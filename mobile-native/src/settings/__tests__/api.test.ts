@@ -60,7 +60,7 @@ import {
 } from "../api";
 import { DEFAULT_PREFERENCES } from "../schema";
 
-const { toSyncError, SETTINGS_PATH } = __testing;
+const { toSyncError, SETTINGS_PATH, settingsMessageFor } = __testing;
 
 /** Build the error the real `pulseApi` would throw, via the mocked class. */
 function apiError(status: number, message = "boom"): Error {
@@ -415,5 +415,105 @@ describe("sessions", () => {
   it("surfaces a failed revoke, because silence would read as success", async () => {
     mockPulseApi.mockRejectedValue(apiError(403));
     await expect(revokeSession("sess-1")).rejects.toBeInstanceOf(PreferenceSyncError);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What the user is actually told.
+ *
+ * The banner a tester photographed thirteen times — "The requested PulseSoc
+ * service was not found." — is the generic 404 body from `bot.py`, written for
+ * whoever is holding the failing request. That reader is a developer. Passing it
+ * through unedited put an accurate, unactionable sentence in front of somebody
+ * who had done nothing but tap a switch, and it appeared identically on every
+ * settings screen, which is why the whole surface read as "static UI".
+ *
+ * Two properties are pinned here. Each status gets its own text, so a support
+ * report can be told apart from a bug report by reading the screenshot. And the
+ * 404 text says plainly that the change was not saved and that this is not
+ * something the user can fix — softening it into "try again later" would hide a
+ * missing deployment behind an invitation to retry forever.
+ */
+describe("user-facing messages", () => {
+  const STATUSES = [401, 403, 404, 409, 422, 429, 500, 503];
+
+  it("no longer shows the backend's generic 404 prose", () => {
+    expect(settingsMessageFor(404, "The requested PulseSoc service was not found.")).not.toMatch(
+      /requested PulseSoc service/i
+    );
+  });
+
+  it("gives every status its own wording", () => {
+    const messages = STATUSES.map((status) => settingsMessageFor(status, ""));
+    expect(new Set(messages).size).toBe(new Set(STATUSES.map((s) => (s >= 500 ? 500 : s))).size);
+    messages.forEach((message) => expect(message.length).toBeGreaterThan(10));
+  });
+
+  it("tells a signed-out user the one thing that will help", () => {
+    expect(settingsMessageFor(401, "")).toMatch(/sign in/i);
+  });
+
+  it("says a forbidden change is about permission, not about the network", () => {
+    expect(settingsMessageFor(403, "")).toMatch(/allowed/i);
+  });
+
+  it("states that a 404 lost the change and is not the user's doing", () => {
+    const message = settingsMessageFor(404, "");
+    expect(message).toMatch(/not saved/i);
+    expect(message).not.toMatch(/try again|retry/i);
+  });
+
+  it("names the other device on a conflict, and says how to resolve it", () => {
+    expect(settingsMessageFor(409, "")).toMatch(/another device/i);
+    expect(settingsMessageFor(409, "")).toMatch(/refresh/i);
+  });
+
+  it("prefers the server's own words for a validation failure", () => {
+    // 422 is the one status where the backend knows something the client does
+    // not — which field, and why.
+    expect(settingsMessageFor(422, "Quiet hours must be under 24 hours.")).toBe(
+      "Quiet hours must be under 24 hours."
+    );
+    expect(settingsMessageFor(422, "")).toBeTruthy();
+  });
+
+  it("promises a retry only where one will actually happen", () => {
+    // 429 and 5xx are the transient classes; the store really does retry those.
+    expect(settingsMessageFor(429, "")).toMatch(/moment|retry|finish/i);
+    expect(settingsMessageFor(500, "")).toMatch(/retry/i);
+    expect(settingsMessageFor(503, "")).toMatch(/retry/i);
+  });
+
+  it("never leaves a blank message, whatever the server sent", () => {
+    [0, 100, 302, 400, 418, 451, 507].forEach((status) => {
+      expect(settingsMessageFor(status, "").trim().length).toBeGreaterThan(0);
+    });
+  });
+
+  it("carries the same text through toSyncError", () => {
+    const spy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    STATUSES.forEach((status) => {
+      expect(toSyncError(apiError(status, "")).message).toBe(settingsMessageFor(status, ""));
+    });
+    spy.mockRestore();
+  });
+
+  it("logs a 404 as a deployment defect, because it is invisible in the logs otherwise", () => {
+    // A missing endpoint and an ordinary rejected write are indistinguishable in
+    // aggregate error counts. This line is what makes the difference greppable.
+    const spy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    toSyncError(apiError(404, "The requested PulseSoc service was not found."));
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(String(spy.mock.calls[0][0])).toMatch(/deployment defect/i);
+    spy.mockRestore();
+  });
+
+  it("does not log for an ordinary rejected write", () => {
+    const spy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    [401, 403, 409, 422, 429, 500].forEach((status) => toSyncError(apiError(status, "")));
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 });

@@ -1136,26 +1136,64 @@ webhook_app.config.update(
 )
 app = webhook_app
 
-try:
-    from pulse_communications_v2.routes import register as register_pulse_comm_v2_routes
+# Which optional route packs registered, and why any of them did not.
+#
+# Every registration below is wrapped in `except Exception` so that one broken
+# feature cannot stop the process from booting. That is the right trade, but on
+# its own it is also how a whole subsystem goes missing in production without
+# anybody noticing: the blueprint fails to register, the log line scrolls away,
+# and from then on every request to those paths falls through to the generic
+# 404 handler and tells users "The requested PulseSoc service was not found."
+# The screens still render, because they are client-side, so it reads as a UI
+# bug rather than a server that is missing an entire API.
+#
+# Recording the outcome here makes that state observable from outside the box —
+# see `/health/routes`, which is what a deploy should be checked against before
+# anyone opens the app.
+ROUTE_PACK_STATUS = {}
 
-    register_pulse_comm_v2_routes(webhook_app)
-except Exception:
-    logging.exception("PULSE_COMMUNICATIONS_V2_ROUTE_REGISTRATION_FAILED")
 
-try:
-    from services.presence_routes import register as register_pulse_presence_routes
+def _record_route_pack(name, register_callable):
+    try:
+        register_callable(webhook_app)
+        ROUTE_PACK_STATUS[name] = {"registered": True, "error": None}
+    except Exception as exc:
+        ROUTE_PACK_STATUS[name] = {"registered": False, "error": exc.__class__.__name__}
+        # CRITICAL rather than ERROR: an unregistered pack is not a degraded
+        # feature, it is a feature that is entirely absent from this deployment.
+        logging.critical(
+            "ROUTE_PACK_REGISTRATION_FAILED pack=%s error=%s — every endpoint in this pack will 404",
+            name,
+            exc.__class__.__name__,
+            exc_info=True,
+        )
 
-    register_pulse_presence_routes(webhook_app)
-except Exception:
-    logging.exception("PULSE_PRESENCE_ROUTE_REGISTRATION_FAILED")
 
-try:
-    from services.pulse_settings_routes import register as register_pulse_settings_routes
+def _load_route_pack(name, module_path):
+    """Import a route pack and register it, recording either outcome.
 
-    register_pulse_settings_routes(webhook_app)
-except Exception:
-    logging.exception("PULSE_MOBILE_SETTINGS_ROUTE_REGISTRATION_FAILED")
+    The import is inside the try for the same reason the registration is: a pack
+    whose module fails to import is exactly as absent from the running server as
+    one whose blueprint fails to register, and both must be visible rather than
+    fatal.
+    """
+    try:
+        module = __import__(module_path, fromlist=["register"])
+        _record_route_pack(name, getattr(module, "register"))
+    except Exception as exc:
+        ROUTE_PACK_STATUS[name] = {"registered": False, "error": exc.__class__.__name__}
+        logging.critical(
+            "ROUTE_PACK_IMPORT_FAILED pack=%s module=%s error=%s — every endpoint in this pack will 404",
+            name,
+            module_path,
+            exc.__class__.__name__,
+            exc_info=True,
+        )
+
+
+_load_route_pack("pulse_communications_v2", "pulse_communications_v2.routes")
+_load_route_pack("pulse_presence", "services.presence_routes")
+_load_route_pack("pulse_mobile_settings", "services.pulse_settings_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):
@@ -106521,6 +106559,53 @@ def health_check():
     response = jsonify({"ok": True, "service": "coinpilotx-web"})
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response, 200
+
+
+@webhook_app.route("/health/routes", methods=["GET"])
+def route_health_check():
+    """Report whether the native app's API surface is actually present.
+
+    This exists because of a real production failure: TestFlight build 5 shipped
+    a client written against endpoints that the deployed server did not have, so
+    every Settings write returned the generic 404 body and users were told "The
+    requested PulseSoc service was not found." while the screens themselves
+    rendered perfectly. Nothing on the server was broken in a way that any
+    existing check could see — `/health` answered 200 throughout.
+
+    Two things are reported, because two different failures produce the same
+    symptom. `route_packs` catches a blueprint that raised while registering.
+    `endpoints` catches a deploy built from a branch that never contained the
+    code, which is what actually happened: the rule simply is not in the map.
+
+    Deliberately unauthenticated and deliberately free of any detail beyond
+    presence — knowing that a path exists is already implied by the client
+    bundle, and the check is worthless if you have to sign in to run it, since
+    signing in is the thing that breaks when the API is missing.
+    """
+    rules = {str(rule.rule) for rule in webhook_app.url_map.iter_rules()}
+    required = [
+        "/api/pulse/mobile/settings",
+        "/api/pulse/mobile/settings/blocked",
+        "/api/pulse/mobile/settings/muted",
+        "/api/pulse/mobile/settings/sessions",
+        "/api/pulse/mobile/settings/sessions/revoke",
+        "/api/pulse/mobile/settings/data-export",
+        "/api/pulse/mobile/settings/delete-account",
+        "/api/pulse/seller/application",
+        "/api/pulse/seller/application/draft",
+    ]
+    endpoints = {path: (path in rules) for path in required}
+    packs = {name: bool(state.get("registered")) for name, state in ROUTE_PACK_STATUS.items()}
+    healthy = all(endpoints.values()) and all(packs.values())
+    payload = {
+        "ok": healthy,
+        "endpoints": endpoints,
+        "route_packs": ROUTE_PACK_STATUS,
+        "missing": sorted(path for path, present in endpoints.items() if not present),
+    }
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response, 200 if healthy else 503
 
 
 @webhook_app.route("/health/database", methods=["GET"])

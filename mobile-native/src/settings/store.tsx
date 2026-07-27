@@ -35,7 +35,9 @@ import {
   normalizePreferences,
   PreferenceGroup,
   Preferences,
-  preferencesEqual
+  preferencesEqual,
+  stripDeviceLocal,
+  withDeviceLocal
 } from "./schema";
 
 const CACHE_KEY = "pulsesoc.native.settings.v1";
@@ -131,14 +133,31 @@ export function PreferencesProvider({ children, enabled = true }: { children: Re
     const groups = Array.from(dirty.current);
     if (!groups.length) return;
 
-    inFlight.current = true;
-    if (mounted.current) setStatus("saving");
-
     const source = latest.current;
-    const patch = groups.reduce<Partial<Preferences>>((acc, group) => {
+    const full = groups.reduce<Partial<Preferences>>((acc, group) => {
       (acc as Record<string, unknown>)[group] = source[group];
       return acc;
     }, {});
+    // Device-local leaves are already durable in AsyncStorage. Sending them
+    // would tell the account something only this handset can know, and a patch
+    // that reduces to nothing would come back 400 — which the store treats as
+    // permanent and would use to roll back a change that in fact succeeded.
+    const patch = stripDeviceLocal(full);
+
+    if (!Object.keys(patch).length) {
+      groups.forEach((group) => dirty.current.delete(group));
+      confirmed.current = source;
+      if (mounted.current) {
+        setError(null);
+        setStatus(dirty.current.size ? "saving" : "saved");
+        syncPendingState();
+      }
+      await persist(source, revision.current, Array.from(dirty.current));
+      return;
+    }
+
+    inFlight.current = true;
+    if (mounted.current) setStatus("saving");
 
     try {
       const envelope = await pushPreferencePatch(patch, revision.current);
@@ -148,8 +167,9 @@ export function PreferencesProvider({ children, enabled = true }: { children: Re
       revision.current = envelope.revision || revision.current;
 
       // Server is authoritative for groups it just accepted, but must not clobber
-      // groups the user changed mid-flight.
-      const merged = { ...envelope.preferences } as Preferences;
+      // groups the user changed mid-flight, and has no opinion at all about the
+      // leaves this device never sent it.
+      const merged = withDeviceLocal(envelope.preferences, latest.current);
       dirty.current.forEach((group) => {
         (merged as Record<string, unknown>)[group] = latest.current[group];
       });
@@ -172,10 +192,16 @@ export function PreferencesProvider({ children, enabled = true }: { children: Re
         // The server refused this payload — keeping it queued would fail forever.
         // Roll the affected groups back to the last confirmed values.
         groups.forEach((group) => dirty.current.delete(group));
-        const rolledBack = { ...latest.current } as Preferences;
+        const reverted = { ...latest.current } as Preferences;
         groups.forEach((group) => {
-          (rolledBack as Record<string, unknown>)[group] = confirmed.current[group];
+          (reverted as Record<string, unknown>)[group] = confirmed.current[group];
         });
+        // A group can hold both synced and device-local leaves — `security` holds
+        // 2FA and Face ID together. Only the leaves that were actually sent can
+        // have been refused, so reverting the whole group would switch Face ID
+        // off on a device where it is genuinely enrolled, because of a rejected
+        // login-alerts write it had nothing to do with.
+        const rolledBack = withDeviceLocal(reverted, latest.current);
         latest.current = rolledBack;
         if (mounted.current) {
           setPreferences(rolledBack);
@@ -255,12 +281,15 @@ export function PreferencesProvider({ children, enabled = true }: { children: Re
       }
 
       revision.current = remote.revision;
-      // Server wins except where the user has unflushed local edits.
-      const merged = { ...remote.preferences } as Preferences;
+      // Server wins except where the user has unflushed local edits, and except
+      // for the leaves it has never been sent — for those the snapshot we just
+      // read off this device is the only truth there is.
+      const authoritative = withDeviceLocal(remote.preferences, latest.current);
+      const merged = { ...authoritative } as Preferences;
       dirty.current.forEach((group) => {
         (merged as Record<string, unknown>)[group] = latest.current[group];
       });
-      confirmed.current = remote.preferences;
+      confirmed.current = authoritative;
       latest.current = merged;
       setPreferences((current) => (preferencesEqual(current, merged) ? current : merged));
       await persist(merged, revision.current, Array.from(dirty.current));
@@ -310,16 +339,27 @@ export function PreferencesProvider({ children, enabled = true }: { children: Re
 
       if (preferencesEqual(current, next)) return;
 
+      // Did anything the *account* owns actually move? "The group changed" is a
+      // different question, because `security` and `storage` each mix a
+      // device-owned leaf with synced ones. Queueing the group on a purely local
+      // edit would re-send every synced leaf beside it, and under last-write-wins
+      // that re-send silently reverts whatever another device just set them to —
+      // so dragging this phone's cache slider could undo a download-policy change
+      // made on a tablet a second earlier.
+      const syncedChanged =
+        JSON.stringify(stripDeviceLocal({ [group]: current[group] } as Partial<Preferences>)) !==
+        JSON.stringify(stripDeviceLocal({ [group]: next[group] } as Partial<Preferences>));
+
       latest.current = next;
       setPreferences(next);
-      dirty.current.add(group);
+      if (syncedChanged) dirty.current.add(group);
       syncPendingState();
       setError(null);
-      setStatus("saving");
+      setStatus(dirty.current.size ? "saving" : "saved");
 
       await persist(next, revision.current, Array.from(dirty.current));
-      if (enabled) scheduleFlush();
-      else setStatus("saved");
+      if (enabled && dirty.current.size) scheduleFlush();
+      else if (!enabled) setStatus("saved");
     },
     [enabled, persist, scheduleFlush, syncPendingState]
   );
@@ -336,11 +376,12 @@ export function PreferencesProvider({ children, enabled = true }: { children: Re
       return;
     }
     revision.current = remote.revision;
-    const merged = { ...remote.preferences } as Preferences;
+    const authoritative = withDeviceLocal(remote.preferences, latest.current);
+    const merged = { ...authoritative } as Preferences;
     dirty.current.forEach((group) => {
       (merged as Record<string, unknown>)[group] = latest.current[group];
     });
-    confirmed.current = remote.preferences;
+    confirmed.current = authoritative;
     latest.current = merged;
     setPreferences(merged);
     setError(null);

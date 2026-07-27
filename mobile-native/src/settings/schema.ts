@@ -430,6 +430,97 @@ export function preferencesEqual(a: Preferences, b: Preferences): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/* -------------------------------------------------------------------------- */
+/*                        Device-local vs account-synced                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Preferences that describe *this device* and must never be written to the
+ * account.
+ *
+ * Everything not listed here is account-synced: the user changes it on one
+ * device and expects to find it on the next. That is the right default for
+ * appearance, accessibility, language, notifications, privacy and data consent,
+ * all of which are properties of the person rather than the handset.
+ *
+ * These four are properties of the handset, and syncing them is not merely
+ * redundant — it is wrong:
+ *
+ *  - `security.biometricUnlock` is owned by this device's keychain. The
+ *    preference is a mirror kept so other screens can read it without touching
+ *    SecureStore. Synced, it becomes a claim about hardware the account cannot
+ *    make: enrolling Face ID on a phone would tell a tablet with no enrolment
+ *    that biometric unlock is on. Worse, each device corrects the shared value
+ *    to its own local truth on mount, so two devices with different enrolments
+ *    overwrite each other on every launch.
+ *  - `storage.cacheLimitMb` and `storage.autoClearCache` budget the free space
+ *    of one device. A 256 MB cap chosen on a full phone has no business
+ *    shrinking the cache on a tablet with room to spare.
+ *  - the whole `developer` group is a debugging affordance for the machine in
+ *    front of you. Turning on verbose logging to diagnose one handset should
+ *    not enable it on every device the account is signed into.
+ *
+ * Auto-download policy is deliberately NOT here: it expresses an intent about
+ * the user's data plan, not about storage hardware, and users expect "never
+ * auto-download video" to follow them.
+ */
+export const DEVICE_LOCAL_KEYS: { [K in PreferenceGroup]?: readonly (keyof Preferences[K])[] } = {
+  security: ["biometricUnlock"],
+  storage: ["cacheLimitMb", "autoClearCache"],
+  developer: ["enabled", "showPerfOverlay", "verboseApiLogging"]
+};
+
+/** True when no leaf of `group` may leave the device. */
+export function isDeviceLocalGroup(group: PreferenceGroup): boolean {
+  const keys = DEVICE_LOCAL_KEYS[group];
+  if (!keys) return false;
+  return keys.length === Object.keys(DEFAULT_PREFERENCES[group]).length;
+}
+
+/**
+ * Strip device-local leaves from an outgoing patch, dropping any group left
+ * with nothing to say.
+ *
+ * Returning `{}` is meaningful and the caller must check for it: the server
+ * answers an empty patch with 400, which the store treats as permanent and
+ * would roll a perfectly good local change back. A patch that reduces to
+ * nothing is a patch that should never be sent.
+ */
+export function stripDeviceLocal(patch: Partial<Preferences>): Partial<Preferences> {
+  const out: Partial<Preferences> = {};
+  (Object.keys(patch) as PreferenceGroup[]).forEach((group) => {
+    const source = patch[group];
+    if (!source || typeof source !== "object") return;
+    const local = (DEVICE_LOCAL_KEYS[group] ?? []) as readonly string[];
+    const kept = Object.entries(source).filter(([key]) => !local.includes(key));
+    if (!kept.length) return;
+    (out as Record<string, unknown>)[group] = Object.fromEntries(kept);
+  });
+  return out;
+}
+
+/**
+ * Overlay this device's local-only values onto a document that came from the
+ * server.
+ *
+ * The server has never been told these leaves, so whatever it returns for them
+ * is its own default — adopting it would silently switch Face ID off in the UI
+ * on every reconcile. `local` is always the authority for them.
+ */
+export function withDeviceLocal(remote: Preferences, local: Preferences): Preferences {
+  const merged = { ...remote } as Preferences;
+  (Object.keys(DEVICE_LOCAL_KEYS) as PreferenceGroup[]).forEach((group) => {
+    const keys = (DEVICE_LOCAL_KEYS[group] ?? []) as readonly string[];
+    if (!keys.length) return;
+    const next = { ...(remote[group] as Record<string, unknown>) };
+    keys.forEach((key) => {
+      next[key] = (local[group] as Record<string, unknown>)[key];
+    });
+    (merged as Record<string, unknown>)[group] = next;
+  });
+  return merged;
+}
+
 export const NOTIFICATION_CATEGORY_LABELS: Record<NotificationCategory, { title: string; description: string }> = {
   likes: { title: "Likes", description: "When someone likes your posts, reels, or comments." },
   comments: { title: "Comments", description: "Replies and comments on content you posted." },

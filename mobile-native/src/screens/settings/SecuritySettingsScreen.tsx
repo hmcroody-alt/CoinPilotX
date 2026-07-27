@@ -133,8 +133,12 @@ export function SecuritySettingsScreen() {
     if (!mounted.current) return;
     setCapability(nextCapability);
     setBiometricEnabled(enabled);
-    // The keychain is the truth for biometrics; the preference is only a synced
-    // mirror so other surfaces can read it without touching SecureStore.
+    // The keychain is the truth for biometrics; the preference is a device-local
+    // mirror so other surfaces can read it without touching SecureStore. It is
+    // listed in `DEVICE_LOCAL_KEYS`, so this correction is written to disk and
+    // never to the account — otherwise enrolling a face here would tell every
+    // other signed-in device that it has biometric unlock too, and each device
+    // would overwrite the shared value with its own answer on every launch.
     if (enabled !== latestValue.current.biometricUnlock) void setGroup({ biometricUnlock: enabled });
   }, [setGroup]);
 

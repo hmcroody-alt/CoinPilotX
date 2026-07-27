@@ -599,3 +599,198 @@ describe("usePreferences outside a provider", () => {
     spy.mockRestore();
   });
 });
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Device-local preferences must never reach the account.
+ *
+ * Four values describe the handset, not the user: whether Face ID is enrolled
+ * *here*, how much space this phone will lend the cache, and whether developer
+ * tooling is on for this build. Syncing them looked harmless — an extra field in
+ * a PATCH — but it made a claim the account cannot support, and it produced a
+ * loop: each device hydrated, saw the other's value, and wrote its own back.
+ *
+ * There are four separate ways to lose that fix, so there are four groups of
+ * tests: the outbound patch, the empty-patch edge, the reconcile, and rollback.
+ * The last two are the subtle ones — a merge that forgets the local keys undoes
+ * the split on the next successful save, and a rollback that reverts the whole
+ * `security` group switches off Face ID on a phone where it is genuinely
+ * enrolled, because 2FA and biometrics share that group.
+ */
+describe("device-local preferences", () => {
+  it("never contacts the server for a developer-only change", async () => {
+    await mount();
+    await act(async () => {
+      await handle.update("developer", { enabled: true });
+    });
+    await settle(60_000);
+    expect(mockPushPreferencePatch).not.toHaveBeenCalled();
+    expect(handle.preferences.developer.enabled).toBe(true);
+  });
+
+  it("never contacts the server for the cache controls", async () => {
+    await mount();
+    await act(async () => {
+      await handle.update("storage", { cacheLimitMb: 512, autoClearCache: true });
+    });
+    await settle(60_000);
+    expect(mockPushPreferencePatch).not.toHaveBeenCalled();
+    expect(handle.preferences.storage.cacheLimitMb).toBe(512);
+  });
+
+  it("never contacts the server for biometric enrolment", async () => {
+    await mount();
+    await act(async () => {
+      await handle.update("security", { biometricUnlock: true });
+    });
+    await settle(60_000);
+    expect(mockPushPreferencePatch).not.toHaveBeenCalled();
+    expect(handle.preferences.security.biometricUnlock).toBe(true);
+  });
+
+  it("still persists a local-only change, so it survives a relaunch", async () => {
+    // The whole value of these settings is that they stick on this device. If
+    // the early return skipped the snapshot write, they would live exactly as
+    // long as the process.
+    await mount();
+    await act(async () => {
+      await handle.update("developer", { showPerfOverlay: true });
+    });
+    await settle();
+    expect((cacheStore.get(CACHE_KEY) as any).preferences.developer.showPerfOverlay).toBe(true);
+  });
+
+  it("reports saved rather than leaving the banner spinning", async () => {
+    // No request is made, so nothing will ever arrive to clear a "Saving…".
+    await mount();
+    await act(async () => {
+      await handle.update("storage", { cacheLimitMb: 1024 });
+    });
+    await settle();
+    expect(handle.status).not.toBe("saving");
+    expect(handle.error).toBeNull();
+    expect(handle.pendingGroups).toEqual([]);
+  });
+
+  it("sends the synced half of a mixed group and withholds the local half", async () => {
+    await mount();
+    await act(async () => {
+      await handle.update("security", {
+        loginAlerts: !DEFAULT_PREFERENCES.security.loginAlerts,
+        biometricUnlock: true
+      });
+    });
+    await settle();
+    expect(mockPushPreferencePatch).toHaveBeenCalledTimes(1);
+    const [patch] = mockPushPreferencePatch.mock.calls[0];
+    expect(patch.security).toBeDefined();
+    expect(patch.security.loginAlerts).toBe(!DEFAULT_PREFERENCES.security.loginAlerts);
+    expect(patch.security).not.toHaveProperty("biometricUnlock");
+  });
+
+  it("does not send an empty group when only local keys were touched alongside another group", async () => {
+    // The empty-patch hazard: the server answers `{}` with 400, and the store
+    // reads 400 as permanent — so an empty `security` here would roll back a
+    // change that had in fact succeeded.
+    await mount();
+    await act(async () => {
+      await handle.update("security", { biometricUnlock: true });
+      await handle.update("appearance", { theme: "dark" });
+    });
+    await settle();
+    const [patch] = mockPushPreferencePatch.mock.calls[0];
+    expect(Object.keys(patch)).toEqual(["appearance"]);
+  });
+
+  it("keeps the device's value when the server's reconcile disagrees", async () => {
+    // The loop, reproduced: another phone has biometrics on, this one does not,
+    // and the account's copy therefore says `true`. The response echoes what it
+    // was sent, plus that stale claim about hardware it cannot see.
+    mockPushPreferencePatch.mockImplementation(async (patch: Partial<Preferences>) =>
+      envelope(
+        { ...(patch as Partial<Preferences>), security: { ...DEFAULT_PREFERENCES.security, biometricUnlock: true } },
+        2
+      )
+    );
+    await mount();
+    await act(async () => {
+      await handle.update("security", { biometricUnlock: false });
+      await handle.update("appearance", { theme: "dark" });
+    });
+    await settle();
+    expect(handle.preferences.security.biometricUnlock).toBe(false);
+    expect(handle.preferences.appearance.theme).toBe("dark");
+  });
+
+  it("lets the server win on hydration for everything except the local keys", async () => {
+    cacheStore.set(CACHE_KEY, {
+      preferences: normalizePreferences({
+        ...DEFAULT_PREFERENCES,
+        security: { ...DEFAULT_PREFERENCES.security, biometricUnlock: true },
+        storage: { ...DEFAULT_PREFERENCES.storage, cacheLimitMb: 256 }
+      }),
+      revision: 1,
+      pending: []
+    });
+    mockFetchRemotePreferences.mockResolvedValue(
+      envelope(
+        {
+          security: { ...DEFAULT_PREFERENCES.security, biometricUnlock: false, twoFactorEnabled: true },
+          storage: { ...DEFAULT_PREFERENCES.storage, cacheLimitMb: 4096 }
+        },
+        3
+      )
+    );
+    await mount();
+    await waitFor(() => expect(handle.preferences.security.twoFactorEnabled).toBe(true));
+    expect(handle.preferences.security.biometricUnlock).toBe(true);
+    expect(handle.preferences.storage.cacheLimitMb).toBe(256);
+  });
+
+  it("survives a refresh without losing the device's answers", async () => {
+    await mount();
+    await act(async () => {
+      await handle.update("security", { biometricUnlock: true });
+    });
+    await settle();
+    mockFetchRemotePreferences.mockResolvedValue(envelope({}, 5));
+    await act(async () => {
+      await handle.refresh();
+    });
+    expect(handle.preferences.security.biometricUnlock).toBe(true);
+  });
+
+  it("rolls back the rejected synced key without touching biometrics", async () => {
+    // `security` holds both. Reverting the group wholesale would switch Face ID
+    // off on a phone where it is enrolled, because of an unrelated 422.
+    await mount();
+    await act(async () => {
+      await handle.update("security", { biometricUnlock: true });
+    });
+    await settle();
+    mockPushPreferencePatch.mockRejectedValue(new SyncError("Rejected.", 422, true));
+    await act(async () => {
+      await handle.update("security", { loginAlerts: !DEFAULT_PREFERENCES.security.loginAlerts });
+    });
+    await settle();
+    expect(handle.preferences.security.loginAlerts).toBe(DEFAULT_PREFERENCES.security.loginAlerts);
+    expect(handle.preferences.security.biometricUnlock).toBe(true);
+  });
+
+  it("keeps biometrics through a rolled-back state that is then persisted", async () => {
+    await mount();
+    await act(async () => {
+      await handle.update("security", { biometricUnlock: true });
+    });
+    await settle();
+    mockPushPreferencePatch.mockRejectedValue(new SyncError("Rejected.", 403, true));
+    await act(async () => {
+      await handle.update("security", { twoFactorEnabled: true });
+    });
+    await settle();
+    const snapshot = (cacheStore.get(CACHE_KEY) as any).preferences;
+    expect(snapshot.security.twoFactorEnabled).toBe(false);
+    expect(snapshot.security.biometricUnlock).toBe(true);
+  });
+});

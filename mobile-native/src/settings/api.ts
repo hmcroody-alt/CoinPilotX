@@ -70,11 +70,60 @@ export class PreferenceSyncError extends Error {
   }
 }
 
+/**
+ * What each status means to somebody looking at a settings screen.
+ *
+ * The server's own prose is written for whoever is holding the failing request,
+ * which for most of these is a developer. Passing it through unedited is how
+ * "The requested PulseSoc service was not found." — the generic 404 body from
+ * `bot.py` — ended up in front of a user who had done nothing but tap a switch.
+ * It is accurate and completely unactionable.
+ *
+ * Two rules govern this table. Where the user can do something, say what. Where
+ * they cannot, say that plainly instead of implying they can, and never dress a
+ * server-side defect up as something they got wrong.
+ */
+function settingsMessageFor(status: number, serverMessage: string): string {
+  switch (status) {
+    case 401:
+      return "Your session has expired. Sign in again to change this setting.";
+    case 403:
+      return "This account isn't allowed to change that setting.";
+    case 404:
+      // Deliberately not softened into "try again later". A 404 here means the
+      // settings service is not answering on the server this build is pointed
+      // at, which no amount of retrying will fix and which the user cannot
+      // cause. Naming it is what turns a mysterious banner into a bug report.
+      return "Settings can't be saved right now — this version of PulseSoc can't reach the settings service. Your change was not saved.";
+    case 409:
+      return "This setting was changed on another device. Pull down to refresh, then try again.";
+    case 422:
+      return serverMessage || "That value isn't valid for this setting.";
+    case 429:
+      return "Too many changes at once. We'll finish saving in a moment.";
+    default:
+      if (status >= 500) return "PulseSoc had a problem saving that. We'll retry automatically.";
+      return serverMessage || "Could not save your change.";
+  }
+}
+
 function toSyncError(error: unknown): PreferenceSyncError {
   if (error instanceof PulseApiError) {
-    // 4xx (except 408/429) means the payload or session is the problem.
+    // 4xx means the payload or the session is the problem and repeating the
+    // request cannot help. 408 and 429 are the exceptions: both are invitations
+    // to try the same request again later.
     const permanent = error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429;
-    return new PreferenceSyncError(error.message || "Could not save your change.", error.status, permanent);
+    const message = settingsMessageFor(error.status, String(error.message || "").trim());
+    if (error.status === 404) {
+      // Loud on purpose. This is the one status in this function that indicates
+      // a broken deployment rather than a broken request, and it is otherwise
+      // indistinguishable in the logs from an ordinary rejected write.
+      console.error(
+        `[settings] ${error.status} from the settings service — the endpoint is missing on the server this build calls. ` +
+          "This is a deployment defect, not a user error."
+      );
+    }
+    return new PreferenceSyncError(message, error.status, permanent);
   }
   return new PreferenceSyncError("You appear to be offline. We'll retry automatically.", 0, false);
 }
@@ -225,4 +274,4 @@ export async function revokeSession(sessionId: string): Promise<void> {
   }
 }
 
-export const __testing = { toEnvelope, toSyncError, toRelationshipList, toSession, SETTINGS_PATH };
+export const __testing = { toEnvelope, toSyncError, toRelationshipList, toSession, settingsMessageFor, SETTINGS_PATH };

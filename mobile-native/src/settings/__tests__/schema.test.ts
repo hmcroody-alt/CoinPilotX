@@ -25,10 +25,15 @@ import {
   FONT_SCALE_MIN,
   NOTIFICATION_CATEGORIES,
   NOTIFICATION_CATEGORY_LABELS,
+  DEVICE_LOCAL_KEYS,
   Preferences,
+  PreferenceGroup,
+  isDeviceLocalGroup,
   normalizePreferences,
   preferencesEqual,
-  quantizeFontScale
+  quantizeFontScale,
+  stripDeviceLocal,
+  withDeviceLocal
 } from "../schema";
 
 const GROUPS = Object.keys(DEFAULT_PREFERENCES) as (keyof Preferences)[];
@@ -388,5 +393,186 @@ describe("defaults", () => {
       showPerfOverlay: false,
       verboseApiLogging: false
     });
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Device-local classification.
+ *
+ * Four preferences describe *this handset* rather than the account, and sending
+ * them to the server is not a harmless extra field — it is a false claim made
+ * to every other signed-in device. `security.biometricUnlock` says "Face ID is
+ * enrolled", which is true of one phone and unknowable for the others; the
+ * storage caps budget one device's free space; `developer` is a debugging
+ * affordance for the handset it was switched on from.
+ *
+ * The failure mode without this split is not a wrong toggle, it is a loop: two
+ * devices hydrate, each overwrites the shared value with its own answer, and
+ * each launch flips the other. So the tests below assert both halves — that the
+ * keys leave on the way out (`stripDeviceLocal`) and that they survive on the
+ * way back in (`withDeviceLocal`) — because either one alone still loses.
+ */
+describe("device-local classification", () => {
+  it("names only keys that actually exist in their group", () => {
+    // A typo here fails open: the key would be silently synced forever.
+    (Object.keys(DEVICE_LOCAL_KEYS) as PreferenceGroup[]).forEach((group) => {
+      const declared = DEVICE_LOCAL_KEYS[group] as readonly string[];
+      declared.forEach((key) => {
+        expect(Object.keys(DEFAULT_PREFERENCES[group])).toContain(key);
+      });
+    });
+  });
+
+  it("treats `developer` as wholly local and `security` as only partly local", () => {
+    expect(isDeviceLocalGroup("developer")).toBe(true);
+    expect(isDeviceLocalGroup("security")).toBe(false);
+    expect(isDeviceLocalGroup("storage")).toBe(false);
+    expect(isDeviceLocalGroup("appearance")).toBe(false);
+  });
+
+  it("keeps auto-download on the account, because it states an intent, not a capacity", () => {
+    // Easy to lump in with the cache caps. It is different in kind: "never use
+    // cellular data for video" is a decision about the user's data plan, and it
+    // should follow them onto a new phone.
+    const storage = (DEVICE_LOCAL_KEYS.storage ?? []) as readonly string[];
+    expect(storage).not.toContain("autoDownloadPhotos");
+    expect(storage).not.toContain("autoDownloadVideos");
+    expect(storage).toEqual(expect.arrayContaining(["cacheLimitMb", "autoClearCache"]));
+  });
+
+  describe("stripDeviceLocal", () => {
+    it("removes a local key but keeps its synced siblings", () => {
+      const out = stripDeviceLocal({
+        security: { twoFactorEnabled: true, biometricUnlock: true, loginAlerts: false } as any
+      });
+      expect(out.security).toEqual({ twoFactorEnabled: true, loginAlerts: false });
+    });
+
+    it("drops the group entirely when nothing synced is left", () => {
+      // Not the same as sending `{security: {}}`. The server answers an empty
+      // patch with 400, which the store reads as permanent and rolls back — so
+      // an empty group here would revert a change that in fact succeeded.
+      const out = stripDeviceLocal({ security: { biometricUnlock: true } as any });
+      expect(out).toEqual({});
+      expect(Object.keys(out)).toHaveLength(0);
+    });
+
+    it("removes the whole developer group, which is local in its entirety", () => {
+      expect(stripDeviceLocal({ developer: DEFAULT_PREFERENCES.developer })).toEqual({});
+    });
+
+    it("removes both cache keys and keeps the download policy", () => {
+      const out = stripDeviceLocal({
+        storage: { cacheLimitMb: 900, autoClearCache: true, autoDownloadPhotos: "wifi" } as any
+      });
+      expect(out.storage).toEqual({ autoDownloadPhotos: "wifi" });
+    });
+
+    it("passes a group with no local keys through untouched", () => {
+      const patch = { appearance: DEFAULT_PREFERENCES.appearance };
+      expect(stripDeviceLocal(patch)).toEqual(patch);
+    });
+
+    it("does not mutate the patch it was given", () => {
+      const patch = { developer: { ...DEFAULT_PREFERENCES.developer } };
+      const before = JSON.stringify(patch);
+      stripDeviceLocal(patch);
+      expect(JSON.stringify(patch)).toBe(before);
+    });
+
+    it("ignores a group whose value is not an object", () => {
+      expect(stripDeviceLocal({ appearance: null as any })).toEqual({});
+      expect(stripDeviceLocal({} as any)).toEqual({});
+    });
+  });
+
+  describe("withDeviceLocal", () => {
+    const remote = normalizePreferences({
+      ...DEFAULT_PREFERENCES,
+      security: { ...DEFAULT_PREFERENCES.security, twoFactorEnabled: true, biometricUnlock: true },
+      storage: { ...DEFAULT_PREFERENCES.storage, cacheLimitMb: 2048 },
+      developer: { ...DEFAULT_PREFERENCES.developer, enabled: true }
+    });
+    const local = normalizePreferences({
+      ...DEFAULT_PREFERENCES,
+      security: { ...DEFAULT_PREFERENCES.security, twoFactorEnabled: false, biometricUnlock: false },
+      storage: { ...DEFAULT_PREFERENCES.storage, cacheLimitMb: 256 },
+      developer: { ...DEFAULT_PREFERENCES.developer, enabled: false }
+    });
+
+    it("lets the server win on everything it owns", () => {
+      expect(withDeviceLocal(remote, local).security.twoFactorEnabled).toBe(true);
+    });
+
+    it("keeps this device's answer for a hardware fact the account cannot know", () => {
+      // The other phone having Face ID enrolled says nothing about this one.
+      expect(withDeviceLocal(remote, local).security.biometricUnlock).toBe(false);
+    });
+
+    it("keeps this device's cache budget and developer state", () => {
+      const merged = withDeviceLocal(remote, local);
+      expect(merged.storage.cacheLimitMb).toBe(256);
+      expect(merged.developer.enabled).toBe(false);
+    });
+
+    it("differs from the remote document in exactly the declared keys", () => {
+      const merged = withDeviceLocal(remote, local);
+      const differing: string[] = [];
+      (Object.keys(DEFAULT_PREFERENCES) as PreferenceGroup[]).forEach((group) => {
+        Object.keys(DEFAULT_PREFERENCES[group]).forEach((key) => {
+          const a = JSON.stringify((merged[group] as any)[key]);
+          const b = JSON.stringify((remote[group] as any)[key]);
+          if (a !== b) differing.push(`${group}.${key}`);
+        });
+      });
+      expect(differing.sort()).toEqual([
+        "developer.enabled",
+        "security.biometricUnlock",
+        "storage.cacheLimitMb"
+      ]);
+    });
+
+    it("is idempotent when the two documents already agree", () => {
+      expect(withDeviceLocal(remote, remote)).toEqual(remote);
+    });
+
+    it("does not mutate either input", () => {
+      const a = JSON.stringify(remote);
+      const b = JSON.stringify(local);
+      withDeviceLocal(remote, local);
+      expect(JSON.stringify(remote)).toBe(a);
+      expect(JSON.stringify(local)).toBe(b);
+    });
+
+    it("returns a complete preference document", () => {
+      const merged = withDeviceLocal(remote, local);
+      expect(Object.keys(merged).sort()).toEqual(Object.keys(DEFAULT_PREFERENCES).sort());
+      expect(normalizePreferences(merged)).toEqual(merged);
+    });
+  });
+
+  it("round-trips: what is stripped on the way out is restored on the way back", () => {
+    // The property that makes the pair safe. Anything `stripDeviceLocal` refuses
+    // to send must be something `withDeviceLocal` refuses to accept back, or the
+    // value is simply lost on the next reconcile.
+    const localDoc = normalizePreferences({
+      ...DEFAULT_PREFERENCES,
+      security: { ...DEFAULT_PREFERENCES.security, biometricUnlock: true },
+      storage: { ...DEFAULT_PREFERENCES.storage, cacheLimitMb: 512, autoClearCache: true },
+      developer: { enabled: true, showPerfOverlay: true, verboseApiLogging: true }
+    });
+    const sent = stripDeviceLocal(localDoc);
+    (Object.keys(DEVICE_LOCAL_KEYS) as PreferenceGroup[]).forEach((group) => {
+      ((DEVICE_LOCAL_KEYS[group] ?? []) as readonly string[]).forEach((key) => {
+        expect((sent as any)[group]?.[key]).toBeUndefined();
+      });
+    });
+    // The server echoes defaults for everything it was never told about.
+    const merged = withDeviceLocal(DEFAULT_PREFERENCES, localDoc);
+    expect(merged.security.biometricUnlock).toBe(true);
+    expect(merged.storage.cacheLimitMb).toBe(512);
+    expect(merged.developer).toEqual(localDoc.developer);
   });
 });
