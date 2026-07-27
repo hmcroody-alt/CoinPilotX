@@ -12,12 +12,17 @@ type PlaybackOwner = {
 let activeOwner: PlaybackOwner | null = null;
 const listeners = new Set<(owner: PlaybackOwner | null) => void>();
 const PRIORITY: Record<MediaPlaybackKind, number> = { call: 100, recording: 90, live: 70, voice: 60, viewer: 50, status: 40, reel: 40, feed: 35, music_preview: 30, radio: 20 };
+const BACKGROUND_RETAINED_KINDS = new Set<MediaPlaybackKind>(["call", "recording", "live", "radio"]);
 
 AppState.addEventListener("change", (next) => {
   if (next === "active") return;
-  if (activeOwner?.kind === "radio") return;
+  if (activeOwner && shouldRetainMediaPlaybackOnBackground(activeOwner.kind)) return;
   releaseMediaPlayback(undefined, "backgrounded").catch(() => undefined);
 });
+
+export function shouldRetainMediaPlaybackOnBackground(kind: MediaPlaybackKind) {
+  return BACKGROUND_RETAINED_KINDS.has(kind);
+}
 
 export function getActiveMediaPlayback() {
   return activeOwner ? { id: activeOwner.id, kind: activeOwner.kind } : null;

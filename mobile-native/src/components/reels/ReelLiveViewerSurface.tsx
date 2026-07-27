@@ -2,6 +2,7 @@ import { ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
 import { getLiveKitToken } from "../../api/live";
+import { claimMediaPlayback, releaseMediaPlayback } from "../../core/mediaPlaybackCoordinator";
 import { PulseReel } from "../../api/reels";
 import { useLiveBroadcastRoom } from "../../live/useLiveBroadcastRoom";
 import { reelLiveSessionId } from "../../reels/reelMediaKind";
@@ -28,6 +29,7 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
   const { connect, disconnect, setRemoteAudioEnabled } = room;
   const [mode, setMode] = useState<ViewerMode>("connecting");
   const [VideoTileView, setVideoTileView] = useState<React.ComponentType<any> | null>(null);
+  const playbackOwnerId = `reel-live:${liveId || reel.id || "unknown"}`;
 
   useEffect(() => {
     let mounted = true;
@@ -82,6 +84,20 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
     // viewer mutes, it actually silences the host instead of routing to earpiece.
     setRemoteAudioEnabled(!muted).catch(() => undefined);
   }, [mode, muted, room.connected, room.remoteAudioTrackCount, setRemoteAudioEnabled]);
+
+  useEffect(() => {
+    if (!active || mode !== "livekit" || !room.connected) {
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+      return;
+    }
+    claimMediaPlayback({
+      id: playbackOwnerId,
+      kind: "live",
+      pause: () => undefined,
+      stop: () => disconnect("feed_live_backgrounded").then(() => undefined)
+    }).catch(() => undefined);
+    return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
+  }, [active, disconnect, mode, playbackOwnerId, room.connected]);
 
   const videoParticipants = useMemo(
     () =>

@@ -500,11 +500,8 @@ export function LiveScreen({ route, navigation }: Props) {
   }, [activeLiveId, currentGuest, guestIsLive, guestPublishing, publishAsGuest]);
 
   useEffect(() => {
+    if (canUseWebRtc) return;
     if (!activeLiveId || !canPlayHls || !playbackUrl) {
-      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
-      return;
-    }
-    if (canUseWebRtc) {
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
       return;
     }
@@ -516,6 +513,20 @@ export function LiveScreen({ route, navigation }: Props) {
     }).then((granted) => granted ? videoRef.current?.playAsync() : undefined).catch(() => undefined);
     return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
   }, [activeLiveId, canPlayHls, canUseWebRtc, playbackOwnerId, playbackUrl]);
+
+  useEffect(() => {
+    if (!activeLiveId || !canUseWebRtc || !joined) {
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+      return;
+    }
+    claimMediaPlayback({
+      id: playbackOwnerId,
+      kind: "live",
+      pause: () => undefined,
+      stop: () => disconnectLiveRoom("viewer_backgrounded").then(() => undefined)
+    }).catch(() => undefined);
+    return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
+  }, [activeLiveId, canUseWebRtc, disconnectLiveRoom, joined, playbackOwnerId]);
 
   useEffect(() => {
     if (!activeLiveId || !canUseWebRtc || !joined) return;
