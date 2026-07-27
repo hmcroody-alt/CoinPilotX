@@ -1,4 +1,4 @@
-export type MasterNavigationActionStatus = "native" | "shell" | "fallback" | "gated";
+export type MasterNavigationActionStatus = "native" | "shell" | "provider" | "gated";
 
 export type MasterNavigationAction = {
   label: string;
@@ -60,7 +60,7 @@ export const masterNavigationSections: MasterNavigationSection[] = [
       { label: "Status", route: "/pulse/status", status: "native", description: "Status viewer and rail." },
       { label: "Add Status", route: "/pulse/status/create", status: "native", description: "Status creator entry." },
       { label: "Live Viewer", route: "/pulse/live", status: "native", description: "Native Live discovery and viewer foundation." },
-      { label: "Live Studio", route: "/pulse/live/studio", status: "fallback", description: "Hosting remains on safe web fallback." },
+      { label: "Live Studio", route: "/pulse/live/studio", status: "native", description: "Native pre-flight (device/camera/network readiness + setup) that starts a native LiveKit broadcast in-app." },
       { label: "Pulse Radio", route: "/pulse/music#pulse-radio", status: "native", description: "Native PulseSoc Music, upload portal, and approved radio pool." }
     ]
   },
@@ -81,6 +81,7 @@ export const masterNavigationSections: MasterNavigationSection[] = [
     description: "UNDX, alerts, crypto, watchlists, and safety intelligence.",
     actions: [
       { label: "UNDX", route: "/pulse/ai", status: "native", description: "Digital Intelligence Companion.", badge: "LogiNexus" },
+      { label: "UNDX Action Center", route: "/pulse/undx/actions", status: "native", description: "Governed actions, approvals, receipts, and Marketplace workflow state." },
       { label: "Intelligence Center", route: "/pulse/intelligence", status: "native", description: "Streams, events, forecasts, sources, and alert overview." },
       { label: "Alert Management", route: "/pulse/alerts", status: "native", description: "Crypto, market, and intelligence alert controls." },
       { label: "Crypto Command", route: "/dashboard/crypto/alerts", status: "shell", description: "Crypto alerts and command-center shell." },
@@ -107,8 +108,8 @@ export const masterNavigationSections: MasterNavigationSection[] = [
     actions: [
       { label: "Notifications", route: "/pulse/notifications", status: "native", description: "Notification and activity categories." },
       { label: "Notification Preferences", route: "/dashboard/network/notifications", status: "shell", description: "Notification settings shell." },
-      { label: "Terms", route: "/terms", status: "fallback", description: "Legal document provider boundary." },
-      { label: "Privacy Policy", route: "/privacy", status: "fallback", description: "Legal document provider boundary." },
+      { label: "Terms", route: "/terms", status: "provider", description: "Legal document provider boundary." },
+      { label: "Privacy Policy", route: "/privacy", status: "provider", description: "Legal document provider boundary." },
       { label: "System Status", route: "/dashboard/system/feed", status: "shell", description: "Native dashboard module shell." }
     ]
   }

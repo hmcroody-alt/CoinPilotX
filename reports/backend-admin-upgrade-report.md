@@ -1,4 +1,4 @@
-# CoinPilotXAI Backend Admin Upgrade Report
+# CoinPlotXAI Backend Admin Upgrade Report
 
 Date: 2026-05-11
 

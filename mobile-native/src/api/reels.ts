@@ -97,6 +97,11 @@ export type CreateReelPayload = {
   visibility?: "public" | "followers" | "private";
   media_ids: number[];
   music_track_id?: string;
+  // Defense-in-depth music metadata (additive; backend stays the source of truth).
+  attached_audio_url?: string;
+  original_audio_muted?: boolean;
+  audio_start_time?: number;
+  audio_volume?: number;
   share_to_feed?: boolean;
 };
 
@@ -127,6 +132,10 @@ export async function createReel(payload: CreateReelPayload) {
       media_ids: payload.media_ids,
       music_track_id: payload.music_track_id || "",
       audio_track_id: payload.music_track_id || "",
+      attached_audio_url: payload.attached_audio_url || "",
+      original_audio_muted: payload.original_audio_muted ?? Boolean(payload.music_track_id),
+      audio_start_time: payload.audio_start_time ?? 0,
+      audio_volume: payload.audio_volume ?? 1,
       share_to_feed: Boolean(payload.share_to_feed)
     })
   });
@@ -260,6 +269,12 @@ export async function deleteReelComment(commentId: number) {
   });
 }
 
+export async function deleteReel(reelId: number) {
+  return pulseApi<{ ok?: boolean; message?: string; reel_id?: number; trace_id?: string }>(`/api/pulse/reels/${reelId}`, {
+    method: "DELETE"
+  });
+}
+
 export async function reactToReel(reelId: number, reactionType = "fire") {
   return pulseApi<{ ok?: boolean; removed?: boolean; reaction_type?: string; reaction_counts?: Record<string, number>; reel_id?: number }>(
     `/api/pulse/reels/${reelId}/react`,
@@ -267,17 +282,39 @@ export async function reactToReel(reelId: number, reactionType = "fire") {
   );
 }
 
-export async function saveReel(reelId: number) {
-  return pulseApi<{ ok?: boolean; saved?: boolean; message?: string }>(`/api/pulse/reels/${reelId}/save`, {
-    method: "POST",
-    body: JSON.stringify({})
-  });
-}
+// `saveReel(reelId)` used to live here: an empty-bodied toggle. It is gone
+// rather than aliased, because a toggle cannot be retried safely — a dropped
+// response followed by a retry undoes the save — and because a second way to
+// save a Reel is how a Reel came to look saved on one screen and unsaved on the
+// next. Reels save through `social/saveContract.setSavedOnServer` like
+// everything else, which states the wanted state instead of asking for a flip.
 
-export async function repostReel(reelId: number) {
-  return pulseApi<{ ok?: boolean; message?: string; post_id?: number }>(`/api/pulse/reels/${reelId}/repost`, {
-    method: "POST",
-    body: JSON.stringify({})
+export type ReelRepostResponse = {
+  ok?: boolean;
+  message?: string;
+  post_id?: number;
+  reel_id?: number;
+  original_post_id?: number;
+  reposted?: boolean;
+  is_reposted?: boolean;
+  repost_count?: number;
+  removed?: boolean;
+};
+
+/**
+ * Repost or un-repost a reel. `undo` maps to DELETE.
+ *
+ * Shares its backend with repostPost in api/feed.ts, because a reel repost is a
+ * pulse_posts row pointing at the reel's post exactly as a post's repost is. The
+ * response therefore carries the same `reposted` flag and `repost_count` a feed
+ * caller gets, which is what lets this be a toggle rather than the one-way button
+ * it used to be.
+ */
+export async function repostReel(reelId: number, options: { undo?: boolean } = {}) {
+  const undo = Boolean(options.undo);
+  return pulseApi<ReelRepostResponse>(`/api/pulse/reels/${reelId}/repost`, {
+    method: undo ? "DELETE" : "POST",
+    body: JSON.stringify({ undo })
   });
 }
 

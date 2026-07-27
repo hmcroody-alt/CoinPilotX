@@ -2,9 +2,19 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
 import { CanonicalMediaRecord, mediaRecordForCache } from "../media/mediaContract";
+import { buildCommentTree } from "../social/commentTree";
+import { observeSavedState } from "../social/savedStore";
 
 const FEED_CACHE_PREFIX = "pulsesoc.native.feed.";
 const POST_CACHE_PREFIX = "pulsesoc.native.post.";
+
+/**
+ * Client-side page size for post comments. The server clamps to
+ * `pulse_feed_engine.COMMENT_PAGE_LIMIT_MAX` (120), so asking for more is
+ * silently reduced rather than rejected; 20 is chosen to make the first page
+ * cheap and the "load more" affordance real instead of decorative.
+ */
+export const POST_COMMENT_PAGE_SIZE = 20;
 
 export type PulseAuthor = {
   id?: number;
@@ -22,6 +32,24 @@ export type PulseAuthor = {
 };
 
 export type PulseMedia = CanonicalMediaRecord;
+
+/**
+ * Post-level attached-music descriptor. Mirrors the reel/status music shapes so
+ * a single audio policy (`resolvePostAudioPolicy`) can drive playback identically
+ * across every surface. The backend hydrates this on video posts that had a track
+ * attached at publish time (see feed-video hydration in bot.py).
+ */
+export type PulsePostMusic = {
+  id?: number;
+  track_id?: number | string;
+  title?: string;
+  artist?: string;
+  audio_url?: string;
+  attached_audio_url?: string;
+  audio_start_time?: number;
+  audio_volume?: number;
+  original_audio_muted?: boolean;
+};
 
 export type PulseComment = {
   id: number;
@@ -69,6 +97,14 @@ export type PulsePost = {
   image_url?: string;
   thumbnail_url?: string;
   video_url?: string;
+  music?: PulsePostMusic;
+  music_track_id?: string | number;
+  attached_audio_url?: string;
+  original_audio_muted?: boolean;
+  audio_start_time?: number;
+  audio_volume?: number;
+  audio_title?: string;
+  audio_artist?: string;
   reaction_counts?: Record<string, number>;
   reactions?: Record<string, number>;
   viewer_reaction?: string;
@@ -82,6 +118,14 @@ export type PulsePost = {
   reposted?: boolean;
   is_reposted?: boolean;
   repost_count?: number;
+  /**
+   * Present when this row is a repost wrapping another post. Both spellings
+   * come off the wire (`_public_post` emits `repost` and `original_post`), and
+   * a card needs one of them to know which post a Save is actually about — the
+   * wrapper and the original are the same content under two ids.
+   */
+  repost?: { original_post_id?: number; caption?: string; original?: PulsePost | null } | null;
+  original_post?: PulsePost | null;
   share_count?: number;
   visibility?: string;
   moderation_status?: string;
@@ -113,6 +157,13 @@ export type CreatePostPayload = {
   media_ids?: number[];
   tags?: string[];
   music_track_id?: string;
+  // Defense-in-depth: carry the resolved music metadata on the create payload so
+  // playback works even when server-side attachment enrichment is bypassed. The
+  // backend remains the source of truth for `music_track_id`; these are additive.
+  attached_audio_url?: string;
+  original_audio_muted?: boolean;
+  audio_start_time?: number;
+  audio_volume?: number;
 };
 
 export type CreatePostResponse = {
@@ -152,6 +203,10 @@ export async function listFeed(params: FeedParams = {}) {
 
   const data = await pulseApi<FeedResponse>(`/api/pulse/feed?${query.toString()}`);
   const posts = normalizePosts(data.posts || data.feed || []);
+  // Network truth, so the store may be corrected by it. Deliberately not done
+  // in `loadCachedFeed`: a cache is the one payload guaranteed to be older than
+  // whatever the store already holds.
+  adoptFeedSavedStates(posts);
   if (!params.offset) await cacheFeed(params.feed || params.tab || "for_you", posts);
   return {
     ...data,
@@ -180,7 +235,11 @@ export async function cacheFeed(feed: string, posts: PulsePost[]) {
 export async function getPostDetail(postId: number) {
   const data = await pulseApi<PostDetailResponse>(`/api/pulse/posts/${postId}`);
   const post = data.post ? normalizePost(data.post) : undefined;
-  const comments = normalizeComments(data.comments || post?.comments || []);
+  if (post) adoptFeedSavedStates([post]);
+  // bot.py:77002 returns a FLAT comment list carrying parent_comment_id, so the
+  // nesting has to be derived here. Without this transform a reply renders as a
+  // sibling of the comment it answers, which is what shipped.
+  const comments = buildCommentTree(normalizeComments(data.comments || post?.comments || []));
   const detail = { ...data, post, comments };
   if (post) await cachePostDetail(postId, detail);
   return detail;
@@ -196,7 +255,14 @@ export async function createPost(payload: CreatePostPayload) {
       visibility: payload.visibility || "public",
       media_ids: payload.media_ids || [],
       tags: payload.tags || [],
-      music_track_id: payload.music_track_id || ""
+      music_track_id: payload.music_track_id || "",
+      // Defense-in-depth music metadata, mirrored from createReel/createStatus so
+      // the attached track survives even when server-side attachment is bypassed.
+      attached_audio_url: payload.attached_audio_url || "",
+      original_audio_muted:
+        payload.original_audio_muted ?? Boolean(payload.music_track_id),
+      audio_start_time: payload.audio_start_time ?? 0,
+      audio_volume: payload.audio_volume ?? 1
     })
   });
   const post = data.post ? normalizePost(data.post) : undefined;
@@ -234,17 +300,41 @@ export async function reactToPost(postId: number, reactionType: string) {
   );
 }
 
-export async function savePost(postId: number) {
-  return pulseApi<{ ok?: boolean; saved?: boolean; is_saved?: boolean; post?: PulsePost }>(`/api/pulse/posts/${postId}/save`, {
-    method: "POST",
-    body: JSON.stringify({ post_id: postId })
-  });
-}
+// `savePost(postId)` used to live here: a bodyless toggle that asked the server
+// to flip whatever it currently held. Removed rather than kept as an alias,
+// because a toggle is unsafe to retry — a dropped response followed by a retry
+// undoes the save — and because two ways to save a post is how the app ended up
+// with screens that disagreed about whether one was saved. Everything now goes
+// through `social/saveContract.setSavedOnServer`, which states the wanted state.
 
-export async function repostPost(postId: number, body = "") {
-  return pulseApi<{ ok?: boolean; reposted?: boolean; is_reposted?: boolean; post?: PulsePost }>(`/api/pulse/posts/${postId}/repost`, {
-    method: "POST",
-    body: JSON.stringify({ post_id: postId, body })
+export type RepostResponse = {
+  ok?: boolean;
+  message?: string;
+  reposted?: boolean;
+  is_reposted?: boolean;
+  repost_count?: number;
+  post_id?: number;
+  original_post_id?: number;
+  removed?: boolean;
+  post?: PulsePost;
+};
+
+/**
+ * Repost or un-repost, with the server as the source of truth for both.
+ *
+ * `undo` maps to DELETE, which the route only gained once the engine could soft
+ * delete. Before that this was create-only and returned neither `reposted` nor a
+ * count, so the screens rendered a one-way button rather than a toggle that would
+ * have claimed an un-repost the server never performed. Both fields come back on
+ * every branch now, including the no-op branches — reposting something already
+ * reposted, or undoing something already undone — so a caller can always
+ * reconcile its optimistic state with the truth instead of guessing.
+ */
+export async function repostPost(postId: number, options: { body?: string; undo?: boolean } = {}) {
+  const undo = Boolean(options.undo);
+  return pulseApi<RepostResponse>(`/api/pulse/posts/${postId}/repost`, {
+    method: undo ? "DELETE" : "POST",
+    body: JSON.stringify({ post_id: postId, body: options.body || "", undo })
   });
 }
 
@@ -252,6 +342,12 @@ export async function hidePost(postId: number, reason = "Hidden from Home") {
   return pulseApi<{ ok?: boolean; hidden?: boolean; message?: string }>(`/api/pulse/posts/${postId}/hide`, {
     method: "POST",
     body: JSON.stringify({ post_id: postId, reason })
+  });
+}
+
+export async function deletePost(postId: number) {
+  return pulseApi<{ ok?: boolean; message?: string; post_id?: number }>(`/api/pulse/posts/${postId}`, {
+    method: "DELETE"
   });
 }
 
@@ -285,21 +381,100 @@ export async function mutePostAuthor(post: PulsePost, reason = "Muted from Home"
   });
 }
 
-export async function addPostComment(postId: number, body: string) {
+/**
+ * Post a comment, or a reply when `parentCommentId` is supplied.
+ *
+ * The backend has always accepted `parent_comment_id` here — bot.py:77495
+ * forwards it straight to `pulse_feed_engine.add_comment`, and generates a
+ * `comment_reply` notification instead of a `comment` notification when it is
+ * present. The client simply never sent it, which is why feed posts had no
+ * replies while Reels did. Sending 0 is equivalent to omitting it, so existing
+ * two-argument callers keep their exact previous behavior.
+ */
+export async function addPostComment(postId: number, body: string, parentCommentId = 0) {
+  const parentId = Number(parentCommentId || 0);
   const data = await pulseApi<{ ok?: boolean; comment?: PulseComment; comments?: PulseComment[] }>(`/api/pulse/posts/${postId}/comments`, {
     method: "POST",
-    body: JSON.stringify({ body, content: body, text: body })
+    body: JSON.stringify({
+      body,
+      content: body,
+      text: body,
+      // Verified against both handlers: bot.py:77504 (posts) and bot.py:76506
+      // (reels) each read exactly `parent_comment_id` and nothing else, so this
+      // is the only key worth sending.
+      parent_comment_id: parentId > 0 ? parentId : 0
+    })
   });
+  const comment = data.comment ? normalizeComment(data.comment, postId) : undefined;
   return {
     ...data,
-    comment: data.comment ? normalizeComment(data.comment, postId) : undefined,
+    // A server that echoes the comment without the parent it was filed under
+    // would make the reply render as a root. Preserve the parent the caller
+    // asked for so the optimistic insert and the confirmed insert agree.
+    comment: comment && parentId > 0 ? { ...comment, parent_comment_id: Number(comment.parent_comment_id || parentId) } : comment,
     comments: normalizeComments(data.comments || [], postId)
   };
 }
 
-export async function listPostComments(postId: number) {
-  const data = await pulseApi<{ ok?: boolean; comments?: PulseComment[]; items?: PulseComment[] }>(`/api/pulse/posts/${postId}/comments`);
-  return normalizeComments(data.comments || data.items || [], postId);
+export type PostCommentPage = {
+  /** Nested for rendering. */
+  comments: PulseComment[];
+  /**
+   * The same rows, still flat, exactly as the server ordered them.
+   *
+   * A paginating caller needs this. Page 2 can contain a reply whose parent was
+   * on page 1, and merging two already-nested pages at the root level would
+   * strand that reply as a top-level comment. Accumulating the flat rows and
+   * re-running buildCommentTree over the whole accumulation re-parents it
+   * correctly. It is also the honest offset counter: `offset` must advance by
+   * rows consumed, not by roots rendered.
+   */
+  flat: PulseComment[];
+  total: number;
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+};
+
+/**
+ * Read one page of a post's comments, nested.
+ *
+ * `has_more` comes from the server rather than being inferred from page length,
+ * because page length is wrong in exactly the case where the total is a multiple
+ * of the limit: a full final page looks identical to a full middle page. The
+ * server-side contract is proven by tests/test_pulse_comment_pagination.py.
+ *
+ * `total` is the unpaginated count of visible comments, so a caller can show
+ * "12 of 340" on the first page instead of only after fetching all of them.
+ */
+export async function listPostComments(postId: number, options: { limit?: number; offset?: number } = {}): Promise<PostCommentPage> {
+  const limit = Math.max(1, Number(options.limit || POST_COMMENT_PAGE_SIZE));
+  const offset = Math.max(0, Number(options.offset || 0));
+  const query = `?limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(offset))}`;
+  const data = await pulseApi<{
+    ok?: boolean;
+    comments?: PulseComment[];
+    items?: PulseComment[];
+    total?: number;
+    has_more?: boolean;
+    limit?: number;
+    offset?: number;
+  }>(`/api/pulse/posts/${postId}/comments${query}`);
+  const flat = normalizeComments(data.comments || data.items || [], postId);
+  const resolvedLimit = Number(data.limit || limit);
+  const resolvedOffset = Number(data.offset ?? offset);
+  const total = Number(data.total ?? flat.length);
+  return {
+    comments: buildCommentTree(flat),
+    flat,
+    total,
+    // Trust the server's has_more when it says so. Fall back to the arithmetic
+    // only for an older server that omits the field entirely — `??` rather than
+    // `||` so an explicit `false` is honored instead of being recomputed.
+    hasMore: data.has_more ?? resolvedOffset + flat.length < total,
+    limit: resolvedLimit,
+    offset: resolvedOffset
+  };
 }
 
 export function pulsePostUrl(postId: number) {
@@ -308,6 +483,38 @@ export function pulsePostUrl(postId: number) {
 
 export function normalizePosts(items: PulsePost[]) {
   return items.map(normalizePost).filter((post) => post.id > 0);
+}
+
+/**
+ * The id a Save applies to, which for a repost is the post being reposted.
+ *
+ * Saving a repost has to save the original, or the Saved collection fills with
+ * wrappers that vanish when the reposter deletes their share, and the same
+ * content shows Saved in one place and Save in another. The server already
+ * resolves it this way (`savable_post_id` in services/pulse_feed_engine.py);
+ * this is the client half of that agreement, in one place rather than
+ * re-spelled inline in every card that renders a Save button.
+ */
+export function savablePostId(post: PulsePost): number {
+  return Number(post.repost?.original_post_id || post.original_post?.id || post.id || 0);
+}
+
+/**
+ * Teach the save store what a *fresh* fetch just said about these posts.
+ *
+ * A mounting card may only seed an item the store has never heard of — that is
+ * what stops a stale list from reverting a save under the user. The cost of
+ * that rule is that nothing would ever correct the store when the user unsaved
+ * on the web and then pulled to refresh here. This is the correction: callers
+ * that know their payload came from the network, and not from cache, hand it
+ * over explicitly. `observeSavedState` still declines to overwrite a mutation
+ * in flight, so a refresh racing a tap cannot undo the tap.
+ */
+export function adoptFeedSavedStates(posts: PulsePost[]) {
+  posts.forEach((post) => {
+    const id = savablePostId(post);
+    if (id > 0) observeSavedState("post", id, Boolean(post.saved));
+  });
 }
 
 export function normalizePost(item: PulsePost): PulsePost {
@@ -357,7 +564,11 @@ export function normalizeComment(item: PulseComment, fallbackPostId = 0): PulseC
 export function mediaDisplayUrl(media: PulseMedia) {
   const url = media.media_url || media.url || media.playback_url || media.hls_url || media.thumbnail_url || media.poster_url || "";
   if (!url) return "";
-  if (/^https?:\/\//i.test(url)) return url;
+  // Absolute URIs (http(s), plus local preview schemes: file:, content:, ph:,
+  // asset:, data:, blob:) are returned as-is. Only server-relative paths get the
+  // API base prefix. This lets pre-publish previews render local device media
+  // through the exact same renderers as published content.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
   if (url.startsWith("/")) return `${PULSE_API_BASE_URL}${url}`;
   return `${PULSE_API_BASE_URL}/${url}`;
 }

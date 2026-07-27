@@ -6,8 +6,6 @@ import {
   CreatorState,
   getCreatorState,
   loadCachedCreatorState,
-  openCreatorWebFallback,
-  plannerWebRoute,
   saveContentPlannerItem
 } from "../api/creator";
 import { Panel } from "../components/Panel";
@@ -140,7 +138,7 @@ export function ContentPlannerScreen({ route, navigation }: Props) {
         <Text style={styles.title}>{copy.title}</Text>
         <Text style={styles.subtitle}>{copy.subtitle}</Text>
       </View>
-      <Pressable style={styles.refreshButton} onPress={() => load().catch(() => undefined)}>
+      <Pressable accessibilityRole="button" style={styles.refreshButton} onPress={() => load().catch(() => undefined)}>
         <Text style={styles.refreshText}>Refresh Planner</Text>
       </Pressable>
       {offline ? <Text style={styles.offline}>Showing saved creator state</Text> : null}
@@ -163,7 +161,7 @@ export function ContentPlannerScreen({ route, navigation }: Props) {
         <TextInput style={[styles.input, styles.textArea]} value={caption} onChangeText={setCaption} placeholder="Caption or body" placeholderTextColor={colors.muted} multiline />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choiceRow}>
           {CONTENT_TYPES.map((type) => (
-            <Pressable key={type} style={[styles.choice, contentType === type ? styles.choiceActive : undefined]} onPress={() => setContentType(type)}>
+            <Pressable accessibilityRole="button" key={type} style={[styles.choice, contentType === type ? styles.choiceActive : undefined]} onPress={() => setContentType(type)}>
               <Text style={[styles.choiceText, contentType === type ? styles.choiceTextActive : undefined]}>{type.replace("_", " ")}</Text>
             </Pressable>
           ))}
@@ -176,25 +174,18 @@ export function ContentPlannerScreen({ route, navigation }: Props) {
         <Toggle label="Links validated" value={linksValidated} onPress={() => setLinksValidated((value) => !value)} />
         <Toggle label="Final preview reviewed" value={previewReviewed} onPress={() => setPreviewReviewed((value) => !value)} />
         <View style={styles.actionRow}>
-          <Pressable style={styles.primaryButton} disabled={saving} onPress={() => save(mode === "scheduler" ? "scheduled" : "draft").catch(() => undefined)}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: saving }} style={styles.primaryButton} disabled={saving} onPress={() => save(mode === "scheduler" ? "scheduled" : "draft").catch(() => undefined)}>
             <Text style={styles.primaryText}>{saving ? "Saving..." : mode === "scheduler" ? "Save Scheduled Draft" : "Save Draft"}</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} disabled={saving} onPress={() => save("scheduled").catch(() => undefined)}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: saving }} style={styles.secondaryButton} disabled={saving} onPress={() => save("scheduled").catch(() => undefined)}>
             <Text style={styles.secondaryText}>Schedule</Text>
           </Pressable>
         </View>
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Gateway tools</Text>
-        <Gateway label="Content Planner Web" body="Full planner board and backend checklist state." onPress={() => openCreatorWebFallback(plannerWebRoute("planner")).catch(() => undefined)} />
-        <Gateway label="Draft Studio Web" body="Advanced draft editing and version-history unavailable states." onPress={() => openCreatorWebFallback(plannerWebRoute("drafts")).catch(() => undefined)} />
-        <Gateway label="Post Scheduler Web" body="Backend-owned queue review and schedule validation." onPress={() => openCreatorWebFallback(plannerWebRoute("scheduler")).catch(() => undefined)} />
-      </Panel>
-
-      <Panel>
         <Text style={styles.sectionTitle}>Publish safety</Text>
-        <Text style={styles.muted}>Publish now, recurring schedules, bulk scheduling, smart rescheduling, and version history stay on safe fallback until backend contracts expose native authority.</Text>
+        <Text style={styles.muted}>Publish now, recurring schedules, bulk scheduling, smart rescheduling, and version history stay inside native provider boundaries until backend contracts expose native authority.</Text>
       </Panel>
 
       <Panel>
@@ -205,13 +196,13 @@ export function ContentPlannerScreen({ route, navigation }: Props) {
       <Panel>
         <Text style={styles.sectionTitle}>Connected surfaces</Text>
         <View style={styles.actionRow}>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("CreatorStudio")}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("CreatorStudio")}>
             <Text style={styles.secondaryText}>Creator Studio</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("Events", { title: "Events" })}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("Events", { title: "Events" })}>
             <Text style={styles.secondaryText}>Events</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true } })}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true } })}>
             <Text style={styles.secondaryText}>Feed Composer</Text>
           </Pressable>
         </View>
@@ -261,23 +252,10 @@ function Metric({ label, value }: { label: string; value: unknown }) {
 
 function Toggle({ label, value, onPress }: { label: string; value: boolean; onPress: () => void }) {
   return (
-    <Pressable style={styles.toggle} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.toggle} onPress={onPress}>
       <View style={[styles.toggleDot, value ? styles.toggleDotOn : undefined]} />
       <Text style={styles.toggleText}>{label}</Text>
       <Text style={styles.toggleState}>{value ? "Yes" : "No"}</Text>
-    </Pressable>
-  );
-}
-
-function Gateway({ label, body, onPress }: { label: string; body: string; onPress: () => void }) {
-  return (
-    <Pressable style={styles.gateway} onPress={onPress}>
-      <View style={styles.gatewayPulse} />
-      <View style={styles.gatewayBody}>
-        <Text style={styles.gatewayTitle}>{label}</Text>
-        <Text style={styles.muted}>{body}</Text>
-      </View>
-      <Text style={styles.gatewayOpen}>Open</Text>
     </Pressable>
   );
 }

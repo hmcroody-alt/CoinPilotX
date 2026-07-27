@@ -68,12 +68,12 @@
     {
       "details": "",
       "name": "Hide on downward scroll",
-      "passed": true
+      "passed": false
     },
     {
       "details": "",
       "name": "Reveal on upward scroll",
-      "passed": true
+      "passed": false
     },
     {
       "details": "",
@@ -121,5 +121,5 @@
       "passed": true
     }
   ],
-  "ok": true
+  "ok": false
 }

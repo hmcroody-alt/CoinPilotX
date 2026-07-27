@@ -12,6 +12,9 @@ import {
   View
 } from "react-native";
 import { acceptCall, declineCall, getActiveCalls, markRingSeen, PulseCall, PulseCallParticipant } from "../api/calls";
+import { callHaptic, startCallTone, stopCallTone } from "./callSignalMedia";
+import { isIncomingRingingCall } from "./callToneLifecycle";
+import { endCallKitCall, initNativeCallKit, reportIncomingCallKit } from "./callKitBridge";
 import { navigationRef } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
@@ -31,6 +34,7 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
   const [error, setError] = useState("");
   const ignoredCalls = useRef<Map<string, number>>(new Map());
   const ringSeenCalls = useRef<Set<string>>(new Set());
+  const callKitAnswered = useRef<Set<string>>(new Set());
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const pulse = useRef(new Animated.Value(0)).current;
   const reducedMotion = useLogiNexusReducedMotion();
@@ -44,13 +48,22 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
 
     if (ringing) {
       setIncomingCall(ringing);
+      reportIncomingCallKit({
+        callId: ringing.call_id,
+        displayName: callerParticipant(ringing).display_name || callerParticipant(ringing).username || "PulseSoc caller",
+        handle: callerParticipant(ringing).username || ringing.call_id,
+        hasVideo: ringing.call_type === "video"
+      });
       setError("");
       if (!ringSeenCalls.current.has(ringing.call_id)) {
         ringSeenCalls.current.add(ringing.call_id);
         markRingSeen(ringing.call_id).catch(() => undefined);
       }
     } else {
-      setIncomingCall(null);
+      setIncomingCall((current) => {
+        if (current?.call_id && !callKitAnswered.current.has(current.call_id)) endCallKitCall(current.call_id);
+        return null;
+      });
     }
   }, [currentUserId, signedIn]);
 
@@ -67,6 +80,8 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
     if (!incomingCall?.call_id) return;
     setBusyAction("accept");
     setError("");
+    callHaptic("answer");
+    await stopCallTone();
     try {
       const call = await acceptCall(incomingCall.call_id);
       const acceptedCaller = callerParticipant(call);
@@ -87,10 +102,32 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
     }
   }, [incomingCall]);
 
+  useEffect(() => {
+    if (!signedIn) return;
+    initNativeCallKit({
+      onAnswered: (callId) => {
+        callKitAnswered.current.add(callId);
+        stopCallTone().catch(() => undefined);
+        setIncomingCall(null);
+        if (navigationRef.isReady()) {
+          navigationRef.navigate("Call", { callId, direction: "incoming", title: "Incoming caller" });
+        }
+      },
+      onEnded: (callId) => {
+        callKitAnswered.current.delete(callId);
+        ignoredCalls.current.set(callId, Date.now());
+        stopCallTone().catch(() => undefined);
+        setIncomingCall((current) => (current?.call_id === callId ? null : current));
+      }
+    }).catch(() => undefined);
+  }, [signedIn]);
+
   const decline = useCallback(async () => {
     if (!incomingCall?.call_id) return;
     setBusyAction("decline");
     setError("");
+    callHaptic("decline");
+    await stopCallTone();
     try {
       await declineCall(incomingCall.call_id);
       setIncomingCall(null);
@@ -104,14 +141,21 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
 
   const ignore = useCallback(() => {
     if (!incomingCall?.call_id) return;
+    stopCallTone().catch(() => undefined);
     ignoredCalls.current.set(incomingCall.call_id, Date.now());
     setIncomingCall(null);
   }, [incomingCall]);
 
   useEffect(() => {
+    if (incomingCall?.call_id) startCallTone("ringtone").catch(() => undefined);
+    return () => { stopCallTone().catch(() => undefined); };
+  }, [incomingCall?.call_id]);
+
+  useEffect(() => {
     if (!signedIn) {
       setIncomingCall(null);
       ringSeenCalls.current.clear();
+      callKitAnswered.current.clear();
       return;
     }
     refreshActiveCalls().catch(() => undefined);
@@ -220,15 +264,6 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
 
     </>
   );
-}
-
-function isIncomingRingingCall(call: PulseCall, currentUserId: number | undefined, ignored: Map<string, number>) {
-  if (!call.call_id || ignored.has(call.call_id)) return false;
-  if (!["created", "ringing"].includes(String(call.status || ""))) return false;
-  if (!currentUserId) return true;
-  const participant = call.participant || (call.participants || []).find((item) => Number(item.user_id) === Number(currentUserId));
-  if (!participant) return true;
-  return String(participant.role || "").toLowerCase() === "callee" || String(participant.status || "").toLowerCase() === "ringing";
 }
 
 function pruneIgnoredCalls(ignored: Map<string, number>) {

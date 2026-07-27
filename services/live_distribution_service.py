@@ -32,10 +32,23 @@ def playback_manifest(session=None):
         hls_url = f"{base}/{stream_uuid}.m3u8"
     supports_webrtc = bool(session.get("webrtc_room_id"))
     preferred_transport = "hls" if hls_url else "webrtc" if supports_webrtc else "waiting"
+    effective_status = str(session.get("status") or "starting").lower()
+    if effective_status not in {"ended", "offline", "archived", "deleted", "failed"} and supports_webrtc:
+        track_count = int(session.get("audio_tracks") or 0) + int(session.get("video_tracks") or 0)
+        if track_count > 0 or publish_state in {
+            "browser_live_egress",
+            "browser_live_livekit_direct",
+            "livekit_direct",
+            "livekit_room_active",
+            "livekit_participant_joined",
+            "livekit_tracks_published",
+            "mux_live",
+        }:
+            effective_status = "live"
     return {
         "ok": True,
         "live_id": int(session.get("id") or session.get("live_id") or 0),
-        "status": session.get("status") or "starting",
+        "status": effective_status,
         "hls_url": hls_url,
         "playback_url": hls_url,
         "mux_playback_id": mux_playback_id,

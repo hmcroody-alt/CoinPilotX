@@ -18,14 +18,17 @@ jest.mock("expo-secure-store", () => ({
 
 jest.mock("../sessionStore", () => ({
   BIOMETRIC_USER_KEY: "pulsesoc.native.session.biometric.userId",
-  getSessionEnvelope: jest.fn()
+  getSessionEnvelope: jest.fn(),
+  setSessionEnvelope: jest.fn(),
+  getBiometricSession: jest.fn(),
+  setBiometricSession: jest.fn()
 }));
 
 jest.mock("../auth", () => ({
   restoreSession: jest.fn()
 }));
 
-import { getSessionEnvelope } from "../sessionStore";
+import { getBiometricSession, getSessionEnvelope } from "../sessionStore";
 import { restoreSession } from "../auth";
 import {
   authenticateWithBiometrics,
@@ -37,30 +40,35 @@ import {
 const mockedLocalAuth = LocalAuthentication as jest.Mocked<typeof LocalAuthentication>;
 const mockedSecureStore = SecureStore as jest.Mocked<typeof SecureStore>;
 const mockedGetSessionEnvelope = getSessionEnvelope as jest.Mock;
+const mockedGetBiometricSession = getBiometricSession as jest.Mock;
 const mockedRestoreSession = restoreSession as jest.Mock;
+
+beforeEach(() => mockedGetBiometricSession.mockResolvedValue(null));
 
 describe("getBiometricCapability", () => {
   beforeEach(() => jest.clearAllMocks());
 
   it("reports no_hardware when the device has no biometric sensor", async () => {
     mockedLocalAuth.hasHardwareAsync.mockResolvedValue(false);
+    mockedLocalAuth.supportedAuthenticationTypesAsync.mockResolvedValue([]);
     const result = await getBiometricCapability();
-    expect(result).toEqual({ available: false, kind: "none", reason: "no_hardware" });
+    expect(result).toEqual({ available: false, hasHardware: false, kind: "none", reason: "no_hardware" });
   });
 
-  it("reports not_enrolled when hardware exists but nothing is enrolled", async () => {
+  it("reports not_enrolled (but keeps hardware + kind) when nothing is enrolled in iOS", async () => {
     mockedLocalAuth.hasHardwareAsync.mockResolvedValue(true);
     mockedLocalAuth.isEnrolledAsync.mockResolvedValue(false);
+    mockedLocalAuth.supportedAuthenticationTypesAsync.mockResolvedValue([2]);
     const result = await getBiometricCapability();
-    expect(result).toEqual({ available: false, kind: "none", reason: "not_enrolled" });
+    expect(result).toEqual({ available: false, hasHardware: true, kind: "faceId", reason: "not_enrolled" });
   });
 
-  it("reports faceId when facial recognition is supported", async () => {
+  it("reports faceId when facial recognition is supported and enrolled", async () => {
     mockedLocalAuth.hasHardwareAsync.mockResolvedValue(true);
     mockedLocalAuth.isEnrolledAsync.mockResolvedValue(true);
     mockedLocalAuth.supportedAuthenticationTypesAsync.mockResolvedValue([2]);
     const result = await getBiometricCapability();
-    expect(result).toEqual({ available: true, kind: "faceId" });
+    expect(result).toEqual({ available: true, hasHardware: true, kind: "faceId" });
   });
 });
 

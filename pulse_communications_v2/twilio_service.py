@@ -61,16 +61,16 @@ def _send_sms(to_number: str, body: str, *, event_type: str, user_id: int = 0) -
 
 
 def send_sms_verification(to_number: str, code: str, *, user_id: int = 0) -> dict:
-    return _send_sms(to_number, f"Your CoinPilotXAI verification code is {str(code)[:12]}.", event_type="sms_verification", user_id=user_id)
+    return _send_sms(to_number, f"Your PulseSoc verification code is {str(code)[:12]}.", event_type="sms_verification", user_id=user_id)
 
 
 def send_message_alert(to_number: str, preview: str = "", *, user_id: int = 0) -> dict:
-    return _send_sms(to_number, f"New Pulse message: {_clean(preview, 140)}", event_type="message_alert", user_id=user_id)
+    return _send_sms(to_number, f"New PulseSoc message: {_clean(preview, 140)}", event_type="message_alert", user_id=user_id)
 
 
 def send_room_invite_alert(to_number: str, room_title: str = "", inviter: str = "", *, user_id: int = 0) -> dict:
-    return _send_sms(to_number, f"{_clean(inviter, 80) or 'A Pulse member'} invited you to {_clean(room_title, 100) or 'a Pulse room'}.", event_type="room_invite", user_id=user_id)
+    return _send_sms(to_number, f"{_clean(inviter, 80) or 'A PulseSoc member'} invited you to {_clean(room_title, 100) or 'a PulseSoc room'}.", event_type="room_invite", user_id=user_id)
 
 
 def send_security_alert(to_number: str, alert: str = "", *, user_id: int = 0) -> dict:
-    return _send_sms(to_number, f"CoinPilotXAI security alert: {_clean(alert, 180)}", event_type="security_alert", user_id=user_id)
+    return _send_sms(to_number, f"PulseSoc security alert: {_clean(alert, 180)}", event_type="security_alert", user_id=user_id)

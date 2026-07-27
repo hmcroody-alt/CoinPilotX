@@ -1,14 +1,59 @@
 import { getStateFromPath, LinkingOptions } from "@react-navigation/native";
 import { profileNavigationParams, profileTargetFromUrl } from "../api/profileTarget";
+import { findSettingsEntry } from "../settings/registry";
+import { canonicalNativeRoute, nativeObjectDestination } from "./nativeRouteActions";
 import { RootStackParamList } from "./types";
+
+/**
+ * `pulsesoc://settings/<id>` — resolved from the registry, not from a table.
+ *
+ * This is handled here rather than in `config.screens` below for two reasons.
+ * First, a screen may only carry one path in the static config, and several
+ * settings destinations already own one (`ProfileEdit` is `pulse/profile/edit`,
+ * `SafetyHub` is `pulse/safety/:section?`) — declaring them again would be a
+ * conflict, not an alias. Second, resolving through `findSettingsEntry` means
+ * the deep link and the index row can never disagree about where an id goes:
+ * both read the same entry, including its `params`.
+ *
+ * The `settings/` prefix, not `pulse/settings/`, is deliberate. The latter is
+ * already claimed by `AccountCenter`'s `pulse/settings/:section` catch-all, and
+ * layering these underneath it would make every new id a ranking question.
+ *
+ * Returns null for anything that isn't a settings link, so the caller falls
+ * through to its normal resolution.
+ */
+function settingsDeepLink(path: string) {
+  const match = /^\/?settings\/([a-z0-9-]+)\/?$/i.exec(path.split("?")[0]);
+  if (!match) return null;
+  const entry = findSettingsEntry(match[1].toLowerCase());
+  // An unknown id lands on the settings index rather than nowhere: a link from
+  // an older or newer build should still open Settings, not fail silently.
+  if (!entry) return { routes: [{ name: "Tabs" as const, params: { screen: "Settings" } }] };
+  return { routes: [{ name: entry.route, params: entry.params }] };
+}
 
 export const linking: LinkingOptions<RootStackParamList> = {
   prefixes: ["pulsesoc://", "https://pulsesoc.com"],
   getStateFromPath(path, options) {
-    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    const canonical = canonicalNativeRoute(path);
+    const normalizedPath = canonical.relative;
+    const settingsRoute = settingsDeepLink(canonical.path) || settingsDeepLink(normalizedPath);
+    if (settingsRoute) return settingsRoute;
+    if (canonical.path === "/pulse/profile/edit") {
+      return { routes: [{ name: "ProfileEdit" }] };
+    }
     const profileParams = profileNavigationParams(profileTargetFromUrl(normalizedPath), "Profile");
     if (profileParams) {
       return { routes: [{ name: "ProfileDetail", params: profileParams }] };
+    }
+    const objectDestination = nativeObjectDestination(normalizedPath);
+    if (objectDestination) {
+      return {
+        routes: [{
+          name: objectDestination.screen as keyof RootStackParamList,
+          params: objectDestination.params
+        }]
+      };
     }
     return getStateFromPath(path, options);
   },
@@ -244,6 +289,14 @@ export const linking: LinkingOptions<RootStackParamList> = {
       IntelligenceCenter: {
         path: "pulse/intelligence/:subsystem?"
       },
+      UndxActionCenter: {
+        path: "pulse/undx/actions",
+        parse: {
+          orgId: String,
+          actor: String,
+          productArea: String
+        }
+      },
       AlertManagement: {
         path: "pulse/alerts/:alertId?",
         parse: {
@@ -264,14 +317,14 @@ export const linking: LinkingOptions<RootStackParamList> = {
           section: String
         }
       },
-      AccountSettings: "pulse/dashboard/account-settings",
-      AccountSecurity: "pulse/dashboard/account-security",
+      AccountSettings: "dashboard/account/settings",
+      AccountSecurity: "dashboard/account/security",
       AccountWebSettings: "account/settings",
       AccountWebSecurity: "account/security",
       AccountPrivacy: "privacy-center",
       AccountDevices: "pulse/settings/devices",
       AccountHealth: "pulse/account-health",
-      AccountHealthWeb: "pulse/dashboard/account-health",
+      AccountHealthWeb: "dashboard/account/health",
       SafetyHub: {
         path: "pulse/safety/:section?",
         parse: {

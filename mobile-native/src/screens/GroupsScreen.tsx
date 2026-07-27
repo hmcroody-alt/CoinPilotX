@@ -31,6 +31,7 @@ import {
 } from "../api/groups";
 import { PulseCommandAction, PulseCommandHeader, PulseCommandPanel, PulseCommandSearch } from "../components/PulseCommand";
 import { LogiNexusStatePanel } from "../components/Screen";
+import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
 import {
   groupAccessibilityLabel,
@@ -63,6 +64,9 @@ import { formatShortTime } from "../utils/format";
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "GroupDetail">>;
 
 export function GroupsScreen({ route, navigation }: Props) {
+  // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
+  // reserves the matching clearance so the last row never sits under the dock.
+  const dock = useBottomNavSurface();
   const initialSlug = route?.params?.groupSlug || "";
   const [groups, setGroups] = useState<PulseGroup[]>([]);
   const [rooms, setRooms] = useState<PulseRoom[]>([]);
@@ -229,7 +233,8 @@ export function GroupsScreen({ route, navigation }: Props) {
       <FlatList
         data={groups}
         keyExtractor={(item) => item.slug}
-        contentContainerStyle={styles.content}
+        {...dock.handlers}
+        contentContainerStyle={[styles.content, dock.contentPadding]}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => {
           refreshRooms().catch(() => undefined);
           load("refresh").catch(() => undefined);
@@ -247,7 +252,7 @@ export function GroupsScreen({ route, navigation }: Props) {
             {categories.length ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                 {categories.map((category) => (
-                  <Pressable key={category} style={styles.filter} onPress={() => setQuery(category)}>
+                  <Pressable accessibilityRole="button" key={category} style={styles.filter} onPress={() => setQuery(category)}>
                     <Text style={styles.filterText}>{category}</Text>
                   </Pressable>
                 ))}
@@ -404,13 +409,13 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport }: {
             ))}
           </ScrollView>
           <View style={styles.actionRow}>
-            {actionIsAvailable("join") || actionIsAvailable("leave") ? <Pressable style={styles.primaryButton} disabled={Boolean(busyKey)} onPress={() => onJoin(group)}>
+            {actionIsAvailable("join") || actionIsAvailable("leave") ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyKey) }} style={styles.primaryButton} disabled={Boolean(busyKey)} onPress={() => onJoin(group)}>
               <Text style={styles.primaryText}>{groupActions[0]?.label || (group.joined ? "Leave" : "Join")}</Text>
             </Pressable> : null}
-            {actionIsAvailable("openChat") ? <Pressable style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onChat(group)}>
+            {actionIsAvailable("openChat") ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyKey) }} style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onChat(group)}>
               <Text style={styles.smallButtonText}>Open Chat</Text>
             </Pressable> : null}
-            {actionIsAvailable("reportGroup") ? <Pressable style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onReport(group)}>
+            {actionIsAvailable("reportGroup") ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyKey) }} style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onReport(group)}>
               <Text style={styles.smallButtonText}>Report</Text>
             </Pressable> : null}
           </View>
@@ -531,8 +536,8 @@ function GroupInvitationRow({ invitation, request }: { invitation: PulseGroupInv
         <Text style={styles.cardTitle} numberOfLines={1}>{invitation.display_name}</Text>
         <Text style={styles.cardText} numberOfLines={1}>{request ? "Request" : "Invite"} · {groupInvitationStateLabel(invitation)} · {groupMemberRoleLabel(invitation.role)}</Text>
         <View style={styles.actionRow}>
-          <Pressable style={styles.inlineAction}><Text style={styles.inlineActionText}>{request ? "Approve boundary" : "Pending"}</Text></Pressable>
-          <Pressable style={[styles.inlineAction, styles.inlineDanger]}><Text style={styles.inlineActionText}>{request ? "Reject boundary" : "Cancel boundary"}</Text></Pressable>
+          <Pressable accessibilityRole="button" style={styles.inlineAction}><Text style={styles.inlineActionText}>{request ? "Approve boundary" : "Pending"}</Text></Pressable>
+          <Pressable accessibilityRole="button" style={[styles.inlineAction, styles.inlineDanger]}><Text style={styles.inlineActionText}>{request ? "Reject boundary" : "Cancel boundary"}</Text></Pressable>
         </View>
       </View>
     </View>
@@ -620,14 +625,14 @@ function RoomDetail({ room, busyKey, onClose, onOpen, onReport }: {
           </ScrollView>
           <View style={styles.actionRow}>
             {primary?.available ? (
-              <Pressable style={styles.primaryButton} disabled={Boolean(busyKey)} onPress={() => onOpen(room)}>
+              <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyKey) }} style={styles.primaryButton} disabled={Boolean(busyKey)} onPress={() => onOpen(room)}>
                 <Text style={styles.primaryText}>{primary.label}</Text>
               </Pressable>
             ) : null}
             {actions.find((action) => action.key === "providerBoundary")?.available ? (
               <View style={styles.boundaryPill}><Text style={styles.boundaryPillText}>{roomProviderStateLabel(room)}</Text></View>
             ) : null}
-            <Pressable style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onReport(room)}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyKey) }} style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onReport(room)}>
               <Text style={styles.smallButtonText}>Report</Text>
             </Pressable>
           </View>
@@ -887,7 +892,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-    paddingBottom: 116
+    paddingBottom: 0
   },
   cover: {
     backgroundColor: colors.surfaceRaised,

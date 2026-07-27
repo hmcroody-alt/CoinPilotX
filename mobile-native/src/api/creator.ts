@@ -1,4 +1,3 @@
-import { Linking } from "react-native";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
@@ -125,7 +124,12 @@ export function plannerWebRoute(mode: "planner" | "scheduler" | "drafts" | "ai" 
 
 export async function openCreatorWebFallback(path = "/pulse/creator-studio") {
   const target = /^https?:\/\//i.test(path) ? path : `${PULSE_API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
-  await Linking.openURL(target).catch(() => undefined);
+  return {
+    ok: false,
+    target,
+    status: "native_provider_boundary",
+    message: "Creator operation remains inside native Creator Studio until the protected contract is available."
+  };
 }
 
 export function normalizeCreatorState(input: CreatorState): CreatorState {

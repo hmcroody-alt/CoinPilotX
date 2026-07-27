@@ -1,86 +1,183 @@
 import React from "react";
-import { act, fireEvent, render } from "@testing-library/react-native";
-import { StatusActionRail } from "../StatusActionRail";
+import { AccessibilityInfo } from "react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 
-jest.mock("@expo/vector-icons", () => {
-  const { Text: MockText } = require("react-native");
-  return { Ionicons: ({ name, testID }: { name: string; testID?: string }) => <MockText testID={testID}>{name}</MockText> };
-});
-
-jest.mock("expo-haptics", () => ({
-  ImpactFeedbackStyle: { Light: "light" },
-  impactAsync: jest.fn(() => Promise.resolve()),
-  selectionAsync: jest.fn(() => Promise.resolve())
+jest.mock("@react-native-async-storage/async-storage", () => ({
+  getItem: jest.fn(),
+  setItem: jest.fn(),
+  removeItem: jest.fn()
 }));
 
-jest.mock("react-native-safe-area-context", () => ({
-  useSafeAreaInsets: () => ({ top: 47, right: 0, bottom: 34, left: 0 })
+jest.mock("expo-haptics", () => ({
+  impactAsync: jest.fn().mockResolvedValue(undefined),
+  ImpactFeedbackStyle: { Light: "light", Medium: "medium" }
 }));
 
 jest.mock("../../theme/logiNexusMotion", () => ({
-  useLogiNexusReducedMotion: () => true
+  useLogiNexusReducedMotion: jest.fn().mockReturnValue(false)
 }));
 
-function renderRail(overrides: Partial<React.ComponentProps<typeof StatusActionRail>> = {}) {
-  const props: React.ComponentProps<typeof StatusActionRail> = {
-    reactionCount: 1,
-    selectedReaction: null,
+import { useLogiNexusReducedMotion } from "../../theme/logiNexusMotion";
+import { StatusActionRail } from "../StatusActionRail";
+
+const mockedUseReducedMotion = useLogiNexusReducedMotion as jest.Mock;
+
+function baseProps() {
+  return {
+    reactionCount: 0,
+    selectedReaction: undefined as string | undefined,
+    reactionPending: false,
+    shareBusy: false,
+    saved: false,
+    savePending: false,
     onReact: jest.fn(),
     onReply: jest.fn(),
     onShare: jest.fn(),
-    ...overrides
+    onSave: jest.fn()
   };
-  return { props, ...render(<StatusActionRail {...props} />) };
 }
 
 describe("StatusActionRail", () => {
-  it("renders icon-only controls with the reaction count and no visible text labels", () => {
-    const view = renderRail();
-    expect(view.queryByText("React")).toBeNull();
-    expect(view.queryByText("Reply")).toBeNull();
-    expect(view.queryByText("Share")).toBeNull();
-    expect(view.getByTestId("status-action-react-icon")).toBeTruthy();
-    expect(view.getByTestId("status-action-reply-icon")).toBeTruthy();
-    expect(view.getByTestId("status-action-share-icon")).toBeTruthy();
-    expect(view.getByTestId("status-action-reaction-count").props.children).toBe(1);
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedUseReducedMotion.mockReturnValue(false);
+    jest.spyOn(AccessibilityInfo, "announceForAccessibility").mockImplementation(() => undefined);
   });
 
-  it("keeps complete VoiceOver labels and selected state", () => {
-    const view = renderRail({ selectedReaction: "love" });
-    expect(view.getByLabelText(/React to Status, selected/).props.accessibilityState.selected).toBe(true);
-    expect(view.getByLabelText("Reply to Status")).toBeTruthy();
-    expect(view.getByLabelText("Share Status")).toBeTruthy();
-    expect(view.getByLabelText("1 reaction")).toBeTruthy();
+  it("never renders the literal words React, Reply, or Share as visible text", () => {
+    const { queryByText } = render(<StatusActionRail {...baseProps()} />);
+    expect(queryByText("React")).toBeNull();
+    expect(queryByText("Reply")).toBeNull();
+    expect(queryByText("Share")).toBeNull();
   });
 
-  it("routes each tap only to its existing action handler", () => {
-    const view = renderRail();
-    fireEvent.press(view.getByTestId("status-action-react"));
-    fireEvent.press(view.getByTestId("status-action-reply"));
-    fireEvent.press(view.getByTestId("status-action-share"));
-    expect(view.props.onReact).toHaveBeenCalledTimes(1);
-    expect(view.props.onReact).toHaveBeenCalledWith("love");
-    expect(view.props.onReply).toHaveBeenCalledTimes(1);
-    expect(view.props.onShare).toHaveBeenCalledTimes(1);
+  it("exposes accessible React, Reply, and Share controls with correct labels", () => {
+    const { getByLabelText } = render(<StatusActionRail {...baseProps()} />);
+    expect(getByLabelText("React to Status")).toBeTruthy();
+    expect(getByLabelText("Reply to Status")).toBeTruthy();
+    expect(getByLabelText("Share Status")).toBeTruthy();
   });
 
-  it("opens the reaction tray on long press without applying the default reaction", () => {
-    const view = renderRail();
-    act(() => {
-      fireEvent(view.getByTestId("status-action-react"), "longPress", { stopPropagation: jest.fn() });
-    });
-    expect(view.getByTestId("status-reaction-tray")).toBeTruthy();
-    expect(view.props.onReact).not.toHaveBeenCalled();
-    fireEvent.press(view.getByTestId("status-reaction-fire"));
-    expect(view.props.onReact).toHaveBeenCalledWith("fire");
+  it("does not render a reaction count when count is zero", () => {
+    const { queryByLabelText } = render(<StatusActionRail {...baseProps()} />);
+    expect(queryByLabelText(/^\d+ reactions?$/)).toBeNull();
   });
 
-  it("prevents rapid duplicate requests while an action is pending", () => {
-    const view = renderRail({ reactionPending: true, sharePending: true });
-    fireEvent.press(view.getByTestId("status-action-react"));
-    fireEvent.press(view.getByTestId("status-action-share"));
-    expect(view.props.onReact).not.toHaveBeenCalled();
-    expect(view.props.onShare).not.toHaveBeenCalled();
-    expect(view.getByTestId("status-action-react").props.accessibilityState.busy).toBe(true);
+  it("renders and announces the reaction count when greater than zero", () => {
+    const { getByLabelText } = render(<StatusActionRail {...baseProps()} reactionCount={1} />);
+    expect(getByLabelText("1 reaction")).toBeTruthy();
+  });
+
+  it("pluralizes the reaction count label for counts greater than one", () => {
+    const { getByLabelText } = render(<StatusActionRail {...baseProps()} reactionCount={5} />);
+    expect(getByLabelText("5 reactions")).toBeTruthy();
+  });
+
+  it("tapping the heart applies the default Love reaction", () => {
+    const onReact = jest.fn();
+    const { getByTestId } = render(<StatusActionRail {...baseProps()} onReact={onReact} />);
+    fireEvent.press(getByTestId("status-action-react"));
+    expect(onReact).toHaveBeenCalledWith("love");
+  });
+
+  it("announces the applied reaction for VoiceOver users on tap", () => {
+    const { getByTestId } = render(<StatusActionRail {...baseProps()} />);
+    fireEvent.press(getByTestId("status-action-react"));
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith("Love reaction selected");
+  });
+
+  it("long-pressing the heart opens the reaction tray with only backend-supported reactions", () => {
+    const { getByTestId, getByLabelText } = render(<StatusActionRail {...baseProps()} />);
+    fireEvent(getByTestId("status-action-react"), "onLongPress");
+    expect(getByLabelText("Open reaction options")).toBeTruthy();
+    expect(getByTestId("status-reaction-love")).toBeTruthy();
+    expect(getByTestId("status-reaction-fire")).toBeTruthy();
+  });
+
+  it("selecting a tray reaction invokes onReact with that type and closes the tray", () => {
+    const onReact = jest.fn();
+    const { getByTestId, queryByLabelText } = render(<StatusActionRail {...baseProps()} onReact={onReact} />);
+    fireEvent(getByTestId("status-action-react"), "onLongPress");
+    fireEvent.press(getByTestId("status-reaction-fire"));
+    expect(onReact).toHaveBeenCalledWith("fire");
+    expect(queryByLabelText("Open reaction options")).toBeNull();
+  });
+
+  it("tapping the backdrop closes the tray without reacting", () => {
+    const onReact = jest.fn();
+    const { getByTestId, getByLabelText, queryByLabelText } = render(<StatusActionRail {...baseProps()} onReact={onReact} />);
+    fireEvent(getByTestId("status-action-react"), "onLongPress");
+    fireEvent.press(getByLabelText("Close reaction options"));
+    expect(onReact).not.toHaveBeenCalled();
+    expect(queryByLabelText("Open reaction options")).toBeNull();
+  });
+
+  it("reflects the selected reaction as an accessibility selected state", () => {
+    const { getByTestId } = render(<StatusActionRail {...baseProps()} selectedReaction="love" />);
+    expect(getByTestId("status-action-react").props.accessibilityState?.selected).toBe(true);
+  });
+
+  it("marks the React button busy while a reaction mutation is pending", () => {
+    const { getByTestId } = render(<StatusActionRail {...baseProps()} reactionPending />);
+    expect(getByTestId("status-action-react").props.accessibilityState?.busy).toBe(true);
+  });
+
+  it("tapping Reply invokes onReply", () => {
+    const onReply = jest.fn();
+    const { getByLabelText } = render(<StatusActionRail {...baseProps()} onReply={onReply} />);
+    fireEvent.press(getByLabelText("Reply to Status"));
+    expect(onReply).toHaveBeenCalledTimes(1);
+  });
+
+  it("tapping Share invokes onShare", () => {
+    const onShare = jest.fn();
+    const { getByLabelText } = render(<StatusActionRail {...baseProps()} onShare={onShare} />);
+    fireEvent.press(getByLabelText("Share Status"));
+    expect(onShare).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the Share button while a share is already in flight", () => {
+    const onShare = jest.fn();
+    const { getByLabelText } = render(<StatusActionRail {...baseProps()} shareBusy onShare={onShare} />);
+    const shareButton = getByLabelText("Share Status");
+    expect(shareButton.props.accessibilityState?.disabled).toBe(true);
+    fireEvent.press(shareButton);
+    expect(onShare).not.toHaveBeenCalled();
+  });
+
+  it("exposes a Save control, which the rail previously did not have at all", () => {
+    const onSave = jest.fn();
+    const { getByLabelText } = render(<StatusActionRail {...baseProps()} onSave={onSave} />);
+    fireEvent.press(getByLabelText("Save Status"));
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels the Save control for removal once the Status is saved", () => {
+    const { getByTestId, getByLabelText } = render(<StatusActionRail {...baseProps()} saved />);
+    expect(getByLabelText("Remove Status from Saved")).toBeTruthy();
+    expect(getByTestId("status-action-save").props.accessibilityState?.selected).toBe(true);
+  });
+
+  it("blocks a second Save press while the first mutation is still in flight", () => {
+    const onSave = jest.fn();
+    const { getByTestId } = render(<StatusActionRail {...baseProps()} savePending onSave={onSave} />);
+    const saveButton = getByTestId("status-action-save");
+    expect(saveButton.props.accessibilityState?.busy).toBe(true);
+    fireEvent.press(saveButton);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("does not open the reaction tray on a plain tap", () => {
+    const { getByTestId, queryByLabelText } = render(<StatusActionRail {...baseProps()} />);
+    fireEvent.press(getByTestId("status-action-react"));
+    expect(queryByLabelText("Open reaction options")).toBeNull();
+  });
+
+  it("skips the press pulse animation when Reduced Motion is enabled", () => {
+    mockedUseReducedMotion.mockReturnValue(true);
+    const onReact = jest.fn();
+    const { getByTestId } = render(<StatusActionRail {...baseProps()} onReact={onReact} />);
+    expect(() => fireEvent.press(getByTestId("status-action-react"))).not.toThrow();
+    expect(onReact).toHaveBeenCalledWith("love");
   });
 });

@@ -1,5 +1,3 @@
-import { Linking } from "react-native";
-import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 
@@ -111,7 +109,12 @@ export async function blockPulseUser(input: { blockedUserId?: number; publicPlay
 
 export async function openSupportWebFallback(path = "/pulse/help") {
   const safePath = path.startsWith("/") && !path.startsWith("//") ? path : "/pulse/help";
-  await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);
+  return {
+    ok: false,
+    path: safePath,
+    status: "native_provider_boundary",
+    message: "Support content remains inside native trust and safety surfaces for App Review."
+  };
 }
 
 function normalizeTickets(tickets: SupportTicket[]) {

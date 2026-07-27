@@ -1,12 +1,20 @@
 import { Audio, ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { PulseReel, reelIsPlayable, reelPosterUrl, reelVideoUrl, reelWebUrl } from "../api/reels";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
+import { resolveReelAudioPolicy } from "../core/attachedMusicAudioPolicy";
 import { refreshCanonicalMediaAccess } from "../media/mediaAccess";
 import { LikeBurst, LikeBurstHandle, MuteGlyphPulse, MuteGlyphPulseHandle } from "../media/MediaGestureFeedback";
 import { useTapMuteLike } from "../media/useTapMuteLike";
+import { classifyReelMedia } from "../reels/reelMediaKind";
+import { useSavedState } from "../social/savedStore";
+import { ReelPhotoSurface } from "./reels/ReelPhotoSurface";
+import { ReelCarouselSurface } from "./reels/ReelCarouselSurface";
+import { ReelLiveViewerSurface } from "./reels/ReelLiveViewerSurface";
 import { colors } from "../theme/colors";
+import { sharePulseObject } from "../sharing/nativeShare";
+import { ContentTranslation } from "./ContentTranslation";
 
 type ReelPlayerCardProps = {
   reel: PulseReel;
@@ -68,12 +76,24 @@ export function ReelPlayerCard({
   const [failed, setFailed] = useState(false);
   const [ownsPlayback, setOwnsPlayback] = useState(false);
   const [refreshingUrl, setRefreshingUrl] = useState(false);
-  const [source, setSource] = useState(() => reelVideoUrl(reel));
-  const initialSource = useMemo(() => reelVideoUrl(reel), [reel]);
+  const [source, setSource] = useState(() => reelVideoUrl(reel) || reel.live?.playback_url || "");
+  const initialSource = useMemo(() => reelVideoUrl(reel) || reel.live?.playback_url || "", [reel]);
+  /**
+   * Saved state comes from the shared store, not from `reel.saved`.
+   *
+   * The same Reel is also a post in the feed, and both cards can be mounted at
+   * once. Reading the screen's copy is what let one of them show Saved while the
+   * other showed Save. The payload's flag is still handed over, but only as a
+   * seed for content the store has not heard of yet.
+   */
+  const saveState = useSavedState("reel", reel.id, typeof reel.saved === "boolean" ? reel.saved : undefined);
   const poster = useMemo(() => reelPosterUrl(reel), [reel]);
   const author = reel.author || {};
-  const isLive = String(reel.content_type || reel.post_type || "").toLowerCase() === "live" || Boolean(reel.live_session_id || reel.live?.live_session_id);
-  const attachedAudio = reel.audio?.attached_audio_url || reel.audio?.audio_url || "";
+  const kind = useMemo(() => classifyReelMedia(reel), [reel]);
+  const isVideoKind = kind === "video" || kind === "replay";
+  const isLive = kind === "livestream";
+  const musicPolicy = useMemo(() => resolveReelAudioPolicy(reel.audio), [reel.audio]);
+  const drivesPlayback = isVideoKind || (kind === "carousel" && musicPolicy.hasAttachedMusic);
   const playbackOwnerId = `reel:${reel.id}`;
   const media = reel.media?.[0];
   const contentState = reelContentState(reel, offline, failed);
@@ -86,7 +106,16 @@ export function ReelPlayerCard({
   }, [initialSource, reel.id]);
 
   useEffect(() => {
-    if (active) {
+    if (!drivesPlayback) {
+      if (active) {
+        watchStartedAt.current = Date.now();
+      } else if (watchStartedAt.current) {
+        onViewable?.(reel, Date.now() - watchStartedAt.current);
+        watchStartedAt.current = 0;
+      }
+      return;
+    }
+    if (active && !muted) {
       watchStartedAt.current = Date.now();
       claimMediaPlayback({
         id: playbackOwnerId,
@@ -103,6 +132,11 @@ export function ReelPlayerCard({
         setOwnsPlayback(granted);
         return granted ? videoRef.current?.playAsync() : undefined;
       }).catch(() => setOwnsPlayback(false));
+    } else if (active) {
+      watchStartedAt.current = Date.now();
+      setOwnsPlayback(false);
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+      videoRef.current?.playAsync().catch(() => undefined);
     } else {
       setOwnsPlayback(false);
       if (watchStartedAt.current) {
@@ -113,12 +147,12 @@ export function ReelPlayerCard({
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
     }
     return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
-  }, [active, onViewable, playbackOwnerId, reel]);
+  }, [active, muted, onViewable, playbackOwnerId, reel, drivesPlayback]);
 
   useEffect(() => {
     let cancelled = false;
     async function syncAttachedAudio() {
-      if (!active || !ownsPlayback || !attachedAudio) {
+      if (!drivesPlayback || !active || !ownsPlayback || !musicPolicy.hasAttachedMusic) {
         const existing = attachedSoundRef.current;
         attachedSoundRef.current = null;
         if (existing) await existing.unloadAsync().catch(() => undefined);
@@ -126,8 +160,8 @@ export function ReelPlayerCard({
       }
       if (!attachedSoundRef.current) {
         const created = await Audio.Sound.createAsync(
-          { uri: attachedAudio },
-          { isLooping: true, positionMillis: Math.max(0, Number(reel.audio?.audio_start_time || 0) * 1000), shouldPlay: ownsPlayback && !muted, volume: Math.max(0, Math.min(1, Number(reel.audio?.audio_volume ?? 1))) }
+          { uri: musicPolicy.musicUrl! },
+          { isLooping: musicPolicy.isLooping, positionMillis: musicPolicy.musicStartMs, shouldPlay: ownsPlayback && !muted, volume: musicPolicy.musicVolume }
         );
         if (cancelled) return created.sound.unloadAsync();
         attachedSoundRef.current = created.sound;
@@ -137,18 +171,18 @@ export function ReelPlayerCard({
     }
     syncAttachedAudio().catch(() => undefined);
     return () => { cancelled = true; };
-  }, [active, attachedAudio, muted, ownsPlayback, reel.audio?.audio_start_time, reel.audio?.audio_volume]);
+  }, [active, musicPolicy, muted, ownsPlayback, drivesPlayback]);
 
   useEffect(() => () => {
     attachedSoundRef.current?.unloadAsync().catch(() => undefined);
     attachedSoundRef.current = null;
-  }, [attachedAudio]);
+  }, [musicPolicy.musicUrl]);
 
   useEffect(() => {
-    if (!active || !ownsPlayback) return;
+    if (!drivesPlayback || !active || !ownsPlayback) return;
     videoRef.current?.playAsync().catch(() => undefined);
     attachedSoundRef.current?.setStatusAsync({ shouldPlay: !muted, isMuted: muted }).catch(() => undefined);
-  }, [active, muted, ownsPlayback]);
+  }, [active, muted, ownsPlayback, drivesPlayback]);
 
   const { onPress: handleTap } = useTapMuteLike({
     onToggleMuted,
@@ -180,7 +214,13 @@ export function ReelPlayerCard({
   return (
     <View style={styles.card}>
       {poster ? <Image source={{ uri: poster }} style={styles.poster} resizeMode="cover" blurRadius={active ? 0 : 3} /> : null}
-      {contentState === "playable" && source ? (
+      {kind === "photo" ? (
+        <ReelPhotoSurface reel={reel} />
+      ) : kind === "carousel" ? (
+        <ReelCarouselSurface reel={reel} active={active} muted={muted} muteOriginal={musicPolicy.muteOriginalAudio} />
+      ) : kind === "livestream" ? (
+        <ReelLiveViewerSurface reel={reel} active={active} muted={muted} poster={poster} />
+      ) : contentState === "playable" && source ? (
         <Video
           ref={videoRef}
           source={{ uri: source }}
@@ -188,7 +228,7 @@ export function ReelPlayerCard({
           resizeMode={ResizeMode.COVER}
           shouldPlay={false}
           isLooping
-          isMuted={muted || Boolean(attachedAudio && reel.audio?.original_audio_muted !== false)}
+          isMuted={muted || musicPolicy.muteOriginalAudio}
           progressUpdateIntervalMillis={250}
           usePoster={Boolean(poster)}
           posterSource={poster ? { uri: poster } : undefined}
@@ -208,9 +248,16 @@ export function ReelPlayerCard({
           refreshAttempted.current = false;
           setFailed(false);
           recoverPlaybackUrl().catch(() => undefined);
-        }} onShare={() => Share.share({ message: reelWebUrl(reel.id) }).catch(() => undefined)} />
+        }} onShare={() => sharePulseObject({
+          kind: "reel",
+          url: reelWebUrl(reel.id),
+          title: reel.title || "PulseSoc Reel",
+          description: reel.caption || reel.body,
+          author: reel.author?.display_name || reel.author?.name || reel.author?.username,
+          previewImageUrl: reel.poster_url
+        }).catch(() => undefined)} />
       )}
-      {contentState === "playable" ? <Pressable accessibilityRole="button" accessibilityLabel={muted ? "Reel muted. Tap to unmute, double tap to like." : "Reel sound on. Tap to mute, double tap to like."} style={styles.tapLayer} onPress={handleTap} onLongPress={() => onOpenReactions(reel)} /> : null}
+      {isVideoKind && contentState === "playable" ? <Pressable accessibilityRole="button" accessibilityLabel={muted ? "Reel muted. Tap to unmute, double tap to like." : "Reel sound on. Tap to mute, double tap to like."} style={styles.tapLayer} onPress={handleTap} onLongPress={() => onOpenReactions(reel)} /> : null}
       <View style={styles.scrim} pointerEvents="none" />
       {buffering || refreshingUrl ? <View style={styles.buffering}><View style={styles.bufferingCore}><ActivityIndicator color="#36f0cf" /><Text style={styles.bufferingText}>{refreshingUrl ? "Refreshing Reel" : "Tuning signal"}</Text></View></View> : null}
       <LikeBurst ref={likeBurstRef} />
@@ -233,13 +280,27 @@ export function ReelPlayerCard({
         <Action icon={reactionIcon(reel.viewer_reaction)} label={reel.viewer_reaction ? "Liked" : "Like"} value={reel.reactions_count || reel.reaction_counts?.like || reel.reaction_counts?.fire || 0} active={Boolean(reel.viewer_reaction)} disabled={reel.reactions_disabled} onPress={() => onReact(reel, reel.viewer_reaction || "like")} onLongPress={() => onOpenReactions(reel)} />
         <Action icon="◌" label="Comment" value={reel.comments_count || 0} onPress={() => onOpenComments(reel)} />
         <Action icon="➤" label="Share" value={reel.share_count || 0} onPress={() => onShare(reel)} />
-        <Action icon={reel.saved ? "◆" : "◇"} label={reel.saved ? "Saved" : "Save"} onPress={() => onSave(reel)} active={Boolean(reel.saved)} />
+        <Action
+          icon={saveState.saved ? "◆" : "◇"}
+          label={saveState.pending ? (saveState.saved ? "Saving" : "Removing") : saveState.saved ? "Saved" : "Save"}
+          hint={saveState.saved ? "Removes this Reel from your Saved collection" : "Adds this Reel to your Saved collection"}
+          busy={saveState.pending}
+          onPress={() => onSave(reel)}
+          active={saveState.saved}
+        />
         <Action icon="•••" label="More" onPress={() => onOpenMore(reel)} />
       </View>
 
       <View style={styles.caption}>
         <Text style={styles.title} numberOfLines={1}>{author.username ? `@${author.username}` : reel.title || "PulseSoc Reel"}</Text>
-        {reel.caption ? <RichCaption value={reel.caption} /> : reel.body ? <RichCaption value={reel.body} /> : null}
+        {reel.caption || reel.body ? (
+          <ContentTranslation
+            contentType="reel"
+            contentRef={reel.id}
+            text={reel.caption || reel.body || ""}
+            renderText={(value) => <RichCaption value={value} />}
+          />
+        ) : null}
         {isLive ? <Pressable accessibilityRole="button" accessibilityLabel="Join this Live" style={styles.joinLive} onPress={() => onJoinLive(reel)}><Text style={styles.joinLiveText}>Join Live</Text></Pressable> : null}
         <View style={styles.mediaMetaRow}>
           <Pressable accessibilityRole="button" accessibilityLabel={reel.audio?.title ? `Music: ${reel.audio.title}${reel.audio.artist ? ` by ${reel.audio.artist}` : ""}` : "Original audio"} style={styles.musicMicro} onPress={() => onOpenMusic(reel)}><View style={styles.musicOrb}><Text style={styles.musicNote}>♪</Text></View><Text style={styles.musicLabel} numberOfLines={1}>{reel.audio?.title || "Original audio"}{reel.audio?.artist ? ` · ${reel.audio.artist}` : ""}</Text></Pressable>
@@ -287,9 +348,9 @@ function RichCaption({ value }: { value: string }) {
   return <Text style={styles.body} numberOfLines={3}>{tokens.map((token, index) => token.startsWith("#") || token.startsWith("@") ? <Text key={`${token}-${index}`} style={styles.captionLink}>{token}</Text> : token)}</Text>;
 }
 
-function Action({ icon, label, value, active, disabled, onPress, onLongPress }: { icon: string; label: string; value?: number; active?: boolean; disabled?: boolean; onPress: () => void; onLongPress?: () => void }) {
+function Action({ icon, label, value, active, disabled, busy, hint, onPress, onLongPress }: { icon: string; label: string; value?: number; active?: boolean; disabled?: boolean; busy?: boolean; hint?: string; onPress: () => void; onLongPress?: () => void }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${label}${value ? `, ${value}` : ""}`} accessibilityState={{ selected: active, disabled }} disabled={disabled} style={({ pressed }) => [styles.action, active ? styles.actionActive : undefined, pressed && styles.actionPressed, disabled && styles.actionDisabled]} onPress={onPress} onLongPress={onLongPress}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${label}${value ? `, ${value}` : ""}`} accessibilityHint={hint} accessibilityState={{ selected: active, disabled: disabled || busy, busy }} disabled={disabled || busy} style={({ pressed }) => [styles.action, active ? styles.actionActive : undefined, pressed && styles.actionPressed, (disabled || busy) && styles.actionDisabled]} onPress={onPress} onLongPress={onLongPress}>
       <Text style={[styles.actionIcon, active ? styles.actionTextActive : undefined]}>{icon}</Text>
       <Text style={styles.actionLabel}>{label}</Text>
       {value ? <Text style={styles.actionValue}>{value}</Text> : null}

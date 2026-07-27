@@ -11,7 +11,7 @@ modified during this investigation.
 ## Executive Finding
 
 The reproduced media-status failure occurs before the request reaches the
-CoinPilotXAI application.
+CoinPlotXAI application.
 
 Cloudflare rejects the multipart upload request:
 

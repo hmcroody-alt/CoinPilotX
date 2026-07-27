@@ -1,4 +1,4 @@
-"""Shared billing helpers for CoinPilotXAI.
+"""Shared billing helpers for CoinPlotXAI.
 
 The Flask app remains the Stripe webhook entry point, but this module keeps the
 business rules importable by web routes, admin tools, and future workers.

@@ -1,5 +1,3 @@
-import { Linking } from "react-native";
-import { PULSE_API_BASE_URL } from "../api/config";
 import { dashboardModuleGroups, DashboardModuleGroup, DashboardModuleItem } from "../data/dashboardModules";
 import { RootStackParamList } from "./types";
 
@@ -10,7 +8,7 @@ export type DashboardModuleRouteMatch = {
   group: DashboardModuleGroup;
   module: DashboardModuleItem;
 };
-export type DashboardActionRouteKind = "native_route" | "native_shell_route" | "safe_web_fallback" | "missing_invalid_route";
+export type DashboardActionRouteKind = "native_route" | "native_shell_route" | "native_provider_boundary" | "missing_invalid_route";
 export type DashboardActionRouteClassification = {
   kind: DashboardActionRouteKind;
   label: string;
@@ -54,16 +52,30 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     const mode = queryValue(normalized, "mode") || modeFromPath;
     navigation.navigate("CameraStudio", {
       target: target || "feed",
-      mode: mode === "video" || mode === "status" || mode === "reel" ? mode : "photo",
+      mode: mode === "video" || mode === "status" || mode === "reel" || mode === "live" ? mode : "photo",
+      captureMode: mode === "live" ? "live" : mode === "video" || mode === "reel" ? "video" : "photo",
       title: "Camera Studio"
     });
     return;
   }
   if (path.startsWith("/pulse/live/studio") || path.startsWith("/dashboard/creator/live-studio")) {
-    openDashboardWebFallback(normalized);
+    navigation.navigate("LiveStudio", { title: "Live Studio" });
     return;
   }
-  if (path.includes("/notifications") || path.includes("/activity")) {
+  if (
+    path === "/dashboard/network/notifications" ||
+    path.includes("/notification-preferences") ||
+    path.includes("/notifications/preferences") ||
+    path.includes("/notifications/settings")
+  ) {
+    navigation.navigate("NotificationPreferences");
+    return;
+  }
+  if (path.includes("/notifications")) {
+    navigation.navigate("NotificationCenter");
+    return;
+  }
+  if (path.includes("/activity")) {
     navigation.navigate("ActivityInbox", { title: "Activity Inbox" });
     return;
   }
@@ -76,7 +88,7 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     return;
   }
   if (path.includes("/reels")) {
-    navigation.navigate("Reels", { title: "Reels" });
+    navigation.navigate("Tabs", { screen: "Reels" });
     return;
   }
   if (path.includes("/status") || path.includes("/statuses")) {
@@ -169,7 +181,7 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     return;
   }
   if (path.includes("/videos")) {
-    openDashboardWebFallback(normalized);
+    navigation.navigate("DashboardLegacyModule", { title: "Videos", legacyGroup: "media", legacyModule: "videos" });
     return;
   }
   if (path.includes("/ai")) {
@@ -180,7 +192,7 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     navigation.navigate("IntelligenceCenter", { title: "System Status" });
     return;
   }
-  openDashboardWebFallback(normalized);
+  navigation.navigate("DashboardLegacyModule", { title: "Dashboard Module", legacyGroup: "unknown", legacyModule: path });
 }
 
 export function openDashboardAccessRoute(navigation: DashboardNavigation, module: DashboardModuleItem) {
@@ -225,9 +237,9 @@ export function classifyDashboardActionRoute(route: string): DashboardActionRout
   }
   if (isKnownSafeFallbackPath(path)) {
     return {
-      kind: "safe_web_fallback",
-      label: "Safe fallback",
-      detail: "Uses the protected production route until dedicated native support exists.",
+      kind: "native_provider_boundary",
+      label: "Native boundary",
+      detail: "Opens a native dashboard boundary while the backend-owned operation remains protected.",
       route: raw
     };
   }
@@ -241,26 +253,31 @@ export function classifyDashboardActionRoute(route: string): DashboardActionRout
   }
   if (path.startsWith("/dashboard/")) {
     return {
-      kind: "safe_web_fallback",
-      label: "Safe fallback",
-      detail: "Legacy dashboard URL is not represented in the native module registry yet.",
+      kind: "native_provider_boundary",
+      label: "Native boundary",
+      detail: "Legacy dashboard URL is represented by the native module boundary.",
       route: raw
     };
   }
   return {
     kind: "missing_invalid_route",
     label: "Invalid",
-    detail: "No native, shell, or safe fallback destination is registered for this action.",
+    detail: "No native, shell, or provider-boundary destination is registered for this action.",
     route: raw
   };
 }
 
 export function dashboardWebUrl(route: string) {
-  return route.startsWith("http") ? route : `${PULSE_API_BASE_URL}${route.startsWith("/") ? route : `/${route}`}`;
+  return normalizeDashboardPath(route);
 }
 
 export function openDashboardWebFallback(route: string) {
-  Linking.openURL(dashboardWebUrl(route)).catch(() => undefined);
+  return {
+    ok: false,
+    route: normalizeDashboardPath(route),
+    status: "native_provider_boundary",
+    message: "This dashboard action is held inside the native app until its protected provider operation is available."
+  };
 }
 
 export function normalizeDashboardPath(route: string) {
@@ -368,6 +385,7 @@ function isKnownNativeDashboardPath(path: string) {
     "/pulse/reels",
     "/pulse/status",
     "/pulse/live",
+    "/pulse/live/studio",
     "/pulse/music",
     "/pulse/marketplace",
     "/pulse/seller-store",
@@ -412,7 +430,6 @@ function isKnownNativeDashboardPath(path: string) {
 
 function isKnownSafeFallbackPath(path: string) {
   return [
-    "/pulse/live/studio",
     "/pulse/videos",
     "/dashboard/home"
   ].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));

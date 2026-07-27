@@ -3,17 +3,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Alert,
   Animated,
   AppState,
   Dimensions,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
   RefreshControl,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -22,12 +23,14 @@ import {
   ViewToken
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { PULSESOC_QA_REELS_FIXTURES } from "../api/config";
 import { PulseComment } from "../api/feed";
 import { liveWebUrl } from "../api/live";
 import {
   addReelComment,
   clearReelCommentDraft,
+  deleteReel,
   deleteReelComment,
   editReelComment,
   followReelCreator,
@@ -43,21 +46,27 @@ import {
   reportReel,
   reportReelComment,
   repostReel,
-  saveReel,
   saveReelCommentDraft,
   shareReel,
   trackReelView
 } from "../api/reels";
 import { PulseApiError } from "../api/pulseApi";
+import { describeDeleteError } from "../api/deleteErrors";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
-import { registerSyncInvalidation } from "../core/eventSync";
+import { ContentTranslation } from "../components/ContentTranslation";
+import { classifyReelMedia } from "../reels/reelMediaKind";
+import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
-import { pausePulseRadio } from "../core/pulseRadio";
+import { registerReelsReselectHandler } from "../navigation/reelsReselect";
 import { RootStackParamList } from "../navigation/types";
+import { actionKey, useSocialActionGuard } from "../social/actionGuard";
+import { peekSaveState } from "../social/savedStore";
+import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { useAuth } from "../session/auth";
+import { sharePulseObject } from "../sharing/nativeShare";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Reels"> | NativeStackScreenProps<RootStackParamList, "ReelDetail">;
 
@@ -72,6 +81,7 @@ const QA_RECOVERY_STATES = new Set<ConnectionState>(["loading", "connecting", "o
 export function ReelsScreen({ route, navigation }: Props) {
   const { authState, requestReauthentication } = useAuth();
   const insets = useSafeAreaInsets();
+  const bottomNavScroll = useBottomNavScrollVisibility({ topRevealY: 40, minimumScrollableDistance: 40 });
   const params = route.params || {};
   const initialReelId = "reelId" in params ? Number(params.reelId || 0) : 0;
   const [reels, setReels] = useState<PulseReel[]>([]);
@@ -87,17 +97,24 @@ export function ReelsScreen({ route, navigation }: Props) {
   const [retryCount, setRetryCount] = useState(0);
   const [cachedAt, setCachedAt] = useState(0);
   const [offline, setOffline] = useState(false);
-  const [busyId, setBusyId] = useState<number | null>(null);
+  // Replaces a `busyId` scalar. Reels are one-at-a-time on screen, but the scalar
+  // was still wrong: it was written by every handler and read by none except
+  // handleDeleteReel, so a double tap on save or react issued two requests. The
+  // guard locks per action+id in a ref and rejects out-of-order responses.
+  const guard = useSocialActionGuard();
+  // Reel actions had no error surface at all: react, save, repost, report,
+  // follow and not-interested each swallowed their failure, so the icon snapped
+  // back with no explanation and Report gave no signal in either direction. This
+  // is the missing channel, announced politely and self-clearing.
+  const [actionMessage, setActionMessage] = useState("");
   const [commentReel, setCommentReel] = useState<PulseReel | null>(null);
   const [comments, setComments] = useState<PulseComment[]>([]);
   const [commentBody, setCommentBody] = useState("");
   const [commentError, setCommentError] = useState("");
   const [commentTotal, setCommentTotal] = useState(0);
-  const [postingComment, setPostingComment] = useState(false);
   const [replyTo, setReplyTo] = useState<PulseComment | null>(null);
   const [editingComment, setEditingComment] = useState<PulseComment | null>(null);
   const [editBody, setEditBody] = useState("");
-  const [editingBusy, setEditingBusy] = useState(false);
   const [reactionReel, setReactionReel] = useState<PulseReel | null>(null);
   const [musicReel, setMusicReel] = useState<PulseReel | null>(null);
   const [moreReel, setMoreReel] = useState<PulseReel | null>(null);
@@ -108,6 +125,10 @@ export function ReelsScreen({ route, navigation }: Props) {
   const qaStateApplied = useRef(false);
   const loadVersion = useRef(0);
   const activeReelId = useRef(0);
+  const listRef = useRef<FlatList<PulseReel>>(null);
+  // Guards against overlapping reselect-refreshes so a rapid burst of
+  // double-taps cannot launch multiple concurrent feed refreshes.
+  const reselectingRef = useRef(false);
 
   async function load(mode: "initial" | "refresh" | "more" = "initial") {
     if (mode === "initial" && QA_REELS_STATE && QA_RECOVERY_STATES.has(QA_REELS_STATE as ConnectionState)) {
@@ -183,10 +204,34 @@ export function ReelsScreen({ route, navigation }: Props) {
     if (commentReel) refreshComments(commentReel).catch(() => undefined);
   }), [lane, initialReelId, commentReel?.id]);
 
+  // Double-tapping the Reels bottom-tab while Reels is already the active route
+  // scrolls the feed back to the top and refreshes the CURRENTLY-selected lane
+  // (For You / Following / Trending / Music / Live) — it never forces the lane
+  // back to "For You". Momentum is cancelled by the scrollToOffset, the keyboard
+  // and any non-critical overlays (comments / reactions / music / more / share)
+  // are dismissed, and playback resumes on the new top item via activeIndex 0.
+  // A single re-tap is a no-op; only the double-tap reaches this handler.
+  useEffect(() => registerReelsReselectHandler(async () => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    Keyboard.dismiss();
+    setCommentReel(null);
+    setReactionReel(null);
+    setMusicReel(null);
+    setMoreReel(null);
+    setShareOpen(false);
+    setActiveIndex(0);
+    if (reselectingRef.current) return;
+    reselectingRef.current = true;
+    try {
+      await load("refresh");
+      AccessibilityInfo.announceForAccessibility?.("Reels refreshed");
+    } finally {
+      reselectingRef.current = false;
+    }
+  }), [lane, initialReelId]);
+
   useEffect(() => {
-    pausePulseRadio()
-      .catch(() => undefined)
-      .finally(() => configureReelsAudioSession().catch(() => undefined));
+    configureReelsAudioSession().catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -235,6 +280,15 @@ export function ReelsScreen({ route, navigation }: Props) {
     return () => clearTimeout(timer);
   }, [commentBody, replyTo?.id, commentReel?.id]);
 
+  // Self-clearing so a stale message cannot be misread as describing the next
+  // action. 3.6s is long enough to read a sentence and is the same dwell Status
+  // uses for its reaction errors.
+  useEffect(() => {
+    if (!actionMessage) return;
+    const timer = setTimeout(() => setActionMessage(""), 3600);
+    return () => clearTimeout(timer);
+  }, [actionMessage]);
+
   const updateReel = useCallback((reelId: number, next: Partial<PulseReel>) => {
     setReels((current) => current.map((item) => (item.id === reelId ? { ...item, ...next } : item)));
   }, []);
@@ -242,49 +296,61 @@ export function ReelsScreen({ route, navigation }: Props) {
   async function handleReact(reel: PulseReel, reactionType = "fire") {
     if (reel.live_session_id || reel.live?.live_session_id) return;
     if (reel.reactions_disabled) return;
-    setBusyId(reel.id);
     const previousReaction = reel.viewer_reaction || "";
     const previousCount = Number(reel.reactions_count || 0);
-    updateReel(reel.id, { viewer_reaction: reactionType, reactions_count: previousCount + (previousReaction ? 0 : 1) });
-    try {
-      const result = await reactToReel(reel.id, reactionType);
-      updateReel(reel.id, {
-        viewer_reaction: result.removed ? "" : result.reaction_type || reactionType,
-        reaction_counts: result.reaction_counts || reel.reaction_counts,
-        reactions_count: result.removed ? Math.max(0, previousCount - 1) : previousCount + (previousReaction ? 0 : 1)
-      });
-      Vibration.vibrate(8);
-    } catch {
-      updateReel(reel.id, { viewer_reaction: reel.viewer_reaction, reactions_count: reel.reactions_count || 0 });
-    } finally {
-      setBusyId(null);
-    }
+    const optimisticCount = previousCount + (previousReaction ? 0 : 1);
+    await guard.run(actionKey("reel_react", reel.id), () => reactToReel(reel.id, reactionType), {
+      // The reaction tray lets the user change their mind while a request is in
+      // flight, so the second tap must run; the guard's sequence check is what
+      // discards the slower, older answer instead of letting it revert the newer
+      // choice.
+      supersede: true,
+      optimistic: () => updateReel(reel.id, { viewer_reaction: reactionType, reactions_count: optimisticCount }),
+      onResult: (result) => {
+        updateReel(reel.id, {
+          viewer_reaction: result.removed ? "" : result.reaction_type || reactionType,
+          reaction_counts: result.reaction_counts || reel.reaction_counts,
+          reactions_count: result.removed ? Math.max(0, previousCount - 1) : optimisticCount
+        });
+        // Haptic on confirmation, not on the tap: buzzing for a reaction the
+        // server then rejected teaches the user to trust a signal that lies.
+        Vibration.vibrate(8);
+      },
+      onRollback: () => updateReel(reel.id, { viewer_reaction: previousReaction, reactions_count: previousCount }),
+      onError: setActionMessage
+    });
   }
 
+  // This handler was already correct on the client and still did not work: the
+  // save route wrote the generic library while the Reels feed read its `saved`
+  // flag off the underlying post, so the optimistic flip was reverted by the
+  // next fetch. The server now writes both (see `api_pulse_reel_save_by_id`);
+  // routing through the shared store additionally keeps a reel that also
+  // appears as a feed post in agreement with itself.
   async function handleSave(reel: PulseReel) {
     if (reel.live_session_id || reel.live?.live_session_id) return;
-    setBusyId(reel.id);
-    updateReel(reel.id, { saved: !reel.saved });
-    try {
-      const result = await saveReel(reel.id);
-      updateReel(reel.id, { saved: Boolean(result.saved) });
-    } catch {
-      updateReel(reel.id, { saved: reel.saved });
-    } finally {
-      setBusyId(null);
-    }
+    // Read from the store, not from this screen's copy of the reel: the copy can
+    // be out of date if the same content was saved from the feed post it also
+    // appears as.
+    const wasSaved = peekSaveState("reel", reel.id)?.saved ?? Boolean(reel.saved);
+    const outcome = await setSaved({ type: "reel", id: reel.id }, !wasSaved);
+    updateReel(reel.id, { saved: outcome.saved });
+    if (!outcome.ok && outcome.message) setActionMessage(outcome.message);
   }
 
   async function handleRepost(reel: PulseReel) {
-    setBusyId(reel.id);
-    updateReel(reel.id, { reposted: true });
-    try {
-      await repostReel(reel.id);
-    } catch {
-      updateReel(reel.id, { reposted: reel.reposted });
-    } finally {
-      setBusyId(null);
-    }
+    const wasReposted = Boolean(reel.reposted);
+    const undo = wasReposted;
+    // A real toggle now that the reel repost route has a DELETE branch sharing
+    // pulse_feed_engine.repost with the post route. This used to refuse the second
+    // tap with "You already reposted this Reel" — the honest answer while no
+    // delete path existed, but a dead end for anyone who reposted by accident.
+    await guard.run(actionKey("reel_repost", reel.id), () => repostReel(reel.id, { undo }), {
+      optimistic: () => updateReel(reel.id, { reposted: !undo }),
+      onResult: (result) => updateReel(reel.id, { reposted: Boolean(result.reposted ?? result.is_reposted ?? !undo) }),
+      onRollback: () => updateReel(reel.id, { reposted: wasReposted }),
+      onError: setActionMessage
+    });
   }
 
   async function handleShare(reel: PulseReel) {
@@ -292,41 +358,121 @@ export function ReelsScreen({ route, navigation }: Props) {
     try {
       const liveId = Number(reel.live_session_id || reel.live?.live_session_id || 0);
       if (liveId) {
-        await Share.share({ message: reel.live?.live_url || liveWebUrl(liveId) });
+        await sharePulseObject({
+          kind: "live",
+          url: reel.live?.live_url || liveWebUrl(liveId),
+          title: reel.title || "PulseSoc Live",
+          description: reel.caption || reel.body,
+          author: reel.author?.display_name || reel.author?.name || reel.author?.username,
+          previewImageUrl: reel.poster_url
+        });
         return;
       }
       const result = await shareReel(reel.id);
-      await Share.share({ message: result.share_url || reelWebUrl(reel.id) });
+      await sharePulseObject({
+        kind: "reel",
+        url: result.share_url || reelWebUrl(reel.id),
+        title: reel.title || "PulseSoc Reel",
+        description: reel.caption || reel.body,
+        author: reel.author?.display_name || reel.author?.name || reel.author?.username,
+        previewImageUrl: reel.poster_url
+      });
     } catch {
-      await Share.share({ message: reelWebUrl(reel.id) }).catch(() => undefined);
+      await sharePulseObject({
+        kind: "reel",
+        url: reelWebUrl(reel.id),
+        title: reel.title || "PulseSoc Reel",
+        description: reel.caption || reel.body,
+        author: reel.author?.display_name || reel.author?.name || reel.author?.username,
+        previewImageUrl: reel.poster_url
+      }).catch(() => undefined);
     } finally {
       setShareOpen(false);
     }
   }
 
   async function handleNotInterested(reel: PulseReel) {
-    setBusyId(reel.id);
-    try {
-      await markReelNotInterested(reel.id);
-      setReels((current) => current.filter((item) => item.id !== reel.id));
-    } finally {
-      setBusyId(null);
-    }
+    // This had a `finally` but no `catch`, so a failure rejected the handler and
+    // every call site papered over it with `.catch(() => undefined)`: the Reel
+    // stayed on screen and the user was told nothing. The Reel now leaves only
+    // when the server has recorded the signal, and a failure says so.
+    await guard.run(actionKey("reel_not_interested", reel.id), () => markReelNotInterested(reel.id), {
+      onResult: () => setReels((current) => current.filter((item) => item.id !== reel.id)),
+      onError: setActionMessage
+    });
+  }
+
+  async function handleDeleteReel(reel: PulseReel) {
+    await guard.run(actionKey("reel_delete", reel.id), () => deleteReel(reel.id), {
+      // No optimistic removal: a Reel that disappears and then returns reads as
+      // the feed resurrecting deleted content.
+      onResult: () => {
+        if (commentReel?.id === reel.id) setCommentReel(null);
+        if (reactionReel?.id === reel.id) setReactionReel(null);
+        if (musicReel?.id === reel.id) setMusicReel(null);
+        if (moreReel?.id === reel.id) setMoreReel(null);
+        setReels((current) => current.filter((item) => item.id !== reel.id));
+        invalidateNativeSync(["activity", "notifications"], "reels_delete", [
+          {
+            event_type: "pulse_reel_deleted",
+            entity_type: "reel",
+            entity_id: reel.id,
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_reels" }
+          }
+        ]).catch(() => undefined);
+      },
+      // Delete keeps the modal alert and describeDeleteError's wording, which
+      // separates "not yours" from "already gone" — a distinction users act on.
+      onError: (_message, err) => Alert.alert("Reel not deleted", describeDeleteError(err, "Reel"))
+    });
+  }
+
+  function confirmDeleteReel(reel: PulseReel) {
+    Alert.alert(
+      "Delete Reel?",
+      "This removes the Reel for everyone. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => handleDeleteReel(reel).catch(() => undefined) }
+      ]
+    );
   }
 
   async function handleFollowCreator(reel: PulseReel) {
-    setBusyId(reel.id);
     const original = Boolean(reel.viewer_follows_author);
-    updateReel(reel.id, { viewer_follows_author: !original });
-    const result = await followReelCreator(reel.id).catch(() => null);
-    updateReel(reel.id, { viewer_follows_author: result ? Boolean(result.following) : original });
-    setBusyId(null);
+    // `followReelCreator(...).catch(() => null)` used to reduce every failure to
+    // "revert the button", which is exactly what a successful unfollow also looks
+    // like. The rollback is unchanged; the difference is the user is now told.
+    await guard.run(actionKey("reel_follow_creator", reel.id), () => followReelCreator(reel.id), {
+      optimistic: () => updateReel(reel.id, { viewer_follows_author: !original }),
+      onResult: (result) => {
+        updateReel(reel.id, { viewer_follows_author: Boolean(result?.following ?? !original) });
+        invalidateNativeSync(["activity", "notifications"], "reels_follow", [
+          {
+            event_type: "pulse_follow_changed",
+            entity_type: "user",
+            entity_id: Number(reel.author?.user_id || reel.user_id || 0),
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_reels", following: Boolean(result?.following ?? !original) }
+          }
+        ]).catch(() => undefined);
+      },
+      onRollback: () => updateReel(reel.id, { viewer_follows_author: original }),
+      onError: setActionMessage
+    });
   }
 
   async function handleReport(reel: PulseReel) {
-    setBusyId(reel.id);
-    await reportReel(reel.id).catch(() => undefined);
-    setBusyId(null);
+    // Previously `reportReel(reel.id).catch(() => undefined)` — the single worst
+    // silent swallow on this screen. Reporting is a safety action: a user who taps
+    // it and sees nothing cannot tell whether their report was filed, so they
+    // either tap repeatedly or assume the platform ignored them. Both outcomes are
+    // reported as harms. Success and failure are now both stated.
+    await guard.run(actionKey("reel_report", reel.id), () => reportReel(reel.id), {
+      onResult: () => setActionMessage("Report sent. Our safety team will review this Reel."),
+      onError: setActionMessage
+    });
   }
 
   async function openComments(reel: PulseReel) {
@@ -356,24 +502,37 @@ export function ReelsScreen({ route, navigation }: Props) {
   }
 
   async function submitComment() {
-    if (!commentReel || !commentBody.trim() || postingComment) return;
+    if (!commentReel || !commentBody.trim()) return;
+    const reel = commentReel;
+    const parent = replyTo;
     const body = commentBody.trim();
-    setPostingComment(true);
     setCommentError("");
     setCommentBody("");
-    try {
-      const comment = await addReelComment(commentReel.id, body, replyTo?.id || 0);
-      setComments((current) => replyTo ? insertReply(current, replyTo.id, comment) : [comment, ...current]);
-      setCommentTotal((current) => current + 1);
-      updateReel(commentReel.id, { comments_count: commentTotal + 1 });
-      await clearReelCommentDraft(commentReel.id);
-      setReplyTo(null);
-    } catch {
-      setCommentBody(body);
-      setCommentError("Saved as a private draft on this device. Posting requires a connection.");
-    } finally {
-      setPostingComment(false);
-    }
+    await guard.run(actionKey("reel_comment", reel.id), () => addReelComment(reel.id, body, parent?.id || 0), {
+      onResult: (comment) => {
+        setComments((current) => (parent ? insertReply(current, parent.id, comment) : [comment, ...current]));
+        setCommentTotal((current) => current + 1);
+        updateReel(reel.id, { comments_count: commentTotal + 1 });
+        clearReelCommentDraft(reel.id).catch(() => undefined);
+        setReplyTo(null);
+        invalidateNativeSync(["activity", "notifications"], "reels_comment", [
+          {
+            event_type: "pulse_reel_comment_created",
+            entity_type: "reel",
+            entity_id: reel.id,
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_reels", parent_comment_id: parent?.id || 0 }
+          }
+        ]).catch(() => undefined);
+      },
+      onRollback: () => {
+        setCommentBody(body);
+        // The draft-saved wording is kept rather than replaced by the generic
+        // copy, because it tells the user something the generic message cannot:
+        // their text is not lost.
+        setCommentError("Saved as a private draft on this device. Posting requires a connection.");
+      }
+    });
   }
 
   function beginEditComment(comment: PulseComment) {
@@ -384,52 +543,90 @@ export function ReelsScreen({ route, navigation }: Props) {
   }
 
   async function submitEditComment() {
-    if (!editingComment || !editBody.trim() || editingBusy) return;
-    setEditingBusy(true);
+    if (!editingComment || !editBody.trim()) return;
+    const target = editingComment;
+    const nextBody = editBody.trim();
     setCommentError("");
-    try {
-      const result = await editReelComment(editingComment.id, editBody.trim());
-      const updated = result.comment ? { ...editingComment, ...result.comment, body: result.comment.body || editBody.trim(), edited_at: result.comment.edited_at || new Date().toISOString() } : { ...editingComment, body: editBody.trim(), edited_at: new Date().toISOString() };
-      setComments((current) => updateCommentTree(current, editingComment.id, updated));
-      setEditingComment(null);
-      setEditBody("");
-    } catch {
-      setCommentError("That edit was not accepted. Check your connection and ownership, then retry.");
-    } finally {
-      setEditingBusy(false);
-    }
+    await guard.run(actionKey("reel_comment_edit", target.id), () => editReelComment(target.id, nextBody), {
+      onResult: (result) => {
+        const updated = result.comment
+          ? { ...target, ...result.comment, body: result.comment.body || nextBody, edited_at: result.comment.edited_at || new Date().toISOString() }
+          : { ...target, body: nextBody, edited_at: new Date().toISOString() };
+        setComments((current) => updateCommentTree(current, target.id, updated));
+        setEditingComment(null);
+        setEditBody("");
+      },
+      // Kept over the generic copy: this names the two things the user can
+      // actually check — connection and whether the comment is theirs.
+      onRollback: () => setCommentError("That edit was not accepted. Check your connection and ownership, then retry.")
+    });
   }
 
   async function handleDeleteComment(comment: PulseComment) {
     if (!comment.can_delete && Number(comment.user_id || comment.author?.user_id || 0) !== Number(authState.user?.user_id || 0)) return;
     const previous = comments;
-    setComments((current) => removeCommentFromTree(current, comment.id));
-    if (commentReel) updateReel(commentReel.id, { comments_count: Math.max(0, Number(commentReel.comments_count || 0) - 1) });
-    try {
-      await deleteReelComment(comment.id);
-      setCommentTotal((current) => Math.max(0, current - 1));
-    } catch {
-      setComments(previous);
-      if (commentReel) updateReel(commentReel.id, { comments_count: Number(commentReel.comments_count || 0) });
-      setCommentError("Delete was not authorized or the network is unavailable.");
-    }
+    const reel = commentReel;
+    await guard.run(actionKey("reel_comment_delete", comment.id), () => deleteReelComment(comment.id), {
+      optimistic: () => {
+        setComments((current) => removeCommentFromTree(current, comment.id));
+        if (reel) updateReel(reel.id, { comments_count: Math.max(0, Number(reel.comments_count || 0) - 1) });
+      },
+      onResult: () => setCommentTotal((current) => Math.max(0, current - 1)),
+      onRollback: () => {
+        setComments(previous);
+        if (reel) updateReel(reel.id, { comments_count: Number(reel.comments_count || 0) });
+        setCommentError("Delete was not authorized or the network is unavailable.");
+      }
+    });
   }
 
   async function handleReactToComment(comment: PulseComment) {
     const previous = comments;
     const wasActive = Boolean(comment.viewer_reaction);
-    setComments((current) => updateCommentTree(current, comment.id, { ...comment, viewer_reaction: wasActive ? "" : "like", like_count: Math.max(0, Number(comment.like_count || 0) + (wasActive ? -1 : 1)) }));
-    try {
-      const result = await reactToReelComment(comment.id);
-      setComments((current) => updateCommentTree(current, comment.id, { ...comment, viewer_reaction: result.removed ? "" : result.reaction_type || "like", like_count: Number(result.reaction_counts?.like || 0), reaction_counts: result.reaction_counts }));
-    } catch {
-      setComments(previous);
-      setCommentError("Comment reaction needs a connection. No change was saved.");
-    }
+    await guard.run(actionKey("reel_comment_react", comment.id), () => reactToReelComment(comment.id), {
+      // Liking and unliking a comment in quick succession is ordinary, so the
+      // later tap wins rather than being dropped.
+      supersede: true,
+      optimistic: () => setComments((current) => updateCommentTree(current, comment.id, {
+        ...comment,
+        viewer_reaction: wasActive ? "" : "like",
+        like_count: Math.max(0, Number(comment.like_count || 0) + (wasActive ? -1 : 1))
+      })),
+      onResult: (result) => setComments((current) => updateCommentTree(current, comment.id, {
+        ...comment,
+        viewer_reaction: result.removed ? "" : result.reaction_type || "like",
+        like_count: Number(result.reaction_counts?.like || 0),
+        reaction_counts: result.reaction_counts
+      })),
+      onRollback: () => {
+        setComments(previous);
+        setCommentError("Comment reaction needs a connection. No change was saved.");
+      }
+    });
+  }
+
+  async function handleReportComment(comment: PulseComment) {
+    // Another silent swallow: `reportReelComment(comment.id).catch(() => undefined)`
+    // was wired straight into the modal, so reporting a comment produced no
+    // acknowledgement whatsoever.
+    await guard.run(actionKey("reel_comment_report", comment.id), () => reportReelComment(comment.id), {
+      onResult: () => setCommentError("Report sent. Our safety team will review this comment."),
+      onError: setCommentError
+    });
   }
 
   function joinLiveReel(reel: PulseReel) {
     const liveId = Number(reel.live_session_id || reel.live?.live_session_id || 0);
+    if (classifyReelMedia(reel) === "replay") {
+      navigation.navigate("ReplayViewer", {
+        liveId: liveId || undefined,
+        replayUrl: reel.live?.playback_url || reel.video_url || undefined,
+        poster: reel.poster_url || reel.live?.preview_url || undefined,
+        title: reel.title || "Replay",
+        creator: reel.author?.display_name || undefined
+      });
+      return;
+    }
     if (liveId) navigation.navigate("LiveDetail", { liveId, title: reel.title || "PulseSoc Live" });
   }
 
@@ -439,9 +636,10 @@ export function ReelsScreen({ route, navigation }: Props) {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.laneRailContent} style={[styles.laneRail, { top: insets.top + 6 }]} accessibilityRole="tablist">
         {REEL_LANES.map((item) => <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: lane === item.key }} style={[styles.laneButton, lane === item.key && styles.laneButtonActive]} onPress={() => setLane(item.key)}><Text style={[styles.laneText, lane === item.key && styles.laneTextActive]}>{item.label}</Text></Pressable>)}
       </ScrollView>
-      <Pressable accessibilityRole="button" accessibilityLabel="Create Reel" style={[styles.createButton, { top: insets.top + 6 }]} onPress={() => navigation.navigate("CameraStudio", { target: "reel", mode: "reel", title: "Create Reel" })}><Text style={styles.createText}>＋</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Create Reel" style={[styles.createButton, { top: insets.top + 6 }]} onPress={() => navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true, composerMode: "reel" } })}><Text style={styles.createText}>＋</Text></Pressable>
       {offline && reels.length ? <View style={[styles.statusPill, { top: insets.top + 52 }]}><Text style={styles.statusPillText}>Saved Reels · {connectionState === "connecting" ? "refreshing" : cacheAge(cachedAt)}</Text></View> : null}
       <FlatList
+        ref={listRef}
         data={reels}
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item, index }) => (
@@ -452,7 +650,7 @@ export function ReelsScreen({ route, navigation }: Props) {
               muted={muted}
               offline={offline}
               contentTop={insets.top + 56}
-              busy={busyId === item.id}
+              busy={guard.isItemBusy(item.id)}
               onToggleMuted={() => setMuted((current) => !current)}
               onReact={handleReact}
               onOpenReactions={setReactionReel}
@@ -480,6 +678,9 @@ export function ReelsScreen({ route, navigation }: Props) {
         showsVerticalScrollIndicator={false}
         snapToInterval={viewportHeight}
         decelerationRate="fast"
+        onScroll={bottomNavScroll.onScroll}
+        onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
+        scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
         viewabilityConfig={viewabilityConfig.current}
         onViewableItemsChanged={onViewableItemsChanged.current}
         onEndReached={() => load("more").catch(() => undefined)}
@@ -499,7 +700,7 @@ export function ReelsScreen({ route, navigation }: Props) {
         total={commentTotal}
         body={commentBody}
         error={commentError}
-        posting={postingComment}
+        posting={Boolean(commentReel) && guard.isBusy(actionKey("reel_comment", commentReel?.id || 0))}
         onChangeBody={setCommentBody}
         onSubmit={submitComment}
         replyTo={replyTo}
@@ -507,20 +708,25 @@ export function ReelsScreen({ route, navigation }: Props) {
         onReact={(comment) => handleReactToComment(comment).catch(() => undefined)}
         editingComment={editingComment}
         editBody={editBody}
-        editingBusy={editingBusy}
+        editingBusy={Boolean(editingComment) && guard.isBusy(actionKey("reel_comment_edit", editingComment?.id || 0))}
         onBeginEdit={beginEditComment}
         onChangeEditBody={setEditBody}
         onSubmitEdit={() => submitEditComment().catch(() => undefined)}
         onCancelEdit={() => { setEditingComment(null); setEditBody(""); }}
         currentUserId={Number(authState.user?.user_id || 0)}
         onDelete={(comment) => handleDeleteComment(comment).catch(() => undefined)}
-        onReport={(comment) => reportReelComment(comment.id).catch(() => undefined)}
+        onReport={(comment) => handleReportComment(comment).catch(() => undefined)}
         onCancelReply={() => setReplyTo(null)}
         onClose={() => { setCommentReel(null); setReplyTo(null); setEditingComment(null); }}
       />
+      {actionMessage ? (
+        <View style={[styles.actionPill, { bottom: insets.bottom + 92 }]} pointerEvents="none">
+          <Text accessibilityLiveRegion="polite" testID="reels-action-message" style={styles.actionPillText}>{actionMessage}</Text>
+        </View>
+      ) : null}
       <ReactionPicker reel={reactionReel} onSelect={(reaction) => { if (reactionReel) handleReact(reactionReel, reaction).catch(() => undefined); setReactionReel(null); }} onClose={() => setReactionReel(null)} />
       <MusicDetail reel={musicReel} onClose={() => setMusicReel(null)} />
-      <ReelMoreMenu reel={moreReel} onClose={() => setMoreReel(null)} onRepost={(reel) => { setMoreReel(null); handleRepost(reel).catch(() => undefined); }} onLess={(reel) => { setMoreReel(null); handleNotInterested(reel).catch(() => undefined); }} onReport={(reel) => { setMoreReel(null); handleReport(reel).catch(() => undefined); }} onPromote={(reel) => { setMoreReel(null); navigation.navigate("GrowthCenter", { contentType: "reel", contentId: reel.id, title: "Promote Reel" }); }} />
+      <ReelMoreMenu reel={moreReel} onClose={() => setMoreReel(null)} onRepost={(reel) => { setMoreReel(null); handleRepost(reel).catch(() => undefined); }} onLess={(reel) => { setMoreReel(null); handleNotInterested(reel).catch(() => undefined); }} onReport={(reel) => { setMoreReel(null); handleReport(reel).catch(() => undefined); }} onPromote={(reel) => { setMoreReel(null); navigation.navigate("GrowthCenter", { contentType: "reel", contentId: reel.id, title: "Promote Reel" }); }} onDelete={(reel) => { setMoreReel(null); confirmDeleteReel(reel); }} />
     </View>
   );
 }
@@ -586,7 +792,16 @@ function CommentsModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.modalWrap} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <Pressable style={styles.modalBackdrop} onPress={onClose} />
+        {/* Tap-to-dismiss target for sighted users. Hidden from the a11y tree:
+            it duplicates the labelled "Close" button in the sheet header, and a
+            full-screen unnamed button would otherwise sit in front of the sheet
+            content in the VoiceOver swipe order. */}
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={onClose}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
         <View style={styles.sheet}>
           <View style={styles.sheetHeader}>
             <View><View style={styles.sheetHandle} /><Text style={styles.sheetTitle}>{total || comments.length} Comments</Text><Text style={styles.sheetContext} numberOfLines={1}>{reel?.author?.display_name || "PulseSoc creator"} · {reel?.title || "Reel"}</Text></View>
@@ -656,7 +871,15 @@ function CommentThread({ comment, currentUserId, expanded, editingComment, editB
           <View style={styles.commentActions}><Pressable accessibilityRole="button" disabled={!editBody.trim() || editingBusy} onPress={onSubmitEdit}><Text style={styles.commentAction}>{editingBusy ? "Saving" : "Save edit"}</Text></Pressable><Pressable accessibilityRole="button" onPress={onCancelEdit}><Text style={styles.commentAction}>Cancel</Text></Pressable></View>
         </View>
       ) : (
-        <Text style={styles.commentBody}>{comment.body}{comment.edited_at ? <Text style={styles.editedLabel}> · edited</Text> : null}</Text>
+        <View>
+          <ContentTranslation
+            contentType={depth > 0 ? "reply" : "comment"}
+            contentRef={comment.id || comment.comment_id}
+            text={comment.body}
+            textStyle={styles.commentBody}
+          />
+          {comment.edited_at ? <Text style={styles.editedLabel}>Edited</Text> : null}
+        </View>
       )}
       <View style={styles.commentActions}>
         <Text style={styles.commentTime}>{formatShortTime(comment.created_at)}</Text>
@@ -682,10 +905,10 @@ function MusicDetail({ reel, onClose }: { reel: PulseReel | null; onClose: () =>
   return <Modal visible={Boolean(reel)} transparent animationType="slide" onRequestClose={onClose}><Pressable style={styles.modalWrap} onPress={onClose}><Pressable style={styles.compactSheet} onPress={(event) => event.stopPropagation()}><View style={styles.sheetHandle} /><Text style={styles.musicGlyph}>♪</Text><Text style={styles.sheetTitle}>{audio?.title || "Original audio"}</Text><Text style={styles.sheetContext}>{audio?.artist || "PulseSoc creator audio"}</Text><Text style={styles.boundaryText}>PulseSoc keeps this sound synced to the Reel while the video remains the focus.</Text><Pressable style={styles.sheetPrimary} onPress={onClose}><Text style={styles.sheetPrimaryText}>Done</Text></Pressable></Pressable></Pressable></Modal>;
 }
 
-function ReelMoreMenu({ reel, onClose, onRepost, onLess, onReport, onPromote }: { reel: PulseReel | null; onClose: () => void; onRepost: (reel: PulseReel) => void; onLess: (reel: PulseReel) => void; onReport: (reel: PulseReel) => void; onPromote: (reel: PulseReel) => void }) {
+function ReelMoreMenu({ reel, onClose, onRepost, onLess, onReport, onPromote, onDelete }: { reel: PulseReel | null; onClose: () => void; onRepost: (reel: PulseReel) => void; onLess: (reel: PulseReel) => void; onReport: (reel: PulseReel) => void; onPromote: (reel: PulseReel) => void; onDelete: (reel: PulseReel) => void }) {
   if (!reel) return null;
   const live = Boolean(reel.live_session_id || reel.live?.live_session_id);
-  return <Modal visible transparent animationType="slide" onRequestClose={onClose}><Pressable style={styles.modalWrap} onPress={onClose}><Pressable style={styles.compactSheet} onPress={(event) => event.stopPropagation()}><View style={styles.sheetHandle} /><Text style={styles.sheetTitle}>{live ? "Live options" : "Reel options"}</Text>{live ? <Text style={styles.boundaryText}>Join Live to use the existing Live viewer, chat, moderation, and co-host controls.</Text> : <><MenuAction label={reel.reposted ? "Reposted" : "Repost"} onPress={() => onRepost(reel)} />{reel.can_manage ? <MenuAction label="Promote Reel" onPress={() => onPromote(reel)} /> : null}<MenuAction label="Not interested" onPress={() => onLess(reel)} /><MenuAction label="Report Reel" danger onPress={() => onReport(reel)} /></>}<MenuAction label="Cancel" onPress={onClose} /></Pressable></Pressable></Modal>;
+  return <Modal visible transparent animationType="slide" onRequestClose={onClose}><Pressable style={styles.modalWrap} onPress={onClose}><Pressable style={styles.compactSheet} onPress={(event) => event.stopPropagation()}><View style={styles.sheetHandle} /><Text style={styles.sheetTitle}>{live ? "Live options" : "Reel options"}</Text>{live ? <Text style={styles.boundaryText}>Join Live to use the existing Live viewer, chat, moderation, and co-host controls.</Text> : <><MenuAction label={reel.reposted ? "Reposted" : "Repost"} onPress={() => onRepost(reel)} />{reel.can_manage ? <MenuAction label="Promote Reel" onPress={() => onPromote(reel)} /> : null}<MenuAction label="Not interested" onPress={() => onLess(reel)} /><MenuAction label="Report Reel" danger onPress={() => onReport(reel)} />{reel.can_manage ? <MenuAction label="Delete Reel" danger onPress={() => onDelete(reel)} /> : null}</>}<MenuAction label="Cancel" onPress={onClose} /></Pressable></Pressable></Modal>;
 }
 
 function MenuAction({ label, danger, onPress }: { label: string; danger?: boolean; onPress: () => void }) { return <Pressable accessibilityRole="button" style={styles.menuAction} onPress={onPress}><Text style={[styles.menuActionText, danger && styles.menuDanger]}>{label}</Text><Text style={styles.menuChevron}>›</Text></Pressable>; }
@@ -1026,5 +1249,18 @@ const styles = StyleSheet.create({
     top: 8,
     zIndex: 20
   },
-  statusPillText: { color: colors.warning, fontSize: 11, fontWeight: "800" }
+  statusPillText: { color: colors.warning, fontSize: 11, fontWeight: "800" },
+  actionPill: {
+    alignSelf: "center",
+    backgroundColor: "rgba(5,17,31,0.94)",
+    borderColor: "rgba(97,234,246,0.32)",
+    borderRadius: 16,
+    borderWidth: 1,
+    maxWidth: "88%",
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    position: "absolute",
+    zIndex: 30
+  },
+  actionPillText: { color: colors.text, fontSize: 13, fontWeight: "700", textAlign: "center" }
 });

@@ -89,7 +89,9 @@ def main() -> int:
             "Feature Parity + QA Readiness Report",
             "reports/pulsesoc_native_feature_parity_qa_readiness.md",
             "scripts/pulsesoc_native_feature_parity_audit.py",
-            "Recommended next action: device QA setup"
+            # The parity report's "device QA setup" recommendation was completed as
+            # its own logged mission; verify the living master records that follow-up.
+            "Device QA Setup"
         ],
         "master progress",
         failures,
@@ -116,7 +118,10 @@ def main() -> int:
     )
     require('"expo"' in package and '"react-native"' in package, "mobile-native package is Expo/React Native", failures)
     require('"scheme": "pulsesoc"' in app_json, "Expo app declares pulsesoc scheme", failures)
-    require("react-native-web" not in package, "Report correctly treats Expo web as unavailable unless dependencies are added", failures)
+    # The parity report flagged missing Expo web deps as a QA blocker; the team
+    # intentionally installed them (SDK 54 versions) to enable the Expo web QA
+    # surface, so verify that surface is now present rather than absent.
+    require("react-native-web" in package, "Expo web QA dependencies are installed as an available QA surface", failures)
 
     production_paths = [
         "templates/index.html",

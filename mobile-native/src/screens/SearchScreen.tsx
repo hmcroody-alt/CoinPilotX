@@ -24,9 +24,45 @@ import {
   SEARCH_GROUPS
 } from "../api/search";
 import { profileNavigationParams, resolveProfileTarget } from "../api/profileTarget";
+import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
 import { RootStackParamList } from "../navigation/types";
+import { SavableContentType, SaveTarget } from "../social/saveContract";
+import { useSavedState } from "../social/savedStore";
+import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
+
+/**
+ * Which search result types can be saved, keyed on the `type` the search API
+ * stamps on each row.
+ *
+ * Deliberately not every type the results contain. `video` rows come from
+ * `pulse_videos`, a different table with no save route, and a Save button that
+ * posts a video id to the post route would 404 — a broken button is worse than
+ * an absent one. Creators, groups, rooms, music and comments are excluded for
+ * the same reason.
+ */
+const SEARCH_SAVE_TYPES: Record<string, SavableContentType> = {
+  post: "post",
+  reel: "reel",
+  status: "status",
+  marketplace: "marketplace"
+};
+
+function searchSaveTarget(item: PulseSearchResult): SaveTarget | null {
+  const contentType = SEARCH_SAVE_TYPES[String(item.type || "").toLowerCase()];
+  if (!contentType) return null;
+  const id = Number(item.id || 0);
+  if (!id) return null;
+  return {
+    type: contentType,
+    id,
+    title: item.title || "PulseSoc result",
+    previewText: item.description || item.meta || "",
+    thumbnailUrl: item.avatar_url || "",
+    sourceUrl: item.url || ""
+  };
+}
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "Search">>;
 
@@ -47,6 +83,9 @@ const DISCOVERY_TABS: Array<{ key: DiscoveryTab; label: string; groups: PulseSea
 ];
 
 export function SearchScreen({ route, navigation }: Props) {
+  // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
+  // reserves the matching clearance so the last row never sits under the dock.
+  const dock = useBottomNavSurface();
   const initialQuery = String(route?.params?.query || "");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [query, setQuery] = useState(initialQuery);
@@ -168,7 +207,8 @@ export function SearchScreen({ route, navigation }: Props) {
         <FlatList
           data={visibleResults}
           keyExtractor={(item, index) => `${item.type || "result"}-${item.id || item.url || index}`}
-          contentContainerStyle={styles.content}
+          {...dock.handlers}
+          contentContainerStyle={[styles.content, dock.contentPadding]}
           refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => runSearch(query, "refresh").catch(() => undefined)} />}
           ListHeaderComponent={
             loading && !visibleResults.length ? (
@@ -186,7 +226,7 @@ export function SearchScreen({ route, navigation }: Props) {
                 <Text style={styles.emptyTitle}>{unsupportedTab ? "Discovery tab is not native yet" : "No PulseSoc results found"}</Text>
                 <Text style={styles.emptyText}>
                   {unsupportedTab
-                    ? "This tab will stay on the existing PulseSoc backend and web fallback until a native destination exists."
+                    ? "This tab will stay on the existing PulseSoc backend with a native provider boundary until a destination exists."
                     : "Try another creator, topic, video, listing, room, reel, or signal."}
                 </Text>
               </View>
@@ -206,7 +246,7 @@ function EventsGatewayShortcut({ onPress }: { onPress: () => void }) {
     <Pressable style={styles.eventsGateway} onPress={onPress}>
       <Text style={styles.eventsGatewayKicker}>Native gateway</Text>
       <Text style={styles.eventsGatewayTitle}>Events and scheduled Live</Text>
-      <Text style={styles.eventsGatewayText}>Open scheduled broadcasts from the existing PulseSoc Live backend. Creation and ticketing stay on safe fallback.</Text>
+      <Text style={styles.eventsGatewayText}>Open scheduled broadcasts from the existing PulseSoc Live backend. Creation and ticketing stay inside provider-owned boundaries.</Text>
     </Pressable>
   );
 }
@@ -216,7 +256,7 @@ function LearningGatewayShortcut({ onPress }: { onPress: () => void }) {
     <Pressable style={styles.eventsGateway} onPress={onPress}>
       <Text style={styles.eventsGatewayKicker}>Native gateway</Text>
       <Text style={styles.eventsGatewayTitle}>Courses and learning</Text>
-      <Text style={styles.eventsGatewayText}>Open native lesson discovery. Course creation, payments, teacher tools, and unsupported lesson media stay on safe fallback.</Text>
+      <Text style={styles.eventsGatewayText}>Open native lesson discovery. Course creation, payments, teacher tools, and unsupported lesson media stay inside provider-owned boundaries.</Text>
     </Pressable>
   );
 }
@@ -242,6 +282,7 @@ function ChipSection({ title, items, emptyText, onPress }: { title: string; item
 
 function SearchResultCard({ item, onPress }: { item: PulseSearchResult; onPress: (item: PulseSearchResult) => void }) {
   const letter = String(item.type || item.title || "P").slice(0, 1).toUpperCase();
+  const target = searchSaveTarget(item);
   return (
     <Pressable style={styles.card} onPress={() => onPress(item)}>
       {item.avatar_url ? <Image source={{ uri: item.avatar_url }} style={styles.avatar} /> : <View style={styles.resultMark}><Text style={styles.resultMarkText}>{letter}</Text></View>}
@@ -250,7 +291,32 @@ function SearchResultCard({ item, onPress }: { item: PulseSearchResult; onPress:
         <Text style={styles.cardDescription} numberOfLines={2}>{item.description || item.meta || "PulseSoc"}</Text>
         <Text style={styles.cardMeta} numberOfLines={1}>{item.meta || item.type || "PulseSoc"}</Text>
       </View>
-      <Text style={styles.cardType}>{item.type || "PulseSoc"}</Text>
+      {target ? <SearchSaveButton target={target} /> : <Text style={styles.cardType}>{item.type || "PulseSoc"}</Text>}
+    </Pressable>
+  );
+}
+
+/**
+ * Search results carry no `saved` flag — the search API selects columns rather
+ * than building post payloads — so the store is the only source of truth here.
+ * That is enough: a result the user saved from the feed a moment ago already
+ * has an entry, and one they save from here seeds it for every other screen.
+ */
+function SearchSaveButton({ target }: { target: SaveTarget }) {
+  const state = useSavedState(target.type, target.id);
+  return (
+    <Pressable
+      testID={`search-save-${target.type}-${target.id}`}
+      accessibilityRole="button"
+      accessibilityLabel={state.saved ? `Remove ${target.type} from Saved` : `Save ${target.type}`}
+      accessibilityState={{ selected: state.saved, busy: state.pending, disabled: state.pending }}
+      style={[styles.saveButton, state.saved ? styles.saveButtonActive : undefined]}
+      disabled={state.pending}
+      onPress={() => { setSaved(target, !state.saved).catch(() => undefined); }}
+    >
+      <Text style={[styles.saveButtonText, state.saved ? styles.saveButtonTextActive : undefined]}>
+        {state.pending ? (state.saved ? "Saving" : "Removing") : state.saved ? "Saved" : "Save"}
+      </Text>
     </Pressable>
   );
 }
@@ -414,6 +480,29 @@ const styles = StyleSheet.create({
   root: {
     backgroundColor: colors.background,
     flex: 1
+  },
+  saveButton: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 34,
+    minWidth: 68,
+    paddingHorizontal: 10,
+    paddingVertical: 7
+  },
+  saveButtonActive: {
+    backgroundColor: "rgba(37, 208, 167, 0.14)",
+    borderColor: colors.accent
+  },
+  saveButtonText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  saveButtonTextActive: {
+    color: colors.accent
   },
   searchInput: {
     backgroundColor: colors.surface,

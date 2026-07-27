@@ -1,6 +1,4 @@
-import { Linking } from "react-native";
 import { readJsonCache, writeJsonCache } from "../core/cache";
-import { PULSE_API_BASE_URL } from "./config";
 import { listLiveNow, loadCachedLiveDiscovery, normalizeLiveItems, PulseLiveItem } from "./live";
 
 const EVENTS_CACHE_KEY = "pulsesoc.native.events.scheduled_live";
@@ -81,13 +79,16 @@ export function eventItemsFromLive(items: PulseLiveItem[]): PulseScheduledEvent[
     });
 }
 
-export async function openEventsWebFallback(mode: "events" | "schedule" | "create" | "studio" = "events") {
+export async function openEventsWebFallback(mode: "events" | "schedule" | "create" = "events") {
   const path = mode === "schedule"
     ? "/pulse/live/schedule"
     : mode === "create"
       ? "/pulse/live/events/create"
-      : mode === "studio"
-        ? "/pulse/live/studio?context_type=event"
-        : "/pulse/events";
-  await Linking.openURL(`${PULSE_API_BASE_URL}${path}`);
+      : "/pulse/events";
+  return {
+    ok: false,
+    path,
+    status: "native_provider_boundary",
+    message: "Event operation remains inside the native Events boundary until the protected contract is available."
+  };
 }

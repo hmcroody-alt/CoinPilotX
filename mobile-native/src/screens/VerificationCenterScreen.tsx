@@ -4,7 +4,6 @@ import { ActivityIndicator, AppState, Pressable, RefreshControl, ScrollView, Sty
 import {
   loadCachedVerificationState,
   loadVerificationState,
-  openVerificationWebFallback,
   pickAndUploadVerificationDocument,
   startVerificationRequest,
   submitVerificationAppeal,
@@ -236,7 +235,6 @@ export function VerificationCenterScreen({ navigation, route }: Props) {
           value={appealNote}
         />
         <ActionButton label={busy === "appeal" ? "Submitting..." : "Submit appeal"} disabled={Boolean(busy)} onPress={submitAppeal} />
-        <ActionButton label="Open protected web verification" variant="secondary" disabled={Boolean(busy)} onPress={() => openVerificationWebFallback("/dashboard/account/verification")} />
       </Panel>
 
       <Panel>

@@ -39,6 +39,8 @@ env \
     -derivedDataPath "$DERIVED_DATA_PATH" \
     PRODUCT_BUNDLE_IDENTIFIER="$DEVELOPMENT_BUNDLE_ID" \
     PULSESOC_DISPLAY_NAME="$DEVELOPMENT_DISPLAY_NAME" \
+    PULSESOC_APS_ENVIRONMENT=development \
+    CODE_SIGN_IDENTITY="Apple Development" \
     ARCHS=arm64 \
     ONLY_ACTIVE_ARCH=YES \
     -allowProvisioningUpdates \

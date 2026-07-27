@@ -1,24 +1,31 @@
-import { ResizeMode, Video } from "expo-av";
+import { Audio, ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { PulseStatus, pulseStatusUrl, statusMediaKind, statusMediaUrl, statusMusicLabel, statusPosterUrl } from "../api/status";
+import { DEFAULT_STATUS_REACTION, PulseStatus, pulseStatusUrl, StatusReactionType, statusMediaKind, statusMediaUrl, statusMusicLabel, statusPosterUrl } from "../api/status";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
+import { resolveStatusMusicPolicy } from "../core/attachedMusicAudioPolicy";
 import { LikeBurst, LikeBurstHandle } from "../media/MediaGestureFeedback";
-import { StatusActionRail, StatusReactionType } from "./StatusActionRail";
+import { StatusActionRail } from "./StatusActionRail";
+import { sharePulseObject } from "../sharing/nativeShare";
+import { ContentTranslation } from "./ContentTranslation";
+import { useSavedState } from "../social/savedStore";
+import { setSaved } from "../social/useSaveAction";
 
 type Props = {
   status: PulseStatus;
   active: boolean;
   muted: boolean;
   busy?: boolean;
+  reactionPending?: boolean;
+  reactionError?: string;
   progress?: number;
   onPrevious: () => void;
   onNext: () => void;
   onToggleMuted: () => void;
-  onReact: (status: PulseStatus, reactionType?: string) => void;
+  onReact: (status: PulseStatus, reactionType?: StatusReactionType) => void;
   onReply: (status: PulseStatus) => void;
   onShare: (status: PulseStatus) => void;
   onMore: (status: PulseStatus) => void;
@@ -31,6 +38,8 @@ export function StatusViewerCard({
   active,
   muted,
   busy,
+  reactionPending,
+  reactionError,
   progress = 0,
   onPrevious,
   onNext,
@@ -44,28 +53,43 @@ export function StatusViewerCard({
 }: Props) {
   const insets = useSafeAreaInsets();
   const videoRef = useRef<Video>(null);
+  const attachedSoundRef = useRef<Audio.Sound | null>(null);
   const startedAt = useRef(0);
   const likeBurstRef = useRef<LikeBurstHandle>(null);
   const lastZoneTap = useRef<{ time: number; side: "left" | "right" }>({ time: 0, side: "left" });
   const [buffering, setBuffering] = useState(false);
   const [failed, setFailed] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const saveState = useSavedState("status", status.id, status.saved);
   const mediaUrl = useMemo(() => statusMediaUrl(status), [status]);
   const posterUrl = useMemo(() => statusPosterUrl(status), [status]);
   const kind = statusMediaKind(status);
   const author = status.author || {};
   const music = statusMusicLabel(status);
+  const musicPolicy = useMemo(() => resolveStatusMusicPolicy(status.music), [status.music]);
   const playbackOwnerId = `status:${status.id}`;
+  const drivesPlayback = kind === "video" || musicPolicy.hasAttachedMusic;
 
   useEffect(() => {
-    if (active) {
+    if (active && drivesPlayback && !muted) {
       startedAt.current = Date.now();
       claimMediaPlayback({
         id: playbackOwnerId,
         kind: "status",
-        pause: () => videoRef.current?.pauseAsync().then(() => undefined),
-        stop: () => videoRef.current?.stopAsync().then(() => undefined)
-      }).then((granted) => granted ? videoRef.current?.playAsync() : undefined).catch(() => undefined);
+        pause: () => Promise.all([
+          videoRef.current?.pauseAsync().catch(() => undefined),
+          attachedSoundRef.current?.pauseAsync().catch(() => undefined)
+        ]).then(() => undefined),
+        stop: () => Promise.all([
+          videoRef.current?.stopAsync().catch(() => undefined),
+          attachedSoundRef.current?.stopAsync().catch(() => undefined)
+        ]).then(() => undefined)
+      }).then((granted) => granted && kind === "video" ? videoRef.current?.playAsync() : undefined).catch(() => undefined);
+    } else if (active) {
+      startedAt.current = Date.now();
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+      if (kind === "video") videoRef.current?.playAsync().catch(() => undefined);
     } else {
       if (startedAt.current) {
         onViewed?.(status, Date.now() - startedAt.current, false);
@@ -75,7 +99,37 @@ export function StatusViewerCard({
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
     }
     return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
-  }, [active, onViewed, playbackOwnerId, status]);
+  }, [active, drivesPlayback, kind, muted, onViewed, playbackOwnerId, status]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const shouldPlayMusic = active && !paused && !muted;
+    async function syncAttachedMusic() {
+      if (!active || !musicPolicy.hasAttachedMusic) {
+        const existing = attachedSoundRef.current;
+        attachedSoundRef.current = null;
+        if (existing) await existing.unloadAsync().catch(() => undefined);
+        return;
+      }
+      if (!attachedSoundRef.current) {
+        const created = await Audio.Sound.createAsync(
+          { uri: musicPolicy.musicUrl! },
+          { isLooping: musicPolicy.isLooping, positionMillis: musicPolicy.musicStartMs, shouldPlay: shouldPlayMusic, volume: musicPolicy.musicVolume }
+        );
+        if (cancelled) return created.sound.unloadAsync();
+        attachedSoundRef.current = created.sound;
+      } else {
+        await attachedSoundRef.current.setStatusAsync({ shouldPlay: shouldPlayMusic });
+      }
+    }
+    syncAttachedMusic().catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [active, muted, paused, musicPolicy]);
+
+  useEffect(() => () => {
+    attachedSoundRef.current?.unloadAsync().catch(() => undefined);
+    attachedSoundRef.current = null;
+  }, [musicPolicy.musicUrl]);
 
   useEffect(() => {
     if (!active || paused || kind === "video") return;
@@ -87,6 +141,29 @@ export function StatusViewerCard({
     if (paused) videoRef.current?.pauseAsync().catch(() => undefined);
     else if (active) videoRef.current?.playAsync().catch(() => undefined);
   }, [active, paused]);
+
+  /**
+   * Save is performed here rather than handed up to StatusScreen because the
+   * store already holds the state — a callback prop would only give the screen
+   * a copy to keep in sync, which is the arrangement that made Save unreliable
+   * on the feed. The snapshot fields travel with the request so the Saved
+   * library has a title and thumbnail to show for a Status that will have
+   * expired out of the rail long before the user opens it.
+   */
+  async function handleSave() {
+    const outcome = await setSaved(
+      {
+        type: "status",
+        id: status.id,
+        title: status.body || "PulseSoc Status",
+        previewText: status.body,
+        thumbnailUrl: posterUrl || mediaUrl,
+        sourceUrl: pulseStatusUrl(status.id)
+      },
+      !saveState.saved
+    );
+    setSaveError(outcome.ok ? "" : outcome.message || "");
+  }
 
   function markComplete() {
     if (!startedAt.current) return;
@@ -108,7 +185,7 @@ export function StatusViewerCard({
       const x = event?.nativeEvent?.locationX ?? (side === "left" ? 90 : 260);
       const y = event?.nativeEvent?.locationY ?? 320;
       likeBurstRef.current?.trigger(x, y);
-      onReact(status, "love");
+      onReact(status, DEFAULT_STATUS_REACTION);
       return;
     }
     nav();
@@ -128,7 +205,7 @@ export function StatusViewerCard({
           resizeMode={ResizeMode.COVER}
           shouldPlay={false}
           isLooping={false}
-          isMuted={muted}
+          isMuted={muted || musicPolicy.muteOriginalAudio}
           usePoster={Boolean(posterUrl)}
           posterSource={posterUrl ? { uri: posterUrl } : undefined}
           onPlaybackStatusUpdate={(playbackStatus) => {
@@ -149,9 +226,25 @@ export function StatusViewerCard({
         <Image source={{ uri: mediaUrl }} style={styles.media} resizeMode="cover" />
       ) : (
         <View style={styles.textStatus}>
-          <Text style={styles.textStatusBody}>{status.body || (failed ? "Status media is unavailable." : "PulseSoc Status")}</Text>
+          {status.body ? (
+            <ContentTranslation
+              contentType="status"
+              contentRef={status.id}
+              text={status.body}
+              textStyle={styles.textStatusBody}
+            />
+          ) : (
+            <Text style={styles.textStatusBody}>{failed ? "Status media is unavailable." : "PulseSoc Status"}</Text>
+          )}
           {failed ? (
-            <Pressable style={styles.webButton} onPress={() => Share.share({ message: pulseStatusUrl(status.id) }).catch(() => undefined)}>
+            <Pressable style={styles.webButton} onPress={() => sharePulseObject({
+              kind: "status",
+              url: pulseStatusUrl(status.id),
+              title: status.body || "PulseSoc Status",
+              description: status.body,
+              author: status.author?.display_name || status.author?.name || status.author?.username || status.author_name,
+              previewImageUrl: posterUrl
+            }).catch(() => undefined)}>
               <Text style={styles.webButtonText}>Share Status Link</Text>
             </Pressable>
           ) : null}
@@ -185,16 +278,29 @@ export function StatusViewerCard({
       <StatusActionRail
         reactionCount={status.reaction_count || 0}
         selectedReaction={status.viewer_reaction}
-        reactionPending={busy}
-        replyPending={busy}
-        sharePending={busy}
-        onReact={(reactionType: StatusReactionType) => onReact(status, reactionType)}
+        reactionPending={reactionPending}
+        shareBusy={busy}
+        saved={saveState.saved}
+        savePending={saveState.pending}
+        onReact={(reactionType) => onReact(status, reactionType)}
         onReply={() => onReply(status)}
         onShare={() => onShare(status)}
+        onSave={() => { handleSave().catch(() => undefined); }}
       />
+      {reactionError || saveError ? (
+        <Text accessibilityLiveRegion="polite" style={styles.reactionError}>{reactionError || saveError}</Text>
+      ) : null}
 
       <View style={styles.caption}>
-        {status.body && kind !== "text" ? <Text accessibilityLabel={`Status caption, ${status.body}`} style={styles.captionText} numberOfLines={4}>{status.body}</Text> : null}
+        {status.body && kind !== "text" ? (
+          <ContentTranslation
+            contentType="status"
+            contentRef={status.id}
+            text={status.body}
+            textStyle={styles.captionText}
+            numberOfLines={4}
+          />
+        ) : null}
         {music ? <Text accessibilityLabel={`Status music, ${music}`} style={styles.music} numberOfLines={1}>{music}</Text> : null}
         <Text style={styles.stats}>{status.view_count || 0} views</Text>
       </View>
@@ -303,6 +409,17 @@ const styles = StyleSheet.create({
     right: 10,
     top: 8,
     zIndex: 8
+  },
+  reactionError: {
+    color: colors.danger,
+    fontSize: 11,
+    fontWeight: "800",
+    maxWidth: 150,
+    position: "absolute",
+    right: 10,
+    textAlign: "right",
+    top: "58%",
+    zIndex: 7
   },
   rightTap: {
     bottom: 0,

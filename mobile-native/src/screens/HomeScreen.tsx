@@ -3,9 +3,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Battery from "expo-battery";
 import { RouteProp, useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Easing, FlatList, Image, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, ViewToken, useWindowDimensions } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Easing, FlatList, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, ViewToken, useWindowDimensions } from "react-native";
 import {
   addPostComment,
+  deletePost,
   hidePost,
   listFeed,
   loadCachedFeed,
@@ -14,9 +15,11 @@ import {
   pulsePostUrl,
   reactToPost,
   repostPost,
-  savePost,
+  savablePostId,
   toggleFollowAuthor
 } from "../api/feed";
+import { isContentOwner } from "../api/contentOwnership";
+import { describeDeleteError } from "../api/deleteErrors";
 import { profileTargetFromPost } from "../api/profile";
 import { profileNavigationParams } from "../api/profileTarget";
 import { listStatuses, loadCachedStatuses, PulseStatus, statusPosterUrl } from "../api/status";
@@ -24,17 +27,31 @@ import { HomePulseComposer } from "../components/HomePulseComposer";
 import { LogiNexusBadge, LogiNexusEmptyState, LogiNexusPanel } from "../components/LogiNexus";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { PostCard } from "../components/PostCard";
+import { peekSaveState } from "../social/savedStore";
+import { setSaved } from "../social/useSaveAction";
+import { SponsoredAdCard } from "../components/SponsoredAdCard";
+import { WelcomeUfoOverlay } from "../components/WelcomeUfoOverlay";
+import { StaticUFOField } from "../components/StaticUFOField";
+import { fetchSponsoredAds, SponsoredAd } from "../api/ads";
+import { FeedRow, injectAds } from "../feed/injectAds";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { getPulseRadioState, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
-import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
+import { BOTTOM_NAV_CONTENT_CLEARANCE, useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlobalNavigationBadges, GlobalNavigationIdentity, LogiNexusGlobalHeader } from "../navigation/GlobalNavigation";
 import { openDashboardRoute } from "../navigation/dashboardRouting";
+import { registerHomeReselectHandler } from "../navigation/homeReselect";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { AppTabParamList, RootStackParamList } from "../navigation/types";
+import { actionKey, useSocialActionGuard } from "../social/actionGuard";
+import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
+import { sharePulseObject } from "../sharing/nativeShare";
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
+
+type HomeFeedRow = FeedRow<PulsePost>;
 
 type HomeScreenProps = {
   badges?: GlobalNavigationBadges;
@@ -94,10 +111,15 @@ function useHomeAmbientMotionEnabled() {
 export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const navigation = useNavigation<HomeNavigation>();
   const route = useRoute<RouteProp<AppTabParamList, "Home">>();
-  const listRef = useRef<FlatList<PulsePost>>(null);
+  const { authState } = useAuth();
+  const isFocused = useIsFocused();
+  const currentUserId = Number(authState.user?.user_id || 0);
+  const insets = useSafeAreaInsets();
+  const listRef = useRef<FlatList<HomeFeedRow>>(null);
   const offsetRef = useRef(0);
   const hasMoreRef = useRef(false);
   const loadingMoreRef = useRef(false);
+  const refreshingRef = useRef(false);
   const [posts, setPosts] = useState<PulsePost[]>([]);
   const bottomNavScroll = useBottomNavScrollVisibility({ enabled: posts.length > 0 });
   const [selectedFeed, setSelectedFeed] = useState(FEED_TABS[0].key);
@@ -106,7 +128,11 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState("");
-  const [busyPostId, setBusyPostId] = useState<number | null>(null);
+  // Replaces a `busyPostId` scalar. A scalar cannot represent two cards acting at
+  // once, and every social handler here only ever *wrote* it — nothing read it —
+  // so it prevented no duplicate request. The guard locks per action+id in a ref,
+  // which is what makes a second tap a no-op rather than a second write.
+  const guard = useSocialActionGuard();
   const [statusItems, setStatusItems] = useState<PulseStatus[]>([]);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusOffline, setStatusOffline] = useState(false);
@@ -114,13 +140,59 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const ambientMotionEnabled = useHomeAmbientMotionEnabled();
   const [activePostId, setActivePostId] = useState<number | null>(null);
+  const [ads, setAds] = useState<SponsoredAd[]>([]);
+  const [hiddenAdKeys, setHiddenAdKeys] = useState<Set<string>>(() => new Set());
+  const [viewableAdKeys, setViewableAdKeys] = useState<Set<string>>(() => new Set());
   const feedViewabilityConfig = useRef({ itemVisiblePercentThreshold: 72 }).current;
   const onFeedViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    const item = viewableItems.find((token) => token.isViewable)?.item as PulsePost | undefined;
-    setActivePostId(item ? item.id : null);
+    let nextActivePostId: number | null = null;
+    const nextViewableAdKeys = new Set<string>();
+    for (const token of viewableItems) {
+      if (!token.isViewable) continue;
+      const row = token.item as HomeFeedRow | undefined;
+      if (!row) continue;
+      if (row.type === "post" && nextActivePostId == null) nextActivePostId = row.post.id;
+      if (row.type === "ad") nextViewableAdKeys.add(row.key);
+    }
+    setActivePostId(nextActivePostId);
+    setViewableAdKeys((current) => {
+      if (current.size === nextViewableAdKeys.size && [...current].every((key) => nextViewableAdKeys.has(key))) {
+        return current;
+      }
+      return nextViewableAdKeys;
+    });
   }).current;
   const selectionRestoredRef = useRef(false);
   const activeTab = useMemo(() => FEED_TABS.find((tab) => tab.key === selectedFeed) || FEED_TABS[0], [selectedFeed]);
+
+  const isAuthenticated = currentUserId > 0;
+
+  const loadAds = useCallback(
+    async (feedKey = selectedFeed) => {
+      if (!isAuthenticated) return;
+      const served = await fetchSponsoredAds({ context: "home", feedContext: feedKey, limit: 3 });
+      setAds(served);
+    },
+    [isAuthenticated, selectedFeed]
+  );
+
+  const availableAds = useMemo(
+    () => ads.filter((ad) => !hiddenAdKeys.has(`${ad.campaignId}:${ad.creativeId}`)),
+    [ads, hiddenAdKeys]
+  );
+
+  const feedRows = useMemo<HomeFeedRow[]>(
+    () => injectAds(posts, availableAds, { interval: 5, leadIn: 3 }),
+    [posts, availableAds]
+  );
+
+  const handleHideAd = useCallback((ad: SponsoredAd) => {
+    setHiddenAdKeys((current) => {
+      const next = new Set(current);
+      next.add(`${ad.campaignId}:${ad.creativeId}`);
+      return next;
+    });
+  }, []);
 
   const loadStatuses = useCallback(async () => {
     setStatusLoading(true);
@@ -147,11 +219,15 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const load = useCallback(
     async (mode: "initial" | "refresh" | "more" = "initial", feedKey = selectedFeed) => {
       if (mode === "more" && (!hasMoreRef.current || loadingMoreRef.current)) return;
+      if (mode === "refresh" && refreshingRef.current) return;
       const nextOffset = mode === "more" ? offsetRef.current : 0;
       setError("");
       setOffline(false);
       if (mode === "initial") setLoading(true);
-      if (mode === "refresh") setRefreshing(true);
+      if (mode === "refresh") {
+        refreshingRef.current = true;
+        setRefreshing(true);
+      }
       if (mode === "more") {
         loadingMoreRef.current = true;
         setLoadingMore(true);
@@ -172,6 +248,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       } finally {
         setLoading(false);
         setRefreshing(false);
+        if (mode === "refresh") refreshingRef.current = false;
         loadingMoreRef.current = false;
         setLoadingMore(false);
       }
@@ -197,7 +274,8 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
 
   useEffect(() => {
     load("initial", selectedFeed).catch(() => undefined);
-  }, [load, selectedFeed]);
+    loadAds(selectedFeed).catch(() => undefined);
+  }, [load, loadAds, selectedFeed]);
 
   useEffect(() => {
     loadStatuses().catch(() => undefined);
@@ -220,174 +298,253 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     };
   }, [load]);
 
+  useEffect(() => registerHomeReselectHandler(async () => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    loadStatuses().catch(() => undefined);
+    if (!refreshingRef.current) {
+      await load("refresh");
+      AccessibilityInfo.announceForAccessibility?.("Home refreshed");
+    }
+  }), [load, loadStatuses]);
+
   const updatePost = useCallback((postId: number, next: Partial<PulsePost>) => {
     setPosts((current) => current.map((post) => (post.id === postId ? { ...post, ...next } : post)));
   }, []);
 
   async function handleReact(post: PulsePost, reactionType: string) {
-    setBusyPostId(post.id);
     const previous = post.viewer_reaction || "";
+    const previousCounts = post.reaction_counts || {};
     const removing = previous === reactionType;
-    const counts = { ...(post.reaction_counts || {}) };
+    const counts = { ...previousCounts };
     if (previous) counts[previous] = Math.max(0, Number(counts[previous] || 0) - 1);
     if (!removing) counts[reactionType] = Number(counts[reactionType] || 0) + 1;
-    updatePost(post.id, { viewer_reaction: removing ? "" : reactionType, reaction_counts: counts });
-    try {
-      const result = await reactToPost(post.id, reactionType);
-      updatePost(post.id, {
+    await guard.run(actionKey("post_react", post.id), () => reactToPost(post.id, reactionType), {
+      // Switching reaction mid-flight is legitimate, so the second tap runs and
+      // the sequence guard makes the LATER one win. Dropping it would leave the
+      // button showing the reaction the user just abandoned.
+      supersede: true,
+      optimistic: () => updatePost(post.id, { viewer_reaction: removing ? "" : reactionType, reaction_counts: counts }),
+      onResult: (result) => updatePost(post.id, {
         viewer_reaction: result.removed ? "" : result.viewer_reaction || result.reaction_type || reactionType,
         reaction_counts: result.reaction_counts || counts
-      });
-    } catch {
-      updatePost(post.id, { viewer_reaction: previous, reaction_counts: post.reaction_counts || {} });
-    } finally {
-      setBusyPostId(null);
-    }
+      }),
+      onRollback: () => updatePost(post.id, { viewer_reaction: previous, reaction_counts: previousCounts }),
+      // Previously an empty `catch {}`: the count snapped back with no
+      // explanation, which is indistinguishable from the tap not registering.
+      onError: setError
+    });
   }
 
+  /**
+   * Saving is the one social action that is not local to this list.
+   *
+   * The optimistic-guard pattern used for reactions and reposts updates this
+   * screen's copy of the post, which is right for a count nobody else is
+   * showing. A saved state is shown by the profile behind this feed, by the
+   * detail screen pushed on top of it, and by the Saved collection — all
+   * holding their own copies. Routing through the shared store updates every
+   * one of them from a single tap, and keeps the in-flight lock global so two
+   * screens showing the same post cannot both mutate it at once.
+   */
   async function handleSave(post: PulsePost) {
-    setBusyPostId(post.id);
-    updatePost(post.id, { saved: !post.saved });
-    try {
-      const result = await savePost(post.id);
-      updatePost(post.id, { saved: Boolean(result.saved ?? result.is_saved ?? !post.saved) });
-    } catch {
-      updatePost(post.id, { saved: post.saved });
-    } finally {
-      setBusyPostId(null);
-    }
+    const savableId = savablePostId(post);
+    // What to ask for is decided from the store, not from this screen's copy of
+    // the post: the copy can be several taps out of date if the user saved the
+    // same content from the detail screen pushed on top of this one.
+    const previousSaved = peekSaveState("post", savableId)?.saved ?? Boolean(post.saved ?? post.is_saved);
+    const outcome = await setSaved({ type: "post", id: savableId }, !previousSaved);
+    updatePost(post.id, { saved: outcome.saved, is_saved: outcome.saved });
+    if (!outcome.ok && outcome.message) setError(outcome.message);
   }
 
   async function handleRepost(post: PulsePost) {
-    setBusyPostId(post.id);
-    updatePost(post.id, { reposted: true, repost_count: Number(post.repost_count || 0) + (post.reposted ? 0 : 1) });
-    try {
-      const result = await repostPost(post.id);
-      updatePost(post.id, { reposted: Boolean(result.reposted ?? result.is_reposted ?? true) });
-    } catch {
-      updatePost(post.id, { reposted: post.reposted, repost_count: post.repost_count || 0 });
-    } finally {
-      setBusyPostId(null);
-    }
+    const previousReposted = Boolean(post.reposted);
+    const previousCount = Number(post.repost_count || 0);
+    const undo = previousReposted;
+    // A real toggle now. This was one-way while the route was create-only and
+    // returned neither a `reposted` flag nor a count — an un-repost would have
+    // claimed something the server never performed. DELETE soft-deletes every
+    // live repost row the viewer holds, so undo is honest even for the duplicate
+    // rows the old create-only route left behind.
+    await guard.run(actionKey("post_repost", post.id), () => repostPost(post.id, { undo }), {
+      optimistic: () => updatePost(post.id, {
+        reposted: !undo,
+        repost_count: undo ? Math.max(0, previousCount - 1) : previousCount + 1
+      }),
+      // The server's count is authoritative because it also reflects everyone
+      // else's reposts, which this screen cannot see. Falling back to the
+      // optimistic value keeps the card correct if an older build omits it.
+      onResult: (result) => updatePost(post.id, {
+        reposted: Boolean(result.reposted ?? result.is_reposted ?? !undo),
+        repost_count: typeof result.repost_count === "number"
+          ? result.repost_count
+          : undo ? Math.max(0, previousCount - 1) : previousCount + 1
+      }),
+      onRollback: () => updatePost(post.id, { reposted: previousReposted, repost_count: previousCount }),
+      onError: setError
+    });
   }
 
   async function handleShare(post: PulsePost) {
-    await Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined);
+    const author = post.author || post.user || {};
+    await sharePulseObject({
+      kind: "post",
+      url: pulsePostUrl(post.id),
+      title: post.title || "PulseSoc post",
+      description: post.body || post.text || post.content,
+      author: author.display_name || author.name || author.username || post.author_name,
+      previewImageUrl: post.thumbnail_url || post.image_url
+    }).catch(() => undefined);
   }
 
   async function handleInlineComment(post: PulsePost, body: string) {
-    setBusyPostId(post.id);
     const previousCount = Number(post.comment_count || post.comments_count || 0);
-    try {
-      const result = await addPostComment(post.id, body);
-      const nextComment = result.comment;
-      if (nextComment) {
-        updatePost(post.id, {
-          comment_count: previousCount + 1,
-          comments_count: previousCount + 1,
-          preview_comments: [nextComment, ...(post.preview_comments || [])].slice(0, 2)
-        });
-      } else if (result.comments?.length) {
-        updatePost(post.id, {
-          comment_count: result.comments.length,
-          comments_count: result.comments.length,
-          preview_comments: result.comments.slice(0, 2)
-        });
-      } else {
-        await load("refresh");
-      }
-      invalidateNativeSync(["activity", "notifications"], "home_comment", [
-        {
-          event_type: "comment_created",
-          entity_type: "post",
-          entity_id: post.id,
-          invalidates: ["activity", "notifications"],
-          metadata: { source: "native_home_feed_inline_comment" }
+    const previousPreview = post.preview_comments || [];
+    await guard.run(actionKey("post_comment", post.id), () => addPostComment(post.id, body), {
+      // Optimistic on the counter only. The comment body itself is not shown
+      // until the server returns a row, because a preview comment with no id
+      // cannot be replied to, reacted to or deleted.
+      optimistic: () => updatePost(post.id, { comment_count: previousCount + 1, comments_count: previousCount + 1 }),
+      onResult: (result) => {
+        const nextComment = result.comment;
+        if (nextComment) {
+          updatePost(post.id, {
+            comment_count: previousCount + 1,
+            comments_count: previousCount + 1,
+            preview_comments: [nextComment, ...previousPreview].slice(0, 2)
+          });
+        } else if (result.comments?.length) {
+          updatePost(post.id, {
+            comment_count: result.comments.length,
+            comments_count: result.comments.length,
+            preview_comments: result.comments.slice(0, 2)
+          });
+        } else {
+          load("refresh").catch(() => undefined);
         }
-      ]).catch(() => undefined);
-    } finally {
-      setBusyPostId(null);
-    }
+        // A comment does generate a notification for the author, so the activity
+        // and notification caches are genuinely stale now.
+        invalidateNativeSync(["activity", "notifications"], "home_comment", [
+          {
+            event_type: "comment_created",
+            entity_type: "post",
+            entity_id: post.id,
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_home_feed_inline_comment" }
+          }
+        ]).catch(() => undefined);
+      },
+      // Previously there was a `finally` but no `catch`, so a failed inline
+      // comment rejected out of the handler and left the count raised.
+      onRollback: () => updatePost(post.id, {
+        comment_count: previousCount,
+        comments_count: previousCount,
+        preview_comments: previousPreview
+      }),
+      onError: setError
+    });
   }
 
   async function handleFollow(post: PulsePost) {
-    setBusyPostId(post.id);
-    try {
-      const result = await toggleFollowAuthor(post);
-      const following = Boolean(result.following);
-      const publicId = post.author?.public_player_id || post.author_public_player_id || "";
-      setPosts((current) =>
-        current.map((item) => {
-          const itemPublicId = item.author?.public_player_id || item.author_public_player_id || "";
-          if (publicId && itemPublicId === publicId) return { ...item, viewer_follows_author: following };
-          return item.id === post.id ? { ...item, viewer_follows_author: following } : item;
-        })
-      );
-      invalidateNativeSync(["activity", "notifications"], "home_follow", [
-        {
-          event_type: following ? "follow" : "unfollow",
-          entity_type: "profile",
-          entity_id: publicId || post.author?.user_id || post.author?.id || "unknown",
-          invalidates: ["activity", "notifications"],
-          metadata: { source: "native_home_feed" }
-        }
-      ]).catch(() => undefined);
-    } finally {
-      setBusyPostId(null);
-    }
+    const publicId = post.author?.public_player_id || post.author_public_player_id || "";
+    const previousFollows = Boolean(post.viewer_follows_author);
+    const applyFollowing = (following: boolean) => setPosts((current) =>
+      current.map((item) => {
+        const itemPublicId = item.author?.public_player_id || item.author_public_player_id || "";
+        if (publicId && itemPublicId === publicId) return { ...item, viewer_follows_author: following };
+        return item.id === post.id ? { ...item, viewer_follows_author: following } : item;
+      })
+    );
+    await guard.run(actionKey("post_follow_author", post.id), () => toggleFollowAuthor(post), {
+      optimistic: () => applyFollowing(!previousFollows),
+      onResult: (result) => {
+        const following = Boolean(result.following);
+        applyFollowing(following);
+        invalidateNativeSync(["activity", "notifications"], "home_follow", [
+          {
+            event_type: following ? "follow" : "unfollow",
+            entity_type: "profile",
+            entity_id: publicId || post.author?.user_id || post.author?.id || "unknown",
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_home_feed" }
+          }
+        ]).catch(() => undefined);
+      },
+      // Previously a `finally` with no `catch`: a failed follow rejected out of
+      // the handler and the button was left claiming the follow had happened.
+      onRollback: () => applyFollowing(previousFollows),
+      onError: setError
+    });
   }
 
   async function handleHide(post: PulsePost) {
-    setBusyPostId(post.id);
-    try {
-      await hidePost(post.id);
-      setPosts((current) => current.filter((item) => item.id !== post.id));
-      invalidateNativeSync(["activity", "notifications"], "home_hide", [
-        {
-          event_type: "pulse_post_hidden",
-          entity_type: "post",
-          entity_id: post.id,
-          invalidates: ["activity", "notifications"],
-          metadata: { source: "native_home_feed" }
-        }
-      ]).catch(() => undefined);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Post could not be hidden.");
-    } finally {
-      setBusyPostId(null);
-    }
+    await guard.run(actionKey("post_hide", post.id), () => hidePost(post.id), {
+      // Removal is applied on confirmation, not optimistically: putting a hidden
+      // post back after a failure would look like the feed resurrecting it.
+      onResult: () => {
+        setPosts((current) => current.filter((item) => item.id !== post.id));
+        invalidateNativeSync(["activity", "notifications"], "home_hide", [
+          {
+            event_type: "pulse_post_hidden",
+            entity_type: "post",
+            entity_id: post.id,
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_home_feed" }
+          }
+        ]).catch(() => undefined);
+      },
+      onError: (message) => setError(message || "Post could not be hidden.")
+    });
   }
 
   async function handleMute(post: PulsePost) {
-    setBusyPostId(post.id);
     const authorId = Number(post.author?.user_id || post.author?.id || 0);
     const publicId = post.author?.public_player_id || post.author_public_player_id || "";
-    try {
-      const result = await mutePostAuthor(post);
-      const mutedId = Number(result.muted_user_id || authorId || 0);
-      setPosts((current) =>
-        current.filter((item) => {
-          const itemAuthorId = Number(item.author?.user_id || item.author?.id || 0);
-          const itemPublicId = item.author?.public_player_id || item.author_public_player_id || "";
-          if (mutedId && itemAuthorId === mutedId) return false;
-          if (publicId && itemPublicId === publicId) return false;
-          return item.id !== post.id;
-        })
-      );
-      invalidateNativeSync(["activity", "notifications"], "home_mute", [
-        {
-          event_type: "pulse_user_muted",
-          entity_type: "user",
-          entity_id: mutedId || publicId || "unknown",
-          invalidates: ["activity", "notifications"],
-          metadata: { source: "native_home_feed" }
-        }
-      ]).catch(() => undefined);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "User could not be muted.");
-    } finally {
-      setBusyPostId(null);
-    }
+    await guard.run(actionKey("post_mute_author", post.id), () => mutePostAuthor(post), {
+      onResult: (result) => {
+        const mutedId = Number(result.muted_user_id || authorId || 0);
+        setPosts((current) =>
+          current.filter((item) => {
+            const itemAuthorId = Number(item.author?.user_id || item.author?.id || 0);
+            const itemPublicId = item.author?.public_player_id || item.author_public_player_id || "";
+            if (mutedId && itemAuthorId === mutedId) return false;
+            if (publicId && itemPublicId === publicId) return false;
+            return item.id !== post.id;
+          })
+        );
+        invalidateNativeSync(["activity", "notifications"], "home_mute", [
+          {
+            event_type: "pulse_user_muted",
+            entity_type: "user",
+            entity_id: mutedId || publicId || "unknown",
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_home_feed" }
+          }
+        ]).catch(() => undefined);
+      },
+      onError: (message) => setError(message || "User could not be muted.")
+    });
+  }
+
+  async function handleDelete(post: PulsePost) {
+    await guard.run(actionKey("post_delete", post.id), () => deletePost(post.id), {
+      onResult: () => {
+        setPosts((current) => current.filter((item) => item.id !== post.id));
+        if (activePostId === post.id) setActivePostId(null);
+        invalidateNativeSync(["activity", "notifications"], "home_delete", [
+          {
+            event_type: "pulse_post_deleted",
+            entity_type: "post",
+            entity_id: post.id,
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_home_feed" }
+          }
+        ]).catch(() => undefined);
+      },
+      // describeDeleteError, not the guard's generic copy: delete has its own
+      // permission and already-deleted wording that users act on.
+      onError: (_message, err) => setError(describeDeleteError(err, "Post"))
+    });
   }
 
   function selectFeed(feedKey: string) {
@@ -401,8 +558,10 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   }
 
   function refreshHome() {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
     loadStatuses().catch(() => undefined);
     load("refresh").catch(() => undefined);
+    loadAds().catch(() => undefined);
   }
 
   function openHomeRoute(routePath: string) {
@@ -422,13 +581,34 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         <View style={[styles.homeSignalWave, styles.homeSignalWaveOne]} />
         <View style={[styles.homeSignalWave, styles.homeSignalWaveTwo]} />
       </View>
+      {/*
+        `error` used to be reachable only through ListEmptyComponent, so a failed
+        like, comment, follow or delete set a message that nothing rendered as
+        long as the feed had a single post in it — which is the normal case. The
+        handlers reported, and the report went nowhere. The banner sits outside
+        the FlatList so it is visible whether or not the list is empty and cannot
+        be scrolled away from, and it is dismissible so a stale failure does not
+        sit over the feed forever.
+      */}
+      {error ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${error}. Tap to dismiss.`}
+          accessibilityLiveRegion="polite"
+          style={styles.actionErrorBanner}
+          onPress={() => setError("")}
+        >
+          <Text style={styles.actionErrorText}>{error}</Text>
+          <Text style={styles.actionErrorDismiss}>Dismiss</Text>
+        </Pressable>
+      ) : null}
       <FlatList
         testID="native-home-feed"
         ref={listRef}
         style={styles.list}
-        contentContainerStyle={styles.content}
-        data={posts}
-        keyExtractor={(item) => String(item.id)}
+        contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 12) + BOTTOM_NAV_CONTENT_CLEARANCE }]}
+        data={feedRows}
+        keyExtractor={(row) => row.key}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => refreshHome()} />}
         ListHeaderComponent={
           <HomeHeader
@@ -448,6 +628,8 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             identity={identity}
             initiallyExpandComposer={Boolean(route.params?.openComposer)}
             initialComposerMode={route.params?.composerMode || "post"}
+            captureReturnNonce={route.params?.composerReturnNonce || ""}
+            shareHandoffNonce={route.params?.shareHandoffNonce || ""}
             onRefresh={refreshHome}
             onSelectFeed={selectFeed}
             onOpenUndx={() => navigation.navigate("Tabs", { screen: "PulseAI" })}
@@ -459,9 +641,17 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             onAddStatus={() => navigation.navigate("Tabs", { screen: "Status", params: { openCreator: true } })}
             onViewStatuses={() => navigation.navigate("Tabs", { screen: "Status" })}
             onOpenStatus={(status) => navigation.navigate("StatusDetail", { statusId: status.id, title: status.author?.display_name || "Status" })}
-            onOpenCamera={(mode) => {
-              if (mode === "reel") navigation.navigate("CameraStudio", { target: "reel", mode: "reel", title: "Reel Camera" });
-              else navigation.navigate("CameraStudio", { target: "feed", mode, title: mode === "video" ? "Video Camera" : "Camera" });
+            onOpenCamera={(cameraMode, composerMode) => {
+              const target = composerMode === "status" ? "status" : composerMode === "reel" ? "reel" : "feed";
+              const routeMode = composerMode === "status" ? "status" : composerMode === "reel" ? "reel" : cameraMode === "video" ? "video" : "photo";
+              navigation.navigate("CameraStudio", {
+                target,
+                mode: routeMode,
+                captureMode: cameraMode === "reel" ? "video" : cameraMode,
+                returnToComposer: true,
+                composerMode,
+                title: composerMode === "reel" ? "Reel Camera" : composerMode === "status" ? "Status Camera" : cameraMode === "video" ? "Video Camera" : "Camera"
+              });
             }}
             onCreated={(post) => {
               if (post) setPosts((current) => [post, ...current.filter((item) => item.id !== post.id)]);
@@ -475,8 +665,10 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
                 }
               ]).catch(() => undefined);
               load("refresh").catch(() => undefined);
+              loadStatuses().catch(() => undefined);
             }}
-            onOpenMusic={() => openDashboardRoute(navigation, "/dashboard/media/music-library")}
+            onOpenMusic={() => navigation.navigate("Music", { title: "PulseSoc Music" })}
+            onOpenPreview={(token) => navigation.navigate("ContentPreview", { token })}
           />
         }
         ListEmptyComponent={
@@ -488,45 +680,59 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         }
         viewabilityConfig={feedViewabilityConfig}
         onViewableItemsChanged={onFeedViewableItemsChanged}
-        renderItem={({ item }) => (
-          <PostCard
-            post={item}
-            busy={busyPostId === item.id}
-            active={activePostId === item.id}
-            motionEnabled={ambientMotionEnabled}
-            edgeInset={12}
-            onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
-            onReact={handleReact}
-            onSave={handleSave}
-            onRepost={handleRepost}
-            onPromote={(post) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: post.id, title: "Promote Post" })}
-            onShare={handleShare}
-            onComment={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Comments" })}
-            onSubmitComment={handleInlineComment}
-            onReport={(post) =>
-              navigation.navigate("SafetyHub", {
-                title: "Report",
-                section: "reports",
-                reportType: "post",
-                reportTarget: String(post.id)
-              })
-            }
-            onHide={handleHide}
-            onBlock={(post) =>
-              navigation.navigate("SafetyHub", {
-                title: "Blocked Users",
-                section: "blocks",
-                blockTarget: post.author?.public_player_id || post.author_public_player_id || post.author?.username || post.author_username || ""
-              })
-            }
-            onMute={handleMute}
-            onFollow={handleFollow}
-            onAuthorPress={(post) => {
-              const params = profileNavigationParams(profileTargetFromPost(post), post.author?.display_name || "Profile");
-              if (params) navigation.navigate("ProfileDetail", params);
-            }}
-          />
-        )}
+        renderItem={({ item: row }) => {
+          if (row.type === "ad") {
+            return (
+              <SponsoredAdCard
+                ad={row.ad}
+                isViewable={viewableAdKeys.has(row.key)}
+                edgeInset={12}
+                navigation={navigation}
+                onHide={handleHideAd}
+              />
+            );
+          }
+          const item = row.post;
+          return (
+            <PostCard
+              post={item}
+              busy={guard.isItemBusy(item.id)}
+              active={activePostId === item.id}
+              motionEnabled={ambientMotionEnabled}
+              onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
+              onReact={handleReact}
+              onSave={handleSave}
+              onRepost={handleRepost}
+              onPromote={(post) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: post.id, title: "Promote Post" })}
+              onShare={handleShare}
+              onComment={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Comments" })}
+              onSubmitComment={handleInlineComment}
+              onReport={(post) =>
+                navigation.navigate("SafetyHub", {
+                  title: "Report",
+                  section: "reports",
+                  reportType: "post",
+                  reportTarget: String(post.id)
+                })
+              }
+              onHide={handleHide}
+              onBlock={(post) =>
+                navigation.navigate("SafetyHub", {
+                  title: "Blocked Users",
+                  section: "blocks",
+                  blockTarget: post.author?.public_player_id || post.author_public_player_id || post.author?.username || post.author_username || ""
+                })
+              }
+              onMute={handleMute}
+              onFollow={handleFollow}
+              onDelete={isContentOwner(item, currentUserId) ? handleDelete : undefined}
+              onAuthorPress={(post) => {
+                const params = profileNavigationParams(profileTargetFromPost(post), post.author?.display_name || "Profile");
+                if (params) navigation.navigate("ProfileDetail", params);
+              }}
+            />
+          );
+        }}
         onEndReached={() => load("more").catch(() => undefined)}
         onEndReachedThreshold={0.35}
         ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.footer} color={colors.accent} /> : null}
@@ -534,7 +740,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
       />
+      <StaticUFOField />
       <MasterNavigationDrawer visible={drawerOpen} onClose={() => setDrawerOpen(false)} onOpenRoute={openHomeRoute} />
+      <WelcomeUfoOverlay active={isFocused && currentUserId > 0} />
     </View>
   );
 }
@@ -557,6 +765,8 @@ function HomeHeader({
   ambientMotionEnabled,
   initiallyExpandComposer,
   initialComposerMode,
+  captureReturnNonce,
+  shareHandoffNonce,
   onRefresh,
   onSelectFeed,
   onOpenUndx,
@@ -569,7 +779,8 @@ function HomeHeader({
   onOpenStatus,
   onOpenCamera,
   onCreated,
-  onOpenMusic
+  onOpenMusic,
+  onOpenPreview
 }: {
   feedTabs: FeedTab[];
   selectedFeed: string;
@@ -587,7 +798,9 @@ function HomeHeader({
   identity?: GlobalNavigationIdentity;
   ambientMotionEnabled: boolean;
   initiallyExpandComposer: boolean;
-  initialComposerMode: "post" | "reel";
+  initialComposerMode: "post" | "status" | "reel";
+  captureReturnNonce: string;
+  shareHandoffNonce: string;
   onRefresh: () => void;
   onSelectFeed: (feedKey: string) => void;
   onOpenUndx: () => void;
@@ -598,9 +811,10 @@ function HomeHeader({
   onAddStatus: () => void;
   onViewStatuses: () => void;
   onOpenStatus: (status: PulseStatus) => void;
-  onOpenCamera: (mode: "photo" | "video" | "reel") => void;
+  onOpenCamera: (mode: "photo" | "video" | "reel", composerMode: "post" | "status" | "reel") => void;
   onCreated: (post?: PulsePost) => void;
-  onOpenMusic: () => void;
+  onOpenMusic: (composerMode: "post" | "status" | "reel") => void;
+  onOpenPreview: (token: string) => void;
 }) {
   const { width } = useWindowDimensions();
   const compactHero = width < 360;
@@ -624,17 +838,19 @@ function HomeHeader({
           <HomePulseComposer
             initiallyExpanded={initiallyExpandComposer}
             initialMode={initialComposerMode}
+            captureReturnNonce={captureReturnNonce}
+            shareHandoffNonce={shareHandoffNonce}
             identity={identity}
             onCreated={onCreated}
             onOpenCamera={onOpenCamera}
-            onOpenLive={onOpenLive}
             onOpenMusic={onOpenMusic}
             onOpenRoute={onOpenRoute}
+            onOpenPreview={onOpenPreview}
           />
           <View style={styles.feedTabsWrap}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.feedTabs}>
               {feedTabs.map((tab) => (
-                <Pressable key={tab.key} style={[styles.feedTab, selectedFeed === tab.key && styles.feedTabActive]} onPress={() => onSelectFeed(tab.key)}>
+                <Pressable accessibilityRole="button" key={tab.key} style={[styles.feedTab, selectedFeed === tab.key && styles.feedTabActive]} onPress={() => onSelectFeed(tab.key)}>
                   <Text style={[styles.feedTabText, selectedFeed === tab.key && styles.feedTabTextActive]}>{tab.label}</Text>
                 </Pressable>
               ))}
@@ -675,11 +891,11 @@ function HomeCommandRail({
       </LogiNexusPanel>
       <View style={styles.commandShortcutGroup}>
         <Text style={styles.commandSectionTitle}>Today</Text>
-        <Pressable style={styles.commandShortcutCard} onPress={() => onOpenRoute("/pulse/dashboard")}>
+        <Pressable accessibilityRole="button" style={styles.commandShortcutCard} onPress={() => onOpenRoute("/pulse/dashboard")}>
           <Text style={styles.commandShortcutTitle}>Dashboard</Text>
           <Text style={styles.commandShortcutMeta}>Account command center</Text>
         </Pressable>
-        <Pressable style={styles.commandShortcutCard} onPress={() => onOpenRoute("/pulse/growth")}>
+        <Pressable accessibilityRole="button" style={styles.commandShortcutCard} onPress={() => onOpenRoute("/pulse/growth")}>
           <Text style={styles.commandShortcutTitle}>Promote</Text>
           <Text style={styles.commandShortcutMeta}>Owner tools</Text>
         </Pressable>
@@ -705,7 +921,7 @@ function HomeCommandRail({
           <Text style={styles.commandRadioTab}>Podcasts</Text>
           <Text style={styles.commandRadioTab}>Discover</Text>
         </View>
-        <Pressable style={styles.commandRadioNow} onPress={onOpenPulseRadio}>
+        <Pressable accessibilityRole="button" style={styles.commandRadioNow} onPress={onOpenPulseRadio}>
           <View style={styles.commandRadioDot} />
           <View style={styles.commandRadioCopy}>
             <Text style={styles.commandRadioNowTitle} numberOfLines={1}>Pulse Radio</Text>
@@ -713,10 +929,10 @@ function HomeCommandRail({
           </View>
         </Pressable>
         <View style={styles.commandRadioActions}>
-          <Pressable style={styles.commandRadioPrimary} onPress={onOpenPulseRadio}>
+          <Pressable accessibilityRole="button" style={styles.commandRadioPrimary} onPress={onOpenPulseRadio}>
             <Text style={styles.commandRadioPrimaryText}>Play / Pause</Text>
           </Pressable>
-          <Pressable style={styles.commandRadioSecondary} onPress={onOpenPulseRadio}>
+          <Pressable accessibilityRole="button" style={styles.commandRadioSecondary} onPress={onOpenPulseRadio}>
             <Text style={styles.commandRadioSecondaryText}>Next</Text>
           </Pressable>
         </View>
@@ -887,12 +1103,13 @@ const PulseRadioHeroControl = memo(function PulseRadioHeroControl() {
   const busy = radio.status === "connecting" || radio.status === "buffering";
   const playing = radio.status === "playing";
   const unavailable = radio.status === "error" || radio.status === "offline";
-  const stateLabel = playing ? "playing" : busy ? "connecting" : unavailable ? "unavailable" : "paused";
+  const interrupted = radio.userWantsPlayback && Boolean(radio.interruptedBy);
+  const stateLabel = playing ? "playing" : busy ? "connecting" : unavailable ? "unavailable" : interrupted ? "paused for active audio" : "paused";
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Pulse Radio, ${stateLabel}`}
-      accessibilityHint={playing ? "Pauses Pulse Radio" : "Starts Pulse Radio"}
+      accessibilityHint={playing ? "Pauses Pulse Radio" : interrupted ? "Keeps Pulse Radio paused instead of resuming after active audio ends" : "Starts Pulse Radio"}
       accessibilityState={{ busy }}
       testID="home-pulse-radio-toggle"
       style={[styles.heroRadioPill, playing && styles.heroRadioPillPlaying]}
@@ -1096,7 +1313,7 @@ function StatusRail({
         </Pressable>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusRail}>
-        <Pressable style={styles.addStatusCard} onPress={onAddStatus}>
+        <Pressable accessibilityRole="button" style={styles.addStatusCard} onPress={onAddStatus}>
           <Text style={styles.addStatusIcon}>+</Text>
           <Text style={styles.addStatusText}>Add Status</Text>
         </Pressable>
@@ -1108,7 +1325,7 @@ function StatusRail({
         ) : null}
         {!loading && !items.length ? Array.from({ length: 5 }).map((_, index) => <StatusPlaceholder key={`status-placeholder-${index}`} message={error || "No status yet"} />) : null}
         {items.map((status) => (
-          <Pressable key={status.id} style={[styles.statusCard, !status.viewed && styles.statusCardUnseen]} onPress={() => onOpenStatus(status)}>
+          <Pressable accessibilityRole="button" key={status.id} style={[styles.statusCard, !status.viewed && styles.statusCardUnseen]} onPress={() => onOpenStatus(status)}>
             <View style={styles.statusAvatar}>
               {statusPosterUrl(status) || status.author?.avatar_url || status.author_avatar_url ? (
                 <Image source={{ uri: statusPosterUrl(status) || status.author?.avatar_url || status.author_avatar_url }} style={styles.statusAvatarImage} />
@@ -1144,6 +1361,32 @@ function mergePosts(current: PulsePost[], incoming: PulsePost[]) {
 }
 
 const styles = StyleSheet.create({
+  actionErrorBanner: {
+    alignItems: "center",
+    backgroundColor: "rgba(74, 24, 24, 0.92)",
+    borderColor: colors.danger,
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    marginHorizontal: 12,
+    marginTop: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9
+  },
+  actionErrorDismiss: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase"
+  },
+  actionErrorText: {
+    color: colors.text,
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: "700"
+  },
   addStatusCard: {
     alignItems: "center",
     backgroundColor: "transparent",
@@ -1191,7 +1434,6 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     maxWidth: 1480,
     padding: 12,
-    paddingBottom: 172,
     width: "100%"
   },
   commandIdentityCard: {

@@ -371,11 +371,70 @@ def revoke_delegated_policy(cur, user_id: int, policy_id: str) -> bool:
     return int(cur.rowcount or 0) == 1
 
 
-def record_tool_result(cur, user_id: int, prepared: dict[str, Any], result: dict[str, Any], correlation_id: str) -> dict[str, Any]:
+def confirmation_evidence(user_id: int, expect_action_id: str | None, confirmation: Any) -> dict[str, Any]:
+    """Judge whether a redeemed grant really authorizes THIS action for THIS user.
+
+    ``confirmation`` is the row returned by :func:`consume_confirmation` — the only
+    thing in this system that constitutes proof that a human approved an action. A
+    caller-supplied string is not proof, so it is never accepted here.
+
+    The caller must state which ``expect_action_id`` it believes it is recording. There
+    is deliberately no "any grant will do" fallback: accepting an unnamed grant is how
+    an approval for one action ends up filed as authorization for another.
+    """
+    if not isinstance(confirmation, dict) or not confirmation:
+        return {"present": False, "bound": False, "reason": "no_grant"}
+    if not str(expect_action_id or ""):
+        return {"present": True, "bound": False, "reason": "unspecified_action"}
+    action_id = str(confirmation.get("action_id") or "")
+    same_user = int(confirmation.get("user_id") or 0) == int(user_id or 0)
+    consumed = str(confirmation.get("status") or "") in {"consumed", "confirmed"}
+    if action_id != str(expect_action_id):
+        return {"present": True, "bound": False, "reason": "wrong_action"}
+    if not same_user:
+        return {"present": True, "bound": False, "reason": "wrong_actor"}
+    if not consumed:
+        return {"present": True, "bound": False, "reason": "not_consumed"}
+    return {"present": True, "bound": True, "reason": "grant_consumed"}
+
+
+def record_tool_result(cur, user_id: int, prepared: dict[str, Any], result: dict[str, Any], correlation_id: str, *, confirmation: Any = None, expect_action_id: str | None = None, canonical_verified: bool | None = None) -> dict[str, Any]:
+    """Append the audit row for one production tool operation.
+
+    Two things are deliberately NOT taken from ``result``: whether the action was
+    confirmed, and whether it is verified. ``result`` is the tool's own account of
+    itself, and an audit trail that repeats a caller's claim of "confirmed" records
+    nothing an attacker could not also have written. Confirmation is therefore
+    established only from a redeemed grant passed in as ``confirmation``, and an
+    operation whose tool requires approval cannot reach ``verified`` without one.
+    """
     tool = undx_policy.PRODUCTION_TOOL_REGISTRY[prepared["tool_name"]]
     success = bool(result.get("success"))
     canonical_id = clean(result.get("canonical_entity_id"), 180)
-    verification = {"read_after_write_required": tool.get("method") == "POST", "canonical_id_present": bool(canonical_id), "verified": success and (tool.get("method") != "POST" or bool(canonical_id))}
+    required = bool(prepared.get("confirmation_required"))
+    evidence = confirmation_evidence(user_id, expect_action_id, confirmation)
+    approved = (not required) or evidence["bound"]
+    confirmation_state = ("not_required" if not required
+                          else "confirmed" if evidence["bound"]
+                          else "missing" if not evidence["present"]
+                          else "rejected:" + evidence["reason"])
+    # ``canonical_verified`` is an actual read-after-write verdict from the backend. When
+    # the caller has one it OUTRANKS the structural heuristic below, which can only ask
+    # "did a POST come back with an id" and would otherwise call a non-POST write
+    # verified on the strength of it having been attempted.
+    if canonical_verified is None:
+        observed_ok = tool.get("method") != "POST" or bool(canonical_id)
+    else:
+        observed_ok = bool(canonical_verified)
+    verification = {
+        "read_after_write_required": tool.get("method") == "POST",
+        "canonical_id_present": bool(canonical_id),
+        "canonical_read_back": None if canonical_verified is None else bool(canonical_verified),
+        "confirmation_required": required,
+        "confirmation_evidence": evidence["reason"],
+        "approved": approved,
+        "verified": success and approved and observed_ok,
+    }
     status = "verified" if verification["verified"] else "failed_verification" if success else "failed"
     timestamp = now()
     cur.execute(
@@ -385,10 +444,11 @@ def record_tool_result(cur, user_id: int, prepared: dict[str, Any], result: dict
          verification_json, rollback_json, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)""",
         (prepared["operation_id"], int(user_id), prepared["tool_name"], prepared["idempotency_key"],
-         prepared.get("canonical_target") or "", "confirmed" if not prepared.get("confirmation_required") else clean(result.get("confirmation_state") or "missing", 40),
+         prepared.get("canonical_target") or "", clean(confirmation_state, 40),
          status, clean(correlation_id, 120), canonical_id, json.dumps(result, default=str)[:8000], json.dumps(verification), timestamp, timestamp),
     )
-    return {"status": status, "canonical_entity_id": canonical_id, "verification": verification}
+    return {"status": status, "canonical_entity_id": canonical_id,
+            "confirmation_state": confirmation_state, "verification": verification}
 
 
 ALLOWED_UI_CONTEXT = {
@@ -454,7 +514,25 @@ def create_confirmation(cur, user_id: int, action: dict[str, Any], *, ttl_second
     return {"confirmation_id": confirmation_id, "confirmation_token": raw_token, "expires_at": expires_at}
 
 
-def consume_confirmation(cur, user_id: int, token: str) -> dict[str, Any] | None:
+def argument_hash(arguments: Any) -> str:
+    """The canonical payload fingerprint an approval is bound to."""
+    normalized = json.dumps(arguments or {}, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def consume_confirmation(cur, user_id: int, token: str, *,
+                         expect_action_id: str | None = None,
+                         expect_argument_hash: str | None = None) -> dict[str, Any] | None:
+    """Redeem one approval. Single-use, time-limited, and bound to its own actor.
+
+    ``expect_action_id`` / ``expect_argument_hash`` let the CALLER state which action it
+    believes it is executing, and the binding is checked HERE, before the row is burned.
+    Previously the only binding check lived in the caller and ran after consumption, so a
+    request for the wrong action still destroyed a valid approval for the right one, and
+    the boundary itself would hand back a grant for an action nobody asked about. A
+    mismatch returns ``None`` — identical to an unknown token — so a caller probing with
+    a guessed token learns nothing about whether it exists.
+    """
     token_hash = hashlib.sha256(clean(token, 500).encode("utf-8")).hexdigest()
     cur.execute(
         """SELECT * FROM pulse_ai_confirmations
@@ -465,6 +543,12 @@ def consume_confirmation(cur, user_id: int, token: str) -> dict[str, Any] | None
     if not row:
         return None
     result = dict(row)
+    # Binding checked BEFORE the consuming UPDATE: a mis-bound request must not burn a
+    # good approval, and must not be told it existed.
+    if expect_action_id is not None and str(result.get("action_id") or "") != str(expect_action_id):
+        return None
+    if expect_argument_hash is not None and str(result.get("argument_hash") or "") != str(expect_argument_hash):
+        return None
     timestamp = now()
     cur.execute(
         "UPDATE pulse_ai_confirmations SET status='consumed', consumed_at=?, updated_at=? WHERE id=? AND status='pending'",
@@ -472,5 +556,29 @@ def consume_confirmation(cur, user_id: int, token: str) -> dict[str, Any] | None
     )
     if int(cur.rowcount or 0) != 1:
         return None
+    # The SELECTed row still says 'pending'. Returning that would let a caller record
+    # "an approval existed" when what actually happened is "this call burned it", so the
+    # returned row states the post-redemption truth.
+    result["status"] = "consumed"
+    result["consumed_at"] = timestamp
     result["arguments"] = json.loads(result.get("arguments_json") or "{}")
     return result
+
+
+def revoke_confirmation(cur, user_id: int, token: str) -> dict[str, Any]:
+    """Withdraw a pending approval (pending -> revoked). Own actor only, idempotent.
+
+    An approver who changes their mind between granting and executing needs a way to
+    take the approval back; without one the only options are waiting out the TTL or
+    racing the executor. Scoped by ``user_id`` so nobody can cancel another account's
+    approval, and restricted to ``status='pending'`` so an already-redeemed approval is
+    never rewritten after the fact.
+    """
+    token_hash = hashlib.sha256(clean(token, 500).encode("utf-8")).hexdigest()
+    timestamp = now()
+    cur.execute(
+        "UPDATE pulse_ai_confirmations SET status='revoked', updated_at=? "
+        "WHERE token_hash=? AND user_id=? AND status='pending'",
+        (timestamp, token_hash, int(user_id)),
+    )
+    return {"ok": True, "revoked": int(cur.rowcount or 0) > 0}

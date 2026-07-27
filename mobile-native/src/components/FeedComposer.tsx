@@ -78,11 +78,11 @@ export function FeedComposer({ visible, onClose, onCreated }: Props) {
     <Modal visible={visible} animationType="slide" onRequestClose={closeComposer}>
       <View style={styles.root}>
         <View style={styles.header}>
-          <Pressable style={styles.headerButton} disabled={publishing || mediaUpload.uploading} onPress={closeComposer}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: publishing || mediaUpload.uploading }} style={styles.headerButton} disabled={publishing || mediaUpload.uploading} onPress={closeComposer}>
             <Text style={styles.headerButtonText}>Cancel</Text>
           </Pressable>
           <Text style={styles.headerTitle}>Create Post</Text>
-          <Pressable style={[styles.publishButton, (!canPublish || publishing) && styles.disabled]} disabled={!canPublish || publishing} onPress={publish}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canPublish || publishing }} style={[styles.publishButton, (!canPublish || publishing) && styles.disabled]} disabled={!canPublish || publishing} onPress={publish}>
             {publishing ? <ActivityIndicator color={colors.background} /> : <Text style={styles.publishText}>Publish</Text>}
           </Pressable>
         </View>
@@ -107,7 +107,7 @@ export function FeedComposer({ visible, onClose, onCreated }: Props) {
 
           <View style={styles.selector}>
             {visibilityOptions.map((option) => (
-              <Pressable
+              <Pressable accessibilityRole="button"
                 key={option.value}
                 style={[styles.visibilityButton, visibility === option.value && styles.visibilityActive]}
                 onPress={() => setVisibility(option.value)}
@@ -118,13 +118,13 @@ export function FeedComposer({ visible, onClose, onCreated }: Props) {
           </View>
 
           <View style={styles.mediaActions}>
-            <Pressable style={styles.secondaryButton} disabled={publishing || mediaUpload.uploading} onPress={() => mediaUpload.chooseImage()}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: publishing || mediaUpload.uploading }} style={styles.secondaryButton} disabled={publishing || mediaUpload.uploading} onPress={() => mediaUpload.chooseImage()}>
               <Text style={styles.secondaryText}>Image</Text>
             </Pressable>
-            <Pressable style={styles.secondaryButton} disabled={publishing || mediaUpload.uploading} onPress={() => mediaUpload.chooseVideo()}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: publishing || mediaUpload.uploading }} style={styles.secondaryButton} disabled={publishing || mediaUpload.uploading} onPress={() => mediaUpload.chooseVideo()}>
               <Text style={styles.secondaryText}>Video</Text>
             </Pressable>
-            <Pressable style={styles.secondaryButton} disabled={publishing || mediaUpload.uploading} onPress={() => mediaUpload.openCamera("image")}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: publishing || mediaUpload.uploading }} style={styles.secondaryButton} disabled={publishing || mediaUpload.uploading} onPress={() => mediaUpload.openCamera("image")}>
               <Text style={styles.secondaryText}>Camera</Text>
             </Pressable>
           </View>

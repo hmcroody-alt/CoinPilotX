@@ -60,7 +60,7 @@ def main() -> None:
     require("onScroll={bottomNavScroll.onScroll}" in screen, "shared scroll container not wired")
     require("onScroll={bottomNavScroll.onScroll}" in home, "Home feed list not wired")
     require("onScroll={bottomNavScroll.onScroll}" in messenger, "Messenger conversation list not wired")
-    require("useBottomNavScrollVisibility" not in reels, "Reels should keep stable navigation by default")
+    require("useBottomNavScrollVisibility" in reels and "onScroll={bottomNavScroll.onScroll}" in reels, "Reels scroll-responsive navigation is not wired")
     require("Physical iPhone" in report and "Reels" in report and "Verification" in report, "report incomplete")
     require("Black Cover Fix" in report and "absolute overlay" in report, "black cover regression notes missing")
 

@@ -1,4 +1,4 @@
-# CoinPilotXAI Pulse Architecture Report
+# CoinPlotXAI Pulse Architecture Report
 
 Date: 2026-05-25
 

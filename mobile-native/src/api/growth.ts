@@ -1,4 +1,3 @@
-import { Linking } from "react-native";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
@@ -72,7 +71,12 @@ export async function cacheGrowthState(state: GrowthState) {
 
 export async function openGrowthWebFallback(path = "/pulse/growth") {
   const target = /^https?:\/\//i.test(path) ? path : `${PULSE_API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
-  await Linking.openURL(target).catch(() => undefined);
+  return {
+    ok: false,
+    target,
+    status: "native_provider_boundary",
+    message: "Growth operation remains inside native Growth Center until the protected contract is available."
+  };
 }
 
 export function normalizeGrowthState(input: GrowthState): GrowthState {

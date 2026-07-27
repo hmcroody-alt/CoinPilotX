@@ -1,18 +1,64 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Image, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
-import { ResizeMode, Video } from "expo-av";
+import { ActivityIndicator, Alert, Animated, Image, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Audio, ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
-import { mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl } from "../api/feed";
+import { Ionicons } from "@expo/vector-icons";
+import { mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl, savablePostId } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
-import { LogiNexusBadge } from "./LogiNexus";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
+import { AttachedMusicPolicy, resolvePostAudioPolicy } from "../core/attachedMusicAudioPolicy";
+import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { canonicalMediaPlaybackUrl, refreshCanonicalMediaAccess } from "../media/mediaAccess";
+import { useSavedState } from "../social/savedStore";
+import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
-import { compactPreview, formatShortTime } from "../utils/format";
+import { formatShortTime } from "../utils/format";
+import { sharePulseObject } from "../sharing/nativeShare";
+import { ContentTranslation } from "./ContentTranslation";
 
 const MEDIA_ASPECT_MIN = 0.55;
 const MEDIA_ASPECT_MAX = 1.91;
+const COLLAPSED_BODY_LINES = 4;
+
+// Shared media layout contract for feed posts. Feed photo/video default to
+// fullBleed so media reaches the true feed-viewport edges regardless of the
+// per-screen list padding. Only media escapes the text content column.
+export type PostMediaLayout = "fullBleed" | "inset";
+
+// Derive the horizontal bleed from the measured card width and the actual
+// window width instead of a per-screen magic inset. When fullBleed, the media
+// container is pulled out symmetrically so it spans the full viewport width.
+export function computeMediaBleedStyle(
+  layout: PostMediaLayout,
+  windowWidth: number,
+  cardWidth: number
+): { marginHorizontal: number; width?: number } {
+  if (layout !== "fullBleed") return { marginHorizontal: 0 };
+  if (!(windowWidth > 0) || !(cardWidth > 0)) return { marginHorizontal: 0 };
+  const bleed = Math.max(0, (windowWidth - cardWidth) / 2);
+  if (bleed <= 0) return { marginHorizontal: 0 };
+  return { marginHorizontal: -bleed, width: windowWidth };
+}
+
+function sharePostFromCard(post: PulsePost) {
+  const author = post.author || post.user || {};
+  return sharePulseObject({
+    kind: "post",
+    url: pulsePostUrl(post.id),
+    title: post.title || "PulseSoc post",
+    description: post.body || post.text || post.content,
+    author: author.display_name || author.name || author.username || post.author_name,
+    previewImageUrl: post.thumbnail_url || post.image_url
+  });
+}
+
+const VISIBILITY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  public: "globe-outline",
+  followers: "people-outline",
+  friends: "people-outline",
+  private: "lock-closed-outline"
+};
 
 type PostCardProps = {
   post: PulsePost;
@@ -20,7 +66,7 @@ type PostCardProps = {
   busy?: boolean;
   active?: boolean;
   motionEnabled?: boolean;
-  edgeInset?: number;
+  mediaLayout?: PostMediaLayout;
   onOpen?: (post: PulsePost) => void;
   onReact?: (post: PulsePost, reactionType: string) => void;
   onSave?: (post: PulsePost) => void;
@@ -34,6 +80,7 @@ type PostCardProps = {
   onHide?: (post: PulsePost) => void;
   onBlock?: (post: PulsePost) => void;
   onMute?: (post: PulsePost) => void;
+  onDelete?: (post: PulsePost) => void;
   onAuthorPress?: (post: PulsePost) => void;
 };
 
@@ -43,7 +90,7 @@ export function PostCard({
   busy,
   active = false,
   motionEnabled = true,
-  edgeInset = 12,
+  mediaLayout = "fullBleed",
   onOpen,
   onReact,
   onSave,
@@ -57,8 +104,12 @@ export function PostCard({
   onHide,
   onBlock,
   onMute,
+  onDelete,
   onAuthorPress
 }: PostCardProps) {
+  const { width: windowWidth } = useWindowDimensions();
+  const [cardWidth, setCardWidth] = useState(0);
+  const mediaBleedStyle = computeMediaBleedStyle(mediaLayout, windowWidth, cardWidth);
   const commentInputRef = useRef<TextInput>(null);
   const [commentBody, setCommentBody] = useState("");
   const [commentPosting, setCommentPosting] = useState(false);
@@ -67,16 +118,29 @@ export function PostCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
   const [bodyExpanded, setBodyExpanded] = useState(Boolean(detail));
+  const [bodyTruncated, setBodyTruncated] = useState(false);
   const likeScale = useRef(new Animated.Value(1)).current;
   const author = post.author || {};
   const displayName = author.display_name || author.name || post.author_name || "PulseSoc";
   const handle = author.username || author.handle || post.author_username || "";
-  const longBody = String(post.body || "").length > 260;
-  const body = detail || bodyExpanded ? post.body : compactPreview(post.body, "");
+  const body = post.body || "";
+  const showReadMore = !detail && bodyTruncated;
+  const visibilityKey = String(post.visibility || "public").toLowerCase();
+  const visibilityIcon = VISIBILITY_ICON[visibilityKey] || "globe-outline";
+  const visibilityLabel = visibilityKey.charAt(0).toUpperCase() + visibilityKey.slice(1);
   const commentCount = Number(post.comment_count || 0);
   const reactionTotal = Object.values(post.reaction_counts || {}).reduce((sum, count) => sum + Number(count || 0), 0);
   const creatorLabel = author.premium_verified || author.verified ? "Pulse Creator" : "";
   const viewerLiked = Boolean(post.viewer_reaction);
+  /**
+   * A repost is a wrapper row around an original, and both can be on screen at
+   * once. Saving is about the content, not the wrapper, so the card asks about
+   * — and writes — the original's id. The server collapses to the same id, so
+   * the two cards agree without either knowing about the other.
+   */
+  const savableId = savablePostId(post);
+  const saveState = useSavedState("post", savableId, typeof (post.saved ?? post.is_saved) === "boolean" ? Boolean(post.saved ?? post.is_saved) : undefined);
+  const viewerSaved = saveState.saved;
 
   async function submitInlineComment() {
     const bodyText = commentBody.trim();
@@ -116,7 +180,7 @@ export function PostCard({
       onPress={() => onOpen?.(post)}
       disabled={!onOpen}
     >
-      <View style={styles.card}>
+      <View style={styles.card} onLayout={(event) => setCardWidth(event.nativeEvent.layout.width)}>
       <View style={styles.cardInset}>
         <View style={styles.cardHeader}>
           <Pressable
@@ -136,12 +200,17 @@ export function PostCard({
                 <Text style={styles.authorName} numberOfLines={1}>
                   {displayName}
                 </Text>
-                {author.verified || author.premium_verified ? <Text style={styles.verifiedMark}>◆</Text> : null}
+                {author.verified || author.premium_verified ? (
+                  <Ionicons name="checkmark-circle" size={15} color={colors.accent} style={styles.verifiedMark} />
+                ) : null}
               </View>
-              <Text style={styles.meta} numberOfLines={1}>
-                {handle ? `@${handle} · ` : ""}
-                {formatShortTime(post.created_at)} · {post.visibility || "public"}
-              </Text>
+              <View style={styles.metaRow}>
+                <Text style={styles.meta} numberOfLines={1}>
+                  {handle ? `@${handle} · ` : ""}
+                  {formatShortTime(post.created_at)} · {visibilityLabel}
+                </Text>
+                <Ionicons name={visibilityIcon} size={11} color={colors.muted} style={styles.metaVisibilityIcon} />
+              </View>
             </View>
           </Pressable>
           <View style={styles.headerActions}>
@@ -178,14 +247,35 @@ export function PostCard({
           </View>
         </View>
 
-      <View style={styles.badgeRow}>
-        {creatorLabel ? <View style={styles.creatorPill}><Text style={styles.creatorPillText}>✦ {creatorLabel}</Text></View> : null}
-        <LogiNexusBadge label={post.visibility || "public"} />
-      </View>
+      {creatorLabel ? (
+        <View style={styles.badgeRow}>
+          <View style={styles.creatorPill}><Text style={styles.creatorPillText}>✦ {creatorLabel}</Text></View>
+        </View>
+      ) : null}
 
-      {post.title ? <Text style={styles.title}>{post.title}</Text> : null}
-      {body ? <Text style={styles.body}>{body}</Text> : null}
-      {longBody && !detail ? (
+      {post.title ? (
+        <Text style={styles.title} numberOfLines={detail ? undefined : 2}>
+          {post.title}
+        </Text>
+      ) : null}
+      {body && !detail ? (
+        <Text
+          style={[styles.body, styles.bodyMeasure]}
+          onTextLayout={(event) => setBodyTruncated(event.nativeEvent.lines.length > COLLAPSED_BODY_LINES)}
+        >
+          {body}
+        </Text>
+      ) : null}
+      {body ? (
+        <ContentTranslation
+          contentType="post"
+          contentRef={post.id}
+          text={body}
+          textStyle={styles.body}
+          numberOfLines={detail || bodyExpanded ? undefined : COLLAPSED_BODY_LINES}
+        />
+      ) : null}
+      {showReadMore ? (
         <Pressable accessibilityRole="button" accessibilityLabel={bodyExpanded ? "Collapse post" : "Read full post"} onPress={(event) => { event.stopPropagation(); setBodyExpanded((value) => !value); }}>
           <Text style={styles.readMore}>{bodyExpanded ? "Show less" : "Read more"}</Text>
         </Pressable>
@@ -193,7 +283,7 @@ export function PostCard({
       </View>
 
       {post.media?.length ? (
-        <View style={[styles.mediaBleed, { marginHorizontal: -edgeInset }]}>
+        <View style={[styles.mediaBleed, mediaBleedStyle]}>
           <MediaStrip post={post} active={active} motionEnabled={motionEnabled} onReact={onReact} />
         </View>
       ) : null}
@@ -223,7 +313,7 @@ export function PostCard({
           testID={`home-feed-like-${post.id}`}
           accessibilityRole="button"
           accessibilityLabel={`${viewerLiked ? "Liked" : "Like"} post ${post.id}`}
-          style={styles.actionButton}
+          style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
           disabled={busy}
           accessibilityState={{ selected: viewerLiked, busy: Boolean(busy) }}
           onLongPress={(event) => {
@@ -244,7 +334,7 @@ export function PostCard({
             testID={`home-feed-comment-${post.id}`}
             accessibilityRole="button"
             accessibilityLabel={`Comment on post ${post.id}`}
-            style={styles.actionButton}
+            style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
             disabled={busy}
             onPress={(event) => {
               event.stopPropagation();
@@ -260,7 +350,7 @@ export function PostCard({
           testID={`home-feed-repost-${post.id}`}
           accessibilityRole="button"
           accessibilityLabel={`${post.reposted ? "Reposted" : "Repost"} post ${post.id}`}
-          style={styles.actionButton}
+          style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
           disabled={busy}
           onPress={(event) => {
             event.stopPropagation();
@@ -276,27 +366,44 @@ export function PostCard({
           testID={`home-feed-share-${post.id}`}
           accessibilityRole="button"
           accessibilityLabel={`Share post ${post.id}`}
-          style={styles.actionButton}
+          style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
           onPress={(event) => {
             event.stopPropagation();
-            onShare ? onShare(post) : Share.share({ message: pulsePostUrl(post.id) });
+            onShare ? onShare(post) : sharePostFromCard(post).catch(() => undefined);
           }}
         >
           <Text style={styles.actionIcon}>↗</Text>
           <Text style={styles.actionText}>{post.share_count ? compactCount(post.share_count) : "Share"}</Text>
         </Pressable>
+        {/*
+          Rendered unconditionally. It used to appear only when a screen passed
+          `onSave`, which is why the same post offered Save in the feed and no
+          Save at all in search results or an activity card — the control was a
+          property of the screen rather than of the content. The prop is still
+          honoured where a screen wants to observe the action, but the card can
+          now perform the save itself, so a surface cannot omit it by omission.
+        */}
         <Pressable
           testID={`home-feed-save-${post.id}`}
           accessibilityRole="button"
-          accessibilityLabel={`${post.saved ? "Saved" : "Save"} post ${post.id}`}
-          style={[styles.actionButton, styles.actionButtonTrailing]}
-          disabled={busy}
+          accessibilityLabel={`${viewerSaved ? "Saved" : "Save"} post ${savableId}`}
+          accessibilityHint={viewerSaved ? "Removes this post from your Saved collection" : "Adds this post to your Saved collection"}
+          accessibilityState={{ selected: viewerSaved, busy: saveState.pending || Boolean(busy) }}
+          style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
+          disabled={saveState.pending || busy}
           onPress={(event) => {
             event.stopPropagation();
-            onSave?.(post);
+            if (onSave) {
+              onSave(post);
+              return;
+            }
+            setSaved({ type: "post", id: savableId }, !viewerSaved).catch(() => undefined);
           }}
         >
-          <Text style={[styles.actionIcon, post.saved && styles.actionIconActive]}>□</Text>
+          <Ionicons name={viewerSaved ? "bookmark" : "bookmark-outline"} size={16} color={viewerSaved ? colors.accent : colors.muted} />
+          <Text style={[styles.actionText, viewerSaved && styles.actionTextActive]}>
+            {saveState.pending ? (viewerSaved ? "Saving" : "Removing") : viewerSaved ? "Saved" : "Save"}
+          </Text>
         </Pressable>
       </View>
 
@@ -404,6 +511,33 @@ export function PostCard({
               <Text style={styles.menuActionText}>Mute</Text>
             </Pressable>
           ) : null}
+          {onDelete ? (
+            <Pressable
+              testID={`home-feed-delete-${post.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Delete post ${post.id}`}
+              style={styles.menuAction}
+              disabled={busy}
+              onPress={(event) => {
+                event.stopPropagation();
+                setMenuOpen(false);
+                Alert.alert(
+                  "Delete post?",
+                  "This removes the post for everyone. This cannot be undone.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Delete",
+                      style: "destructive",
+                      onPress: () => onDelete(post)
+                    }
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.menuActionDangerText}>Delete</Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
 
@@ -505,10 +639,15 @@ function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost;
           title: post.title || "PulseSoc post media",
           subtitle: post.body || "PulseSoc media",
           author,
-          sourceUrl: pulsePostUrl(post.id)
+          sourceUrl: pulsePostUrl(post.id),
+          // Carry the attached-music policy into the expanded/fullscreen viewer so
+          // opening a video post keeps its selected soundtrack instead of falling
+          // back to the original video audio. Resolved per-media so galleries with
+          // mixed clips each honor their own metadata; images ignore it harmlessly.
+          musicPolicy: resolvePostAudioPolicy(post, media)
         })
       ),
-    [author, post.body, post.id, post.media, post.title]
+    [author, post, post.body, post.id, post.media, post.title]
   );
   if (!post.media?.length) return null;
   const items = post.media.slice(0, 4);
@@ -527,6 +666,7 @@ function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost;
             aspect={aspect}
             active={active}
             motionEnabled={motionEnabled}
+            musicPolicy={resolvePostAudioPolicy(post, media)}
             onOpenViewer={() => setViewerIndex(0)}
           />
           <NativeMediaViewer
@@ -535,7 +675,7 @@ function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost;
             initialIndex={viewerIndex || 0}
             title="Post media"
             onClose={() => setViewerIndex(null)}
-            onShare={() => Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined)}
+            onShare={() => sharePostFromCard(post).catch(() => undefined)}
           />
         </View>
       );
@@ -561,7 +701,7 @@ function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost;
           initialIndex={viewerIndex || 0}
           title="Post media"
           onClose={() => setViewerIndex(null)}
-          onShare={() => Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined)}
+          onShare={() => sharePostFromCard(post).catch(() => undefined)}
           onLike={likeMedia}
         />
       </View>
@@ -612,7 +752,7 @@ function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost;
         initialIndex={viewerIndex || 0}
         title="Post media"
         onClose={() => setViewerIndex(null)}
-        onShare={() => Share.share({ message: pulsePostUrl(post.id) }).catch(() => undefined)}
+        onShare={() => sharePostFromCard(post).catch(() => undefined)}
         onLike={likeMedia}
       />
     </View>
@@ -625,6 +765,7 @@ function FeedInlineVideo({
   aspect,
   active,
   motionEnabled,
+  musicPolicy,
   onOpenViewer
 }: {
   media: PulseMedia;
@@ -632,9 +773,11 @@ function FeedInlineVideo({
   aspect: number;
   active: boolean;
   motionEnabled: boolean;
+  musicPolicy?: AttachedMusicPolicy;
   onOpenViewer: () => void;
 }) {
   const videoRef = useRef<Video>(null);
+  const attachedSoundRef = useRef<Audio.Sound | null>(null);
   const refreshAttempted = useRef(false);
   const [muted, setMuted] = useState(true);
   const [buffering, setBuffering] = useState(false);
@@ -644,6 +787,12 @@ function FeedInlineVideo({
   const poster = mediaPosterUrl(media);
   const playbackOwnerId = `feed:${postId}:${media.id || 0}`;
   const canAutoplay = active && motionEnabled;
+  const audibleAutoplay = canAutoplay && !muted;
+  // Attached music takes exclusive audio priority: the original video track is
+  // silenced whenever a track is attached, and the music follows the same
+  // audible state the viewer controls with the mute toggle.
+  const hasAttachedMusic = Boolean(musicPolicy?.hasAttachedMusic && musicPolicy.musicUrl);
+  const videoMuted = muted || Boolean(musicPolicy?.muteOriginalAudio);
 
   useEffect(() => {
     setSource(canonicalMediaPlaybackUrl(media));
@@ -652,15 +801,24 @@ function FeedInlineVideo({
   }, [media]);
 
   useEffect(() => {
-    if (canAutoplay) {
+    if (audibleAutoplay) {
       claimMediaPlayback({
         id: playbackOwnerId,
         kind: "feed",
-        pause: () => videoRef.current?.pauseAsync().then(() => undefined).catch(() => undefined),
-        stop: () => videoRef.current?.stopAsync().then(() => undefined).catch(() => undefined)
+        pause: () => Promise.all([
+          videoRef.current?.pauseAsync().catch(() => undefined),
+          attachedSoundRef.current?.pauseAsync().catch(() => undefined)
+        ]).then(() => undefined),
+        stop: () => Promise.all([
+          videoRef.current?.stopAsync().catch(() => undefined),
+          attachedSoundRef.current?.stopAsync().catch(() => undefined)
+        ]).then(() => undefined)
       })
         .then((granted) => (granted ? videoRef.current?.playAsync() : undefined))
         .catch(() => undefined);
+    } else if (canAutoplay) {
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+      videoRef.current?.playAsync().catch(() => undefined);
     } else {
       videoRef.current?.pauseAsync().catch(() => undefined);
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
@@ -668,7 +826,48 @@ function FeedInlineVideo({
     return () => {
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
     };
-  }, [canAutoplay, playbackOwnerId]);
+  }, [audibleAutoplay, canAutoplay, playbackOwnerId]);
+
+  // Drive the attached music track alongside the (muted) video, mirroring the
+  // Reels player so a video post published with music plays the music — not the
+  // original mic audio. The track is audible only when the viewer has unmuted.
+  useEffect(() => {
+    let cancelled = false;
+    async function syncAttachedAudio() {
+      if (!hasAttachedMusic || !audibleAutoplay) {
+        const existing = attachedSoundRef.current;
+        attachedSoundRef.current = null;
+        if (existing) await existing.unloadAsync().catch(() => undefined);
+        return;
+      }
+      if (!attachedSoundRef.current) {
+        // Match the Reels player: put the iOS audio session into playback mode so
+        // the attached track is audible even when the ringer switch is silent and
+        // even if the viewer opened the feed without visiting Reels/Music first.
+        await configureReelsAudioSession().catch(() => undefined);
+        const created = await Audio.Sound.createAsync(
+          { uri: musicPolicy!.musicUrl! },
+          {
+            isLooping: musicPolicy!.isLooping,
+            positionMillis: musicPolicy!.musicStartMs,
+            shouldPlay: true,
+            volume: musicPolicy!.musicVolume
+          }
+        );
+        if (cancelled) return created.sound.unloadAsync();
+        attachedSoundRef.current = created.sound;
+      } else {
+        await attachedSoundRef.current.setStatusAsync({ shouldPlay: true, isMuted: false });
+      }
+    }
+    syncAttachedAudio().catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [audibleAutoplay, hasAttachedMusic, musicPolicy]);
+
+  useEffect(() => () => {
+    attachedSoundRef.current?.unloadAsync().catch(() => undefined);
+    attachedSoundRef.current = null;
+  }, [musicPolicy?.musicUrl]);
 
   async function recover() {
     if (refreshAttempted.current) {
@@ -707,7 +906,7 @@ function FeedInlineVideo({
           style={StyleSheet.absoluteFillObject}
           resizeMode={ResizeMode.COVER}
           shouldPlay={false}
-          isMuted={muted}
+          isMuted={videoMuted}
           isLooping
           progressUpdateIntervalMillis={400}
           onPlaybackStatusUpdate={(status) => {
@@ -767,25 +966,16 @@ function reactionSummary(counts: Record<string, number>) {
 const styles = StyleSheet.create({
   actionButton: {
     alignItems: "center",
-    backgroundColor: "rgba(9, 20, 33, 0.56)",
-    borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: logiNexus.radius.capsule,
-    borderWidth: 1,
+    borderRadius: logiNexus.radius.medium,
+    flex: 1,
     flexDirection: "row",
-    gap: 5,
+    gap: 6,
     justifyContent: "center",
-    minHeight: 40,
-    minWidth: 42,
-    paddingHorizontal: 8,
-    paddingVertical: 7
+    minHeight: 38,
+    paddingVertical: 9
   },
-  actionButtonActive: {
-    backgroundColor: "rgba(37, 208, 167, 0.16)",
-    borderColor: logiNexus.colors.home.borderActive
-  },
-  actionButtonTrailing: {
-    marginLeft: "auto",
-    minWidth: 40
+  actionButtonPressed: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)"
   },
   actionIcon: {
     color: colors.muted,
@@ -801,10 +991,8 @@ const styles = StyleSheet.create({
     borderTopColor: logiNexus.colors.home.borderSubtle,
     borderTopWidth: 1,
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginTop: 11,
-    paddingTop: 9
+    marginTop: 10,
+    paddingTop: 4
   },
   actionText: {
     color: colors.muted,
@@ -861,7 +1049,16 @@ const styles = StyleSheet.create({
   body: {
     color: colors.text,
     ...logiNexus.typography.home.cardBody,
-    marginTop: 12
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 10
+  },
+  bodyMeasure: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    opacity: 0,
+    zIndex: -1
   },
   commentNotice: {
     color: colors.muted,
@@ -1090,9 +1287,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900"
   },
+  menuActionDangerText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "900"
+  },
   meta: {
     color: colors.muted,
-    ...logiNexus.typography.home.cardMetadata
+    ...logiNexus.typography.home.cardMetadata,
+    flexShrink: 1
+  },
+  metaRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+    marginTop: 2
+  },
+  metaVisibilityIcon: {
+    marginTop: 1
   },
   overflowButton: {
     alignItems: "center",
@@ -1214,10 +1426,10 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontSize: 22,
-    fontWeight: "900",
-    lineHeight: 27,
-    marginTop: 14
+    fontSize: 19,
+    fontWeight: "800",
+    lineHeight: 24,
+    marginTop: 12
   },
   utilityButton: {
     minHeight: 34,
@@ -1239,9 +1451,7 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   verifiedMark: {
-    color: colors.accentStrong,
-    fontSize: 13,
-    fontWeight: "900"
+    marginTop: 1
   },
   creatorPill: {
     backgroundColor: "rgba(159, 124, 255, 0.22)",

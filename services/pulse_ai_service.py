@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_operator, undx_policy
+from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_operator, undx_platform_knowledge, undx_policy
 
 
 LOGGER = logging.getLogger(__name__)
@@ -406,7 +406,11 @@ def _conversation_payload(row: dict, unread_count: int = 0) -> dict:
         "pinned": True,
         "muted": False,
         "unread_count": int(unread_count or 0),
-        "presence": {"status": "online", "active_now": True, "presence_visible": True},
+        # UNDX is a service, not a person. It reports the dedicated "assistant"
+        # marker instead of borrowing the human online state, so it can never be
+        # mistaken for -- or rendered through -- real user presence. Clients show
+        # this as "Always available", not as an online indicator.
+        "presence": {"status": "assistant", "assistant": True, "active_now": False},
         "last_message_at": row.get("last_message_at") or row.get("updated_at") or row.get("created_at"),
         "last_activity_at": row.get("last_message_at") or row.get("updated_at") or row.get("created_at"),
         "last_message_preview": "Message UNDX",
@@ -710,6 +714,10 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
 
         current_messages = _messages_for_conversation(cur, conversation, int(user_id), limit=40)
         knowledge = _retrieve_knowledge(cur, body)
+        # Extend the existing approved-knowledge pipeline with only a small,
+        # request-relevant slice of the offline source inventory. Never send the
+        # complete manifest, schemas, or source paths to a model provider.
+        knowledge[0:0] = undx_platform_knowledge.retrieve(body)
         search_result = {}
         if route.get("needs_web_search"):
             search_result = pulse_ai_web_search.search(body, purpose="pulse_ai_messenger")
@@ -1097,10 +1105,18 @@ def confirm_action(user_id: int, payload: dict | None = None) -> dict:
         return {"ok": False, "error": "confirmation_required", "message": "A valid UNDX confirmation is required.", "http_status": 400}
     conn, cur = _open_db()
     try:
-        confirmation = undx_architecture.consume_confirmation(cur, int(user_id), token)
+        # State the action we intend to run so the boundary enforces the binding BEFORE
+        # burning the approval: a token minted for any other action is refused rather
+        # than consumed, and the refusal is indistinguishable from an unknown token.
+        confirmation = undx_architecture.consume_confirmation(
+            cur, int(user_id), token,
+            expect_action_id="notifications.preference.update")
         if not confirmation:
             conn.rollback()
             return {"ok": False, "error": "confirmation_invalid", "message": "That confirmation expired, was already used, or belongs to another account.", "http_status": 409}
+        # Defence in depth. Unreachable while the boundary enforces the binding above,
+        # but kept so a future caller that forgets expect_action_id still cannot execute
+        # an action the approval was not for.
         if confirmation.get("action_id") != "notifications.preference.update":
             conn.rollback()
             return {"ok": False, "error": "action_not_supported", "message": "That action is not available.", "http_status": 400}
@@ -1144,6 +1160,29 @@ def confirm_action(user_id: int, payload: dict | None = None) -> dict:
             "UPDATE pulse_ai_confirmations SET status=?, updated_at=? WHERE id=?",
             ("verified" if verified else "failed_verification", timestamp, int(confirmation["id"])),
         )
+        # Audit the operation itself, not just the approval row. The grant is passed in
+        # as the evidence of authorization and the real read-back verdict is passed as
+        # the verification, so this row cannot claim more than actually happened.
+        try:
+            prepared = undx_architecture.prepare_tool_operation(
+                int(user_id), "pulsesoc.notification_preferences.update",
+                str(confirmation.get("confirmation_id") or ""), category)
+            undx_architecture.record_tool_result(
+                cur, int(user_id), prepared,
+                {"success": True, "canonical_entity_id": f"user:{int(user_id)}:{category}",
+                 "observed_value": actual, "proposed_value": proposed},
+                correlation_id=_trace(),
+                confirmation=confirmation,
+                expect_action_id="notifications.preference.update",
+                canonical_verified=verified)
+        except Exception:
+            # An audit write must never decide the outcome of a governed action that has
+            # already been performed and verified. The approval row above is the
+            # authoritative record; this one is the operations trail.
+            LOGGER.exception(
+                "UNDX operation audit write failed",
+                extra={"user_id": int(user_id), "action_id": "notifications.preference.update"},
+            )
         conn.commit()
         return {
             "ok": verified,

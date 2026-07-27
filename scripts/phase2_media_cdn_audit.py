@@ -65,7 +65,7 @@ def cdn_probe(url: str, expected_mime: str):
     last_error = ""
     for _ in range(8):
         try:
-            req = Request(url, headers={"User-Agent": "CoinPilotXAI-Phase2-Media-Audit/1.0", "Range": "bytes=0-63"})
+            req = Request(url, headers={"User-Agent": "CoinPlotXAI-Phase2-Media-Audit/1.0", "Range": "bytes=0-63"})
             with urlopen(req, timeout=10) as response:
                 status = int(getattr(response, "status", 200))
                 content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()

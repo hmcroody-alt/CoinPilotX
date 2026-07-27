@@ -88,7 +88,7 @@ def provider_config_status(conn):
     sms_configured = bool(
         (os.getenv("BREVO_SMS_API_KEY") or os.getenv("BREVO_API_KEY"))
         and os.getenv("BREVO_SMS_ENABLED", "").lower() == "true"
-        and os.getenv("BREVO_SMS_SENDER")
+        and (os.getenv("SMS_SENDER_NAME") or os.getenv("BREVO_SMS_SENDER"))
     )
     return {
         "in_app": {

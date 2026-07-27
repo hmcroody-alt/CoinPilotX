@@ -1,4 +1,4 @@
-"""Railway-friendly Telegram polling worker for CoinPilotXAI."""
+"""Railway-friendly Telegram polling worker for CoinPlotXAI."""
 
 import logging
 

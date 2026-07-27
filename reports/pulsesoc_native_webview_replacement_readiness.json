@@ -1,0 +1,430 @@
+{
+  "audit": "pulsesoc_native_webview_replacement",
+  "blocker_counts_by_kind": {},
+  "critical_surface_count": 26,
+  "critical_surfaces_blocked_or_incomplete": 0,
+  "critical_surfaces_with_static_native_coverage": 26,
+  "hard_blocker_count": 0,
+  "hard_blockers": [],
+  "native_route_count": 122,
+  "production_route_mentions": {
+    "/dashboard/": 396,
+    "/pulse/camera": 7,
+    "/pulse/creator": 15,
+    "/pulse/dashboard": 1,
+    "/pulse/groups": 2,
+    "/pulse/intelligence": 17,
+    "/pulse/live": 49,
+    "/pulse/marketplace": 2,
+    "/pulse/messages": 43,
+    "/pulse/music": 16,
+    "/pulse/notifications": 31,
+    "/pulse/premium": 25,
+    "/pulse/profile": 12,
+    "/pulse/reels": 15,
+    "/pulse/search": 5,
+    "/pulse/settings": 11,
+    "/pulse/status": 12,
+    "/pulse/videos": 6
+  },
+  "reason": "Native-only replacement requires zero WebView/openURL/safe-web-fallback paths in shippable source (comments and test fixtures excluded) and complete static coverage for critical surfaces.",
+  "release_readiness": "PASS",
+  "surface_matrix": [
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "LoginScreen.tsx",
+        "SignupScreen.tsx",
+        "AccountRecoveryScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Login",
+        "Signup",
+        "AccountRecovery"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Authentication"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "HomeScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Home"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Home feed"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "SearchScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Search"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Search / Discover"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "MessengerScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Messenger"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Messenger inbox"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "ChatScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Chat"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Conversation"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "CallScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Call"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Calls"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "GroupsScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Groups",
+        "GroupDetail"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Groups / Rooms"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "ReelsScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Reels",
+        "ReelDetail"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Reels"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "StatusScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Status",
+        "StatusDetail"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Status"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "LiveScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Live",
+        "LiveDetail"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Live"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "CameraStudioScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "CameraStudio"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Camera Studio"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "MusicScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Music"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Music / Pulse Radio"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "ActivityInboxScreen.tsx",
+        "NotificationCenterScreen.tsx",
+        "NotificationPreferencesScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "ActivityInbox",
+        "NotificationCenter",
+        "NotificationPreferences"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Activity / Notifications"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "ProfileScreen.tsx",
+        "ProfileEditScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Profile",
+        "ProfileDetail",
+        "ProfileEdit"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Profile"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "MarketplaceScreen.tsx",
+        "SellerListingComposerScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Marketplace",
+        "MarketplaceDetail",
+        "MarketplaceCreateGateway"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Marketplace"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "SellerStoreScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "SellerStore",
+        "MerchantApply",
+        "MerchantDashboard",
+        "MerchantProfile"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Seller / Store"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "BuyerOrdersScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "BuyerOrders",
+        "BuyerOrderDetail",
+        "BuyerPurchases",
+        "BuyerOrdersDashboard"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Buyer Orders"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "PremiumScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Premium"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Premium / Billing"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "CreatorStudioScreen.tsx",
+        "ContentPlannerScreen.tsx",
+        "GrowthCenterScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "CreatorStudio",
+        "ContentPlanner",
+        "PostScheduler",
+        "DraftStudio",
+        "GrowthCenter"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Creator Studio"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "CoursesLearningScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Courses",
+        "CourseDetail",
+        "LearningLessonDetail"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Courses / Learning"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "EventsScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Events",
+        "EventDetail",
+        "LiveScheduleGateway",
+        "LiveEventCreateGateway"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Events"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "UserDashboardScreen.tsx",
+        "DashboardModuleDetailScreen.tsx",
+        "DashboardLegacyModuleScreen.tsx",
+        "DashboardActionAliasScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "UserDashboard",
+        "DashboardModuleDetail",
+        "DashboardLegacyModule"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Dashboard"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "PulseAiScreen.tsx",
+        "IntelligenceCenterScreen.tsx",
+        "AlertManagementScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "PulseAI",
+        "IntelligenceCenter",
+        "AlertManagement"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Intelligence / UNDX"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "AccountCenterScreen.tsx",
+        "SettingsScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "AccountCenter",
+        "Settings",
+        "AccountSettings",
+        "AccountSecurity",
+        "AccountPrivacy",
+        "AccountDevices"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Account / Settings"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "SafetyHubScreen.tsx",
+        "TrustSafetyScreen.tsx",
+        "AccountHealthAppealsScreen.tsx",
+        "VerificationCenterScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "SafetyHub",
+        "TrustSafety",
+        "AccountHealth",
+        "VerificationCenter"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Trust / Safety"
+    },
+    {
+      "native_files_missing": [],
+      "native_files_present": [
+        "SavedScreen.tsx"
+      ],
+      "native_routes_missing": [],
+      "native_routes_present": [
+        "Saved"
+      ],
+      "native_shell_or_web_exit_findings": [],
+      "status": "native_static_coverage",
+      "surface": "Saved"
+    }
+  ],
+  "test_only_finding_count": 0,
+  "test_only_findings": []
+}

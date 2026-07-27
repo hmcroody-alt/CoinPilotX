@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
-  applyMarketplaceSeller,
   connectMarketplacePayout,
   deleteMarketplaceSellerListing,
   loadCachedSellerStore,
@@ -14,11 +13,13 @@ import {
   sellerStoreWebUrl,
   updateMarketplaceSellerListing
 } from "../api/marketplace";
+import { DIGITAL_COMMERCE_ENABLED } from "../api/config";
 import { mediaDisplayUrl } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { SellerStorePanel, sellerStoreHeading, sellerStoreShowsPanel } from "../navigation/sellerStoreMode";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
@@ -37,8 +38,6 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   const [offline, setOffline] = useState(false);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [bio, setBio] = useState("");
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [editingListingId, setEditingListingId] = useState(0);
@@ -85,19 +84,6 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       unregisterOrders();
     };
   }, []);
-
-  async function submitApplication() {
-    setBusy("apply");
-    setMessage("");
-    try {
-      const result = await applyMarketplaceSeller({ display_name: displayName, bio });
-      setMessage(result.message || "Seller application saved.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Seller application could not be saved.");
-    } finally {
-      setBusy("");
-    }
-  }
 
   async function startPayoutConnect() {
     setBusy("payout");
@@ -209,11 +195,15 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     );
   }
 
+  const heading = sellerStoreHeading(mode);
+  const shows = (panel: SellerStorePanel) => sellerStoreShowsPanel(mode, panel);
+
   return (
-    <Screen title="Seller / Store" subtitle="Native marketplace control layer using PulseSoc approval, media, payout, and checkout systems.">
+    <Screen title={heading.title} subtitle={heading.subtitle}>
       {offline ? <Text style={styles.warning}>Showing saved seller/store metadata.</Text> : null}
       {message ? <Text style={message.toLowerCase().includes("required") || message.toLowerCase().includes("failed") ? styles.error : styles.notice}>{message}</Text> : null}
 
+      {shows("hero") ? (
       <Panel>
         <View style={styles.hero}>
           <Text style={styles.kicker}>Marketplace Command</Text>
@@ -227,52 +217,46 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           <Metric label="Orders loaded" value={String(orders.length)} />
         </View>
         <View style={styles.actionRow}>
-          <Pressable style={styles.primaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl("dashboard")).catch(() => undefined)}>
-            <Text style={styles.primaryText}>Open Merchant Dashboard</Text>
-          </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
-            <Text style={styles.secondaryText}>Marketplace</Text>
+          <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
+            <Text style={styles.primaryText}>Marketplace</Text>
           </Pressable>
         </View>
       </Panel>
+      ) : null}
 
+      {shows("application") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Merchant application</Text>
-        <Text style={styles.copy}>Submit the native quick application to the existing seller endpoint, then use the protected web application for private document upload and admin review.</Text>
-        <TextInput
-          style={styles.input}
-          value={displayName}
-          onChangeText={setDisplayName}
-          placeholder="Seller display name"
-          placeholderTextColor={colors.muted}
-          autoCapitalize="words"
-        />
-        <TextInput
-          style={[styles.input, styles.textArea]}
-          value={bio}
-          onChangeText={setBio}
-          placeholder="Describe what you sell and how it helps buyers"
-          placeholderTextColor={colors.muted}
-          multiline
-        />
+        {/*
+          This panel used to be the application: two free-text boxes posted
+          straight at the seller endpoint. It now points at the real one. Two
+          places to apply would mean two half-answered applications per person
+          and a reviewer with no way to tell which is current, so this is a door
+          rather than a second form.
+        */}
+        <Text style={styles.copy}>Apply to sell on PulseSoc. The application walks you through who you are, what you sell, and the documents we verify. Your answers save as you go, and every decision is made by a person on our review team.</Text>
         <View style={styles.actionRow}>
-          <Pressable style={styles.primaryButton} disabled={busy === "apply"} onPress={submitApplication}>
-            <Text style={styles.primaryText}>{busy === "apply" ? "Saving..." : "Save Seller Application"}</Text>
-          </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl("apply")).catch(() => undefined)}>
-            <Text style={styles.secondaryText}>Full Application</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityHint="Opens the seller application, where you can start or continue your answers"
+            style={styles.primaryButton}
+            onPress={() => navigation.navigate("MerchantApply")}
+          >
+            <Text style={styles.primaryText}>Open Seller Application</Text>
           </Pressable>
         </View>
       </Panel>
+      ) : null}
 
+      {shows("listings") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Listing management</Text>
         <Text style={styles.copy}>Product creation, safety review, media moderation, pricing, fulfillment, refunds, disputes, and checkout stay on existing PulseSoc marketplace systems.</Text>
         <View style={styles.actionRow}>
-          <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
+          <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
             <Text style={styles.primaryText}>Capture Product Media</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("MarketplaceCreateGateway", { title: "Create Listing" })}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("MarketplaceCreateGateway", { title: "Create Listing" })}>
             <Text style={styles.secondaryText}>Create Listing</Text>
           </Pressable>
         </View>
@@ -281,13 +265,15 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         ))}
         {!listings.length ? <Text style={styles.emptyText}>No marketplace listings loaded yet.</Text> : null}
       </Panel>
+      ) : null}
 
+      {shows("inventory") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Seller inventory</Text>
         <Text style={styles.copy}>Edit seller-owned listing fields and control visibility through PulseSoc marketplace review. Public Marketplace visibility remains approval-gated.</Text>
         <View style={styles.inventoryList}>
           {listings.slice(0, 8).map((listing) => (
-            <Pressable
+            <Pressable accessibilityRole="button"
               key={`inventory-${listing.id}`}
               style={[styles.inventoryRow, editingListing?.id === listing.id && styles.inventoryRowActive]}
               onPress={() => startListingEdit(listing)}
@@ -330,32 +316,29 @@ export function SellerStoreScreen({ route, navigation }: Props) {
               keyboardType="numeric"
             />
             <View style={styles.actionRow}>
-              <Pressable style={styles.primaryButton} disabled={busy === `edit:${editingListing.id}`} onPress={saveListingEdit}>
+              <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === `edit:${editingListing.id}` }} style={styles.primaryButton} disabled={busy === `edit:${editingListing.id}`} onPress={saveListingEdit}>
                 <Text style={styles.primaryText}>{busy === `edit:${editingListing.id}` ? "Saving..." : "Save and Review"}</Text>
               </Pressable>
-              <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
+              <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("CameraStudio", { target: "marketplace", title: "Marketplace Media" })}>
                 <Text style={styles.secondaryText}>Add Media</Text>
-              </Pressable>
-              <Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl("create")).catch(() => undefined)}>
-                <Text style={styles.secondaryText}>Advanced Edit Web</Text>
               </Pressable>
             </View>
             <View style={styles.actionRow}>
-              <Pressable
+              <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === `pause:${editingListing.id}` || statusKey(editingListing) === "paused" }}
                 style={styles.secondaryButton}
                 disabled={busy === `pause:${editingListing.id}` || statusKey(editingListing) === "paused"}
                 onPress={() => mutateListingStatus(editingListing, "pause")}
               >
                 <Text style={styles.secondaryText}>{busy === `pause:${editingListing.id}` ? "Pausing..." : "Pause"}</Text>
               </Pressable>
-              <Pressable
+              <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === `resume:${editingListing.id}` || statusKey(editingListing) === "live" }}
                 style={styles.secondaryButton}
                 disabled={busy === `resume:${editingListing.id}` || statusKey(editingListing) === "live"}
                 onPress={() => mutateListingStatus(editingListing, "resume")}
               >
                 <Text style={styles.secondaryText}>{busy === `resume:${editingListing.id}` ? "Resuming..." : "Resume Review"}</Text>
               </Pressable>
-              <Pressable
+              <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === `delete:${editingListing.id}` || statusKey(editingListing) === "removed" }}
                 style={styles.dangerButton}
                 disabled={busy === `delete:${editingListing.id}` || statusKey(editingListing) === "removed"}
                 onPress={() => mutateListingStatus(editingListing, "delete")}
@@ -363,11 +346,13 @@ export function SellerStoreScreen({ route, navigation }: Props) {
                 <Text style={styles.dangerText}>{busy === `delete:${editingListing.id}` ? "Removing..." : "Remove"}</Text>
               </Pressable>
             </View>
-            <Text style={styles.meta}>Updates are saved server-side and re-enter marketplace review when content changes. Checkout, payouts, fulfillment, disputes, and provider actions stay on safe fallback flows.</Text>
+            <Text style={styles.meta}>Updates are saved server-side and re-enter marketplace review when content changes. Checkout, payouts, fulfillment, disputes, and provider actions stay inside native provider boundaries.</Text>
           </View>
         ) : null}
       </Panel>
+      ) : null}
 
+      {shows("media") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Product media gallery</Text>
         <Text style={styles.copy}>The gallery reuses marketplace media payloads and the shared native media viewer. Unsupported media falls back safely inside the viewer.</Text>
@@ -390,7 +375,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         </View>
         {!mediaItems.length ? <Text style={styles.emptyText}>Media appears here after marketplace listings or product uploads are available.</Text> : null}
       </Panel>
+      ) : null}
 
+      {shows("orders") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Orders and payouts</Text>
         <Text style={styles.copy}>Orders, seller fees, Stripe Connect onboarding, checkout, and payout release remain provider and backend controlled.</Text>
@@ -401,31 +388,35 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           </View>
         ))}
         {!orders.length ? <Text style={styles.emptyText}>No seller orders loaded.</Text> : null}
-        <View style={styles.actionRow}>
-          <Pressable style={styles.primaryButton} disabled={busy === "payout"} onPress={startPayoutConnect}>
-            <Text style={styles.primaryText}>{busy === "payout" ? "Checking..." : "Connect Payouts"}</Text>
-          </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => Linking.openURL(sellerStoreWebUrl("payouts")).catch(() => undefined)}>
-            <Text style={styles.secondaryText}>Payout Web</Text>
-          </Pressable>
-        </View>
+        {DIGITAL_COMMERCE_ENABLED ? (
+          <View style={styles.actionRow}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy === "payout" }} style={styles.primaryButton} disabled={busy === "payout"} onPress={startPayoutConnect}>
+              <Text style={styles.primaryText}>{busy === "payout" ? "Checking..." : "Connect Payouts"}</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <Text style={styles.meta}>Payout onboarding and payout release are managed by PulseSoc and its payment provider. You will be notified when your payouts are ready.</Text>
+        )}
       </Panel>
+      ) : null}
 
+      {shows("trust") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Trust and eligibility</Text>
         <View style={styles.actionRow}>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("VerificationCenter", { title: "Verification Center", track: "business" })}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("VerificationCenter", { title: "Verification Center", track: "business" })}>
             <Text style={styles.secondaryText}>Verification</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("SafetyHub", { title: "Safety Hub", section: "reports" })}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("SafetyHub", { title: "Safety Hub", section: "reports" })}>
             <Text style={styles.secondaryText}>Safety Hub</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("Premium")}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("Premium")}>
             <Text style={styles.secondaryText}>Premium</Text>
           </Pressable>
         </View>
         <Text style={styles.copy}>Advanced tax forms, bank onboarding, disputes, refunds, fulfillment, and admin review stay on safe web/provider flows until native QA gates are ready.</Text>
       </Panel>
+      ) : null}
 
       <NativeMediaViewer visible={viewerOpen} items={mediaItems} initialIndex={viewerIndex} title="Store media" onClose={() => setViewerOpen(false)} />
     </Screen>
@@ -479,7 +470,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 function ListingRow({ listing, onOpen }: { listing: MarketplaceListing; onOpen: () => void }) {
   const cover = listing.media?.[0] ? mediaDisplayUrl(listing.media[0]) : "";
   return (
-    <Pressable style={styles.listingRow} onPress={onOpen}>
+    <Pressable accessibilityRole="button" style={styles.listingRow} onPress={onOpen}>
       {cover ? <Image source={{ uri: cover }} style={styles.listingImage} /> : <View style={styles.listingImageFallback} />}
       <View style={styles.listingBody}>
         <Text style={styles.listingTitle} numberOfLines={1}>{listing.title || "Marketplace listing"}</Text>

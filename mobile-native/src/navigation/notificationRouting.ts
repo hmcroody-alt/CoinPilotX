@@ -1,7 +1,5 @@
-import { Linking } from "react-native";
 import * as Notifications from "expo-notifications";
 import { createNavigationContainerRef } from "@react-navigation/native";
-import { PULSE_API_BASE_URL } from "../api/config";
 import { profileNavigationParams, profileTargetFromUrl } from "../api/profileTarget";
 import { dashboardModuleParamsForRoute } from "./dashboardRouting";
 import { RootStackParamList } from "./types";
@@ -12,7 +10,59 @@ export type NotificationRouteResult = {
   handled: boolean;
   target: string;
   reason?: string;
+  // Original normalized path (query/fragment stripped) when no native route matched.
+  // Retained for diagnostics so repeated fallbacks reveal missing native route families.
+  fallbackFrom?: string;
 };
+
+export type NotificationRouteReport = {
+  reason: string;
+  targetFamily: string;
+  handled: boolean;
+};
+
+export type NotificationRouteReporter = (report: NotificationRouteReport) => void;
+
+let routeResolutionReporter: NotificationRouteReporter | null = null;
+
+export function setNotificationRouteReporter(reporter: NotificationRouteReporter | null) {
+  routeResolutionReporter = reporter;
+}
+
+// Coarse, non-sensitive route family: drops query/fragment, collapses numeric/opaque ids,
+// and keeps at most three leading segments (e.g. "/pulse/foo/123?token=x" -> "/pulse/foo/:id").
+export function notificationTargetFamily(target: string) {
+  const path = String(target || "").split("?")[0].split("#")[0];
+  const segments = path
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => (/^\d+$/.test(segment) || segment.length > 24 ? ":id" : segment));
+  return `/${segments.slice(0, 3).join("/")}`;
+}
+
+function defaultNotificationRouteReporter(): NotificationRouteReporter | null {
+  if (typeof __DEV__ !== "undefined" && __DEV__) {
+    return (report) => {
+      if (report.reason === "native_fallback") {
+        // QA-only signal: a notification/saved/search target had no native route and was
+        // recovered into the Activity Inbox. Repeated families here are the migration backlog.
+        console.warn(`[notificationRouting] native_fallback for family ${report.targetFamily}`);
+      }
+    };
+  }
+  return null;
+}
+
+function reportNotificationRoute(result: NotificationRouteResult) {
+  const reporter = routeResolutionReporter || defaultNotificationRouteReporter();
+  if (!reporter) return;
+  const source = result.fallbackFrom || result.target;
+  reporter({
+    reason: result.reason || (result.handled ? "native_resolved" : "unhandled"),
+    targetFamily: notificationTargetFamily(source),
+    handled: result.handled
+  });
+}
 
 type NotificationResponseRoutingOptions = {
   canRoute?: () => boolean;
@@ -78,6 +128,12 @@ export function notificationTargetFromData(data: Notifications.NotificationConte
 }
 
 export async function routeNotificationTarget(target: string): Promise<NotificationRouteResult> {
+  const result = await resolveNotificationTarget(target);
+  reportNotificationRoute(result);
+  return result;
+}
+
+async function resolveNotificationTarget(target: string): Promise<NotificationRouteResult> {
   const normalized = normalizeNotificationTarget(target);
   if (!normalized) {
     navigateToNotifications();
@@ -173,9 +229,8 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
   }
 
   if (normalized.startsWith("/pulse/live/studio") && navigationRef.isReady()) {
-    const webTarget = `${PULSE_API_BASE_URL}${normalized}`;
-    await Linking.openURL(webTarget).catch(() => undefined);
-    return { handled: false, target: normalized, reason: "live_studio_web_fallback" };
+    navigationRef.navigate("LiveStudio", { title: "Live Studio" });
+    return { handled: true, target: normalized };
   }
 
   if (normalized.startsWith("/pulse/live") && navigationRef.isReady()) {
@@ -365,6 +420,18 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
+  // The application has its own screen, and `linking.ts` already maps this exact
+  // path to it. Routing a notification through SellerStore instead would mean one
+  // URL resolving to two destinations depending on how the app was opened, and it
+  // would land an applicant on a panel whose only content is a button to the
+  // screen they asked for. Reviewers send "we need more information" notifications
+  // against this path, so the extra tap is in front of the people least able to
+  // absorb it.
+  if (normalized.startsWith("/pulse/merchant/apply") && navigationRef.isReady()) {
+    navigationRef.navigate("MerchantApply", { title: "Merchant Application" });
+    return { handled: true, target: normalized };
+  }
+
   const sellerStore = sellerStoreTarget(normalized);
   if (sellerStore && navigationRef.isReady()) {
     navigationRef.navigate("SellerStore", sellerStore);
@@ -404,15 +471,29 @@ export async function routeNotificationTarget(target: string): Promise<Notificat
     return { handled: true, target: normalized };
   }
 
-  const webTarget = `${PULSE_API_BASE_URL}${normalized}`;
-  const supported = await Linking.canOpenURL(webTarget).catch(() => false);
-  if (supported) {
-    await Linking.openURL(webTarget);
-    return { handled: false, target: normalized, reason: "opened_web_fallback" };
+  // Public legal documents and unresolved internal targets remain inside native
+  // Settings/Activity surfaces during App Review. Do not drop notification taps
+  // into the browser.
+  if (isIntentionalWebExceptionTarget(normalized)) {
+    if (navigationRef.isReady()) navigationRef.navigate("Tabs", { screen: "Settings" });
+    return { handled: true, target: normalized, reason: "native_legal_boundary" };
   }
 
   navigateToNotifications();
-  return { handled: true, target: "/pulse/notifications", reason: "unsupported_target" };
+  return {
+    handled: true,
+    target: "/pulse/notifications",
+    reason: "native_fallback",
+    fallbackFrom: normalized.split("?")[0].split("#")[0]
+  };
+}
+
+const INTENTIONAL_WEB_EXCEPTION_PREFIXES = ["/terms", "/privacy", "/legal", "/cookies", "/licenses", "/copyright"];
+
+function isIntentionalWebExceptionTarget(target: string) {
+  return INTENTIONAL_WEB_EXCEPTION_PREFIXES.some(
+    (prefix) => target === prefix || target.startsWith(`${prefix}/`) || target.startsWith(`${prefix}?`)
+  );
 }
 
 export function normalizeNotificationTarget(raw: string) {
@@ -618,9 +699,11 @@ function sellerStoreTarget(target: string): { title: string; mode?: "overview" |
     const mode = normalizeSellerStoreMode(extractStringQueryValue(target, "mode"));
     return { title: "Seller / Store", ...(mode ? { mode } : {}) };
   }
-  if (target.startsWith("/pulse/merchant/apply")) {
-    return { title: "Merchant Application", mode: "apply" };
-  }
+  // `/pulse/merchant/apply` is deliberately absent: it is handled earlier, by the
+  // branch that opens MerchantApply. Leaving a case for it here would also match
+  // it in the `/pulse/merchant/<sellerId>` fallback below and quietly reopen the
+  // two-destinations-for-one-URL problem the moment the order of these checks
+  // changed.
   if (target.startsWith("/pulse/merchant/dashboard")) {
     return { title: "Merchant Dashboard", mode: "dashboard" };
   }

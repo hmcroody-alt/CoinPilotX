@@ -70,6 +70,83 @@ def add_user(cur, now: str) -> int:
     return int(cur.lastrowid)
 
 
+def complete_seller_application(bot, user_id: int, now: str) -> None:
+    conn = bot.db()
+    conn.row_factory = bot.sqlite3.Row
+    cur = conn.cursor()
+    application = bot.seller_lifecycle.get_application(cur, user_id)
+    if not application:
+        application_id = bot.seller_lifecycle.create_draft(cur, user_id, source="native")
+        application = bot.seller_lifecycle.get_application_by_id(cur, application_id)
+    application_id = int(application.get("id") or 0)
+    fields = bot.seller_lifecycle.merge_fields(
+        bot.seller_lifecycle.applicant_fields(application),
+        {
+            "seller_type": "creator",
+            "seller_intent": ["Digital Products", "Courses"],
+            "full_name": "Seller Inventory Events QA",
+            "country": "United States",
+            "state_region": "CA",
+            "email": "seller-inventory-events-qa@example.com",
+            "phone": "+15555550123",
+            "display_name": "Seller Inventory Events QA",
+            "website": "https://pulsesoc.com",
+            "years_experience": "3",
+            "business_description": "A QA seller profile used only to verify that native marketplace seller inventory events reach the sync cursor.",
+            "sold_online_before": "yes",
+            "banned_elsewhere": "no",
+            "guaranteed_profits": "no",
+            "comply_rules": "yes",
+            "understand_claims": "yes",
+            "marketplace_rules": "yes",
+            "anti_scam_agreement": "yes",
+            "no_profit_guarantees": "yes",
+        },
+    )
+    for index, document_type in enumerate(bot.seller_lifecycle.REQUIRED_DOCUMENTS):
+        cur.execute(
+            """
+            INSERT INTO marketplace_merchant_documents
+                (application_id, user_id, document_type, original_filename, stored_path, mime_type,
+                 file_size, private_access, scan_status, review_status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'image/jpeg', 2048, 1, 'passed', 'pending', ?, ?)
+            """,
+            (
+                application_id,
+                user_id,
+                document_type,
+                f"{document_type}.jpg",
+                f"/tmp/seller-inventory-events/{application_id}-{index}.jpg",
+                now,
+                now,
+            ),
+        )
+    documents = bot.seller_lifecycle.documents_for(cur, application_id)
+    bot.seller_lifecycle.save_draft(cur, application_id, fields, documents)
+    conn.commit()
+    conn.close()
+
+
+def approve_seller_for_inventory(bot, user_id: int) -> None:
+    conn = bot.db()
+    conn.row_factory = bot.sqlite3.Row
+    cur = conn.cursor()
+    application = bot.seller_lifecycle.get_application(cur, user_id)
+    if not application:
+        conn.close()
+        raise AssertionError("seller application was not created")
+    bot.seller_lifecycle.apply_transition(
+        cur,
+        application,
+        bot.seller_lifecycle.APPROVED,
+        actor_type=bot.seller_lifecycle.ADMIN,
+        actor_id=99,
+        reason="QA approval for seller inventory event emission.",
+    )
+    conn.commit()
+    conn.close()
+
+
 def assert_ok(response, label: str, failures: list[str]) -> dict:
     data = response.get_json(silent=True) or {}
     require(response.status_code < 400, f"{label} returned HTTP {response.status_code}: {data}", failures)
@@ -99,15 +176,23 @@ def run_seeded_inventory_flow(failures: list[str]) -> None:
         "seller application",
         failures,
     )
-    require("Seller application saved" in apply_data.get("message", ""), "seller apply response message changed unexpectedly", failures)
+    require(
+        "Draft saved" in apply_data.get("message", ""),
+        "legacy seller apply response message changed unexpectedly",
+        failures,
+    )
+    complete_seller_application(bot, user_id, now)
+    submit_data = assert_ok(
+        client.post("/api/pulse/seller/application/submit"),
+        "seller application submit",
+        failures,
+    )
+    require("Application sent for review" in submit_data.get("message", ""), "seller submit response message changed unexpectedly", failures)
+    approve_seller_for_inventory(bot, user_id)
 
     conn = bot.db()
     conn.row_factory = bot.sqlite3.Row
     cur = conn.cursor()
-    cur.execute(
-        "UPDATE marketplace_sellers SET status='approved', verification_status='verified', updated_at=? WHERE user_id=?",
-        (now, user_id),
-    )
     cur.execute(
         """
         INSERT INTO marketplace_product_media
@@ -212,7 +297,7 @@ def main() -> int:
         require(token in bot_source, f"bot.py missing seller inventory event token: {token}", failures)
 
     route_tokens = {
-        "seller application": '@webhook_app.route("/api/pulse/marketplace/seller/apply", methods=["POST"])',
+        "seller application submit": '@webhook_app.route("/api/pulse/seller/application/submit", methods=["POST"])',
         "listing create": '@webhook_app.route("/api/pulse/marketplace/listings/create", methods=["POST"])',
         "listing update": '@webhook_app.route("/api/pulse/marketplace/seller/listings/<int:listing_id>", methods=["PATCH", "POST"])',
         "listing pause": '@webhook_app.route("/api/pulse/marketplace/seller/listings/<int:listing_id>/pause", methods=["POST"])',
@@ -224,7 +309,12 @@ def main() -> int:
     for label, token in route_tokens.items():
         block = route_block(bot_source, token)
         require(bool(block), f"missing route block for {label}", failures)
-        require("pulse_emit_marketplace_inventory_event(" in block, f"{label} route does not emit seller inventory event", failures)
+        if label == "merchant admin review":
+            action_block = route_block(bot_source, "def admin_seller_application_action(admin):")
+            require("admin_seller_application_action(admin)" in block, f"{label} route does not delegate to seller action handler", failures)
+            require("pulse_emit_marketplace_inventory_event(" in action_block, f"{label} action handler does not emit seller inventory event", failures)
+        else:
+            require("pulse_emit_marketplace_inventory_event(" in block, f"{label} route does not emit seller inventory event", failures)
 
     for token in [
         "Seller inventory event coverage %",

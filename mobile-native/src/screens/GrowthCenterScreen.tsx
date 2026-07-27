@@ -1,7 +1,7 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { getGrowthState, growthMoney, GrowthState, loadCachedGrowthState, openGrowthWebFallback, promotionWebPath } from "../api/growth";
+import { getGrowthState, growthMoney, GrowthState, loadCachedGrowthState } from "../api/growth";
 import { getPremiumStatus, premiumStateLabel, PremiumStatus } from "../api/premium";
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
@@ -115,7 +115,6 @@ export function GrowthCenterScreen({ route, navigation }: Props) {
         <Text style={styles.sectionTitle}>Promote content</Text>
         <Text style={styles.muted}>Promotion starts from real owner content and uses existing promotion policy, billing, targeting, and review rules.</Text>
         <View style={styles.actionGrid}>
-          <Action label="Promote selected" onPress={() => openGrowthWebFallback(promotionWebPath(context.contentType, context.contentId)).catch(() => undefined)} />
           <Action label="Feed" onPress={() => navigation.navigate("Tabs", { screen: "Home" })} />
           <Action label="Reels" onPress={() => navigation.navigate("Reels")} />
           <Action label="Marketplace" onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })} />
@@ -161,13 +160,7 @@ export function GrowthCenterScreen({ route, navigation }: Props) {
 
       <Panel>
         <Text style={styles.sectionTitle}>Advanced tools</Text>
-        <Text style={styles.muted}>Campaign launch, wallet funding, billing, targeting, ad review, and unsupported promotion tools stay on existing PulseSoc web/provider flows.</Text>
-        <View style={styles.actionGrid}>
-          <Action label="Open Growth Web" onPress={() => openGrowthWebFallback("/pulse/growth").catch(() => undefined)} />
-          <Action label="Campaign Launch" onPress={() => openGrowthWebFallback("/pulse/promote").catch(() => undefined)} />
-          <Action label="Wallet Funding" onPress={() => openGrowthWebFallback("/pulse/growth#wallet").catch(() => undefined)} />
-          <Action label="Billing" onPress={() => openGrowthWebFallback("/pulse/growth#billing").catch(() => undefined)} />
-        </View>
+        <Text style={styles.muted}>Campaign launch, wallet funding, billing, targeting, and ad review are managed by PulseSoc. Your campaigns and wallet activity stay in sync automatically.</Text>
       </Panel>
     </ScrollView>
   );

@@ -1,4 +1,4 @@
-"""Trust-first monetization architecture for CoinPilotXAI."""
+"""Trust-first monetization architecture for CoinPlotXAI."""
 
 from __future__ import annotations
 

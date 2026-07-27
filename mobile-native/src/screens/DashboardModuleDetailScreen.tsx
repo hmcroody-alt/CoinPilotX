@@ -2,7 +2,7 @@ import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { dashboardModuleGroups, DashboardModuleGroup, DashboardModuleItem } from "../data/dashboardModules";
-import { classifyDashboardActionRoute, dashboardWebUrl, openDashboardAccessRoute, openDashboardRoute, openDashboardWebFallback, DashboardNavigation } from "../navigation/dashboardRouting";
+import { classifyDashboardActionRoute, openDashboardAccessRoute, openDashboardRoute, DashboardNavigation } from "../navigation/dashboardRouting";
 import { RootStackParamList } from "../navigation/types";
 import { DashboardLiveStatePanel, loadDashboardModuleLiveState } from "../api/dashboardLiveState";
 import { colors } from "../theme/colors";
@@ -94,15 +94,9 @@ export function DashboardModuleDetailScreen() {
         <Text style={styles.sectionTitle}>Available actions</Text>
         <View style={styles.actionGrid}>
           <ActionButton
-            label={module.access === "locked" ? "Review Access" : nativeRoute ? routeClass.label === "Native shell" ? "Open Native Shell" : "Open Native Surface" : "Open Fallback"}
-            body={module.access === "locked" ? "Open the entitlement or owner area tied to this card." : nativeRoute ? routeClass.detail : "Use the protected production route until native support exists."}
+            label={module.access === "locked" ? "Review Access" : nativeRoute ? routeClass.label === "Native shell" ? "Open Native Shell" : "Open Native Surface" : "Open Native Boundary"}
+            body={module.access === "locked" ? "Open the entitlement or owner area tied to this card." : nativeRoute ? routeClass.detail : "Keep the protected production workflow inside this native dashboard boundary."}
             onPress={() => (module.access === "locked" ? openDashboardAccessRoute(navigation, module) : openDashboardRoute(navigation, module.route))}
-          />
-          <ActionButton
-            label="Open Production Route"
-            body={dashboardWebUrl(module.route)}
-            variant="secondary"
-            onPress={() => openDashboardWebFallback(module.route)}
           />
         </View>
       </View>
@@ -122,7 +116,7 @@ export function DashboardModuleDetailScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Foundation status</Text>
         <Text style={styles.bodyText}>
-          This shell completes native dashboard navigation parity for the module card. Advanced workflows remain on safe fallback until their native screens are built and verified.
+          This shell completes native dashboard navigation parity for the module card. Advanced workflows remain inside native provider boundaries until their dedicated screens are built and verified.
         </Text>
       </View>
     </ScrollView>

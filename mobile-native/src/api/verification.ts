@@ -1,7 +1,5 @@
 import * as DocumentPicker from "expo-document-picker";
-import { Linking } from "react-native";
 import { readJsonCache, writeJsonCache } from "../core/cache";
-import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
 
 const VERIFICATION_CACHE_KEY = "pulsesoc.native.verification.state";
@@ -164,11 +162,6 @@ export async function uploadVerificationDocument(
     method: "POST",
     body: form
   });
-}
-
-export async function openVerificationWebFallback(path = "/dashboard/account/verification") {
-  const safePath = path.startsWith("/") && !path.startsWith("//") ? path : "/dashboard/account/verification";
-  await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);
 }
 
 export function verificationStatusLabel(status?: string) {

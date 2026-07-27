@@ -12,6 +12,7 @@ import {
   TextInput,
   View
 } from "react-native";
+import { DIGITAL_COMMERCE_ENABLED } from "../api/config";
 import {
   askLearningTutor,
   getLearningLesson,
@@ -177,7 +178,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
         contentContainerStyle={styles.detailContent}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
       >
-        <Pressable style={styles.backButton} onPress={() => {
+        <Pressable accessibilityRole="button" style={styles.backButton} onPress={() => {
           setSelectedLesson(null);
           navigation.navigate("Courses", { title: "Courses" });
         }}>
@@ -198,7 +199,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
         <Panel>
           <Text style={styles.sectionTitle}>Lesson overview</Text>
           <Text style={styles.bodyText}>{selectedLesson.content || selectedLesson.summary || "Lesson content is available through the PulseSoc education backend."}</Text>
-          <Pressable style={styles.primaryButton} onPress={completeLesson}>
+          <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={completeLesson}>
             <Text style={styles.primaryText}>Mark Complete</Text>
           </Pressable>
           {progressMessage ? <Text style={styles.answer}>{progressMessage}</Text> : null}
@@ -225,16 +226,18 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
         <Panel>
           <Text style={styles.sectionTitle}>PulseSoc tutor</Text>
           <TextInput style={styles.input} value={question} onChangeText={setQuestion} placeholder="Ask about this lesson" placeholderTextColor={colors.muted} />
-          <Pressable style={styles.secondaryButton} onPress={askTutor}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={askTutor}>
             <Text style={styles.secondaryText}>Ask Tutor</Text>
           </Pressable>
           {tutorAnswer ? <Text style={styles.answer}>{tutorAnswer}</Text> : <Text style={styles.muted}>Tutor answers use the existing education AI endpoint and safety rules.</Text>}
         </Panel>
-        <Panel>
-          <Text style={styles.sectionTitle}>Fallbacks</Text>
-          <Gateway label="Open Lesson Web" body="Full lesson, quiz, and any unsupported media/player behavior." onPress={() => openLearningWebFallback(learningWebRoute("education", selectedLesson.slug)).catch(() => undefined)} />
-          <Gateway label="Course Catalog Web" body="Paid-course-ready catalog, enrollment, checkout, and teacher compliance surfaces." onPress={() => openLearningWebFallback(learningWebRoute("courses")).catch(() => undefined)} />
-        </Panel>
+        {DIGITAL_COMMERCE_ENABLED ? (
+          <Panel>
+            <Text style={styles.sectionTitle}>Fallbacks</Text>
+            <Gateway label="Open Lesson Web" body="Full lesson, quiz, and any unsupported media/player behavior." onPress={() => openLearningWebFallback(learningWebRoute("education", selectedLesson.slug)).catch(() => undefined)} />
+            <Gateway label="Course Catalog Web" body="Paid-course-ready catalog, enrollment, checkout, and teacher compliance surfaces." onPress={() => openLearningWebFallback(learningWebRoute("courses")).catch(() => undefined)} />
+          </Panel>
+        ) : null}
       </ScrollView>
     );
   }
@@ -245,17 +248,19 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
         <View style={styles.hero}>
           <Text style={styles.kicker}>Learning Gateway</Text>
           <Text style={styles.title}>{gatewayTitle(gatewayMode)}</Text>
-          <Text style={styles.subtitle}>This native gateway preserves the existing PulseSoc teacher, course, payment, and review rules. Advanced operations stay on safe fallback.</Text>
+          <Text style={styles.subtitle}>This native gateway preserves the existing PulseSoc teacher, course, payment, and review rules. Advanced operations stay inside provider-owned boundaries.</Text>
         </View>
         <Panel>
           <Text style={styles.sectionTitle}>Backend authority preserved</Text>
-          <Text style={styles.muted}>Course creation, paid enrollment, lesson editing, teacher approval, checkout, and advanced player behavior remain web/provider-owned until dedicated native contracts exist.</Text>
+          <Text style={styles.muted}>Course creation, paid enrollment, lesson editing, teacher approval, checkout, and advanced player behavior are managed by PulseSoc.</Text>
         </Panel>
-        <Panel>
-          <Gateway label="Open Course Catalog" body="Browse the production course catalog." onPress={() => openLearningWebFallback(learningWebRoute("courses", courseId || undefined)).catch(() => undefined)} />
-          <Gateway label="Teacher Profile" body="Open the existing trusted educator profile surface." onPress={() => openLearningWebFallback(learningWebRoute("teachers", teacherId || undefined)).catch(() => undefined)} />
-          <Gateway label="Teacher Dashboard" body="Teacher applications, lessons, payouts, and review status." onPress={() => openLearningWebFallback(learningWebRoute("teacher-dashboard")).catch(() => undefined)} />
-        </Panel>
+        {DIGITAL_COMMERCE_ENABLED ? (
+          <Panel>
+            <Gateway label="Open Course Catalog" body="Browse the production course catalog." onPress={() => openLearningWebFallback(learningWebRoute("courses", courseId || undefined)).catch(() => undefined)} />
+            <Gateway label="Teacher Profile" body="Open the existing trusted educator profile surface." onPress={() => openLearningWebFallback(learningWebRoute("teachers", teacherId || undefined)).catch(() => undefined)} />
+            <Gateway label="Teacher Dashboard" body="Teacher applications, lessons, payouts, and review status." onPress={() => openLearningWebFallback(learningWebRoute("teacher-dashboard")).catch(() => undefined)} />
+          </Panel>
+        ) : null}
       </ScrollView>
     );
   }
@@ -272,26 +277,28 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
           <View style={styles.hero}>
             <Text style={styles.kicker}>Courses + Learning</Text>
             <Text style={styles.title}>Learning Gateway</Text>
-            <Text style={styles.subtitle}>{offline ? "Showing saved lessons" : "Native lesson discovery powered by the existing PulseSoc education backend, with course payments and teacher tools kept on safe fallback."}</Text>
+            <Text style={styles.subtitle}>{offline ? "Showing saved lessons" : "Native lesson discovery powered by the existing PulseSoc education backend, with course payments and teacher tools kept inside provider-owned boundaries."}</Text>
           </View>
           {error ? <Text style={styles.error}>{error}</Text> : null}
           {offline ? <Text style={styles.offline}>Showing saved learning data</Text> : null}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
-            <Pressable style={[styles.categoryChip, !selectedCategory ? styles.categoryChipActive : undefined]} onPress={() => selectCategory("")}>
+            <Pressable accessibilityRole="button" style={[styles.categoryChip, !selectedCategory ? styles.categoryChipActive : undefined]} onPress={() => selectCategory("")}>
               <Text style={[styles.categoryText, !selectedCategory ? styles.categoryTextActive : undefined]}>All</Text>
             </Pressable>
             {categories.map((category) => (
-              <Pressable key={category.slug} style={[styles.categoryChip, selectedCategory === category.slug ? styles.categoryChipActive : undefined]} onPress={() => selectCategory(category.slug)}>
+              <Pressable accessibilityRole="button" key={category.slug} style={[styles.categoryChip, selectedCategory === category.slug ? styles.categoryChipActive : undefined]} onPress={() => selectCategory(category.slug)}>
                 <Text style={[styles.categoryText, selectedCategory === category.slug ? styles.categoryTextActive : undefined]}>{category.title}</Text>
               </Pressable>
             ))}
           </ScrollView>
-          <Panel>
-            <Text style={styles.sectionTitle}>Course gateway</Text>
-            <Gateway label="PulseSoc Courses" body="Production catalog, paid-course readiness, enrollment, and checkout fallback." onPress={() => openLearningWebFallback(learningWebRoute("courses")).catch(() => undefined)} />
-            <Gateway label="Teacher Dashboard" body="Teacher applications, lesson editing, payouts, and review status." onPress={() => openLearningWebFallback(learningWebRoute("teacher-dashboard")).catch(() => undefined)} />
-            <Gateway label="Create Course" body="Course creation stays on existing server validation and review workflows." onPress={() => openLearningWebFallback(learningWebRoute("create")).catch(() => undefined)} />
-          </Panel>
+          {DIGITAL_COMMERCE_ENABLED ? (
+            <Panel>
+              <Text style={styles.sectionTitle}>Course gateway</Text>
+              <Gateway label="PulseSoc Courses" body="Production catalog, paid-course readiness, enrollment, and checkout fallback." onPress={() => openLearningWebFallback(learningWebRoute("courses")).catch(() => undefined)} />
+              <Gateway label="Teacher Dashboard" body="Teacher applications, lesson editing, payouts, and review status." onPress={() => openLearningWebFallback(learningWebRoute("teacher-dashboard")).catch(() => undefined)} />
+              <Gateway label="Create Course" body="Course creation stays on existing server validation and review workflows." onPress={() => openLearningWebFallback(learningWebRoute("create")).catch(() => undefined)} />
+            </Panel>
+          ) : null}
           {recent.length ? (
             <Panel>
               <Text style={styles.sectionTitle}>Continue learning</Text>
@@ -314,7 +321,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
 
 function LessonCard({ lesson, onPress }: { lesson: LearningLessonSummary; onPress: () => void }) {
   return (
-    <Pressable style={styles.card} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.card} onPress={onPress}>
       <View style={styles.cardGlow} />
       <View style={styles.cardBody}>
         <Text style={styles.kicker}>{lesson.category_slug || "Lesson"}</Text>
@@ -332,7 +339,7 @@ function LessonCard({ lesson, onPress }: { lesson: LearningLessonSummary; onPres
 
 function MiniLesson({ lesson, onPress }: { lesson: LearningLessonSummary; onPress: () => void }) {
   return (
-    <Pressable style={styles.miniLesson} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.miniLesson} onPress={onPress}>
       <Text style={styles.miniLessonTitle}>{lesson.title}</Text>
       <Text style={styles.miniLessonMeta}>{lesson.difficulty || "Guided"} · {lesson.estimated_time || "Self paced"}</Text>
     </Pressable>
@@ -341,7 +348,7 @@ function MiniLesson({ lesson, onPress }: { lesson: LearningLessonSummary; onPres
 
 function Gateway({ label, body, onPress }: { label: string; body: string; onPress: () => void }) {
   return (
-    <Pressable style={styles.gateway} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.gateway} onPress={onPress}>
       <View style={styles.gatewayDot} />
       <View style={styles.gatewayBody}>
         <Text style={styles.gatewayTitle}>{label}</Text>

@@ -3,12 +3,23 @@ import { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useEffect, useRef, useState } from "react";
-import { Animated, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, Animated, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LogiNexusBadge, LogiNexusSignalIndicator } from "../components/LogiNexus";
+import { getPulseRadioState, playNextTrack, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { useBottomNavVisibility } from "./BottomNavVisibility";
+import {
+  BOTTOM_NAV_CREATE_MARGIN_TOP,
+  BOTTOM_NAV_CREATE_MIN_HEIGHT,
+  BOTTOM_NAV_DOCK_PADDING_TOP,
+  BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT,
+  BOTTOM_NAV_DOCK_PANEL_PADDING
+} from "./bottomNavMetrics";
+import { resolveBottomNavPolicy } from "./bottomNavPolicy";
+import { triggerHomeReselect } from "./homeReselect";
+import { triggerReelsReselect } from "./reelsReselect";
 import { AppTabParamList } from "./types";
 
 export type GlobalNavigationBadges = {
@@ -42,6 +53,11 @@ type HeaderProps = {
   identity?: GlobalNavigationIdentity;
   testID?: string;
 };
+
+// Max gap between two taps on the already-active Reels tab to count as a
+// double-tap. 320ms matches the platform double-tap feel without being so long
+// that two deliberate single taps are misread as one gesture.
+const REELS_DOUBLE_TAP_MS = 320;
 
 const PRIMARY_TABS: Array<{
   name: keyof AppTabParamList;
@@ -148,17 +164,28 @@ export function LogiNexusGlobalHeader({
 export function LogiNexusBottomNavigation({ state, descriptors, navigation, badges }: BottomTabBarProps & { badges?: GlobalNavigationBadges }) {
   const insets = useSafeAreaInsets();
   const activeRoute = state.routes[state.index]?.name as keyof AppTabParamList | undefined;
-  const { hidden, showBottomNav } = useBottomNavVisibility();
+  // Timestamp of the last tap on the Reels tab while it was already active, used
+  // to recognise a double-tap (second tap within DOUBLE_TAP_MS) → reselect.
+  const lastReelsTapRef = useRef(0);
+  const { hidden: requestedHidden, showBottomNav } = useBottomNavVisibility();
+  const hidden = resolveBottomNavPolicy(activeRoute) === "always-visible" ? false : requestedHidden;
   const hiddenProgress = useRef(new Animated.Value(0)).current;
   const [shellHeight, setShellHeight] = useState(0);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => undefined);
+    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     Animated.timing(hiddenProgress, {
-      duration: hidden ? 180 : 210,
+      duration: reduceMotion ? 0 : hidden ? 180 : 210,
       toValue: hidden ? 1 : 0,
       useNativeDriver: true
     }).start();
-  }, [hidden, hiddenProgress]);
+  }, [hidden, hiddenProgress, reduceMotion]);
 
   useEffect(() => {
     showBottomNav();
@@ -182,10 +209,11 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
         const nextHeight = Math.ceil(event.nativeEvent.layout.height);
         setShellHeight((current) => (current === nextHeight ? current : nextHeight));
       }}
-      pointerEvents={hidden ? "none" : "box-none"}
+      pointerEvents={hidden ? "none" : "auto"}
       style={[styles.bottomShell, { paddingBottom: Math.max(insets.bottom, 10), opacity, transform: [{ translateY }] }]}
       testID="global-bottom-navigation"
     >
+      <PulseMiniPlayerBar navigation={navigation} />
       <View pointerEvents="auto" style={styles.bottomPanel}>
         {PRIMARY_TABS.map((item) => {
           const route = state.routes.find((candidate) => candidate.name === item.routeName);
@@ -199,6 +227,14 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
               accessibilityRole="tab"
               accessibilityLabel={item.accessibilityLabel}
               accessibilityState={{ selected: active, disabled }}
+              accessibilityActions={item.name === "Reels" && active ? [{ name: "refresh", label: "Refresh Reels" }] : undefined}
+              onAccessibilityAction={
+                item.name === "Reels" && active
+                  ? (event) => {
+                      if (event.nativeEvent.actionName === "refresh") triggerReelsReselect();
+                    }
+                  : undefined
+              }
               testID={`global-bottom-${String(item.name).toLowerCase()}`}
               disabled={disabled}
               style={({ pressed }) => [
@@ -211,6 +247,23 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
                 Haptics.selectionAsync().catch(() => undefined);
                 if (item.name === "Create") {
                   navigation.navigate("Home", { openComposer: true });
+                  return;
+                }
+                if (item.name === "Home" && active) {
+                  triggerHomeReselect();
+                  return;
+                }
+                if (item.name === "Reels" && active) {
+                  // Already on Reels: only a DOUBLE-tap (two taps within the
+                  // window) triggers scroll-to-top + refresh. A lone tap is a
+                  // no-op (we're already here) and simply arms the window.
+                  const now = Date.now();
+                  if (now - lastReelsTapRef.current <= REELS_DOUBLE_TAP_MS) {
+                    lastReelsTapRef.current = 0;
+                    triggerReelsReselect();
+                  } else {
+                    lastReelsTapRef.current = now;
+                  }
                   return;
                 }
                 const event = route
@@ -242,6 +295,73 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
         })}
       </View>
     </Animated.View>
+  );
+}
+
+// Persistent "continue listening across pages" strip: shown above the tab
+// bar on every primary tab screen whenever Pulse Radio has a loaded track,
+// regardless of which page the user is on. Tapping it opens the queue
+// screen; the play/pause and next controls work in place without navigating.
+function PulseMiniPlayerBar({ navigation }: { navigation: BottomTabBarProps["navigation"] }) {
+  const [radio, setRadio] = useState<PulseRadioState>(getPulseRadioState());
+  useEffect(() => subscribePulseRadio(setRadio), []);
+
+  if (!radio.track) return null;
+
+  const playing = radio.status === "playing";
+  const busy = radio.status === "connecting" || radio.status === "buffering";
+  const progress = radio.durationMillis > 0 ? Math.min(1, Math.max(0, radio.positionMillis / radio.durationMillis)) : 0;
+  const hasNext = radio.queueIndex < radio.queue.length - 1 || radio.repeatMode !== "off";
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Now playing: ${radio.track.title} by ${radio.track.artist}. Open queue`}
+      testID="global-mini-player"
+      style={styles.miniPlayer}
+      onPress={() => (navigation as any).getParent()?.navigate("PulseQueue")}
+    >
+      <View style={styles.miniPlayerProgressTrack}>
+        <View style={[styles.miniPlayerProgressFill, { width: `${progress * 100}%` }]} />
+      </View>
+      <View style={styles.miniPlayerRow}>
+        <View style={styles.miniPlayerText}>
+          <Text style={styles.miniPlayerTitle} numberOfLines={1}>
+            {radio.track.title}
+          </Text>
+          <Text style={styles.miniPlayerArtist} numberOfLines={1}>
+            {radio.track.artist}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={playing ? "Pause" : "Play"}
+          testID="global-mini-player-play-pause"
+          style={styles.miniPlayerButton}
+          onPress={(event) => {
+            event.stopPropagation();
+            Haptics.selectionAsync().catch(() => undefined);
+            togglePulseRadio().catch(() => undefined);
+          }}
+        >
+          <Ionicons name={playing ? "pause" : busy ? "hourglass-outline" : "play"} size={18} color={colors.background} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Next track"
+          disabled={!hasNext}
+          testID="global-mini-player-next"
+          style={[styles.miniPlayerButton, styles.miniPlayerButtonSecondary, !hasNext && styles.disabled]}
+          onPress={(event) => {
+            event.stopPropagation();
+            Haptics.selectionAsync().catch(() => undefined);
+            playNextTrack().catch(() => undefined);
+          }}
+        >
+          <Ionicons name="play-skip-forward" size={16} color={colors.text} />
+        </Pressable>
+      </View>
+    </Pressable>
   );
 }
 
@@ -358,8 +478,10 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(50, 230, 179, 0.14)"
   },
   bottomCreateItem: {
-    marginTop: -32,
-    minHeight: 98
+    // Shared with the overhang the clearance accounts for — see
+    // `bottomNavMetrics.ts`. Changing these here changes that there.
+    marginTop: BOTTOM_NAV_CREATE_MARGIN_TOP,
+    minHeight: BOTTOM_NAV_CREATE_MIN_HEIGHT
   },
   bottomLabel: {
     ...logiNexus.typography.metadata,
@@ -379,8 +501,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 4,
-    minHeight: 106,
-    padding: 10,
+    // Shared with the clearance every scrollable surface reserves — see
+    // `bottomNavMetrics.ts`. Changing this here changes that there.
+    minHeight: BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT,
+    padding: BOTTOM_NAV_DOCK_PANEL_PADDING,
     shadowColor: colors.accent,
     shadowOpacity: 0.16,
     shadowRadius: 22
@@ -393,7 +517,7 @@ const styles = StyleSheet.create({
     elevation: 40,
     left: 0,
     paddingHorizontal: logiNexus.spacing.md,
-    paddingTop: 10,
+    paddingTop: BOTTOM_NAV_DOCK_PADDING_TOP,
     position: "absolute",
     right: 0,
     zIndex: 40
@@ -565,6 +689,55 @@ const styles = StyleSheet.create({
   },
   iconTextHome: {
     fontSize: 25
+  },
+  miniPlayer: {
+    backgroundColor: "rgba(8, 16, 29, 0.94)",
+    borderColor: "rgba(121, 210, 255, 0.24)",
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 8,
+    overflow: "hidden"
+  },
+  miniPlayerProgressTrack: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    height: 2,
+    width: "100%"
+  },
+  miniPlayerProgressFill: {
+    backgroundColor: colors.accent,
+    height: 2
+  },
+  miniPlayerRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10
+  },
+  miniPlayerText: {
+    flex: 1,
+    minWidth: 0
+  },
+  miniPlayerTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700"
+  },
+  miniPlayerArtist: {
+    color: colors.muted,
+    fontSize: 11,
+    marginTop: 1
+  },
+  miniPlayerButton: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: 17,
+    height: 34,
+    justifyContent: "center",
+    width: 34
+  },
+  miniPlayerButtonSecondary: {
+    backgroundColor: "rgba(255,255,255,0.08)"
   },
   pressed: {
     opacity: 0.72,

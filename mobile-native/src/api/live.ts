@@ -1,8 +1,23 @@
-import { Linking } from "react-native";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { PulseAuthor } from "./feed";
 import { pulseApi } from "./pulseApi";
+import {
+  buildLiveStartPayload,
+  normalizeGuestRequest,
+  normalizeGuestRequests,
+  normalizeLiveGuest,
+  normalizeLiveGuests,
+  normalizeLiveKitCredentials,
+  normalizeLiveStartResult,
+  type LiveGuest,
+  type LiveGuestRequest,
+  type LiveKitCredentials,
+  type LiveStartResult
+} from "../live/liveSession";
+import type { LiveStudioDraft } from "../live/liveStudioReadiness";
+
+export type LiveKitRole = "host" | "guest" | "cohost" | "viewer";
 
 const LIVE_CACHE_KEY = "pulsesoc.native.live.discovery";
 const liveStateCacheKey = (liveId: number) => `pulsesoc.native.live.state.${liveId}`;
@@ -72,6 +87,11 @@ export type PulseLiveState = {
   viewer_role?: string;
   accepting_guests?: boolean;
   cohost_enabled?: boolean;
+  viewer_join_request?: LiveGuestRequest | null;
+  guest?: LiveGuest | null;
+  guests?: LiveGuest[];
+  join_request_count?: number;
+  guest_count?: number;
   messages?: PulseLiveChatMessage[];
   playback?: LivePlayback;
   discovery?: PulseLiveItem;
@@ -178,13 +198,246 @@ export async function cacheLiveDiscovery(data: LiveNowResponse) {
   });
 }
 
-export async function openLiveWebFallback(liveId?: number, mode: "viewer" | "studio" | "host" = "viewer") {
-  const url = mode === "viewer" && liveId ? liveWebUrl(liveId) : `${PULSE_API_BASE_URL}/pulse/live/studio?context_type=native`;
-  await Linking.openURL(url);
+/**
+ * Start a native broadcast. Maps the Live Studio draft into the backend
+ * `/api/pulse/live/start` contract and returns the normalized go-live result
+ * (live id, LiveKit room, token url, feed post). Throws a real PulseApiError on
+ * failure — callers must surface the honest message, never a fake success.
+ */
+export async function startLive(draft: LiveStudioDraft): Promise<LiveStartResult> {
+  const payload = buildLiveStartPayload(draft);
+  const data = await pulseApi<Record<string, unknown>>("/api/pulse/live/start", {
+    method: "POST",
+    body: JSON.stringify({ ...payload, destinations: ["pulse"] })
+  });
+  const result = normalizeLiveStartResult(data);
+  if (!result) {
+    throw new Error(typeof data.message === "string" ? data.message : "PulseSoc could not start the broadcast.");
+  }
+  return result;
+}
+
+/**
+ * Mint a LiveKit access token for a live room. `role: "host"` requests publish
+ * permission (host only), `"guest"` requests a co-host publish token, `"viewer"`
+ * a subscribe-only token. Returns null when the backend returns no usable
+ * token/url so the caller can surface an honest error instead of a blank preview.
+ */
+export async function getLiveKitToken(liveId: number, role: LiveKitRole = "viewer"): Promise<LiveKitCredentials | null> {
+  const data = await pulseApi<Record<string, unknown>>(`/api/pulse/live/${liveId}/livekit/token`, {
+    method: "POST",
+    body: JSON.stringify({ role })
+  });
+  return normalizeLiveKitCredentials(data);
+}
+
+export async function confirmHostLivePublish(
+  liveId: number,
+  payload: { audioTracks?: number; videoTracks?: number; traceId?: string } = {}
+) {
+  const data = await pulseApi<Record<string, unknown>>(`/api/pulse/live/${liveId}/native-publish`, {
+    method: "POST",
+    body: JSON.stringify({
+      source: "native",
+      trace_id: payload.traceId || "",
+      audio_tracks: Math.max(0, Number(payload.audioTracks || 0)),
+      video_tracks: Math.max(0, Number(payload.videoTracks || 0))
+    })
+  });
+  return {
+    ok: Boolean(data.ok),
+    status: String(data.status || ""),
+    publishPath: String(data.publish_path || ""),
+    audioTracks: Number(data.audio_tracks || payload.audioTracks || 0),
+    videoTracks: Number(data.video_tracks || payload.videoTracks || 0),
+    playback: normalizePlayback((data.playback || {}) as LivePlayback, liveId),
+    message: String(data.message || ""),
+    retryable: Boolean(data.retryable),
+    retryAfterMs: Number(data.retry_after_ms || 0)
+  };
+}
+
+export async function getLiveJoinStatus(liveId: number): Promise<{
+  ok?: boolean;
+  status: string;
+  step: string;
+  request: LiveGuestRequest | null;
+  guest: LiveGuest | null;
+  canPublish: boolean;
+  livekitConfigured: boolean;
+  tokenUrl: string;
+  message: string;
+  errorCode: string;
+}> {
+  const data = await pulseApi<Record<string, unknown>>(`/api/pulse/live/${liveId}/join-status`);
+  return {
+    ok: Boolean(data.ok),
+    status: String(data.status || "none"),
+    step: String(data.step || "idle"),
+    request: normalizeGuestRequest(data.request as Record<string, unknown> | null | undefined),
+    guest: normalizeLiveGuest(data.guest as Record<string, unknown> | null | undefined),
+    canPublish: Boolean(data.can_publish),
+    livekitConfigured: Boolean(data.livekit_configured),
+    tokenUrl: String(data.token_url || ""),
+    message: String(data.message || ""),
+    errorCode: String(data.error_code || "")
+  };
+}
+
+export type EndLiveResult = {
+  recordingStatus: string;
+  replayUrl: string;
+  replayAvailable: boolean;
+};
+
+/** End a broadcast (host only). Optionally attach a replay url. */
+export async function endLive(liveId: number, opts: { replayUrl?: string } = {}): Promise<EndLiveResult> {
+  const body: Record<string, unknown> = { source: "native" };
+  if (opts.replayUrl) body.replay_url = opts.replayUrl;
+  const data = await pulseApi<Record<string, unknown>>(`/api/pulse/live/${liveId}/end`, {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+  return {
+    recordingStatus: String(data.recording_status || ""),
+    replayUrl: String(data.replay_url || ""),
+    replayAvailable: Boolean(data.replay_available)
+  };
+}
+
+/** List pending guest/co-host join requests for a live (host only). */
+export async function listJoinRequests(liveId: number): Promise<LiveGuestRequest[]> {
+  const data = await pulseApi<{ requests?: unknown }>(`/api/pulse/live/${liveId}/join-requests`);
+  return normalizeGuestRequests(data.requests);
+}
+
+/**
+ * Host guest-management snapshot: pending join requests plus the active guests
+ * already on stage. One call to the real `GET /join-requests` endpoint, which
+ * returns both arrays. Host-gated by the backend.
+ */
+export async function listGuestManagement(liveId: number): Promise<{ requests: LiveGuestRequest[]; guests: LiveGuest[] }> {
+  const data = await pulseApi<{ requests?: unknown; guests?: unknown }>(`/api/pulse/live/${liveId}/join-requests`);
+  return { requests: normalizeGuestRequests(data.requests), guests: normalizeLiveGuests(data.guests) };
+}
+
+/** Mute, unmute, or remove an active guest (host only). Wired to the real guest-action endpoint. */
+export async function guestAction(liveId: number, guestId: number, action: "mute" | "unmute" | "remove") {
+  return pulseApi<{ ok?: boolean; status?: string; guest_id?: number; message?: string }>(
+    `/api/pulse/live/${liveId}/guests/${guestId}/${action}`,
+    { method: "POST", body: JSON.stringify({ source: "native" }) }
+  );
+}
+
+export const muteGuest = (liveId: number, guestId: number) => guestAction(liveId, guestId, "mute");
+export const unmuteGuest = (liveId: number, guestId: number) => guestAction(liveId, guestId, "unmute");
+export const removeGuest = (liveId: number, guestId: number) => guestAction(liveId, guestId, "remove");
+
+/**
+ * Moderate a single live-chat comment. `delete`/`pin`/`unpin` are host-only and
+ * enforced server-side; `report` is available to any viewer. Wired to
+ * POST /api/pulse/live/:liveId/chat/:messageId/:action.
+ */
+export async function moderateLiveChat(
+  liveId: number,
+  messageId: number,
+  action: "delete" | "pin" | "unpin" | "report",
+  opts: { reason?: string } = {}
+) {
+  return pulseApi<{ ok?: boolean; status?: string; message_id?: number; pinned?: boolean; message?: string }>(
+    `/api/pulse/live/${liveId}/chat/${messageId}/${action}`,
+    { method: "POST", body: JSON.stringify({ source: "native", reason: opts.reason }) }
+  );
+}
+
+export const deleteLiveChat = (liveId: number, messageId: number) => moderateLiveChat(liveId, messageId, "delete");
+export const pinLiveChat = (liveId: number, messageId: number) => moderateLiveChat(liveId, messageId, "pin");
+export const unpinLiveChat = (liveId: number, messageId: number) => moderateLiveChat(liveId, messageId, "unpin");
+export const reportLiveChat = (liveId: number, messageId: number, reason?: string) =>
+  moderateLiveChat(liveId, messageId, "report", { reason });
+
+/** Accept or deny a pending guest/co-host join request (host only). */
+export async function respondToJoinRequest(liveId: number, requestId: number, action: "accept" | "deny") {
+  return pulseApi<{ ok?: boolean; status?: string; message?: string }>(
+    `/api/pulse/live/${liveId}/join-requests/${requestId}/${action}`,
+    { method: "POST", body: JSON.stringify({ source: "native" }) }
+  );
+}
+
+/** Ask the host to join a live as a co-host publisher. */
+export async function requestToJoinLive(
+  liveId: number,
+  readiness: { cameraReady?: boolean; micReady?: boolean; networkQuality?: string } = {}
+) {
+  return pulseApi<{ ok?: boolean; request_id?: number; status?: string; message?: string }>(
+    `/api/pulse/live/${liveId}/join-request`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        requested_role: "cohost",
+        camera_ready: Boolean(readiness.cameraReady),
+        mic_ready: Boolean(readiness.micReady),
+        network_quality: String(readiness.networkQuality || "good")
+      })
+    }
+  );
+}
+
+/** Cancel your own pending co-host join request. */
+export async function cancelJoinRequest(liveId: number, requestId: number) {
+  return pulseApi<{ ok?: boolean; status?: string; message?: string }>(
+    `/api/pulse/live/${liveId}/join-requests/${requestId}/cancel`,
+    { method: "POST", body: JSON.stringify({ source: "native" }) }
+  );
+}
+
+export async function confirmGuestPublishComplete(
+  liveId: number,
+  guestId: number,
+  payload: {
+    traceId?: string;
+    participantIdentity?: string;
+    videoPublicationSid?: string;
+    audioPublicationSid?: string;
+  } = {}
+) {
+  const data = await pulseApi<Record<string, unknown>>(`/api/pulse/live/${liveId}/guests/${guestId}/publish-complete`, {
+    method: "POST",
+    body: JSON.stringify({
+      trace_id: payload.traceId || "",
+      participant_identity: payload.participantIdentity || "",
+      room_connected: true,
+      video_publication_sid: payload.videoPublicationSid || "",
+      audio_publication_sid: payload.audioPublicationSid || ""
+    })
+  });
+  return {
+    ok: Boolean(data.ok),
+    status: String(data.status || ""),
+    state: String(data.state || ""),
+    step: String(data.step || ""),
+    traceId: String(data.trace_id || payload.traceId || ""),
+    retryAfterMs: Number(data.retry_after_ms || 800),
+    missingEvent: String(data.missing_event || ""),
+    message: String(data.message || ""),
+    guest: normalizeLiveGuest(data.guest as Record<string, unknown> | null | undefined)
+  };
+}
+
+/** Open the native web viewer for a live. Studio/host broadcasting is fully native — no web handoff. */
+export async function openLiveWebFallback(liveId?: number) {
+  if (!liveId) return;
+  return {
+    ok: false,
+    liveId,
+    target: liveWebUrl(liveId),
+    status: "native_provider_boundary",
+    message: "Live playback remains inside the native Live viewer until the provider room is available."
+  };
 }
 
 export function liveWebUrl(liveId?: number) {
-  return liveId ? `${PULSE_API_BASE_URL}/pulse/reels?live=${encodeURIComponent(String(liveId))}` : `${PULSE_API_BASE_URL}/pulse/live`;
+  return liveId ? `${PULSE_API_BASE_URL}/pulse/live/${encodeURIComponent(String(liveId))}` : `${PULSE_API_BASE_URL}/pulse/live`;
 }
 
 export function normalizeLiveItems(items: PulseLiveItem[]) {
@@ -225,6 +478,11 @@ export function normalizeLiveState(data: PulseLiveState, liveId: number): PulseL
     publish_state: String(data.publish_state || discovery?.publish_state || playback.state_machine || "live"),
     viewer_count: Number(data.viewer_count || discovery?.viewer_count || 0),
     viewer_role: String(data.viewer_role || "viewer"),
+    viewer_join_request: normalizeGuestRequest(data.viewer_join_request as Record<string, unknown> | null | undefined),
+    guest: normalizeLiveGuest(data.guest as Record<string, unknown> | null | undefined),
+    guests: normalizeLiveGuests(data.guests),
+    join_request_count: Number(data.join_request_count || 0),
+    guest_count: Number(data.guest_count || 0),
     messages: normalizeLiveChat(data.messages || []),
     playback,
     discovery
@@ -261,6 +519,16 @@ export function livePosterUrl(item: PulseLiveItem | PulseLiveState | null | unde
 export function liveSupportsNativePlayback(item: PulseLiveItem | PulseLiveState | null | undefined) {
   const playback = item?.playback || {};
   return Boolean(livePlaybackUrl(item) && (playback.supports_hls || playback.preferred_transport === "hls" || playback.playback_url || playback.hls_url));
+}
+
+export function liveSupportsNativeWebRtc(item: PulseLiveItem | PulseLiveState | null | undefined) {
+  const playback = item?.playback || {};
+  return Boolean(
+    playback.supports_webrtc ||
+      playback.webrtc_room_id ||
+      playback.preferred_transport === "webrtc" ||
+      ("livekit" in (item || {}) && Boolean((item as PulseLiveState).livekit?.room))
+  );
 }
 
 export function isScheduledLive(item: PulseLiveItem) {

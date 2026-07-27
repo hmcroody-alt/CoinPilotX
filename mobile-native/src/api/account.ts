@@ -1,5 +1,3 @@
-import { Linking } from "react-native";
-import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 
@@ -82,6 +80,36 @@ export type AccountActionResponse = {
   settings?: AccountSettings;
 };
 
+export type AccountLanguageResponse = {
+  ok?: boolean;
+  message?: string;
+  preferred_language?: string;
+  language?: string;
+  supported_languages?: string[];
+  any_language_supported?: boolean;
+};
+
+export type AccountRegionPreferences = {
+  preferred_locale: string;
+  preferred_timezone: string;
+  preferred_currency: string;
+  preferred_date_format: "auto" | "mdy" | "dmy" | "ymd";
+  automatic?: {
+    locale?: boolean;
+    timezone?: boolean;
+    currency?: boolean;
+    date_format?: boolean;
+  };
+  updated_at?: string | null;
+  changed_fields?: string[];
+};
+
+export type AccountRegionPreferencesResponse = AccountRegionPreferences & {
+  ok?: boolean;
+  message?: string;
+  preferences?: AccountRegionPreferences;
+};
+
 export async function getAccountStatus() {
   return pulseApi<AccountStatus>("/api/account/status");
 }
@@ -100,6 +128,32 @@ export async function updateAccountSettings(settings: AccountSettings) {
     ...data,
     settings: normalizeSettings(data.settings || settings)
   };
+}
+
+export async function getAccountLanguage() {
+  return pulseApi<AccountLanguageResponse>("/api/account/language");
+}
+
+export async function updateAccountLanguage(language: string) {
+  return pulseApi<AccountLanguageResponse>("/api/account/language", {
+    method: "POST",
+    body: JSON.stringify({ preferred_language: language, language })
+  });
+}
+
+export async function getAccountRegionPreferences() {
+  const data = await pulseApi<AccountRegionPreferencesResponse>("/api/account/region-preferences");
+  return normalizeRegionPreferences(data.preferences || data);
+}
+
+export async function updateAccountRegionPreferences(
+  preferences: Partial<Pick<AccountRegionPreferences, "preferred_locale" | "preferred_timezone" | "preferred_currency" | "preferred_date_format">>
+) {
+  const data = await pulseApi<AccountRegionPreferencesResponse>("/api/account/region-preferences", {
+    method: "PATCH",
+    body: JSON.stringify(preferences)
+  });
+  return normalizeRegionPreferences(data.preferences || data);
 }
 
 export async function getAccountSecurity() {
@@ -135,6 +189,19 @@ export async function verifyPhone() {
     method: "POST",
     body: JSON.stringify({})
   });
+}
+
+function normalizeRegionPreferences(value: Partial<AccountRegionPreferences>): AccountRegionPreferences {
+  const dateFormat = String(value.preferred_date_format || "auto").toLowerCase();
+  return {
+    preferred_locale: String(value.preferred_locale || ""),
+    preferred_timezone: String(value.preferred_timezone || ""),
+    preferred_currency: String(value.preferred_currency || "").toUpperCase(),
+    preferred_date_format: dateFormat === "mdy" || dateFormat === "dmy" || dateFormat === "ymd" ? dateFormat : "auto",
+    automatic: value.automatic,
+    updated_at: value.updated_at || null,
+    changed_fields: Array.isArray(value.changed_fields) ? value.changed_fields.map(String) : []
+  };
 }
 
 export async function enableTwoFactor() {
@@ -202,7 +269,12 @@ export async function cacheAccountState(state: AccountState) {
 
 export async function openAccountWebFallback(path = "/pulse/settings/account") {
   const safePath = path.startsWith("/") && !path.startsWith("//") ? path : "/pulse/settings/account";
-  await Linking.openURL(`${PULSE_API_BASE_URL}${safePath}`).catch(() => undefined);
+  return {
+    ok: false,
+    path: safePath,
+    status: "native_provider_boundary",
+    message: "Account action remains inside the native Account Center until this protected operation exposes a native mutation."
+  };
 }
 
 function normalizeAccountState(input: AccountState): AccountState {

@@ -1,24 +1,52 @@
 {
   "expo": {
-    "name": "PulseSoc Native",
+    "name": "PulseSoc",
     "slug": "pulsesoc-native",
     "scheme": "pulsesoc",
-    "version": "0.1.0",
+    "version": "1.0.1",
     "newArchEnabled": false,
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
     "ios": {
-      "bundleIdentifier": "com.pulsesoc.nativeapp",
-      "supportsTablet": true,
+      "bundleIdentifier": "com.pulsesoc.app",
+    "buildNumber": "5",
+      "supportsTablet": false,
+      "associatedDomains": [
+        "applinks:pulsesoc.com"
+      ],
       "infoPlist": {
         "NSCameraUsageDescription": "PulseSoc uses the camera for native status, reels, profile media, and calls.",
         "NSMicrophoneUsageDescription": "PulseSoc uses the microphone for native voice/video calls and media capture.",
         "NSPhotoLibraryUsageDescription": "PulseSoc uses the photo library for profile, chat, status, and reels uploads.",
-        "NSFaceIDUsageDescription": "PulseSoc uses Face ID to unlock your saved sign-in securely."
+        "NSFaceIDUsageDescription": "PulseSoc uses Face ID to unlock your saved sign-in securely.",
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": [
+          "audio",
+          "fetch",
+          "remote-notification"
+        ]
       }
     },
     "android": {
       "package": "com.pulsesoc.nativeapp",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "pulsesoc.com",
+              "pathPrefix": "/pulse"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
@@ -41,7 +69,12 @@
     ],
     "extra": {
       "pulseApiBaseUrl": "https://pulsesoc.com",
-      "track": "parallel-native-foundation"
-    }
+      "track": "parallel-native-foundation",
+      "expoProjectId": "",
+      "eas": {
+        "projectId": "03be39d7-db88-43af-af5f-50c267d830f8"
+      }
+    },
+    "owner": "hmcroody"
   }
 }

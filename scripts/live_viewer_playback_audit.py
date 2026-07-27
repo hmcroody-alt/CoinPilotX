@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Verify active live viewer renders playback instead of a fake placeholder."""
+"""Verify active Live watching resolves to the canonical Reels viewer."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 
@@ -22,7 +22,7 @@ def require(condition, message):
 
 def main():
     bot.init_db()
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     conn = db_service.connect()
     conn.row_factory = bot.sqlite3.Row
     cur = conn.cursor()
@@ -51,12 +51,27 @@ def main():
     with client.session_transaction() as sess:
         sess["account_user_id"] = user_id
     response = client.get(f"/pulse/live/{live_id}")
-    html = response.get_data(as_text=True)
-    require(response.status_code == 200, "viewer page loads")
-    require("data-live-player" in html and "live-public-video" in html, "active live renders public video player")
-    require("Tap to unmute" in html, "viewer includes browser-safe audio unlock")
-    require("live-ready-orb" not in html, "active live avoids fake avatar placeholder")
-    require("live broadcast" not in html.lower(), "active live avoids fake broadcast placeholder text")
+    require(response.status_code == 302, "legacy live viewer route redirects")
+    require(response.location == f"/pulse/reels?live={live_id}", "legacy live viewer redirects to Reels live target")
+
+    reels_page = client.get(f"/pulse/reels?live={live_id}")
+    require(reels_page.status_code == 200, "canonical Reels live viewer page loads")
+    html = reels_page.get_data(as_text=True)
+    require("PulseSoc Reels" in html and "pulse_reels_experience.css" in html, "Reels viewer shell renders")
+
+    feed = client.get(f"/api/pulse/reels/feed?tab=live&live={live_id}")
+    payload = feed.get_json() or {}
+    reels = payload.get("reels") or (payload.get("data") or {}).get("reels") or []
+    focused = next((item for item in reels if int(item.get("live_session_id") or 0) == live_id), None)
+    require(feed.status_code == 200 and payload.get("ok") is True, "Reels live feed API loads")
+    require(focused is not None, "focused live session appears in Reels feed")
+    media = (focused.get("media") or [{}])[0]
+    require(focused.get("post_type") == "live" or focused.get("content_type") == "live", "focused item is typed as live")
+    require((focused.get("live") or {}).get("live_url") == f"/pulse/reels?live={live_id}", "live item keeps Reels watch URL")
+    require(str(media.get("playback_url") or "").endswith(".m3u8"), "live item exposes HLS playback")
+    require(media.get("has_audio") is True, "live item declares host audio-capable playback")
+    require(media.get("mime_type") == "application/vnd.apple.mpegurl", "live item exposes native HLS MIME type")
+    require("live-ready-orb" not in html, "Reels live viewer avoids fake avatar placeholder")
     print("live viewer playback audit ok")
 
 

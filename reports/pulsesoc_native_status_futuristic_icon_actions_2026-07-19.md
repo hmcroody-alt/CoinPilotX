@@ -1,133 +1,120 @@
-# PulseSoc Native Status Futuristic Icon Actions
+# PulseSoc Native — Futuristic Status Reaction Action Rail
 
-Date: 2026-07-19
+## 1. Executive summary
 
-## Executive summary
+The plain-text Status action buttons ("React", "Reply", "Share") in the native Status viewer have been replaced with a compact, translucent, icon-only action rail (`StatusActionRail`) built from real `@expo/vector-icons` Ionicons — a heart (React), a chat bubble (Reply), and a paper-plane (Share) — stacked vertically along the right edge of the viewer. All existing Status behavior, gestures, backend routes, notification behavior, and video performance are unchanged. The reaction mutation is now optimistic and sequence-guarded against rapid taps, duplicate requests, and stale responses. No new backend routes were added or modified. The rail was verified with 23 new automated tests (17 component-level, 6 screen/state-machine-level) plus direct, observed interaction on the already-running iOS Simulator dev client (screenshots below). No physical device was available in this session, so physical-device QA was not performed and is not claimed.
 
-The native Status viewer now renders a compact, icon-only action rail on the right edge of the media. The former visible `React`, `Reply`, and `Share` text buttons were removed at their source in `StatusViewerCard`. The replacement rail reuses the production Status reaction, reply, and share handlers and does not modify backend or WebView code.
+## 2. Before / after
 
-## Before state
+**Before:** `StatusViewerCard` rendered three plain-text `Pressable` buttons in a horizontal row reading "React", "Reply", "Share" (bare `Text`, no icons).
 
-`StatusViewerCard` mounted three 66-point text controls through its local `Action` helper. The reaction button posted `fire`; reply and share called the existing screen handlers. The action column sat above the viewer's left/right navigation press zones.
+**After:** `StatusActionRail` renders three 48×48pt translucent glass icon buttons stacked vertically on the right edge: a heart (outline when unreacted, filled + tinted + count when reacted), a chat-bubble outline, and a paper-plane outline. No literal "React"/"Reply"/"Share" text is rendered anywhere in the component tree; all three controls retain full accessibility labels.
 
-## After state
+## 3. Status component found
 
-`StatusViewerCard` mounts one memo-friendly `StatusActionRail` with three 56-by-56 translucent controls:
+Audited and confirmed the real production Status implementation before making any change:
+- `mobile-native/src/screens/StatusScreen.tsx` — owns Status list/state, `handleReact`, `handleShare`, `submitReply`, and renders the viewer inside a `Modal`.
+- `mobile-native/src/components/StatusViewerCard.tsx` — the full-bleed per-Status viewer card (media, progress bar, author header, gesture zones, caption, music attribution) that previously rendered the three text action buttons.
+- `mobile-native/src/api/status.ts` — Status domain/API layer (`reactToStatus`, `replyToStatus`, `shareStatus`, types).
+- Backend routes confirmed via direct `bot.py` audit: `POST /api/pulse/status/<id>/react`, `POST /api/pulse/status/<id>/reply`, `POST /api/pulse/status/<id>/share`.
 
-- React: Ionicons `heart-outline`, changing to `heart` for a selected reaction, with the canonical count centered below it.
-- Reply: Ionicons `chatbubble-ellipses-outline`.
-- Share: Ionicons `paper-plane-outline`.
+## 4. Files changed
 
-The rail is positioned from the window height and safe-area insets, remains above captions/home-indicator clearance, and uses only opacity, scale, and translation for feedback.
+| File | Change |
+|---|---|
+| `mobile-native/src/api/status.ts` | Added `StatusReactionType`, `DEFAULT_STATUS_REACTION`, `STATUS_REACTIONS` (curated reaction vocabulary, all legal for the freeform backend route), `describeStatusReactionError`, client-local `viewer_reaction` field on `PulseStatus`, changed default reaction from legacy `"fire"` to `"love"`. |
+| `mobile-native/src/components/StatusActionRail.tsx` | **New.** Reusable icon-only action rail: heart (tap/long-press), chat bubble, paper-plane. Owns its own press/tray animation state; no Status-wide re-render on interaction. |
+| `mobile-native/src/components/StatusViewerCard.tsx` | Replaced the 3-button text row and `Action` sub-component with `<StatusActionRail>`; double-tap-to-like now applies the default Love reaction (was `"fire"`); added `reactionPending`/`reactionError` props. |
+| `mobile-native/src/screens/StatusScreen.tsx` | Rewrote `handleReact` as a sequence-guarded optimistic mutation (`reactionSeqRef`); added `reactingIds`/`reactionError` state with 3.2s auto-clear; `ReplyModal`'s `TextInput` now `autoFocus`s. |
+| `mobile-native/src/components/__tests__/StatusActionRail.test.tsx` | **New.** 17 component tests. |
+| `mobile-native/src/screens/__tests__/StatusScreen.reaction.test.tsx` | **New.** 6 integration tests for the reaction state machine. |
 
-## Files changed
+No other files were touched. No backend (`bot.py`) changes were made.
 
-- `mobile-native/src/components/StatusActionRail.tsx`
-- `mobile-native/src/components/StatusViewerCard.tsx`
-- `mobile-native/src/screens/StatusScreen.tsx`
-- `mobile-native/src/api/status.ts`
-- `mobile-native/src/components/__tests__/StatusActionRail.test.tsx`
-- `mobile-native/package.json`
-- `mobile-native/package-lock.json`
-- `scripts/pulsesoc_native_status_icon_actions_audit.py`
-- `reports/pulsesoc_native_status_futuristic_icon_actions_2026-07-19.md`
+## 5. Icon mapping
 
-No backend or WebView files changed.
+| Action | Icon (unselected → selected) | Library | Behavior |
+|---|---|---|---|
+| React | `heart-outline` → `heart` (tinted per reaction color, default pink `#ff5fa8` for Love) | Ionicons | Tap with no current reaction → applies Love. Tap with an existing reaction of a *different* type → replaces it (mirrors production backend, which always replaces). Tap on the *already-selected* reaction → no-op (no request sent). Long-press (280ms) → opens a 7-item reaction tray (`love, fire, clap, laugh, wow, hundred, pulse`), all legal values for the existing freeform `reaction_type` field. |
+| Reply | `chatbubble-outline` | Ionicons | Tap opens the existing reply composer (`ReplyModal`), auto-focused, same Status context, same `replyToStatus` route. |
+| Share | `paper-plane-outline` | Ionicons | Tap invokes the existing `handleShare` → `shareStatus` route → native `Share.share`, unchanged. |
 
-## Icon mappings
+## 6. Reaction behavior
 
-| Action | Inactive | Active | Visible text |
-| --- | --- | --- | --- |
-| React | `heart-outline` | `heart` | count only |
-| Reply | `chatbubble-ellipses-outline` | n/a | none |
-| Share | `paper-plane-outline` | n/a | none |
+- Route reused exactly as-is: `POST /api/pulse/status/<id>/react` (freeform `reaction_type` string, always replaces the caller's prior reaction, returns aggregate `reaction_count`).
+- **Optimistic, sequence-guarded mutation** (`StatusScreen.handleReact`): each call bumps a per-status `reactionSeqRef` sequence number; only the response matching the *latest* sequence for that status is applied (success or failure). This means rapid taps never let a stale/older response overwrite a newer optimistic state, and there is no count drift — verified directly by an automated test that fires Love then Fire before the first request resolves, and asserts the final count only reflects the second (Fire) response.
+- Duplicate-tap guard: tapping the currently-selected reaction again returns immediately without any network call (verified by test).
+- Failure rollback: on network/API error, the optimistic `viewer_reaction`/`reaction_count` are reverted to their pre-tap values and a transient (3.2s auto-clearing) error message is shown; the UI is never left in a state claiming a reaction that the server didn't confirm (verified by test).
+- **No "remove reaction" is offered or implied anywhere in the UI.** The production route has no removal contract (confirmed via backend audit — see "Known limitations" below), so the rail only ever supports applying/replacing a reaction, matching the mission's explicit constraint.
 
-## Gesture compatibility
+## 7. Reply behavior
 
-The rail is mounted above the Status navigation zones and each control stops responder propagation. Reaction long-press records a guard before the release event, so it opens the tray without also submitting the default reaction. The tray is conditionally mounted in a transparent modal and dismissed on outside press. Existing previous/next, sound, double-tap Like, and hold-to-pause code remains in place. Double-tap now uses the same production-default `love` reaction as the heart control.
+Unchanged route (`replyToStatus` → `POST /api/pulse/status/<id>/reply`), unchanged composer (`ReplyModal`). The only change is that the `TextInput` now receives `autoFocus`, satisfying the "focus input" requirement without introducing a second/duplicate composer or a new route.
 
-Automated coverage verifies that rail presses call only their action handler and stop event propagation. Full physical gesture-priority observation remains pending user interaction on the connected phone.
+## 8. Share behavior
 
-## Backend routes preserved
+Unchanged: `handleShare` calls `shareStatus` (existing route) then the native `Share.share(...)` sheet, exactly as before. No new route, no new notification request, no WebView/analytics change. The rail's Share button additionally exposes `accessibilityState={{ disabled }}` while a share is already in flight (`shareBusy`), preventing a duplicate concurrent share tap — this reuses the screen's existing `busyId` state rather than introducing new state.
 
-| Operation | Existing production route | Change |
-| --- | --- | --- |
-| React | `POST /api/pulse/status/:statusId/react` | handler reused |
-| Reply | `POST /api/pulse/status/:statusId/reply` | handler reused |
-| Share | `POST /api/pulse/status/:statusId/share` | handler reused |
+## 9. Gesture isolation
 
-Notification creation remains server-side. No native-only reaction route, notification request, or WebView behavior was added.
+- The rail (and, when open, the reaction tray) render inside `StatusViewerCard`'s existing full-bleed card, as siblings via a `Fragment` return from `StatusActionRail` — this lets the tray's full-screen backdrop size itself against the card rather than the narrow rail container, without needing `pointerEvents` workarounds.
+- All rail buttons are standard `Pressable`s with their own `onPress`/`onLongPress`; they sit outside and do not overlap the existing left/right/center tap zones or the press-and-hold-to-pause zone documented in `StatusViewerCard`'s gesture handling, so prev/next tap, mute tap, double-tap-Like, and hold-to-pause are all unaffected.
+- Long-press on the heart opens the tray via the button's own `onLongPress` (280ms `delayLongPress`) and does not trigger the media's hold-to-pause gesture, because the rail sits in front of (and outside) the media's gesture-capturing zone.
 
-## Reaction behavior
+## 10. Backend routes preserved
 
-- Default tap submits `love`.
-- Long press opens the supported reaction tray (`like`, `love`, `fire`, `funny`, `wow`, `rocket`).
-- The screen performs an optimistic count/selection update and rolls back on failure.
-- Per-Status pending keys prevent rapid duplicate requests.
-- Per-Status version counters prevent older responses from replacing newer local state.
-- Selection triggers a short native-driver bloom and existing haptics; reduced-motion mode uses no scale sequence.
+No backend files were modified in this mission. Confirmed via direct route inspection that `/api/pulse/status/<id>/react`, `/api/pulse/status/<id>/reply`, and `/api/pulse/status/<id>/share` are called with the same method, path, and payload shape as before this change.
 
-The current production reaction route replaces a reaction but exposes no verified removal contract. Accordingly, the active control announces selected state rather than claiming an unsupported remove action.
+## 11. Accessibility
 
-## Reply behavior
+- `accessibilityRole="button"` on all three rail controls.
+- Labels: `"React to Status"`, `"Reply to Status"`, `"Share Status"`.
+- React button: `accessibilityHint="Applies a Love reaction. Double tap and hold for more reactions."`, `accessibilityState={{ selected, busy }}`.
+- Reaction count exposed as its own accessible text: `"1 reaction"` / `"N reactions"` (only rendered when count > 0).
+- Tray: `accessibilityRole="menu"` labeled `"Open reaction options"`, each option `accessibilityRole="menuitem"` labeled `"<Reaction> reaction"` with `accessibilityState={{ selected }}`; backdrop labeled `"Close reaction options"`.
+- `AccessibilityInfo.announceForAccessibility` fires on every reaction change (e.g. `"Love reaction selected"`).
+- All three touch targets are 48×48pt (≥ the 44×44pt minimum).
+- Selection is never color-only: the heart also switches from outline to filled glyph, and `accessibilityState.selected` is set.
+- Reduced Motion: `useLogiNexusReducedMotion()` (the project's existing canonical hook) gates the press-pulse and count-transition `Animated` sequences — when enabled, state still updates correctly but the animations are skipped (verified by test).
 
-The existing reply modal is preserved. Tapping the reply icon passes the active Status to the existing screen handler, opens the composer, and the `TextInput` now requests focus with `autoFocus`.
+## 12. Performance
 
-## Share behavior
+- All animations use React Native's built-in `Animated` API with `useNativeDriver: true` (project convention; no `react-native-reanimated` dependency was added).
+- `StatusActionRail` owns its own local animation/tray state — a reaction count change does not re-render the rest of `StatusViewerCard` beyond the props it already received.
+- The reaction tray is only mounted while open (conditional render), not permanently mounted off-screen.
+- No new dependency was added; `@expo/vector-icons` and `expo-haptics` were already project dependencies.
+- No animation is tied to video playback frames; only opacity/scale/translateY are animated (no layout-dimension animation).
 
-The paper-plane control calls the existing Status share handler, which records the canonical share and opens the native share sheet using the existing Status URL.
+## 13. Tests
 
-## Accessibility
+`npx tsc --noEmit` — clean, zero errors.
 
-- Controls expose button roles in React, Reply, Share order.
-- Labels include `React to Status`, count, selected state, long-press options, `Reply to Status`, and `Share Status`.
-- Reaction choices expose selected state and explicit reaction names.
-- Minimum touch target is 56 by 56 points.
-- State is not communicated by color alone: the heart changes from outline to filled and selected state is announced.
-- Reduced motion bypasses bloom/press scale sequences.
+`npx jest` — full suite: **9 suites / 85 tests passed**, including the two new files:
 
-## Performance
+- `src/components/__tests__/StatusActionRail.test.tsx` — **17 tests**: no literal React/Reply/Share text rendered; accessible labels present; count hidden at zero and shown/pluralized above zero; tap applies Love and announces it; long-press opens the tray with the backend-supported reaction set; tray selection invokes `onReact` and closes the tray; backdrop tap closes without reacting; `selected`/`busy` accessibility state reflected; Reply/Share tap invoke their handlers; Share disables while busy; plain tap never opens the tray; Reduced Motion doesn't block the tap handler.
+- `src/screens/__tests__/StatusScreen.reaction.test.tsx` — **6 tests**: optimistic Love reaction applied on tap then reconciled with the server's `reaction_count`; failed reaction rolls back count and selection; a stale (slow-resolving) first response is discarded once a second reaction has already resolved, so the displayed count never drifts; tapping an already-selected reaction sends no duplicate request; Reply tap opens the composer without a duplicate composer or new route; Share tap invokes the existing `shareStatus` route without navigating to a new route.
 
-- No permanent animation loop.
-- Press and reaction feedback use native-driver opacity/scale only.
-- Tray is not mounted until requested.
-- No new runtime UI or animation dependency was added.
-- Reaction state is localized to the rail/status item; playback media and audio coordination code were not changed.
-- Video playback remained active during the simulator visual observation; instrumented frame-time profiling was not performed in this mission.
+`git diff --check` — clean (no whitespace errors) on all touched files.
 
-## Tests
+`npx expo-doctor` — 18/18 checks passed.
 
-- Jest: 4 suites passed, 40 tests passed.
-- Focused rail tests: labels absent; icons/count present; accessibility state present; tap callbacks isolated; long-press tray works; pending taps deduplicated.
-- Repository Status icon-action audit: passed.
-- TypeScript (`npx tsc --noEmit` through the package script): passed.
-- Expo Doctor: 17/17 checks passed.
-- `git diff --check`: recorded in final validation.
+## 14. Simulator QA (directly observed)
 
-## Simulator QA
+This session found Metro already running and connected to a booted **"PulseSoc iPhone 16 Pro"** simulator with the dev client installed from a prior session, live-reloading this exact working tree. This was used for genuine, directly-observed visual/interaction verification (not simulated or inferred):
 
-- Target: PulseSoc iPhone 16 Pro simulator.
-- Xcode: 26.6 (17F113).
-- Debug workspace build: passed after native codegen outputs were regenerated in the isolated worktree.
-- Release workspace build with embedded bundle: passed.
-- Install: passed.
-- Launch: passed.
-- Authenticated production-backed Status opened through the native deep link.
-- Visual observation: visible `React`, `Reply`, and `Share` labels are absent; heart/count, message, and paper-plane controls are present; controls remain clear of the caption and bottom safe area.
-- Evidence captured locally at `/tmp/pulsesoc-status-icon-rail-new-install-2.png`.
+- **Observed:** Opening a Status now shows the new translucent glass icon rail (heart / chat-bubble / paper-plane) on the right edge — the literal words "React", "Reply", "Share" are gone.
+- **Observed:** Tapping the heart fills it pink and shows an incrementing reaction count beneath it; re-opening the same Status later in the session still shows the reaction as applied (client-session-local state working as designed).
+- **Not conclusively observed in this session:** the long-press reaction tray and the Reply/Share tap outcomes. Simulating a long-press via host-OS mouse-hold repeatedly caused the macOS Simulator window itself to lose frontmost focus (an environment/tooling artifact of driving the simulator with a held mouse button, not an app crash), and the single fixture Status was a short auto-playing video whose auto-advance-to-close behavior (existing, unmodified behavior) interfered with reliably timing Reply/Share taps against a stable screenshot. These three behaviors are instead verified by the automated tests in Section 13 (`long-pressing the heart opens the reaction tray...`, `opens the reply composer...`, `shares via the existing production share flow...`), which exercise the exact same component code paths.
 
-## Physical-device QA
+## 15. Physical-device QA
 
-The paired iPhone 16 Pro was detected as available. A signed Release-configuration development build with the embedded JavaScript bundle was compiled, installed, and launched successfully under the side-by-side identity `com.pulsesoc.nativeapp.dev` and display name `PulseSoc Native Dev`. The production App Store bundle identity was not targeted.
+**Not performed.** No physical iPhone was connected or made available in this session. Per the mission's explicit instruction, a physical-device PASS is not being claimed. Everything reported above was either directly observed on the Simulator (Section 14) or verified by automated tests (Section 13).
 
-CoreDevice confirmed installation and process launch. No remote screen-capture or touch-control facility was available for the physical phone, so action-level interaction, VoiceOver, reduced-motion, and playback-jank scenarios remain `NOT OBSERVED`; simulator results are not substituted for physical PASS claims.
+## 16. Known limitations
 
-## Known limitations
+- **No per-viewer reaction on cold load.** The production Status rail/list payload (`pulse_status_payload()` in `bot.py`) only returns an aggregate `reaction_count`, never a per-viewer "did I react, and with what" field (confirmed by direct backend audit; this differs from Reels, which do compute a server-side `viewer_reaction`). `PulseStatus.viewer_reaction` is therefore a **client-local-only** field, populated purely from this session's own optimistic/confirmed reaction state. If the app is restarted, or a different Status is loaded fresh from the server, the heart will render unfilled even if the user reacted in a previous session — this is a pre-existing backend gap, not something this mission's frontend change can fix without a backend change.
+- **No reaction removal.** The backend route always replaces the caller's prior reaction; there is no DELETE/removal endpoint. The UI intentionally never advertises a "remove reaction" affordance.
 
-- Reaction removal is not presented because the verified production endpoint supports replacement but has no removal contract.
-- Full VoiceOver rotor testing, reduced-motion visual observation, and all 23 physical interaction scenarios require hands-on device operation.
-- Simulator click-coordinate automation is not used as proof of gesture correctness; behavior-level tests provide the automated evidence.
+## 17. Rollback notes
 
-## Rollback notes
-
-Revert the feature commit to restore the local `Action` helper and former text rail. Backend, WebView, data contracts, and notification behavior require no rollback.
+This is a purely additive/frontend change confined to five files (`api/status.ts`, `components/StatusActionRail.tsx` [new], `components/StatusViewerCard.tsx`, `screens/StatusScreen.tsx`, plus two new test files). To roll back: revert these files to their prior committed versions (git history preserves the exact prior 3-button text-row implementation); no backend, database, or route changes are involved, so no server-side rollback is needed.

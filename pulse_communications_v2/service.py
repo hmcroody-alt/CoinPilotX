@@ -492,38 +492,41 @@ def _participant_ids(cur, conversation_id: int) -> list[int]:
     return sorted({int(row["user_id"]) for row in cur.fetchall() if int(row["user_id"] or 0)})
 
 
-def _user_presence_by_ids(cur, user_ids: list[int]) -> dict[int, dict]:
+def _user_presence_by_ids(cur, user_ids: list[int], viewer_user_id: int = 0) -> dict[int, dict]:
+    """Read presence for a set of users from the unified presence service.
+
+    Messenger does not compute presence itself. It previously read
+    user_presence.status directly, which was only ever written with 'online'
+    and never reset, so every user who had loaded a page once appeared online
+    forever. Liveness now comes from services.presence_service, which derives
+    it from unexpired heartbeats and applies the viewer's privacy permissions.
+    """
     ids = sorted({int(user_id) for user_id in user_ids if int(user_id or 0)})
     if not ids:
         return {}
     try:
-        bot = _bot()
-        ensure_presence = getattr(bot, "ensure_user_presence_schema", None)
-        if ensure_presence:
-            ensure_presence(cur)
-        placeholders = ",".join(["?"] * len(ids))
-        cur.execute(
-            f"""
-            SELECT user_id, status, last_seen_at, last_active_at, updated_at
-            FROM user_presence
-            WHERE user_id IN ({placeholders})
-            """,
-            tuple(ids),
-        )
+        from services import presence_service
+
+        mapping = presence_service.presence_for(cur, int(viewer_user_id or 0), ids)
         return {
-            int(row["user_id"]): {
-                "user_id": int(row["user_id"]),
-                "status": row["status"] or "offline",
-                "last_seen_at": row["last_seen_at"] or "",
-                "last_active_at": row["last_active_at"] or "",
-                "updated_at": row["updated_at"] or "",
-                "active_now": str(row["status"] or "").lower() in {"online", "active", "active_now"},
+            int(uid): {
+                "user_id": int(uid),
+                "status": item.get("status") or "offline",
+                "last_seen_at": item.get("last_seen_at") or "",
+                "last_seen_text": item.get("last_seen_text") or "",
+                "last_active_at": item.get("last_seen_at") or "",
+                "updated_at": item.get("last_seen_at") or "",
+                "activity": item.get("activity") or "idle",
+                "activity_context": item.get("activity_context") or "",
+                "devices": int(item.get("devices") or 0),
+                "active_now": bool(item.get("online")),
                 "available": True,
             }
-            for row in cur.fetchall()
+            for uid, item in mapping.items()
         }
     except Exception as exc:
         logging.info("COMM_V2_USER_PRESENCE_LOOKUP_SKIPPED error=%s", exc.__class__.__name__)
+        # Fail closed: an error must never be rendered as "online".
         return {}
 
 
@@ -1007,7 +1010,11 @@ def _conversation_payloads(cur, conversations: list[dict], viewer_user_id: int) 
         )
         latest_by_conversation = {int(row["conversation_id"]): dict(row) for row in cur.fetchall()}
     out = []
-    presence_by_user = _user_presence_by_ids(cur, [int(member.get("user_id") or 0) for members in preview_by_conversation.values() for member in members])
+    presence_by_user = _user_presence_by_ids(
+        cur,
+        [int(member.get("user_id") or 0) for members in preview_by_conversation.values() for member in members],
+        viewer_user_id=int(viewer_user_id or 0),
+    )
     for conversation in conversations:
         conversation_id = int(conversation.get("id") or 0)
         mine = mine_by_conversation.get(conversation_id, {})
@@ -2975,26 +2982,22 @@ def _conversation_control_stats(cur, conversation: dict, user_id: int) -> dict:
     online_count = 0
     activity_status = "Offline"
     if participant_ids:
-        placeholders = ",".join(["?"] * len(participant_ids))
-        cur.execute(
-            f"""
-            SELECT COUNT(*) AS total
-            FROM comm_v2_presence
-            WHERE user_id IN ({placeholders}) AND COALESCE(active_until,'')>=?
-            """,
-            (*participant_ids, _now()),
-        )
-        online_count = int(_row(cur.fetchone()).get("total") or 0)
-        if conversation.get("conversation_type") == "direct":
-            peer_ids = [int(pid) for pid in participant_ids if int(pid) != int(user_id)]
-            if peer_ids:
-                peer_presence = _user_presence_by_ids(cur, peer_ids).get(peer_ids[0], {})
-                if peer_presence.get("active_now"):
-                    activity_status = "Online"
-                elif peer_presence.get("last_seen_at") or peer_presence.get("last_active_at") or peer_presence.get("updated_at"):
-                    activity_status = "Recently active"
-                else:
-                    activity_status = "Offline"
+        # Presence for every participant comes from the one unified service so
+        # the control centre can never disagree with the thread header or the
+        # conversation list. The previous implementation counted rows in
+        # comm_v2_presence directly, which is a second, independently-aged
+        # presence store; the mission forbids subsystem-local presence logic.
+        peer_ids = [int(pid) for pid in participant_ids if int(pid) != int(user_id)]
+        presence_map = _user_presence_by_ids(cur, peer_ids, viewer_user_id=int(user_id))
+        online_count = sum(1 for item in presence_map.values() if item.get("active_now"))
+        if conversation.get("conversation_type") == "direct" and peer_ids:
+            peer_presence = presence_map.get(peer_ids[0], {})
+            if peer_presence.get("active_now"):
+                activity_status = "Online"
+            else:
+                # Prefer the real last-seen sentence over a vague "Recently
+                # active" so the control centre matches the spec's wording.
+                activity_status = peer_presence.get("last_seen_text") or "Offline"
         else:
             activity_status = "Online" if online_count > 0 else "Offline"
     connection = "Connected"
@@ -3056,11 +3059,17 @@ def conversation_control_center(user_id: int, conversation_ref: int | str) -> di
             (conversation_id,),
         )
         members = [dict(row) for row in cur.fetchall()]
-        presence_by_user = _user_presence_by_ids(cur, [int(member.get("user_id") or 0) for member in members])
+        # Pass the viewer. Without it privacy is evaluated against an anonymous
+        # reader, so any member using contacts-only visibility reads as offline
+        # even to the people they actually share this conversation with.
+        presence_by_user = _user_presence_by_ids(cur, [int(member.get("user_id") or 0) for member in members], viewer_user_id=int(user_id))
         for member in members:
             presence = presence_by_user.get(int(member.get("user_id") or 0), {})
             member["presence"] = presence.get("status") or "offline"
-            member["active_now"] = bool(presence.get("active_now") or presence.get("status") == "online")
+            # One source for "is this person live": the service's own flag. The
+            # old expression also re-derived it from the status string, which is
+            # a second inference path that can drift from the first.
+            member["active_now"] = bool(presence.get("active_now"))
         _, settings = _load_conversation_settings(cur, conversation_id, user_id)
         participant_stats = _conversation_control_stats(cur, conversation, user_id)
         actor_role = str(participant_stats.get("role") or "member").lower()
@@ -3586,34 +3595,39 @@ def conversation_presence(user_id: int, conversation_ref: int | str) -> dict:
             return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
         cur.execute(
             """
-            SELECT p.user_id, COALESCE(u.display_name,u.username,'Pulse member') AS display_name,
-                   pr.status, pr.last_seen_at, pr.active_until
+            SELECT p.user_id, COALESCE(u.display_name,u.username,'Pulse member') AS display_name
             FROM comm_v2_participants p
             LEFT JOIN users u ON u.user_id=p.user_id
-            LEFT JOIN comm_v2_presence pr ON pr.user_id=p.user_id
             WHERE p.conversation_id=? AND p.membership_state='active' AND COALESCE(p.left_at,'')=''
             ORDER BY p.id ASC
             """,
             (int(conversation["id"]),),
         )
-        now_dt = datetime.now(timezone.utc)
+        # Liveness and privacy both come from the unified presence service.
+        #
+        # This used to join comm_v2_presence and compare active_until itself,
+        # which made it a second presence implementation that could disagree
+        # with the conversation list. It also emitted status="hidden" for
+        # blocked or invisible users -- a distinguishable value that let a
+        # client detect it had been blocked simply by reading the field. Hidden
+        # users are now indistinguishable from offline users, which is the
+        # property the presence service guarantees.
+        member_rows = [dict(row) for row in cur.fetchall()]
+        target_ids = [int(item.get("user_id") or 0) for item in member_rows if int(item.get("user_id") or 0)]
+        presence_map = _user_presence_by_ids(cur, target_ids, viewer_user_id=int(user_id))
         presence = []
-        for row in cur.fetchall():
-            item = dict(row)
+        for item in member_rows:
             target_id = int(item.get("user_id") or 0)
-            visible = _presence_visible(cur, int(user_id), target_id)
-            active_now = False
-            try:
-                active_now = datetime.fromisoformat(item.get("active_until") or "") >= now_dt
-            except Exception:
-                active_now = False
+            state = presence_map.get(target_id) or {}
             presence.append({
                 "user_id": target_id,
                 "display_name": item.get("display_name") or "Pulse member",
-                "presence_visible": visible,
-                "status": "online" if visible and active_now else "offline" if visible else "hidden",
-                "active_now": bool(visible and active_now),
-                "last_seen_at": item.get("last_seen_at") if visible else "",
+                "status": state.get("status") or "offline",
+                "active_now": bool(state.get("active_now")),
+                "activity": state.get("activity") or "idle",
+                "activity_context": state.get("activity_context") or "",
+                "last_seen_at": state.get("last_seen_at") or "",
+                "last_seen_text": state.get("last_seen_text") or "",
             })
         typing = typing_state(user_id, int(conversation["id"]), existing_conn=(conn, cur)).get("typing") or []
         conn.commit()

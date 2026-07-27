@@ -1,0 +1,12 @@
+node_modules/
+.expo/
+*.log
+
+# iOS generated artifacts must never be uploaded to EAS.
+ios/Pods/
+ios/build/
+ios/build-*/
+ios/**/*.xcuserdata/
+ios/**/*.xcuserstate
+ios/**/DerivedData/
+ios/.xcode.env.local

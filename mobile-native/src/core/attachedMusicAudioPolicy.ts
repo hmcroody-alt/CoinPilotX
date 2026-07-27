@@ -1,0 +1,195 @@
+import { PULSE_API_BASE_URL } from "../api/config";
+import type { PulseReelAudio } from "../api/reels";
+import type { PulseStatusMusic } from "../api/status";
+import type { PulsePost, PulsePostMusic } from "../api/feed";
+import type { CanonicalMediaRecord } from "../media/mediaContract";
+
+/**
+ * Single source of truth for the product rule "attached music takes exclusive
+ * audio priority": whenever a post has an attached music track, the original
+ * media audio must be muted and only the music may be audible. Every composer
+ * preview and every playback surface (Reels, carousels, statuses) derives its
+ * mute/volume state from this resolver so the rule cannot drift per screen.
+ */
+
+export const ATTACHED_MUSIC_EXCLUSIVE = "ATTACHED_MUSIC_EXCLUSIVE" as const;
+export const ORIGINAL_AUDIO = "ORIGINAL_AUDIO" as const;
+export type AudioMode = typeof ATTACHED_MUSIC_EXCLUSIVE | typeof ORIGINAL_AUDIO;
+
+const DEFAULT_MUSIC_VOLUME = 1;
+
+/** Normalized, surface-agnostic description of a post's audio metadata. */
+export type AttachedMusicSource = {
+  /** URL of the attached music track, if one is attached. */
+  musicUrl?: string | null;
+  /** Where the music starts within the track, in seconds. */
+  startSeconds?: number | null;
+  /** User-selected music level, 0..1. */
+  volume?: number | null;
+  /** Whether the music track should loop under the visual content. */
+  isLooping?: boolean;
+};
+
+export type AttachedMusicPolicy = {
+  mode: AudioMode;
+  hasAttachedMusic: boolean;
+  /** True whenever music is attached — the original source must be silent. */
+  muteOriginalAudio: boolean;
+  musicUrl?: string;
+  musicVolume: number;
+  musicStartMs: number;
+  isLooping: boolean;
+};
+
+/**
+ * Absolutize a music URL the same way `mediaDisplayUrl` treats media: absolute
+ * URIs (http(s):, file:, etc.) pass through untouched, while server-relative
+ * paths get the API base prefix. This is critical on-device — `Audio.Sound`
+ * cannot load a relative URI like `/static/audit/track.wav`, so a published
+ * post's attached track (which the backend serializes as a relative path) would
+ * silently fail to play, leaving only the muted original audio. The composer
+ * preview already absolutizes its URL, which is why preview sounded right while
+ * the published video did not.
+ */
+function absolutizeMusicUrl(url: string): string {
+  if (!url) return "";
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
+  if (url.startsWith("/")) return `${PULSE_API_BASE_URL}${url}`;
+  return `${PULSE_API_BASE_URL}/${url}`;
+}
+
+function clampVolume(value: unknown): number {
+  if (value === null || value === undefined || value === "") return DEFAULT_MUSIC_VOLUME;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return DEFAULT_MUSIC_VOLUME;
+  return Math.max(0, Math.min(1, numeric));
+}
+
+/**
+ * Resolves the audio policy for a piece of content. When music is attached the
+ * mode is exclusive and the original audio is always muted; the caller must
+ * never fall back to source audio just because the track is still loading or
+ * has failed (see failure handling at the call sites).
+ */
+export function resolveAttachedMusicPolicy(source?: AttachedMusicSource | null): AttachedMusicPolicy {
+  const musicUrl = absolutizeMusicUrl(String(source?.musicUrl || "").trim());
+  if (!musicUrl) {
+    return {
+      mode: ORIGINAL_AUDIO,
+      hasAttachedMusic: false,
+      muteOriginalAudio: false,
+      musicUrl: undefined,
+      musicVolume: DEFAULT_MUSIC_VOLUME,
+      musicStartMs: 0,
+      isLooping: false
+    };
+  }
+  return {
+    mode: ATTACHED_MUSIC_EXCLUSIVE,
+    hasAttachedMusic: true,
+    muteOriginalAudio: true,
+    musicUrl,
+    musicVolume: clampVolume(source?.volume),
+    musicStartMs: Math.max(0, Math.round(Number(source?.startSeconds || 0) * 1000)),
+    isLooping: source?.isLooping !== false
+  };
+}
+
+export function reelAudioToMusicSource(audio?: PulseReelAudio | null): AttachedMusicSource {
+  return {
+    musicUrl: audio?.attached_audio_url || "",
+    startSeconds: audio?.audio_start_time ?? 0,
+    volume: audio?.audio_volume,
+    isLooping: true
+  };
+}
+
+export function statusMusicToMusicSource(music?: PulseStatusMusic | null): AttachedMusicSource {
+  return {
+    musicUrl: music?.attached_audio_url || music?.audio_url || "",
+    startSeconds: 0,
+    volume: undefined,
+    isLooping: true
+  };
+}
+
+/** Convenience resolvers so call sites never re-implement the adapter wiring. */
+export function resolveReelAudioPolicy(audio?: PulseReelAudio | null): AttachedMusicPolicy {
+  return resolveAttachedMusicPolicy(reelAudioToMusicSource(audio));
+}
+
+export function resolveStatusMusicPolicy(music?: PulseStatusMusic | null): AttachedMusicPolicy {
+  return resolveAttachedMusicPolicy(statusMusicToMusicSource(music));
+}
+
+function firstAttachedUrl(...values: Array<string | null | undefined>): string {
+  for (const value of values) {
+    const trimmed = String(value || "").trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
+
+/**
+ * Resolve a feed post's audio metadata into the surface-agnostic source, drawing
+ * from (in priority order): the post-level `music` object, top-level mirror
+ * fields, and finally the attached_audio_url stamped on the video media record.
+ * This is what makes a published video post honor its attached track instead of
+ * falling back to the original microphone audio.
+ */
+export function postMusicToMusicSource(
+  post?: Pick<PulsePost, "music" | "attached_audio_url" | "audio_start_time" | "audio_volume"> | null,
+  media?: CanonicalMediaRecord | null
+): AttachedMusicSource {
+  const music: PulsePostMusic | undefined = post?.music || undefined;
+  const musicUrl = firstAttachedUrl(
+    music?.attached_audio_url,
+    music?.audio_url,
+    post?.attached_audio_url,
+    media?.attached_audio_url
+  );
+  const startSeconds = music?.audio_start_time ?? post?.audio_start_time ?? media?.audio_start_time ?? 0;
+  const volume = music?.audio_volume ?? post?.audio_volume ?? media?.audio_volume;
+  return { musicUrl, startSeconds, volume, isLooping: true };
+}
+
+export function resolvePostAudioPolicy(
+  post?: Pick<PulsePost, "music" | "attached_audio_url" | "audio_start_time" | "audio_volume"> | null,
+  media?: CanonicalMediaRecord | null
+): AttachedMusicPolicy {
+  return resolveAttachedMusicPolicy(postMusicToMusicSource(post, media));
+}
+
+/**
+ * The concrete playback instructions a *video player surface* must obey to honor
+ * the attached-music rule. This is deliberately a pure, surface-agnostic
+ * translation of an `AttachedMusicPolicy` so the inline feed player and the
+ * expanded/fullscreen `NativeMediaViewer` derive identical behavior from the
+ * same post metadata — the expanded viewer historically ignored the policy and
+ * fell back to the original video audio, dropping the attached track when a post
+ * was opened. Any surface that plays a post video must mute the original audio
+ * whenever `muteOriginalAudio` is true and, when `shouldPlayMusic` is true, load
+ * the music track at the given start/volume/loop settings alongside the video.
+ */
+export type ViewerAudioPlan = {
+  /** Silence the video element's own audio track. */
+  muteOriginalAudio: boolean;
+  /** Whether a separate attached-music track should be loaded and played. */
+  shouldPlayMusic: boolean;
+  musicUrl?: string;
+  musicVolume: number;
+  musicStartMs: number;
+  isLooping: boolean;
+};
+
+export function resolveViewerAudioPlan(policy?: AttachedMusicPolicy | null): ViewerAudioPlan {
+  const hasMusic = Boolean(policy?.hasAttachedMusic && policy?.musicUrl);
+  return {
+    muteOriginalAudio: Boolean(policy?.muteOriginalAudio),
+    shouldPlayMusic: hasMusic,
+    musicUrl: hasMusic ? policy?.musicUrl : undefined,
+    musicVolume: policy?.musicVolume ?? DEFAULT_MUSIC_VOLUME,
+    musicStartMs: Math.max(0, Math.round(Number(policy?.musicStartMs || 0))),
+    isLooping: policy?.isLooping !== false
+  };
+}

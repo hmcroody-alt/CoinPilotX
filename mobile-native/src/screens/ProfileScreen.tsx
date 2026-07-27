@@ -1,22 +1,33 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useEffect, useMemo, useState } from "react";
-import { FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { listFeed, PulsePost } from "../api/feed";
-import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, profileWebUrl, PulseProfile, toggleProfileFollow } from "../api/profile";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Animated, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { deletePost, listFeed, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
+import { describeDeleteError } from "../api/deleteErrors";
+import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
 import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
 import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, resolveProfileTarget } from "../api/profileTarget";
 import { PostCard } from "../components/PostCard";
-import { ProfileHeader } from "../components/ProfileHeader";
+import { peekSaveState } from "../social/savedStore";
+import { setSaved } from "../social/useSaveAction";
+import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/ProfileHeader";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
-import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
+import { invalidateNativeSync } from "../core/eventSync";
+import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
+import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { colors } from "../theme/colors";
+import { sharePulseObject } from "../sharing/nativeShare";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "ProfileDetail">>;
 type TabKey = "posts" | "media" | "about";
 
 export function ProfileScreen({ route, navigation }: Props) {
-  const bottomNavScroll = useBottomNavScrollVisibility();
+  const dock = useBottomNavSurface();
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const onScroll = useMemo(
+    () => Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true, listener: dock.handlers.onScroll }),
+    [dock.handlers.onScroll, scrollY]
+  );
   const profileTarget = useMemo<NativeProfileTarget | null>(() => resolveProfileTarget(route?.params || null), [
     route?.params?.profileKey,
     route?.params?.userId,
@@ -34,6 +45,11 @@ export function ProfileScreen({ route, navigation }: Props) {
   const [errorState, setErrorState] = useState<ReturnType<typeof profileErrorState> | null>(null);
   const [actionMessage, setActionMessage] = useState("");
   const [followBusy, setFollowBusy] = useState(false);
+  // Replaces a `busyPostId` scalar. A scalar can mark at most one card, so acting
+  // on one post greyed out every other card's buttons, and the handlers guarded
+  // themselves by reading state that React had not committed yet. The guard locks
+  // per action+id in a ref, which is what actually stops the second tap.
+  const guard = useSocialActionGuard();
 
   const visiblePosts = useMemo(() => (tab === "media" ? posts.filter((post) => post.media?.length) : posts), [posts, tab]);
 
@@ -112,6 +128,157 @@ export function ProfileScreen({ route, navigation }: Props) {
     }
   }
 
+  async function startCall(callType: "audio" | "video") {
+    if (!profile || owner) return;
+    setActionMessage(callType === "video" ? "Starting secure video call…" : "Starting secure call…");
+    try {
+      const target: MessengerUserSearchResult = {
+        id: profile.user_id,
+        user_id: profile.user_id,
+        display_name: profile.display_name,
+        public_player_id: profile.public_player_id || profile.username || profileTarget?.publicPlayerId || profileKey,
+        avatar_url: profile.avatar_url || "",
+        premium: Boolean(profile.premium_status),
+        premium_mark: profile.verified_badge ? "verified" : ""
+      };
+      const result = await openDirectConversation(target);
+      navigation?.navigate("Call", { conversationId: result.conversation_id, callType, direction: "outgoing", title: profile.display_name });
+    } catch (callError) {
+      setActionMessage(callError instanceof Error ? callError.message : "Call could not start.");
+    }
+  }
+
+  function handleStat(key: ProfileStatKey) {
+    if (key === "posts") return setTab("posts");
+    if (key === "media") return setTab("media");
+    setActionMessage(key === "followers" ? `${profile?.follower_count || 0} followers.` : `${profile?.following_count || 0} following.`);
+  }
+
+  function handleModule(key: ProfileModuleKey) {
+    switch (key) {
+      case "identity":
+        return owner ? navigation?.navigate("ProfileEdit") : setTab("about");
+      case "media":
+        return setTab("media");
+      case "music":
+        return navigation?.navigate("Music", { title: "Music" });
+      case "trust":
+        return navigation?.navigate("TrustCenter", { title: "Trust Center" });
+      case "safety":
+        return navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" });
+      case "pulse_dna":
+        return navigation?.navigate("IntelligenceCenter", { title: "Pulse DNA" });
+      case "achievements":
+        return navigation?.navigate("GrowthCenter", { contentType: "profile", title: "Achievements" });
+      case "activity":
+        return navigation?.navigate("ActivityInbox", { title: "Activity" });
+      case "collections":
+        return navigation?.navigate("Saved");
+      case "communities":
+        return navigation?.navigate("Tabs", { screen: "Groups" });
+      case "marketplace":
+        return navigation?.navigate("Tabs", { screen: "Marketplace" });
+      case "events":
+        return navigation?.navigate("Events", { mode: "events", title: "Events" });
+      case "business":
+        // Business is the single entry point for running a business: the store,
+        // seller marketplace tools and advertising all live inside Business OS.
+        // Consumer marketplace browsing stays on the Marketplace tab above.
+        return navigation?.navigate("BusinessOs", { title: "Business OS" });
+      case "memories":
+        return navigation?.navigate("Tabs", { screen: "Status" });
+      default:
+        return undefined;
+    }
+  }
+
+  function updateProfilePost(id: number, patch: Partial<PulsePost>) {
+    setPosts((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }
+
+  // Routed through the shared save store rather than this screen's guard: the
+  // same post is very often also on the feed underneath this profile, and a
+  // per-screen optimistic update leaves that copy disagreeing. See
+  // `social/useSaveAction.ts`.
+  async function handleSave(post: PulsePost) {
+    const savableId = savablePostId(post);
+    const wasSaved = peekSaveState("post", savableId)?.saved ?? Boolean(post.saved ?? post.is_saved);
+    const outcome = await setSaved({ type: "post", id: savableId }, !wasSaved);
+    updateProfilePost(post.id, { saved: outcome.saved, is_saved: outcome.saved });
+    if (!outcome.ok && outcome.message) setActionMessage(outcome.message);
+  }
+
+  async function handleReact(post: PulsePost, reactionType: string) {
+    const previous = post.viewer_reaction || "";
+    const previousCounts = post.reaction_counts || {};
+    const removing = previous === reactionType;
+    // Counts are recomputed here, not left to the server round trip, so the
+    // number under the button moves with the icon. Home and PostDetail do the
+    // same arithmetic; a profile card that only flipped the icon showed a stale
+    // count until the next refresh.
+    const counts: Record<string, number> = { ...previousCounts };
+    if (previous) counts[previous] = Math.max(0, Number(counts[previous] || 0) - 1);
+    if (!removing) counts[reactionType] = Number(counts[reactionType] || 0) + 1;
+    await guard.run(actionKey("post_react", post.id), () => reactToPost(post.id, reactionType), {
+      // Changing reaction mid-flight is legitimate, so the second tap runs and
+      // the guard's sequence check discards the slower, older answer.
+      supersede: true,
+      optimistic: () => updateProfilePost(post.id, { viewer_reaction: removing ? "" : reactionType, reaction_counts: counts }),
+      onResult: (result) => updateProfilePost(post.id, {
+        viewer_reaction: String(result.removed ? "" : result.viewer_reaction ?? result.reaction_type ?? (removing ? "" : reactionType)),
+        reaction_counts: result.reaction_counts ?? counts
+      }),
+      onRollback: () => updateProfilePost(post.id, { viewer_reaction: previous, reaction_counts: previousCounts }),
+      onError: setActionMessage
+    });
+  }
+
+  async function handleRepost(post: PulsePost) {
+    const previousReposted = Boolean(post.reposted ?? post.is_reposted);
+    const previousCount = Number(post.repost_count || 0);
+    const undo = previousReposted;
+    // PostCard was rendered here without an `onRepost` prop at all, so its
+    // labelled repost button ran `onRepost?.(post)` against undefined and did
+    // nothing — a button that looked live, announced itself to screen readers, and
+    // silently discarded every tap. Same toggle as Home and PostDetail.
+    await guard.run(actionKey("post_repost", post.id), () => repostPost(post.id, { undo }), {
+      optimistic: () => updateProfilePost(post.id, {
+        reposted: !undo,
+        repost_count: undo ? Math.max(0, previousCount - 1) : previousCount + 1
+      }),
+      onResult: (result) => updateProfilePost(post.id, {
+        reposted: Boolean(result.reposted ?? result.is_reposted ?? !undo),
+        repost_count: typeof result.repost_count === "number"
+          ? result.repost_count
+          : undo ? Math.max(0, previousCount - 1) : previousCount + 1
+      }),
+      onRollback: () => updateProfilePost(post.id, { reposted: previousReposted, repost_count: previousCount }),
+      onError: setActionMessage
+    });
+  }
+
+  async function handleDeletePost(post: PulsePost) {
+    await guard.run(actionKey("post_delete", post.id), () => deletePost(post.id), {
+      // No optimistic removal: a post that vanishes and then reappears reads as
+      // the feed resurrecting it. The row leaves only once the server agrees.
+      onResult: () => {
+        setPosts((current) => current.filter((item) => item.id !== post.id));
+        invalidateNativeSync(["activity", "notifications"], "profile_delete", [
+          {
+            event_type: "pulse_post_deleted",
+            entity_type: "post",
+            entity_id: post.id,
+            invalidates: ["activity", "notifications"],
+            metadata: { source: "native_profile" }
+          }
+        ]).catch(() => undefined);
+      },
+      // Delete keeps its own copy: describeDeleteError distinguishes "not yours"
+      // from "already gone", and users act on that difference.
+      onError: (_message, deleteError) => setActionMessage(describeDeleteError(deleteError, "Post"))
+    });
+  }
+
   if (loading && !profile) {
     return (
       <LogiNexusScreenShell>
@@ -130,64 +297,82 @@ export function ProfileScreen({ route, navigation }: Props) {
             <Text style={styles.retryButtonText}>Retry native profile</Text>
           </Pressable>
         ) : null}
-        {profileTarget && state.canOpenWebFallback ? (
-          <Pressable style={styles.webButton} onPress={() => Linking.openURL(profileWebUrl(profileTarget)).catch(() => undefined)}>
-            <Text style={styles.webButtonText}>Open web fallback</Text>
-          </Pressable>
-        ) : null}
         </LogiNexusStatePanel>
       </LogiNexusScreenShell>
     );
   }
 
   return (
-    <FlatList
+    <Animated.FlatList
       style={styles.list}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, dock.contentPadding]}
       data={tab === "about" ? [] : visiblePosts}
       keyExtractor={(item) => String(item.id)}
       refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
       ListHeaderComponent={
-        <View style={styles.header}>
-          {offline ? <Text style={styles.offline}>Showing saved profile</Text> : null}
-          {errorState ? <Text style={styles.error}>{errorState.body}</Text> : null}
-          {actionMessage ? <Text accessibilityLiveRegion="polite" style={styles.actionMessage}>{actionMessage}</Text> : null}
+        <View>
           <ProfileHeader
             profile={profile}
             publicKey={profileKey}
             owner={owner}
             followBusy={followBusy}
+            scrollY={scrollY}
             onEdit={() => navigation?.navigate("ProfileEdit")}
             onCustomize={() => navigation?.navigate("ProfileEdit")}
             onGrowth={() => navigation?.navigate("GrowthCenter", { contentType: "profile", title: "Grow Profile" })}
             onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })}
             onMessage={() => messageProfile().catch(() => undefined)}
             onFollow={() => followProfile().catch(() => undefined)}
+            onCall={() => startCall("audio").catch(() => undefined)}
+            onVideoCall={() => startCall("video").catch(() => undefined)}
             onRefresh={() => load("refresh").catch(() => undefined)}
+            onStatPress={handleStat}
+            onModulePress={handleModule}
           />
-          <View style={styles.tabs}>
-            <TabButton label="Posts" value="posts" active={tab} onPress={setTab} />
-            <TabButton label="Media" value="media" active={tab} onPress={setTab} />
-            <TabButton label="About" value="about" active={tab} onPress={setTab} />
+          <View style={styles.section}>
+            {offline ? <Text style={styles.offline}>Showing saved profile</Text> : null}
+            {errorState ? <Text style={styles.error}>{errorState.body}</Text> : null}
+            {actionMessage ? <Text accessibilityLiveRegion="polite" style={styles.actionMessage}>{actionMessage}</Text> : null}
+            <View style={styles.tabs}>
+              <TabButton label="Posts" value="posts" active={tab} onPress={setTab} />
+              <TabButton label="Media" value="media" active={tab} onPress={setTab} />
+              <TabButton label="About" value="about" active={tab} onPress={setTab} />
+            </View>
+            {tab === "about" ? <AboutPanel profile={profile} owner={owner} onVerification={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })} onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })} onSellerStore={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })} /> : null}
           </View>
-          {tab === "about" ? <AboutPanel profile={profile} profileTarget={profileTarget} owner={owner} onVerification={() => navigation?.navigate("VerificationCenter", { title: "Verification Center" })} onSafety={() => navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" })} onSellerStore={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })} /> : null}
         </View>
       }
       ListEmptyComponent={tab === "about" ? null : <Text style={styles.empty}>{tab === "media" ? "No media posts loaded." : "No profile posts loaded."}</Text>}
       renderItem={({ item }) => (
-        <PostCard
-          post={item}
-          onOpen={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Post" })}
-          onAuthorPress={(post) => {
-            const target = profileTargetFromAuthor(post.author as Record<string, unknown> | undefined, post as unknown as Record<string, unknown>);
-            const params = profileNavigationParams(target, post.author?.display_name || "Profile");
-            if (params) navigation?.navigate("ProfileDetail", params);
-          }}
-        />
+        <View style={styles.postWrap}>
+          <PostCard
+            post={item}
+            busy={guard.isItemBusy(item.id)}
+            onOpen={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Post" })}
+            onReact={handleReact}
+            onSave={handleSave}
+            onRepost={handleRepost}
+            onComment={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Comments" })}
+            onShare={(post) => sharePulseObject({
+              kind: "post",
+              url: pulsePostUrl(post.id),
+              title: post.title || "PulseSoc post",
+              description: post.body || post.text || post.content,
+              author: post.author?.display_name || post.author?.name || post.author?.username || post.author_name,
+              previewImageUrl: post.thumbnail_url || post.image_url
+            }).catch(() => undefined)}
+            onDelete={owner ? handleDeletePost : undefined}
+            onAuthorPress={(post) => {
+              const target = profileTargetFromAuthor(post.author as Record<string, unknown> | undefined, post as unknown as Record<string, unknown>);
+              const params = profileNavigationParams(target, post.author?.display_name || "Profile");
+              if (params) navigation?.navigate("ProfileDetail", params);
+            }}
+          />
+        </View>
       )}
-      onScroll={bottomNavScroll.onScroll}
-      onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
-      scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
+      onScroll={onScroll}
+      onScrollBeginDrag={dock.handlers.onScrollBeginDrag}
+      scrollEventThrottle={dock.handlers.scrollEventThrottle}
     />
   );
 }
@@ -200,7 +385,7 @@ function TabButton({ label, value, active, onPress }: { label: string; value: Ta
   );
 }
 
-function AboutPanel({ profile, profileTarget, owner, onVerification, onSafety, onSellerStore }: { profile: PulseProfile; profileTarget: NativeProfileTarget | null; owner: boolean; onVerification: () => void; onSafety: () => void; onSellerStore: () => void }) {
+function AboutPanel({ profile, owner, onVerification, onSafety, onSellerStore }: { profile: PulseProfile; owner: boolean; onVerification: () => void; onSafety: () => void; onSellerStore: () => void }) {
   return (
     <View style={styles.about}>
       <Text style={styles.aboutTitle}>About</Text>
@@ -222,9 +407,6 @@ function AboutPanel({ profile, profileTarget, owner, onVerification, onSafety, o
       ) : null}
       <Pressable style={styles.webLink} onPress={onSafety}>
         <Text style={styles.webLinkText}>Open Safety Hub</Text>
-      </Pressable>
-      <Pressable style={styles.webLink} onPress={() => Linking.openURL(profileWebUrl(owner ? undefined : profileTarget || profile)).catch(() => undefined)}>
-        <Text style={styles.webLinkText}>Open full PulseSoc profile</Text>
       </Pressable>
     </View>
   );
@@ -278,8 +460,14 @@ const styles = StyleSheet.create({
     textAlign: "center"
   },
   content: {
-    padding: 16,
     paddingBottom: 32
+  },
+  section: {
+    paddingHorizontal: 16,
+    paddingTop: 4
+  },
+  postWrap: {
+    paddingHorizontal: 16
   },
   empty: {
     color: colors.muted,

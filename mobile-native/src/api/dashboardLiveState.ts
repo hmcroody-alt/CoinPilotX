@@ -51,7 +51,7 @@ export function buildDashboardModuleLiveState(state: UserDashboardState, group: 
   return {
     ...panel,
     metrics: panel.metrics.length ? panel.metrics : fallbackMetrics(state, group, module),
-    signals: panel.signals.length ? panel.signals : ["Live data source is represented by the server dashboard aggregation.", "Advanced module-specific actions remain on safe fallback when unsupported."]
+    signals: panel.signals.length ? panel.signals : ["Live data source is represented by the server dashboard aggregation.", "Advanced module-specific actions remain inside native provider boundaries when unsupported."]
   };
 }
 
@@ -136,7 +136,7 @@ function mediaMetrics(state: UserDashboardState, moduleKey: string): DashboardLi
     metric("Feed media", String(postsWithMedia), "Recent feed items with media from the native feed API.", postsWithMedia ? "ready" : "fallback"),
     metric("Reels", String(creator?.reels?.total || 0), "Creator reel totals from the creator dashboard state.", creator?.reels?.total ? "ready" : "fallback"),
     metric("Videos", String(creator?.videos?.total || 0), "Video totals and processing counts stay backend-owned.", creator?.videos?.processing ? "attention" : "ready"),
-    metric("Module media surface", moduleKey.replace(/_/g, " "), "Upload, library, music, and radio-specific provider tools remain safe fallback where unsupported.", "fallback")
+    metric("Module media surface", moduleKey.replace(/_/g, " "), "Upload, library, music, and radio-specific provider tools remain inside native provider boundaries where unsupported.", "fallback")
   ];
 }
 
@@ -179,7 +179,7 @@ function aiMetrics(state: UserDashboardState, moduleKey: string): DashboardLiveM
     metric("AI readiness", `${Number(hub?.overall_intelligence_score || 0)}%`, "AI surfaces reuse the Intelligence dashboard state and provider boundaries.", hub?.overall_intelligence_score ? "ready" : "fallback"),
     metric("Recommendations", String(recommendations.length), recommendations[0] || "AI recommendations are sourced from approved dashboard intelligence.", recommendations.length ? "attention" : "ready"),
     metric("Active threats", String(Number(hub?.active_threats || 0)), "Threat and safety signals are read-only in the dashboard shell.", hub?.active_threats ? "attention" : "ready"),
-    metric("AI module", moduleKey.replace(/_/g, " "), "Advanced AI provider operations remain safe fallback until native contracts are dedicated.", "fallback")
+    metric("AI module", moduleKey.replace(/_/g, " "), "Advanced AI provider operations remain inside native provider boundaries until native contracts are dedicated.", "fallback")
   ];
 }
 
@@ -245,7 +245,7 @@ function signalsForGroup(state: UserDashboardState, groupKey: string, moduleKey:
   }
   return [
     `${moduleKey.replace(/_/g, " ")} is backed by existing PulseSoc state where available.`,
-    "Provider-owned or advanced operations remain on safe fallback.",
+    "Provider-owned or advanced operations remain inside native provider boundaries.",
     `Dashboard refreshed at ${formatTime(state.loadedAt)}.`
   ];
 }

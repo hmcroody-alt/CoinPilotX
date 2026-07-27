@@ -1,12 +1,13 @@
 import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { PULSE_AI_CONVERSATION_ID, PULSE_AI_DISPLAY_NAME } from "../api/messenger";
-import { RootStackParamList } from "../navigation/types";
+import { AppTabParamList, RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
-export function PulseAiScreen() {
+export function PulseAiScreen({ route }: BottomTabScreenProps<AppTabParamList, "PulseAI">) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   useEffect(() => {
@@ -14,11 +15,12 @@ export function PulseAiScreen() {
     const target = {
       conversationId: PULSE_AI_CONVERSATION_ID,
       title: PULSE_AI_DISPLAY_NAME,
-      presence: "available"
+      presence: "available",
+      ...(route.params?.taskId ? { undxTaskId: route.params.taskId } : {})
     };
     if (parentNavigation) parentNavigation.replace("Chat", target);
     else navigation.replace("Chat", target);
-  }, [navigation]);
+  }, [navigation, route.params?.taskId]);
 
   return (
     <View style={styles.redirect}>

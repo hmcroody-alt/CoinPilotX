@@ -54,7 +54,7 @@ export function UserDashboardScreen() {
   const dashboardCards = useMemo(() => (state?.cards || []).slice(4), [state?.cards]);
   const moduleGroups = state?.moduleGroups || [];
   const moduleCount = useMemo(() => moduleGroups.reduce((total, group) => total + group.modules.length, 0), [moduleGroups]);
-  const fallbackCount = useMemo(() => moduleGroups.reduce((total, group) => total + group.modules.filter((module) => classifyDashboardActionRoute(module.route).kind === "safe_web_fallback").length, 0), [moduleGroups]);
+  const boundaryCount = useMemo(() => moduleGroups.reduce((total, group) => total + group.modules.filter((module) => classifyDashboardActionRoute(module.route).kind === "native_provider_boundary").length, 0), [moduleGroups]);
 
   if (loading && !state) {
     return (
@@ -89,7 +89,7 @@ export function UserDashboardScreen() {
           <Signal label="Activity" value={`${state?.activity?.unreadTotal || 0} unread`} tone={(state?.activity?.unreadTotal || 0) > 0 ? "attention" : "ready"} />
           <Signal label="Orders" value={`${state?.buyerOrders.length || 0}`} tone="ready" />
           <Signal label="System" value={state?.warnings.length ? "Partial" : "Stable"} tone={state?.warnings.length ? "attention" : "ready"} />
-          <Signal label="Dashboard" value={`${moduleCount} modules`} tone={fallbackCount ? "fallback" : "ready"} />
+          <Signal label="Dashboard" value={`${moduleCount} modules`} tone={boundaryCount ? "fallback" : "ready"} />
         </View>
       </View>
 
@@ -102,7 +102,7 @@ export function UserDashboardScreen() {
 
       {state?.warnings.length ? (
         <View style={styles.warningPanel}>
-          <Text style={styles.warningTitle}>Some modules are using safe fallback data</Text>
+          <Text style={styles.warningTitle}>Some modules use provider-owned operations</Text>
           {state.warnings.map((warning) => (
             <Text key={warning} style={styles.warningText}>{warning}</Text>
           ))}
@@ -133,10 +133,10 @@ export function UserDashboardScreen() {
         </View>
       </Section>
 
-      <Section title="Production Dashboard Map" subtitle="Current PulseSoc dashboard module groups represented natively with safe fallback routing where advanced modules are still web-owned.">
+      <Section title="Production Dashboard Map" subtitle="Current PulseSoc dashboard module groups represented natively with provider boundaries where advanced modules are still server-owned.">
         <View style={styles.moduleRail}>
           {moduleGroups.map((group) => (
-            <Pressable key={`rail-${group.key}`} style={styles.railChip} onPress={() => undefined}>
+            <Pressable accessibilityRole="button" key={`rail-${group.key}`} style={styles.railChip} onPress={() => undefined}>
               <Text style={styles.railGlyph}>{group.icon}</Text>
               <View style={styles.railCopy}>
                 <Text style={styles.railLabel}>{group.label}</Text>
@@ -151,7 +151,7 @@ export function UserDashboardScreen() {
         <ModuleGroupSection key={group.key} group={group} onOpen={(module) => openDashboardModule(navigation, group, module)} />
       ))}
 
-      <Section title="Dashboard Quick Actions" subtitle="Production quick-action routes are wired to native destinations or safe web fallbacks.">
+      <Section title="Dashboard Quick Actions" subtitle="Production quick-action routes are wired to native destinations or native provider boundaries.">
         <View style={styles.quickLinkGrid}>
           {(state?.dashboardQuickActionLinks || []).map((action) => (
             <DashboardQuickLink key={action.label} action={action} onPress={() => openDashboardQuickAction(navigation, action)} />
@@ -162,7 +162,7 @@ export function UserDashboardScreen() {
       <Section title="Recent Activity" subtitle="Server-authoritative activity and commerce events feed this timeline.">
         {state?.recentActivity.length ? (
           state.recentActivity.map((item) => (
-            <Pressable key={item.id} style={styles.timelineRow} onPress={() => openActivityTarget(navigation, item.target)}>
+            <Pressable accessibilityRole="button" key={item.id} style={styles.timelineRow} onPress={() => openActivityTarget(navigation, item.target)}>
               <View style={styles.timelineDot} />
               <View style={styles.timelineCopy}>
                 <Text style={styles.timelineTitle}>{item.title}</Text>
@@ -196,7 +196,7 @@ function ModuleGroupSection({ group, onOpen }: { group: DashboardModuleGroup; on
 function DashboardModuleCard({ module, onPress }: { module: DashboardModuleItem; onPress: () => void }) {
   const routeClass = classifyDashboardActionRoute(module.route);
   return (
-    <Pressable style={[styles.moduleCard, module.access === "locked" ? styles.moduleLocked : null]} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={[styles.moduleCard, module.access === "locked" ? styles.moduleLocked : null]} onPress={onPress}>
       <View style={styles.moduleTop}>
         <Text style={styles.moduleGlyph}>{module.icon}</Text>
         <Text style={[styles.moduleStatus, module.status === "COMING_SOON" ? styles.moduleComingSoon : null]}>
@@ -217,7 +217,7 @@ function DashboardModuleCard({ module, onPress }: { module: DashboardModuleItem;
 function DashboardQuickLink({ action, onPress }: { action: DashboardQuickAction; onPress: () => void }) {
   const routeClass = classifyDashboardActionRoute(action.route);
   return (
-    <Pressable style={styles.quickLink} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.quickLink} onPress={onPress}>
       <Text style={styles.quickLinkIcon}>{action.label.slice(0, 2)}</Text>
       <Text style={styles.quickLinkText}>{action.label}</Text>
       <Text style={styles.quickLinkGo}>{routeClass.label}</Text>
@@ -248,7 +248,7 @@ function Signal({ label, value, tone }: { label: string; value: string; tone: Da
 
 function DashboardMetric({ card, onPress }: { card: DashboardCard; onPress: () => void }) {
   return (
-    <Pressable style={[styles.metricCard, stateStyle(card.state)]} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={[styles.metricCard, stateStyle(card.state)]} onPress={onPress}>
       <Text style={styles.cardTitle}>{card.title}</Text>
       <Text style={styles.metricValue}>{card.value}</Text>
       <Text style={styles.cardDetail}>{card.detail}</Text>
@@ -258,7 +258,7 @@ function DashboardMetric({ card, onPress }: { card: DashboardCard; onPress: () =
 
 function QuickAction({ card, onPress }: { card: DashboardCard; onPress: () => void }) {
   return (
-    <Pressable style={styles.quickAction} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.quickAction} onPress={onPress}>
       <Text style={styles.quickTitle}>{card.title}</Text>
       <Text style={styles.quickDetail}>{quickActionCopy(card.key)}</Text>
     </Pressable>
@@ -267,7 +267,7 @@ function QuickAction({ card, onPress }: { card: DashboardCard; onPress: () => vo
 
 function SystemCard({ card, onPress }: { card: DashboardCard; onPress: () => void }) {
   return (
-    <Pressable style={[styles.systemCard, stateStyle(card.state)]} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={[styles.systemCard, stateStyle(card.state)]} onPress={onPress}>
       <View style={styles.systemHeader}>
         <Text style={styles.cardTitle}>{card.title}</Text>
         <Text style={styles.statePill}>{stateLabel(card.state)}</Text>

@@ -17,7 +17,11 @@
     "build:ios:development": "npx eas-cli build --platform ios --profile development",
     "build:ios:simulator": "npx eas-cli build --platform ios --profile development-simulator",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "i18n:validate": "node scripts/validate-i18n.mjs",
+    "i18n:hardcoded": "node scripts/find-hardcoded-strings.mjs",
+    "verify": "npm run typecheck && npm run i18n:validate && npm test",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@babel/runtime": "^7.29.7",
@@ -25,6 +29,7 @@
     "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.0.3",
     "@livekit/react-native": "^2.9.0",
+    "@livekit/react-native-webrtc": "144.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^6.6.1",
     "@react-navigation/native": "^6.1.18",
@@ -35,7 +40,9 @@
     "expo-av": "~16.0.8",
     "expo-battery": "~10.0.8",
     "expo-camera": "~17.0.10",
+    "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.13",
+    "expo-dev-client": "~6.0.21",
     "expo-device": "~8.0.10",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.23",
@@ -50,12 +57,15 @@
     "expo-status-bar": "~3.0.9",
     "livekit-client": "^2.15.4",
     "nullthrows": "1.1.1",
+    "pulse-now-playing": "file:./modules/pulse-now-playing",
     "react": "19.1.0",
     "react-dom": "^19.1.0",
     "react-native": "^0.81.5",
     "react-native-gesture-handler": "~2.28.0",
+    "react-native-qrcode-svg": "^6.3.21",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
+    "react-native-svg": "15.12.1",
     "react-native-web": "^0.21.0"
   },
   "devDependencies": {
@@ -64,10 +74,21 @@
     "@types/react": "~19.1.10",
     "jest": "~29.7.0",
     "jest-expo": "~54.0.17",
+    "patch-package": "^8.0.1",
     "react-test-renderer": "19.1.0",
     "typescript": "~5.9.2"
   },
   "jest": {
-    "preset": "jest-expo"
+    "preset": "jest-expo",
+    "setupFilesAfterEnv": [
+      "<rootDir>/jest.setup.js"
+    ]
+  },
+  "expo": {
+    "doctor": {
+      "appConfigFieldsNotSyncedCheck": {
+        "enabled": false
+      }
+    }
   }
 }

@@ -1,0 +1,14 @@
+diff --git a/node_modules/react-native/ReactCommon/hermes/executor/HermesExecutorFactory.cpp b/node_modules/react-native/ReactCommon/hermes/executor/HermesExecutorFactory.cpp
+index 0b72b72..2b197fd 100644
+--- a/node_modules/react-native/ReactCommon/hermes/executor/HermesExecutorFactory.cpp
++++ b/node_modules/react-native/ReactCommon/hermes/executor/HermesExecutorFactory.cpp
+@@ -7,6 +7,9 @@
+
+ #include "HermesExecutorFactory.h"
+
++#include <atomic>
++#include <thread>
++
+ #include <cxxreact/MessageQueueThread.h>
+ #include <cxxreact/TraceSection.h>
+ #include <hermes/hermes.h>

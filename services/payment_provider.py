@@ -1,4 +1,4 @@
-"""Payment provider boundary for CoinPilotXAI creator economy.
+"""Payment provider boundary for CoinPlotXAI creator economy.
 
 All Stripe calls should live here so route handlers and ledger code do not
 grow provider-specific branches. Missing Stripe configuration returns explicit
@@ -125,7 +125,7 @@ def create_checkout_session(
             "price_data": {
                 "currency": (currency or "usd").lower(),
                 "unit_amount": amount_cents,
-                "product_data": {"name": title[:180] or "CoinPilotXAI purchase"},
+                "product_data": {"name": title[:180] or "CoinPlotXAI purchase"},
             },
         }],
         metadata=metadata,

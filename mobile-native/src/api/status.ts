@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSE_API_BASE_URL, PULSESOC_QA_STATUS_FIXTURES } from "./config";
 import { mediaDisplayUrl, mediaKind, PulseAuthor, PulseMedia } from "./feed";
-import { pulseApi } from "./pulseApi";
+import { pulseApi, PulseApiError } from "./pulseApi";
 
 const STATUS_CACHE_PREFIX = "pulsesoc.native.status.";
 const statusCacheKey = (lane: string) => `${STATUS_CACHE_PREFIX}${lane || "for_you"}`;
@@ -25,6 +25,32 @@ export type PulseStatusMusic = {
 
 export type StatusVisibility = "public" | "followers" | "private";
 export type StatusType = "text" | "photo" | "video" | "music" | "live" | "ai";
+
+/**
+ * Status reaction vocabulary for the native icon action rail.
+ *
+ * The production route `/api/pulse/status/<id>/react` accepts any freeform
+ * string up to 40 chars (no server-side enum) and always REPLACES the
+ * caller's prior reaction row rather than supporting removal. This fixed
+ * list is the client's own curated, presentable vocabulary — every value
+ * in it is a legal, acceptable `reaction_type` for that route, so nothing
+ * here is "unsupported" by the backend. Do not add a value the backend
+ * would reject, and do not add a "none"/removal value: removal is not a
+ * verified backend contract (see reports/pulsesoc_native_status_futuristic_icon_actions_2026-07-19.md).
+ */
+export type StatusReactionType = "love" | "fire" | "clap" | "laugh" | "wow" | "hundred" | "pulse";
+
+export const DEFAULT_STATUS_REACTION: StatusReactionType = "love";
+
+export const STATUS_REACTIONS: Array<{ type: StatusReactionType; label: string; icon: string; iconFilled: string; color: string }> = [
+  { type: "love", label: "Love", icon: "heart-outline", iconFilled: "heart", color: "#ff5fa8" },
+  { type: "fire", label: "Fire", icon: "flame-outline", iconFilled: "flame", color: "#ff8a3d" },
+  { type: "clap", label: "Applause", icon: "thumbs-up-outline", iconFilled: "thumbs-up", color: "#61eaf6" },
+  { type: "laugh", label: "Laugh", icon: "happy-outline", iconFilled: "happy", color: "#ffd166" },
+  { type: "wow", label: "Mind blown", icon: "flash-outline", iconFilled: "flash", color: "#b98bff" },
+  { type: "hundred", label: "Hundred", icon: "ribbon-outline", iconFilled: "ribbon", color: "#36e58f" },
+  { type: "pulse", label: "Pulse", icon: "pulse-outline", iconFilled: "pulse", color: "#61eaf6" }
+];
 
 export type PulseStatus = {
   id: number;
@@ -53,15 +79,32 @@ export type PulseStatus = {
     shares?: number;
   };
   reaction_count?: number;
-  viewer_reaction?: string;
   reply_count?: number;
   share_count?: number;
+  /**
+   * Client-local only. The production rail/list payload never returns a
+   * per-viewer reaction (only an aggregate `reaction_count` — confirmed by
+   * backend audit, see report "Known limitations"), so this is set purely
+   * from local optimistic/confirmed state after a reaction is sent in the
+   * current session, and is not persisted or trustworthy across app restarts.
+   */
+  viewer_reaction?: StatusReactionType | string;
   author_live?: boolean;
   story_count?: number;
   unseen_count?: number;
   creator_status_ids?: number[];
   can_manage?: boolean;
   muted?: boolean;
+  /**
+   * Server truth for whether the viewer has this Status in their Saved
+   * collection. Unlike `viewer_reaction` above this *is* persisted — the rail
+   * query resolves it per viewer out of `pulse_saved_items` — so it survives a
+   * refetch and an app restart. Left `undefined` (rather than defaulted to
+   * false) when the payload omits it, so a card mounted from an older response
+   * seeds nothing and defers to whatever the save store already knows.
+   */
+  saved?: boolean;
+  is_saved?: boolean;
   fixture_state?: "ready" | "uploading" | "failed" | "expired" | "deleted" | "private" | "blocked" | "reported" | "offline_queued";
 };
 
@@ -83,6 +126,11 @@ export type CreateStatusPayload = {
   media_ids?: number[];
   music_media_id?: number;
   music_track_id?: string | number;
+  // Defense-in-depth music metadata (additive; backend stays the source of truth).
+  attached_audio_url?: string;
+  original_audio_muted?: boolean;
+  audio_start_time?: number;
+  audio_volume?: number;
   effect_name?: string;
   sticker?: string;
   link_url?: string;
@@ -193,11 +241,26 @@ export async function trackStatusView(statusId: number, params: { completed?: bo
   });
 }
 
-export async function reactToStatus(statusId: number, reactionType = "fire") {
-  return pulseApi<{ ok?: boolean; status_id?: number; reaction_type?: string; viewer_reaction?: string; reaction_count?: number }>(`/api/pulse/status/${statusId}/react`, {
+export async function reactToStatus(statusId: number, reactionType: string = DEFAULT_STATUS_REACTION) {
+  return pulseApi<{ ok?: boolean; status_id?: number; reaction_type?: string; reaction_count?: number }>(`/api/pulse/status/${statusId}/react`, {
     method: "POST",
     body: JSON.stringify({ reaction_type: reactionType })
   });
+}
+
+/** Concise, user-facing copy for a failed Status reaction, mirroring api/deleteErrors.ts's status-code mapping. */
+export function describeStatusReactionError(err: unknown): string {
+  if (err instanceof PulseApiError) {
+    if (err.status === 401) return "Your session expired. Sign in again to react.";
+    if (err.status === 404) return "This Status is no longer available.";
+    if (err.status === 429) return "Too many attempts. Wait a moment and try again.";
+    if (err.status >= 500) return "Reaction could not be sent right now. Try again.";
+    return err.message || "Reaction could not be sent.";
+  }
+  if (err instanceof TypeError || (err instanceof Error && /network/i.test(err.message))) {
+    return "You're offline. Reconnect to react.";
+  }
+  return "Reaction could not be sent.";
 }
 
 export async function replyToStatus(statusId: number, body: string) {
@@ -244,7 +307,7 @@ export function reconcileStatusItems(current: PulseStatus[], incoming: PulseStat
 }
 
 export function pulseStatusUrl(statusId: number) {
-  return `${PULSE_API_BASE_URL}/pulse/status?status_id=${encodeURIComponent(String(statusId))}`;
+  return `${PULSE_API_BASE_URL}/pulse/status/${encodeURIComponent(String(statusId))}`;
 }
 
 export function normalizeStatuses(items: PulseStatus[]) {
@@ -300,8 +363,19 @@ export function normalizeStatus(item: PulseStatus): PulseStatus {
     story_count: Number(item.story_count || 1),
     unseen_count: Number(item.unseen_count || 0),
     creator_status_ids: (item.creator_status_ids || []).map(Number).filter(Boolean),
-    viewed: Boolean(item.viewed)
+    viewed: Boolean(item.viewed),
+    // Deliberately not coerced with Boolean(): an absent flag has to stay
+    // absent so the save store can tell "the server says unsaved" apart from
+    // "the server did not say", and only the first of those may overwrite a
+    // state the user just chose.
+    saved: readStatusSavedFlag(item)
   };
+}
+
+function readStatusSavedFlag(item: PulseStatus): boolean | undefined {
+  if (typeof item.saved === "boolean") return item.saved;
+  if (typeof item.is_saved === "boolean") return item.is_saved;
+  return undefined;
 }
 
 export function statusMediaUrl(status: PulseStatus) {

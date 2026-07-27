@@ -6,7 +6,6 @@ import {
   Image,
   Pressable,
   RefreshControl,
-  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,13 +14,13 @@ import {
 import {
   listScheduledLiveEvents,
   loadCachedScheduledLiveEvents,
-  openEventsWebFallback,
   PulseScheduledEvent
 } from "../api/events";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
+import { sharePulseObject } from "../sharing/nativeShare";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "Events">>;
 
@@ -108,7 +107,15 @@ export function EventsScreen({ route, navigation }: Props) {
 
   function shareEvent(item: PulseScheduledEvent | null) {
     const path = item?.event_url || "/pulse/events";
-    Share.share({ message: `https://pulsesoc.com${path}` }).catch(() => undefined);
+    const url = /^https?:\/\//i.test(path) ? path : `https://pulsesoc.com${path.startsWith("/") ? path : `/${path}`}`;
+    sharePulseObject({
+      kind: "event",
+      url,
+      title: item?.title || "PulseSoc Event",
+      description: item?.category,
+      author: item?.creator_name,
+      previewImageUrl: item?.thumbnail_url
+    }).catch(() => undefined);
   }
 
   useEffect(() => {
@@ -132,7 +139,7 @@ export function EventsScreen({ route, navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
       >
         <View style={styles.detailShell}>
-          <Pressable style={styles.backButton} onPress={() => setSelected(null)}>
+          <Pressable accessibilityRole="button" style={styles.backButton} onPress={() => setSelected(null)}>
             <Text style={styles.backText}>Back to events</Text>
           </Pressable>
           <View style={styles.detailHero}>
@@ -140,7 +147,7 @@ export function EventsScreen({ route, navigation }: Props) {
             <View style={styles.detailOverlay}>
               <Text style={styles.kicker}>Scheduled Live Gateway</Text>
               <Text style={styles.detailTitle}>{selected.title || "PulseSoc Event"}</Text>
-              <Pressable onPress={() => hostProfile(selected)}>
+              <Pressable accessibilityRole="button" onPress={() => hostProfile(selected)}>
                 <Text style={styles.detailMeta}>{selected.creator_name || "PulseSoc Creator"} · {selected.category || "Live"}</Text>
               </Pressable>
               <Text style={styles.detailMeta}>{formatShortTime(selected.scheduled_at || selected.started_at || "") || "Schedule pending"} · {Number(selected.viewer_count || 0)} interested</Text>
@@ -149,17 +156,14 @@ export function EventsScreen({ route, navigation }: Props) {
           {offline ? <Text style={styles.offline}>Showing cached event details</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <View style={styles.actionGrid}>
-            <Pressable style={styles.primaryButton} onPress={() => watchEvent(selected)}>
+            <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => watchEvent(selected)}>
               <Text style={styles.primaryButtonText}>Join or Watch</Text>
             </Pressable>
-            <Pressable style={styles.secondaryButton} onPress={() => shareEvent(selected)}>
+            <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => shareEvent(selected)}>
               <Text style={styles.secondaryButtonText}>Share</Text>
             </Pressable>
-            <Pressable style={styles.secondaryButton} onPress={() => openEventsWebFallback("schedule").catch(() => undefined)}>
-              <Text style={styles.secondaryButtonText}>Schedule Web</Text>
-            </Pressable>
-            <Pressable style={styles.secondaryButton} onPress={() => openEventsWebFallback("studio").catch(() => undefined)}>
-              <Text style={styles.secondaryButtonText}>Studio Web</Text>
+            <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation?.navigate("LiveStudio", { title: "Live Studio" })}>
+              <Text style={styles.secondaryButtonText}>Go Live</Text>
             </Pressable>
           </View>
           <View style={styles.notice}>
@@ -185,14 +189,11 @@ export function EventsScreen({ route, navigation }: Props) {
           <View style={styles.gatewayPanel}>
             <View>
               <Text style={styles.gatewayTitle}>Scheduled Live gateway</Text>
-              <Text style={styles.gatewayText}>Native discovery uses existing Live scheduled data. Creation and payments stay on safe fallback.</Text>
+              <Text style={styles.gatewayText}>Native discovery uses existing Live scheduled data. Creation and payments stay inside provider-owned boundaries.</Text>
             </View>
             <View style={styles.headerActions}>
-              <Pressable style={styles.primaryButton} onPress={() => load("refresh").catch(() => undefined)}>
+              <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => load("refresh").catch(() => undefined)}>
                 <Text style={styles.primaryButtonText}>Refresh</Text>
-              </Pressable>
-              <Pressable style={styles.secondaryButton} onPress={() => openEventsWebFallback(routeMode === "create" ? "create" : "schedule").catch(() => undefined)}>
-                <Text style={styles.secondaryButtonText}>{routeMode === "create" ? "Create Web" : "Schedule Web"}</Text>
               </Pressable>
             </View>
           </View>
@@ -206,16 +207,13 @@ export function EventsScreen({ route, navigation }: Props) {
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No scheduled events yet</Text>
           <Text style={styles.emptyText}>PulseSoc will show scheduled Live events here when `/api/pulse/live-now` returns scheduled data.</Text>
-          <Pressable style={styles.secondaryButton} onPress={() => openEventsWebFallback("events").catch(() => undefined)}>
-            <Text style={styles.secondaryButtonText}>Open Events Web</Text>
-          </Pressable>
         </View>
       }
       ListFooterComponent={
         <View style={styles.footer}>
-          <Text style={styles.sectionTitle}>Fallbacks</Text>
-          <GatewayRow title="Create Live Event" body="Uses the current Live Studio and backend eligibility rules." onPress={() => openEventsWebFallback("create").catch(() => undefined)} />
-          <GatewayRow title="Live Studio" body="Hosting, co-hosting, and stream setup stay on the existing web flow." onPress={() => openEventsWebFallback("studio").catch(() => undefined)} />
+          <Text style={styles.sectionTitle}>Go live</Text>
+          <GatewayRow title="Create Live Event" body="Uses the current Live Studio and backend eligibility rules." onPress={() => navigation?.navigate("LiveStudio", { title: "Live Studio" })} />
+          <GatewayRow title="Live Studio" body="Set up your device, camera, and network, then broadcast natively in-app." onPress={() => navigation?.navigate("LiveStudio", { title: "Live Studio" })} />
         </View>
       }
     />
@@ -224,20 +222,20 @@ export function EventsScreen({ route, navigation }: Props) {
 
 function EventCard({ item, onOpen, onWatch, onHostPress }: { item: PulseScheduledEvent; onOpen: () => void; onWatch: () => void; onHostPress: () => void }) {
   return (
-    <Pressable style={styles.card} onPress={onOpen}>
+    <Pressable accessibilityRole="button" style={styles.card} onPress={onOpen}>
       {item.thumbnail_url || item.preview_url ? <Image source={{ uri: item.thumbnail_url || item.preview_url }} style={styles.cardImage} /> : <View style={styles.cardImageFallback} />}
       <View style={styles.cardBody}>
         <Text style={styles.kicker}>Scheduled</Text>
         <Text style={styles.cardTitle} numberOfLines={2}>{item.title || "PulseSoc Event"}</Text>
-        <Pressable onPress={onHostPress}>
+        <Pressable accessibilityRole="button" onPress={onHostPress}>
           <Text style={styles.cardMeta} numberOfLines={1}>{item.creator_name || "PulseSoc Creator"} · {item.category || "Live"}</Text>
         </Pressable>
         <Text style={styles.cardMeta}>{formatShortTime(item.scheduled_at || item.started_at || "") || "Time pending"} · {Number(item.viewer_count || 0)} interested</Text>
         <View style={styles.cardActions}>
-          <Pressable style={styles.smallButton} onPress={onWatch}>
+          <Pressable accessibilityRole="button" style={styles.smallButton} onPress={onWatch}>
             <Text style={styles.smallButtonText}>Watch</Text>
           </Pressable>
-          <Pressable style={styles.smallGhostButton} onPress={onOpen}>
+          <Pressable accessibilityRole="button" style={styles.smallGhostButton} onPress={onOpen}>
             <Text style={styles.smallGhostText}>Details</Text>
           </Pressable>
         </View>
@@ -248,7 +246,7 @@ function EventCard({ item, onOpen, onWatch, onHostPress }: { item: PulseSchedule
 
 function GatewayRow({ title, body, onPress }: { title: string; body: string; onPress: () => void }) {
   return (
-    <Pressable style={styles.gatewayRow} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.gatewayRow} onPress={onPress}>
       <View style={styles.gatewayPulse} />
       <View style={styles.gatewayBody}>
         <Text style={styles.gatewayRowTitle}>{title}</Text>

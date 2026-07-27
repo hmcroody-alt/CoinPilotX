@@ -20,11 +20,11 @@
 | Messaging | `/api/pulse/communications/v2/conversations` | PASS | 200 | HTTP 200 |
 | Messaging | `/api/pulse/communications/v2/realtime?after_id=0&limit=20` | PASS | 200 | HTTP 200 |
 | Live streaming | `/pulse/live` | PASS | 200 | HTTP 200 |
-| Live streaming | `/api/pulse/live/stream` | PASS | 200 | HTTP 200 |
+| Live streaming | `/api/pulse/live/stream` | PASS | 204 | HTTP 204 |
 | Notifications | `/pulse/notifications` | PASS | 200 | HTTP 200 |
 | Notifications | `/api/pulse/notifications/unread-count` | PASS | 200 | HTTP 200 |
 | Notifications | `/api/pulse/badge-counts` | PASS | 200 | HTTP 200 |
-| Composer | `/pulse/create` | PASS | 200 | HTTP 200 |
+| Composer | `/pulse/create` | PASS | 302 | HTTP 302 |
 | Composer | `/pulse/camera` | PASS | 200 | HTTP 200 |
 | Videos | `/pulse/videos` | PASS | 200 | HTTP 200 |
 | Videos | `/api/pulse/videos` | PASS | 200 | HTTP 200 |

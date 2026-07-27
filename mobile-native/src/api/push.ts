@@ -35,10 +35,17 @@ const PUSH_REGISTRATION_CACHE_KEY = "pulsesoc.native.push.registration";
 const PUSH_INSTALLATION_ID_KEY = "pulsesoc.native.push.installation_id";
 let activePushRegistration: Promise<PushRegistrationResult> | null = null;
 
+// `handleNotification` runs only for notifications that arrive while the app is
+// FOREGROUNDED. In that case PulseSoc renders its own auto-dismissing in-app
+// banner (InAppNotificationBanner), so we suppress the OS heads-up banner/alert
+// here to avoid stacking two banners for one notification (Issue 4). Sound, the
+// notification list, and the badge are kept so the notification still lands in
+// Notification Center. Background notifications are unaffected — the OS presents
+// those normally.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldShowBanner: true,
+    shouldShowAlert: false,
+    shouldShowBanner: false,
     shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: true

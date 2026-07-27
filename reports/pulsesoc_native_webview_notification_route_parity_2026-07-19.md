@@ -4,7 +4,7 @@ Date: 2026-07-19
 
 Scope: PulseSoc native notification production-route parity
 
-Integrated source baseline: `origin/main` at `4f22130ff6d631c3fd7147a25fe6e5d4c8a5a86c`
+Source baseline: `origin/main` at `428c15f3e8510434481fffb283dce4b47bbff8b1`
 
 ## Executive summary
 
@@ -173,12 +173,3 @@ The requested physical two-account matrix remains the only release blocker. Veri
 ## Rollback
 
 Revert the scoped native commit. No database migration, backend route, notification schema, WebView asset, or App Store production bundle identity is changed by this work.
-
-## Repository release
-
-- Implementation commit: `3e8b0e5a9e7ec5693c0d877298308d08085aee6e`
-- Evidence and audit commit: `953102693f49973a7c955251102ef3cbcb607d9a`
-- Integration: clean cherry-pick onto current `origin/main`; no conflicts
-- Push destination: `origin/main`
-- Push mode: safe non-force fast-forward
-- Remote verification: `origin/main` resolved to the pushed evidence commit before this final report correction

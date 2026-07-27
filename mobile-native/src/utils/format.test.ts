@@ -1,5 +1,9 @@
 import { compactPreview, formatFileSize } from "./format";
 
+jest.mock("@react-native-async-storage/async-storage", () =>
+  require("@react-native-async-storage/async-storage/jest/async-storage-mock")
+);
+
 describe("formatFileSize", () => {
   it("returns empty string for falsy input", () => {
     expect(formatFileSize(undefined)).toBe("");

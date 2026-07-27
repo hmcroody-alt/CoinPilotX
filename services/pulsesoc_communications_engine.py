@@ -500,7 +500,7 @@ def _generate_livekit_token(room_name: str, user_id: int, call_type: str = "audi
         "ok": True,
         "provider": "livekit",
         "token": f"{signing_input}.{_base64url(signature)}",
-        "livekit_url": os.getenv("LIVEKIT_URL", "").strip(),
+        "livekit_url": _livekit_ws_url(),
         "room_name": room_name,
         "expires_at": datetime.fromtimestamp(payload["exp"], timezone.utc).isoformat(timespec="seconds"),
     }
@@ -535,6 +535,33 @@ def _livekit_http_url() -> str:
     raw = os.getenv("LIVEKIT_URL", "").strip().rstrip("/")
     parsed = urlparse(raw)
     scheme = "https" if parsed.scheme == "wss" else "http" if parsed.scheme == "ws" else parsed.scheme
+    return urlunparse((scheme, parsed.netloc, parsed.path.rstrip("/"), "", "", ""))
+
+
+def _livekit_ws_url() -> str:
+    """Client-facing LiveKit endpoint, always a WebSocket scheme.
+
+    The LiveKit client SDKs (livekit-client / @livekit/react-native) expect a
+    ws:// or wss:// URL and refuse to connect to an http(s) endpoint. Operators
+    routinely paste the https:// dashboard URL into LIVEKIT_URL, which then
+    silently breaks every call with no server-side error. Normalize
+    https->wss and http->ws (and default a bare host to wss) so that common
+    misconfiguration cannot take calling down. ws/wss pass through unchanged.
+    """
+    raw = os.getenv("LIVEKIT_URL", "").strip().rstrip("/")
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    scheme = (parsed.scheme or "").lower()
+    if not parsed.netloc:
+        # Bare host with no scheme lands entirely in `path`; assume secure ws.
+        return f"wss://{raw}"
+    if scheme == "https":
+        scheme = "wss"
+    elif scheme == "http":
+        scheme = "ws"
+    elif scheme not in ("ws", "wss"):
+        scheme = "wss"
     return urlunparse((scheme, parsed.netloc, parsed.path.rstrip("/"), "", "", ""))
 
 

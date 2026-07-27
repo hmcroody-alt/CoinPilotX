@@ -41,7 +41,7 @@ def main() -> int:
     require('RefreshResult = "refreshed" | "invalid" | "temporary" | "unavailable"' in pulse_api, "refresh outcomes do not distinguish invalid credentials from temporary failure")
     require("clearNativeSessionCredentials" in pulse_api and "setSessionEnvelope(nextEnvelope)" in pulse_api, "refresh rotation is not atomic or cannot revoke invalid credentials")
     require("envelope.userId !== userId" in pulse_api, "rotated sessions do not enforce canonical user-ID continuity")
-    require("registerSessionInvalidationHandler" in app and 'setAuthState({ status: "signedOut", user: null })' in app, "invalid sessions do not route the authenticated shell to real sign-in")
+    require("registerSessionInvalidationHandler" in app and "setAuthState(expiredState())" in app, "invalid sessions do not route the authenticated shell to real sign-in")
     require('requestReauthentication("/pulse/reels")' in read("mobile-native/src/screens/ReelsScreen.tsx"), "Reels Sign In recovery does not preserve the intended destination")
     require("session_refresh_temporary" in pulse_api, "temporary refresh failure can be mislabeled as session expiration")
     require("mobile_security_sessions" in backend and "refresh_token_hash" in backend, "server-side refresh sessions are not hashed and tracked")

@@ -516,7 +516,9 @@
       pinned: true,
       muted: false,
       verified: true,
-      presence: { status: "online", active_now: true, presence_visible: true },
+      // Pulse AI is a service. It is not given a human online indicator; the
+      // UI renders it as "Always available" via the assistant presence class.
+      presence: { assistant: true },
       last_message_preview: "Ask me anything about PulseSoc.",
       last_activity_at: new Date().toISOString(),
       ...overrides,
@@ -556,29 +558,62 @@
     return String(title || "P").trim().slice(0, 2).toUpperCase();
   }
 
+  // Presence is server-authoritative. These helpers only render what the
+  // server sent for the specific user being displayed. They never infer,
+  // substitute, or default a user to online: if the server did not report a
+  // presence record for that exact user id, the answer is offline.
   function presenceForUser(userId) {
-    return (state.presence || []).find((item) => Number(item.user_id || 0) === Number(userId || 0)) || {};
+    const id = Number(userId || 0);
+    if (!id) return {};
+    return (state.presence || []).find((item) => Number(item.user_id || 0) === id) || {};
   }
 
   function presenceForConversation(item) {
+    // Pulse AI is a service, not a person. It is labelled distinctly rather
+    // than being given a human online indicator.
+    if (item?.is_ai || item?.ai_assistant) return { assistant: true };
     if (item?.presence && item.presence.available !== false && item.presence.status) return item.presence;
     const peerId = Number(item?.peer_user_id || item?.other_user_id || item?.target_user_id || 0);
-    const directPeer = peerId ? presenceForUser(peerId) : null;
-    if (directPeer?.user_id) return directPeer;
-    const activePeer = (state.presence || []).find((presence) => Number(presence.user_id || 0) !== currentUserId && presence.active_now);
-    return activePeer || {};
+    if (!peerId) return {};
+    // Only ever this peer's own presence. Previously this fell back to "any
+    // other user who happens to be online", which displayed one person's
+    // status on another person's conversation.
+    return presenceForUser(peerId);
   }
 
   function presenceLabel(presence) {
-    if (!presence || presence.presence_visible === false || presence.status === "hidden") return "Presence hidden";
-    if (presence.active_now || presence.status === "online") return "Online";
+    if (presence?.assistant) return "Always available";
+    if (!presence || !presence.status) return "Offline";
+    if (presence.status === "online") return activityLabel(presence) || "Online";
     if (presence.status === "away") return "Away";
-    if (presence.last_seen_at) return `Last active ${relativeTime(presence.last_seen_at)}`;
+    if (presence.last_seen_text) return presence.last_seen_text;
+    if (presence.last_seen_at) return `Last seen ${relativeTime(presence.last_seen_at)}`;
     return "Offline";
   }
 
+  // Activity states are transient and expire server-side, so an indicator can
+  // never get stuck on screen if the other client disappears mid-action.
+  const ACTIVITY_LABELS = {
+    typing: "Typing…",
+    recording_voice: "Recording voice…",
+    uploading_media: "Uploading media…",
+    sending_files: "Sending files…",
+    in_audio_call: "In audio call",
+    in_video_call: "In video call",
+    live_hosting: "Hosting Live",
+    live_guest: "Guest in Live",
+    live_watching: "Watching Live",
+  };
+
+  function activityLabel(presence) {
+    const activity = String(presence?.activity || "idle");
+    if (activity === "idle") return "";
+    return ACTIVITY_LABELS[activity] || "";
+  }
+
   function presenceClass(presence) {
-    if (presence?.active_now || presence?.status === "online") return "online";
+    if (presence?.assistant) return "assistant";
+    if (presence?.status === "online") return "online";
     if (presence?.status === "away") return "away";
     return "offline";
   }
@@ -1128,7 +1163,7 @@
     if (!members.length) return controlEmptyHtml("No members found.");
     return `<div class="control-detail-list">${members.map((member) => `<article>
       ${avatarHtml({ title: member.display_name, avatar_url: member.avatar_url }, "control-detail-avatar")}
-      <span><strong>${escapeHtml(member.display_name || "Pulse member")}</strong><small>${escapeHtml(member.role || "member")} · ${member.active_now ? "Online" : "Offline"}</small></span>
+      <span><strong>${escapeHtml(member.display_name || "Pulse member")}</strong><small>${escapeHtml(member.role || "member")} · ${escapeHtml(presenceLabel(presenceForUser(member.user_id)))}</small></span>
     </article>`).join("")}</div>`;
   }
 
@@ -1685,10 +1720,10 @@
     const presenceText = state.active ? presenceLabel(threadPresence) : "Standby";
     if (sub) {
       sub.textContent = state.active
-        ? activeIsAI ? "Online · Galaxy Assistant" : `${presenceText} · ${typeLabel(state.active.conversation_type || "conversation")}`
+        ? activeIsAI ? "Always available · Galaxy Assistant" : `${presenceText} · ${typeLabel(state.active.conversation_type || "conversation")}`
         : "Start a secure conversation.";
       sub.setAttribute("data-presence", presenceClass(threadPresence));
-      sub.setAttribute("data-presence-label", activeIsAI ? "Online" : presenceText);
+      sub.setAttribute("data-presence-label", presenceText);
     }
     if (avatar) {
       const avatarUrl = state.active?.avatar_url || state.active?.avatar_thumbnail_url || "";
@@ -2283,12 +2318,19 @@
   function applyRealtimePresence(payload) {
     const userId = Number(payload?.user_id || 0);
     if (!userId) return;
+    // Mirror the server payload exactly. Nothing is invented client-side:
+    // the previous version substituted the current clock for a missing
+    // last_seen_at, which manufactured a "last seen just now" for users the
+    // server had said nothing about.
     const nextPresence = {
       user_id: userId,
       status: payload.status || "offline",
-      active_now: payload.status === "online",
-      last_seen_at: payload.last_seen_at || payload.updated_at || new Date().toISOString(),
-      presence_visible: payload.presence_visible !== false,
+      online: payload.online === true || payload.status === "online" || payload.status === "away",
+      activity: payload.activity || "idle",
+      activity_context: payload.activity_context || "",
+      devices: Number(payload.devices || 0),
+      last_seen_at: payload.last_seen_at || "",
+      last_seen_text: payload.last_seen_text || "",
     };
     const existing = (state.presence || []).filter((item) => Number(item.user_id || 0) !== userId);
     state.presence = [...existing, nextPresence];
@@ -3612,6 +3654,10 @@
     const now = Date.now();
     if (now - state.typingSentAt < 2500) return;
     state.typingSentAt = now;
+    // Also published as a presence activity so every surface (not just this
+    // conversation view) reports the same state, and so it inherits the
+    // server-side expiry that prevents stuck indicators.
+    setPresenceActivity("typing", String(state.active.conversation_id || ""));
     try {
       await api(`/conversations/${state.active.conversation_id}/typing`, {
         method: "POST",
@@ -3624,6 +3670,7 @@
     window.clearTimeout(state.typingTimer);
     window.clearTimeout(state.typingStopTimer);
     if (!state.active || isPulseAIConversation(state.active)) return;
+    setPresenceActivity("idle", "");
     try {
       await api(`/conversations/${state.active.conversation_id}/typing`, {
         method: "POST",
@@ -3632,25 +3679,202 @@
     } catch (_) {}
   }
 
-  async function sendPresenceHeartbeat() {
+  // ---------------------------------------------------------------------
+  // Presence client
+  //
+  // The server owns the schedule: it returns the heartbeat interval and the
+  // grace period on connect, so the cadence can be retuned server-side
+  // without shipping a new client. The client's only jobs are to beat on
+  // time, to say goodbye promptly, and to stop beating when the page is not
+  // visible so a backgrounded tab does not hold a user online.
+  // ---------------------------------------------------------------------
+  const PRESENCE_API = "/api/pulse/presence";
+  const presenceClient = {
+    sessionId: "",
+    deviceId: "",
+    intervalMs: 45000,
+    timer: 0,
+    activity: "idle",
+    activityContext: "",
+    stopped: false,
+  };
+
+  function presenceDeviceId() {
+    if (presenceClient.deviceId) return presenceClient.deviceId;
+    let stored = "";
     try {
-      await api("/presence/heartbeat", { method: "POST", body: JSON.stringify({ status: "online" }) }, "presence_heartbeat");
+      // Stable per browser profile so reloading replaces the session rather
+      // than accumulating a new "device" on every page load.
+      stored = window.sessionStorage?.getItem("pulsePresenceDeviceId") || "";
+      if (!stored) {
+        stored = `web-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+        window.sessionStorage?.setItem("pulsePresenceDeviceId", stored);
+      }
+    } catch (_) {
+      stored = `web-${Math.random().toString(36).slice(2)}`;
+    }
+    presenceClient.deviceId = stored;
+    return stored;
+  }
+
+  async function presenceRequest(path, payload) {
+    const res = await fetch(PRESENCE_API + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(payload || {}),
+    });
+    if (!res.ok) throw new Error(`presence_${res.status}`);
+    return res.json();
+  }
+
+  async function presenceConnect() {
+    if (!currentUserId) return;
+    try {
+      const data = await presenceRequest("/connect", {
+        device_id: presenceDeviceId(),
+        device_label: "web",
+        platform: "web",
+      });
+      if (data?.ok) {
+        presenceClient.sessionId = data.session_id || "";
+        presenceClient.intervalMs = Math.max(5000, Number(data.heartbeat_interval_seconds || 45) * 1000);
+      }
+    } catch (_) {
+      // Offline or server down. The next scheduled beat retries; meanwhile
+      // this user correctly ages out to offline for everyone else.
+    }
+  }
+
+  async function sendPresenceHeartbeat() {
+    if (!currentUserId || presenceClient.stopped) return;
+    try {
+      const data = await presenceRequest("/heartbeat", {
+        session_id: presenceClient.sessionId,
+        device_id: presenceDeviceId(),
+        device_label: "web",
+        platform: "web",
+        activity: presenceClient.activity,
+        activity_context: presenceClient.activityContext,
+      });
+      if (data?.ok) {
+        // The server re-established the session for us after an expiry or a
+        // restart; adopt whatever it handed back.
+        if (data.session_id) presenceClient.sessionId = data.session_id;
+        if (data.heartbeat_interval_seconds) {
+          presenceClient.intervalMs = Math.max(5000, Number(data.heartbeat_interval_seconds) * 1000);
+        }
+      }
     } catch (_) {}
   }
 
   function schedulePresenceHeartbeat() {
-    window.setTimeout(async () => {
-      await sendPresenceHeartbeat();
+    window.clearTimeout(presenceClient.timer);
+    presenceClient.timer = window.setTimeout(async () => {
+      if (!presenceClient.stopped) await sendPresenceHeartbeat();
       schedulePresenceHeartbeat();
-    }, 30000);
+    }, presenceClient.intervalMs);
+  }
+
+  function setPresenceActivity(activity, context = "") {
+    const next = String(activity || "idle");
+    const changed = next !== presenceClient.activity || context !== presenceClient.activityContext;
+    presenceClient.activity = next;
+    presenceClient.activityContext = context;
+    // Push immediately so the other side sees typing without waiting for the
+    // next scheduled beat. The state still carries a server-side expiry, so
+    // a client that dies here cannot leave the indicator stuck.
+    if (changed) sendPresenceHeartbeat();
+  }
+
+  function stopPresence(disconnect = true) {
+    presenceClient.stopped = true;
+    window.clearTimeout(presenceClient.timer);
+    if (!disconnect || !currentUserId || !presenceClient.sessionId) return;
+    const body = JSON.stringify({ session_id: presenceClient.sessionId });
+    try {
+      // sendBeacon survives page teardown; fetch usually does not.
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(`${PRESENCE_API}/disconnect`, new Blob([body], { type: "application/json" }));
+      } else {
+        fetch(`${PRESENCE_API}/disconnect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body,
+          keepalive: true,
+        });
+      }
+    } catch (_) {}
+  }
+
+  function resumePresence() {
+    presenceClient.stopped = false;
+    sendPresenceHeartbeat();
+    schedulePresenceHeartbeat();
+  }
+
+  function bindPresenceLifecycle() {
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        // Stop beating but do not disconnect: a brief tab switch should not
+        // flap the user offline. The grace period covers this window.
+        presenceClient.stopped = true;
+        window.clearTimeout(presenceClient.timer);
+      } else {
+        resumePresence();
+      }
+    });
+    // pagehide covers navigation, tab close, and mobile app termination in a
+    // way that unload does not.
+    window.addEventListener("pagehide", () => stopPresence(true));
+  }
+
+  async function startPresence() {
+    if (!currentUserId) return;
+    await presenceConnect();
+    schedulePresenceHeartbeat();
+    bindPresenceLifecycle();
+    refreshPresenceForVisibleUsers();
+  }
+
+  // Read presence for exactly the users currently on screen.
+  async function refreshPresenceForVisibleUsers() {
+    if (!currentUserId) return;
+    const ids = new Set();
+    (state.conversations || []).forEach((item) => {
+      const peer = Number(item?.peer_user_id || item?.other_user_id || item?.target_user_id || 0);
+      if (peer > 0) ids.add(peer);
+    });
+    (state.members || []).forEach((member) => {
+      const id = Number(member?.user_id || 0);
+      if (id > 0 && id !== currentUserId) ids.add(id);
+    });
+    if (!ids.size) return;
+    try {
+      const res = await fetch(`${PRESENCE_API}/query?user_ids=${[...ids].join(",")}`, {
+        credentials: "same-origin",
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.ok) {
+        state.presence = data.presence || [];
+        renderActiveRail();
+        renderConversations();
+        renderMembers();
+      }
+    } catch (_) {}
   }
 
   async function loadPresence(conversationId) {
     if (!conversationId) return;
     try {
       const data = await api(`/conversations/${conversationId}/presence`, {}, "conversation_presence");
-      state.presence = data.presence || [];
+      // Typing comes from the conversation endpoint; liveness comes from the
+      // unified presence service so it matches every other surface.
+      state.typing = data.typing || state.typing;
     } catch (_) {}
+    await refreshPresenceForVisibleUsers();
   }
 
   function openModal(name) {
@@ -4347,8 +4571,7 @@
   bind();
   bindMessengerMediaViewer();
   setMobileMode(isMobile() ? "list" : "desktop");
-  sendPresenceHeartbeat();
-  schedulePresenceHeartbeat();
+  startPresence();
   mobileQuery.addEventListener?.("change", () => setMobileMode(isMobile() ? (state.active ? "thread" : "list") : "desktop"));
   renderMessages();
   renderMembers();

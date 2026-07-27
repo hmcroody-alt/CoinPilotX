@@ -46,7 +46,7 @@ DEFAULT_TRACKS = [
     {
         "id": "pulse-original-rise",
         "title": "PulseSoc Rise",
-        "artist": "CoinPilotXAI Originals",
+        "artist": "CoinPlotXAI Originals",
         "duration_seconds": 28,
         "license": "original_pulse_sound",
         "license_type": "PulseSoc original work",

@@ -1,4 +1,4 @@
-"""AI orchestration layer for concise, live-data-aware CoinPilotXAI answers."""
+"""AI orchestration layer for concise, live-data-aware CoinPlotXAI answers."""
 
 import os
 import time
@@ -27,7 +27,7 @@ def route(user_id, message, pro=False, memory=None, timeout_seconds=12):
     started = time.time()
     message = _trim(message, 1800)
     low = message.lower()
-    source = "coinpilotxai"
+    source = "coinplotxai"
     confidence = "Medium"
     response = ""
     live_context = {}
@@ -64,7 +64,7 @@ def route(user_id, message, pro=False, memory=None, timeout_seconds=12):
         result = scam_shield.analyze_text(message)
         response = result.get("response") or result.get("explanation") or "Scam Shield could not analyze this text right now."
         live_context["scam"] = result
-        source = "CoinPilotXAI Scam Shield"
+        source = "CoinPlotXAI Scam Shield"
         confidence = result.get("confidence", "High" if result.get("risk_level") in {"critical", "high"} else "Medium")
     elif "wallet" in low or "address" in low:
         result = wallet_intel.analyze_public_identifier(message)
@@ -82,7 +82,7 @@ def route(user_id, message, pro=False, memory=None, timeout_seconds=12):
     else:
         prompt = f"{SYSTEM_RULES}\n\nUser question:\n{message}"
         response = intelligence.assistant_response(user_id, prompt, pro=pro)
-        source = "OpenAI + CoinPilotXAI context" if os.getenv("OPENAI_API_KEY") else "CoinPilotXAI fallback"
+        source = "OpenAI + CoinPlotXAI context" if os.getenv("OPENAI_API_KEY") else "CoinPlotXAI fallback"
 
     if not response:
         response = f"{_live_prefix()}\n\nI could not produce a reliable answer from the available providers."

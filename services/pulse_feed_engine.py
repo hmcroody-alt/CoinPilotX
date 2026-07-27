@@ -480,6 +480,31 @@ def _comment_counts(cur, post_ids):
     return {int(row["post_id"]): int(row["total"] or 0) for row in cur.fetchall()}
 
 
+def _repost_counts(cur, post_ids):
+    """
+    How many live reposts each post has.
+
+    Deliberately the same predicate `_viewer_post_state` uses for the `reposted`
+    flag — `deleted_at IS NULL` on the repost row — so undoing a repost drops the
+    flag and the count together. Counting deleted rows here would leave a post
+    reading "1 repost" with the button showing not-reposted, which is the state
+    the mobile client used to invent locally.
+    """
+    if not post_ids:
+        return {}
+    placeholders = ",".join(["?"] * len(post_ids))
+    cur.execute(
+        f"""
+        SELECT repost_of_post_id, COUNT(*) AS total
+        FROM pulse_posts
+        WHERE repost_of_post_id IN ({placeholders}) AND deleted_at IS NULL
+        GROUP BY repost_of_post_id
+        """,
+        post_ids,
+    )
+    return {int(row["repost_of_post_id"]): int(row["total"] or 0) for row in cur.fetchall()}
+
+
 def _view_counts(cur, post_ids):
     if not post_ids:
         return {}
@@ -521,6 +546,7 @@ def _public_post(
     viewer_saved=False,
     viewer_reposted=False,
     viewer_follows_author=False,
+    reposts=0,
 ):
     item = dict(row)
     author = _public_author(item)
@@ -587,6 +613,14 @@ def _public_post(
         "is_saved": bool(viewer_saved),
         "reposted": bool(viewer_reposted),
         "is_reposted": bool(viewer_reposted),
+        # Emitted because the clients render it. The web template already read
+        # `p.repost_count || p.reposts_count || 0` and the mobile PostCard shows
+        # `post.repost_count ? compactCount(...) : "Repost"`, but nothing here ever
+        # sent either key: the count was permanently absent, so a mobile client
+        # that incremented it optimistically watched the number vanish on the next
+        # refresh. Both spellings, matching the pattern used for comments and views.
+        "repost_count": int(reposts or 0),
+        "reposts_count": int(reposts or 0),
         "viewer_follows_author": bool(viewer_follows_author),
         "is_following_author": bool(viewer_follows_author),
         "can_delete": can_delete,
@@ -595,21 +629,44 @@ def _public_post(
     }
 
 
+def savable_post_id(row):
+    """The post a Save on this row is *about*.
+
+    A repost is its own `pulse_posts` row wrapping an original, and the wrapper
+    is what the feed hands the client. Saving the wrapper stores the wrapper's
+    id, so the original's card — same content, different id — kept reading back
+    unsaved, and the Saved collection filled up with wrapper rows whose body is
+    the resharer's caption rather than the post the user meant to keep.
+
+    Collapsing to the original here means one row in `pulse_post_saves` per
+    piece of content no matter which card the user tapped. The write path uses
+    the same function, so read and write cannot disagree about identity.
+    """
+    row = row or {}
+    original = int(row.get("repost_of_post_id") or 0)
+    return original if original > 0 else int(row.get("id") or 0)
+
+
 def _viewer_post_state(cur, rows, viewer_user_id=None):
     if not viewer_user_id or not rows:
         return {"saved": set(), "reposted": set(), "following": set()}
     post_ids = sorted({int((row or {}).get("id") or 0) for row in rows or [] if int((row or {}).get("id") or 0) > 0})
+    # Saves are keyed on the original, reposts and follows on the wrapper, so
+    # the two id sets are deliberately not the same list.
+    saved_ids = sorted({savable_post_id(row) for row in rows or [] if savable_post_id(row) > 0})
     author_ids = sorted({int((row or {}).get("user_id") or 0) for row in rows or [] if int((row or {}).get("user_id") or 0) > 0})
     saved = set()
     reposted = set()
     following = set()
-    if post_ids:
-        placeholders = ",".join(["?"] * len(post_ids))
+    if saved_ids:
+        placeholders = ",".join(["?"] * len(saved_ids))
         cur.execute(
             f"SELECT post_id FROM pulse_post_saves WHERE user_id=? AND post_id IN ({placeholders})",
-            (int(viewer_user_id), *post_ids),
+            (int(viewer_user_id), *saved_ids),
         )
         saved = {int(row["post_id"]) for row in cur.fetchall()}
+    if post_ids:
+        placeholders = ",".join(["?"] * len(post_ids))
         cur.execute(
             f"""
             SELECT repost_of_post_id
@@ -692,6 +749,7 @@ def _repost_originals(cur, rows, viewer_user_id=None):
     hydrated_ids = [int(row["id"]) for row in originals]
     reactions = _reaction_counts(cur, hydrated_ids)
     comments = _comment_counts(cur, hydrated_ids)
+    reposts = _repost_counts(cur, hydrated_ids)
     views = _view_counts(cur, hydrated_ids)
     viewer_reactions = {}
     if viewer_user_id and hydrated_ids:
@@ -711,9 +769,10 @@ def _repost_originals(cur, rows, viewer_user_id=None):
             viewer_user_id,
             views.get(int(row["id"]), 0),
             music.get(int(row["id"])),
-            int(row["id"]) in viewer_state["saved"],
+            savable_post_id(row) in viewer_state["saved"],
             int(row["id"]) in viewer_state["reposted"],
             int(row.get("user_id") or 0) in viewer_state["following"],
+            reposts=reposts.get(int(row["id"]), 0),
         )
         for row in originals
     }
@@ -907,6 +966,7 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
     post_ids = [int(post_id)]
     reactions = _reaction_counts(cur, post_ids)
     comments = _comment_counts(cur, post_ids)
+    reposts = _repost_counts(cur, post_ids)
     views = _view_counts(cur, post_ids)
     viewer_reaction = None
     if viewer_user_id:
@@ -928,9 +988,10 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
         viewer_user_id,
         views.get(int(post_id), 0),
         music.get(int(post_id)),
-        int(post_id) in viewer_state["saved"],
+        savable_post_id(row) in viewer_state["saved"],
         int(post_id) in viewer_state["reposted"],
         int(row.get("user_id") or 0) in viewer_state["following"],
+        reposts=reposts.get(int(post_id), 0),
     )
 
 
@@ -1038,6 +1099,7 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     post_ids = [int(row["id"]) for row in rows]
     reactions = _reaction_counts(cur, post_ids)
     comments = _comment_counts(cur, post_ids)
+    reposts = _repost_counts(cur, post_ids)
     views = _view_counts(cur, post_ids)
     viewer_reactions = {}
     if viewer_user_id and post_ids:
@@ -1063,9 +1125,10 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
             viewer_user_id,
             views.get(int(row["id"]), 0),
             music.get(int(row["id"])),
-            int(row["id"]) in viewer_state["saved"],
+            savable_post_id(row) in viewer_state["saved"],
             int(row["id"]) in viewer_state["reposted"],
             int(row.get("user_id") or 0) in viewer_state["following"],
+            reposts=reposts.get(int(row["id"]), 0),
         )
         for row in rows
     ]
@@ -1117,6 +1180,7 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
     post_ids = [int(row["id"]) for row in rows]
     reactions = _reaction_counts(cur, post_ids)
     comments = _comment_counts(cur, post_ids)
+    reposts = _repost_counts(cur, post_ids)
     views = _view_counts(cur, post_ids)
     viewer_reactions = {}
     if viewer_user_id and post_ids:
@@ -1142,9 +1206,10 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
             viewer_user_id,
             views.get(int(row["id"]), 0),
             music.get(int(row["id"])),
-            int(row["id"]) in viewer_state["saved"],
+            savable_post_id(row) in viewer_state["saved"],
             int(row["id"]) in viewer_state["reposted"],
             int(row.get("user_id") or 0) in viewer_state["following"],
+            reposts=reposts.get(int(row["id"]), 0),
         )
         for row in rows
     ]
@@ -1419,9 +1484,38 @@ def add_comment(user_id, post_id, body, parent_comment_id=None, media_ids=None, 
     return {"ok": True, "comment_id": comment_id, "comment": comment, "comments_count": len(comments), "message": "Comment posted."}, 200
 
 
-def list_comments(post_id, limit=80):
+COMMENT_PAGE_LIMIT_MAX = 120
+COMMENT_PAGE_LIMIT_DEFAULT = 80
+
+
+def list_comments(post_id, limit=80, offset=0, viewer_user_id=None):
+    """Return one page of a post's comments, oldest first.
+
+    Pagination is offset-based rather than cursor-based to match the existing
+    ORDER BY (created_at ASC, id ASC), which is stable for already-published
+    comments: a new comment always sorts after the current page, so paging
+    forward cannot skip or repeat a row. `total` is the unpaginated count, so a
+    client knows whether another page exists without fetching it — returning
+    only the rows makes "has more" unanswerable except by guessing from the page
+    being full, which is wrong exactly when the total is a multiple of limit.
+
+    `viewer_user_id` populates can_edit/can_delete. Without it the client has to
+    infer ownership by comparing ids itself, which is how a delete control ends
+    up rendered for a comment the server will refuse to delete.
+    """
+    safe_limit = max(1, min(int(limit or COMMENT_PAGE_LIMIT_DEFAULT), COMMENT_PAGE_LIMIT_MAX))
+    safe_offset = max(0, int(offset or 0))
     conn = user_context.connect()
     cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM pulse_comments c
+        WHERE c.post_id=? AND c.deleted_at IS NULL AND c.moderation_status!='blocked'
+        """,
+        (int(post_id),),
+    )
+    total = int(dict(cur.fetchone() or {}).get("total") or 0)
     cur.execute(
         """
         SELECT c.*, u.username, u.email, u.full_name, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
@@ -1432,13 +1526,16 @@ def list_comments(post_id, limit=80):
         LEFT JOIN arena_profiles ap ON ap.user_id=c.user_id
         WHERE c.post_id=? AND c.deleted_at IS NULL AND c.moderation_status!='blocked'
         ORDER BY c.created_at ASC, c.id ASC
-        LIMIT ?
+        LIMIT ? OFFSET ?
         """,
-        (int(post_id), max(1, min(int(limit or 80), 120))),
+        (int(post_id), safe_limit, safe_offset),
     )
     comments = []
+    viewer_id = int(viewer_user_id) if viewer_user_id else 0
     for row in cur.fetchall():
         item = dict(row)
+        author_id = int(item.get("user_id") or 0)
+        owned = bool(viewer_id) and author_id == viewer_id
         comments.append({
             "id": item.get("id"),
             "post_id": item.get("post_id"),
@@ -1448,10 +1545,19 @@ def list_comments(post_id, limit=80):
             "created_at": item.get("created_at"),
             "updated_at": item.get("updated_at"),
             "edited_at": item.get("edited_at"),
+            "can_edit": owned,
+            "can_delete": owned,
             "author": _public_author(item),
         })
     conn.close()
-    return {"ok": True, "comments": comments}
+    return {
+        "ok": True,
+        "comments": comments,
+        "total": total,
+        "limit": safe_limit,
+        "offset": safe_offset,
+        "has_more": safe_offset + len(comments) < total,
+    }
 
 
 def get_comment(comment_id):
@@ -1539,6 +1645,163 @@ def react(user_id, post_id, reaction_type, notify_owner=True):
                 exc,
             )
     return {"ok": True, "message": "Reaction added.", "reaction_type": reaction_type, "post_id": int(post_id), "reaction_counts": reactions, "reactions_count": sum(int(v or 0) for v in reactions.values())}, 200
+
+
+def repost(
+    user_id,
+    post_id,
+    note="",
+    undo=False,
+    default_title="",
+    default_body="",
+    reposter_public_player_id="",
+    original_public_player_id="",
+):
+    """
+    Repost, un-repost, and the idempotence that makes both safe.
+
+    The route this replaces unconditionally INSERTed a 'repost' row, so it had
+    three defects that the clients could only work around by lying to the user:
+
+    1. NO UNDO. There was no delete path at all, so the mobile clients rendered a
+       one-way button and left a comment explaining that a toggle would "claim an
+       un-repost the server never performed". The user could repost by accident and
+       had no way back. `undo=True` soft-deletes, matching `deleted_at IS NULL` —
+       the predicate `_viewer_post_state` and `_repost_counts` both already use —
+       so the flag and the count drop together.
+    2. NO DEDUPE. Two taps meant two repost rows on the same original, and the
+       second was invisible to the tapper. Reposting when a live repost already
+       exists is now a no-op that reports the existing row.
+    3. NO STATE IN THE RESPONSE. It returned `{ok, post_id, next_url}` — no
+       `reposted`, no count — so a client had no way to reconcile with the server
+       and had to guess. Both are returned now.
+
+    Undo clears EVERY live repost row the viewer holds for this original, not just
+    the newest one, because the create-only route left duplicates behind and a
+    single-row undo would leave the button stuck on "Reposted" with no way to
+    clear it.
+    """
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (int(post_id),))
+    original = _row(cur.fetchone())
+    if not original:
+        conn.close()
+        return {"ok": False, "message": "Post not found."}, 404
+    cur.execute(
+        "SELECT id FROM pulse_posts WHERE user_id=? AND repost_of_post_id=? AND deleted_at IS NULL ORDER BY id",
+        (int(user_id), int(post_id)),
+    )
+    existing_ids = [int(row["id"]) for row in cur.fetchall()]
+    now = _now()
+
+    if undo:
+        if not existing_ids:
+            # Not an error: the client's optimistic state and the server agree on
+            # the outcome, which is all the caller needs. Reporting 404 here would
+            # make a double-tapped undo look like a failure.
+            counts = _repost_counts(cur, [int(post_id)])
+            conn.close()
+            return {
+                "ok": True,
+                "message": "Repost already removed.",
+                "post_id": int(post_id),
+                "reposted": False,
+                "is_reposted": False,
+                "repost_count": int(counts.get(int(post_id), 0)),
+                "removed": True,
+            }, 200
+        placeholders = ",".join(["?"] * len(existing_ids))
+        cur.execute(
+            f"UPDATE pulse_posts SET deleted_at=?, updated_at=? WHERE id IN ({placeholders})",
+            (now, now, *existing_ids),
+        )
+        conn.commit()
+        counts = _repost_counts(cur, [int(post_id)])
+        conn.close()
+        return {
+            "ok": True,
+            "message": "Repost removed.",
+            "post_id": int(post_id),
+            "removed_post_ids": existing_ids,
+            "reposted": False,
+            "is_reposted": False,
+            "repost_count": int(counts.get(int(post_id), 0)),
+            "removed": True,
+        }, 200
+
+    if existing_ids:
+        counts = _repost_counts(cur, [int(post_id)])
+        conn.close()
+        return {
+            "ok": True,
+            "message": "Already reposted.",
+            "post_id": existing_ids[0],
+            "original_post_id": int(post_id),
+            "reposted": True,
+            "is_reposted": True,
+            "repost_count": int(counts.get(int(post_id), 0)),
+            "next_url": f"/pulse/post/{existing_ids[0]}",
+        }, 200
+
+    # Both identities are accepted as arguments because bot.py resolves them
+    # through pulse_identity_for_user, which falls back through arena_profiles,
+    # the users row and a derived handle. Recomputing them here from
+    # arena_profiles alone would silently downgrade attribution for anyone whose
+    # profile row is missing, so the caller's answer wins when it has one.
+    reposter_public_id = str(reposter_public_player_id or "").lstrip("@")
+    if not reposter_public_id:
+        try:
+            cur.execute("SELECT public_player_id FROM arena_profiles WHERE user_id=? LIMIT 1", (int(user_id),))
+            reposter_public_id = str((_row(cur.fetchone()) or {}).get("public_player_id") or "").lstrip("@")
+        except Exception:
+            reposter_public_id = ""
+    original_public_id = str(original_public_player_id or original.get("public_player_id") or "").lstrip("@")
+    # `default_body` exists so the reel route can keep saying "Reposted a Reel"
+    # while sharing this implementation. Wording is the only thing that differed
+    # between the two routes, and it is not worth a second copy of the dedupe and
+    # soft-delete logic to preserve.
+    body = _clean_text(note, 1200) or _clean_text(default_body, 1200) or (
+        f"Reposted a PulseSoc from @{original_public_id}" if original_public_id else "Reposted a PulseSoc"
+    )
+    try:
+        cur.execute(
+            """
+            INSERT INTO pulse_posts
+            (user_id, public_player_id, post_type, body, title, tags_json, visibility,
+             moderation_status, repost_of_post_id, created_at, updated_at)
+            VALUES (?, ?, 'repost', ?, ?, ?, 'public', 'approved', ?, ?, ?)
+            """,
+            (
+                int(user_id),
+                reposter_public_id or None,
+                body,
+                original.get("title") or default_title or "",
+                original.get("tags_json") or "[]",
+                int(post_id),
+                now,
+                now,
+            ),
+        )
+        repost_id = int(cur.lastrowid)
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        conn.close()
+        logging.exception("PULSE_FEED_REPOST_FAILED user_id=%s post_id=%s error=%s", user_id, post_id, exc)
+        return {"ok": False, "message": "Repost could not be completed."}, 500
+    counts = _repost_counts(cur, [int(post_id)])
+    conn.close()
+    return {
+        "ok": True,
+        "message": "Reposted to PulseSoc.",
+        "post_id": repost_id,
+        "original_post_id": int(post_id),
+        "reposted": True,
+        "is_reposted": True,
+        "repost_count": int(counts.get(int(post_id), 0)),
+        "next_url": f"/pulse/post/{repost_id}",
+    }, 200
 
 
 def follow(follower_user_id, followed_user_id=None, followed_public_player_id="", notify_owner=True):

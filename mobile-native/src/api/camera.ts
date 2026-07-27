@@ -3,7 +3,7 @@ import { StatusCreateResponse, PulseStatus, normalizeStatus } from "./status";
 import { pulseApi } from "./pulseApi";
 
 export type CameraTarget = "feed" | "post" | "status" | "reel" | "message" | "avatar" | "cover" | "creator" | "marketplace";
-export type CameraMode = "photo" | "video" | "status" | "reel";
+export type CameraMode = "photo" | "video" | "status" | "reel" | "live";
 
 export type PulseCameraConfig = {
   enabled: boolean;

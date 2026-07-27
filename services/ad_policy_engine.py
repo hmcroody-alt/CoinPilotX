@@ -69,5 +69,5 @@ def contextual_slot(page_context):
         "learn": ("financial_education", "Learning sponsor"),
         "pulse": ("cybersecurity", "Community safety sponsor"),
     }
-    category, headline = mapping.get(context, ("crypto_education", "CoinPilotXAI trusted sponsor"))
+    category, headline = mapping.get(context, ("crypto_education", "CoinPlotXAI trusted sponsor"))
     return {"label": "Sponsored", "category": category, "headline": headline, "status": "available"}

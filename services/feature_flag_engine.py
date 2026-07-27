@@ -1,4 +1,4 @@
-"""Feature readiness and public exposure controls for CoinPilotXAI.
+"""Feature readiness and public exposure controls for CoinPlotXAI.
 
 The goal of this engine is conservative: public surfaces should only promise
 features that are actually ready, while beta/internal systems remain visible to

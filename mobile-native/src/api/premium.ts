@@ -1,4 +1,3 @@
-import { Linking } from "react-native";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
@@ -98,7 +97,12 @@ export async function openPremiumBillingPortal() {
 }
 
 export async function openPremiumHub() {
-  await Linking.openURL(`${PULSE_API_BASE_URL}/pulse/premium`).catch(() => undefined);
+  return {
+    ok: false,
+    path: "/pulse/premium",
+    status: "native_provider_boundary",
+    message: "Premium remains inside the native Premium Center for App Review."
+  };
 }
 
 export function premiumWebUrl(path = "/pulse/premium") {
@@ -200,7 +204,12 @@ async function getPremiumEconomyState() {
 
 async function openPremiumUrl(url: string) {
   const target = /^https?:\/\//i.test(url) ? url : premiumWebUrl(url);
-  await Linking.openURL(target);
+  return {
+    ok: false,
+    target,
+    status: "native_provider_boundary",
+    message: "Payment provider URL received; native App Store purchase handling must complete this flow before release."
+  };
 }
 
 function mapServerEntitlement(item: Record<string, unknown>): PremiumEntitlement | null {

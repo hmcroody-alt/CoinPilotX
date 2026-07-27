@@ -1,6 +1,6 @@
 # Pulse Media Upload Audit
 
-Generated: 2026-06-03T12:17:45
+Generated: 2026-07-26T00:15:49
 
 ## Infrastructure
 
@@ -8,23 +8,23 @@ Generated: 2026-06-03T12:17:45
 - Storage configured: `True`
 - R2/CDN base: `not configured locally`
 - Mux configured: `False`
-- ffmpeg present: `False`
+- ffmpeg present: `True`
 
 ## Upload Results
 
 | Upload type | Result | Media type | URL | CDN | Mux playback | Processing | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| image-only | PASS | image / image/png | `/static/uploads/pulse_media/2026/06/03/pulse-image-92196cfa47cfb836.png` | `n/a` | `n/a` | ready/verified | Uploaded and normalized. |
-| video-only webm | PASS | video / video/webm | `/static/uploads/pulse_media/2026/06/03/pulse-video-d6e6fd55d50fcf8f.webm` | `n/a` | `n/a` | ready/verified | Uploaded and normalized. |
-| video-only mov | PASS | video / video/quicktime | `/static/uploads/pulse_media/2026/06/03/pulse-video-16526360db17ad8e.mov` | `n/a` | `n/a` | ready/verified | MOV stored; playback may vary until transcoding is enabled. |
-| audio-only | PASS | audio / audio/ogg | `/static/uploads/pulse_media/2026/06/03/pulse-audio-881120ec3f050dca.ogg` | `n/a` | `n/a` | ready/verified | Uploaded and normalized. |
+| image-only | PASS | image / image/png | `/static/uploads/pulse_media/2026/07/26/pulse-image-3348392b6e80084f.png` | `n/a` | `n/a` | ready/verified | Uploaded and normalized. |
+| video-only webm | PASS | video / video/webm | `/static/uploads/pulse_media/2026/07/26/pulse-video-c59a3378104e944f.webm` | `n/a` | `n/a` | ready/verified | Uploaded and normalized. |
+| video-only mov | PASS | video / video/quicktime | `/static/uploads/pulse_media/2026/07/26/pulse-video-8727668101a27d47.mov` | `n/a` | `n/a` | ready/verified | MOV stored; playback may vary until transcoding is enabled. |
+| audio-only | PASS | audio / audio/ogg | `/static/uploads/pulse_media/2026/07/26/pulse-audio-c53ef7cd53ce2f36.ogg` | `n/a` | `n/a` | ready/verified | Uploaded and normalized. |
 
 ## Created Objects
 
-- Mixed media Pulse post: `856`
-- Photo/video/audio Status ids: `627, 628, 629`
-- Reel id: `70`
-- Original sound track id: `26773`
+- Mixed media Pulse post: `1`
+- Photo/video/audio Status ids: `1, 2, 3`
+- Reel id: `1`
+- Original sound track id: `4`
 
 ## Resolution
 

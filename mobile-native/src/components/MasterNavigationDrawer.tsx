@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlobalNavigationIdentity } from "../navigation/GlobalNavigation";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone } from "../theme/logiNexus";
@@ -17,6 +18,7 @@ type Props = {
 export function MasterNavigationDrawer({ visible, identity, onClose, onOpenRoute, sections = masterNavigationSections }: Props) {
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const insets = useSafeAreaInsets();
 
   const filteredSections = useMemo(() => {
     const clean = query.trim().toLowerCase();
@@ -40,7 +42,7 @@ export function MasterNavigationDrawer({ visible, identity, onClose, onOpenRoute
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.drawerOverlay}>
         <Pressable accessibilityRole="button" accessibilityLabel="Close navigation drawer" style={styles.drawerScrim} onPress={onClose} />
-        <LogiNexusPanel style={styles.drawerPanel} tone="intelligence">
+        <LogiNexusPanel style={[styles.drawerPanel, { paddingTop: insets.top + logiNexus.spacing.md }]} tone="intelligence">
           <View style={styles.drawerHeader}>
             <View style={styles.drawerTitleRow}>
               <LogiNexusSignalIndicator tone="intelligence" />
@@ -70,7 +72,7 @@ export function MasterNavigationDrawer({ visible, identity, onClose, onOpenRoute
             <LogiNexusBadge label={`${sections.reduce((sum, section) => sum + section.actions.length, 0)} actions`} tone="default" />
             <LogiNexusBadge label="server authoritative" tone="safety" />
           </View>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.drawerScroll}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.drawerScroll, { paddingBottom: logiNexus.spacing.xxl + insets.bottom }]}>
             {filteredSections.map((section) => {
               const isCollapsed = Boolean(collapsed[section.title]) && !query.trim();
               return (
@@ -155,7 +157,7 @@ function DrawerIdentity({ identity }: { identity: GlobalNavigationIdentity }) {
 }
 
 function statusStyle(status: MasterNavigationAction["status"]) {
-  if (status === "fallback") return styles.drawerStatusFallback;
+  if (status === "provider") return styles.drawerStatusFallback;
   if (status === "gated") return styles.drawerStatusGated;
   if (status === "shell") return styles.drawerStatusShell;
   return styles.drawerStatusNative;

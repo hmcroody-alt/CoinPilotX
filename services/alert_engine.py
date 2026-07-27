@@ -1,4 +1,4 @@
-"""Production alert engine for CoinPilotXAI.
+"""Production alert engine for CoinPlotXAI.
 
 Alert rules are stored in the database, evaluated by a worker/manual endpoint,
 and dispatched through the centralized notification services with delivery logs.
@@ -169,6 +169,11 @@ def _ensure_alert_schema_impl(conn=None):
             ("source_ref", "TEXT"),
             ("metadata", "TEXT"),
             ("deleted_at", "TEXT"),
+            # Edge-trigger latch state. See `evaluate_alert_rule`.
+            ("condition_state", "TEXT"),
+            ("trigger_seq", "INTEGER DEFAULT 0"),
+            ("last_observed_value", "REAL"),
+            ("state_changed_at", "TEXT"),
         ],
     )
     cur.execute(
@@ -210,8 +215,21 @@ def _ensure_alert_schema_impl(conn=None):
             ("notification_id", "INTEGER"),
             ("delivery_job_id", "INTEGER"),
             ("delivery_status", "TEXT"),
+            # Stable per-crossing identity: "<rule_id>:<trigger_seq>". Unique across
+            # retries, restarts and duplicate workers so one crossing can only ever
+            # own one triggered event (and therefore one push).
+            ("trigger_key", "TEXT"),
         ],
     )
+    try:
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_events_trigger_key "
+            "ON alert_events (trigger_key)"
+        )
+    except Exception:
+        # A pre-existing database may hold duplicate rows from the level-triggered
+        # era; the application-level guard in `_create_event` still holds.
+        logging.warning("alert_events.trigger_key unique index could not be created.", exc_info=True)
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS alert_delivery_jobs (
@@ -917,7 +935,92 @@ def condition_matches(condition, observed_value, threshold_value):
     return False
 
 
+#: Latch states persisted on ``alert_rules.condition_state``.
+STATE_ARMED = "armed"
+STATE_LATCHED = "latched"
+
+
+def _claim_crossing(rule_id, observed_value):
+    """Atomically claim a false->true crossing for ``rule_id``.
+
+    The alert worker can run in several processes at once (and a dashboard
+    request can evaluate the same rule concurrently). Latching with a plain
+    read-then-write would let two evaluators both observe ``armed`` and both
+    fire. Instead we move ``armed -> latched`` with a single conditional UPDATE
+    and let the database decide the winner: exactly one caller sees a non-zero
+    rowcount, and only that caller sends the notification.
+
+    Returns the claimed ``trigger_seq`` on success, or ``None`` if another
+    evaluator already owns this crossing.
+    """
+    ensure_alert_schema()
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE alert_rules
+            SET condition_state=?,
+                trigger_seq=COALESCE(trigger_seq, 0)+1,
+                last_observed_value=?,
+                state_changed_at=?,
+                updated_at=?
+            WHERE id=? AND COALESCE(condition_state, '')<>?
+            """,
+            (STATE_LATCHED, observed_value, _now(), _now(), rule_id, STATE_LATCHED),
+        )
+        claimed = int(getattr(cur, "rowcount", 0) or 0) > 0
+        conn.commit()
+        if not claimed:
+            return None
+        cur.execute("SELECT trigger_seq FROM alert_rules WHERE id=? LIMIT 1", (rule_id,))
+        row = cur.fetchone()
+        return int((row[0] if row else 0) or 0)
+    finally:
+        conn.close()
+
+
+def _set_condition_state(rule_id, state, observed_value):
+    """Persist a non-firing state transition (arming / re-arming)."""
+    ensure_alert_schema()
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE alert_rules
+            SET condition_state=?, last_observed_value=?, state_changed_at=?, updated_at=?
+            WHERE id=?
+            """,
+            (state, observed_value, _now(), _now(), rule_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def evaluate_alert_rule(rule):
+    """Evaluate one rule, firing at most once per genuine threshold crossing.
+
+    This is edge-triggered, not level-triggered. The previous implementation
+    fired whenever the condition *was* true and the cooldown had lapsed, so a
+    rule like "BTC above $61,000" kept re-notifying every cooldown window for as
+    long as BTC stayed above $61,000 — each push carrying a freshly observed
+    price. On the device that reads as a banner that never goes away.
+
+    The state machine, mirroring services/business_os/crypto/alerts.py:
+
+      * No recorded state (a brand new rule, or one migrated from the
+        level-triggered era) only *arms*. It never fires on its first
+        observation, so creating "BTC above $61,000" while BTC already trades at
+        $64,446 no longer produces an immediate, self-perpetuating alert.
+      * ``armed`` + condition true  -> a real crossing: fire exactly once, latch.
+      * ``latched`` + condition true -> still in region: stay silent.
+      * condition false             -> re-arm, ready for the next crossing.
+
+    Cooldown is retained on top of the latch as a rate limit for rules that
+    oscillate rapidly across the threshold; it is no longer the only guard.
+    """
     if not rule:
         return {"ok": False, "triggered": False, "message": "Alert rule missing."}
     rule = _public_rule(rule)
@@ -925,21 +1028,71 @@ def evaluate_alert_rule(rule):
         return {"ok": True, "triggered": False, "message": "Alert is not active."}
     observed = current_observed_value(rule)
     if not observed.get("ok"):
+        # A missing/failed quote must not disturb latch state, otherwise a single
+        # provider blip would re-arm a latched rule and let it fire again.
         _mark_checked(rule["id"], status_message=observed.get("message"))
         if observed.get("status") == "error":
             _create_event(rule, None, "error", observed.get("message") or "Alert evaluation failed.")
         return {"ok": observed.get("status") != "error", "triggered": False, "message": observed.get("message") or "Alert skipped."}
     threshold = rule.get("threshold_value")
-    matched = condition_matches(rule.get("condition"), observed["value"], threshold)
+    value = observed["value"]
+    matched = condition_matches(rule.get("condition"), value, threshold)
     _mark_checked(rule["id"])
+    previous_state = str(rule.get("condition_state") or "").strip().lower()
+
     if not matched:
-        return {"ok": True, "triggered": False, "observed_value": observed["value"], "message": "Condition not met."}
+        if previous_state != STATE_ARMED:
+            _set_condition_state(rule["id"], STATE_ARMED, value)
+        return {
+            "ok": True,
+            "triggered": False,
+            "observed_value": value,
+            "state": STATE_ARMED,
+            "rearmed": previous_state == STATE_LATCHED,
+            "message": "Condition not met." if previous_state != STATE_LATCHED else "Condition cleared; alert re-armed for the next crossing.",
+        }
+
+    if previous_state == STATE_LATCHED:
+        return {
+            "ok": True,
+            "triggered": False,
+            "latched": True,
+            "observed_value": value,
+            "state": STATE_LATCHED,
+            "message": "Condition still met from the already-notified crossing; no repeat notification sent.",
+        }
+
+    if previous_state != STATE_ARMED:
+        # First observation of this rule: record where the market sits without
+        # firing, so only a subsequent genuine crossing notifies.
+        _set_condition_state(rule["id"], STATE_ARMED, value)
+        return {
+            "ok": True,
+            "triggered": False,
+            "armed": True,
+            "observed_value": value,
+            "state": STATE_ARMED,
+            "message": "Alert armed on first observation; it will notify on the next threshold crossing.",
+        }
+
     last_triggered = _parse_dt(rule.get("last_triggered_at"))
     cooldown = int(rule.get("cooldown_seconds") or DEFAULT_COOLDOWN_SECONDS)
     if last_triggered and _utcnow() - last_triggered < timedelta(seconds=cooldown):
         message = f"Condition met, skipped because alert is cooling down for {cooldown} seconds."
-        return {"ok": True, "triggered": False, "cooldown": True, "observed_value": observed["value"], "message": message}
-    return trigger_alert(rule, observed["value"])
+        return {"ok": True, "triggered": False, "cooldown": True, "observed_value": value, "state": previous_state, "message": message}
+
+    trigger_seq = _claim_crossing(rule["id"], value)
+    if trigger_seq is None:
+        # Another worker/request won the same crossing; it owns the notification.
+        return {
+            "ok": True,
+            "triggered": False,
+            "latched": True,
+            "observed_value": value,
+            "state": STATE_LATCHED,
+            "message": "Crossing already claimed by a concurrent evaluation; no duplicate notification sent.",
+        }
+    return trigger_alert(rule, value, trigger_seq=trigger_seq)
 
 
 def _mark_checked(rule_id, status_message=""):
@@ -951,19 +1104,39 @@ def _mark_checked(rule_id, status_message=""):
     conn.close()
 
 
-def _create_event(rule, observed_value, status, message):
+def _create_event(rule, observed_value, status, message, trigger_seq=None):
+    """Record an alert event.
+
+    When ``trigger_seq`` is supplied the event carries a stable ``trigger_key``
+    of ``"<rule_id>:<trigger_seq>"`` — one key per genuine crossing, unchanged
+    across retries, worker restarts and duplicate provider callbacks. If an
+    event for that key already exists it is returned as-is rather than inserted
+    again, so a replayed dispatch reuses the same event id (and therefore the
+    same downstream dedupe key) instead of producing a second banner.
+
+    The old key was a wall-clock bucket (``rule_id:now//cooldown``), which
+    rotated on its own and so identified a *time window* rather than an event.
+    """
     ensure_alert_schema()
     now = _now()
-    cooldown = max(1, int(rule.get("cooldown_seconds") or DEFAULT_COOLDOWN_SECONDS))
-    trigger_bucket = f"{rule.get('id')}:{int(time.time() // cooldown)}"
+    trigger_key = f"{rule.get('id')}:{int(trigger_seq)}" if trigger_seq is not None else None
     conn = user_context.connect()
     cur = conn.cursor()
+    if trigger_key:
+        cur.execute("SELECT * FROM alert_events WHERE trigger_key=? LIMIT 1", (trigger_key,))
+        existing = _row_to_dict(cur.fetchone())
+        if existing:
+            conn.close()
+            existing["trigger_bucket"] = trigger_key
+            existing["trigger_key"] = trigger_key
+            existing["replayed"] = True
+            return existing
     cur.execute(
         """
         INSERT INTO alert_events
         (alert_rule_id, user_id, symbol, alert_type, condition, threshold_value, observed_value,
-         status, message, title, body, metadata, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         status, message, title, body, metadata, trigger_key, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             rule.get("id"),
@@ -977,7 +1150,8 @@ def _create_event(rule, observed_value, status, message):
             message[:2000],
             f"{rule.get('symbol')} alert {status}",
             message[:2000],
-            json.dumps({"rule_id": rule.get("id"), "observed_value": observed_value, "trigger_bucket": trigger_bucket})[:4000],
+            json.dumps({"rule_id": rule.get("id"), "observed_value": observed_value, "trigger_bucket": trigger_key})[:4000],
+            trigger_key,
             now,
         ),
     )
@@ -986,20 +1160,32 @@ def _create_event(rule, observed_value, status, message):
     cur.execute("SELECT * FROM alert_events WHERE id=? LIMIT 1", (event_id,))
     event = _row_to_dict(cur.fetchone())
     if event:
-        event["trigger_bucket"] = trigger_bucket
+        event["trigger_bucket"] = trigger_key or str(event.get("id") or "")
+        event["trigger_key"] = trigger_key or ""
     conn.close()
     return event
 
 
-def trigger_alert(rule, observed_value):
+def trigger_alert(rule, observed_value, trigger_seq=None):
     symbol = _normalize_symbol(rule.get("symbol"))
     condition = _normalize_condition(rule.get("condition"))
     threshold = rule.get("threshold_value")
+    # "Value at crossing", not "live observed value": the notification describes a
+    # single past event and is never refreshed with later prices, so wording that
+    # implies a live feed would be misleading.
     if condition in {"above", "below"}:
-        message = f"{symbol} {_condition_label(condition)} {_format_money(threshold)}. Live observed value: {_format_money(observed_value)}."
+        message = f"{symbol} {_condition_label(condition)} {_format_money(threshold)}. Value at crossing: {_format_money(observed_value)}."
     else:
-        message = f"{symbol} {_condition_label(condition)} {threshold}%. Live observed value: {round(float(observed_value), 2)}%."
-    event = _create_event(rule, observed_value, "triggered", message)
+        message = f"{symbol} {_condition_label(condition)} {threshold}%. Value at crossing: {round(float(observed_value), 2)}%."
+    if trigger_seq is None:
+        # Direct/manual invocation (tests, admin replays) still gets a stable key.
+        trigger_seq = _claim_crossing(rule.get("id"), observed_value)
+        if trigger_seq is None:
+            return {"ok": True, "triggered": False, "latched": True, "observed_value": observed_value, "message": "Crossing already claimed."}
+    event = _create_event(rule, observed_value, "triggered", message, trigger_seq=trigger_seq)
+    if event.get("replayed"):
+        # The crossing was already recorded and dispatched; do not send again.
+        return {"ok": True, "triggered": False, "deduped": True, "event": event, "observed_value": observed_value, "message": "Crossing already notified; duplicate suppressed."}
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute(
@@ -1419,8 +1605,8 @@ def send_test_alert(rule_id, user_id):
 def test_delivery_channel(user_id, channel, client_state=None):
     channel = (channel or "").strip().lower()
     client_state = client_state or {}
-    title = f"CoinPilotXAI {channel.title()} alert test"
-    body = "This is a setup test for CoinPilotXAI alert delivery."
+    title = f"CoinPlotXAI {channel.title()} alert test"
+    body = "This is a setup test for CoinPlotXAI alert delivery."
     metadata = {"url": "/notifications", "test": True, "channel": channel}
     readiness = channel_readiness(user_id, browser_permission=client_state.get("permission"), require_recent_test=False)
     user = _user_record(user_id)

@@ -15,6 +15,7 @@ import mimetypes
 import secrets
 import sqlite3
 import logging
+from logging.handlers import RotatingFileHandler
 import sys
 import requests
 import threading
@@ -275,6 +276,7 @@ from services import (
     scam_shield as scam_shield_service,
     security_guard,
     security_monitor,
+    seller_lifecycle,
     seo_engine,
     sms_service,
     social_energy_engine,
@@ -410,7 +412,7 @@ OWNER_BOOTSTRAP_TEMP = {
 # LOGGING
 # =========================
 logging.basicConfig(
-    filename="coinpilotx.log",
+    handlers=[RotatingFileHandler("coinpilotx.log", maxBytes=50 * 1024 * 1024, backupCount=5)],
     level=logging.INFO,
     format="%(asctime)s - %(message)s"
 )
@@ -710,7 +712,7 @@ def seed_education_knowledge_bank(cur):
     for slug, category, title, difficulty, estimated, summary in lesson_seed:
         content = (
             f"{summary}\n\n"
-            "CoinPilotXAI teaches this topic with a safety-first lens: understand the tool, identify the risk, decide slowly, and never treat educational intelligence as a guaranteed result.\n\n"
+            "CoinPlotXAI teaches this topic with a safety-first lens: understand the tool, identify the risk, decide slowly, and never treat educational intelligence as a guaranteed result.\n\n"
             "Key terms: wallet, private key, approval, volatility, liquidity, signal confidence, source status, and risk control."
         )
         cur.execute(
@@ -729,7 +731,7 @@ def seed_education_knowledge_bank(cur):
                 content,
                 "Fake airdrop link; sudden guaranteed-profit dashboard; fake support account asking for recovery words.",
                 "Seed phrase request; urgency; shortened URL; pay-to-unlock claim; celebrity/exchange impersonation.",
-                "Pause; verify official sources; never share keys; use read-only explorers; ask CoinPilotXAI Tutor for education.",
+                "Pause; verify official sources; never share keys; use read-only explorers; ask CoinPlotXAI Tutor for education.",
                 "Rushing; trusting screenshots; oversizing; clicking without checking the domain; ignoring approvals.",
                 now,
                 now,
@@ -1141,6 +1143,42 @@ try:
 except Exception:
     logging.exception("PULSE_COMMUNICATIONS_V2_ROUTE_REGISTRATION_FAILED")
 
+try:
+    from services.presence_routes import register as register_pulse_presence_routes
+
+    register_pulse_presence_routes(webhook_app)
+except Exception:
+    logging.exception("PULSE_PRESENCE_ROUTE_REGISTRATION_FAILED")
+
+try:
+    from services.pulse_settings_routes import register as register_pulse_settings_routes
+
+    register_pulse_settings_routes(webhook_app)
+except Exception:
+    logging.exception("PULSE_MOBILE_SETTINGS_ROUTE_REGISTRATION_FAILED")
+
+
+def cancel_scheduled_account_deletion(cur, user_id):
+    """Undo a pending account deletion because the user came back.
+
+    Settings tells the user, in as many words, that signing back in during the
+    grace period cancels the request. The only place that can be made true is
+    the login path, so this is called from each one that records a successful
+    interactive sign-in. It shares the cursor of the caller's transaction so the
+    cancellation commits with the login rather than as a separate write that
+    could succeed while the login fails.
+    """
+    try:
+        from services.pulse_settings_routes import cancel_pending_deletion
+
+        cancelled = cancel_pending_deletion(cur, user_id)
+        if cancelled:
+            logging.warning("ACCOUNT_DELETION_CANCELLED_ON_LOGIN user_id=%s requests=%s", user_id, cancelled)
+        return cancelled
+    except Exception:
+        logging.exception("ACCOUNT_DELETION_CANCEL_ON_LOGIN_FAILED user_id=%s", user_id)
+        return 0
+
 
 @webhook_app.context_processor
 def inject_seo_runtime_config():
@@ -1192,7 +1230,7 @@ ADS_LANDING_PAGES = {
         "proof": ["Moderated live competition", "Call signs protect identity", "Virtual-dollar scoring only"],
     },
     "crypto-scam-scanner": {
-        "title": "Crypto Scam Scanner | CoinPilotXAI Scam Shield",
+        "title": "Crypto Scam Scanner | CoinPlotXAI Scam Shield",
         "headline_a": "Scan a suspicious crypto link before you click.",
         "headline_b": "Spot phishing, wallet drainers, and fake giveaways faster.",
         "description": "Use Scam Shield to check URLs, wallet prompts, token claims, and suspicious messages with plain-English safety explanations.",
@@ -1220,7 +1258,7 @@ ADS_LANDING_PAGES = {
         "proof": ["Virtual dollars only", "XP, ranks, and replays", "Built for mobile play"],
     },
     "crypto-training-simulator": {
-        "title": "Crypto Training Simulator | CoinPilotXAI",
+        "title": "Crypto Training Simulator | CoinPlotXAI",
         "headline_a": "Practice crypto decisions in a training environment.",
         "headline_b": "Build market discipline with simulated missions.",
         "description": "Train against realistic crypto scenarios, scam traps, volatility decisions, and risk psychology lessons before you face real-world pressure.",
@@ -1289,7 +1327,7 @@ def render_ads_landing_page(slug):
         ]
         if path != f"/{slug}"
     )
-    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(page['title'])}</title><meta name="description" content="{clean_html(page['description'])}"><meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="{canonical}"><meta property="og:title" content="{clean_html(page['title'])}"><meta property="og:description" content="{clean_html(page['description'])}"><meta property="og:url" content="{canonical}"><meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260606.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{clean_html(page['title'])}"><meta name="twitter:description" content="{clean_html(page['description'])}"><meta name="twitter:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260606.png"><link rel="icon" type="image/png" href="/static/brand/pulsesoc-logo-20260606.png"><link rel="apple-touch-icon" href="/static/brand/pulsesoc-apple-touch-icon-20260606.png"><link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#020817">{google_tag_script()}<script type="application/ld+json">{json.dumps(schema)}</script><style>:root{{--bg:#050b14;--text:#f6fbff;--muted:#a8b8c8;--line:rgba(255,255,255,.13);--accent:{page['accent']};--green:#36e58f;--cyan:#6edff6}}*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;overflow-x:hidden}}body{{background:radial-gradient(circle at 18% 0,color-mix(in srgb,var(--accent) 24%,transparent),transparent 24rem),radial-gradient(circle at 90% 8%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}.wrap{{width:min(100% - 28px,1120px);margin:auto;padding:22px 0 76px}}nav{{min-height:62px;display:flex;align-items:center;justify-content:space-between;gap:14px}}.brand{{display:inline-flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{min-height:calc(100dvh - 82px);display:grid;grid-template-columns:minmax(0,1.05fr) minmax(300px,.95fr);gap:22px;align-items:center}}.kicker{{color:var(--green);font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}h1{{font-size:clamp(42px,7.5vw,82px);line-height:.95;margin:10px 0 14px;letter-spacing:0}}p{{color:var(--muted);font-size:17px;line-height:1.58}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}}.button{{min-height:50px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;text-decoration:none;font-weight:950;border:1px solid rgba(255,255,255,.16);color:var(--text);background:rgba(255,255,255,.065)}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0;box-shadow:0 0 28px color-mix(in srgb,var(--accent) 35%,transparent)}}.stage{{position:relative;border:1px solid color-mix(in srgb,var(--accent) 42%,rgba(255,255,255,.12));border-radius:18px;overflow:hidden;background:linear-gradient(150deg,rgba(255,255,255,.09),rgba(255,255,255,.035));box-shadow:0 26px 90px rgba(0,0,0,.34);padding:20px;min-height:360px}}.stage:before{{content:"";position:absolute;inset:-35%;background:conic-gradient(from 120deg,transparent,color-mix(in srgb,var(--accent) 25%,transparent),transparent 38%,rgba(54,229,143,.16),transparent 68%);animation:sweep 10s linear infinite;pointer-events:none}}.stage>*{{position:relative}}.logo{{width:84px;height:84px;border-radius:22px;filter:drop-shadow(0 0 26px color-mix(in srgb,var(--accent) 38%,transparent))}}.metric{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}}.metric div,.proof span{{border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.18);padding:12px}}.proof{{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}}.trust{{border-top:1px solid var(--line);padding-top:18px;margin-top:18px;font-size:14px;color:var(--muted)}}.related{{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}}.related a{{color:#dff9ff;border:1px solid var(--line);border-radius:999px;padding:8px 11px;text-decoration:none;font-weight:850}}@keyframes sweep{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}@media(max-width:820px){{.wrap{{width:min(100% - 24px,1120px);padding-bottom:44px}}.hero{{grid-template-columns:1fr;min-height:auto;padding-top:24px}}h1{{font-size:clamp(34px,10vw,54px)}}.button{{width:100%}}.stage{{min-height:280px;padding:16px}}.stage:before{{animation-duration:18s}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-logo-20260606.png" alt="PulseSoc logo" width="38" height="38">CoinPilotXAI</a><a class="button" href="/privacy">Privacy</a></nav><section class="hero"><article><div class="kicker">Controlled Google Ads landing page · Variant {variant.upper()}</div><h1>{clean_html(headline)}</h1><p>{clean_html(page['description'])}</p><div class="actions"><a class="button primary" href="{signup_url}" data-analytics="{clean_html(page['analytics'])}">{clean_html(cta)}</a><a class="button" href="{secondary_url}" data-analytics="landing_secondary_click">{clean_html(page['secondary'])}</a></div><div class="proof">{proof}</div><p class="trust">Educational platform only. Alpha Arena uses simulated trading and virtual dollars. Roast Battle virtual dollars are entertainment scoring only and have no real-money value. CoinPilotXAI never asks for seed phrases or private keys.</p><div class="related">{related}</div></article><aside class="stage" aria-label="CoinPilotXAI live preview"><img class="logo" src="/static/brand/pulsesoc-logo-20260606.png" alt="PulseSoc logo" width="84" height="84"><h2>Live command-center preview</h2><p>Fast mobile pages, clear CTAs, moderated social energy, and privacy-first behavioral analytics.</p><div class="metric"><div><strong>CTA</strong><br>{clean_html(cta)}</div><div><strong>Trust</strong><br>Safety-first copy</div><div><strong>Tracking</strong><br>GA4 + Ads ready</div><div><strong>Speed</strong><br>Deferred scripts</div></div></aside></section></main><script src="/static/analytics.js" defer></script></body></html>"""
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(page['title'])}</title><meta name="description" content="{clean_html(page['description'])}"><meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="{canonical}"><meta property="og:title" content="{clean_html(page['title'])}"><meta property="og:description" content="{clean_html(page['description'])}"><meta property="og:url" content="{canonical}"><meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260606.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{clean_html(page['title'])}"><meta name="twitter:description" content="{clean_html(page['description'])}"><meta name="twitter:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260606.png"><link rel="icon" type="image/png" href="/static/brand/pulsesoc-logo-20260606.png"><link rel="apple-touch-icon" href="/static/brand/pulsesoc-apple-touch-icon-20260606.png"><link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#020817">{google_tag_script()}<script type="application/ld+json">{json.dumps(schema)}</script><style>:root{{--bg:#050b14;--text:#f6fbff;--muted:#a8b8c8;--line:rgba(255,255,255,.13);--accent:{page['accent']};--green:#36e58f;--cyan:#6edff6}}*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;overflow-x:hidden}}body{{background:radial-gradient(circle at 18% 0,color-mix(in srgb,var(--accent) 24%,transparent),transparent 24rem),radial-gradient(circle at 90% 8%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}.wrap{{width:min(100% - 28px,1120px);margin:auto;padding:22px 0 76px}}nav{{min-height:62px;display:flex;align-items:center;justify-content:space-between;gap:14px}}.brand{{display:inline-flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{min-height:calc(100dvh - 82px);display:grid;grid-template-columns:minmax(0,1.05fr) minmax(300px,.95fr);gap:22px;align-items:center}}.kicker{{color:var(--green);font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}h1{{font-size:clamp(42px,7.5vw,82px);line-height:.95;margin:10px 0 14px;letter-spacing:0}}p{{color:var(--muted);font-size:17px;line-height:1.58}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}}.button{{min-height:50px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;text-decoration:none;font-weight:950;border:1px solid rgba(255,255,255,.16);color:var(--text);background:rgba(255,255,255,.065)}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0;box-shadow:0 0 28px color-mix(in srgb,var(--accent) 35%,transparent)}}.stage{{position:relative;border:1px solid color-mix(in srgb,var(--accent) 42%,rgba(255,255,255,.12));border-radius:18px;overflow:hidden;background:linear-gradient(150deg,rgba(255,255,255,.09),rgba(255,255,255,.035));box-shadow:0 26px 90px rgba(0,0,0,.34);padding:20px;min-height:360px}}.stage:before{{content:"";position:absolute;inset:-35%;background:conic-gradient(from 120deg,transparent,color-mix(in srgb,var(--accent) 25%,transparent),transparent 38%,rgba(54,229,143,.16),transparent 68%);animation:sweep 10s linear infinite;pointer-events:none}}.stage>*{{position:relative}}.logo{{width:84px;height:84px;border-radius:22px;filter:drop-shadow(0 0 26px color-mix(in srgb,var(--accent) 38%,transparent))}}.metric{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}}.metric div,.proof span{{border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.18);padding:12px}}.proof{{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}}.trust{{border-top:1px solid var(--line);padding-top:18px;margin-top:18px;font-size:14px;color:var(--muted)}}.related{{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}}.related a{{color:#dff9ff;border:1px solid var(--line);border-radius:999px;padding:8px 11px;text-decoration:none;font-weight:850}}@keyframes sweep{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}@media(max-width:820px){{.wrap{{width:min(100% - 24px,1120px);padding-bottom:44px}}.hero{{grid-template-columns:1fr;min-height:auto;padding-top:24px}}h1{{font-size:clamp(34px,10vw,54px)}}.button{{width:100%}}.stage{{min-height:280px;padding:16px}}.stage:before{{animation-duration:18s}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-logo-20260606.png" alt="PulseSoc logo" width="38" height="38">CoinPlotXAI</a><a class="button" href="/privacy">Privacy</a></nav><section class="hero"><article><div class="kicker">Controlled Google Ads landing page · Variant {variant.upper()}</div><h1>{clean_html(headline)}</h1><p>{clean_html(page['description'])}</p><div class="actions"><a class="button primary" href="{signup_url}" data-analytics="{clean_html(page['analytics'])}">{clean_html(cta)}</a><a class="button" href="{secondary_url}" data-analytics="landing_secondary_click">{clean_html(page['secondary'])}</a></div><div class="proof">{proof}</div><p class="trust">Educational platform only. Alpha Arena uses simulated trading and virtual dollars. Roast Battle virtual dollars are entertainment scoring only and have no real-money value. CoinPlotXAI never asks for seed phrases or private keys.</p><div class="related">{related}</div></article><aside class="stage" aria-label="CoinPlotXAI live preview"><img class="logo" src="/static/brand/pulsesoc-logo-20260606.png" alt="PulseSoc logo" width="84" height="84"><h2>Live command-center preview</h2><p>Fast mobile pages, clear CTAs, moderated social energy, and privacy-first behavioral analytics.</p><div class="metric"><div><strong>CTA</strong><br>{clean_html(cta)}</div><div><strong>Trust</strong><br>Safety-first copy</div><div><strong>Tracking</strong><br>GA4 + Ads ready</div><div><strong>Speed</strong><br>Deferred scripts</div></div></aside></section></main><script src="/static/analytics.js" defer></script></body></html>"""
     response = Response(html)
     response.headers["Cache-Control"] = "public, max-age=300"
     return response
@@ -1355,7 +1393,7 @@ def support_page():
         conn.close()
         send_channel_email(
             "support@pulsesoc.com",
-            f"CoinPilotXAI Support Ticket: {subject}",
+            f"PulseSoc Support Ticket: {subject}",
             f"<p><strong>From:</strong> {clean_html(name)} &lt;{clean_html(email)}&gt;</p><p><strong>Issue:</strong> {clean_html(issue_type)}</p><p>{clean_html(message)}</p>",
             f"From: {name} <{email}>\nIssue: {issue_type}\n\n{message}",
             user_id=account_user_id() or 0,
@@ -1415,7 +1453,7 @@ def api_support_ticket():
     conn.close()
     send_channel_email(
         "support@pulsesoc.com",
-        f"CoinPilotXAI Support Ticket: {subject}",
+        f"PulseSoc Support Ticket: {subject}",
         f"<p><strong>From:</strong> {clean_html(name)} &lt;{clean_html(email)}&gt;</p><p><strong>Issue:</strong> {clean_html(issue_type)}</p><p>{clean_html(message)}</p>",
         f"From: {name} <{email}>\nIssue: {issue_type}\n\n{message}",
         user_id=(user or {}).get("user_id") or 0,
@@ -1431,9 +1469,9 @@ def security_page():
     return simple_public_page(
         "security",
         "Security Reporting | CoinPlotXAI Inc.",
-        "CoinPilotXAI Security Reporting",
-        "Report scams, suspicious wallets, phishing, abusive users, or account compromise to CoinPlotXAI Inc.",
-        "Security reports are routed to security@pulsesoc.com. CoinPilotXAI never asks for seed phrases, private keys, recovery phrases, wallet passwords, or exchange passwords.",
+        "PulseSoc Security Reporting",
+        "Report scams, suspicious wallets, phishing, abusive users, or account compromise to PulseSoc.",
+        "Security reports are routed to support@pulsesoc.com. PulseSoc never asks for seed phrases, private keys, recovery phrases, wallet passwords, or exchange passwords.",
         ["Scam reporting", "Suspicious wallet reporting", "Phishing reporting", "Account compromise help"],
         [{"title": "Report a security concern", "body": "Use the security reporting API or support form to report suspicious behavior. Include public wallet addresses or URLs only, never private credentials."}],
         ["/safety", "/scam-guide", "/wallet-security", "/support"],
@@ -1466,7 +1504,7 @@ def api_security_report():
     conn.close()
     send_channel_email(
         "security@pulsesoc.com",
-        f"CoinPilotXAI Security Report: {report_type}",
+        f"PulseSoc Security Report: {report_type}",
         f"<p><strong>Email:</strong> {clean_html(email)}</p><p><strong>Target:</strong> {clean_html(target)}</p><p>{clean_html(description)}</p>",
         f"Email: {email}\nTarget: {target}\n\n{description}",
         user_id=(user or {}).get("user_id") or 0,
@@ -1482,9 +1520,9 @@ def scam_shield_page():
     return redirect("/scam-shield/scan")
     return simple_public_page(
         "scam-shield",
-        "Scam Shield Crypto Threat Scanner | CoinPilotXAI",
+        "Scam Shield Crypto Threat Scanner | CoinPlotXAI",
         "Scam Shield Crypto Threat Scanner",
-        "Scan suspicious crypto messages, wallet prompts, token claims, URLs, and fake support messages with CoinPilotXAI Scam Shield.",
+        "Scan suspicious crypto messages, wallet prompts, token claims, URLs, and fake support messages with CoinPlotXAI Scam Shield.",
         "Scam Shield uses layered AI and rule-based threat detection to identify many common crypto scam patterns while reminding users to verify independently.",
         ["Seed phrase requests", "Fake airdrops", "Wallet drainer prompts", "Phishing domains", "Fake support", "Guaranteed return scams"],
         [
@@ -1522,7 +1560,7 @@ def scam_shield_scan_page():
         f"<div class='history-item'><strong>{clean_html(row.get('risk_level') or 'Low')} · {int(row.get('risk_score') or 0)}/100</strong><span>{clean_html(row.get('scan_type') or 'auto')} · {clean_html(row.get('created_at') or '')}</span><p>{clean_html(row.get('summary') or '')}</p></div>"
         for row in recent_rows
     ) or "<p class='muted'>Recent scans will appear here after you run the scanner.</p>"
-    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Suspicious Crypto Link Scanner | CoinPilotXAI</title><meta name="description" content="Paste a suspicious crypto link, wallet address, token contract, DM, email, or message. CoinPilotXAI will inspect it for scam risk."><meta name="robots" content="noindex,nofollow"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260606.png"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(54,229,143,.18),transparent 28rem),radial-gradient(circle at 90% 6%,rgba(110,223,246,.14),transparent 24rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:24px 0 calc(84px + env(safe-area-inset-bottom))}}a{{color:var(--cyan)}}.hero{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:16px;align-items:start}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}}h1{{font-size:clamp(34px,7vw,64px);line-height:.98;margin:12px 0}}p,.muted{{color:var(--muted)}}textarea,select{{width:100%;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}textarea{{min-height:190px;resize:vertical}}select{{min-height:46px}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}}button,.button{{min-height:48px;border:1px solid var(--line);border-radius:10px;padding:11px 15px;font-weight:950;cursor:pointer;background:rgba(255,255,255,.06);color:var(--text);text-decoration:none;display:inline-flex;align-items:center;justify-content:center}}button.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0}}button:disabled{{opacity:.5;cursor:not-allowed}}.result{{display:none;margin-top:16px}}.result.show{{display:block}}.score{{font-size:clamp(38px,8vw,72px);font-weight:950}}.badge{{display:inline-flex;border-radius:999px;padding:7px 11px;border:1px solid var(--line);font-weight:950}}.badge.Low{{border-color:rgba(54,229,143,.4);color:#c8ffe2}}.badge.Medium{{border-color:rgba(255,209,102,.45);color:#ffe6a6}}.badge.High,.badge.Critical{{border-color:rgba(255,107,122,.5);color:#ffd6dc}}.warning{{border:1px solid rgba(255,107,122,.38);background:rgba(255,107,122,.1);border-radius:12px;padding:12px;color:#ffd6dc}}ul{{padding-left:20px}}li{{margin:7px 0}}.history{{display:grid;gap:10px}}.history-item{{border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.04);padding:12px}}.history-item span{{display:block;color:var(--muted);font-size:13px}}.toast{{min-height:22px;color:#ffe6a6;margin-top:8px}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.actions{{display:grid;grid-template-columns:1fr}}.card{{padding:14px}}textarea{{min-height:170px}}}}</style></head><body><main class="wrap"><a href="/dashboard">Back to Dashboard</a><section class="hero"><article class="card"><div class="muted">Scam Shield</div><h1>Suspicious Crypto Link Scanner</h1><p>Paste a suspicious crypto link, wallet address, token contract, DM, email, or message. CoinPilotXAI will inspect it for scam risk.</p><form id="scanForm"><label>Scan type<select name="scan_type"><option value="auto">Auto Detect</option><option value="crypto_link">Crypto Link</option><option value="wallet_address">Wallet Address</option><option value="token_contract">Token Contract</option><option value="telegram_dm">Telegram/DM Message</option><option value="email_text">Email/Text</option><option value="website_url">Website URL</option></select></label><label>Paste suspicious content<textarea name="input" placeholder="Paste suspicious link, message, wallet address, token contract, or email text..."></textarea></label><div class="actions"><button class="primary" id="scanBtn" type="submit" disabled>Scan Now</button><button type="button" id="clearBtn">Clear</button><button type="button" id="copyBtn" disabled>Copy Report</button></div><div class="toast" id="scanMsg"></div></form><section class="result card" id="resultPanel" aria-live="polite"></section></article><aside class="card"><h2>Recent Scan History</h2><p class="muted">History never exposes your full pasted content here. Only risk summaries and timestamps are shown.</p><div class="history" id="historyPanel">{recent_html}</div></aside></section></main><script>const form=document.getElementById('scanForm'),input=form.elements.input,btn=document.getElementById('scanBtn'),msg=document.getElementById('scanMsg'),panel=document.getElementById('resultPanel'),copyBtn=document.getElementById('copyBtn'),historyPanel=document.getElementById('historyPanel');let lastReport='';function esc(s){{return String(s||'').replace(/[&<>"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]))}}function setReady(){{btn.disabled=!input.value.trim();}}input.addEventListener('input',setReady);document.getElementById('clearBtn').addEventListener('click',()=>{{input.value='';panel.classList.remove('show');panel.innerHTML='';msg.textContent='';copyBtn.disabled=true;lastReport='';setReady();}});copyBtn.addEventListener('click',async()=>{{if(!lastReport)return;try{{await navigator.clipboard.writeText(lastReport);msg.textContent='Report copied.'}}catch(e){{msg.textContent='Copy failed. Select the report text manually.'}}}});function render(data){{const flags=(data.red_flags||[]).map(x=>`<li>${{esc(x)}}</li>`).join('')||'<li>No obvious high-risk pattern detected. Still verify independently.</li>';const actions=(data.safe_actions||[]).map(x=>`<li>${{esc(x)}}</li>`).join('');const warn=['High','Critical'].includes(data.risk_level)?'<p class="warning">Do not connect your wallet, sign approvals, share seed phrases, or send funds until independently verified.</p>':'';panel.innerHTML=`<h2>Scan Result</h2><span class="badge ${{esc(data.risk_level)}}">${{esc(data.risk_level)}} Risk</span><div class="score">${{Number(data.risk_score||0)}}/100</div>${{warn}}<p><strong>Summary:</strong> ${{esc(data.summary)}}</p><p><strong>Why it matters:</strong> ${{esc(data.why_it_matters)}}</p><h3>Red flags</h3><ul>${{flags}}</ul><h3>Safe next steps</h3><ul>${{actions}}</ul><p class="muted">Confidence: ${{Number(data.confidence||0).toFixed(2)}} · Source: ${{esc(data.source||data.source_status||'Local rules + AI review')}} · ${{new Date().toLocaleString()}}</p>`;panel.classList.add('show');lastReport=panel.innerText;copyBtn.disabled=false;historyPanel.insertAdjacentHTML('afterbegin',`<div class="history-item"><strong>${{esc(data.risk_level)}} · ${{Number(data.risk_score||0)}}/100</strong><span>${{esc(data.scan_type||'auto')}} · just now</span><p>${{esc(data.summary)}}</p></div>`);}}form.addEventListener('submit',async e=>{{e.preventDefault();const text=input.value.trim();if(!text){{msg.textContent='Paste a suspicious crypto link, wallet address, token contract, or message to scan.';return;}}btn.disabled=true;btn.textContent='Scanning...';msg.textContent='Inspecting scam patterns...';try{{const r=await fetch('/api/scam-shield/scan',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{input:text,scan_type:form.elements.scan_type.value}})}});const data=await r.json();if(!r.ok||!data.ok)throw new Error(data.message||'Scan failed.');render(data);msg.textContent='Scan complete.';if(window.coinPilotXTrack)window.coinPilotXTrack('scam_shield_scan',{{risk_level:data.risk_level,scan_type:data.scan_type}})}}catch(err){{msg.textContent=err.message||'Could not scan right now.'}}finally{{btn.textContent='Scan Now';setReady();}}}});setReady();</script></body></html>"""
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Suspicious Crypto Link Scanner | CoinPlotXAI</title><meta name="description" content="Paste a suspicious crypto link, wallet address, token contract, DM, email, or message. CoinPlotXAI will inspect it for scam risk."><meta name="robots" content="noindex,nofollow"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260606.png"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(54,229,143,.18),transparent 28rem),radial-gradient(circle at 90% 6%,rgba(110,223,246,.14),transparent 24rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:24px 0 calc(84px + env(safe-area-inset-bottom))}}a{{color:var(--cyan)}}.hero{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:16px;align-items:start}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}}h1{{font-size:clamp(34px,7vw,64px);line-height:.98;margin:12px 0}}p,.muted{{color:var(--muted)}}textarea,select{{width:100%;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}textarea{{min-height:190px;resize:vertical}}select{{min-height:46px}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}}button,.button{{min-height:48px;border:1px solid var(--line);border-radius:10px;padding:11px 15px;font-weight:950;cursor:pointer;background:rgba(255,255,255,.06);color:var(--text);text-decoration:none;display:inline-flex;align-items:center;justify-content:center}}button.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0}}button:disabled{{opacity:.5;cursor:not-allowed}}.result{{display:none;margin-top:16px}}.result.show{{display:block}}.score{{font-size:clamp(38px,8vw,72px);font-weight:950}}.badge{{display:inline-flex;border-radius:999px;padding:7px 11px;border:1px solid var(--line);font-weight:950}}.badge.Low{{border-color:rgba(54,229,143,.4);color:#c8ffe2}}.badge.Medium{{border-color:rgba(255,209,102,.45);color:#ffe6a6}}.badge.High,.badge.Critical{{border-color:rgba(255,107,122,.5);color:#ffd6dc}}.warning{{border:1px solid rgba(255,107,122,.38);background:rgba(255,107,122,.1);border-radius:12px;padding:12px;color:#ffd6dc}}ul{{padding-left:20px}}li{{margin:7px 0}}.history{{display:grid;gap:10px}}.history-item{{border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.04);padding:12px}}.history-item span{{display:block;color:var(--muted);font-size:13px}}.toast{{min-height:22px;color:#ffe6a6;margin-top:8px}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.actions{{display:grid;grid-template-columns:1fr}}.card{{padding:14px}}textarea{{min-height:170px}}}}</style></head><body><main class="wrap"><a href="/dashboard">Back to Dashboard</a><section class="hero"><article class="card"><div class="muted">Scam Shield</div><h1>Suspicious Crypto Link Scanner</h1><p>Paste a suspicious crypto link, wallet address, token contract, DM, email, or message. CoinPlotXAI will inspect it for scam risk.</p><form id="scanForm"><label>Scan type<select name="scan_type"><option value="auto">Auto Detect</option><option value="crypto_link">Crypto Link</option><option value="wallet_address">Wallet Address</option><option value="token_contract">Token Contract</option><option value="telegram_dm">Telegram/DM Message</option><option value="email_text">Email/Text</option><option value="website_url">Website URL</option></select></label><label>Paste suspicious content<textarea name="input" placeholder="Paste suspicious link, message, wallet address, token contract, or email text..."></textarea></label><div class="actions"><button class="primary" id="scanBtn" type="submit" disabled>Scan Now</button><button type="button" id="clearBtn">Clear</button><button type="button" id="copyBtn" disabled>Copy Report</button></div><div class="toast" id="scanMsg"></div></form><section class="result card" id="resultPanel" aria-live="polite"></section></article><aside class="card"><h2>Recent Scan History</h2><p class="muted">History never exposes your full pasted content here. Only risk summaries and timestamps are shown.</p><div class="history" id="historyPanel">{recent_html}</div></aside></section></main><script>const form=document.getElementById('scanForm'),input=form.elements.input,btn=document.getElementById('scanBtn'),msg=document.getElementById('scanMsg'),panel=document.getElementById('resultPanel'),copyBtn=document.getElementById('copyBtn'),historyPanel=document.getElementById('historyPanel');let lastReport='';function esc(s){{return String(s||'').replace(/[&<>"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]))}}function setReady(){{btn.disabled=!input.value.trim();}}input.addEventListener('input',setReady);document.getElementById('clearBtn').addEventListener('click',()=>{{input.value='';panel.classList.remove('show');panel.innerHTML='';msg.textContent='';copyBtn.disabled=true;lastReport='';setReady();}});copyBtn.addEventListener('click',async()=>{{if(!lastReport)return;try{{await navigator.clipboard.writeText(lastReport);msg.textContent='Report copied.'}}catch(e){{msg.textContent='Copy failed. Select the report text manually.'}}}});function render(data){{const flags=(data.red_flags||[]).map(x=>`<li>${{esc(x)}}</li>`).join('')||'<li>No obvious high-risk pattern detected. Still verify independently.</li>';const actions=(data.safe_actions||[]).map(x=>`<li>${{esc(x)}}</li>`).join('');const warn=['High','Critical'].includes(data.risk_level)?'<p class="warning">Do not connect your wallet, sign approvals, share seed phrases, or send funds until independently verified.</p>':'';panel.innerHTML=`<h2>Scan Result</h2><span class="badge ${{esc(data.risk_level)}}">${{esc(data.risk_level)}} Risk</span><div class="score">${{Number(data.risk_score||0)}}/100</div>${{warn}}<p><strong>Summary:</strong> ${{esc(data.summary)}}</p><p><strong>Why it matters:</strong> ${{esc(data.why_it_matters)}}</p><h3>Red flags</h3><ul>${{flags}}</ul><h3>Safe next steps</h3><ul>${{actions}}</ul><p class="muted">Confidence: ${{Number(data.confidence||0).toFixed(2)}} · Source: ${{esc(data.source||data.source_status||'Local rules + AI review')}} · ${{new Date().toLocaleString()}}</p>`;panel.classList.add('show');lastReport=panel.innerText;copyBtn.disabled=false;historyPanel.insertAdjacentHTML('afterbegin',`<div class="history-item"><strong>${{esc(data.risk_level)}} · ${{Number(data.risk_score||0)}}/100</strong><span>${{esc(data.scan_type||'auto')}} · just now</span><p>${{esc(data.summary)}}</p></div>`);}}form.addEventListener('submit',async e=>{{e.preventDefault();const text=input.value.trim();if(!text){{msg.textContent='Paste a suspicious crypto link, wallet address, token contract, or message to scan.';return;}}btn.disabled=true;btn.textContent='Scanning...';msg.textContent='Inspecting scam patterns...';try{{const r=await fetch('/api/scam-shield/scan',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{input:text,scan_type:form.elements.scan_type.value}})}});const data=await r.json();if(!r.ok||!data.ok)throw new Error(data.message||'Scan failed.');render(data);msg.textContent='Scan complete.';if(window.coinPilotXTrack)window.coinPilotXTrack('scam_shield_scan',{{risk_level:data.risk_level,scan_type:data.scan_type}})}}catch(err){{msg.textContent=err.message||'Could not scan right now.'}}finally{{btn.textContent='Scan Now';setReady();}}}});setReady();</script></body></html>"""
     response = Response(html)
     response.headers["Cache-Control"] = "private, no-store, max-age=0" if user else "public, max-age=120"
     return response
@@ -1544,17 +1582,17 @@ def legal_money_page(title, body):
 
 @webhook_app.route("/legal/payments", methods=["GET"])
 def legal_payments_page():
-    return legal_money_page("Payments", "<p>CoinPilotXAI is not a bank. Payments, card handling, seller onboarding, and payouts are processed by third-party payment providers such as Stripe. CoinPilotXAI never stores card numbers or raw bank account details.</p><p>Seller balances are tracked through an internal ledger for auditability, while actual funds movement depends on provider confirmation, risk review, refunds, disputes, and platform rules.</p>")
+    return legal_money_page("Payments", "<p>CoinPlotXAI is not a bank. Payments, card handling, seller onboarding, and payouts are processed by third-party payment providers such as Stripe. CoinPlotXAI never stores card numbers or raw bank account details.</p><p>Seller balances are tracked through an internal ledger for auditability, while actual funds movement depends on provider confirmation, risk review, refunds, disputes, and platform rules.</p>")
 
 
 @webhook_app.route("/legal/refunds", methods=["GET"])
 def legal_refunds_page():
-    return legal_money_page("Refunds", "<p>Digital products, courses, live classes, marketplace items, and Premium access may have different refund windows and eligibility rules. Refunds can be limited by usage, delivery, abuse prevention, provider rules, and applicable law.</p><p>Refunds and disputes are traceable in CoinPilotXAI records and provider records. Educational and creator content never guarantees profits or outcomes.</p>")
+    return legal_money_page("Refunds", "<p>Digital products, courses, live classes, marketplace items, and Premium access may have different refund windows and eligibility rules. Refunds can be limited by usage, delivery, abuse prevention, provider rules, and applicable law.</p><p>Refunds and disputes are traceable in CoinPlotXAI records and provider records. Educational and creator content never guarantees profits or outcomes.</p>")
 
 
 @webhook_app.route("/legal/seller-terms", methods=["GET"])
 def legal_seller_terms_page():
-    return legal_money_page("Seller Terms", "<p>Sellers are responsible for taxes, truthful listings, safe fulfillment, accurate education claims, and compliance with marketplace and teacher rules. Scam promotion, guaranteed-profit claims, misleading financial advice, and unsafe content are prohibited.</p><p>Payouts require approval, provider onboarding, and ongoing trust review. CoinPilotXAI may hold, reverse, suspend, or review funds when fraud, disputes, safety risks, or policy violations are detected.</p>")
+    return legal_money_page("Seller Terms", "<p>Sellers are responsible for taxes, truthful listings, safe fulfillment, accurate education claims, and compliance with marketplace and teacher rules. Scam promotion, guaranteed-profit claims, misleading financial advice, and unsafe content are prohibited.</p><p>Payouts require approval, provider onboarding, and ongoing trust review. CoinPlotXAI may hold, reverse, suspend, or review funds when fraud, disputes, safety risks, or policy violations are detected.</p>")
 
 
 @webhook_app.route("/about", methods=["GET"])
@@ -1565,19 +1603,19 @@ def about_page():
         "name": "CoinPlotXAI Inc.",
         "url": "https://pulsesoc.com/about",
         "sameAs": ["https://pulsesoc.com/arena-preview"],
-        "description": "CoinPilotXAI is an educational AI crypto intelligence, scam protection, market awareness, and simulation training platform.",
+        "description": "CoinPlotXAI is an educational AI crypto intelligence, scam protection, market awareness, and simulation training platform.",
     }
     sections = [
-        ("Mission", "CoinPilotXAI helps people train discipline, understand risk, practice decision-making, improve market awareness, and protect themselves from crypto scams in a simulation-first environment."),
+        ("Mission", "CoinPlotXAI helps people train discipline, understand risk, practice decision-making, improve market awareness, and protect themselves from crypto scams in a simulation-first environment."),
         ("AI + Human Psychology", "The platform combines live/cached market context, AI tactical summaries, psychology checks, and risk education so users can slow down, recognize pressure, and make clearer educational decisions."),
-        ("Arena Training Ecosystem", "CoinPilotXAI Arena is a Pro training world with virtual portfolio battles, live rooms, AI commentary, Scam Hunter drills, boss challenges, leaderboards, and cinematic match rooms. It uses virtual dollars only and rewards discipline, scam defense, and learning."),
-        ("Scam Protection", "Scam Shield teaches users to recognize phishing, fake support, wallet drainers, impersonation, malicious approvals, urgency manipulation, and suspicious links. CoinPilotXAI never asks for seed phrases or private keys."),
+        ("Arena Training Ecosystem", "CoinPlotXAI Arena is a Pro training world with virtual portfolio battles, live rooms, AI commentary, Scam Hunter drills, boss challenges, leaderboards, and cinematic match rooms. It uses virtual dollars only and rewards discipline, scam defense, and learning."),
+        ("Scam Protection", "Scam Shield teaches users to recognize phishing, fake support, wallet drainers, impersonation, malicious approvals, urgency manipulation, and suspicious links. CoinPlotXAI never asks for seed phrases or private keys."),
         ("Privacy + Security", "Arena uses public player identities instead of exposing email addresses, payment details, real names, or internal account IDs. Security logging, admin audit trails, rate-aware APIs, and browser protections help keep the platform accountable."),
-        ("Continuous Innovation", "CoinPilotXAI is evolving into a realtime intelligence operating system: live market context, social Arena presence, push-ready alerts, education paths, and AI coaching continue to improve without promising profits."),
+        ("Continuous Innovation", "CoinPlotXAI is evolving into a realtime intelligence operating system: live market context, social Arena presence, push-ready alerts, education paths, and AI coaching continue to improve without promising profits."),
         ("Educational Disclaimer", "CoinPlotXAI Inc. provides educational AI intelligence and simulations only. It is not financial, investment, legal, betting, or tax advice. No real-money trading execution occurs inside Arena."),
     ]
     cards = "".join(f"<article class='card'><h2>{clean_html(title)}</h2><p>{clean_html(text)}</p></article>" for title, text in sections)
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About CoinPilotXAI | AI Crypto Intelligence, Scam Protection and Arena Training</title><meta name="description" content="CoinPilotXAI is an educational AI crypto intelligence platform with Scam Shield, live market context, Pro Arena simulations, virtual portfolio battles, psychology training, and privacy-safe social learning."><link rel="canonical" href="https://pulsesoc.com/about"><meta property="og:title" content="About CoinPilotXAI"><meta property="og:description" content="AI crypto intelligence, Scam Shield, risk psychology education, and Pro Arena virtual-dollar training."><meta property="og:url" content="https://pulsesoc.com/about"><meta property="og:image" content="https://pulsesoc.com/static/og/coinpilotxai-og.png"><meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{json.dumps(schema)}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 30px,1120px);margin:auto;padding:28px 0 90px}}a{{color:#6edff6}}.hero{{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin:30px 0}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.28);padding:20px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}h1{{font-size:clamp(42px,7vw,78px);line-height:.96;margin:0 0 14px}}p{{color:#9fb5c0}}.kicker{{color:#36e58f;font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}.button{{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(110,223,246,.24);padding:10px 14px;font-weight:900;text-decoration:none;color:#f2fbff}}.primary{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><section class="hero"><article class="card"><div class="kicker">About CoinPilotXAI</div><h1>A safer AI command center for crypto learning, risk awareness, and simulation.</h1><p>CoinPilotXAI is built for people who want sharper market awareness without hype, gambling language, or fake profit promises.</p><div class="actions"><a class="button primary" href="/signup">Start Free</a><a class="button" href="/arena-preview">Preview Arena</a><a class="button" href="/scam-shield/scan">Open Scam Shield</a></div></article><article class="card"><h2>What We Optimize For</h2><p>Clarity, emotional control, scam defense, privacy-safe social learning, and educational practice before real-world risk.</p></article></section><section class="grid">{cards}</section></main></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About CoinPlotXAI | AI Crypto Intelligence, Scam Protection and Arena Training</title><meta name="description" content="CoinPlotXAI is an educational AI crypto intelligence platform with Scam Shield, live market context, Pro Arena simulations, virtual portfolio battles, psychology training, and privacy-safe social learning."><link rel="canonical" href="https://pulsesoc.com/about"><meta property="og:title" content="About CoinPlotXAI"><meta property="og:description" content="AI crypto intelligence, Scam Shield, risk psychology education, and Pro Arena virtual-dollar training."><meta property="og:url" content="https://pulsesoc.com/about"><meta property="og:image" content="https://pulsesoc.com/static/og/coinpilotxai-og.png"><meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{json.dumps(schema)}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 30px,1120px);margin:auto;padding:28px 0 90px}}a{{color:#6edff6}}.hero{{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin:30px 0}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.28);padding:20px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}h1{{font-size:clamp(42px,7vw,78px);line-height:.96;margin:0 0 14px}}p{{color:#9fb5c0}}.kicker{{color:#36e58f;font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}.button{{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(110,223,246,.24);padding:10px 14px;font-weight:900;text-decoration:none;color:#f2fbff}}.primary{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><section class="hero"><article class="card"><div class="kicker">About CoinPlotXAI</div><h1>A safer AI command center for crypto learning, risk awareness, and simulation.</h1><p>CoinPlotXAI is built for people who want sharper market awareness without hype, gambling language, or fake profit promises.</p><div class="actions"><a class="button primary" href="/signup">Start Free</a><a class="button" href="/arena-preview">Preview Arena</a><a class="button" href="/scam-shield/scan">Open Scam Shield</a></div></article><article class="card"><h2>What We Optimize For</h2><p>Clarity, emotional control, scam defense, privacy-safe social learning, and educational practice before real-world risk.</p></article></section><section class="grid">{cards}</section></main></body></html>""")
 
 
 @webhook_app.route("/search", methods=["GET"])
@@ -1607,7 +1645,7 @@ def simple_public_page(slug, title, h1, intro, answer, points, sections=None, re
         "canonical": canonical,
         "image": "https://pulsesoc.com/static/og/coinpilotxai-og.png",
         "og_type": "website",
-        "eyebrow": "CoinPilotXAI Intelligence",
+        "eyebrow": "CoinPlotXAI Intelligence",
         "h1": h1,
         "intro": intro,
         "answer": answer,
@@ -1615,7 +1653,7 @@ def simple_public_page(slug, title, h1, intro, answer, points, sections=None, re
         "sections": sections or [],
         "faqs": [
             {"question": "Is this financial advice?", "answer": "No. CoinPlotXAI Inc. provides educational AI intelligence only, not financial, betting, investment, or legal advice."},
-            {"question": "Does CoinPilotXAI need my seed phrase?", "answer": "No. CoinPilotXAI never asks for seed phrases, private keys, recovery phrases, wallet passwords, or exchange passwords."},
+            {"question": "Does CoinPlotXAI need my seed phrase?", "answer": "No. CoinPlotXAI never asks for seed phrases, private keys, recovery phrases, wallet passwords, or exchange passwords."},
         ],
         "related": related or ["/platform", "/scam-guide", "/live-market", "/pricing"],
         "keywords": ["AI crypto intelligence platform", "crypto alerts", "wallet intelligence", "scam detection"],
@@ -1638,7 +1676,7 @@ def education_shell(title, h1, intro, body):
     main{{padding:42px 0 70px}} .hero{{padding:32px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.035));box-shadow:0 28px 90px rgba(0,0,0,.28)}} h1{{font-size:clamp(38px,7vw,68px);line-height:1;margin:8px 0}} h2{{font-size:clamp(24px,4vw,34px)}} .muted,p{{color:var(--muted)}} .edu-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:18px 0}} .edu-card,.edu-panel{{border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.045);padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.22)}} .edu-card{{transition:transform .18s ease,box-shadow .18s ease}} .edu-card:hover{{transform:translateY(-3px);box-shadow:0 0 32px rgba(110,223,246,.18)}} .edu-card span,.edu-card strong{{display:block;font-size:18px;color:var(--cyan);font-weight:950}} small{{color:var(--gold)}} .edu-actions{{display:flex;gap:10px;flex-wrap:wrap}} .concepts{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}} .concept{{border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;background:rgba(0,0,0,.16)}} .radar{{height:130px;border-radius:999px;background:radial-gradient(circle,rgba(54,229,143,.28),transparent 28%,rgba(110,223,246,.18),transparent 58%);animation:pulseRadar 4s ease-in-out infinite}} @keyframes pulseRadar{{50%{{filter:brightness(1.35);transform:scale(1.02)}}}} @media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}} @media(max-width:720px){{.hero{{padding:22px}}.edu-actions a{{width:100%}}}}
 		    </style>
 </head><body>
-  <header><div class="wrap"><nav><a href="/" data-edu-nav="show_edu_nav_home">CoinPilotXAI</a><div class="edu-actions"><a href="/dashboard" data-edu-nav="show_edu_nav_dashboard">Dashboard</a><a href="/education" data-edu-nav="show_edu_nav_education">Education</a><a href="/scam-shield" data-edu-nav="show_edu_nav_scam_shield">Scam Shield</a><div class="edu-customize"><button class="edu-customize-button" type="button" data-edu-customize>Customize</button><div class="edu-customize-panel" data-edu-customize-panel hidden><strong>Customize Education Navigation</strong><label class="edu-toggle">Show CoinPilotXAI <input type="checkbox" data-edu-pref="show_edu_nav_home" checked></label><label class="edu-toggle">Show Dashboard <input type="checkbox" data-edu-pref="show_edu_nav_dashboard" checked></label><label class="edu-toggle">Show Education <input type="checkbox" data-edu-pref="show_edu_nav_education" checked></label><label class="edu-toggle">Show Scam Shield <input type="checkbox" data-edu-pref="show_edu_nav_scam_shield" checked></label><button class="edu-cta" type="button" data-edu-reset>Reset defaults</button></div></div></div></nav></div></header>
+  <header><div class="wrap"><nav><a href="/" data-edu-nav="show_edu_nav_home">CoinPlotXAI</a><div class="edu-actions"><a href="/dashboard" data-edu-nav="show_edu_nav_dashboard">Dashboard</a><a href="/education" data-edu-nav="show_edu_nav_education">Education</a><a href="/scam-shield" data-edu-nav="show_edu_nav_scam_shield">Scam Shield</a><div class="edu-customize"><button class="edu-customize-button" type="button" data-edu-customize>Customize</button><div class="edu-customize-panel" data-edu-customize-panel hidden><strong>Customize Education Navigation</strong><label class="edu-toggle">Show CoinPlotXAI <input type="checkbox" data-edu-pref="show_edu_nav_home" checked></label><label class="edu-toggle">Show Dashboard <input type="checkbox" data-edu-pref="show_edu_nav_dashboard" checked></label><label class="edu-toggle">Show Education <input type="checkbox" data-edu-pref="show_edu_nav_education" checked></label><label class="edu-toggle">Show Scam Shield <input type="checkbox" data-edu-pref="show_edu_nav_scam_shield" checked></label><button class="edu-cta" type="button" data-edu-reset>Reset defaults</button></div></div></div></nav></div></header>
   <main class="wrap"><section class="hero"><div class="radar" aria-hidden="true"></div><h1>{clean_html(h1)}</h1><p>{clean_html(intro)}</p></section>{body}<p class="muted">Educational market intelligence only. Not financial, investment, legal, betting, or tax advice. Never share seed phrases or private keys.</p></main>
   <script>
     (function () {{
@@ -1691,7 +1729,7 @@ def education_feature_page(h1, intro, sections, lesson_slug, cta=""):
       </div>
     """
     tutor = f"""
-      <div class='edu-panel'><h2>Ask CoinPilotXAI Tutor</h2>
+      <div class='edu-panel'><h2>Ask CoinPlotXAI Tutor</h2>
         <form data-tutor-form><input name='question' placeholder='Ask about this lesson...' style='width:100%;min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:var(--text);padding:10px'><button class='edu-cta' type='submit'>Ask Tutor</button></form>
         <p class='muted' data-tutor-response>Answers use this lesson first and stay safety-focused.</p>
       </div>
@@ -1704,7 +1742,7 @@ def education_feature_page(h1, intro, sections, lesson_slug, cta=""):
         }});
       </script>
     """
-    return education_shell(f"{h1} | CoinPilotXAI Education", h1, intro, f"<section class='edu-panel'><div class='concepts'>{concepts}</div>{cta}</section>{quiz}{tutor}<section class='edu-panel'><a class='edu-cta' href='/education/lesson/{clean_html(lesson_slug)}'>Open Full Lesson</a></section>")
+    return education_shell(f"{h1} | CoinPlotXAI Education", h1, intro, f"<section class='edu-panel'><div class='concepts'>{concepts}</div>{cta}</section>{quiz}{tutor}<section class='edu-panel'><a class='edu-cta' href='/education/lesson/{clean_html(lesson_slug)}'>Open Full Lesson</a></section>")
 
 
 @webhook_app.route("/education", methods=["GET"])
@@ -1732,7 +1770,7 @@ def education_hub_page():
         for l in lessons
     )
     return education_shell(
-        "Crypto Education Hub | CoinPilotXAI",
+        "Crypto Education Hub | CoinPlotXAI",
         "Crypto Education Hub",
         "Build safer crypto habits with structured lessons, quizzes, progress tracking, Scam Shield training, wallet safety, market psychology, and AI tutor support.",
         f"""
@@ -1848,7 +1886,7 @@ def education_category_page(category_slug):
     conn.close()
     cards = "".join(f"<a class='edu-card' href='/education/lesson/{clean_html(l['slug'])}'><strong>{clean_html(l['title'])}</strong><small>{clean_html(l['difficulty'])} · {clean_html(l['estimated_time'])}</small><p>{clean_html(l['summary'])}</p></a>" for l in lessons)
     return education_shell(
-        f"{category['title']} Lessons | CoinPilotXAI",
+        f"{category['title']} Lessons | CoinPlotXAI",
         category["title"],
         category.get("summary") or "Structured crypto education with safety-first lessons.",
         f"<section class='edu-grid'>{cards}</section><section class='edu-panel'><a class='edu-cta' href='/education'>Back to Education Hub</a></section>",
@@ -1882,7 +1920,7 @@ def education_lesson_page(lesson_slug):
     <section class='edu-panel'><p><strong>{clean_html(lesson.get('difficulty'))}</strong> · {clean_html(lesson.get('estimated_time'))}</p><p>{clean_html(lesson.get('content'))}</p></section>
     <section class='edu-panel'><h2>Knowledge Map</h2><div class='concepts'>{sections}</div></section>
     <section class='edu-panel'><h2>Quiz</h2><div class='concepts'>{quiz}</div><button class='edu-cta' data-complete-lesson>Mark Complete</button><p class='muted' data-progress-message></p></section>
-    <section class='edu-panel'><h2>Ask CoinPilotXAI Tutor</h2><form data-tutor-form><input name='question' placeholder='Ask about this lesson...' style='width:100%;min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:var(--text);padding:10px'><button class='edu-cta' type='submit'>Ask Tutor</button></form><p class='muted' data-tutor-response></p></section>
+    <section class='edu-panel'><h2>Ask CoinPlotXAI Tutor</h2><form data-tutor-form><input name='question' placeholder='Ask about this lesson...' style='width:100%;min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:var(--text);padding:10px'><button class='edu-cta' type='submit'>Ask Tutor</button></form><p class='muted' data-tutor-response></p></section>
     <script>
       document.querySelector('[data-complete-lesson]').addEventListener('click', async () => {{
         const res = await fetch('/api/education/progress', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{lesson_slug:'{lesson_slug}',path:'{clean_html(lesson.get('category_slug'))}',status:'completed',score:100}})}}).then(r=>r.json()).catch(()=>({{ok:false,message:'Login required to save progress.'}}));
@@ -1896,7 +1934,7 @@ def education_lesson_page(lesson_slug):
       }});
     </script>
     """
-    return education_shell(f"{lesson['title']} | CoinPilotXAI Education", lesson["title"], lesson.get("summary") or "", body)
+    return education_shell(f"{lesson['title']} | CoinPlotXAI Education", lesson["title"], lesson.get("summary") or "", body)
 
 
 @webhook_app.route("/api/education/categories", methods=["GET"])
@@ -1941,7 +1979,7 @@ def api_education_tutor():
         response = "I can explain why those secrets must never be shared, but I cannot request, store, or handle seed phrases, private keys, recovery phrases, or wallet passwords."
     else:
         response = (
-            f"CoinPilotXAI Tutor: Based on {lesson.get('title') or 'this lesson'}, the safe way to think about it is: "
+            f"CoinPlotXAI Tutor: Based on {lesson.get('title') or 'this lesson'}, the safe way to think about it is: "
             f"{lesson.get('summary') or 'verify sources, slow down, and keep risk controlled.'} "
             "Use official sources, avoid urgent wallet prompts, and treat all market intelligence as educational context rather than a guarantee."
         )
@@ -2079,7 +2117,7 @@ def reset_pwa_page():
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>Reset CoinPilotXAI App Cache</title>
+      <title>Reset CoinPlotXAI App Cache</title>
       <style>
         body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,Arial,sans-serif}
         main{width:min(100%,560px);padding:28px;border:1px solid rgba(0,229,255,.22);border-radius:14px;background:#0d1627;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.35)}
@@ -2088,22 +2126,22 @@ def reset_pwa_page():
     </head>
     <body>
       <main>
-        <h1>Resetting CoinPilotXAI app cache</h1>
+        <h1>Resetting CoinPlotXAI app cache</h1>
         <p>Clearing old offline cache, service workers, and local app flags. You will be returned to PulseSoc Home automatically.</p>
       </main>
       <script>
         (async function () {
           try {
-            console.log("[CoinPilotXAI PWA] reset started");
+            console.log("[CoinPlotXAI PWA] reset started");
             if ("serviceWorker" in navigator) {
               var regs = await navigator.serviceWorker.getRegistrations();
               await Promise.all(regs.map(function (reg) { return reg.unregister(); }));
-              console.log("[CoinPilotXAI PWA] service workers unregistered", regs.length);
+              console.log("[CoinPlotXAI PWA] service workers unregistered", regs.length);
             }
             if ("caches" in window) {
               var keys = await caches.keys();
               await Promise.all(keys.map(function (key) { return caches.delete(key); }));
-              console.log("[CoinPilotXAI PWA] caches deleted", keys);
+              console.log("[CoinPlotXAI PWA] caches deleted", keys);
             }
             if ("indexedDB" in window && indexedDB.databases) {
               var databases = await indexedDB.databases();
@@ -2113,7 +2151,7 @@ def reset_pwa_page():
                   req.onsuccess = req.onerror = req.onblocked = function () { resolve(); };
                 }) : Promise.resolve();
               }));
-              console.log("[CoinPilotXAI PWA] indexedDB cleared");
+              console.log("[CoinPlotXAI PWA] indexedDB cleared");
             }
             try { localStorage.clear(); } catch (err) {}
             try { sessionStorage.clear(); } catch (err) {}
@@ -2634,6 +2672,15 @@ def record_pulsesoc_presence_activity():
     source = "native" if native_app_request_context().get("is_native") else "web"
     device_label = presence_device_label()
     record_local_presence_activity(user_id, "online", source, device_label)
+    # A page view is a supplementary liveness signal only. The authoritative
+    # heartbeat comes from the presence client on an interval the server sets;
+    # this keeps a user who is actively navigating from flickering offline
+    # between heartbeats, but it can never by itself hold a user online,
+    # because presence expiry is evaluated at read time.
+    try:
+        record_presence_heartbeat_from_request(user_id, source=source, device_label=device_label)
+    except Exception as exc:
+        logging.info("PRESENCE_REQUEST_HEARTBEAT_SKIPPED user_id=%s error=%s", int(user_id or 0), exc.__class__.__name__)
     try:
         command_center_client_service.enqueue_presence_event(int(user_id), "online", source=source, device_label=device_label)
     except Exception as exc:
@@ -2778,6 +2825,30 @@ PRESENCE_ACTIVITY_PATHS = {
     "/pulse/status",
 }
 PRESENCE_ACTIVITY_THROTTLE_SECONDS = 60
+# A stored "online"/"away" status is only trustworthy while it is fresh. If a
+# heartbeat has not refreshed presence within this window the user is treated as
+# offline, so a session that ended without an explicit "offline" write can never
+# leave a user fake-online. Matches the 6-minute freshness cutoff used by the
+# server-authoritative pulse_online_sessions presence payload.
+PRESENCE_ONLINE_TTL_SECONDS = 360
+
+
+def presence_status_is_fresh(reference_iso, now=None):
+    """Return True when an ISO presence timestamp is within the online window."""
+    if not reference_iso:
+        return False
+    try:
+        parsed = parse_iso_datetime(reference_iso)
+    except Exception:
+        parsed = None
+    if not parsed:
+        return False
+    now = now or datetime.now(timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return (now - parsed).total_seconds() <= PRESENCE_ONLINE_TTL_SECONDS
 
 
 def ensure_user_presence_schema(cur=None, conn=None):
@@ -2869,24 +2940,94 @@ def record_local_presence_activity(user_id, status="online", source="web", devic
         conn.close()
 
 
+def record_presence_heartbeat_from_request(user_id, source="web", device_label=""):
+    """Refresh the caller's presence session from an authenticated page view.
+
+    Reuses the presence session already stored on the Flask session so a
+    browsing user does not accumulate one presence session per page load.
+    """
+    user_id = safe_int(user_id, 0)
+    if user_id <= 0:
+        return {"ok": False, "reason": "invalid_user"}
+    from services import presence_service
+
+    session_key = f"presence_session_{user_id}"
+    session_id = session.get(session_key) or ""
+    conn = db()
+    cur = conn.cursor()
+    try:
+        result = {"ok": False}
+        if session_id:
+            result = presence_service.heartbeat(cur, user_id, session_id, conn=conn)
+        if not result.get("ok"):
+            result = presence_service.connect(
+                cur,
+                user_id,
+                device_id=f"{source}:{device_label}",
+                device_label=device_label or source,
+                platform=source,
+                conn=conn,
+            )
+            session[session_key] = result.get("session_id")
+        conn.commit()
+        return result
+    except Exception as exc:
+        logging.info("PRESENCE_HEARTBEAT_REQUEST_SKIPPED user_id=%s error=%s", user_id, exc.__class__.__name__)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "reason": "heartbeat_failed"}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def read_local_presence(user_id):
+    """Read a user's own presence, as they see themselves.
+
+    Status is derived from live presence sessions, never from a stored flag.
+    The user_presence table is retained as a denormalised cache for device
+    metadata, but it is not trusted for liveness: it used to be written only
+    ever with 'online' and had nothing to set it back, which is exactly the
+    fake-online defect this replaces. The Command Center worker also writes
+    that table, on its own 5-minute/15-minute ageing schedule; ignoring its
+    status column is what keeps that from being a second opinion here.
+
+    This is a *self* read -- viewer and target are the same user below -- so no
+    privacy filter applies. Any caller wanting presence for somebody else must
+    go to presence_service.presence_for with the real viewer, or the filtering
+    that makes invisible mode and blocks work would be bypassed.
+    """
     user_id = safe_int(user_id, 0)
     if user_id <= 0:
         return {"user_id": user_id, "status": "offline", "available": False}
+    from services import presence_service
+
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     try:
         ensure_user_presence_schema(cur, conn)
+        derived = presence_service.presence_of(cur, user_id, user_id, conn=conn)
         cur.execute("SELECT * FROM user_presence WHERE user_id=? LIMIT 1", (user_id,))
         row = cur.fetchone()
-        if not row:
-            return {"user_id": user_id, "status": "offline", "available": False}
-        item = dict(row)
+        item = dict(row) if row else {}
+        status = normalize_presence_status(derived.get("status"))
         return {
-            "user_id": int(item.get("user_id") or user_id),
-            "status": normalize_presence_status(item.get("status")),
-            "last_seen_at": item.get("last_seen_at") or "",
+            "user_id": user_id,
+            "status": status,
+            "online": status in {"online", "away"},
+            "activity": derived.get("activity") or "idle",
+            "devices": int(derived.get("devices") or 0),
+            # Last-seen comes from the service alone. Falling back to the
+            # user_presence cache would reintroduce a second last-seen
+            # authority -- one the Command Center worker also writes -- and the
+            # two are free to disagree.
+            "last_seen_at": derived.get("last_seen_at") or "",
+            "last_seen_text": derived.get("last_seen_text") or "",
             "last_active_at": item.get("last_active_at") or "",
             "updated_at": item.get("updated_at") or "",
             "available": True,
@@ -4023,7 +4164,7 @@ def restricted_owner_message_response():
     return pulse_social_shell(
         "Restricted Area",
         "This area is restricted to the owner.",
-        "<section class='card'><h2>This area is restricted to the owner.</h2><p class='muted'>Return to PulseSoc or contact the CoinPilotXAI owner if you believe you should have access.</p><div class='actions'><a class='button primary' href='/pulse/premium'>Back to PulseSoc Premium</a><a class='button' href='/pulse'>PulseSoc Home</a></div></section>",
+        "<section class='card'><h2>This area is restricted to the owner.</h2><p class='muted'>Return to PulseSoc or contact the CoinPlotXAI owner if you believe you should have access.</p><div class='actions'><a class='button primary' href='/pulse/premium'>Back to PulseSoc Premium</a><a class='button' href='/pulse'>PulseSoc Home</a></div></section>",
         "",
         "",
     ), 403
@@ -5500,6 +5641,7 @@ def login_page():
                 ), int(challenge_gate.get("status") or 403)
             register_failed_login(email, user.get("user_id") if user else 0, "invalid_password")
             return render_account_page("login", "Login", error="Email or password is incorrect.")
+        session.permanent = True
         session["account_user_id"] = user["user_id"]
         session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
         log_auth_event("login_success", email, user["user_id"], status="success", details={"db_engine": db_service.ENGINE_NAME})
@@ -5508,6 +5650,7 @@ def login_page():
         if user_is_owner_account(user):
             ensure_owner_super_user(cur, conn)
         cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (datetime.now().isoformat(), datetime.now().isoformat(), user["user_id"]))
+        cancel_scheduled_account_deletion(cur, user["user_id"])
         notify_user(
             cur,
             user["user_id"],
@@ -5682,12 +5825,14 @@ def api_mobile_auth_login():
             return api_error(challenge_gate.get("message") or "Security challenge required.", int(challenge_gate.get("status") or 403), **payload)
         register_failed_login(email, user.get("user_id") if user else 0, "mobile_invalid_password")
         return api_error("Email or password is incorrect.", 401)
+    session.permanent = True
     session["account_user_id"] = user["user_id"]
     session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
     conn = db()
     cur = conn.cursor()
     now = datetime.now().isoformat()
     cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (now, now, user["user_id"]))
+    cancel_scheduled_account_deletion(cur, user["user_id"])
     notify_user(
         cur,
         user["user_id"],
@@ -5966,6 +6111,127 @@ def api_account_language():
     except ValueError as exc:
         return api_error(str(exc), 400, error="unsupported_language")
     return jsonify({"ok": True, "message": "Language preference saved.", "preferred_language": language, "language": language, "supported_languages": SUPPORTED_LANGUAGE_CODES, "any_language_supported": True})
+
+
+@webhook_app.route("/api/account/region-preferences", methods=["GET", "PATCH", "POST"])
+@webhook_app.route("/api/mobile/account/region-preferences", methods=["GET", "PATCH", "POST"])
+@webhook_app.route("/api/pulse/mobile/account/region-preferences", methods=["GET", "PATCH", "POST"])
+def api_account_region_preferences():
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    from services import pulse_region_preferences
+
+    try:
+        if request.method == "GET":
+            preferences = pulse_region_preferences.get_preferences(int(user["user_id"]))
+        else:
+            if not request.is_json:
+                return api_error(
+                    "Region preferences require a JSON request body.",
+                    415,
+                    error="invalid_content_type",
+                )
+            preferences = pulse_region_preferences.update_preferences(
+                int(user["user_id"]),
+                request.get_json(silent=True) or {},
+            )
+        return jsonify({"ok": True, "preferences": preferences, **preferences})
+    except pulse_region_preferences.RegionPreferenceError as exc:
+        return api_error(str(exc), 400, error=exc.code)
+    except Exception as exc:
+        logging.exception(
+            "PULSE_REGION_PREFERENCES_FAILED user_id=%s reason=%s",
+            int(user["user_id"]),
+            exc.__class__.__name__,
+        )
+        return api_error(
+            "Region preferences are temporarily unavailable. Your existing settings are unchanged.",
+            503,
+            error="region_preferences_unavailable",
+        )
+
+
+@webhook_app.route("/api/pulse/translations", methods=["POST"])
+def api_pulse_translate_content():
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    from services import content_translation
+
+    try:
+        result = content_translation.translate_content(
+            int(user["user_id"]),
+            content_type=payload.get("content_type"),
+            content_ref=payload.get("content_ref"),
+            text=payload.get("text"),
+            source_language=payload.get("source_language") or "auto",
+            target_language=payload.get("target_language") or account_language(user),
+            force=payload.get("force") is True,
+        )
+        return jsonify({"ok": True, "result": result})
+    except content_translation.TranslationError as exc:
+        return api_error(str(exc), exc.status, error=exc.code)
+    except Exception as exc:
+        logging.exception(
+            "PULSE_CONTENT_TRANSLATION_FAILED user_id=%s reason=%s",
+            int(user["user_id"]),
+            exc.__class__.__name__,
+        )
+        return api_error(
+            "Translation is temporarily unavailable. Please try again.",
+            503,
+            error="translation_unavailable",
+        )
+
+
+@webhook_app.route("/api/pulse/translations/preference", methods=["GET", "PUT", "POST"])
+def api_pulse_translation_preference():
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    from services import content_translation
+
+    source_language = (
+        payload.get("source_language")
+        or request.args.get("source_language")
+        or "auto"
+    )
+    target_language = (
+        payload.get("target_language")
+        or request.args.get("target_language")
+        or account_language(user)
+    )
+    try:
+        if request.method == "GET":
+            result = content_translation.get_preference(
+                int(user["user_id"]),
+                source_language,
+                target_language,
+            )
+        else:
+            result = content_translation.set_preference(
+                int(user["user_id"]),
+                source_language,
+                target_language,
+                payload.get("policy"),
+            )
+        return jsonify({"ok": True, "result": result})
+    except content_translation.TranslationError as exc:
+        return api_error(str(exc), exc.status, error=exc.code)
+    except Exception as exc:
+        logging.exception(
+            "PULSE_TRANSLATION_PREFERENCE_FAILED user_id=%s reason=%s",
+            int(user["user_id"]),
+            exc.__class__.__name__,
+        )
+        return api_error(
+            "Translation preferences are temporarily unavailable.",
+            503,
+            error="translation_preference_unavailable",
+        )
 
 
 @webhook_app.route("/api/i18n/missing", methods=["POST"])
@@ -6342,7 +6608,6 @@ def api_dashboard_content_planner_item():
     finally:
         conn.close()
     return jsonify(result), (200 if result.get("ok") else 400)
-    return jsonify({"ok": True, "account": state})
 
 
 @webhook_app.route("/api/dashboard/network/state", methods=["GET"])
@@ -9908,8 +10173,8 @@ def private_chat_thread_page(thread_id):
             status=404,
         )
     other = payload.get("other") or {}
-    other_name = clean_html(other.get("display_name") or "CoinPilotXAI user")
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Chat with {other_name} | CoinPilotXAI</title><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#071527);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}}a{{color:inherit}}.shell{{height:100dvh;display:grid;grid-template-rows:auto 1fr auto;width:min(100%,980px);margin:auto;border-inline:1px solid rgba(110,223,246,.12)}}header{{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.92);backdrop-filter:blur(18px);display:flex;justify-content:space-between;gap:12px;align-items:center}}.button,button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);font-weight:900;padding:10px 14px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.meta{{color:var(--muted);font-size:13px}}.thread{{min-height:0;overflow:auto;padding:16px;display:grid;gap:9px;background:radial-gradient(circle at 80% 10%,rgba(54,229,143,.08),transparent 22rem)}}.bubble{{max-width:min(78%,620px);padding:11px 13px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.07);box-shadow:0 12px 36px rgba(0,0,0,.16)}}.bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.bubble small{{display:block;margin-top:5px;opacity:.72}}.composer{{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96)}}textarea{{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}.toast{{position:fixed;left:50%;bottom:calc(82px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:10px 13px;border:1px solid var(--line);border-radius:12px;background:#071321;box-shadow:0 18px 50px rgba(0,0,0,.4);display:none}}.toast.show{{display:block}}@media(max-width:720px){{.shell{{border:0}}.composer{{grid-template-columns:1fr}}.button,button{{width:100%}}.bubble{{max-width:88%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}</style></head><body><main class="shell" data-thread-id="{int(thread_id)}"><header><div><strong>{other_name}</strong><div class="meta">{clean_html(other.get("rank") or "PulseSoc contact")} · private thread</div></div><a class="button" href="/dashboard">Dashboard</a></header><section class="thread" data-chat-thread></section><form class="composer" data-chat-form><textarea name="message" placeholder="Write a reply..." autocomplete="off"></textarea><button class="button primary" type="submit">Send</button></form></main><div class="toast" data-toast></div><script>const threadId={int(thread_id)};let lastMessageId=0;let loading=false;const box=document.querySelector('[data-chat-thread]');const form=document.querySelector('[data-chat-form]');const input=form.elements.message;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));function toast(message){{const t=document.querySelector('[data-toast]');t.textContent=message;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}}function bubble(m,temp=false){{return `<div class="bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||m.id||''}}"><span>${{esc(m.body)}}</span><small>${{temp?'sending...':esc(m.delivery_status||'delivered')}}</small></div>`}}function append(items){{const seen=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{const id=String(m.message_id||m.id||'');if(id&&seen.has(id))return;box.insertAdjacentHTML('beforeend',bubble(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||m.id||0));}});box.scrollTop=box.scrollHeight;}}function render(items){{box.innerHTML=(items||[]).map(m=>bubble(m)).join('')||'<p class="meta">No messages yet.</p>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||m.id||0)));box.scrollTop=box.scrollHeight;}}async function load(initial=false){{if(loading||document.hidden)return;loading=true;try{{const url=initial?`/api/chat/thread/${{threadId}}`:`/api/chat/thread/${{threadId}}/new?after_id=${{lastMessageId}}`;const d=await fetch(url,{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());if(d.ok)initial?render(d.messages):append(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}catch(e){{}}finally{{loading=false;}}}}form.addEventListener('submit',async e=>{{e.preventDefault();const body=input.value.trim();if(!body)return;input.value='';const button=form.querySelector('button');button.disabled=true;const tempId='temp-'+Date.now();box.insertAdjacentHTML('beforeend',`<div class="bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/chat/thread/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{message:body}})}}).then(r=>r.json());const temp=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(temp)temp.outerHTML=bubble(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||d.message.id||0));if(navigator.vibrate)navigator.vibrate(20);}}else{{if(temp)temp.querySelector('small').textContent='failed';input.value=body;toast(d.message||'Could not send this message.');}}}}catch(err){{input.value=body;toast('Could not send this message.')}}finally{{button.disabled=false;input.focus();}}}});input.addEventListener('keydown',e=>{{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});load(true);setInterval(()=>load(false),1500);document.addEventListener('visibilitychange',()=>{{if(!document.hidden)load(false)}});input.focus();</script></body></html>""")
+    other_name = clean_html(other.get("display_name") or "CoinPlotXAI user")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Chat with {other_name} | CoinPlotXAI</title><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#071527);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}}a{{color:inherit}}.shell{{height:100dvh;display:grid;grid-template-rows:auto 1fr auto;width:min(100%,980px);margin:auto;border-inline:1px solid rgba(110,223,246,.12)}}header{{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.92);backdrop-filter:blur(18px);display:flex;justify-content:space-between;gap:12px;align-items:center}}.button,button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);font-weight:900;padding:10px 14px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.meta{{color:var(--muted);font-size:13px}}.thread{{min-height:0;overflow:auto;padding:16px;display:grid;gap:9px;background:radial-gradient(circle at 80% 10%,rgba(54,229,143,.08),transparent 22rem)}}.bubble{{max-width:min(78%,620px);padding:11px 13px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.07);box-shadow:0 12px 36px rgba(0,0,0,.16)}}.bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.bubble small{{display:block;margin-top:5px;opacity:.72}}.composer{{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96)}}textarea{{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}.toast{{position:fixed;left:50%;bottom:calc(82px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:10px 13px;border:1px solid var(--line);border-radius:12px;background:#071321;box-shadow:0 18px 50px rgba(0,0,0,.4);display:none}}.toast.show{{display:block}}@media(max-width:720px){{.shell{{border:0}}.composer{{grid-template-columns:1fr}}.button,button{{width:100%}}.bubble{{max-width:88%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}</style></head><body><main class="shell" data-thread-id="{int(thread_id)}"><header><div><strong>{other_name}</strong><div class="meta">{clean_html(other.get("rank") or "PulseSoc contact")} · private thread</div></div><a class="button" href="/dashboard">Dashboard</a></header><section class="thread" data-chat-thread></section><form class="composer" data-chat-form><textarea name="message" placeholder="Write a reply..." autocomplete="off"></textarea><button class="button primary" type="submit">Send</button></form></main><div class="toast" data-toast></div><script>const threadId={int(thread_id)};let lastMessageId=0;let loading=false;const box=document.querySelector('[data-chat-thread]');const form=document.querySelector('[data-chat-form]');const input=form.elements.message;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));function toast(message){{const t=document.querySelector('[data-toast]');t.textContent=message;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}}function bubble(m,temp=false){{return `<div class="bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||m.id||''}}"><span>${{esc(m.body)}}</span><small>${{temp?'sending...':esc(m.delivery_status||'delivered')}}</small></div>`}}function append(items){{const seen=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{const id=String(m.message_id||m.id||'');if(id&&seen.has(id))return;box.insertAdjacentHTML('beforeend',bubble(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||m.id||0));}});box.scrollTop=box.scrollHeight;}}function render(items){{box.innerHTML=(items||[]).map(m=>bubble(m)).join('')||'<p class="meta">No messages yet.</p>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||m.id||0)));box.scrollTop=box.scrollHeight;}}async function load(initial=false){{if(loading||document.hidden)return;loading=true;try{{const url=initial?`/api/chat/thread/${{threadId}}`:`/api/chat/thread/${{threadId}}/new?after_id=${{lastMessageId}}`;const d=await fetch(url,{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());if(d.ok)initial?render(d.messages):append(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}catch(e){{}}finally{{loading=false;}}}}form.addEventListener('submit',async e=>{{e.preventDefault();const body=input.value.trim();if(!body)return;input.value='';const button=form.querySelector('button');button.disabled=true;const tempId='temp-'+Date.now();box.insertAdjacentHTML('beforeend',`<div class="bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/chat/thread/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{message:body}})}}).then(r=>r.json());const temp=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(temp)temp.outerHTML=bubble(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||d.message.id||0));if(navigator.vibrate)navigator.vibrate(20);}}else{{if(temp)temp.querySelector('small').textContent='failed';input.value=body;toast(d.message||'Could not send this message.');}}}}catch(err){{input.value=body;toast('Could not send this message.')}}finally{{button.disabled=false;input.focus();}}}});input.addEventListener('keydown',e=>{{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});load(true);setInterval(()=>load(false),1500);document.addEventListener('visibilitychange',()=>{{if(!document.hidden)load(false)}});input.focus();</script></body></html>""")
 
 
 @webhook_app.route("/chat/fan-messages", methods=["GET"])
@@ -9975,7 +10240,7 @@ def messages_page():
       <div class='grid'>
         <section class='profile-card'>
           <h2>Private Messages</h2>
-          <p>Start secure one-to-one conversations with another CoinPilotXAI user by email. Telegram is not required.</p>
+          <p>Start secure one-to-one conversations with another CoinPlotXAI user by email. Telegram is not required.</p>
           <form id='message-start-form'>
             <label>User email or username</label>
             <input name='query' placeholder='user@example.com' required>
@@ -10216,7 +10481,7 @@ def create_founder_checkout_session(user):
         "plan": "founder_premium",
         "plan_key": "founder_premium",
         "product": "PulseSoc",
-        "company": "CoinPilotXAI Inc.",
+        "company": "CoinPlotXAI Inc.",
         "environment": stripe_environment_label(),
         "price_id": STRIPE_FOUNDER_PRICE_ID,
         "product_id": STRIPE_FOUNDER_PRODUCT_ID or STRIPE_PRODUCT_ID,
@@ -10530,7 +10795,7 @@ def create_stripe_checkout_session(user):
         "plan": "pro",
         "plan_key": "pulse_premium",
         "product": "PulseSoc",
-        "company": "CoinPilotXAI Inc.",
+        "company": "CoinPlotXAI Inc.",
         "environment": stripe_environment_label(),
         "price_id": STRIPE_PRICE_ID,
         "product_id": STRIPE_PRODUCT_ID,
@@ -10726,6 +10991,40 @@ def api_premium_billing_portal():
     return premium_json_response({"ok": False, "message": error or "Billing portal temporarily unavailable.", "fallback_url": "/pulse/premium"}, 503)
 
 
+def _effective_premium_access(user, owns_premium):
+    """R3.2 Business OS slice: effective (currently-usable) premium access.
+
+    Ownership (an active subscription/grant) is passed in as ``owns_premium`` and is
+    NEVER mutated here — callers keep their existing subscription/ownership fields so
+    the API never tells a suspended user they lack the underlying subscription. This
+    only computes whether the user may *currently exercise* premium: ownership AND the
+    account is not on hold. To match what the capability gates actually serve, the hold
+    is applied only under canonical mode; off/shadow present the legacy ownership value
+    unchanged (byte-for-byte). Read-only: records no audit rows.
+
+    Returns ``(effective_bool, access_denial_reason_or_None)``. Fails safe to ownership.
+    """
+    owns = bool(owns_premium)
+    try:
+        raw = (os.getenv("BUSINESS_OS_ENTITLEMENTS", "") or "").strip().lower()
+        if raw not in ("1", "true", "on", "yes", "canonical"):
+            return owns, None
+        if not owns:
+            return False, None
+        from services.business_os.entitlements import facade as _ent_facade
+        ctx = {
+            "account_status": user.get("account_status"),
+            "access_enabled": user.get("access_enabled"),
+        }
+        hold = _ent_facade.account_hold(int(user.get("user_id") or 0), context=ctx)
+        if hold.get("on_hold"):
+            return False, (hold.get("reason") or "account_hold")
+        return True, None
+    except Exception:  # noqa: BLE001
+        logging.exception("effective premium access check failed; using ownership")
+        return owns, None
+
+
 @webhook_app.route("/api/premium/status", methods=["GET"])
 def api_premium_status():
     init_db()
@@ -10738,10 +11037,26 @@ def api_premium_status():
     founder_info = premium_entitlement_service.founder_membership(uid)
     provider_row = _latest_user_subscription_row(uid)
     status_payload = subscription_status_payload(fresh_user)
+    # Ownership (subscription/grant) is preserved verbatim in premium_active/plan/
+    # subscription_status. effective_premium_access is the SEPARATE, hold-aware signal
+    # a suspended owner must be shown so the API never advertises usable access it will
+    # then deny. Under flag off/shadow, effective == ownership (no behaviour change).
+    owns_premium = bool(premium_entitlement_service.is_premium_user(uid) or premium_visibility_engine.is_premium_user(fresh_user))
+    effective_premium, access_denial_reason = _effective_premium_access(fresh_user, owns_premium)
+    if founder_info:
+        status_message = "Founder Premium is active."
+    elif access_denial_reason and premium_entitlement_service.is_premium_user(uid):
+        status_message = "Premium is paused while your account is under review."
+    elif premium_entitlement_service.is_premium_user(uid):
+        status_message = "Premium is active."
+    else:
+        status_message = "Stripe verification is still pending."
     return premium_json_response({
         "ok": True,
         "user_id": uid,
-        "premium_active": bool(premium_entitlement_service.is_premium_user(uid) or premium_visibility_engine.is_premium_user(fresh_user)),
+        "premium_active": owns_premium,
+        "effective_premium_access": effective_premium,
+        "access_denial_reason": access_denial_reason,
         "founder_active": bool(founder_info),
         "founder_number": int(founder_info.get("founder_number") or 0) if founder_info else 0,
         "plan": fresh_user.get("subscription_plan") or fresh_user.get("plan") or provider_row.get("plan_key") or "free",
@@ -10754,7 +11069,7 @@ def api_premium_status():
         "premium_url": "/pulse/premium",
         "profile_url": "/pulse/profile",
         "home_url": "/pulse",
-        "message": "Founder Premium is active." if founder_info else "Premium is active." if premium_entitlement_service.is_premium_user(uid) else "Stripe verification is still pending.",
+        "message": status_message,
     })
 
 
@@ -11204,7 +11519,7 @@ def friendly_internal_error(error):
         }), 500
     body = (
         "<!doctype html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>CoinPilotXAI | System Notice</title>"
+        "<title>CoinPlotXAI | System Notice</title>"
         "<style>body{margin:0;font-family:system-ui;background:#050b14;color:#f2fbff;display:grid;min-height:100vh;place-items:center;padding:24px}"
         ".card{max-width:680px;border:1px solid rgba(110,223,246,.22);border-radius:16px;background:#0d1627;padding:28px;box-shadow:0 24px 80px rgba(0,0,0,.32)}"
         "a{color:#36e58f}.trace{color:#9fb5c0;font-size:13px}</style></head><body><main class='card'>"
@@ -11435,34 +11750,126 @@ def admin_users_page():
     admin, denied = require_admin_page("users.view")
     if denied:
         return denied
-    data = admin_users_payload()
-    rows = "".join(
-        f"<tr><td><a href='/admin/users/{u.get('user_id')}'>{clean_html(u.get('name') or 'User')}</a></td>"
-        f"<td>{clean_html(u.get('email') or '')}</td><td>{u.get('user_id')}</td><td>{clean_html(u.get('account_status') or '')}</td>"
-        f"<td>{clean_html(u.get('plan') or '')}</td><td>{clean_html(u.get('subscription_status') or '')}</td>"
-        f"<td>{'Yes' if u.get('has_pro_access') else 'No'}</td><td>{clean_html(u.get('pro_access_type') or '')}</td>"
-        f"<td>{clean_html(str(u.get('total_revenue') or 0))}</td><td>{clean_html(u.get('created_at') or '')}</td></tr>"
-        for u in data.get("users", [])
+    data = admin_users_payload(scan_limit=5000)
+    users = data.get("users", [])
+    current_filter = clean_html(request.args.get("filter", "all")).strip().lower() or "all"
+    q = clean_html(request.args.get("q", "")).strip()
+    page, per = _ops_page_arg(default_per=50)
+
+    def _money(v):
+        try:
+            return "${:,.2f}".format(float(v or 0))
+        except Exception:
+            return clean_html(str(v or 0))
+
+    def _pill(status):
+        s = (status or "").lower()
+        if s in ("restricted", "suspended", "deleted"):
+            dot = "status-dot status-danger"
+        elif s in ("active", ""):
+            dot = "status-dot"
+        else:
+            dot = "status-dot status-warn"
+        return f"<span class='pill'><span class='{dot}'></span>{clean_html(status or 'active')}</span>"
+
+    total = len(users)
+    pro_n = sum(1 for u in users if u.get("pro_access_type") == "paid")
+    trial_n = sum(1 for u in users if u.get("pro_access_type") == "trial")
+    flagged_n = sum(1 for u in users if (u.get("account_status") or "active").lower() in ("restricted", "suspended", "deleted"))
+    users = users[(page - 1) * per:(page - 1) * per + per]
+
+    tiles = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>Matching</div><div class='metric'>{total:,}</div><div class='muted' style='font-size:.82rem'>current filter &amp; search</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Paid Pro</div><div class='metric'>{pro_n:,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Trial</div><div class='metric'>{trial_n:,}</div></div>"
+        f"<div class='card ops-kpi ops-stat-card{' attention' if flagged_n else ''}'><div class='muted'>Flagged</div><div class='metric'>{flagged_n:,}</div><div class='muted' style='font-size:.82rem'>restricted / suspended</div></div>"
+        "</div>"
     )
-    filter_links = " ".join(f"<a class='button secondary' href='/admin/users?filter={key}'>{label}</a>" for key, label in [
-        ("all", "All"), ("pro", "Pro"), ("trial", "Trials"), ("free", "Free"), ("restricted", "Restricted"), ("suspended", "Suspended"), ("deleted", "Deleted"), ("payment_issue", "Payment Issues")
-    ])
+
+    search_form = (
+        "<form method='get' action='/admin/users' class='card' style='display:flex;gap:10px;align-items:center;margin-bottom:14px'>"
+        f"<input type='hidden' name='filter' value='{current_filter}'/>"
+        f"<input type='text' name='q' value='{clean_html(q)}' placeholder='Search name, email, ID, phone, Stripe customer…' style='flex:1'/>"
+        "<button type='submit' style='max-width:150px'>Search</button>"
+        "</form>"
+    )
+
+    filter_links = " ".join(
+        f"<a class='button' style='{'border-color:var(--cyan);color:var(--text)' if key == current_filter else ''}' href='/admin/users?filter={key}'>{label}</a>"
+        for key, label in [
+            ("all", "All"), ("pro", "Pro"), ("trial", "Trials"), ("free", "Free"),
+            ("restricted", "Restricted"), ("suspended", "Suspended"), ("deleted", "Deleted"), ("payment_issue", "Payment Issues"),
+        ]
+    )
+
+    rows = "".join(
+        "<tr>"
+        f"<td><a href='/admin/users/{u.get('user_id')}'>{clean_html(u.get('name') or 'User')}</a></td>"
+        f"<td class='muted'>{clean_html(u.get('email') or '')}</td>"
+        f"<td class='muted'>{clean_html(str(u.get('user_id')))}</td>"
+        f"<td>{_pill(u.get('account_status'))}</td>"
+        f"<td class='muted'>{clean_html(u.get('plan') or '')}</td>"
+        f"<td>{('Pro' if u.get('has_pro_access') else '&mdash;')}{(' · ' + clean_html(u.get('pro_access_type'))) if u.get('pro_access_type') else ''}</td>"
+        f"<td>{_money(u.get('total_revenue'))}</td>"
+        f"<td class='muted'>{clean_html(u.get('created_at') or '')}</td>"
+        "</tr>"
+        for u in users
+    )
+    if not rows:
+        rows = "<tr><td colspan='8' class='muted'>No users match this view.</td></tr>"
+
+    pager = _ops_pager("/admin/users", page, per, total, {"filter": current_filter, "q": q, "per": per})
+    export_qs = "&".join(f"{k}={quote(str(v))}" for k, v in (("filter", current_filter), ("q", q)) if v)
+    export_btn = f"<a class='button' href='/admin/users/export.csv?{export_qs}' style='margin-left:auto'>Export CSV</a>"
     body = (
         "<h1>User Management Center</h1>"
         "<p class='muted'>Owner-grade user database, Pro status, payments, email logs, restrictions, and account controls.</p>"
-        f"<div class='card'>{filter_links}</div>"
-        "<div class='card'><table><tr><th>Name</th><th>Email</th><th>ID</th><th>Status</th><th>Plan</th><th>Subscription</th><th>Pro Access</th><th>Type</th><th>Revenue</th><th>Signup</th></tr>"
+        f"{tiles}{search_form}"
+        f"<div class='card' style='margin-bottom:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center'>{filter_links}{export_btn}</div>"
+        f"{pager}"
+        "<div class='card'><table><tr><th>Name</th><th>Email</th><th>ID</th><th>Status</th><th>Plan</th><th>Pro Access</th><th>Revenue</th><th>Signup</th></tr>"
         f"{rows}</table></div>"
+        f"{pager}"
     )
     return admin_page_html("User Management", body, admin)
 
 
-def admin_users_payload():
+@webhook_app.route("/admin/users/export.csv", methods=["GET"])
+def admin_users_export_csv():
+    admin, denied = require_admin_page("users.view")
+    if denied:
+        return denied
+    data = admin_users_payload(scan_limit=50000)
+    rows = data.get("users", [])
+    cols = ["user_id", "name", "email", "account_status", "plan", "subscription_status",
+            "pro_access_type", "has_pro_access", "total_revenue", "payment_count",
+            "country", "telegram_linked", "created_at", "last_login"]
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(cols)
+    for u in rows:
+        writer.writerow([u.get(c, "") for c in cols])
+    try:
+        log_admin_audit(admin.get("id"), "admin_users_exported", "user", "",
+                        {"count": len(rows), "filter": data.get("filter")})
+    except Exception:
+        pass
+    fname = f"pulsesoc-users-{data.get('filter') or 'all'}.csv"
+    return Response(output.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename={fname}"})
+
+
+def admin_users_payload(scan_limit=500):
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     search = clean_html(request.args.get("q", "")).strip().lower()
     filter_key = clean_html(request.args.get("filter", "all")).strip().lower()
+    try:
+        scan_limit = max(1, int(scan_limit))
+    except Exception:
+        scan_limit = 500
     cur.execute(
         """
         SELECT u.*,
@@ -11474,8 +11881,9 @@ def admin_users_payload():
         WHERE COALESCE(u.email,'')!=''
         GROUP BY u.user_id
         ORDER BY COALESCE(u.created_at,u.signup_time,'') DESC
-        LIMIT 500
-        """
+        LIMIT ?
+        """,
+        (scan_limit,),
     )
     users = []
     for row in [dict(r) for r in cur.fetchall()]:
@@ -12033,15 +12441,16 @@ def admin_test_email():
         return jsonify({"ok": False, "error": "valid email required"}), 400
     logging.info("Admin test email requested for domain=%s brevo_key_loaded=%s", email.split("@")[-1], bool(os.getenv("BREVO_API_KEY")))
     text = (
-        "This is a CoinPlotXAI Inc. Brevo transactional email test.\n\n"
+        "This is a PulseSoc Brevo transactional email test.\n\n"
         "If you received this, server-side email delivery is connected.\n\n"
+        "PulseSoc is built by CoinPlotXAI Inc. Support: support@pulsesoc.com.\n\n"
         "CoinPlotXAI Inc. never asks for seed phrases, private keys, or wallet passwords."
     )
-    html = branded_email_html("CoinPlotXAI Inc. Email Test", """
-      <p>This is a Brevo transactional email test from CoinPlotXAI Inc.</p>
+    html = branded_email_html("PulseSoc Email Test", """
+      <p>This is a Brevo transactional email test from PulseSoc.</p>
       <p>If you received this, server-side email delivery is connected.</p>
     """)
-    sent = send_platform_email(email, "CoinPlotXAI Inc. Brevo test email", text, html, 0)
+    sent = send_platform_email(email, "PulseSoc Brevo test email", text, html, 0)
     return jsonify({
         "ok": bool(sent),
         "provider": (os.getenv("EMAIL_PROVIDER") or ("brevo" if os.getenv("BREVO_API_KEY") else "unconfigured")),
@@ -12053,12 +12462,14 @@ def admin_test_email():
 
 def send_brevo_debug_email(to_email):
     from_email, from_name = email_sender_identity()
+    reply_to = email_service_service.reply_to_config()
     brevo_key = (os.getenv("BREVO_API_KEY") or "").strip()
     payload = {
         "sender": {"email": from_email, "name": from_name},
         "to": [{"email": to_email}],
-        "subject": "CoinPlotXAI Inc. Brevo debug email",
-        "textContent": "Brevo debug email from CoinPlotXAI Inc. If this arrives, API delivery is working.",
+        "replyTo": {"email": reply_to["email"], "name": reply_to["name"]},
+        "subject": "PulseSoc Brevo debug email",
+        "textContent": "Brevo debug email from PulseSoc. If this arrives, API delivery is working. Support: support@pulsesoc.com.",
         "htmlContent": branded_email_html("Brevo Debug Email", "<p>If this arrives, API delivery is working.</p>"),
     }
     logging.info("Debug Brevo email requested: to_domain=%s sender=%s brevo_key_loaded=%s", to_email.split("@")[-1], from_email, bool(brevo_key))
@@ -13149,6 +13560,37 @@ def admin_saas_summary():
     }
 
 
+def _ops_page_arg(default_per=50, max_per=200):
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except Exception:
+        page = 1
+    try:
+        per = int(request.args.get("per", str(default_per)))
+    except Exception:
+        per = default_per
+    per = max(10, min(per, max_per))
+    return page, per
+
+
+def _ops_pager(base_path, page, per_page, total, params=None):
+    """Prev/Next page navigation preserving existing query params. Returns '' for a single page."""
+    pages = max(1, (int(total) + per_page - 1) // per_page)
+    page = max(1, min(int(page), pages))
+    if pages <= 1:
+        return f"<div class='ops-pager'><span class='muted'>{int(total):,} total</span></div>"
+
+    def _url(p):
+        q = dict(params or {})
+        q["page"] = p
+        qs = "&".join(f"{k}={quote(str(v))}" for k, v in q.items() if v not in (None, ""))
+        return f"{base_path}?{qs}"
+
+    prev = f"<a class='button' href='{_url(page - 1)}'>&larr; Prev</a>" if page > 1 else "<span class='button' style='opacity:.4;pointer-events:none'>&larr; Prev</span>"
+    nxt = f"<a class='button' href='{_url(page + 1)}'>Next &rarr;</a>" if page < pages else "<span class='button' style='opacity:.4;pointer-events:none'>Next &rarr;</span>"
+    return f"<div class='ops-pager'>{prev}<span class='muted'>Page {page} of {pages} &middot; {int(total):,} total</span>{nxt}</div>"
+
+
 def latest_checkout_diagnostics():
     init_db()
     conn = db()
@@ -13166,95 +13608,350 @@ def latest_checkout_diagnostics():
 
 
 def admin_page_html(title, body, admin=None):
-    command_center_nav = "<a class='command-center-link' href='/admin/command-center'>Backend Command Center</a>" if admin_is_owner_level(admin) else ""
-    nav = (
-        "<a href='/admin/dashboard'>Dashboard</a>"
-        f"{command_center_nav}"
-        "<a href='/admin/global-command'>Global Command</a>"
-        "<a href='/admin/users'>Users</a>"
-        "<a href='/admin/admins'>Admins</a>"
-        "<a href='/admin/employees'>Employees</a>"
-        "<a href='/admin/departments'>Departments</a>"
-        "<a href='/admin/transactions'>Transactions</a>"
-        "<a class='command-center-link' href='/admin/payments-command-center'>Payments Command Center</a>"
-        "<a href='/admin/emails'>Emails</a>"
-        "<a href='/admin/emails/payment'>Payment Emails</a>"
-        "<a href='/admin/telegram'>Telegram</a>"
-        "<a href='/admin/ai-usage'>AI Usage</a>"
-        "<a href='/admin/scam-shield'>Scam Shield</a>"
-        "<a href='/admin/command-logs'>Command Logs</a>"
-        "<a href='/admin/visitors'>Visitors</a>"
-        "<a href='/admin/notifications'>Notifications</a>"
-        "<a href='/admin/calls'>Calls</a>"
-        "<a href='/admin/notification-delivery'>Delivery</a>"
-        "<a href='/admin/pulse-moderation'>PulseSoc Mod</a>"
-        "<a href='/admin/pulse-ads-review-board'>Ads Review Board</a>"
-        "<a href='/admin/pulse-music-review'>Music Review</a>"
-        "<a href='/admin/pulse-feed-health'>Feed Health</a>"
-        "<a href='/admin/pulse-analytics'>PulseSoc Analytics</a>"
-        "<a href='/admin/pulse-infrastructure'>PulseSoc Infra</a>"
-        "<a href='/admin/watch-rules'>Watch Rules</a>"
-        "<a href='/admin/education'>Education</a>"
-        "<a href='/admin/predictions'>Predictions</a>"
-        "<a href='/admin/seo'>SEO</a>"
-        "<a href='/admin/private-chat-reports'>Chat Reports</a>"
-        "<a href='/admin/support'>Support</a>"
-        "<a href='/admin/data-recovery'>Data Recovery</a>"
-        "<a href='/admin/unmatched-payments'>Unmatched</a>"
-        "<a href='/admin/security'>Security</a>"
-        "<a href='/admin/system'>System</a>"
-        "<a href='/admin/performance'>Performance</a>"
-        "<a href='/admin/audit-logs'>Audit</a>"
-        "<a href='/admin/logout'>Logout</a>"
+    is_owner = admin_is_owner_level(admin)
+    # Operations Center V2 information architecture. Every href below maps to an
+    # existing admin route; grouping is presentation-only so no route logic changes.
+    # Tuple shape: (icon, label, href, owner_only)
+    nav_groups = [
+        ("Overview", [
+            ("◆", "Dashboard", "/admin/dashboard", False),
+            ("⌘", "Global Command", "/admin/global-command", False),
+            ("★", "Backend Command Center", "/admin/command-center", True),
+        ]),
+        ("Operations", [
+            ("◎", "Users", "/admin/users", False),
+            ("⊕", "Support", "/admin/support", False),
+            ("♦", "Admins", "/admin/admins", False),
+            ("▤", "Employees", "/admin/employees", False),
+            ("▦", "Departments", "/admin/departments", False),
+            ("↺", "Data Recovery", "/admin/data-recovery", False),
+        ]),
+        ("Moderation & Trust", [
+            ("⚑", "PulseSoc Mod", "/admin/pulse-moderation", False),
+            ("▣", "Ads Review Board", "/admin/pulse-ads-review-board", False),
+            ("♫", "Music Review", "/admin/pulse-music-review", False),
+            ("☷", "Chat Reports", "/admin/private-chat-reports", False),
+            ("◉", "Watch Rules", "/admin/watch-rules", False),
+            ("⛨", "Scam Shield", "/admin/scam-shield", False),
+        ]),
+        ("Social Platform", [
+            ("〰", "Feed Health", "/admin/pulse-feed-health", False),
+            ("◰", "PulseSoc Analytics", "/admin/pulse-analytics", False),
+            ("☷", "Education", "/admin/education", False),
+            ("☎", "Calls", "/admin/calls", False),
+        ]),
+        ("Commerce", [
+            ("$", "Transactions", "/admin/transactions", False),
+            ("◈", "Payments Command Center", "/admin/payments-command-center", False),
+            ("⚠", "Unmatched Payments", "/admin/unmatched-payments", False),
+            ("▧", "Payment Emails", "/admin/emails/payment", False),
+        ]),
+        ("Communications", [
+            ("◔", "Notifications", "/admin/notifications", False),
+            ("↑", "Delivery", "/admin/notification-delivery", False),
+            ("✉", "Emails", "/admin/emails", False),
+            ("✈", "Telegram", "/admin/telegram", False),
+        ]),
+        ("Intelligence", [
+            ("✦", "AI Usage", "/admin/ai-usage", False),
+            ("◑", "Predictions", "/admin/predictions", False),
+        ]),
+        ("Infrastructure", [
+            ("▥", "PulseSoc Infra", "/admin/pulse-infrastructure", False),
+            ("⚙", "System", "/admin/system", False),
+            ("⚡", "Performance", "/admin/performance", False),
+        ]),
+        ("Security", [
+            ("■", "Security", "/admin/security", False),
+            ("▤", "Audit Logs", "/admin/audit-logs", False),
+            ("▷", "Command Logs", "/admin/command-logs", False),
+            ("◉", "Visitors", "/admin/visitors", False),
+        ]),
+        ("Growth", [
+            ("◈", "SEO", "/admin/seo", False),
+        ]),
+    ]
+
+    sidebar_parts = []
+    index_items = []
+    open_count = 0
+    for group_label, links in nav_groups:
+        rows = []
+        for icon, label, href, owner_only in links:
+            if owner_only and not is_owner:
+                continue
+            cls = "ops-link is-owner" if owner_only else "ops-link"
+            rows.append(
+                f"<a class='{cls}' href='{href}'>"
+                f"<span class='ico' aria-hidden='true'>{icon}</span>"
+                f"<span>{clean_html(label)}</span></a>"
+            )
+            index_items.append({"label": label, "href": href, "group": group_label, "icon": icon})
+        if not rows:
+            continue
+        open_attr = " open" if open_count < 4 else ""
+        open_count += 1
+        sidebar_parts.append(
+            f"<details class='ops-group' data-key='{clean_html(group_label)}'{open_attr}>"
+            f"<summary>{clean_html(group_label)}<span class='chev' aria-hidden='true'>&#9656;</span></summary>"
+            + "".join(rows) +
+            "</details>"
+        )
+    index_items.append({"label": "Logout", "href": "/admin/logout", "group": "Session", "icon": "⏏"})
+    sidebar_html = "".join(sidebar_parts)
+    nav_index_json = json.dumps(index_items)
+
+    email = clean_html((admin or {}).get('email') or '')
+    initial = email[:1].upper() if email else "A"
+    status_strip = (
+        "<div class='ops-status-strip' aria-label='System status'>"
+        "<span class='ops-stat' data-svc='api'><span class='d'></span>API</span>"
+        "<span class='ops-stat' data-svc='database'><span class='d'></span>DB</span>"
+        "<span class='ops-stat' data-svc='queues'><span class='d'></span>Queue</span>"
+        "<span class='ops-stat' data-svc='payments'><span class='d'></span>Payments</span>"
+        "<span class='ops-stat' data-svc='live'><span class='d'></span>Live</span>"
+        "<span class='ops-stat' data-svc='calls'><span class='d'></span>Calls</span>"
+        "<span class='ops-stat' data-svc='ai'><span class='d'></span>AI</span>"
+        "</div>"
     )
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="robots" content="noindex,nofollow" />
-  <title>{clean_html(title)} | CoinPlotXAI Admin</title>
-  <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
-  <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
-  <style>
-    :root {{ color-scheme: dark; --bg:#050b14; --panel:#0d1627; --line:rgba(110,223,246,.22); --text:#f2fbff; --muted:#9fb5c0; --accent:#36e58f; --cyan:#6edff6; }}
-    body {{ margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif; background:radial-gradient(circle at top left,rgba(54,229,143,.12),transparent 34%),var(--bg); color:var(--text); }}
-    header {{ position:sticky; top:0; z-index:2; backdrop-filter:blur(14px); background:rgba(5,11,20,.88); border-bottom:1px solid var(--line); }}
-    .wrap {{ max-width:1180px; margin:auto; padding:22px; }}
-    nav {{ display:flex; gap:12px; flex-wrap:wrap; margin-top:12px; }}
-    a {{ color:var(--cyan); text-decoration:none; }}
-    nav a,.button {{ min-height:44px; display:inline-flex; align-items:center; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,.04); }}
-    nav a.command-center-link,.button.command-center-link {{ color:#06101b; border-color:transparent; background:linear-gradient(135deg,var(--accent),var(--cyan)); font-weight:950; box-shadow:0 0 22px rgba(54,229,143,.22); }}
-    h1 {{ margin:.2rem 0; }}
-    .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; }}
-    .card {{ background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.025)); border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:0 24px 80px rgba(0,0,0,.25); overflow-wrap:break-word; }}
-    .metric {{ font-size:2rem; font-weight:800; color:var(--accent); }}
-    table {{ width:100%; border-collapse:collapse; overflow-wrap:break-word; }}
-    th,td {{ text-align:left; padding:10px; border-bottom:1px solid rgba(255,255,255,.08); }}
-    .muted {{ color:var(--muted); }}
-    .pill {{ display:inline-flex; align-items:center; gap:7px; margin:3px 4px 3px 0; padding:6px 9px; border:1px solid var(--line); border-radius:999px; color:#dffcff; background:rgba(110,223,246,.08); font-size:.86rem; }}
-    .status-dot {{ width:9px; height:9px; border-radius:999px; background:var(--accent); box-shadow:0 0 14px rgba(54,229,143,.75); display:inline-block; }}
-    .smart-time {{ color:rgba(217,247,255,.68); white-space:nowrap; }}
-    .time-dot {{ opacity:.45; margin:0 4px; }}
-    .status-warn {{ background:#ffd166; box-shadow:0 0 14px rgba(255,209,102,.8); }}
-    .status-danger {{ background:#ff6b8a; box-shadow:0 0 14px rgba(255,107,138,.8); }}
-    .department-card {{ position:relative; min-height:210px; }}
-    .department-card:before {{ content:""; position:absolute; inset:0; border-radius:14px; pointer-events:none; background:linear-gradient(120deg,transparent,rgba(110,223,246,.10),transparent); opacity:.65; }}
-    .mini-chart {{ height:8px; border-radius:999px; background:rgba(255,255,255,.08); overflow:hidden; }}
-    .mini-chart span {{ display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,var(--accent),var(--cyan)); }}
-    textarea {{ width:100%; min-height:90px; border-radius:10px; border:1px solid var(--line); background:#081323; color:var(--text); padding:10px; box-sizing:border-box; }}
-    input,button,select {{ width:100%; min-height:44px; border-radius:10px; border:1px solid var(--line); background:#081323; color:var(--text); padding:10px; box-sizing:border-box; }}
-    button {{ background:linear-gradient(135deg,#00e5ff,#36e58f); color:#031016; font-weight:800; cursor:pointer; }}
-    @media(max-width:720px) {{ .wrap {{ padding:16px; }} table {{ display:block; overflow-x:auto; }} }}
-  </style>
-</head>
-<body>
-  <header><div class="wrap"><strong>CoinPlotXAI Inc. Admin</strong><div class="muted">{clean_html((admin or {}).get('email') or '')}</div><nav>{nav}</nav></div></header>
-  <main class="wrap">{body}</main>
-  <script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=live-reels-only-20260702a" defer></script>
-  <script>window.CoinPilotTime?.hydrate(document);</script>
-</body>
-</html>"""
+
+    return (
+        "<!doctype html><html lang='en'><head>"
+        "<meta charset='utf-8'/>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'/>"
+        "<meta name='robots' content='noindex,nofollow'/>"
+        f"<title>{clean_html(title)} | CoinPlotXAI Admin</title>"
+        "<link rel='stylesheet' href='/static/css/pulse_design_system.css'/>"
+        "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
+        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722i'/>"
+        "</head><body>"
+        "<a class='ops-skip' href='#ops-main'>Skip to content</a>"
+        "<div class='ops-scrim-mobile' aria-hidden='true'></div>"
+        "<aside class='ops-sidebar' aria-label='Primary navigation'>"
+        "<div class='ops-brand'><span class='dot' aria-hidden='true'></span>"
+        "<span><b>PulseSoc</b><small>Operations Center</small></span></div>"
+        f"<nav class='ops-nav'>{sidebar_html}</nav>"
+        "</aside>"
+        "<div class='ops-main'>"
+        "<header class='ops-topbar'>"
+        "<button class='ops-menu-btn' type='button' aria-label='Toggle navigation'>&#9776;</button>"
+        "<div class='ops-search' role='button' tabindex='0' aria-label='Open command palette'>"
+        "<span class='q'>Jump to any section…</span><kbd>⌘K</kbd></div>"
+        "<div class='spacer'></div>"
+        f"{status_strip}"
+        "<div class='ops-whoami'>"
+        f"<span class='email'>{email}</span>"
+        f"<span class='ops-avatar' aria-hidden='true'>{clean_html(initial)}</span>"
+        "<a class='ops-logout' href='/admin/logout'>Logout</a></div>"
+        "</header>"
+        f"<main id='ops-main' class='ops-content wrap'>{body}</main>"
+        "</div>"
+        "<div class='ops-palette' role='dialog' aria-modal='true' aria-label='Command palette'>"
+        "<div class='ops-palette__scrim'></div>"
+        "<div class='ops-palette__box'>"
+        "<input class='ops-palette__input' type='text' placeholder='Search or jump to…' "
+        "autocomplete='off' spellcheck='false' aria-label='Command palette search'/>"
+        "<div class='ops-palette__list' role='listbox'></div>"
+        "<div class='ops-palette__hint'><span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>"
+        "<span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div>"
+        "</div></div>"
+        f"<script type='application/json' id='ops-nav-index'>{nav_index_json}</script>"
+        "<script src='/static/js/time.js'></script>"
+        "<script src='/static/js/pulseshell_bridge.js?v=pulseshell-20260630a' defer></script>"
+        "<script src='/static/notifications.js?v=live-reels-only-20260702a' defer></script>"
+        "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722i' defer></script>"
+        "<script>window.CoinPilotTime?.hydrate(document);</script>"
+        "</body></html>"
+    )
+
+
+@webhook_app.route("/admin/ops/status.json", methods=["GET"])
+def admin_ops_status_json():
+    # Lightweight live-status feed for the Operations Center top strip.
+    # Only reports states it can genuinely verify; unverified services are
+    # omitted and render neutral in the UI (no fabricated green lights).
+    admin = admin_login_required()
+    if not admin:
+        return jsonify({"error": "unauthorized"}), 401
+    services = {"api": "ok"}
+    heartbeats = {}
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.fetchone()
+        services["database"] = "ok"
+        try:
+            cur.execute("SELECT worker_name, last_seen_at FROM worker_heartbeats")
+            heartbeats = {str(r[0]): str(r[1] or "") for r in cur.fetchall()}
+        except Exception:
+            heartbeats = {}
+        conn.close()
+    except Exception:
+        services["database"] = "down"
+
+    def _fresh(ts, minutes=10):
+        if not ts:
+            return None
+        try:
+            return (datetime.now() - datetime.fromisoformat(ts)) <= timedelta(minutes=minutes)
+        except Exception:
+            return None
+
+    # Payments: honest config-presence signal (no live Stripe call in a poll).
+    if STRIPE_SECRET_KEY and STRIPE_PRICE_ID:
+        services["payments"] = "ok" if STRIPE_WEBHOOK_SECRET else "warn"
+    elif STRIPE_SECRET_KEY:
+        services["payments"] = "warn"
+
+    # AI: OpenAI credential presence.
+    if os.getenv("OPENAI_API_KEY"):
+        services["ai"] = "ok"
+    else:
+        services["ai"] = "warn"
+
+    # Calls (LiveKit): honest config-presence signal. Audio/video calling is
+    # fully dependent on the three LiveKit credentials; if any is missing the
+    # client never receives a usable token and every call fails silently, so
+    # surface that as "down" rather than leaving it invisible. All three present
+    # => ok; partial config => warn (misconfigured); none => down.
+    _lk_url = os.getenv("LIVEKIT_URL", "").strip()
+    _lk_key = os.getenv("LIVEKIT_API_KEY", "").strip()
+    _lk_secret = os.getenv("LIVEKIT_API_SECRET", "").strip()
+    if _lk_url and _lk_key and _lk_secret:
+        services["calls"] = "ok"
+    elif _lk_url or _lk_key or _lk_secret:
+        services["calls"] = "warn"
+    else:
+        services["calls"] = "down"
+
+    # Queues + Live: worker heartbeat freshness (stale workers degrade honestly).
+    any_worker = None
+    for name, ts in heartbeats.items():
+        f = _fresh(ts)
+        if f is True:
+            any_worker = True
+            break
+        if f is False and any_worker is None:
+            any_worker = False
+    if any_worker is not None:
+        services["queues"] = "ok" if any_worker else "warn"
+    tele = _fresh(heartbeats.get("telegram_worker"))
+    if tele is not None:
+        services["live"] = "ok" if tele else "warn"
+
+    return jsonify({"services": services, "ts": datetime.now().isoformat()})
+
+
+@webhook_app.route("/admin/ops/search.json", methods=["GET"])
+def admin_ops_search_json():
+    # Global entity search that powers the Operations Center command palette.
+    # Each entity type is gated by its own RBAC permission and degrades
+    # independently, so a viewer without users.view still gets an empty (not
+    # errored) result set and the palette keeps working for section jumps.
+    admin = admin_login_required()
+    if not admin:
+        return jsonify({"ok": False, "error": "Admin login required."}), 401
+    q = clean_html(request.args.get("q", "")).strip()
+    results = []
+    if len(q) >= 2:
+        if admin_has_permission(admin, "users.view"):
+            results.extend(_ops_search_users(q, limit=6))
+        if admin_has_permission(admin, "transactions.view"):
+            results.extend(_ops_search_payments(q, limit=6))
+    return jsonify({"ok": True, "query": q, "results": results})
+
+
+def _ops_search_users(q, limit=8):
+    like = f"%{q}%"
+    conn = db()
+    try:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT * FROM users
+            WHERE COALESCE(email,'') != '' AND (
+                email LIKE ? OR full_name LIKE ? OR display_name LIKE ?
+                OR COALESCE(phone,'') LIKE ?
+                OR CAST(user_id AS TEXT) LIKE ?
+                OR CAST(COALESCE(telegram_user_id,'') AS TEXT) LIKE ?
+                OR COALESCE(stripe_customer_id,'') LIKE ?
+            )
+            ORDER BY COALESCE(created_at, signup_time, '') DESC
+            LIMIT ?
+            """,
+            (like, like, like, like, like, like, like, int(limit)),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+    out = []
+    for row in rows:
+        name = row.get("full_name") or row.get("display_name") or row.get("username") or ""
+        status = (row.get("account_status") or "active").lower()
+        out.append({
+            "type": "user",
+            "icon": "◎",
+            "group": "Users",
+            "label": name or mask_email(row.get("email")),
+            "sublabel": f"{mask_email(row.get('email'))} · #{row.get('user_id')} · {status}",
+            "href": f"/admin/users/{row.get('user_id')}",
+        })
+    return out
+
+
+def _ops_search_payments(q, limit=6):
+    like = f"%{q}%"
+    conn = db()
+    try:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT p.*, u.email AS _email, u.full_name AS _name
+            FROM payment_records p
+            LEFT JOIN users u ON u.user_id = p.user_id
+            WHERE p.stripe_session_id LIKE ? OR p.stripe_customer_id LIKE ?
+                OR COALESCE(p.stripe_subscription_id,'') LIKE ?
+                OR COALESCE(p.invoice_id,'') LIKE ?
+                OR COALESCE(p.payment_intent_id,'') LIKE ?
+                OR COALESCE(p.stripe_event_id,'') LIKE ?
+                OR CAST(p.id AS TEXT) LIKE ?
+                OR CAST(COALESCE(p.user_id,'') AS TEXT) LIKE ?
+                OR COALESCE(u.email,'') LIKE ?
+            ORDER BY p.created_at DESC
+            LIMIT ?
+            """,
+            (like, like, like, like, like, like, like, like, like, int(limit)),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+    out = []
+    for row in rows:
+        try:
+            amount = "${:,.2f}".format(float(row.get("amount") or 0))
+        except Exception:
+            amount = str(row.get("amount") or "")
+        currency = (row.get("currency") or "").upper()
+        status = (row.get("status") or "").lower()
+        who = row.get("_name") or mask_email(row.get("_email")) or (f"user #{row.get('user_id')}" if row.get("user_id") else "unlinked")
+        created = (row.get("created_at") or "")[:10]
+        user_id = row.get("user_id")
+        out.append({
+            "type": "payment",
+            "icon": "$",
+            "group": "Payments",
+            "label": f"{amount} {currency} · {status}".strip(),
+            "sublabel": f"{who} · #{row.get('id')} · {created}",
+            "href": f"/admin/users/{user_id}" if user_id else "/admin/transactions",
+        })
+    return out
 
 
 @webhook_app.route("/admin/login", methods=["GET", "POST"])
@@ -13437,7 +14134,26 @@ def admin_dashboard_page():
     if not admin:
         return redirect(url_for("admin_login_page"))
     stats = admin_saas_summary()
-    cards = "".join(f"<div class='card'><div class='muted'>{label.replace('_',' ').title()}</div><div class='metric'>{value}</div></div>" for label, value in stats.items())
+
+    def _n(v):
+        try:
+            return f"{int(v):,}"
+        except Exception:
+            return clean_html(str(v))
+
+    def _money(v):
+        try:
+            return "${:,.2f}".format(float(v))
+        except Exception:
+            return clean_html(str(v))
+
+    def _stat_card(label, value, href=None, cls="", sub=""):
+        inner = f"<div class='muted'>{clean_html(label)}</div><div class='metric'>{_n(value)}</div>"
+        if sub:
+            inner += f"<div class='muted' style='font-size:.82rem'>{clean_html(sub)}</div>"
+        if href:
+            return f"<a class='card ops-stat-card {cls}' href='{href}'>{inner}</a>"
+        return f"<div class='card ops-stat-card {cls}'>{inner}</div>"
     missing = owner_profile_missing_fields(admin) if admin.get("role") == "owner" else []
     profile_prompt = ""
     if missing:
@@ -13457,12 +14173,72 @@ def admin_dashboard_page():
             "<p><a class='button command-center-link' href='/admin/command-center'>Backend Command Center</a></p>"
             "</div>"
         )
-    body = (
-        "<h1>Owner Dashboard</h1><p class='muted'>Live SaaS visibility across accounts, billing, emails, Telegram, analytics, and support.</p>"
-        f"{profile_prompt}{command_center_cta}<div class='grid'>{cards}</div>"
-        f"<form method='post' action='/admin/billing/recalculate' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Recalculate Billing Metrics</button><p class='muted'>Scans successful Stripe payment records and fixes any paid users still marked trialing.</p></form>"
+    attn_pay = "attention" if stats.get("failed_payments") else ""
+    attn_unm = "attention" if stats.get("unmatched") else ""
+    kpis = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>Total Users</div><div class='metric'>{_n(stats['total_users'])}</div>"
+        f"<div class='delta up'>+{_n(stats['new_today'])} today &middot; +{_n(stats['new_week'])} this week</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>MRR (est.)</div><div class='metric'>{_money(stats['mrr_estimate'])}</div>"
+        f"<div class='muted' style='font-size:.82rem'>{_n(stats['paid_pro'])} paying members</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Total Revenue</div><div class='metric'>{_money(stats['total_revenue'])}</div>"
+        "<div class='muted' style='font-size:.82rem'>lifetime succeeded payments</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Visitors &middot; 24h</div><div class='metric'>{_n(stats['visitors_24h'])}</div>"
+        f"<div class='muted' style='font-size:.82rem'>{_n(stats['events_today'])} events today</div></div>"
+        "</div>"
     )
-    return admin_page_html("Owner Dashboard", body, admin)
+    def _pct(num, den):
+        try:
+            return f"{(100.0 * float(num) / float(den)):.1f}%" if den else "—"
+        except Exception:
+            return "—"
+
+    paid = int(stats.get("paid_pro") or 0)
+    trials = int(stats.get("trial_users") or 0)
+    arpu = (float(stats.get("total_revenue") or 0) / paid) if paid else 0.0
+    exec_metrics = (
+        "<h2>Executive Metrics</h2>"
+        "<p class='muted' style='margin-top:-6px'>Derived from live counts &mdash; ratios, not new estimates.</p>"
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>ARPU (paying)</div><div class='metric'>{_money(arpu)}</div>"
+        "<div class='muted' style='font-size:.82rem'>lifetime revenue / paid member</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Paid Conversion</div><div class='metric'>{_pct(paid, stats.get('total_users'))}</div>"
+        f"<div class='muted' style='font-size:.82rem'>{_n(paid)} of {_n(stats.get('total_users'))} users</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Trial &rarr; Paid Share</div><div class='metric'>{_pct(paid, paid + trials)}</div>"
+        f"<div class='muted' style='font-size:.82rem'>paid vs. {_n(trials)} active trials</div></div>"
+        f"<div class='card ops-kpi{' ops-stat-card attention' if stats.get('failed_payments') else ''}'><div class='muted'>Payment Failure Rate</div><div class='metric'>{_pct(stats.get('failed_payments'), paid + int(stats.get('failed_payments') or 0))}</div>"
+        f"<div class='muted' style='font-size:.82rem'>{_n(stats.get('failed_payments'))} past-due / unpaid</div></div>"
+        "</div>"
+    )
+    subs = (
+        "<h2>Subscriptions</h2><div class='grid'>"
+        + _stat_card("Paid Pro", stats["paid_pro"], "/admin/users?filter=pro")
+        + _stat_card("Trial", stats["trial_users"], "/admin/users?filter=trial")
+        + _stat_card("Free", stats["free_users"], "/admin/users?filter=free")
+        + _stat_card("Active Pro Access", stats["active_pro_access"], "/admin/users")
+        + "</div>"
+    )
+    attention = (
+        "<h2>Needs attention</h2><div class='grid'>"
+        + _stat_card("Failed Payments", stats["failed_payments"], "/admin/transactions", cls=attn_pay, sub="past due / unpaid")
+        + _stat_card("Unmatched Payments", stats["unmatched"], "/admin/unmatched-payments", cls=attn_unm, sub="need reconciliation")
+        + "</div>"
+    )
+    activity = (
+        "<h2>Activity</h2><div class='grid'>"
+        + _stat_card("Emails &middot; today", stats["emails_today"], "/admin/emails")
+        + _stat_card("Events &middot; today", stats["events_today"], "/admin/pulse-analytics")
+        + _stat_card("Telegram Linked", stats["telegram_linked"], "/admin/telegram")
+        + _stat_card("Audit Entries", stats["audit_count"], "/admin/audit-logs")
+        + "</div>"
+    )
+    body = (
+        "<h1>Command Center</h1><p class='muted'>Live SaaS visibility across accounts, billing, emails, Telegram, analytics, and support.</p>"
+        f"{profile_prompt}{command_center_cta}"
+        f"{kpis}{exec_metrics}{subs}{attention}{activity}"
+        f"<form method='post' action='/admin/billing/recalculate' class='card' style='margin-top:18px'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Recalculate Billing Metrics</button><p class='muted'>Scans successful Stripe payment records and fixes any paid users still marked trialing.</p></form>"
+    )
+    return admin_page_html("Command Center", body, admin)
 
 
 @webhook_app.route("/admin/live-ops", methods=["GET"])
@@ -13883,7 +14659,7 @@ def admin_test_smtp_route():
     port_raw = (os.getenv("SMTP_PORT") or "587").strip()
     user = (os.getenv("SMTP_USER") or "").strip()
     password = os.getenv("SMTP_PASSWORD") or ""
-    sender = (os.getenv("MAIL_FROM_ADDRESS") or user or "noreply@pulsesoc.com").strip()
+    sender = (os.getenv("MAIL_FROM_ADDRESS") or os.getenv("BREVO_SENDER_EMAIL") or os.getenv("SUPPORT_EMAIL") or user or "support@pulsesoc.com").strip()
     recipient = (os.getenv("SMTP_TEST_RECIPIENT") or os.getenv("ADMIN_TEST_EMAIL") or os.getenv("SUPPORT_EMAIL") or "support@pulsesoc.com").strip()
     logging.info("SMTP_TEST_ATTEMPT admin_id=%s host=%s port=%s user_present=%s recipient=%s", admin.get("id"), host, port_raw, bool(user), mask_email(recipient))
     if not host or not port_raw:
@@ -13924,10 +14700,10 @@ def admin_test_smtp_route():
         return jsonify({"ok": False, "error_stage": "login", "error": f"SMTP login failed: {exc}"}), 500
     try:
         msg = EmailMessage()
-        msg["Subject"] = "CoinPilotXAI SMTP test"
+        msg["Subject"] = "CoinPlotXAI SMTP test"
         msg["From"] = sender
         msg["To"] = recipient
-        msg.set_content("CoinPilotXAI SMTP diagnostics succeeded. This confirms SMTP connection, login, and delivery path.")
+        msg.set_content("CoinPlotXAI SMTP diagnostics succeeded. This confirms SMTP connection, login, and delivery path.")
         smtp.send_message(msg)
         smtp.quit()
         logging.info("SMTP_TEST_SUCCESS admin_id=%s host=%s port=%s recipient=%s", admin.get("id"), host, port, mask_email(recipient))
@@ -14264,18 +15040,130 @@ def admin_transactions_page():
     admin = admin_login_required()
     if not admin:
         return redirect(url_for("admin_login_page"))
+    page, per = _ops_page_arg(default_per=50)
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT * FROM payment_records ORDER BY created_at DESC LIMIT 100")
+    cur.execute("SELECT COUNT(*) c FROM payment_records")
+    records_total = int(dict(cur.fetchone() or {}).get("c") or 0)
+    cur.execute("SELECT * FROM payment_records ORDER BY created_at DESC LIMIT ? OFFSET ?", (per, (page - 1) * per))
     records = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT * FROM subscriptions ORDER BY created_at DESC LIMIT 100")
     subs = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT COALESCE(status,'') st, COUNT(*) c, COALESCE(SUM(COALESCE(amount,0)),0) s FROM payment_records GROUP BY COALESCE(status,'')")
+    agg = [dict(r) for r in cur.fetchall()]
     conn.close()
-    rows = "".join(f"<tr><td>{r.get('user_id')}</td><td>{clean_html(str(r.get('amount') or ''))}</td><td>{clean_html(str(r.get('currency') or ''))}</td><td>{clean_html(str(r.get('status') or ''))}</td><td>{clean_html(str(r.get('created_at') or ''))}</td></tr>" for r in records)
-    sub_rows = "".join(f"<tr><td>{s.get('user_id')}</td><td>{clean_html(s.get('plan') or '')}</td><td>{clean_html(s.get('status') or '')}</td><td>{clean_html(s.get('stripe_subscription_id') or '')}</td><td>{clean_html(s.get('created_at') or '')}</td></tr>" for s in subs)
-    body = f"<h1>Transactions</h1><div class='card'><table><tr><th>User</th><th>Amount</th><th>Currency</th><th>Status</th><th>Date</th></tr>{rows}</table></div><h2>Subscriptions</h2><div class='card'><table><tr><th>User</th><th>Plan</th><th>Status</th><th>Stripe Subscription</th><th>Date</th></tr>{sub_rows}</table></div>"
+
+    succ_sum = succ_c = fail_c = refund_c = total_c = 0
+    for a in agg:
+        st = (a.get("st") or "").lower()
+        c = int(a.get("c") or 0)
+        s = float(a.get("s") or 0)
+        total_c += c
+        if st in ("succeeded", "paid", "complete", "completed"):
+            succ_sum += s
+            succ_c += c
+        elif "refund" in st:
+            refund_c += c
+        elif st in ("failed", "unpaid", "past_due", "canceled", "cancelled"):
+            fail_c += c
+
+    def _m(v, ccy=""):
+        try:
+            base = "${:,.2f}".format(float(v or 0))
+        except Exception:
+            return clean_html(str(v or ""))
+        return base + (f" {clean_html(ccy).upper()}" if ccy else "")
+
+    def _pill(status):
+        s = (status or "").lower()
+        if s in ("failed", "unpaid", "past_due", "canceled", "cancelled"):
+            dot = "status-dot status-danger"
+        elif s in ("succeeded", "paid", "active", "complete", "completed"):
+            dot = "status-dot"
+        else:
+            dot = "status-dot status-warn"
+        return f"<span class='pill'><span class='{dot}'></span>{clean_html(status or '—')}</span>"
+
+    def _user_cell(uid):
+        if not uid:
+            return "<td class='muted'>unlinked</td>"
+        return f"<td><a href='/admin/users/{clean_html(str(uid))}'>#{clean_html(str(uid))}</a></td>"
+
+    tiles = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>Succeeded Volume</div><div class='metric'>{_m(succ_sum)}</div>"
+        f"<div class='muted' style='font-size:.82rem'>{succ_c:,} payments</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Total Records</div><div class='metric'>{total_c:,}</div>"
+        "<div class='muted' style='font-size:.82rem'>all payment events</div></div>"
+        f"<div class='card ops-kpi ops-stat-card{' attention' if fail_c else ''}'><div class='muted'>Failed / Unpaid</div><div class='metric'>{fail_c:,}</div>"
+        "<div class='muted' style='font-size:.82rem'>needs review</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Refunds</div><div class='metric'>{refund_c:,}</div>"
+        "<div class='muted' style='font-size:.82rem'>refunded records</div></div>"
+        "</div>"
+    )
+
+    rows = "".join(
+        "<tr>"
+        + _user_cell(r.get("user_id"))
+        + f"<td>{_m(r.get('amount'), r.get('currency') or '')}</td>"
+        + f"<td class='muted'>{clean_html(r.get('payment_type') or '')}</td>"
+        + f"<td>{_pill(r.get('status'))}</td>"
+        + f"<td class='muted'>{clean_html(str(r.get('created_at') or ''))}</td>"
+        + "</tr>"
+        for r in records
+    )
+    sub_rows = "".join(
+        "<tr>"
+        + _user_cell(s.get("user_id"))
+        + f"<td>{clean_html(s.get('plan') or '')}</td>"
+        + f"<td>{_pill(s.get('status'))}</td>"
+        + f"<td class='muted'>{clean_html(s.get('stripe_subscription_id') or '')}</td>"
+        + f"<td class='muted'>{clean_html(s.get('created_at') or '')}</td>"
+        + "</tr>"
+        for s in subs
+    )
+    if not rows:
+        rows = "<tr><td colspan='5' class='muted'>No payment records on this page.</td></tr>"
+    pager = _ops_pager("/admin/transactions", page, per, records_total, {"per": per})
+    body = (
+        "<h1>Transactions</h1>"
+        "<p class='muted'>Payment records and subscriptions. Volume tiles aggregate the full ledger; the payments table is paginated.</p>"
+        f"{tiles}"
+        "<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'><h2 style='margin-right:auto'>Payments</h2><a class='button' href='/admin/transactions/export.csv'>Export CSV</a></div>"
+        f"{pager}"
+        f"<div class='card'><table><tr><th>User</th><th>Amount</th><th>Type</th><th>Status</th><th>Date</th></tr>{rows}</table></div>"
+        f"{pager}"
+        "<h2>Subscriptions</h2>"
+        "<p class='muted' style='margin-top:-6px'>100 most recent.</p>"
+        f"<div class='card'><table><tr><th>User</th><th>Plan</th><th>Status</th><th>Stripe Subscription</th><th>Date</th></tr>{sub_rows}</table></div>"
+    )
     return admin_page_html("Transactions", body, admin)
+
+
+@webhook_app.route("/admin/transactions/export.csv", methods=["GET"])
+def admin_transactions_export_csv():
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cols = ["id", "user_id", "amount", "currency", "status", "payment_type",
+            "stripe_customer_id", "stripe_subscription_id", "invoice_id", "created_at"]
+    cur.execute(f"SELECT {', '.join(cols)} FROM payment_records ORDER BY created_at DESC")
+    data = cur.fetchall()
+    conn.close()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(cols)
+    writer.writerows(data)
+    try:
+        log_admin_audit(admin.get("id"), "admin_transactions_exported", "payment", "", {"count": len(data)})
+    except Exception:
+        pass
+    return Response(output.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=pulsesoc-transactions.csv"})
 
 
 def ensure_email_logs_reporting_schema(cur, conn):
@@ -14526,10 +15414,11 @@ def admin_emails_page():
         <div class="email-admin-card"><strong>API key source</strong><span>{clean_html(brevo_diag.get('api_key_source') or 'n/a')}</span></div>
         <div class="email-admin-card"><strong>Sender source</strong><span>{clean_html(brevo_diag.get('sender_email_source') or 'n/a')}</span></div>
         <div class="email-admin-card"><strong>Sender domain</strong><span>{clean_html(brevo_diag.get('sender_domain') or 'n/a')}</span></div>
+        <div class="email-admin-card"><strong>Reply-to configured</strong><span>{'Yes' if brevo_diag.get('reply_to_email_masked') else 'No'}</span></div>
       </div>
-      <p class="muted">Sender: {clean_html(brevo_diag.get('sender_email_masked') or 'not available')} · Public links use: {clean_html(brevo_diag.get('public_base_url') or '')}</p>
+      <p class="muted">Sender: {clean_html(brevo_diag.get('sender_email_masked') or 'not available')} · Reply-to: {clean_html(brevo_diag.get('reply_to_email_masked') or 'not available')} · Public links use: {clean_html(brevo_diag.get('public_base_url') or '')}</p>
       <p><a class="button" href="/api/admin/email/outbound-ip">Check Railway Outbound IP</a></p>
-      {'<p class="muted">PulseSoc is using its built-in noreply sender fallback. If Brevo rejects this sender, set BREVO_SENDER_EMAIL or DEFAULT_FROM_EMAIL in Railway to a verified Brevo sender.</p>' if brevo_diag.get('using_default_sender') else ''}
+      {'<p class="muted">PulseSoc is using its built-in support sender fallback. Set BREVO_SENDER_EMAIL, BREVO_REPLY_TO, and DEFAULT_FROM_EMAIL in Railway to support@pulsesoc.com after the sender is verified in Brevo.</p>' if brevo_diag.get('using_default_sender') else ''}
     </div>
     <div class="card">
       <h2>Email QA Tools</h2>
@@ -14630,6 +15519,10 @@ def api_admin_email_diagnostics():
         "BREVO_SENDER_EMAIL": bool(os.getenv("BREVO_SENDER_EMAIL")),
         "BREVO_SENDER_NAME": bool(os.getenv("BREVO_SENDER_NAME")),
         "SUPPORT_EMAIL": bool(os.getenv("SUPPORT_EMAIL")),
+        "PUBLIC_SUPPORT_EMAIL": bool(os.getenv("PUBLIC_SUPPORT_EMAIL")),
+        "BREVO_REPLY_TO": bool(os.getenv("BREVO_REPLY_TO")),
+        "COMPANY_NAME": bool(os.getenv("COMPANY_NAME")),
+        "PRODUCT_NAME": bool(os.getenv("PRODUCT_NAME")),
         "SECURITY_EMAIL": bool(os.getenv("SECURITY_EMAIL")),
         "PUBLIC_BASE_URL": bool(os.getenv("PUBLIC_BASE_URL")),
         "APP_BASE_URL": bool(os.getenv("APP_BASE_URL")),
@@ -14644,6 +15537,8 @@ def api_admin_email_diagnostics():
         "missing_fields": diag.get("missing_fields") or [],
         "sender_email_masked": diag.get("sender_email_masked"),
         "sender_name": diag.get("sender_name"),
+        "reply_to_email_masked": diag.get("reply_to_email_masked"),
+        "reply_to_email_source": diag.get("reply_to_email_source"),
         "sender_email_source": diag.get("sender_email_source"),
         "sender_name_source": diag.get("sender_name_source"),
         "sender_domain": diag.get("sender_domain"),
@@ -15129,7 +16024,7 @@ def admin_unmatched_payments_page():
     rows_data = [dict(row) for row in cur.fetchall()]
     conn.close()
     rows = "".join(f"<tr><td>{clean_html(str(r.get('stripe_event_id') or ''))}</td><td>{clean_html(str(r.get('customer_email') or ''))}</td><td>{clean_html(str(r.get('amount') or ''))}</td><td>{clean_html(str(r.get('reason') or ''))}</td><td>{clean_html(str(r.get('created_at') or ''))}</td></tr>" for r in rows_data)
-    body = f"<h1>Unmatched Payments</h1><p class='muted'>Payments Stripe confirmed but CoinPilotXAI could not safely match to a website account.</p><div class='card'><table><tr><th>Event</th><th>Email</th><th>Amount</th><th>Reason</th><th>Date</th></tr>{rows}</table></div>"
+    body = f"<h1>Unmatched Payments</h1><p class='muted'>Payments Stripe confirmed but CoinPlotXAI could not safely match to a website account.</p><div class='card'><table><tr><th>Event</th><th>Email</th><th>Amount</th><th>Reason</th><th>Date</th></tr>{rows}</table></div>"
     return admin_page_html("Unmatched Payments", body, admin)
 
 
@@ -15139,18 +16034,95 @@ def admin_audit_logs_page():
     admin, denied = require_admin_page("audit.view")
     if denied:
         return denied
+    action_q = clean_html(request.args.get("action", "")).strip()
+    page, per = _ops_page_arg(default_per=50)
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT * FROM admin_audit_logs ORDER BY created_at DESC LIMIT 150")
+    cur.execute("SELECT COUNT(*) c, COUNT(DISTINCT admin_email) a, SUM(CASE WHEN action LIKE '%permission_denied' THEN 1 ELSE 0 END) d, SUM(CASE WHEN action LIKE '%login%' THEN 1 ELSE 0 END) l FROM admin_audit_logs")
+    agg = dict(cur.fetchone() or {})
+    if action_q:
+        cur.execute("SELECT COUNT(*) c FROM admin_audit_logs WHERE action LIKE ?", (f"%{action_q}%",))
+        trail_total = int(dict(cur.fetchone() or {}).get("c") or 0)
+        cur.execute("SELECT * FROM admin_audit_logs WHERE action LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?", (f"%{action_q}%", per, (page - 1) * per))
+    else:
+        trail_total = int(agg.get("c") or 0)
+        cur.execute("SELECT * FROM admin_audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?", (per, (page - 1) * per))
     logs = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT * FROM admin_activity_logs ORDER BY created_at DESC LIMIT 150")
     activity = [dict(row) for row in cur.fetchall()]
     conn.close()
-    rows = "".join(f"<tr><td>{clean_html(r.get('admin_email') or '')}</td><td>{clean_html(r.get('action') or '')}</td><td>{clean_html(r.get('target_type') or '')}</td><td>{clean_html(r.get('target_id') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in logs)
-    activity_rows = "".join(f"<tr><td>{a.get('admin_user_id') or ''}</td><td>{clean_html(a.get('action') or '')}</td><td>{clean_html(a.get('route') or '')}</td><td>{clean_html(a.get('target_type') or '')}</td><td>{clean_html(a.get('created_at') or '')}</td></tr>" for a in activity)
-    body = f"<h1>Audit Logs</h1><p class='muted'>Owner, super admin, and security-only review of administrative actions.</p><div class='card'><h2>Audit Trail</h2><table><tr><th>Admin</th><th>Action</th><th>Target</th><th>ID</th><th>Date</th></tr>{rows}</table></div><div class='card'><h2>Activity Stream</h2><table><tr><th>Admin ID</th><th>Action</th><th>Route</th><th>Target</th><th>Date</th></tr>{activity_rows or '<tr><td colspan=5>No activity yet.</td></tr>'}</table></div>"
+
+    tiles = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>Audit Entries</div><div class='metric'>{int(agg.get('c') or 0):,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Distinct Admins</div><div class='metric'>{int(agg.get('a') or 0):,}</div></div>"
+        f"<div class='card ops-kpi ops-stat-card{' attention' if int(agg.get('d') or 0) else ''}'><div class='muted'>Permission Denials</div><div class='metric'>{int(agg.get('d') or 0):,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Login Events</div><div class='metric'>{int(agg.get('l') or 0):,}</div></div>"
+        "</div>"
+    )
+    audit_clear_link = '<a class="button" href="/admin/audit-logs" style="max-width:90px">Clear</a>' if action_q else ''
+    search_form = (
+        "<form method='get' action='/admin/audit-logs' class='card' style='display:flex;gap:10px;align-items:center;margin-bottom:14px'>"
+        f"<input type='text' name='action' value='{clean_html(action_q)}' placeholder='Filter by action (e.g. permission_denied, login, grant)…' style='flex:1'/>"
+        "<button type='submit' style='max-width:130px'>Filter</button>"
+        f"{audit_clear_link}"
+        "</form>"
+    )
+
+    def _action_pill(action):
+        a = (action or "").lower()
+        if a.endswith("permission_denied") or "denied" in a or "fail" in a:
+            dot = "status-dot status-danger"
+        elif "login" in a or "success" in a or "approved" in a or "grant" in a:
+            dot = "status-dot"
+        else:
+            dot = "status-dot status-warn"
+        return f"<span class='pill'><span class='{dot}'></span>{clean_html(action or '')}</span>"
+
+    rows = "".join(
+        f"<tr><td class='muted'>{clean_html(r.get('admin_email') or ('#'+str(r.get('admin_user_id'))) or '')}</td><td>{_action_pill(r.get('action'))}</td><td class='muted'>{clean_html(r.get('target_type') or '')}</td><td class='muted'>{clean_html(str(r.get('target_id') or ''))}</td><td class='muted'>{clean_html(r.get('created_at') or '')}</td></tr>"
+        for r in logs
+    ) or "<tr><td colspan='5' class='muted'>No matching audit entries.</td></tr>"
+    activity_rows = "".join(f"<tr><td class='muted'>{a.get('admin_user_id') or ''}</td><td>{clean_html(a.get('action') or '')}</td><td class='muted'>{clean_html(a.get('route') or '')}</td><td class='muted'>{clean_html(a.get('target_type') or '')}</td><td class='muted'>{clean_html(a.get('created_at') or '')}</td></tr>" for a in activity)
+    body = (
+        "<h1>Audit Logs</h1>"
+        "<p class='muted'>Owner, super admin, and security-only review of administrative actions. Denials are highlighted.</p>"
+        f"{tiles}{search_form}"
+        f"<div style='margin:0 0 12px'><a class='button' href='/admin/audit-logs/export.csv{('?action=' + quote(action_q)) if action_q else ''}'>Export CSV</a></div>"
+        f"{_ops_pager('/admin/audit-logs', page, per, trail_total, {'action': action_q, 'per': per})}"
+        f"<div class='card'><h2 style='margin-top:0'>Audit Trail <span class='muted' style='font-size:.9rem'>({len(logs)} shown)</span></h2><table><tr><th>Admin</th><th>Action</th><th>Target</th><th>ID</th><th>Date</th></tr>{rows}</table></div>"
+        f"<div class='card'><h2 style='margin-top:0'>Activity Stream</h2><table><tr><th>Admin ID</th><th>Action</th><th>Route</th><th>Target</th><th>Date</th></tr>{activity_rows or '<tr><td colspan=5 class=muted>No activity yet.</td></tr>'}</table></div>"
+    )
     return admin_page_html("Audit Logs", body, admin)
+
+
+@webhook_app.route("/admin/audit-logs/export.csv", methods=["GET"])
+def admin_audit_logs_export_csv():
+    admin, denied = require_admin_page("audit.view")
+    if denied:
+        return denied
+    action_q = clean_html(request.args.get("action", "")).strip()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cols = ["id", "admin_email", "action", "target_type", "target_id", "ip_hash", "created_at"]
+    if action_q:
+        cur.execute(f"SELECT {', '.join(cols)} FROM admin_audit_logs WHERE action LIKE ? ORDER BY created_at DESC", (f"%{action_q}%",))
+    else:
+        cur.execute(f"SELECT {', '.join(cols)} FROM admin_audit_logs ORDER BY created_at DESC")
+    data = cur.fetchall()
+    conn.close()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(cols)
+    writer.writerows(data)
+    try:
+        log_admin_audit(admin.get("id"), "admin_audit_exported", "audit", "", {"count": len(data), "action": action_q})
+    except Exception:
+        pass
+    return Response(output.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=pulsesoc-audit-logs.csv"})
 
 
 @webhook_app.route("/admin/profile", methods=["GET", "POST"])
@@ -15363,6 +16335,13 @@ def pulse_ads_json_payload():
 
 
 def pulse_ads_verify_write():
+    # Native app requests authenticate with a signed Authorization: Bearer token.
+    # Those are inherently CSRF-safe (a cross-site attacker cannot attach the
+    # custom header), so a verified mobile access token satisfies the write gate
+    # without a form/header CSRF token. The ad endpoints resolve the user before
+    # calling this, which is what sets g.mobile_access_user_id.
+    if getattr(g, "mobile_access_user_id", None):
+        return True
     session_token = session.get("csrf_token")
     header_token = request.headers.get("X-CSRF-Token") or request.headers.get("X-CSRFToken")
     return bool(
@@ -16160,12 +17139,13 @@ def admin_pulse_ads_review_board_page():
             f"<form method='post' action='/admin/pulse-ads-review-board/action'><input type='hidden' name='csrf_token' value='{token}'><input type='hidden' name='campaign_id' value='{campaign_id}'><input type='hidden' name='action' value='suspend'><input name='reason' placeholder='Suspend reason'><button> Suspend Campaign</button></form>"
             "</td></tr>"
         )
+    ads_rows_html = rows or '<tr><td colspan="6" class="muted">No ads awaiting review.</td></tr>'
     body = (
         "<h1>PulseSoc Ads Review Board</h1>"
         "<p class='muted'>Human review, moderation state, wallet finance visibility, and safe platform controls.</p>"
         f"{status_cards}"
         "<div class='card'><h2>Pending and Recent Reviews</h2><table><tr><th>Advertiser</th><th>Creative</th><th>Uploaded Media</th><th>Status</th><th>Risk</th><th>Actions</th></tr>"
-        f"{rows or '<tr><td colspan=\"6\" class=\"muted\">No ads awaiting review.</td></tr>'}</table></div>"
+        f"{ads_rows_html}</table></div>"
     )
     return admin_page_html("Ads Review Board", body, admin)
 
@@ -16615,6 +17595,8 @@ def admin_user_detail_page(user_id):
     cur.execute("SELECT stripe_event_id, stripe_session_id, stripe_customer_id, stripe_subscription_id, invoice_id, amount, currency, status, email_sent, pro_activated_at, stripe_payload, created_at FROM payment_records WHERE user_id=? ORDER BY id DESC LIMIT 30", (user_id,))
     payments = [dict(row) for row in cur.fetchall()]
     latest_payment = payments[0] if payments else {}
+    cur.execute("SELECT COALESCE(SUM(COALESCE(amount,0)),0) s, COUNT(*) c FROM payment_records WHERE user_id=? AND lower(COALESCE(status,''))='succeeded'", (user_id,))
+    _rev = dict(cur.fetchone() or {})
     cur.execute("SELECT stripe_event_id, event_type, status, created_at, processed_at FROM stripe_events WHERE user_id=? ORDER BY id DESC LIMIT 1", (user_id,))
     latest_stripe_event = dict(cur.fetchone() or {})
     cur.execute("SELECT email_type, template, status, stripe_event_id, payment_id, created_at, sent_at, error_message FROM payment_email_logs WHERE user_id=? ORDER BY id DESC LIMIT 1", (user_id,))
@@ -16662,8 +17644,28 @@ def admin_user_detail_page(user_id):
             "Last login": user.get("last_login_at"),
         }.items()
     )
-    body = (
-        f"<h1>User #{user_id}</h1><p><a class='button' href='/admin/users/{user_id}/edit'>Edit User</a></p>"
+    _status = (user.get("account_status") or "active").lower()
+    _sdot = "status-dot status-danger" if _status in ("restricted", "suspended", "deleted") else "status-dot" if _status in ("active", "") else "status-dot status-warn"
+    _rev_amt = "${:,.2f}".format(float(_rev.get("s") or 0))
+    _header = (
+        "<div class='card ops-userhead'>"
+        "<div class='ops-userhead__id'>"
+        f"<div class='ops-userhead__name'>{clean_html(user.get('full_name') or user.get('display_name') or ('User #' + str(user_id)))}</div>"
+        f"<div class='muted'>{clean_html(mask_email(user.get('email')))} &middot; #{user_id}</div>"
+        "</div>"
+        "<div class='ops-userhead__stats'>"
+        f"<div class='ops-userhead__stat'><span class='muted'>Status</span><span class='pill'><span class='{_sdot}'></span>{clean_html(user.get('account_status') or 'active')}</span></div>"
+        f"<div class='ops-userhead__stat'><span class='muted'>Class</span><strong>{clean_html(paid_class)}</strong></div>"
+        f"<div class='ops-userhead__stat'><span class='muted'>Lifetime Revenue</span><strong>{_rev_amt}</strong><span class='muted' style='font-size:.78rem'>{int(_rev.get('c') or 0)} payments</span></div>"
+        f"<div class='ops-userhead__stat'><span class='muted'>Plan</span><strong>{clean_html(user.get('plan') or 'free')}</strong></div>"
+        "</div>"
+        f"<div class='ops-userhead__actions'><a class='button' href='/admin/users/{user_id}/edit'>Edit User</a></div>"
+        "</div>"
+    )
+    owner_repair_form = (
+        '<form method="post" action="/admin/users/' + str(user_id) + '/set-password" class="card"><input type="hidden" name="csrf_token" value="' + get_csrf_token() + '" /><h2>Owner Access Repair</h2><p class="muted">Sets a temporary password, activates the account, and optionally confirms email. The password is never logged.</p><label>Temporary password<input name="password" type="password" autocomplete="new-password" required minlength="8" /></label><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="confirm_email" value="1" checked /> Confirm email and activate account</label><button type="submit">Set Temporary Password</button></form>'
+    ) if admin_is_owner_level(admin) else ''
+    _actions = (
         f"<form method='post' action='/admin/users/{user_id}/convert-paid-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Convert Trial to PulseSoc Premium</button><p class='muted'>Use only after confirming a successful Stripe payment for this user.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/force-sync-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Force Sync Premium From Stripe/Payment</button><p class='muted'>Repairs this user only when a successful local payment record or Stripe event exists.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/retry-stripe-session' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><label>Stripe Session ID<input name='session_id' value='{clean_html(user.get('stripe_session_id') or latest_checkout_attempt.get('stripe_session_id') or latest_payment.get('stripe_session_id') or '')}' placeholder='cs_live_...' /></label><button type='submit'>Retry Stripe Session Lookup</button><p class='muted'>Retrieves the checkout session from Stripe and activates PulseSoc Premium if paid.</p></form>"
@@ -16672,7 +17674,11 @@ def admin_user_detail_page(user_id):
         f"<form method='post' action='/admin/users/{user_id}/resend-confirmation' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Resend Account Confirmation Email</button><p class='muted'>Generates a fresh verification link for unconfirmed accounts.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/send-reset-email' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Send Password Reset Email</button><p class='muted'>Sends a fresh password reset link to the user's account email.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/manual-confirm-email' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Emergency Confirm Email</button><p class='muted'>Owner-only fallback after identity/support review. Use only when email delivery is confirmed externally.</p></form>"
-        f"{'<form method=\"post\" action=\"/admin/users/' + str(user_id) + '/set-password\" class=\"card\"><input type=\"hidden\" name=\"csrf_token\" value=\"' + get_csrf_token() + '\" /><h2>Owner Access Repair</h2><p class=\"muted\">Sets a temporary password, activates the account, and optionally confirms email. The password is never logged.</p><label>Temporary password<input name=\"password\" type=\"password\" autocomplete=\"new-password\" required minlength=\"8\" /></label><label style=\"display:flex;gap:8px;align-items:center\"><input type=\"checkbox\" name=\"confirm_email\" value=\"1\" checked /> Confirm email and activate account</label><button type=\"submit\">Set Temporary Password</button></form>' if admin_is_owner_level(admin) else ''}"
+        f"{owner_repair_form}"
+    )
+    body = (
+        f"{_header}"
+        f"<details class='ops-group ops-actions'><summary>Account Actions &amp; Repair Tools</summary><div class='grid'>{_actions}</div></details>"
         f"<h2>Backend Premium Status</h2><div class='grid'>{diagnostic}</div>"
         f"<div class='grid'>{summary}</div>"
         f"<h2>Payment History</h2><div class='card'>{admin_rows_table(payments, [('amount','Amount'),('currency','Currency'),('status','Status'),('stripe_event_id','Event'),('invoice_id','Invoice'),('created_at','Date')])}</div>"
@@ -16961,6 +17967,3108 @@ def admin_billing_recalculate_page():
     return redirect(url_for("admin_dashboard_page"))
 
 
+@webhook_app.route("/admin/business-os/reconcile", methods=["POST"])
+def admin_business_os_reconcile():
+    """Owner-only, flag-gated trigger for the Business OS payments reconciliation
+    worker. Replays already-persisted, signature-verified webhook events from the
+    durable inbox into the canonical ledger. Idempotent — safe to call repeatedly,
+    and it moves no *new* money on its own; it only settles events Stripe already
+    confirmed. Returns the sweep summary as JSON."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if os.getenv("BUSINESS_OS_LEDGER", "").strip().lower() not in ("1", "true", "on", "yes"):
+        return jsonify({"ok": False, "error": "BUSINESS_OS_LEDGER flag is off."}), 409
+    token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
+    if not token or token != session.get("csrf_token"):
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    provider = (request.args.get("provider") or "stripe").strip() or "stripe"
+    try:
+        from services.business_os.payments import reconcile_worker as _busos_worker
+        summary = _busos_worker.run_once(provider)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("BUSINESS_OS reconcile failed provider=%s", provider)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    log_admin_audit(admin["id"], "business_os_reconcile", "payments", provider, summary)
+    return jsonify({"ok": True, "summary": summary})
+
+
+def _business_os_entitlements_enabled():
+    """True when the canonical entitlement system is active (shadow or canonical).
+
+    Off (the default) means the whole slice is dark: admin write endpoints refuse,
+    so we never mutate canonical grants a disabled system won't read."""
+    mode = (os.getenv("BUSINESS_OS_ENTITLEMENTS", "") or "").strip().lower()
+    return mode in ("shadow", "canonical", "1", "true", "on", "yes")
+
+
+def _business_os_ent_csrf_ok():
+    token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
+    return bool(token) and token == session.get("csrf_token")
+
+
+@webhook_app.route("/admin/business-os/entitlements/grant", methods=["POST"])
+def admin_business_os_entitlement_grant():
+    """Owner-only, flag-gated, CSRF-protected manual entitlement grant.
+
+    Requires a human-readable ``reason``. Captures the canonical decision
+    before and after the change and records both the entitlement service's own
+    audit row and an admin audit-trail entry (with before/after). Reversible via
+    the revoke endpoint; never touches financial state."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_entitlements_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ENTITLEMENTS flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+
+    subject_id = (request.form.get("subject_id") or request.form.get("user_id") or "").strip()
+    subject_type = (request.form.get("subject_type") or "user").strip() or "user"
+    key = (request.form.get("entitlement_key") or "").strip()
+    source = (request.form.get("source") or "admin").strip() or "admin"
+    reason = (request.form.get("reason") or "").strip()
+    expires_at = (request.form.get("expires_at") or "").strip() or None
+    if not subject_id or not key:
+        return jsonify({"ok": False, "error": "subject_id and entitlement_key are required."}), 400
+    if not reason:
+        return jsonify({"ok": False, "error": "reason is required."}), 400
+
+    try:
+        from services.business_os.entitlements import service as _ent
+        before = _ent.explain_entitlement(subject_id, key, subject_type=subject_type)
+        grant = _ent.grant_entitlement(
+            subject_id, key, source=source, subject_type=subject_type,
+            expires_at=expires_at, created_by=f"admin:{admin['id']}", reason=reason,
+            audit_reference=f"admin_grant:{admin['id']}",
+        )
+        after = _ent.explain_entitlement(subject_id, key, subject_type=subject_type)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("BUSINESS_OS entitlement grant failed key=%s subject=%s", key, subject_id)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    log_admin_audit(admin["id"], "business_os_entitlement_grant", subject_type, subject_id,
+                    {"key": key, "source": source, "reason": reason,
+                     "before": before, "after": after})
+    return jsonify({"ok": True, "grant": grant, "before": before, "after": after})
+
+
+@webhook_app.route("/admin/business-os/entitlements/revoke", methods=["POST"])
+def admin_business_os_entitlement_revoke():
+    """Owner-only, flag-gated, CSRF-protected manual entitlement revoke.
+
+    Requires a ``reason``. Records before/after canonical state in both the
+    entitlement audit table and the admin audit trail. Idempotent."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_entitlements_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ENTITLEMENTS flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+
+    subject_id = (request.form.get("subject_id") or request.form.get("user_id") or "").strip()
+    subject_type = (request.form.get("subject_type") or "user").strip() or "user"
+    key = (request.form.get("entitlement_key") or "").strip()
+    reason = (request.form.get("reason") or "").strip()
+    source = (request.form.get("source") or "").strip() or None
+    if not subject_id or not key:
+        return jsonify({"ok": False, "error": "subject_id and entitlement_key are required."}), 400
+    if not reason:
+        return jsonify({"ok": False, "error": "reason is required."}), 400
+
+    try:
+        from services.business_os.entitlements import service as _ent
+        before = _ent.explain_entitlement(subject_id, key, subject_type=subject_type)
+        result = _ent.revoke_entitlement(
+            subject_id, key, reason=reason, subject_type=subject_type,
+            source=source, actor=f"admin:{admin['id']}",
+        )
+        after = _ent.explain_entitlement(subject_id, key, subject_type=subject_type)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("BUSINESS_OS entitlement revoke failed key=%s subject=%s", key, subject_id)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    log_admin_audit(admin["id"], "business_os_entitlement_revoke", subject_type, subject_id,
+                    {"key": key, "reason": reason, "result": result,
+                     "before": before, "after": after})
+    return jsonify({"ok": True, "result": result, "before": before, "after": after})
+
+
+@webhook_app.route("/admin/business-os/entitlements/explain", methods=["GET"])
+def admin_business_os_entitlement_explain():
+    """Owner-only read: full precedence trace for one subject+key. Read-only, so
+    no CSRF/flag gate beyond owner auth; returns the same structure the service's
+    ``explain_entitlement`` produces plus the current facade mode."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    subject_id = (request.args.get("subject_id") or request.args.get("user_id") or "").strip()
+    subject_type = (request.args.get("subject_type") or "user").strip() or "user"
+    key = (request.args.get("entitlement_key") or "").strip()
+    if not subject_id or not key:
+        return jsonify({"ok": False, "error": "subject_id and entitlement_key are required."}), 400
+    try:
+        from services.business_os.entitlements import service as _ent
+        from services.business_os.entitlements import facade as _facade
+        trace = _ent.explain_entitlement(subject_id, key, subject_type=subject_type)
+        trace["facade_mode"] = _facade.get_mode()
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("BUSINESS_OS entitlement explain failed key=%s subject=%s", key, subject_id)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify({"ok": True, "explain": trace})
+
+
+# =====================================================================
+# Business OS — Advertising vertical, slice 2 (canonical HTTP surface).
+#
+# These routes are a NEW, clearly-separated canonical surface under
+# /api/business-os/advertising/* (advertiser) and /admin/business-os/advertising/*
+# (admin). They do NOT redirect, replace, or touch the legacy advertiser portal
+# (pulse_ads_service / /api/pulse/ads/*), and they move no money, spend, delivery,
+# or impressions. Owner identity is always derived from the authenticated
+# session/token — never from the request body. When BUSINESS_OS_ADVERTISING is off
+# the whole surface is dark (404), so no partial canonical path is exposed and
+# legacy behaviour is untouched. All decision logic lives in the importable
+# controller services.business_os.advertising.api; these are thin adapters.
+# =====================================================================
+def _business_os_advertising_enabled():
+    return (os.getenv("BUSINESS_OS_ADVERTISING", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+def _bo_ad_hold_context(user):
+    """Fresh account state for account-hold precedence (never a stale cache)."""
+    return {
+        "account_status": user.get("account_status"),
+        "access_enabled": user.get("access_enabled"),
+    }
+
+
+def _bo_ad_reply(result):
+    status, body = result
+    return jsonify(body), status
+
+
+def _bo_ad_request_ref():
+    try:
+        return request.headers.get("X-Request-Id") or request.headers.get("X-Request-ID") or ""
+    except Exception:
+        return ""
+
+
+def _bo_ad_attach_sponsored(viewer_user_id, placement, result):
+    """Best-effort injection of ONE canonical sponsored placement into a live
+    Feed/Reels response. Advertising is a strangler surface layered beside the
+    organic feed, so this is flag-gated and fully defensive: when the flag is off
+    (default) or anything goes wrong, the organic response is left unchanged and
+    NOTHING is raised — a feed poll must never fail because advertising had a
+    problem. The injected value is the delivery pipeline's already client-safe
+    projection (label only; never ledger ids, private targeting, or advertiser
+    identity). 'No ad' is a normal outcome and simply leaves ``sponsored`` absent.
+    Returns the (possibly unchanged) result dict for convenience."""
+    if not isinstance(result, dict) or not _business_os_advertising_enabled():
+        return result
+    try:
+        from services.business_os.advertising import delivery as _adl
+        req = {}
+        try:
+            rid = request.headers.get("X-Request-Id") or request.headers.get("X-Request-ID")
+            if rid:
+                req["request_id"] = str(rid)[:120]
+        except Exception:
+            pass
+        placed = _adl.request_placement(viewer_user_id, placement, request=req)
+        if isinstance(placed, dict) and placed.get("sponsored"):
+            result["sponsored"] = placed.get("sponsored")
+            result["sponsored_placement"] = placed.get("placement")
+    except Exception:
+        logging.debug(
+            "BO_AD_SPONSORED_ATTACH_SKIPPED placement=%s", placement, exc_info=True)
+    return result
+
+
+# --- advertiser routes (authenticated; owner = the session/token user) ------
+@webhook_app.route("/api/business-os/advertising/eligibility", methods=["GET"])
+def api_business_os_advertising_eligibility():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.get_eligibility(
+        user.get("user_id"), context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/advertiser", methods=["POST"])
+def api_business_os_advertising_register():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.register_advertiser(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns", methods=["POST"])
+def api_business_os_advertising_create_campaign():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.create_draft(
+        user.get("user_id"), pulse_ads_json_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns", methods=["GET"])
+def api_business_os_advertising_list_campaigns():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    status_filter = (request.args.get("status") or "").strip() or None
+    return _bo_ad_reply(_adapi.list_own_campaigns(
+        user.get("user_id"), status=status_filter))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>", methods=["GET"])
+def api_business_os_advertising_get_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.get_own_campaign(user.get("user_id"), campaign_id))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/update", methods=["POST"])
+def api_business_os_advertising_update_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.update_draft(
+        user.get("user_id"), campaign_id, pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/archive", methods=["POST"])
+def api_business_os_advertising_archive_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.lifecycle(user.get("user_id"), campaign_id, "archive"))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/restore", methods=["POST"])
+def api_business_os_advertising_restore_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.lifecycle(user.get("user_id"), campaign_id, "restore"))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/submit", methods=["POST"])
+def api_business_os_advertising_submit_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.submit(
+        user.get("user_id"), campaign_id, context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/withdraw", methods=["POST"])
+def api_business_os_advertising_withdraw_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.withdraw(user.get("user_id"), campaign_id))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/reopen", methods=["POST"])
+def api_business_os_advertising_reopen_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.reopen(user.get("user_id"), campaign_id))
+
+
+# --- funding routes (slice 4): budget config + reserve/release --------------
+# Funding readiness is SEPARATE from review approval and from delivery. Reserve
+# moves budget into per-campaign escrow via the canonical ledger; it delivers
+# nothing. Reserve/release are owned writes: flag gate + auth + write CSRF. Both
+# require an idempotency key (JSON body or the Idempotency-Key header) so retries
+# are safe and never double-reserve.
+def _bo_ad_funding_payload():
+    """Parsed JSON body with the Idempotency-Key header folded in when the body
+    omits an explicit ``idempotency_key`` (so clients may supply it either way)."""
+    payload = pulse_ads_json_payload()
+    if not isinstance(payload, dict):
+        payload = {}
+    if not payload.get("idempotency_key"):
+        header_key = (request.headers.get("Idempotency-Key") or "").strip()
+        if header_key:
+            payload = dict(payload)
+            payload["idempotency_key"] = header_key
+    return payload
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/funding", methods=["GET"])
+def api_business_os_advertising_get_funding(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.get_funding(user.get("user_id"), campaign_id))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/budget", methods=["POST"])
+def api_business_os_advertising_set_budget(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.set_budget(
+        user.get("user_id"), campaign_id, pulse_ads_json_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/reserve", methods=["POST"])
+def api_business_os_advertising_reserve_funds(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.reserve(
+        user.get("user_id"), campaign_id, _bo_ad_funding_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/release", methods=["POST"])
+def api_business_os_advertising_release_funds(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.release(
+        user.get("user_id"), campaign_id, _bo_ad_funding_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+# --- operational routes (slice 5): controlled activation + scheduling -------
+# Operational status is SEPARATE from review approval, funding, and delivery.
+# None of these routes deliver, auction, bid, pace, record impressions/clicks, or
+# move money. "active" means operationally AUTHORIZED for a future delivery
+# worker — NOT delivering. schedule/activate/resume run the full activation gate
+# (approved + funded + activation_ready + eligible + valid budget/window) in the
+# service; pause/cancel need only ownership. All are owned writes: flag + auth +
+# write CSRF. Every transition is audited via the existing ad-audit trail.
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/operational", methods=["GET"])
+def api_business_os_advertising_get_operational(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.get_operational(user.get("user_id"), campaign_id))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/schedule", methods=["POST"])
+def api_business_os_advertising_schedule_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.schedule(
+        user.get("user_id"), campaign_id, pulse_ads_json_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/activate", methods=["POST"])
+def api_business_os_advertising_activate_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.activate(
+        user.get("user_id"), campaign_id, pulse_ads_json_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/pause", methods=["POST"])
+def api_business_os_advertising_pause_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.pause(
+        user.get("user_id"), campaign_id, pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/resume", methods=["POST"])
+def api_business_os_advertising_resume_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.resume(
+        user.get("user_id"), campaign_id, context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/cancel", methods=["POST"])
+def api_business_os_advertising_cancel_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.cancel(
+        user.get("user_id"), campaign_id, pulse_ads_json_payload()))
+
+
+# --- advertiser ad-set routes (slice 6) -------------------------------------
+# An ad set is a campaign child with its OWN review lifecycle. Owner identity is
+# derived from the session; nothing here delivers, targets a real user, or moves
+# money. Dark (404) when the flag is off; CSRF on every write.
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/ad-sets", methods=["POST"])
+def api_business_os_advertising_create_ad_set(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.create_ad_set(
+        user.get("user_id"), campaign_id, pulse_ads_json_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/ad-sets", methods=["GET"])
+def api_business_os_advertising_list_ad_sets_for_campaign(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.list_ad_sets(
+        user.get("user_id"), campaign_id=campaign_id))
+
+
+@webhook_app.route("/api/business-os/advertising/ad-sets", methods=["GET"])
+def api_business_os_advertising_list_ad_sets():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    campaign_filter = (request.args.get("campaign_id") or "").strip() or None
+    return _bo_ad_reply(_adapi.list_ad_sets(
+        user.get("user_id"), campaign_id=campaign_filter))
+
+
+@webhook_app.route("/api/business-os/advertising/ad-sets/<ad_set_id>", methods=["GET"])
+def api_business_os_advertising_get_ad_set(ad_set_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.get_ad_set(user.get("user_id"), ad_set_id))
+
+
+@webhook_app.route("/api/business-os/advertising/ad-sets/<ad_set_id>/update", methods=["POST"])
+def api_business_os_advertising_update_ad_set(ad_set_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.update_ad_set(
+        user.get("user_id"), ad_set_id, pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/ad-sets/<ad_set_id>/<action>", methods=["POST"])
+def api_business_os_advertising_ad_set_lifecycle(ad_set_id, action):
+    """Owner ad-set lifecycle verb (submit/withdraw/pause/resume/archive/restore).
+    Unknown actions are rejected 400 by the controller; review approve/reject is
+    admin-only and lives on the admin surface."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.ad_set_lifecycle(
+        user.get("user_id"), ad_set_id, action))
+
+
+# --- advertiser creative routes (slice 6) -----------------------------------
+# A creative binds to an ad set + campaign under the same owner. Media is
+# validated against the authoritative media ownership system and destinations are
+# verified/normalized inside the service. Nothing here delivers or renders.
+@webhook_app.route("/api/business-os/advertising/ad-sets/<ad_set_id>/creatives", methods=["POST"])
+def api_business_os_advertising_create_creative(ad_set_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.create_creative(
+        user.get("user_id"), ad_set_id, pulse_ads_json_payload(),
+        context=_bo_ad_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/advertising/ad-sets/<ad_set_id>/creatives", methods=["GET"])
+def api_business_os_advertising_list_creatives_for_ad_set(ad_set_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.list_creatives(
+        user.get("user_id"), ad_set_id=ad_set_id))
+
+
+@webhook_app.route("/api/business-os/advertising/creatives", methods=["GET"])
+def api_business_os_advertising_list_creatives():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    ad_set_filter = (request.args.get("ad_set_id") or "").strip() or None
+    return _bo_ad_reply(_adapi.list_creatives(
+        user.get("user_id"), ad_set_id=ad_set_filter))
+
+
+@webhook_app.route("/api/business-os/advertising/creatives/<creative_id>", methods=["GET"])
+def api_business_os_advertising_get_creative(creative_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.get_creative(user.get("user_id"), creative_id))
+
+
+@webhook_app.route("/api/business-os/advertising/creatives/<creative_id>/readiness", methods=["GET"])
+def api_business_os_advertising_creative_readiness(creative_id):
+    """Owner-scoped DERIVED hierarchy-readiness for a creative. Inputs are kept
+    separate and nothing is stored; this reads state and never delivers."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.get_creative_readiness(
+        user.get("user_id"), creative_id))
+
+
+@webhook_app.route("/api/business-os/advertising/creatives/<creative_id>/update", methods=["POST"])
+def api_business_os_advertising_update_creative(creative_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.update_creative(
+        user.get("user_id"), creative_id, pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/creatives/<creative_id>/revise", methods=["POST"])
+def api_business_os_advertising_revise_creative(creative_id):
+    """Materially revise a submitted/approved creative into a NEW version; the
+    reviewed original is left intact (its review history is preserved)."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.revise_creative(
+        user.get("user_id"), creative_id, pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/creatives/<creative_id>/<action>", methods=["POST"])
+def api_business_os_advertising_creative_lifecycle(creative_id, action):
+    """Owner creative lifecycle verb (submit/withdraw/archive/restore). Submission
+    enforces the media + destination completeness contract in the service."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.creative_lifecycle(
+        user.get("user_id"), creative_id, action))
+
+
+# --- admin routes (owner guard + administrative audit trail) ----------------
+_BO_AD_ADMIN_ACTION_TO_STATUS = {
+    "approve": "approved", "restore": "approved",
+    "reject": "rejected", "suspend": "suspended",
+}
+
+
+@webhook_app.route("/admin/business-os/advertising/advertisers", methods=["GET"])
+def admin_business_os_advertising_list_advertisers():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    status_filter = (request.args.get("status") or "").strip() or None
+    return _bo_ad_reply(_adapi.admin_list_advertisers(status=status_filter))
+
+
+@webhook_app.route("/admin/business-os/advertising/advertisers/<user_id>", methods=["GET"])
+def admin_business_os_advertising_get_advertiser(user_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_advertiser(user_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/advertisers/<user_id>/status", methods=["POST"])
+def admin_business_os_advertising_set_advertiser_status(user_id):
+    """Owner-only, flag-gated, CSRF-protected advertiser approval transition.
+
+    Accepts ``action`` in {approve, reject, suspend, restore}. Records the full
+    administrative audit trail (acting admin, target advertiser, previous state,
+    new state, reason if supplied, timestamp via log_admin_audit, request ref)."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    action = (request.form.get("action") or "").strip().lower()
+    status = _BO_AD_ADMIN_ACTION_TO_STATUS.get(action)
+    if not status:
+        return jsonify({"ok": False, "error": "action must be approve|reject|suspend|restore."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    result = _adapi.admin_set_advertiser_status(
+        admin["id"], user_id, status, reason=reason)
+    resp_status, body = result
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_advertiser_status", "advertiser", str(user_id),
+            {"action": action, "before_status": body.get("before_status"),
+             "after_status": body.get("after_status"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/review", methods=["POST"])
+def admin_business_os_advertising_review_campaign(campaign_id):
+    """Owner-only, flag-gated, CSRF-protected campaign review decision.
+
+    Accepts ``decision`` (or ``action``) in {approve, reject}; reject requires a
+    ``reason`` (surfaced to the owner). Records the full administrative audit
+    trail (acting admin, target campaign, previous state, new state, reason,
+    timestamp via log_admin_audit, request ref). 'approved' is review-approved
+    only — it funds nothing and activates no delivery."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    decision = (request.form.get("decision") or request.form.get("action") or "").strip().lower()
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_review(
+        admin["id"], campaign_id, decision, reason=reason)
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_campaign_review", "campaign", str(campaign_id),
+            {"decision": decision, "before_status": body.get("before_status"),
+             "after_status": body.get("after_status"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns", methods=["GET"])
+def admin_business_os_advertising_list_campaigns():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    status_filter = (request.args.get("status") or "").strip() or None
+    advertiser_id = (request.args.get("advertiser_user_id") or "").strip() or None
+    return _bo_ad_reply(_adapi.admin_list_campaigns(
+        status=status_filter, advertiser_user_id=advertiser_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>", methods=["GET"])
+def admin_business_os_advertising_get_campaign(campaign_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_campaign(campaign_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/funding", methods=["GET"])
+def admin_business_os_advertising_list_funding():
+    """Owner-only, flag-gated cross-owner funding listing. Optional
+    ``funding_status`` filter (e.g. funding_failed) to inspect failed/inconsistent
+    reservations. Read-only — admins can never fabricate balances here."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    status_filter = (request.args.get("funding_status") or "").strip() or None
+    return _bo_ad_reply(_adapi.admin_list_funding(funding_status=status_filter))
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/funding", methods=["GET"])
+def admin_business_os_advertising_get_funding(campaign_id):
+    """Owner-only, flag-gated funding view: state + ledger transaction references
+    + escrow balance + the append-only funding operation log. Read-only; the only
+    way to change ledger state remains the existing protected reconciliation
+    mechanism — admins cannot fabricate balances or bypass ledger rules here."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_funding(campaign_id))
+
+
+# --- admin operational routes (slice 5): read + intervention ----------------
+# Owner-guarded. Reads combine review + funding + operational states. The three
+# write interventions (pause, cancel, complete) each record the full admin audit
+# trail (acting admin, target campaign, previous->new operational state, reason,
+# timestamp, request ref). None deliver, auction, or move money; admin cancel
+# does NOT release reserved funds — that stays an explicit funding-service call.
+@webhook_app.route("/admin/business-os/advertising/operations", methods=["GET"])
+def admin_business_os_advertising_list_operations():
+    """Owner-only, flag-gated cross-owner operational listing. Optional
+    ``operational_status`` filter (e.g. active, paused). Read-only."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    status_filter = (request.args.get("operational_status") or "").strip() or None
+    return _bo_ad_reply(_adapi.admin_list_operations(operational_status=status_filter))
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/operational", methods=["GET"])
+def admin_business_os_advertising_get_operational(campaign_id):
+    """Owner-only, flag-gated operational view: review + funding + operational
+    states together plus the full funding projection. Read-only."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_operational(campaign_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/operational/pause", methods=["POST"])
+def admin_business_os_advertising_op_pause(campaign_id):
+    """Owner-only admin pause intervention: scheduled/active -> paused."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_pause(admin["id"], campaign_id, {"reason": reason})
+    if body.get("ok"):
+        op = body.get("operational") or {}
+        log_admin_audit(
+            admin["id"], "business_os_campaign_op_pause", "campaign", str(campaign_id),
+            {"after_status": op.get("operational_status"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/operational/cancel", methods=["POST"])
+def admin_business_os_advertising_op_cancel(campaign_id):
+    """Owner-only admin cancel intervention: -> cancelled. Releases NO funds."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_cancel(admin["id"], campaign_id, {"reason": reason})
+    if body.get("ok"):
+        op = body.get("operational") or {}
+        log_admin_audit(
+            admin["id"], "business_os_campaign_op_cancel", "campaign", str(campaign_id),
+            {"after_status": op.get("operational_status"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/operational/complete", methods=["POST"])
+def admin_business_os_advertising_op_complete(campaign_id):
+    """Owner-only authorized path to mark a run finished: active -> completed."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_complete(admin["id"], campaign_id, {"reason": reason})
+    if body.get("ok"):
+        op = body.get("operational") or {}
+        log_admin_audit(
+            admin["id"], "business_os_campaign_op_complete", "campaign", str(campaign_id),
+            {"after_status": op.get("operational_status"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+# --- admin ad-set / creative review routes (slice 6) ------------------------
+# Owner-guarded, flag-gated. Reads expose the object + its parent context and the
+# DERIVED hierarchy-readiness (inputs kept separate, never stored). The two review
+# writes (ad-set + creative approve/reject) each record the full admin audit trail
+# (acting admin, target, object version, previous->new state, reason, timestamp,
+# request ref). Approval is review-approval only — it publishes and delivers
+# nothing; a rejection reason is surfaced to the owner.
+@webhook_app.route("/admin/business-os/advertising/ad-sets", methods=["GET"])
+def admin_business_os_advertising_list_ad_sets():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    status_filter = (request.args.get("status") or "").strip() or None
+    return _bo_ad_reply(_adapi.admin_list_ad_sets(status=status_filter))
+
+
+@webhook_app.route("/admin/business-os/advertising/ad-sets/<ad_set_id>", methods=["GET"])
+def admin_business_os_advertising_get_ad_set(ad_set_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_ad_set(ad_set_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/ad-sets/<ad_set_id>/review", methods=["POST"])
+def admin_business_os_advertising_review_ad_set(ad_set_id):
+    """Owner-only, flag-gated, CSRF-protected ad-set review decision (approve|reject);
+    reject requires a reason surfaced to the owner. Records the admin audit trail."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    decision = (request.form.get("decision") or request.form.get("action") or "").strip().lower()
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_review_ad_set(
+        admin["id"], ad_set_id, decision, reason=reason)
+    if body.get("ok"):
+        ad_set = body.get("ad_set") or {}
+        log_admin_audit(
+            admin["id"], "business_os_ad_set_review", "ad_set", str(ad_set_id),
+            {"decision": decision, "before_status": body.get("before_status"),
+             "after_status": body.get("after_status"),
+             "version": ad_set.get("version"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/advertising/creatives", methods=["GET"])
+def admin_business_os_advertising_list_creatives():
+    """Owner-only, flag-gated creative review queue. Defaults to creatives awaiting
+    review (submitted); an optional ``status`` filter overrides that."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    status_filter = (request.args.get("status") or "").strip() or "submitted"
+    return _bo_ad_reply(_adapi.admin_list_creatives(status=status_filter))
+
+
+@webhook_app.route("/admin/business-os/advertising/creatives/<creative_id>", methods=["GET"])
+def admin_business_os_advertising_get_creative(creative_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_creative(creative_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/creatives/<creative_id>/readiness", methods=["GET"])
+def admin_business_os_advertising_creative_readiness(creative_id):
+    """Owner-only, flag-gated DERIVED hierarchy-readiness for a creative (trusted
+    read). Inputs kept separate; nothing is stored or delivered."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_creative_readiness(creative_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/creatives/<creative_id>/review", methods=["POST"])
+def admin_business_os_advertising_review_creative(creative_id):
+    """Owner-only, flag-gated, CSRF-protected creative review decision (approve|reject);
+    reject requires a reason surfaced to the owner. Records the admin audit trail.
+    Approval is review-approval only — it publishes and delivers nothing."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    decision = (request.form.get("decision") or request.form.get("action") or "").strip().lower()
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_review_creative(
+        admin["id"], creative_id, decision, reason=reason)
+    if body.get("ok"):
+        creative = body.get("creative") or {}
+        log_admin_audit(
+            admin["id"], "business_os_creative_review", "creative", str(creative_id),
+            {"decision": decision, "before_status": body.get("before_status"),
+             "after_status": body.get("after_status"),
+             "version": creative.get("version"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+# =====================================================================
+# Slice 7 — Feed/Reels delivery MVP route adapters (thin; decision logic lives
+# in services.business_os.advertising.api). Viewer identity always comes from the
+# authenticated session (never the body). The whole surface is dark when the flag
+# is off (advertiser 404, admin 409), consistent with slices 2-6. These endpoints
+# move NO money and touch NO legacy pulse_ads_service tables.
+# =====================================================================
+def _bo_ad_fold_idempotency(payload):
+    """Fold an Idempotency-Key header into the payload dict (header wins only when
+    the body did not already carry one). Non-dict payloads are coerced to a dict."""
+    payload = payload if isinstance(payload, dict) else {}
+    try:
+        hdr = request.headers.get("Idempotency-Key") or request.headers.get("X-Idempotency-Key")
+    except Exception:
+        hdr = None
+    if hdr and not payload.get("idempotency_key"):
+        payload = {**payload, "idempotency_key": hdr}
+    return payload
+
+
+@webhook_app.route("/api/business-os/advertising/delivery/<placement>", methods=["POST"])
+def api_business_os_advertising_request_delivery(placement):
+    """Return ONE eligible sponsored Feed/Reels placement (or sponsored:null). The
+    viewer only supplies non-PII request signals; everything authoritative is
+    server-side. No spend, no auction."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.request_delivery(
+        user.get("user_id"), placement, pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/deliveries/<delivery_id>/impression", methods=["POST"])
+def api_business_os_advertising_record_impression(delivery_id):
+    """Record ONE idempotent impression for a delivery. The opaque token from the
+    sponsored payload authenticates the display; hierarchy is copied server-side."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    payload = _bo_ad_fold_idempotency(pulse_ads_json_payload())
+    return _bo_ad_reply(_adapi.record_impression(
+        user.get("user_id"), delivery_id, payload))
+
+
+@webhook_app.route("/api/business-os/advertising/deliveries/<delivery_id>/click", methods=["POST"])
+def api_business_os_advertising_record_click(delivery_id):
+    """Record ONE idempotent click for a delivery. The destination is SERVER-
+    resolved from the bound creative version; the client supplies none."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    payload = _bo_ad_fold_idempotency(pulse_ads_json_payload())
+    return _bo_ad_reply(_adapi.record_click(
+        user.get("user_id"), delivery_id, payload))
+
+
+@webhook_app.route("/admin/business-os/advertising/deliveries", methods=["GET"])
+def admin_business_os_advertising_list_deliveries():
+    """Owner-only, flag-gated, READ-ONLY delivery-instance search (spec §13)."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    args = request.args
+    return _bo_ad_reply(_adapi.admin_list_deliveries(
+        advertiser_user_id=(args.get("advertiser_user_id") or "").strip() or None,
+        campaign_id=(args.get("campaign_id") or "").strip() or None,
+        placement=(args.get("placement") or "").strip() or None,
+        since=(args.get("since") or "").strip() or None,
+        until=(args.get("until") or "").strip() or None,
+        limit=int(args.get("limit") or 100)))
+
+
+@webhook_app.route("/admin/business-os/advertising/deliveries/<delivery_id>", methods=["GET"])
+def admin_business_os_advertising_get_delivery(delivery_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_get_delivery(delivery_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/impressions", methods=["GET"])
+def admin_business_os_advertising_list_impressions():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    args = request.args
+    return _bo_ad_reply(_adapi.admin_list_impressions(
+        delivery_id=(args.get("delivery_id") or "").strip() or None,
+        campaign_id=(args.get("campaign_id") or "").strip() or None,
+        advertiser_user_id=(args.get("advertiser_user_id") or "").strip() or None,
+        fraud_status=(args.get("fraud_status") or "").strip() or None,
+        since=(args.get("since") or "").strip() or None,
+        until=(args.get("until") or "").strip() or None,
+        limit=int(args.get("limit") or 100)))
+
+
+@webhook_app.route("/admin/business-os/advertising/clicks", methods=["GET"])
+def admin_business_os_advertising_list_clicks():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    args = request.args
+    return _bo_ad_reply(_adapi.admin_list_clicks(
+        delivery_id=(args.get("delivery_id") or "").strip() or None,
+        campaign_id=(args.get("campaign_id") or "").strip() or None,
+        advertiser_user_id=(args.get("advertiser_user_id") or "").strip() or None,
+        fraud_status=(args.get("fraud_status") or "").strip() or None,
+        since=(args.get("since") or "").strip() or None,
+        until=(args.get("until") or "").strip() or None,
+        limit=int(args.get("limit") or 100)))
+
+
+# =====================================================================
+# Stage 2 consolidated advertising surfaces (Parts 2/4/6): advertiser
+# reporting + spend, the governed UNDX assistant, advertiser appeals, and the
+# admin billing/fraud/spend-control/restriction/appeal surfaces. Thin adapters
+# only — all decision logic lives in services.business_os.advertising.api. Owner
+# identity is derived from the session/token (never the body); admin routes are
+# owner-guarded, flag-gated (409 when off for admins), CSRF-protected on writes,
+# and persist the full before/after audit trail via log_admin_audit.
+# =====================================================================
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/report", methods=["GET"])
+def api_business_os_advertising_campaign_report(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    args = request.args
+    payload = {}
+    for _k in ("currency", "start", "end", "placement"):
+        _v = (args.get(_k) or "").strip()
+        if _v:
+            payload[_k] = _v
+    return _bo_ad_reply(_adapi.get_campaign_report(
+        user.get("user_id"), campaign_id, payload or None))
+
+
+@webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/spend", methods=["GET"])
+def api_business_os_advertising_campaign_spend(campaign_id):
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    currency = (request.args.get("currency") or "").strip()
+    payload = {"currency": currency} if currency else None
+    return _bo_ad_reply(_adapi.get_campaign_spend(
+        user.get("user_id"), campaign_id, payload))
+
+
+@webhook_app.route("/api/business-os/advertising/assistant/tools", methods=["GET"])
+def api_business_os_advertising_assistant_tools():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.assistant_list_tools(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/advertising/assistant/plan", methods=["POST"])
+def api_business_os_advertising_assistant_plan():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.assistant_plan(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/assistant/execute", methods=["POST"])
+def api_business_os_advertising_assistant_execute():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.assistant_execute(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/advertising/appeals", methods=["POST"])
+def api_business_os_advertising_submit_appeal():
+    """Advertiser-initiated appeal of a restriction/rejection. Subject is the
+    authenticated owner — never taken from the body."""
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.submit_appeal(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+# --- admin: billing inspection / fraud signals (read-only) ------------------
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/billing", methods=["GET"])
+def admin_business_os_advertising_billing_summary(campaign_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    currency = (request.args.get("currency") or "").strip() or "usd"
+    return _bo_ad_reply(_adapi.admin_billing_summary(campaign_id, {"currency": currency}))
+
+
+@webhook_app.route("/admin/business-os/advertising/billing-events", methods=["GET"])
+def admin_business_os_advertising_billing_events():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    args = request.args
+    return _bo_ad_reply(_adapi.admin_list_billing_events(
+        campaign_id=(args.get("campaign_id") or "").strip() or None,
+        advertiser_user_id=(args.get("advertiser_user_id") or "").strip() or None,
+        billing_status=(args.get("billing_status") or "").strip() or None,
+        limit=int(args.get("limit") or 200)))
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/fraud", methods=["GET"])
+def admin_business_os_advertising_fraud_summary(campaign_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    return _bo_ad_reply(_adapi.admin_fraud_summary(campaign_id))
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/flagged", methods=["GET"])
+def admin_business_os_advertising_flagged_events(campaign_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    kind = (request.args.get("kind") or "click").strip() or "click"
+    return _bo_ad_reply(_adapi.admin_list_flagged_events(
+        campaign_id, kind=kind, limit=int(request.args.get("limit") or 200)))
+
+
+# --- admin: governed spend controls (halt / lift) — reason + audit ----------
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/spend/halt", methods=["POST"])
+def admin_business_os_advertising_spend_halt(campaign_id):
+    """Owner-only governed spend halt: active -> paused. Requires a reason;
+    records the before/after administrative audit trail."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_halt_spend(admin["id"], campaign_id, {"reason": reason})
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_spend_halt", "campaign", str(campaign_id),
+            {"before": body.get("before"), "after": body.get("after"),
+             "reason": reason, "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/advertising/campaigns/<campaign_id>/spend/lift", methods=["POST"])
+def admin_business_os_advertising_spend_lift(campaign_id):
+    """Owner-only governed lift of a spend halt: paused -> active. Requires a
+    reason; records the before/after administrative audit trail."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_lift_spend_halt(admin["id"], campaign_id, {"reason": reason})
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_spend_lift", "campaign", str(campaign_id),
+            {"before": body.get("before"), "after": body.get("after"),
+             "reason": reason, "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+# --- admin: governed advertiser restrictions (restrict / lift) --------------
+@webhook_app.route("/admin/business-os/advertising/advertisers/<user_id>/restrict", methods=["POST"])
+def admin_business_os_advertising_restrict_advertiser(user_id):
+    """Owner-only governed advertiser restriction: approved -> suspended. Requires
+    a reason; records the before/after administrative audit trail."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_restrict_advertiser(admin["id"], user_id, {"reason": reason})
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_advertiser_restrict", "advertiser", str(user_id),
+            {"before_status": body.get("before_status"),
+             "after_status": body.get("after_status"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/advertising/advertisers/<user_id>/lift-restriction", methods=["POST"])
+def admin_business_os_advertising_lift_restriction(user_id):
+    """Owner-only governed lift of an advertiser restriction: suspended ->
+    approved. Requires a reason; records the before/after audit trail."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_lift_restriction(admin["id"], user_id, {"reason": reason})
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_advertiser_lift_restriction", "advertiser", str(user_id),
+            {"before_status": body.get("before_status"),
+             "after_status": body.get("after_status"), "reason": reason,
+             "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+# --- admin: appeals (list + governed resolution) ----------------------------
+@webhook_app.route("/admin/business-os/advertising/appeals", methods=["GET"])
+def admin_business_os_advertising_list_appeals():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    from services.business_os.advertising import api as _adapi
+    args = request.args
+    return _bo_ad_reply(_adapi.admin_list_appeals(
+        user_id=(args.get("user_id") or "").strip() or None,
+        state=(args.get("state") or "").strip() or None,
+        limit=int(args.get("limit") or 200)))
+
+
+@webhook_app.route("/admin/business-os/advertising/appeals/<appeal_id>/resolve", methods=["POST"])
+def admin_business_os_advertising_resolve_appeal(appeal_id):
+    """Owner-only governed appeal resolution. Accepts ``decision`` in
+    {grant, deny}; requires a reason. A grant lifts the restriction in the same
+    governed action. Records the full administrative audit trail."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_ADVERTISING flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    decision = (request.form.get("decision") or request.form.get("action") or "").strip().lower()
+    reason = (request.form.get("reason") or "").strip() or None
+    request_ref = _bo_ad_request_ref()
+    from services.business_os.advertising import api as _adapi
+    resp_status, body = _adapi.admin_resolve_appeal(
+        admin["id"], appeal_id, {"decision": decision, "reason": reason})
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_appeal_resolve", "appeal", str(appeal_id),
+            {"decision": decision, "restriction_lifted": body.get("restriction_lifted"),
+             "reason": reason, "request_ref": request_ref})
+    return jsonify(body), resp_status
+
+
+# =====================================================================
+# Business OS — Marketplace vertical, Stage 3 (canonical HTTP surface).
+#
+# A NEW, clearly-separated canonical commerce surface under
+# /api/business-os/marketplace/* (buyer + seller) and
+# /admin/business-os/marketplace/* (admin). It does NOT redirect, replace, or
+# touch the legacy inline marketplace tables/handlers, and all money math is
+# server-authoritative through the shared canonical ledger. Identity is always
+# derived from the authenticated session/token — never from the request body.
+# When BUSINESS_OS_MARKETPLACE is off the whole surface is dark (404), so no
+# partial canonical path is exposed and legacy behaviour is untouched. All
+# decision logic lives in the importable controller
+# services.business_os.marketplace.api; these are thin adapters.
+# =====================================================================
+def _business_os_marketplace_enabled():
+    return (os.getenv("BUSINESS_OS_MARKETPLACE", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+def _bo_mkt_hold_context(user):
+    """Fresh account state for account-hold precedence (never a stale cache)."""
+    return {
+        "account_status": user.get("account_status"),
+        "access_enabled": user.get("access_enabled"),
+    }
+
+
+def _bo_mkt_form_payload(allowed):
+    """Build a clean payload dict from request.form for admin write routes,
+    keeping only the allowlisted keys (never csrf_token or other noise)."""
+    out = {}
+    for k in allowed:
+        v = request.form.get(k)
+        if v is not None and str(v).strip() != "":
+            out[k] = v
+    return out
+
+
+# --- buyer/seller routes (authenticated; identity = the session/token user) --
+@webhook_app.route("/api/business-os/marketplace/seller", methods=["GET"])
+def api_business_os_marketplace_get_seller():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.get_own_seller(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/marketplace/seller", methods=["POST"])
+def api_business_os_marketplace_register_seller():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.register_seller(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/marketplace/products", methods=["POST"])
+def api_business_os_marketplace_create_product():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.create_product(
+        user.get("user_id"), pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/products", methods=["GET"])
+def api_business_os_marketplace_list_products():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    status_filter = (request.args.get("status") or "").strip() or None
+    return _bo_ad_reply(_mktapi.list_own_products(
+        user.get("user_id"), status=status_filter))
+
+
+@webhook_app.route("/api/business-os/marketplace/products/<product_id>", methods=["GET"])
+def api_business_os_marketplace_get_product(product_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.get_own_product(user.get("user_id"), product_id))
+
+
+@webhook_app.route("/api/business-os/marketplace/products/<product_id>/update", methods=["POST"])
+def api_business_os_marketplace_update_product(product_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.update_product(
+        user.get("user_id"), product_id, pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/products/<product_id>/inventory", methods=["POST"])
+def api_business_os_marketplace_set_inventory(product_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.set_inventory(
+        user.get("user_id"), product_id, pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/products/<product_id>/<action>", methods=["POST"])
+def api_business_os_marketplace_product_lifecycle(product_id, action):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.product_lifecycle(
+        user.get("user_id"), product_id, action,
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/storefront", methods=["GET"])
+def api_business_os_marketplace_storefront():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    seller_filter = (request.args.get("seller_user_id") or "").strip() or None
+    return _bo_ad_reply(_mktapi.public_list_products(seller_user_id=seller_filter))
+
+
+@webhook_app.route("/api/business-os/marketplace/storefront/<product_id>", methods=["GET"])
+def api_business_os_marketplace_storefront_product(product_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.public_get_product(product_id))
+
+
+@webhook_app.route("/api/business-os/marketplace/products/<product_id>/reviews", methods=["GET"])
+def api_business_os_marketplace_product_reviews(product_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.product_reviews(product_id))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders", methods=["POST"])
+def api_business_os_marketplace_create_order():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.create_order(
+        user.get("user_id"), pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders", methods=["GET"])
+def api_business_os_marketplace_list_orders():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    role = (request.args.get("role") or "buyer").strip().lower()
+    status_filter = (request.args.get("status") or "").strip() or None
+    return _bo_ad_reply(_mktapi.list_my_orders(
+        user.get("user_id"), role=role, status=status_filter))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders/<order_id>", methods=["GET"])
+def api_business_os_marketplace_get_order(order_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.get_order(user.get("user_id"), order_id))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders/<order_id>/pay", methods=["POST"])
+def api_business_os_marketplace_pay_order(order_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.pay_order(
+        user.get("user_id"), order_id, context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders/<order_id>/fulfill", methods=["POST"])
+def api_business_os_marketplace_fulfill_order(order_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.fulfill_order(
+        user.get("user_id"), order_id, pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders/<order_id>/complete", methods=["POST"])
+def api_business_os_marketplace_complete_order(order_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.complete_order(
+        user.get("user_id"), order_id, context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders/<order_id>/cancel", methods=["POST"])
+def api_business_os_marketplace_cancel_order(order_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.cancel_order(
+        user.get("user_id"), order_id, pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/orders/<order_id>/dispute", methods=["POST"])
+def api_business_os_marketplace_open_dispute(order_id):
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.open_dispute(
+        user.get("user_id"), order_id, pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/reviews", methods=["POST"])
+def api_business_os_marketplace_create_review():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.create_review(
+        user.get("user_id"), pulse_ads_json_payload(),
+        context=_bo_mkt_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/marketplace/payouts", methods=["GET"])
+def api_business_os_marketplace_payouts():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.seller_payout_balance(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/marketplace/appeals", methods=["POST"])
+def api_business_os_marketplace_submit_appeal():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.submit_appeal(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/marketplace/assistant/tools", methods=["GET"])
+def api_business_os_marketplace_assistant_tools():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.assistant_tools(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/marketplace/assistant/plan", methods=["POST"])
+def api_business_os_marketplace_assistant_plan():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.assistant_plan(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/marketplace/assistant/execute", methods=["POST"])
+def api_business_os_marketplace_assistant_execute():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.assistant_execute(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+# --- admin marketplace routes (owner-only, flag-gated, CSRF, audited) -------
+@webhook_app.route("/admin/business-os/marketplace/orders", methods=["GET"])
+def admin_business_os_marketplace_list_orders():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.admin_list_orders(
+        admin["id"],
+        buyer_user_id=(request.args.get("buyer_user_id") or "").strip() or None,
+        seller_user_id=(request.args.get("seller_user_id") or "").strip() or None,
+        status=(request.args.get("status") or "").strip() or None))
+
+
+@webhook_app.route("/admin/business-os/marketplace/orders/<order_id>", methods=["GET"])
+def admin_business_os_marketplace_get_order(order_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.admin_get_order(admin["id"], order_id))
+
+
+@webhook_app.route("/admin/business-os/marketplace/orders/<order_id>/refund", methods=["POST"])
+def admin_business_os_marketplace_refund_order(order_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    payload = _bo_mkt_form_payload({"amount_cents", "reason"})
+    resp_status, body = _mktapi.admin_refund_order(admin["id"], order_id, payload)
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_marketplace_refund", "order", str(order_id),
+            {"amount_cents": payload.get("amount_cents"),
+             "reason": payload.get("reason"), "request_ref": _bo_ad_request_ref()})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/marketplace/disputes", methods=["GET"])
+def admin_business_os_marketplace_list_disputes():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.admin_list_disputes(
+        admin["id"], status=(request.args.get("status") or "").strip() or None,
+        order_id=(request.args.get("order_id") or "").strip() or None))
+
+
+@webhook_app.route("/admin/business-os/marketplace/disputes/<dispute_id>/resolve", methods=["POST"])
+def admin_business_os_marketplace_resolve_dispute(dispute_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    payload = _bo_mkt_form_payload({"decision", "reason", "refund_amount_cents"})
+    resp_status, body = _mktapi.admin_resolve_dispute(admin["id"], dispute_id, payload)
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_marketplace_dispute_resolve", "dispute",
+            str(dispute_id), {"decision": payload.get("decision"),
+                              "reason": payload.get("reason"),
+                              "request_ref": _bo_ad_request_ref()})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/marketplace/sellers/<user_id>/restrict", methods=["POST"])
+def admin_business_os_marketplace_restrict_seller(user_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    payload = _bo_mkt_form_payload({"reason"})
+    resp_status, body = _mktapi.admin_restrict_seller(admin["id"], user_id, payload)
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_marketplace_seller_restrict", "seller",
+            str(user_id), {"reason": payload.get("reason"),
+                           "request_ref": _bo_ad_request_ref()})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/marketplace/sellers/<user_id>/lift-restriction", methods=["POST"])
+def admin_business_os_marketplace_lift_seller(user_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    payload = _bo_mkt_form_payload({"reason"})
+    resp_status, body = _mktapi.admin_lift_seller_restriction(admin["id"], user_id, payload)
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_marketplace_seller_lift", "seller",
+            str(user_id), {"reason": payload.get("reason"),
+                           "request_ref": _bo_ad_request_ref()})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/marketplace/appeals", methods=["GET"])
+def admin_business_os_marketplace_list_appeals():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.admin_list_appeals(
+        admin["id"], user_id=(request.args.get("user_id") or "").strip() or None,
+        state=(request.args.get("state") or "").strip() or None))
+
+
+@webhook_app.route("/admin/business-os/marketplace/appeals/<appeal_id>/resolve", methods=["POST"])
+def admin_business_os_marketplace_resolve_appeal(appeal_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    payload = _bo_mkt_form_payload({"decision", "reason"})
+    resp_status, body = _mktapi.admin_resolve_appeal(admin["id"], appeal_id, payload)
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_marketplace_appeal_resolve", "appeal",
+            str(appeal_id), {"decision": payload.get("decision"),
+                             "restriction_lifted": body.get("appeal", {}).get("restriction_lifted"),
+                             "reason": payload.get("reason"),
+                             "request_ref": _bo_ad_request_ref()})
+    return jsonify(body), resp_status
+
+
+@webhook_app.route("/admin/business-os/marketplace/sellers/<user_id>/payout", methods=["GET"])
+def admin_business_os_marketplace_seller_payout(user_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    from services.business_os.marketplace import api as _mktapi
+    return _bo_ad_reply(_mktapi.admin_seller_payout_balance(admin["id"], user_id))
+
+
+@webhook_app.route("/admin/business-os/marketplace/sellers/<user_id>/payout-note", methods=["POST"])
+def admin_business_os_marketplace_payout_note(user_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "BUSINESS_OS_MARKETPLACE flag is off."}), 409
+    if not _business_os_ent_csrf_ok():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.marketplace import api as _mktapi
+    payload = _bo_mkt_form_payload({"amount_cents", "provider_reference", "reason", "currency"})
+    resp_status, body = _mktapi.admin_record_payout_note(admin["id"], user_id, payload)
+    if body.get("ok"):
+        log_admin_audit(
+            admin["id"], "business_os_marketplace_payout_note", "seller",
+            str(user_id), {"amount_cents": payload.get("amount_cents"),
+                           "provider_reference": payload.get("provider_reference"),
+                           "reason": payload.get("reason"),
+                           "request_ref": _bo_ad_request_ref()})
+    return jsonify(body), resp_status
+
+
+# =====================================================================
+# Business OS — In-App Purchase webhooks (Stage 4).
+# Unauthenticated provider callbacks (Apple ASSN v2 / Google Play RTDN).
+# Decision + verification logic lives in the importable controller
+# services.business_os.entitlements.iap_api; these are thin adapters.
+# DARK 404 when BUSINESS_OS_IAP is off.
+# =====================================================================
+def _business_os_iap_enabled():
+    return (os.getenv("BUSINESS_OS_IAP", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/webhook/business-os/iap/apple", methods=["POST"])
+def webhook_business_os_iap_apple():
+    if not _business_os_iap_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    from services.business_os.entitlements import iap_api as _iapapi
+    body = request.get_json(force=True, silent=True)
+    if body is None:
+        # Apple may post the bare JWS as text/plain; fall back to the raw body.
+        raw = request.get_data(as_text=True) or ""
+        body = raw.strip() or {}
+    status, resp = _iapapi.apple_notification(body)
+    return jsonify(resp), status
+
+
+@webhook_app.route("/webhook/business-os/iap/google", methods=["POST"])
+def webhook_business_os_iap_google():
+    if not _business_os_iap_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    from services.business_os.entitlements import iap_api as _iapapi
+    body = request.get_json(force=True, silent=True) or {}
+    # The Play Developer API purchase-verifier is wired here in production from a
+    # service-account credential; absent that, the controller acknowledges the
+    # push (so Pub/Sub stops retrying) without granting any entitlement.
+    verifier = globals().get("_business_os_google_play_purchase_verifier")
+    status, resp = _iapapi.google_rtdn(body, google_purchase_verifier=verifier)
+    return jsonify(resp), status
+
+
+# =====================================================================
+# Business OS — Crypto intelligence (Stage 5). Informational only: cost-basis /
+# P&L bookkeeping, portfolio read, and durable price alerts. NOTHING here executes
+# a trade or moves funds. Decision logic lives in the importable controller
+# services.business_os.crypto.api; these are thin authenticated adapters.
+# DARK 404 when BUSINESS_OS_CRYPTO is off.
+# =====================================================================
+def _business_os_crypto_enabled():
+    return (os.getenv("BUSINESS_OS_CRYPTO", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/crypto/transactions", methods=["POST"])
+def api_business_os_crypto_record_transaction():
+    if not _business_os_crypto_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.crypto import api as _cryptoapi
+    return _bo_ad_reply(_cryptoapi.record_transaction(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/crypto/portfolio", methods=["GET"])
+def api_business_os_crypto_portfolio():
+    if not _business_os_crypto_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.crypto import api as _cryptoapi
+    return _bo_ad_reply(_cryptoapi.portfolio(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/crypto/alerts", methods=["POST"])
+def api_business_os_crypto_create_alert():
+    if not _business_os_crypto_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.crypto import api as _cryptoapi
+    return _bo_ad_reply(_cryptoapi.create_alert(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/crypto/alerts", methods=["GET"])
+def api_business_os_crypto_list_alerts():
+    if not _business_os_crypto_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.crypto import api as _cryptoapi
+    active_only = (request.args.get("active") or "").strip().lower() in (
+        "1", "true", "on", "yes")
+    return _bo_ad_reply(_cryptoapi.list_alerts(
+        user.get("user_id"), active_only=active_only))
+
+
+@webhook_app.route("/api/business-os/crypto/alerts/<alert_id>/delete", methods=["POST"])
+def api_business_os_crypto_delete_alert(alert_id):
+    if not _business_os_crypto_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.crypto import api as _cryptoapi
+    return _bo_ad_reply(_cryptoapi.delete_alert(user.get("user_id"), alert_id))
+
+
+# =====================================================================
+# Business OS — Attribution intelligence (Stage 6). Informational only: it records
+# an append-only log of touchpoints + conversions and computes fractional credit
+# under multi-touch models. NOTHING here moves money — credit is a reporting
+# quantity, not a payout. Decision logic lives in the importable controller
+# services.business_os.attribution.api; these are thin authenticated adapters.
+# DARK 404 when BUSINESS_OS_ATTRIBUTION is off.
+# =====================================================================
+def _business_os_attribution_enabled():
+    return (os.getenv("BUSINESS_OS_ATTRIBUTION", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/attribution/touchpoints", methods=["POST"])
+def api_business_os_attr_record_touchpoint():
+    if not _business_os_attribution_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.attribution import api as _attrapi
+    return _bo_ad_reply(_attrapi.record_touchpoint(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/attribution/conversions", methods=["POST"])
+def api_business_os_attr_record_conversion():
+    if not _business_os_attribution_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.attribution import api as _attrapi
+    return _bo_ad_reply(_attrapi.record_conversion(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/attribution/conversions/<conversion_id>", methods=["GET"])
+def api_business_os_attr_conversion_report(conversion_id):
+    if not _business_os_attribution_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.attribution import api as _attrapi
+    model = (request.args.get("model") or "last_touch").strip()
+    return _bo_ad_reply(_attrapi.conversion_report(
+        user.get("user_id"), conversion_id, model))
+
+
+@webhook_app.route("/api/business-os/attribution/path", methods=["GET"])
+def api_business_os_attr_path_report():
+    if not _business_os_attribution_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.attribution import api as _attrapi
+    return _bo_ad_reply(_attrapi.path_report(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/attribution/report/campaigns", methods=["GET"])
+def api_business_os_attr_campaign_report():
+    if not _business_os_attribution_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.attribution import api as _attrapi
+    model = (request.args.get("model") or "last_touch").strip()
+    return _bo_ad_reply(_attrapi.campaign_report(model))
+
+
+@webhook_app.route("/api/business-os/attribution/conversions/<conversion_id>/recompute", methods=["POST"])
+def api_business_os_attr_recompute(conversion_id):
+    if not _business_os_attribution_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.attribution import api as _attrapi
+    payload = pulse_ads_json_payload() or {}
+    models = payload.get("models") if isinstance(payload, dict) else None
+    return _bo_ad_reply(_attrapi.run_recompute(conversion_id, models))
+
+
+# =====================================================================
+# Business OS — Recommendations intelligence (Stage 6). Informational only: it
+# records an append-only log of catalog items + implicit-feedback interactions and
+# computes a deterministic per-user ranked recommendation projection under
+# popularity / content_based / collaborative / hybrid models. NOTHING here moves
+# money or takes an action — a recommendation is a suggestion. Decision logic lives
+# in the importable controller services.business_os.recommendations.api; these are
+# thin authenticated adapters. DARK 404 when BUSINESS_OS_RECOMMENDATIONS is off.
+# =====================================================================
+def _business_os_recommendations_enabled():
+    return (os.getenv("BUSINESS_OS_RECOMMENDATIONS", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/recommendations/items", methods=["POST"])
+def api_business_os_rec_record_item():
+    if not _business_os_recommendations_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.recommendations import api as _recapi
+    return _bo_ad_reply(_recapi.record_item(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/recommendations/interactions", methods=["POST"])
+def api_business_os_rec_record_interaction():
+    if not _business_os_recommendations_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.recommendations import api as _recapi
+    return _bo_ad_reply(_recapi.record_interaction(
+        user.get("user_id"), pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/recommendations", methods=["GET"])
+def api_business_os_rec_recommendations_report():
+    if not _business_os_recommendations_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.recommendations import api as _recapi
+    model = (request.args.get("model") or "hybrid").strip()
+    try:
+        limit = int(request.args.get("limit") or 50)
+    except (TypeError, ValueError):
+        limit = 50
+    return _bo_ad_reply(_recapi.recommendations_report(
+        user.get("user_id"), model, limit))
+
+
+@webhook_app.route("/api/business-os/recommendations/interactions", methods=["GET"])
+def api_business_os_rec_interactions_report():
+    if not _business_os_recommendations_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.recommendations import api as _recapi
+    return _bo_ad_reply(_recapi.interactions_report(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/recommendations/report/popularity", methods=["GET"])
+def api_business_os_rec_popularity_report():
+    if not _business_os_recommendations_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.recommendations import api as _recapi
+    try:
+        limit = int(request.args.get("limit") or 100)
+    except (TypeError, ValueError):
+        limit = 100
+    return _bo_ad_reply(_recapi.popularity_report(limit))
+
+
+@webhook_app.route("/api/business-os/recommendations/recompute", methods=["POST"])
+def api_business_os_rec_recompute():
+    if not _business_os_recommendations_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.recommendations import api as _recapi
+    payload = pulse_ads_json_payload() or {}
+    models = payload.get("models") if isinstance(payload, dict) else None
+    return _bo_ad_reply(_recapi.run_recompute(user.get("user_id"), models))
+
+
+# =====================================================================
+# Business OS — Merchant automation (Stage 6, second Stage-6 automation vertical).
+# A merchant declares rules (signal_type <operator> threshold -> suggest action_type);
+# the engine evaluates each active rule against the latest signal per subject and
+# emits a deterministic, rebuildable projection of PROPOSED actions. NOTHING here
+# moves money or takes an action — a proposal is a suggestion. Decision logic lives in
+# the importable controller services.business_os.merchant_automation.api; these are
+# thin authenticated adapters. DARK 404 when BUSINESS_OS_MERCHANT_AUTOMATION is off.
+# =====================================================================
+def _business_os_merchant_automation_enabled():
+    return (os.getenv("BUSINESS_OS_MERCHANT_AUTOMATION", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/merchant/rules", methods=["POST"])
+def api_business_os_merchant_record_rule():
+    if not _business_os_merchant_automation_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.merchant_automation import api as _mapi
+    return _bo_ad_reply(_mapi.record_rule(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/merchant/signals", methods=["POST"])
+def api_business_os_merchant_record_signal():
+    if not _business_os_merchant_automation_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.merchant_automation import api as _mapi
+    return _bo_ad_reply(_mapi.record_signal(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/merchant/rules", methods=["GET"])
+def api_business_os_merchant_rules_report():
+    if not _business_os_merchant_automation_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.merchant_automation import api as _mapi
+    merchant_id = (request.args.get("merchant_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_mapi.rules_report(merchant_id, limit))
+
+
+@webhook_app.route("/api/business-os/merchant/signals", methods=["GET"])
+def api_business_os_merchant_signals_report():
+    if not _business_os_merchant_automation_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.merchant_automation import api as _mapi
+    merchant_id = (request.args.get("merchant_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 500)
+    except (TypeError, ValueError):
+        limit = 500
+    return _bo_ad_reply(_mapi.signals_report(merchant_id, limit))
+
+
+@webhook_app.route("/api/business-os/merchant/proposals", methods=["GET"])
+def api_business_os_merchant_proposals_report():
+    if not _business_os_merchant_automation_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.merchant_automation import api as _mapi
+    merchant_id = (request.args.get("merchant_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_mapi.proposals_report(merchant_id, limit))
+
+
+@webhook_app.route("/api/business-os/merchant/evaluate", methods=["POST"])
+def api_business_os_merchant_evaluate():
+    if not _business_os_merchant_automation_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.merchant_automation import api as _mapi
+    payload = pulse_ads_json_payload() or {}
+    merchant_id = payload.get("merchant_id") if isinstance(payload, dict) else None
+    return _bo_ad_reply(_mapi.run_evaluate(merchant_id))
+
+
+# =====================================================================
+# Business OS — Creator commerce (Stage 6, informational-only earnings/tier vertical).
+# A creator declares offerings (a named support option); an append-only log records
+# supporter contribution facts; the engine computes a deterministic, rebuildable
+# per-creator projection: summed support, a supporter TIER by cumulative-support
+# threshold, and a ranked supporter list. NOTHING here moves money, pays out, or
+# charges — earnings are a reporting quantity and a tier is a label, not a grant.
+# Decision logic lives in the importable controller
+# services.business_os.creator_commerce.api; these are thin authenticated adapters.
+# DARK 404 when BUSINESS_OS_CREATOR_COMMERCE is off.
+# =====================================================================
+def _business_os_creator_commerce_enabled():
+    return (os.getenv("BUSINESS_OS_CREATOR_COMMERCE", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/creator/offerings", methods=["POST"])
+def api_business_os_creator_record_offering():
+    if not _business_os_creator_commerce_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.creator_commerce import api as _ccapi
+    return _bo_ad_reply(_ccapi.record_offering(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/creator/contributions", methods=["POST"])
+def api_business_os_creator_record_contribution():
+    if not _business_os_creator_commerce_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.creator_commerce import api as _ccapi
+    return _bo_ad_reply(_ccapi.record_contribution(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/creator/offerings", methods=["GET"])
+def api_business_os_creator_offerings_report():
+    if not _business_os_creator_commerce_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.creator_commerce import api as _ccapi
+    creator_id = (request.args.get("creator_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_ccapi.offerings_report(creator_id, limit))
+
+
+@webhook_app.route("/api/business-os/creator/supporters", methods=["GET"])
+def api_business_os_creator_supporters_report():
+    if not _business_os_creator_commerce_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.creator_commerce import api as _ccapi
+    creator_id = (request.args.get("creator_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_ccapi.supporters_report(creator_id, limit))
+
+
+@webhook_app.route("/api/business-os/creator/earnings", methods=["GET"])
+def api_business_os_creator_earnings_report():
+    if not _business_os_creator_commerce_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.creator_commerce import api as _ccapi
+    creator_id = (request.args.get("creator_id") or "").strip()
+    return _bo_ad_reply(_ccapi.earnings_report(creator_id))
+
+
+@webhook_app.route("/api/business-os/creator/recompute", methods=["POST"])
+def api_business_os_creator_recompute():
+    if not _business_os_creator_commerce_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.creator_commerce import api as _ccapi
+    payload = pulse_ads_json_payload() or {}
+    creator_id = payload.get("creator_id") if isinstance(payload, dict) else None
+    return _bo_ad_reply(_ccapi.run_recompute(creator_id))
+
+
+# =====================================================================
+# Business OS — Governed UNDX business actions (Stage 6, informational-only
+# governance vertical). An org declares governance policies (an action_type -> an
+# effect of allow/deny/require_approval, with an optional risk ceiling); an append-only
+# log records proposed action requests; the engine computes a deterministic,
+# rebuildable per-org projection of governance DECISIONS. NOTHING here executes an
+# action — a decision is a governance label, not an instruction. Decision logic lives
+# in the importable controller services.business_os.undx_actions.api; these are thin
+# authenticated adapters. DARK 404 when BUSINESS_OS_UNDX_ACTIONS is off.
+# =====================================================================
+def _business_os_undx_actions_enabled():
+    return (os.getenv("BUSINESS_OS_UNDX_ACTIONS", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+def _business_os_undx_user_scope(user):
+    """Server-owned UNDX tenant/actor identity for end-user action workflows."""
+    user_id = str((user or {}).get("user_id") or "").strip()
+    return {
+        "org_id": (os.getenv("BUSINESS_OS_UNDX_DEFAULT_ORG_ID")
+                   or "coinplotxai").strip(),
+        "actor": f"user:{user_id}",
+        "user_id": user_id,
+    }
+
+
+@webhook_app.route("/api/business-os/undx/policies", methods=["POST"])
+def api_business_os_undx_record_policy():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.record_policy(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/requests", methods=["POST"])
+def api_business_os_undx_record_request():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.record_action_request(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/tools", methods=["POST"])
+def api_business_os_undx_register_tool():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.register_tool(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/permissions", methods=["POST"])
+def api_business_os_undx_grant_permission():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.grant_permission(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/confirmations", methods=["POST"])
+def api_business_os_undx_record_confirmation():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.record_confirmation(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/receipts", methods=["POST"])
+def api_business_os_undx_record_receipt():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.record_receipt(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/emergency-stop", methods=["POST"])
+def api_business_os_undx_emergency_stop():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    return _bo_ad_reply(_uxapi.activate_emergency_stop(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/undx/policies", methods=["GET"])
+def api_business_os_undx_policies_report():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    from services.business_os.undx_actions import api as _uxapi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_uxapi.policies_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/undx/requests", methods=["GET"])
+def api_business_os_undx_requests_report():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    from services.business_os.undx_actions import api as _uxapi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 500)
+    except (TypeError, ValueError):
+        limit = 500
+    return _bo_ad_reply(_uxapi.requests_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/undx/decisions", methods=["GET"])
+def api_business_os_undx_decisions_report():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    from services.business_os.undx_actions import api as _uxapi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_uxapi.decisions_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/undx/tools", methods=["GET"])
+def api_business_os_undx_tools_report():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.undx_actions import api as _uxapi
+    product_area = (request.args.get("product_area") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_uxapi.tools_report(product_area, limit))
+
+
+@webhook_app.route("/api/business-os/undx/permissions", methods=["GET"])
+def api_business_os_undx_permissions_report():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.undx_actions import api as _uxapi
+    scope = _business_os_undx_user_scope(user)
+    org_id = scope["org_id"]
+    actor = scope["actor"]
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_uxapi.permissions_report(org_id, actor, limit))
+
+
+@webhook_app.route("/api/business-os/undx/action-center", methods=["GET"])
+def api_business_os_undx_action_center_report():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.undx_actions import api as _uxapi
+    scope = _business_os_undx_user_scope(user)
+    org_id = scope["org_id"]
+    try:
+        limit = int(request.args.get("limit") or 100)
+    except (TypeError, ValueError):
+        limit = 100
+    return _bo_ad_reply(_uxapi.action_center_report(
+        org_id, limit, actor=scope["actor"]))
+
+
+@webhook_app.route("/api/business-os/undx/marketplace/listings/draft", methods=["POST"])
+def api_business_os_undx_marketplace_create_listing_draft():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    scope = _business_os_undx_user_scope(user)
+    return _bo_ad_reply(_uxapi.marketplace_create_listing_draft(
+        scope["user_id"], pulse_ads_json_payload(),
+        trusted_org_id=scope["org_id"], trusted_actor=scope["actor"]))
+
+
+@webhook_app.route("/api/business-os/undx/marketplace/listings/publish/plan", methods=["POST"])
+def api_business_os_undx_marketplace_plan_publish():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    scope = _business_os_undx_user_scope(user)
+    return _bo_ad_reply(_uxapi.marketplace_plan_publish(
+        scope["user_id"], pulse_ads_json_payload(),
+        trusted_org_id=scope["org_id"], trusted_actor=scope["actor"]))
+
+
+@webhook_app.route("/api/business-os/undx/marketplace/listings/publish/execute", methods=["POST"])
+def api_business_os_undx_marketplace_execute_publish():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    scope = _business_os_undx_user_scope(user)
+    return _bo_ad_reply(_uxapi.marketplace_execute_publish(
+        scope["user_id"], pulse_ads_json_payload(),
+        trusted_org_id=scope["org_id"], trusted_actor=scope["actor"]))
+
+
+@webhook_app.route("/api/business-os/undx/evaluate", methods=["POST"])
+def api_business_os_undx_evaluate():
+    if not _business_os_undx_actions_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.undx_actions import api as _uxapi
+    payload = pulse_ads_json_payload() or {}
+    org_id = payload.get("org_id") if isinstance(payload, dict) else None
+    return _bo_ad_reply(_uxapi.run_evaluate(org_id))
+
+
+# =====================================================================
+# Business OS — Localization (Stage 6, strangler). An org declares LOCALES
+# and append-only translation STRINGS; the engine computes a rebuildable
+# per-org projection of string RESOLUTIONS (exact -> explicit fallback ->
+# language base -> org default -> missing) with a per-locale coverage rollup.
+# NOTHING here renders or ships a string — a resolution is a reporting label.
+# Resolution logic lives in the importable controller
+# services.business_os.localization.api; these are thin authenticated adapters.
+# DARK 404 when BUSINESS_OS_LOCALIZATION is off.
+# =====================================================================
+def _business_os_localization_enabled():
+    return (os.getenv("BUSINESS_OS_LOCALIZATION", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/l10n/locales", methods=["POST"])
+def api_business_os_l10n_record_locale():
+    if not _business_os_localization_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.localization import api as _l10napi
+    return _bo_ad_reply(_l10napi.record_locale(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/l10n/strings", methods=["POST"])
+def api_business_os_l10n_record_string():
+    if not _business_os_localization_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.localization import api as _l10napi
+    return _bo_ad_reply(_l10napi.record_string(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/l10n/locales", methods=["GET"])
+def api_business_os_l10n_locales_report():
+    if not _business_os_localization_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.localization import api as _l10napi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_l10napi.locales_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/l10n/strings", methods=["GET"])
+def api_business_os_l10n_strings_report():
+    if not _business_os_localization_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.localization import api as _l10napi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 1000)
+    except (TypeError, ValueError):
+        limit = 1000
+    return _bo_ad_reply(_l10napi.strings_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/l10n/resolutions", methods=["GET"])
+def api_business_os_l10n_resolutions_report():
+    if not _business_os_localization_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.localization import api as _l10napi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 500)
+    except (TypeError, ValueError):
+        limit = 500
+    return _bo_ad_reply(_l10napi.resolutions_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/l10n/resolve", methods=["POST"])
+def api_business_os_l10n_resolve():
+    if not _business_os_localization_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.localization import api as _l10napi
+    payload = pulse_ads_json_payload() or {}
+    org_id = payload.get("org_id") if isinstance(payload, dict) else None
+    return _bo_ad_reply(_l10napi.run_resolve(org_id))
+
+
+# =====================================================================
+# Business OS — Performance (Stage 6, strangler). An org records append-only
+# metric SAMPLES (a numeric value for a metric_key, optionally bucketed by a
+# window) and optional TARGETS (warn/breach thresholds with a direction); the
+# engine computes a rebuildable per-(org, metric, window) SUMMARY projection
+# (count/min/max/mean/p50/p95) and labels each cell ok/warn/breach/none.
+# NOTHING here renders, alerts, pages, or scales — a summary is a reporting
+# label. Summary logic lives in the importable controller
+# services.business_os.performance.api; these are thin authenticated adapters.
+# DARK 404 when BUSINESS_OS_PERFORMANCE is off.
+# =====================================================================
+def _business_os_performance_enabled():
+    return (os.getenv("BUSINESS_OS_PERFORMANCE", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/perf/samples", methods=["POST"])
+def api_business_os_perf_record_sample():
+    if not _business_os_performance_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.performance import api as _perfapi
+    return _bo_ad_reply(_perfapi.record_sample(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/perf/targets", methods=["POST"])
+def api_business_os_perf_record_target():
+    if not _business_os_performance_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.performance import api as _perfapi
+    return _bo_ad_reply(_perfapi.record_target(pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/perf/targets", methods=["GET"])
+def api_business_os_perf_targets_report():
+    if not _business_os_performance_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.performance import api as _perfapi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_perfapi.targets_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/perf/samples", methods=["GET"])
+def api_business_os_perf_samples_report():
+    if not _business_os_performance_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.performance import api as _perfapi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 1000)
+    except (TypeError, ValueError):
+        limit = 1000
+    return _bo_ad_reply(_perfapi.samples_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/perf/summaries", methods=["GET"])
+def api_business_os_perf_summaries_report():
+    if not _business_os_performance_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.performance import api as _perfapi
+    org_id = (request.args.get("org_id") or "").strip()
+    try:
+        limit = int(request.args.get("limit") or 500)
+    except (TypeError, ValueError):
+        limit = 500
+    return _bo_ad_reply(_perfapi.summaries_report(org_id, limit))
+
+
+@webhook_app.route("/api/business-os/perf/summarize", methods=["POST"])
+def api_business_os_perf_summarize():
+    if not _business_os_performance_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.performance import api as _perfapi
+    payload = pulse_ads_json_payload() or {}
+    org_id = payload.get("org_id") if isinstance(payload, dict) else None
+    return _bo_ad_reply(_perfapi.run_summarize(org_id))
+
+
 @webhook_app.route("/admin/admins", methods=["GET"])
 def admin_admins_page():
     admin, denied = require_admin_page("admins.view")
@@ -16969,10 +21077,65 @@ def admin_admins_page():
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT id, full_name, email, role, status, last_login_at, created_at FROM admin_users ORDER BY id ASC")
+    cur.execute("SELECT id, full_name, email, role, status, job_title, last_login_at, created_at, must_change_password, locked_until FROM admin_users ORDER BY id ASC")
     rows = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT role_name, COUNT(DISTINCT permission_key) c FROM (SELECT role_name, permission_key FROM role_permissions UNION SELECT role_name, permission_key FROM admin_role_permissions) GROUP BY role_name")
+    perm_count = {(r["role_name"] or "").lower(): int(r["c"] or 0) for r in cur.fetchall()}
     conn.close()
-    body = f"<h1>Admins</h1><p><a class='button' href='/admin/admins/new'>Create Admin</a></p><div class='card'>{admin_rows_table(rows, [('id','ID'),('full_name','Name'),('email','Email'),('role','Role'),('status','Status'),('last_login_at','Last Login')])}</div>"
+
+    now_iso = datetime.now().isoformat()
+    total = len(rows)
+    active_n = sum(1 for r in rows if (r.get("status") or "active").lower() == "active")
+    roles_used = len({(r.get("role") or "").lower() for r in rows if r.get("role")})
+    flagged_n = sum(1 for r in rows if r.get("must_change_password") or (r.get("locked_until") and str(r.get("locked_until")) > now_iso))
+
+    tiles = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>Admins</div><div class='metric'>{total:,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Active</div><div class='metric'>{active_n:,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Roles In Use</div><div class='metric'>{roles_used:,}</div></div>"
+        f"<div class='card ops-kpi ops-stat-card{' attention' if flagged_n else ''}'><div class='muted'>Needs Attention</div><div class='metric'>{flagged_n:,}</div><div class='muted' style='font-size:.82rem'>locked / must reset</div></div>"
+        "</div>"
+    )
+
+    def _status_pill(r):
+        s = (r.get("status") or "active").lower()
+        locked = r.get("locked_until") and str(r.get("locked_until")) > now_iso
+        if locked:
+            return "<span class='pill'><span class='status-dot status-danger'></span>locked</span>"
+        dot = "status-dot" if s == "active" else "status-dot status-warn"
+        return f"<span class='pill'><span class='{dot}'></span>{clean_html(r.get('status') or 'active')}</span>"
+
+    def _row(r):
+        role = (r.get("role") or "").lower()
+        role_chip = f"<a class='ops-chip' href='/admin/roles'>{clean_html(r.get('role') or '—')}</a>" if r.get("role") else "<span class='muted'>—</span>"
+        pc = "all" if role == "owner" else perm_count.get(role, 0)
+        flags = ""
+        if r.get("must_change_password"):
+            flags += "<span class='ops-chip' style='border-color:var(--warn,#f5c451)'>must reset pw</span>"
+        job_title_html = ('<div class="muted" style="font-size:.8rem">' + clean_html(r.get('job_title')) + '</div>') if r.get('job_title') else ''
+        return (
+            "<tr>"
+            f"<td class='muted'>{clean_html(str(r.get('id')))}</td>"
+            f"<td><a href='/admin/admins/{r.get('id')}/edit'>{clean_html(r.get('full_name') or 'Admin')}</a>"
+            f"{job_title_html}</td>"
+            f"<td class='muted'>{clean_html(mask_email(r.get('email')))}</td>"
+            f"<td>{role_chip}</td>"
+            f"<td>{pc}</td>"
+            f"<td>{_status_pill(r)}{flags}</td>"
+            f"<td class='muted'>{clean_html(r.get('last_login_at') or 'never')}</td>"
+            "</tr>"
+        )
+
+    table_rows = "".join(_row(r) for r in rows) or "<tr><td colspan='7' class='muted'>No admins.</td></tr>"
+    body = (
+        "<h1>Admin Team</h1>"
+        "<p class='muted'>Staff directory with roles, effective permission counts, and account security state.</p>"
+        f"{tiles}"
+        "<p><a class='button' href='/admin/admins/new'>Create Admin</a> <a class='button' href='/admin/roles'>Manage Roles</a></p>"
+        "<div class='card'><table><tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Perms</th><th>Status</th><th>Last Login</th></tr>"
+        f"{table_rows}</table></div>"
+    )
     return admin_page_html("Admins", body, admin)
 
 
@@ -17302,8 +21465,66 @@ def admin_roles_page():
     cur = conn.cursor()
     cur.execute("SELECT name, description, status, created_at FROM roles ORDER BY name")
     roles = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT role_name, permission_key FROM role_permissions UNION SELECT role_name, permission_key FROM admin_role_permissions")
+    grants = {}
+    for row in cur.fetchall():
+        grants.setdefault((row["role_name"] or "").lower(), set()).add(row["permission_key"])
+    cur.execute("SELECT COALESCE(LOWER(role),'(none)') r, COUNT(*) c FROM admin_users GROUP BY LOWER(role)")
+    holders = {row["r"]: int(row["c"] or 0) for row in cur.fetchall()}
+    cur.execute("SELECT COUNT(*) c FROM permissions")
+    perm_total = int(dict(cur.fetchone() or {}).get("c") or 0)
     conn.close()
-    return admin_page_html("Roles", f"<h1>Roles</h1><div class='card'>{admin_rows_table(roles, [('name','Role'),('description','Description'),('status','Status'),('created_at','Created')])}</div>", admin)
+
+    total_grants = sum(len(v) for v in grants.values())
+    assigned = sum(v for k, v in holders.items() if k != "(none)")
+
+    def _pill(status):
+        s = (status or "active").lower()
+        dot = "status-dot" if s in ("active", "enabled", "") else "status-dot status-warn"
+        return f"<span class='pill'><span class='{dot}'></span>{clean_html(status or 'active')}</span>"
+
+    tiles = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>Roles</div><div class='metric'>{len(roles):,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Permissions</div><div class='metric'>{perm_total:,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Grants</div><div class='metric'>{total_grants:,}</div><div class='muted' style='font-size:.82rem'>role &times; permission</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Admins Assigned</div><div class='metric'>{assigned:,}</div></div>"
+        "</div>"
+    )
+
+    def _role_card(r):
+        name = (r.get("name") or "").lower()
+        perms = sorted(grants.get(name, set()))
+        held = holders.get(name, 0)
+        by_domain = {}
+        for p in perms:
+            by_domain.setdefault(p.split(".")[0], []).append(p)
+        chips = ""
+        for dom in sorted(by_domain):
+            keys = by_domain[dom]
+            chips += (
+                f"<div class='ops-rbac__domain'><span class='ops-rbac__domname'>{clean_html(dom)}</span>"
+                + "".join(f"<span class='ops-chip'>{clean_html(k.split('.', 1)[1] if '.' in k else k)}</span>" for k in keys)
+                + "</div>"
+            )
+        if not perms:
+            chips = "<p class='muted'>No permissions granted.</p>"
+        return (
+            "<div class='card ops-rbac__role'>"
+            f"<div class='ops-rbac__rolehead'><div><strong>{clean_html(r.get('name'))}</strong> {_pill(r.get('status'))}</div>"
+            f"<div class='muted'>{len(perms)} perms &middot; {held} admin{'s' if held != 1 else ''}</div></div>"
+            f"<p class='muted'>{clean_html(r.get('description') or '')}</p>"
+            f"<details class='ops-rbac__perms'><summary>{len(perms)} permission{'s' if len(perms) != 1 else ''}</summary>{chips}</details>"
+            "</div>"
+        )
+
+    cards = "".join(_role_card(r) for r in roles) or "<p class='muted'>No roles defined.</p>"
+    body = (
+        "<h1>Roles &amp; Access</h1>"
+        "<p class='muted'>Every role, the permissions it grants, and how many admins currently hold it. Owner bypasses all checks.</p>"
+        f"{tiles}<div class='ops-rbac__grid'>{cards}</div>"
+    )
+    return admin_page_html("Roles", body, admin)
 
 
 @webhook_app.route("/admin/permissions", methods=["GET"])
@@ -17316,8 +21537,50 @@ def admin_permissions_page():
     cur = conn.cursor()
     cur.execute("SELECT key, description, created_at FROM permissions ORDER BY key")
     permissions = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT role_name, permission_key FROM role_permissions UNION SELECT role_name, permission_key FROM admin_role_permissions")
+    perm_roles = {}
+    for row in cur.fetchall():
+        perm_roles.setdefault(row["permission_key"], set()).add((row["role_name"] or "").lower())
     conn.close()
-    return admin_page_html("Permissions", f"<h1>Permissions</h1><div class='card'>{admin_rows_table(permissions, [('key','Permission'),('description','Description'),('created_at','Created')])}</div>", admin)
+
+    by_domain = {}
+    for p in permissions:
+        by_domain.setdefault((p.get("key") or "").split(".")[0], []).append(p)
+
+    tiles = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi'><div class='muted'>Permissions</div><div class='metric'>{len(permissions):,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Domains</div><div class='metric'>{len(by_domain):,}</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Role Bindings</div><div class='metric'>{sum(len(v) for v in perm_roles.values()):,}</div></div>"
+        "</div>"
+    )
+
+    sections = ""
+    for dom in sorted(by_domain):
+        rows = ""
+        for p in by_domain[dom]:
+            roles = sorted(perm_roles.get(p.get("key"), set()))
+            role_chips = "".join(f"<span class='ops-chip'>{clean_html(r)}</span>" for r in roles) or "<span class='muted'>no roles</span>"
+            rows += (
+                "<tr>"
+                f"<td><code>{clean_html(p.get('key'))}</code></td>"
+                f"<td class='muted'>{clean_html(p.get('description') or '')}</td>"
+                f"<td>{len(roles)}</td>"
+                f"<td>{role_chips}</td>"
+                "</tr>"
+            )
+        sections += (
+            f"<div class='card'><h2 style='margin-top:0'>{clean_html(dom)} <span class='muted' style='font-size:.9rem'>({len(by_domain[dom])})</span></h2>"
+            "<table><tr><th>Permission</th><th>Description</th><th>Roles</th><th>Granted To</th></tr>"
+            f"{rows}</table></div>"
+        )
+
+    body = (
+        "<h1>Permissions</h1>"
+        "<p class='muted'>Every permission key grouped by domain, with the roles that grant it. Used by <code>admin_has_permission()</code> at request time.</p>"
+        f"{tiles}{sections}"
+    )
+    return admin_page_html("Permissions", body, admin)
 
 
 @webhook_app.route("/admin/telegram", methods=["GET"])
@@ -17464,7 +21727,7 @@ def api_admin_telegram_send_test():
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
             json={
                 "chat_id": user.get("telegram_chat_id"),
-                "text": "CoinPilotXAI Telegram health check: your bot connection is working.",
+                "text": "CoinPlotXAI Telegram health check: your bot connection is working.",
                 "disable_web_page_preview": True,
             },
             timeout=10,
@@ -17712,19 +21975,52 @@ def admin_moderation_page():
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT moderation_status, COUNT(*) AS total FROM chat_media_uploads GROUP BY moderation_status ORDER BY total DESC")
+    cur.execute("SELECT COALESCE(moderation_status,'unknown') s, COUNT(*) AS total FROM chat_media_uploads GROUP BY moderation_status ORDER BY total DESC")
     media = [dict(row) for row in cur.fetchall()]
-    cur.execute("SELECT status, COUNT(*) AS total FROM chat_reports GROUP BY status ORDER BY total DESC")
+    cur.execute("SELECT COALESCE(status,'open') s, COUNT(*) AS total FROM chat_reports GROUP BY status ORDER BY total DESC")
     reports = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT COUNT(*) AS total FROM blocked_users")
     blocked = int((cur.fetchone() or {"total": 0})["total"])
     conn.close()
+
+    def _q(rows, *keys):
+        return sum(int(r["total"] or 0) for r in rows if (r["s"] or "").lower() in keys)
+
+    media_total = sum(int(r["total"] or 0) for r in media)
+    media_pending = _q(media, "pending", "flagged", "review", "queued")
+    media_blocked = _q(media, "blocked", "rejected", "removed")
+    reports_total = sum(int(r["total"] or 0) for r in reports)
+    reports_open = _q(reports, "open", "pending", "new", "") or (reports_total - _q(reports, "resolved", "closed", "dismissed"))
+
+    def _dot(v, warn_dot):
+        return "status-dot status-warn" if (v and warn_dot) else "status-dot"
+
+    tiles = (
+        "<div class='ops-kpis'>"
+        f"<div class='card ops-kpi ops-stat-card{' attention' if media_pending else ''}'><div class='muted'>Media Pending</div><div class='metric'>{media_pending:,}</div><div class='muted' style='font-size:.82rem'>awaiting review</div></div>"
+        f"<div class='card ops-kpi ops-stat-card{' attention' if reports_open else ''}'><div class='muted'>Open Reports</div><div class='metric'>{reports_open:,}</div><div class='muted' style='font-size:.82rem'>of {reports_total:,} total</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>Media Reviewed</div><div class='metric'>{media_total:,}</div><div class='muted' style='font-size:.82rem'>{media_blocked:,} blocked</div></div>"
+        f"<div class='card ops-kpi'><div class='muted'>User Blocks</div><div class='metric'>{blocked:,}</div></div>"
+        "</div>"
+    )
+
+    def _pill_rows(rows, warn_keys):
+        out = ""
+        for r in rows:
+            s = (r["s"] or "").lower()
+            dot = "status-dot status-warn" if s in warn_keys else ("status-dot status-danger" if s in ("blocked", "rejected", "removed") else "status-dot")
+            out += f"<tr><td><span class='pill'><span class='{dot}'></span>{clean_html(r['s'])}</span></td><td>{int(r['total'] or 0):,}</td></tr>"
+        return out or "<tr><td colspan='2' class='muted'>None.</td></tr>"
+
     body = (
-        "<h1>Moderation Command Center</h1><p class='muted'>Safety foundation for chat, media, Roast Battle, and Arena social systems.</p>"
-        f"<div class='grid'><div class='card'><strong>Blocked Users</strong><p class='metric'>{blocked}</p></div>"
-        f"<div class='card'><h2>Media Queue</h2>{admin_rows_table(media, [('moderation_status','Status'),('total','Total')])}</div>"
-        f"<div class='card'><h2>Reports</h2>{admin_rows_table(reports, [('status','Status'),('total','Total')])}</div></div>"
-        "<p><a class='button' href='/admin/reports'>Open Reports</a> <a class='button' href='/admin/media-moderation'>Open Media Moderation</a></p>"
+        "<h1>Moderation Command Center</h1>"
+        "<p class='muted'>Unified safety surface for chat, media, Roast Battle, and Arena. Pending work is highlighted first.</p>"
+        f"{tiles}"
+        "<p><a class='button' href='/admin/reports'>Open Reports</a> <a class='button' href='/admin/media-moderation'>Media Moderation</a> <a class='button' href='/admin/private-chat-reports'>Chat Reports</a></p>"
+        "<div class='grid'>"
+        f"<div class='card'><h2 style='margin-top:0'>Media Queue</h2><table><tr><th>Status</th><th>Count</th></tr>{_pill_rows(media, {'pending','flagged','review','queued'})}</table></div>"
+        f"<div class='card'><h2 style='margin-top:0'>Reports</h2><table><tr><th>Status</th><th>Count</th></tr>{_pill_rows(reports, {'open','pending','new'})}</table></div>"
+        "</div>"
     )
     return admin_page_html("Moderation", body, admin)
 
@@ -18061,7 +22357,7 @@ def admin_support_page():
         if reply_message:
             send_channel_email(
                 request.form.get("ticket_email") or "support@pulsesoc.com",
-                "CoinPilotXAI Support Reply",
+                "CoinPlotXAI Support Reply",
                 f"<p>{clean_html(reply_message)}</p>",
                 reply_message,
                 user_id=0,
@@ -18284,7 +22580,7 @@ def admin_analytics_export(kind):
     writer.writerow(headers)
     writer.writerows(cur.fetchall())
     conn.close()
-    return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename=coinpilotxai-{kind}.csv"})
+    return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename=coinplotxai-{kind}.csv"})
 
 
 @webhook_app.route("/admin/brevo/resync", methods=["POST"])
@@ -18614,9 +22910,9 @@ def public_learn_page(slug):
         "roast-battle-rules": ["Call signs", "Clean intensity", "Virtual-dollar scoring", "Crowd heat"],
         "arena-ranking-system": ["XP", "Ranks", "Badges", "Streaks"],
     }.get(safe_slug, ["Safety", "Education", "Practice", "Review"])
-    cards = "".join(f"<article class='card'><h2>{clean_html(topic)}</h2><p>CoinPilotXAI teaches this through guided examples, live context, and clear next actions. Keep learning educational, simulated, and risk-aware.</p></article>" for topic in topics)
+    cards = "".join(f"<article class='card'><h2>{clean_html(topic)}</h2><p>CoinPlotXAI teaches this through guided examples, live context, and clear next actions. Keep learning educational, simulated, and risk-aware.</p></article>" for topic in topics)
     schema_json = json.dumps(seo_engine.json_ld(path))
-    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(meta['title'])}</title><meta name="description" content="{clean_html(meta['description'])}"><link rel="canonical" href="{clean_html(meta['canonical'])}"><meta property="og:title" content="{clean_html(title)} | CoinPilotXAI"><meta property="og:description" content="{clean_html(meta['description'])}"><meta property="og:image" content="{clean_html(meta['og_image'])}"><meta property="og:url" content="{clean_html(meta['canonical'])}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{clean_html(title)} | CoinPilotXAI"><meta name="twitter:description" content="{clean_html(meta['description'])}"><meta name="twitter:image" content="{clean_html(meta['og_image'])}"><script type="application/ld+json">{schema_json}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:34px 0 90px}}.hero{{padding:22px 0}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:14px;background:rgba(255,255,255,.055);padding:16px}}a,.button{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6);padding:10px 13px;border-radius:8px;text-decoration:none;font-weight:900;display:inline-flex}}p{{color:#9fb5c0;line-height:1.6}}</style></head><body><main class="wrap"><section class="hero"><a href="/">CoinPilotXAI</a><h1>{clean_html(title)}</h1><p>{clean_html(meta['description'])}</p><a class="button" href="/arena/play">Start Training</a></section><section class="grid">{cards}</section></main></body></html>"""
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(meta['title'])}</title><meta name="description" content="{clean_html(meta['description'])}"><link rel="canonical" href="{clean_html(meta['canonical'])}"><meta property="og:title" content="{clean_html(title)} | CoinPlotXAI"><meta property="og:description" content="{clean_html(meta['description'])}"><meta property="og:image" content="{clean_html(meta['og_image'])}"><meta property="og:url" content="{clean_html(meta['canonical'])}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{clean_html(title)} | CoinPlotXAI"><meta name="twitter:description" content="{clean_html(meta['description'])}"><meta name="twitter:image" content="{clean_html(meta['og_image'])}"><script type="application/ld+json">{schema_json}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:34px 0 90px}}.hero{{padding:22px 0}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:14px;background:rgba(255,255,255,.055);padding:16px}}a,.button{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6);padding:10px 13px;border-radius:8px;text-decoration:none;font-weight:900;display:inline-flex}}p{{color:#9fb5c0;line-height:1.6}}</style></head><body><main class="wrap"><section class="hero"><a href="/">CoinPlotXAI</a><h1>{clean_html(title)}</h1><p>{clean_html(meta['description'])}</p><a class="button" href="/arena/play">Start Training</a></section><section class="grid">{cards}</section></main></body></html>"""
     return Response(html)
 
 
@@ -18755,7 +23051,7 @@ def save_command_result(user_id, command_history_id, title="", summary="", sourc
         (
             user_id,
             int(command_history_id or 0),
-            clean_html(title or "Saved CoinPilotXAI result")[:180],
+            clean_html(title or "Saved CoinPlotXAI result")[:180],
             clean_html(summary or "")[:3000],
             clean_html(source or "web")[:80],
             json.dumps(metadata or {}),
@@ -18860,7 +23156,7 @@ def arena_access_preview_response(user=None):
     <section class="hero">
       <article class="card wide">
         <div class="kicker">Arena Access</div>
-        <h1>CoinPilotXAI Arena is part of the free core ecosystem.</h1>
+        <h1>CoinPlotXAI Arena is part of the free core ecosystem.</h1>
         <p>Live virtual-dollar battles, Arena chat, AI commentary, live rooms, Scam Hunter, boss training, cinematic match rooms, and immersive risk psychology training are available after login.</p>
         <div class="actions"><a class="button primary" href="/login?next={next_url}">Log In</a><a class="button" href="/arena-preview">View Arena Preview</a><a class="button" href="/dashboard">Dashboard</a></div>
       </article>
@@ -18962,7 +23258,7 @@ def api_command_save():
     saved_id = save_command_result(
         user["user_id"],
         payload.get("history_id") or 0,
-        title=payload.get("title") or payload.get("command_name") or "Saved CoinPilotXAI result",
+        title=payload.get("title") or payload.get("command_name") or "Saved CoinPlotXAI result",
         summary=payload.get("summary") or payload.get("output_summary") or "",
         source=payload.get("source") or "web",
         metadata=payload.get("metadata") or {},
@@ -18995,9 +23291,9 @@ def api_ai_chat():
         result = {
             "ok": routed.get("ok", True),
             "action_key": "ai_chat",
-            "title": "CoinPilotXAI",
+            "title": "CoinPlotXAI",
             "summary": routed.get("response", ""),
-            "source": routed.get("source", "coinpilotxai"),
+            "source": routed.get("source", "coinplotxai"),
             "confidence": routed.get("confidence", "Medium"),
             "latency_ms": routed.get("latency_ms"),
             "disclaimer": "Educational information only. Not financial, betting, investment, or legal advice.",
@@ -19022,7 +23318,7 @@ def api_ai_chat():
     formatted["conversation_id"] = conversation_id
     formatted["response"] = ai_text
     formatted["saved"] = bool(history_id)
-    formatted.setdefault("source", "coinpilotxai")
+    formatted.setdefault("source", "coinplotxai")
     response = jsonify(formatted)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
@@ -19088,10 +23384,10 @@ def api_pulse_assistant_chat():
 
 
 UNDX_SYSTEM_PROMPT = (
-    "You are UNDX Core, the premium intelligence layer inside CoinPilotXAI. "
-    "Your job is to help build, expand, secure, and evolve CoinPilotXAI phase by phase. "
+    "You are UNDX Core, the premium intelligence layer inside CoinPlotXAI. "
+    "Your job is to help build, expand, secure, and evolve CoinPlotXAI phase by phase. "
     "Respond like a strategic AI builder. When the user gives a mission, classify it, explain the objective, "
-    "suggest modules, identify risks, recommend next actions, and keep responses focused on building CoinPilotXAI."
+    "suggest modules, identify risks, recommend next actions, and keep responses focused on building CoinPlotXAI."
 )
 
 
@@ -19550,7 +23846,7 @@ def sports_edge_landing_page():
         "Alerts and Notifications", "Training/Education Mode",
     ]
     feature_cards = "".join(f"<article class='card mini'><h3>{clean_html(item)}</h3><p>Educational intelligence with risk context, source status, and no guaranteed-outcome claims.</p></article>" for item in features)
-    body = f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Sports Edge AI Intelligence | CoinPilotXAI</title><meta name='description' content='Use CoinPilotXAI Sports Edge to track sports data, AI signals, risk psychology, and crypto market intelligence in one web and mobile command center.'><link rel='canonical' href='https://pulsesoc.com/sports-edge'><meta property='og:title' content='Sports Edge AI Intelligence | CoinPilotXAI'><meta property='og:description' content='Track sports data, AI signals, discipline coaching, and risk intelligence.'><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 32px,1180px);margin:auto}}header{{position:sticky;top:0;background:rgba(5,11,20,.9);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.18)}}nav{{min-height:68px;display:flex;justify-content:space-between;align-items:center;gap:12px}}a{{color:inherit;text-decoration:none}}.hero{{padding:72px 0 32px;display:grid;grid-template-columns:1.15fr .85fr;gap:20px;align-items:center}}h1{{font-size:clamp(40px,7vw,76px);line-height:.96;margin:0 0 16px}}p{{color:#9fb5c0}}.button{{display:inline-flex;min-height:46px;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(110,223,246,.24);font-weight:900}}.primary{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b}}.gold{{background:linear-gradient(135deg,#ffd166,#b6ff4f);color:#1c1303}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.card{{border:1px solid rgba(110,223,246,.2);border-radius:18px;background:rgba(255,255,255,.05);padding:20px;box-shadow:0 24px 80px rgba(0,0,0,.24)}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:18px 0 50px}}.mini:hover{{box-shadow:0 0 34px rgba(110,223,246,.18)}}.status{{color:#36e58f;font-weight:900}}@media(max-width:820px){{.hero{{grid-template-columns:1fr;padding-top:36px}}.actions .button{{width:100%}}}}</style></head><body><header><div class='wrap'><nav><a href='/'>CoinPilotXAI</a><a href='/dashboard'>Dashboard</a></nav></div></header><main class='wrap'><section class='hero'><div><p class='status'>Sports Edge Intelligence</p><h1>Sports Edge Intelligence Meets Crypto Market Discipline</h1><p>Track live sports data, market psychology, odds movement, AI insights, and risk signals from one CoinPilotXAI command center.</p><div class='actions'><a class='button primary' href='/app#sports-edge'>Open Sports Edge</a><a class='button gold' href='/sports-edge/trade' target='_blank' rel='noopener sponsored' data-analytics='gemini_trade_redirect_clicked'>Sign In to Trade</a></div><p><small>External trading platform. CoinPilotXAI may use affiliate links. Trading involves risk.</small></p></div><aside class='card'><h2>Live Status</h2><p>{clean_html(source_note)}</p><p>Educational intelligence only. Not financial advice. Not betting advice. No guaranteed outcomes. Follow local laws.</p></aside></section><section class='grid'>{feature_cards}</section></main></body></html>"""
+    body = f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Sports Edge AI Intelligence | CoinPlotXAI</title><meta name='description' content='Use CoinPlotXAI Sports Edge to track sports data, AI signals, risk psychology, and crypto market intelligence in one web and mobile command center.'><link rel='canonical' href='https://pulsesoc.com/sports-edge'><meta property='og:title' content='Sports Edge AI Intelligence | CoinPlotXAI'><meta property='og:description' content='Track sports data, AI signals, discipline coaching, and risk intelligence.'><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 32px,1180px);margin:auto}}header{{position:sticky;top:0;background:rgba(5,11,20,.9);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.18)}}nav{{min-height:68px;display:flex;justify-content:space-between;align-items:center;gap:12px}}a{{color:inherit;text-decoration:none}}.hero{{padding:72px 0 32px;display:grid;grid-template-columns:1.15fr .85fr;gap:20px;align-items:center}}h1{{font-size:clamp(40px,7vw,76px);line-height:.96;margin:0 0 16px}}p{{color:#9fb5c0}}.button{{display:inline-flex;min-height:46px;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(110,223,246,.24);font-weight:900}}.primary{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b}}.gold{{background:linear-gradient(135deg,#ffd166,#b6ff4f);color:#1c1303}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.card{{border:1px solid rgba(110,223,246,.2);border-radius:18px;background:rgba(255,255,255,.05);padding:20px;box-shadow:0 24px 80px rgba(0,0,0,.24)}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:18px 0 50px}}.mini:hover{{box-shadow:0 0 34px rgba(110,223,246,.18)}}.status{{color:#36e58f;font-weight:900}}@media(max-width:820px){{.hero{{grid-template-columns:1fr;padding-top:36px}}.actions .button{{width:100%}}}}</style></head><body><header><div class='wrap'><nav><a href='/'>CoinPlotXAI</a><a href='/dashboard'>Dashboard</a></nav></div></header><main class='wrap'><section class='hero'><div><p class='status'>Sports Edge Intelligence</p><h1>Sports Edge Intelligence Meets Crypto Market Discipline</h1><p>Track live sports data, market psychology, odds movement, AI insights, and risk signals from one CoinPlotXAI command center.</p><div class='actions'><a class='button primary' href='/app#sports-edge'>Open Sports Edge</a><a class='button gold' href='/sports-edge/trade' target='_blank' rel='noopener sponsored' data-analytics='gemini_trade_redirect_clicked'>Sign In to Trade</a></div><p><small>External trading platform. CoinPlotXAI may use affiliate links. Trading involves risk.</small></p></div><aside class='card'><h2>Live Status</h2><p>{clean_html(source_note)}</p><p>Educational intelligence only. Not financial advice. Not betting advice. No guaranteed outcomes. Follow local laws.</p></aside></section><section class='grid'>{feature_cards}</section></main></body></html>"""
     log_product_event(account_user_id(), "sports_edge_opened", {})
     return Response(body)
 
@@ -19619,7 +23915,7 @@ def tactical_insight_payload(symbol):
         )
     else:
         insight = (
-            f"{symbol} live pricing is reconnecting, so CoinPilotXAI is using cached market intelligence. "
+            f"{symbol} live pricing is reconnecting, so CoinPlotXAI is using cached market intelligence. "
             "The safest posture is observation until price, volume, and news context refresh."
         )
     confidence = 84 if price and news.get("items") else 68 if price else 56
@@ -19694,18 +23990,18 @@ def api_quote_signals(symbol):
     asset = market_data_service.get_symbol(clean_html(symbol).upper()[:12]) or {}
     change = float(asset.get("change_24h") or 0)
     signal = "Caution" if change < -3 else "Momentum watch" if change > 3 else "Neutral watch"
-    return jsonify({"ok": True, "symbol": symbol.upper(), "signal": signal, "explanation": "Educational market intelligence only. Not financial advice.", "source": "CoinPilotXAI rules"})
+    return jsonify({"ok": True, "symbol": symbol.upper(), "signal": signal, "explanation": "Educational market intelligence only. Not financial advice.", "source": "CoinPlotXAI rules"})
 
 
 @webhook_app.route("/quote", methods=["GET"])
 def quote_center_page():
-    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Live Quote Market Center | CoinPilotXAI</title><meta name='description' content='Live crypto quote board with AI market intelligence, source status, and educational risk notes.'><link rel='canonical' href='https://pulsesoc.com/quote'><meta property='og:title' content='Live Quote Market Center | CoinPilotXAI'><meta property='og:description' content='Track live crypto quotes, AI market context, and educational risk intelligence.'><style>:root{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}*{box-sizing:border-box}html,body{min-height:100%;overflow-x:hidden;overflow-y:auto}body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.psych-market-bg,.intelligence-glow-bg{position:relative;isolation:isolate;overflow-x:hidden;background:radial-gradient(circle at 14% 4%,rgba(110,223,246,.2),transparent 28rem),radial-gradient(circle at 86% 18%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421)}.soft-data-grid:before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.055) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(circle at 50% 15%,black,transparent 72%);pointer-events:none;z-index:-2}.intelligence-glow-bg:after{content:'';position:absolute;inset:auto -15% -28% -15%;height:260px;background:linear-gradient(90deg,transparent,rgba(110,223,246,.17),rgba(255,209,102,.1),transparent);filter:blur(24px);animation:intelligenceDrift 16s ease-in-out infinite alternate;z-index:-1}.wrap{width:min(100% - 28px,1180px);margin:auto;padding:38px 0 96px}.hero{padding:24px 0 20px}.kicker{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}h1{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}p{color:var(--muted)}.trust-gradient-panel,.card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.82);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}.quote-cta-glow{box-shadow:0 0 0 1px rgba(110,223,246,.22),0 0 30px rgba(110,223,246,.18)}.filters{display:flex;gap:8px;overflow-x:auto;padding:10px 0 16px;position:sticky;top:0;background:rgba(5,11,20,.9);backdrop-filter:blur(14px);z-index:5}.filter{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850;cursor:pointer}.filter.active{box-shadow:0 0 24px rgba(110,223,246,.34);color:#fff}.search{width:100%;min-height:46px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.06);color:#fff;padding:12px;margin:8px 0 12px}.meta{color:var(--muted);font-size:13px;margin:8px 0 12px}.row{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;padding:14px 12px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer;border-radius:12px;transition:background .2s ease,transform .2s ease,box-shadow .2s ease}.row:hover{background:rgba(110,223,246,.08);transform:translateY(-1px);box-shadow:0 0 26px rgba(110,223,246,.12)}.green{color:var(--green)}.red{color:#ff6b7a}.actions{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 20px}.button{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid var(--line);padding:10px 14px;color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));font-weight:900;text-decoration:none}@keyframes intelligenceDrift{from{transform:translateX(-4%) scale(1);opacity:.55}to{transform:translateX(4%) scale(1.06);opacity:.85}}@media(max-width:760px){.row{grid-template-columns:1fr 1fr}.actions .button{width:100%}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}</style></head><body class='psych-market-bg intelligence-glow-bg soft-data-grid'><main class='wrap'><section class='hero'><div class='kicker'>Live Quote Market Center</div><h1>Real-time crypto intelligence with calm market context.</h1><p>Track live assets, top movers, volume leaders, source status, and market filters. Educational market intelligence only. Not financial advice.</p><div class='actions'><a class='button quote-cta-glow' href='/signup?next=/watch'>Create Free Account</a><a class='button quote-cta-glow' href='/simulator'>Start Trading Simulator</a></div></section><section class='card trust-gradient-panel'><input class='search' id='search' placeholder='Search BTC, ETH, SUI, OP, TON...'><div class='filters'><button class='filter active' data-filter='top_volume'>Top Volume</button><button class='filter' data-filter='top_market_cap'>Top Market Cap</button><button class='filter' data-filter='gainers'>Gainers</button><button class='filter' data-filter='losers'>Losers</button><button class='filter' data-filter='stablecoins'>Stablecoins</button><button class='filter' data-filter='layer1'>Layer 1</button><button class='filter' data-filter='layer2'>Layer 2</button><button class='filter' data-filter='ai'>AI Coins</button><button class='filter' data-filter='meme'>Meme Coins</button></div><div class='meta' id='meta'>Loading live market board...</div><div id='rows'><div class='meta'>Loading...</div></div></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{style:'currency',currency:'USD'});const pct=n=>(Number(n||0)>=0?'+':'')+Number(n||0).toFixed(2)+'%';let markets=[];let filter='top_volume';function categoryOk(m){const s=(m.symbol||'').toUpperCase(), name=(m.name||'').toLowerCase();if(filter==='stablecoins')return ['USDT','USDC','DAI'].includes(s)||name.includes('stable');if(filter==='layer1')return ['BTC','ETH','SOL','SUI','TON','ADA','AVAX','NEAR','ATOM','DOT'].includes(s);if(filter==='layer2')return ['OP','ARB','MATIC','POL','STRK','BASE'].includes(s)||name.includes('optimism')||name.includes('arbitrum');if(filter==='ai')return ['FET','TAO','RNDR','RENDER','AI'].includes(s)||name.includes('ai')||name.includes('artificial');if(filter==='meme')return ['DOGE','SHIB','PEPE','BONK','WIF'].includes(s)||name.includes('doge')||name.includes('meme');return true}function sorted(list){if(filter==='gainers')return list.sort((a,b)=>(b.change_24h??-999)-(a.change_24h??-999));if(filter==='losers')return list.sort((a,b)=>(a.change_24h??999)-(b.change_24h??999));if(filter==='top_market_cap')return list.sort((a,b)=>(b.market_cap||0)-(a.market_cap||0));return list.sort((a,b)=>(b.volume_24h||0)-(a.volume_24h||0))}function render(){const q=document.getElementById('search').value.trim().toLowerCase();const data=sorted(markets.filter(categoryOk).filter(m=>!q||(m.symbol||'').toLowerCase().includes(q)||(m.name||'').toLowerCase().includes(q))).slice(0,60);document.querySelectorAll('[data-filter]').forEach(b=>b.classList.toggle('active',b.dataset.filter===filter));document.getElementById('rows').innerHTML=data.map((m,i)=>`<div class='row' onclick=\"location.href='/quote/crypto/${m.symbol}'\"><strong>${i+1}. ${m.name} (${m.symbol})</strong><span>${money(m.price)}</span><span class='${Number(m.change_24h||0)>=0?'green':'red'}'>${pct(m.change_24h)}</span><span>${Number(m.volume_24h||0).toLocaleString()}</span></div>`).join('')||'<div class=meta>Live source is reconnecting right now. Here is what I can safely show when cached data returns.</div>'}async function load(){try{const d=await fetch('/api/quote/crypto',{cache:'no-store'}).then(r=>r.json());markets=d.markets||[];document.getElementById('meta').textContent=`Source: ${d.source||'unavailable'} · Updated: ${d.updated_at||'reconnecting'}${d.warning?' · '+d.warning:''}`;render()}catch(e){document.getElementById('meta').textContent='Live source is reconnecting right now. Here is what I can safely tell you… market data is temporarily unavailable.'}}document.addEventListener('click',e=>{const b=e.target.closest('[data-filter]');if(!b)return;filter=b.dataset.filter;render()});document.getElementById('search').addEventListener('input',render);load();setInterval(load,30000)</script></body></html>""")
+    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Live Quote Market Center | CoinPlotXAI</title><meta name='description' content='Live crypto quote board with AI market intelligence, source status, and educational risk notes.'><link rel='canonical' href='https://pulsesoc.com/quote'><meta property='og:title' content='Live Quote Market Center | CoinPlotXAI'><meta property='og:description' content='Track live crypto quotes, AI market context, and educational risk intelligence.'><style>:root{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}*{box-sizing:border-box}html,body{min-height:100%;overflow-x:hidden;overflow-y:auto}body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.psych-market-bg,.intelligence-glow-bg{position:relative;isolation:isolate;overflow-x:hidden;background:radial-gradient(circle at 14% 4%,rgba(110,223,246,.2),transparent 28rem),radial-gradient(circle at 86% 18%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421)}.soft-data-grid:before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.055) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(circle at 50% 15%,black,transparent 72%);pointer-events:none;z-index:-2}.intelligence-glow-bg:after{content:'';position:absolute;inset:auto -15% -28% -15%;height:260px;background:linear-gradient(90deg,transparent,rgba(110,223,246,.17),rgba(255,209,102,.1),transparent);filter:blur(24px);animation:intelligenceDrift 16s ease-in-out infinite alternate;z-index:-1}.wrap{width:min(100% - 28px,1180px);margin:auto;padding:38px 0 96px}.hero{padding:24px 0 20px}.kicker{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}h1{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}p{color:var(--muted)}.trust-gradient-panel,.card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.82);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}.quote-cta-glow{box-shadow:0 0 0 1px rgba(110,223,246,.22),0 0 30px rgba(110,223,246,.18)}.filters{display:flex;gap:8px;overflow-x:auto;padding:10px 0 16px;position:sticky;top:0;background:rgba(5,11,20,.9);backdrop-filter:blur(14px);z-index:5}.filter{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850;cursor:pointer}.filter.active{box-shadow:0 0 24px rgba(110,223,246,.34);color:#fff}.search{width:100%;min-height:46px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.06);color:#fff;padding:12px;margin:8px 0 12px}.meta{color:var(--muted);font-size:13px;margin:8px 0 12px}.row{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;padding:14px 12px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer;border-radius:12px;transition:background .2s ease,transform .2s ease,box-shadow .2s ease}.row:hover{background:rgba(110,223,246,.08);transform:translateY(-1px);box-shadow:0 0 26px rgba(110,223,246,.12)}.green{color:var(--green)}.red{color:#ff6b7a}.actions{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 20px}.button{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid var(--line);padding:10px 14px;color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));font-weight:900;text-decoration:none}@keyframes intelligenceDrift{from{transform:translateX(-4%) scale(1);opacity:.55}to{transform:translateX(4%) scale(1.06);opacity:.85}}@media(max-width:760px){.row{grid-template-columns:1fr 1fr}.actions .button{width:100%}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}</style></head><body class='psych-market-bg intelligence-glow-bg soft-data-grid'><main class='wrap'><section class='hero'><div class='kicker'>Live Quote Market Center</div><h1>Real-time crypto intelligence with calm market context.</h1><p>Track live assets, top movers, volume leaders, source status, and market filters. Educational market intelligence only. Not financial advice.</p><div class='actions'><a class='button quote-cta-glow' href='/signup?next=/watch'>Create Free Account</a><a class='button quote-cta-glow' href='/simulator'>Start Trading Simulator</a></div></section><section class='card trust-gradient-panel'><input class='search' id='search' placeholder='Search BTC, ETH, SUI, OP, TON...'><div class='filters'><button class='filter active' data-filter='top_volume'>Top Volume</button><button class='filter' data-filter='top_market_cap'>Top Market Cap</button><button class='filter' data-filter='gainers'>Gainers</button><button class='filter' data-filter='losers'>Losers</button><button class='filter' data-filter='stablecoins'>Stablecoins</button><button class='filter' data-filter='layer1'>Layer 1</button><button class='filter' data-filter='layer2'>Layer 2</button><button class='filter' data-filter='ai'>AI Coins</button><button class='filter' data-filter='meme'>Meme Coins</button></div><div class='meta' id='meta'>Loading live market board...</div><div id='rows'><div class='meta'>Loading...</div></div></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{style:'currency',currency:'USD'});const pct=n=>(Number(n||0)>=0?'+':'')+Number(n||0).toFixed(2)+'%';let markets=[];let filter='top_volume';function categoryOk(m){const s=(m.symbol||'').toUpperCase(), name=(m.name||'').toLowerCase();if(filter==='stablecoins')return ['USDT','USDC','DAI'].includes(s)||name.includes('stable');if(filter==='layer1')return ['BTC','ETH','SOL','SUI','TON','ADA','AVAX','NEAR','ATOM','DOT'].includes(s);if(filter==='layer2')return ['OP','ARB','MATIC','POL','STRK','BASE'].includes(s)||name.includes('optimism')||name.includes('arbitrum');if(filter==='ai')return ['FET','TAO','RNDR','RENDER','AI'].includes(s)||name.includes('ai')||name.includes('artificial');if(filter==='meme')return ['DOGE','SHIB','PEPE','BONK','WIF'].includes(s)||name.includes('doge')||name.includes('meme');return true}function sorted(list){if(filter==='gainers')return list.sort((a,b)=>(b.change_24h??-999)-(a.change_24h??-999));if(filter==='losers')return list.sort((a,b)=>(a.change_24h??999)-(b.change_24h??999));if(filter==='top_market_cap')return list.sort((a,b)=>(b.market_cap||0)-(a.market_cap||0));return list.sort((a,b)=>(b.volume_24h||0)-(a.volume_24h||0))}function render(){const q=document.getElementById('search').value.trim().toLowerCase();const data=sorted(markets.filter(categoryOk).filter(m=>!q||(m.symbol||'').toLowerCase().includes(q)||(m.name||'').toLowerCase().includes(q))).slice(0,60);document.querySelectorAll('[data-filter]').forEach(b=>b.classList.toggle('active',b.dataset.filter===filter));document.getElementById('rows').innerHTML=data.map((m,i)=>`<div class='row' onclick=\"location.href='/quote/crypto/${m.symbol}'\"><strong>${i+1}. ${m.name} (${m.symbol})</strong><span>${money(m.price)}</span><span class='${Number(m.change_24h||0)>=0?'green':'red'}'>${pct(m.change_24h)}</span><span>${Number(m.volume_24h||0).toLocaleString()}</span></div>`).join('')||'<div class=meta>Live source is reconnecting right now. Here is what I can safely show when cached data returns.</div>'}async function load(){try{const d=await fetch('/api/quote/crypto',{cache:'no-store'}).then(r=>r.json());markets=d.markets||[];document.getElementById('meta').textContent=`Source: ${d.source||'unavailable'} · Updated: ${d.updated_at||'reconnecting'}${d.warning?' · '+d.warning:''}`;render()}catch(e){document.getElementById('meta').textContent='Live source is reconnecting right now. Here is what I can safely tell you… market data is temporarily unavailable.'}}document.addEventListener('click',e=>{const b=e.target.closest('[data-filter]');if(!b)return;filter=b.dataset.filter;render()});document.getElementById('search').addEventListener('input',render);load();setInterval(load,30000)</script></body></html>""")
 
 
 @webhook_app.route("/quote/crypto/<symbol>", methods=["GET"])
 def quote_symbol_page(symbol):
     symbol = clean_html(symbol).upper()[:12]
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{symbol} Live Price, Market Data, AI Crypto Intelligence | CoinPilotXAI</title><meta name='description' content='{symbol} live price, market data, educational AI explanation, watchlist actions, and risk notes from CoinPilotXAI.'><link rel='canonical' href='https://pulsesoc.com/quote/crypto/{symbol}'><meta property='og:title' content='{symbol} Live Price | CoinPilotXAI'><meta property='og:description' content='Live quote intelligence, AI context, and educational risk notes for {symbol}.'><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.psych-market-bg,.intelligence-glow-bg{{position:relative;isolation:isolate;overflow-x:hidden;background:radial-gradient(circle at 14% 4%,rgba(110,223,246,.2),transparent 28rem),radial-gradient(circle at 86% 18%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421)}}.soft-data-grid:before{{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(110,223,246,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.055) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(circle at 50% 15%,black,transparent 72%);pointer-events:none;z-index:-2}}.wrap{{width:min(100% - 28px,1050px);margin:auto;padding:30px 0 90px}}a{{color:inherit}}.trust-gradient-panel,.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.82);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px;margin:14px 0}}.metric{{font-size:clamp(40px,8vw,68px);font-weight:950}}p{{color:var(--muted)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;padding:10px 14px;text-decoration:none;cursor:pointer;box-shadow:0 0 30px rgba(110,223,246,.16)}}.tactical-card{{position:relative;overflow:hidden;background:radial-gradient(circle at 14% 0,rgba(110,223,246,.18),transparent 22rem),linear-gradient(135deg,rgba(14,28,48,.96),rgba(7,14,26,.92))}}.tactical-card:before{{content:'';position:absolute;inset:-1px;background:linear-gradient(120deg,transparent,rgba(110,223,246,.16),rgba(54,229,143,.08),transparent);animation:tacticalGlow 7s ease-in-out infinite;pointer-events:none}}.tactical-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;position:relative}}.live-dot,.confidence{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;padding:6px 9px;color:#c8ffe2;font-size:12px;font-weight:900;background:rgba(255,255,255,.055)}}.live-dot:before{{content:'';width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8)}}.tactical-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;position:relative}}.tactical-pill{{border:1px solid rgba(255,255,255,.08);border-radius:13px;background:rgba(255,255,255,.045);padding:12px}}.tactical-pill strong{{display:block;color:#fff;margin-top:2px}}.tactical-insight{{font-size:15px;line-height:1.55;margin:12px 0;position:relative}}canvas{{width:100%;height:260px;background:rgba(0,0,0,.18);border-radius:14px}}@keyframes tacticalGlow{{0%,100%{{opacity:.28;transform:translateX(-8%)}}50%{{opacity:.68;transform:translateX(8%)}}}}@media(max-width:720px){{.actions .button{{width:100%}}.tactical-head{{align-items:flex-start;flex-direction:column}}.tactical-grid{{grid-template-columns:1fr}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body class='psych-market-bg intelligence-glow-bg soft-data-grid'><main class='wrap'><a href='/quote'>← Quote Center</a><section class='card trust-gradient-panel'><h1>{symbol} Live Quote</h1><div class='metric' id='price'>Loading...</div><p id='meta'></p><div class='actions'><button class='button' id='watch'>Add to Watchlist</button><a class='button' href='/alerts'>Create Alert</a><a class='button' href='/simulator?asset={symbol}'>Simulate Trade</a><a class='button' href='/chat?asset={symbol}'>Ask AI</a><a class='button' href='/education'>Open Education</a></div></section><section class='card tactical-card' aria-live='polite'><div class='tactical-head'><div><p class='live-dot'>Live intelligence</p><h2>AI Tactical Insight</h2></div><span class='confidence' id='confidence'>Confidence --</span></div><div class='tactical-grid'><div class='tactical-pill'>Market Mood<strong id='mood'>Loading tactical context...</strong></div><div class='tactical-pill'>Tactical Bias<strong id='bias'>Neutral</strong></div><div class='tactical-pill'>Key Levels<strong id='levels'>Support -- · Resistance --</strong></div><div class='tactical-pill'>AI Next Decision<strong id='decision'>Watch for confirmation</strong></div></div><p class='tactical-insight' id='tacticalInsight'>CoinPilotXAI is loading live quote context, Fear & Greed, cached news, and volatility. If live sources reconnect slowly, cached tactical intelligence will appear here.</p><p id='tacticalMeta'></p></section><section class='card'><canvas id='chart'></canvas></section><section class='card'><h2>AI Market Explanation</h2><p id='explain'>Educational market intelligence only. Not financial advice.</p></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});const compact=n=>Number(n||0).toLocaleString(undefined,{{maximumFractionDigits:0}});async function loadTactical(){{try{{const t=await fetch('/api/quote/crypto/{symbol}/tactical-insight',{{cache:'no-store'}}).then(r=>r.json());document.getElementById('mood').textContent=t.market_mood||'Cached tactical context';document.getElementById('bias').textContent=t.tactical_bias||'Neutral';const levels=t.key_levels||{{}};document.getElementById('levels').textContent='Support '+(levels.support?compact(levels.support):'--')+' · Resistance '+(levels.resistance?compact(levels.resistance):'--');document.getElementById('decision').textContent=t.next_decision||'Wait for confirmation before aggressive positioning';document.getElementById('tacticalInsight').textContent=t.ai_insight||'Cached tactical intelligence is active while live sources reconnect.';document.getElementById('confidence').textContent='Confidence '+(t.confidence||60)+'%';document.getElementById('tacticalMeta').textContent=`Fear & Greed: ${{(t.fear_greed||{{}}).classification||'reconnecting'}} · Volatility score: ${{t.volatility_score||0}} · News: ${{t.news_source||'cached intelligence'}}`;}}catch(e){{document.getElementById('tacticalInsight').textContent='Cached tactical intelligence is active while live sources reconnect. Avoid emotional entries and wait for confirmation.';}}}}async function load(){{try{{const d=await fetch('/api/quote/crypto/{symbol}',{{cache:'no-store'}}).then(r=>r.json());const a=d.asset||{{}};document.getElementById('price').textContent=money(a.price);document.getElementById('meta').textContent=`24h: ${{Number(a.change_24h||0).toFixed(2)}}% · Volume: ${{Number(a.volume_24h||0).toLocaleString()}} · Source: ${{d.source||'unavailable'}} · Last updated: ${{d.last_updated||'now'}}`;document.getElementById('explain').textContent=`${symbol} is being shown with source labels and risk context. Use the watchlist, alert, simulator, and AI tools for education, not guaranteed outcomes.`;const c=document.getElementById('chart'),ctx=c.getContext('2d');c.width=c.clientWidth*2;c.height=260*2;const chart=await fetch('/api/quote/crypto/{symbol}/chart').then(r=>r.json());ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#6edff6';ctx.lineWidth=4;ctx.beginPath();(chart.points||[]).forEach((p,i)=>{{const x=i/(chart.points.length-1||1)*c.width;const y=c.height-(p.price/(a.price*1.04||1))*c.height*.9;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y)}});ctx.stroke()}}catch(e){{document.getElementById('meta').textContent='Live quote source temporarily reconnecting.'}}}}document.getElementById('watch').onclick=async()=>{{await fetch('/api/watch',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{watch_type:'coin',value:'{symbol}',channels:['in_app']}})}});document.getElementById('watch').textContent='Saved'}};load();loadTactical();setInterval(()=>{{load();loadTactical()}},30000)</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{symbol} Live Price, Market Data, AI Crypto Intelligence | CoinPlotXAI</title><meta name='description' content='{symbol} live price, market data, educational AI explanation, watchlist actions, and risk notes from CoinPlotXAI.'><link rel='canonical' href='https://pulsesoc.com/quote/crypto/{symbol}'><meta property='og:title' content='{symbol} Live Price | CoinPlotXAI'><meta property='og:description' content='Live quote intelligence, AI context, and educational risk notes for {symbol}.'><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.psych-market-bg,.intelligence-glow-bg{{position:relative;isolation:isolate;overflow-x:hidden;background:radial-gradient(circle at 14% 4%,rgba(110,223,246,.2),transparent 28rem),radial-gradient(circle at 86% 18%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421)}}.soft-data-grid:before{{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(110,223,246,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.055) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(circle at 50% 15%,black,transparent 72%);pointer-events:none;z-index:-2}}.wrap{{width:min(100% - 28px,1050px);margin:auto;padding:30px 0 90px}}a{{color:inherit}}.trust-gradient-panel,.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.82);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px;margin:14px 0}}.metric{{font-size:clamp(40px,8vw,68px);font-weight:950}}p{{color:var(--muted)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;padding:10px 14px;text-decoration:none;cursor:pointer;box-shadow:0 0 30px rgba(110,223,246,.16)}}.tactical-card{{position:relative;overflow:hidden;background:radial-gradient(circle at 14% 0,rgba(110,223,246,.18),transparent 22rem),linear-gradient(135deg,rgba(14,28,48,.96),rgba(7,14,26,.92))}}.tactical-card:before{{content:'';position:absolute;inset:-1px;background:linear-gradient(120deg,transparent,rgba(110,223,246,.16),rgba(54,229,143,.08),transparent);animation:tacticalGlow 7s ease-in-out infinite;pointer-events:none}}.tactical-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;position:relative}}.live-dot,.confidence{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;padding:6px 9px;color:#c8ffe2;font-size:12px;font-weight:900;background:rgba(255,255,255,.055)}}.live-dot:before{{content:'';width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8)}}.tactical-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;position:relative}}.tactical-pill{{border:1px solid rgba(255,255,255,.08);border-radius:13px;background:rgba(255,255,255,.045);padding:12px}}.tactical-pill strong{{display:block;color:#fff;margin-top:2px}}.tactical-insight{{font-size:15px;line-height:1.55;margin:12px 0;position:relative}}canvas{{width:100%;height:260px;background:rgba(0,0,0,.18);border-radius:14px}}@keyframes tacticalGlow{{0%,100%{{opacity:.28;transform:translateX(-8%)}}50%{{opacity:.68;transform:translateX(8%)}}}}@media(max-width:720px){{.actions .button{{width:100%}}.tactical-head{{align-items:flex-start;flex-direction:column}}.tactical-grid{{grid-template-columns:1fr}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body class='psych-market-bg intelligence-glow-bg soft-data-grid'><main class='wrap'><a href='/quote'>← Quote Center</a><section class='card trust-gradient-panel'><h1>{symbol} Live Quote</h1><div class='metric' id='price'>Loading...</div><p id='meta'></p><div class='actions'><button class='button' id='watch'>Add to Watchlist</button><a class='button' href='/alerts'>Create Alert</a><a class='button' href='/simulator?asset={symbol}'>Simulate Trade</a><a class='button' href='/chat?asset={symbol}'>Ask AI</a><a class='button' href='/education'>Open Education</a></div></section><section class='card tactical-card' aria-live='polite'><div class='tactical-head'><div><p class='live-dot'>Live intelligence</p><h2>AI Tactical Insight</h2></div><span class='confidence' id='confidence'>Confidence --</span></div><div class='tactical-grid'><div class='tactical-pill'>Market Mood<strong id='mood'>Loading tactical context...</strong></div><div class='tactical-pill'>Tactical Bias<strong id='bias'>Neutral</strong></div><div class='tactical-pill'>Key Levels<strong id='levels'>Support -- · Resistance --</strong></div><div class='tactical-pill'>AI Next Decision<strong id='decision'>Watch for confirmation</strong></div></div><p class='tactical-insight' id='tacticalInsight'>CoinPlotXAI is loading live quote context, Fear & Greed, cached news, and volatility. If live sources reconnect slowly, cached tactical intelligence will appear here.</p><p id='tacticalMeta'></p></section><section class='card'><canvas id='chart'></canvas></section><section class='card'><h2>AI Market Explanation</h2><p id='explain'>Educational market intelligence only. Not financial advice.</p></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});const compact=n=>Number(n||0).toLocaleString(undefined,{{maximumFractionDigits:0}});async function loadTactical(){{try{{const t=await fetch('/api/quote/crypto/{symbol}/tactical-insight',{{cache:'no-store'}}).then(r=>r.json());document.getElementById('mood').textContent=t.market_mood||'Cached tactical context';document.getElementById('bias').textContent=t.tactical_bias||'Neutral';const levels=t.key_levels||{{}};document.getElementById('levels').textContent='Support '+(levels.support?compact(levels.support):'--')+' · Resistance '+(levels.resistance?compact(levels.resistance):'--');document.getElementById('decision').textContent=t.next_decision||'Wait for confirmation before aggressive positioning';document.getElementById('tacticalInsight').textContent=t.ai_insight||'Cached tactical intelligence is active while live sources reconnect.';document.getElementById('confidence').textContent='Confidence '+(t.confidence||60)+'%';document.getElementById('tacticalMeta').textContent=`Fear & Greed: ${{(t.fear_greed||{{}}).classification||'reconnecting'}} · Volatility score: ${{t.volatility_score||0}} · News: ${{t.news_source||'cached intelligence'}}`;}}catch(e){{document.getElementById('tacticalInsight').textContent='Cached tactical intelligence is active while live sources reconnect. Avoid emotional entries and wait for confirmation.';}}}}async function load(){{try{{const d=await fetch('/api/quote/crypto/{symbol}',{{cache:'no-store'}}).then(r=>r.json());const a=d.asset||{{}};document.getElementById('price').textContent=money(a.price);document.getElementById('meta').textContent=`24h: ${{Number(a.change_24h||0).toFixed(2)}}% · Volume: ${{Number(a.volume_24h||0).toLocaleString()}} · Source: ${{d.source||'unavailable'}} · Last updated: ${{d.last_updated||'now'}}`;document.getElementById('explain').textContent=`${symbol} is being shown with source labels and risk context. Use the watchlist, alert, simulator, and AI tools for education, not guaranteed outcomes.`;const c=document.getElementById('chart'),ctx=c.getContext('2d');c.width=c.clientWidth*2;c.height=260*2;const chart=await fetch('/api/quote/crypto/{symbol}/chart').then(r=>r.json());ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#6edff6';ctx.lineWidth=4;ctx.beginPath();(chart.points||[]).forEach((p,i)=>{{const x=i/(chart.points.length-1||1)*c.width;const y=c.height-(p.price/(a.price*1.04||1))*c.height*.9;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y)}});ctx.stroke()}}catch(e){{document.getElementById('meta').textContent='Live quote source temporarily reconnecting.'}}}}document.getElementById('watch').onclick=async()=>{{await fetch('/api/watch',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{watch_type:'coin',value:'{symbol}',channels:['in_app']}})}});document.getElementById('watch').textContent='Saved'}};load();loadTactical();setInterval(()=>{{load();loadTactical()}},30000)</script></body></html>""")
 
 
 def prediction_samples():
@@ -19723,7 +24019,7 @@ def api_predictions():
         markets = [market for market in markets if str(market.get("category", "")).lower() == category]
     if status:
         markets = [market for market in markets if str(market.get("status", "")).lower() == status]
-    return jsonify({"ok": True, "provider": provider, "source_status": "educational sample fallback" if status_payload.get("fallback") else "live", "provider_status": status_payload, "markets": markets, "disclaimer": "Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPilotXAI does not guarantee outcomes."})
+    return jsonify({"ok": True, "provider": provider, "source_status": "educational sample fallback" if status_payload.get("fallback") else "live", "provider_status": status_payload, "markets": markets, "disclaimer": "Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPlotXAI does not guarantee outcomes."})
 
 
 @webhook_app.route("/api/predictions/<market_id>", methods=["GET"])
@@ -19737,7 +24033,7 @@ def predictions_page():
     user = require_account()
     if not user:
         return redirect(url_for("signup_page", next="/predictions"))
-    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Predictions Intelligence | CoinPilotXAI</title><style>body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.wrap{width:min(100% - 28px,1120px);margin:auto;padding:34px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.card{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px}.button{min-height:42px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}</style></head><body><main class='wrap'><h1>Live Predictions Intelligence</h1><p>Track event probabilities, crypto scenarios, sports outcomes, economic events, and market sentiment from one AI intelligence dashboard.</p><div id='cards' class='grid'></div></main><script>async function load(){const d=await fetch('/api/predictions',{cache:'no-store'}).then(r=>r.json());document.getElementById('cards').innerHTML=(d.markets||[]).map(m=>`<article class='card'><small>${m.category} · ${m.source}</small><h2>${m.title}</h2><p>Probability: <strong>${m.probability}%</strong></p><p>Volume: ${Number(m.volume||0).toLocaleString()} · Risk: ${m.risk_level}</p><button class='button' data-watch='${m.id}'>Track in Dashboard</button> <a class='button' href='/predictions/${m.id}'>View Details</a></article>`).join('')}document.addEventListener('click',async e=>{if(e.target.dataset.watch){await fetch('/api/predictions/watch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({market_id:e.target.dataset.watch})});e.target.textContent='Tracked'}});load()</script></body></html>""")
+    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Predictions Intelligence | CoinPlotXAI</title><style>body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.wrap{width:min(100% - 28px,1120px);margin:auto;padding:34px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.card{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px}.button{min-height:42px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}</style></head><body><main class='wrap'><h1>Live Predictions Intelligence</h1><p>Track event probabilities, crypto scenarios, sports outcomes, economic events, and market sentiment from one AI intelligence dashboard.</p><div id='cards' class='grid'></div></main><script>async function load(){const d=await fetch('/api/predictions',{cache:'no-store'}).then(r=>r.json());document.getElementById('cards').innerHTML=(d.markets||[]).map(m=>`<article class='card'><small>${m.category} · ${m.source}</small><h2>${m.title}</h2><p>Probability: <strong>${m.probability}%</strong></p><p>Volume: ${Number(m.volume||0).toLocaleString()} · Risk: ${m.risk_level}</p><button class='button' data-watch='${m.id}'>Track in Dashboard</button> <a class='button' href='/predictions/${m.id}'>View Details</a></article>`).join('')}document.addEventListener('click',async e=>{if(e.target.dataset.watch){await fetch('/api/predictions/watch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({market_id:e.target.dataset.watch})});e.target.textContent='Tracked'}});load()</script></body></html>""")
 
 
 @webhook_app.route("/predictions/crypto", methods=["GET"])
@@ -19747,12 +24043,12 @@ def predictions_crypto_page():
     external_url = clean_html(os.getenv("EXTERNAL_TRADE_URL") or os.getenv("PREDICTIONS_EXTERNAL_TRADE_URL") or get_gemini_trade_url())
     return Response(f"""<!doctype html>
 <html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>Live Crypto Predictions Intelligence | CoinPilotXAI</title>
-<meta name='description' content='Track active crypto prediction scenarios, market probabilities, AI explanations, and risk intelligence with CoinPilotXAI.'>
+<title>Live Crypto Predictions Intelligence | CoinPlotXAI</title>
+<meta name='description' content='Track active crypto prediction scenarios, market probabilities, AI explanations, and risk intelligence with CoinPlotXAI.'>
 <link rel='canonical' href='https://pulsesoc.com/predictions/crypto'>
 <style>
 :root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 26rem),radial-gradient(circle at 88% 16%,rgba(54,229,143,.11),transparent 23rem),#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}body:before{{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.045) 1px,transparent 1px);background-size:54px 54px;mask-image:radial-gradient(circle at 50% 10%,black,transparent 72%);pointer-events:none}}.wrap{{position:relative;width:min(100% - 28px,1180px);margin:auto;padding:34px 0 90px}}a{{color:inherit;text-decoration:none}}.kicker{{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}}h1{{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}}p{{color:var(--muted)}}.filters{{display:flex;gap:8px;overflow:auto;padding:10px 0 18px;position:sticky;top:0;background:rgba(5,11,20,.86);backdrop-filter:blur(12px);z-index:2}}.pill{{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850;cursor:pointer}}.pill.active{{box-shadow:0 0 24px rgba(110,223,246,.34);color:#fff}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.84);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}}.status{{display:inline-flex;gap:8px;align-items:center;color:var(--green);font-weight:900}}.status:before{{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 16px var(--green)}}.prob{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:12px 0}}.prob span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.actions{{display:flex;gap:8px;flex-wrap:wrap}}.button{{min-height:42px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}}.button.secondary{{background:rgba(255,255,255,.055);color:#f2fbff}}.disclaimer{{margin-top:22px;border:1px solid rgba(255,209,102,.22);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#ffe7a6}}@media(max-width:720px){{.actions .button,.actions a{{width:100%;text-align:center}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}
-</style></head><body><main class='wrap'><section><div class='kicker'>Crypto Predictions Intelligence</div><h1>Active crypto prediction scenarios with AI risk context.</h1><p>Track probabilities, close dates, liquidity context, and market psychology. Actions save inside your PulseSoc account.</p><div class='filters'><button class='pill active' data-filter='active'>Active</button><button class='pill' data-filter='trending'>Trending</button><button class='pill' data-filter='closing'>Closing Soon</button><button class='pill' data-filter='btc'>Bitcoin</button><button class='pill' data-filter='eth'>Ethereum</button><button class='pill' data-filter='alt'>Altcoins</button><button class='pill' data-filter='macro'>Macro Crypto</button><button class='pill' data-filter='volume'>High Volume</button></div></section><section id='cards' class='grid' aria-live='polite'></section><p class='disclaimer'>Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPilotXAI does not guarantee outcomes.</p></main>
+</style></head><body><main class='wrap'><section><div class='kicker'>Crypto Predictions Intelligence</div><h1>Active crypto prediction scenarios with AI risk context.</h1><p>Track probabilities, close dates, liquidity context, and market psychology. Actions save inside your PulseSoc account.</p><div class='filters'><button class='pill active' data-filter='active'>Active</button><button class='pill' data-filter='trending'>Trending</button><button class='pill' data-filter='closing'>Closing Soon</button><button class='pill' data-filter='btc'>Bitcoin</button><button class='pill' data-filter='eth'>Ethereum</button><button class='pill' data-filter='alt'>Altcoins</button><button class='pill' data-filter='macro'>Macro Crypto</button><button class='pill' data-filter='volume'>High Volume</button></div></section><section id='cards' class='grid' aria-live='polite'></section><p class='disclaimer'>Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPlotXAI does not guarantee outcomes.</p></main>
 <script>
 const actionUrl='{action_url}';
 const externalUrl='{external_url}';
@@ -19766,7 +24062,7 @@ async function load(){{const d=await fetch('/api/predictions?category=crypto&sta
 document.addEventListener('click',async e=>{{const filter=e.target.closest('[data-filter]');if(filter){{currentFilter=filter.dataset.filter;render();return}}const btn=e.target.closest('button[data-action]');if(!btn)return;if(actionUrl.startsWith('/signup')){{location.href=actionUrl;return}}if(btn.dataset.action==='ai'){{location.href='/chat?context=prediction&symbol='+encodeURIComponent(btn.dataset.symbol||'CRYPTO')+'&id='+encodeURIComponent(btn.dataset.id);return}}if(btn.dataset.action==='simulate'){{location.href='/simulator?prediction='+encodeURIComponent(btn.dataset.id);return}}const endpoint=btn.dataset.action==='alert'?'/api/predictions/alert':'/api/predictions/watch';await fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{market_id:btn.dataset.id}})}});btn.textContent=btn.dataset.action==='watch'?'Watching ✓':'Prediction alert activated'}});
 load();
 </script></body></html>""")
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Live Crypto Predictions Intelligence | CoinPilotXAI</title><meta name='description' content='Track active crypto prediction scenarios, market probabilities, AI explanations, and risk intelligence with CoinPilotXAI.'><link rel='canonical' href='https://pulsesoc.com/predictions/crypto'><meta property='og:title' content='Live Crypto Predictions Intelligence | CoinPilotXAI'><meta property='og:description' content='Crypto prediction scenarios with AI explanations, probability context, and educational risk intelligence.'><script type='application/ld+json'>{{"@context":"https://schema.org","@type":"WebPage","name":"Live Crypto Predictions Intelligence","description":"Educational crypto prediction scenarios, probability tracking, and AI risk intelligence from CoinPilotXAI."}}</script><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 26rem),radial-gradient(circle at 88% 16%,rgba(54,229,143,.11),transparent 23rem),#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}body:before{{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.045) 1px,transparent 1px);background-size:54px 54px;mask-image:radial-gradient(circle at 50% 10%,black,transparent 72%);pointer-events:none}}.wrap{{position:relative;width:min(100% - 28px,1180px);margin:auto;padding:34px 0 90px}}a{{color:inherit;text-decoration:none}}.hero{{padding:34px 0 20px}}.kicker{{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}}h1{{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}}p{{color:var(--muted)}}.filters{{display:flex;gap:8px;overflow:auto;padding:10px 0 18px}}.pill{{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.84);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}}.status{{display:inline-flex;gap:8px;align-items:center;color:var(--green);font-weight:900}}.status:before{{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 16px var(--green)}}.prob{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:12px 0}}.prob span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.actions{{display:flex;gap:8px;flex-wrap:wrap}}.button{{min-height:42px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}}.button.secondary{{background:rgba(255,255,255,.055);color:#f2fbff}}.disclaimer{{margin-top:22px;border:1px solid rgba(255,209,102,.22);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#ffe7a6}}@media(max-width:720px){{.actions .button{{width:100%}}.tactical-head{{align-items:flex-start;flex-direction:column}}.tactical-grid{{grid-template-columns:1fr}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class='wrap'><section class='hero'><div class='kicker'>Crypto Predictions Intelligence</div><h1>Active crypto prediction scenarios with AI risk context.</h1><p>Track scenario probabilities, close dates, liquidity context, and market psychology without guaranteed-outcome claims. Live provider data appears when legally configured; sample scenarios are clearly labeled.</p><div class='filters'><span class='pill'>Active</span><span class='pill'>Trending</span><span class='pill'>Closing Soon</span><span class='pill'>Bitcoin</span><span class='pill'>Ethereum</span><span class='pill'>Altcoins</span><span class='pill'>Macro Crypto</span><span class='pill'>High Volume</span></div></section><section id='cards' class='grid' aria-live='polite'></section><p class='disclaimer'>Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPilotXAI does not guarantee outcomes.</p></main><script>const actionUrl='{action_url}';const externalUrl='{clean_html(os.getenv("PREDICTIONS_EXTERNAL_TRADE_URL") or get_gemini_trade_url())}';function card(m){{const p=Number(m.probability||m.yes_probability||0);return `<article class='card'><span class='status'>${{m.status||'active'}} · ${{m.source||'source pending'}}</span><h2>${{m.title}}</h2><p>${{m.category}} · Risk: ${{m.risk_level||'Unknown'}}</p><div class='prob'><span style='width:${{Math.max(0,Math.min(100,p))}}%'></span></div><p><strong>${{p}}%</strong> Yes probability · Volume ${{Number(m.volume||0).toLocaleString()}} · Liquidity ${{Number(m.liquidity||0).toLocaleString()}}</p><p>Closes: ${{(m.close_time||'').slice(0,10)}} · Resolves: ${{(m.resolve_time||'').slice(0,10)}}</p><div class='actions'><button class='button' data-action='watch' data-id='${{m.id}}'>Watch Prediction</button><button class='button secondary' data-action='alert' data-id='${{m.id}}'>Create Alert</button><button class='button secondary' data-action='ai' data-id='${{m.id}}'>Ask AI</button><button class='button secondary' data-action='simulate' data-id='${{m.id}}'>Simulate Outcome</button><a class='button secondary' href='${{externalUrl}}' target='_blank' rel='noopener sponsored'>Open External Trade</a></div></article>`}}async function load(){{const d=await fetch('/api/predictions?category=crypto&status=active',{{cache:'no-store'}}).then(r=>r.json());document.getElementById('cards').innerHTML=(d.markets||[]).map(card).join('')||'<article class=card>Predictions source reconnecting. No live crypto scenarios are available right now.</article>'}}document.addEventListener('click',async e=>{{const btn=e.target.closest('button[data-action]');if(!btn)return;if(actionUrl.startsWith('/signup')){{location.href=actionUrl;return}}const endpoint=btn.dataset.action==='alert'?'/api/predictions/alert':btn.dataset.action==='simulate'?'/api/predictions/simulate':'/api/predictions/watch';await fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{market_id:btn.dataset.id}})}});btn.textContent='Saved'}});load()</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Live Crypto Predictions Intelligence | CoinPlotXAI</title><meta name='description' content='Track active crypto prediction scenarios, market probabilities, AI explanations, and risk intelligence with CoinPlotXAI.'><link rel='canonical' href='https://pulsesoc.com/predictions/crypto'><meta property='og:title' content='Live Crypto Predictions Intelligence | CoinPlotXAI'><meta property='og:description' content='Crypto prediction scenarios with AI explanations, probability context, and educational risk intelligence.'><script type='application/ld+json'>{{"@context":"https://schema.org","@type":"WebPage","name":"Live Crypto Predictions Intelligence","description":"Educational crypto prediction scenarios, probability tracking, and AI risk intelligence from CoinPlotXAI."}}</script><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 26rem),radial-gradient(circle at 88% 16%,rgba(54,229,143,.11),transparent 23rem),#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}body:before{{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.045) 1px,transparent 1px);background-size:54px 54px;mask-image:radial-gradient(circle at 50% 10%,black,transparent 72%);pointer-events:none}}.wrap{{position:relative;width:min(100% - 28px,1180px);margin:auto;padding:34px 0 90px}}a{{color:inherit;text-decoration:none}}.hero{{padding:34px 0 20px}}.kicker{{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}}h1{{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}}p{{color:var(--muted)}}.filters{{display:flex;gap:8px;overflow:auto;padding:10px 0 18px}}.pill{{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.84);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}}.status{{display:inline-flex;gap:8px;align-items:center;color:var(--green);font-weight:900}}.status:before{{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 16px var(--green)}}.prob{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:12px 0}}.prob span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.actions{{display:flex;gap:8px;flex-wrap:wrap}}.button{{min-height:42px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}}.button.secondary{{background:rgba(255,255,255,.055);color:#f2fbff}}.disclaimer{{margin-top:22px;border:1px solid rgba(255,209,102,.22);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#ffe7a6}}@media(max-width:720px){{.actions .button{{width:100%}}.tactical-head{{align-items:flex-start;flex-direction:column}}.tactical-grid{{grid-template-columns:1fr}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class='wrap'><section class='hero'><div class='kicker'>Crypto Predictions Intelligence</div><h1>Active crypto prediction scenarios with AI risk context.</h1><p>Track scenario probabilities, close dates, liquidity context, and market psychology without guaranteed-outcome claims. Live provider data appears when legally configured; sample scenarios are clearly labeled.</p><div class='filters'><span class='pill'>Active</span><span class='pill'>Trending</span><span class='pill'>Closing Soon</span><span class='pill'>Bitcoin</span><span class='pill'>Ethereum</span><span class='pill'>Altcoins</span><span class='pill'>Macro Crypto</span><span class='pill'>High Volume</span></div></section><section id='cards' class='grid' aria-live='polite'></section><p class='disclaimer'>Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPlotXAI does not guarantee outcomes.</p></main><script>const actionUrl='{action_url}';const externalUrl='{clean_html(os.getenv("PREDICTIONS_EXTERNAL_TRADE_URL") or get_gemini_trade_url())}';function card(m){{const p=Number(m.probability||m.yes_probability||0);return `<article class='card'><span class='status'>${{m.status||'active'}} · ${{m.source||'source pending'}}</span><h2>${{m.title}}</h2><p>${{m.category}} · Risk: ${{m.risk_level||'Unknown'}}</p><div class='prob'><span style='width:${{Math.max(0,Math.min(100,p))}}%'></span></div><p><strong>${{p}}%</strong> Yes probability · Volume ${{Number(m.volume||0).toLocaleString()}} · Liquidity ${{Number(m.liquidity||0).toLocaleString()}}</p><p>Closes: ${{(m.close_time||'').slice(0,10)}} · Resolves: ${{(m.resolve_time||'').slice(0,10)}}</p><div class='actions'><button class='button' data-action='watch' data-id='${{m.id}}'>Watch Prediction</button><button class='button secondary' data-action='alert' data-id='${{m.id}}'>Create Alert</button><button class='button secondary' data-action='ai' data-id='${{m.id}}'>Ask AI</button><button class='button secondary' data-action='simulate' data-id='${{m.id}}'>Simulate Outcome</button><a class='button secondary' href='${{externalUrl}}' target='_blank' rel='noopener sponsored'>Open External Trade</a></div></article>`}}async function load(){{const d=await fetch('/api/predictions?category=crypto&status=active',{{cache:'no-store'}}).then(r=>r.json());document.getElementById('cards').innerHTML=(d.markets||[]).map(card).join('')||'<article class=card>Predictions source reconnecting. No live crypto scenarios are available right now.</article>'}}document.addEventListener('click',async e=>{{const btn=e.target.closest('button[data-action]');if(!btn)return;if(actionUrl.startsWith('/signup')){{location.href=actionUrl;return}}const endpoint=btn.dataset.action==='alert'?'/api/predictions/alert':btn.dataset.action==='simulate'?'/api/predictions/simulate':'/api/predictions/watch';await fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{market_id:btn.dataset.id}})}});btn.textContent='Saved'}});load()</script></body></html>""")
 
 
 @webhook_app.route("/predictions/<market_id>", methods=["GET"])
@@ -19779,10 +24075,10 @@ def prediction_detail_page(market_id):
         return Response("Prediction market not found", status=404)
     return simple_public_page(
         f"predictions/{market_id}",
-        f"{market['title']} | CoinPilotXAI Predictions Intelligence",
+        f"{market['title']} | CoinPlotXAI Predictions Intelligence",
         market["title"],
         "Educational prediction intelligence for scenario planning, probability awareness, and risk discipline.",
-        f"Current educational probability: {market['probability']}%. Source: {market['source']}. CoinPilotXAI does not guarantee outcomes.",
+        f"Current educational probability: {market['probability']}%. Source: {market['source']}. CoinPlotXAI does not guarantee outcomes.",
         ["Key drivers", "Uncertainty", "Risk controls", "Alert setup"],
         [{"title": "AI explanation", "body": "Ask AI to explain the drivers, uncertainty, and risk level before taking any external action."}],
         ["/predictions", "/education", "/sports-edge", "/quote"],
@@ -19801,7 +24097,7 @@ def api_prediction_watch():
     cur.execute("INSERT OR IGNORE INTO prediction_watches (user_id, market_id, threshold, created_at) VALUES (?, ?, ?, ?)", (user["user_id"], market_id, payload.get("threshold") or 50, datetime.now().isoformat()))
     conn.commit()
     conn.close()
-    notification_service.send_user_alert(user["user_id"], "market_alerts", "Prediction watch saved", f"CoinPilotXAI is watching {market_id}.", {"market_id": market_id}, channels=["in_app"])
+    notification_service.send_user_alert(user["user_id"], "market_alerts", "Prediction watch saved", f"CoinPlotXAI is watching {market_id}.", {"market_id": market_id}, channels=["in_app"])
     return jsonify({"ok": True, "market_id": market_id})
 
 
@@ -20181,7 +24477,7 @@ def day_signal_page():
             return f"<label data-question='{key}'>{label}<select name='{key}' required>{options}</select>{error}</label>"
         return f"<label data-question='{key}'>{label}<input name='{key}' placeholder='{clean_html(item.get('placeholder', 'short answer'))}' required>{error}</label>"
     fields = "".join(render_day_signal_field(item) for item in questions)
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Day Signal | CoinPilotXAI</title><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:calc(24px + env(safe-area-inset-top)) 0 90px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}}label{{display:block;margin:12px 0;color:var(--muted);font-weight:850;scroll-margin-top:24px}}input,select{{width:100%;min-height:46px;border:1px solid var(--line);border-radius:10px;background:#081323;color:#fff;padding:10px;margin-top:6px}}label.is-missing input,label.is-missing select{{border-color:#ff6b7a;box-shadow:0 0 0 3px rgba(255,107,122,.16)}}.field-error{{display:block;min-height:18px;color:#ffb7bf;margin-top:5px}}button,.button{{min-height:44px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 14px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex}}pre{{white-space:pre-wrap;color:#dff7ff}}</style></head><body><main class='wrap'><a class='button' href='/dashboard'>Dashboard</a><section class='card'><h1>{'Pro Psychological Day Signal' if pro else 'Basic Day Signal'}</h1><p>Educational readiness check only. Not financial, trading, betting, or investment advice.</p><form id='form' novalidate>{fields}<button>Generate Day Signal</button></form><pre id='result'></pre></section></main><script>const form=document.getElementById('form');function clearErrors(){{document.querySelectorAll('.is-missing').forEach(n=>n.classList.remove('is-missing'));document.querySelectorAll('[data-error-for]').forEach(n=>n.textContent='')}}function markMissing(name,message){{const q=document.querySelector(`[data-question="${{name}}"]`);if(!q)return false;q.classList.add('is-missing');const err=q.querySelector('[data-error-for]');if(err)err.textContent=message||'Please answer this question.';q.scrollIntoView({{behavior:'smooth',block:'center'}});return true}}form.addEventListener('submit',async e=>{{e.preventDefault();clearErrors();const answers=Object.fromEntries(new FormData(e.target).entries());for(const element of form.querySelectorAll('[required]')){{if(!String(element.value||'').trim()){{markMissing(element.name,'Please answer this question.');return;}}}}document.getElementById('result').textContent='CoinPilotXAI is thinking...';const r=await fetch('/api/day-signal',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{answers}})}});const d=await r.json();if(!r.ok||d.ok===false){{const text=d.response||d.message||'Day Signal unavailable right now.';document.getElementById('result').textContent=text;const match=text.match(/Please answer: (.+)$/);if(match){{const label=[...document.querySelectorAll('[data-question]')].find(node=>node.firstChild&&node.firstChild.textContent.trim()===match[1]);if(label)markMissing(label.dataset.question,'Required for Day Signal.')}}return}}document.getElementById('result').textContent=d.response||d.message||'Day Signal unavailable right now.'}})</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Day Signal | CoinPlotXAI</title><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:calc(24px + env(safe-area-inset-top)) 0 90px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}}label{{display:block;margin:12px 0;color:var(--muted);font-weight:850;scroll-margin-top:24px}}input,select{{width:100%;min-height:46px;border:1px solid var(--line);border-radius:10px;background:#081323;color:#fff;padding:10px;margin-top:6px}}label.is-missing input,label.is-missing select{{border-color:#ff6b7a;box-shadow:0 0 0 3px rgba(255,107,122,.16)}}.field-error{{display:block;min-height:18px;color:#ffb7bf;margin-top:5px}}button,.button{{min-height:44px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 14px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex}}pre{{white-space:pre-wrap;color:#dff7ff}}</style></head><body><main class='wrap'><a class='button' href='/dashboard'>Dashboard</a><section class='card'><h1>{'Pro Psychological Day Signal' if pro else 'Basic Day Signal'}</h1><p>Educational readiness check only. Not financial, trading, betting, or investment advice.</p><form id='form' novalidate>{fields}<button>Generate Day Signal</button></form><pre id='result'></pre></section></main><script>const form=document.getElementById('form');function clearErrors(){{document.querySelectorAll('.is-missing').forEach(n=>n.classList.remove('is-missing'));document.querySelectorAll('[data-error-for]').forEach(n=>n.textContent='')}}function markMissing(name,message){{const q=document.querySelector(`[data-question="${{name}}"]`);if(!q)return false;q.classList.add('is-missing');const err=q.querySelector('[data-error-for]');if(err)err.textContent=message||'Please answer this question.';q.scrollIntoView({{behavior:'smooth',block:'center'}});return true}}form.addEventListener('submit',async e=>{{e.preventDefault();clearErrors();const answers=Object.fromEntries(new FormData(e.target).entries());for(const element of form.querySelectorAll('[required]')){{if(!String(element.value||'').trim()){{markMissing(element.name,'Please answer this question.');return;}}}}document.getElementById('result').textContent='CoinPlotXAI is thinking...';const r=await fetch('/api/day-signal',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{answers}})}});const d=await r.json();if(!r.ok||d.ok===false){{const text=d.response||d.message||'Day Signal unavailable right now.';document.getElementById('result').textContent=text;const match=text.match(/Please answer: (.+)$/);if(match){{const label=[...document.querySelectorAll('[data-question]')].find(node=>node.firstChild&&node.firstChild.textContent.trim()===match[1]);if(label)markMissing(label.dataset.question,'Required for Day Signal.')}}return}}document.getElementById('result').textContent=d.response||d.message||'Day Signal unavailable right now.'}})</script></body></html>""")
 
 
 def api_account_user():
@@ -20864,9 +25160,9 @@ def dashboard_brief_payload(user_id):
         "market_pulse": f"BTC {btc.get('price', 'unavailable')} · ETH {eth.get('price', 'unavailable')}",
         "risk_alerts": "Review position size, avoid urgency, and verify links before signing wallet approvals.",
         "top_watch": [item.get("symbol") for item in markets[:5] if item.get("symbol")],
-        "scam_warning": "Never enter a seed phrase, private key, wallet password, exchange password, or recovery phrase into any CoinPilotXAI tool.",
+        "scam_warning": "Never enter a seed phrase, private key, wallet password, exchange password, or recovery phrase into any CoinPlotXAI tool.",
         "ai_insight": "Based on available public market data, start with risk control and alerts before making any high-conviction move.",
-        "source": market.get("source") or "CoinPilotXAI market service",
+        "source": market.get("source") or "CoinPlotXAI market service",
         "updated_at": datetime.now().isoformat(),
     }
 
@@ -21031,7 +25327,7 @@ def api_watch_items():
             user["user_id"],
             "market_alerts",
             f"Watch created for {target_value or watch_type}",
-            f"CoinPilotXAI will watch {target_value or watch_type} and deliver alerts through your enabled channels.",
+            f"CoinPlotXAI will watch {target_value or watch_type} and deliver alerts through your enabled channels.",
             {"watch_rule_id": watch_rule_id, "watch_type": watch_type},
             channels=["in_app"],
         )
@@ -21048,7 +25344,7 @@ def watch_page():
     user = require_account()
     if not user:
         return redirect(url_for("signup_page", next="/watch"))
-    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Watch Command Center | CoinPilotXAI</title><style>body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.wrap{width:min(100% - 28px,1100px);margin:auto;padding:28px 0 90px}.card{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px;margin:14px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.row{display:grid;grid-template-columns:1fr auto;gap:10px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px}.button,input,select{min-height:44px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:#081323;color:#f2fbff;padding:10px}.button{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}</style></head><body><main class='wrap'><h1>Live Watch Command Center</h1><p>Watch coins, wallets, exchanges, scam keywords, whale movements, news topics, sports edges, and portfolio assets. Alerts use your in-app, email, SMS, push, and optional companion preferences.</p><section class='card'><form id='watchForm' class='grid'><select name='watch_type'><option value='coin'>Coin/token</option><option value='wallet'>Wallet</option><option value='exchange'>Exchange</option><option value='scam_keyword'>Scam keyword</option><option value='whale'>Whale movement</option><option value='news_topic'>News topic</option><option value='sports_edge'>Sports edge</option><option value='portfolio_asset'>Portfolio asset</option></select><input name='value' placeholder='BTC, wallet, topic, keyword...' required><button class='button'>Watch This</button></form><p id='msg'></p></section><section class='card'><h2>My Active Watches</h2><div id='rules'>Loading...</div></section></main><script>async function load(){const d=await fetch('/api/watch',{cache:'no-store',credentials:'same-origin'}).then(r=>r.json());document.getElementById('rules').innerHTML=(d.watch_rules||[]).map(r=>`<div class='row'><span><strong>${r.target_value}</strong><br>${r.watch_type} · ${r.status}</span><span><button data-test='${r.id}'>Test Alert</button> <button data-pause='${r.id}'>Pause</button> <button data-delete='${r.id}'>Delete</button></span></div>`).join('')||'No watches yet.'}document.getElementById('watchForm').addEventListener('submit',async e=>{e.preventDefault();const p=Object.fromEntries(new FormData(e.target).entries());const d=await fetch('/api/watch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}).then(r=>r.json());document.getElementById('msg').textContent=d.ok?'Watch created.':'Could not save watch.';e.target.reset();load()});document.addEventListener('click',async e=>{const b=e.target;if(b.dataset.test)await fetch('/api/watch/'+b.dataset.test+'/test-alert',{method:'POST'});if(b.dataset.pause)await fetch('/api/watch/'+b.dataset.pause+'/pause',{method:'POST'});if(b.dataset.delete)await fetch('/api/watch/'+b.dataset.delete+'/delete',{method:'POST'});load()});load()</script></body></html>""")
+    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Watch Command Center | CoinPlotXAI</title><style>body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.wrap{width:min(100% - 28px,1100px);margin:auto;padding:28px 0 90px}.card{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px;margin:14px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.row{display:grid;grid-template-columns:1fr auto;gap:10px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px}.button,input,select{min-height:44px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:#081323;color:#f2fbff;padding:10px}.button{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}</style></head><body><main class='wrap'><h1>Live Watch Command Center</h1><p>Watch coins, wallets, exchanges, scam keywords, whale movements, news topics, sports edges, and portfolio assets. Alerts use your in-app, email, SMS, push, and optional companion preferences.</p><section class='card'><form id='watchForm' class='grid'><select name='watch_type'><option value='coin'>Coin/token</option><option value='wallet'>Wallet</option><option value='exchange'>Exchange</option><option value='scam_keyword'>Scam keyword</option><option value='whale'>Whale movement</option><option value='news_topic'>News topic</option><option value='sports_edge'>Sports edge</option><option value='portfolio_asset'>Portfolio asset</option></select><input name='value' placeholder='BTC, wallet, topic, keyword...' required><button class='button'>Watch This</button></form><p id='msg'></p></section><section class='card'><h2>My Active Watches</h2><div id='rules'>Loading...</div></section></main><script>async function load(){const d=await fetch('/api/watch',{cache:'no-store',credentials:'same-origin'}).then(r=>r.json());document.getElementById('rules').innerHTML=(d.watch_rules||[]).map(r=>`<div class='row'><span><strong>${r.target_value}</strong><br>${r.watch_type} · ${r.status}</span><span><button data-test='${r.id}'>Test Alert</button> <button data-pause='${r.id}'>Pause</button> <button data-delete='${r.id}'>Delete</button></span></div>`).join('')||'No watches yet.'}document.getElementById('watchForm').addEventListener('submit',async e=>{e.preventDefault();const p=Object.fromEntries(new FormData(e.target).entries());const d=await fetch('/api/watch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}).then(r=>r.json());document.getElementById('msg').textContent=d.ok?'Watch created.':'Could not save watch.';e.target.reset();load()});document.addEventListener('click',async e=>{const b=e.target;if(b.dataset.test)await fetch('/api/watch/'+b.dataset.test+'/test-alert',{method:'POST'});if(b.dataset.pause)await fetch('/api/watch/'+b.dataset.pause+'/pause',{method:'POST'});if(b.dataset.delete)await fetch('/api/watch/'+b.dataset.delete+'/delete',{method:'POST'});load()});load()</script></body></html>""")
 
 
 def update_watch_rule_status(rule_id, user_id, status):
@@ -21098,7 +25394,7 @@ def api_watch_test_alert(rule_id):
     conn.close()
     if not rule:
         return jsonify({"ok": False, "message": "Watch rule not found."}), 404
-    result = notification_service.send_user_alert(user["user_id"], "market_alerts", f"Test alert: {rule.get('target_value')}", "This is a CoinPilotXAI watch test alert.", {"watch_rule_id": rule_id}, channels=(rule.get("channels") or "in_app").split(","))
+    result = notification_service.send_user_alert(user["user_id"], "market_alerts", f"Test alert: {rule.get('target_value')}", "This is a CoinPlotXAI watch test alert.", {"watch_rule_id": rule_id}, channels=(rule.get("channels") or "in_app").split(","))
     return jsonify({"ok": True, "delivery": result})
 
 
@@ -21302,7 +25598,22 @@ def public_arena_player(profile):
     profile = dict(profile or {})
     privacy = json.loads(profile.get("privacy_settings_json") or "{}") if isinstance(profile.get("privacy_settings_json"), str) else {}
     show_country = privacy.get("show_country", True)
-    show_online = privacy.get("show_online_status", True)
+    # The show_online_status preference is no longer read here; it is enforced
+    # by presence_service, which owns the whole privacy vocabulary.
+    #
+    # No online_status key. This card is the shared builder behind every Arena
+    # surface -- leaderboards, match rosters, chat cards, profile pages -- and
+    # it used to carry `arena_profiles.online_status`, a column written to
+    # 'training' on activity with nothing anywhere to set it back. The Arena
+    # presence roster was fixed to stop emitting it; this builder was the other
+    # exit, and it reached far more surfaces. A player who opened the Arena once
+    # described themselves as active in every list forever.
+    #
+    # Nothing replaces it here on purpose. A card built from a profile row has
+    # no viewer in scope, so it cannot apply the privacy filter that invisible
+    # mode and blocking require. Any Arena surface wanting presence asks
+    # presence_service.presence_for with the real viewer -- api_arena_presence
+    # does exactly that -- rather than reading a flag off the card.
     return {
         "public_player_id": profile.get("public_player_id") or profile.get("username"),
         "display_name": profile.get("display_name") or profile.get("public_player_id") or "Arena Pilot",
@@ -21313,7 +25624,6 @@ def public_arena_player(profile):
         "xp": int(profile.get("xp") or 0),
         "streak_count": int(profile.get("streak_count") or 0),
         "favorite_asset": profile.get("favorite_asset") or "BTC",
-        "online_status": profile.get("online_status") if show_online else "hidden",
         "discipline_score": int(profile.get("discipline_score") or 50),
         "scam_defense_score": int(profile.get("scam_defense_score") or 50),
         "ai_summary": arena_player_style_summary(profile),
@@ -21496,8 +25806,8 @@ def get_or_create_arena_profile(user_id):
         cur.execute(
             """
             INSERT INTO arena_profiles
-            (user_id, public_player_id, display_name, privacy_settings_json, username, xp, rank, arena_iq, streak_count, country, favorite_asset, online_status, discipline_score, scam_defense_score, strategy_score, prediction_accuracy_score, last_seen_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 0, 'Rookie', 50, 0, ?, 'BTC', 'training', 50, 50, 50, 50, ?, ?, ?)
+            (user_id, public_player_id, display_name, privacy_settings_json, username, xp, rank, arena_iq, streak_count, country, favorite_asset, discipline_score, scam_defense_score, strategy_score, prediction_accuracy_score, last_seen_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 0, 'Rookie', 50, 0, ?, 'BTC', 50, 50, 50, 50, ?, ?, ?)
             """,
             (user_id, public_id, display_name, json.dumps(default_arena_privacy()), username, user.get("country") or "", now, now, now),
         )
@@ -21549,7 +25859,7 @@ def arena_profile_payload(user_id):
         "profile": profile,
         "badges": badges,
         "pending_challenges": int((pending or {}).get("c") if hasattr(pending, "get") else pending["c"] if pending else 0),
-        "disclaimer": "CoinPilotXAI Arena is an educational simulation. No real money is traded. Not financial advice.",
+        "disclaimer": "CoinPlotXAI Arena is an educational simulation. No real money is traded. Not financial advice.",
     }
 
 
@@ -21659,7 +25969,7 @@ def update_arena_profile_after_attempt(user_id, result):
         UPDATE arena_profiles
         SET xp=?, rank=?, arena_iq=?, streak_count=streak_count+1,
             discipline_score=?, scam_defense_score=?, strategy_score=?, prediction_accuracy_score=?,
-            online_status='training', last_seen_at=?, updated_at=?
+            last_seen_at=?, updated_at=?
         WHERE user_id=?
         """,
         (
@@ -21704,7 +26014,7 @@ def award_arena_continuous_xp(user_id, xp, reason="continuous_play", score=0):
     row = cur.fetchone()
     total_xp = int((row or {}).get("xp") if hasattr(row, "get") else row["xp"] if row else 0) + xp
     cur.execute(
-        "UPDATE arena_profiles SET xp=?, rank=?, arena_iq=MAX(arena_iq, ?), online_status='training', last_seen_at=?, updated_at=? WHERE user_id=?",
+        "UPDATE arena_profiles SET xp=?, rank=?, arena_iq=MAX(arena_iq, ?), last_seen_at=?, updated_at=? WHERE user_id=?",
         (total_xp, arena_rank_for_xp(total_xp), min(100, 50 + int(score or 0) // 2), now, now, user_id),
     )
     cur.execute(
@@ -21749,7 +26059,7 @@ def arena_leaderboard_payload(limit=20, country=None, sort_key="arena_iq"):
         item["leaderboard_rank"] = index
         players.append(item)
     conn.close()
-    return {"ok": True, "players": players, "source": "CoinPilotXAI Arena database", "updated_at": datetime.now().isoformat()}
+    return {"ok": True, "players": players, "source": "CoinPlotXAI Arena database", "updated_at": datetime.now().isoformat()}
 
 
 def arena_player_style_summary(profile):
@@ -21949,7 +26259,7 @@ def ensure_arena_participant(cur, match_id, user_id, fake_balance=10000):
 def arena_public_match_participants(cur, match_id):
     cur.execute(
         """
-        SELECT p.*, ap.public_player_id, ap.display_name, ap.rank, ap.country, ap.avatar_url, ap.faction, ap.online_status
+        SELECT p.*, ap.public_player_id, ap.display_name, ap.rank, ap.country, ap.avatar_url, ap.faction
         FROM arena_match_participants p
         LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id
         WHERE p.match_id=? ORDER BY p.score DESC, p.joined_at ASC
@@ -21967,7 +26277,6 @@ def arena_public_match_participants(cur, match_id):
             "country": item.get("country"),
             "avatar_url": item.get("avatar_url"),
             "faction": item.get("faction"),
-            "online_status": item.get("online_status"),
         })
         item.update(profile)
         item.pop("email", None)
@@ -22522,6 +26831,26 @@ def arena_chat_payload(thread_id, user_id, limit=50, after_id=None):
     sender_cards = arena_sender_cards(cur, [user_id, other_id] + [message.get("sender_id") for message in raw_messages])
     profiles = {int(user_id): sender_cards.get(int(user_id), {}), other_id: sender_cards.get(other_id, {})}
     messages = [arena_public_message(cur, message, user_id, sender_cards) for message in raw_messages]
+    # Presence for the other participant, from the one service, filtered for
+    # this viewer. The Arena chat page used to render the literal string
+    # "Online / recently active" into its header -- not derived from anything,
+    # true of every thread whether or not the other person had ever connected.
+    # presence_for applies invisible mode and blocking, so a hidden peer comes
+    # back as plain offline here exactly as it does in Messenger.
+    # Shaped exactly like a presence_for entry -- `online` is the boolean that
+    # service emits, not `active_now`. Inventing a differently-named field here
+    # would make the client's liveness test silently always-false, which fails
+    # safe but for the wrong reason and would hide a real outage.
+    other_presence = {"status": "offline", "online": False, "last_seen_at": "", "last_seen_text": ""}
+    try:
+        from services import presence_service
+
+        entry = presence_service.presence_for(cur, int(user_id), [other_id]).get(other_id) or {}
+        if entry:
+            other_presence = entry
+    except Exception as exc:
+        # Fail closed: an unreadable presence store reports offline, never online.
+        logging.warning("ARENA_CHAT_PRESENCE_UNAVAILABLE thread_id=%s error=%s", thread_id, exc.__class__.__name__)
     conn.close()
     last_message_id = max([int(message.get("message_id") or 0) for message in messages] or [int(after_id or 0)])
     return {
@@ -22529,6 +26858,7 @@ def arena_chat_payload(thread_id, user_id, limit=50, after_id=None):
         "thread": {"id": int(thread["id"]), "status": thread["status"], "updated_at": thread["updated_at"], "last_message_at": thread["last_message_at"] if "last_message_at" in thread.keys() else thread["updated_at"]},
         "me": profiles.get(int(user_id), {}),
         "other": profiles.get(other_id, {}),
+        "other_presence": other_presence,
         "participants": [profiles.get(int(user_id), {}), profiles.get(other_id, {})],
         "messages": messages,
         "last_message_id": last_message_id,
@@ -22693,7 +27023,7 @@ def arena_page_shell(title, body, user=None, public=False, meta_tags=""):
     setInterval(loadArenaInboxPulse,15000);
     </script>""" if user else ""
     logo_url = url_for("static", filename="brand/pulsesoc-logo-20260606.png")
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | PulseSoc</title><meta name="description" content="CoinPilotXAI Arena is an educational AI crypto intelligence game with virtual dollars, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px;animation:gridDrift 24s linear infinite}}body.arena-drawer-open{{overflow:hidden}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none;display:inline-flex;align-items:center;gap:10px}}.brand img{{width:34px;height:34px;border-radius:10px;object-fit:contain;box-shadow:0 0 22px rgba(110,223,246,.22)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.arena-mobile-drawer-toggle,.arena-mobile-drawer,.arena-mobile-drawer-backdrop{{display:none}}.arena-bg,.arena-effects,.arena-particles,.arena-glow,.emoji-storm-layer,.emoji-storm,.cinematic-layer:not(.active),.victory-layer:not(.active),.arena-intro{{pointer-events:none!important}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}}.button:hover,button:hover{{transform:translateY(-2px);box-shadow:0 0 28px rgba(110,223,246,.22);border-color:rgba(110,223,246,.48)}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}}.card:hover{{transform:translateY(-2px);box-shadow:0 30px 90px rgba(0,0,0,.34),0 0 38px rgba(110,223,246,.14)}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04);animation:arenaCardIn .42s ease both}}.presence-ribbon{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}}.presence-pill{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;background:rgba(255,255,255,.045);padding:7px 10px;color:#dff7ff;font-size:13px}}.presence-pill i{{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8);animation:presencePulse 2.4s ease-in-out infinite}}.arena-intro{{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:radial-gradient(circle,rgba(110,223,246,.16),rgba(5,11,20,.94));animation:introFade 2.2s ease forwards;pointer-events:none}}.arena-intro-card{{border:1px solid rgba(110,223,246,.35);border-radius:24px;padding:24px;background:rgba(8,19,35,.86);box-shadow:0 0 60px rgba(110,223,246,.24);text-align:center;animation:vsPulse 1.4s ease-in-out infinite alternate}}.victory-overlay{{position:fixed;inset:0;z-index:120;display:grid;place-items:center;background:radial-gradient(circle at 50% 35%,rgba(54,229,143,.28),transparent 20rem),rgba(2,7,14,.74);backdrop-filter:blur(8px);animation:victoryFlash 1.6s ease both}}.victory-card{{width:min(92vw,620px);border:1px solid rgba(110,223,246,.42);border-radius:24px;background:linear-gradient(180deg,rgba(17,29,50,.96),rgba(5,11,20,.94));box-shadow:0 0 80px rgba(54,229,143,.26),0 30px 120px rgba(0,0,0,.55);padding:24px;text-align:center;transform:translateZ(0)}}.victory-title{{font-size:clamp(44px,10vw,96px);line-height:.9;margin:0;background:linear-gradient(135deg,var(--green),var(--cyan),var(--gold));-webkit-background-clip:text;color:transparent}}.emoji-storm{{position:fixed;inset:0;z-index:121;pointer-events:none;overflow:hidden}}.emoji-storm span{{position:absolute;top:-32px;font-size:clamp(24px,5vw,46px);animation:emojiRain 2.8s linear forwards;will-change:transform,opacity}}.crowd-meter{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.crowd-meter span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold));animation:hypeFlow 4s linear infinite}}.live-arena-card{{border-color:rgba(54,229,143,.34);background:radial-gradient(circle at 15% 10%,rgba(54,229,143,.18),transparent 16rem),radial-gradient(circle at 80% 0,rgba(110,223,246,.18),transparent 18rem),linear-gradient(160deg,rgba(10,28,48,.94),rgba(5,11,20,.92));box-shadow:0 30px 100px rgba(0,0,0,.36),0 0 44px rgba(54,229,143,.12)}}.live-arena-card:before{{content:"";position:absolute;inset:-40%;background:conic-gradient(from 180deg,transparent,rgba(54,229,143,.12),transparent 36%,rgba(110,223,246,.14),transparent 68%);animation:hypeFlow 6s linear infinite;pointer-events:none}}.live-arena-card>*{{position:relative;z-index:1}}.live-arena-cta{{font-size:16px;letter-spacing:.04em;box-shadow:0 0 28px rgba(54,229,143,.28)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes gridDrift{{from{{background-position:0 0}}to{{background-position:42px 42px}}}}@keyframes arenaCardIn{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:none}}}}@keyframes presencePulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.35);opacity:1}}}}@keyframes introFade{{0%,70%{{opacity:1}}100%{{opacity:0;visibility:hidden}}}}@keyframes vsPulse{{from{{transform:scale(.985);box-shadow:0 0 34px rgba(110,223,246,.16)}}to{{transform:scale(1);box-shadow:0 0 72px rgba(54,229,143,.18)}}}}@keyframes hypeFlow{{from{{filter:hue-rotate(0deg)}}to{{filter:hue-rotate(30deg)}}}}@keyframes victoryFlash{{0%{{opacity:0;transform:scale(1.04)}}18%{{opacity:1}}100%{{opacity:1;transform:scale(1)}}}}@keyframes emojiRain{{0%{{transform:translate3d(0,-20px,0) rotate(0deg);opacity:0}}12%{{opacity:1}}100%{{transform:translate3d(var(--drift,0),105vh,0) rotate(420deg);opacity:0}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(max-width:768px){{header nav>.actions{{display:none}}header{{position:relative}}.wrap{{padding:12px 0 calc(84px + env(safe-area-inset-bottom))}}h1{{font-size:clamp(28px,9vw,42px)}}h2{{font-size:clamp(20px,6vw,26px)}}.hero{{gap:12px;margin-top:12px}}.grid{{gap:12px;margin-top:12px}}.card{{border-radius:14px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.26)}}.card:after,.live-arena-card:before{{display:none}}.arena-intro{{display:none}}.player-card{{padding:10px}}.arena-mobile-drawer-toggle{{display:inline-flex;position:fixed;left:max(8px,env(safe-area-inset-left));top:calc(74px + env(safe-area-inset-top));z-index:74;width:auto;min-height:38px;padding:8px 10px;border-radius:0 12px 12px 0;background:rgba(6,18,31,.92);backdrop-filter:blur(14px);box-shadow:0 0 22px rgba(110,223,246,.18);font-size:13px}}.arena-mobile-drawer-backdrop{{display:none;position:fixed;inset:0;z-index:72;background:rgba(0,0,0,.38);pointer-events:none}}.arena-mobile-drawer-backdrop:not([hidden]){{display:block;pointer-events:auto}}.arena-mobile-drawer{{display:block;position:fixed;top:0;left:0;bottom:0;width:min(82vw,340px);z-index:73;transform:translateX(-104%);transition:transform .22s ease;background:linear-gradient(180deg,rgba(7,19,34,.98),rgba(4,9,18,.98));border-right:1px solid rgba(110,223,246,.24);box-shadow:24px 0 70px rgba(0,0,0,.46);padding:calc(16px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));overflow:auto;pointer-events:none}}.arena-mobile-drawer.open{{transform:translateX(0);pointer-events:auto}}.drawer-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}}.drawer-head button{{width:40px;min-height:40px;padding:0;font-size:22px}}.drawer-actions{{display:grid;gap:10px}}.drawer-actions .card{{position:static!important;max-width:none!important}}.drawer-actions label.option{{justify-content:space-between}}.victory-card{{padding:18px}}.emoji-storm span{{font-size:26px}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}.victory-overlay,.emoji-storm span{{animation:none!important}}}}</style></head><body>{drawer_html}<header><div class="wrap"><nav><a class="brand" href="/arena"><img src="{logo_url}" alt="PulseSoc logo" width="34" height="34" loading="lazy" onerror="this.style.display='none'"><span>Alpha Arena</span></a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{'<div class="presence-ribbon" data-arena-presence-panel><span class="presence-pill"><i></i>Connecting Arena presence</span></div>' if user else ''}{body}<p class="notice">{arena_victory_engine.EDUCATIONAL_DISCLAIMER}</p></main>{script}</body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | PulseSoc</title><meta name="description" content="CoinPlotXAI Arena is an educational AI crypto intelligence game with virtual dollars, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px;animation:gridDrift 24s linear infinite}}body.arena-drawer-open{{overflow:hidden}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none;display:inline-flex;align-items:center;gap:10px}}.brand img{{width:34px;height:34px;border-radius:10px;object-fit:contain;box-shadow:0 0 22px rgba(110,223,246,.22)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.arena-mobile-drawer-toggle,.arena-mobile-drawer,.arena-mobile-drawer-backdrop{{display:none}}.arena-bg,.arena-effects,.arena-particles,.arena-glow,.emoji-storm-layer,.emoji-storm,.cinematic-layer:not(.active),.victory-layer:not(.active),.arena-intro{{pointer-events:none!important}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}}.button:hover,button:hover{{transform:translateY(-2px);box-shadow:0 0 28px rgba(110,223,246,.22);border-color:rgba(110,223,246,.48)}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}}.card:hover{{transform:translateY(-2px);box-shadow:0 30px 90px rgba(0,0,0,.34),0 0 38px rgba(110,223,246,.14)}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04);animation:arenaCardIn .42s ease both}}.presence-ribbon{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}}.presence-pill{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;background:rgba(255,255,255,.045);padding:7px 10px;color:#dff7ff;font-size:13px}}.presence-pill i{{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8);animation:presencePulse 2.4s ease-in-out infinite}}.arena-intro{{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:radial-gradient(circle,rgba(110,223,246,.16),rgba(5,11,20,.94));animation:introFade 2.2s ease forwards;pointer-events:none}}.arena-intro-card{{border:1px solid rgba(110,223,246,.35);border-radius:24px;padding:24px;background:rgba(8,19,35,.86);box-shadow:0 0 60px rgba(110,223,246,.24);text-align:center;animation:vsPulse 1.4s ease-in-out infinite alternate}}.victory-overlay{{position:fixed;inset:0;z-index:120;display:grid;place-items:center;background:radial-gradient(circle at 50% 35%,rgba(54,229,143,.28),transparent 20rem),rgba(2,7,14,.74);backdrop-filter:blur(8px);animation:victoryFlash 1.6s ease both}}.victory-card{{width:min(92vw,620px);border:1px solid rgba(110,223,246,.42);border-radius:24px;background:linear-gradient(180deg,rgba(17,29,50,.96),rgba(5,11,20,.94));box-shadow:0 0 80px rgba(54,229,143,.26),0 30px 120px rgba(0,0,0,.55);padding:24px;text-align:center;transform:translateZ(0)}}.victory-title{{font-size:clamp(44px,10vw,96px);line-height:.9;margin:0;background:linear-gradient(135deg,var(--green),var(--cyan),var(--gold));-webkit-background-clip:text;color:transparent}}.emoji-storm{{position:fixed;inset:0;z-index:121;pointer-events:none;overflow:hidden}}.emoji-storm span{{position:absolute;top:-32px;font-size:clamp(24px,5vw,46px);animation:emojiRain 2.8s linear forwards;will-change:transform,opacity}}.crowd-meter{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.crowd-meter span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold));animation:hypeFlow 4s linear infinite}}.live-arena-card{{border-color:rgba(54,229,143,.34);background:radial-gradient(circle at 15% 10%,rgba(54,229,143,.18),transparent 16rem),radial-gradient(circle at 80% 0,rgba(110,223,246,.18),transparent 18rem),linear-gradient(160deg,rgba(10,28,48,.94),rgba(5,11,20,.92));box-shadow:0 30px 100px rgba(0,0,0,.36),0 0 44px rgba(54,229,143,.12)}}.live-arena-card:before{{content:"";position:absolute;inset:-40%;background:conic-gradient(from 180deg,transparent,rgba(54,229,143,.12),transparent 36%,rgba(110,223,246,.14),transparent 68%);animation:hypeFlow 6s linear infinite;pointer-events:none}}.live-arena-card>*{{position:relative;z-index:1}}.live-arena-cta{{font-size:16px;letter-spacing:.04em;box-shadow:0 0 28px rgba(54,229,143,.28)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes gridDrift{{from{{background-position:0 0}}to{{background-position:42px 42px}}}}@keyframes arenaCardIn{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:none}}}}@keyframes presencePulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.35);opacity:1}}}}@keyframes introFade{{0%,70%{{opacity:1}}100%{{opacity:0;visibility:hidden}}}}@keyframes vsPulse{{from{{transform:scale(.985);box-shadow:0 0 34px rgba(110,223,246,.16)}}to{{transform:scale(1);box-shadow:0 0 72px rgba(54,229,143,.18)}}}}@keyframes hypeFlow{{from{{filter:hue-rotate(0deg)}}to{{filter:hue-rotate(30deg)}}}}@keyframes victoryFlash{{0%{{opacity:0;transform:scale(1.04)}}18%{{opacity:1}}100%{{opacity:1;transform:scale(1)}}}}@keyframes emojiRain{{0%{{transform:translate3d(0,-20px,0) rotate(0deg);opacity:0}}12%{{opacity:1}}100%{{transform:translate3d(var(--drift,0),105vh,0) rotate(420deg);opacity:0}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(max-width:768px){{header nav>.actions{{display:none}}header{{position:relative}}.wrap{{padding:12px 0 calc(84px + env(safe-area-inset-bottom))}}h1{{font-size:clamp(28px,9vw,42px)}}h2{{font-size:clamp(20px,6vw,26px)}}.hero{{gap:12px;margin-top:12px}}.grid{{gap:12px;margin-top:12px}}.card{{border-radius:14px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.26)}}.card:after,.live-arena-card:before{{display:none}}.arena-intro{{display:none}}.player-card{{padding:10px}}.arena-mobile-drawer-toggle{{display:inline-flex;position:fixed;left:max(8px,env(safe-area-inset-left));top:calc(74px + env(safe-area-inset-top));z-index:74;width:auto;min-height:38px;padding:8px 10px;border-radius:0 12px 12px 0;background:rgba(6,18,31,.92);backdrop-filter:blur(14px);box-shadow:0 0 22px rgba(110,223,246,.18);font-size:13px}}.arena-mobile-drawer-backdrop{{display:none;position:fixed;inset:0;z-index:72;background:rgba(0,0,0,.38);pointer-events:none}}.arena-mobile-drawer-backdrop:not([hidden]){{display:block;pointer-events:auto}}.arena-mobile-drawer{{display:block;position:fixed;top:0;left:0;bottom:0;width:min(82vw,340px);z-index:73;transform:translateX(-104%);transition:transform .22s ease;background:linear-gradient(180deg,rgba(7,19,34,.98),rgba(4,9,18,.98));border-right:1px solid rgba(110,223,246,.24);box-shadow:24px 0 70px rgba(0,0,0,.46);padding:calc(16px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));overflow:auto;pointer-events:none}}.arena-mobile-drawer.open{{transform:translateX(0);pointer-events:auto}}.drawer-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}}.drawer-head button{{width:40px;min-height:40px;padding:0;font-size:22px}}.drawer-actions{{display:grid;gap:10px}}.drawer-actions .card{{position:static!important;max-width:none!important}}.drawer-actions label.option{{justify-content:space-between}}.victory-card{{padding:18px}}.emoji-storm span{{font-size:26px}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}.victory-overlay,.emoji-storm span{{animation:none!important}}}}</style></head><body>{drawer_html}<header><div class="wrap"><nav><a class="brand" href="/arena"><img src="{logo_url}" alt="PulseSoc logo" width="34" height="34" loading="lazy" onerror="this.style.display='none'"><span>Alpha Arena</span></a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{'<div class="presence-ribbon" data-arena-presence-panel><span class="presence-pill"><i></i>Connecting Arena presence</span></div>' if user else ''}{body}<p class="notice">{arena_victory_engine.EDUCATIONAL_DISCLAIMER}</p></main>{script}</body></html>""")
 
 
 def arena_simple_page(title, heading, intro, cards=None, script=""):
@@ -22967,7 +27297,7 @@ def arena_preview_page():
       <article class="card wide">
         <div class="kicker">AI Crypto Intelligence Game</div>
         <h1>Train your crypto intelligence. Battle friends. Survive markets. Defeat scams.</h1>
-        <p>CoinPilotXAI Arena turns education, virtual-dollar market decisions, scam defense, discipline scoring, and friendly competition into a daily skill system.</p>
+        <p>CoinPlotXAI Arena turns education, virtual-dollar market decisions, scam defense, discipline scoring, and friendly competition into a daily skill system.</p>
         <div class="actions"><a class="button primary" href="/signup?next=/arena">Create Free Account</a><a class="button" href="/education">Explore Education</a></div>
       </article>
       <article class="card"><div class="kicker">No Gambling</div><h2>Virtual Dollars Only</h2><p>Scores reward discipline, scam defense, research, consistency, and risk control. Profit alone does not win.</p></article>
@@ -22978,7 +27308,7 @@ def arena_preview_page():
       <article class="card"><h3>Social Competition</h3><p>Follow rising players, challenge friends, and climb skill-based leaderboards.</p></article>
     </section>
     """
-    return arena_page_shell("CoinPilotXAI Arena - AI Crypto Intelligence Game", body, public=True)
+    return arena_page_shell("CoinPlotXAI Arena - AI Crypto Intelligence Game", body, public=True)
 
 
 @webhook_app.route("/arena", methods=["GET"])
@@ -23013,7 +27343,7 @@ def arena_home_page():
     body = f"""
     <section class="hero">
       <article class="card wide">
-        <div class="kicker">CoinPilotXAI Arena</div>
+        <div class="kicker">CoinPlotXAI Arena</div>
         <h1>Train. Compete. Improve.</h1>
         <p>Build crypto intelligence with virtual-dollar missions, scam defense, discipline scoring, and friendly global competition.</p>
         <div class="actions"><a class="button primary" href="/arena/daily">Start Daily Mission</a><a class="button" href="/arena/scam-hunter">Scam Hunter</a><a class="button gold" href="/arena/leaderboard">View Leaderboard</a></div>
@@ -23189,7 +27519,7 @@ def arena_player_page(public_player_id):
         if user else
         f"""<a class="button primary" href="/signup?next={clean_html(request.path)}">Create Free Account</a><button class="arena-share-btn" data-share-url="{share_url}" data-public-player-id="{clean_html(public_profile.get('public_player_id'))}">Share</button>"""
     )
-    og_title = f"{clean_html(display)} | CoinPilotXAI Arena Player"
+    og_title = f"{clean_html(display)} | CoinPlotXAI Arena Player"
     og_desc = clean_html(arena_player_style_summary(profile))
     og_image = f"https://pulsesoc.com/api/arena/share/profile/{clean_html(public_profile.get('public_player_id'))}?format=svg"
     meta_tags = f"""<link rel="canonical" href="{share_url}"><meta property="og:title" content="{og_title}"><meta property="og:description" content="{og_desc}"><meta property="og:image" content="{og_image}"><meta property="og:url" content="{share_url}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{og_title}"><meta name="twitter:description" content="{og_desc}"><meta name="twitter:image" content="{og_image}">"""
@@ -23200,14 +27530,14 @@ def arena_player_page(public_player_id):
     <script>
     async function trackShare(playerId,platform){{try{{await fetch('/api/arena/share/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{shared_player_id:playerId,share_type:'player_profile',platform:platform,title:'Arena player profile shared'}})}});}}catch(e){{}}}}
     async function copyShare(url){{await navigator.clipboard.writeText(url);const t=document.querySelector('[data-share-toast]');if(t)t.textContent='Player profile link copied.';}}
-    function openShareModal(url){{const modal=document.querySelector('[data-share-modal]');const text=encodeURIComponent('Check out this Arena player profile on CoinPilotXAI.');const encoded=encodeURIComponent(url);modal.querySelector('[data-share-x]').href='https://twitter.com/intent/tweet?text='+text+'&url='+encoded;modal.querySelector('[data-share-facebook]').href='https://www.facebook.com/sharer/sharer.php?u='+encoded;modal.querySelector('[data-share-whatsapp]').href='https://wa.me/?text='+text+'%20'+encoded;modal.querySelector('[data-share-telegram]').href='https://t.me/share/url?url='+encoded+'&text='+text;modal.hidden=false;}}
+    function openShareModal(url){{const modal=document.querySelector('[data-share-modal]');const text=encodeURIComponent('Check out this Arena player profile on CoinPlotXAI.');const encoded=encodeURIComponent(url);modal.querySelector('[data-share-x]').href='https://twitter.com/intent/tweet?text='+text+'&url='+encoded;modal.querySelector('[data-share-facebook]').href='https://www.facebook.com/sharer/sharer.php?u='+encoded;modal.querySelector('[data-share-whatsapp]').href='https://wa.me/?text='+text+'%20'+encoded;modal.querySelector('[data-share-telegram]').href='https://t.me/share/url?url='+encoded+'&text='+text;modal.hidden=false;}}
     document.addEventListener('click',async e=>{{const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');const m=e.target.closest('[data-message]');const r=e.target.closest('[data-report]');const b=e.target.closest('[data-block]');const s=e.target.closest('.arena-share-btn');
       if(c){{const challenge_type=prompt('Choose challenge type: quick_battle, btc_duel, eth_duel, scam_hunter_duel, survival_mode, fake_portfolio_battle, prediction_war, ai_boss_race','btc_duel')||'btc_duel';const message=prompt('Optional challenge note','Ready for an Arena challenge?')||'';const res=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type:challenge_type,message:message}})}});alert((await res.json()).message||'Challenge sent.');}}
       if(f){{const res=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await res.json()).message||'Followed.');}}
       if(m){{const text=prompt('Message this Arena player');if(text){{const res=await fetch('/api/players/' + encodeURIComponent(m.dataset.message) + '/message',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message:text,source_context:'profile'}})}});const d=await res.json();if(d.next_url)location.href=d.next_url;else alert(d.message||'Message request sent.');}}}}
       if(r){{const res=await fetch('/api/arena/report-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:r.dataset.report,report_type:'profile',details:'Reported from profile'}})}});alert((await res.json()).message||'Report sent.');}}
       if(b){{const res=await fetch('/api/arena/block-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:b.dataset.block,reason:'Blocked from profile'}})}});alert((await res.json()).message||'Player blocked.');}}
-      if(s){{const url=s.dataset.shareUrl;await trackShare(s.dataset.publicPlayerId,'native_or_copy');if(navigator.share){{try{{await navigator.share({{title:'CoinPilotXAI Arena Player',text:'Check out this Arena player profile on CoinPilotXAI.',url:url}});return;}}catch(err){{if(err&&err.name==='AbortError')return;}}}}try{{await copyShare(url);}}catch(err){{openShareModal(url);}}}}
+      if(s){{const url=s.dataset.shareUrl;await trackShare(s.dataset.publicPlayerId,'native_or_copy');if(navigator.share){{try{{await navigator.share({{title:'CoinPlotXAI Arena Player',text:'Check out this Arena player profile on CoinPlotXAI.',url:url}});return;}}catch(err){{if(err&&err.name==='AbortError')return;}}}}try{{await copyShare(url);}}catch(err){{openShareModal(url);}}}}
       if(e.target.closest('[data-copy-share]')){{const btn=document.querySelector('.arena-share-btn');await copyShare(btn.dataset.shareUrl);await trackShare(btn.dataset.publicPlayerId,'copy_link');}}
       if(e.target.closest('[data-close-share]'))document.querySelector('[data-share-modal]').hidden=true;
     }});
@@ -23224,7 +27554,10 @@ def arena_players_page():
         return redirect(url_for("signup_page", next="/arena/players"))
     players = arena_leaderboard_payload(limit=24).get("players", [])
     cards = "".join(
-        f"""<article class="player-card elite"><strong>{clean_html(p.get('display_name'))}</strong><span class="rank">{clean_html(p.get('rank'))}</span><p>Arena IQ {int(p.get('arena_iq') or 0)} · {clean_html(p.get('online_status') or 'training')}</p><div class="actions"><a class="button" href="/arena/player/{clean_html(p.get('public_player_id'))}">Profile</a><button data-message="{clean_html(p.get('public_player_id'))}">Message</button><button data-challenge="{clean_html(p.get('public_player_id'))}">Challenge</button><button data-follow="{clean_html(p.get('public_player_id'))}">Follow</button></div></article>"""
+        # No ` · training` fallback. arena_profiles.online_status is written on
+        # activity and never cleared, and defaulting the empty case to
+        # "training" invented an activity for players who had none.
+        f"""<article class="player-card elite"><strong>{clean_html(p.get('display_name'))}</strong><span class="rank">{clean_html(p.get('rank'))}</span><p>Arena IQ {int(p.get('arena_iq') or 0)}</p><div class="actions"><a class="button" href="/arena/player/{clean_html(p.get('public_player_id'))}">Profile</a><button data-message="{clean_html(p.get('public_player_id'))}">Message</button><button data-challenge="{clean_html(p.get('public_player_id'))}">Challenge</button><button data-follow="{clean_html(p.get('public_player_id'))}">Follow</button></div></article>"""
         for p in players
     )
     body = f"""
@@ -23264,7 +27597,7 @@ def arena_chat_page(thread_id):
     body = f"""
     <section class="hero">
       <article class="card wide"><div class="kicker">Arena Live Chat</div><h1>{clean_html(other.get('display_name') or 'Arena Pilot')}</h1><p><span class="rank">{clean_html(other.get('rank') or 'Rookie')}</span> <span class="muted">· live thread · public Arena identity only</span></p></article>
-      <article class="card"><h2>Presence</h2><p><span class="online-dot">Online / recently active</span></p><p class="muted" data-typing>Ready.</p></article>
+      <article class="card"><h2>Presence</h2><p class="muted" data-arena-chat-presence>Checking presence...</p></article>
     </section>
     <section class="card" style="min-height:58vh;display:grid;grid-template-rows:auto 1fr auto;gap:12px">
       <div class="actions"><a class="button" href="/arena/inbox">Inbox</a><a class="button" href="/arena/player/{clean_html(other.get('public_player_id') or '')}">View Profile</a><button data-sound-toggle>Sound</button></div>
@@ -23278,7 +27611,20 @@ def arena_chat_page(thread_id):
     function messageHtml(m, optimistic=false){{return `<div class="chat-bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||0}}"><span>${{esc(m.body)}}</span><small>${{esc(optimistic?'sending...':(m.delivery_status||'delivered'))}}</small></div>`;}}
     function appendMessages(items){{const box=document.querySelector('[data-arena-chat-thread]');const existing=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{if(existing.has(String(m.message_id)))return;box.insertAdjacentHTML('beforeend',messageHtml(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||0));}});box.scrollTop=box.scrollHeight;}}
     function renderMessages(items){{const box=document.querySelector('[data-arena-chat-thread]');box.innerHTML=(items||[]).map(m=>messageHtml(m)).join('')||'<div class="private-chat-empty">Send the first Arena reply.</div>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||0)));box.scrollTop=box.scrollHeight;}}
-    async function loadChat(){{if(chatLoading||document.hidden)return;chatLoading=true;try{{const url=lastMessageId?`/api/arena/chat/${{threadId}}/new?after_id=${{lastMessageId}}`:`/api/arena/chat/${{threadId}}`;const d=await fetch(url,{{cache:'no-store'}}).then(r=>r.json());if(d.ok){{if(lastMessageId)appendMessages(d.messages);else renderMessages(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}}}finally{{chatLoading=false;}}}}
+    function renderPresence(p){{const box=document.querySelector('[data-arena-chat-presence]');if(!box)return;
+      // Rendered only from what the server sent. `online` is the service's own
+      // boolean; the status string is used solely to pick the word, never to
+      // decide liveness, so an unrecognised status cannot light the dot.
+      // A missing object leaves the header alone rather than asserting
+      // "Offline" -- a dropped poll is not evidence the peer left.
+      if(!p||typeof p!=='object')return;
+      const status=String(p.status||'offline');
+      if(p.online===true&&(status==='online'||status==='away')){{box.innerHTML=`<span class="online-dot">${{esc(status==='away'?'Away':'Online')}}</span>`;return;}}
+      // last_seen_text is formatted server-side in the viewer's locale, and is
+      // empty whenever the peer hides last seen. Falling back to the raw
+      // timestamp would leak an unformatted value the server chose to withhold.
+      box.textContent=p.last_seen_text?`Last seen ${{esc(p.last_seen_text)}}`:'Offline';}}
+    async function loadChat(){{if(chatLoading||document.hidden)return;chatLoading=true;try{{const url=lastMessageId?`/api/arena/chat/${{threadId}}/new?after_id=${{lastMessageId}}`:`/api/arena/chat/${{threadId}}`;const d=await fetch(url,{{cache:'no-store'}}).then(r=>r.json());if(d.ok){{if(lastMessageId)appendMessages(d.messages);else renderMessages(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));renderPresence(d.other_presence);}}}}finally{{chatLoading=false;}}}}
     document.querySelector('[data-arena-chat-form]').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.elements.body;const button=e.target.querySelector('button');const body=input.value.trim();if(!body)return;input.value='';button.disabled=true;const tempId=`temp-${{Date.now()}}`;const box=document.querySelector('[data-arena-chat-thread]');box.insertAdjacentHTML('beforeend',`<div class="chat-bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/arena/chat/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message:body,body}})}}).then(r=>r.json());const pending=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(pending)pending.outerHTML=messageHtml(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||0));}}else if(pending){{pending.querySelector('small').textContent='failed - retry';input.value=body;}}}}catch(err){{input.value=body;}}finally{{button.disabled=false;if(navigator.vibrate)navigator.vibrate([30]);if(soundOn&&window.CoinPilotNotifications)window.CoinPilotNotifications.playSound();}}}});
     document.querySelector('[data-arena-chat-form] input').addEventListener('input',()=>fetch('/api/arena/chat/typing',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{thread_id:threadId}})}}).catch(()=>{{}}));
     document.addEventListener('click',e=>{{if(e.target.closest('[data-sound-toggle]')){{soundOn=!soundOn;e.target.textContent=soundOn?'Sound On':'Sound';}}}});
@@ -23617,7 +27963,7 @@ def pulse_roast_battle_shell_response(response):
     html = re.sub(r"<header><div class=\"wrap\"><nav>.*?</nav></div></header>", pulse_header, html, count=1, flags=re.S)
     html = html.replace("</head>", pulse_style + "</head>", 1)
     html = html.replace("</body>", pulse_bottom_nav + "</body>", 1)
-    html = html.replace("CoinPilotXAI Arena is an educational AI crypto intelligence game with virtual dollars, daily missions, scam defense, and skill-based leaderboards.", "PulseSoc Roast Battle is a moderated creator entertainment experience with live voting, reactions, replays, and shareable highlights.")
+    html = html.replace("CoinPlotXAI Arena is an educational AI crypto intelligence game with virtual dollars, daily missions, scam defense, and skill-based leaderboards.", "PulseSoc Roast Battle is a moderated creator entertainment experience with live voting, reactions, replays, and shareable highlights.")
     html = html.replace("Connecting Arena presence", "Connecting PulseSoc Roast Battle")
     return Response(html, status=response.status_code, content_type="text/html; charset=utf-8")
 
@@ -23875,7 +28221,7 @@ def arena_phase_two_page(room_id=None, match_id=None):
           joinBtn.hidden=!d.can_join;
           document.querySelector('[data-arena-trade]').hidden=!d.can_trade;
           document.querySelector('[data-trade-gate]').innerHTML=d.can_trade?'':(d.can_join?'<p class="muted">Join this battle to enable the simulated trade ticket.</p>':'<p class="muted">Spectator mode. Simulated trading is only available to participants.</p>');
-          document.querySelector('[data-participants]').innerHTML = (d.participants || []).map(p => `<div class="player-card"><strong>${{esc(p.display_name || 'Arena Pilot')}}</strong><span class="rank">${{p.score || 0}} pts</span><p>Virtual cash $${{Number(p.fake_balance || 0).toLocaleString()}}</p><p class="muted">${{esc(p.rank||'Rookie')}} · ${{esc(p.online_status||'training')}}</p></div>`).join('') || '<p class="muted">Waiting for pilots.</p>';
+          document.querySelector('[data-participants]').innerHTML = (d.participants || []).map(p => `<div class="player-card"><strong>${{esc(p.display_name || 'Arena Pilot')}}</strong><span class="rank">${{p.score || 0}} pts</span><p>Virtual cash $${{Number(p.fake_balance || 0).toLocaleString()}}</p><p class="muted">${{esc(p.rank||'Rookie')}}</p></div>`).join('') || '<p class="muted">Waiting for pilots.</p>';
           document.querySelector('[data-positions]').innerHTML = (d.positions || []).map(p => `<div class="player-card"><strong>${{esc(p.symbol)}}</strong><p>Qty ${{Number(p.quantity || 0).toFixed(6)}} · Avg $${{Number(p.average_price || 0).toLocaleString()}} · Realized P/L $${{Number(p.realized_pnl || 0).toFixed(2)}}</p></div>`).join('') || '<p class="muted">No simulated positions yet.</p>';
           document.querySelector('[data-match-events]').innerHTML = (d.events || []).map(e => `<div><strong>${{esc(e.title || e.event_type)}}</strong><p>${{esc(e.body || '')}}</p><small>${{esc(e.created_at || '')}}</small></div>`).join('') || '<div>Waiting for the first Arena event.</div>';
           const m=d.market_context||{{}};
@@ -24215,10 +28561,15 @@ def api_arena_presence():
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
+    # arena_presence rows are client-submitted and were shown for a fixed
+    # fifteen minutes after the last update, so a player who closed the app
+    # stayed on the roster with whatever status they last claimed. The row is
+    # still the source of *what* they were doing in the Arena; whether they are
+    # here at all is now asked of the presence service.
     cutoff = (datetime.now() - timedelta(minutes=15)).isoformat()
     cur.execute(
         """
-        SELECT pr.status, pr.room_id, pr.match_id, pr.updated_at, ap.public_player_id, ap.display_name, ap.rank, ap.online_status
+        SELECT pr.user_id, pr.status, pr.room_id, pr.match_id, pr.updated_at, ap.public_player_id, ap.display_name, ap.rank
         FROM arena_presence pr
         LEFT JOIN arena_profiles ap ON ap.user_id=pr.user_id
         WHERE pr.updated_at>=?
@@ -24227,17 +28578,37 @@ def api_arena_presence():
         """,
         (cutoff,),
     )
+    candidates = [dict(row) for row in cur.fetchall()]
+    live_ids: set[int] = set()
+    try:
+        from services import presence_service
+
+        arena_presence_map = presence_service.presence_for(
+            cur,
+            int(user["user_id"]),
+            [int(item.get("user_id") or 0) for item in candidates],
+        )
+        live_ids = {uid for uid, item in arena_presence_map.items() if item.get("online")}
+    except Exception as exc:
+        # Fail closed: an unreadable presence store empties the roster rather
+        # than filling it with players who may not be here.
+        logging.warning("ARENA_PRESENCE_UNAVAILABLE error=%s", exc.__class__.__name__)
     presence = []
-    for row in cur.fetchall():
-        item = dict(row)
+    for item in candidates:
+        if int(item.get("user_id") or 0) not in live_ids:
+            continue
         item.update(public_arena_player(item))
         item.pop("user_id", None)
+        # public_arena_player no longer carries online_status, so the
+        # never-reset 'training' flag cannot re-enter the payload through the
+        # card either. Everything a client learns about liveness here came from
+        # live_ids above.
         presence.append(item)
     cur.execute("SELECT title, body, event_type, created_at FROM arena_match_events ORDER BY id DESC LIMIT 8")
     events = [f"{row['title']}: {row['body']}" if row["body"] else row["title"] for row in cur.fetchall()]
     conn.close()
-    if not events:
-        events = ["AI commentator is scanning market pressure.", "Arena rooms are open for Pro training.", "Scam Hunter drills are active."]
+    # No filler. An empty Arena reports an empty Arena; the previous fallback
+    # invented three lines of activity that had not happened.
     return jsonify({"ok": True, "presence": presence, "activity": events, "updated_at": datetime.now().isoformat()})
 
 
@@ -24270,7 +28641,13 @@ def api_arena_presence_update():
         """,
         (user["user_id"], status, room_id, match_id, now),
     )
-    cur.execute("UPDATE arena_profiles SET online_status=?, last_seen_at=?, updated_at=? WHERE user_id=?", (status, now, now, user["user_id"]))
+    # No longer mirrors the client-submitted status into
+    # arena_profiles.online_status. That column had no reader left once
+    # public_arena_player stopped emitting it, and this was the one write that
+    # put *client-controlled* text into it -- the shape most likely to tempt a
+    # future reader into treating it as presence. last_seen_at is still updated
+    # because the Arena profile page shows it as a plain timestamp.
+    cur.execute("UPDATE arena_profiles SET last_seen_at=?, updated_at=? WHERE user_id=?", (now, now, user["user_id"]))
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "status": status, "updated_at": now})
@@ -25155,7 +29532,7 @@ def api_arena_ai_commentary():
     commentary = arena_player_style_summary(profile)
     if int(profile.get("discipline_score") or 0) >= 70:
         commentary = f"{account_display_name(user)} maintained strong discipline through the simulated market stress."
-    return jsonify({"ok": True, "commentary": commentary, "source": "CoinPilotXAI Arena AI commentator"})
+    return jsonify({"ok": True, "commentary": commentary, "source": "CoinPlotXAI Arena AI commentator"})
 
 
 @webhook_app.route("/api/arena/team/create", methods=["POST"])
@@ -25444,7 +29821,7 @@ def api_arena_quests_claim():
     profile_row = cur.fetchone()
     if not profile_row:
         cur.execute(
-            "INSERT INTO arena_profiles (user_id, username, xp, rank, arena_iq, streak_count, online_status, created_at, updated_at) VALUES (?, ?, 0, 'Rookie', 50, 0, 'training', ?, ?)",
+            "INSERT INTO arena_profiles (user_id, username, xp, rank, arena_iq, streak_count, created_at, updated_at) VALUES (?, ?, 0, 'Rookie', 50, 0, ?, ?)",
             (user["user_id"], arena_username_for_user(user), now, now),
         )
         current_xp = 0
@@ -26128,7 +30505,17 @@ def api_arena_chat_new(thread_id):
     )
     if not payload:
         return jsonify({"ok": False, "message": "Thread not found."}), 404
-    return jsonify({"ok": True, "messages": payload.get("messages") or [], "last_message_id": payload.get("last_message_id") or int(request.args.get("after_id") or 0)})
+    # other_presence rides the delta response too. This is the route the page
+    # polls every two seconds once it has any message; without it the header
+    # would be populated by the first full load and then never updated again,
+    # which is a stale indicator rather than a fabricated one but is just as
+    # much a lie after the peer disconnects.
+    return jsonify({
+        "ok": True,
+        "messages": payload.get("messages") or [],
+        "last_message_id": payload.get("last_message_id") or int(request.args.get("after_id") or 0),
+        "other_presence": payload.get("other_presence") or {},
+    })
 
 
 @webhook_app.route("/api/arena/chat/send", methods=["POST"])
@@ -26189,7 +30576,31 @@ def api_arena_chat_typing():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     thread_id = int((request.get_json(silent=True) or {}).get("thread_id") or 0)
-    return jsonify({"ok": True, "status": "typing", "thread_id": thread_id, "player": public_arena_player(get_or_create_arena_profile(user["user_id"]) or {})})
+    # This route used to echo status:"typing" straight back to the sender and
+    # store nothing at all -- the one person guaranteed already to know they
+    # were typing. No peer could ever see it. It now records the activity in the
+    # presence service, keyed on the thread, so Arena typing lives in the same
+    # store, on the same TTL, and under the same privacy rules as Messenger's.
+    recorded = False
+    try:
+        from services import presence_service
+
+        conn = db()
+        try:
+            cur = conn.cursor()
+            result = presence_service.set_activity_for_user(
+                cur, user["user_id"], "typing", f"arena:{thread_id}", conn=conn
+            )
+            conn.commit()
+            recorded = bool(result.get("ok"))
+        finally:
+            conn.close()
+    except Exception as exc:
+        logging.warning("ARENA_TYPING_PRESENCE_UNAVAILABLE thread_id=%s error=%s", thread_id, exc.__class__.__name__)
+    # `recorded` is the truth about what happened, not a fixed "typing" string.
+    # It is false when the user has no live presence session, and a caller that
+    # cannot record presence should not be told that it did.
+    return jsonify({"ok": True, "recorded": recorded, "thread_id": thread_id, "player": public_arena_player(get_or_create_arena_profile(user["user_id"]) or {})})
 
 
 @webhook_app.route("/api/arena/block-player", methods=["POST"])
@@ -26291,7 +30702,7 @@ def api_arena_share_generate():
         profile = public_arena_player(dict(row_lookup)) if row_lookup else None
     if not profile:
         profile = public_arena_player(get_or_create_arena_profile(user["user_id"]) or {})
-    achievement = {"title": clean_html(payload.get("title") or "Arena Progress")[:120], "subtitle": clean_html(payload.get("subtitle") or "Training crypto intelligence with CoinPilotXAI Arena")[:180]}
+    achievement = {"title": clean_html(payload.get("title") or "Arena Progress")[:120], "subtitle": clean_html(payload.get("subtitle") or "Training crypto intelligence with CoinPlotXAI Arena")[:180]}
     card = arena_share_service.share_card(profile=profile, achievement=achievement)
     conn = db()
     cur = conn.cursor()
@@ -26455,7 +30866,7 @@ def simulator_page():
     if not user:
         return redirect(url_for("signup_page", next="/simulator"))
     asset = clean_html(request.args.get("asset") or "BTC").upper()[:12]
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Trading Simulator | CoinPilotXAI</title><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:28px 0 96px}}.grid{{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px;box-shadow:0 22px 70px rgba(0,0,0,.24)}}.button,input,select{{min-height:44px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:#081323;color:#f2fbff;padding:10px}}.button{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:900;cursor:pointer}}.row{{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:10px;border-bottom:1px solid rgba(255,255,255,.08)}}.muted{{color:#9fb5c0}}@media(max-width:820px){{.grid{{grid-template-columns:1fr}}}}</style></head><body><main class='wrap'><h1>CoinPilotXAI Trading Simulator</h1><p class='muted'>Training simulator only. No real trades. Not financial advice.</p><section class='grid'><article class='card'><h2>Paper Wallet</h2><div id='summary'>Loading...</div><h2>Positions</h2><div id='positions'></div><h2>Trade History</h2><div id='history'></div></article><aside class='card'><h2>Simulated Order Ticket</h2><form id='order'><select name='side'><option value='buy'>Market Buy</option><option value='sell'>Market Sell</option></select><input name='symbol' value='{asset}' placeholder='BTC'><input name='quantity' type='number' step='any' min='0' placeholder='Simulated quantity'><button class='button'>Preview and Place Simulated Trade</button></form><p id='msg' class='muted'></p><h2>AI Hitchhiker Coach</h2><p id='coach' class='muted'>The coach will warn about overexposure, FOMO, revenge trading, and sizing risk.</p></aside></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});async function load(){{const d=await fetch('/api/simulator',{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());document.getElementById('summary').innerHTML=`<div class='row'><strong>Cash</strong><span>${{money(d.cash_balance)}}</span></div><div class='row'><strong>Equity</strong><span>${{money(d.equity)}}</span></div><div class='row'><strong>Risk Score</strong><span>${{d.risk_score}}/100</span></div>`;document.getElementById('positions').innerHTML=(d.positions||[]).map(p=>`<div class='row'><strong>${{p.symbol}}</strong><span>${{p.quantity}}</span><span>${{money(p.value)}}</span></div>`).join('')||'<p class=muted>No simulated positions yet.</p>';document.getElementById('history').innerHTML=(d.trades||[]).slice(0,20).map(t=>`<div class='row'><strong>${{t.side}} ${{t.symbol}}</strong><span>${{t.quantity}}</span><span>${{money(t.notional)}}</span></div>`).join('')||'<p class=muted>No simulated trades yet.</p>';document.getElementById('coach').textContent=d.ai_coaching}}document.getElementById('order').addEventListener('submit',async e=>{{e.preventDefault();const p=Object.fromEntries(new FormData(e.target).entries());const d=await fetch('/api/simulator/order',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(p)}}).then(r=>r.json());document.getElementById('msg').textContent=d.ok?'Simulated trade saved.':'Simulator says: '+(d.message||'Trade failed.');load()}});load()</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Trading Simulator | CoinPlotXAI</title><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:28px 0 96px}}.grid{{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px;box-shadow:0 22px 70px rgba(0,0,0,.24)}}.button,input,select{{min-height:44px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:#081323;color:#f2fbff;padding:10px}}.button{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:900;cursor:pointer}}.row{{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:10px;border-bottom:1px solid rgba(255,255,255,.08)}}.muted{{color:#9fb5c0}}@media(max-width:820px){{.grid{{grid-template-columns:1fr}}}}</style></head><body><main class='wrap'><h1>CoinPlotXAI Trading Simulator</h1><p class='muted'>Training simulator only. No real trades. Not financial advice.</p><section class='grid'><article class='card'><h2>Paper Wallet</h2><div id='summary'>Loading...</div><h2>Positions</h2><div id='positions'></div><h2>Trade History</h2><div id='history'></div></article><aside class='card'><h2>Simulated Order Ticket</h2><form id='order'><select name='side'><option value='buy'>Market Buy</option><option value='sell'>Market Sell</option></select><input name='symbol' value='{asset}' placeholder='BTC'><input name='quantity' type='number' step='any' min='0' placeholder='Simulated quantity'><button class='button'>Preview and Place Simulated Trade</button></form><p id='msg' class='muted'></p><h2>AI Hitchhiker Coach</h2><p id='coach' class='muted'>The coach will warn about overexposure, FOMO, revenge trading, and sizing risk.</p></aside></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});async function load(){{const d=await fetch('/api/simulator',{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());document.getElementById('summary').innerHTML=`<div class='row'><strong>Cash</strong><span>${{money(d.cash_balance)}}</span></div><div class='row'><strong>Equity</strong><span>${{money(d.equity)}}</span></div><div class='row'><strong>Risk Score</strong><span>${{d.risk_score}}/100</span></div>`;document.getElementById('positions').innerHTML=(d.positions||[]).map(p=>`<div class='row'><strong>${{p.symbol}}</strong><span>${{p.quantity}}</span><span>${{money(p.value)}}</span></div>`).join('')||'<p class=muted>No simulated positions yet.</p>';document.getElementById('history').innerHTML=(d.trades||[]).slice(0,20).map(t=>`<div class='row'><strong>${{t.side}} ${{t.symbol}}</strong><span>${{t.quantity}}</span><span>${{money(t.notional)}}</span></div>`).join('')||'<p class=muted>No simulated trades yet.</p>';document.getElementById('coach').textContent=d.ai_coaching}}document.getElementById('order').addEventListener('submit',async e=>{{e.preventDefault();const p=Object.fromEntries(new FormData(e.target).entries());const d=await fetch('/api/simulator/order',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(p)}}).then(r=>r.json());document.getElementById('msg').textContent=d.ok?'Simulated trade saved.':'Simulator says: '+(d.message||'Trade failed.');load()}});load()</script></body></html>""")
 
 
 @webhook_app.route("/api/simulator/order", methods=["POST"])
@@ -26775,7 +31186,7 @@ def alerts_api():
             notification_service.queue_notification(
                 user["user_id"],
                 f"Alert activated for {clean_html(payload.get('symbol', '')).upper()}",
-                "CoinPilotXAI is now monitoring this rule and will trigger through the selected channels when conditions are met.",
+                "CoinPlotXAI is now monitoring this rule and will trigger through the selected channels when conditions are met.",
                 "market_alerts",
                 {"alert_id": result.get("alert_id"), "url": "/alerts"},
             )
@@ -27050,8 +31461,7 @@ def alerts_page():
     user = require_account()
     if not user:
         return redirect(url_for("login_page", next="/alerts"))
-    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Alerts Command Center | CoinPilotXAI</title><style>:root{color-scheme:dark;--bg:#050b14;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--panel:rgba(13,22,39,.88)}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}.wrap{width:min(100% - 28px,1120px);margin:auto;padding:28px 0 92px}a{color:var(--cyan)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),var(--panel));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}.button,input,select{min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:#f2fbff;padding:10px;font:inherit}.button{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;cursor:pointer}.button.secondary{background:rgba(255,255,255,.06);color:#f2fbff}.button.warn{background:rgba(255,107,122,.15);color:#ffd7dc}.button:disabled,.channel-grid label.disabled{opacity:.55;cursor:not-allowed}.row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;margin:10px 0;background:rgba(255,255,255,.04)}.actions{display:flex;gap:8px;flex-wrap:wrap}.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08);font-size:12px}.pill.ready{border-color:rgba(54,229,143,.38);background:rgba(54,229,143,.12)}.pill.needs,.pill.permission{border-color:rgba(255,209,102,.42);background:rgba(255,209,102,.12);color:#ffe6a6}.pill.failed{border-color:rgba(255,107,122,.42);background:rgba(255,107,122,.12);color:#ffd7dc}.pill.disabled{opacity:.62}.status-active{color:#c8ffe2}.status-paused{color:#ffd166}.status-deleted{color:#ffadb5}.muted{color:var(--muted)}.channel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0}.channel-grid label{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;color:var(--muted)}.setup-grid{display:grid;gap:8px;margin:10px 0}.setup-card{border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px;background:rgba(255,255,255,.04)}.setup-card strong{display:flex;justify-content:space-between;gap:8px}.setup-card p{margin:6px 0;color:var(--muted)}.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:20;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;color:#f2fbff;padding:12px 14px;box-shadow:0 18px 60px rgba(0,0,0,.4);display:none}.toast.show{display:block}.warnbox{border:1px solid rgba(255,209,102,.32);background:rgba(255,209,102,.08);border-radius:12px;padding:10px;margin:10px 0;color:#ffe6a6}.events{display:grid;gap:8px}.event{border-left:3px solid var(--cyan);padding:10px;background:rgba(255,255,255,.04);border-radius:10px}.event.error{border-left-color:var(--red)}.event.skipped{border-left-color:var(--gold)}@media(max-width:800px){.grid{grid-template-columns:1fr}.button{width:100%}.row{grid-template-columns:1fr}.actions{display:grid;grid-template-columns:1fr 1fr}.channel-grid{grid-template-columns:1fr}}</style></head><body><main class='wrap'><a href='/dashboard'>Back to Dashboard</a><h1>Alerts Command Center</h1><p class='muted'>Live market alerts with in-app, email, PWA push, SMS, and Telegram delivery logging. Coin price alerts are monitored by the production worker; news, prediction, scam keyword, and Arena alerts are safely scaffolded for expansion.</p><section class='grid'><article class='card'><h2>Create Alert</h2><form id='alertForm'><select name='alert_type'><option value='coin_price'>Coin price</option><option value='volatility'>24h volatility</option><option value='move_24h'>24h move</option><option value='news'>News keyword</option><option value='scam_keyword'>Scam keyword</option><option value='prediction'>Prediction probability</option><option value='arena'>Arena activity</option></select><input name='symbol' placeholder='BTC, ETH, SOL, ETF, scam keyword...' required><select name='condition'><option value='above'>Above</option><option value='below'>Below</option><option value='moves_up_percent'>Moves up %</option><option value='moves_down_percent'>Moves down %</option><option value='volatility_above'>Volatility above %</option></select><input name='threshold' type='number' step='any' placeholder='Threshold value' required><div class='channel-grid'><label><input type='checkbox' name='channels' value='in_app' checked> In-app <span data-channel-label='in_app'></span></label><label><input type='checkbox' name='channels' value='email'> Email <span data-channel-label='email'></span></label><label><input type='checkbox' name='channels' value='push'> PWA push <span data-channel-label='push'></span></label><label><input type='checkbox' name='channels' value='sms'> SMS/Text <span data-channel-label='sms'></span></label><label><input type='checkbox' name='channels' value='telegram'> Telegram Companion <span data-channel-label='telegram'></span></label></div><button class='button' id='activateBtn'>Activate Alert</button><p id='msg' class='muted'></p></form></article><article class='card'><h2>Delivery Readiness</h2><p class='muted'>Every trigger creates delivery logs. Missing provider settings are logged as not configured instead of crashing or silently failing.</p><div id='workerStatus' class='warnbox'>Checking worker heartbeat...</div><div id='channelReadiness' class='setup-grid'>Checking channels...</div><a class='button secondary' href='/notifications'>Notification Center</a></article></section><section class='card'><h2>Active Alerts</h2><div id='alerts'>Loading...</div></section><section class='card'><h2>Recent Alert Events</h2><div id='events' class='events'>Loading...</div></section></main><div id='toast' class='toast'></div><script>const $=s=>document.querySelector(s);const CHANNELS=['in_app','email','push','sms','telegram'];let READINESS={};function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3800)}function channels(c,delivery={}){return CHANNELS.map(ch=>{const enabled=!!(c||{})[ch];const last=(delivery||{})[ch]||{};let cls='disabled',label='Disabled';if(enabled){if(last.status==='failed'){cls='failed';label='Failed'}else if(last.status==='not_configured'||last.status==='permission_denied'){cls='needs';label='Needs setup'}else{const r=READINESS[ch]||{};cls=r.ready?'ready':'needs';label=r.ready?'Ready':'Needs setup'}}return `<span class="pill ${cls}">${ch.replace('_',' ')} · ${label}</span>`}).join(' ')}async function api(url,opts={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Push-Permission':('Notification'in window?Notification.permission:'unsupported'),...(opts.headers||{})},...opts});let d={};try{d=await r.json()}catch(e){}if(!r.ok&&!d.message)d.message='Request failed.';return d}function renderReadiness(){const node=$('#channelReadiness');node.innerHTML=CHANNELS.map(ch=>{const r=READINESS[ch]||{};const cls=r.ready?'ready':(r.status==='permission_denied'?'permission':'needs');const action=ch==='push'&&!r.ready?`<a class="button secondary" href="/notifications">Enable Push</a>`:ch==='sms'&&!r.ready?`<a class="button secondary" href="/account/settings">Add Phone for SMS</a>`:ch==='telegram'&&!r.ready?`<a class="button secondary" href="/account/settings">Connect Telegram</a>`:'';return `<div class="setup-card"><strong>${ch.replace('_',' ')} <span class="pill ${cls}">${r.label||'Needs setup'}</span></strong><p>${r.message||''}</p>${action}</div>`}).join('');CHANNELS.forEach(ch=>{const input=document.querySelector(`input[name="channels"][value="${ch}"]`);const label=input&&input.closest('label');const r=READINESS[ch]||{};if(input&&ch!=='in_app'&&ch!=='email'){input.disabled=!r.ready;if(!r.ready)input.checked=false}if(label)label.classList.toggle('disabled',!!input.disabled);const badge=document.querySelector(`[data-channel-label="${ch}"]`);if(badge)badge.innerHTML=` <span class="pill ${r.ready?'ready':'needs'}">${r.label||''}</span>`})}function alertRow(a){const status=a.status||'active';const action=status==='active'?`<button class="button secondary" data-action="pause" data-id="${a.id}">Pause</button>`:`<button class="button secondary" data-action="resume" data-id="${a.id}">Resume</button>`;return `<div class="row"><div><strong>${a.symbol||a.target||'Alert'}</strong> <span class="pill status-${status}">${status}</span><p class="muted">${(a.alert_type||'coin_price').replace('_',' ')} ${(a.condition||'above').replaceAll('_',' ')} ${a.threshold_value??a.target_value??''}</p><p>${channels(a.channels,a.delivery_statuses||{})}</p><p class="muted">Last checked: ${a.last_checked_at||'not yet'} · Last triggered: ${a.last_triggered_at||'not yet'} · Triggers: ${a.trigger_count||0}</p></div><div class="actions">${action}<button class="button secondary" data-action="test" data-id="${a.id}">Test Alert</button><button class="button warn" data-action="delete" data-id="${a.id}">Delete</button></div></div>`}function eventRow(e){return `<div class="event ${e.status||''}"><strong>${e.symbol||'Alert'} ${e.status||''}</strong><p>${e.message||e.body||''}</p><p class="muted">Observed: ${e.observed_value??'n/a'} · ${e.created_at||''}</p></div>`}async function load(){const d=await api('/api/alerts?push_permission='+encodeURIComponent('Notification'in window?Notification.permission:'unsupported'));READINESS=d.channel_readiness||{};renderReadiness();$('#alerts').innerHTML=(d.alerts||[]).map(alertRow).join('')||'<p class=muted>No alerts yet.</p>';$('#events').innerHTML=(d.events||[]).map(eventRow).join('')||'<p class=muted>No alert events yet.</p>';const w=d.worker||{};$('#workerStatus').textContent=w.stale?'Alert worker has not checked rules recently. Ask an admin to start python alert_worker.py on Railway.':'Alert worker heartbeat is healthy.'}$('#alertForm').addEventListener('submit',async e=>{e.preventDefault();const btn=$('#activateBtn');btn.disabled=true;btn.textContent='Activating...';const fd=new FormData(e.target);const payload={alert_type:fd.get('alert_type'),symbol:fd.get('symbol'),condition:fd.get('condition'),threshold:Number(fd.get('threshold')),push_permission:('Notification'in window?Notification.permission:'unsupported'),channels:{in_app:false,email:false,push:false,sms:false,telegram:false}};fd.getAll('channels').forEach(c=>payload.channels[c]=true);const d=await api('/api/alerts',{method:'POST',body:JSON.stringify(payload)});btn.disabled=false;btn.textContent='Activate Alert';if(d.ok){$('#msg').textContent='Alert activated.';if((d.warnings||[]).length)toast(d.warnings.join(' '));else toast('Alert activated.');e.target.reset();e.target.querySelector('[value=in_app]').checked=true;load()}else{$('#msg').textContent=d.message||'Alert could not be created.';toast($('#msg').textContent);if(d.channel_readiness){READINESS=d.channel_readiness;renderReadiness()}}});document.addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;b.disabled=true;const action=b.dataset.action;const id=b.dataset.id;const method=action==='delete'?'delete':action;const d=await api(`/api/alerts/${id}/${method}`,{method:'POST',body:'{}'});if(d.ok){toast(d.message||'Alert updated.');load()}else{toast(d.message||'Could not update alert.');b.disabled=false}});load();setInterval(load,10000)</script></body></html>""")
-
+    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Alerts Command Center | CoinPlotXAI</title><style>:root{color-scheme:dark;--bg:#050b14;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--panel:rgba(13,22,39,.88)}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}.wrap{width:min(100% - 28px,1120px);margin:auto;padding:28px 0 92px}a{color:var(--cyan)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),var(--panel));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}.button,input,select{min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:#f2fbff;padding:10px;font:inherit}.button{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;cursor:pointer}.button.secondary{background:rgba(255,255,255,.06);color:#f2fbff}.button.warn{background:rgba(255,107,122,.15);color:#ffd7dc}.button:disabled,.channel-grid label.disabled{opacity:.55;cursor:not-allowed}.row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;margin:10px 0;background:rgba(255,255,255,.04)}.actions{display:flex;gap:8px;flex-wrap:wrap}.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08);font-size:12px}.pill.ready{border-color:rgba(54,229,143,.38);background:rgba(54,229,143,.12)}.pill.needs,.pill.permission{border-color:rgba(255,209,102,.42);background:rgba(255,209,102,.12);color:#ffe6a6}.pill.failed{border-color:rgba(255,107,122,.42);background:rgba(255,107,122,.12);color:#ffd7dc}.pill.disabled{opacity:.62}.status-active{color:#c8ffe2}.status-paused{color:#ffd166}.status-deleted{color:#ffadb5}.muted{color:var(--muted)}.channel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0}.channel-grid label{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;color:var(--muted)}.setup-grid{display:grid;gap:8px;margin:10px 0}.setup-card{border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px;background:rgba(255,255,255,.04)}.setup-card strong{display:flex;justify-content:space-between;gap:8px}.setup-card p{margin:6px 0;color:var(--muted)}.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:20;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;color:#f2fbff;padding:12px 14px;box-shadow:0 18px 60px rgba(0,0,0,.4);display:none}.toast.show{display:block}.warnbox{border:1px solid rgba(255,209,102,.32);background:rgba(255,209,102,.08);border-radius:12px;padding:10px;margin:10px 0;color:#ffe6a6}.events{display:grid;gap:8px}.event{border-left:3px solid var(--cyan);padding:10px;background:rgba(255,255,255,.04);border-radius:10px}.event.error{border-left-color:var(--red)}.event.skipped{border-left-color:var(--gold)}@media(max-width:800px){.grid{grid-template-columns:1fr}.button{width:100%}.row{grid-template-columns:1fr}.actions{display:grid;grid-template-columns:1fr 1fr}.channel-grid{grid-template-columns:1fr}}</style></head><body><main class='wrap'><a href='/dashboard'>Back to Dashboard</a><h1>Alerts Command Center</h1><p class='muted'>Live market alerts with in-app, email, PWA push, SMS, and Telegram delivery logging. Coin price alerts are monitored by the production worker; news, prediction, scam keyword, and Arena alerts are safely scaffolded for expansion.</p><section class='grid'><article class='card'><h2>Create Alert</h2><form id='alertForm'><select name='alert_type'><option value='coin_price'>Coin price</option><option value='volatility'>24h volatility</option><option value='move_24h'>24h move</option><option value='news'>News keyword</option><option value='scam_keyword'>Scam keyword</option><option value='prediction'>Prediction probability</option><option value='arena'>Arena activity</option></select><input name='symbol' placeholder='BTC, ETH, SOL, ETF, scam keyword...' required><select name='condition'><option value='above'>Above</option><option value='below'>Below</option><option value='moves_up_percent'>Moves up %</option><option value='moves_down_percent'>Moves down %</option><option value='volatility_above'>Volatility above %</option></select><input name='threshold' type='number' step='any' placeholder='Threshold value' required><div class='channel-grid'><label><input type='checkbox' name='channels' value='in_app' checked> In-app <span data-channel-label='in_app'></span></label><label><input type='checkbox' name='channels' value='email'> Email <span data-channel-label='email'></span></label><label><input type='checkbox' name='channels' value='push'> PWA push <span data-channel-label='push'></span></label><label><input type='checkbox' name='channels' value='sms'> SMS/Text <span data-channel-label='sms'></span></label><label><input type='checkbox' name='channels' value='telegram'> Telegram Companion <span data-channel-label='telegram'></span></label></div><button class='button' id='activateBtn'>Activate Alert</button><p id='msg' class='muted'></p></form></article><article class='card'><h2>Delivery Readiness</h2><p class='muted'>Every trigger creates delivery logs. Missing provider settings are logged as not configured instead of crashing or silently failing.</p><div id='workerStatus' class='warnbox'>Checking worker heartbeat...</div><div id='channelReadiness' class='setup-grid'>Checking channels...</div><a class='button secondary' href='/notifications'>Notification Center</a></article></section><section class='card'><h2>Active Alerts</h2><div id='alerts'>Loading...</div></section><section class='card'><h2>Recent Alert Events</h2><div id='events' class='events'>Loading...</div></section></main><div id='toast' class='toast'></div><script>const $=s=>document.querySelector(s);const CHANNELS=['in_app','email','push','sms','telegram'];let READINESS={};function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3800)}function channels(c,delivery={}){return CHANNELS.map(ch=>{const enabled=!!(c||{})[ch];const last=(delivery||{})[ch]||{};let cls='disabled',label='Disabled';if(enabled){if(last.status==='failed'){cls='failed';label='Failed'}else if(last.status==='not_configured'||last.status==='permission_denied'){cls='needs';label='Needs setup'}else{const r=READINESS[ch]||{};cls=r.ready?'ready':'needs';label=r.ready?'Ready':'Needs setup'}}return `<span class="pill ${cls}">${ch.replace('_',' ')} · ${label}</span>`}).join(' ')}async function api(url,opts={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Push-Permission':('Notification'in window?Notification.permission:'unsupported'),...(opts.headers||{})},...opts});let d={};try{d=await r.json()}catch(e){}if(!r.ok&&!d.message)d.message='Request failed.';return d}function renderReadiness(){const node=$('#channelReadiness');node.innerHTML=CHANNELS.map(ch=>{const r=READINESS[ch]||{};const cls=r.ready?'ready':(r.status==='permission_denied'?'permission':'needs');const action=ch==='push'&&!r.ready?`<a class="button secondary" href="/notifications">Enable Push</a>`:ch==='sms'&&!r.ready?`<a class="button secondary" href="/account/settings">Add Phone for SMS</a>`:ch==='telegram'&&!r.ready?`<a class="button secondary" href="/account/settings">Connect Telegram</a>`:'';return `<div class="setup-card"><strong>${ch.replace('_',' ')} <span class="pill ${cls}">${r.label||'Needs setup'}</span></strong><p>${r.message||''}</p>${action}</div>`}).join('');CHANNELS.forEach(ch=>{const input=document.querySelector(`input[name="channels"][value="${ch}"]`);const label=input&&input.closest('label');const r=READINESS[ch]||{};if(input&&ch!=='in_app'&&ch!=='email'){input.disabled=!r.ready;if(!r.ready)input.checked=false}if(label)label.classList.toggle('disabled',!!input.disabled);const badge=document.querySelector(`[data-channel-label="${ch}"]`);if(badge)badge.innerHTML=` <span class="pill ${r.ready?'ready':'needs'}">${r.label||''}</span>`})}function alertRow(a){const status=a.status||'active';const action=status==='active'?`<button class="button secondary" data-action="pause" data-id="${a.id}">Pause</button>`:`<button class="button secondary" data-action="resume" data-id="${a.id}">Resume</button>`;return `<div class="row"><div><strong>${a.symbol||a.target||'Alert'}</strong> <span class="pill status-${status}">${status}</span><p class="muted">${(a.alert_type||'coin_price').replace('_',' ')} ${(a.condition||'above').replaceAll('_',' ')} ${a.threshold_value??a.target_value??''}</p><p>${channels(a.channels,a.delivery_statuses||{})}</p><p class="muted">Last checked: ${a.last_checked_at||'not yet'} · Last triggered: ${a.last_triggered_at||'not yet'} · Triggers: ${a.trigger_count||0}</p></div><div class="actions">${action}<button class="button secondary" data-action="test" data-id="${a.id}">Test Alert</button><button class="button warn" data-action="delete" data-id="${a.id}">Delete</button></div></div>`}function eventRow(e){return `<div class="event ${e.status||''}"><strong>${e.symbol||'Alert'} ${e.status||''}</strong><p>${e.message||e.body||''}</p><p class="muted">Observed: ${e.observed_value??'n/a'} · ${e.created_at||''}</p></div>`}async function load(){const d=await api('/api/alerts?push_permission='+encodeURIComponent('Notification'in window?Notification.permission:'unsupported'));READINESS=d.channel_readiness||{};renderReadiness();$('#alerts').innerHTML=(d.alerts||[]).map(alertRow).join('')||'<p class=muted>No alerts yet.</p>';$('#events').innerHTML=(d.events||[]).map(eventRow).join('')||'<p class=muted>No alert events yet.</p>';const w=d.worker||{};$('#workerStatus').textContent=w.stale?'Alert worker has not checked rules recently. Ask an admin to start python alert_worker.py on Railway.':'Alert worker heartbeat is healthy.'}$('#alertForm').addEventListener('submit',async e=>{e.preventDefault();const btn=$('#activateBtn');btn.disabled=true;btn.textContent='Activating...';const fd=new FormData(e.target);const payload={alert_type:fd.get('alert_type'),symbol:fd.get('symbol'),condition:fd.get('condition'),threshold:Number(fd.get('threshold')),push_permission:('Notification'in window?Notification.permission:'unsupported'),channels:{in_app:false,email:false,push:false,sms:false,telegram:false}};fd.getAll('channels').forEach(c=>payload.channels[c]=true);const d=await api('/api/alerts',{method:'POST',body:JSON.stringify(payload)});btn.disabled=false;btn.textContent='Activate Alert';if(d.ok){$('#msg').textContent='Alert activated.';if((d.warnings||[]).length)toast(d.warnings.join(' '));else toast('Alert activated.');e.target.reset();e.target.querySelector('[value=in_app]').checked=true;load()}else{$('#msg').textContent=d.message||'Alert could not be created.';toast($('#msg').textContent);if(d.channel_readiness){READINESS=d.channel_readiness;renderReadiness()}}});document.addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;b.disabled=true;const action=b.dataset.action;const id=b.dataset.id;const method=action==='delete'?'delete':action;const d=await api(`/api/alerts/${id}/${method}`,{method:'POST',body:'{}'});if(d.ok){toast(d.message||'Alert updated.');load()}else{toast(d.message||'Could not update alert.');b.disabled=false}});load();setInterval(load,10000)</script></body></html>""")
 
 @webhook_app.route("/api/notifications", methods=["GET"])
 def api_notifications():
@@ -27118,22 +31528,6 @@ def api_notifications_test():
     return response
 
 
-@webhook_app.route("/api/notifications/test-push", methods=["POST"])
-def api_notifications_test_push():
-    init_db()
-    user = api_account_user()
-    if not user:
-        response = jsonify({"ok": False, "message": "Login required."})
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        return response, 401
-    payload = request.get_json(silent=True) or {}
-    result = alert_engine_service.test_delivery_channel(user["user_id"], "push", {"permission": payload.get("permission")})
-    log_product_event(user["user_id"], "test_push_notification_sent", {"result": result})
-    response = jsonify(result)
-    response.headers["Cache-Control"] = "no-store, max-age=0"
-    return response
-
-
 @webhook_app.route("/api/admin/notifications/test-event", methods=["POST"])
 def api_admin_notifications_test_event():
     admin, denied = require_admin_api("system.view")
@@ -27183,12 +31577,28 @@ def api_admin_notifications_process_delivery():
         admin.get("id"),
         "notification_delivery_jobs_processed",
         "notification",
-        "delivery_jobs",
-        {"ok": result.get("ok"), "processed": result.get("processed"), "counts": result.get("counts")},
+        "phase2_delivery",
+        {"processed": result.get("processed"), "counts": result.get("counts")},
     )
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
-    return response, (200 if result.get("ok") else 400)
+    return response
+
+
+@webhook_app.route("/api/notifications/test-push", methods=["POST"])
+def api_notifications_test_push():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    payload = request.get_json(silent=True) or {}
+    result = alert_engine_service.test_delivery_channel(user["user_id"], "push", {"permission": payload.get("permission")})
+    log_product_event(user["user_id"], "test_push_notification_sent", {"result": result})
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 @webhook_app.route("/api/notification-preferences", methods=["GET", "POST"])
@@ -28241,8 +32651,8 @@ def admin_test_notification_page():
         result = notification_service.send_user_alert(
             user_id,
             "product_updates",
-            "CoinPilotXAI admin test alert",
-            "This is a test notification from the CoinPilotXAI admin center.",
+            "CoinPlotXAI admin test alert",
+            "This is a test notification from the CoinPlotXAI admin center.",
             {"admin_id": admin.get("id"), "url": "/notifications"},
             channels=payload.getlist("channels") if hasattr(payload, "getlist") else payload.get("channels", ["in_app", "email", "sms", "push"]),
         )
@@ -28660,6 +33070,15 @@ def pulse_status_active_rows(cur, viewer_user_id=0, limit=40):
                    AND COALESCE(ls.status,'') IN ('live','active')
                ) THEN 1 ELSE 0 END AS author_live,
                CASE WHEN s.status_type='ai' THEN 85 ELSE 50 END AS ai_momentum_score,
+               -- Saved state for this viewer. The Save action for a Status writes
+               -- the generic `pulse_saved_items` library, but nothing ever read it
+               -- back onto the Status itself, so a Status could be saved and had
+               -- no way to say so — which is also why the native Status card had
+               -- no Save control at all.
+               CASE WHEN EXISTS (
+                 SELECT 1 FROM pulse_saved_items si
+                 WHERE si.user_id=? AND si.content_type='status' AND si.content_id=CAST(s.id AS TEXT)
+               ) THEN 1 ELSE 0 END AS viewer_saved,
                (SELECT title FROM pulse_status_music sm WHERE sm.status_id=s.id ORDER BY sm.id DESC LIMIT 1) AS music_title
         FROM pulse_status s
         LEFT JOIN users u ON u.user_id=s.user_id
@@ -28675,7 +33094,9 @@ def pulse_status_active_rows(cur, viewer_user_id=0, limit=40):
         ORDER BY s.created_at DESC
         LIMIT ?
         """,
-        (viewer_user_id, viewer_user_id, now, viewer_user_id, int(limit or 40)),
+        # The saved-state subquery sits in the SELECT list, so its placeholder is
+        # bound first — ahead of the two join placeholders.
+        (viewer_user_id, viewer_user_id, viewer_user_id, now, viewer_user_id, int(limit or 40)),
     )
     return [dict(row) for row in cur.fetchall()]
 
@@ -29205,7 +33626,7 @@ def pulse_live_now_homepage_html(user_id=0):
     card_html = "".join(
         f"<article class='pulse-live-now-card {'' if int(card.get('id') or 0) else 'is-empty'}' data-live-now-card data-live-id='{int(card.get('id') or 0)}'>"
         f"<div class='pulse-live-preview'><span class='live-dot'>LIVE</span><strong>{clean_html(card.get('ai_rating') or 'Ready')}</strong></div>"
-        f"<div><h3>{clean_html('No creators live yet. Start the first broadcast.' if not int(card.get('id') or 0) else card.get('title') or 'PulseSoc Live')}</h3><p>{clean_html(card.get('creator_name') or 'CoinPilotXAI')} · {clean_html(card.get('category') or 'Community')}</p>"
+        f"<div><h3>{clean_html('No creators live yet. Start the first broadcast.' if not int(card.get('id') or 0) else card.get('title') or 'PulseSoc Live')}</h3><p>{clean_html(card.get('creator_name') or 'CoinPlotXAI')} · {clean_html(card.get('category') or 'Community')}</p>"
         f"<p><span>{int(card.get('viewer_count') or 0)} viewers</span><span>{clean_html(card.get('momentum') or 'warming')}</span><span>AI {clean_html(card.get('ai_rating') or 'Ready')}</span></p></div>"
         f"<a class='button primary' href='{pulse_live_watch_url(int(card.get('id') or 0)) if int(card.get('id') or 0) else '/pulse/live/studio?context_type=home'}' data-open-live-in-reels='{int(card.get('id') or 0)}'>{'Join Live in Reels' if int(card.get('id') or 0) else 'Start Live'}</a>"
         "</article>"
@@ -29313,7 +33734,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>__TITLE__ | CoinPilotXAI</title>
+<title>__TITLE__ | CoinPlotXAI</title>
 <link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260606.png">
 <link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=feed-post-v3-media-overlay-20260629a">
 <link rel="stylesheet" href="/static/css/pulse_status_system.css?v=status-v4-20260703b">
@@ -30049,7 +34470,7 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace(
             "</body>",
-            '<script src="/static/js/pulse_home_core.js?v=live-reels-only-20260702a" defer></script></body>',
+            '<script src="/static/js/pulse_home_core.js?v=bottom-dock-scroll-20260719a" defer></script></body>',
             1,
         )
     if boot_profile == "shell_only":
@@ -30058,9 +34479,10 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js" defer></script>', "")
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_upload_manager.js?v=composer-premium-20260617a"></script>', "")
+    body_class = 'pulse-home-os' if request.path == '/pulse' else ''
     rendered_html = rendered_html.replace(
         "<body>",
-        f'<body class="{'pulse-home-os' if request.path == '/pulse' else ''}" data-pulse-boot-profile="{clean_html(boot_profile)}">',
+        f'<body class="{body_class}" data-pulse-boot-profile="{clean_html(boot_profile)}">',
         1,
     )
     return Response(rendered_html)
@@ -30628,6 +35050,10 @@ def pulse_status_payload(row, viewer_user_id=0):
         "created_at": item.get("created_at") or "",
         "expires_at": item.get("expires_at") or "",
         "viewed": bool(item.get("viewer_viewed")),
+        # Both spellings, matching every other savable payload in the app, so a
+        # client does not have to know which surface it is reading.
+        "saved": bool(item.get("viewer_saved")),
+        "is_saved": bool(item.get("viewer_saved")),
         "view_count": safe_int(item.get("view_count"), 0),
         "completion_rate": round(float(item.get("completion_rate") or 0), 3),
         "reaction_count": safe_int(item.get("reaction_count"), 0),
@@ -33535,9 +37961,38 @@ def pulse_conversation_summaries(cur, user_id, include_types=None, limit=80, tra
     )
     conversations = []
     skipped = []
-    typing_cutoff = (datetime.utcnow() - timedelta(seconds=8)).isoformat(timespec="seconds")
     now = datetime.utcnow().isoformat(timespec="seconds")
-    for row in cur.fetchall():
+    conversation_rows = cur.fetchall()
+    # One batched typing read for the whole list, from the presence service.
+    # Each row previously ran its own query against pulse_conversation_typing
+    # with a local 8-second cutoff, which made the list a second authority on
+    # both who is typing and when that stops being true.
+    typing_by_conversation = {}
+    try:
+        from services import presence_service
+
+        typing_by_conversation = presence_service.activity_by_context(
+            cur,
+            user_id,
+            [str(int(dict(r).get("id") or 0)) for r in conversation_rows],
+            activities=("typing",),
+        )
+    except Exception as exc:
+        # Fail closed: no typing indicators rather than possibly wrong ones.
+        logging.warning("PULSE_CONVERSATION_LIST_TYPING_UNAVAILABLE trace_id=%s error=%s", trace_id, exc.__class__.__name__)
+    typing_display_names = {}
+    typing_ids = sorted({uid for entry in typing_by_conversation.values() for uid in entry})
+    if typing_ids:
+        try:
+            cur.execute(
+                "SELECT user_id, COALESCE(display_name,username,'PulseSoc member') AS display_name FROM users WHERE user_id IN (%s)"
+                % ",".join(["?"] * len(typing_ids)),
+                tuple(typing_ids),
+            )
+            typing_display_names = {int(dict(r)["user_id"]): dict(r)["display_name"] for r in cur.fetchall() or []}
+        except Exception as exc:
+            logging.warning("PULSE_CONVERSATION_LIST_TYPING_NAMES_FAILED trace_id=%s error=%s", trace_id, exc.__class__.__name__)
+    for row in conversation_rows:
         try:
             item = dict(row)
             conversation_id = int(item.get("id") or 0)
@@ -33571,21 +38026,10 @@ def pulse_conversation_summaries(cur, user_id, include_types=None, limit=80, tra
                     unread_count = int(dict(cur.fetchone() or {}).get("total") or 0)
                 except Exception:
                     logging.exception("PULSE_CONVERSATION_UNREAD_FAILED trace_id=%s conversation_id=%s", trace_id, conversation_id)
-            typing_names = []
-            try:
-                cur.execute(
-                    """
-                    SELECT COALESCE(u.display_name,u.username,'PulseSoc member') AS display_name
-                    FROM pulse_conversation_typing t
-                    JOIN users u ON u.user_id=t.user_id
-                    WHERE t.conversation_id=? AND t.user_id!=? AND t.typing_until>=?
-                    ORDER BY t.updated_at DESC LIMIT 3
-                    """,
-                    (conversation_id, user_id, typing_cutoff),
-                )
-                typing_names = [dict(row).get("display_name") or "PulseSoc member" for row in cur.fetchall()]
-            except Exception:
-                logging.exception("PULSE_CONVERSATION_TYPING_FAILED trace_id=%s conversation_id=%s", trace_id, conversation_id)
+            typing_names = [
+                typing_display_names.get(uid) or "PulseSoc member"
+                for uid in sorted(typing_by_conversation.get(str(conversation_id), {}))
+            ][:3]
             preview_users = []
             try:
                 cur.execute(
@@ -33687,8 +38131,23 @@ def pulse_ensure_default_rooms(cur, current_user_id):
                 (conversation_id,),
             )
             last = dict(cur.fetchone() or {})
-            cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
-            online_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+            # Membership is not presence. This counted every participant who
+            # had never explicitly left, so someone who joined a room years ago
+            # and never returned was counted as "online" forever -- and the
+            # room's energy bar was computed from that same number. Ask the
+            # presence service who is actually live instead.
+            cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
+            member_ids = [int(dict(row).get("user_id") or 0) for row in cur.fetchall()]
+            online_count = 0
+            try:
+                from services import presence_service
+
+                room_presence = presence_service.presence_for(cur, int(current_user_id or 0), member_ids)
+                online_count = sum(1 for item in room_presence.values() if item.get("online"))
+            except Exception as exc:
+                # Fail closed: an unreadable presence store reports an empty
+                # room, never a full one.
+                logging.warning("PULSE_ROOM_PRESENCE_UNAVAILABLE room=%s error=%s", room.get("key"), exc.__class__.__name__)
             cur.execute("SELECT COALESCE(unread_count,0) AS unread_count, COALESCE(last_read_message_id,0) AS last_read_message_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, current_user_id))
             mine = dict(cur.fetchone() or {})
             unread_count = int(mine.get("unread_count") or 0)
@@ -33704,7 +38163,10 @@ def pulse_ensure_default_rooms(cur, current_user_id):
             rooms.append({
                 "id": room["key"],
                 "room_id": room["key"],
-                "energy": min(99, 42 + online_count * 3),
+                # No invented floor. The old expression started at 42, so a room
+                # with nobody in it still rendered a bar just under half full --
+                # a simulated activity signal on a dead room.
+                "energy": min(99, online_count * 12),
                 "conversation_id": conversation_id,
                 "name": room["name"],
                 "title": room["name"],
@@ -34126,38 +38588,71 @@ def pulse_conversation_presence_payload(cur, conversation_id, current_user_id=0)
     conversation = dict(cur.fetchone() or {})
     if not conversation:
         return {}
-    cutoff = (datetime.utcnow() - timedelta(minutes=6)).isoformat(timespec="seconds")
+    # Membership only. Liveness is asked of the presence service below rather
+    # than inferred here.
+    #
+    # This used to LEFT JOIN pulse_online_sessions and fall back to
+    # users.last_seen_at, calling anyone seen within six minutes "online".
+    # Both inputs are wrong for the question: users.last_seen_at is touched by
+    # any authenticated page view, so closing the browser left a user reading
+    # as online for the rest of the window, and the six-minute cutoff was a
+    # third grace period competing with the service's own.
     cur.execute(
         """
-        SELECT DISTINCT u.user_id, COALESCE(u.display_name,u.username,'PulseSoc user') AS display_name,
+        SELECT u.user_id, COALESCE(u.display_name,u.username,'PulseSoc user') AS display_name,
                COALESCE(u.avatar_url,'') AS avatar_url,
                COALESCE(p.role,'member') AS role,
-               MAX(COALESCE(os.last_seen_at,u.last_seen_at,'')) AS seen_at
+               COALESCE(p.joined_at,p.created_at,'') AS joined_at
         FROM pulse_conversation_participants p
         JOIN users u ON u.user_id=p.user_id
-        LEFT JOIN pulse_online_sessions os ON os.user_id=p.user_id AND COALESCE(os.last_seen_at,'')>=?
         WHERE p.conversation_id=? AND COALESCE(p.left_at,'')=''
         GROUP BY u.user_id
-        ORDER BY COALESCE(os.last_seen_at,u.last_seen_at,p.joined_at,p.created_at,'') DESC
-        LIMIT 12
+        LIMIT 60
         """,
-        (cutoff, conversation_id),
+        (conversation_id,),
     )
     members = [dict(row) for row in cur.fetchall()]
+    presence_by_user = {}
+    try:
+        from services import presence_service
+
+        presence_by_user = presence_service.presence_for(
+            cur,
+            int(current_user_id or 0),
+            [int(member.get("user_id") or 0) for member in members],
+        )
+    except Exception as exc:
+        # Fail closed. If presence cannot be read, everyone reports offline --
+        # never the reverse. An empty map below produces exactly that.
+        logging.warning("PULSE_CONVERSATION_PRESENCE_UNAVAILABLE conversation_id=%s error=%s", conversation_id, exc.__class__.__name__)
     active_members = []
     online_count = 0
     for member in members:
-        is_online = bool(member.get("seen_at") and str(member.get("seen_at")) >= cutoff)
+        user_id = int(member.get("user_id") or 0)
+        presence = presence_by_user.get(user_id) or {}
+        is_online = bool(presence.get("online"))
         if is_online:
             online_count += 1
         active_members.append({
-            "id": int(member.get("user_id") or 0),
+            "id": user_id,
             "display_name": member.get("display_name") or "PulseSoc user",
             "avatar_url": member.get("avatar_url") or "",
             "role": member.get("role") or "member",
             "online": is_online,
-            "is_self": int(member.get("user_id") or 0) == int(current_user_id or 0),
+            "status": presence.get("status") or "offline",
+            "activity": presence.get("activity") or "idle",
+            # Composed server-side by the presence service so every client
+            # words it identically, and empty when the viewer is not entitled
+            # to see it.
+            "last_seen_text": presence.get("last_seen_text") or "",
+            "is_self": user_id == int(current_user_id or 0),
         })
+    # Online members first, then the most recently seen. The ordering used to
+    # come out of SQL; it now follows the same presence answer the payload
+    # reports, so the list cannot be sorted by one notion of recency while
+    # being labelled by another.
+    active_members.sort(key=lambda item: (not item["online"], item["display_name"].lower()))
+    active_members = active_members[:12]
     cur.execute(
         """
         SELECT body, message_type, created_at
@@ -34189,7 +38684,11 @@ def pulse_conversation_presence_payload(cur, conversation_id, current_user_id=0)
         (conversation_id, int(current_user_id or 0)),
     )
     helpful = dict(cur.fetchone() or {})
-    pulse_energy = min(99, 42 + online_count * 7 + recent_count * 5)
+    # Both inputs are now real: online_count comes from the presence service and
+    # recent_count from messages actually sent in the last hour. The former
+    # constant floor of 42 meant an empty, silent conversation still showed a
+    # half-full energy bar.
+    pulse_energy = min(99, online_count * 7 + recent_count * 5)
     title = conversation.get("title") or ("PulseSoc Room" if (conversation.get("conversation_type") or "") in {"room", "chat_room"} else "Group Chat")
     summary = "The room is warming up. Start with a useful question or a quick update."
     if recent_messages:
@@ -34197,24 +38696,35 @@ def pulse_conversation_presence_payload(cur, conversation_id, current_user_id=0)
         if latest:
             summary = f"Latest energy: {str(latest.get('body') or '')[:140]}"
     moderators = [m for m in active_members if str(m.get("role") or "").lower() in {"owner", "admin", "moderator"}][:4]
-    typing_cutoff = (datetime.utcnow() - timedelta(seconds=8)).isoformat(timespec="seconds")
-    cur.execute(
-        """
-        SELECT t.user_id, COALESCE(u.display_name,u.username,'PulseSoc member') AS display_name
-        FROM pulse_conversation_typing t
-        JOIN users u ON u.user_id=t.user_id
-        WHERE t.conversation_id=? AND t.user_id!=? AND t.typing_until>=?
-        ORDER BY t.updated_at DESC
-        LIMIT 5
-        """,
-        (conversation_id, int(current_user_id or 0), typing_cutoff),
-    )
-    typing_users = [{"id": int(row["user_id"]), "display_name": row["display_name"] or "PulseSoc member"} for row in cur.fetchall()]
+    # Typing comes from the presence service, not from a table this surface
+    # keeps for itself. The old query read pulse_conversation_typing against its
+    # own 8-second cutoff -- a second expiry rule running alongside the
+    # service's, and therefore a second place a stuck bubble could originate.
+    typing_users = []
+    try:
+        from services import presence_service
+
+        typing_ids = presence_service.activity_by_context(
+            cur, int(current_user_id or 0), [str(conversation_id)], activities=("typing",)
+        ).get(str(conversation_id), {})
+        names = {int(m.get("user_id") or 0): m.get("display_name") for m in members}
+        typing_users = [
+            {"id": uid, "display_name": names.get(uid) or "PulseSoc member"}
+            for uid in sorted(typing_ids)
+            if uid in names
+        ][:5]
+    except Exception as exc:
+        # Fail closed: an unreadable presence store shows nobody typing.
+        logging.warning("PULSE_CONVERSATION_TYPING_UNAVAILABLE conversation_id=%s error=%s", conversation_id, exc.__class__.__name__)
     return {
         "conversation_id": conversation_id,
         "title": title,
         "conversation_type": conversation.get("conversation_type") or "group",
-        "online_count": max(online_count, 1 if active_members else 0),
+        # No floor. This was max(online_count, 1 if active_members else 0), so
+        # any conversation with a member list reported at least one person
+        # online -- an empty room always claimed one live participant, and the
+        # viewer could be looking at their own name while nobody was there.
+        "online_count": online_count,
         "active_members": active_members[:8],
         "moderators": moderators,
         "pulse_energy": pulse_energy,
@@ -35088,7 +39598,11 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
             mobile_bottom_html += f"<button type='button'{active_attr} data-pulse-create-trigger='1' data-pulse-dock-item data-dock-action='{clean_html(action)}' aria-label='Create PulseSoc content'><span class='nav-ico' aria-hidden='true'>{icon_html}</span><span class='nav-label'>Create</span></button>"
         else:
             mobile_bottom_html += f"<a href='{clean_html(href)}'{active_attr} data-pulse-dock-item data-dock-action='{clean_html(action)}' aria-label='{clean_html(label)}'><span class='nav-ico' aria-hidden='true'>{icon_html}</span><span class='nav-label'>{clean_html(label)}</span>{badge}</a>"
-    premium_side = premium_visibility_engine.prompt_html("dashboard", shell_user)
+    # R3.3: the shell upsell card must reflect *currently usable* premium, not raw
+    # ownership, so a suspended owner is not told premium is "enabled across PulseSoc".
+    # Under flag off/shadow this equals ownership, so the rendered HTML is unchanged.
+    _shell_premium_effective, _ = _effective_premium_access(shell_user, premium_visibility_engine.is_premium_user(shell_user))
+    premium_side = premium_visibility_engine.prompt_html("dashboard", shell_user, is_premium_override=_shell_premium_effective)
     default_side = side_html or f"<article class='card'><h2>PulseSoc Intelligence</h2><p>Live community tools, safety signals, creator economy, and learning spaces are connected here.</p></article>{premium_side}"
     live_shell_mode = "data-pulse-live-shell" in (main_html or "")
     shell_body_class = "pulse-home-os pulse-social-os pulse-live-shell-mode" if live_shell_mode else "pulse-home-os pulse-social-os"
@@ -35215,22 +39729,28 @@ def pulse_mark_online(user_id, connection_type="http", current_path=""):
         conn = db()
         cur = conn.cursor()
         session_id = str(sid)[:160]
-        cur.execute(
-            """
-            UPDATE pulse_online_sessions
-            SET connection_type=?, current_path=?, last_seen_at=?, online_status='online'
-            WHERE user_id=? AND session_id=?
-            """,
-            (str(connection_type)[:40], str(current_path or request.path)[:260], now, user_id, session_id),
-        )
-        if cur.rowcount == 0:
-            cur.execute(
-                """
-                INSERT INTO pulse_online_sessions (user_id, session_id, connection_type, current_path, last_seen_at, online_status, created_at)
-                VALUES (?, ?, ?, ?, ?, 'online', ?)
-                """,
-                (user_id, session_id, str(connection_type)[:40], str(current_path or request.path)[:260], now, now),
+        # The web page-view heartbeat now lands in the presence service, which
+        # is the same store the mobile clients heartbeat into and the same one
+        # every surface reads. Previously this wrote a pulse_online_sessions row
+        # with online_status='online' -- a flag nothing ever cleared, in a table
+        # that by the end had no readers left at all. A presence session, by
+        # contrast, expires on the shared clock: stop making requests and you
+        # stop being online, with nothing needing to notice.
+        try:
+            from services import presence_service
+
+            presence_service.touch_device(
+                cur,
+                user_id,
+                device_id=f"web:{session_id}",
+                device_label=str(connection_type or "web")[:40],
+                platform="web",
+                conn=conn,
             )
+        except Exception as exc:
+            logging.debug("PULSE_ONLINE_PRESENCE_SKIPPED user_id=%s error=%s", user_id, exc.__class__.__name__)
+        # Retained for the admin user list and login auditing, which display it
+        # as a raw timestamp. Nothing derives liveness from it any more.
         cur.execute("UPDATE users SET last_seen_at=? WHERE user_id=?", (now, user_id))
         conn.commit()
         conn.close()
@@ -35290,7 +39810,27 @@ def pulse_live_metrics():
     metrics["transport"] = "sse_with_polling_fallback"
     metrics["comments_per_sec"] = round(metrics.get("comments_last_minute", 0) / 60, 3)
     metrics["reactions_per_sec"] = round(metrics.get("reactions_last_minute", 0) / 60, 3)
-    metrics["online_users"] = max(metrics.get("active_users", 0), realtime_health.get("online_users", 0))
+    # `active_users` counts distinct actors in the last minute of the event log,
+    # which answers "who did something recently", not "who is connected". A user
+    # who reacted to a post 45 seconds ago and then killed the app was counted
+    # as online. Taking max() of that against the transport's own figure made it
+    # strictly worse: the number could only ever be inflated, never corrected.
+    #
+    # online_users now comes from the presence service, the same source every
+    # user-facing surface reads. The event-log figure is kept under its own
+    # honest name so the dashboard does not lose the signal.
+    try:
+        from services import presence_service
+
+        _presence_conn = db()
+        try:
+            metrics["online_users"] = int(presence_service.health_snapshot(_presence_conn.cursor(), conn=_presence_conn).get("online_users") or 0)
+        finally:
+            _presence_conn.close()
+    except Exception as exc:
+        logging.warning("PULSE_LIVE_METRICS_PRESENCE_UNAVAILABLE error=%s", exc.__class__.__name__)
+        metrics["online_users"] = 0
+    metrics["actors_last_minute"] = metrics.get("active_users", 0)
     metrics["active_realtime_clients"] = realtime_health.get("active_realtime_clients", 0)
     metrics["websocket_clients"] = 0
     metrics["failed_socket_events"] = realtime_health.get("failed_broadcasts", 0)
@@ -35792,7 +40332,16 @@ def pulse_reels_page():
     function releaseFarReelMedia(activeCard){const cards=reelCards(),activeIndex=cards.indexOf(activeCard);if(activeIndex<0)return;cards.forEach((card,index)=>{const distance=index-activeIndex;if(distance>=-1&&distance<=2)return;card.dataset.reelWindow='released';card.querySelectorAll('video').forEach(video=>{if(!video.paused){logReelAudioState(card,video,'offscreen_unload');video.pause()}video.autoplay=false;video.preload='none';if(video.readyState>1){try{video.load()}catch(_){}}});});}
     function syncPlayback(){refreshReelsSoundPreference();const cards=reelCards();const mid=innerHeight/2;let active=null;cards.forEach(card=>{const r=card.getBoundingClientRect();const visible=r.top<mid&&r.bottom>mid;if(visible)active=card;card.classList.toggle('is-active',visible);card.querySelectorAll('video').forEach(v=>{if(v.classList.contains('reel-blur-bg')){v.pause();return}if(visible&&v===primaryReelVideo(card)){v.preload='auto';if(v.readyState===0){logReelAudioState(card,v,'restore_state',{action:'sync-load'});v.load()}playReelVideo(v,true)}else{if(!v.paused){logReelAudioState(card,v,document.hidden?'visibility_hidden':'offscreen_pause');v.pause()}if(card.dataset.reelWindow!=='released')v.preload='metadata'}updateReelMediaHealth(card,v,visible?'active_probe':'offscreen_pause');updateReelControls(card);});});if(active){preloadNextReel(active);releaseFarReelMedia(active);syncReelsSidebars(active.dataset.reelId||'');if(autoplayNext?.checked&&active.nextElementSibling&&active.nextElementSibling.nextElementSibling===null)loadMoreReels();}}
     window.retryPulseReelMedia=function(el,id){const card=el.closest('.reel-card');if(updateReelMediaHealth(card,el,'retry_probe'))return;const attempts=Number(el.dataset.retryCount||0);reelVideoDiagnostics(el,'retry-'+attempts);const srcEl=el.tagName==='VIDEO'?el.querySelector('source'):el;const src=srcEl?.getAttribute('src')||el.getAttribute('src')||el.currentSrc||'';if(pulseReelStreamUrl(src)){if(!updateReelMediaHealth(card,el,'media_error'))card?.classList.add('is-broken');console.warn('Pulse reel stream failed without cache-busting retry',{id,src,error:el.error?{code:el.error.code,message:el.error.message}:null});return}if(attempts<2){el.dataset.retryCount=String(attempts+1);const clean=src.split('?')[0];window.setTimeout(()=>{if(updateReelMediaHealth(card,el,'retry_before_load'))return;if(srcEl)srcEl.setAttribute('src',clean+'?retry='+(attempts+1)+'&t='+Date.now());else el.setAttribute('src',clean+'?retry='+(attempts+1)+'&t='+Date.now());if(el.tagName==='VIDEO'){logReelAudioState(card,el,'preload_swap',{attempt:attempts+1});el.load();}},450*(attempts+1));return}if(!updateReelMediaHealth(card,el,'media_error'))card?.classList.add('is-broken');console.warn('PulseSoc reel media failed after retry',{id,src:el.currentSrc||el.src,error:el.error?{code:el.error.code,message:el.error.message}:null});}
-    function preloadNextReel(activeCard){const active=activeCard||reelCards().find(card=>{const r=card.getBoundingClientRect();return r.top<innerHeight/2&&r.bottom>innerHeight/2});if(!active)return 0;let warmed=0;[{card:active.previousElementSibling,mode:'previous',preload:'metadata'},{card:active.nextElementSibling,mode:'next1',preload:'auto'},{card:active.nextElementSibling?.nextElementSibling,mode:'next2',preload:'auto'}].filter(item=>item.card).forEach(({card,mode,preload})=>{card.dataset.reelWindow=mode;warmReelPoster(card);const flag='reelLightPreloaded'+mode;if(card.dataset[flag]==='1')return;card.dataset[flag]='1';card.querySelectorAll('img[loading="lazy"],video').forEach(media=>{if(media.tagName==='VIDEO'){media.preload=preload;media.autoplay=false;media.playsInline=true;if(preload==='auto'&&media.readyState===0){try{media.load();warmed+=1}catch(_){}}}else if(media.dataset.src&&!media.src){media.src=media.dataset.src;warmed+=1}});});active.dataset.preloadSuccess=String(warmed);return warmed;}
+    function preloadNextReel(activeCard){const active=activeCard||reelCards().find(card=>{const r=card.getBoundingClientRect();return r.top<innerHeight/2&&r.bottom>innerHeight/2});if(!active)return 0;let warmed=0;[{card:active.previousElementSibling,mode:'previous',preload:'metadata'},{card:active.nextElementSibling,mode:'next1',preload:'auto'},{card:active.nextElementSibling?.nextElementSibling,mode:'next2',preload:'auto'}].filter(item=>item.card).forEach(({card,mode,preload})=>{card.dataset.reelWindow=mode;warmReelPoster(card);
+      /* The window policy is RE-ASSERTED on every pass. It used to sit behind an
+         early return on this flag, which meant a card that had been warmed once and
+         then torn down by releaseFarReelMedia (preload='none', buffer dropped) stayed
+         at preload='none' forever once the viewer scrolled back to it — so the reel
+         about to become active buffered nothing. The flag is now a record of having
+         been warmed, not a gate on being re-armed. Re-arming costs no network by
+         itself; the actual fetch below is still gated on readyState===0, which is the
+         honest "this element holds no data" test and is naturally idempotent. */
+      card.dataset['reelLightPreloaded'+mode]='1';card.querySelectorAll('img[loading="lazy"],video').forEach(media=>{if(media.tagName==='VIDEO'){media.preload=preload;media.autoplay=false;media.playsInline=true;if(preload==='auto'&&media.readyState===0){try{media.load();warmed+=1}catch(_){}}}else if(media.dataset.src&&!media.src){media.src=media.dataset.src;warmed+=1}});});active.dataset.preloadSuccess=String(warmed);return warmed;}
     function renderRail(activeLane='for_you',categories=[]){const seen=new Set();const tabs=[...reelTabs,...(categories||[]).map(c=>['category:'+c,c])].filter(([key])=>{if(seen.has(key))return false;seen.add(key);return true});rail.innerHTML=`<button class="reels-mobile-title" type="button" aria-current="page" data-reels-title>Reels</button>`+tabs.map(([key,label])=>`<button class="${key===activeLane?'active':''}" data-reel-lane="${esc(key)}" aria-pressed="${key===activeLane?'true':'false'}">${esc(label)}</button>`).join('');rail.querySelector('.active')?.scrollIntoView({block:'nearest',inline:'center'});}
     function setEmpty(lane){const copy=emptyCopy[lane]||['No Reels in this lane yet.','Creators are still warming this category up.'];reelsEmpty.querySelector('h2').textContent=copy[0];reelsEmpty.querySelector('p').textContent=copy[1];}
     function setTabUrl(lane,{preserveLive=false}={}){const u=new URL(location.href);u.searchParams.set('tab',lane);if(!preserveLive)u.searchParams.delete('live');history.replaceState({tab:lane},'',u.pathname+'?'+u.searchParams.toString())}
@@ -36293,6 +40842,34 @@ def pulse_live_reel_playback_url(live):
     return media_service.normalize_url(playback_url or "")
 
 
+def pulse_live_effective_status(live):
+    live = dict(live or {})
+    status = str(live.get("status") or "starting").lower()
+    if status in {"ended", "offline", "archived", "deleted", "failed"}:
+        return status
+    publish_state = str(live.get("publish_state") or "").lower()
+    stream_health = str(live.get("stream_health") or "").lower()
+    has_room = bool(str(live.get("webrtc_room_id") or "").strip())
+    track_count = safe_int(live.get("audio_tracks"), 0) + safe_int(live.get("video_tracks"), 0)
+    livekit_live_states = {
+        "browser_live_egress",
+        "browser_live_livekit_direct",
+        "livekit_direct",
+        "livekit_room_active",
+        "livekit_participant_joined",
+        "livekit_tracks_published",
+        "mux_live",
+    }
+    if has_room and (
+        track_count > 0
+        or safe_int(live.get("is_live"), 0) > 0
+        or publish_state in livekit_live_states
+        or stream_health in {"livekit_connected", "livekit_direct", "egress_starting", "egress_active", "stable"}
+    ):
+        return "live"
+    return status or "starting"
+
+
 def pulse_live_watch_url(live_id, mode=""):
     live_id = safe_int(live_id, 0)
     if live_id <= 0:
@@ -36342,6 +40919,7 @@ def pulse_live_reel_items(viewer_user_id=0, lane="for_you", limit=3, category=""
                 OR COALESCE(l.playback_url,'')!=''
                 OR COALESCE(l.hls_url,'')!=''
                 OR COALESCE(l.mux_playback_id,'')!=''
+                OR COALESCE(l.webrtc_room_id,'')!=''
               )
             ORDER BY CASE WHEN l.id=? THEN 0 ELSE 1 END,
                      COALESCE(l.engagement_score,0) DESC,
@@ -36357,7 +40935,7 @@ def pulse_live_reel_items(viewer_user_id=0, lane="for_you", limit=3, category=""
         for live in rows:
             playback_url = pulse_live_reel_playback_url(live)
             live_id = safe_int(live.get("id"), 0)
-            if not reel_media_source_is_playable(playback_url) and live_id != focus_live_id:
+            if not reel_media_source_is_playable(playback_url) and live_id != focus_live_id and not str(live.get("webrtc_room_id") or "").strip():
                 continue
             author = pulse_identity_for_user(cur, safe_int(live.get("user_id"), 0))
             if lane == "following" and not bool(live.get("viewer_follows_author")):
@@ -36415,7 +40993,7 @@ def pulse_live_reel_items(viewer_user_id=0, lane="for_you", limit=3, category=""
                 "live_chat_preview": chat_preview,
                 "live": {
                     "live_session_id": live_id,
-                    "status": live.get("status") or "live",
+                    "status": pulse_live_effective_status(live),
                     "publish_state": live.get("publish_state") or live.get("status") or "live",
                     "playback_url": playback_url,
                     "preview_url": preview_url,
@@ -36813,7 +41391,7 @@ def pulse_friends_page():
       } catch(err) { toast(err.message); }
     });
     """
-    return pulse_social_shell("Friends and Following", "Build your trusted CoinPilotXAI circle, follow creators, accept requests, and message without exposing private identity data.", main, "", script)
+    return pulse_social_shell("Friends and Following", "Build your trusted CoinPlotXAI circle, follow creators, accept requests, and message without exposing private identity data.", main, "", script)
 
 
 @webhook_app.route("/pulse/invite", methods=["GET"])
@@ -36927,7 +41505,8 @@ def pulse_live_page():
     active_streams = [dict(row) for row in cur.fetchall()]
     conn.close()
     stream_cards = "".join(f"<article class='card' data-live-gateway-card='{int(s.get('id') or 0)}'><span class='pill' style='border-color:rgba(255,77,109,.45);color:#ffd6dc'>LIVE NOW</span><h2>{clean_html(s.get('title') or 'PulseSoc Live')}</h2><p>{clean_html(s.get('creator_name') or '')} · {clean_html(s.get('category') or '')}</p><p><span class='pill'>{int(s.get('viewer_count') or 0)} viewers</span> <span class='pill'>{clean_html(s.get('stream_health') or s.get('status') or '')}</span></p><a class='button primary' href='{pulse_live_watch_url(int(s.get('id') or 0))}' data-open-live-in-reels='{int(s.get('id') or 0)}'>Join Live in Reels</a></article>" for s in active_streams)
-    main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{safe_int(profile.get('trust_score'), 0)}/100 · {clean_html(profile.get('trust_band') or '')}</p></article><article class='card'><h2>Invite Progress</h2><p>{completed}/{required} real members</p></article><article class='card'><h2>Creator Rank</h2><p>{clean_html(privileges.get('current_level') or 'New User')}</p></article></section><section class='card'><h2>Live Discovery</h2><p class='muted'>Trending streams, category filters, creator profiles, and live viewer counts are connected here.</p></section><section class='grid'>{stream_cards or '<article class=\"card\"><h2>No one is live right now.</h2><p>Start the next PulseSoc Live session or check back soon.</p></article>'}</section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
+    stream_cards_empty = '<article class="card"><h2>No one is live right now.</h2><p>Start the next PulseSoc Live session or check back soon.</p></article>'
+    main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{safe_int(profile.get('trust_score'), 0)}/100 · {clean_html(profile.get('trust_band') or '')}</p></article><article class='card'><h2>Invite Progress</h2><p>{completed}/{required} real members</p></article><article class='card'><h2>Creator Rank</h2><p>{clean_html(privileges.get('current_level') or 'New User')}</p></article></section><section class='card'><h2>Live Discovery</h2><p class='muted'>Trending streams, category filters, creator profiles, and live viewer counts are connected here.</p></section><section class='grid'>{stream_cards or stream_cards_empty}</section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
     script = """
     const LIVE_ALLOWED_CATEGORIES = new Set(['Crypto Education','Scam Shield Lesson','Arena Training','Market Psychology']);
     const LIVE_SETUP_REQUIRED_PLATFORMS = new Set(['facebook','youtube','twitch','kick','tiktok','x_twitter','linkedin','custom_rtmp']);
@@ -37034,7 +41613,7 @@ def pulse_live_page():
       }
     });
     """
-    return pulse_social_shell("PulseSoc Live Eligibility", "Unlock Live by growing a real, trusted CoinPilotXAI audience.", main, "", script)
+    return pulse_social_shell("PulseSoc Live Eligibility", "Unlock Live by growing a real, trusted CoinPlotXAI audience.", main, "", script)
 
 
 @webhook_app.route("/pulse/live/studio/<int:stream_id>", methods=["GET"])
@@ -38133,6 +42712,24 @@ def pulse_livekit_http_url():
     if raw_url.startswith("ws://"):
         return "http://" + raw_url[5:]
     return raw_url
+
+
+def pulse_livekit_ws_url():
+    # Client-facing LiveKit endpoint. The livekit-client / @livekit/react-native
+    # SDKs refuse to connect to an http(s) URL, so an operator who pastes the
+    # https:// dashboard URL into LIVEKIT_URL silently breaks every live join
+    # with no server error. Normalize https->wss and http->ws (bare host
+    # defaults to wss); ws/wss pass through unchanged.
+    raw_url = (pulse_livekit_config().get("url") or "").strip().rstrip("/")
+    if not raw_url:
+        return ""
+    if raw_url.startswith("https://"):
+        return "wss://" + raw_url[8:]
+    if raw_url.startswith("http://"):
+        return "ws://" + raw_url[7:]
+    if raw_url.startswith(("wss://", "ws://")):
+        return raw_url
+    return "wss://" + raw_url
 
 
 def pulse_livekit_egress_token(room_name):
@@ -39631,7 +44228,7 @@ def api_pulse_live_livekit_token(live_id):
         "ok": True,
         "live_id": live_id,
         "trace_id": trace_id,
-        "livekit_url": config.get("url") or "",
+        "livekit_url": pulse_livekit_ws_url(),
         "room": room_name,
         "identity": identity,
         "can_publish": can_publish,
@@ -39793,6 +44390,7 @@ def api_pulse_live_debug_event(live_id):
         return jsonify({"ok": False, "message": "Live debug event could not be stored."}), 500
 
 
+@webhook_app.route("/api/pulse/live/<int:live_id>/native-publish", methods=["POST"])
 @webhook_app.route("/api/pulse/live/<int:live_id>/browser-publish", methods=["POST"])
 def api_pulse_live_browser_publish(live_id):
     init_db()
@@ -39956,8 +44554,8 @@ def api_pulse_live_browser_publish(live_id):
             mux_status = "egress_starting"
             livekit_egress_status = egress.get("status") or stream_health
             livekit_egress_error = ""
-            is_live = 0
-            status = "starting"
+            is_live = 1
+            status = "live"
             publish_path = "livekit_mux_egress"
         elif quota_exhausted:
             publish_state = "browser_live_livekit_direct"
@@ -39965,18 +44563,18 @@ def api_pulse_live_browser_publish(live_id):
             mux_status = "egress_quota_exhausted"
             livekit_egress_status = "quota_exhausted"
             livekit_egress_error = (egress.get("message") or egress.get("reason") or "LiveKit egress minutes are exhausted.")[:500]
-            is_live = 0
-            status = "starting"
+            is_live = 1
+            status = "live"
             publish_path = "livekit_direct"
         else:
-            publish_state = "browser_publish_failed"
-            stream_health = "egress_failed"
+            publish_state = "browser_live_livekit_direct"
+            stream_health = "livekit_direct"
             mux_status = live.get("mux_live_status") or "idle"
             livekit_egress_status = "failed"
             livekit_egress_error = (egress.get("message") or egress.get("reason") or "LiveKit egress failed.")[:500]
-            is_live = 0
-            status = live.get("status") or "starting"
-            publish_path = "livekit_mux_egress"
+            is_live = 1
+            status = "live"
+            publish_path = "livekit_direct"
         pulse_live_record_timeline_event(
             cur,
             "live_egress_start_response",
@@ -40018,7 +44616,7 @@ def api_pulse_live_browser_publish(live_id):
         )
         conn.commit(); conn.close()
         try:
-            event_name = "livestream_browser_livekit_egress_started" if egress.get("ok") else "livestream_browser_livekit_direct_started" if quota_exhausted else "livestream_browser_livekit_egress_failed"
+            event_name = "livestream_browser_livekit_egress_started" if egress.get("ok") else "livestream_browser_livekit_direct_started"
             pulse_emit_event(event_name, {"live_id": live_id, "audio_tracks": verified_audio_tracks, "video_tracks": verified_video_tracks, "publish_path": publish_path, "egress_id": egress.get("egress_id") or "", "egress_ok": bool(egress.get("ok")), "egress_quota_exhausted": bool(quota_exhausted)}, user["user_id"], None)
         except Exception:
             logging.exception("PULSE_LIVE_BROWSER_PUBLISH_EMIT_FAILED live_id=%s trace_id=%s", live_id, trace_id)
@@ -40034,8 +44632,8 @@ def api_pulse_live_browser_publish(live_id):
         playback = live_distribution_service.playback_manifest(live_for_playback)
         if not egress.get("ok") and not quota_exhausted:
             return jsonify({
-                "ok": False,
-                "message": livekit_egress_error or "LiveKit could not start forwarding to Mux.",
+                "ok": True,
+                "message": "Native LiveKit playback is active. Public HLS replay is waiting for provider egress recovery.",
                 "trace_id": trace_id,
                 "live_id": live_id,
 	                "audio_tracks": verified_audio_tracks,
@@ -40050,7 +44648,7 @@ def api_pulse_live_browser_publish(live_id):
                     "room_composite_error": egress.get("room_composite_error") or "",
                 },
                 "playback": playback,
-            }), 502
+            })
         return jsonify({
             "ok": True,
             "message": "LiveKit egress quota is unavailable. Public Mux playback will stay offline until egress minutes are available." if quota_exhausted else "LiveKit egress started. Waiting for Mux to become active before public playback opens.",
@@ -40244,6 +44842,80 @@ def api_pulse_live_chat(live_id):
     return jsonify({"ok": True, "message": "Chat sent.", "message_id": message_id, "moderation_status": moderation_status})
 
 
+@webhook_app.route("/api/pulse/live/<int:live_id>/chat/<int:message_id>/<action>", methods=["POST"])
+def api_pulse_live_chat_moderate(live_id, message_id, action):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    action = clean_html(action or "")[:24].lower()
+    if action not in {"delete", "remove", "pin", "unpin", "report"}:
+        return api_error("Invalid moderation action.", 400)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+        live = dict(cur.fetchone() or {})
+        if not live:
+            conn.close()
+            return api_error("Live stream not found.", 404)
+        cur.execute("SELECT * FROM pulse_live_chat WHERE id=? AND live_id=? LIMIT 1", (message_id, live_id))
+        message = dict(cur.fetchone() or {})
+        if not message:
+            conn.close()
+            return api_error("Chat message not found.", 404)
+        is_host = pulse_live_is_host(live, user) or bool(admin_current_user())
+        target_user_id = int(message.get("user_id") or 0)
+        # Host-only controls: delete/remove, pin, unpin. Report is available to any viewer.
+        if action in {"delete", "remove", "pin", "unpin"} and not is_host:
+            conn.close()
+            return api_error("Only the host can moderate live chat.", 403)
+        if action in {"delete", "remove"}:
+            cur.execute(
+                "UPDATE pulse_live_chat SET deleted_at=?, moderation_status='removed' WHERE id=?",
+                (now, message_id),
+            )
+            pulse_live_audit(cur, live_id, user["user_id"], "chat_removed", target_user_id=target_user_id, metadata={"message_id": message_id})
+            conn.commit(); conn.close()
+            try:
+                pulse_emit_event("live_chat_removed", {"live_id": live_id, "message_id": message_id, "target_user_id": target_user_id}, user["user_id"], None)
+            except Exception:
+                logging.exception("PULSE_LIVE_CHAT_REMOVE_EMIT_FAILED live_id=%s message_id=%s", live_id, message_id)
+            return jsonify({"ok": True, "status": "removed", "message_id": message_id})
+        if action in {"pin", "unpin"}:
+            pinned = 1 if action == "pin" else 0
+            if pinned:
+                # Keep a single pinned comment at a time for a clean host overlay.
+                cur.execute("UPDATE pulse_live_chat SET pinned=0 WHERE live_id=? AND pinned=1", (live_id,))
+            cur.execute("UPDATE pulse_live_chat SET pinned=? WHERE id=?", (pinned, message_id))
+            pulse_live_audit(cur, live_id, user["user_id"], f"chat_{action}", target_user_id=target_user_id, metadata={"message_id": message_id})
+            conn.commit(); conn.close()
+            try:
+                pulse_emit_event("live_chat_pinned", {"live_id": live_id, "message_id": message_id, "pinned": bool(pinned)}, user["user_id"], None)
+            except Exception:
+                logging.exception("PULSE_LIVE_CHAT_PIN_EMIT_FAILED live_id=%s message_id=%s", live_id, message_id)
+            return jsonify({"ok": True, "status": "pinned" if pinned else "unpinned", "message_id": message_id, "pinned": bool(pinned)})
+        # report: flag for review without deleting; only escalate an approved message.
+        if str(message.get("moderation_status") or "approved") == "approved":
+            cur.execute("UPDATE pulse_live_chat SET moderation_status='review' WHERE id=?", (message_id,))
+        payload = request.get_json(silent=True) or {}
+        reason = clean_html(payload.get("reason") or "Needs review")[:200]
+        pulse_live_audit(cur, live_id, user["user_id"], "chat_reported", target_user_id=target_user_id, metadata={"message_id": message_id, "reason": reason})
+        conn.commit(); conn.close()
+        try:
+            pulse_emit_event("live_chat_reported", {"live_id": live_id, "message_id": message_id, "target_user_id": target_user_id, "reason": reason}, user["user_id"], None)
+        except Exception:
+            logging.exception("PULSE_LIVE_CHAT_REPORT_EMIT_FAILED live_id=%s message_id=%s", live_id, message_id)
+        return jsonify({"ok": True, "status": "reported", "message_id": message_id})
+    except Exception as exc:
+        logging.exception("PULSE_LIVE_CHAT_MODERATE_FAILED live_id=%s message_id=%s action=%s user_id=%s error=%s", live_id, message_id, action, user.get("user_id"), exc)
+        try:
+            conn.rollback(); conn.close()
+        except Exception:
+            pass
+        return api_error("Moderation action could not be completed.", 500)
+
+
 @webhook_app.route("/api/pulse/live/<int:live_id>/state", methods=["GET"])
 def api_pulse_live_state(live_id):
     init_db()
@@ -40284,6 +44956,9 @@ def api_pulse_live_state(live_id):
     health = live_health_service.health_snapshot(live, viewer_count=viewer_count, chat_count=len(messages))
     presence = live_presence_engine.stream_energy_state(live, messages, reactions, [{"id": i} for i in range(viewer_count)])
     playback = live_distribution_service.playback_manifest(live)
+    effective_status = pulse_live_effective_status({**live, "status": playback.get("status") or live.get("status")})
+    live["status"] = effective_status
+    playback["status"] = effective_status
     archive = live_archive_service.replay_manifest(live, messages)
     audio = audio_engine.score_audio_health({
         "muted": int(live.get("audio_tracks") or 0) <= 0 and (live.get("status") or "") == "live",
@@ -40297,7 +44972,7 @@ def api_pulse_live_state(live_id):
     return jsonify({
         "ok": True,
         "live_id": live_id,
-        "status": live.get("status") or "starting",
+        "status": effective_status,
         "publish_state": live.get("publish_state") or live.get("status") or "idle",
         "direct_mode": (live.get("publish_state") or "").lower() in {"browser_live_livekit_direct", "livekit_direct"} or (live.get("mux_live_status") or "").lower() in {"egress_quota_exhausted", "livekit_direct"},
         "viewer_count": viewer_count,
@@ -41359,7 +46034,7 @@ def pulse_space_detail_page(slug):
     init_db()
     space = next((item for item in PULSE_SPACES if item["slug"] == slug), None)
     if not space:
-        return pulse_section_shell("PulseSoc Space", "This space is being prepared.", [{"title": "Explore Spaces", "description": "Find active CoinPilotXAI communities.", "href": "/pulse/spaces", "cta": "Browse Spaces"}])
+        return pulse_section_shell("PulseSoc Space", "This space is being prepared.", [{"title": "Explore Spaces", "description": "Find active CoinPlotXAI communities.", "href": "/pulse/spaces", "cta": "Browse Spaces"}])
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT title, body, post_type, topic, quality_score, energy_score, created_at FROM pulse_ai_posts WHERE space_slug=? AND status IN ('published','queued','pending_approval') ORDER BY id DESC LIMIT 3", (slug,))
     ai_posts = [dict(row) for row in cur.fetchall()]
@@ -41622,7 +46297,7 @@ def pulse_camera_studio_page():
     <canvas id='cameraCanvas' hidden></canvas>
     """
     script = f"""
-    let stream=null,facing='user',capturedBlob=null,activeFilter='',recording=false,startedAt=0,timerId=null;const video=document.getElementById('cameraPreview'),status=document.getElementById('cameraStatus'),canvas=document.getElementById('cameraCanvas'),tip=document.getElementById('permissionTip'),overlay=document.getElementById('processingOverlay'),denied=document.getElementById('deniedModal'),capture=document.getElementById('captureBtn'),timer=document.getElementById('recordTimer'),stage=document.querySelector('.camera-stage');function setStatus(m){{status.textContent=m||''}}function applyFilter(css){{const intensity=Number(document.getElementById('filterIntensity').value||74)/100;document.documentElement.style.setProperty('--camera-filter',css?css+` opacity(${{0.72+intensity*.28}})`:'brightness(1.04) contrast(1.06) saturate(1.08)')}}async function startCamera(){{try{{denied.classList.remove('is-on');if(stream)stream.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:facing,width:{{ideal:1080}},height:{{ideal:1920}},frameRate:{{ideal:30,max:60}}}},audio:{camera_audio_constraint}}});video.srcObject=stream;stage.classList.toggle('is-front',facing==='user');tip.classList.add('is-hidden');setStatus('')}}catch(e){{denied.classList.add('is-on');setStatus('Camera permission blocked. Upload is ready.')}}}}document.getElementById('switchCamera').onclick=()=>{{facing=facing==='user'?'environment':'user';startCamera();}};document.getElementById('micToggle').onclick=()=>{{stream?.getAudioTracks().forEach(t=>t.enabled=!t.enabled);setStatus('Microphone toggled')}};document.getElementById('flashToggle').onclick=async()=>{{const track=stream?.getVideoTracks()[0];try{{await track?.applyConstraints({{advanced:[{{torch:true}}]}});setStatus('Light adjusted')}}catch(e){{setStatus('Flash is not available on this device')}}}};document.getElementById('galleryBtn').onclick=()=>document.getElementById('fallbackUpload').click();document.getElementById('modalUpload').onclick=()=>document.getElementById('fallbackUpload').click();document.getElementById('retryCamera').onclick=startCamera;document.getElementById('filterIntensity').oninput=()=>{{const active=document.querySelector('.filter-chip.is-active');applyFilter(active?.dataset.css||'')}};document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{{if(b.disabled){{setStatus('Premium filter locked.');return}}document.querySelectorAll('.filter-chip').forEach(x=>x.classList.remove('is-active'));b.classList.add('is-active');activeFilter=b.dataset.filter;applyFilter(b.dataset.css||'');}});capture.onclick=async()=>{{if(!stream){{await startCamera();return}}if('{mode}'!=='photo'){{recording=!recording;capture.classList.toggle('is-recording',recording);timer.classList.toggle('is-on',recording);if(recording){{startedAt=Date.now();timerId=setInterval(()=>{{const s=Math.floor((Date.now()-startedAt)/1000);timer.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}},250);setStatus('Recording visual state. Capture still stores a cover frame in this web build.')}}else{{clearInterval(timerId);setStatus('Recording stopped. Continue to upload the captured frame or gallery video.')}}}}canvas.width=video.videoWidth||1080;canvas.height=video.videoHeight||1920;const ctx=canvas.getContext('2d');ctx.filter=getComputedStyle(document.documentElement).getPropertyValue('--camera-filter')||'none';if(facing==='user'){{ctx.translate(canvas.width,0);ctx.scale(-1,1)}}ctx.drawImage(video,0,0,canvas.width,canvas.height);capturedBlob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',.94));if('{mode}'==='photo')setStatus('Captured. Apply another filter or continue.');}};document.getElementById('uploadCapture').onclick=async()=>{{try{{overlay.classList.add('is-on');const fd=new FormData();const fallback=document.getElementById('fallbackUpload').files[0];if(fallback)fd.append('file',fallback);else if(capturedBlob)fd.append('file',capturedBlob,'coinpilot-camera.jpg');else throw new Error('Capture or choose media first.');fd.append('context_type','pulse_camera');fd.append('target','{target}');fd.append('mode','{mode}');fd.append('group','{group}');fd.append('filter_name',activeFilter);const r=await fetch('/api/pulse/media/upload',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');if('{target}'==='status'){{const pd=await fetch('/api/pulse/status',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{status_type:d.media.media_type==='video'?'video':'image',body:'Captured with PulseSoc Camera',media_ids:[d.media.id],visibility:'public',duration_hours:24}})}}).then(async pr=>{{const out=await pr.json();if(!pr.ok||out.ok===false)throw new Error(out.message||'Status publish failed.');return out}});location.href='/pulse/status';return}}if('{target}'==='reel'){{const rd=await fetch('/api/pulse/reels/create',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{title:'Camera Reel',caption:'Created with CoinPilotXAI Reels Camera',category:'Community',visibility:'public',post_type:d.media.media_type||'image',media_ids:[d.media.id]}})}}).then(async pr=>{{const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Reel create failed.');return pd}});location.href=rd.next_url||'/pulse/reels';return}}if('{target}'==='avatar'||'{target}'==='cover'){{const endpoint='{target}'==='avatar'?'/api/pulse/profile/avatar':'/api/pulse/profile/cover';const pr=await fetch(endpoint,{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{media_url:d.media.media_url,thumbnail_url:d.media.thumbnail_url||d.media.media_url,filter_name:activeFilter}})}});const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Profile media update failed.');location.href='/pulse/profile/edit';return}}if('{target}'==='message'&&{conversation_id}>0){{await fetch('/api/pulse/messages/send',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{conversation_id:{conversation_id},message_type:d.media.media_type==='gif'?'gif':d.media.media_type==='video'?'video':'image',media_url:d.media.media_url,thumbnail_url:d.media.thumbnail_url||d.media.media_url,body:''}})}}).then(async pr=>{{const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Message send failed.')}});location.href='/pulse/messages/{conversation_id}';return}}if('{target}'==='group'&&'{group}'){{const postFd=new FormData();postFd.append('body','');postFd.append('media_url',d.media.media_url);postFd.append('thumbnail_url',d.media.thumbnail_url||d.media.media_url);postFd.append('media_type',d.media.media_type);postFd.append('filter_name',activeFilter);const pr=await fetch('/api/pulse/groups/{group}/posts',{{method:'POST',credentials:'same-origin',body:postFd}});const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Group post failed.');location.href='/pulse/groups/{group}';return}}const post=await fetch('/api/pulse/posts/create-from-camera',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{media_id:d.media.id,media_url:d.media.media_url,title:'PulseSoc Camera',body:document.getElementById('cameraStatus').textContent||'Created with PulseSoc Camera',post_type:d.media.media_type||'image'}})}}).then(async pr=>{{const out=await pr.json();if(!pr.ok||out.ok===false)throw new Error(out.message||'Camera post failed.');return out}});location.href=post.next_url||'/pulse';}}catch(e){{overlay.classList.remove('is-on');setStatus(e.message)}}}};window.addEventListener('pagehide',()=>stream?.getTracks().forEach(t=>t.stop()));startCamera();
+    let stream=null,facing='user',capturedBlob=null,activeFilter='',recording=false,startedAt=0,timerId=null;const video=document.getElementById('cameraPreview'),status=document.getElementById('cameraStatus'),canvas=document.getElementById('cameraCanvas'),tip=document.getElementById('permissionTip'),overlay=document.getElementById('processingOverlay'),denied=document.getElementById('deniedModal'),capture=document.getElementById('captureBtn'),timer=document.getElementById('recordTimer'),stage=document.querySelector('.camera-stage');function setStatus(m){{status.textContent=m||''}}function applyFilter(css){{const intensity=Number(document.getElementById('filterIntensity').value||74)/100;document.documentElement.style.setProperty('--camera-filter',css?css+` opacity(${{0.72+intensity*.28}})`:'brightness(1.04) contrast(1.06) saturate(1.08)')}}async function startCamera(){{try{{denied.classList.remove('is-on');if(stream)stream.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:facing,width:{{ideal:1080}},height:{{ideal:1920}},frameRate:{{ideal:30,max:60}}}},audio:{camera_audio_constraint}}});video.srcObject=stream;stage.classList.toggle('is-front',facing==='user');tip.classList.add('is-hidden');setStatus('')}}catch(e){{denied.classList.add('is-on');setStatus('Camera permission blocked. Upload is ready.')}}}}document.getElementById('switchCamera').onclick=()=>{{facing=facing==='user'?'environment':'user';startCamera();}};document.getElementById('micToggle').onclick=()=>{{stream?.getAudioTracks().forEach(t=>t.enabled=!t.enabled);setStatus('Microphone toggled')}};document.getElementById('flashToggle').onclick=async()=>{{const track=stream?.getVideoTracks()[0];try{{await track?.applyConstraints({{advanced:[{{torch:true}}]}});setStatus('Light adjusted')}}catch(e){{setStatus('Flash is not available on this device')}}}};document.getElementById('galleryBtn').onclick=()=>document.getElementById('fallbackUpload').click();document.getElementById('modalUpload').onclick=()=>document.getElementById('fallbackUpload').click();document.getElementById('retryCamera').onclick=startCamera;document.getElementById('filterIntensity').oninput=()=>{{const active=document.querySelector('.filter-chip.is-active');applyFilter(active?.dataset.css||'')}};document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{{if(b.disabled){{setStatus('Premium filter locked.');return}}document.querySelectorAll('.filter-chip').forEach(x=>x.classList.remove('is-active'));b.classList.add('is-active');activeFilter=b.dataset.filter;applyFilter(b.dataset.css||'');}});capture.onclick=async()=>{{if(!stream){{await startCamera();return}}if('{mode}'!=='photo'){{recording=!recording;capture.classList.toggle('is-recording',recording);timer.classList.toggle('is-on',recording);if(recording){{startedAt=Date.now();timerId=setInterval(()=>{{const s=Math.floor((Date.now()-startedAt)/1000);timer.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}},250);setStatus('Recording visual state. Capture still stores a cover frame in this web build.')}}else{{clearInterval(timerId);setStatus('Recording stopped. Continue to upload the captured frame or gallery video.')}}}}canvas.width=video.videoWidth||1080;canvas.height=video.videoHeight||1920;const ctx=canvas.getContext('2d');ctx.filter=getComputedStyle(document.documentElement).getPropertyValue('--camera-filter')||'none';if(facing==='user'){{ctx.translate(canvas.width,0);ctx.scale(-1,1)}}ctx.drawImage(video,0,0,canvas.width,canvas.height);capturedBlob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',.94));if('{mode}'==='photo')setStatus('Captured. Apply another filter or continue.');}};document.getElementById('uploadCapture').onclick=async()=>{{try{{overlay.classList.add('is-on');const fd=new FormData();const fallback=document.getElementById('fallbackUpload').files[0];if(fallback)fd.append('file',fallback);else if(capturedBlob)fd.append('file',capturedBlob,'coinpilot-camera.jpg');else throw new Error('Capture or choose media first.');fd.append('context_type','pulse_camera');fd.append('target','{target}');fd.append('mode','{mode}');fd.append('group','{group}');fd.append('filter_name',activeFilter);const r=await fetch('/api/pulse/media/upload',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');if('{target}'==='status'){{const pd=await fetch('/api/pulse/status',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{status_type:d.media.media_type==='video'?'video':'image',body:'Captured with PulseSoc Camera',media_ids:[d.media.id],visibility:'public',duration_hours:24}})}}).then(async pr=>{{const out=await pr.json();if(!pr.ok||out.ok===false)throw new Error(out.message||'Status publish failed.');return out}});location.href='/pulse/status';return}}if('{target}'==='reel'){{const rd=await fetch('/api/pulse/reels/create',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{title:'Camera Reel',caption:'Created with CoinPlotXAI Reels Camera',category:'Community',visibility:'public',post_type:d.media.media_type||'image',media_ids:[d.media.id]}})}}).then(async pr=>{{const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Reel create failed.');return pd}});location.href=rd.next_url||'/pulse/reels';return}}if('{target}'==='avatar'||'{target}'==='cover'){{const endpoint='{target}'==='avatar'?'/api/pulse/profile/avatar':'/api/pulse/profile/cover';const pr=await fetch(endpoint,{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{media_url:d.media.media_url,thumbnail_url:d.media.thumbnail_url||d.media.media_url,filter_name:activeFilter}})}});const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Profile media update failed.');location.href='/pulse/profile/edit';return}}if('{target}'==='message'&&{conversation_id}>0){{await fetch('/api/pulse/messages/send',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{conversation_id:{conversation_id},message_type:d.media.media_type==='gif'?'gif':d.media.media_type==='video'?'video':'image',media_url:d.media.media_url,thumbnail_url:d.media.thumbnail_url||d.media.media_url,body:''}})}}).then(async pr=>{{const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Message send failed.')}});location.href='/pulse/messages/{conversation_id}';return}}if('{target}'==='group'&&'{group}'){{const postFd=new FormData();postFd.append('body','');postFd.append('media_url',d.media.media_url);postFd.append('thumbnail_url',d.media.thumbnail_url||d.media.media_url);postFd.append('media_type',d.media.media_type);postFd.append('filter_name',activeFilter);const pr=await fetch('/api/pulse/groups/{group}/posts',{{method:'POST',credentials:'same-origin',body:postFd}});const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Group post failed.');location.href='/pulse/groups/{group}';return}}const post=await fetch('/api/pulse/posts/create-from-camera',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{media_id:d.media.id,media_url:d.media.media_url,title:'PulseSoc Camera',body:document.getElementById('cameraStatus').textContent||'Created with PulseSoc Camera',post_type:d.media.media_type||'image'}})}}).then(async pr=>{{const out=await pr.json();if(!pr.ok||out.ok===false)throw new Error(out.message||'Camera post failed.');return out}});location.href=post.next_url||'/pulse';}}catch(e){{overlay.classList.remove('is-on');setStatus(e.message)}}}};window.addEventListener('pagehide',()=>stream?.getTracks().forEach(t=>t.stop()));startCamera();
     """
     return pulse_social_shell("Camera Creator Studio", "Capture photos and videos, apply premium filters, and publish safely across PulseSoc.", main, "", script)
 
@@ -41671,7 +46346,8 @@ def pulse_marketplace_page():
     document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');const s=e.target.closest('[data-save-listing]');try{if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')} if(s){await pulseApi('/api/pulse/marketplace/listings/save',{method:'POST',body:JSON.stringify({listing_id:s.dataset.saveListing})});toast('Saved.')}}catch(err){toast(err.message)}})
     """ % int(user.get("user_id") or 0)
     search_bar = "<section class='card'><form data-marketplace-search role='search'><div class='actions'><input name='q' type='search' placeholder='Search marketplace items, categories, or sellers' autocomplete='off' aria-label='Search marketplace'><button class='primary' type='submit'>Search</button></div></form></section>"
-    main = f"{seller_form}{listing_form}{search_bar}<section class='grid' data-marketplace-results>{listing_html or '<article class=\"card\"><h2>Marketplace is warming up.</h2><p>Create the first educational listing or teacher service. Payments are coming later after compliance readiness.</p></article>'}</section>{pulse_promotion_modal_html()}<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'><script src='/static/js/pulsesoc_promotions.js' defer></script>"
+    listing_empty = '<article class="card"><h2>Marketplace is warming up.</h2><p>Create the first educational listing or teacher service. Payments are coming later after compliance readiness.</p></article>'
+    main = f"{seller_form}{listing_form}{search_bar}<section class='grid' data-marketplace-results>{listing_html or listing_empty}</section>{pulse_promotion_modal_html()}<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'><script src='/static/js/pulsesoc_promotions.js' defer></script>"
     return pulse_social_shell("PulseSoc Marketplace", "Creator products, educational services, templates, books, scam-prevention guides, and coaching foundations. No risky financial products.", main, "", script)
 
 
@@ -41925,6 +46601,8 @@ def pulse_emit_marketplace_inventory_event(
         return
     listing_id = int(listing_id or 0)
     event_type = str(event_type or "seller_inventory_changed")[:80]
+    actor_id = int(actor_user_id or seller_user_id or 0)
+    now = datetime.utcnow().isoformat(timespec="seconds")
     title_text = str(title or "Marketplace listing").strip()[:160]
     entity_type = "marketplace_listing" if listing_id else "marketplace_seller"
     entity_id = str(listing_id or seller_user_id)
@@ -41940,6 +46618,12 @@ def pulse_emit_marketplace_inventory_event(
     }:
         invalidates.append("orders")
     metadata = {
+        "event_type": event_type,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "actor_id": actor_id,
+        "timestamp": now,
+        "sync_cursor_key": f"{event_type}:{entity_type}:{entity_id}:{now}",
         "domain": "marketplace",
         "category": "seller_inventory",
         "listing_id": listing_id,
@@ -41977,7 +46661,7 @@ def pulse_emit_marketplace_inventory_event(
         note_titles.get(event_type, "Seller inventory updated"),
         note_bodies.get(event_type, "Your marketplace seller inventory changed."),
         target_url,
-        actor_user_id=actor_user_id or seller_user_id,
+        actor_user_id=actor_id,
         entity_type=entity_type,
         entity_id=entity_id,
         metadata=metadata,
@@ -42488,6 +47172,24 @@ def pulse_assistant_page():
 
 @webhook_app.route("/pulse/merchant/apply", methods=["GET", "POST"])
 def pulse_merchant_apply_page():
+    """
+    The web front door to the seller application.
+
+    This handler used to be its own application system: it inserted a fresh
+    ``marketplace_merchant_applications`` row on every submit, wrote ``status``
+    straight into the column, and upserted ``marketplace_sellers`` itself. Three
+    consequences followed. A user who submitted twice had two applications in
+    the queue and a reviewer with no way to tell which was current. No status
+    change left a history row, so a web application arrived in the review
+    workspace with an empty timeline. And the seller record received the
+    *application's* status vocabulary (``pending_review``), while every
+    capability gate in this file compares against the *seller's*
+    (``approved``) — the gate held, but only by luck of neither string matching.
+
+    It now goes through ``seller_lifecycle`` exactly as the native flow does:
+    one row per user, ``apply_transition`` for every status change, and the
+    seller record mirrored from the transition rather than written here.
+    """
     init_db()
     user = require_account()
     if not user:
@@ -42495,79 +47197,102 @@ def pulse_merchant_apply_page():
     message = ""
     if request.method == "POST":
         now = datetime.utcnow().isoformat(timespec="seconds")
-        fields = {key: clean_html(request.form.get(key, ""))[:1200] for key in [
+        submitted = {key: clean_html(request.form.get(key, ""))[:1200] for key in [
             "full_name", "display_name", "country", "state_region", "email", "phone", "pulse_username",
             "business_name", "seller_type", "website", "social_links", "years_experience", "business_description",
             "sold_online_before", "banned_elsewhere", "guaranteed_profits", "comply_rules", "understand_claims",
         ]}
-        intents = request.form.getlist("intent")
-        acknowledgement_ok = request.form.get("marketplace_rules") and request.form.get("anti_scam_agreement") and request.form.get("no_profit_guarantees")
-        required = ["full_name", "display_name", "country", "email", "business_description", "seller_type"]
-        documents = []
-        try:
-            for doc_type in ["id_front", "id_back", "selfie", "business_registration", "tax_certificate", "ownership_proof"]:
-                saved = save_private_verification_document(user["user_id"], request.files.get(doc_type), doc_type)
-                if saved:
-                    documents.append(saved)
-        except ValueError as exc:
-            message = str(exc)
-            documents = []
-        complete_count = sum(1 for key in required if fields.get(key)) + len(intents)
-        complete_count += 2 if any(d["document_type"] == "id_front" for d in documents) and any(d["document_type"] == "id_back" for d in documents) else 0
-        complete_count += 1 if any(d["document_type"] == "selfie" for d in documents) else 0
-        complete_count += 2 if acknowledgement_ok else 0
-        completeness = min(100, int(complete_count / (len(required) + 10) * 100))
-        risk = 0
-        if fields.get("guaranteed_profits") == "yes":
-            risk += 45
-        if fields.get("banned_elsewhere") == "yes":
-            risk += 25
-        if fields.get("understand_claims") != "yes" or fields.get("comply_rules") != "yes" or not acknowledgement_ok:
-            risk += 30
-        has_required_docs = any(d["document_type"] == "id_front" for d in documents) and any(d["document_type"] == "id_back" for d in documents) and any(d["document_type"] == "selfie" for d in documents)
-        status = "pending_review" if completeness >= 70 and has_required_docs and acknowledgement_ok else "draft"
-        conn = db(); cur = conn.cursor()
-        if not message:
-            cur.execute(
-                """
-                INSERT INTO marketplace_merchant_applications
-                (user_id, full_name, display_name, country, state_region, email, phone, pulse_username, business_name,
-                 seller_type, website, social_links, years_experience, business_description, seller_intent_json,
-                 verification_json, safety_answers_json, completeness, risk_score, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    user["user_id"], fields["full_name"], fields["display_name"], fields["country"], fields["state_region"],
-                    fields["email"], fields["phone"], fields["pulse_username"], fields["business_name"], fields["seller_type"],
-                    fields["website"], fields["social_links"], fields["years_experience"], fields["business_description"],
-                    json.dumps(intents, default=str),
-                    json.dumps({"documents": [{"type": d["document_type"], "filename": d["original_filename"], "private": True, "admin_only": True, "scanner_status": d["scanner_status"]} for d in documents]}, default=str),
-                    json.dumps({k: fields[k] for k in ["sold_online_before", "banned_elsewhere", "guaranteed_profits", "comply_rules", "understand_claims"]}, default=str),
-                    completeness, risk, status, now, now,
-                ),
-            )
-            application_id = int(cur.lastrowid)
-            for doc in documents:
-                cur.execute(
-                    """
-                    INSERT INTO marketplace_merchant_documents
-                    (application_id, user_id, document_type, original_filename, stored_path, mime_type, file_size, private_access, scan_status, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-                    """,
-                    (application_id, user["user_id"], doc["document_type"], doc["original_filename"], doc["stored_path"], doc["mime_type"], doc["file_size"], doc["scanner_status"], now),
+        submitted["seller_intent"] = request.form.getlist("intent")
+        for key in seller_lifecycle.AGREEMENT_FIELDS:
+            submitted[key] = bool(request.form.get(key))
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        status = seller_lifecycle.normalize_status(application.get("status")) if application else ""
+        if application and status not in seller_lifecycle.APPLICANT_EDITABLE:
+            # Already with a reviewer, or already decided. Checked before the
+            # uploads are read, so a submission we are going to refuse never
+            # writes an identity document to disk in the first place.
+            message = "Your application is already with our review team. We will be in touch."
+            conn.close()
+        else:
+            uploads = []
+            try:
+                for doc_type in seller_lifecycle.ALL_DOCUMENT_TYPES:
+                    saved = save_private_verification_document(user["user_id"], request.files.get(doc_type), doc_type)
+                    if saved:
+                        uploads.append(saved)
+            except ValueError as exc:
+                message = str(exc)
+                uploads = []
+
+            if message:
+                conn.close()
+            else:
+                if not application:
+                    application_id = seller_lifecycle.create_draft(cur, user["user_id"], source="web")
+                    application = seller_lifecycle.get_application_by_id(cur, application_id)
+                else:
+                    application_id = int(application.get("id") or 0)
+
+                # Merged rather than replaced, so a resubmission that leaves a
+                # field blank does not erase the answer already on file.
+                fields = seller_lifecycle.merge_fields(
+                    seller_lifecycle.applicant_fields(application), submitted
                 )
-            cur.execute(
-                """
-                INSERT INTO marketplace_sellers
-                (user_id, display_name, bio, status, seller_type, business_name, website, country, state_region, phone, seller_intent_json, verification_status, risk_score, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, bio=excluded.bio, status=excluded.status, seller_type=excluded.seller_type, business_name=excluded.business_name, website=excluded.website, country=excluded.country, state_region=excluded.state_region, phone=excluded.phone, seller_intent_json=excluded.seller_intent_json, risk_score=excluded.risk_score, updated_at=excluded.updated_at
-                """,
-                (user["user_id"], fields["display_name"], fields["business_description"], status, fields["seller_type"], fields["business_name"], fields["website"], fields["country"], fields["state_region"], fields["phone"], json.dumps(intents, default=str), risk, now, now),
-            )
-            conn.commit()
-            message = "Application submitted for review. You’ll be notified after approval." if status == "pending_review" else "Draft saved. Add the required ID and selfie verification before review."
-        conn.close()
+                for doc in uploads:
+                    cur.execute(
+                        "DELETE FROM marketplace_merchant_documents WHERE application_id=? AND document_type=?",
+                        (application_id, doc["document_type"]),
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO marketplace_merchant_documents
+                        (application_id, user_id, document_type, original_filename, stored_path, mime_type,
+                         file_size, private_access, scan_status, review_status, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 'pending', ?)
+                        """,
+                        (application_id, user["user_id"], doc["document_type"], doc["original_filename"],
+                         doc["stored_path"], doc["mime_type"], doc["file_size"], doc["scanner_status"], now),
+                    )
+                documents = seller_lifecycle.documents_for(cur, application_id)
+                seller_lifecycle.save_draft(cur, application_id, fields, documents)
+
+                application = seller_lifecycle.get_application_by_id(cur, application_id)
+                errors = seller_lifecycle.validate_application(fields, documents)
+                if errors:
+                    missing = ", ".join(sorted(errors))
+                    message = f"Draft saved. Still needed before review: {missing.replace('_', ' ')}."
+                else:
+                    target = (seller_lifecycle.RESUBMITTED
+                              if status == seller_lifecycle.INFORMATION_REQUESTED
+                              else seller_lifecycle.SUBMITTED)
+                    if status == seller_lifecycle.REJECTED:
+                        # Reopen the same row first, so the reviewer who sees it
+                        # next still has the earlier decision in the timeline.
+                        seller_lifecycle.apply_transition(
+                            cur, application, seller_lifecycle.DRAFT,
+                            actor_type=seller_lifecycle.APPLICANT, actor_id=user["user_id"],
+                            reason="Reopened after rejection",
+                        )
+                        application = seller_lifecycle.get_application_by_id(cur, application_id)
+                        target = seller_lifecycle.SUBMITTED
+                    try:
+                        seller_lifecycle.apply_transition(
+                            cur, application, target,
+                            actor_type=seller_lifecycle.APPLICANT, actor_id=user["user_id"],
+                            reason="Submitted for review",
+                        )
+                        # The same nudge the native door sends. Without it a web
+                        # submission would sit in the queue with nothing on the
+                        # admin board pointing at it.
+                        notify_seller_review_admins(
+                            cur, seller_lifecycle.get_application_by_id(cur, application_id), target
+                        )
+                        message = "Application submitted for review. You’ll be notified after approval."
+                    except seller_lifecycle.TransitionError as exc:
+                        message = str(exc)
+                conn.commit()
+                conn.close()
     intents = ["Digital Products", "Courses", "Coaching", "Ebooks", "Trading Education", "Templates", "AI Tools", "Physical Products", "Livestream Selling", "Services"]
     intent_checks = "".join(f"<label><input type='checkbox' name='intent' value='{clean_html(item)}'> {clean_html(item)}</label>" for item in intents)
     main = f"""
@@ -42632,7 +47357,7 @@ def seller_payouts_page(seller_type):
     payout_rows = "".join(f"<tr><td>{p.get('id')}</td><td>{(int(p.get('amount_cents') or 0)/100):.2f} {clean_html(p.get('currency') or 'USD')}</td><td>{clean_html(p.get('status') or '')}</td><td>{clean_html(p.get('provider_payout_id') or '')}</td></tr>" for p in payouts)
     main = f"""
     <section class='grid'><div class='card'><h2>Platform Fee</h2><p class='metric'>{fee_bps/100:.0f}%</p></div><div class='card'><h2>Onboarding</h2><p class='metric'>{clean_html(account.get('onboarding_status') or 'not started')}</p></div><div class='card'><h2>Payouts</h2><p class='metric'>{'Enabled' if account.get('payouts_enabled') else 'Setup'}</p></div></section>
-    <section class='card'><h2>Stripe Connect Payouts</h2><p class='muted'>CoinPilotXAI collects payment, deducts the platform fee, and sends the net amount to your connected Stripe account. Card numbers are never stored by CoinPilotXAI.</p><button class='primary' id='connectPayouts'>Connect Stripe Account</button><p id='payoutStatus' class='muted'></p></section>
+    <section class='card'><h2>Stripe Connect Payouts</h2><p class='muted'>CoinPlotXAI collects payment, deducts the platform fee, and sends the net amount to your connected Stripe account. Card numbers are never stored by CoinPlotXAI.</p><button class='primary' id='connectPayouts'>Connect Stripe Account</button><p id='payoutStatus' class='muted'></p></section>
     <section class='card'><h2>Transactions</h2><table class='table'><tr><th>ID</th><th>Item</th><th>Gross</th><th>Fee</th><th>Net</th><th>Status</th></tr>{tx_rows or '<tr><td colspan=6>No transactions yet.</td></tr>'}</table></section>
     <section class='card'><h2>Payout History</h2><table class='table'><tr><th>ID</th><th>Amount</th><th>Status</th><th>Provider</th></tr>{payout_rows or '<tr><td colspan=4>No payouts yet.</td></tr>'}</table></section>
     """
@@ -42702,7 +47427,8 @@ def pulse_merchant_profile_page(username):
     if not seller:
         return pulse_social_shell("Merchant", "Merchant profile not found.", "<section class='card'><a class='button' href='/pulse/marketplace'>Back to Marketplace</a></section>")
     cards = "".join(f"<article class='card'><h2>{clean_html(l.get('title') or '')}</h2><p>{clean_html(l.get('short_description') or l.get('description') or '')}</p><span class='pill'>{clean_html(l.get('price_label') or '')}</span></article>" for l in listings)
-    main = f"<section class='card'><h2>{clean_html(seller.get('display_name') or 'Merchant')}</h2><p><span class='pill'>Verified merchant</span> <span class='pill'>Trust {100-int(seller.get('risk_score') or 0)}</span></p><p>{clean_html(seller.get('bio') or '')}</p></section><section class='grid'>{cards or '<article class=\"card\"><h2>No public products yet.</h2></article>'}</section>"
+    cards_empty = '<article class="card"><h2>No public products yet.</h2></article>'
+    main = f"<section class='card'><h2>{clean_html(seller.get('display_name') or 'Merchant')}</h2><p><span class='pill'>Verified merchant</span> <span class='pill'>Trust {100-int(seller.get('risk_score') or 0)}</span></p><p>{clean_html(seller.get('bio') or '')}</p></section><section class='grid'>{cards or cards_empty}</section>"
     return pulse_social_shell("Merchant Profile", "Verified merchant storefront with safety history, products, courses, and reviews.", main)
 
 
@@ -42863,13 +47589,16 @@ def pulse_premium_page():
     entitlements = premium_entitlement_service.get_user_entitlements(uid)
     payment_config = premium_entitlement_service.payment_config_status()
     premium = premium_entitlement_service.is_premium_user(uid) or premium_visibility_engine.is_premium_user(user)
+    # R3.2: keep `premium` as ownership (drives level/renewal so an owner is never shown
+    # as lacking a subscription); derive a separate hold-aware label for usable access.
+    effective_premium, access_denial_reason = _effective_premium_access(user, premium)
     expired = str(user.get("subscription_status") or "").lower() in {"expired", "canceled", "cancelled", "past_due"} and not premium
     founder = bool(founder_info)
     founder_number = int(founder_info.get("founder_number") or 0)
     checkout_ready = founder_checkout_configured()
     has_billing_profile = bool((user.get("stripe_customer_id") or user.get("provider_customer_id") or "").strip())
     level = f"Founder Premium #{founder_number}" if founder_number else "Founder Premium" if founder else "Premium Active" if premium else "Renew Premium" if expired else "Free"
-    status = "Founder active" if founder else "Premium active" if premium else "Premium expired" if expired else "Free PulseSoc"
+    status = "Founder active" if founder else ("Premium paused" if access_denial_reason else "Premium active") if premium else "Premium expired" if expired else "Free PulseSoc"
     renewal = "Lifetime locked at $4.99/month" if founder else clean_html(user.get("pro_expires_at") or user.get("subscription_expires_at") or "Active access") if premium else "Renew to restore tools" if expired else "Founder checkout is being connected. Admin Founder access is available now."
     primary_cta = "Founder Membership Active" if founder else "Activate Founder Membership" if checkout_ready else "Founder checkout is being connected"
     founder_primary_action = (
@@ -43695,7 +48424,7 @@ def pulse_premium_undx_page():
               <p>Generate conceptual manifests only. No actual file access.</p>
               <form class='undx-project-form' id='undxWorkspaceManifestForm'>
                 <div class='undx-project-fields'>
-                  <label class='undx-project-field'><span>Workspace Name</span><input id='undxManifestWorkspaceName' type='text' autocomplete='off' placeholder='CoinPilotXAI Workspace'></label>
+                  <label class='undx-project-field'><span>Workspace Name</span><input id='undxManifestWorkspaceName' type='text' autocomplete='off' placeholder='CoinPlotXAI Workspace'></label>
                   <label class='undx-project-field'><span>Workspace Type</span><select id='undxManifestWorkspaceType'><option>Development</option><option>Research</option><option>Design</option><option>Business</option><option>Operations</option><option>Training</option></select></label>
                   <label class='undx-project-field'><span>Technology Stack</span><input id='undxManifestTechnologyStack' type='text' autocomplete='off' placeholder='Python, Flask, JavaScript, OpenAI'></label>
                   <label class='undx-project-field'><span>Repository Count</span><input id='undxManifestRepositoryCount' type='number' min='0' max='99' value='1'></label>
@@ -44347,7 +49076,7 @@ def pulse_premium_undx_page():
       <section class='undx-core-hero' id='undx-command-overview'>
         <span class='undx-core-label'>Premium Intelligence Layer</span>
         <h1>Enter the Unknown Destination</h1>
-        <p>UNDX is the intelligence engine behind future CoinPilotXAI expansion, built to coordinate premium analysis, secure growth, autonomous building, and the next unknown layer of product evolution.</p>
+        <p>UNDX is the intelligence engine behind future CoinPlotXAI expansion, built to coordinate premium analysis, secure growth, autonomous building, and the next unknown layer of product evolution.</p>
         <div class='undx-core-actions'>
           <a class='button primary' href='#undx-system-status'>Initialize UNDX Core</a>
           <a class='button' href='#undx-core-modules'>View Core Modules</a>
@@ -44359,7 +49088,7 @@ def pulse_premium_undx_page():
             <span class='undx-core-label'>Phase 3 Active Module</span>
             <h2>Builder Intelligence Console</h2>
           </div>
-          <p>Describe what you want CoinPilotXAI to build next, and UNDX will prepare the mission blueprint.</p>
+          <p>Describe what you want CoinPlotXAI to build next, and UNDX will prepare the mission blueprint.</p>
         </div>
         <div class='undx-console-layout'>
           <div class='undx-console-form'>
@@ -44382,7 +49111,7 @@ def pulse_premium_undx_page():
             <span class='undx-core-label'>Phase 7 Conversational Core</span>
             <h2>UNDX Chat Interface</h2>
           </div>
-          <p>Chat with UNDX and issue real mission directives powered by CoinPilotXAI intelligence.</p>
+          <p>Chat with UNDX and issue real mission directives powered by CoinPlotXAI intelligence.</p>
         </div>
         <div class='undx-chat-layout' data-undx-chat-endpoint='/api/undx/chat'>
           <div class='undx-chat-panel'>
@@ -44439,7 +49168,7 @@ def pulse_premium_undx_page():
             <span class='undx-core-label'>Council Mode: Multi-Agent</span>
             <h2>UNDX Agent Council</h2>
           </div>
-          <p>Eight routed intelligence agents evaluate each mission through the UNDX Intelligence Router before CoinPilotXAI enters the next build phase.</p>
+          <p>Eight routed intelligence agents evaluate each mission through the UNDX Intelligence Router before CoinPlotXAI enters the next build phase.</p>
         </div>
         <div class='undx-agent-toolbar'>
           <div class='undx-memory-status' aria-label='UNDX agent council status'>
@@ -44675,7 +49404,7 @@ def pulse_premium_undx_page():
             <section class='undx-simulation-card' aria-label='Repository Profile Engine'>
               <span class='undx-core-label'>Repository Profile Engine</span>
               <h3>Repository Profile</h3>
-              <label>Repository Name<input id='undxFoundationRepoName' type='text' autocomplete='off' placeholder='CoinPilotXAI main repository'></label>
+              <label>Repository Name<input id='undxFoundationRepoName' type='text' autocomplete='off' placeholder='CoinPlotXAI main repository'></label>
               <label>Architecture Notes<textarea id='undxFoundationArchitectureNotes' rows='3' placeholder='Describe known modules, services, routes, APIs, database layers, or connected repository context.'></textarea></label>
               <div class='undx-project-actions'>
                 <button class='button primary' type='button' id='undxCreateRepositoryProfile'>Create Repository Profile</button>
@@ -45955,7 +50684,7 @@ def pulse_premium_undx_page():
               <div class='undx-project-fields'>
                 <label class='undx-project-field'>
                   <span>Repository / Folder Name</span>
-                  <input id='undxRepoName' type='text' autocomplete='off' placeholder='CoinPilotXAI main app'>
+                  <input id='undxRepoName' type='text' autocomplete='off' placeholder='CoinPlotXAI main app'>
                 </label>
                 <label class='undx-project-field'>
                   <span>Repository Type</span>
@@ -46262,7 +50991,7 @@ def pulse_premium_undx_page():
               <span class='undx-core-label'>Future Read-Only Preview</span>
               <h3>Future Read-Only Preview</h3>
               <div class='undx-blueprint-grid'>
-                <section class='undx-blueprint-block'><strong>Repository</strong><p>CoinPilotXAI</p></section>
+                <section class='undx-blueprint-block'><strong>Repository</strong><p>CoinPlotXAI</p></section>
                 <section class='undx-blueprint-block'><strong>File Preview</strong><ol><li>bot.py</li><li>static/js/main.js</li><li>templates/pulse.html</li></ol></section>
                 <section class='undx-blueprint-block'><strong>Status</strong><p>Preview Only</p></section>
               </div>
@@ -46368,7 +51097,7 @@ def pulse_premium_undx_page():
                 <div class='undx-project-fields'>
                   <label class='undx-project-field'>
                     <span>Repository Name</span>
-                    <input id='undxPreviewRepositoryName' type='text' autocomplete='off' placeholder='CoinPilotXAI'>
+                    <input id='undxPreviewRepositoryName' type='text' autocomplete='off' placeholder='CoinPlotXAI'>
                   </label>
                   <label class='undx-project-field'>
                     <span>Repository Type</span>
@@ -48351,8 +53080,8 @@ def pulse_premium_undx_page():
               <span class='undx-core-label'>Connection Center</span>
               <h3>Repository Connection Center</h3>
               <p>Connection Status · Repository Name · Connection Type · Repository Visibility · Trust Level · Read-Only Status</p>
-              <label>Repository Name<input id='undxConnectorRepositoryName' value='CoinPilotXAI' placeholder='Example: CoinPilotXAI'></label>
-              <label>Repository Description<textarea id='undxConnectorRepositoryDescription' rows='3' placeholder='Approved repository metadata only. No secrets or file contents.'>CoinPilotXAI premium PulseSoc and UNDX command-center application.</textarea></label>
+              <label>Repository Name<input id='undxConnectorRepositoryName' value='CoinPlotXAI' placeholder='Example: CoinPlotXAI'></label>
+              <label>Repository Description<textarea id='undxConnectorRepositoryDescription' rows='3' placeholder='Approved repository metadata only. No secrets or file contents.'>CoinPlotXAI premium PulseSoc and UNDX command-center application.</textarea></label>
               <label>Connection Type<select id='undxConnectorConnectionType'>
                 <option>Workspace Repository</option><option>GitHub Repository</option><option>Local Repository</option><option>Future GitLab</option><option>Future Bitbucket</option>
               </select></label>
@@ -49962,13 +54691,13 @@ sqlite</textarea></label>
             <span class='undx-core-label'>Core Modules Grid</span>
             <h2>Core Modules</h2>
           </div>
-          <p>Premium systems queued for phased activation inside the hidden CoinPilotXAI intelligence layer.</p>
+          <p>Premium systems queued for phased activation inside the hidden CoinPlotXAI intelligence layer.</p>
         </div>
         <div class='undx-core-grid'>
           <article class='undx-core-card'><span class='undx-module-label'>Initializing</span><div><h3>Builder Intelligence</h3><p>Plans app structures, product flows, launch paths, and future software-building missions.</p></div></article>
           <article class='undx-core-card'><span class='undx-module-label'>Locked</span><div><h3>Security Expansion</h3><p>Prepares scam defense, hardening reviews, trust layers, and premium security intelligence.</p></div></article>
           <article class='undx-core-card'><span class='undx-module-label'>Coming Soon</span><div><h3>Crypto Research Engine</h3><p>Turns market, wallet, token, and education signals into safer research workflows.</p></div></article>
-          <article class='undx-core-card'><span class='undx-module-label'>Coming Soon</span><div><h3>Autonomous Debugging</h3><p>Designed to inspect failures, explain risk, and guide repairs across CoinPilotXAI systems.</p></div></article>
+          <article class='undx-core-card'><span class='undx-module-label'>Coming Soon</span><div><h3>Autonomous Debugging</h3><p>Designed to inspect failures, explain risk, and guide repairs across CoinPlotXAI systems.</p></div></article>
           <article class='undx-core-card'><span class='undx-module-label'>Coming Soon</span><div><h3>Product Growth Intelligence</h3><p>Reads adoption signals, creator momentum, conversion paths, and expansion opportunities.</p></div></article>
           <article class='undx-core-card'><span class='undx-module-label'>Locked</span><div><h3>Mission Control Automation</h3><p>Coordinates future jobs, audits, release readiness, and command-center operations.</p></div></article>
         </div>
@@ -49977,7 +54706,7 @@ sqlite</textarea></label>
         <article class='undx-section-panel undx-mission-panel'>
           <span class='undx-core-label'>UNDX Mission Panel</span>
           <h2>Mission Layer</h2>
-          <p>UNDX is being built as the internal intelligence system that will help expand CoinPilotXAI phase by phase — from crypto intelligence to security, automation, software building, and autonomous research.</p>
+          <p>UNDX is being built as the internal intelligence system that will help expand CoinPlotXAI phase by phase — from crypto intelligence to security, automation, software building, and autonomous research.</p>
         </article>
         <article class='undx-section-panel' id='undx-system-status'>
           <span class='undx-core-label'>System Status Panel</span>
@@ -52871,7 +57600,7 @@ sqlite</textarea></label>
       const plannedFiles = undxNormalizeExecutionList(manifest.plannedFiles, undxDefaultPreviewFiles(), 40, 180);
       return {
         manifestId: String(manifest.manifestId || `MANIFEST-UNDX-${Date.now()}`).slice(0,44),
-        repositoryName: String(manifest.repositoryName || 'CoinPilotXAI').slice(0,140),
+        repositoryName: String(manifest.repositoryName || 'CoinPlotXAI').slice(0,140),
         repositoryType: String(manifest.repositoryType || 'Other').slice(0,100),
         plannedFiles,
         notes: String(manifest.notes || '').slice(0,1200),
@@ -53072,7 +57801,7 @@ sqlite</textarea></label>
     }
     function undxRepositoryContextDefaults(){
       return {
-        applicationName: 'CoinPilotXAI',
+        applicationName: 'CoinPlotXAI',
         framework: 'Flask/Python',
         mainEntryFile: 'bot.py',
         databaseType: 'SQLite application database',
@@ -53091,7 +57820,7 @@ sqlite</textarea></label>
     function undxNormalizeRepositoryContext(context){
       const source = context && typeof context === 'object' ? context : undxRepositoryContextDefaults();
       return {
-        applicationName: String(source.applicationName || 'CoinPilotXAI').slice(0,120),
+        applicationName: String(source.applicationName || 'CoinPlotXAI').slice(0,120),
         framework: String(source.framework || 'Flask/Python').slice(0,120),
         mainEntryFile: String(source.mainEntryFile || 'bot.py').slice(0,120),
         databaseType: String(source.databaseType || 'SQLite application database').slice(0,160),
@@ -53184,7 +57913,7 @@ sqlite</textarea></label>
         `- Known Services: ${profile.knownServices.join(', ')}`,
         '',
         'Context-Aware Build Guidance:',
-        '- Reference the CoinPilotXAI Flask application shell instead of generic app files.',
+        '- Reference the CoinPlotXAI Flask application shell instead of generic app files.',
         '- Keep UNDX work isolated to /pulse/premium and /pulse/premium/undx unless the user approves broader changes.',
         '- Treat bot.py as the known route surface, undx_router.py as the intelligence-router surface, and undx_worker.py as the worker context.',
         '- Preserve server-side secret handling for OpenAI and routed providers.',
@@ -54604,7 +59333,7 @@ sqlite</textarea></label>
         planId: undxNextStrategicPlanId(plans),
         selectedInputs,
         executiveSummary: `UNDX reviewed ${selectedInputs.length} intelligence input groups and recommends focusing the next build phase on ${highestProject} while strengthening ${missionName}.`,
-        strategicObjective: 'Determine what should happen next across CoinPilotXAI by prioritizing high-value, lower-risk, approval-aware UNDX initiatives.',
+        strategicObjective: 'Determine what should happen next across CoinPlotXAI by prioritizing high-value, lower-risk, approval-aware UNDX initiatives.',
         recommendedPriorities: ['Advance the highest-value active project', 'Increase Knowledge Graph coverage', 'Convert workspace summaries into execution candidates', 'Review approval gates before future file or command access'],
         recommendedBuildOrder: buildOrder,
         keyRisks: ['Strategic plans remain conceptual until future approved execution phases', 'Missing repository previews reduce implementation confidence', 'High-risk security or payment areas require explicit approval gates'],
@@ -56246,7 +60975,7 @@ sqlite</textarea></label>
         recommendedLanguage: String(record.recommendedLanguage || 'Python').slice(0,80),
         recommendedFramework: String(record.recommendedFramework || 'Flask').slice(0,100),
         recommendedToolchain: String(record.recommendedToolchain || 'pytest · ruff').slice(0,240),
-        reason: String(record.reason || record.reasoning || 'Recommended for CoinPilotXAI planning.').slice(0,1000),
+        reason: String(record.reason || record.reasoning || 'Recommended for CoinPlotXAI planning.').slice(0,1000),
         tradeoffs: String(record.tradeoffs || 'Balance speed, safety, team familiarity, and maintainability.').slice(0,1000),
         riskNotes: String(record.riskNotes || 'Audit dependencies and protect secrets.').slice(0,1000),
         createdAt: record.createdAt || new Date().toISOString()
@@ -56400,7 +61129,7 @@ sqlite</textarea></label>
         if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
         const agents = data.agents || [];
         if(undxLanguageReviewOutput) undxLanguageReviewOutput.replaceChildren(
-          undxBlock('Architecture Fit Review', agents.find(agent => agent.key === 'architect')?.recommendation || 'Architecture Fit Review: keep stack consistent with CoinPilotXAI boundaries.'),
+          undxBlock('Architecture Fit Review', agents.find(agent => agent.key === 'architect')?.recommendation || 'Architecture Fit Review: keep stack consistent with CoinPlotXAI boundaries.'),
           undxBlock('Research Review', agents.find(agent => agent.key === 'research')?.recommendation || 'Research Review: validate ecosystem and migration pressure.'),
           undxBlock('Implementation Review', agents.find(agent => agent.key === 'builder')?.recommendation || 'Implementation Review: convert recommendations into planning tasks only.'),
           undxBlock('Optimization Review', agents.find(agent => agent.key === 'optimization')?.recommendation || 'Optimization Review: optimize for maintainability before speed.'),
@@ -56514,7 +61243,7 @@ sqlite</textarea></label>
       const releaseConfidenceScore = Math.max(35, Math.min(96, 62 + sourceStrength * 5 - riskScore * .15));
       return undxNormalizeTestStrategy({
         strategyId: undxNextTestStrategyId(undxLoadTestStrategies()),
-        objective: project.objective || task.projectObjective || proposal.businessObjective || 'Validate CoinPilotXAI and UNDX changes before any future execution-capable phase.',
+        objective: project.objective || task.projectObjective || proposal.businessObjective || 'Validate CoinPlotXAI and UNDX changes before any future execution-capable phase.',
         recommendedTestTypes: ['Unit Testing','Integration Testing','End-to-End Testing','Regression Testing','Security Testing','Performance Testing','Accessibility Testing','User Acceptance Testing'],
         coveragePlan: {
           Frontend:'Validate responsive UNDX panels, state updates, empty states, and localStorage persistence.',
@@ -56546,7 +61275,7 @@ sqlite</textarea></label>
         referenced: {
           sources,
           projectId: project.projectId || '',
-          projectName: project.name || 'CoinPilotXAI',
+          projectName: project.name || 'CoinPlotXAI',
           taskPackage: task.packageId || '',
           changeProposal: proposal.proposalId || '',
           structureModel: structure.modelId || '',
@@ -56668,7 +61397,7 @@ sqlite</textarea></label>
         riskNotes: strategy.bugPredictions,
         readinessAssessment:'Build Candidate',
         complexityScore: Math.max(30, Math.min(90, strategy.riskScore)),
-        referenced:{project: strategy.referenced?.projectName || 'CoinPilotXAI', technologies:['Testing Intelligence'], testStrategy: strategy.strategyId},
+        referenced:{project: strategy.referenced?.projectName || 'CoinPlotXAI', technologies:['Testing Intelligence'], testStrategy: strategy.strategyId},
         createdAt:new Date().toISOString()
       });
       undxSaveTaskPackages([pkg, ...packages]);
@@ -56932,7 +61661,7 @@ sqlite</textarea></label>
       if(sources.includes('strategicPlan') && plan) return `Strategic Plan ${plan.planId}: ${plan.objective}`;
       const model = undxLoadStructureModels()[0];
       if(sources.includes('structureModel') && model) return `Repository Structure Model ${model.modelId}: ${model.repositoryName}`;
-      return (undxMissionInput?.value || '').trim() || 'Coordinate the next CoinPilotXAI build phase through multi-agent engineering review.';
+      return (undxMissionInput?.value || '').trim() || 'Coordinate the next CoinPlotXAI build phase through multi-agent engineering review.';
     }
     function undxBuildAgentMemory(){
       const sources = undxSelectedAgentSources();
@@ -57923,7 +62652,7 @@ sqlite</textarea></label>
       const trustLevel = ['Unknown','Observed','Verified','Approved','Trusted'].includes(connection?.trustLevel) ? connection.trustLevel : 'Observed';
       return {
         connectionId:String(connection?.connectionId || `REPOCON-UNDX-${Date.now()}`).slice(0,44),
-        repositoryName:String(connection?.repositoryName || 'CoinPilotXAI').slice(0,140),
+        repositoryName:String(connection?.repositoryName || 'CoinPlotXAI').slice(0,140),
         repositoryDescription:String(connection?.repositoryDescription || 'Approved repository metadata only.').slice(0,700),
         connectionType:String(connection?.connectionType || 'Workspace Repository').slice(0,80),
         repositoryVisibility:String(connection?.repositoryVisibility || 'Private').slice(0,80),
@@ -57974,7 +62703,7 @@ sqlite</textarea></label>
       const connections = undxLoadRepositoryConnections();
       return undxNormalizeRepositoryConnection({
         connectionId:undxRepoIqNextId(connections, 'REPOCON-UNDX', 'connectionId'),
-        repositoryName:(undxConnectorRepositoryName?.value || 'CoinPilotXAI').trim(),
+        repositoryName:(undxConnectorRepositoryName?.value || 'CoinPlotXAI').trim(),
         repositoryDescription:(undxConnectorRepositoryDescription?.value || '').trim(),
         connectionType:undxConnectorConnectionType?.value || 'Workspace Repository',
         repositoryVisibility:undxConnectorVisibility?.value || 'Private',
@@ -58163,7 +62892,7 @@ sqlite</textarea></label>
     function undxRepositoryIndexSource(){
       const report = undxLoadRepositoryConnectorReports()[0] || null;
       const connection = report?.connection || undxLoadRepositoryConnections()[0] || null;
-      return {report, connection: connection ? undxNormalizeRepositoryConnection(connection) : undxNormalizeRepositoryConnection({repositoryName:'CoinPilotXAI'})};
+      return {report, connection: connection ? undxNormalizeRepositoryConnection(connection) : undxNormalizeRepositoryConnection({repositoryName:'CoinPlotXAI'})};
     }
     function undxIndexRoutes(connection){return ['/pulse','/pulse/premium','/pulse/premium/undx','/api/undx/chat','/api/undx/agent-council'].filter(Boolean);}
     function undxIndexServices(connection){return ['UNDX Intelligence Router','Premium Access Service','Mission Memory Service','Project Registry','Repository Connector','Agent Council Router'];}
@@ -58277,7 +63006,7 @@ sqlite</textarea></label>
       const sourceType = undxSandboxSourceType?.value || 'Repository Index Report';
       const project = undxCurrentProject() || {};
       const source = sourceType === 'Task Package' ? undxLoadTaskPackages()[0] : sourceType === 'Change Proposal' ? undxLoadChangeProposals()[0] : sourceType === 'Repository Report' ? undxLoadRepositoryIntelligenceRecords()[0] : sourceType === 'Strategic Plan' ? undxLoadStrategicPlans()[0] : sourceType === 'Project' ? project : sourceType === 'Context-Aware Coding Report' ? undxLoadContextAwareCodingReports()[0] : undxLoadRepositoryIndexReports()[0];
-      return {sourceType, source:source || {}, projectName:project.name || project.projectId || 'CoinPilotXAI'};
+      return {sourceType, source:source || {}, projectName:project.name || project.projectId || 'CoinPlotXAI'};
     }
     function undxSandboxSteps(objective){
       return ['Define simulated scope','Map dependencies and impacted systems','Plan implementation sequence','Plan validation and review gates','Prepare rollback and approval checkpoint'].map((purpose,index)=>({step:`Step ${index+1}`, purpose, dependencies:['Repository Index','Approval Protocol','Testing Intelligence'].slice(0,(index%3)+1), expectedOutcome:`${purpose} completed in simulation only.`, validationMethod:index < 3 ? 'Review generated plan against read-only intelligence.' : 'Confirm execution remains disabled.'}));
@@ -58303,7 +63032,7 @@ sqlite</textarea></label>
       return {architectureRisk:54, dependencyRisk:58, securityRisk:security, testingRisk:62, regressionRisk:56, deploymentRisk:deployment, complexityRisk:text.length > 180 ? 72 : 48};
     }
     function undxNormalizeTaskImpact(impact){
-      return {impactId:String(impact?.impactId || `TASKIMP-UNDX-${Date.now()}`).slice(0,44), modules:undxNormalizeExecutionList(impact?.modules, ['UNDX','Premium','Repository Intelligence','Task Engine'], 12, 120), routes:undxNormalizeExecutionList(impact?.routes, ['/pulse/premium/undx','/api/undx/chat','/api/undx/agent-council'], 12, 160), services:undxNormalizeExecutionList(impact?.services, ['UNDX Intelligence Router','Project Registry','Mission Memory'], 12, 180), components:undxNormalizeExecutionList(impact?.components, ['Command View','Sandbox Dashboard','Report Registry'], 12, 180), dependencies:undxNormalizeExecutionList(impact?.dependencies, ['OpenAI fallback','Premium foundation','LocalStorage registry'], 12, 160), tests:undxNormalizeExecutionList(impact?.tests, ['py_compile','JS parse','UNDX audit','Browser desktop/mobile check'], 12, 180), users:undxNormalizeExecutionList(impact?.users, ['Premium UNDX users','CoinPilotXAI builder workflow'], 8, 180), createdAt:impact?.createdAt || new Date().toISOString()};
+      return {impactId:String(impact?.impactId || `TASKIMP-UNDX-${Date.now()}`).slice(0,44), modules:undxNormalizeExecutionList(impact?.modules, ['UNDX','Premium','Repository Intelligence','Task Engine'], 12, 120), routes:undxNormalizeExecutionList(impact?.routes, ['/pulse/premium/undx','/api/undx/chat','/api/undx/agent-council'], 12, 160), services:undxNormalizeExecutionList(impact?.services, ['UNDX Intelligence Router','Project Registry','Mission Memory'], 12, 180), components:undxNormalizeExecutionList(impact?.components, ['Command View','Sandbox Dashboard','Report Registry'], 12, 180), dependencies:undxNormalizeExecutionList(impact?.dependencies, ['OpenAI fallback','Premium foundation','LocalStorage registry'], 12, 160), tests:undxNormalizeExecutionList(impact?.tests, ['py_compile','JS parse','UNDX audit','Browser desktop/mobile check'], 12, 180), users:undxNormalizeExecutionList(impact?.users, ['Premium UNDX users','CoinPlotXAI builder workflow'], 8, 180), createdAt:impact?.createdAt || new Date().toISOString()};
     }
     const undxLoadTaskImpacts = () => undxRepoIqLoad(undxTaskImpactsKey, undxNormalizeTaskImpact);
     function undxNormalizeSandboxReport(report){
@@ -58340,7 +63069,7 @@ sqlite</textarea></label>
     async function undxRunSandboxReviewFlow(){const report=undxLoadSandboxReports()[0] || undxGenerateSandboxReportFlow(); if(undxSandboxMessage) undxSandboxMessage.textContent='Routing sandbox review through UNDX Intelligence Router...'; try{const response=await fetch(undxCouncilEndpoint,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({mission:undxSandboxReportText(report)})}); const data=await response.json().catch(()=>({})); if(!response.ok || data.ok===false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.'); const agents=data.agents || []; if(undxSandboxReviewOutput) undxSandboxReviewOutput.replaceChildren(undxBlock('Architecture Review',agents.find(a=>a.key==='architect')?.recommendation || 'Simulation architecture is scoped.'),undxBlock('Implementation Review',agents.find(a=>a.key==='builder')?.recommendation || 'No implementation occurs in Phase 38.'),undxBlock('Testing Review',agents.find(a=>a.key==='testing')?.recommendation || 'Validation plan ready.'),undxBlock('Security Review',agents.find(a=>a.key==='security')?.recommendation || 'Execution locks remain active.'),undxBlock('Documentation Review',agents.find(a=>a.key==='documentation')?.recommendation || 'Record sandbox outcomes.'),undxBlock('Combined Recommendation','Needs More Validation before any future controlled execution.')); if(undxSandboxBoardOutput) undxSandboxBoardOutput.replaceChildren(undxBlock('Execution Recommendation','Needs More Validation'),undxBlock('Approve for Future Execution','Not yet. Simulation only.'),undxBlock('Needs More Testing','Yes'),undxBlock('Needs More Review','Yes'),undxBlock('Not Recommended','Real execution is not recommended in Phase 38.')); undxSandboxLog('Review Generated'); if(undxSandboxMessage) undxSandboxMessage.textContent='Multi-agent sandbox review complete.';}catch(error){if(undxSandboxReviewOutput) undxSandboxReviewOutput.replaceChildren(undxBlock('Architecture Review','OpenAI fallback: keep sandbox planning-only.'),undxBlock('Implementation Review','OpenAI fallback: no code execution.'),undxBlock('Testing Review','OpenAI fallback: run audits before handoff.'),undxBlock('Security Review','OpenAI fallback: execution/file/Git/deployment locks remain enabled.'),undxBlock('Documentation Review','OpenAI fallback: preserve report.'),undxBlock('Combined Recommendation','Fallback → OpenAI. Sandbox remains simulation-only.')); if(undxSandboxMessage) undxSandboxMessage.textContent=`${error.message || 'Router unavailable.'} OpenAI fallback active.`;}}
     function undxRenderSandboxInitial(){const sim=undxLoadExecutionSimulations()[0] || undxNormalizeExecutionSimulation({}); const val=undxLoadValidationSimulations()[0] || undxNormalizeValidationSimulation({}); const roll=undxLoadRollbackSimulations()[0] || undxNormalizeRollbackSimulation({}); const impact=undxLoadTaskImpacts()[0] || undxNormalizeTaskImpact({}); const report=undxLoadSandboxReports()[0] || null; undxRenderExecutionSimulation(sim); undxRenderValidationSimulation(val); undxRenderRollbackSimulation(roll); undxRenderSandboxRisk(report?.risk || undxSandboxRiskProfile(sim.taskObjective)); undxRenderSandboxReadiness(report); undxRenderTaskImpact(impact); undxRenderFailureScenarios(); undxRenderSandboxReportRegistry(); undxRenderSandboxActivityLog();}
     function undxCodeObjectiveText(){return String((undxCodeObjective?.value || '').trim() || 'Generate a controlled implementation proposal for the next UNDX build phase.').slice(0,800);}
-    function undxCodeSourceSummary(){const sourceType=undxCodeSourceType?.value || 'Sandbox Report'; const project=undxCurrentProject() || {}; const source=sourceType==='Repository Index Report'?undxLoadRepositoryIndexReports()[0]:sourceType==='Repository Intelligence Report'?undxLoadRepositoryIntelligenceRecords()[0]:sourceType==='Context-Aware Coding Report'?undxLoadContextAwareCodingReports()[0]:sourceType==='Task Package'?undxLoadTaskPackages()[0]:sourceType==='Change Proposal'?undxLoadChangeProposals()[0]:sourceType==='Strategic Plan'?undxLoadStrategicPlans()[0]:sourceType==='Project'?project:undxLoadSandboxReports()[0]; return {sourceType, source:source || {}, projectName:project.name || project.projectId || 'CoinPilotXAI'};}
+    function undxCodeSourceSummary(){const sourceType=undxCodeSourceType?.value || 'Sandbox Report'; const project=undxCurrentProject() || {}; const source=sourceType==='Repository Index Report'?undxLoadRepositoryIndexReports()[0]:sourceType==='Repository Intelligence Report'?undxLoadRepositoryIntelligenceRecords()[0]:sourceType==='Context-Aware Coding Report'?undxLoadContextAwareCodingReports()[0]:sourceType==='Task Package'?undxLoadTaskPackages()[0]:sourceType==='Change Proposal'?undxLoadChangeProposals()[0]:sourceType==='Strategic Plan'?undxLoadStrategicPlans()[0]:sourceType==='Project'?project:undxLoadSandboxReports()[0]; return {sourceType, source:source || {}, projectName:project.name || project.projectId || 'CoinPlotXAI'};}
     function undxCodeQualityProfile(objective){const text=String(objective || '').toLowerCase(); const base=text.length>220?76:84; const security=/auth|security|wallet|payment|secret|admin/.test(text)?82:88; const testing=/test|validation|audit|coverage/.test(text)?90:78; const complexity=/migration|multi|router|repository|agent/.test(text)?72:84; const overall=Math.round((base+86+complexity+security+testing)/5); return {maintainabilityScore:base, readabilityScore:86, complexityScore:complexity, securityScore:security, testingScore:testing, overallQualityScore:overall};}
     function undxCodeRiskScore(objective){const text=String(objective || '').toLowerCase(); let score=38; if(/auth|security|wallet|payment|secret|admin/.test(text)) score+=18; if(/migration|database|route|repository|deployment/.test(text)) score+=14; if(text.length>240) score+=8; return Math.max(0,Math.min(100,score));}
     function undxNormalizeCodeArtifact(artifact){const objective=String(artifact?.objective || undxCodeObjectiveText()).slice(0,800); const quality=artifact?.quality || undxCodeQualityProfile(objective); const riskScore=Math.max(0,Math.min(100,Number(artifact?.riskScore || undxCodeRiskScore(objective)))); return {artifactId:String(artifact?.artifactId || `CODE-UNDX-${Date.now()}`).slice(0,44), artifactType:String(artifact?.artifactType || 'implementation').slice(0,80), sourceType:String(artifact?.sourceType || undxCodeSourceSummary().sourceType).slice(0,120), objective, proposedFileLocations:undxNormalizeExecutionList(artifact?.proposedFileLocations, ['bot.py: UNDX premium route section','scripts/undx_homepage_audit.py: UNDX audit coverage','templates or static assets only if future phase approves extraction'], 10, 180), proposedClasses:undxNormalizeExecutionList(artifact?.proposedClasses, ['UNDXControlledCodeGenerationEngine','CodeArtifactRegistry'], 10, 160), proposedFunctions:undxNormalizeExecutionList(artifact?.proposedFunctions, ['normalize_code_artifact','generate_patch_proposal','render_code_quality','attach_artifact_to_project'], 12, 180), proposedComponents:undxNormalizeExecutionList(artifact?.proposedComponents, ['Code Generation Center','Code Artifact Registry','Code Quality Engine','Approval Package'], 12, 180), proposedApis:undxNormalizeExecutionList(artifact?.proposedApis, ['/api/undx/agent-council for review only','future /api/undx/code-review approval endpoint'], 8, 180), proposedRoutes:undxNormalizeExecutionList(artifact?.proposedRoutes, ['/pulse/premium/undx'], 8, 180), purpose:String(artifact?.purpose || 'Prepare implementation-ready proposal artifacts without repository modification.').slice(0,500), dependencies:undxNormalizeExecutionList(artifact?.dependencies, ['Repository Index Report','Context-Aware Coding Report','Sandbox Report','Approval Protocol'], 10, 160), affectedSystems:undxNormalizeExecutionList(artifact?.affectedSystems, ['UNDX Command Center','Project Workspace','Mission Memory','Audit Suite'], 10, 160), riskSummary:String(artifact?.riskSummary || `Proposal-only artifact. Risk Score: ${riskScore}/100. Repository writes remain disabled.`).slice(0,500), sandboxReadiness:String(artifact?.sandboxReadiness || 'Ready for simulation review').slice(0,120), validationPlan:undxNormalizeExecutionList(artifact?.validationPlan, ['Python compile','JavaScript parse','UNDX audit','PulseSoc feed isolation audit','Desktop/mobile browser checks'], 10, 180), rollbackPlan:undxNormalizeExecutionList(artifact?.rollbackPlan, ['Discard generated proposal','Keep registry snapshot','Regenerate narrower artifact','Require approval before future edits'], 10, 180), quality, riskScore, createdAt:artifact?.createdAt || new Date().toISOString(), status:'Proposal Only'};}
@@ -58377,7 +63106,7 @@ sqlite</textarea></label>
     function undxRenderCodeGenerationInitial(){const artifact=undxLoadCodeArtifacts()[0] || null; undxRenderCodeArtifact(artifact); undxRenderPatchProposal(undxLoadPatchProposals()[0] || undxNormalizePatchProposal({})); undxRenderGeneratedTests(undxLoadGeneratedTests()[0] || undxNormalizeGeneratedTests({})); undxRenderDocumentationArtifact(undxLoadDocumentationArtifacts()[0] || undxNormalizeDocumentationArtifact({})); undxRenderMigrationArtifact(undxLoadMigrationArtifacts()[0] || undxNormalizeMigrationArtifact({})); undxRenderCodeIntegrations(artifact || undxNormalizeCodeArtifact({})); undxRenderControlledCodeRegistry();}
     const undxRepoActionStatuses = ['Draft','Submitted','Under Review','Approved','Rejected','Revoked','Expired','Archived'];
     function undxRepoActionObjectiveText(){return String((undxRepoActionObjective?.value || '').trim() || 'Review a controlled repository action proposal for the next UNDX build phase.').slice(0,900);}
-    function undxRepoActionSourceSummary(){const sourceType=undxRepoActionSourceType?.value || 'Code Generation Report'; const project=undxCurrentProject() || {}; const source=sourceType==='Code Artifact'?undxLoadCodeArtifacts()[0]:sourceType==='Patch Proposal'?undxLoadPatchProposals()[0]:sourceType==='Generated Test'?undxLoadGeneratedTests()[0]:sourceType==='Documentation Artifact'?undxLoadDocumentationArtifacts()[0]:sourceType==='Migration Artifact'?undxLoadMigrationArtifacts()[0]:sourceType==='Sandbox Report'?undxLoadSandboxReports()[0]:sourceType==='Change Proposal'?undxLoadChangeProposals()[0]:sourceType==='Repository Index Report'?undxLoadRepositoryIndexReports()[0]:sourceType==='Project'?project:undxLoadCodeGenerationReports()[0]; return {sourceType, source:source || {}, projectName:project.name || project.projectId || 'CoinPilotXAI'};}
+    function undxRepoActionSourceSummary(){const sourceType=undxRepoActionSourceType?.value || 'Code Generation Report'; const project=undxCurrentProject() || {}; const source=sourceType==='Code Artifact'?undxLoadCodeArtifacts()[0]:sourceType==='Patch Proposal'?undxLoadPatchProposals()[0]:sourceType==='Generated Test'?undxLoadGeneratedTests()[0]:sourceType==='Documentation Artifact'?undxLoadDocumentationArtifacts()[0]:sourceType==='Migration Artifact'?undxLoadMigrationArtifacts()[0]:sourceType==='Sandbox Report'?undxLoadSandboxReports()[0]:sourceType==='Change Proposal'?undxLoadChangeProposals()[0]:sourceType==='Repository Index Report'?undxLoadRepositoryIndexReports()[0]:sourceType==='Project'?project:undxLoadCodeGenerationReports()[0]; return {sourceType, source:source || {}, projectName:project.name || project.projectId || 'CoinPlotXAI'};}
     function undxRepoGovernanceScores(objective, type){
       const text=String(`${objective || ''} ${type || ''}`).toLowerCase();
       const risk=undxCodeRiskScore(text);
@@ -58529,7 +63258,7 @@ sqlite</textarea></label>
         title: String(record.title || 'UNDX Memory Record').slice(0,160),
         type: String(record.type || 'Engineering Decisions').slice(0,120),
         description: String(record.description || '').slice(0,1200),
-        relatedProject: String(record.relatedProject || 'CoinPilotXAI').slice(0,160),
+        relatedProject: String(record.relatedProject || 'CoinPlotXAI').slice(0,160),
         relatedMission: String(record.relatedMission || 'UNDX Command Center').slice(0,160),
         relatedStrategicPlan: String(record.relatedStrategicPlan || 'Phase Evolution').slice(0,160),
         relationshipCount: Math.max(0, Math.min(999, Number(record.relationshipCount || 0))),
@@ -58580,7 +63309,7 @@ sqlite</textarea></label>
         title: base[0],
         type: base[1],
         description: `${base[2]} This memory record was generated from UNDX local intelligence registries only and preserves engineering continuity across phases.`,
-        relatedProject: project.name || project.projectId || 'CoinPilotXAI',
+        relatedProject: project.name || project.projectId || 'CoinPlotXAI',
         relatedMission: mission.name || mission.type || 'UNDX Command Center',
         relatedStrategicPlan: plan.planId || 'Phase 24 Workspace Memory Graph Expansion',
         relationshipCount,
@@ -58603,7 +63332,7 @@ sqlite</textarea></label>
         connectedDecisions: connected,
         orphanedDecisions: Math.max(0, all.length - connected),
         mostReferencedDecision: all.slice().sort((a,b) => b.relationshipCount - a.relationshipCount)[0]?.title || 'UNDX uses OpenAI Router',
-        mostReferencedProject: sources.projects[0]?.name || all[0]?.relatedProject || 'CoinPilotXAI',
+        mostReferencedProject: sources.projects[0]?.name || all[0]?.relatedProject || 'CoinPlotXAI',
         mostReferencedTechnology: mostTechnology,
         mostReferencedFramework: framework,
         mostConnectedDecision: all.slice().sort((a,b) => b.relationshipCount - a.relationshipCount)[0]?.title || 'Universal Code Intelligence Added',
@@ -58930,7 +63659,7 @@ sqlite</textarea></label>
       const memory = sources.memory || {};
       const code = sources.code || {};
       const simulation = sources.simulation || {};
-      const objective = project.objective || simulation.simulatedObjective || memory.description || code.syntaxStyle || 'Prepare the next CoinPilotXAI implementation package from UNDX intelligence.';
+      const objective = project.objective || simulation.simulatedObjective || memory.description || code.syntaxStyle || 'Prepare the next CoinPlotXAI implementation package from UNDX intelligence.';
       const complexityScore = Math.max(24, Math.min(96, 34 + selectedInputs.length * 4 + sourceStrength * 5 + (simulation.forecast?.complexityProbability || 0) / 5));
       const readinessAssessment = undxTaskReadiness(complexityScore, sourceStrength);
       const technologies = [...new Set([...(memory.technologies || []), code.languageName, 'Python', 'Flask', 'OpenAI'].filter(Boolean))].slice(0,8);
@@ -58975,7 +63704,7 @@ sqlite</textarea></label>
           technologies,
           plans: undxLoadStrategicPlans().slice(0,3).map(item => item.planId),
           simulations: undxLoadBuildSimulations().slice(0,3).map(item => item.simulationId),
-          project: project.name || project.projectId || 'CoinPilotXAI'
+          project: project.name || project.projectId || 'CoinPlotXAI'
         },
         createdAt: new Date().toISOString()
       });
@@ -59531,7 +64260,7 @@ sqlite</textarea></label>
     }
     function undxBuildWorkspaceManifest(){
       const manifests = undxLoadWorkspaceManifests();
-      const workspaceName = (undxManifestWorkspaceName?.value || 'CoinPilotXAI Workspace').trim().slice(0,140);
+      const workspaceName = (undxManifestWorkspaceName?.value || 'CoinPlotXAI Workspace').trim().slice(0,140);
       const workspaceType = undxManifestWorkspaceType?.value || 'Development';
       const technologyStack = (undxManifestTechnologyStack?.value || 'Python, Flask, JavaScript, OpenAI').split(/[,\\n]/).map(item => item.trim()).filter(Boolean);
       const folderCategories = (undxManifestFolderCategories?.value || 'app, scripts, templates, static, audits, docs').split(/[,\\n]/).map(item => item.trim()).filter(Boolean);
@@ -59733,7 +64462,7 @@ sqlite</textarea></label>
     function undxNormalizeStructureModel(model){
       return {
         modelId: String(model.modelId || `STRUCT-UNDX-${Date.now()}`).slice(0,44),
-        repositoryName: String(model.repositoryName || 'CoinPilotXAI Repository').slice(0,140),
+        repositoryName: String(model.repositoryName || 'CoinPlotXAI Repository').slice(0,140),
         repositoryType: String(model.repositoryType || 'Flask/Python application').slice(0,120),
         conceptualFolderMap: undxNormalizeExecutionList(model.conceptualFolderMap, undxStructureFolderGroups(), 12, 120),
         entryPoints: undxNormalizeExecutionList(model.entryPoints, ['bot.py', 'app.py', 'main.py', 'server.js', 'index.ts', 'package.json', 'requirements.txt'], 12, 120),
@@ -59803,7 +64532,7 @@ sqlite</textarea></label>
         selected.includes('projectWorkspace') && project,
         notes
       ].filter(Boolean).length;
-      const repositoryName = plans[0]?.name || workspaceManifests[0]?.workspaceName || previewManifests[0]?.repositoryName || profiles[0]?.name || context.applicationName || 'CoinPilotXAI Repository';
+      const repositoryName = plans[0]?.name || workspaceManifests[0]?.workspaceName || previewManifests[0]?.repositoryName || profiles[0]?.name || context.applicationName || 'CoinPlotXAI Repository';
       const repositoryType = plans[0]?.type || workspaceManifests[0]?.projectType || previewManifests[0]?.repositoryType || profiles[0]?.repositoryType || context.framework || 'Flask/Python application';
       const entryPoints = [...new Set([context.mainEntryFile, ...(context.filesKnown || []), 'bot.py', 'app.py', 'main.py', 'server.js', 'index.ts', 'package.json', 'requirements.txt'].filter(Boolean))].slice(0,10);
       const knownModules = (context.premiumModules || []).length + (context.knownServices || []).length + profiles.length + workspaceManifests.length;
@@ -60106,8 +64835,8 @@ sqlite</textarea></label>
       const readinessAssessment = readinessScore >= 76 ? 'Approval Ready' : readinessScore >= 56 ? 'Review Ready' : 'Planning Ready';
       return undxNormalizeChangeProposal({
         proposalId: undxNextChangeProposalId(undxLoadChangeProposals()),
-        executiveSummary: `UNDX prepared a controlled editing proposal for ${project.name || structureModels[0]?.repositoryName || 'CoinPilotXAI'} using ${sourceStrength} read-only intelligence source groups.`,
-        businessObjective: project.objective || strategicPlans[0]?.executiveSummary || 'Improve CoinPilotXAI safely while preserving premium boundaries and approval controls.',
+        executiveSummary: `UNDX prepared a controlled editing proposal for ${project.name || structureModels[0]?.repositoryName || 'CoinPlotXAI'} using ${sourceStrength} read-only intelligence source groups.`,
+        businessObjective: project.objective || strategicPlans[0]?.executiveSummary || 'Improve CoinPlotXAI safely while preserving premium boundaries and approval controls.',
         engineeringObjective: 'Convert UNDX planning intelligence into an engineering-grade change proposal without editing files, running commands, or accessing repositories.',
         proposedChanges: ['Define the proposed implementation scope', 'Map potential impact areas and dependencies', 'Prepare validation and rollback plans', 'Route approvals before future execution', 'Keep all changes proposed-only until human approval'],
         potentialImpactAreas: {
@@ -60140,7 +64869,7 @@ sqlite</textarea></label>
           deployment:'Deployment Approval: Proposed'
         },
         readinessAssessment,
-        changeTree: {initiative:'CoinPilotXAI Evolution', feature:'Controlled Editing Proposal Engine', changeGroup:'Approval-Gated Engineering Plan', proposedChange:'Generate proposed changes without modifying files'},
+        changeTree: {initiative:'CoinPlotXAI Evolution', feature:'Controlled Editing Proposal Engine', changeGroup:'Approval-Gated Engineering Plan', proposedChange:'Generate proposed changes without modifying files'},
         approvalPackage: {
           approvalSummary:'Proposal is ready for human review only.',
           riskSummary:`Risk Score: ${Math.round(riskScore)}/100`,
@@ -60149,7 +64878,7 @@ sqlite</textarea></label>
         },
         riskScores: {complexityScore: Math.round(complexityScore), riskScore: Math.round(riskScore), impactScore: Math.round(impactScore), readinessScore: Math.round(readinessScore)},
         referenced: {
-          project: project.name || 'CoinPilotXAI',
+          project: project.name || 'CoinPlotXAI',
           structureModels: structureModels.slice(0,3).map(item => item.modelId),
           entryPoints: structureModels[0]?.entryPoints || ['bot.py'],
           protectedAreas: structureModels[0]?.protectedAreas || ['.env', 'secrets', 'tokens'],
@@ -60369,9 +65098,9 @@ sqlite</textarea></label>
       const scores = request.scores || {};
       return {
         requestId: String(request.requestId || `EXEC-UNDX-${Date.now()}`).slice(0,48),
-        businessObjective: String(request.businessObjective || 'Preserve CoinPilotXAI value through controlled future execution.').slice(0,1000),
+        businessObjective: String(request.businessObjective || 'Preserve CoinPlotXAI value through controlled future execution.').slice(0,1000),
         engineeringObjective: String(request.engineeringObjective || 'Evaluate execution eligibility without executing code or touching repositories.').slice(0,1000),
-        referencedProject: String(request.referencedProject || 'CoinPilotXAI').slice(0,160),
+        referencedProject: String(request.referencedProject || 'CoinPlotXAI').slice(0,160),
         referencedProposal: String(request.referencedProposal || 'None').slice(0,80),
         riskSummary: String(request.riskSummary || 'Risk requires human review before future execution.').slice(0,1000),
         validationSummary: String(request.validationSummary || 'Validation requires audits, browser checks, and manual QA.').slice(0,1000),
@@ -60438,9 +65167,9 @@ sqlite</textarea></label>
       const scores = {riskScore, readinessScore, confidenceScore, approvalScore};
       return undxNormalizeExecutionRequest({
         requestId: undxNextExecutionRequestId(undxLoadExecutionRequests()),
-        businessObjective: project.objective || proposal?.businessObjective || strategicPlans[0]?.executiveSummary || 'Move CoinPilotXAI toward future execution readiness with human control.',
+        businessObjective: project.objective || proposal?.businessObjective || strategicPlans[0]?.executiveSummary || 'Move CoinPlotXAI toward future execution readiness with human control.',
         engineeringObjective: proposal?.engineeringObjective || 'Convert approved planning intelligence into an execution eligibility request without modifying files, repositories, Git, commands, or deployments.',
-        referencedProject: project.name || proposal?.referenced?.project || 'CoinPilotXAI',
+        referencedProject: project.name || proposal?.referenced?.project || 'CoinPlotXAI',
         referencedProposal: proposal?.proposalId || 'None',
         riskSummary: `Risk Summary: ${riskScore}/100. Human approval is required before any future execution-capable system may act.`,
         validationSummary: 'Validation Summary: Python compile, UNDX audit, premium foundation audit, site functional audit, performance audit, PulseSoc feed layout audit, JS parse check, and browser route check required.',
@@ -62831,7 +67560,7 @@ sqlite</textarea></label>
       return undxCurrentProject() || undxLoadProjects()[0] || null;
     }
     function undxRepositoryFoundationSignals(project, notes = ''){
-      const source = `${project?.name || ''} ${project?.objective || ''} ${notes} CoinPilotXAI Flask Python JavaScript HTML CSS SQL OpenAI Premium PulseSoc UNDX`.toLowerCase();
+      const source = `${project?.name || ''} ${project?.objective || ''} ${notes} CoinPlotXAI Flask Python JavaScript HTML CSS SQL OpenAI Premium PulseSoc UNDX`.toLowerCase();
       const has = token => source.includes(token.toLowerCase());
       return {
         languages:['Python','JavaScript','SQL','HTML','CSS'].concat(has('typescript') ? ['TypeScript'] : []),
@@ -62867,7 +67596,7 @@ sqlite</textarea></label>
       const riskNotes = Array.isArray(profile?.riskNotes) ? profile.riskNotes.slice(0,12) : ['Secrets must remain hidden.', 'Repository writes remain disabled.', 'Future file access requires approval gates.'];
       const normalized = {
         profileId:String(profile?.profileId || '').slice(0,44),
-        repositoryName:String(profile?.repositoryName || undxFoundationRepoName?.value || 'CoinPilotXAI Repository').slice(0,160),
+        repositoryName:String(profile?.repositoryName || undxFoundationRepoName?.value || 'CoinPlotXAI Repository').slice(0,160),
         projectId:String(profile?.projectId || project?.projectId || '').slice(0,44),
         projectName:String(profile?.projectName || project?.name || 'No project linked').slice(0,160),
         technologyStack:Array.isArray(profile?.technologyStack) ? profile.technologyStack.slice(0,16) : signals.technologyStack,
@@ -62949,10 +67678,10 @@ sqlite</textarea></label>
       const profiles = undxLoadRepositoryProfiles();
       const profile = undxNormalizeRepositoryFoundationProfile({
         profileId:undxNextRepositoryProfileId(profiles),
-        repositoryName:(undxFoundationRepoName?.value || `${project?.name || 'CoinPilotXAI'} Repository`).trim(),
+        repositoryName:(undxFoundationRepoName?.value || `${project?.name || 'CoinPlotXAI'} Repository`).trim(),
         projectId:project?.projectId || '',
         projectName:project?.name || 'No project linked',
-        architectureNotes:(undxFoundationArchitectureNotes?.value || `Repository intelligence profile for ${project?.name || 'CoinPilotXAI'} using read-only planning metadata.`).trim(),
+        architectureNotes:(undxFoundationArchitectureNotes?.value || `Repository intelligence profile for ${project?.name || 'CoinPlotXAI'} using read-only planning metadata.`).trim(),
         createdAt:new Date().toISOString(),
         updatedAt:new Date().toISOString()
       });
@@ -62988,7 +67717,7 @@ sqlite</textarea></label>
         dataSystems:[profile.databaseLayer,'localStorage planning registries'],
         integrations:['OpenAI bridge','UNDX Intelligence Router','Railway environment configuration'],
         services:profile.services,
-        summary:`Architecture Summary: ${profile.repositoryName} is a Flask-centered CoinPilotXAI system with premium UNDX modules, API routes, local planning registries, and read-only repository intelligence boundaries.`,
+        summary:`Architecture Summary: ${profile.repositoryName} is a Flask-centered CoinPlotXAI system with premium UNDX modules, API routes, local planning registries, and read-only repository intelligence boundaries.`,
         createdAt:new Date().toISOString()
       };
       const knowledgeGraph = ['Repository','Modules','Services','Routes','Dependencies'].map((label, index, arr) => ({label, next:arr[index + 1] || 'Read-only analysis complete'}));
@@ -63137,7 +67866,7 @@ sqlite</textarea></label>
     function undxCodebaseSource(){
       const project = undxCurrentProject() || undxLoadProjects()[0] || null;
       const profile = project?.linkedRepositoryProfiles?.[0] || undxLoadRepositoryProfiles()[0] || null;
-      return {project, profile, repositoryName:profile?.repositoryName || project?.name || 'CoinPilotXAI Repository'};
+      return {project, profile, repositoryName:profile?.repositoryName || project?.name || 'CoinPlotXAI Repository'};
     }
     function undxCodebaseGroups(){
       return {
@@ -63346,7 +68075,7 @@ sqlite</textarea></label>
         projectName:project?.name || profile?.projectName || 'No project linked',
         profileId:profile?.profileId || '',
         mapId:map.mapId,
-        codebaseSummary:`${repositoryName} is mapped as a CoinPilotXAI Flask-centered application with premium UNDX command views, API services, local planning registries, repository intelligence, and audit-driven validation.`,
+        codebaseSummary:`${repositoryName} is mapped as a CoinPlotXAI Flask-centered application with premium UNDX command views, API services, local planning registries, repository intelligence, and audit-driven validation.`,
         fileIntelligenceSummary:`${fileIq.files.length} conceptual file records mapped with module ownership, route relationships, service relationships, tests, risk, and change sensitivity.`,
         functionIntelligenceSummary:`${funcIq.functions.length} conceptual function/class records prepared for future review.`,
         routeCodeMap:routeMap.routes.map(item => `${item.route} → ${item.controllers.join(', ')} → ${item.services.join(', ')}`),
@@ -63578,7 +68307,7 @@ sqlite</textarea></label>
       const sandboxReport = project?.linkedSandboxReports?.[0] || undxLoadSandboxReports?.()[0] || null;
       const codeReport = undxLoadCodeGenerationReports?.()[0] || null;
       const approvalRequest = project?.linkedRepositoryActionRequests?.[0] || undxLoadRepoActionRequests?.()[0] || null;
-      const mission = undxMissionInput?.value?.trim() || project?.objective || 'Prepare the next CoinPilotXAI engineering task.';
+      const mission = undxMissionInput?.value?.trim() || project?.objective || 'Prepare the next CoinPlotXAI engineering task.';
       const source = sourceType === 'Codebase Understanding Report' ? codebaseReport : sourceType === 'Repository Profile' ? repositoryProfile : sourceType === 'Repository Index Report' ? repositoryIndex : sourceType === 'Context-Aware Coding Report' ? codingReport : sourceType === 'Sandbox Report' ? sandboxReport : sourceType === 'Code Generation Report' ? codeReport : sourceType === 'Approval Request' ? approvalRequest : sourceType === 'Mission' ? {objective:mission} : project;
       return {sourceType, project, source:source || {}, codebaseReport, repositoryProfile, mission};
     }
@@ -63617,7 +68346,7 @@ sqlite</textarea></label>
       const {project, codebaseReport, mission} = undxTaskIqSource();
       const objective = codebaseReport?.recommendedNextAction || project?.objective || mission;
       return [
-        {type:'security', title:'Map security-sensitive wallet risk workflow', objective:`Protect ${project?.name || 'CoinPilotXAI'} by mapping wallet risk, scam, authentication, and approval boundaries before any future build.`},
+        {type:'security', title:'Map security-sensitive wallet risk workflow', objective:`Protect ${project?.name || 'CoinPlotXAI'} by mapping wallet risk, scam, authentication, and approval boundaries before any future build.`},
         {type:'feature', title:'Prepare repository-aware builder directive', objective:`Convert codebase understanding into a task package that references ${codebaseReport?.reportId || 'the active codebase report'} and preserves UNDX read-only gates.`},
         {type:'testing', title:'Define validation coverage for task lifecycle', objective:'Create unit, integration, browser, security, performance, and regression validation needs for the selected engineering scope.'},
         {type:'documentation', title:'Capture approval-ready engineering context', objective:`Document objective, impact, risk, dependencies, rollback, and approval recommendation for: ${objective}`},
@@ -63747,7 +68476,7 @@ sqlite</textarea></label>
         taskId:task.taskId,
         taskSummary:task.title,
         objective:task.objective,
-        businessImpact:'Improves CoinPilotXAI delivery clarity and turns repository understanding into approval-ready work.',
+        businessImpact:'Improves CoinPlotXAI delivery clarity and turns repository understanding into approval-ready work.',
         technicalImpact:'Maps task scope to modules, services, routes, tests, dependencies, validation, and rollback.',
         riskSummary:`Overall risk ${task.riskScore}/100. Execution remains disabled.`,
         dependencySummary:'Depends on codebase understanding, project registry, validation plan, and approval protocol.',
@@ -65858,7 +70587,7 @@ sqlite</textarea></label>
       }
       return project;
     }
-    const undxInitialChatText = 'UNDX Core online. OpenAI intelligence bridge active. What mission should CoinPilotXAI evolve next?';
+    const undxInitialChatText = 'UNDX Core online. OpenAI intelligence bridge active. What mission should CoinPlotXAI evolve next?';
     function undxChatMessage(role, text, extra = {}){
       return {
         id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
@@ -66331,7 +71060,7 @@ sqlite</textarea></label>
       const steps = [
         'Define the user problem and premium success signal.',
         'Map the data, route, UI, and audit surfaces required.',
-        'Build the first safe prototype inside the CoinPilotXAI pattern.',
+        'Build the first safe prototype inside the CoinPlotXAI pattern.',
         'Run focused audits, then prepare the next phase upgrade.'
       ];
       const blueprint = {
@@ -66928,7 +71657,7 @@ sqlite</textarea></label>
     undxRenderPerformanceDiagnostics();
     undxInitCommandCenterViews();
     """
-    response = pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer designed to help CoinPilotXAI build, analyze, secure, and evolve.", main, "", script)
+    response = pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer designed to help CoinPlotXAI build, analyze, secure, and evolve.", main, "", script)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -67035,6 +71764,47 @@ def pulse_premium_activate_api():
         return jsonify({"ok": False, "message": str(exc), "trace_id": trace_id}), 500
 
 
+def _identity_effects_allowed(user):
+    """R3.1 Business OS slice: account-hold-aware gate for premium identity effects.
+
+    Same strangler pattern as ``_profile_customization_allowed`` but for the
+    distinct ``premium.identity.effects`` capability (kept as its own key so the
+    two capabilities never share a helper). Behaviour by ``BUSINESS_OS_ENTITLEMENTS``:
+
+      * off (default) -> return the legacy result unchanged (byte-for-byte).
+      * shadow        -> serve legacy; facade records a canonical shadow_diff.
+      * canonical     -> facade authoritative (legacy fallback when canonical is
+                         silent), with account-hold precedence: a suspended /
+                         disabled / banned / restricted / access-disabled account
+                         is denied even if legacy says premium.
+
+    Any failure in the entitlement path falls back to the legacy result so the
+    feature can never be broken by the new system. Legacy authority is the same
+    ``premium_visibility_engine.is_premium_user`` the route used before."""
+    legacy_allowed = bool(premium_visibility_engine.is_premium_user(user))
+    try:
+        mode = (os.getenv("BUSINESS_OS_ENTITLEMENTS", "") or "").strip().lower()
+        if mode in ("", "0", "false", "off", "no"):
+            return legacy_allowed
+        from services.business_os.entitlements import facade as _ent_facade
+        uid = int(user.get("user_id") or 0)
+        key = "premium.identity.effects"
+        ent_context = {
+            "account_status": user.get("account_status"),
+            "access_enabled": user.get("access_enabled"),
+        }
+        if mode == "shadow":
+            try:
+                _ent_facade.shadow_compare(uid, key, context=ent_context)
+            except Exception:  # noqa: BLE001
+                logging.exception("entitlement shadow_compare failed uid=%s key=%s", uid, key)
+            return legacy_allowed
+        return bool(_ent_facade.check(uid, key, context=ent_context))
+    except Exception:  # noqa: BLE001
+        logging.exception("entitlement identity-effects check failed; using legacy")
+        return legacy_allowed
+
+
 @webhook_app.route("/api/pulse/premium/identity-effects", methods=["GET", "POST"])
 def pulse_premium_identity_effects_api():
     init_db()
@@ -67048,10 +71818,10 @@ def pulse_premium_identity_effects_api():
         cur.execute("SELECT effect_key, label, effect_type, premium_only, status, metadata_json FROM pulse_identity_effects WHERE status='active' ORDER BY id")
         effects = [dict(row) for row in cur.fetchall()]
         conn.close()
-        return jsonify({"ok": True, "premium": premium_visibility_engine.is_premium_user(user), "effects": effects})
+        return jsonify({"ok": True, "premium": _identity_effects_allowed(user), "effects": effects})
     data = request.get_json(silent=True) or request.form.to_dict()
     effect_key = str(data.get("effect_key") or "founder_gold")[:80]
-    if not premium_visibility_engine.is_premium_user(user):
+    if not _identity_effects_allowed(user):
         conn.close()
         return api_error("Premium identity effects require PulseSoc Premium.", 403)
     now = datetime.utcnow().isoformat(timespec="seconds")
@@ -67067,38 +71837,96 @@ def pulse_premium_identity_effects_api():
     return jsonify({"ok": True, "message": "Identity effect updated.", "effect_key": effect_key})
 
 
+def _profile_customization_allowed(user):
+    """First Business OS entitlement vertical slice: advanced profile customization.
+
+    Strangler wiring around the legacy premium check. Behaviour by
+    ``BUSINESS_OS_ENTITLEMENTS`` mode (resolved inside the facade):
+
+      * off (default)  -> return the legacy result unchanged (zero behaviour change).
+      * shadow         -> serve the legacy result, but let the facade compute the
+                          canonical answer and record a shadow_diff for telemetry.
+      * canonical      -> serve the canonical facade decision (which itself falls
+                          back to legacy when canonical is silent).
+
+    Any failure in the entitlement path falls back to the legacy result so the
+    feature can never be broken by the new system. The legacy authority here is
+    the existing ``premium_visibility_engine.is_premium_user`` so the off-path is
+    byte-for-byte the prior behaviour."""
+    legacy_allowed = bool(premium_visibility_engine.is_premium_user(user))
+    try:
+        mode = (os.getenv("BUSINESS_OS_ENTITLEMENTS", "") or "").strip().lower()
+        if mode in ("", "0", "false", "off", "no"):
+            return legacy_allowed
+        from services.business_os.entitlements import facade as _ent_facade
+        uid = int(user.get("user_id") or 0)
+        key = "premium.profile.customization"
+        # Pass the freshest authoritative account state we already hold in memory so
+        # the facade's account-hold precedence (R3) needs no second DB read and cannot
+        # be bypassed through this route. account_status default 'active'; access_enabled
+        # default 1 (only an explicit 0 is a hold).
+        ent_context = {
+            "account_status": user.get("account_status"),
+            "access_enabled": user.get("access_enabled"),
+        }
+        if mode == "shadow":
+            # Serve legacy; compute+record canonical divergence without changing access.
+            try:
+                _ent_facade.shadow_compare(uid, key, context=ent_context)
+            except Exception:  # noqa: BLE001
+                logging.exception("entitlement shadow_compare failed uid=%s", uid)
+            return legacy_allowed
+        # canonical (or truthy flag): facade is authoritative, with legacy fallback,
+        # and an account hold (suspended/disabled/banned/restricted) overrides premium.
+        return bool(_ent_facade.check(uid, key, context=ent_context))
+    except Exception:  # noqa: BLE001
+        logging.exception("entitlement profile-customization check failed; using legacy")
+        return legacy_allowed
+
+
 @webhook_app.route("/api/pulse/premium/profile-theme", methods=["GET", "POST"])
 def pulse_premium_profile_theme_api():
     init_db()
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    if ios_native_app_request():
-        return ios_paid_digital_unavailable_response(api=True)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     if request.method == "GET":
         cur.execute("SELECT * FROM pulse_profile_themes WHERE user_id=? AND active=1 ORDER BY updated_at DESC LIMIT 1", (int(user.get("user_id") or 0),))
         theme = cur.fetchone()
         conn.close()
-        return jsonify({"ok": True, "theme": dict(theme) if theme else {"theme_key": "midnight_elite", "accent_color": "#ffd166"}})
-    if not premium_visibility_engine.is_premium_user(user):
+        return jsonify({"ok": True, "theme": dict(theme) if theme else {"theme_key": "deep_space", "accent_color": "#32e6b3", "layout_key": "classic", "motion_level": "balanced"}})
+    if not _profile_customization_allowed(user):
         conn.close()
         return api_error("Premium profile themes require PulseSoc Premium.", 403)
     data = request.get_json(silent=True) or request.form.to_dict()
-    theme_key = str(data.get("theme_key") or "midnight_elite")[:80]
-    accent = str(data.get("accent_color") or "#ffd166")[:32]
+    allowed_themes = {"deep_space", "neon_galaxy", "cyber_city", "solar_pulse", "aurora", "quantum", "crystal", "dark_matter", "nova", "minimal_black"}
+    allowed_layouts = {"classic", "creator", "professional", "minimal", "artist", "music", "gaming", "developer", "business", "streamer"}
+    allowed_motion = {"subtle", "balanced", "reduced"}
+    theme_key = str(data.get("theme_key") or "deep_space")[:80]
+    layout_key = str(data.get("layout_key") or "classic")[:80]
+    motion_level = str(data.get("motion_level") or "balanced")[:32]
+    accent = str(data.get("accent_color") or "#32e6b3")[:32]
+    modules = data.get("modules") if isinstance(data.get("modules"), list) else []
+    modules = [str(item)[:40] for item in modules[:12] if str(item).strip()]
+    if theme_key not in allowed_themes or layout_key not in allowed_layouts or motion_level not in allowed_motion:
+        conn.close()
+        return api_error("Choose a supported Profile theme, layout, and motion level.", 400)
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", accent):
+        conn.close()
+        return api_error("Choose a valid Profile accent color.", 400)
     now = datetime.utcnow().isoformat(timespec="seconds")
     cur.execute("UPDATE pulse_profile_themes SET active=0 WHERE user_id=?", (int(user.get("user_id") or 0),))
     cur.execute(
         """
-        INSERT INTO pulse_profile_themes (user_id, theme_key, accent_color, background_style, active, created_at, updated_at)
-        VALUES (?, ?, ?, 'premium_gradient', 1, ?, ?)
-        ON CONFLICT(user_id, theme_key) DO UPDATE SET active=1, accent_color=excluded.accent_color, updated_at=excluded.updated_at
+        INSERT INTO pulse_profile_themes (user_id, theme_key, accent_color, background_style, layout_key, modules_json, motion_level, active, created_at, updated_at)
+        VALUES (?, ?, ?, 'living_identity', ?, ?, ?, 1, ?, ?)
+        ON CONFLICT(user_id, theme_key) DO UPDATE SET active=1, accent_color=excluded.accent_color, background_style=excluded.background_style, layout_key=excluded.layout_key, modules_json=excluded.modules_json, motion_level=excluded.motion_level, updated_at=excluded.updated_at
         """,
-        (int(user.get("user_id") or 0), theme_key, accent, now, now),
+        (int(user.get("user_id") or 0), theme_key, accent, layout_key, json.dumps(modules), motion_level, now, now),
     )
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "message": "Profile theme updated.", "theme_key": theme_key})
+    return jsonify({"ok": True, "message": "Profile identity style updated.", "theme_key": theme_key, "layout_key": layout_key, "motion_level": motion_level, "modules": modules})
 
 
 def creator_ai_payload(kind, text, topic=""):
@@ -67173,6 +72001,8 @@ def pulse_creator_dashboard_page():
     media_html = "".join(f"<article class='studio-media-card'><span>{clean_html(m.get('media_type') or 'media')}</span><strong>{clean_html(m.get('original_filename') or 'Uploaded media')}</strong><small>{clean_html(m.get('mime_type') or '')}</small></article>" for m in media_rows) or "<p class='muted'>No uploaded media yet. Upload images or videos from PulseSoc Composer or Reels.</p>"
     tools = [("Hook generator","hook"),("Caption enhancer","caption"),("Reel idea generator","hook"),("Hashtag generator","caption"),("Scam-safe wording checker","virality"),("Education content assistant","caption"),("Live title generator","live-title"),("Community post ideas","hook")]
     tool_html = "".join(f"<button type='button' data-ai-tool='{tool}'>{clean_html(label)}</button>" for label, tool in tools)
+    # R3.2: hold-aware "usable premium" claim for the studio side panel (off/shadow = legacy).
+    _studio_premium_effective, _ = _effective_premium_access(user, premium_visibility_engine.is_premium_user(user))
     main = f"""
     <style>
     body:has(.creator-studio) .wrap{{width:min(100% - 28px,1500px)}}body:has(.creator-studio) .layout{{grid-template-columns:minmax(0,1fr)}}body:has(.creator-studio) .layout>aside{{display:none}}
@@ -67190,7 +72020,7 @@ def pulse_creator_dashboard_page():
         <section class='card' id='media'><h2>Media Library</h2><div class='studio-media-grid'>{media_html}</div></section>
         <section class='studio-section-grid'><article class='card'><h2>Safety / Trust</h2><p>Scam Shield score, flagged content, moderation guidance, trust signals, and creator safety checklist.</p><button type='button' data-ai-tool='virality'>Run Trust Check</button></article><article class='card' id='resources'><h2>Resources</h2><p>Creator guides, better Reels, audience growth, safe selling, live setup, and PulseSoc AI playbooks.</p><a class='button' href='/pulse/teachers'>Open Guides</a></article></section>
       </main>
-      <aside class='studio-right'><section class='card'><h3>PulseSoc Intelligence</h3><p>Total creator items: {total_content}</p><p>{'You have enough activity for useful recommendations.' if total_content >= 5 else 'Create at least five items to unlock stronger recommendations.'}</p></section><section class='card'><h3>Premium</h3><p>{'Premium active.' if premium_visibility_engine.is_premium_user(user) else 'Premium tools are previewing. Activate when checkout opens.'}</p><a class='button primary' href='/pulse/premium'>Open Premium</a></section></aside>
+      <aside class='studio-right'><section class='card'><h3>PulseSoc Intelligence</h3><p>Total creator items: {total_content}</p><p>{'You have enough activity for useful recommendations.' if total_content >= 5 else 'Create at least five items to unlock stronger recommendations.'}</p></section><section class='card'><h3>Premium</h3><p>{'Premium active.' if _studio_premium_effective else 'Premium tools are previewing. Activate when checkout opens.'}</p><a class='button primary' href='/pulse/premium'>Open Premium</a></section></aside>
     </section>
     """
     script = """
@@ -67355,7 +72185,9 @@ def pulse_creator_analytics_page():
         return redirect(url_for("login_page", next=request.path))
     if ios_native_app_request():
         return ios_paid_digital_unavailable_response(api=False)
-    premium = premium_visibility_engine.is_premium_user(user)
+    # R3.2: this `premium` flag gates the *usable* (unlocked) analytics view, so it must
+    # reflect effective access — a suspended owner sees locked previews (off/shadow = legacy).
+    premium, _ = _effective_premium_access(user, premium_visibility_engine.is_premium_user(user))
     cards = [
         ("Audience Heatmap", "Shows when real audience activity clusters."),
         ("Retention Curve", "Highlights where viewers slow down, replay, or drop."),
@@ -67363,7 +72195,9 @@ def pulse_creator_analytics_page():
         ("Trust Graph", "Keeps creator growth tied to safety and reliability."),
     ]
     body = "<section class='grid'>" + "".join(f"<article class='card premium-analytics-preview {'locked' if not premium else ''}'><span class='premium-badge'>{clean_html(name)}</span><p>{clean_html(desc)}</p><div class='premium-energy-meter'><span style='width:{70+i*6}%'></span></div></article>" for i, (name, desc) in enumerate(cards)) + "</section>"
-    body += premium_visibility_engine.prompt_html("creator", user)
+    # R3.3: keep the upsell card consistent with the locked/unlocked previews above by
+    # reusing the same effective flag; off/shadow leaves it equal to ownership (unchanged).
+    body += premium_visibility_engine.prompt_html("creator", user, is_premium_override=premium)
     return pulse_social_shell("Creator Analytics", "Premium analytics previews grounded in real PulseSoc activity, never fake performance claims.", body)
 
 
@@ -67522,7 +72356,8 @@ def pulse_courses_page():
     courses = [dict(row) for row in cur.fetchall()]
     conn.close()
     cards = "".join(f"<article class='card'><h2>{clean_html(c.get('title'))}</h2><p>{clean_html(c.get('description') or '')}</p><p><span class='pill'>{clean_html(c.get('category') or 'Education')}</span> <span class='pill'>{clean_html(c.get('access_level') or 'free')}</span> <span class='pill'>{clean_html(c.get('price_label') or 'Free')}</span></p><p>Teacher: {clean_html(c.get('teacher_name') or '')}</p><a class='button' href='/pulse/courses/{int(c.get('id') or 0)}'>Open Course</a></article>" for c in courses)
-    return pulse_social_shell("PulseSoc Courses", "Free lessons now, paid-course-ready architecture later after trust and compliance review.", f"<section class='card'><div class='actions'><a class='button primary' href='/pulse/courses/create'>Create Course</a><a class='button' href='/pulse/teacher-dashboard'>Teacher Dashboard</a></div></section><section class='grid'>{cards or '<article class=\"card\"><h2>No courses yet.</h2><p>Teachers can prepare safe, educational course drafts now.</p></article>'}</section>")
+    courses_empty = '<article class="card"><h2>No courses yet.</h2><p>Teachers can prepare safe, educational course drafts now.</p></article>'
+    return pulse_social_shell("PulseSoc Courses", "Free lessons now, paid-course-ready architecture later after trust and compliance review.", f"<section class='card'><div class='actions'><a class='button primary' href='/pulse/courses/create'>Create Course</a><a class='button' href='/pulse/teacher-dashboard'>Teacher Dashboard</a></div></section><section class='grid'>{cards or courses_empty}</section>")
 
 
 @webhook_app.route("/pulse/courses/create", methods=["GET"])
@@ -67557,7 +72392,8 @@ def pulse_course_detail_page(course_id):
     if not course:
         return pulse_social_shell("Course", "This course is not available.", "<section class='card'><a class='button' href='/pulse/courses'>Back to Courses</a></section>")
     lesson_html = "".join(f"<article class='card'><h2>{clean_html(l.get('title'))}</h2><p>{clean_html(l.get('description') or '')}</p><span class='pill'>{clean_html(l.get('access_level') or 'free')}</span></article>" for l in lessons)
-    main = f"<section class='card'><h2>{clean_html(course.get('title'))}</h2><p>{clean_html(course.get('description') or '')}</p><p><span class='pill'>{clean_html(course.get('category') or '')}</span> <span class='pill'>{clean_html(course.get('status') or '')}</span></p><p>Teacher: {clean_html(course.get('teacher_name') or '')}</p></section><section>{lesson_html or '<article class=\"card\"><h2>No lessons published yet.</h2><p>The teacher can add reviewed lessons from the dashboard.</p></article>'}</section>"
+    lesson_empty = '<article class="card"><h2>No lessons published yet.</h2><p>The teacher can add reviewed lessons from the dashboard.</p></article>'
+    main = f"<section class='card'><h2>{clean_html(course.get('title'))}</h2><p>{clean_html(course.get('description') or '')}</p><p><span class='pill'>{clean_html(course.get('category') or '')}</span> <span class='pill'>{clean_html(course.get('status') or '')}</span></p><p>Teacher: {clean_html(course.get('teacher_name') or '')}</p></section><section>{lesson_html or lesson_empty}</section>"
     return pulse_social_shell(course.get("title") or "Course", "Teacher course detail and lesson foundation.", main)
 
 
@@ -69419,8 +74255,12 @@ def pulse_group_detail_page(group_slug):
             (int(p.get("id") or 0),),
         )
         previews = [pulse_group_comment_payload(cur, row, user["user_id"]) for row in cur.fetchall()]
+        def _preview_delete_btn(c):
+            if c.get('can_delete'):
+                return '<button data-group-comment-delete="' + str(c['id']) + '">Delete</button>'
+            return ''
         preview_html = "".join(
-            f"<div class='group-comment' data-comment-id='{c['id']}'><strong>{clean_html(c['author_name'])}{pulse_premium_mark_html(c.get('premium_mark'))}</strong><p>{clean_html(c['body'])}</p><small>{smart_time_html(c.get('created_at'))}</small>{'<button data-group-comment-delete=\"'+str(c['id'])+'\">Delete</button>' if c.get('can_delete') else ''}<button data-group-comment-report='{c['id']}'>Report</button></div>"
+            f"<div class='group-comment' data-comment-id='{c['id']}'><strong>{clean_html(c['author_name'])}{pulse_premium_mark_html(c.get('premium_mark'))}</strong><p>{clean_html(c['body'])}</p><small>{smart_time_html(c.get('created_at'))}</small>{_preview_delete_btn(c)}<button data-group-comment-report='{c['id']}'>Report</button></div>"
             for c in reversed(previews)
         )
         if not groups_advanced:
@@ -69484,7 +74324,8 @@ def pulse_group_detail_page(group_slug):
         action_html = f"<button class='primary' data-join-group-id='{group_id}'>Join Group</button><button data-open-group-chat-id='{group_id}'>Open Group Chat</button><button data-invite-group-id='{group_id}'>Invite</button><button data-report-group-id='{group_id}'>Report</button><button data-leave-group-id='{group_id}'>Leave</button>"
     composer_html = f"<section class='card'><h2>Share With Group</h2><textarea id='groupPostBody' placeholder='Share an update, lesson, warning, question, photo, or video caption.'></textarea><label>Attach photo or video<input id='groupMediaFile' type='file' accept='image/*,video/*'></label><div class='group-composer-actions'><a class='button' href='/pulse/camera/photo?target=group&group={slug}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=group&group={slug}'>Record Video</a><button class='primary' id='groupPostBtn'>Post</button></div></section>" if groups_advanced else "<section class='card'><h2>Groups Stabilization</h2><p class='muted'>Advanced posting, media, invites, moderation, and chat controls are temporarily paused. Group browsing, creation, joining, and leaving remain available.</p></section>"
     modal_html = f"<section class='group-report-modal' id='groupReportModal'><div class='group-report-sheet'><h2 id='groupReportTitle'>Report Post</h2><select id='groupReportReason'><option value='spam'>Spam</option><option value='harassment'>Harassment</option><option value='scam'>Scam</option><option value='impersonation'>Impersonation</option><option value='misleading financial claims'>Misleading financial claims</option><option value='nudity'>Nudity</option><option value='violence'>Violence</option><option value='misinformation'>Misinformation</option><option value='illegal'>Illegal</option><option value='other'>Other</option></select><textarea id='groupReportNotes' placeholder='Add context for moderators'></textarea><div class='actions'><button type='button' id='cancelGroupReport'>Cancel</button><button class='primary' type='button' id='submitGroupReport'>Submit Report</button></div></div></section><section class='group-report-modal' id='groupInviteModal'><div class='group-report-sheet'><h2>Invite to Group</h2><form id='groupInviteSearch'><input name='q' placeholder='Search by name or public PulseSoc ID'><button class='primary'>Search</button></form><div class='messenger-search-results' id='groupInviteResults'></div><button type='button' id='copyGroupInvite'>Copy Invite Link</button><button type='button' id='cancelGroupInvite'>Close</button></div></section>" if groups_advanced else ""
-    main = f"{style}<section class='card' data-group-shell='{group_id}'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p class='group-meta-pills'><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'><span data-group-member-count>{members}</span> members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='group-community-actions'>{action_html}</div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section>{delete_group_html}{composer_html}<section>{post_html or '<article class=\"card\"><p>No group posts yet.</p></article>'}</section>{modal_html}"
+    post_empty = '<article class="card"><p>No group posts yet.</p></article>'
+    main = f"{style}<section class='card' data-group-shell='{group_id}'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p class='group-meta-pills'><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'><span data-group-member-count>{members}</span> members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='group-community-actions'>{action_html}</div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section>{delete_group_html}{composer_html}<section>{post_html or post_empty}</section>{modal_html}"
     script = f"""
     const groupSlug={json.dumps(slug)};
     let pendingReportPostId=null;
@@ -69816,6 +74657,7 @@ def api_pulse_feed():
             "intelligence": pulse_feed_engine.safe_intelligence_panel(request.args.get("topic") or ""),
         }
         result["intelligence"]["status_activity"] = {"active_statuses": 0, "unseen_statuses": 0, "live_creators": 0, "engagement_signal": 0, "ranking_weight": "fallback"}
+    _bo_ad_attach_sponsored(user["user_id"], "feed", result)
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
@@ -70887,8 +75729,24 @@ def api_pulse_video_react(video_id):
     return jsonify({**result, "video_id": video_id}), status
 
 
-@webhook_app.route("/api/pulse/videos/<int:video_id>/repost", methods=["POST"])
+@webhook_app.route("/api/pulse/videos/<int:video_id>/repost", methods=["POST", "DELETE"])
 def api_pulse_video_repost(video_id):
+    """Repost and un-repost a video.
+
+    Two branches, and only the first is a repost in the sense the rest of the
+    system means it. A video sourced from a feed post gets a `pulse_posts` row
+    with `repost_of_post_id` set, so it shares pulse_feed_engine.repost with the
+    post and reel routes and gets dedupe, undo and a reconcilable response.
+
+    A video with no source post has nothing to point `repost_of_post_id` at, so
+    the second branch creates a fresh video post instead. That is a copy, not a
+    repost: `_viewer_post_state` cannot see it, no `reposted` flag or count ever
+    described it, and undoing it would mean deleting a post the caller now owns.
+    DELETE therefore refuses on that branch rather than reporting an un-repost
+    that did not happen. No client currently reaches this route at all — grep
+    finds `data-video-repost` only in the icon normalizer, never rendered — so
+    this is about the two branches telling the truth, not about a live button.
+    """
     init_db()
     user = api_account_user()
     if not user:
@@ -70896,6 +75754,7 @@ def api_pulse_video_repost(video_id):
     trace_id = secrets.token_hex(6)
     payload = request.get_json(silent=True) or {}
     note = clean_html(payload.get("body") or payload.get("note") or "")[:1200]
+    undo = request.method == "DELETE" or bool(payload.get("undo")) or bool(payload.get("remove"))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT * FROM pulse_videos WHERE id=? AND COALESCE(status,'active')='active' LIMIT 1", (int(video_id),))
     video = dict(cur.fetchone() or {})
@@ -70917,20 +75776,40 @@ def api_pulse_video_repost(video_id):
             conn.close()
             return api_error("Source post not found.", 404, trace_id)
         original_public_id = pulse_identity_for_user(cur, original.get("user_id")).get("public_player_id") or original.get("public_player_id") or pulse_public_id_for_user(original.get("user_id")).lstrip("@")
-        body = note or f"Reposted a PulseSoc Video from @{clean_html(original_public_id or 'PulseSoc creator')}"
-        cur.execute(
-            """
-            INSERT INTO pulse_posts (user_id, public_player_id, post_type, body, title, tags_json, visibility, moderation_status, repost_of_post_id, created_at, updated_at)
-            VALUES (?, ?, 'repost', ?, ?, ?, 'public', 'approved', ?, ?, ?)
-            """,
-            (user["user_id"], repost_owner_public_id, body, original.get("title") or video.get("title") or "PulseSoc Video", original.get("tags_json") or "[]", source_post_id, now, now),
+        conn.close()
+        result, status = pulse_feed_engine.repost(
+            user["user_id"],
+            source_post_id,
+            note=note,
+            undo=undo,
+            default_title=original.get("title") or video.get("title") or "PulseSoc Video",
+            default_body=f"Reposted a PulseSoc Video from @{clean_html(original_public_id or 'PulseSoc creator')}",
+            reposter_public_player_id=repost_owner_public_id,
+            original_public_player_id=clean_html(original_public_id or "PulseSoc creator"),
         )
-        repost_id = int(cur.lastrowid)
-        conn.commit(); conn.close()
-        pulse_emit_event("pulse_video_reposted", {"post_id": repost_id, "original_post_id": source_post_id, "video_id": video_id}, user["user_id"], repost_id)
-        return jsonify({"ok": True, "message": "Video reposted to PulseSoc.", "post_id": repost_id, "video_id": video_id, "next_url": f"/pulse/post/{repost_id}"}), 200
+        if not result.get("ok"):
+            logging.error(
+                "PULSE_VIDEO_REPOST_FAILED trace_id=%s user_id=%s video_id=%s undo=%s message=%s",
+                trace_id, user.get("user_id"), video_id, undo, result.get("message"),
+            )
+            return api_error(result.get("message") or "Video could not be reposted.", status, trace_id)
+        result = dict(result)
+        result["video_id"] = video_id
+        result["original_post_id"] = source_post_id
+        if not undo:
+            result["message"] = result.get("message") or "Video reposted to PulseSoc."
+        if undo:
+            pulse_emit_event("pulse_video_unreposted", {"post_id": source_post_id, "original_post_id": source_post_id, "video_id": video_id, "removed_post_ids": result.get("removed_post_ids") or []}, user["user_id"], source_post_id)
+        elif result.get("message") != "Already reposted.":
+            pulse_emit_event("pulse_video_reposted", {"post_id": int(result.get("post_id") or 0), "original_post_id": source_post_id, "video_id": video_id}, user["user_id"], int(result.get("post_id") or 0))
+        return jsonify(result), status
     media_id = safe_int(video.get("media_id"), 0)
     conn.close()
+    if undo:
+        # See the docstring: this branch never created a `repost_of_post_id` link,
+        # so there is nothing here an un-repost could remove. Claiming success
+        # would leave the caller believing a post it still owns had been withdrawn.
+        return api_error("This video was shared as a new post, so it has no repost to undo. Delete the post instead.", 409, trace_id)
     body = note or clean_html(video.get("description") or "Reposted a PulseSoc Video")[:1200]
     title = clean_html(video.get("title") or "PulseSoc Video")[:160]
     result = pulse_feed_engine.create_post(user["user_id"], body, "video", title, tags=[], visibility="public", media_ids=[media_id] if media_id else [], enqueue_background=bool(media_id))
@@ -71521,7 +76400,9 @@ def api_pulse_reels_feed():
             include_preview_comments=include_preview_comments,
         )
         pulse_mark_online(user["user_id"], "reels", request.path)
-        return jsonify({"ok": True, "data": {"reels": payload.get("reels", [])}, "lane": payload.get("lane") or "for_you", "lane_label": payload.get("lane_label") or "For You", "reels": payload.get("reels", []), "categories": payload.get("categories", []), "has_more": payload.get("has_more", False), "next_offset": payload.get("next_offset", 0)})
+        reels_response = {"ok": True, "data": {"reels": payload.get("reels", [])}, "lane": payload.get("lane") or "for_you", "lane_label": payload.get("lane_label") or "For You", "reels": payload.get("reels", []), "categories": payload.get("categories", []), "has_more": payload.get("has_more", False), "next_offset": payload.get("next_offset", 0)}
+        _bo_ad_attach_sponsored(user["user_id"], "reels", reels_response)
+        return jsonify(reels_response)
     except Exception as exc:
         trace_id = secrets.token_hex(6)
         logging.exception("PULSE_REELS_FEED_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
@@ -71580,7 +76461,7 @@ def api_pulse_reels_sounds():
             "id": int(item.get("id") or 0),
             "track_id": int(item.get("id") or 0),
             "title": item.get("title") or "PulseSoc sound",
-            "artist": item.get("artist") or "CoinPilotXAI",
+            "artist": item.get("artist") or "CoinPlotXAI",
             "audio_url": item.get("audio_url") or "",
             "duration": float(item.get("duration_seconds") or 0),
             "waveform": item.get("waveform_json") or "",
@@ -72243,6 +77124,7 @@ def api_pulse_reel_save_by_id(reel_id):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
+    want_saved = pulse_requested_save_state()
     reel = pulse_reel_payload(reel_id=reel_id, viewer_user_id=user["user_id"])
     if not reel:
         return api_error("Reel not found.", 404)
@@ -72250,10 +77132,25 @@ def api_pulse_reel_save_by_id(reel_id):
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT id FROM pulse_saved_items WHERE user_id=? AND content_type='reel' AND content_id=? LIMIT 1", (user["user_id"], str(reel_id)))
     existing = cur.fetchone()
-    if existing:
-        cur.execute("DELETE FROM pulse_saved_items WHERE id=? AND user_id=?", (existing["id"], user["user_id"]))
+    if want_saved is None:
+        want_saved = not existing
+    # A reel is a `pulse_reels` row over a `pulse_posts` row, and the Reels feed
+    # reads its `saved` flag straight out of that post via `pulse_feed_engine`.
+    # This route used to write only `pulse_saved_items`, which that read path
+    # never consults — so a saved reel showed Saved until the next fetch and
+    # then silently reverted, and survived neither refresh nor restart. Mirroring
+    # the state onto the underlying post is what makes it read back.
+    reel_post_id = safe_int(reel.get("post_id"), 0)
+    if reel_post_id:
+        cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (reel_post_id,))
+        reel_post = cur.fetchone()
+        if reel_post:
+            pulse_apply_post_save(cur, user, reel_post, bool(want_saved), now)
+    if not want_saved:
+        if existing:
+            cur.execute("DELETE FROM pulse_saved_items WHERE id=? AND user_id=?", (existing["id"], user["user_id"]))
         conn.commit(); conn.close()
-        return jsonify({"ok": True, "saved": False, "message": "Reel removed from Saved."})
+        return jsonify({"ok": True, "saved": False, "is_saved": False, "changed": bool(existing), "content_type": "reel", "content_id": str(reel_id), "message": "Reel removed from Saved."})
     collection_id = ensure_pulse_saved_collection(cur, user["user_id"], "Reels")
     media = (reel.get("media") or [{}])[0] if isinstance(reel.get("media"), list) else {}
     cur.execute(
@@ -72278,11 +77175,21 @@ def api_pulse_reel_save_by_id(reel_id):
         ),
     )
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "saved": True, "message": "Reel saved."})
+    return jsonify({"ok": True, "saved": True, "is_saved": True, "changed": not existing, "content_type": "reel", "content_id": str(reel_id), "message": "Reel saved."})
 
 
-@webhook_app.route("/api/pulse/reels/<int:reel_id>/repost", methods=["POST"])
+@webhook_app.route("/api/pulse/reels/<int:reel_id>/repost", methods=["POST", "DELETE"])
 def api_pulse_reel_repost_by_id(reel_id):
+    """Repost and un-repost a reel.
+
+    Shares pulse_feed_engine.repost with the post route above, because a reel's
+    repost is a `pulse_posts` row pointing at the reel's post exactly as a post's
+    repost is. Only three things stay reel-specific: the `pulse_reel_payload`
+    lookup that resolves reel_id to post_id, the "Reposted a Reel" wording, and
+    the `pulse_reel_reposted` event listeners already subscribe to. Duplicating
+    the dedupe and soft-delete logic to keep those three would guarantee the two
+    routes eventually disagreed about what a repost is.
+    """
     init_db()
     user = api_account_user()
     if not user:
@@ -72293,36 +77200,54 @@ def api_pulse_reel_repost_by_id(reel_id):
         return api_error("Reel not found.", 404, trace_id)
     payload = request.get_json(silent=True) or {}
     note = clean_html(payload.get("body") or payload.get("note") or "")[:1200]
+    undo = request.method == "DELETE" or bool(payload.get("undo")) or bool(payload.get("remove"))
+    original_post_id = int(reel["post_id"])
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (int(reel["post_id"]),))
+    cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (original_post_id,))
     original = dict(cur.fetchone() or {})
     if not original:
         conn.close()
         return api_error("Reel post not found.", 404, trace_id)
-    now = datetime.utcnow().isoformat(timespec="seconds")
     repost_owner_public_id = pulse_identity_for_user(cur, user["user_id"]).get("public_player_id") or pulse_public_id_for_user(user["user_id"]).lstrip("@")
     original_public_id = pulse_identity_for_user(cur, original.get("user_id")).get("public_player_id") or original.get("public_player_id") or pulse_public_id_for_user(original.get("user_id")).lstrip("@")
-    body = note or f"Reposted a Reel from @{clean_html(str(original_public_id or 'PulseSoc creator'))}"
-    try:
-        cur.execute(
-            """
-            INSERT INTO pulse_posts (user_id, public_player_id, post_type, body, title, tags_json, visibility, moderation_status, repost_of_post_id, created_at, updated_at)
-            VALUES (?, ?, 'repost', ?, ?, ?, 'public', 'approved', ?, ?, ?)
-            """,
-            (user["user_id"], repost_owner_public_id, body, original.get("title") or "PulseSoc Reel", original.get("tags_json") or "[]", int(reel["post_id"]), now, now),
-        )
-        repost_id = int(cur.lastrowid)
-        conn.commit()
-    except Exception as exc:
-        conn.rollback(); conn.close()
-        logging.exception("PULSE_REEL_REPOST_FAILED trace_id=%s user_id=%s reel_id=%s error=%s", trace_id, user.get("user_id"), reel_id, exc)
-        return api_error("Reel could not be reposted.", 500, trace_id)
     conn.close()
+    result, status = pulse_feed_engine.repost(
+        user["user_id"],
+        original_post_id,
+        note=note,
+        undo=undo,
+        default_title=original.get("title") or "PulseSoc Reel",
+        default_body=f"Reposted a Reel from @{clean_html(str(original_public_id or 'PulseSoc creator'))}",
+        reposter_public_player_id=repost_owner_public_id,
+        original_public_player_id=clean_html(str(original_public_id or "PulseSoc creator")),
+    )
+    if not result.get("ok"):
+        logging.error(
+            "PULSE_REEL_REPOST_FAILED trace_id=%s user_id=%s reel_id=%s undo=%s message=%s",
+            trace_id, user.get("user_id"), reel_id, undo, result.get("message"),
+        )
+        return api_error(result.get("message") or "Reel could not be reposted.", status, trace_id)
+    result = dict(result)
+    result["reel_id"] = reel_id
+    result["original_post_id"] = original_post_id
     try:
-        pulse_emit_event("pulse_reel_reposted", {"post_id": repost_id, "original_post_id": int(reel["post_id"]), "reel_id": reel_id}, user["user_id"], repost_id)
+        if undo:
+            pulse_emit_event(
+                "pulse_reel_unreposted",
+                {"post_id": original_post_id, "original_post_id": original_post_id, "reel_id": reel_id, "removed_post_ids": result.get("removed_post_ids") or []},
+                user["user_id"],
+                original_post_id,
+            )
+        elif result.get("message") != "Already reposted.":
+            pulse_emit_event(
+                "pulse_reel_reposted",
+                {"post_id": int(result.get("post_id") or 0), "original_post_id": original_post_id, "reel_id": reel_id},
+                user["user_id"],
+                int(result.get("post_id") or 0),
+            )
     except Exception as exc:
-        logging.warning("PULSE_REEL_REPOST_EVENT_FAILED trace_id=%s repost_id=%s error=%s", trace_id, repost_id, exc)
-    return jsonify({"ok": True, "message": "Reposted to PulseSoc.", "post_id": repost_id, "reel_id": reel_id, "next_url": f"/pulse/post/{repost_id}"})
+        logging.warning("PULSE_REEL_REPOST_EVENT_FAILED trace_id=%s repost_id=%s error=%s", trace_id, result.get("post_id"), exc)
+    return jsonify(result), status
 
 
 @webhook_app.route("/api/pulse/reels/<int:reel_id>/share", methods=["POST"])
@@ -72702,6 +77627,120 @@ def pulse_saved_items_query(cur, user_id, *, collection_id=0, content_type="", q
     return [dict(row) for row in cur.fetchall()]
 
 
+PULSE_SAVE_TRUE_WORDS = {"1", "true", "yes", "on", "save", "saved"}
+PULSE_SAVE_FALSE_WORDS = {"0", "false", "no", "off", "unsave", "unsaved", "remove"}
+
+
+def pulse_requested_save_state(payload=None):
+    """The state the caller is asking for, or None if it wants a toggle.
+
+    Toggling is not idempotent: a client that retries a request whose response
+    it never saw — a dropped connection, a double tap, a background retry —
+    flips the state back instead of confirming it, which is exactly how a Save
+    button ends up disagreeing with the server. Callers that state their intent
+    ("make this saved") get an operation they can safely repeat. Callers that
+    do not are still toggled, because the existing web templates POST an empty
+    body and must keep working.
+    """
+    if not isinstance(payload, dict):
+        payload = request.get_json(silent=True) or {}
+    for key in ("saved", "is_saved", "save", "intent", "state"):
+        if key not in payload:
+            continue
+        value = payload.get(key)
+        if isinstance(value, bool):
+            return value
+        text = str(value if value is not None else "").strip().lower()
+        if text in PULSE_SAVE_TRUE_WORDS:
+            return True
+        if text in PULSE_SAVE_FALSE_WORDS:
+            return False
+    return None
+
+
+def pulse_savable_post_id(post_row):
+    """The post a Save on this row is about — see `pulse_feed_engine.savable_post_id`.
+
+    A repost is a wrapper row around an original. Saving the wrapper stored the
+    wrapper's id, so the same content shown as an original read back unsaved and
+    the Saved collection kept the resharer's caption instead of the post. Both
+    the feed's read path and this write path collapse to the original so the two
+    cannot disagree about what was saved.
+    """
+    if not post_row:
+        return 0
+    try:
+        original = int(post_row["repost_of_post_id"] or 0)
+    except (KeyError, IndexError, TypeError):
+        original = 0
+    if original > 0:
+        return original
+    try:
+        return int(post_row["id"] or 0)
+    except (KeyError, IndexError, TypeError):
+        return 0
+
+
+def pulse_apply_post_save(cur, user, post_row, want_saved, now):
+    """Bring one post to `want_saved` for one viewer. Returns (saved, changed).
+
+    Writes both tables the rest of the app reads: `pulse_post_saves`, which the
+    feed joins to decide a card's Save state, and `pulse_saved_items`, which the
+    Saved library lists. They were only ever written together here; doing it in
+    one function means a new caller cannot write one and forget the other.
+    """
+    user_id = user["user_id"]
+    target_id = pulse_savable_post_id(post_row)
+    if not target_id:
+        return False, False
+    row = post_row
+    if target_id != int(post_row["id"] or 0):
+        cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (target_id,))
+        original = cur.fetchone()
+        if original:
+            row = original
+    cur.execute("SELECT id FROM pulse_post_saves WHERE post_id=? AND user_id=? LIMIT 1", (target_id, user_id))
+    currently_saved = bool(cur.fetchone())
+    if want_saved is None:
+        want_saved = not currently_saved
+    if bool(want_saved) == currently_saved:
+        return currently_saved, False
+    if not want_saved:
+        cur.execute("DELETE FROM pulse_post_saves WHERE post_id=? AND user_id=?", (target_id, user_id))
+        cur.execute(
+            "DELETE FROM pulse_saved_items WHERE user_id=? AND content_type='post' AND content_id=?",
+            (user_id, str(target_id)),
+        )
+        return False, True
+    post_type = (row["post_type"] if row is not None else "") or "post"
+    cur.execute(
+        "INSERT INTO pulse_post_saves (post_id, user_id, collection_name, created_at) VALUES (?, ?, 'Saved', ?)",
+        (target_id, user_id, now),
+    )
+    collection_id = ensure_pulse_saved_collection(cur, user_id)
+    title = clean_html((row["title"] if row is not None else "") or f"PulseSoc {post_type}")[:220]
+    preview = clean_html((row["body"] if row is not None else "") or "")[:700]
+    cur.execute(
+        """
+        INSERT INTO pulse_saved_items
+        (user_id, collection_id, content_type, content_id, title, preview_text, thumbnail_url, media_url, source_url, metadata_json, created_at, updated_at)
+        VALUES (?, ?, 'post', ?, ?, ?, '', '', ?, ?, ?, ?)
+        ON CONFLICT(user_id, content_type, content_id) DO UPDATE SET collection_id=excluded.collection_id, title=excluded.title, preview_text=excluded.preview_text, updated_at=excluded.updated_at
+        """,
+        (user_id, collection_id, str(target_id), title, preview, f"/pulse/post/{target_id}", json.dumps({"post_type": post_type}), now, now),
+    )
+    pulse_notify_post_owner(
+        cur,
+        target_id,
+        user,
+        "video_save" if post_type == "video" else "save",
+        "PulseSoc saved",
+        f"{pulse_actor_display_name(user)} saved your PulseSoc post.",
+        metadata={"source": "api_pulse_post_save", "content_type": post_type},
+    )
+    return True, True
+
+
 @webhook_app.route("/api/pulse/posts/<int:post_id>/save", methods=["POST"])
 def api_pulse_post_save(post_id):
     init_db()
@@ -72709,6 +77748,7 @@ def api_pulse_post_save(post_id):
     if not user:
         return api_error("Login required.", 401)
     trace_id = secrets.token_hex(6)
+    want_saved = pulse_requested_save_state()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (post_id,))
     post = cur.fetchone()
@@ -72716,38 +77756,17 @@ def api_pulse_post_save(post_id):
         conn.close()
         return api_error("Post not found.", 404, trace_id)
     now = datetime.utcnow().isoformat(timespec="seconds")
-    cur.execute("SELECT id FROM pulse_post_saves WHERE post_id=? AND user_id=? LIMIT 1", (post_id, user["user_id"]))
-    existing = cur.fetchone()
-    if existing:
-        cur.execute("DELETE FROM pulse_post_saves WHERE post_id=? AND user_id=?", (post_id, user["user_id"]))
-        cur.execute("DELETE FROM pulse_saved_items WHERE user_id=? AND content_type='post' AND content_id=?", (user["user_id"], str(post_id)))
-        saved = False
-    else:
-        cur.execute("INSERT INTO pulse_post_saves (post_id, user_id, collection_name, created_at) VALUES (?, ?, 'Saved', ?)", (post_id, user["user_id"], now))
-        collection_id = ensure_pulse_saved_collection(cur, user["user_id"])
-        title = clean_html(post["title"] or f"PulseSoc {post['post_type'] or 'post'}")[:220]
-        preview = clean_html(post["body"] or "")[:700]
-        cur.execute(
-            """
-            INSERT INTO pulse_saved_items
-            (user_id, collection_id, content_type, content_id, title, preview_text, thumbnail_url, media_url, source_url, metadata_json, created_at, updated_at)
-            VALUES (?, ?, 'post', ?, ?, ?, '', '', ?, ?, ?, ?)
-            ON CONFLICT(user_id, content_type, content_id) DO UPDATE SET collection_id=excluded.collection_id, title=excluded.title, preview_text=excluded.preview_text, updated_at=excluded.updated_at
-            """,
-            (user["user_id"], collection_id, str(post_id), title, preview, f"/pulse/post/{post_id}", json.dumps({"post_type": post["post_type"] or "post"}), now, now),
-        )
-        saved = True
-        pulse_notify_post_owner(
-            cur,
-            post_id,
-            user,
-            "video_save" if (post["post_type"] or "") == "video" else "save",
-            "PulseSoc saved",
-            f"{pulse_actor_display_name(user)} saved your PulseSoc post.",
-            metadata={"source": "api_pulse_post_save", "content_type": post["post_type"] or "post"},
-        )
+    saved, changed = pulse_apply_post_save(cur, user, post, want_saved, now)
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "saved": saved, "message": "Post saved." if saved else "Post removed from saved."})
+    return jsonify({
+        "ok": True,
+        "saved": saved,
+        "is_saved": saved,
+        "changed": changed,
+        "content_type": "post",
+        "content_id": str(pulse_savable_post_id(post)),
+        "message": "Post saved." if saved else "Post removed from saved.",
+    })
 
 
 @webhook_app.route("/api/pulse/posts/<int:post_id>/hide", methods=["POST"])
@@ -72883,6 +77902,30 @@ def api_pulse_saved_items():
         if not content_id:
             conn.close()
             return api_error("Saved item is missing a content ID.", 400)
+        # Content-keyed removal. Deleting by row id already existed, but a card
+        # only knows what it is showing — a type and an id — and would have had
+        # to list the whole library to translate that into a row id before it
+        # could unsave anything. That is why Status had a Save with no Unsave.
+        # Absent an explicit intent this stays an add, because every existing
+        # caller POSTs here to save.
+        if pulse_requested_save_state(payload) is False:
+            cur.execute(
+                "DELETE FROM pulse_saved_items WHERE user_id=? AND content_type=? AND content_id=?",
+                (user["user_id"], content_type, content_id),
+            )
+            removed = cur.rowcount
+            conn.commit(); conn.close()
+            return jsonify({
+                "ok": True,
+                "saved": False,
+                "is_saved": False,
+                "changed": bool(removed),
+                "content_type": content_type,
+                "content_id": content_id,
+                "items": [],
+                "collections": [],
+                "message": "Removed from Saved.",
+            })
         collection_id = safe_int(payload.get("collection_id"), 0) or ensure_pulse_saved_collection(cur, user["user_id"])
         cur.execute("SELECT id FROM pulse_saved_collections WHERE id=? AND user_id=? LIMIT 1", (collection_id, user["user_id"]))
         if not cur.fetchone():
@@ -72899,7 +77942,11 @@ def api_pulse_saved_items():
             (user["user_id"], collection_id, content_type, content_id, snapshot["title"], snapshot["preview_text"], snapshot["thumbnail_url"], snapshot["media_url"], snapshot["source_url"], json.dumps(payload, default=str)[:5000], now, now),
         )
         conn.commit()
+        # Held separately because the listing filters below reassign
+        # `content_type` from the query string.
+        saved_content_type, saved_content_id = content_type, content_id
     else:
+        saved_content_type, saved_content_id = "", ""
         ensure_pulse_saved_collection(cur, user["user_id"])
         conn.commit()
     collection_id = safe_int(request.args.get("collection_id"), 0)
@@ -72909,7 +77956,10 @@ def api_pulse_saved_items():
     cur.execute("SELECT * FROM pulse_saved_collections WHERE user_id=? ORDER BY is_default DESC, name", (user["user_id"],))
     collections = [dict(row) for row in cur.fetchall()]
     conn.close()
-    return jsonify({"ok": True, "items": items, "collections": collections, "message": "Saved." if request.method == "POST" else ""})
+    response = {"ok": True, "items": items, "collections": collections, "message": "Saved." if request.method == "POST" else ""}
+    if request.method == "POST":
+        response.update({"saved": True, "is_saved": True, "changed": True, "content_type": saved_content_type, "content_id": saved_content_id})
+    return jsonify(response)
 
 
 @webhook_app.route("/api/pulse/saved/<int:item_id>", methods=["DELETE"])
@@ -72972,8 +78022,22 @@ def api_pulse_post_pin(post_id):
     return jsonify({"ok": True, "pinned": pinned, "message": "Post pinned." if pinned else "Post unpinned."})
 
 
-@webhook_app.route("/api/pulse/posts/<int:post_id>/repost", methods=["POST"])
+@webhook_app.route("/api/pulse/posts/<int:post_id>/repost", methods=["POST", "DELETE"])
 def api_pulse_post_repost(post_id):
+    """Repost and un-repost a post.
+
+    DELETE is the undo the clients had no way to reach. While this route was
+    create-only and returned neither a `reposted` flag nor a count, the mobile
+    screens rendered a one-way button and carried comments explaining that a
+    toggle "would claim an un-repost the server never performed and leave a second
+    row behind". POST is idempotent now too, so the second of two fast taps
+    reports the existing repost instead of writing that second row.
+
+    The insert, the dedupe and the soft delete live in pulse_feed_engine.repost so
+    this route and the reel route share one implementation and cannot drift.
+    Identity resolution stays here, because pulse_identity_for_user falls back
+    through more sources than the engine can reach on its own.
+    """
     init_db()
     user = api_account_user()
     if not user:
@@ -72981,27 +78045,49 @@ def api_pulse_post_repost(post_id):
     trace_id = secrets.token_hex(6)
     payload = request.get_json(silent=True) or {}
     note = clean_html(payload.get("body") or payload.get("note") or "")[:1200]
+    undo = request.method == "DELETE" or bool(payload.get("undo")) or bool(payload.get("remove"))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (post_id,))
     original = dict(cur.fetchone() or {})
     if not original:
         conn.close()
         return api_error("Post not found.", 404, trace_id)
-    now = datetime.utcnow().isoformat(timespec="seconds")
     repost_owner_public_id = pulse_identity_for_user(cur, user["user_id"]).get("public_player_id") or pulse_public_id_for_user(user["user_id"]).lstrip("@")
     original_public_id = pulse_identity_for_user(cur, original.get("user_id")).get("public_player_id") or original.get("public_player_id") or pulse_public_id_for_user(original.get("user_id")).lstrip("@")
-    body = note or f"Reposted a PulseSoc from @{clean_html(original_public_id or 'PulseSoc creator')}"
-    cur.execute(
-        """
-        INSERT INTO pulse_posts (user_id, public_player_id, post_type, body, title, tags_json, visibility, moderation_status, repost_of_post_id, created_at, updated_at)
-        VALUES (?, ?, 'repost', ?, ?, ?, 'public', 'approved', ?, ?, ?)
-        """,
-        (user["user_id"], repost_owner_public_id, body, original.get("title") or "", original.get("tags_json") or "[]", post_id, now, now),
+    conn.close()
+    result, status = pulse_feed_engine.repost(
+        user["user_id"],
+        post_id,
+        note=note,
+        undo=undo,
+        default_title=original.get("title") or "",
+        reposter_public_player_id=repost_owner_public_id,
+        original_public_player_id=clean_html(original_public_id or "PulseSoc creator"),
     )
-    repost_id = int(cur.lastrowid)
-    conn.commit(); conn.close()
-    pulse_emit_event("post_reposted", {"post_id": repost_id, "original_post_id": post_id}, user["user_id"], repost_id)
-    return jsonify({"ok": True, "message": "Reposted to PulseSoc.", "post_id": repost_id, "next_url": f"/pulse/post/{repost_id}"})
+    if not result.get("ok"):
+        logging.error(
+            "PULSE_POST_REPOST_FAILED trace=%s user_id=%s post_id=%s undo=%s message=%s",
+            trace_id, user["user_id"], post_id, undo, result.get("message"),
+        )
+        return api_error(result.get("message") or "Repost could not be completed.", status, trace_id)
+    if undo:
+        # Emitted even when there was nothing to remove, because the event
+        # describes the resulting state and a listener that only heard about
+        # non-empty removals would drift from the response the client just got.
+        pulse_emit_event(
+            "post_unreposted",
+            {"post_id": post_id, "original_post_id": post_id, "removed_post_ids": result.get("removed_post_ids") or []},
+            user["user_id"],
+            post_id,
+        )
+    elif result.get("message") != "Already reposted.":
+        pulse_emit_event(
+            "post_reposted",
+            {"post_id": int(result.get("post_id") or 0), "original_post_id": post_id},
+            user["user_id"],
+            int(result.get("post_id") or 0),
+        )
+    return jsonify(result), status
 
 
 @webhook_app.route("/api/pulse/posts/<int:post_id>/comments", methods=["GET", "POST"])
@@ -73011,7 +78097,15 @@ def api_pulse_comments(post_id):
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     if request.method == "GET":
-        return jsonify(pulse_feed_engine.list_comments(post_id))
+        # limit/offset make comment pagination real instead of a client-side
+        # slice of an unbounded fetch. Omitting both preserves the previous
+        # response shape and defaults, so existing callers are unaffected.
+        return jsonify(pulse_feed_engine.list_comments(
+            post_id,
+            limit=safe_int(request.args.get("limit"), pulse_feed_engine.COMMENT_PAGE_LIMIT_DEFAULT),
+            offset=safe_int(request.args.get("offset"), 0),
+            viewer_user_id=user["user_id"],
+        ))
     payload = request.get_json(silent=True) or {}
     result, status = pulse_feed_engine.add_comment(user["user_id"], post_id, payload.get("body") or "", payload.get("parent_comment_id"), payload.get("media_ids") or [], notify_owner=False)
     if result.get("ok"):
@@ -75347,15 +80441,26 @@ def api_pulse_messages_typing(conversation_id):
     allowed = bool(cur.fetchone())
     if allowed:
         now = datetime.utcnow().isoformat(timespec="seconds")
-        typing_until = (datetime.utcnow() + timedelta(seconds=8)).isoformat(timespec="seconds") if typing else ""
-        cur.execute(
-            """
-            INSERT INTO pulse_conversation_typing (conversation_id, user_id, typing_until, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(conversation_id, user_id) DO UPDATE SET typing_until=excluded.typing_until, updated_at=excluded.updated_at
-            """,
-            (conversation_id, user["user_id"], typing_until, now),
-        )
+        # Typing is a presence activity, so it is recorded in the presence
+        # service and nowhere else. This endpoint used to own a
+        # pulse_conversation_typing row with its own 8-second `typing_until`;
+        # the readers have been moved to the service, and writing the old row
+        # as well would put a second, differently-expiring copy back.
+        #
+        # The conversation id is the activity context, which is what lets one
+        # person be typing in one thread without appearing to type in another.
+        try:
+            from services import presence_service
+
+            presence_service.set_activity_for_user(
+                cur,
+                user["user_id"],
+                "typing" if typing else "idle",
+                str(conversation_id) if typing else "",
+                conn=conn,
+            )
+        except Exception as exc:
+            logging.warning("PULSE_TYPING_PRESENCE_UNAVAILABLE conversation_id=%s error=%s", conversation_id, exc.__class__.__name__)
         cur.execute("UPDATE pulse_conversation_participants SET last_seen_at=? WHERE conversation_id=? AND user_id=?", (now, conversation_id, user["user_id"]))
         conn.commit()
     conn.close()
@@ -75476,6 +80581,20 @@ def api_pulse_space_post():
 
 @webhook_app.route("/api/pulse/marketplace/seller/apply", methods=["POST"])
 def api_pulse_marketplace_seller_apply():
+    """
+    The old two-field native "application", kept alive but no longer a back door.
+
+    This used to write ``marketplace_sellers`` directly with ``status='pending'``
+    and stop there. The applicant never got an application row, uploaded no
+    documents, and never appeared in the review queue, so no admin could ever act
+    on them. That is the defect this mission exists to fix.
+
+    The route stays because older installed builds still call it. What it does
+    now is start or update a *draft* in the real pipeline and tell the caller
+    where to finish. It cannot reach a reviewable state on its own — only the
+    full flow, which validates every step and requires identity documents, can
+    do that.
+    """
     init_db()
     user = api_account_user()
     if not user:
@@ -75485,28 +80604,399 @@ def api_pulse_marketplace_seller_apply():
     bio = clean_html(payload.get("bio") or "")[:1000]
     if not name or not bio:
         return jsonify({"ok": False, "message": "Add a seller name and educational value description."}), 400
+
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        status = seller_lifecycle.normalize_status(application.get("status")) if application else ""
+        if not application or status in (seller_lifecycle.WITHDRAWN, seller_lifecycle.EXPIRED):
+            application_id = seller_lifecycle.create_draft(cur, user["user_id"], source="native_legacy")
+            application = seller_lifecycle.get_application_by_id(cur, application_id)
+            status = seller_lifecycle.DRAFT
+
+        if status in seller_lifecycle.APPLICANT_EDITABLE:
+            fields = seller_lifecycle.merge_fields(
+                seller_lifecycle.applicant_fields(application),
+                {"display_name": name, "business_description": bio},
+            )
+            documents = seller_lifecycle.documents_for(cur, application.get("id"))
+            seller_lifecycle.save_draft(cur, int(application.get("id") or 0), fields, documents)
+            application = seller_lifecycle.get_application_by_id(cur, application.get("id"))
+
+        conn.commit()
+        view = seller_lifecycle.applicant_view(application, seller_lifecycle.documents_for(cur, application.get("id")))
+    finally:
+        conn.close()
+
+    return jsonify({
+        "ok": True,
+        "message": "Draft saved. Finish verification to send your application for review.",
+        "application": view,
+        "next_url": "/pulse/merchant/apply",
+    })
+
+
+def _seller_application_conn():
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    return conn, conn.cursor()
+
+
+def _seller_application_response(cur, application):
+    documents = seller_lifecycle.documents_for(cur, application.get("id"))
+    return {"ok": True, "application": seller_lifecycle.applicant_view(application, documents)}
+
+
+@webhook_app.route("/api/pulse/seller/application", methods=["GET"])
+def api_pulse_seller_application_get():
+    """
+    The applicant's own application, or an empty shell describing what to expect.
+
+    Returns the step schema alongside the answers so the native flow renders
+    from the same definition the server validates against, and a step cannot
+    drift out of agreement with the rule that gates it.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn, cur = _seller_application_conn()
+    try:
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        payload = _seller_application_response(cur, application) if application else {
+            "ok": True,
+            "application": seller_lifecycle.applicant_view({}, []),
+        }
+    finally:
+        conn.close()
+    return jsonify(payload)
+
+
+@webhook_app.route("/api/pulse/seller/application/draft", methods=["POST"])
+def api_pulse_seller_application_draft():
+    """
+    Autosave. Creates the application on the first keystroke that reaches us.
+
+    The single most frequent write in this system, and the one most exposed, so
+    it is deliberately the least powerful: ``save_draft`` writes answers and
+    derived scores only. There is no path from here to a reviewable state.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    conn, cur = _seller_application_conn()
+    try:
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        if not application:
+            application_id = seller_lifecycle.create_draft(cur, user["user_id"], source="native")
+            application = seller_lifecycle.get_application_by_id(cur, application_id)
+
+        status = seller_lifecycle.normalize_status(application.get("status"))
+        if status not in seller_lifecycle.APPLICANT_EDITABLE:
+            conn.close()
+            return jsonify({
+                "ok": False,
+                "message": "This application is with a reviewer and cannot be edited right now.",
+                "application": seller_lifecycle.applicant_view(application, seller_lifecycle.documents_for(cur, application.get("id"))),
+            }), 409
+
+        documents = seller_lifecycle.documents_for(cur, application.get("id"))
+        fields = seller_lifecycle.merge_fields(
+            seller_lifecycle.applicant_fields(application),
+            payload.get("fields") if isinstance(payload.get("fields"), dict) else payload,
+        )
+        seller_lifecycle.save_draft(cur, int(application.get("id") or 0), fields, documents)
+        conn.commit()
+        application = seller_lifecycle.get_application_by_id(cur, application.get("id"))
+        response = _seller_application_response(cur, application)
+    finally:
+        conn.close()
+    return jsonify(response)
+
+
+@webhook_app.route("/api/pulse/seller/application/documents", methods=["POST"])
+def api_pulse_seller_application_document_upload():
+    """
+    Upload one verification document.
+
+    Multipart rather than base64 JSON so a passport photo does not have to be
+    held in memory as a string on either side. The file goes to private storage
+    outside the web root via the same helper the web form has always used; the
+    response says only that it arrived. Nothing about the file's contents, and
+    not its stored path, is logged or returned.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    document_type = clean_html(request.form.get("document_type") or "")[:60]
+    if document_type not in seller_lifecycle.ALL_DOCUMENT_TYPES:
+        return jsonify({"ok": False, "message": "Unknown document type."}), 400
+    upload = request.files.get("file") or request.files.get(document_type)
+    if not upload:
+        return jsonify({"ok": False, "message": "Attach a file to upload."}), 400
+
+    conn, cur = _seller_application_conn()
+    try:
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        if not application:
+            application_id = seller_lifecycle.create_draft(cur, user["user_id"], source="native")
+            application = seller_lifecycle.get_application_by_id(cur, application_id)
+        if seller_lifecycle.normalize_status(application.get("status")) not in seller_lifecycle.APPLICANT_EDITABLE:
+            conn.close()
+            return jsonify({"ok": False, "message": "This application is with a reviewer and cannot be edited right now."}), 409
+
+        try:
+            saved = save_private_verification_document(user["user_id"], upload, document_type)
+        except ValueError as exc:
+            conn.close()
+            return jsonify({"ok": False, "message": str(exc)}), 400
+        if not saved:
+            conn.close()
+            return jsonify({"ok": False, "message": "That file could not be read."}), 400
+
+        application_id = int(application.get("id") or 0)
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        # Replacing rather than accumulating: a second selfie means the first was
+        # wrong, and leaving both would make a reviewer guess which is current.
+        cur.execute(
+            "DELETE FROM marketplace_merchant_documents WHERE application_id=? AND document_type=?",
+            (application_id, document_type),
+        )
+        cur.execute(
+            """
+            INSERT INTO marketplace_merchant_documents
+                (application_id, user_id, document_type, original_filename, stored_path, mime_type,
+                 file_size, private_access, scan_status, review_status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 'pending', ?, ?)
+            """,
+            (
+                application_id, user["user_id"], document_type, saved["original_filename"],
+                saved["stored_path"], saved["mime_type"], saved["file_size"], saved["scanner_status"], now, now,
+            ),
+        )
+        documents = seller_lifecycle.documents_for(cur, application_id)
+        fields = seller_lifecycle.applicant_fields(application)
+        seller_lifecycle.save_draft(cur, application_id, fields, documents)
+        conn.commit()
+        application = seller_lifecycle.get_application_by_id(cur, application_id)
+        response = _seller_application_response(cur, application)
+    finally:
+        conn.close()
+    return jsonify(response)
+
+
+@webhook_app.route("/api/pulse/seller/application/documents/<int:document_id>/remove", methods=["POST", "DELETE"])
+def api_pulse_seller_application_document_remove(document_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn, cur = _seller_application_conn()
+    try:
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        if not application or seller_lifecycle.normalize_status(application.get("status")) not in seller_lifecycle.APPLICANT_EDITABLE:
+            conn.close()
+            return jsonify({"ok": False, "message": "This application cannot be edited right now."}), 409
+        # Scoped by user id as well as document id: an application id in the URL
+        # is not proof of ownership.
+        cur.execute(
+            "DELETE FROM marketplace_merchant_documents WHERE id=? AND application_id=? AND user_id=?",
+            (int(document_id or 0), int(application.get("id") or 0), user["user_id"]),
+        )
+        documents = seller_lifecycle.documents_for(cur, application.get("id"))
+        seller_lifecycle.save_draft(cur, int(application.get("id") or 0), seller_lifecycle.applicant_fields(application), documents)
+        conn.commit()
+        application = seller_lifecycle.get_application_by_id(cur, application.get("id"))
+        response = _seller_application_response(cur, application)
+    finally:
+        conn.close()
+    return jsonify(response)
+
+
+@webhook_app.route("/api/pulse/seller/application/submit", methods=["POST"])
+def api_pulse_seller_application_submit():
+    """
+    Send the application to review.
+
+    Revalidates every step server-side. The client's own validation is a
+    courtesy to the applicant, not a gate — a request that skipped the flow
+    entirely gets the same answer as one that filled it in honestly.
+
+    Submitting reaches ``submitted`` or ``resubmitted``. Neither is an approval,
+    and there is no transition from either that an applicant can make.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn, cur = _seller_application_conn()
+    try:
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        if not application:
+            conn.close()
+            return jsonify({"ok": False, "message": "Start an application first."}), 404
+
+        status = seller_lifecycle.normalize_status(application.get("status"))
+        documents = seller_lifecycle.documents_for(cur, application.get("id"))
+        fields = seller_lifecycle.applicant_fields(application)
+        errors = seller_lifecycle.validate_application(fields, documents)
+        if errors:
+            conn.close()
+            return jsonify({
+                "ok": False,
+                "message": "Some steps still need attention before this can be reviewed.",
+                "errors": errors,
+            }), 400
+
+        target = seller_lifecycle.RESUBMITTED if status == seller_lifecycle.INFORMATION_REQUESTED else seller_lifecycle.SUBMITTED
+        if status == seller_lifecycle.REJECTED:
+            # A rejected applicant reopens the same row so the reviewer keeps the
+            # history, then submits it. Two transitions, one request.
+            seller_lifecycle.apply_transition(
+                cur, application, seller_lifecycle.DRAFT,
+                actor_type=seller_lifecycle.APPLICANT, actor_id=user["user_id"], reason="Reopened after rejection",
+            )
+            application = seller_lifecycle.get_application_by_id(cur, application.get("id"))
+            target = seller_lifecycle.SUBMITTED
+
+        try:
+            seller_lifecycle.apply_transition(
+                cur, application, target,
+                actor_type=seller_lifecycle.APPLICANT, actor_id=user["user_id"], reason="Submitted for review",
+            )
+        except seller_lifecycle.TransitionError as exc:
+            conn.close()
+            return jsonify({"ok": False, "message": str(exc)}), 409
+
+        pulse_emit_marketplace_inventory_event(
+            cur, user["user_id"], "seller_application_submitted",
+            actor_user_id=user["user_id"], status=target, approval_status="pending",
+            title=fields.get("display_name") or "Seller application",
+            extra={"application_id": int(application.get("id") or 0), "application_status": target},
+        )
+        notify_seller_review_admins(cur, application, target)
+        conn.commit()
+        application = seller_lifecycle.get_application_by_id(cur, application.get("id"))
+        response = _seller_application_response(cur, application)
+    finally:
+        conn.close()
+    response["message"] = "Application sent for review."
+    return jsonify(response)
+
+
+@webhook_app.route("/api/pulse/seller/application/withdraw", methods=["POST"])
+def api_pulse_seller_application_withdraw():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn, cur = _seller_application_conn()
+    try:
+        application = seller_lifecycle.get_application(cur, user["user_id"])
+        if not application:
+            conn.close()
+            return jsonify({"ok": False, "message": "There is no application to withdraw."}), 404
+        try:
+            seller_lifecycle.apply_transition(
+                cur, application, seller_lifecycle.WITHDRAWN,
+                actor_type=seller_lifecycle.APPLICANT, actor_id=user["user_id"], reason="Withdrawn by applicant",
+            )
+        except seller_lifecycle.TransitionError as exc:
+            conn.close()
+            return jsonify({"ok": False, "message": str(exc)}), 409
+        conn.commit()
+        application = seller_lifecycle.get_application_by_id(cur, application.get("id"))
+        response = _seller_application_response(cur, application)
+    finally:
+        conn.close()
+    return jsonify(response)
+
+
+def notify_seller_review_admins(cur, application, status):
+    """
+    Put the submission on the monetization department's board.
+
+    Admins are not PulseSoc users — ``admin_users`` has no ``user_id`` — so
+    ``notify_user`` is the wrong channel and would silently write nothing. The
+    right substrate is ``admin_tasks``, which is what ``department_counts``
+    already reads to light up the command centre.
+
+    Upserted by source, so an applicant who is asked for more information and
+    resubmits reopens the same task instead of leaving two on the board.
+    Best-effort throughout: a board failure must never roll back a submission
+    the applicant has already been told succeeded. The queue count is the
+    durable signal; this is the nudge.
+    """
     now = datetime.utcnow().isoformat(timespec="seconds")
-    conn = db(); cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO marketplace_sellers (user_id, display_name, bio, status, created_at, updated_at)
-        VALUES (?, ?, ?, 'pending', ?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, bio=excluded.bio, updated_at=excluded.updated_at
-        """,
-        (user["user_id"], name, bio, now, now),
+    display = clean_html(str(application.get("display_name") or "A seller"))[:80]
+    application_id = str(application.get("id") or "")
+    priority = "high" if int(application.get("risk_score") or 0) >= 45 else "normal"
+    try:
+        cur.execute(
+            "SELECT id FROM admin_tasks WHERE source_type='seller_application' AND source_id=? LIMIT 1",
+            (application_id,),
+        )
+        existing = dict(cur.fetchone() or {})
+        if existing:
+            cur.execute(
+                "UPDATE admin_tasks SET status='open', priority=?, title=?, updated_at=? WHERE id=?",
+                (priority, f"Seller application: {display}", now, int(existing.get("id") or 0)),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO admin_tasks
+                    (department, title, description, priority, status, source_type, source_id, created_at, updated_at)
+                VALUES ('monetization', ?, ?, ?, 'open', 'seller_application', ?, ?, ?)
+                """,
+                (
+                    f"Seller application: {display}",
+                    "Review identity, business details, and verification documents, then approve, reject, or request more information.",
+                    priority, application_id, now, now,
+                ),
+            )
+    except Exception as exc:
+        logging.warning("SELLER_APPLICATION_ADMIN_TASK_FAILED error=%s", exc)
+
+
+def close_seller_review_task(cur, application_id):
+    """Take a decided application off the board."""
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    try:
+        cur.execute(
+            "UPDATE admin_tasks SET status='done', completed_at=?, updated_at=? "
+            "WHERE source_type='seller_application' AND source_id=?",
+            (now, now, str(application_id or "")),
+        )
+    except Exception as exc:
+        logging.warning("SELLER_APPLICATION_ADMIN_TASK_CLOSE_FAILED error=%s", exc)
+
+
+def notify_seller_applicant(cur, application, status, message=""):
+    """
+    Tell the applicant what happened, in the applicant's vocabulary.
+
+    ``message`` is the reviewer's own sentence, written for the applicant. The
+    internal note is never passed here — that is the point of them being two
+    different fields.
+    """
+    title, default_message = seller_lifecycle.STATUS_COPY.get(
+        seller_lifecycle.normalize_status(status), seller_lifecycle.STATUS_COPY[seller_lifecycle.DRAFT]
     )
-    pulse_emit_marketplace_inventory_event(
-        cur,
-        user["user_id"],
-        "seller_application_submitted",
-        actor_user_id=user["user_id"],
-        status="pending",
-        approval_status="pending",
-        title=name,
-        extra={"application_status": "pending"},
-    )
-    conn.commit(); conn.close()
-    return jsonify({"ok": True, "message": "Seller application saved."})
+    try:
+        notify_user(
+            cur, int(application.get("user_id") or 0), "seller_application_changed",
+            f"Seller application: {title}",
+            clean_html(str(message or default_message))[:400],
+            target_url="/pulse/merchant/apply",
+            entity_type="seller_application", entity_id=str(application.get("id") or ""),
+            metadata={"application_status": seller_lifecycle.normalize_status(status)},
+        )
+    except Exception as exc:
+        logging.warning("SELLER_APPLICATION_APPLICANT_NOTIFY_FAILED error=%s", exc)
 
 
 def approved_marketplace_seller_for_user(cur, user_id):
@@ -75749,7 +81239,7 @@ def _creator_checkout_for_item(buyer, item_type, item_id, plan_key=""):
     seller_user_id = 0
     seller_type = "merchant"
     checkout_item_type = item_type
-    title = "CoinPilotXAI purchase"
+    title = "CoinPlotXAI purchase"
     amount_cents = 0
     currency = "USD"
     if item_type == "product":
@@ -76334,6 +81824,20 @@ def api_pulse_marketplace_listing_save():
         return jsonify({"ok": False, "message": "Listing not found."}), 404
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    # This route could only ever add. The native card's answer was to disable the
+    # button once a listing was saved, which left the user with no way to undo a
+    # mis-tap and no route to call if there had been one. Saving is one control
+    # everywhere else in the app, so it is one control here too.
+    cur.execute("SELECT 1 FROM marketplace_saved_products WHERE user_id=? AND listing_id=? LIMIT 1", (user["user_id"], listing_id))
+    currently_saved = bool(cur.fetchone())
+    want_saved = pulse_requested_save_state(payload)
+    if want_saved is None:
+        want_saved = not currently_saved
+    if not want_saved:
+        cur.execute("DELETE FROM marketplace_saved_products WHERE user_id=? AND listing_id=?", (user["user_id"], listing_id))
+        cur.execute("DELETE FROM pulse_saved_items WHERE user_id=? AND content_type='marketplace' AND content_id=?", (user["user_id"], str(listing_id)))
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "saved": False, "is_saved": False, "changed": currently_saved, "content_type": "marketplace", "content_id": str(listing_id), "message": "Product removed from Saved."})
     cur.execute("INSERT OR IGNORE INTO marketplace_saved_products (user_id, listing_id, created_at) VALUES (?, ?, ?)", (user["user_id"], listing_id, now))
     collection_id = ensure_pulse_saved_collection(cur, user["user_id"], "Marketplace")
     title = f"Marketplace item #{listing_id}"
@@ -76360,7 +81864,7 @@ def api_pulse_marketplace_listing_save():
         (user["user_id"], collection_id, str(listing_id), title, preview, thumbnail, f"/pulse/marketplace", json.dumps({"listing_id": listing_id}), now, now),
     )
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "message": "Product saved."})
+    return jsonify({"ok": True, "saved": True, "is_saved": True, "changed": not currently_saved, "content_type": "marketplace", "content_id": str(listing_id), "message": "Product saved."})
 
 
 @webhook_app.route("/api/pulse/courses/create", methods=["POST"])
@@ -78333,7 +83837,7 @@ def admin_pulse_post_debug_page():
 
 
 def trust_public_page(title, headline, body_html, cta="/signup"):
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | PulseSoc</title><meta name="description" content="{clean_html(headline)}"><meta name="robots" content="index,follow"><link rel="canonical" href="https://pulsesoc.com{clean_html(request.path)}"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260606.png"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 15% 0,rgba(110,223,246,.18),transparent 26rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:22px 0 80px}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px}}a{{color:inherit}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{padding:42px 0 18px}}h1{{font-size:clamp(38px,7vw,74px);line-height:.95;margin:8px 0}}p{{color:var(--muted);line-height:1.6}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.84));padding:16px}}.button{{min-height:46px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;text-decoration:none;font-weight:950;padding:12px 15px;display:inline-flex;align-items:center;justify-content:center}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}li{{margin:8px 0;color:var(--muted)}}@media(max-width:850px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-logo-20260606.png" alt="">CoinPilotXAI</a><a class="button" href="{clean_html(cta)}">Get Started</a></nav><section class="hero"><span class="badge">Trust-first platform</span><h1>{clean_html(headline)}</h1></section>{body_html}</main></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | PulseSoc</title><meta name="description" content="{clean_html(headline)}"><meta name="robots" content="index,follow"><link rel="canonical" href="https://pulsesoc.com{clean_html(request.path)}"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260606.png"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 15% 0,rgba(110,223,246,.18),transparent 26rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:22px 0 80px}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px}}a{{color:inherit}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{padding:42px 0 18px}}h1{{font-size:clamp(38px,7vw,74px);line-height:.95;margin:8px 0}}p{{color:var(--muted);line-height:1.6}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.84));padding:16px}}.button{{min-height:46px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;text-decoration:none;font-weight:950;padding:12px 15px;display:inline-flex;align-items:center;justify-content:center}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}li{{margin:8px 0;color:var(--muted)}}@media(max-width:850px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-logo-20260606.png" alt="">CoinPlotXAI</a><a class="button" href="{clean_html(cta)}">Get Started</a></nav><section class="hero"><span class="badge">Trust-first platform</span><h1>{clean_html(headline)}</h1></section>{body_html}</main></body></html>""")
 
 
 @webhook_app.route("/privacy-center", methods=["GET", "POST"])
@@ -78383,15 +83887,15 @@ def privacy_center_page():
 def trust_center_page():
     body = """
     <section class="grid">
-      <article class="card"><h2>Data Use</h2><p>CoinPilotXAI uses product signals to improve safety, speed, and community quality. Private identity data is never sold.</p></article>
+      <article class="card"><h2>Data Use</h2><p>CoinPlotXAI uses product signals to improve safety, speed, and community quality. Private identity data is never sold.</p></article>
       <article class="card"><h2>Ads</h2><p>Sponsored placements are labeled, reviewed, contextual-first, and blocked when they include scam-token or guaranteed-profit language.</p></article>
       <article class="card"><h2>Moderation</h2><p>PulseSoc, Roast Battle, media uploads, and comments include report paths, safety filters, and admin review queues.</p></article>
       <article class="card"><h2>Security</h2><p>Scam Shield, upload validation, admin permissions, rate limits, and worker health checks are monitored from admin control rooms.</p></article>
-      <article class="card"><h2>Education</h2><p>CoinPilotXAI is educational only. It is not financial, investment, betting, legal, or professional advice.</p></article>
+      <article class="card"><h2>Education</h2><p>CoinPlotXAI is educational only. It is not financial, investment, betting, legal, or professional advice.</p></article>
       <article class="card"><h2>Creators</h2><p>Creator content is community-generated and educational. Monetization foundations are staged until compliance is ready.</p></article>
     </section>
     """
-    return trust_public_page("Trust Center", "How CoinPilotXAI keeps growth aligned with trust.", body, "/privacy-center")
+    return trust_public_page("Trust Center", "How CoinPlotXAI keeps growth aligned with trust.", body, "/privacy-center")
 
 
 @webhook_app.route("/community-rules", methods=["GET"])
@@ -78458,9 +83962,9 @@ def pro_page():
         ("Future Creator Economy", ["creator prestige upgrades", "teacher and merchant enhancements", "optional discovery boosts", "future monetization tools after trust review"]),
     ]
     cards = "".join(f"<article class='card'><h2>{clean_html(name)}</h2><ul>{''.join(f'<li>{clean_html(item)}</li>' for item in items)}</ul><a class='button primary' href='/pulse/premium'>Explore PulseSoc Premium</a></article>" for name, items in packages)
-    trust = "<article class='card'><h2>Growth-First Access</h2><p>The core CoinPilotXAI ecosystem is free for authenticated users. Premium is aspirational: identity, prestige, creator enhancement, cosmetics, and deeper creator intelligence.</p></article>"
+    trust = "<article class='card'><h2>Growth-First Access</h2><p>The core CoinPlotXAI ecosystem is free for authenticated users. Premium is aspirational: identity, prestige, creator enhancement, cosmetics, and deeper creator intelligence.</p></article>"
     body = f"<section class='grid'>{cards}{trust}</section>"
-    return trust_public_page("CoinPilotXAI Premium", "Free core ecosystem with PulseSoc Premium prestige and creator enhancements.", body, "/pulse/premium")
+    return trust_public_page("CoinPlotXAI Premium", "Free core ecosystem with PulseSoc Premium prestige and creator enhancements.", body, "/pulse/premium")
 
 
 def pulse_admin_user_row(cur, user_id):
@@ -78650,8 +84154,12 @@ def admin_pulse_users_page():
             rows = []
             query_error = f"{query_error} | fallback: {fallback_exc}"
     conn.close()
+    def _avatar_cell(r):
+        if r.get('avatar_url'):
+            return '<img src="' + clean_html(r.get('avatar_url') or '') + '" style="width:34px;height:34px;border-radius:999px;object-fit:cover">'
+        return '•'
     table = "".join(
-        f"<tr><td>{('<img src=\"'+clean_html(r.get('avatar_url') or '')+'\" style=\"width:34px;height:34px;border-radius:999px;object-fit:cover\">') if r.get('avatar_url') else '•'}</td><td><strong>{clean_html(r.get('display_name') or 'User')}</strong><br><small>{clean_html(r.get('email') or '')}</small></td><td>{clean_html(r.get('username') or '')}</td><td>{clean_html(r.get('status') or 'active')}</td><td>{int(r.get('trust_score') or 0)}</td><td>{clean_html(r.get('current_level') or '')}</td><td>{clean_html(r.get('live_status') or '')}</td><td>{clean_html(r.get('badges') or 'No badges')}</td><td><a class='button' href='/admin/pulse-users/{int(r.get('user_id') or 0)}'>Manage</a></td></tr>"
+        f"<tr><td>{_avatar_cell(r)}</td><td><strong>{clean_html(r.get('display_name') or 'User')}</strong><br><small>{clean_html(r.get('email') or '')}</small></td><td>{clean_html(r.get('username') or '')}</td><td>{clean_html(r.get('status') or 'active')}</td><td>{int(r.get('trust_score') or 0)}</td><td>{clean_html(r.get('current_level') or '')}</td><td>{clean_html(r.get('live_status') or '')}</td><td>{clean_html(r.get('badges') or 'No badges')}</td><td><a class='button' href='/admin/pulse-users/{int(r.get('user_id') or 0)}'>Manage</a></td></tr>"
         for r in rows
     )
     body = f"""
@@ -79052,7 +84560,7 @@ def admin_payments_page():
     wallet_rows = "".join(f"<tr><td>{w.get('id')}</td><td>{int(w.get('user_id') or 0)}</td><td>{clean_html(w.get('wallet_type') or '')}</td><td>${int(w.get('pending_balance_cents') or 0)/100:.2f}</td><td>${int(w.get('available_balance_cents') or 0)/100:.2f}</td><td>${int(w.get('lifetime_fees_cents') or 0)/100:.2f}</td><td>{clean_html(w.get('status') or '')}</td></tr>" for w in (creator_summary.get("wallets") or []))
     body = f"""
     <h1>Payments Command Center</h1><p class='muted'>Stripe Connect-style marketplace payments backed by internal wallets, append-only ledger entries, webhook idempotency, entitlements, and audit logs.</p>
-    <section class='card'><h2>Treasury Modules</h2><p class='muted'>Platform fee revenue now flows into the CoinPilotXAI treasury ledger and settlement system.</p><div class='actions'><a class='button primary' href='/admin/treasury'>Treasury</a><a class='button' href='/admin/platform-revenue'>Platform Revenue</a><a class='button' href='/admin/creator-payouts'>Creator Payouts</a><a class='button' href='/admin/fee-ledger'>Fee Ledger</a><a class='button' href='/admin/escrow'>Escrow</a><a class='button' href='/admin/settlements'>Settlement Engine</a><a class='button' href='/admin/stripe-connect'>Stripe Connect</a><a class='button' href='/admin/tax-center'>Tax Center</a><a class='button' href='/admin/revenue-analytics'>Revenue Analytics</a><a class='button' href='/admin/financial-audit'>Financial Audit</a><a class='button' href='/admin/refunds'>Refund Center</a><a class='button' href='/admin/disputes'>Dispute Resolution</a></div></section>
+    <section class='card'><h2>Treasury Modules</h2><p class='muted'>Platform fee revenue now flows into the CoinPlotXAI treasury ledger and settlement system.</p><div class='actions'><a class='button primary' href='/admin/treasury'>Treasury</a><a class='button' href='/admin/platform-revenue'>Platform Revenue</a><a class='button' href='/admin/creator-payouts'>Creator Payouts</a><a class='button' href='/admin/fee-ledger'>Fee Ledger</a><a class='button' href='/admin/escrow'>Escrow</a><a class='button' href='/admin/settlements'>Settlement Engine</a><a class='button' href='/admin/stripe-connect'>Stripe Connect</a><a class='button' href='/admin/tax-center'>Tax Center</a><a class='button' href='/admin/revenue-analytics'>Revenue Analytics</a><a class='button' href='/admin/financial-audit'>Financial Audit</a><a class='button' href='/admin/refunds'>Refund Center</a><a class='button' href='/admin/disputes'>Dispute Resolution</a></div></section>
     <section class='card'><h2>Provider Status</h2><pre>{clean_html(json.dumps(provider, indent=2, default=str))}</pre></section>
     <section class='grid'>{core_cards}</section>
     <section class='card'><h2>Creator Economy Ledger Transactions</h2><table class='table'><tr><th>ID</th><th>Item</th><th>Buyer</th><th>Seller</th><th>Gross</th><th>Fee</th><th>Status</th><th>Trace</th></tr>{ledger_rows or '<tr><td colspan=8>No creator economy transactions yet.</td></tr>'}</table></section>
@@ -79190,7 +84698,7 @@ def admin_payments_command_center_page():
     </style>
     <section class='payments-hero'><span class='pill'>Financial Operating Hub · {clean_html(str(provider_status))}</span><h1>Payments Command Center</h1><p class='muted'>Monitor platform revenue, creator payouts, treasury health, subscriptions, and creator economy flow in realtime.</p><div class='pay-pulse'></div></section>
     <section class='pay-grid'>{kpi_html}</section>
-    <section class='card'><h2>Creator Economy Flow</h2><div class='treasury-flow'><div class='flow-step'><strong>Customer payment</strong><span>Stripe checkout confirms trusted payment.</span></div><div class='flow-step'><strong>Platform fee</strong><span>CoinPilotXAI fee is calculated from active rules.</span></div><div class='flow-step'><strong>Creator allocation</strong><span>Seller net moves to pending balance.</span></div><div class='flow-step'><strong>Treasury allocation</strong><span>Fee revenue posts to platform wallet and fee ledger.</span></div><div class='flow-step'><strong>Escrow</strong><span>Risk and fulfillment windows hold funds safely.</span></div><div class='flow-step'><strong>Settlement payout</strong><span>Eligible funds release to connected accounts.</span></div></div></section>
+    <section class='card'><h2>Creator Economy Flow</h2><div class='treasury-flow'><div class='flow-step'><strong>Customer payment</strong><span>Stripe checkout confirms trusted payment.</span></div><div class='flow-step'><strong>Platform fee</strong><span>CoinPlotXAI fee is calculated from active rules.</span></div><div class='flow-step'><strong>Creator allocation</strong><span>Seller net moves to pending balance.</span></div><div class='flow-step'><strong>Treasury allocation</strong><span>Fee revenue posts to platform wallet and fee ledger.</span></div><div class='flow-step'><strong>Escrow</strong><span>Risk and fulfillment windows hold funds safely.</span></div><div class='flow-step'><strong>Settlement payout</strong><span>Eligible funds release to connected accounts.</span></div></div></section>
     <section class='grid'><div class='card'><h2>Live Financial Stream</h2>{stream_html}</div><div class='card'><h2>AI Financial Intelligence</h2><section class='pay-grid'>{insight_html}</section></div></section>
     <section class='card'><h2>Quick Actions</h2><div class='actions'>{quick_html}</div></section>
     <section class='card table-wrap'><h2>Top Creator Balances</h2><table class='table'><tr><th>User</th><th>Seller</th><th>Gross</th><th>Fees</th><th>Available</th><th>Status</th></tr>{creator_rows or '<tr><td colspan=6>No creator balances yet.</td></tr>'}</table></section>
@@ -79251,7 +84759,7 @@ def admin_treasury_page():
     .treasury-card span{{display:block;color:#9fb2c3;font-weight:800;font-size:.86rem}}.treasury-card strong{{display:block;font-size:1.75rem;margin:7px 0;color:#ecfbff}}.treasury-card p{{color:#9fb2c3;margin:0}}
     .treasury-orbit{{height:8px;border-radius:999px;background:linear-gradient(90deg,#7af5d3,#69d7ff,#f5d76e);box-shadow:0 0 28px rgba(105,215,255,.45);margin-top:16px}}
     </style>
-    <section class='treasury-hero'><p class='pill'>Creator Economy Treasury</p><h1>CoinPilotXAI Treasury OS</h1><p class='muted'>Every platform fee, creator net amount, escrow hold, payout queue item, refund, dispute, and settlement batch now has a visible ledger home.</p><div class='treasury-orbit'></div></section>
+    <section class='treasury-hero'><p class='pill'>Creator Economy Treasury</p><h1>CoinPlotXAI Treasury OS</h1><p class='muted'>Every platform fee, creator net amount, escrow hold, payout queue item, refund, dispute, and settlement batch now has a visible ledger home.</p><div class='treasury-orbit'></div></section>
     <section class='treasury-grid'>{card_html}</section>
     <section class='card'><h2>Treasury Health</h2><pre>{clean_html(json.dumps({'stripe': provider, 'treasury_tables': 'active', 'settlement_engine': 'ledger_ready', 'payout_safety': 'queue_and_review'}, indent=2, default=str))}</pre></section>
     <section class='card table-wrap'><h2>Platform Wallets</h2><table class='table'><tr><th>Wallet</th><th>Currency</th><th>Available</th><th>Pending</th><th>Lifetime Revenue</th><th>Refunds</th><th>Status</th></tr>{wallet_rows or '<tr><td colspan=7>No platform wallets yet.</td></tr>'}</table></section>
@@ -79276,7 +84784,7 @@ def admin_sponsorships_page():
         action = request.form.get("action") or "create"
         sponsor_id = int(request.form.get("sponsor_id") or 0)
         now = datetime.utcnow().isoformat(timespec="seconds")
-        conn = db(); cur = conn.cursor()
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         if action == "create":
             campaign = clean_html(request.form.get("campaign_name") or "")[:160]
             landing = clean_html(request.form.get("landing_page") or "")[:500]
@@ -79844,6 +85352,110 @@ def admin_content_health_page():
     return admin_page_html("Content Health", body, admin)
 
 
+def admin_seller_application_action(admin):
+    """
+    Execute one reviewer decision, as one transaction.
+
+    Everything a decision touches — the status, the mirrored seller record, the
+    history row, the internal note, the assignment, the applicant's
+    notification, the department board — is written against a single cursor and
+    committed once. A half-applied decision (seller approved, no audit row) is
+    the failure mode that would make this system untrustworthy, so it is made
+    structurally impossible rather than merely unlikely.
+
+    Returns the flash message. Never raises past this boundary: the page must
+    still render if a decision is refused.
+    """
+    app_id = safe_int(request.form.get("application_id"), 0)
+    decision = clean_html(request.form.get("decision") or request.form.get("action") or "")[:40].lower()
+    # Two separate fields on purpose. ``reason`` is written for the applicant
+    # and is sent to them. ``internal_note`` is written for other reviewers and
+    # never leaves the admin surface.
+    reason = clean_html(request.form.get("reason") or "")[:1200]
+    internal_note = clean_html(request.form.get("internal_note") or request.form.get("note") or "")[:1600]
+    reviewer_id = safe_int(request.form.get("reviewer_id"), -1)
+
+    if not app_id:
+        return "No application selected."
+
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        application = seller_lifecycle.get_application_by_id(cur, app_id)
+        if not application:
+            return "Application not found."
+
+        outcome = ""
+        # Assignment is not a decision and may happen on its own, so it is
+        # handled first and independently of whether a decision was chosen.
+        if reviewer_id >= 0:
+            seller_lifecycle.assign_reviewer(cur, app_id, reviewer_id, admin.get("id"))
+            outcome = "Reviewer assigned." if reviewer_id else "Reviewer cleared."
+
+        if internal_note:
+            seller_lifecycle.add_note(cur, app_id, admin.get("id"), internal_note, visibility="internal")
+            outcome = (outcome + " Internal note saved.").strip()
+
+        if decision:
+            target = seller_lifecycle.decision_target(decision)
+            if decision in seller_lifecycle.DECISIONS_REQUIRING_REASON and not reason:
+                conn.rollback()
+                conn.close()
+                return "A reason is required for that decision — the applicant will read it."
+            move = seller_lifecycle.apply_transition(
+                cur, application, target,
+                actor_type=seller_lifecycle.ADMIN,
+                actor_id=admin.get("id"),
+                reason=reason,
+                applicant_message=reason,
+            )
+            # Re-read so downstream helpers see the row as it now is.
+            application = seller_lifecycle.get_application_by_id(cur, app_id)
+            notify_seller_applicant(cur, application, target, reason)
+            if target in (
+                seller_lifecycle.APPROVED, seller_lifecycle.REJECTED, seller_lifecycle.SUSPENDED,
+            ):
+                close_seller_review_task(cur, app_id)
+            try:
+                pulse_emit_marketplace_inventory_event(
+                    cur, application.get("user_id"), "seller_application_changed",
+                    actor_user_id=0, status=target,
+                    approval_status=seller_lifecycle.seller_status_for(target),
+                    title="Seller application",
+                    extra={"application_id": app_id},
+                )
+            except Exception as exc:
+                logging.warning("SELLER_APPLICATION_EVENT_FAILED error=%s", exc)
+            outcome = f"Application #{app_id} moved from {move['from']} to {move['to']}."
+
+        conn.commit()
+        if decision:
+            # Audit metadata carries the decision and nothing the applicant
+            # wrote: no names, no document filenames, no field values.
+            log_admin_audit(
+                admin.get("id"), "seller_application_reviewed", "seller_application", str(app_id),
+                {"decision": decision, "to_status": seller_lifecycle.decision_target(decision),
+                 "reason_given": bool(reason), "note_added": bool(internal_note)},
+            )
+        elif reviewer_id >= 0 or internal_note:
+            log_admin_audit(
+                admin.get("id"), "seller_application_annotated", "seller_application", str(app_id),
+                {"assigned": reviewer_id if reviewer_id >= 0 else None, "note_added": bool(internal_note)},
+            )
+        return outcome or "Nothing to change."
+    except seller_lifecycle.TransitionError as exc:
+        conn.rollback()
+        return clean_html(str(exc))[:300]
+    except Exception as exc:
+        conn.rollback()
+        logging.warning("SELLER_APPLICATION_DECISION_FAILED app=%s error=%s", app_id, exc)
+        return "That decision could not be applied."
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 @webhook_app.route("/admin/merchant-applications", methods=["GET", "POST"])
 def admin_merchant_applications_page():
     admin, denied = require_admin_page("monetization.manage")
@@ -79852,68 +85464,155 @@ def admin_merchant_applications_page():
     init_db()
     message = ""
     if request.method == "POST":
-        app_id = int(request.form.get("application_id") or 0)
-        action = request.form.get("action") or ""
-        note = clean_html(request.form.get("note") or "")[:1200]
-        now = datetime.utcnow().isoformat(timespec="seconds")
-        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-        cur.execute("SELECT * FROM marketplace_merchant_applications WHERE id=? LIMIT 1", (app_id,))
-        app_row = dict(cur.fetchone() or {})
-        if app_row and action in {"approve", "reject", "more_info", "suspend", "verify"}:
-            status = {"approve": "approved", "reject": "rejected", "more_info": "draft", "suspend": "suspended", "verify": "under_review"}[action]
-            verification_status = "verified" if action in {"approve", "verify"} else "rejected" if action == "reject" else "pending"
-            cur.execute("UPDATE marketplace_merchant_applications SET status=?, reviewer_id=?, internal_notes=?, reviewed_at=?, updated_at=? WHERE id=?", (status, admin.get("id"), note, now, now, app_id))
-            cur.execute(
-                """
-                UPDATE marketplace_sellers
-                SET status=?, verification_status=?, reviewed_by=?, reviewed_at=?, review_notes=?, updated_at=?
-                WHERE user_id=?
-                """,
-                (status, verification_status, admin.get("id"), now, note, now, app_row.get("user_id")),
-            )
-            pulse_emit_marketplace_inventory_event(
-                cur,
-                app_row.get("user_id"),
-                "seller_application_changed",
-                actor_user_id=admin.get("id") or 0,
-                status=status,
-                approval_status=verification_status,
-                title=app_row.get("display_name") or "Seller application",
-                extra={"application_id": app_id, "review_action": action, "verification_status": verification_status},
-            )
-            conn.commit()
-            log_admin_audit(admin.get("id"), "merchant_application_reviewed", "merchant_application", str(app_id), {"action": action, "status": status})
-            message = "Merchant application updated."
-        conn.close()
+        message = admin_seller_application_action(admin)
+        # Redirect after the decision so the filters survive a browser refresh
+        # and a refresh cannot replay an approval.
+        return redirect(
+            f"/admin/merchant-applications?status={quote(request.form.get('return_status') or 'open')}"
+            f"&q={quote(request.form.get('return_query') or '')}&msg={quote(message)}"
+        )
+
+    status_filter = clean_html(request.args.get("status") or "open").lower()[:40]
+    query = clean_html(request.args.get("q") or "")[:80]
+    mine = request.args.get("mine") == "1"
+    message = clean_html(request.args.get("msg") or "")[:300]
+
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT ma.*, u.username, u.display_name AS account_name FROM marketplace_merchant_applications ma LEFT JOIN users u ON u.user_id=ma.user_id ORDER BY CASE ma.status WHEN 'pending_review' THEN 0 WHEN 'under_review' THEN 1 WHEN 'draft' THEN 2 ELSE 3 END, ma.id DESC LIMIT 120")
-    apps = [dict(row) for row in cur.fetchall()]
+    apps = seller_lifecycle.search_queue(
+        cur, status=status_filter, query=query,
+        reviewer_id=admin.get("id") if mine else None,
+    )
+    counts = seller_lifecycle.queue_counts(cur)
     app_ids = [int(a.get("id") or 0) for a in apps]
     docs_by_app = {}
+    history_by_app = {}
+    notes_by_app = {}
     if app_ids:
         placeholders = ",".join(["?"] * len(app_ids))
         cur.execute(f"SELECT * FROM marketplace_merchant_documents WHERE application_id IN ({placeholders}) ORDER BY id ASC", app_ids)
         for row in cur.fetchall():
             doc = dict(row)
             docs_by_app.setdefault(int(doc.get("application_id") or 0), []).append(doc)
+        # Batched for the same reason the documents above are: the queue draws
+        # every row's timeline and notes inline, so a per-row fetch is two
+        # queries per application and the page a reviewer opens most often is
+        # the one with the most rows on it.
+        history_by_app = seller_lifecycle.history_for_many(cur, app_ids)
+        notes_by_app = seller_lifecycle.notes_for_many(cur, app_ids, visibility="internal")
+    cur.execute("SELECT id, full_name, email FROM admin_users WHERE COALESCE(status,'active')='active' ORDER BY id ASC LIMIT 60")
+    reviewers = [dict(row) for row in cur.fetchall()]
     conn.close()
+    reviewer_names = {int(r.get("id") or 0): clean_html(r.get("full_name") or r.get("email") or f"Admin {r.get('id')}") for r in reviewers}
+    return_status = clean_html(status_filter)
+    return_query = clean_html(query)
+
+    chips = ""
+    for chip_key, chip_label in (
+        ("open", "Needs review"), (seller_lifecycle.SUBMITTED, "Submitted"),
+        (seller_lifecycle.RESUBMITTED, "Resubmitted"), (seller_lifecycle.UNDER_REVIEW, "Under review"),
+        (seller_lifecycle.INFORMATION_REQUESTED, "Info requested"), (seller_lifecycle.APPROVED, "Approved"),
+        (seller_lifecycle.REJECTED, "Rejected"), (seller_lifecycle.SUSPENDED, "Suspended"),
+        (seller_lifecycle.DRAFT, "Drafts"), ("all", "All"),
+    ):
+        chip_count = int(counts.get(chip_key, counts.get("total", 0) if chip_key == "all" else 0) or 0)
+        active = " active" if status_filter == chip_key else ""
+        chips += (
+            f"<a class='chip{active}' href='/admin/merchant-applications?status={quote(chip_key)}"
+            f"&q={quote(query)}{'&mine=1' if mine else ''}'>{chip_label}<b>{chip_count}</b></a>"
+        )
+
     rows = ""
     for a in apps:
-        docs = docs_by_app.get(int(a.get("id") or 0), [])
+        app_id = int(a.get("id") or 0)
+        status = seller_lifecycle.normalize_status(a.get("status"))
+        fields = seller_lifecycle.applicant_fields(a)
+        docs = docs_by_app.get(app_id, [])
         front_doc = next((d for d in docs if d.get("document_type") == "id_front"), None)
         selfie_doc = next((d for d in docs if d.get("document_type") == "selfie"), None)
         compare_btn = f"<button type='button' class='doc-card compare' data-compare-left='{front_doc.get('id')}' data-compare-right='{selfie_doc.get('id')}' data-compare-left-title='Front ID' data-compare-right-title='Selfie'>Compare ID + Selfie</button>" if front_doc and selfie_doc else ""
         doc_cards = ""
         for d in docs:
             doc_id = int(d.get("id") or 0)
-            status = clean_html(d.get("review_status") or d.get("scan_status") or "pending")
+            doc_status = clean_html(d.get("review_status") or d.get("scan_status") or "pending")
             label = clean_html(merchant_doc_label(d.get("document_type")))
             view_url = merchant_doc_review_url(doc_id)
             download_url = merchant_doc_review_url(doc_id, download=True)
             thumb = f"<img src='{view_url}' alt='{label} preview' loading='lazy'>" if merchant_doc_is_image(d) else "<div class='pdf-thumb'>PDF</div>" if merchant_doc_is_pdf(d) else "<div class='pdf-thumb'>DOC</div>"
-            doc_cards += f"<button type='button' class='doc-card' data-doc-id='{doc_id}' data-doc-url='{view_url}' data-download-url='{download_url}' data-doc-kind='{'pdf' if merchant_doc_is_pdf(d) else 'image' if merchant_doc_is_image(d) else 'file'}' data-doc-title='{label}'><span class='doc-thumb'>{thumb}</span><span><strong>{label}</strong><small>{clean_html(d.get('original_filename') or '')}</small><small>{int(d.get('file_size') or 0)//1024} KB · {clean_html(d.get('created_at') or '')}</small><em class='doc-status {status}'>{status}</em></span></button>"
-        doc_html = f"<div class='doc-grid'>{doc_cards}{compare_btn}</div>" if doc_cards else "<span class='muted'>No documents uploaded</span>"
-        rows += f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('display_name') or a.get('account_name') or '')}<br><small>{clean_html(a.get('email') or '')}</small></td><td>{clean_html(a.get('seller_type') or '')}</td><td>{clean_html(a.get('status') or '')}</td><td>{int(a.get('completeness') or 0)}%</td><td>{int(a.get('risk_score') or 0)}</td><td>{doc_html}</td><td><form method='post'><input type='hidden' name='application_id' value='{a.get('id')}'><input name='note' placeholder='Internal note'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button><button name='action' value='more_info'>Request Info</button><button name='action' value='suspend'>Suspend</button><button name='action' value='verify'>Verify</button></form></td></tr>"
+            doc_cards += f"<button type='button' class='doc-card' data-doc-id='{doc_id}' data-doc-url='{view_url}' data-download-url='{download_url}' data-doc-kind='{'pdf' if merchant_doc_is_pdf(d) else 'image' if merchant_doc_is_image(d) else 'file'}' data-doc-title='{label}'><span class='doc-thumb'>{thumb}</span><span><strong>{label}</strong><small>{clean_html(d.get('original_filename') or '')}</small><small>{int(d.get('file_size') or 0)//1024} KB · {clean_html(d.get('created_at') or '')}</small><em class='doc-status {doc_status}'>{doc_status}</em></span></button>"
+        missing = [t for t in seller_lifecycle.REQUIRED_DOCUMENTS if not any(d.get("document_type") == t for d in docs)]
+        missing_html = f"<p class='missing'>Missing: {clean_html(', '.join(seller_lifecycle.DOCUMENT_LABELS.get(t, t) for t in missing))}</p>" if missing else ""
+        doc_html = (f"<div class='doc-grid'>{doc_cards}{compare_btn}</div>{missing_html}" if doc_cards else f"<span class='muted'>No documents uploaded</span>{missing_html}")
+
+        signals = seller_lifecycle.risk_signals(fields, docs)
+        signal_html = "".join(f"<li class='sig {clean_html(s.get('level') or 'info')}'><strong>{clean_html(s.get('label') or '')}</strong><span>{clean_html(s.get('detail') or '')}</span></li>" for s in signals)
+        signal_block = f"<details class='panel'><summary>Risk signals ({len(signals)})</summary><ul class='signals'>{signal_html}</ul></details>" if signals else "<p class='muted'>No risk signals.</p>"
+
+        history = history_by_app.get(app_id, [])
+        history_html = "".join(
+            f"<li><code>{clean_html(h.get('from_status') or '—')} → {clean_html(h.get('to_status') or '')}</code>"
+            f"<small>{clean_html(h.get('actor_type') or '')} · {clean_html(h.get('created_at') or '')}</small>"
+            f"{('<span>' + clean_html(h.get('reason') or '') + '</span>') if h.get('reason') else ''}</li>"
+            for h in history
+        )
+        history_block = f"<details class='panel'><summary>Review history ({len(history)})</summary><ol class='timeline'>{history_html}</ol></details>" if history else ""
+
+        notes = notes_by_app.get(app_id, [])
+        notes_html = "".join(
+            f"<li><strong>{clean_html(reviewer_names.get(int(n.get('author_admin_id') or 0), 'Admin'))}</strong>"
+            f"<small>{clean_html(n.get('created_at') or '')}</small><p>{clean_html(n.get('body') or '')}</p></li>"
+            for n in notes
+        )
+        notes_block = f"<details class='panel'><summary>Internal notes ({len(notes)})</summary><ul class='notes'>{notes_html}</ul></details>" if notes else ""
+
+        assigned = int(a.get("reviewer_id") or 0)
+        reviewer_options = "<option value='0'>Unassigned</option>" + "".join(
+            f"<option value='{int(r.get('id') or 0)}'{' selected' if int(r.get('id') or 0) == assigned else ''}>{clean_html(r.get('full_name') or r.get('email') or '')}</option>"
+            for r in reviewers
+        )
+
+        # Only decisions the state machine will actually accept are offered, so
+        # the reviewer is never shown a button that is going to be refused.
+        decision_buttons = ""
+        for decision_key, decision_label, decision_class in (
+            ("start_review", "Start review", ""), ("request_information", "Request info", ""),
+            ("approve", "Approve", "primary"), ("reject", "Reject", "danger"),
+            ("suspend", "Suspend", "danger"), ("reinstate", "Reinstate", "primary"),
+        ):
+            target = seller_lifecycle.DECISIONS.get(decision_key)
+            if not seller_lifecycle.can_transition(status, target, seller_lifecycle.ADMIN):
+                continue
+            decision_buttons += f"<button class='{decision_class}' name='decision' value='{decision_key}'>{decision_label}</button>"
+        if not decision_buttons:
+            decision_buttons = "<span class='muted'>No decision available in this state.</span>"
+
+        intent = ", ".join(str(v) for v in (fields.get("seller_intent") or [])) or "—"
+        request_msg = clean_html(a.get("information_request_message") or "")
+        request_block = f"<p class='pending-info'>Awaiting applicant: {request_msg}</p>" if status == seller_lifecycle.INFORMATION_REQUESTED and request_msg else ""
+
+        rows += (
+            f"<tr><td>{app_id}</td>"
+            f"<td>{clean_html(fields.get('display_name') or a.get('account_name') or '')}"
+            f"<br><small>@{clean_html(a.get('username') or '')}</small>"
+            f"<br><small>{clean_html(fields.get('email') or '')}</small></td>"
+            f"<td>{clean_html(seller_lifecycle.SELLER_TYPE_LABELS.get(fields.get('seller_type'), fields.get('seller_type') or '—'))}"
+            f"<br><small>{clean_html(intent)}</small></td>"
+            f"<td><span class='pill {status}'>{clean_html(status.replace('_',' '))}</span>"
+            f"<br><small>{clean_html(a.get('submitted_at') or a.get('updated_at') or '')}</small>{request_block}</td>"
+            f"<td>{int(a.get('completeness') or 0)}%</td>"
+            f"<td class='risk-{'high' if int(a.get('risk_score') or 0) >= 45 else 'mid' if int(a.get('risk_score') or 0) >= 20 else 'low'}'>{int(a.get('risk_score') or 0)}</td>"
+            f"<td>{doc_html}</td>"
+            f"<td class='workspace'>{signal_block}{history_block}{notes_block}"
+            f"<form method='post' class='decide'>"
+            f"<input type='hidden' name='application_id' value='{app_id}'>"
+            f"<input type='hidden' name='return_status' value='{return_status}'>"
+            f"<input type='hidden' name='return_query' value='{return_query}'>"
+            f"<label>Reviewer<select name='reviewer_id'>{reviewer_options}</select></label>"
+            f"<label>Message to applicant<textarea name='reason' rows='2' placeholder='Required to reject, suspend, or request more information. The applicant reads this.'></textarea></label>"
+            f"<label>Internal note<textarea name='internal_note' rows='2' placeholder='Admin-only. Never shown to the applicant.'></textarea></label>"
+            f"<div class='actions'>{decision_buttons}</div>"
+            f"<button class='ghost' name='decision' value=''>Save note / assignment only</button>"
+            f"</form></td></tr>"
+        )
     body = f"""
     <style>
     .merchant-review-shell{{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:16px;align-items:start}}
@@ -79937,10 +85636,47 @@ def admin_merchant_applications_page():
     .compare-pane{{min-height:70dvh;border:1px solid rgba(255,255,255,.1);border-radius:16px;background:#050b14;display:flex;align-items:center;justify-content:center;overflow:auto;position:relative}}
     .doc-panel{{border:1px solid rgba(110,223,246,.22);border-radius:20px;background:#071321;padding:14px;display:grid;gap:10px;align-content:start}}
     .doc-panel button,.doc-panel a{{width:100%;justify-content:center}}
+    .queue-filters{{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}}
+    .chip{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.24);border-radius:999px;padding:6px 13px;color:#cfe6f2;text-decoration:none;font-weight:800;font-size:13px}}
+    .chip b{{background:rgba(110,223,246,.16);border-radius:999px;padding:1px 8px;font-size:12px}}
+    .chip.active{{border-color:rgba(54,229,143,.6);color:#36e58f;background:rgba(54,229,143,.1)}}
+    .queue-search{{display:flex;gap:8px;flex-wrap:wrap;align-items:center}}
+    .queue-search input[type=search]{{min-width:220px}}
+    .pill{{display:inline-block;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:900;text-transform:capitalize;border:1px solid rgba(255,255,255,.14)}}
+    .pill.submitted,.pill.resubmitted{{color:#6edff6;border-color:rgba(110,223,246,.5)}}
+    .pill.under_review{{color:#ffd166;border-color:rgba(255,209,102,.5)}}
+    .pill.information_requested{{color:#ffa94d;border-color:rgba(255,169,77,.5)}}
+    .pill.approved{{color:#36e58f;border-color:rgba(54,229,143,.5)}}
+    .pill.rejected,.pill.suspended{{color:#ff7a88;border-color:rgba(255,122,136,.5)}}
+    .pill.draft,.pill.expired,.pill.withdrawn{{color:#9fb5c0}}
+    .risk-high{{color:#ff7a88;font-weight:950}}.risk-mid{{color:#ffd166;font-weight:900}}.risk-low{{color:#36e58f;font-weight:800}}
+    .missing{{color:#ffa94d;font-size:12px;margin:6px 0 0}}
+    .workspace{{min-width:320px}}
+    .workspace .panel{{margin:0 0 8px;border:1px solid rgba(110,223,246,.16);border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.03)}}
+    .workspace summary{{cursor:pointer;font-weight:900;font-size:13px}}
+    .signals,.notes,.timeline{{margin:8px 0 0;padding-left:16px;display:grid;gap:7px;font-size:12.5px}}
+    .signals li.high{{color:#ff7a88}}.signals li.medium{{color:#ffd166}}.signals li.low{{color:#9fb5c0}}
+    .signals span,.timeline small,.notes small{{display:block;color:#9fb5c0;font-size:11.5px}}
+    .decide{{display:grid;gap:7px;margin-top:8px}}
+    .decide label{{display:grid;gap:3px;font-size:12px;color:#9fb5c0;font-weight:800}}
+    .decide textarea{{width:100%;min-height:46px;resize:vertical}}
+    .decide .actions{{display:flex;flex-wrap:wrap;gap:6px}}
+    .decide .danger{{border-color:rgba(255,122,136,.5);color:#ff7a88}}
+    .decide .ghost{{background:none;color:#9fb5c0;font-size:12px}}
+    .pending-info{{color:#ffa94d;font-size:12px;margin:5px 0 0}}
     @media(max-width:860px){{.merchant-review-shell{{grid-template-columns:1fr}}.review-sidebar{{position:static}}.doc-modal.open{{grid-template-columns:1fr;overflow:auto}}.compare-view{{grid-template-columns:1fr}}}}
     </style>
-    <h1>Merchant Applications</h1><p class='muted'>Review identity, business intent, private verification documents, safety answers, PulseSoc reputation, and risk before unlocking product listings.</p><p>{clean_html(message)}</p>
-    <section class='merchant-review-shell'><div class='card'><table class='table'><tr><th>ID</th><th>Merchant</th><th>Type</th><th>Status</th><th>Complete</th><th>Risk</th><th>Verification Documents</th><th>Actions</th></tr>{rows or '<tr><td colspan=8>No merchant applications yet.</td></tr>'}</table></div><aside class='review-sidebar'><h2>Review Standard</h2><p class='muted'>Open documents in the protected viewer, compare selfie against ID, mark each file verified/rejected/suspicious, then decide the merchant application.</p><p><span class='doc-status verified'>verified</span> <span class='doc-status suspicious'>suspicious</span> <span class='doc-status rejected'>rejected</span></p><a class='button' href='/admin/marketplace-command'>Marketplace Command</a></aside></section>
+    <h1>Seller Applications</h1><p class='muted'>Review identity, business intent, private verification documents, safety answers, PulseSoc reputation, and risk before unlocking product listings. Approval is never automatic — every decision below is recorded against your admin account.</p>
+    {f"<p class='pill approved'>{clean_html(message)}</p>" if message else ""}
+    <nav class='queue-filters' aria-label='Application status filters'>{chips}</nav>
+    <form class='queue-search' method='get' action='/admin/merchant-applications' role='search'>
+      <input type='hidden' name='status' value='{return_status}'>
+      <input type='search' name='q' value='{return_query}' placeholder='Search name, username, email, business' aria-label='Search applications'>
+      <label class='muted'><input type='checkbox' name='mine' value='1'{' checked' if mine else ''}> Assigned to me</label>
+      <button type='submit'>Search</button>
+      <a class='button' href='/admin/merchant-applications?status=open'>Reset</a>
+    </form>
+    <section class='merchant-review-shell'><div class='card'><table class='table'><tr><th>ID</th><th>Applicant</th><th>Type &amp; Intent</th><th>Status</th><th>Complete</th><th>Risk</th><th>Verification Documents</th><th>Review Workspace</th></tr>{rows or "<tr><td colspan=8>No applications match this filter.</td></tr>"}</table></div><aside class='review-sidebar'><h2>Review Standard</h2><p class='muted'>Open documents in the protected viewer, compare selfie against ID, mark each file verified/rejected/suspicious, then decide the application.</p><p class='muted'>Reject, suspend, and request-info require a message — the applicant reads it. Internal notes stay here.</p><p><span class='doc-status verified'>verified</span> <span class='doc-status suspicious'>suspicious</span> <span class='doc-status rejected'>rejected</span></p><p class='muted'>Needs review now: <strong>{int(counts.get('open', 0) or 0)}</strong></p><a class='button' href='/admin/marketplace-command'>Marketplace Command</a></aside></section>
     <section class='doc-modal' id='merchantDocModal' aria-hidden='true'><div class='doc-viewer' id='merchantDocViewer'></div><aside class='doc-panel'><h2 id='merchantDocTitle'>Document</h2><p class='muted'>Protected admin-only merchant verification viewer.</p><div class='actions'><button type='button' id='docZoomIn'>Zoom In</button><button type='button' id='docZoomOut'>Zoom Out</button><button type='button' id='docRotate'>Rotate</button></div><a class='button' id='docDownload' href='#'>Download Original</a><textarea id='docNote' placeholder='Internal review note, mismatch detail, or fraud observation'></textarea><button type='button' data-doc-review='verify' class='primary'>Verify</button><button type='button' data-doc-review='flag'>Flag Suspicious</button><button type='button' data-doc-review='reject'>Reject</button><button type='button' id='docClose'>Close</button></aside></section>
     <script>
     (()=>{{let activeDoc=0,zoom=1,rot=0;const modal=document.getElementById('merchantDocModal'),viewer=document.getElementById('merchantDocViewer'),title=document.getElementById('merchantDocTitle'),download=document.getElementById('docDownload'),note=document.getElementById('docNote');function esc(v){{return String(v||'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]))}}function apply(){{viewer.style.setProperty('--zoom',zoom);viewer.style.setProperty('--rot',rot+'deg')}}function openDoc(btn){{activeDoc=Number(btn.dataset.docId||0);zoom=1;rot=0;title.textContent=btn.dataset.docTitle||'Document';download.href=btn.dataset.downloadUrl||'#';const url=btn.dataset.docUrl;viewer.innerHTML=btn.dataset.docKind==='pdf'?`<iframe src="${{esc(url)}}"></iframe>`:`<img src="${{esc(url)}}" alt="${{esc(btn.dataset.docTitle||'Document')}}">`;modal.classList.add('open');modal.setAttribute('aria-hidden','false');apply()}}function openCompare(btn){{activeDoc=Number(btn.dataset.compareRight||0);zoom=1;rot=0;title.textContent='Selfie Match Review';download.href='/admin/merchant-document/'+activeDoc+'?download=1';viewer.innerHTML=`<div class="compare-view"><div><h3>${{esc(btn.dataset.compareLeftTitle)}}</h3><div class="compare-pane"><img src="/admin/merchant-document/${{Number(btn.dataset.compareLeft||0)}}" alt="ID document"></div></div><div><h3>${{esc(btn.dataset.compareRightTitle)}}</h3><div class="compare-pane"><img src="/admin/merchant-document/${{Number(btn.dataset.compareRight||0)}}" alt="Selfie document"></div></div></div>`;modal.classList.add('open');modal.setAttribute('aria-hidden','false');apply()}}document.addEventListener('click',e=>{{const card=e.target.closest('.doc-card[data-doc-id]');if(card){{openDoc(card);return}}const cmp=e.target.closest('[data-compare-left]');if(cmp)openCompare(cmp)}});document.getElementById('docClose').onclick=()=>{{modal.classList.remove('open');modal.setAttribute('aria-hidden','true')}};document.getElementById('docZoomIn').onclick=()=>{{zoom=Math.min(3,zoom+.18);apply()}};document.getElementById('docZoomOut').onclick=()=>{{zoom=Math.max(.5,zoom-.18);apply()}};document.getElementById('docRotate').onclick=()=>{{rot=(rot+90)%360;apply()}};document.querySelectorAll('[data-doc-review]').forEach(b=>b.addEventListener('click',async()=>{{if(!activeDoc)return;try{{const r=await fetch(`/admin/merchant-document/${{activeDoc}}/review`,{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{action:b.dataset.docReview,note:note.value}})}});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Review failed.');alert(d.message);location.reload()}}catch(err){{alert(err.message)}}}}));modal.addEventListener('click',e=>{{if(e.target===modal)document.getElementById('docClose').click()}});document.addEventListener('keydown',e=>{{if(e.key==='Escape'&&modal.classList.contains('open'))document.getElementById('docClose').click()}})}})();
@@ -80035,7 +85771,14 @@ def admin_teacher_document_file(doc_id):
     root = os.path.abspath(os.path.join("instance", "private_uploads", "teacher_verification"))
     full_path = os.path.abspath(doc.get("stored_path") or "")
     if not full_path.startswith(root + os.sep) or not os.path.exists(full_path):
-        logging.warning("TEACHER_DOCUMENT_MISSING doc_id=%s path=%s", doc_id, doc.get("stored_path"))
+        # The path is deliberately not logged, for the same reason it is omitted
+        # from the merchant equivalent below: a verification document's stored
+        # path encodes the applicant's user id and the document type, so logging
+        # it copies identity metadata out of the private uploads directory and
+        # into a log file with a different retention policy and a wider
+        # audience. The id is enough to find the row, and the row still has the
+        # path for anyone with database access.
+        logging.warning("TEACHER_DOCUMENT_MISSING doc_id=%s", doc_id)
         abort(404)
     return send_file(full_path, mimetype=doc.get("mime_type") or None, as_attachment=bool(request.args.get("download")), download_name=doc.get("original_filename") or f"teacher-document-{doc_id}", max_age=0)
 
@@ -80083,7 +85826,13 @@ def admin_merchant_document_file(doc_id):
     root = os.path.abspath(os.path.join("instance", "private_uploads", "merchant_verification"))
     full_path = os.path.abspath(stored_path)
     if not full_path.startswith(root + os.sep) or not os.path.exists(full_path):
-        logging.warning("MERCHANT_DOCUMENT_MISSING doc_id=%s path=%s", doc_id, stored_path)
+        # The path is deliberately not logged. A verification document's stored
+        # path encodes the applicant's user id and the document type, so logging
+        # it copies identity metadata out of the private uploads directory and
+        # into a log file with a different retention policy and a wider
+        # audience. The id is enough to find the row, and the row still has the
+        # path for anyone with database access.
+        logging.warning("MERCHANT_DOCUMENT_MISSING doc_id=%s", doc_id)
         abort(404)
     return send_file(
         full_path,
@@ -81856,6 +87605,36 @@ def admin_command_center_page():
         f"<div class='ops-metric'><strong>{int(operating_snapshot.get('external_service_gaps') or 0)}</strong><span>provider gaps</span></div>"
         "</div></section>"
     )
+    # Seller applications are the one queue where a person is waiting on us and
+    # nothing happens until an admin acts, so it gets its own control rather
+    # than living only inside a department room. The count is read live, and
+    # when it is zero the control stops glowing — a permanently glowing badge
+    # teaches admins to ignore it.
+    seller_pending = 0
+    seller_counts = {}
+    if admin_has_permission(admin, "monetization.manage"):
+        try:
+            _sconn = db(); _sconn.row_factory = sqlite3.Row; _scur = _sconn.cursor()
+            seller_pending = seller_lifecycle.pending_review_count(_scur)
+            seller_counts = seller_lifecycle.queue_counts(_scur)
+            _sconn.close()
+        except Exception as exc:
+            logging.warning("SELLER_APPLICATION_COUNT_FAILED error=%s", exc)
+    seller_card = ""
+    if admin_has_permission(admin, "monetization.manage"):
+        seller_card = (
+            f"<a class='card seller-queue-card{' live' if seller_pending else ''}' href='/admin/merchant-applications?status=open'>"
+            "<h2>Seller Applications</h2>"
+            f"<p class='metric'>{seller_pending}<span class='seller-queue-unit'>waiting on review</span></p>"
+            "<p class='muted'>People and businesses applying to sell on PulseSoc. Nothing is approved automatically — each one needs an administrator decision.</p>"
+            "<div class='ops-metrics'>"
+            f"<div class='ops-metric'><strong>{int(seller_counts.get(seller_lifecycle.SUBMITTED, 0) or 0)}</strong><span>new</span></div>"
+            f"<div class='ops-metric'><strong>{int(seller_counts.get(seller_lifecycle.RESUBMITTED, 0) or 0)}</strong><span>resubmitted</span></div>"
+            f"<div class='ops-metric'><strong>{int(seller_counts.get(seller_lifecycle.UNDER_REVIEW, 0) or 0)}</strong><span>in review</span></div>"
+            f"<div class='ops-metric'><strong>{int(seller_counts.get(seller_lifecycle.INFORMATION_REQUESTED, 0) or 0)}</strong><span>info requested</span></div>"
+            "</div>"
+            "<p><span class='seller-queue-cta'>Open review queue</span></p></a>"
+        )
     cards = []
     for slug, meta in ADMIN_DEPARTMENTS.items():
         if not admin_has_permission(admin, meta["permission"]):
@@ -81881,11 +87660,20 @@ def admin_command_center_page():
       .ops-actions{{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}}
       .ops-action{{border:1px solid rgba(54,229,143,.24);border-radius:999px;background:rgba(54,229,143,.08);padding:4px 8px;color:#dffcff;font-size:12px;font-weight:800}}
       code{{white-space:normal;color:#dffcff}}
+      .seller-queue-card{{position:relative;overflow:hidden;text-decoration:none;color:#f2fbff;border:1px solid rgba(54,229,143,.34);background:radial-gradient(circle at 88% -10%,rgba(54,229,143,.2),transparent 22rem),linear-gradient(140deg,rgba(8,24,20,.96),rgba(9,20,38,.94))}}
+      .seller-queue-card:before{{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,#36e58f,#6edff6,#36e58f)}}
+      .seller-queue-card .metric{{display:flex;align-items:baseline;gap:10px;color:#36e58f}}
+      .seller-queue-unit{{font-size:13px;font-weight:800;color:#9fb5c0;letter-spacing:.3px}}
+      .seller-queue-cta{{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(54,229,143,.5);border-radius:999px;background:rgba(54,229,143,.12);padding:7px 15px;font-weight:950;color:#36e58f}}
+      .seller-queue-card.live{{border-color:rgba(54,229,143,.75);animation:sellerQueueGlow 2.4s ease-in-out infinite}}
+      .seller-queue-card.live .metric{{text-shadow:0 0 22px rgba(54,229,143,.5)}}
+      @keyframes sellerQueueGlow{{0%,100%{{box-shadow:0 0 0 rgba(54,229,143,0),0 10px 30px rgba(0,0,0,.35)}}50%{{box-shadow:0 0 38px rgba(54,229,143,.4),0 10px 30px rgba(0,0,0,.35)}}}}
+      @media(prefers-reduced-motion:reduce){{.seller-queue-card.live{{animation:none;box-shadow:0 0 30px rgba(54,229,143,.32)}}}}
       @media(max-width:760px){{.ops-metrics{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}
     </style>
     <h1>PulseSoc Backend Operating System</h1>
     <p class='muted'>Live backend management inventory for PulseSoc. Every feature must be visible, measurable, actionable, auditable, permission-gated, and operationally owned.</p>
-    <div class='grid'>{os_summary_card}{launch_card}{developer_rule_card}</div>
+    <div class='grid'>{seller_card}{os_summary_card}{launch_card}{developer_rule_card}</div>
     <h2>Live Command Modules</h2>
     <div class='grid'>{''.join(module_cards) or '<div class="card">No backend management modules assigned to this role yet.</div>'}</div>
     <h2>Provider / Infrastructure Readiness</h2>
@@ -84517,7 +90305,7 @@ def api_pulse_post_from_camera():
         return api_error("Login required.", 401)
     payload = request.get_json(silent=True) or {}
     media_url = clean_html(payload.get("media_url") or "")[:1000]
-    body = clean_html(payload.get("body") or "Created with CoinPilotXAI Camera Studio")[:3000]
+    body = clean_html(payload.get("body") or "Created with CoinPlotXAI Camera Studio")[:3000]
     if not media_url:
         return api_error("Upload media before creating a camera post.", 400)
     media_ids = [safe_int(payload.get("media_id"), 0)] if safe_int(payload.get("media_id"), 0) else []
@@ -85820,6 +91608,24 @@ def stripe_webhook():
     logging.info("STRIPE_EVENT_TYPE event_type=%s event_id=%s", event_type, event.get("id"))
     logging.info("stripe webhook received event_type=%s event_id=%s", event_type, event.get("id"))
     event_id = event.get("id", "")
+    # --- Business OS strangler hook (flag-gated, non-blocking) ---
+    # Persist the signature-verified event to the durable, idempotent webhook
+    # inbox BEFORE any handler runs. Purely additive: when BUSINESS_OS_LEDGER is
+    # off this is skipped entirely, and any failure here is swallowed so it can
+    # never affect the existing webhook path.
+    if os.getenv("BUSINESS_OS_LEDGER", "").strip().lower() in ("1", "true", "on", "yes"):
+        try:
+            from services.business_os.payments import webhook_inbox as _busos_inbox
+            _busos_inbox.ensure_schema()
+            _busos_inbox.enqueue_event(
+                provider="stripe",
+                provider_event_id=event_id,
+                payload=event,
+                event_type=event_type,
+                signature_verified=bool(STRIPE_WEBHOOK_SECRET),
+            )
+        except Exception:
+            logging.exception("BUSINESS_OS webhook inbox enqueue failed (non-fatal) event_id=%s", event_id)
     webhook_record = creator_economy_service.record_webhook_event(event_id, event_type, event, status="received")
     if webhook_record.get("duplicate"):
         logging.info("Payment webhook duplicate skipped provider_event_id=%s event_type=%s", event_id, event_type)
@@ -86400,6 +92206,7 @@ def get_user_email(user_id):
 def brevo_config_diagnostics():
     status = email_service_service.provider_status()
     sender_email = status.get("sender_email") or ""
+    reply_to_email = status.get("reply_to_email") or ""
     return {
         "provider": "brevo",
         "ready": bool(status.get("ready")),
@@ -86411,12 +92218,16 @@ def brevo_config_diagnostics():
         "sender_name_configured": bool(status.get("sender_name_configured")),
         "default_from_email_configured": bool(status.get("default_from_email_configured")),
         "support_email_configured": bool(status.get("support_email_configured")),
+        "public_support_email_configured": bool(status.get("public_support_email_configured")),
         "security_email_configured": bool(status.get("security_email_configured")),
         "public_base_url_configured": bool(os.getenv("PUBLIC_BASE_URL") or os.getenv("PULSE_APP_URL") or os.getenv("APP_BASE_URL")),
         "missing_fields": list(status.get("missing_fields") or []),
         "sender_email": sender_email,
         "sender_email_masked": mask_email(sender_email) if sender_email else "",
         "sender_name": status.get("sender_name") or "",
+        "reply_to_email_masked": mask_email(reply_to_email) if reply_to_email else "",
+        "reply_to_name": status.get("reply_to_name") or "",
+        "reply_to_email_source": status.get("reply_to_email_source") or "",
         "sender_email_source": status.get("sender_email_source") or "",
         "sender_name_source": status.get("sender_name_source") or "",
         "sender_domain": status.get("sender_domain") or "",
@@ -86945,7 +92756,8 @@ def branded_email_html(title, body_html):
       <div style="max-width:620px;margin:0 auto;border:1px solid rgba(110,223,246,.22);border-radius:12px;background:#0d1627;padding:28px">
         <h1 style="margin:0 0 14px;color:#ffffff">{title}</h1>
         <div style="color:#c4d2e7;line-height:1.65;font-size:15px">{body_html}</div>
-        <p style="margin-top:24px;color:#9fb5c0;font-size:13px">CoinPlotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.</p>
+        <p style="margin-top:24px;color:#9fb5c0;font-size:13px">PulseSoc™ • Built by CoinPlotXAI Inc. Support: support@pulsesoc.com</p>
+        <p style="color:#9fb5c0;font-size:13px">CoinPlotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.</p>
         <p style="color:#ffd9a0;font-size:13px">Educational AI intelligence only. Not financial, betting, investment, or legal advice.</p>
       </div>
     </div>
@@ -87040,17 +92852,17 @@ def send_signup_welcome_emails(user):
 
 
 def send_update_signup_email(lead):
-    subject = "You’re on the CoinPlotXAI Inc. update list"
+    subject = "You’re on the PulseSoc update list"
     name = lead.get("full_name") or "there"
     text = (
         f"Hi {name},\n\n"
-        "Thanks for joining the CoinPlotXAI Inc. update list.\n\n"
+        "Thanks for joining the PulseSoc update list.\n\n"
         "You may receive product updates, launch news, safety alerts, feature releases, and promotional offers based on your consent choices.\n\n"
         "No account was created unless you registered separately at https://pulsesoc.com/signup.\n"
         "You can opt out anytime. For SMS, reply STOP where supported or contact support.\n\n"
         "Support: support@pulsesoc.com"
     )
-    html = branded_email_html("You’re on the CoinPlotXAI Inc. update list", f"""
+    html = branded_email_html("You’re on the PulseSoc update list", f"""
       <p>Hi {clean_html(name)},</p>
       <p>Thanks for joining updates. You may receive product updates, launch news, safety alerts, feature releases, and promotional offers based on your consent choices.</p>
       <p>No account was created unless you registered separately.</p>
@@ -87089,14 +92901,14 @@ def send_password_reset_email(user, reset_link):
 
 
 def send_password_changed_email(user):
-    subject = "Your CoinPilotX password was changed"
+    subject = "Your PulseSoc password was changed"
     text = (
         f"Hi {account_display_name(user)},\n\n"
         "Your PulseSoc account password was changed successfully.\n\n"
         "If you did not make this change, contact support immediately at support@pulsesoc.com.\n\n"
         "CoinPlotXAI Inc. never asks for seed phrases, private keys, or wallet passwords."
     )
-    html = branded_email_html("Your CoinPilotX password was changed", f"""
+    html = branded_email_html("Your PulseSoc password was changed", f"""
       <p>Hi {clean_html(account_display_name(user))},</p>
       <p>Your account password was changed successfully.</p>
       <p>If you did not make this change, contact <a href="mailto:support@pulsesoc.com" style="color:#6edff6">support@pulsesoc.com</a> immediately.</p>
@@ -87158,7 +92970,7 @@ def send_trial_lifecycle_email(user, event_type):
     days_left = days_until(user.get("trial_end_date") or user.get("pro_expires_at"))
     copy = {
         "day_7": (
-            "Make the most of CoinPilotXAI",
+            "Make the most of PulseSoc",
             "Your core platform access is free. Explore PulseSoc, AI utilities, watchlists, alerts, groups, spaces, marketplace access, and scam education.",
         ),
         "day_21": (
@@ -87171,7 +92983,7 @@ def send_trial_lifecycle_email(user, event_type):
         ),
         "trial_ended": (
             "Your legacy trial has ended",
-            "Your account remains on Free Core access. You can keep using CoinPilotXAI, and PulseSoc Premium is optional for prestige identity and creator enhancements.",
+            "Your account remains on Free Core access. You can keep using PulseSoc, and PulseSoc Premium is optional for prestige identity and creator enhancements.",
         ),
     }
     subject, message = copy.get(event_type, copy["day_7"])
@@ -87269,8 +93081,8 @@ def payment_email_copy(user, details, email_type):
     support = "https://pulsesoc.com/support"
     subject_map = {
         "pro_activated": "Your PulseSoc Premium Access Is Active",
-        "payment_successful": "CoinPilotXAI Payment Successful",
-        "receipt_invoice": "Your CoinPilotXAI Receipt and Billing Details",
+        "payment_successful": "PulseSoc Payment Successful",
+        "receipt_invoice": "Your PulseSoc Receipt and Billing Details",
         "payment_failed": "Action needed: PulseSoc Premium payment issue",
         "subscription_canceled": "PulseSoc Premium subscription update",
         "trial_ending": "Your PulseSoc Premium trial is ending soon",
@@ -87566,11 +93378,11 @@ def subscription_email_body(plan_name, timestamp, txid=None):
         f"Activated at: {timestamp}\n"
         f"{txid_line}"
         "Legal operator: CoinPlotXAI Inc.\n\n"
-        "Open your CoinPilotXAI dashboard:\n"
+        "Open your PulseSoc dashboard:\n"
         "https://pulsesoc.com/dashboard\n\n"
         "Optional Telegram companion:\n"
         "https://t.me/DocShieldX_bot\n\n"
-        "Safety reminder: CoinPilotX will never ask for your seed phrase, private key, or wallet password.\n\n"
+        "Safety reminder: PulseSoc will never ask for your seed phrase, private key, or wallet password.\n\n"
         "CoinPlotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice."
     )
 
@@ -87579,7 +93391,7 @@ def send_subscription_email(user_id, payment_type, txid=None, stripe_session_id=
     timestamp = timestamp or datetime.now().isoformat()
     email = get_user_email(user_id)
     if payment_type == "btc":
-        subject = "Your CoinPilotX BTC Payment Was Verified"
+        subject = "Your PulseSoc BTC Payment Was Verified"
         body = subscription_email_body("PulseSoc Premium - BTC", timestamp, txid=txid)
     else:
         subject = "Your PulseSoc Premium Subscription Is Active"
@@ -89569,7 +95381,7 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "before users trust them.\n\n"
         "CoinPilotX does not hold user funds, create exchange accounts, or guarantee profits. "
         "CoinPlotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.\n\n"
-        "Powered by CoinPlotXAI Inc.",
+        "Built by CoinPlotXAI Inc.",
         reply_markup=main_menu()
     )
 
@@ -90795,6 +96607,7 @@ def _init_db_impl():
         ("latest_payment_at", "TEXT"),
         ("risk_profile", "TEXT DEFAULT 'balanced'"),
         ("preferred_exchange_goal", "TEXT DEFAULT 'beginner'"),
+        ("preferred_language", "TEXT DEFAULT 'en'"),
         ("stripe_customer_id", "TEXT"),
         ("stripe_session_id", "TEXT"),
         ("last_payment_type", "TEXT"),
@@ -92275,9 +98088,9 @@ def _init_db_impl():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_saved_sounds_user ON pulse_saved_sounds(user_id, created_at)")
     now_seed = datetime.utcnow().isoformat(timespec="seconds")
     default_sounds = [
-        ("PulseSoc Neon Rise", "CoinPilotXAI", 84, 118, "trending", "energetic", "electronic", ["reels", "video", "neon"]),
+        ("PulseSoc Neon Rise", "CoinPlotXAI", 84, 118, "trending", "energetic", "electronic", ["reels", "video", "neon"]),
         ("Trust Signal", "PulseSoc Studio", 72, 96, "educational", "focused", "ambient", ["status", "education", "trust"]),
-        ("Creator Glow Loop", "CoinPilotXAI", 98, 124, "creator", "cinematic", "electronic", ["post", "creator", "motion"]),
+        ("Creator Glow Loop", "CoinPlotXAI", 98, 124, "creator", "cinematic", "electronic", ["post", "creator", "motion"]),
     ]
     for title, artist, trend, bpm, source, mood, genre, tags in default_sounds:
         cur.execute(
@@ -92853,6 +98666,11 @@ def _init_db_impl():
         reviewed_at TEXT
     )
     """)
+    # The application lifecycle columns. Additive only: every one of these has a
+    # usable default for the rows the web form wrote before this existed, so a
+    # deployed database needs no migration and no historical row is rewritten.
+    add_columns_if_missing(cur, "marketplace_merchant_applications", list(seller_lifecycle.APPLICATION_EXTRA_COLUMNS), conn=conn)
+    seller_lifecycle.ensure_schema(cur)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_merchant_documents (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94017,12 +99835,20 @@ def _init_db_impl():
         theme_key TEXT DEFAULT 'midnight_elite',
         accent_color TEXT DEFAULT '#ffd166',
         background_style TEXT DEFAULT 'premium_gradient',
+        layout_key TEXT DEFAULT 'classic',
+        modules_json TEXT DEFAULT '[]',
+        motion_level TEXT DEFAULT 'balanced',
         active INTEGER DEFAULT 1,
         created_at TEXT,
         updated_at TEXT,
         UNIQUE(user_id, theme_key)
     )
     """)
+    add_columns_if_missing(cur, "pulse_profile_themes", [
+        ("layout_key", "TEXT DEFAULT 'classic'"),
+        ("modules_json", "TEXT DEFAULT '[]'"),
+        ("motion_level", "TEXT DEFAULT 'balanced'"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_identity_effects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101228,7 +107054,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.info("Telegram status alert count failed for user=%s error=%s", user.get("user_id"), exc)
     pro_status = "PulseSoc Premium Active" if has_pro_access(user) else "Free Core"
     await update.message.reply_text(
-        "CoinPilotXAI Status\n\n"
+        "CoinPlotXAI Status\n\n"
         "Account linked: Yes\n"
         f"Plan: {pro_status}\n"
         f"Active alerts: {active_alerts}\n\n"
@@ -102445,7 +108271,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu_ai_assistant":
         await query.message.reply_text(
-            append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk a question with /ask, or just send me a normal message.\n\nI can help with crypto, scams, blockchain, portfolio thinking, and safer financial literacy.\n\nPowered by CoinPlotXAI Inc."),
+            append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk a question with /ask, or just send me a normal message.\n\nI can help with crypto, scams, blockchain, portfolio thinking, and safer financial literacy.\n\nBuilt by CoinPlotXAI Inc."),
             reply_markup=main_menu()
         )
         return
@@ -102631,7 +108457,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu_talk":
         await query.message.reply_text(
-            append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk me a crypto question in plain English, or send a suspicious message and I’ll help you inspect it.\n\nPowered by CoinPlotXAI Inc."),
+            append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk me a crypto question in plain English, or send a suspicious message and I’ll help you inspect it.\n\nBuilt by CoinPlotXAI Inc."),
             reply_markup=main_menu()
         )
         return
@@ -103096,6 +108922,38 @@ def initialize_database_for_web_startup():
 
     threading.Thread(target=_run_startup_init, name="coinpilotx-db-init", daemon=True).start()
     logging.info("DB_INIT_BACKGROUND_STARTED")
+
+
+@webhook_app.route("/.well-known/apple-app-site-association", methods=["GET"])
+def pulse_apple_app_site_association():
+    from services.native_app_links import apple_app_site_association
+
+    payload, error = apple_app_site_association()
+    if payload is None:
+        response = jsonify({"ok": False, "error": "native_link_configuration_missing", "message": error})
+        response.status_code = 503
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    response = jsonify(payload)
+    response.headers["Content-Type"] = "application/json"
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return response
+
+
+@webhook_app.route("/.well-known/assetlinks.json", methods=["GET"])
+def pulse_android_asset_links():
+    from services.native_app_links import android_asset_links
+
+    payload, error = android_asset_links()
+    if payload is None:
+        response = jsonify({"ok": False, "error": "native_link_configuration_missing", "message": error})
+        response.status_code = 503
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    response = jsonify(payload)
+    response.headers["Content-Type"] = "application/json"
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return response
 
 
 if __name__ != "__main__":

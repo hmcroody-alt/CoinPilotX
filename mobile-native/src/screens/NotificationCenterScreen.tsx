@@ -1,6 +1,6 @@
-import { useNavigation } from "@react-navigation/native";
+import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, AppState, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import {
   deleteNotification,
@@ -20,6 +20,8 @@ import { compactPreview, formatShortTime } from "../utils/format";
 
 export function NotificationCenterScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, "NotificationCenter">>();
+  const openedDeepLinkId = useRef<number | null>(null);
   const [notifications, setNotifications] = useState<PulseNotification[]>([]);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -42,16 +44,23 @@ export function NotificationCenterScreen() {
     }
   }, []);
 
-  const openNotification = useCallback(async (notification: PulseNotification) => {
+  const openNotificationById = useCallback(async (notificationId: number, wasRead = false) => {
     try {
-      const resolved = await resolveNotificationTarget(notification.id);
-      setNotifications((current) => current.map((item) => (item.id === notification.id ? { ...item, read: true } : item)));
-      setUnread((current) => Math.max(0, current - (notification.read ? 0 : 1)));
-      await routeNotificationTarget(resolved.target_url || notification.target_url || notification.deep_link || "/pulse/notifications");
+      const resolved = await resolveNotificationTarget(notificationId);
+      const notification = notifications.find(item => item.id === notificationId);
+      setNotifications((current) => current.map((item) => (item.id === notificationId ? { ...item, read: true } : item)));
+      setUnread((current) => Math.max(0, current - (wasRead ? 0 : 1)));
+      await routeNotificationTarget(
+        resolved.target_url || notification?.target_url || notification?.deep_link || "/pulse/notifications"
+      );
     } catch (openError) {
       Alert.alert("Notification unavailable", openError instanceof Error ? openError.message : "That notification could not be opened.");
     }
-  }, []);
+  }, [notifications]);
+
+  const openNotification = useCallback(async (notification: PulseNotification) => {
+    await openNotificationById(notification.id, notification.read);
+  }, [openNotificationById]);
 
   const markRead = useCallback(async (notification: PulseNotification) => {
     try {
@@ -101,6 +110,14 @@ export function NotificationCenterScreen() {
     return unregisterNotifications;
   }, [load]);
 
+  useEffect(() => {
+    const notificationId = route.params?.notificationId;
+    if (!notificationId || loading || openedDeepLinkId.current === notificationId) return;
+    openedDeepLinkId.current = notificationId;
+    const notification = notifications.find(item => item.id === notificationId);
+    openNotificationById(notificationId, notification?.read === true).catch(() => undefined);
+  }, [loading, notifications, openNotificationById, route.params?.notificationId]);
+
   return (
     <View style={styles.root}>
       <View style={styles.header}>
@@ -109,10 +126,10 @@ export function NotificationCenterScreen() {
           <Text style={styles.subtitle}>{unread ? `${unread} unread` : "All caught up"}</Text>
         </View>
         <View style={styles.headerActions}>
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("NotificationPreferences")}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("NotificationPreferences")}>
             <Text style={styles.secondaryText}>Prefs</Text>
           </Pressable>
-          <Pressable style={styles.button} onPress={markAllRead}>
+          <Pressable accessibilityRole="button" style={styles.button} onPress={markAllRead}>
             <Text style={styles.buttonText}>Read all</Text>
           </Pressable>
         </View>
@@ -150,7 +167,7 @@ function NotificationRow({
   onDelete: () => void;
 }) {
   return (
-    <Pressable style={({ pressed }) => [styles.card, !notification.read && styles.unreadCard, pressed && styles.pressed]} onPress={onOpen}>
+    <Pressable accessibilityRole="button" style={({ pressed }) => [styles.card, !notification.read && styles.unreadCard, pressed && styles.pressed]} onPress={onOpen}>
       <View style={styles.rowTop}>
         <Text style={styles.category}>{notification.category || notification.type || "PulseSoc"}</Text>
         <Text style={styles.time}>{formatShortTime(notification.created_at)}</Text>
@@ -158,13 +175,13 @@ function NotificationRow({
       <Text style={styles.cardTitle} numberOfLines={2}>{notification.title}</Text>
       <Text style={styles.body} numberOfLines={3}>{compactPreview(notification.body, "Open notification")}</Text>
       <View style={styles.actions}>
-        <Pressable style={styles.smallButton} onPress={onOpen}>
+        <Pressable accessibilityRole="button" style={styles.smallButton} onPress={onOpen}>
           <Text style={styles.smallButtonText}>Open</Text>
         </Pressable>
-        <Pressable style={styles.smallButton} onPress={onRead}>
+        <Pressable accessibilityRole="button" style={styles.smallButton} onPress={onRead}>
           <Text style={styles.smallButtonText}>{notification.read ? "Read" : "Mark read"}</Text>
         </Pressable>
-        <Pressable style={styles.deleteButton} onPress={onDelete}>
+        <Pressable accessibilityRole="button" style={styles.deleteButton} onPress={onDelete}>
           <Text style={styles.deleteText}>Delete</Text>
         </Pressable>
       </View>

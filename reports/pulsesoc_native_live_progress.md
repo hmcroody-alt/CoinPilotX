@@ -6,7 +6,7 @@ Date: 2026-07-04
 
 This foundation adds native Live discovery and viewer support only.
 
-It does not build native Go Live, Studio, hosting, co-hosting, camera publishing, microphone publishing, restream controls, or native LiveKit host controls. Those flows remain on the existing safe web fallback until a separate native LiveKit hosting phase is planned.
+Native Go Live, Studio, hosting, and co-host requests are now wired natively as a client of the existing backend LiveKit token/approval APIs, with no web Studio handoff. Real-device host publishing, camera/microphone publishing, and restream behavior remain unverified. Unsupported viewer playback transports still use the existing safe web fallback.
 
 ## Existing PulseSoc Reuse
 
@@ -41,7 +41,7 @@ Navigation added:
 - Native `LiveDetail` stack route.
 - Native linking for `/pulse/live` and `/pulse/live/<live_id>`.
 - Notification/deep-link routing for `/pulse/live`, `/pulse/live/<id>`, and `/pulse/reels?live=<id>`.
-- Safe web fallback for `/pulse/live/studio`.
+- Native routing for `/pulse/live/studio` into the native Live Studio.
 
 Native Live discovery includes:
 
@@ -64,19 +64,16 @@ Native Live viewer includes:
 - Live reactions through existing reaction API.
 - Share hook using the existing PulseSoc Live/Reels URL.
 
-## Web Fallbacks Preserved
+## Native Host/Studio Now Wired
 
-Kept on web fallback:
+Go Live, Studio, host controls, and co-host requests are native (`LiveStudioScreen`, `LiveHostSessionScreen`) using the existing backend LiveKit token/approval APIs. No browser Studio handoff remains for these flows.
 
-- Go Live.
-- Studio.
-- Host controls.
-- Co-hosting.
-- Restream destinations.
-- Unsupported playback transports.
-- Native camera/mic publishing.
+Still on the existing safe web fallback:
 
-This keeps the current production WebView app and browser Live Studio untouched and usable.
+- Unsupported viewer playback transports.
+- Restream destinations not exposed by the native host flow.
+
+The current production WebView app and browser Live Studio remain untouched and usable.
 
 ## Device-Only Behavior Not Verified
 
@@ -96,8 +93,7 @@ Recommended next native feature: Native Live Viewer Device QA + Hardening.
 Why this comes next:
 
 - Live playback is more device-sensitive than previous static/list surfaces.
-- Native hosting should not start until viewer playback, chat, reactions, deep links, refresh, and fallback behavior are verified.
-- The current native Live foundation intentionally keeps hosting on web fallback, so the safest next step is QA and hardening rather than expanding scope.
+- Native hosting is now wired (`LiveStudioScreen`/`LiveHostSessionScreen`) but its real-device publishing behavior is unverified, so viewer and host device QA is the safest next step before broadening host scope.
 
 Reusable existing PulseSoc logic:
 
@@ -124,8 +120,8 @@ Safest implementation plan:
 
 1. Verify Live discovery on simulator or real device.
 2. Verify supported playback URLs render in native video.
-3. Verify unsupported LiveKit direct/co-host/Studio paths open web fallback.
+3. Verify unsupported viewer playback transports open the web fallback and that native Studio/co-host requests reach the backend.
 4. Verify chat send/read and reactions with an authenticated account.
 5. Verify foreground/background state refresh.
 6. Fix only blockers found during device QA.
-7. Keep native hosting out of scope until viewer behavior is stable.
+7. Verify native host publishing (`LiveStudioScreen`/`LiveHostSessionScreen`) on a real device before broadening host scope.

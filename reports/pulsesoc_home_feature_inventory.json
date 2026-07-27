@@ -17,7 +17,7 @@
     },
     {
       "details": "",
-      "name": "Top nav old ! removed",
+      "name": "Top nav uses restored notification control",
       "passed": true
     },
     {
@@ -58,7 +58,7 @@
     {
       "details": "",
       "name": "Feed hierarchy markers present",
-      "passed": true
+      "passed": false
     },
     {
       "details": "",
@@ -201,7 +201,7 @@
       "appears_in_nav_menu_search_apps": true,
       "appears_on_home": true,
       "current_backend_route_or_api": "/api/pulse/notifications",
-      "current_entry_point": "top alert radar + rail",
+      "current_entry_point": "top bell + rail",
       "current_route": "/pulse/notifications",
       "current_status": "wired",
       "feature": "Notifications / Pulse Alerts",
@@ -429,7 +429,7 @@
     }
   ],
   "missing_routes": [],
-  "ok": true,
+  "ok": false,
   "routes_verified": [
     "/pulse",
     "/dashboard",

@@ -1,0 +1,132 @@
+{
+  "report": "PulseSoc Native — App Store Rejection Risk Register",
+  "generated": "2026-07-20",
+  "release_branch": "release/undx-nexus-core-v4",
+  "release_commit_sha": "7ac897135424efc60dde1549433803ce091c5895",
+  "working_tree": "DIRTY (uncommitted changes present, including in mobile-native/src)",
+  "native_marketing_version": "1.0",
+  "native_build_number": "1",
+  "app_json_version": "0.1.0",
+  "bundle_identifier": "com.pulsesoc.nativeapp",
+  "team_id": "87ZC69AGSR",
+  "published_app_store_version": "UNKNOWN — no App Store Connect access from this environment",
+  "final_judgment": "NO-GO",
+  "automated_gates": {
+    "typescript": {"command": "npx tsc --noEmit", "result": "PASS", "errors": 0},
+    "jest": {"command": "npx jest", "result": "PASS", "suites": 23, "tests": 241}
+  },
+  "risks": [
+    {
+      "id": "R1",
+      "severity": "P0",
+      "area": "Signing / Distribution (archive impossible as configured)",
+      "affected": "mobile-native/ios/PulseSocNative.xcodeproj/project.pbxproj",
+      "evidence": "All build configurations use CODE_SIGN_IDENTITY = \"Apple Development\" / \"iPhone Developer\". No \"Apple Distribution\" identity, no App Store provisioning profile, no PROVISIONING_PROFILE_SPECIFIER anywhere. Release bundle id com.pulsesoc.nativeapp; a separate .dev id and \"PulseSoc Native Dev\" display name indicate a side-by-side development install workflow.",
+      "fix": "Configure App Store distribution signing (Apple Distribution cert + App Store provisioning profile) under the team's Apple Developer account. Requires account access — cannot be done from this environment.",
+      "verification": "Xcode Organizer archive validates with distribution profile.",
+      "status": "OPEN — account-side"
+    },
+    {
+      "id": "R2",
+      "severity": "P0",
+      "area": "Push entitlement",
+      "affected": "mobile-native/ios/PulseSocNative/PulseSocNative.entitlements",
+      "evidence": "aps-environment = development. A TestFlight/App Store build must use production APNs; development entitlement breaks push in distribution builds. The app depends on push (expo-notifications, notification routing).",
+      "fix": "Use aps-environment = production for the Release/distribution build. Because a single entitlements file is shared across Debug and Release, this needs a Release-specific entitlements file (or build-setting override) so on-device dev push still works. Tied to the distribution setup in R1.",
+      "verification": "Send a push to a TestFlight build and confirm delivery on device.",
+      "status": "OPEN — account-side + config"
+    },
+    {
+      "id": "R3",
+      "severity": "P0",
+      "area": "Payments — Guideline 3.1.1 (In-App Purchase)",
+      "affected": "mobile-native/src/api/premium.ts, mobile-native/src/api/marketplace.ts, mobile-native/package.json",
+      "evidence": "No In-App Purchase SDK present in package.json (no StoreKit bridge, react-native-iap, expo-in-app-purchases, or RevenueCat). Digital premium subscription opens a web billing portal / /pulse/premium via Linking.openURL (premium.ts:101, openPremiumUrl premium.ts:203). Marketplace opens checkout_url/onboarding_url via Linking.openURL (marketplace.ts:227,261).",
+      "fix": "Digital subscriptions and digital unlocks consumed in-app must use StoreKit IAP. Physical-goods flows must be clearly physical. Until IAP is implemented, disable digital-purchase entry points behind a production flag and update metadata/reviewer notes to not advertise them.",
+      "mitigation": "Digital-purchase entry points (PremiumScreen purchases, marketplace checkout, seller payout onboarding, course enrollment/teacher/catalog) are now wrapped in DIGITAL_COMMERCE_ENABLED (EXPO_PUBLIC_DIGITAL_COMMERCE_ENABLED, default OFF). No web-payment surface renders in production; underlying web-checkout code is preserved for a future StoreKit build. Does not clear the P0 — StoreKit still required before re-enabling.",
+      "verification": "Reviewer can complete a StoreKit sandbox purchase; no web checkout for digital goods remains in the submitted binary.",
+      "status": "OPEN — mitigated (entry points hidden behind flag; StoreKit still required)"
+    },
+    {
+      "id": "R4",
+      "severity": "P0",
+      "area": "Versioning / listing identity",
+      "affected": "mobile-native/ios/PulseSocNative.xcodeproj/project.pbxproj (MARKETING_VERSION=1.0, CURRENT_PROJECT_VERSION=1), mobile-native/app.json (version 0.1.0)",
+      "evidence": "Native project reports 1.0 (build 1) while app.json reports 0.1.0 — mismatch. The 'update existing listing' premise cannot be validated: the published App Store version is unknown from this environment, and multiple src references call the current product 'the WebView app' / 'your current WebView account' (AccountRecoveryScreen.tsx:46, SettingsScreen.tsx:26), suggesting the existing listing may be a web-wrapper rather than this native app.",
+      "fix": "Read the currently published CFBundleShortVersionString/build in App Store Connect. Set MARKETING_VERSION and CURRENT_PROJECT_VERSION greater than every uploaded build. Align app.json. Confirm com.pulsesoc.nativeapp is the existing app record's bundle id.",
+      "verification": "App Store Connect shows the new version number > published, attached to the existing PulseSoc record.",
+      "status": "OPEN — account-side"
+    },
+    {
+      "id": "R5",
+      "severity": "P1",
+      "area": "Minimum functionality / misleading native — Guideline 4.2",
+      "affected": "mobile-native/src/navigation/dashboardRouting.ts:277, src/screens/ProfileScreen.tsx:197,295, src/screens/SellerStoreScreen.tsx:230,262,339,408, src/screens/SellerListingComposerScreen.tsx:118, src/screens/MarketplaceScreen.tsx:117,126,296, src/api/{account,accountHealth,safety,creator,growth,learning,calls,events,live}.ts",
+      "evidence": "~30 Linking.openURL sites route internal product surfaces (profile, seller store, dashboard, events, creator, growth, learning, calls, account health, live) to the web instead of native screens.",
+      "fix": "Provide native destinations, or remove/hide the web-escape entry points. Keep only genuinely-external legal pages (already handled as intentional web exceptions in notificationRouting.ts).",
+      "mitigation": "Duplicate/internal web-escape buttons removed or native-routed across Marketplace, SellerStore, ContentPlanner, GrowthCenter, SellerListingComposer, CreatorStudio, Profile, AlertManagement, IntelligenceCenter, CameraStudio, Courses, and Events (e.g. Events 'Create Live Event' now navigates to native LiveStudio; unused web-fallback helpers/imports removed). Residual escapes limited to: legal/support pages (Apple-exempt), flag-gated commerce (see R3), and a small set of no-native-equivalent fallbacks (intelligence stream cards, CameraStudio unsupported-destination capture/publish, Settings Telegram companion) which are intentionally retained and documented rather than deleted.",
+      "verification": "Static audit shows no duplicate internal-surface Linking.openURL in the submitted binary except documented legal exceptions and retained no-native-equivalent fallbacks.",
+      "status": "OPEN — largely mitigated (duplicate/internal escapes removed or native-routed; documented residual fallbacks remain)"
+    },
+    {
+      "id": "R6",
+      "severity": "P1",
+      "area": "iPad support claim",
+      "affected": "mobile-native/app.json (supportsTablet: true), ios/PulseSocNative/Info.plist (iPad orientations incl. landscape)",
+      "evidence": "supportsTablet: true forces iPad review and iPad screenshots. App is phone-first (portrait, full-bleed phone media); iPad layout is unverified.",
+      "fix": "Either verify and polish iPad layout + provide iPad screenshots, or set supportsTablet: false to ship iPhone-only.",
+      "mitigation": "Resolved: app.json supportsTablet set to false and Xcode TARGETED_DEVICE_FAMILY set to 1 (iPhone-only). No iPad review or iPad screenshots required.",
+      "verification": "Simulator run on iPad shows no broken layout, or the app is iPhone-only.",
+      "status": "FIXED — iPhone-only"
+    },
+    {
+      "id": "R7",
+      "severity": "P1",
+      "area": "Permission usage string (placeholder)",
+      "affected": "mobile-native/ios/PulseSocNative/Info.plist (NSFaceIDUsageDescription)",
+      "evidence": "Was generic placeholder: 'Allow $(PRODUCT_NAME) to access your Face ID biometric data.'",
+      "fix": "Replaced with honest purpose: 'PulseSoc uses Face ID to unlock your saved sign-in securely.' (aligned with app.json).",
+      "verification": "Info.plist inspected.",
+      "status": "FIXED"
+    },
+    {
+      "id": "R8",
+      "severity": "P1",
+      "area": "Release freeze / dirty tree",
+      "affected": "working tree",
+      "evidence": "Uncommitted changes present, including on-mission web-fallback removals in mobile-native/src/{api/verification.ts, navigation/notificationRouting.ts, screens/VerificationCenterScreen.tsx}. Mission rule: never archive from a dirty/unreviewed tree.",
+      "fix": "Review, commit, and tag the release candidate before any archive.",
+      "verification": "git status clean; RC tag present.",
+      "status": "OPEN"
+    },
+    {
+      "id": "R9",
+      "severity": "P2",
+      "area": "Privacy manifest completeness",
+      "affected": "mobile-native/ios/PulseSocNative/PrivacyInfo.xcprivacy",
+      "evidence": "NSPrivacyCollectedDataTypes is an empty array for a social app that collects account info, media, audio, messages, and analytics. Required-reason API declarations (FileTimestamp, UserDefaults, SystemBootTime, DiskSpace) look reasonable.",
+      "fix": "Confirm the app-level manifest and the App Store Connect App Privacy answers reflect real collection; ensure LiveKit/WebRTC and any analytics SDK manifests are present.",
+      "verification": "Archive privacy report matches ASC App Privacy answers.",
+      "status": "OPEN — verify"
+    },
+    {
+      "id": "R10",
+      "severity": "P2",
+      "area": "Background mode justification",
+      "affected": "mobile-native/ios/PulseSocNative/Info.plist (UIBackgroundModes: audio)",
+      "evidence": "audio background mode declared. Plausibly justified by LiveKit live/calls, but reviewer note needed.",
+      "fix": "Keep only if genuinely used; document in reviewer notes.",
+      "verification": "Audio continues correctly in background during a live/call; no misuse.",
+      "status": "OPEN — document"
+    }
+  ],
+  "positive_findings": [
+    "Account deletion screen present (src/screens/AccountCenterScreen.tsx).",
+    "Report/block controls wired across Reels, SafetyHub, Home, PostCard.",
+    "App Transport Security: NSAllowsArbitraryLoads=false; production base URL is HTTPS (https://pulsesoc.com).",
+    "Privacy manifest present with required-reason API declarations.",
+    "Real native livestream stack present (LiveKit / WebRTC).",
+    "Automated gates green: tsc 0 errors, jest 241/241.",
+    "Prior session already removed verification + notification web fallbacks (uncommitted)."
+  ]
+}

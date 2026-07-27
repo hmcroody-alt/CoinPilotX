@@ -18,7 +18,7 @@
     {
       "details": "",
       "name": "Status actions use shared class",
-      "passed": true
+      "passed": false
     },
     {
       "details": "",
@@ -86,5 +86,5 @@
       "passed": true
     }
   ],
-  "ok": true
+  "ok": false
 }

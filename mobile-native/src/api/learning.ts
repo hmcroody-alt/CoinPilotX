@@ -1,4 +1,3 @@
-import { Linking } from "react-native";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
@@ -103,7 +102,12 @@ export async function saveRecentLearningLesson(lesson: LearningLessonSummary) {
 
 export async function openLearningWebFallback(path = "/pulse/courses") {
   const target = /^https?:\/\//i.test(path) ? path : `${PULSE_API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
-  await Linking.openURL(target).catch(() => undefined);
+  return {
+    ok: false,
+    target,
+    status: "native_provider_boundary",
+    message: "Learning operation remains inside the native Courses boundary until the protected contract is available."
+  };
 }
 
 export function learningWebRoute(mode: "courses" | "create" | "teachers" | "teacher-dashboard" | "education" = "courses", id?: number | string) {

@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Appearance,
   AppState,
   AppStateStatus,
   Easing,
@@ -18,7 +19,6 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
-  Linking,
   Modal,
   Platform,
   Pressable,
@@ -42,6 +42,7 @@ import {
   loadCachedMessages,
   markConversationSeen,
   MessengerMessage,
+  MessengerPresence,
   PULSE_AI_CONVERSATION_ID,
   PULSE_AI_DISPLAY_NAME,
   reactToMessage,
@@ -54,10 +55,13 @@ import {
   syncConversation,
   uploadMessengerMedia
 } from "../api/messenger";
-import { PULSE_API_BASE_URL } from "../api/config";
+import { mergeConversationMessages } from "../api/messengerOrdering";
+import { APP_VERSION, PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
+import { buildUndxUiContext, UndxUiContext } from "../undx/undxContext";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
+import { ContentTranslation } from "../components/ContentTranslation";
 import { PulseCommandAvatar, PulseCommandPanel } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import {
@@ -71,6 +75,10 @@ import {
   VoicePlaybackSnapshot
 } from "../core/voiceMessagePlayback";
 import { RootStackParamList } from "../navigation/types";
+import { openNativeRoute } from "../navigation/nativeRouteActions";
+import { presenceActivityText } from "../api/presence";
+import { reportPresenceActivity } from "../api/presenceSession";
+import { useAuth } from "../session/auth";
 import {
   messageAccessibilityLabel,
   messageActionRules,
@@ -185,10 +193,53 @@ function SignalIconButton({
   );
 }
 
+function readOriginRoute(navigation: { getState?: () => unknown }): string | null {
+  try {
+    const state = navigation.getState?.() as { index?: number; routes?: Array<{ name?: string }> } | undefined;
+    if (!state || !Array.isArray(state.routes)) return null;
+    const index = typeof state.index === "number" ? state.index : state.routes.length - 1;
+    const prior = state.routes[index - 1];
+    return prior && typeof prior.name === "string" ? prior.name : null;
+  } catch {
+    return null;
+  }
+}
+
+async function collectUndxUiContext(
+  navigation: { getState?: () => unknown },
+  conversationId: number,
+  selectedTaskId?: string
+): Promise<UndxUiContext> {
+  const [screenReaderEnabled, reduceMotionEnabled] = await Promise.all([
+    AccessibilityInfo.isScreenReaderEnabled().catch(() => null),
+    AccessibilityInfo.isReduceMotionEnabled().catch(() => null)
+  ]);
+  let timezone: string | null = null;
+  try {
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    timezone = null;
+  }
+  return buildUndxUiContext({
+    surface: "undx_chat",
+    originRoute: readOriginRoute(navigation),
+    platform: Platform.OS,
+    appVersion: APP_VERSION || null,
+    screenReaderEnabled,
+    reduceMotionEnabled,
+    colorScheme: Appearance.getColorScheme(),
+    timezone,
+    selectedConversationId: conversationId,
+    selectedTaskId
+  });
+}
+
 export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, "Chat">) {
   const conversationId = route.params.conversationId;
   const assistantConversation = conversationId === PULSE_AI_CONVERSATION_ID;
   const insets = useSafeAreaInsets();
+  const { authState } = useAuth();
+  const selfUserId = Number(authState.user?.user_id || 0);
   const [messages, setMessages] = useState<MessengerMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
@@ -198,6 +249,11 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [initialFetchComplete, setInitialFetchComplete] = useState(false);
   const [usingCachedMessages, setUsingCachedMessages] = useState(false);
   const [typing, setTyping] = useState("");
+  // Live peer presence, refreshed from every conversation fetch and sync.
+  // route.params.presence is only a snapshot taken at navigation time; relying
+  // on it would leave the header showing "Online" for as long as the thread
+  // stayed open, which is exactly the staleness this system exists to remove.
+  const [peerPresence, setPeerPresence] = useState<PeerPresence | null>(null);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number>(0);
   const [recordingElapsed, setRecordingElapsed] = useState(0);
@@ -217,6 +273,19 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const qaChatState = PULSESOC_QA_MESSENGER_FIXTURES ? String(process.env.EXPO_PUBLIC_PULSESOC_QA_CHAT_STATE || "") : "";
   const draftKey = `pulsesoc.native.messenger.draft.${conversationId}`;
+
+  const openUndxResult = useCallback((deepLink?: string) => {
+    const nativePath = nativePathFromDeepLink(deepLink);
+    if (!nativePath) {
+      setStatusMessage("This result is not available as a native route yet.");
+      return;
+    }
+    try {
+      openNativeRoute(navigation, nativePath);
+    } catch {
+      setStatusMessage("This result could not be opened in native PulseSoc.");
+    }
+  }, [navigation]);
 
   useEffect(() => () => {
     stopVoiceMessagePlayback("conversation_closed").catch(() => undefined);
@@ -277,26 +346,19 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     : usingCachedMessages
       ? "Cached history"
       : "Live channel";
+  // Presence beats connection state, and live presence beats the navigation
+  // snapshot. When the server has told us nothing about the peer we show
+  // connection status instead of guessing.
+  const presenceSubtitle = peerPresenceSubtitle(peerPresence);
   const headerSubtitle = assistantConversation
-    ? typing || (error ? "Service reconnecting" : usingCachedMessages ? "Cached history" : "Available · PulseSoc Intelligence")
-    : typing || (isPresenceActive(route.params.presence) ? "Online · Direct" : headerStatus);
+    ? typing || (error ? "Service reconnecting" : usingCachedMessages ? "Cached history" : "Always available · PulseSoc Intelligence")
+    : typing || presenceSubtitle || headerStatus;
+  const peerIsOnline = Boolean(peerPresence?.online);
 
-  const mergeMessages = useCallback((current: MessengerMessage[], incoming: MessengerMessage[]) => {
-    const byKey = new Map<string, MessengerMessage>();
-    [...current, ...incoming].forEach((message) => {
-      const key = message.client_message_id || String(message.id);
-      const existing = byKey.get(key);
-      const serverAccepted = message.id > 0 && Boolean(message.client_message_id);
-      byKey.set(key, {
-        ...existing,
-        ...message,
-        local_status: serverAccepted ? undefined : message.local_status || existing?.local_status,
-        local_error: serverAccepted ? undefined : message.local_error || existing?.local_error,
-        delivery_status: serverAccepted ? message.delivery_status || "sent" : message.delivery_status || existing?.delivery_status
-      });
-    });
-    return Array.from(byKey.values()).sort((a, b) => a.id - b.id);
-  }, []);
+  const mergeMessages = useCallback(
+    (current: MessengerMessage[], incoming: MessengerMessage[]) => mergeConversationMessages(current, incoming),
+    []
+  );
 
   const replaceLocalMessage = useCallback((localId: number, next: MessengerMessage) => {
     setMessages((current) => mergeMessages(current.filter((message) => message.id !== localId), [next]));
@@ -321,6 +383,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       await cacheMessages(conversationId, nextMessages);
       if (!assistantConversation) await markConversationSeen(conversationId).catch(() => undefined);
       setTyping(typingSummary(data.presence));
+      if (!assistantConversation) setPeerPresence(peerPresenceFrom(data.presence, selfUserId));
     } catch (loadError) {
       const cached = await loadCachedMessages(conversationId);
       if (cached.length) {
@@ -337,7 +400,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setRefreshing(false);
       setLoading(false);
     }
-  }, [assistantConversation, conversationId]);
+  }, [assistantConversation, conversationId, selfUserId]);
 
   const loadOlder = useCallback(async () => {
     if (assistantConversation) return;
@@ -402,13 +465,17 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         await markConversationSeen(conversationId).catch(() => undefined);
       }
       setTyping(typingSummary(data.presence));
+      setPeerPresence(peerPresenceFrom(data.presence, selfUserId));
       setUsingCachedMessages(false);
       setError("");
     } catch {
       setTyping("");
+      // A failed sync means we no longer know whether the peer is online, so we
+      // drop the claim rather than keep displaying a stale one.
+      setPeerPresence(null);
       if (messages.length) setStatusMessage("Realtime reconnecting. Message history remains visible.");
     }
-  }, [assistantConversation, conversationId, mergeMessages, messages.length, newestMessageId]);
+  }, [assistantConversation, conversationId, mergeMessages, messages.length, newestMessageId, selfUserId]);
 
   const notifyTyping = useCallback((value: string) => {
     setDraft(value);
@@ -417,10 +484,15 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     if (now - lastTypingAt.current > 1800) {
       lastTypingAt.current = now;
       sendTyping(conversationId, true).catch(() => undefined);
+      // Mirror typing onto the unified presence session so subsystems outside
+      // Messenger see the same activity. The server ages this out on its own
+      // TTL, so a crash mid-keystroke cannot leave the indicator stuck on.
+      reportPresenceActivity("typing", String(conversationId)).catch(() => undefined);
     }
     if (typingTimer.current) clearTimeout(typingTimer.current);
     typingTimer.current = setTimeout(() => {
       sendTyping(conversationId, false).catch(() => undefined);
+      reportPresenceActivity("idle", "").catch(() => undefined);
     }, 1200);
   }, [assistantConversation, conversationId]);
 
@@ -451,7 +523,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         const data = await sendPulseAiMessage({
           body,
           client_message_id: local.client_message_id,
-          ui_context: { current_route: "Chat", selected_conversation_id: conversationId }
+          ui_context: await collectUndxUiContext(navigation, conversationId, route.params.undxTaskId)
         });
         const nextMessages = data.messages || [];
         setMessages(nextMessages);
@@ -542,7 +614,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       });
       throw sendError;
     }
-  }, [assistantConversation, conversationId, mergeMessages, messages, replaceLocalMessage, sync]);
+  }, [assistantConversation, conversationId, mergeMessages, messages, navigation, replaceLocalMessage, route.params.undxTaskId, sync]);
 
   const submitText = useCallback(async () => {
     const body = draft.trim();
@@ -550,7 +622,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     setDraft("");
     const currentReply = replyTo;
     setReplyTo(null);
-    if (!assistantConversation) await sendTyping(conversationId, false).catch(() => undefined);
+    // Clearing the typing indicator is a fire-and-forget network signal; awaiting it
+    // here would delay the optimistic bubble by a full round-trip. sendPayload inserts
+    // the local message synchronously, so let it run first and never block on typing.
+    if (!assistantConversation) void sendTyping(conversationId, false).catch(() => undefined);
     await sendPayload({
       body,
       message_type: "text",
@@ -642,6 +717,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     if (uploading) return;
     setUploading(true);
     setStatusMessage(input.voice ? "Sending voice message…" : "Uploading attachment…");
+    reportPresenceActivity(input.voice ? "sending_files" : "uploading_media", String(conversationId)).catch(() => undefined);
     try {
       const uploaded = await uploadMessengerMedia({
         conversationId,
@@ -680,6 +756,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       Alert.alert(input.voice ? "Voice message failed" : "Attachment failed", message);
     } finally {
       setUploading(false);
+      reportPresenceActivity("idle", "").catch(() => undefined);
     }
   }, [assistantConversation, conversationId, sendPayload, uploading]);
 
@@ -765,6 +842,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       if (recording) {
         const activeRecording = recording;
         setRecording(null);
+        reportPresenceActivity("idle", "").catch(() => undefined);
         const stopped = await activeRecording.stopAndUnloadAsync();
         await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => undefined);
         const uri = activeRecording.getURI();
@@ -805,8 +883,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setRecording(started.recording);
       setRecordingStartedAt(Date.now());
       setStatusMessage("Recording voice message… tap the microphone again to send.");
+      reportPresenceActivity("recording_voice", String(conversationId)).catch(() => undefined);
     } catch (recordingError) {
       setRecording(null);
+      reportPresenceActivity("idle", "").catch(() => undefined);
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => undefined);
       const message = recordingError instanceof Error ? recordingError.message : "Voice recording could not start.";
       setStatusMessage(message);
@@ -818,6 +898,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     const activeRecording = recording;
     if (!activeRecording) return;
     setRecording(null);
+    reportPresenceActivity("idle", "").catch(() => undefined);
     try {
       await activeRecording.stopAndUnloadAsync();
       const uri = activeRecording.getURI();
@@ -875,7 +956,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 10) }]}>
         <View style={styles.threadHeader}>
           <Pressable accessibilityRole="button" accessibilityLabel="Back to conversations" style={styles.backButton} onPress={() => navigation.goBack()}><Text style={styles.backButtonText}>‹</Text></Pressable>
-          <PulseCommandAvatar label={assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Chat"} imageUrl={assistantConversation ? undefined : route.params.avatarUrl} active={assistantConversation || isPresenceActive(route.params.presence)} size={48} tone={assistantConversation ? "intelligence" : "default"} />
+          <PulseCommandAvatar label={assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Chat"} imageUrl={assistantConversation ? undefined : route.params.avatarUrl} active={assistantConversation || peerIsOnline} size={48} tone={assistantConversation ? "intelligence" : "default"} />
           <View style={styles.threadIdentity}>
             <Text style={styles.threadTitle} numberOfLines={1}>{threadTitle}</Text>
             <View style={styles.threadStatusRow}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.threadSubtitle} numberOfLines={1}>{headerSubtitle}</Text></View>
@@ -938,7 +1019,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
               <Text style={styles.undxActionBody}>{component.component === "search_result_card" ? component.relevance_reason || `Canonical ID ${component.canonical_content_id}` : <>{component.target || "PulseSOC"}: {component.current_value ? `${component.current_value} → ` : ""}{component.proposed_value || component.value || component.status || "pending"}</>}</Text>
               {component.risk_summary ? <Text style={styles.undxActionRisk}>{component.risk_summary}</Text> : null}
               {component.component === "search_result_card" && component.deep_link ? (
-                <Pressable accessibilityRole="link" accessibilityLabel={`Open ${component.content_type || "PulseSOC"} result`} style={styles.undxActionConfirm} onPress={() => Linking.openURL(absoluteMediaUrl(component.deep_link)).catch(() => setStatusMessage("This result could not be opened."))}>
+                <Pressable accessibilityRole="link" accessibilityLabel={`Open ${component.content_type || "PulseSOC"} result`} style={styles.undxActionConfirm} onPress={() => openUndxResult(component.deep_link)}>
                   <Text style={styles.undxActionConfirmText}>Open</Text>
                 </Pressable>
               ) : null}
@@ -1057,6 +1138,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         title={assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Conversation"}
         messages={messages}
         connected={!error}
+        activityStatus={peerPresenceControlLabel(peerPresence)}
         assistantConversation={assistantConversation}
         onClose={() => setControlCenterOpen(false)}
         onStartCall={!assistantConversation ? (callType) => {
@@ -1169,7 +1251,18 @@ function MessageBubble({
           </View>
         ) : null}
         {!deleted && !moderated ? <MessageMedia message={message} /> : null}
-        {body ? <Text style={[styles.body, (deleted || moderated) && styles.systemBody]}>{body}</Text> : null}
+        {body ? (
+          deleted || moderated ? (
+            <Text style={[styles.body, styles.systemBody]}>{body}</Text>
+          ) : (
+            <ContentTranslation
+              contentType="chat"
+              contentRef={message.message_id || message.id || message.client_message_id || "pending"}
+              text={body}
+              textStyle={styles.body}
+            />
+          )
+        ) : null}
         {message.forwarded ? <Text style={styles.forwarded}>Forwarded signal</Text> : null}
         <View style={styles.metaRow}>
           <Text style={styles.meta}>{formatShortTime(message.created_at)}</Text>
@@ -1288,7 +1381,12 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
   if (type === "image" || type === "gif") {
     return (
       <>
-        <Pressable onPress={() => setViewerOpen(true)}>
+        <Pressable
+          accessibilityRole="imagebutton"
+          accessibilityLabel={`${messageAccessibilityLabel(message)}. ${type === "gif" ? "GIF" : "Image"} attachment.`}
+          accessibilityHint="Opens the full-screen viewer"
+          onPress={() => setViewerOpen(true)}
+        >
           <Image source={{ uri: thumbnailUrl || mediaUrl }} style={styles.image} resizeMode="cover" />
         </Pressable>
         <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title="Messenger media" onClose={() => setViewerOpen(false)} />
@@ -1410,8 +1508,84 @@ function mediaPreviewLabel(type: string, hasMedia: boolean) {
   return hasMedia ? "Attachment" : "Message";
 }
 
+type PeerPresence = {
+  status: string;
+  activity: string;
+  activity_context: string;
+  last_seen_text: string;
+  online: boolean;
+};
+
+/**
+ * True only when the server has affirmatively said a human is online.
+ *
+ * "active", "available" and "typing" used to count here, which meant a typing
+ * event or a loosely-named field could paint a green ring on someone who was
+ * not connected at all. Only the one canonical token the presence service
+ * emits is accepted now.
+ */
 function isPresenceActive(value?: string) {
-  return ["online", "active", "available", "typing"].includes(String(value || "").toLowerCase());
+  return String(value || "").toLowerCase() === "online";
+}
+
+function isAssistantPresenceValue(value?: string) {
+  return String(value || "").toLowerCase() === "assistant";
+}
+
+/**
+ * Pull this thread's peer out of the presence array the server returns with
+ * every conversation fetch and sync.
+ *
+ * Returning null when the peer is absent is load-bearing: an absent entry means
+ * we know nothing, and the header must then fall back to connection state
+ * rather than to a remembered "Online".
+ */
+function peerPresenceFrom(presence: MessengerPresence | undefined, selfUserId: number): PeerPresence | null {
+  const users = Array.isArray(presence?.users) ? presence?.users || [] : [];
+  const peer = users.find((item) => Number(item?.user_id || 0) !== selfUserId && Number(item?.user_id || 0) !== 0);
+  if (!peer) return null;
+  const record = peer as Record<string, unknown>;
+  const status = String(record.status || "").toLowerCase();
+  return {
+    status,
+    activity: String(record.activity || "idle").toLowerCase(),
+    activity_context: String(record.activity_context || ""),
+    last_seen_text: String(record.last_seen_text || ""),
+    online: status === "online"
+  };
+}
+
+/**
+ * Render the peer's presence as a single header line.
+ *
+ * An offline peer shows their real last-seen sentence when the server supplied
+ * one and a plain "Offline" when it did not. It never shows a fabricated
+ * timestamp, and it never silently upgrades unknown state to "Online".
+ */
+function peerPresenceSubtitle(presence: PeerPresence | null) {
+  if (!presence) return "";
+  if (presence.online) {
+    // Activity wording comes from the shared presence module, not a local map.
+    // Two copies of this vocabulary is how Messenger and Live end up calling
+    // the same state different things.
+    const activity = presenceActivityText(presence.activity);
+    return activity ? `${activity} · Direct` : "Online · Direct";
+  }
+  return presence.last_seen_text || "Offline";
+}
+
+/**
+ * Control-centre presence label. Same server-authoritative source as the header
+ * subtitle, minus the "· Direct" decoration the control sheet renders itself.
+ * Returns "" when we have no presence record so the sheet shows an honest
+ * "Presence unavailable" rather than assuming the peer is online.
+ */
+function peerPresenceControlLabel(presence: PeerPresence | null) {
+  if (!presence) return "";
+  if (presence.online) {
+    return presenceActivityText(presence.activity) || "Online";
+  }
+  return presence.last_seen_text || "Offline";
 }
 
 function absoluteMediaUrl(value?: string) {
@@ -1419,6 +1593,18 @@ function absoluteMediaUrl(value?: string) {
   if (/^https?:\/\//i.test(value)) return value;
   if (value.startsWith("/")) return `${PULSE_API_BASE_URL}${value}`;
   return value;
+}
+
+function nativePathFromDeepLink(value?: string) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    if (/^https?:\/\//i.test(raw)) return new URL(raw).pathname + new URL(raw).search;
+  } catch {
+    return "";
+  }
+  if (raw.startsWith("pulsesoc://")) return raw.replace(/^pulsesoc:\/\/[^/]*(\/?)/i, "/");
+  return raw.startsWith("/") ? raw : "";
 }
 
 const styles = StyleSheet.create({

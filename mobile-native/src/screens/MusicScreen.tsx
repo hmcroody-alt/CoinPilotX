@@ -1,4 +1,5 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -29,6 +30,17 @@ import {
   uploadPulseMusic
 } from "../api/music";
 import { getMyProfile, PulseProfile } from "../api/profile";
+import {
+  cyclePulseRadioRepeatMode,
+  getPulseRadioState,
+  playNextTrack,
+  playPreviousTrack,
+  PulseRadioState,
+  seekPulseRadioBy,
+  subscribePulseRadio,
+  togglePulseRadio,
+  togglePulseRadioShuffle
+} from "../core/pulseRadio";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -87,6 +99,7 @@ export function MusicScreen({ route, navigation }: Props) {
   const [previewingTrackId, setPreviewingTrackId] = useState("");
   const [uploading, setUploading] = useState(false);
   const [draft, setDraft] = useState<UploadDraft>(emptyDraft);
+  const [radio, setRadio] = useState<PulseRadioState>(getPulseRadioState());
   const previewSound = useRef<Audio.Sound | null>(null);
 
   const focusedTracks = useMemo(() => {
@@ -154,6 +167,8 @@ export function MusicScreen({ route, navigation }: Props) {
       stopPreview().catch(() => undefined);
     };
   }, []);
+
+  useEffect(() => subscribePulseRadio(setRadio), []);
 
   async function stopPreview() {
     const sound = previewSound.current;
@@ -242,14 +257,11 @@ export function MusicScreen({ route, navigation }: Props) {
     ]);
   }
 
-  async function useTrack(track: PulseMusicTrack, surface: "reel" | "video" | "status") {
-    await selectPulseMusicForSurface(track, surface);
-    setMessage(`Selected ${track.title} for ${surface === "video" ? "the feed composer" : surface}.`);
-    if (surface === "status") {
-      navigation.navigate("Tabs", { screen: "Status", params: { openCreator: true } });
-    } else {
-      navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true, composerMode: surface === "reel" ? "reel" : "post" } });
-    }
+  async function useTrack(track: PulseMusicTrack, surface: "reel" | "video" | "status" | "post") {
+    const composerSurface = surface === "video" ? "post" : surface;
+    await selectPulseMusicForSurface(track, composerSurface);
+    setMessage(`Selected ${track.title} for ${composerSurface === "post" ? "the feed composer" : composerSurface}.`);
+    navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true, composerMode: composerSurface } });
   }
 
   async function pickAudio() {
@@ -347,14 +359,93 @@ export function MusicScreen({ route, navigation }: Props) {
                   Upload, discover, preview, report, and attach rights-confirmed music to PulseSoc content.
                 </Text>
               </View>
-              <View style={styles.radioCard}>
-                <Text style={styles.radioIcon}>▶</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={radio.status === "playing" ? "Pause PulseSoc Radio" : radio.userWantsPlayback && radio.interruptedBy ? "Keep PulseSoc Radio paused" : "Play PulseSoc Radio"}
+                accessibilityHint={radio.userWantsPlayback && radio.interruptedBy ? "Prevents PulseSoc Radio from resuming after active audio ends." : "PulseSoc Radio continues across native screens after playback starts."}
+                style={styles.radioCard}
+                onPress={() => togglePulseRadio().catch((error) => setMessage(error instanceof Error ? error.message : "Pulse Radio could not start."))}
+              >
+                <Text style={styles.radioIcon}>{radio.status === "playing" ? "Ⅱ" : radio.status === "connecting" || radio.status === "buffering" ? "…" : "▶"}</Text>
                 <View style={styles.radioCopy}>
                   <Text style={styles.radioTitle}>Pulse Radio</Text>
-                  <Text style={styles.radioBody}>Approved music pool</Text>
-                  <Waveform waveform={[0.18, 0.38, 0.66, 0.42, 0.72, 0.5, 0.3, 0.58]} active />
+                  <Text style={styles.radioBody} numberOfLines={2}>{radio.message || "Approved music pool"}</Text>
+                  <Waveform waveform={radio.track ? [0.18, 0.38, 0.66, 0.42, 0.72, 0.5, 0.3, 0.58] : [0.12, 0.22, 0.3, 0.18, 0.28, 0.2]} active={radio.status === "playing" || radio.status === "buffering"} />
                 </View>
-              </View>
+              </Pressable>
+
+              {radio.track ? (
+                <View style={styles.radioControls}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Previous track"
+                    testID="music-radio-previous"
+                    style={styles.radioControlButton}
+                    onPress={() => playPreviousTrack().catch(() => undefined)}
+                  >
+                    <Ionicons name="play-skip-back" size={18} color={colors.text} />
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Seek backward 15 seconds"
+                    testID="music-radio-seek-back"
+                    style={styles.radioControlButton}
+                    onPress={() => seekPulseRadioBy(-15000).catch(() => undefined)}
+                  >
+                    <Ionicons name="play-back" size={16} color={colors.text} />
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Seek forward 15 seconds"
+                    testID="music-radio-seek-forward"
+                    style={styles.radioControlButton}
+                    onPress={() => seekPulseRadioBy(15000).catch(() => undefined)}
+                  >
+                    <Ionicons name="play-forward" size={16} color={colors.text} />
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Next track"
+                    testID="music-radio-next"
+                    style={styles.radioControlButton}
+                    onPress={() => playNextTrack().catch(() => undefined)}
+                  >
+                    <Ionicons name="play-skip-forward" size={18} color={colors.text} />
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={radio.shuffle ? "Disable shuffle" : "Enable shuffle"}
+                    testID="music-radio-shuffle"
+                    style={[styles.radioControlButton, radio.shuffle && styles.radioControlButtonActive]}
+                    onPress={() => togglePulseRadioShuffle()}
+                  >
+                    <Ionicons name="shuffle" size={16} color={radio.shuffle ? colors.background : colors.text} />
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={radio.repeatMode === "one" ? "Repeat one track" : radio.repeatMode === "queue" ? "Repeat queue" : "Repeat off"}
+                    testID="music-radio-repeat"
+                    style={[styles.radioControlButton, radio.repeatMode !== "off" && styles.radioControlButtonActive]}
+                    onPress={() => cyclePulseRadioRepeatMode()}
+                  >
+                    <Ionicons
+                      name={radio.repeatMode === "one" ? "repeat-outline" : "repeat"}
+                      size={16}
+                      color={radio.repeatMode !== "off" ? colors.background : colors.text}
+                    />
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="View and manage queue"
+                    testID="music-radio-open-queue"
+                    style={[styles.radioControlButton, styles.radioControlButtonWide]}
+                    onPress={() => navigation.navigate("PulseQueue", { title: "Queue" })}
+                  >
+                    <Ionicons name="list" size={16} color={colors.text} />
+                    <Text style={styles.radioControlLabel}>Queue</Text>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.uploadPanel}>
@@ -461,7 +552,7 @@ function TrackCard({
   onSave: (track: PulseMusicTrack) => void | Promise<void>;
   onShare: (track: PulseMusicTrack) => void | Promise<void>;
   onReport: (track: PulseMusicTrack) => void | Promise<void>;
-  onUse: (track: PulseMusicTrack, surface: "reel" | "video" | "status") => void | Promise<void>;
+  onUse: (track: PulseMusicTrack, surface: "reel" | "video" | "status" | "post") => void | Promise<void>;
 }) {
   return (
     <View style={[styles.trackCard, highlighted && styles.trackCardHighlighted]}>
@@ -744,6 +835,38 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 14,
     padding: 14
+  },
+  radioControlButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderColor: "rgba(121,210,255,0.2)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    height: 36,
+    justifyContent: "center",
+    width: 36
+  },
+  radioControlButtonActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent
+  },
+  radioControlButtonWide: {
+    paddingHorizontal: 12,
+    width: "auto"
+  },
+  radioControlLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  radioControls: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 10
   },
   radioCopy: {
     flex: 1,

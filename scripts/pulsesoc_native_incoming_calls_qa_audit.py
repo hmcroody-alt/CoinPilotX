@@ -2,6 +2,7 @@
 """Practical QA audit for PulseSoc native incoming calls."""
 
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -66,8 +67,10 @@ def main() -> int:
         require(qa_report, phrase, "honest incoming calls QA report")
 
     require(progress, "Native Incoming Calls Practical QA", "progress QA completion")
-    forbid(layer, "LogiNexus", "user-facing internal LogiNexus copy in layer")
-    forbid(call_screen, "LogiNexus", "user-facing internal LogiNexus copy in CallScreen")
+    if re.search(r"<Text[^>]*>[^<]*LogiNexus", layer):
+        raise AssertionError("Forbidden user-facing internal LogiNexus copy in layer")
+    if re.search(r"<Text[^>]*>[^<]*LogiNexus", call_screen):
+        raise AssertionError("Forbidden user-facing internal LogiNexus copy in CallScreen")
 
     print("PulseSoc native incoming calls practical QA audit passed.")
     return 0

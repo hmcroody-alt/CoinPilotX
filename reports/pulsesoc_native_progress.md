@@ -2,6 +2,152 @@
 
 Date: 2026-07-18
 
+## Latest Mission Status: Native Call Ringing, Answer, and Unavailable Flow
+
+- Date: 2026-07-26.
+- Branch: `release/undx-nexus-core-v4`.
+- Result: **FIXED (foreground/code path)**; no TestFlight build, upload, submit, or tester assignment was performed by explicit constraint.
+- Root cause: outgoing native calls joined the LiveKit media room immediately after server call creation, which could advance backend state and stop ringback before the recipient answered. The caller also lacked a clear pre-answer unavailable state for missed, expired, declined, busy, or failed calls.
+- Fix: extracted shared lifecycle predicates, kept ringback active only during outgoing `ringing`, delayed media connection until the backend reports accepted/connecting/connected, tightened polling while ringing, added caller unavailable messaging for pre-answer terminal states, preserved Full-screen incoming calls, and wired incoming calls into the existing CallKit bridge when a provider is available.
+- Validations: typecheck clean; focused native call Jest `4` suites / `33` tests passed; full native Jest `85` suites / `1356` tests passed; Expo Doctor `16/16` passed; call system, real call experience, native calls, incoming calls, fullscreen incoming calls, call QA, and call P0 behavior audits passed; iPhone 17 Pro Max simulator build/install/launch passed.
+- Physical iPhone: Xcode listed connected iPhones as offline during this run, so locked-device/app-killed CallKit, VoIP push, real ringtone/vibration, microphone/camera, Bluetooth/speaker routing, and two-device media remain physical-device release QA.
+- Report: `reports/pulsesoc_native_call_ringing_answer_unavailable_2026-07-26.md`.
+
+## Latest Mission Status: Native Live Audio and Viewer Playback Repair
+
+- Date: 2026-07-26.
+- Branch: `release/undx-nexus-core-v4`.
+- Result: **FIXED (code path)**; no TestFlight build, upload, submit, or tester assignment was performed by explicit constraint.
+- Root cause: the full native Live viewer required pre-declared WebRTC playback support before attempting the existing LiveKit viewer-token route, while the backend could still serialize LiveKit-direct sessions as `starting` when HLS/Mux egress was absent. Native host publishing also did not confirm local audio/video tracks back to the server, so an active LiveKit room could remain misclassified.
+- Fix: added a native publish-confirmation route alias, wired native host track confirmation, normalized LiveKit-direct sessions as `live`, allowed WebRTC-only active sessions into Reels/Live discovery, made the full native Live viewer prefer LiveKit credentials for active sessions, re-applied remote audio enablement, and kept native HLS as the supported fallback when LiveKit credentials fail.
+- Validations: Python compile clean; typecheck clean; full native Jest `82` suites / `1306` tests passed; Expo Doctor `16/16` passed; native Live/WebRTC/audio/distribution/egress audits passed; `git diff --check` clean.
+- Physical iPhone: not verified in this mission; connected devices were visible to Xcode only as offline. Real host mic, remote audible playback, guest audio, Bluetooth/speaker routing, and interruption behavior remain physical-device release QA.
+- Report: `reports/pulsesoc_native_live_audio_viewer_playback_repair_2026-07-26.md`.
+
+## Latest Mission Status: Production Livestream Audio Repair (viewers can't hear host)
+
+- Date: 2026-07-23.
+- Branch: `release/undx-nexus-core-v4`.
+- Reported broken build: `1.0.1 (2)`, bundle `com.pulsesoc.app`, commit `a64989fe133dc60d4d16e80f7108c36a4ac9103f`.
+- Result: **FIXED (client) + built/installed to P3r7or**; two-device hearing test + TestFlight remain user-side (NOT OBSERVED).
+- Root cause: `useLiveBroadcastRoom.connect()` forced a single iOS `playAndRecord`/`videoChat` audio session for **every** participant, including listen-only viewers. Viewers who never granted mic permission cannot activate a `playAndRecord` session, so subscribed host audio had no output route (silent) while video still rendered.
+- Fix: role-based session via new `resolveLiveAudioConfiguration(publish)` — publishers keep `playAndRecord`/`videoChat`; viewers use `playback`/`moviePlayback` (no mic dependency). Viewer surface now calls `setRemoteAudioEnabled(!muted)` for a true mute/enable instead of output re-routing. Added `audioProfile`/`remoteAudioTrackCount` to the connect diagnostic log.
+- Validations: typecheck clean; Jest `40` suites / `381` tests (3 new); `git diff --check` clean; expo-doctor `16/17` (1 pre-existing prebuild config-sync warning).
+- Device: detached Release `xcodebuild` → `** BUILD SUCCEEDED **`; `main.jsbundle` embedded; installed + launched on P3r7or (`com.pulsesoc.app`).
+- Report: `reports/pulsesoc_production_live_audio_repair_2026-07-23.md`.
+
+
+## Latest Mission Status: Production TestFlight Upload
+
+- Date: 2026-07-21.
+- Branch: `release/undx-nexus-core-v4`.
+- Starting SHA: `995810bd4e26024b4a902a637906549db88a7668`.
+- Result: **BLOCKED**. No IPA was exported, no TestFlight upload was attempted, and no public release was attempted.
+- Public App Store lookup confirms existing app `PulseSoc` / Apple ID `6777591572` / live bundle `com.pulsesoc.app` / version `1.0`.
+- Native Release target currently builds `com.pulsesoc.nativeapp`, uses `Apple Development` signing, and sources `aps-environment=development`.
+- `security find-identity -v -p codesigning` found only Apple Development identities; no Apple Distribution identity was installed.
+- No App Store Connect API key or upload credentials were found, and EAS is logged in as the personal `@hmcroody/pulsesoc-native` project rather than a verified production App Store provider.
+- Current repository validations passed: `npm ci`, typecheck, Jest (`38` suites / `373` tests), Expo Doctor (`17/17`), native WebView replacement audit (`0` hard blockers), and focused native release audits.
+- Report: `reports/pulsesoc_native_testflight_upload_2026-07-21.md`.
+
+Next highest-value mission:
+
+- Create a production-clean iOS release target/profile after App Store Connect provider and production bundle ownership are verified.
+
+Reason:
+
+- The native code is now passing the static replacement gate, but TestFlight requires the existing `com.pulsesoc.app` identity, Apple Distribution signing, App Store provisioning, production entitlements, valid build-number history, and App Store Connect upload credentials.
+
+## Latest Mission Status: Three-Device Live Production Acceptance Test
+
+- Date: 2026-07-21.
+- Branch: `release/undx-nexus-core-v4`.
+- Build under test: `9680a9f5f31f2528ab42aa0621f09971fc58bd36`.
+- Result: **NOT OBSERVED**.
+- Pre-flight branch and commit matched the required build.
+- Device discovery found only one available physical iPhone: `P3r7or` / iPhone 16 Pro (`F45E640F-6D02-514E-877C-B764E8D6818F`) on iOS 18.7.3.
+- The other known devices were unavailable, so the required Host + Guest + Viewer physical matrix could not be executed.
+- Installed app discovery confirmed `PulseSoc Native Dev` (`com.pulsesoc.nativeapp.dev`) remains installed on the available iPhone.
+- No code changes were made.
+- Report: `reports/pulsesoc_live_three_device_acceptance_2026-07-21.md`.
+
+Next highest-value mission:
+
+- Connect three physical iPhones with separate Host, Guest, and Viewer accounts and rerun the Live acceptance matrix.
+
+Reason:
+
+- The code-side Live repair is pushed, but Native Live cannot be called production-accepted until host audio, guest co-host publication, two-way audio, viewer playback, route changes, and end-Live cleanup are directly observed on real hardware.
+
+## Latest Mission Status: Native Release Readiness - Apple Ownership Deferred
+
+- Date: 2026-07-20.
+- Branch: `release/undx-nexus-core-v4`.
+- Scope: technical production-release preparation only; Apple organization ownership, D-U-N-S, Bundle ID migration, App Store Connect ownership, distribution certificates, provisioning, production APNs credentials, upload, App Review, and release publishing were explicitly deferred and not attempted.
+- Result: **NO-GO** for replacing the production WebView app today.
+- TypeScript passed.
+- Expo Doctor passed 17/17.
+- Full native Jest passed: 35 suites, 345 tests.
+- Global navigation, notification route parity, persistent radio/Home reselect, current Live WebRTC guest/audio repair, calls, music upload/library, UNDX chat conversation, and native mission standard audits passed.
+- Strict native-only WebView replacement audit failed: 102 native routes discovered, 14/26 critical surface groups with static native coverage, 57 hard web-exit/fallback blockers.
+- Native-only blocker groups include Authentication, Search/Discover, Conversation, Live, Camera Studio, Seller/Store, Creator Studio, Courses/Learning, Events, Dashboard, Intelligence/UNDX, and Account/Settings.
+- Simulator launch passed on the booted `PulseSoc iPhone 16 Pro`, but the captured Home state shows bottom navigation overlapping the composer; this is a release visual blocker.
+- Physical iPhone `P3r7or` was updated with the guarded side-by-side `PulseSoc Native Dev` build using `com.pulsesoc.nativeapp.dev`; production bundle `com.pulsesoc.app` was not targeted.
+- Release report: `reports/pulsesoc_native_release_readiness_2026-07-20.md`.
+- Simulator evidence: `reports/screenshots/native-release-readiness-2026-07-20/simulator-current-state.png`.
+
+Next highest-value mission:
+
+- Native Web Redirect Elimination Phase 1 plus current Home bottom-dock/composer overlap repair.
+
+Reason:
+
+- The hard requirement is no web redirected links and a visually stable native Home. Until these are fixed, the native app cannot honestly replace the WebView client.
+
+## Latest Mission Status: Native Blocker Inventory and Replacement Dependency Map
+
+- Date: 2026-07-20.
+- Branch: `release/undx-nexus-core-v4`.
+- Scope: forensic blocker inventory only; no broad native rewrites were attempted.
+- Reproduced the original strict native-only replacement audit count: 57 raw hard web-exit/fallback matches.
+- Reconciled the count into 54 active source call-site findings plus 3 test-only false positives/stale fallback expectations.
+- Created an authoritative register with 67 total blocker records: 57 original audit records plus 10 additional non-web release blockers from release evidence and broader source search.
+- Active native replacement blocker records: 64 after excluding test-only findings.
+- Top root causes: shared dashboard fallback routing, notification/deep-link fallback policy, legal document fallback entries, commerce/payment provider web URLs, Live/provider fallback states, creator/learning shell gaps, account/security route handoffs, and current Home bottom-dock/composer overlap.
+- Reports:
+  - `reports/pulsesoc_native_blocker_inventory_2026-07-20.md`
+  - `reports/pulsesoc_native_blocker_inventory_2026-07-20.json`
+  - `reports/pulsesoc_native_route_action_matrix_2026-07-20.csv`
+
+Recommended first implementation wave:
+
+- Wave 0 release-gate correctness plus Wave 1 P0 fixes: update stale audits to consume the blocker inventory, repair the Home bottom-dock/composer overlap, and review/stabilize dirty authentication/session work before eliminating broad web exits.
+
+Reason:
+
+- The team needs a stable, source-backed blocker baseline before implementation starts; otherwise the same web exits, stale audits, and partial native journeys will continue to move between reports without converging toward release readiness.
+
+## Latest Mission Status: Native WebView Replacement Readiness Audit
+
+- Date: 2026-07-19.
+- Scope: full static release-readiness check for replacing the production WebView app with the native PulseSoc app under the rule that no user flow should redirect to web.
+- Result: **NO-GO** for a once-and-for-all WebView replacement today.
+- Added `scripts/pulsesoc_native_webview_replacement_audit.py`.
+- Added `reports/pulsesoc_native_webview_replacement_readiness.md`.
+- Added machine-readable evidence at `reports/pulsesoc_native_webview_replacement_readiness.json`.
+- Audit found 96 native routes and 45 native screen files, but only 13 of 26 critical surface groups pass the strict native-only static gate.
+- Audit found no mounted `react-native-webview` component in `mobile-native/src`; the blockers are remaining URL exits and fallback policies.
+- Hard web-exit/fallback findings: 63.
+- Main blocker families: dashboard safe-web fallback routing, notification web target opening, profile web fallback buttons, marketplace/seller URL exits, camera advanced fallback, live fallback copy, search fallback copy, course/event fallback copy, and API helpers whose only behavior is `Linking.openURL`.
+
+Next highest-value mission:
+
+- Native Web Redirect Elimination Phase 1: navigation, dashboard, notification, profile, and search.
+
+Reason:
+
+- These are shared escape hatches that can redirect users out of native from many places. Fixing route policy first creates the enforcement gate required before commerce, creator, live, education, and provider-heavy flows can become native-only.
+
 ## Latest Mission Status: Native Voice Message Compact Bubble
 
 - Replaced the nested native `VOICE PULSE` media card with one compact horizontal player inside the canonical incoming/outgoing message bubble.
@@ -5578,3 +5724,152 @@ Recommended next mission: Continue inside Pulse Command with conversation-level 
 - Full native typecheck is now blocked by unrelated errors in `mobile-native/src/screens/HomeScreen.tsx` and `mobile-native/src/screens/MusicScreen.tsx`.
 - Manual visual proof remains required: tap UNDX on simulator or physical device, send a prompt, verify the response, and confirm the old command form is gone.
 - Report: `reports/pulsesoc_native_undx_chat_conversation.md`.
+
+## Native UNDX Real Brain Identity Pipeline — 2026-07-19
+
+- Corrected the production assistant backend identity from the legacy public `Pulse AI` persona to canonical `UNDX` while preserving legacy `/api/pulse-ai/*` routes and `pulse_ai_*` tables for compatibility.
+- Reused the same production conversation, message persistence, provider routing, web-search, safety, feedback, and memory code paths instead of creating a native-only assistant backend.
+- Added server-owned UNDX identity constants: name `UNDX`, agent id `undx`, assistant id `undx`, participant id `-9001001`, and conversation type `undx_intelligence`.
+- Replaced the core provider system prompt with UNDX as PulseSOC's AGI-class digital intelligence companion and added a server-side anti-drift instruction so providers do not identify as Pulse AI.
+- Added backend response enforcement before persistence so identity questions and legacy-provider text cannot store `Pulse AI` as the assistant identity.
+- Updated native `sendPulseAiMessage` to include canonical UNDX metadata while keeping the server authoritative.
+- Added `scripts/pulsesoc_undx_identity_backend_audit.py`; focused backend/native identity audits, Python compile, `npm ci`, native typecheck, Expo Doctor, and `git diff --check` pass.
+- Xcode iPhone Simulator build/install exited successfully after dependency refresh. Visual prompt-response proof remains blocked: the Debug app first redboxed with `No script URL provided`; Metro was started, but the follow-up simulator screenshot/relaunch step was rejected by the environment escalated-action usage limit.
+- Physical iPhone verification for this exact identity response remains blocked by the same escalated-action usage limit. Prior UNDX work already proved physical build/install/launch, but not this final identity prompt-response.
+- Report: `reports/pulsesoc_undx_real_brain_identity_pipeline.md`.
+
+## Native Persistent Radio and Home Reselect — 2026-07-19
+
+- Converted PulseSoc Radio into a persistent native player coordinated by `mediaPlaybackCoordinator` instead of a screen-owned Music player.
+- Added iOS background audio configuration in Expo and native Info.plist, and configured the radio audio session to remain active in background with no app-media ducking.
+- Preserved explicit user playback intent across call, voice-message, Reel, Status, feed-video, Live, viewer, and preview interruptions; radio resumes only when the higher-priority owner releases and the user did not manually pause.
+- Stopped muted Reels, Status videos, and feed videos from unnecessarily claiming audio ownership, so silent video playback does not interrupt Pulse Radio.
+- Added an active-Home bottom-tab reselect handler that scrolls Home to the top and performs one guarded refresh through the existing feed/status loading path.
+- `npm ci`, native typecheck, Expo Doctor, Jest, focused persistent-radio audit, and `git diff --check` pass.
+- Xcode iPhone Simulator launch evidence was captured on the booted PulseSoc iPhone 16 Pro. Home visual reselect proof remains code-path/audit verified in this run because the deep-link attempt opened a web surface.
+- Physical devices were detected by Xcode but all were offline, so lock-screen/background/Bluetooth/call-interruption hardware proof remains physical-device-only release QA.
+- Report: `reports/pulsesoc_native_persistent_radio_home_reselect_2026-07-19.md`.
+
+## Native Live WebRTC Guest Playback and Host Audio Repair — 2026-07-20
+
+- Repaired the native Live Detail transport decision so WebRTC/LiveKit lives no longer fall into the generic `Playback fallback required` state when the backend exposes a native `webrtc_room_id`, `supports_webrtc`, or `livekit.room`.
+- Reused the existing `/api/pulse/live/<id>/livekit/token` production route with role `viewer` for native guest playback; HLS via Expo video remains the fallback when a real playback URL exists.
+- Extended the shared `useLiveBroadcastRoom` hook to track local audio publications, remote audio/video counts, and native remote-audio enable/disable for viewer sound control.
+- Added a host safety gate: native Live publishing now fails with `LIVE_LOCAL_AUDIO_NOT_PUBLISHED` if the microphone was enabled but no local audio publication is visible, preventing a silent “successful” broadcast.
+- Added focused Jest coverage and a scoped static audit for the WebRTC viewer and host-audio repair.
+- Physical two-client validation remains required before release confidence can be raised: host on physical iPhone, second client as guest/viewer, audible microphone, mute/unmute, speaker/Bluetooth, and background behavior.
+- Report: `reports/pulsesoc_native_live_webrtc_guest_audio_repair_2026-07-20.md`.
+
+## Wave 0 Release-Gate Cleanup + Wave 1 Auth/Session + Home Layout Stabilization — 2026-07-21
+
+- Branch: `release/undx-nexus-core-v4`.
+- Scope: Wave 0 repaired stale/misleading release-gate audits so they fail only on real active blockers; Wave 1 stabilized P0 authentication/session behavior and fixed the Home composer/bottom-dock overlap structurally (NRB-058). WebView-exit replacement was explicitly out of scope; no Apple ownership/signing/App Store tasks touched.
+- Wave 0 (STALE_AUDIT repairs; audits repaired, never weakened):
+  - Foundation audit (`scripts/pulsesoc_native_app_foundation_audit.py`) now regex-detects real `react-native-webview` imports / rendered `<WebView>` and excludes comments, docs, user-facing copy, and `__tests__`/`__mocks__` fixtures — no more false positives on inert "WebView" substrings. Also realigned messenger assertions to the Communications v2 prefix. Exits 0. (NRB-060)
+  - Live audit (`scripts/pulsesoc_native_live_audit.py`) now validates the native LiveStudio go-live flow and asserts the native host path mints LiveKit tokens through the existing backend token/join-request endpoints (no browser publish handoff), instead of expecting obsolete "Go Live Web" copy. Exits 0. (NRB-061)
+  - Feature-parity audit (`scripts/pulsesoc_native_feature_parity_audit.py`) verifies the completed Device QA Setup follow-up and treats the intentionally-installed Expo web QA deps (react-native-web, SDK 54) as an available surface, rather than asserting obsolete "next action"/missing-dep wording. Exits 0. (NRB-062)
+  - NRB-055/056/057 confirmed TEST_ONLY false positives (stale test descriptions only; assertions unchanged).
+- Wave 1 authentication/session (NRB-059):
+  - Introduced a deterministic 6-phase session bootstrap machine in `mobile-native/src/session/auth.ts`: `BOOTSTRAPPING / AUTHENTICATED / UNAUTHENTICATED / SESSION_EXPIRED / RECOVERABLE_ERROR / FATAL_ERROR`, with a derived back-compat `status` projection (single `stateFor` constructor keeps phase/status from ever desyncing).
+  - Transient network failures now resolve to RECOVERABLE_ERROR (retryable) or a cached session instead of silently bouncing the user to login; expired credentials are distinguished from a clean first launch.
+  - `App.tsx` gates render on `phase` (spinner while BOOTSTRAPPING; error panel with a "Try again" retry for RECOVERABLE_ERROR/FATAL_ERROR); `qaSimulatorAuth.ts` updated to the phase constructors.
+  - Verified pre-existing Wave 1 guarantees retained: single-flight token refresh (module-level in-flight promise), login/signup double-submit guards, logout clears user-scoped state, secure storage (expo-secure-store), and no token/PII logging.
+- Wave 1 Home layout (NRB-058):
+  - Removed HomeScreen's device-specific `paddingBottom: 172`; the feed now reserves `Math.max(insets.bottom, 12) + BOTTOM_NAV_CONTENT_CLEARANCE`, sharing the single dock-clearance constant with `Screen.tsx`/`BottomNavVisibility.tsx`, so the composer/last row clears the floating dock on every safe-area inset.
+- Tests: new `restoreSession.test.ts` (7 tests over all six terminal phases + refresh + cache-fallback) and `HomeScreen.layout.test.ts` (3 source-scan assertions). Existing 43 auth/session tests pass unchanged against the derived `status`.
+- Verification: TypeScript clean; Jest 37 suites / 355 tests pass; Expo Doctor 18/18; `git diff --check` clean; foundation/live/feature-parity audits exit 0.
+- Release readiness remains **NO-GO**: `scripts/pulsesoc_native_webview_replacement_audit.py` still exits 1 on real remaining web-fallback source (e.g. `SearchScreen.tsx` events/lessons gateway copy) — that WebView-exit work is out of scope here. Physical QA (NRB-063) and Apple release tasks (NRB-064) remain open. Device QA for NRB-058/059 on `P3r7or` is pending build/deploy.
+- Mission report: `reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md`.
+
+## App Store Release Attempt And Blocker Elimination — 2026-07-21
+
+- Branch: `release/undx-nexus-core-v4`.
+- Release decision: **NO-GO** for App Store upload and WebView replacement.
+- Existing App Store target was verified through Apple public lookup: PulseSoc app id `6777591572` is live as bundle `com.pulsesoc.app`, version `1.0`, seller `ROODY CHERIE`.
+- Native Release currently builds bundle `com.pulsesoc.nativeapp`; no ownership-safe bundle migration was performed because App Store Connect authority and bundle migration intent were not proven.
+- Local Release archive succeeded through `xcodebuild archive`, but the archive is not distributable: signed with Apple Development, uses development push entitlement, has `get-task-allow=true`, uses a team provisioning profile, and includes Expo dev-menu/dev-client artifacts.
+- IPA export and App Store upload were intentionally skipped because the archive is not App Store-signed and the native WebView replacement gate still fails.
+- Validation passed for `npm ci`, TypeScript, Jest (37 suites / 355 tests), Expo Doctor (17/17), and the current focused release/native audits except the strict WebView replacement audit.
+- Strict WebView replacement audit remains failing with 54 hard web-exit/fallback blockers; this remains the primary repository-side replacement blocker.
+- Xcode iPhone Simulator launch was verified on iPhone 17 Pro Max, with screenshot evidence under `reports/screenshots/native-app-store-release-attempt-2026-07-21/`.
+- Physical iPhone 16 Pro (`P3r7or`) was updated with the guarded dev sidecar bundle `com.pulsesoc.nativeapp.dev`, installed and launched successfully. This is not production App Store signing proof and does not cover hardware feature QA.
+- New release artifacts:
+  - `reports/pulsesoc_native_app_store_release_attempt_2026-07-21.md`
+  - `reports/pulsesoc_native_app_store_release_blockers_2026-07-21.json`
+  - `reports/pulsesoc_native_app_store_release_checklist_2026-07-21.md`
+
+## App Review Critical Native Replacement Cleanup — 2026-07-21
+
+- Branch: `release/undx-nexus-core-v4`.
+- Strict native WebView replacement audit improved from **FAIL / 54 hard blockers / 14 of 26 critical surfaces** to **PASS / 0 hard blockers / 26 of 26 critical surfaces**.
+- Removed native-to-browser handoffs from dashboard routing, notification legal targets, signup legal taps, UNDX result opens, camera unsupported destinations, seller payouts, sponsored ad card URL opens, and provider APIs for account/support/safety/premium/learning/creator/growth/intelligence/events/orders/calls/Live/marketplace.
+- Converted product copy from browser/fallback language to native provider-boundary language where backend/provider authority remains unavailable.
+- Updated route/notification tests to assert native-only routing; Jest now passes `38` suites / `369` tests.
+- Validation passed: typecheck, Jest, Expo Doctor, strict native replacement audit, foundation, feature parity, Live, mission standard, global navigation, notification route parity, persistent radio/Home reselect, Live WebRTC repair, calls, music upload, UNDX conversation, and App Review/store audits.
+- Physical iPhone 16 Pro `P3r7or` was updated with the guarded dev sidecar `com.pulsesoc.nativeapp.dev`, installed, and launched. This is build/install/launch evidence only; hardware feature QA remains not observed.
+- Release remains **NO-GO** because Apple-side bundle/signing/provisioning/APNs, production-clean release packaging, privacy metadata, and physical production QA are still open.
+- Report: `reports/pulsesoc_native_app_review_readiness_2026-07-21.md`.
+
+## Native Live Audio and Guest Join Repair — 2026-07-21
+
+- Branch: `release/undx-nexus-core-v4`.
+- Repaired the repository-side native Live audio/co-host pipeline while preserving the production backend as the source of truth.
+- Host microphone publishing now explicitly configures the iOS LiveKit audio session as `playAndRecord` / `videoChat` with Bluetooth, AirPlay, and default-speaker routing before capture and publication.
+- The shared native LiveKit hook still verifies a local microphone publication and fails with `LIVE_LOCAL_AUDIO_NOT_PUBLISHED` rather than allowing a silent video-only broadcast.
+- Native Live viewer now supports the production co-host lifecycle: request guest seat, cancel pending request, read join status, obtain a server-verified `cohost` LiveKit token, publish camera/microphone, and confirm publication through `/api/pulse/live/<id>/guests/<guest_id>/publish-complete`.
+- Added typed co-host token metadata (`guestId`, `requestId`, `traceId`, publish/subscription claims) and normalized viewer `guest` / `viewer_join_request` state.
+- Added regression tests for co-host token claims, join-request, join-status, and publish-complete route wrappers.
+- Added `scripts/pulsesoc_live_audio_guest_join_repair_audit.py`; focused repair audit passes.
+- Automated validation so far: typecheck PASS; Jest PASS (`38` suites / `373` tests); focused Live audio/guest repair audit PASS.
+- Physical end-to-end proof remains **NOT OBSERVED** until tested with at least host iPhone + guest iPhone + viewer iPhone. A single build/install/launch can verify deployment only, not real participant audio.
+- Report: `reports/pulsesoc_live_audio_guest_join_repair_2026-07-21.md`.
+
+## Production TestFlight Build and Upload — 2026-07-22
+
+- Branch: `release/undx-nexus-core-v4`.
+- Production App Store identity is now aligned to the live PulseSoc app: ASC app id `6777591572`, bundle id `com.pulsesoc.app`, app name `PulseSoc`, version/build `1.0` / `1`.
+- Production EAS credentials were configured and used successfully: Apple Team `87ZC69AGSR`, Distribution Certificate serial `3B0E096FA823409F9A70634AE3DDE8A3`, provisioning profile `3M3L9XV478`, production push entitlement.
+- The native iOS source, Release signing, bundle id, production entitlements, URL schemes, app icon, and session keychain service were committed and pushed.
+- Fixed two EAS build blockers:
+  - CocoaPods could not select the Xcode project until `mobile-native/ios/Podfile` explicitly declared `project 'PulseSocNative.xcodeproj'`.
+  - EAS archive initially omitted the native `.xcodeproj`; archive inputs were corrected so the native iOS project source is uploaded while generated artifacts remain excluded.
+- Production EAS build completed successfully:
+  - Build id: `18d87629-b662-447e-ba23-5299602b74fe`
+  - Git commit: `cabecd02170b6e6d2c45aa6b45e8088ca3eac9bb`
+  - IPA: `https://expo.dev/artifacts/eas/GBW8YF9InKeFzYUQH8ubFhQo-xfYqQqG2fyQ1W-taSM.ipa`
+- App Store Connect upload completed successfully through EAS Submit:
+  - Submission id: `acb0589d-aa6a-4d5b-85e3-314ba21aab39`
+  - API key id: `3J78N2VTH6`
+  - TestFlight URL: `https://appstoreconnect.apple.com/apps/6777591572/testflight/ios`
+- Current status: **Apple processing / TestFlight availability pending**. The build was uploaded, but physical TestFlight install and launch have not yet been observed.
+- Verification before upload: `npm ci`, TypeScript, Expo Doctor (`17/17`), Jest (`38` suites / `373` tests), strict native WebView replacement audit, foundation audit, feature parity audit, mission standard audit, store submission readiness audit, auth continuity audit, and `git diff --check` passed.
+- Physical-device release QA remains open after TestFlight processing: install via TestFlight, launch, login, push, notification tap routing, camera, microphone, LiveKit calls/live, Bluetooth/speaker routing, lock-screen/background behavior, and large real media uploads.
+- Report: `reports/pulsesoc_native_testflight_upload_2026-07-21.md`.
+
+## Production TestFlight Replacement Upload — 2026-07-22
+
+- Apple rejected the first uploaded `1.0 (1)` binary because the `1.0.0` pre-release train was closed and the submitted `CFBundleShortVersionString` was not higher than the previously approved `1.0.0`.
+- Corrected the native release train to `1.0.1 (2)` in both Expo config and native Xcode build settings.
+- Commit pushed: `a64989fe133dc60d4d16e80f7108c36a4ac9103f` (`Bump PulseSoc native iOS build for App Store train`).
+- Replacement EAS production build completed:
+  - Build id: `56724153-4897-4447-9e8b-864b3f5cd137`
+  - Version/build: `1.0.1` / `2`
+  - Artifact: `https://expo.dev/artifacts/eas/sL-VAqaCHPSxEHmgaSs6nY4cUkR9oS1K11cDSfgAlAM.ipa`
+- Replacement App Store Connect upload completed:
+  - Submission id: `13cf0959-ccde-4ac6-bd1f-7c80788d83a4`
+  - TestFlight URL: `https://appstoreconnect.apple.com/apps/6777591572/testflight/ios`
+- Physical iPhone `P3r7or` is wired and visible to `devicectl` as paired/available. TestFlight install remains pending until Apple processing exposes build `1.0.1 (2)`.
+
+## Native Issues 3–6 Repair (chat latency, in-app banner, live guest audio, call tones) — 2026-07-24
+
+- Branch: `release/undx-nexus-core-v4`. New commit **`481bb211d85eb3e3cb5b0c27311f8d0898db9686`** (19 files, +1070 / -47). Also unpushed: `e5f566d4` (Issues 1 & 2).
+- Remote relationship: `origin` at `a307b506`; local **2 ahead, 0 behind**, origin tip is an ancestor → clean fast-forward.
+- **Push BLOCKED from the sandbox**: proxy forbids GitHub egress (SSH 22 `Forbidden`; HTTPS 443 `403 after CONNECT`; no token/credential helper). The commit is in the real local repo; run `git push origin release/undx-nexus-core-v4` from the Mac to publish.
+- Git lock root cause: FUSE mount denies `unlink`/`rmdir` but permits `rename`; stale 0-byte `index.lock`/`HEAD.lock` (no owning process) were renamed aside, which unblocked the commit. `git fsck` reports no missing/broken objects (only cosmetic `tmp_obj` unlink warnings).
+- Issue 3 (chat bubble delay): send path awaited `sendTyping(false)` (a round-trip) before inserting the optimistic bubble; made it fire-and-forget and extracted a pure `mergeConversationMessages`. Test `messengerOrdering.test.ts`.
+- Issue 4 (banner won't auto-dismiss / double banner): added `InAppNotificationBanner` + pure `notificationBannerLifecycle` auto-dismiss controller and suppressed the OS foreground banner (kept list/sound/badge). Test `notificationBannerLifecycle.test.ts`.
+- Issue 5 (live host audio + guest join): fixed viewer remote-audio mute leak (reapply `applyRemoteAudioEnabled` on `TrackSubscribed`/`Reconnected`) and gated co-host connect on `canConnectAsCohostPublisher` (publish + real guest slot). Backend traced end-to-end; publish granted only after a guest row exists. Tests `remoteAudioReapply.test.ts`, `cohostPublishGate.test.ts`.
+- Issue 6 (calls + tones): extracted `callToneLifecycle` predicates and added a `toneGeneration` reentrancy guard so a superseded in-flight `Audio.Sound` load self-discards. The guard's first version wrongly captured the generation before the internal `stopCallTone` bump (which would have silenced every tone); the new test caught it and it was corrected. Test `callSignalMediaReentrancy.test.ts`.
+- Automated verification: `tsc --noEmit` EXIT 0; Jest **47 suites / 439 tests PASS**.
+- **Physical/two-user media validation NOT OBSERVED** (no Xcode/simulator/device here). Issues 5 & 6 remain **PARTIAL** until host+guest+viewer iPhones and a real two-user call are tested. `P3r7or` was not updated in this session.
+- Report: `reports/pulsesoc_native_issues_3_to_6_repair_evidence_2026-07-24.md`.

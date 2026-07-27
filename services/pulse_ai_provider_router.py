@@ -48,6 +48,13 @@ PROVIDERS: tuple[ProviderConfig, ...] = (
     ProviderConfig("groq", ("GROQ_AI_API", "GROQ_API_KEY"), "PULSE_AI_GROQ_MODEL", "llama-3.1-8b-instant", "openai_compatible"),
 )
 
+# Self-hosted UNDX candidate. Deliberately kept OUT of PROVIDERS so it can never
+# activate from a stray key: it only joins the pool when UNDX_CANDIDATE_ENABLED is true
+# AND UNDX_CANDIDATE_BASE_URL is set. Served over an OpenAI-compatible API. Off by default.
+UNDX_CANDIDATE = ProviderConfig(
+    "undx_candidate", ("UNDX_CANDIDATE_API_KEY",), "UNDX_CANDIDATE_MODEL", "undx-core-v1", "openai_compatible"
+)
+
 
 class PulseAIProviderError(RuntimeError):
     def __init__(self, provider: str, reason: str, status_code: int = 0):
@@ -106,12 +113,34 @@ def _timeout() -> float:
         return DEFAULT_TIMEOUT_SECONDS
 
 
+def candidate_enabled() -> bool:
+    return _env_text("UNDX_CANDIDATE_ENABLED", "false").lower() in TRUE_VALUES
+
+
+def _candidate_base_url() -> str:
+    return _env_text("UNDX_CANDIDATE_BASE_URL").rstrip("/")
+
+
 def _key_for(config: ProviderConfig) -> str:
     for key in config.env_keys:
         value = _env_text(key)
         if value:
             return value
     return ""
+
+
+def _provider_configured(config: ProviderConfig) -> bool:
+    if config.name == UNDX_CANDIDATE.name:
+        # Self-hosted endpoint may be keyless; requires the flag and a reachable base URL.
+        return candidate_enabled() and bool(_candidate_base_url())
+    return bool(_key_for(config))
+
+
+def _provider_pool() -> list[ProviderConfig]:
+    pool = list(PROVIDERS)
+    if candidate_enabled():
+        pool.append(UNDX_CANDIDATE)
+    return pool
 
 
 def _model_for(config: ProviderConfig) -> str:
@@ -131,8 +160,14 @@ def provider_status() -> dict[str, Any]:
     return {
         "ok": True,
         "providers": providers,
+        "candidate": {
+            "provider": UNDX_CANDIDATE.name,
+            "enabled": candidate_enabled(),
+            "configured": _provider_configured(UNDX_CANDIDATE),
+            "model": _model_for(UNDX_CANDIDATE),
+        },
         "configured_count": sum(1 for item in providers if item["configured"]),
-        "fallback_order": [item.name for item in PROVIDERS],
+        "fallback_order": [item.name for item in _provider_pool()],
     }
 
 
@@ -154,14 +189,15 @@ def _task_preference(task: str = "general") -> list[str]:
 
 
 def configured_providers_for_task(task: str = "general") -> list[ProviderConfig]:
+    pool = _provider_pool()
     preferred = [item.strip().lower() for item in _env_text("PULSE_AI_PROVIDER_ORDER").split(",") if item.strip()]
     if not preferred:
         preferred = _task_preference(task)
-    ordered = list(PROVIDERS)
+    ordered = list(pool)
     if preferred:
-        by_name = {item.name: item for item in PROVIDERS}
-        ordered = [by_name[name] for name in preferred if name in by_name] + [item for item in PROVIDERS if item.name not in preferred]
-    return [config for config in ordered if _key_for(config)]
+        by_name = {item.name: item for item in pool}
+        ordered = [by_name[name] for name in preferred if name in by_name] + [item for item in pool if item.name not in preferred]
+    return [config for config in ordered if _provider_configured(config)]
 
 
 def _safe_text(value: Any, limit: int = 6000) -> str:
@@ -183,11 +219,19 @@ def _post_openai_compatible(config: ProviderConfig, messages: list[dict[str, str
         url = "https://api.deepseek.com/chat/completions"
     elif config.name == "groq":
         url = "https://api.groq.com/openai/v1/chat/completions"
+    elif config.name == UNDX_CANDIDATE.name:
+        base = _candidate_base_url()
+        if not base:
+            raise PulseAIProviderError(config.name, "candidate_base_url_missing")
+        url = f"{base}/chat/completions"
     else:
         url = "https://api.openai.com/v1/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
     response = requests.post(
         url,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        headers=headers,
         json={"model": model, "messages": messages, "temperature": 0.35, "max_tokens": 850},
         timeout=_timeout(),
     )
@@ -341,6 +385,92 @@ def generate_response(messages: list[dict[str, str]], correlation_id: str = "", 
         "error": "ai_unavailable",
         "reason": "all_providers_failed",
         "message": "UNDX is temporarily unavailable. Please try again soon.",
+        "correlation_id": correlation_id,
+        "attempts": attempts,
+    }
+
+
+def generate_task_response(
+    messages: list[dict[str, str]],
+    correlation_id: str = "",
+    task: str = "general",
+    unavailable_message: str = "This service is temporarily unavailable. Please try again soon.",
+) -> dict[str, Any]:
+    """Run a bounded non-assistant task through the existing provider pool.
+
+    UNDX chat calls must continue through :func:`generate_response`, which injects
+    and validates the canonical identity. Infrastructure tasks such as content
+    translation are not assistant conversations and must not leak that identity
+    into their output. They still reuse the same provider ordering, timeouts,
+    secret handling, fallback behavior, and curated errors.
+    """
+    attempts: list[dict[str, Any]] = []
+    bounded_messages: list[dict[str, str]] = []
+    for item in messages[:8]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip().lower()
+        if role not in {"system", "user", "assistant"}:
+            continue
+        bounded_messages.append({"role": role, "content": _safe_text(item.get("content"), 6000)})
+    if not bounded_messages or not any(item["role"] == "system" for item in bounded_messages):
+        return {
+            "ok": False,
+            "error": "invalid_task_request",
+            "reason": "system_instruction_required",
+            "message": unavailable_message,
+            "correlation_id": correlation_id,
+            "attempts": attempts,
+        }
+    providers = configured_providers_for_task(task)
+    if not providers:
+        return {
+            "ok": False,
+            "error": "ai_unavailable",
+            "reason": "provider_config_missing",
+            "message": unavailable_message,
+            "correlation_id": correlation_id,
+            "attempts": attempts,
+        }
+    for config in providers:
+        started = time.perf_counter()
+        try:
+            reply = _call_provider(config, bounded_messages)
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            if not reply:
+                raise PulseAIProviderError(config.name, "empty_response")
+            return {
+                "ok": True,
+                "reply": reply,
+                "provider": config.name,
+                "model": _model_for(config),
+                "latency_ms": latency_ms,
+                "attempts": attempts + [{"provider": config.name, "ok": True, "latency_ms": latency_ms}],
+            }
+        except (requests.RequestException, PulseAIProviderError) as exc:
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            status_code = getattr(exc, "status_code", 0)
+            reason = getattr(exc, "reason", exc.__class__.__name__)
+            attempts.append({
+                "provider": config.name,
+                "ok": False,
+                "reason": reason,
+                "status_code": int(status_code or 0),
+                "latency_ms": latency_ms,
+            })
+            LOGGER.warning(
+                "PULSE_AI_TASK_PROVIDER_FAILED provider=%s reason=%s status_code=%s correlation_id=%s task=%s",
+                config.name,
+                reason,
+                int(status_code or 0),
+                correlation_id,
+                task,
+            )
+    return {
+        "ok": False,
+        "error": "ai_unavailable",
+        "reason": "all_providers_failed",
+        "message": unavailable_message,
         "correlation_id": correlation_id,
         "attempts": attempts,
     }

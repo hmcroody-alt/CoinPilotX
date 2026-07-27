@@ -167,7 +167,7 @@ export async function nativeMediaAssetFromUri(
   };
 }
 
-export function cameraCompressionPolicy(mode: "photo" | "video" | "status" | "reel" = "photo", destination = "feed"): CameraCompressionPolicy {
+export function cameraCompressionPolicy(mode: "photo" | "video" | "status" | "reel" | "live" = "photo", destination = "feed"): CameraCompressionPolicy {
   const video = mode === "video" || mode === "reel";
   const status = destination === "status" || mode === "status";
   return {

@@ -1,6 +1,7 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { formatAbsoluteDate } from "../core/localTime";
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   BuyerOrder,
   buyerOrderWebUrl,
@@ -13,6 +14,7 @@ import {
 } from "../api/orders";
 import { Panel } from "../components/Panel";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { useScreenPerf } from "../core/useScreenPerf";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 
@@ -45,6 +47,8 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+
+  useScreenPerf("BuyerOrders");
 
   const selected = useMemo(() => detail || orders.find((order) => order.id === orderId) || null, [detail, orderId, orders]);
 
@@ -95,45 +99,67 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
     else navigation.navigate("SellerStore", { title: "Seller / Store" });
   }
 
-  return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(orderId, source, true).catch(() => undefined)} tintColor={colors.accent} />}
-    >
-      <View style={styles.hero}>
-        <Text style={styles.kicker}>Commerce Ledger</Text>
-        <Text style={styles.title}>{selected ? "Order Detail" : "Purchase History"}</Text>
-        <Text style={styles.subtitle}>
-          Buyer-side order state is read from PulseSoc payment ledgers. Checkout, refunds, disputes, shipping, and receipts remain server and provider controlled.
-        </Text>
-      </View>
+  const hero = (
+    <View style={styles.hero}>
+      <Text style={styles.kicker}>Commerce Ledger</Text>
+      <Text style={styles.title}>{selected ? "Order Detail" : "Purchase History"}</Text>
+      <Text style={styles.subtitle}>
+        Buyer-side order state is read from PulseSoc payment ledgers. Checkout, refunds, disputes, shipping, and receipts remain server and provider controlled.
+      </Text>
+    </View>
+  );
 
-      {error ? (
-        <Panel>
-          <Text style={styles.errorTitle}>Commerce state unavailable</Text>
-          <Text style={styles.copy}>{error}</Text>
-          <Pressable style={styles.secondaryButton} onPress={() => load(orderId, source).catch(() => undefined)}>
-            <Text style={styles.secondaryText}>Retry</Text>
-          </Pressable>
-        </Panel>
-      ) : null}
+  const errorPanel = error ? (
+    <Panel>
+      <Text style={styles.errorTitle}>Commerce state unavailable</Text>
+      <Text style={styles.copy}>{error}</Text>
+      <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => load(orderId, source).catch(() => undefined)}>
+        <Text style={styles.secondaryText}>Retry</Text>
+      </Pressable>
+    </Panel>
+  ) : null;
 
-      {loading ? (
-        <Panel>
-          <Text style={styles.copy}>Loading your PulseSoc purchase timeline...</Text>
-        </Panel>
-      ) : null}
+  const loadingPanel = loading ? (
+    <Panel>
+      <Text style={styles.copy}>Loading your PulseSoc purchase timeline...</Text>
+    </Panel>
+  ) : null;
 
-      {selected ? (
+  const refreshControl = (
+    <RefreshControl refreshing={refreshing} onRefresh={() => load(orderId, source, true).catch(() => undefined)} tintColor={colors.accent} />
+  );
+
+  if (selected) {
+    return (
+      <ScrollView style={styles.root} contentContainerStyle={styles.content} refreshControl={refreshControl}>
+        {hero}
+        {errorPanel}
+        {loadingPanel}
         <OrderDetail
           order={selected}
           onBack={() => navigation.navigate("BuyerOrders", { title: "Purchase History" })}
           onListing={() => openListing(selected)}
           onSeller={() => openSeller(selected)}
         />
-      ) : (
+      </ScrollView>
+    );
+  }
+
+  return (
+    <FlatList
+      style={styles.root}
+      contentContainerStyle={styles.content}
+      data={orders}
+      keyExtractor={(order) => `${order.source_table || "order"}-${order.id}`}
+      renderItem={({ item }) => <OrderRow order={item} onPress={() => openOrder(item)} />}
+      initialNumToRender={8}
+      windowSize={7}
+      refreshControl={refreshControl}
+      ListHeaderComponent={
         <>
+          {hero}
+          {errorPanel}
+          {loadingPanel}
           <Panel>
             <Text style={styles.sectionTitle}>Transaction Timeline</Text>
             <Text style={styles.copy}>Receipts, disputes, payment confirmation, and seller fulfillment stay aligned with existing PulseSoc backend records.</Text>
@@ -143,18 +169,18 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
               <Metric label="Open" value={String(orders.filter((order) => ["pending", "processing", "shipped"].includes(String(order.status_group))).length)} />
             </View>
           </Panel>
-          {orders.length ? orders.map((order) => <OrderRow key={`${order.source_table || "order"}-${order.id}`} order={order} onPress={() => openOrder(order)} />) : (
-            <Panel>
-              <Text style={styles.sectionTitle}>No purchases yet</Text>
-              <Text style={styles.copy}>Marketplace and learning purchases will appear here after checkout creates a server-side transaction.</Text>
-              <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
-                <Text style={styles.primaryText}>Browse Marketplace</Text>
-              </Pressable>
-            </Panel>
-          )}
         </>
-      )}
-    </ScrollView>
+      }
+      ListEmptyComponent={
+        <Panel>
+          <Text style={styles.sectionTitle}>No purchases yet</Text>
+          <Text style={styles.copy}>Marketplace and learning purchases will appear here after checkout creates a server-side transaction.</Text>
+          <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
+            <Text style={styles.primaryText}>Browse Marketplace</Text>
+          </Pressable>
+        </Panel>
+      }
+    />
   );
 }
 
@@ -191,10 +217,10 @@ function OrderDetail({ order, onBack, onListing, onSeller }: { order: BuyerOrder
         <Line label="Seller" value={order.seller?.display_name || "PulseSoc Seller"} />
         <Line label="Item" value={order.item_title || order.title || "PulseSoc purchase"} />
         <View style={styles.buttonRow}>
-          <Pressable style={styles.secondaryButton} onPress={onSeller}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={onSeller}>
             <Text style={styles.secondaryText}>View Seller</Text>
           </Pressable>
-          <Pressable style={[styles.secondaryButton, !canOpenListing && styles.disabledButton]} disabled={!canOpenListing} onPress={onListing}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canOpenListing }} style={[styles.secondaryButton, !canOpenListing && styles.disabledButton]} disabled={!canOpenListing} onPress={onListing}>
             <Text style={styles.secondaryText}>Open Listing</Text>
           </Pressable>
         </View>
@@ -204,14 +230,14 @@ function OrderDetail({ order, onBack, onListing, onSeller }: { order: BuyerOrder
         <Text style={styles.sectionTitle}>Buyer controls</Text>
         <Text style={styles.copy}>Receipt, support, dispute, shipping, and provider pages open through existing PulseSoc web/provider flows.</Text>
         <View style={styles.buttonRow}>
-          <Pressable style={styles.primaryButton} onPress={() => openBuyerOrderFallback(order.receipt_url || buyerOrderWebUrl(order)).catch(() => undefined)}>
+          <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => openBuyerOrderFallback(order.receipt_url || buyerOrderWebUrl(order)).catch(() => undefined)}>
             <Text style={styles.primaryText}>View Receipt</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={() => openBuyerOrderFallback(order.dispute_url || order.support_url || supportOrderWebUrl(order)).catch(() => undefined)}>
+          <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => openBuyerOrderFallback(order.dispute_url || order.support_url || supportOrderWebUrl(order)).catch(() => undefined)}>
             <Text style={styles.secondaryText}>Support</Text>
           </Pressable>
         </View>
-        <Pressable style={styles.ghostButton} onPress={onBack}>
+        <Pressable accessibilityRole="button" style={styles.ghostButton} onPress={onBack}>
           <Text style={styles.ghostText}>Back to Purchase History</Text>
         </Pressable>
       </Panel>
@@ -221,7 +247,7 @@ function OrderDetail({ order, onBack, onListing, onSeller }: { order: BuyerOrder
 
 function OrderRow({ order, onPress }: { order: BuyerOrder; onPress: () => void }) {
   return (
-    <Pressable style={styles.row} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.row} onPress={onPress}>
       <View style={styles.rowGlow} />
       <View style={styles.flex}>
         <Text style={styles.rowTitle} numberOfLines={1}>{order.item_title || order.title || "PulseSoc purchase"}</Text>
@@ -277,9 +303,7 @@ function Line({ label, value }: { label: string; value: string }) {
 
 function formatDate(value?: string) {
   if (!value) return "Pending";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return formatAbsoluteDate(value, { withYear: true }) || value;
 }
 
 const styles = StyleSheet.create({

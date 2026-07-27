@@ -27,7 +27,6 @@ import {
   testAlertChannel,
   updateCryptoAlert
 } from "../api/alerts";
-import { openIntelligenceWebFallback } from "../api/intelligence";
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -241,7 +240,6 @@ export function AlertManagementScreen({ route, navigation }: Props) {
 
       <View style={styles.topActions}>
         <ActionButton label={refreshing ? "Refreshing" : "Refresh"} disabled={refreshing} onPress={() => load("refresh").catch(() => undefined)} />
-        <ActionButton label="Advanced Web" variant="secondary" onPress={() => openIntelligenceWebFallback("/dashboard/crypto/alerts").catch(() => undefined)} />
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -382,10 +380,9 @@ export function AlertManagementScreen({ route, navigation }: Props) {
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Safe fallback boundary</Text>
-        <Text style={styles.muted}>Provider administration, advanced Intelligence editing, collector management, and unsupported alert types stay on the existing PulseSoc web surface until native support is planned.</Text>
+        <Text style={styles.sectionTitle}>Provider boundary</Text>
+        <Text style={styles.muted}>Provider administration, advanced Intelligence editing, collector management, and unsupported alert types stay server-managed by PulseSoc until native support is planned.</Text>
         <View style={styles.topActions}>
-          <ActionButton label="Open Alerts Web" variant="secondary" onPress={() => openIntelligenceWebFallback("/dashboard/crypto/alerts").catch(() => undefined)} />
           <ActionButton label="Notifications" variant="secondary" onPress={() => navigation.navigate("NotificationCenter")} />
         </View>
       </Panel>

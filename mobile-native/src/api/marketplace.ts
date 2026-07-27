@@ -1,4 +1,3 @@
-import { Linking } from "react-native";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { PulseAuthor, PulseMedia, mediaDisplayUrl } from "./feed";
@@ -224,7 +223,6 @@ export async function connectMarketplacePayout() {
     method: "POST",
     body: JSON.stringify({ seller_type: "merchant" })
   });
-  if (result.onboarding_url) await Linking.openURL(result.onboarding_url).catch(() => undefined);
   return result;
 }
 
@@ -258,7 +256,6 @@ export async function openMarketplaceCheckout(listingId: number) {
     method: "POST",
     body: JSON.stringify({ item_type: "marketplace_product", item_id: listingId })
   });
-  if (result.checkout_url) await Linking.openURL(result.checkout_url);
   return result;
 }
 

@@ -1,4 +1,3 @@
-import { Linking } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
@@ -93,7 +92,17 @@ export type ActiveCallsResponse = {
   message?: string;
 };
 
-export type CallStatusResponse = PulseCall & {
+export type PulseCallEnvelope = {
+  ok?: boolean;
+  call?: PulseCall;
+  join?: PulseCallJoin;
+  calls?: PulseCall[];
+  items?: PulseCall[];
+  events?: PulseCallEvent[];
+  message?: string;
+};
+
+export type CallStatusResponse = PulseCallEnvelope & PulseCall & {
   events?: PulseCallEvent[];
 };
 
@@ -110,11 +119,11 @@ export type CallControlAction =
 
 export async function startConversationCall(conversationId: number, callType: PulseCallType) {
   const endpoint = `/api/pulse/communications/v2/conversations/${encodeURIComponent(String(conversationId))}/${callType === "video" ? "video" : "voice"}/start`;
-  const data = await pulseApi<PulseCall>(endpoint, {
+  const data = await pulseApi<PulseCall | PulseCallEnvelope>(endpoint, {
     method: "POST",
     body: JSON.stringify({ source: "native", call_type: callType })
   });
-  const call = normalizeCall(data);
+  const call = normalizeCallPayload(data);
   await cacheCallStatus(call).catch(() => undefined);
   return call;
 }
@@ -122,24 +131,26 @@ export async function startConversationCall(conversationId: number, callType: Pu
 export async function startCall(payload: {
   conversation_id?: number;
   participant_user_ids?: number[];
+  recipient_user_ids?: number[];
   call_type?: PulseCallType;
   call_scope?: string;
 }) {
-  const data = await pulseApi<PulseCall>("/api/calls/start", {
+  const recipientUserIds = payload.recipient_user_ids || payload.participant_user_ids || [];
+  const data = await pulseApi<PulseCall | PulseCallEnvelope>("/api/calls/start", {
     method: "POST",
-    body: JSON.stringify({ ...payload, source: "native" })
+    body: JSON.stringify({ ...payload, recipient_user_ids: recipientUserIds, source: "native" })
   });
-  const call = normalizeCall(data);
+  const call = normalizeCallPayload(data);
   await cacheCallStatus(call).catch(() => undefined);
   return call;
 }
 
 export async function acceptCall(callId: string) {
-  const data = await pulseApi<PulseCall>(`/api/calls/${encodeURIComponent(callId)}/accept`, {
+  const data = await pulseApi<PulseCall | PulseCallEnvelope>(`/api/calls/${encodeURIComponent(callId)}/accept`, {
     method: "POST",
     body: JSON.stringify({ source: "native" })
   });
-  const call = normalizeCall(data);
+  const call = normalizeCallPayload(data);
   await cacheCallStatus(call).catch(() => undefined);
   return call;
 }
@@ -152,31 +163,41 @@ export async function markRingSeen(callId: string) {
 }
 
 export async function declineCall(callId: string, reason = "native_decline") {
-  return pulseApi<PulseCall>(`/api/calls/${encodeURIComponent(callId)}/decline`, {
+  const data = await pulseApi<PulseCall | PulseCallEnvelope>(`/api/calls/${encodeURIComponent(callId)}/decline`, {
     method: "POST",
     body: JSON.stringify({ reason, source: "native" })
   });
+  const call = normalizeCallPayload(data);
+  await cacheCallStatus(call).catch(() => undefined);
+  return call;
 }
 
 export async function endCall(callId: string, reason = "native_hangup") {
-  return pulseApi<PulseCall>(`/api/calls/${encodeURIComponent(callId)}/end`, {
+  const data = await pulseApi<PulseCall | PulseCallEnvelope>(`/api/calls/${encodeURIComponent(callId)}/end`, {
     method: "POST",
     body: JSON.stringify({ reason, source: "native" })
   });
+  const call = normalizeCallPayload(data);
+  await cacheCallStatus(call).catch(() => undefined);
+  return call;
 }
 
 export async function requestCallJoinToken(callId: string) {
-  const data = await pulseApi<PulseCall | PulseCallJoin>(`/api/calls/${encodeURIComponent(callId)}/join-token`, {
+  const data = await pulseApi<PulseCall | PulseCallJoin | PulseCallEnvelope>(`/api/calls/${encodeURIComponent(callId)}/join-token`, {
     method: "POST",
     body: JSON.stringify({ source: "native" })
   });
-  if ("call_id" in data || "public_id" in data) return normalizeCall(data as PulseCall).join || {};
+  if (isRecord(data)) {
+    const record = data as Record<string, unknown>;
+    if (isRecord(record.join)) return normalizeJoin(record.join as PulseCallJoin);
+    if (isRecord(record.call) || "call_id" in record || "public_id" in record) return normalizeCallPayload(data as PulseCall | PulseCallEnvelope).join || {};
+  }
   return normalizeJoin(data as PulseCallJoin);
 }
 
 export async function getCallStatus(callId: string) {
   const data = await pulseApi<CallStatusResponse>(`/api/calls/${encodeURIComponent(callId)}/status`);
-  const call = normalizeCall(data);
+  const call = normalizeCallPayload(data);
   await cacheCallStatus(call).catch(() => undefined);
   return { ...data, ...call, events: data.events || [] };
 }
@@ -195,9 +216,26 @@ export async function getConversationCalls(conversationId: number) {
 }
 
 export async function markCallConnected(callId: string, payload: Record<string, unknown> = {}) {
-  return pulseApi<PulseCall>(`/api/calls/${encodeURIComponent(callId)}/connected`, {
+  const data = await pulseApi<PulseCall | PulseCallEnvelope>(`/api/calls/${encodeURIComponent(callId)}/connected`, {
     method: "POST",
     body: JSON.stringify({ ...payload, source: "native" })
+  });
+  const call = normalizeCallPayload(data);
+  await cacheCallStatus(call).catch(() => undefined);
+  return call;
+}
+
+export async function registerVoipPushToken(token: string, payload: Record<string, unknown> = {}) {
+  return pulseApi<{ ok?: boolean; message?: string }>("/api/calls/voip-token", {
+    method: "POST",
+    body: JSON.stringify({ token, platform: "ios", provider: "apns_voip", ...payload, source: "native" })
+  });
+}
+
+export async function unregisterVoipPushToken(token: string) {
+  return pulseApi<{ ok?: boolean; message?: string }>("/api/calls/voip-token/revoke", {
+    method: "POST",
+    body: JSON.stringify({ token, platform: "ios", source: "native" })
   });
 }
 
@@ -239,14 +277,31 @@ export async function openCallWebFallback(callId?: string, conversationId?: numb
   const target = callId
     ? `${PULSE_API_BASE_URL}/pulse/messages${conversationId ? `/${encodeURIComponent(String(conversationId))}` : ""}?call_id=${encodeURIComponent(callId)}`
     : `${PULSE_API_BASE_URL}/pulse/messages`;
-  await Linking.openURL(target);
+  return {
+    ok: false,
+    target,
+    status: "native_provider_boundary",
+    message: "Call options remain inside the native call experience."
+  };
 }
 
 export function normalizeCalls(calls: PulseCall[]) {
-  return (calls || []).map(normalizeCall).filter((call) => call.call_id);
+  return (calls || []).map(normalizeCallPayload).filter((call) => call.call_id);
 }
 
 export function normalizeCall(call: PulseCall): PulseCall {
+  return normalizeCallPayload(call);
+}
+
+export function normalizeCallPayload(data: PulseCall | PulseCallEnvelope): PulseCall {
+  const envelope = isRecord(data) ? data as PulseCallEnvelope : {};
+  const call = isRecord(envelope.call) ? envelope.call as PulseCall : data as PulseCall;
+  const envelopeJoin = isRecord(envelope.join) ? envelope.join as PulseCallJoin : {};
+  const callJoin = isRecord(call.join) ? call.join as PulseCallJoin : {};
+  return normalizeCallRecord({ ...call, join: Object.keys(envelopeJoin).length ? envelopeJoin : callJoin });
+}
+
+function normalizeCallRecord(call: PulseCall): PulseCall {
   const id = String(call.public_id || call.call_id || "");
   const join = normalizeJoin(call.join || {});
   return {
@@ -270,4 +325,8 @@ function normalizeJoin(join: PulseCallJoin): PulseCallJoin {
     room_name: String(join.room_name || ""),
     provider: String(join.provider || "livekit")
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

@@ -3,11 +3,40 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NATIVE = ROOT / "mobile-native"
 BOT = ROOT / "bot.py"
+
+# Detect an actual WebView dependency: an import of react-native-webview or a
+# rendered <WebView> element. A bare "WebView" substring in user-facing copy
+# (e.g. "your current WebView account") or in a comment is NOT a rendered WebView
+# and must not fail the foundation gate — that would be a false positive.
+WEBVIEW_IMPORT = re.compile(r"""(from|require\()\s*['"]react-native-webview['"]""")
+WEBVIEW_RENDER = re.compile(r"<WebView[\s/>]")
+
+
+def is_test_path(path: Path) -> bool:
+    if "__tests__" in path.parts or "__mocks__" in path.parts:
+        return True
+    name = path.name
+    return ".test." in name or ".spec." in name
+
+
+def webview_offenders(paths: list[Path]) -> list[str]:
+    offenders: list[str] = []
+    for path in paths:
+        if is_test_path(path):
+            continue
+        for lineno, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            stripped = raw.strip()
+            if stripped.startswith(("//", "*", "/*")):
+                continue
+            if WEBVIEW_IMPORT.search(raw) or WEBVIEW_RENDER.search(raw):
+                offenders.append(f"{path.relative_to(ROOT).as_posix()}:{lineno}")
+    return offenders
 
 
 def read(path: Path) -> str:
@@ -57,9 +86,8 @@ def main() -> int:
         *sorted((NATIVE / "src").rglob("*.ts")),
         *sorted((NATIVE / "src").rglob("*.tsx")),
     ]
-    combined_native = "\n".join(path.read_text(encoding="utf-8") for path in code_paths)
-    require("react-native-webview" not in combined_native.lower(), "native foundation must not use WebView")
-    require("WebView" not in combined_native, "native foundation must not render WebView")
+    offenders = webview_offenders(code_paths)
+    require(not offenders, "native foundation must not import or render a WebView: " + ", ".join(offenders))
 
     require("AuthNavigator" in app and "AppNavigator" in app, "app switches between auth and signed-in native navigation")
     require("createBottomTabNavigator" in nav and "createNativeStackNavigator" in nav, "native tabs and stack navigation are wired")
@@ -100,10 +128,14 @@ def main() -> int:
         "/api/pulse/profile/me",
     ]:
         require(route in api, f"Pulse API client wires {route}")
+    # The native messenger client targets the canonical Communications v2 API
+    # (served by pulse_communications_v2/routes.py), not the legacy
+    # /api/pulse/messages/* web routes. Verify the constant plus the conversation
+    # list, thread-fetch, and send call sites are wired to that prefix.
+    require('"/api/pulse/communications/v2"' in messenger_api, "Messenger API client uses the Communications v2 prefix")
     for route in [
-        "/api/pulse/messages/conversations",
-        "/api/pulse/messages/${conversationId}/messages",
-        "/api/pulse/messages/${conversationId}/send",
+        "${MESSENGER_API}/conversations",
+        "${MESSENGER_API}/conversations/${conversationId}/messages",
     ]:
         require(route in messenger_api, f"Messenger API client wires {route}")
 

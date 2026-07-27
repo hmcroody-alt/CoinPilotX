@@ -1,4 +1,4 @@
-"""Free/fallback crypto news intelligence for CoinPilotXAI.
+"""Free/fallback crypto news intelligence for CoinPlotXAI.
 
 No paid provider is required. Optional keys improve freshness, but RSS and
 cached intelligence keep the UI useful when live providers are unavailable.
@@ -148,7 +148,7 @@ def _fetch_rss(limit):
     errors = []
     for source, url in RSS_FEEDS:
         try:
-            response = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "CoinPilotXAI/1.0"})
+            response = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "CoinPlotXAI/1.0"})
             response.raise_for_status()
             root = ET.fromstring(response.content)
             for item in root.findall(".//item"):
@@ -278,7 +278,7 @@ def get_crypto_news(limit=20, force_refresh=False):
             normalize_story(
                 "Crypto market news intelligence is warming up",
                 "Live RSS and optional API sources are reconnecting. Watch BTC, ETH, ETF flows, regulation, scams, hacks, and macro liquidity while cached intelligence fills.",
-                "CoinPilotXAI cached intelligence",
+                "CoinPlotXAI cached intelligence",
                 "",
                 _now(),
             )

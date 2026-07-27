@@ -9,10 +9,10 @@ import { BiometricKind } from "../../session/biometricAuth";
 export type BiometricButtonState = "idle" | "loading" | "success" | "failed";
 
 const LABELS: Record<BiometricKind, string> = {
-  faceId: "Continue with Face ID",
-  touchId: "Continue with Touch ID",
-  iris: "Continue with biometrics",
-  none: "Continue with biometrics"
+  faceId: "Sign in with Face ID",
+  touchId: "Sign in with Touch ID",
+  iris: "Sign in with biometrics",
+  none: "Sign in with biometrics"
 };
 
 const ICONS: Record<BiometricKind, keyof typeof MaterialCommunityIcons.glyphMap> = {
@@ -25,12 +25,15 @@ const ICONS: Record<BiometricKind, keyof typeof MaterialCommunityIcons.glyphMap>
 export function BiometricLoginButton({
   kind,
   state,
-  onPress
+  onPress,
+  label
 }: {
   kind: BiometricKind;
   state: BiometricButtonState;
   onPress: () => void;
+  label?: string;
 }) {
+  const idleLabel = label ?? LABELS[kind];
   const reducedMotion = useLogiNexusReducedMotion();
   const glow = useRef(new Animated.Value(0.4)).current;
 
@@ -52,7 +55,7 @@ export function BiometricLoginButton({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={LABELS[kind]}
+      accessibilityLabel={idleLabel}
       accessibilityState={{ disabled, busy: state === "loading" }}
       disabled={disabled}
       testID="biometric-login-button"
@@ -67,7 +70,7 @@ export function BiometricLoginButton({
         )}
       </Animated.View>
       <Text style={styles.label} maxFontSizeMultiplier={1.6}>
-        {state === "loading" ? "Verifying…" : state === "success" ? "Verified" : state === "failed" ? "Try again" : LABELS[kind]}
+        {state === "loading" ? "Verifying…" : state === "success" ? "Verified" : state === "failed" ? "Try again" : idleLabel}
       </Text>
     </Pressable>
   );

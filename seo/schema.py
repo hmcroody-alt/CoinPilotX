@@ -35,7 +35,7 @@ def website_schema():
         "url": SITE_URL + "/",
         "publisher": {"@id": f"{SITE_URL}/#organization"},
         "inLanguage": "en",
-        "description": "PulseSoc is a social, creator, safety, market-intelligence, and premium community platform powered by CoinPilotXAI.",
+        "description": "PulseSoc is a social, creator, safety, market-intelligence, and premium community platform powered by CoinPlotXAI.",
         "potentialAction": {
             "@type": "SearchAction",
             "target": f"{SITE_URL}/search?q={{search_term_string}}",

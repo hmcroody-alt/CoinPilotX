@@ -86,7 +86,7 @@ def main():
     require(publish.get("mux_waiting") is True, "browser publish waits for Mux active before public playback")
     require(publish.get("playback", {}).get("supports_hls") is False, "browser publish suppresses HLS until Mux active")
     state = client.get(f"/api/pulse/live/{live_id}/state").get_json() or {}
-    require(state.get("status") == "starting", "browser live does not mark session live after egress start")
+    require(state.get("status") == "live", "browser live marks session live after egress start")
     require(state.get("publish_state") == "browser_live_egress", "publish state machine records LiveKit egress")
     require(state.get("livekit", {}).get("egress_id") == "EG_AUDIT", "viewer state exposes LiveKit egress id")
     require(state.get("playback", {}).get("supports_hls") is False, "viewer state waits for Mux active before HLS")

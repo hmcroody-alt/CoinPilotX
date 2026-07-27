@@ -1,13 +1,12 @@
+import { formatShortTimestamp } from "../core/localTime";
+
+/**
+ * Localized short timestamp for feeds and lists. Delegates to the central
+ * LocalTimeService so every call site converts the stored UTC instant into the
+ * viewer's active time zone (device or manual override) with DST handled.
+ */
 export function formatShortTime(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  const now = new Date();
-  const sameDay = date.toDateString() === now.toDateString();
-  if (sameDay) {
-    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  }
-  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  return formatShortTimestamp(value);
 }
 
 export function formatFileSize(bytes?: number) {

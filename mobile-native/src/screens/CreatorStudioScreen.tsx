@@ -132,7 +132,7 @@ export function CreatorStudioScreen({ navigation }: Props) {
       return;
     }
     if (route.includes("live-studio")) {
-      openCreatorWebFallback("/pulse/live/studio?context_type=native_creator_studio").catch(() => undefined);
+      navigation.navigate("LiveStudio", { title: "Live Studio" });
       return;
     }
     openCreatorWebFallback(route).catch(() => undefined);
@@ -194,7 +194,7 @@ export function CreatorStudioScreen({ navigation }: Props) {
           <Action label="Reels" onPress={() => navigation.navigate("Reels")} />
           <Action label="Profile" onPress={() => navigation.navigate("ProfileDetail", undefined)} />
           <Action label="Premium" onPress={() => navigation.navigate("Premium")} />
-          <Action label="Live Studio Web" onPress={() => openCreatorWebFallback("/pulse/live/studio?context_type=native_creator_studio").catch(() => undefined)} />
+          <Action label="Live Studio" onPress={() => navigation.navigate("LiveStudio", { title: "Live Studio" })} />
         </View>
       </Panel>
 
@@ -248,9 +248,6 @@ export function CreatorStudioScreen({ navigation }: Props) {
             <Text style={styles.toolState}>{card.state || "BETA"}</Text>
           </Pressable>
         ))}
-        <Pressable style={styles.secondaryButton} onPress={() => openCreatorWebFallback("/pulse/creator-studio").catch(() => undefined)}>
-          <Text style={styles.secondaryText}>Open Full Web Creator Studio</Text>
-        </Pressable>
       </Panel>
     </ScrollView>
   );

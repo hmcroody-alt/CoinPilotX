@@ -14,7 +14,7 @@ for token in ["comm_v2_presence", "comm_v2_user_settings", "presence_privacy", "
 for token in ["/presence/heartbeat", "/presence", "service.conversation_presence"]:
     assert token in ROUTES, f"missing presence route token: {token}"
     print(f"PASS: {token}")
-for token in ["sendPresenceHeartbeat", "loadPresence", "Active now", "Last seen"]:
+for token in ["sendPresenceHeartbeat", "loadPresence", '"Online"', "Last active"]:
     assert token in JS, f"missing presence client token: {token}"
     print(f"PASS: {token}")
 
