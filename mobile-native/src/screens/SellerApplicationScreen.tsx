@@ -178,6 +178,11 @@ export function SellerApplicationScreen({ navigation }: Props) {
 
   async function beginApplication() {
     setBusy("start");
+    // Every other action on this screen clears the banner before it runs. Without
+    // it, a failure from the initial load stays on screen through a successful
+    // start, so the applicant is told the application could not be reached while
+    // looking at step one of the application.
+    setMessage("");
     try {
       dirtyRef.current = true;
       const next = await saveSellerApplicationDraft(draft);

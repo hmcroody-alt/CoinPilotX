@@ -345,4 +345,84 @@ describe("offline", () => {
     const { getByText } = render(<SellerApplicationScreen navigation={{ navigate: jest.fn() }} />);
     await waitFor(() => expect(getByText("The seller application could not load.")).toBeTruthy());
   });
+
+  it("keeps the answers a restarted app recovers from disk", async () => {
+    // Restart is indistinguishable from any other cold mount, so what proves
+    // progress survives it is that the cached copy is what gets rendered and
+    // edited — not a fresh empty form the applicant would have to fill twice.
+    mockLoad.mockRejectedValue(new Error("Network request failed"));
+    mockLoadCached.mockResolvedValue(application({ fields: { full_name: "Amara Nwosu", email: "" } }));
+    const { getByDisplayValue, getByText } = render(<SellerApplicationScreen navigation={{ navigate: jest.fn() }} />);
+    await waitFor(() => expect(getByText("Showing your last saved copy. Reconnect to refresh.")).toBeTruthy());
+    await act(async () => {
+      fireEvent.press(getByText("Continue"));
+    });
+    await waitFor(() => expect(getByDisplayValue("Amara Nwosu")).toBeTruthy());
+  });
+});
+
+describe("resuming", () => {
+  it("opens an existing draft at the form instead of the introduction", async () => {
+    // The introduction is for people who have not applied. Showing it to someone
+    // who already has a draft invites them to "start" an application they are
+    // already halfway through.
+    const { getByText, queryByText } = await renderScreen(application({ application_id: 7, status: "draft" }));
+    expect(queryByText("Start application")).toBeNull();
+    expect(getByText("Seller type")).toBeTruthy();
+  });
+
+  it("creates nothing on the way in, so returning cannot fork a second draft", async () => {
+    // A write on mount is how duplicate drafts happen: the reviewer then has two
+    // half-answered applications from one person and no way to tell which is
+    // current. Reading on mount and writing only on a deliberate action is the
+    // property that prevents it.
+    await renderScreen(application({ application_id: 7, status: "draft" }));
+    expect(mockSaveDraft).not.toHaveBeenCalled();
+  });
+
+  it("resumes a returning applicant at the first step, not wherever they left the index", async () => {
+    const { getByText } = await renderScreen(application({ application_id: 7, status: "draft" }));
+    expect(getByText("Step 1 of 4")).toBeTruthy();
+  });
+});
+
+describe("session and permission failures", () => {
+  it("shows the reason a start was refused rather than a silent no-op", async () => {
+    // Every refusal the server can give — an expired session, a revoked
+    // permission, a closed application window — arrives here as a rejected
+    // promise. The button must not simply stop being busy and leave the
+    // applicant tapping it again.
+    const { getByText } = await renderScreen(application({ application_id: 0 }));
+    mockSaveDraft.mockRejectedValue(new Error("Your session has expired. Please sign in again."));
+    await act(async () => {
+      fireEvent.press(getByText("Start application"));
+    });
+    await waitFor(() => expect(getByText("Your session has expired. Please sign in again.")).toBeTruthy());
+    expect(getByText("Start application")).toBeTruthy();
+  });
+
+  it("clears a stale load failure once the application actually starts", async () => {
+    // Without this the applicant reads "could not load" while looking at step
+    // one of the thing that loaded.
+    mockLoad.mockRejectedValue(new Error("The seller application could not load."));
+    mockLoadCached.mockResolvedValue(null);
+    const { getByText, queryByText } = render(<SellerApplicationScreen navigation={{ navigate: jest.fn() }} />);
+    await waitFor(() => expect(getByText("The seller application could not load.")).toBeTruthy());
+    mockSaveDraft.mockResolvedValue(application());
+    await act(async () => {
+      fireEvent.press(getByText("Start application"));
+    });
+    await waitFor(() => expect(getByText("Seller type")).toBeTruthy());
+    expect(queryByText("The seller application could not load.")).toBeNull();
+  });
+
+  it("never leaves the start button stuck in its busy state after a failure", async () => {
+    const { getByText, queryByText } = await renderScreen(application({ application_id: 0 }));
+    mockSaveDraft.mockRejectedValue(new Error("The requested PulseSoc service was not found."));
+    await act(async () => {
+      fireEvent.press(getByText("Start application"));
+    });
+    await waitFor(() => expect(queryByText("Starting…")).toBeNull());
+    expect(getByText("Start application")).toBeTruthy();
+  });
 });
