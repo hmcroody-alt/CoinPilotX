@@ -39,7 +39,7 @@ import { sharePulseObject } from "../sharing/nativeShare";
 import { elapsedLabel, formatViewerCount, type LiveGuest, type LiveGuestRequest } from "../live/liveSession";
 import { useLiveBroadcastRoom, type LiveParticipant } from "../live/useLiveBroadcastRoom";
 import { RootStackParamList } from "../navigation/types";
-import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
+import { claimLivePlaybackOwner, releaseLivePlaybackOwner } from "../live/livePlaybackOwnership";
 import { colors } from "../theme/colors";
 import { useAuth } from "../session/auth";
 import { GlassCircleButton, GlassPill, LiveBottomSheet, ToolTile } from "../live/liveHostUi";
@@ -144,9 +144,11 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
         return;
       }
       try {
+        await claimLivePlaybackOwner("host", liveId).catch(() => undefined);
         const credentials = await getLiveKitToken(liveId, "host");
         if (cancelled) return;
         if (!credentials || !credentials.canPublish) {
+          await releaseLivePlaybackOwner("host", liveId);
           setFatalError("PulseSoc did not grant a publish token for this broadcast. It cannot go live.");
           setConnecting(false);
           return;
@@ -154,6 +156,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
         const ok = await room.connect(credentials, { publish: true });
         if (cancelled) return;
         if (!ok) {
+          await releaseLivePlaybackOwner("host", liveId);
           setFatalError(room.error || "The native broadcast could not connect to LiveKit.");
           setConnecting(false);
           return;
@@ -162,6 +165,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
         setConnecting(false);
       } catch (error) {
         if (cancelled) return;
+        await releaseLivePlaybackOwner("host", liveId);
         setFatalError(error instanceof Error && error.message ? error.message : "The native broadcast could not start.");
         setConnecting(false);
       }
@@ -169,6 +173,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
     connect();
     return () => {
       cancelled = true;
+      releaseLivePlaybackOwner("host", liveId).catch(() => undefined);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveId]);
@@ -185,10 +190,9 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
   // Pulse Radio, reels, and status playback (mediaPlaybackCoordinator priority: live > reel/status > radio).
   useEffect(() => {
     if (!room.connected) return undefined;
-    const ownerId = `live-host:${liveId}`;
-    claimMediaPlayback({ id: ownerId, kind: "live", pause: () => undefined }).catch(() => undefined);
+    claimLivePlaybackOwner("host", liveId).catch(() => undefined);
     return () => {
-      releaseMediaPlayback(ownerId).catch(() => undefined);
+      releaseLivePlaybackOwner("host", liveId);
     };
   }, [room.connected, liveId]);
 

@@ -2,9 +2,9 @@ import { ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
 import { getLiveKitToken } from "../../api/live";
-import { claimMediaPlayback, releaseMediaPlayback } from "../../core/mediaPlaybackCoordinator";
 import { PulseReel } from "../../api/reels";
 import { useLiveBroadcastRoom } from "../../live/useLiveBroadcastRoom";
+import { claimLivePlaybackOwner, releaseLivePlaybackOwner } from "../../live/livePlaybackOwnership";
 import { reelLiveSessionId } from "../../reels/reelMediaKind";
 import { colors } from "../../theme/colors";
 
@@ -29,7 +29,6 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
   const { connect, disconnect, setRemoteAudioEnabled } = room;
   const [mode, setMode] = useState<ViewerMode>("connecting");
   const [VideoTileView, setVideoTileView] = useState<React.ComponentType<any> | null>(null);
-  const playbackOwnerId = `reel-live:${liveId || reel.id || "unknown"}`;
 
   useEffect(() => {
     let mounted = true;
@@ -48,6 +47,7 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
     async function joinAsViewer() {
       if (!active) {
         await disconnect("left_feed_item").catch(() => undefined);
+        await releaseLivePlaybackOwner("feed", liveId || reel.id || "unknown");
         return;
       }
       if (!liveId) {
@@ -55,6 +55,7 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
         return;
       }
       setMode("connecting");
+      await claimLivePlaybackOwner("feed", liveId || reel.id || "unknown", () => disconnect("feed_live_backgrounded").then(() => undefined)).catch(() => undefined);
       try {
         const credentials = await getLiveKitToken(liveId, "viewer");
         if (cancelled) return;
@@ -73,6 +74,7 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
     return () => {
       cancelled = true;
       disconnect("left_feed_item").catch(() => undefined);
+      releaseLivePlaybackOwner("feed", liveId || reel.id || "unknown");
     };
   }, [active, liveId, hlsUrl, connect, disconnect]);
 
@@ -87,17 +89,12 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
 
   useEffect(() => {
     if (!active || mode !== "livekit" || !room.connected) {
-      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+      releaseLivePlaybackOwner("feed", liveId || reel.id || "unknown");
       return;
     }
-    claimMediaPlayback({
-      id: playbackOwnerId,
-      kind: "live",
-      pause: () => undefined,
-      stop: () => disconnect("feed_live_backgrounded").then(() => undefined)
-    }).catch(() => undefined);
-    return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
-  }, [active, disconnect, mode, playbackOwnerId, room.connected]);
+    claimLivePlaybackOwner("feed", liveId || reel.id || "unknown", () => disconnect("feed_live_backgrounded").then(() => undefined)).catch(() => undefined);
+    return () => { releaseLivePlaybackOwner("feed", liveId || reel.id || "unknown"); };
+  }, [active, disconnect, liveId, mode, reel.id, room.connected]);
 
   const videoParticipants = useMemo(
     () =>

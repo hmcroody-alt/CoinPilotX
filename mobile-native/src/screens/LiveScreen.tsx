@@ -47,7 +47,7 @@ import { profileNavigationParams, profileTargetFromAuthor } from "../api/profile
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
-import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
+import { claimLivePlaybackOwner, releaseLivePlaybackOwner } from "../live/livePlaybackOwnership";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "LiveDetail">>;
 type NativeVideoViewProps = {
@@ -199,25 +199,29 @@ export function LiveScreen({ route, navigation }: Props) {
     async (liveId: number) => {
       if (room.connected || room.connecting) return;
       setLiveKitPlaybackFailed(false);
+      await claimLivePlaybackOwner("viewer", liveId, () => disconnectLiveRoom("viewer_backgrounded").then(() => undefined)).catch(() => undefined);
       const credentials = await getLiveKitToken(liveId, "viewer");
       if (!credentials) {
+        await releaseLivePlaybackOwner("viewer", liveId);
         setLiveKitPlaybackFailed(true);
         setError("PulseSoc could not mint native Live viewer credentials. Retry or wait for the provider room to become available.");
         return;
       }
       const ok = await connectLiveRoom(credentials, { publish: false });
       if (!ok) {
+        await releaseLivePlaybackOwner("viewer", liveId);
         setLiveKitPlaybackFailed(true);
         setError(room.error || "Native Live playback could not connect. Retry or wait for the provider room to become available.");
       }
     },
-    [connectLiveRoom, room.connected, room.connecting, room.error]
+    [connectLiveRoom, disconnectLiveRoom, room.connected, room.connecting, room.error]
   );
 
   async function handleLeave() {
     setJoined(false);
     await disconnectLiveRoom("viewer_left").catch(() => undefined);
-    await releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+    await releaseLivePlaybackOwner("viewer", activeLiveId);
+    await releaseLivePlaybackOwner("feed", activeLiveId);
   }
 
   function toggleSound() {
@@ -263,6 +267,8 @@ export function LiveScreen({ route, navigation }: Props) {
 
   function closeViewer() {
     disconnectLiveRoom("viewer_closed").catch(() => undefined);
+    releaseLivePlaybackOwner("viewer", activeLiveId);
+    releaseLivePlaybackOwner("feed", activeLiveId);
     setSelected(null);
     setState(null);
     setMessages([]);
@@ -319,7 +325,6 @@ export function LiveScreen({ route, navigation }: Props) {
   const currentStatus = String(state?.status || active?.status || "").toLowerCase();
   const liveMayAcceptWebRtc = Boolean(activeLiveId && !["ended", "offline", "archived", "deleted", "failed"].includes(currentStatus));
   const canUseWebRtc = Boolean((liveSupportsNativeWebRtc(state || active) || (!canPlayHls && liveMayAcceptWebRtc)) && !playbackFailed && !liveKitPlaybackFailed);
-  const playbackOwnerId = `live:${activeLiveId}`;
   const liveKitParticipants = useMemo(
     () =>
       room.participants
@@ -502,31 +507,23 @@ export function LiveScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (canUseWebRtc) return;
     if (!activeLiveId || !canPlayHls || !playbackUrl) {
-      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+      releaseLivePlaybackOwner("viewer", activeLiveId);
       return;
     }
-    claimMediaPlayback({
-      id: playbackOwnerId,
-      kind: "live",
-      pause: () => videoRef.current?.pauseAsync().then(() => undefined),
-      stop: () => videoRef.current?.stopAsync().then(() => undefined)
-    }).then((granted) => granted ? videoRef.current?.playAsync() : undefined).catch(() => undefined);
-    return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
-  }, [activeLiveId, canPlayHls, canUseWebRtc, playbackOwnerId, playbackUrl]);
+    claimLivePlaybackOwner("viewer", activeLiveId, () => videoRef.current?.stopAsync().then(() => undefined))
+      .then((granted) => granted ? videoRef.current?.playAsync() : undefined)
+      .catch(() => undefined);
+    return () => { releaseLivePlaybackOwner("viewer", activeLiveId); };
+  }, [activeLiveId, canPlayHls, canUseWebRtc, playbackUrl]);
 
   useEffect(() => {
-    if (!activeLiveId || !canUseWebRtc || !joined) {
-      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+    if (!activeLiveId || !canUseWebRtc) {
+      releaseLivePlaybackOwner("viewer", activeLiveId);
       return;
     }
-    claimMediaPlayback({
-      id: playbackOwnerId,
-      kind: "live",
-      pause: () => undefined,
-      stop: () => disconnectLiveRoom("viewer_backgrounded").then(() => undefined)
-    }).catch(() => undefined);
-    return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
-  }, [activeLiveId, canUseWebRtc, disconnectLiveRoom, joined, playbackOwnerId]);
+    claimLivePlaybackOwner("viewer", activeLiveId, () => disconnectLiveRoom("viewer_backgrounded").then(() => undefined)).catch(() => undefined);
+    return () => { releaseLivePlaybackOwner("viewer", activeLiveId); };
+  }, [activeLiveId, canUseWebRtc, disconnectLiveRoom]);
 
   useEffect(() => {
     if (!activeLiveId || !canUseWebRtc || !joined) return;
