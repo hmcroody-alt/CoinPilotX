@@ -128,6 +128,15 @@ class FailingCommitConnection:
             setattr(self.inner, name, value)
 
 
+class CommitRaisesAfterPersistConnection(FailingCommitConnection):
+    def commit(self):
+        object.__setattr__(self, "commit_calls", int(getattr(self, "commit_calls", 0)) + 1)
+        if int(getattr(self, "commit_calls", 0)) == 1:
+            self.inner.commit()
+            raise bot.sqlite3.OperationalError("audit forced post-persist commit visibility failure")
+        return self.inner.commit()
+
+
 def create_extra_viewer(prefix: str) -> int:
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db_service.connect()
@@ -248,6 +257,24 @@ def main() -> int:
     rolled_back_total = int(dict(cur.fetchone() or {}).get("total") or 0)
     conn.close()
     require(rolled_back_total == 0, "failed co-host request commit rolls back without leaving a partial pending row")
+    recovered_commit_viewer_id = create_extra_viewer("livecommitvisibleaudit")
+    login(client, recovered_commit_viewer_id)
+    original_db = bot.db
+    try:
+        bot.db = lambda: CommitRaisesAfterPersistConnection(original_db())
+        recovered_commit = client.post(
+            f"/api/pulse/live/{live_id}/cohost/request",
+            json={"requested_role": "cohost", "camera_ready": True, "mic_ready": True, "network_quality": "ready", "trace_id": "audit-db-commit-visible"},
+        )
+    finally:
+        bot.db = original_db
+    recovered_commit_data = recovered_commit.get_json() or {}
+    require(recovered_commit.status_code == 200 and recovered_commit_data.get("state") == "pending" and recovered_commit_data.get("step") == "waiting_for_host", "post-persist commit visibility errors recover as pending co-host requests")
+    conn = db_service.connect(); conn.row_factory = bot.sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT status FROM pulse_live_guest_requests WHERE id=?", (recovered_commit_data.get("request_id"),))
+    recovered_commit_row = dict(cur.fetchone() or {})
+    conn.close()
+    require(recovered_commit_row.get("status") == "pending", "recovered commit path preserves the authoritative pending request row")
     side_effect_viewer_id = create_extra_viewer("livesideeffectaudit")
     login(client, side_effect_viewer_id)
     original_db = bot.db

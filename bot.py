@@ -45305,9 +45305,22 @@ def api_pulse_live_join_request(live_id):
                 conn.close()
             except Exception:
                 pass
-            if pulse_live_db_integrity_error(exc) and latest_after_commit_race and latest_after_commit_race.get("status") == "pending":
-                pulse_live_cohost_step_log(trace_id, "duplicate_commit_race_recovered", live_id=live_id, viewer_user_id=user["user_id"], payload={"existing_request_id": int(latest_after_commit_race.get("id") or 0), "db_error": owner_debug.get("db_error")})
-                return pulse_live_pending_request_response(latest_after_commit_race, trace_id=trace_id, message="Request already sent. Waiting for host approval.", step="already_requested")
+            if latest_after_commit_race and latest_after_commit_race.get("status") == "pending":
+                recovered_request_id = int(latest_after_commit_race.get("id") or 0)
+                recovery_step = "duplicate_commit_race_recovered" if pulse_live_db_integrity_error(exc) else "commit_visibility_recovered"
+                pulse_live_cohost_step_log(
+                    trace_id,
+                    recovery_step,
+                    live_id=live_id,
+                    viewer_user_id=user["user_id"],
+                    payload={"existing_request_id": recovered_request_id, "db_error": owner_debug.get("db_error")},
+                )
+                return pulse_live_pending_request_response(
+                    latest_after_commit_race,
+                    trace_id=trace_id,
+                    message="Request sent. Waiting for host approval." if recovered_request_id == request_id else "Request already sent. Waiting for host approval.",
+                    step="waiting_for_host" if recovered_request_id == request_id else "already_requested",
+                )
             return pulse_live_cohost_error("DB_TRANSACTION_FAILED", status=500, step="db_transaction", trace_id=trace_id, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=host_user_id, request_id=request_id, debug_error=exc, diagnostic=owner_debug.get("db_error"))
         pulse_live_cohost_step_log(trace_id, "request_creation_committed", live_id=live_id, viewer_user_id=user["user_id"], payload={"request_id": request_id, "state": "pending"})
         side_effects_ok = True
