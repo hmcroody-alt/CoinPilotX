@@ -20322,6 +20322,80 @@ def api_business_os_messages_report(conversation_id):
 
 
 # =====================================================================
+# Business OS — Section 7: Insights (canonical UNIFIED-insights DOMAIN surface).
+#
+# A first-class /api/business-os/businesses/<id>/insights/* surface that UNIFIES the
+# three existing analytics engines (attribution / recommendations / performance) behind
+# one business-scoped, RBAC-guarded read facade. This adds NO fourth analytics table and
+# recomputes nothing — every handler resolves through services.business_os.insights.api,
+# which stitches the engines' own read-only report functions. Gated behind
+# BUSINESS_OS_INSIGHTS; when off the whole surface is dark (404). Identity is always the
+# authenticated caller, never the request body. These are thin adapters.
+# =====================================================================
+def _business_os_insights_enabled():
+    return (os.getenv("BUSINESS_OS_INSIGHTS", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/businesses/<business_id>/insights", methods=["GET"])
+def api_business_os_insights_overview(business_id):
+    if not _business_os_insights_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.insights import api as _insapi
+    return _bo_ad_reply(_insapi.overview(
+        user.get("user_id"), business_id,
+        model=request.args.get("model"),
+        scope=request.args.get("scope"),
+        popularity_limit=request.args.get("popularity_limit") or 25))
+
+
+@webhook_app.route("/api/business-os/businesses/<business_id>/insights/performance",
+                   methods=["GET"])
+def api_business_os_insights_performance(business_id):
+    if not _business_os_insights_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.insights import api as _insapi
+    return _bo_ad_reply(_insapi.performance_summary(user.get("user_id"), business_id))
+
+
+@webhook_app.route("/api/business-os/businesses/<business_id>/insights/attribution",
+                   methods=["GET"])
+def api_business_os_insights_attribution(business_id):
+    if not _business_os_insights_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.insights import api as _insapi
+    return _bo_ad_reply(_insapi.attribution_report(
+        user.get("user_id"), business_id,
+        model=request.args.get("model"), scope=request.args.get("scope")))
+
+
+@webhook_app.route("/api/business-os/businesses/<business_id>/insights/recommendations",
+                   methods=["GET"])
+def api_business_os_insights_recommendations(business_id):
+    if not _business_os_insights_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.insights import api as _insapi
+    try:
+        limit = int(request.args.get("limit") or 100)
+    except (TypeError, ValueError):
+        limit = 100
+    return _bo_ad_reply(_insapi.recommendations_popularity(
+        user.get("user_id"), business_id, limit=limit))
+
+
+# =====================================================================
 # Business OS — Marketplace vertical, Stage 3 (canonical HTTP surface).
 #
 # A NEW, clearly-separated canonical commerce surface under
