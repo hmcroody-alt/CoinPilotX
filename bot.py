@@ -19543,6 +19543,268 @@ def admin_business_os_advertising_resolve_appeal(appeal_id):
 
 
 # =====================================================================
+# Business OS — Business HQ, Section 1 (canonical HTTP surface).
+#
+# The canonical source of truth for business identity: identity, brand, contact,
+# org/locations, team + RBAC, versioned policies, and an append-only timeline.
+# A NEW, clearly-separated surface under /api/business-os/business/*. It does NOT
+# redirect, replace, or touch any legacy business fields; every other Business OS
+# module is meant to reference the canonical business row owned here. Identity is
+# always derived from the authenticated session/token — never from the request
+# body. When BUSINESS_OS_BUSINESS is off the whole surface is dark (404), so no
+# partial canonical path is exposed. All decision logic lives in the importable
+# controller services.business_os.business.api; these are thin adapters.
+# =====================================================================
+def _business_os_business_enabled():
+    return (os.getenv("BUSINESS_OS_BUSINESS", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+def _bo_biz_hold_context(user):
+    """Fresh account state for account-hold precedence (never a stale cache)."""
+    return {
+        "account_status": user.get("account_status"),
+        "access_enabled": user.get("access_enabled"),
+    }
+
+
+# --- business identity -------------------------------------------------------
+@webhook_app.route("/api/business-os/business", methods=["GET"])
+def api_business_os_business_list():
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.list_businesses(user.get("user_id")))
+
+
+@webhook_app.route("/api/business-os/business", methods=["POST"])
+def api_business_os_business_create():
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.create_business(
+        user.get("user_id"), pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/business/<business_id>", methods=["GET"])
+def api_business_os_business_get(business_id):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.get_business(user.get("user_id"), business_id))
+
+
+@webhook_app.route("/api/business-os/business/<business_id>/update", methods=["POST"])
+def api_business_os_business_update(business_id):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.update_business(
+        user.get("user_id"), business_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/business/<business_id>/status", methods=["POST"])
+def api_business_os_business_status(business_id):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.set_business_status(
+        user.get("user_id"), business_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+# --- locations ---------------------------------------------------------------
+@webhook_app.route("/api/business-os/business/<business_id>/locations", methods=["GET"])
+def api_business_os_business_list_locations(business_id):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.list_locations(user.get("user_id"), business_id))
+
+
+@webhook_app.route("/api/business-os/business/<business_id>/locations", methods=["POST"])
+def api_business_os_business_add_location(business_id):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.add_location(
+        user.get("user_id"), business_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/business/<business_id>/locations/<location_id>/update", methods=["POST"])
+def api_business_os_business_update_location(business_id, location_id):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.update_location(
+        user.get("user_id"), business_id, location_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/business/<business_id>/locations/<location_id>/close", methods=["POST"])
+def api_business_os_business_close_location(business_id, location_id):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.close_location(
+        user.get("user_id"), business_id, location_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+# --- team + RBAC -------------------------------------------------------------
+@webhook_app.route("/api/business-os/business/<business_id>/members", methods=["GET"])
+def api_business_os_business_list_members(business_id):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.list_members(user.get("user_id"), business_id))
+
+
+@webhook_app.route("/api/business-os/business/<business_id>/members", methods=["POST"])
+def api_business_os_business_add_member(business_id):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.add_member(
+        user.get("user_id"), business_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/business/<business_id>/members/<member_user_id>/role", methods=["POST"])
+def api_business_os_business_update_member_role(business_id, member_user_id):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.update_member_role(
+        user.get("user_id"), business_id, member_user_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/business/<business_id>/members/<member_user_id>/remove", methods=["POST"])
+def api_business_os_business_remove_member(business_id, member_user_id):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.remove_member(
+        user.get("user_id"), business_id, member_user_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+# --- policies ----------------------------------------------------------------
+@webhook_app.route("/api/business-os/business/<business_id>/policies", methods=["GET"])
+def api_business_os_business_list_policies(business_id):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.list_policies(user.get("user_id"), business_id))
+
+
+@webhook_app.route("/api/business-os/business/<business_id>/policies", methods=["POST"])
+def api_business_os_business_set_policy(business_id):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.set_policy(
+        user.get("user_id"), business_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/business/<business_id>/policies/<policy_type>", methods=["GET"])
+def api_business_os_business_get_policy(business_id, policy_type):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.business import api as _bizapi
+    return _bo_ad_reply(_bizapi.get_policy(user.get("user_id"), business_id, policy_type))
+
+
+# --- timeline ----------------------------------------------------------------
+@webhook_app.route("/api/business-os/business/<business_id>/timeline", methods=["GET"])
+def api_business_os_business_timeline(business_id):
+    if not _business_os_business_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.business import api as _bizapi
+    try:
+        limit = int(request.args.get("limit") or 100)
+    except (TypeError, ValueError):
+        limit = 100
+    return _bo_ad_reply(_bizapi.get_timeline(user.get("user_id"), business_id, limit=limit))
+
+
+# =====================================================================
 # Business OS — Marketplace vertical, Stage 3 (canonical HTTP surface).
 #
 # A NEW, clearly-separated canonical commerce surface under
