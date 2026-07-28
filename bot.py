@@ -20396,6 +20396,188 @@ def api_business_os_insights_recommendations(business_id):
 
 
 # =====================================================================
+# Business OS — Section 9: Events (canonical events / ticketing DOMAIN surface).
+#
+# A first-class /api/business-os/*events* surface for the ONE canonical
+# events / ticketing domain: a business member (staff+) creates an event,
+# adds ticket types, publishes it and runs check-in; any user buys a ticket.
+# Money for PAID tickets never touches a second payment system — every
+# capture / settlement / refund is a double-entry on the shared canonical
+# ledger, and settlement reuses the marketplace take-rate. Gated behind
+# BUSINESS_OS_EVENTS; when off the whole surface is dark (404). Identity is
+# always the authenticated caller, never the request body. Thin adapters.
+# =====================================================================
+def _business_os_events_enabled():
+    return (os.getenv("BUSINESS_OS_EVENTS", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/businesses/<business_id>/events",
+                   methods=["GET", "POST"])
+def api_business_os_events_collection(business_id):
+    if not _business_os_events_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.events import api as _evapi
+    uid = user.get("user_id")
+    if request.method == "POST":
+        if not pulse_ads_verify_write():
+            return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+        return _bo_ad_reply(_evapi.create_event(
+            uid, business_id, pulse_ads_json_payload(),
+            context=_bo_biz_hold_context(user)))
+    try:
+        limit = int(request.args.get("limit") or 100)
+    except (TypeError, ValueError):
+        limit = 100
+    return _bo_ad_reply(_evapi.list_business_events(uid, business_id, limit=limit))
+
+
+@webhook_app.route("/api/business-os/events/<event_id>", methods=["GET"])
+def api_business_os_events_get(event_id):
+    if not _business_os_events_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.events import api as _evapi
+    return _bo_ad_reply(_evapi.get_event(user.get("user_id"), event_id))
+
+
+@webhook_app.route("/api/business-os/events/<event_id>/ticket-types",
+                   methods=["POST"])
+def api_business_os_events_add_ticket_type(event_id):
+    if not _business_os_events_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.events import api as _evapi
+    return _bo_ad_reply(_evapi.add_ticket_type(
+        user.get("user_id"), event_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/events/<event_id>/publish", methods=["POST"])
+def api_business_os_events_publish(event_id):
+    if not _business_os_events_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.events import api as _evapi
+    return _bo_ad_reply(_evapi.publish_event(
+        user.get("user_id"), event_id, context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/events/<event_id>/cancel", methods=["POST"])
+def api_business_os_events_cancel(event_id):
+    if not _business_os_events_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.events import api as _evapi
+    return _bo_ad_reply(_evapi.cancel_event(
+        user.get("user_id"), event_id, context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/events/<event_id>/purchase", methods=["POST"])
+def api_business_os_events_purchase(event_id):
+    if not _business_os_events_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.events import api as _evapi
+    payload = pulse_ads_json_payload() or {}
+    return _bo_ad_reply(_evapi.purchase_ticket(
+        user.get("user_id"), event_id, payload.get("ticket_type_id"),
+        client_ref=payload.get("client_ref"),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/events/<event_id>/settle", methods=["POST"])
+def api_business_os_events_settle(event_id):
+    if not _business_os_events_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.events import api as _evapi
+    return _bo_ad_reply(_evapi.settle_event(
+        user.get("user_id"), event_id, context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/events/<event_id>/summary", methods=["GET"])
+def api_business_os_events_summary(event_id):
+    if not _business_os_events_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.events import api as _evapi
+    return _bo_ad_reply(_evapi.event_summary(user.get("user_id"), event_id))
+
+
+@webhook_app.route("/api/business-os/event-tickets/<ticket_id>/check-in",
+                   methods=["POST"])
+def api_business_os_events_check_in(ticket_id):
+    if not _business_os_events_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.events import api as _evapi
+    return _bo_ad_reply(_evapi.check_in_ticket(
+        user.get("user_id"), ticket_id, context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/event-tickets/<ticket_id>/refund",
+                   methods=["POST"])
+def api_business_os_events_refund(ticket_id):
+    if not _business_os_events_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.events import api as _evapi
+    return _bo_ad_reply(_evapi.refund_ticket(
+        user.get("user_id"), ticket_id, context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/my/event-tickets", methods=["GET"])
+def api_business_os_events_my_tickets():
+    if not _business_os_events_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.events import api as _evapi
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_evapi.my_tickets(user.get("user_id"), limit=limit))
+
+
+# =====================================================================
 # Business OS — Marketplace vertical, Stage 3 (canonical HTTP surface).
 #
 # A NEW, clearly-separated canonical commerce surface under
