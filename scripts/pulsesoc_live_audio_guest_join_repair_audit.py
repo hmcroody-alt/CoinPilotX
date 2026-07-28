@@ -19,6 +19,8 @@ def main() -> int:
     failures: list[str] = []
 
     hook = read("mobile-native/src/live/useLiveBroadcastRoom.ts")
+    call_hook = read("mobile-native/src/calls/useNativeCallRoom.ts")
+    audio_engine = read("mobile-native/src/core/realtimeAudioEngine.ts")
     session = read("mobile-native/src/live/liveSession.ts")
     api = read("mobile-native/src/api/live.ts")
     viewer = read("mobile-native/src/screens/LiveScreen.tsx")
@@ -32,6 +34,28 @@ def main() -> int:
         'audioMode: "videoChat"',
         "defaultToSpeaker",
         "setMicrophoneEnabled(true)",
+        "ensureMicrophonePublished",
+        "applyRemoteAudioEnabled",
+        "restoreRealtimeRoomAudio",
+        "selectRealtimeSpeakerOutput",
+        "showRealtimeAudioRoutePicker",
+        "stopRealtimeAudioSession",
+    ):
+        require(token in audio_engine, f"Shared realtime audio engine missing repair token: {token}", failures)
+
+    for token in (
+        'startRealtimeAudioSession(livekitNative, "interactive")',
+        "restoreRealtimeRoomAudio",
+        "ensureMicrophonePublished",
+        "setLocalMicrophoneEnabled",
+    ):
+        require(token in call_hook, f"Working call path is not using shared audio engine token: {token}", failures)
+
+    for token in (
+        "startRealtimeAudioSession",
+        "restoreRealtimeRoomAudio",
+        "ensureMicrophonePublished",
+        "setLocalMicrophoneEnabled",
         "setCameraEnabled(true)",
         "LIVE_LOCAL_AUDIO_NOT_PUBLISHED",
         "remoteAudioTrackCount",

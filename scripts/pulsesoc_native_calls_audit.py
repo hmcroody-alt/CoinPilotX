@@ -26,6 +26,8 @@ def main() -> int:
     calls_api = read("mobile-native/src/api/calls.ts")
     call_screen = read("mobile-native/src/screens/CallScreen.tsx")
     call_hook = read("mobile-native/src/calls/useNativeCallRoom.ts")
+    audio_engine = read("mobile-native/src/core/realtimeAudioEngine.ts")
+    call_media = call_hook + "\n" + audio_engine
     chat = read("mobile-native/src/screens/ChatScreen.tsx")
     incoming_layer = read("mobile-native/src/calls/IncomingCallLayer.tsx")
     control_center = read("mobile-native/src/components/ConversationControlCenter.tsx")
@@ -75,10 +77,10 @@ def main() -> int:
     require(call_hook, 'Platform.OS === "web"', "web-safe LiveKit guard")
     require(call_hook, 'await import("@livekit/react-native")', "dynamic native LiveKit import")
     require(call_hook, 'await import("livekit-client")', "dynamic LiveKit client import")
-    require(call_hook, "registerGlobals", "LiveKit native globals registration")
+    require(call_media, "registerGlobals", "LiveKit native globals registration")
     for snippet in [
-        "AudioSession.startAudioSession",
-        "AudioSession.selectAudioOutput",
+        "startAudioSession",
+        "selectAudioOutput",
         "RoomEvent.Reconnecting",
         "RoomEvent.Reconnected",
         "RoomEvent.ConnectionQualityChanged",
@@ -88,7 +90,7 @@ def main() -> int:
         "noiseSuppression: true",
         "autoGainControl: true",
     ]:
-        require(call_hook, snippet, "production-parity native media behavior")
+        require(call_media, snippet, "production-parity native media behavior")
 
     for snippet in [
         "startConversationCall",
