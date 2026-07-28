@@ -19805,6 +19805,228 @@ def api_business_os_business_timeline(business_id):
 
 
 # =====================================================================
+# Business OS — Store, Section 2 (canonical HTTP surface).
+#
+# The canonical storefront + product catalog + merchandising collections for a
+# Section-1 Business, under /api/business-os/store/<business_id>/*. Every access
+# decision is resolved against the S1 canonical business RBAC (reused, never
+# re-modeled). It deliberately does NOT implement orders/carts/checkout/payments
+# (those are the Orders / Payments canonical domains). Dark (404) when
+# BUSINESS_OS_STORE is off. All decision logic lives in the importable controller
+# services.business_os.store.api; these are thin adapters. The lone anonymous route
+# is the public storefront projection (published storefront + active products only).
+# =====================================================================
+def _business_os_store_enabled():
+    return (os.getenv("BUSINESS_OS_STORE", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+# --- storefront --------------------------------------------------------------
+@webhook_app.route("/api/business-os/store/<business_id>/storefront", methods=["GET"])
+def api_business_os_store_get_storefront(business_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.store import api as _storeapi
+    return _bo_ad_reply(_storeapi.get_storefront(user.get("user_id"), business_id))
+
+
+@webhook_app.route("/api/business-os/store/<business_id>/storefront", methods=["POST"])
+def api_business_os_store_upsert_storefront(business_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.store import api as _storeapi
+    return _bo_ad_reply(_storeapi.upsert_storefront(
+        user.get("user_id"), business_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/store/<business_id>/storefront/status", methods=["POST"])
+def api_business_os_store_storefront_status(business_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.store import api as _storeapi
+    return _bo_ad_reply(_storeapi.set_storefront_status(
+        user.get("user_id"), business_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+# --- products ----------------------------------------------------------------
+@webhook_app.route("/api/business-os/store/<business_id>/products", methods=["GET"])
+def api_business_os_store_list_products(business_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.store import api as _storeapi
+    return _bo_ad_reply(_storeapi.list_products(
+        user.get("user_id"), business_id, status=request.args.get("status")))
+
+
+@webhook_app.route("/api/business-os/store/<business_id>/products", methods=["POST"])
+def api_business_os_store_create_product(business_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.store import api as _storeapi
+    return _bo_ad_reply(_storeapi.create_product(
+        user.get("user_id"), business_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/store/<business_id>/products/<product_id>", methods=["GET"])
+def api_business_os_store_get_product(business_id, product_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.store import api as _storeapi
+    return _bo_ad_reply(_storeapi.get_product(user.get("user_id"), business_id, product_id))
+
+
+@webhook_app.route("/api/business-os/store/<business_id>/products/<product_id>/update", methods=["POST"])
+def api_business_os_store_update_product(business_id, product_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.store import api as _storeapi
+    return _bo_ad_reply(_storeapi.update_product(
+        user.get("user_id"), business_id, product_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/store/<business_id>/products/<product_id>/status", methods=["POST"])
+def api_business_os_store_product_status(business_id, product_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.store import api as _storeapi
+    return _bo_ad_reply(_storeapi.set_product_status(
+        user.get("user_id"), business_id, product_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+# --- collections -------------------------------------------------------------
+@webhook_app.route("/api/business-os/store/<business_id>/collections", methods=["GET"])
+def api_business_os_store_list_collections(business_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.store import api as _storeapi
+    return _bo_ad_reply(_storeapi.list_collections(user.get("user_id"), business_id))
+
+
+@webhook_app.route("/api/business-os/store/<business_id>/collections", methods=["POST"])
+def api_business_os_store_create_collection(business_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.store import api as _storeapi
+    return _bo_ad_reply(_storeapi.create_collection(
+        user.get("user_id"), business_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/store/<business_id>/collections/<collection_id>/products", methods=["GET"])
+def api_business_os_store_list_collection_products(business_id, collection_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.store import api as _storeapi
+    return _bo_ad_reply(_storeapi.list_collection_products(
+        user.get("user_id"), business_id, collection_id))
+
+
+@webhook_app.route("/api/business-os/store/<business_id>/collections/<collection_id>/products", methods=["POST"])
+def api_business_os_store_add_collection_product(business_id, collection_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.store import api as _storeapi
+    return _bo_ad_reply(_storeapi.add_product_to_collection(
+        user.get("user_id"), business_id, collection_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/store/<business_id>/collections/<collection_id>/products/<product_id>/remove", methods=["POST"])
+def api_business_os_store_remove_collection_product(business_id, collection_id, product_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.store import api as _storeapi
+    return _bo_ad_reply(_storeapi.remove_product_from_collection(
+        user.get("user_id"), business_id, collection_id, product_id,
+        context=_bo_biz_hold_context(user)))
+
+
+# --- timeline ----------------------------------------------------------------
+@webhook_app.route("/api/business-os/store/<business_id>/timeline", methods=["GET"])
+def api_business_os_store_timeline(business_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.store import api as _storeapi
+    try:
+        limit = int(request.args.get("limit") or 100)
+    except (TypeError, ValueError):
+        limit = 100
+    return _bo_ad_reply(_storeapi.get_timeline(user.get("user_id"), business_id, limit=limit))
+
+
+# --- public storefront (anonymous, read-only) --------------------------------
+@webhook_app.route("/api/business-os/store/<business_id>/public", methods=["GET"])
+def api_business_os_store_public(business_id):
+    if not _business_os_store_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    from services.business_os.store import api as _storeapi
+    return _bo_ad_reply(_storeapi.public_storefront(business_id))
+
+
+# =====================================================================
 # Business OS — Marketplace vertical, Stage 3 (canonical HTTP surface).
 #
 # A NEW, clearly-separated canonical commerce surface under
