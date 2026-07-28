@@ -20182,6 +20182,146 @@ def api_business_os_orders_refunds(order_id):
 
 
 # =====================================================================
+# Business OS — Section 6: Messages (canonical business-messaging DOMAIN surface).
+#
+# A first-class /api/business-os/messages/* surface over the ONE canonical message
+# engine (pulse_conversations / pulse_conversation_participants / pulse_messages).
+# This adds NO second message table and NO second conversation store — a business
+# inbox is a canonical conversation tagged conversation_type='business' + business_id,
+# and every message is a row in the canonical pulse_messages table with identical
+# send semantics. Every handler resolves through services.business_os.messages.api.
+# Gated behind BUSINESS_OS_MESSAGES; when off the whole surface is dark (404).
+# Identity is always the authenticated caller, never the request body. These are
+# thin adapters; all logic lives in the controller.
+# =====================================================================
+def _business_os_messages_enabled():
+    return (os.getenv("BUSINESS_OS_MESSAGES", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+# --- threads -----------------------------------------------------------------
+@webhook_app.route("/api/business-os/businesses/<business_id>/threads", methods=["POST"])
+def api_business_os_messages_start_thread(business_id):
+    if not _business_os_messages_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.messages import api as _msgapi
+    return _bo_ad_reply(_msgapi.start_thread(
+        user.get("user_id"), business_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/businesses/<business_id>/inbox", methods=["GET"])
+def api_business_os_messages_inbox(business_id):
+    if not _business_os_messages_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.messages import api as _msgapi
+    try:
+        limit = int(request.args.get("limit") or 100)
+    except (TypeError, ValueError):
+        limit = 100
+    return _bo_ad_reply(_msgapi.business_inbox(
+        user.get("user_id"), business_id, limit=limit))
+
+
+@webhook_app.route("/api/business-os/messages/threads", methods=["GET"])
+def api_business_os_messages_my_threads():
+    if not _business_os_messages_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.messages import api as _msgapi
+    try:
+        limit = int(request.args.get("limit") or 100)
+    except (TypeError, ValueError):
+        limit = 100
+    return _bo_ad_reply(_msgapi.my_threads(user.get("user_id"), limit=limit))
+
+
+@webhook_app.route("/api/business-os/messages/threads/<conversation_id>", methods=["GET"])
+def api_business_os_messages_get_thread(conversation_id):
+    if not _business_os_messages_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.messages import api as _msgapi
+    return _bo_ad_reply(_msgapi.get_thread(user.get("user_id"), conversation_id))
+
+
+# --- messages ----------------------------------------------------------------
+@webhook_app.route("/api/business-os/messages/threads/<conversation_id>/messages",
+                   methods=["GET"])
+def api_business_os_messages_list(conversation_id):
+    if not _business_os_messages_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.messages import api as _msgapi
+    try:
+        limit = int(request.args.get("limit") or 50)
+    except (TypeError, ValueError):
+        limit = 50
+    return _bo_ad_reply(_msgapi.list_messages(
+        user.get("user_id"), conversation_id, limit=limit,
+        before_id=request.args.get("before_id")))
+
+
+@webhook_app.route("/api/business-os/messages/threads/<conversation_id>/messages",
+                   methods=["POST"])
+def api_business_os_messages_send(conversation_id):
+    if not _business_os_messages_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.messages import api as _msgapi
+    return _bo_ad_reply(_msgapi.send_message(
+        user.get("user_id"), conversation_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/messages/threads/<conversation_id>/read",
+                   methods=["POST"])
+def api_business_os_messages_mark_read(conversation_id):
+    if not _business_os_messages_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.messages import api as _msgapi
+    return _bo_ad_reply(_msgapi.mark_read(user.get("user_id"), conversation_id))
+
+
+@webhook_app.route("/api/business-os/messages/threads/<conversation_id>/report",
+                   methods=["POST"])
+def api_business_os_messages_report(conversation_id):
+    if not _business_os_messages_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.messages import api as _msgapi
+    return _bo_ad_reply(_msgapi.report_message(
+        user.get("user_id"), conversation_id, pulse_ads_json_payload()))
+
+
+# =====================================================================
 # Business OS — Marketplace vertical, Stage 3 (canonical HTTP surface).
 #
 # A NEW, clearly-separated canonical commerce surface under
