@@ -20027,6 +20027,161 @@ def api_business_os_store_public(business_id):
 
 
 # =====================================================================
+# Business OS — Section 5: Orders (canonical order DOMAIN surface).
+#
+# A first-class /api/business-os/orders/* surface over the ONE canonical order
+# engine that physically lives in the marketplace vertical. This adds NO second
+# order table and NO second ledger — every handler resolves through
+# services.business_os.orders.api, which delegates to the marketplace order state
+# machine + shared canonical ledger. Gated behind BUSINESS_OS_ORDERS; when off the
+# whole surface is dark (404). Identity is always the authenticated caller, never
+# the request body. These are thin adapters; all logic lives in the controller.
+# =====================================================================
+def _business_os_orders_enabled():
+    return (os.getenv("BUSINESS_OS_ORDERS", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+# --- buyer order lifecycle ---------------------------------------------------
+@webhook_app.route("/api/business-os/orders", methods=["POST"])
+def api_business_os_orders_create():
+    if not _business_os_orders_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.orders import api as _ordersapi
+    return _bo_ad_reply(_ordersapi.create_order(
+        user.get("user_id"), pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/orders", methods=["GET"])
+def api_business_os_orders_list():
+    if not _business_os_orders_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.orders import api as _ordersapi
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    return _bo_ad_reply(_ordersapi.list_orders(
+        user.get("user_id"), role=(request.args.get("role") or "buyer"),
+        status=request.args.get("status"), limit=limit))
+
+
+@webhook_app.route("/api/business-os/orders/<order_id>", methods=["GET"])
+def api_business_os_orders_get(order_id):
+    if not _business_os_orders_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.orders import api as _ordersapi
+    return _bo_ad_reply(_ordersapi.get_order(user.get("user_id"), order_id))
+
+
+@webhook_app.route("/api/business-os/orders/<order_id>/pay", methods=["POST"])
+def api_business_os_orders_pay(order_id):
+    if not _business_os_orders_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.orders import api as _ordersapi
+    return _bo_ad_reply(_ordersapi.pay_order(
+        user.get("user_id"), order_id, context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/orders/<order_id>/fulfill", methods=["POST"])
+def api_business_os_orders_fulfill(order_id):
+    if not _business_os_orders_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.orders import api as _ordersapi
+    return _bo_ad_reply(_ordersapi.fulfill_order(
+        user.get("user_id"), order_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/orders/<order_id>/complete", methods=["POST"])
+def api_business_os_orders_complete(order_id):
+    if not _business_os_orders_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.orders import api as _ordersapi
+    return _bo_ad_reply(_ordersapi.complete_order(
+        user.get("user_id"), order_id, context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/orders/<order_id>/cancel", methods=["POST"])
+def api_business_os_orders_cancel(order_id):
+    if not _business_os_orders_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.orders import api as _ordersapi
+    return _bo_ad_reply(_ordersapi.cancel_order(
+        user.get("user_id"), order_id, pulse_ads_json_payload(),
+        context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/orders/<order_id>/summary", methods=["GET"])
+def api_business_os_orders_summary(order_id):
+    if not _business_os_orders_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.orders import api as _ordersapi
+    return _bo_ad_reply(_ordersapi.order_money_summary(user.get("user_id"), order_id))
+
+
+# --- refunds / disputes ------------------------------------------------------
+@webhook_app.route("/api/business-os/orders/<order_id>/dispute", methods=["POST"])
+def api_business_os_orders_dispute(order_id):
+    if not _business_os_orders_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.orders import api as _ordersapi
+    return _bo_ad_reply(_ordersapi.open_dispute(
+        user.get("user_id"), order_id, pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/orders/<order_id>/refunds", methods=["GET"])
+def api_business_os_orders_refunds(order_id):
+    if not _business_os_orders_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.orders import api as _ordersapi
+    return _bo_ad_reply(_ordersapi.list_refunds(user.get("user_id"), order_id))
+
+
+# =====================================================================
 # Business OS — Marketplace vertical, Stage 3 (canonical HTTP surface).
 #
 # A NEW, clearly-separated canonical commerce surface under
