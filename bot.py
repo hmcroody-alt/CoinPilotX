@@ -20578,6 +20578,63 @@ def api_business_os_events_my_tickets():
 
 
 # =====================================================================
+# Business OS — Section 10: Verification (canonical cross-domain TRUST surface).
+#
+# The capstone surface: a business manager runs a read-only integrity battery
+# across the canonical domains (ledger conservation, ticket-capture integrity,
+# sold-counter consistency, orphan checks) and records an immutable attestation
+# run. It owns no business data and moves no money — it only observes and
+# attests. Gated behind BUSINESS_OS_VERIFICATION; when off the whole surface is
+# dark (404). Identity is always the authenticated caller. Thin adapters.
+# =====================================================================
+def _business_os_verification_enabled():
+    return (os.getenv("BUSINESS_OS_VERIFICATION", "") or "").strip().lower() in (
+        "1", "true", "on", "yes", "enabled", "canonical")
+
+
+@webhook_app.route("/api/business-os/businesses/<business_id>/verification/run",
+                   methods=["POST"])
+def api_business_os_verification_run(business_id):
+    if not _business_os_verification_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    from services.business_os.verification import api as _vfapi
+    return _bo_ad_reply(_vfapi.run_verification(
+        user.get("user_id"), business_id, context=_bo_biz_hold_context(user)))
+
+
+@webhook_app.route("/api/business-os/businesses/<business_id>/verification/runs",
+                   methods=["GET"])
+def api_business_os_verification_list(business_id):
+    if not _business_os_verification_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.verification import api as _vfapi
+    try:
+        limit = int(request.args.get("limit") or 50)
+    except (TypeError, ValueError):
+        limit = 50
+    return _bo_ad_reply(_vfapi.list_runs(user.get("user_id"), business_id, limit=limit))
+
+
+@webhook_app.route("/api/business-os/verification/runs/<run_id>", methods=["GET"])
+def api_business_os_verification_get(run_id):
+    if not _business_os_verification_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.verification import api as _vfapi
+    return _bo_ad_reply(_vfapi.get_run(user.get("user_id"), run_id))
+
+
+# =====================================================================
 # Business OS — Marketplace vertical, Stage 3 (canonical HTTP surface).
 #
 # A NEW, clearly-separated canonical commerce surface under
