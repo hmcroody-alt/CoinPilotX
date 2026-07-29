@@ -1250,6 +1250,69 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
                   })}
                 </View>
               ) : null}
+              {["search_results", "content_result"].includes(String(component.component || "")) && [
+                "reels.search", "reels.get", "reels.performance.summary", "reels.comments.summary",
+                "status.list", "status.get", "status.viewer.summary", "status.reaction.summary",
+              ].includes(String(component.capability_id || "")) && component.records?.length ? (
+                <View style={styles.undxAlertList}>
+                  {component.records.map((record, recordIndex) => {
+                    const isReel = String(component.capability_id || "").startsWith("reels.");
+                    const entityId = Number(isReel ? record.reel_id : record.status_id);
+                    const sourceUrl = String(record.source_url || (isReel ? `/pulse/reels/${entityId}` : `/pulse/status/${entityId}`));
+                    const title = String(record.title || record.caption || record.body || (isReel ? `Reel ${entityId}` : `Status ${entityId}`));
+                    const detail = component.capability_id === "reels.performance.summary"
+                      ? `${Number(record.reactions || 0)} reactions · ${Number(record.comments || 0)} comments · ${Number(record.shares || 0)} shares · ${Math.round(Number(record.completion_rate || 0) * 100)}% completion`
+                      : component.capability_id === "reels.comments.summary"
+                        ? String(record.summary || "No visible comments are available.")
+                        : component.capability_id === "status.viewer.summary"
+                          ? `${Number(record.viewer_count || 0)} viewers`
+                          : component.capability_id === "status.reaction.summary"
+                            ? `${Number(record.reactions || 0)} reactions`
+                            : `${String(record.visibility || "visible")} · ${String(record.created_at || "")}`;
+                    return (
+                      <Pressable
+                        key={`${isReel ? "reel" : "status"}-${entityId}-${recordIndex}`}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open ${isReel ? "Reel" : "Status"} ${entityId}`}
+                        style={styles.undxAlertRow}
+                        onPress={() => openUndxResult(sourceUrl)}
+                      >
+                        <View style={styles.undxSavedCopy}>
+                          <Text style={styles.undxAlertTitle} numberOfLines={2}>{title}</Text>
+                          <Text style={styles.undxAlertMeta} numberOfLines={3}>{detail}</Text>
+                        </View>
+                        <Text style={styles.undxAlertOpen}>Open ›</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+              {component.component === "profile_result" && [
+                "profile.get", "profile.activity.summary", "profile.relationship.summary",
+              ].includes(String(component.capability_id || "")) && component.records?.length ? (
+                <View style={styles.undxAlertList}>
+                  {component.records.map((record, recordIndex) => {
+                    const userId = Number(record.user_id || 0);
+                    const title = String(record.display_name || record.username || "Your PulseSoc account");
+                    const detail = component.capability_id === "profile.activity.summary"
+                      ? `${Number(record.posts || 0)} posts · ${Number(record.reels || 0)} reels · ${Number(record.statuses || 0)} statuses`
+                      : component.capability_id === "profile.relationship.summary"
+                        ? `${Number(record.followers || 0)} followers · ${Number(record.following || 0)} following`
+                        : String(record.bio || `@${String(record.username || "")}`);
+                    return (
+                      <Pressable key={`${userId}-${recordIndex}`} accessibilityRole="link"
+                        accessibilityLabel="Open your PulseSoc profile" style={styles.undxAlertRow}
+                        onPress={() => openUndxResult(String(record.source_url || "/pulse/profile"))}>
+                        <View style={styles.undxSavedCopy}>
+                          <Text style={styles.undxAlertTitle} numberOfLines={1}>{title}</Text>
+                          <Text style={styles.undxAlertMeta} numberOfLines={2}>{detail}</Text>
+                        </View>
+                        <Text style={styles.undxAlertOpen}>Open ›</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
               {component.component === "profile_result" && component.capability_id === "social.followers.list" && component.records?.length ? (
                 <View style={styles.undxAlertList}>
                   {component.records.map((record, recordIndex) => {

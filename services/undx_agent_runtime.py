@@ -721,6 +721,20 @@ def handle(
         match = re.search(r"\bpost\s*(?:id\s*)?#?\s*(\d+)\b", text, re.IGNORECASE)
         if match:
             arguments["post_id"] = int(match.group(1))
+    if spec.capability_id.startswith("reels.") and spec.capability_id != "reels.search" and not arguments.get("reel_id"):
+        match = re.search(r"\breel\s*(?:id\s*)?#?\s*(\d+)\b", text, re.IGNORECASE)
+        if match:
+            arguments["reel_id"] = int(match.group(1))
+    if spec.capability_id.startswith("status.") and spec.capability_id != "status.list" and not arguments.get("status_id"):
+        match = re.search(r"\bstatus\s*(?:id\s*)?#?\s*(\d+)\b", text, re.IGNORECASE)
+        if match:
+            arguments["status_id"] = int(match.group(1))
+    if spec.capability_id == "profile.preferences.update" and not arguments.get("preferred_language"):
+        lowered = text.lower()
+        for label, code in (("english", "en"), ("spanish", "es"), ("french", "fr")):
+            if label in lowered:
+                arguments["preferred_language"] = code
+                break
     if spec.capability_id == "feed.posts.list":
         lowered = text.lower()
         if "my latest" in lowered or "my posts" in lowered:

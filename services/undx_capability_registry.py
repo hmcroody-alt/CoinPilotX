@@ -217,6 +217,8 @@ _NOTIFICATION_CATEGORY = FieldSpec(
 )
 _PUSH_VALUE = FieldSpec("push", "bool", required=True)
 _POST_ID = FieldSpec("post_id", "int", required=True, minimum=1)
+_REEL_ID = FieldSpec("reel_id", "int", required=True, minimum=1)
+_STATUS_ID = FieldSpec("status_id", "int", required=True, minimum=1)
 _SAVED_VALUE = FieldSpec("saved", "bool", required=True)
 _TARGET_USER_ID = FieldSpec("target_user_id", "int", required=True, minimum=1)
 _CONVERSATION_ID = FieldSpec("conversation_id", "int", required=True, minimum=1)
@@ -766,6 +768,92 @@ _register(CapabilitySpec(
     # the map is what makes the Undo button on this receipt mean anything.
     undo_capability_id="notifications.preference.update",
     undo_argument_map=(("category", "category"), ("push", "!push")),
+))
+
+# Content Graph Intelligence: canonical Reels, Status, and Profile reads plus
+# explicit, reversible Reel edges. Publishing and deletion remain unreachable.
+for _spec in (
+    CapabilitySpec("reels.search", "Find viewable PulseSoc Reels", ("find reels", "find my recent reels", "search reels"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.reels.search",
+                   PermissionScope.SELF_ACCOUNT_ONLY,
+                   (FieldSpec("query", "str", required=False, max_length=80, default=""),
+                    FieldSpec("limit", "int", required=False, minimum=1, maximum=40, default=20)),
+                   "reels_search", "", "/pulse/reels", CardType.SEARCH_RESULTS, "reels_read"),
+    CapabilitySpec("reels.get", "Explain one viewable PulseSoc Reel", ("show reel", "explain reel", "open reel"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.reels.get",
+                   PermissionScope.SELF_ACCOUNT_ONLY, (_REEL_ID,), "reels_get", "",
+                   "/pulse/reels/:reel_id", CardType.CONTENT_RESULT, "reels_read"),
+    CapabilitySpec("reels.performance.summary", "Summarize performance for one Reel owned by the user",
+                   ("how did my reel perform", "reel performance", "reel engagement summary"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.reels.performance.summary",
+                   PermissionScope.SELF_ACCOUNT_ONLY, (_REEL_ID,), "reels_performance", "",
+                   "/pulse/reels/:reel_id", CardType.CONTENT_RESULT, "reels_analytics_read"),
+    CapabilitySpec("reels.comments.summary", "Summarize visible comments on one owned Reel",
+                   ("summarize reel comments", "who commented on my reel"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.reels.comments.summary",
+                   PermissionScope.SELF_ACCOUNT_ONLY,
+                   (_REEL_ID, FieldSpec("limit", "int", required=False, minimum=1, maximum=80, default=40)),
+                   "reels_comments_summary", "", "/pulse/reels/:reel_id", CardType.CONTENT_RESULT, "reels_read"),
+    CapabilitySpec("status.list", "Show active statuses visible to the user", ("show active statuses", "show statuses"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.status.list",
+                   PermissionScope.SELF_ACCOUNT_ONLY,
+                   (FieldSpec("limit", "int", required=False, minimum=1, maximum=40, default=20),),
+                   "statuses_list", "", "/pulse/status", CardType.SEARCH_RESULTS, "status_read"),
+    CapabilitySpec("status.get", "Read one visible PulseSoc Status", ("show status", "open status", "explain status"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.status.get",
+                   PermissionScope.SELF_ACCOUNT_ONLY, (_STATUS_ID,), "statuses_get", "",
+                   "/pulse/status/:status_id", CardType.CONTENT_RESULT, "status_read"),
+    CapabilitySpec("status.viewer.summary", "Summarize viewers for one owned Status",
+                   ("who viewed my status", "status viewer summary"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.status.viewer.summary",
+                   PermissionScope.SELF_ACCOUNT_ONLY, (_STATUS_ID,), "status_viewers", "",
+                   "/pulse/status/:status_id", CardType.CONTENT_RESULT, "status_analytics_read"),
+    CapabilitySpec("status.reaction.summary", "Summarize reactions for one owned Status",
+                   ("how did my status perform", "status reaction summary"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.status.reaction.summary",
+                   PermissionScope.SELF_ACCOUNT_ONLY, (_STATUS_ID,), "status_reactions", "",
+                   "/pulse/status/:status_id", CardType.CONTENT_RESULT, "status_analytics_read"),
+    CapabilitySpec("profile.get", "Read the signed-in user's canonical profile", ("show my profile", "summarize my account"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.profile.get",
+                   PermissionScope.SELF_ACCOUNT_ONLY, (), "profile_get", "",
+                   "/pulse/profile", CardType.PROFILE_RESULT, "profile_read"),
+    CapabilitySpec("profile.activity.summary", "Summarize the user's content activity",
+                   ("show my recent activity", "what happened on my account", "profile activity"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.profile.activity.summary",
+                   PermissionScope.SELF_ACCOUNT_ONLY, (), "profile_activity", "",
+                   "/pulse/profile", CardType.PROFILE_RESULT, "profile_read"),
+    CapabilitySpec("profile.relationship.summary", "Summarize follower and following counts",
+                   ("profile relationship summary", "how many followers do i have"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.profile.relationship.summary",
+                   PermissionScope.SELF_ACCOUNT_ONLY, (), "profile_relationships", "",
+                   "/pulse/profile", CardType.PROFILE_RESULT, "profile_read"),
+):
+    _register(_spec)
+
+for _capability, _intent, _saved, _executor, _verifier, _undo in (
+    ("reels.save", "save reel", True, "reels_save", "reel_saved_value", "reels.unsave"),
+    ("reels.unsave", "unsave reel", False, "reels_unsave", "reel_saved_value", "reels.save"),
+    ("reels.like", "like reel", True, "reels_like", "reel_liked_value", "reels.unlike"),
+    ("reels.unlike", "unlike reel", False, "reels_unlike", "reel_liked_value", "reels.like"),
+):
+    _register(CapabilitySpec(
+        _capability, f"Explicitly {_intent} without toggling", (_intent, f"{_intent} {1}"),
+        RiskLevel.REVERSIBLE_WRITE, ConfirmationPolicy.CONTEXTUAL,
+        f"pulsesoc.{_capability}", PermissionScope.SELF_ACCOUNT_ONLY, (_REEL_ID,),
+        _executor, _verifier, "/pulse/reels/:reel_id", CardType.ACTION_SUCCESS_RECEIPT,
+        "reels_write", target_field="reel_id", verified_fields=("saved" if "save" in _capability else "liked",),
+        undo_capability_id=_undo,
+    ))
+
+_register(CapabilitySpec(
+    "profile.preferences.update", "Update a bounded non-security profile preference",
+    ("set my preferred language", "change my preferred language"),
+    RiskLevel.REVERSIBLE_WRITE, ConfirmationPolicy.CONTEXTUAL,
+    "pulsesoc.profile.preferences.update", PermissionScope.SELF_ACCOUNT_ONLY,
+    (FieldSpec("preferred_language", "enum", required=True, choices=("en", "es", "fr")),),
+    "profile_preferences_update", "profile_preference_value", "/pulse/settings",
+    CardType.SETTING_CHANGE_RECEIPT, "profile_preferences_write",
+    target_field="preferred_language", verified_fields=("preferred_language",),
 ))
 
 

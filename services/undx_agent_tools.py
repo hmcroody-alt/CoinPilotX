@@ -737,6 +737,83 @@ def feed_post_unlike(user_id: int, arguments: dict[str, Any]) -> ToolResult:
     )
 
 
+def _content_read(user_id: int, arguments: dict[str, Any], capability: str, function: str,
+                  canonical_key: str) -> ToolResult:
+    started = time.perf_counter()
+    from services import content_graph_intelligence_service as graph
+    call = getattr(graph, function)
+    kwargs = {key: value for key, value in arguments.items() if not key.startswith("_")}
+    value = call(int(user_id), **kwargs)
+    records = value if isinstance(value, list) else ([value] if value else [])
+    if value is None:
+        return _fail(f"pulsesoc.{capability}", capability, "not_found",
+                     "UNDX could not find an authorized matching item.", started=started)
+    target = 0
+    if records and canonical_key:
+        target = records[0].get(canonical_key) or 0
+    return ToolResult(
+        ok=True, tool_name=f"pulsesoc.{capability}", capability_id=capability,
+        canonical_resource_id=f"{canonical_key.removesuffix('_id')}:{target}" if target else f"user:{int(user_id)}",
+        records=records, data=value if isinstance(value, dict) else {"count": len(records)},
+        latency_ms=_timed(started),
+    )
+
+
+def reels_search(u, a): return _content_read(u, a, "reels.search", "list_reels", "reel_id")
+def reels_get(u, a): return _content_read(u, a, "reels.get", "get_reel", "reel_id")
+def reels_performance(u, a): return _content_read(u, a, "reels.performance.summary", "reel_performance", "reel_id")
+def reels_comments_summary(u, a): return _content_read(u, a, "reels.comments.summary", "reel_comment_summary", "reel_id")
+def statuses_list(u, a): return _content_read(u, a, "status.list", "list_statuses", "status_id")
+def statuses_get(u, a): return _content_read(u, a, "status.get", "get_status", "status_id")
+def status_viewers(u, a): return _content_read(u, a, "status.viewer.summary", "status_viewer_summary", "status_id")
+def status_reactions(u, a): return _content_read(u, a, "status.reaction.summary", "status_reaction_summary", "status_id")
+def profile_get(u, a): return _content_read(u, a, "profile.get", "get_profile", "user_id")
+def profile_activity(u, a): return _content_read(u, a, "profile.activity.summary", "profile_activity_summary", "user_id")
+def profile_relationships(u, a): return _content_read(u, a, "profile.relationship.summary", "profile_relationship_summary", "user_id")
+
+
+def profile_preferences_update(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.content_graph_intelligence_service import update_profile_preferences
+    outcome = update_profile_preferences(
+        int(user_id), preferred_language=clean(arguments.get("preferred_language"), 8),
+    )
+    if not outcome.get("ok"):
+        return _fail("pulsesoc.profile.preferences.update", "profile.preferences.update",
+                     clean(outcome.get("error"), 80), "UNDX could not update that preference.",
+                     started=started)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.profile.preferences.update",
+        capability_id="profile.preferences.update", canonical_resource_id=f"user:{int(user_id)}",
+        data=outcome, latency_ms=_timed(started),
+    )
+
+
+def _reel_write(user_id: int, arguments: dict[str, Any], capability: str, function: str,
+                desired: bool) -> ToolResult:
+    started = time.perf_counter()
+    from services import content_graph_intelligence_service as graph
+    reel_id = int(arguments.get("reel_id") or 0)
+    outcome = getattr(graph, function)(int(user_id), reel_id, **{
+        "saved" if "save" in capability else "liked": desired,
+    })
+    if not outcome.get("ok"):
+        return _fail(f"pulsesoc.{capability}", capability, clean(outcome.get("error"), 80),
+                     "UNDX could not update that Reel.", started=started)
+    return ToolResult(
+        ok=True, tool_name=f"pulsesoc.{capability}", capability_id=capability,
+        canonical_resource_id=f"reel:{reel_id}",
+        data={"reel_id": reel_id, "saved" if "save" in capability else "liked": desired,
+              "changed": bool(outcome.get("changed"))}, latency_ms=_timed(started),
+    )
+
+
+def reels_save(u, a): return _reel_write(u, a, "reels.save", "set_reel_saved", True)
+def reels_unsave(u, a): return _reel_write(u, a, "reels.unsave", "set_reel_saved", False)
+def reels_like(u, a): return _reel_write(u, a, "reels.like", "set_reel_liked", True)
+def reels_unlike(u, a): return _reel_write(u, a, "reels.unlike", "set_reel_liked", False)
+
+
 # ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
@@ -769,6 +846,22 @@ EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
     "feed_comments_summary": feed_comments_summary,
     "feed_post_like": feed_post_like,
     "feed_post_unlike": feed_post_unlike,
+    "reels_search": reels_search,
+    "reels_get": reels_get,
+    "reels_performance": reels_performance,
+    "reels_comments_summary": reels_comments_summary,
+    "reels_save": reels_save,
+    "reels_unsave": reels_unsave,
+    "reels_like": reels_like,
+    "reels_unlike": reels_unlike,
+    "statuses_list": statuses_list,
+    "statuses_get": statuses_get,
+    "status_viewers": status_viewers,
+    "status_reactions": status_reactions,
+    "profile_get": profile_get,
+    "profile_activity": profile_activity,
+    "profile_relationships": profile_relationships,
+    "profile_preferences_update": profile_preferences_update,
 }
 
 

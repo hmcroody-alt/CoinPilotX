@@ -320,6 +320,49 @@ def feed_post_like_value(user_id: int, arguments: dict[str, Any], result: ToolRe
     )
 
 
+def _reel_edge_value(user_id: int, arguments: dict[str, Any], result: ToolResult,
+                     field: str) -> VerificationResult:
+    from services.content_graph_intelligence_service import get_reel
+    reel_id = int(arguments.get("reel_id") or 0)
+    expected = result.capability_id in {f"reels.{field.removesuffix('d')}", f"reels.{field}"}
+    if field == "saved":
+        expected = result.capability_id == "reels.save"
+    elif field == "liked":
+        expected = result.capability_id == "reels.like"
+    record = get_reel(int(user_id), reel_id)
+    observed = None if not record else bool(record.get(field))
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected, observed=observed,
+        detail="" if observed == expected else f"The Reel {field} state did not match the request.",
+        evidence={"canonical_resource_id": f"reel:{reel_id}", "read_back": {field: observed},
+                  "source": "content_graph_intelligence_service.get_reel"},
+    )
+
+
+def reel_saved_value(user_id, arguments, result):
+    return _reel_edge_value(user_id, arguments, result, "saved")
+
+
+def reel_liked_value(user_id, arguments, result):
+    return _reel_edge_value(user_id, arguments, result, "liked")
+
+
+def profile_preference_value(user_id, arguments, result):
+    from services.content_graph_intelligence_service import get_profile_preferences
+    expected = str(arguments.get("preferred_language") or "")
+    record = get_profile_preferences(int(user_id))
+    observed = str((record or {}).get("preferred_language") or "")
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected, observed=observed,
+        detail="" if observed == expected else "The profile preference did not match the request.",
+        evidence={"canonical_resource_id": f"user:{int(user_id)}",
+                  "read_back": {"preferred_language": observed},
+                  "source": "content_graph_intelligence_service.get_profile_preferences"},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
@@ -333,6 +376,9 @@ VERIFIERS: dict[str, Callable[[int, dict[str, Any], ToolResult], VerificationRes
     "saved_post_value": saved_post_value,
     "social_following_value": social_following_value,
     "feed_post_like_value": feed_post_like_value,
+    "reel_saved_value": reel_saved_value,
+    "reel_liked_value": reel_liked_value,
+    "profile_preference_value": profile_preference_value,
 }
 
 

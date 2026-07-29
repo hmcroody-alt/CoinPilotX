@@ -93,6 +93,34 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     "pulsesoc.feed.comments.summary": {"method": None, "route": "services.feed_intelligence_service.summarize_post_comments", "risk": "read_only", "confirmation": False, "canonical_key": "post_id"},
     "pulsesoc.feed.posts.like": {"method": None, "route": "services.feed_intelligence_service.set_post_like", "risk": "medium", "confirmation": False, "canonical_key": "post_id", "verification_route": "services.feed_intelligence_service.get_post_like"},
     "pulsesoc.feed.posts.unlike": {"method": None, "route": "services.feed_intelligence_service.set_post_like", "risk": "medium", "confirmation": False, "canonical_key": "post_id", "verification_route": "services.feed_intelligence_service.get_post_like"},
+    **{
+        f"pulsesoc.{name}": {
+            "method": None,
+            "route": f"services.content_graph_intelligence_service.{owner}",
+            "risk": risk,
+            "confirmation": False,
+            "canonical_key": key,
+            **({"verification_route": f"services.content_graph_intelligence_service.{verify}"} if verify else {}),
+        }
+        for name, owner, risk, key, verify in (
+            ("reels.search", "list_reels", "read_only", "reel_id", ""),
+            ("reels.get", "get_reel", "read_only", "reel_id", ""),
+            ("reels.performance.summary", "reel_performance", "read_only", "reel_id", ""),
+            ("reels.comments.summary", "reel_comment_summary", "read_only", "reel_id", ""),
+            ("reels.save", "set_reel_saved", "medium", "reel_id", "get_reel"),
+            ("reels.unsave", "set_reel_saved", "medium", "reel_id", "get_reel"),
+            ("reels.like", "set_reel_liked", "medium", "reel_id", "get_reel"),
+            ("reels.unlike", "set_reel_liked", "medium", "reel_id", "get_reel"),
+            ("status.list", "list_statuses", "read_only", "status_id", ""),
+            ("status.get", "get_status", "read_only", "status_id", ""),
+            ("status.viewer.summary", "status_viewer_summary", "read_only", "status_id", ""),
+            ("status.reaction.summary", "status_reaction_summary", "read_only", "status_id", ""),
+            ("profile.get", "get_profile", "read_only", "user_id", ""),
+            ("profile.activity.summary", "profile_activity_summary", "read_only", "user_id", ""),
+            ("profile.relationship.summary", "profile_relationship_summary", "read_only", "user_id", ""),
+            ("profile.preferences.update", "update_profile_preferences", "medium", "user_id", "get_profile_preferences"),
+        )
+    },
     "web.search": {"method": None, "route": "services.pulse_ai_web_search.search", "risk": "medium", "confirmation": False},
     "calculator.execute": {"method": None, "route": "deterministic_server_calculator", "risk": "low", "confirmation": False},
 }

@@ -44,6 +44,22 @@ SEEDS = (
     ("unlike-post", "Unlike post 2", "feed.posts.unlike"),
     ("follow", "Follow user 2", "social.follow"),
     ("unfollow", "Unfollow user 2", "social.unfollow"),
+    ("reels-search", "Find my recent reels", "reels.search"),
+    ("reel-get", "Explain reel 1", "reels.get"),
+    ("reel-performance", "How did my reel 1 perform", "reels.performance.summary"),
+    ("reel-comments", "Summarize reel 1 comments", "reels.comments.summary"),
+    ("reel-save", "Save reel 1", "reels.save"),
+    ("reel-unsave", "Unsave reel 1", "reels.unsave"),
+    ("reel-like", "Like reel 1", "reels.like"),
+    ("reel-unlike", "Unlike reel 1", "reels.unlike"),
+    ("status-list", "Show active statuses", "status.list"),
+    ("status-get", "Show status 1", "status.get"),
+    ("status-viewers", "Who viewed my status 1", "status.viewer.summary"),
+    ("status-reactions", "How did my status 1 perform", "status.reaction.summary"),
+    ("profile", "Summarize my account", "profile.get"),
+    ("profile-activity", "Show my recent activity", "profile.activity.summary"),
+    ("profile-relationships", "How many followers do I have", "profile.relationship.summary"),
+    ("profile-language", "Set my preferred language to Spanish", "profile.preferences.update"),
 )
 
 PREFIXES = (

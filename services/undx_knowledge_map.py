@@ -925,26 +925,16 @@ _mapped(
     known_limitations=("Reels are served from request handlers. No callable operation "
                        "returns reels for a viewer.",),
 )
-_mapped(
+_live(
     "reels.get",
     product_area="Reels", resource_type="reel",
-    description="Read a single reel.",
-    supported_intents=("open that reel",),
     native_screen="ReelDetail",
-    domain_service="", domain_operation="",
-    authorization_scope=_PUBLIC, target_field="reel_id",
-    result_card_type=CardType.CONTENT_RESULT,
-    implementation_status=_NO_SERVICE,
-    evidence=(
-        "bot.py:40560 /pulse/reels/<reel_id> renders a page",
-        "bot.py:76990 /api/pulse/reels/<reel_id> accepts PATCH and DELETE only",
-    ),
-    known_limitations=(
-        "There is no JSON read of a single reel. The API path at that id accepts only PATCH and "
-        "DELETE, and the readable route renders HTML. This record previously named GET "
-        "/api/pulse/reels/<reel_id> — a route inferred from the ReelDetail screen rather than "
-        "read from bot.py.",
-    ),
+    backend_route="GET /api/pulse/reels/feed",
+    domain_service="services.content_graph_intelligence_service", domain_operation="get_reel",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("reel_id", "int"), ("creator_id", "int")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/content_graph_intelligence_service.py:get_reel",),
 )
 _mapped(
     "reels.publish",
@@ -1017,6 +1007,36 @@ _mapped(
     evidence=("bot.py status creation handler",),
     known_limitations=("Written inside the request handler; no callable operation exists.",),
 )
+
+for _capability, _area, _resource, _screen, _operation, _output in (
+    ("reels.search", "Reels", "reel", "Reels", "list_reels", (("reel_id", "int"),)),
+    ("reels.performance.summary", "Reels", "reel", "ReelDetail", "reel_performance", (("reel_id", "int"), ("reactions", "int"))),
+    ("reels.comments.summary", "Reels", "comment", "ReelDetail", "reel_comment_summary", (("reel_id", "int"), ("summary", "str"))),
+    ("reels.save", "Reels", "reel", "ReelDetail", "set_reel_saved", (("reel_id", "int"), ("saved", "bool"))),
+    ("reels.unsave", "Reels", "reel", "ReelDetail", "set_reel_saved", (("reel_id", "int"), ("saved", "bool"))),
+    ("reels.like", "Reels", "reel", "ReelDetail", "set_reel_liked", (("reel_id", "int"), ("liked", "bool"))),
+    ("reels.unlike", "Reels", "reel", "ReelDetail", "set_reel_liked", (("reel_id", "int"), ("liked", "bool"))),
+    ("status.list", "Statuses", "status", "Status", "list_statuses", (("status_id", "int"),)),
+    ("status.get", "Statuses", "status", "StatusDetail", "get_status", (("status_id", "int"),)),
+    ("status.viewer.summary", "Statuses", "status_view", "StatusDetail", "status_viewer_summary", (("status_id", "int"), ("viewer_count", "int"))),
+    ("status.reaction.summary", "Statuses", "status_reaction", "StatusDetail", "status_reaction_summary", (("status_id", "int"), ("reaction_counts", "dict"))),
+    ("profile.get", "User profiles", "profile", "Profile", "get_profile", (("user_id", "int"),)),
+    ("profile.activity.summary", "User profiles", "profile", "Profile", "profile_activity_summary", (("user_id", "int"), ("posts", "int"))),
+    ("profile.relationship.summary", "User profiles", "relationship", "Profile", "profile_relationship_summary", (("user_id", "int"), ("followers", "int"))),
+    ("profile.preferences.update", "User profiles", "profile_preference", "Settings", "update_profile_preferences", (("user_id", "int"), ("preferred_language", "str"))),
+):
+    _live(
+        _capability, product_area=_area, resource_type=_resource, native_screen=_screen,
+        backend_route="canonical in-process service",
+        domain_service="services.content_graph_intelligence_service", domain_operation=_operation,
+        authorization_scope=_SELF, owner_field="user_id", output_schema=_output,
+        feature_flag="UNDX_AGENT_READS_ENABLED",
+        evidence=(f"services/content_graph_intelligence_service.py:{_operation}",),
+        known_limitations=(
+            ("Undo is not offered because the prior language value is not stored in the "
+             "operation arguments; the user can explicitly select another supported language."),
+        ) if _capability == "profile.preferences.update" else (),
+    )
 
 # ===========================================================================
 # 8. Comments
