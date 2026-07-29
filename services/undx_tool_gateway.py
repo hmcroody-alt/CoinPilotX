@@ -233,7 +233,11 @@ _ACTOR_NAMING_FIELDS = frozenset({
 })
 
 
-def _enforce_permission_scope(spec: CapabilitySpec) -> None:
+def _enforce_permission_scope(
+    spec: CapabilitySpec,
+    user_id: int,
+    arguments: dict[str, Any],
+) -> None:
     """Refuse any capability whose ownership rule this gateway cannot actually apply.
 
     ``permission`` spent its first life as a comment: a string on every capability
@@ -258,6 +262,26 @@ def _enforce_permission_scope(spec: CapabilitySpec) -> None:
                 "UNDX cannot do that.",
                 outcome=AgentOutcome.PERMISSION_DENIED,
                 details={"capability_id": spec.capability_id, "actor_naming_fields": named},
+            )
+        return
+    if spec.permission == PermissionScope.OTHER_USER_TARGET:
+        declared = {item.name for item in spec.fields}
+        if "target_user_id" not in declared:
+            raise AgentError(
+                "capability_scope_unenforceable",
+                "UNDX cannot do that yet.",
+                outcome=AgentOutcome.UNSUPPORTED_CAPABILITY,
+                details={"capability_id": spec.capability_id, "permission": spec.permission},
+            )
+        target_id = int(arguments.get("target_user_id") or 0)
+        from services.social_relationship_service import is_following
+
+        if target_id <= 0 or is_following(int(user_id), target_id) is None:
+            raise AgentError(
+                "invalid_user_target",
+                "UNDX could not find an eligible PulseSoc account for that action.",
+                outcome=AgentOutcome.PERMISSION_DENIED,
+                details={"capability_id": spec.capability_id},
             )
         return
     raise AgentError(
@@ -377,14 +401,28 @@ def _explain(spec: CapabilitySpec, status: str, result: ToolResult,
     if status == AgentOutcome.VERIFIED_SUCCESS:
         if not spec.is_write:
             return "Here is what I found."
-        return "Done, and I checked the saved state to confirm it."
+        if spec.capability_id == "saved.post.set":
+            return (
+                "The post is saved, and I verified it in your Saved library."
+                if bool((result.data or {}).get("saved"))
+                else "The post was removed from Saved, and I verified the change."
+            )
+        if spec.capability_id == "social.follow":
+            return "You are now following that account, and I verified the relationship."
+        if spec.capability_id == "social.unfollow":
+            return "You are no longer following that account, and I verified the relationship."
+        if spec.capability_id == "feed.posts.like":
+            return "The post is liked, and I verified your reaction."
+        if spec.capability_id == "feed.posts.unlike":
+            return "Your like was removed, and I verified your reaction."
+        return "Done, and I read the new state back to confirm it."
     if status == AgentOutcome.ACCEPTED_UNVERIFIED:
         return ("PulseSoc accepted the change, but I could not read it back to confirm it. "
                 "Please check the screen before relying on it.")
     if status == AgentOutcome.RECOVERABLE_FAILURE:
         return clean(result.error_message or "That did not go through. It is worth trying again.", 240)
     if verification.state == VerificationState.FAILED:
-        return ("The action reported success but the saved state does not match, "
+        return ("The action reported success but the verified state does not match, "
                 "so I have not marked it as done.")
     return clean(result.error_message or "That did not work.", 240)
 
@@ -428,14 +466,14 @@ def execute(
     # 2. Capability allowlisting. Raises unsupported_capability for anything unknown.
     spec = require(capability_id)
 
-    # 2b. Ownership scope. A declared scope the gateway has no rule for is refused, so
-    #     a new pack cannot reach an executor before its authorisation rule exists.
-    _enforce_permission_scope(spec)
-
     # 3. Schema validation. Undeclared keys are dropped rather than rejected, so a
     #    hostile string that smuggles plausible extra parameters can neither steer the
     #    tool nor deny service by making the whole call invalid.
     arguments = validate_arguments(spec.fields, proposed_arguments or {})
+
+    # 3b. Ownership scope runs over the validated argument set. A resolver must never
+    #     authorise a target from a key the capability did not declare.
+    _enforce_permission_scope(spec, int(user_id), arguments)
 
     # 4. Deterministic policy. Nothing here reads message text.
     decision = policy.evaluate(

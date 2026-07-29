@@ -22,6 +22,7 @@ system text. Whitelisting is what prevents that.
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any, Callable
 
@@ -61,6 +62,18 @@ def _alert_record(rule: dict[str, Any] | None) -> dict[str, Any]:
     record["alert_id"] = int(rule.get("id") or 0)
     record["threshold"] = rule.get("threshold_value")
     record["paused"] = clean(rule.get("status") or "active", 24) == "paused"
+    metadata = rule.get("metadata")
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except (TypeError, ValueError):
+            metadata = {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    record["display_name"] = clean(
+        metadata.get("note") or f"{record.get('symbol') or 'Crypto'} alert",
+        80,
+    )
     record["channels"] = {
         name: bool(channels.get(name))
         for name in ("in_app", "push", "email", "sms", "telegram")
@@ -360,6 +373,262 @@ def notification_preferences_update(user_id: int, arguments: dict[str, Any]) -> 
 
 
 # ---------------------------------------------------------------------------
+# Saved content — backed by services.saved_content_service
+# ---------------------------------------------------------------------------
+
+
+def saved_items_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services import saved_content_service
+
+    records = saved_content_service.list_saved_items(
+        int(user_id),
+        content_type=clean(arguments.get("content_type") or "all", 40),
+        query=clean(arguments.get("query"), 120),
+        limit=int(arguments.get("limit") or 20),
+    )
+    return ToolResult(
+        ok=True,
+        tool_name="pulsesoc.saved_items.list",
+        capability_id="saved.items.list",
+        canonical_resource_id=f"user:{int(user_id)}:saved",
+        data={"count": len(records), "content_type": clean(arguments.get("content_type") or "all", 40)},
+        records=records,
+        latency_ms=_timed(started),
+    )
+
+
+def saved_post_set(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.saved_content_service import set_post_saved
+
+    post_id = int(arguments.get("post_id") or 0)
+    desired = bool(arguments.get("saved"))
+    outcome = set_post_saved(int(user_id), post_id, saved=desired)
+    if not outcome.get("ok"):
+        return _fail(
+            "pulsesoc.saved_posts.set",
+            "saved.post.set",
+            clean(outcome.get("error") or "write_rejected", 80),
+            "UNDX could not find that post or change its Saved state.",
+            started=started,
+        )
+    return ToolResult(
+        ok=True,
+        tool_name="pulsesoc.saved_posts.set",
+        capability_id="saved.post.set",
+        canonical_resource_id=f"post:{int(outcome['post_id'])}",
+        data={
+            "post_id": int(outcome["post_id"]),
+            "saved": bool(outcome["saved"]),
+            "changed": bool(outcome.get("changed")),
+        },
+        latency_ms=_timed(started),
+    )
+
+
+def social_relationships_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.social_relationship_service import list_relationships
+
+    direction = clean(arguments.get("direction") or "followers", 20).lower()
+    records = list_relationships(
+        int(user_id),
+        direction=direction,
+        query=clean(arguments.get("query"), 120),
+        limit=int(arguments.get("limit") or 20),
+    )
+    return ToolResult(
+        ok=True,
+        tool_name="pulsesoc.relationships.list",
+        capability_id="social.followers.list",
+        canonical_resource_id=f"user:{int(user_id)}:{direction}",
+        records=records,
+        data={"direction": direction, "record_count": len(records)},
+        latency_ms=_timed(started),
+    )
+
+
+def _set_following(
+    user_id: int,
+    arguments: dict[str, Any],
+    *,
+    following: bool,
+    capability_id: str,
+    tool_name: str,
+) -> ToolResult:
+    started = time.perf_counter()
+    from services.social_relationship_service import set_following
+
+    target_id = int(arguments.get("target_user_id") or 0)
+    outcome = set_following(int(user_id), target_id, following=following)
+    if not outcome.get("ok"):
+        return _fail(
+            tool_name,
+            capability_id,
+            clean(outcome.get("error") or "write_rejected", 80),
+            "UNDX could not change that follow relationship.",
+            started=started,
+        )
+    return ToolResult(
+        ok=True,
+        tool_name=tool_name,
+        capability_id=capability_id,
+        canonical_resource_id=f"follow:{int(user_id)}:{target_id}",
+        data={
+            "target_user_id": target_id,
+            "following": bool(outcome["following"]),
+            "changed": bool(outcome.get("changed")),
+        },
+        latency_ms=_timed(started),
+    )
+
+
+def social_follow(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    return _set_following(
+        user_id, arguments, following=True,
+        capability_id="social.follow", tool_name="pulsesoc.relationships.follow",
+    )
+
+
+def social_unfollow(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    return _set_following(
+        user_id, arguments, following=False,
+        capability_id="social.unfollow", tool_name="pulsesoc.relationships.unfollow",
+    )
+
+
+def conversations_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.messenger_intelligence_service import list_my_conversations
+
+    records = list_my_conversations(
+        int(user_id),
+        conversation_type=clean(arguments.get("conversation_type") or "all", 40),
+        limit=int(arguments.get("limit") or 20),
+    )
+    return ToolResult(
+        ok=True,
+        tool_name="pulsesoc.conversations.list",
+        capability_id="conversations.list",
+        canonical_resource_id=f"user:{int(user_id)}:conversations",
+        records=records,
+        data={"record_count": len(records)},
+        latency_ms=_timed(started),
+    )
+
+
+def messages_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.messenger_intelligence_service import list_conversation_messages
+
+    conversation_id = int(arguments.get("conversation_id") or 0)
+    records = list_conversation_messages(
+        int(user_id), conversation_id, limit=int(arguments.get("limit") or 30),
+    )
+    return ToolResult(
+        ok=True,
+        tool_name="pulsesoc.messages.list",
+        capability_id="messages.list",
+        canonical_resource_id=f"conversation:{conversation_id}:messages",
+        records=records,
+        data={"record_count": len(records), "conversation_id": conversation_id},
+        latency_ms=_timed(started),
+    )
+
+
+def feed_posts_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.feed_intelligence_service import list_posts
+
+    records = list_posts(
+        int(user_id),
+        feed=clean(arguments.get("feed") or "for_you", 40),
+        query=clean(arguments.get("query"), 80),
+        limit=int(arguments.get("limit") or 20),
+    )
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.feed.posts.list", capability_id="feed.posts.list",
+        canonical_resource_id=f"user:{int(user_id)}:feed", records=records,
+        data={"record_count": len(records)}, latency_ms=_timed(started),
+    )
+
+
+def feed_posts_get(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.feed_intelligence_service import get_post
+
+    post_id = int(arguments.get("post_id") or 0)
+    record = get_post(int(user_id), post_id)
+    if not record:
+        return _fail("pulsesoc.feed.posts.get", "feed.posts.get", "not_found",
+                     "UNDX could not find a post you are allowed to view.", started=started)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.feed.posts.get", capability_id="feed.posts.get",
+        canonical_resource_id=f"post:{post_id}", records=[record], data=record,
+        latency_ms=_timed(started),
+    )
+
+
+def feed_comments_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.feed_intelligence_service import list_post_comments
+
+    post_id = int(arguments.get("post_id") or 0)
+    records = list_post_comments(
+        int(user_id), post_id, limit=int(arguments.get("limit") or 40),
+    )
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.feed.comments.list", capability_id="comments.list",
+        canonical_resource_id=f"post:{post_id}:comments", records=records,
+        data={"post_id": post_id, "record_count": len(records)}, latency_ms=_timed(started),
+    )
+
+def _set_post_like(
+    user_id: int,
+    arguments: dict[str, Any],
+    *,
+    liked: bool,
+    capability_id: str,
+    tool_name: str,
+) -> ToolResult:
+    started = time.perf_counter()
+    from services.feed_intelligence_service import set_post_like
+
+    post_id = int(arguments.get("post_id") or 0)
+    outcome = set_post_like(int(user_id), post_id, liked=liked)
+    if not outcome.get("ok"):
+        return _fail(
+            tool_name, capability_id, clean(outcome.get("error") or "write_rejected", 80),
+            "UNDX could not change your reaction on that post.", started=started,
+        )
+    return ToolResult(
+        ok=True, tool_name=tool_name, capability_id=capability_id,
+        canonical_resource_id=f"post:{post_id}",
+        data={
+            "post_id": post_id,
+            "liked": bool(outcome["liked"]),
+            "changed": bool(outcome.get("changed")),
+        },
+        latency_ms=_timed(started),
+    )
+
+
+def feed_post_like(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    return _set_post_like(
+        user_id, arguments, liked=True,
+        capability_id="feed.posts.like", tool_name="pulsesoc.feed.posts.like",
+    )
+
+
+def feed_post_unlike(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    return _set_post_like(
+        user_id, arguments, liked=False,
+        capability_id="feed.posts.unlike", tool_name="pulsesoc.feed.posts.unlike",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
 
@@ -373,6 +642,18 @@ EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
     "crypto_alerts_delete": crypto_alerts_delete,
     "notification_preferences_read": notification_preferences_read,
     "notification_preferences_update": notification_preferences_update,
+    "saved_items_list": saved_items_list,
+    "saved_post_set": saved_post_set,
+    "social_relationships_list": social_relationships_list,
+    "social_follow": social_follow,
+    "social_unfollow": social_unfollow,
+    "conversations_list": conversations_list,
+    "messages_list": messages_list,
+    "feed_posts_list": feed_posts_list,
+    "feed_posts_get": feed_posts_get,
+    "feed_comments_list": feed_comments_list,
+    "feed_post_like": feed_post_like,
+    "feed_post_unlike": feed_post_unlike,
 }
 
 

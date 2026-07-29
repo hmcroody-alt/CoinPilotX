@@ -251,6 +251,75 @@ def notification_preference_value(user_id: int, arguments: dict[str, Any], resul
     )
 
 
+def saved_post_value(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Independently confirm the caller's stored Saved state for one post."""
+    from services.saved_content_service import get_post_saved
+
+    post_id = int(arguments.get("post_id") or 0)
+    expected = bool(arguments.get("saved"))
+    try:
+        state = get_post_saved(int(user_id), post_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Saved-post read-back failed: {exc.__class__.__name__}", expected)
+    observed = None if state is None else bool(state.get("saved"))
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else "The post's Saved state did not match the request.",
+        evidence={
+            "canonical_resource_id": f"post:{post_id}",
+            "read_back": {"saved": observed},
+            "source": "saved_content_service.get_post_saved",
+        },
+    )
+
+
+def social_following_value(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Read the directed edge back; the reverse relationship is irrelevant."""
+    from services.social_relationship_service import is_following
+
+    target_id = int(arguments.get("target_user_id") or 0)
+    expected = result.capability_id == "social.follow"
+    try:
+        observed = is_following(int(user_id), target_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Follow read-back failed: {exc.__class__.__name__}", expected)
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else "The directed follow state did not match the request.",
+        evidence={
+            "canonical_resource_id": f"follow:{int(user_id)}:{target_id}",
+            "read_back": {"following": observed},
+            "source": "social_relationship_service.is_following",
+        },
+    )
+
+def feed_post_like_value(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Read the caller's reaction edge back after an explicit like-state write."""
+    from services.feed_intelligence_service import get_post_like
+
+    post_id = int(arguments.get("post_id") or 0)
+    expected = result.capability_id == "feed.posts.like"
+    try:
+        observed = get_post_like(int(user_id), post_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Reaction read-back failed: {exc.__class__.__name__}", expected)
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else "The post's like state did not match the request.",
+        evidence={
+            "canonical_resource_id": f"post:{post_id}",
+            "read_back": {"liked": observed},
+            "source": "feed_intelligence_service.get_post_like",
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
@@ -261,6 +330,9 @@ VERIFIERS: dict[str, Callable[[int, dict[str, Any], ToolResult], VerificationRes
     "crypto_alert_threshold": crypto_alert_threshold,
     "crypto_alert_deleted": crypto_alert_deleted,
     "notification_preference_value": notification_preference_value,
+    "saved_post_value": saved_post_value,
+    "social_following_value": social_following_value,
+    "feed_post_like_value": feed_post_like_value,
 }
 
 

@@ -1470,6 +1470,25 @@ def confirm_action(user_id: int, payload: dict | None = None) -> dict:
         conn.close()
 
 
+def cancel_action(user_id: int, payload: dict | None = None) -> dict:
+    """Revoke a still-pending UNDX approval without executing its action."""
+    payload = payload or {}
+    token = _clean(payload.get("confirmation_token") or "", 500)
+    if not token:
+        return {"ok": False, "error": "confirmation_required", "message": "A valid UNDX confirmation is required.", "http_status": 400}
+    conn, cur = _open_db()
+    try:
+        result = undx_architecture.revoke_confirmation(cur, int(user_id), token)
+        conn.commit()
+        return {
+            "ok": True,
+            "revoked": bool(result.get("revoked")),
+            "message": "UNDX cancelled the pending action." if result.get("revoked") else "That action was already cancelled, expired, or completed.",
+        }
+    finally:
+        conn.close()
+
+
 def record_feedback(user_id: int, payload: dict | None = None) -> dict:
     payload = payload or {}
     rating = _clean(payload.get("rating") or "", 40).lower().replace(" ", "_")

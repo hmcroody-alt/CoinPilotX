@@ -817,33 +817,30 @@ _mapped(
 # 5. Feed posts
 # ===========================================================================
 
-_mapped(
+_live(
     "feed.posts.list",
     product_area="Feed posts", resource_type="post",
-    description="Read the home feed.",
-    supported_intents=("show my feed", "what's new"),
     native_screen="Home",
     backend_route="GET /api/pulse/feed",
-    domain_service="services.pulse_feed_engine", domain_operation="list_feed",
+    domain_service="services.feed_intelligence_service", domain_operation="list_posts",
     authorization_scope=_SELF, owner_field="user_id",
     output_schema=(("post_id", "int"), ("author_id", "int"), ("body", "str")),
-    result_card_type=CardType.CONTENT_RESULT,
-    implementation_status=_UNVERIFIED,
-    evidence=("services/pulse_feed_engine.py",),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/feed_intelligence_service.py:list_posts",
+              "tests/undx_agent/test_feed_intelligence_pack.py"),
 )
-_mapped(
+_live(
     "feed.posts.get",
     product_area="Feed posts", resource_type="post",
-    description="Read a single post.",
-    supported_intents=("open that post",),
     native_screen="PostDetail",
     backend_route="GET /api/pulse/post/<post_id>",
-    domain_service="services.pulse_feed_engine", domain_operation="get_post",
-    authorization_scope=_PUBLIC, target_field="post_id",
+    domain_service="services.feed_intelligence_service", domain_operation="get_post",
+    authorization_scope=_SELF, owner_field="user_id",
     output_schema=(("post_id", "int"), ("author_id", "int"), ("body", "str")),
-    result_card_type=CardType.CONTENT_RESULT,
-    implementation_status=_UNVERIFIED,
-    evidence=("services/pulse_feed_engine.py", "mobile-native/src/navigation/linking.ts PostDetail"),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/feed_intelligence_service.py:get_post",
+              "tests/undx_agent/test_feed_intelligence_pack.py",
+              "mobile-native/src/navigation/linking.ts PostDetail"),
 )
 _mapped(
     "feed.posts.create",
@@ -1001,22 +998,17 @@ _mapped(
 # 8. Comments
 # ===========================================================================
 
-_mapped(
+_live(
     "comments.list",
     product_area="Comments", resource_type="comment",
-    description="Read the comments on a post or reel.",
-    supported_intents=("what are people saying on this post",),
     native_screen="PostDetail",
     backend_route="GET /api/pulse/post/<post_id>/comments",
-    domain_service="services.pulse_feed_engine", domain_operation="list_comments",
-    authorization_scope=_PUBLIC, target_field="post_id",
+    domain_service="services.feed_intelligence_service", domain_operation="list_post_comments",
+    authorization_scope=_SELF, owner_field="user_id",
     output_schema=(("comment_id", "int"), ("author_id", "int"), ("body", "str")),
-    implementation_status=_UNVERIFIED,
-    evidence=("services/pulse_feed_engine.py:1491 list_comments",
-              "services/pulse_feed_engine.py:1563 get_comment"),
-    known_limitations=("get_comment(comment_id) takes no viewer, so a single-comment read "
-                       "confirms existence to any caller. Comment listing is viewer-aware; "
-                       "the single read is not.",),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/feed_intelligence_service.py:list_post_comments",
+              "tests/undx_agent/test_feed_intelligence_pack.py"),
 )
 _mapped(
     "comments.create",
@@ -1054,41 +1046,31 @@ _mapped(
 # 9. Reactions
 # ===========================================================================
 
-_mapped(
-    "reactions.set",
+_live(
+    "feed.posts.like",
     product_area="Reactions", resource_type="reaction",
-    description="Add or change a reaction on a post, reel or comment.",
-    supported_intents=("like that post", "react with a heart"),
-    risk_class=_WRITE, confirmation_policy=_NEVER,
     native_screen="PostDetail",
     backend_route="POST /api/pulse/post/<post_id>/react",
-    domain_service="services.pulse_feed_engine", domain_operation="react",
-    authorization_scope=_SELF, owner_field="user_id", target_field="post_id",
-    implementation_status=_PARTIAL,
-    evidence=("services/pulse_feed_engine.py:1596 react",
-              "services/pulse_feed_engine.py:1610-1612 the same reaction twice deletes it"),
-    known_limitations=(
-        "react() takes a named reaction_type, which looks like a desired-state "
-        "setter, but it flips: if the caller's existing reaction equals the one "
-        "passed, the row is deleted. A retry after a timeout therefore removes "
-        "the reaction the first call added, and the receipt would still say "
-        "'reaction added'. A set_reaction that is idempotent for a given type is "
-        "required before this can be an agent capability.",
-    ),
-    toggle_semantics=True,
+    domain_service="services.feed_intelligence_service", domain_operation="set_post_like",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("post_id", "int"), ("liked", "bool"), ("changed", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/feed_intelligence_service.py:set_post_like",
+              "services/feed_intelligence_service.py:get_post_like",
+              "tests/undx_agent/test_feed_reaction_write_pack.py"),
 )
-_mapped(
-    "reactions.read",
+_live(
+    "feed.posts.unlike",
     product_area="Reactions", resource_type="reaction",
-    description="Read the caller's own reaction state on a piece of content.",
-    supported_intents=("did I like that",),
     native_screen="PostDetail",
-    domain_service="", domain_operation="",
-    authorization_scope=_SELF, owner_field="user_id", target_field="post_id",
-    implementation_status=_NO_SERVICE,
-    evidence=("services/pulse_feed_engine.py",),
-    known_limitations=("No caller-scoped read of a single reaction exists, so no verifier "
-                       "can be built for reactions.set.",),
+    backend_route="POST /api/pulse/post/<post_id>/react",
+    domain_service="services.feed_intelligence_service", domain_operation="set_post_like",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("post_id", "int"), ("liked", "bool"), ("changed", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/feed_intelligence_service.py:set_post_like",
+              "services/feed_intelligence_service.py:get_post_like",
+              "tests/undx_agent/test_feed_reaction_write_pack.py"),
 )
 
 # ===========================================================================
@@ -1108,40 +1090,31 @@ _SAVED_TOGGLE = (
     "desired state, and the domain operation must refuse a None."
 )
 
-_mapped(
+_live(
     "saved.items.list",
     product_area="Saved content", resource_type="saved_item",
-    description="List the account's saved posts, reels and listings.",
-    supported_intents=("what have I saved", "show my saved items"),
     native_screen="Saved",
     backend_route="GET /api/pulse/saved",
-    domain_service="", domain_operation="pulse_saved_items_query",
+    domain_service="services.saved_content_service",
+    domain_operation="list_saved_items",
     authorization_scope=_SELF, owner_field="user_id",
-    output_schema=(("item_id", "int"), ("item_type", "str"), ("saved_at", "str")),
-    result_card_type=CardType.CONTENT_RESULT,
-    implementation_status=_NO_SERVICE,
-    evidence=("bot.py:77655 pulse_saved_items_query",),
-    known_limitations=(
-        "Owner-scoped and correct, but defined in bot.py and requires an injected "
-        "database cursor, so it is not callable as a domain operation. Stage 7 "
-        "moves it into services/ behind a (user_id, ...) signature.",
-    ),
+    output_schema=(("item_id", "int"), ("content_type", "str"), ("saved_at", "str")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/saved_content_service.py:list_saved_items",
+              "tests/undx_agent/test_saved_content_pack.py"),
 )
-_mapped(
+_live(
     "saved.post.set",
     product_area="Saved content", resource_type="saved_item",
-    description="Save or unsave a post.",
-    supported_intents=("save this post", "unsave that post"),
-    risk_class=_WRITE, confirmation_policy=_NEVER,
     native_screen="PostDetail",
-    backend_route="POST /api/pulse/post/<post_id>/save",
-    domain_service="", domain_operation="",
-    authorization_scope=_SELF, owner_field="user_id", target_field="post_id",
-    undo_capability_id="saved.post.set",
-    implementation_status=_NO_SERVICE,
-    evidence=("bot.py:77755 post save handler",),
-    known_limitations=(_SAVED_TOGGLE,),
-    toggle_semantics=True,
+    backend_route="POST /api/pulse/posts/<post_id>/save",
+    domain_service="services.saved_content_service", domain_operation="set_post_saved",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("post_id", "int"), ("saved", "bool"), ("changed", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/saved_content_service.py:set_post_saved",
+              "services/saved_content_service.py:get_post_saved",
+              "tests/undx_agent/test_saved_post_write_pack.py"),
 )
 _mapped(
     "saved.reel.set",
@@ -1182,62 +1155,43 @@ _mapped(
 # and it is the area with the most defects. Every finding below is a reason a
 # capability written today would misbehave in a way the user could not see.
 
-_mapped(
+_live(
     "social.follow",
     product_area="Social relationships", resource_type="follow_edge",
-    description="Follow an account.",
-    supported_intents=("follow @handle",),
-    risk_class=_WRITE, confirmation_policy=_CONTEXTUAL,
     native_screen="ProfileDetail",
     backend_route="POST /api/pulse/follow",
-    domain_service="services.pulse_feed_engine", domain_operation="follow",
-    authorization_scope=_OTHER, owner_field="user_id", target_field="target_user_id",
-    result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
-    implementation_status=_UNVERIFIED,
-    evidence=("services/pulse_feed_engine.py:1807 follow — INSERT OR IGNORE",
-              "bot.py:78593 the HTTP handler, which toggles instead"),
-    known_limitations=(
-        "The service operation is sound and idempotent: INSERT OR IGNORE sets the "
-        "edge to followed and a retry is a no-op. The HTTP route is not — it "
-        "toggles — so a capability must call the service directly and never the "
-        "route.",
-        "No directed read exists. Nothing in services/ answers "
-        "is_following(follower, followed); the only reader is a private batch "
-        "helper inside _viewer_post_state. Without it the write cannot be "
-        "verified, and no undo can be offered because unfollow has no service.",
-    ),
-    read_back_missing=True,
+    domain_service="services.social_relationship_service", domain_operation="set_following",
+    authorization_scope=_OTHER, owner_field="user_id",
+    output_schema=(("target_user_id", "int"), ("following", "bool"), ("changed", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/social_relationship_service.py:set_following",
+              "services/social_relationship_service.py:is_following",
+              "tests/undx_agent/test_social_relationship_write_pack.py"),
 )
-_mapped(
+_live(
     "social.unfollow",
     product_area="Social relationships", resource_type="follow_edge",
-    description="Stop following an account.",
-    supported_intents=("unfollow @handle",),
-    risk_class=_WRITE, confirmation_policy=_CONTEXTUAL,
     native_screen="ProfileDetail",
-    authorization_scope=_OTHER, owner_field="user_id", target_field="target_user_id",
-    result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
-    implementation_status=_NO_SERVICE,
-    evidence=("bot.py:78612 DELETE FROM pulse_follows — raw SQL inside the toggle handler",
-              "services/pulse_feed_engine.py:1807 follow has no counterpart"),
-    known_limitations=("Exists only as a DELETE statement inside the toggle handler. "
-                       "Naming it as social.follow's undo today would register an undo "
-                       "the runtime cannot perform.",),
+    backend_route="POST /api/pulse/follow",
+    domain_service="services.social_relationship_service", domain_operation="set_following",
+    authorization_scope=_OTHER, owner_field="user_id",
+    output_schema=(("target_user_id", "int"), ("following", "bool"), ("changed", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/social_relationship_service.py:set_following",
+              "services/social_relationship_service.py:is_following",
+              "tests/undx_agent/test_social_relationship_write_pack.py"),
 )
-_mapped(
+_live(
     "social.followers.list",
     product_area="Social relationships", resource_type="follow_edge",
-    description="List the account's followers or following.",
-    supported_intents=("who follows me", "who am I following"),
     native_screen="ProfileDetail",
     backend_route="GET /api/pulse/profile/<profile_key>/followers",
-    domain_service="", domain_operation="",
+    domain_service="services.social_relationship_service", domain_operation="list_relationships",
     authorization_scope=_SELF, owner_field="user_id",
     output_schema=(("user_id", "int"), ("username", "str")),
-    implementation_status=_NO_SERVICE,
-    evidence=("services/pulse_feed_engine.py — pulse_follows is only read by private helpers",),
-    known_limitations=("No public follower-listing operation exists; the table is read "
-                       "inline by feed ranking.",),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/social_relationship_service.py:list_relationships",
+              "tests/undx_agent/test_social_relationship_pack.py"),
 )
 _mapped(
     "social.block.set",
@@ -1363,19 +1317,17 @@ _CONV_ORACLE = (
     "in it. Any capability built on it inherits the oracle."
 )
 
-_mapped(
+_live(
     "conversations.list",
     product_area="Conversations", resource_type="conversation",
-    description="List the account's conversations.",
-    supported_intents=("show my chats", "who messaged me"),
     native_screen="Messenger",
     backend_route="GET /api/pulse/messages",
-    domain_service="pulse_communications_v2.service", domain_operation="list_conversations",
+    domain_service="services.messenger_intelligence_service", domain_operation="list_my_conversations",
     authorization_scope=_SELF, owner_field="user_id",
     output_schema=(("conversation_id", "int"), ("title", "str"), ("unread", "int")),
-    result_card_type=CardType.CONVERSATION_RESULT,
-    implementation_status=_UNVERIFIED,
-    evidence=("pulse_communications_v2/service.py:1170 list_conversations",),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/messenger_intelligence_service.py:list_my_conversations",
+              "tests/undx_agent/test_messenger_read_pack.py"),
 )
 _mapped(
     "conversations.get",
@@ -1455,22 +1407,18 @@ _mapped(
 # 13. Messages
 # ===========================================================================
 
-_mapped(
+_live(
     "messages.list",
     product_area="Messages", resource_type="message",
-    description="Read messages in a conversation.",
-    supported_intents=("what did they say", "read my last messages"),
     native_screen="Chat",
     backend_route="GET /api/pulse/messages/<conversation_id>/messages",
-    domain_service="pulse_communications_v2.service", domain_operation="list_messages",
-    authorization_scope=_ORACLE, owner_field="user_id", target_field="conversation_id",
-    output_schema=(("message_id", "int"), ("sender_id", "int"), ("body", "str")),
-    result_card_type=CardType.CONVERSATION_RESULT,
-    implementation_status=_PARTIAL,
-    evidence=("pulse_communications_v2/service.py:2439 list_messages",),
-    known_limitations=(_CONV_ORACLE,
-                       "Marks the conversation read as a side effect, so this is not a "
-                       "read-only operation despite its name."),
+    domain_service="services.messenger_intelligence_service",
+    domain_operation="list_conversation_messages",
+    authorization_scope=_MEMBER, owner_field="user_id",
+    output_schema=(("message_id", "int"), ("sender_user_id", "int"), ("body", "str")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/messenger_intelligence_service.py:list_conversation_messages",
+              "tests/undx_agent/test_messenger_read_pack.py"),
 )
 _mapped(
     "messages.send",

@@ -230,7 +230,7 @@ export function toActionCard(component: UndxResponseComponent): UndxActionCard {
     kicker,
     title:
       kind === "result"
-        ? component.preview_text || "PulseSOC result"
+        ? component.title || component.preview_text || "PulseSOC result"
         : component.action_name || component.title || "UNDX operation",
     target: component.target || "",
     before: readable(component.current_value),

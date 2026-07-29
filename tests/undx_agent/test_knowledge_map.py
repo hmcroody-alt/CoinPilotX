@@ -702,7 +702,8 @@ class KnowledgeMapTests(unittest.TestCase):
         confident invention.
         """
         view = {row["capability_id"]: row for row in kmap.agent_capability_view()}
-        assert view["social.unfollow"]["executable"] is False
+        assert view["social.block.set"]["executable"] is False
+        assert view["social.unfollow"]["executable"] is True
         assert view["crypto.alerts.create"]["executable"] is True
         for cid, row in view.items():
             assert row["executable"] == (cid in registry.REGISTRY)
@@ -733,10 +734,18 @@ class KnowledgeMapTests(unittest.TestCase):
             row for row in matrix[kmap.ReadinessClass.READY_TO_WIRE]
             if RiskLevel.is_write(row["risk_class"])
         ]
-        assert ready_writes == [], (
-            "a write in a stage target area is classified ready to wire; confirm the "
-            f"underlying defect was fixed rather than the record softened: {ready_writes}"
+        # A stage-target write may graduate only by becoming a registered, verified,
+        # non-toggle capability. Keep the explicit allowlist small so a map edit
+        # cannot silently soften another blocked write.
+        assert {row["capability_id"] for row in ready_writes} == {
+            "saved.post.set", "social.follow", "social.unfollow",
+        }, (
+            "unexpected write graduated in a stage target area: "
+            f"{ready_writes}"
         )
+        for capability_id in ("saved.post.set", "social.follow", "social.unfollow"):
+            graduated = kmap.BY_ID[capability_id]
+            assert graduated.registered and graduated.verifier and not graduated.toggle_semantics
 
 
     def test_blocked_records_explain_what_is_blocking_them(self):
@@ -811,19 +820,27 @@ class KnowledgeMapTests(unittest.TestCase):
         # -- pulse_feed_engine.follow, an INSERT OR IGNORE -- is idempotent, so the
         # hazard is in the route, not the service, and a capability must call the
         # service. What blocks it is that nothing can read back "is A following B".
-        assert classify(kmap.BY_ID["social.follow"]) == kmap.ReadinessClass.VERIFIER_REQUIRED
-        # The real toggle in the same shape: react() reads like a desired-state
-        # setter and deletes the row when the same reaction_type is sent twice.
-        assert classify(kmap.BY_ID["reactions.set"]) == kmap.ReadinessClass.TOGGLE_HAZARD
-        assert classify(kmap.BY_ID["saved.post.set"]) == kmap.ReadinessClass.TOGGLE_HAZARD
+        assert classify(kmap.BY_ID["social.follow"]) == kmap.ReadinessClass.READY_TO_WIRE
+        # The toggling HTTP operation remains unsuitable for agent use. The agent
+        # registry instead exposes two explicit desired-state operations with
+        # independent read-back, so retries cannot invert the requested state.
+        assert "reactions.set" not in kmap.BY_ID
+        assert classify(kmap.BY_ID["feed.posts.like"]) == kmap.ReadinessClass.READY_TO_WIRE
+        assert classify(kmap.BY_ID["feed.posts.unlike"]) == kmap.ReadinessClass.READY_TO_WIRE
+        # Saved post writes graduated only after the agent path stopped calling the
+        # toggling HTTP behavior and gained an explicit desired-state service plus
+        # independent read-back verifier.
+        assert classify(kmap.BY_ID["saved.post.set"]) == kmap.ReadinessClass.READY_TO_WIRE
         assert classify(kmap.BY_ID["social.friend.decline"]) == kmap.ReadinessClass.AUTHORIZATION_DEFECT
         assert classify(kmap.BY_ID["messages.send"]) == kmap.ReadinessClass.AUTHORIZATION_DEFECT
         assert classify(kmap.BY_ID["conversations.get"]) == kmap.ReadinessClass.AUTHORIZATION_DEFECT
         assert classify(kmap.BY_ID["social.block.set"]) == kmap.ReadinessClass.DOMAIN_SERVICE_REQUIRED
-        assert classify(kmap.BY_ID["saved.items.list"]) == kmap.ReadinessClass.DOMAIN_SERVICE_REQUIRED
+        # Saved listing graduated in the first live-training slice: its Flask-bound
+        # query now has an owner-scoped service and a registered read capability.
+        assert classify(kmap.BY_ID["saved.items.list"]) == kmap.ReadinessClass.READY_TO_WIRE
         # Unfollowing is not unsupported — the product plainly offers it. What is
         # missing is a domain service: it exists only as a DELETE statement inside
         # the HTTP toggle handler, so Stage 6 has to write one. Calling it
         # "unsupported" would quietly remove that work from the plan.
-        assert classify(kmap.BY_ID["social.unfollow"]) == kmap.ReadinessClass.DOMAIN_SERVICE_REQUIRED
+        assert classify(kmap.BY_ID["social.unfollow"]) == kmap.ReadinessClass.READY_TO_WIRE
         assert classify(kmap.BY_ID["conversations.mute"]) == kmap.ReadinessClass.VERIFIER_REQUIRED

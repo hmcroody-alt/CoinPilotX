@@ -191,7 +191,10 @@ class CapabilitySpec:
     def deep_link(self, arguments: dict[str, Any] | None = None) -> str:
         """Resolve the native route, substituting ``:params`` from arguments."""
         route = self.native_route
-        for key, value in (arguments or {}).items():
+        values = dict(arguments or {})
+        if ":profileKey" in route and "profileKey" not in values and values.get("target_user_id"):
+            values["profileKey"] = values["target_user_id"]
+        for key, value in values.items():
             route = route.replace(f":{key}", _ROUTE_SAFE.sub("", clean(value, 60)))
         # Drop any optional placeholder the caller did not supply.
         return re.sub(r"/:[A-Za-z_]+\??", "", route).rstrip("/") or "/"
@@ -213,6 +216,16 @@ _NOTIFICATION_CATEGORY = FieldSpec(
     "category", "enum", required=True, choices=NOTIFICATION_CATEGORIES,
 )
 _PUSH_VALUE = FieldSpec("push", "bool", required=True)
+_POST_ID = FieldSpec("post_id", "int", required=True, minimum=1)
+_SAVED_VALUE = FieldSpec("saved", "bool", required=True)
+_TARGET_USER_ID = FieldSpec("target_user_id", "int", required=True, minimum=1)
+_CONVERSATION_ID = FieldSpec("conversation_id", "int", required=True, minimum=1)
+_SAVED_CONTENT_TYPES = (
+    "all", "post", "reel", "status", "marketplace", "video", "room", "group",
+    "teacher", "image", "learning",
+)
+_CONVERSATION_TYPES = ("all", "direct", "group", "room", "community_channel")
+_FEED_TYPES = ("for_you", "following", "trending", "my_posts", "crypto", "questions")
 
 _ALERT_CONDITIONS = ("above", "below", "moves_up_percent", "moves_down_percent", "volatility_above")
 
@@ -377,6 +390,254 @@ _register(CapabilitySpec(
     result_card=CardType.CRYPTO_ALERT_CARD,
     audit_category="crypto_alerts_write",
     target_field="alert_id",
+))
+
+
+# --- Saved content ---------------------------------------------------------
+
+_register(CapabilitySpec(
+    capability_id="saved.items.list",
+    description="List the authenticated user's private Saved library",
+    intents=("find my saved posts", "show my saved posts", "find my saved reels",
+             "show my saved items", "what have i saved", "my saved content"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.saved_items.list",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        FieldSpec("content_type", "enum", required=False,
+                  choices=_SAVED_CONTENT_TYPES, default="all"),
+        FieldSpec("query", "str", required=False, max_length=120, default=""),
+        FieldSpec("limit", "int", required=False, minimum=1, maximum=50, default=20),
+    ),
+    executor="saved_items_list",
+    verifier="",
+    native_route="/pulse/saved",
+    result_card=CardType.CONTENT_RESULT,
+    audit_category="saved_content_read",
+))
+
+_register(CapabilitySpec(
+    capability_id="saved.post.set",
+    description="Save or unsave one PulseSoc post for the authenticated user",
+    intents=("save post", "save this post", "unsave post", "remove post from saved"),
+    risk=RiskLevel.REVERSIBLE_WRITE,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.saved_posts.set",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_POST_ID, _SAVED_VALUE),
+    executor="saved_post_set",
+    verifier="saved_post_value",
+    native_route="/pulse/post/:post_id",
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="saved_content_write",
+    target_field="post_id",
+    verified_fields=("saved",),
+    undo_capability_id="saved.post.set",
+    undo_argument_map=(("post_id", "post_id"), ("saved", "!saved")),
+))
+
+
+# --- Social relationships -------------------------------------------------
+
+_register(CapabilitySpec(
+    capability_id="social.followers.list",
+    description="List followers or followed accounts for the authenticated user",
+    intents=("who follows me", "show my followers", "who am i following",
+             "show who i follow", "find my followers"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.relationships.list",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        FieldSpec("direction", "enum", required=False,
+                  choices=("followers", "following"), default="followers"),
+        FieldSpec("query", "str", required=False, max_length=120, default=""),
+        FieldSpec("limit", "int", required=False, minimum=1, maximum=50, default=20),
+    ),
+    executor="social_relationships_list",
+    verifier="",
+    native_route="/pulse/profile/:profileKey",
+    result_card=CardType.PROFILE_RESULT,
+    audit_category="social_relationships_read",
+))
+
+_register(CapabilitySpec(
+    capability_id="social.follow",
+    description="Follow one PulseSoc account",
+    intents=("follow user", "follow account", "follow member"),
+    risk=RiskLevel.REVERSIBLE_WRITE,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.relationships.follow",
+    permission=PermissionScope.OTHER_USER_TARGET,
+    fields=(_TARGET_USER_ID,),
+    executor="social_follow",
+    verifier="social_following_value",
+    native_route="/pulse/profile/:profileKey",
+    result_card=CardType.RELATIONSHIP_CHANGE_RECEIPT,
+    audit_category="social_relationships_write",
+    target_field="target_user_id",
+    verified_fields=(),
+    undo_capability_id="social.unfollow",
+))
+
+_register(CapabilitySpec(
+    capability_id="social.unfollow",
+    description="Stop following one PulseSoc account",
+    intents=("unfollow user", "unfollow account", "stop following user"),
+    risk=RiskLevel.REVERSIBLE_WRITE,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.relationships.unfollow",
+    permission=PermissionScope.OTHER_USER_TARGET,
+    fields=(_TARGET_USER_ID,),
+    executor="social_unfollow",
+    verifier="social_following_value",
+    native_route="/pulse/profile/:profileKey",
+    result_card=CardType.RELATIONSHIP_CHANGE_RECEIPT,
+    audit_category="social_relationships_write",
+    target_field="target_user_id",
+    verified_fields=(),
+    undo_capability_id="social.follow",
+))
+
+
+# --- Messenger read intelligence -----------------------------------------
+
+_register(CapabilitySpec(
+    capability_id="conversations.list",
+    description="List the authenticated user's active Messenger conversations",
+    intents=("show my chats", "show my conversations", "who messaged me",
+             "open messenger conversations", "list my chats"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.conversations.list",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        FieldSpec("conversation_type", "enum", required=False,
+                  choices=_CONVERSATION_TYPES, default="all"),
+        FieldSpec("limit", "int", required=False, minimum=1, maximum=50, default=20),
+    ),
+    executor="conversations_list",
+    verifier="",
+    native_route="/pulse/messages",
+    result_card=CardType.CONVERSATION_RESULT,
+    audit_category="messenger_read",
+))
+
+_register(CapabilitySpec(
+    capability_id="messages.list",
+    description="Read messages from one authenticated Messenger membership without marking them read",
+    intents=("show messages in conversation", "read conversation", "show conversation messages",
+             "read messages from conversation"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.messages.list",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        _CONVERSATION_ID,
+        FieldSpec("limit", "int", required=False, minimum=1, maximum=100, default=30),
+    ),
+    executor="messages_list",
+    verifier="",
+    native_route="/pulse/messages/:conversation_id",
+    result_card=CardType.CONVERSATION_RESULT,
+    audit_category="messenger_read",
+))
+
+
+# --- Feed intelligence ----------------------------------------------------
+
+_register(CapabilitySpec(
+    capability_id="feed.posts.list",
+    description="Find privacy-filtered PulseSoc posts visible to the authenticated user",
+    intents=("show my feed", "what's new", "find posts", "search posts",
+             "show my latest posts", "show trending posts"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.feed.posts.list",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        FieldSpec("feed", "enum", required=False, choices=_FEED_TYPES, default="for_you"),
+        FieldSpec("query", "str", required=False, max_length=80, default=""),
+        FieldSpec("limit", "int", required=False, minimum=1, maximum=40, default=20),
+    ),
+    executor="feed_posts_list",
+    verifier="",
+    native_route="/pulse",
+    result_card=CardType.CONTENT_RESULT,
+    audit_category="feed_read",
+))
+
+_register(CapabilitySpec(
+    capability_id="feed.posts.get",
+    description="Read one PulseSoc post after enforcing its visibility boundary",
+    intents=("show post", "open post", "explain post", "post details"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.feed.posts.get",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_POST_ID,),
+    executor="feed_posts_get",
+    verifier="",
+    native_route="/pulse/post/:post_id",
+    result_card=CardType.CONTENT_RESULT,
+    audit_category="feed_read",
+))
+
+_register(CapabilitySpec(
+    capability_id="comments.list",
+    description="Read comments on a PulseSoc post visible to the authenticated user",
+    intents=("show comments on post", "what are people saying on post",
+             "read comments on post", "who commented on post"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.feed.comments.list",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        _POST_ID,
+        FieldSpec("limit", "int", required=False, minimum=1, maximum=80, default=40),
+    ),
+    executor="feed_comments_list",
+    verifier="",
+    native_route="/pulse/post/:post_id",
+    result_card=CardType.CONTENT_RESULT,
+    audit_category="feed_read",
+))
+
+_register(CapabilitySpec(
+    capability_id="feed.posts.like",
+    description="Like one viewable PulseSoc post",
+    intents=("like post", "like this post"),
+    risk=RiskLevel.REVERSIBLE_WRITE,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.feed.posts.like",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_POST_ID,),
+    executor="feed_post_like",
+    verifier="feed_post_like_value",
+    native_route="/pulse/post/:post_id",
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="feed_reactions_write",
+    target_field="post_id",
+    undo_capability_id="feed.posts.unlike",
+))
+
+_register(CapabilitySpec(
+    capability_id="feed.posts.unlike",
+    description="Remove the authenticated user's like from one PulseSoc post",
+    intents=("unlike post", "unlike this post", "remove my like from post"),
+    risk=RiskLevel.REVERSIBLE_WRITE,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.feed.posts.unlike",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_POST_ID,),
+    executor="feed_post_unlike",
+    verifier="feed_post_like_value",
+    native_route="/pulse/post/:post_id",
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="feed_reactions_write",
+    target_field="post_id",
+    undo_capability_id="feed.posts.like",
 ))
 
 

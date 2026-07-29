@@ -23,6 +23,7 @@ import {
   Platform,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -31,6 +32,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   cacheMessages,
+  cancelPulseAiAction,
   confirmPulseAiAction,
   createLocalMessage,
   deleteMessage,
@@ -102,6 +104,43 @@ function isLocalMessengerFixtureConversation(conversationId: number) {
 
 function qaFixtureTyping(conversationId: number) {
   return conversationId === 9003 ? "Maria is typing" : "";
+}
+
+function undxUndoCommand(component: UndxResponseComponent): string {
+  const args = component.undo_arguments || {};
+  const alertId = Number(args.alert_id || 0);
+  if (component.undo_capability_id === "crypto.alerts.resume" && alertId > 0) {
+    return `Resume alert ID ${alertId}`;
+  }
+  if (component.undo_capability_id === "crypto.alerts.pause" && alertId > 0) {
+    return `Pause alert ID ${alertId}`;
+  }
+  if (component.undo_capability_id === "saved.post.set") {
+    const postId = Number(args.post_id || 0);
+    if (postId > 0 && typeof args.saved === "boolean") {
+      return `${args.saved ? "Save" : "Unsave"} post ${postId}`;
+    }
+  }
+  if (component.undo_capability_id === "social.follow" || component.undo_capability_id === "social.unfollow") {
+    const targetUserId = Number(args.target_user_id || 0);
+    if (targetUserId > 0) {
+      return `${component.undo_capability_id === "social.follow" ? "Follow" : "Unfollow"} user ${targetUserId}`;
+    }
+  }
+  return "";
+}
+
+function undxUndoLabel(component: UndxResponseComponent): string {
+  if (component.undo_capability_id === "saved.post.set") {
+    return component.undo_arguments?.saved === true ? "Undo · Save again" : "Undo · Remove from Saved";
+  }
+  if (component.undo_capability_id === "social.follow") {
+    return "Undo · Follow again";
+  }
+  if (component.undo_capability_id === "social.unfollow") {
+    return "Undo · Unfollow";
+  }
+  return "Undo · Resume";
 }
 
 function LiveStatusDot({ warning }: { warning: boolean }) {
@@ -309,6 +348,14 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       return;
     }
     try {
+      const alertMatch = /^\/pulse\/alerts\/(\d+)\/?$/.exec(nativePath);
+      if (alertMatch) {
+        navigation.navigate("CryptoAlertManagement", {
+          alertId: Number(alertMatch[1]),
+          title: "Crypto alert",
+        });
+        return;
+      }
       openNativeRoute(navigation, nativePath);
     } catch {
       setStatusMessage("This result could not be opened in native PulseSoc.");
@@ -1039,7 +1086,13 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         </>
       )}
       {assistantConversation && undxComponents.length ? (
-        <View accessibilityLabel="UNDX action cards" style={styles.undxActionRail}>
+        <ScrollView
+          accessibilityLabel="UNDX action cards"
+          nestedScrollEnabled
+          showsVerticalScrollIndicator
+          style={styles.undxActionRailViewport}
+          contentContainerStyle={styles.undxActionRail}
+        >
           {undxComponents.map((component, index) => {
             // Both server dialects are read through one normaliser, so an agent
             // `action_confirmation` and a V4/V5 `confirmation_card` reach the same
@@ -1051,11 +1104,217 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             <View key={`${component.component}-${component.confirmation_id || index}`} style={styles.undxActionCard}>
               <Text style={styles.undxActionKicker}>{card.kicker}</Text>
               <Text style={styles.undxActionTitle}>{card.title}</Text>
-              <Text style={styles.undxActionBody}>{card.kind === "result" ? component.relevance_reason || `Canonical ID ${component.canonical_content_id}` : describeTransition(card)}</Text>
+              <Text style={styles.undxActionBody}>
+                {card.kind === "result"
+                  ? component.relevance_reason ||
+                    (component.capability_id === "saved.items.list"
+                      ? `${component.record_count ?? component.records?.length ?? 0} saved item${(component.record_count ?? component.records?.length ?? 0) === 1 ? "" : "s"}`
+                      : component.canonical_content_id
+                        ? `Canonical ID ${component.canonical_content_id}`
+                        : describeTransition(card))
+                  : describeTransition(card)}
+              </Text>
               {card.risk ? <Text style={styles.undxActionRisk}>{card.risk}</Text> : null}
+              {component.component === "crypto_alert_card" && component.records?.length ? (
+                <View style={styles.undxAlertList}>
+                  {component.records.map((record, recordIndex) => {
+                    const alertId = Number(record.alert_id || record.id || 0);
+                    const symbol = String(record.symbol || "Crypto");
+                    const displayName = String(record.display_name || `${symbol} alert`);
+                    const condition = String(record.condition || "alert");
+                    const threshold = record.threshold ?? record.threshold_value ?? "";
+                    const status = String(record.status || (record.paused ? "paused" : "active"));
+                    return (
+                      <Pressable
+                        key={`${alertId || symbol}-${recordIndex}`}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open ${symbol} alert ${alertId}`}
+                        style={styles.undxAlertRow}
+                        onPress={() => openUndxResult(alertId > 0 ? `/pulse/alerts/${alertId}` : card.deepLink)}
+                      >
+                        <View>
+                          <Text style={styles.undxAlertTitle}>{displayName}</Text>
+                          <Text style={styles.undxAlertMeta}>{condition} {String(threshold)} · {status}</Text>
+                        </View>
+                        <Text style={styles.undxAlertOpen}>Open ›</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+              {component.component === "content_result" && component.capability_id === "saved.items.list" && component.records?.length ? (
+                <View style={styles.undxAlertList}>
+                  {component.records.map((record, recordIndex) => {
+                    const itemId = Number(record.item_id || 0);
+                    const contentType = String(record.content_type || "content");
+                    const title = String(record.title || `Saved ${contentType}`);
+                    const preview = String(record.preview_text || "Open this saved PulseSoc item.");
+                    const sourceUrl = String(record.source_url || "/pulse/saved");
+                    return (
+                      <Pressable
+                        key={`${itemId || sourceUrl}-${recordIndex}`}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open saved ${contentType}: ${title}`}
+                        style={styles.undxAlertRow}
+                        onPress={() => openUndxResult(sourceUrl)}
+                      >
+                        <View style={styles.undxSavedCopy}>
+                          <Text style={styles.undxAlertTitle} numberOfLines={1}>{title}</Text>
+                          <Text style={styles.undxAlertMeta} numberOfLines={2}>{contentType} · {preview}</Text>
+                        </View>
+                        <Text style={styles.undxAlertOpen}>Open ›</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+              {component.component === "content_result" && ["feed.posts.list", "feed.posts.get"].includes(String(component.capability_id || "")) && component.records?.length ? (
+                <View style={styles.undxAlertList}>
+                  {component.records.map((record, recordIndex) => {
+                    const postId = Number(record.post_id || 0);
+                    const title = String(record.title || record.body || `PulseSoc post ${postId}`);
+                    const author = String(record.author_name || "PulseSoc Member");
+                    const reactions = Number(record.reaction_count || 0);
+                    const comments = Number(record.comment_count || 0);
+                    const sourceUrl = String(record.source_url || `/pulse/post/${postId}`);
+                    return (
+                      <Pressable
+                        key={`${postId}-${recordIndex}`}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open post ${postId} by ${author}`}
+                        style={styles.undxAlertRow}
+                        onPress={() => openUndxResult(sourceUrl)}
+                      >
+                        <View style={styles.undxSavedCopy}>
+                          <Text style={styles.undxAlertTitle} numberOfLines={2}>{title}</Text>
+                          <Text style={styles.undxAlertMeta} numberOfLines={1}>{author} · {reactions} reactions · {comments} comments</Text>
+                        </View>
+                        <Text style={styles.undxAlertOpen}>Open ›</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+              {component.component === "content_result" && component.capability_id === "comments.list" && component.records?.length ? (
+                <View style={styles.undxAlertList}>
+                  {component.records.map((record, recordIndex) => {
+                    const commentId = Number(record.comment_id || 0);
+                    const author = String(record.author_name || "PulseSoc Member");
+                    const body = String(record.body || "Comment");
+                    const sourceUrl = String(record.source_url || "/pulse");
+                    return (
+                      <Pressable
+                        key={`${commentId}-${recordIndex}`}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open comment ${commentId} by ${author}`}
+                        style={styles.undxAlertRow}
+                        onPress={() => openUndxResult(sourceUrl)}
+                      >
+                        <View style={styles.undxSavedCopy}>
+                          <Text style={styles.undxAlertTitle} numberOfLines={2}>{body}</Text>
+                          <Text style={styles.undxAlertMeta} numberOfLines={1}>{author} · comment {commentId}</Text>
+                        </View>
+                        <Text style={styles.undxAlertOpen}>Open ›</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+              {component.component === "profile_result" && component.capability_id === "social.followers.list" && component.records?.length ? (
+                <View style={styles.undxAlertList}>
+                  {component.records.map((record, recordIndex) => {
+                    const userId = Number(record.user_id || 0);
+                    const displayName = String(record.display_name || record.username || "PulseSoc Member");
+                    const username = String(record.username || "");
+                    const profileUrl = String(record.profile_url || (userId > 0 ? `/pulse/profile/${userId}` : "/pulse/profile"));
+                    return (
+                      <Pressable
+                        key={`${userId || username}-${recordIndex}`}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open ${displayName}'s profile`}
+                        style={styles.undxAlertRow}
+                        onPress={() => openUndxResult(profileUrl)}
+                      >
+                        <View style={styles.undxSavedCopy}>
+                          <Text style={styles.undxAlertTitle} numberOfLines={1}>{displayName}</Text>
+                          <Text style={styles.undxAlertMeta} numberOfLines={1}>{username ? `@${username}` : "PulseSoc profile"}</Text>
+                        </View>
+                        <Text style={styles.undxAlertOpen}>Open ›</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+              {component.component === "conversation_result" && component.capability_id === "conversations.list" && component.records?.length ? (
+                <View style={styles.undxAlertList}>
+                  {component.records.map((record, recordIndex) => {
+                    const conversationId = Number(record.conversation_id || 0);
+                    const title = String(record.title || "PulseSoc conversation");
+                    const kind = String(record.conversation_type || "conversation");
+                    const unread = Number(record.unread_count || 0);
+                    const sourceUrl = String(record.source_url || (conversationId > 0 ? `/pulse/messages/${conversationId}` : "/pulse/messages"));
+                    return (
+                      <Pressable
+                        key={`${conversationId || title}-${recordIndex}`}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open conversation ${title}`}
+                        style={styles.undxAlertRow}
+                        onPress={() => openUndxResult(sourceUrl)}
+                      >
+                        <View style={styles.undxSavedCopy}>
+                          <Text style={styles.undxAlertTitle} numberOfLines={1}>{title}</Text>
+                          <Text style={styles.undxAlertMeta} numberOfLines={1}>{kind}{unread > 0 ? ` · ${unread} unread` : " · read"}</Text>
+                        </View>
+                        <Text style={styles.undxAlertOpen}>Open ›</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+              {component.component === "conversation_result" && component.capability_id === "messages.list" && component.records?.length ? (
+                <View style={styles.undxAlertList}>
+                  {component.records.map((record, recordIndex) => {
+                    const messageId = Number(record.message_id || 0);
+                    const senderId = Number(record.sender_user_id || 0);
+                    const body = String(record.body || `[${String(record.message_type || "message")}]`);
+                    const sourceUrl = String(record.source_url || "/pulse/messages");
+                    return (
+                      <Pressable
+                        key={`${messageId}-${recordIndex}`}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open message ${messageId}`}
+                        style={styles.undxAlertRow}
+                        onPress={() => openUndxResult(sourceUrl)}
+                      >
+                        <View style={styles.undxSavedCopy}>
+                          <Text style={styles.undxAlertTitle} numberOfLines={2}>{body}</Text>
+                          <Text style={styles.undxAlertMeta} numberOfLines={1}>User {senderId} · message {messageId}</Text>
+                        </View>
+                        <Text style={styles.undxAlertOpen}>Open ›</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
               {card.kind === "confirmation" && card.expiresAt ? <Text style={styles.undxActionRisk}>Approval expires {card.expiresAt}</Text> : null}
               {card.kind === "receipt" && !card.verified ? <Text style={styles.undxActionRisk}>{component.verification_detail || "UNDX could not read this back, so it is not claiming the change is saved."}</Text> : null}
               {card.idempotentReplay ? <Text style={styles.undxActionRisk}>Already done earlier — not repeated.</Text> : null}
+              {card.verified && card.undoCapabilityId && undxUndoCommand(component) ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Undo UNDX action"
+                  disabled={undxActionBusy}
+                  style={styles.undxActionConfirm}
+                  onPress={() => {
+                    setUndxActionBusy(true);
+                    sendPayload({ body: undxUndoCommand(component) })
+                      .catch(() => undefined)
+                      .finally(() => setUndxActionBusy(false));
+                  }}
+                >
+                  {undxActionBusy ? <ActivityIndicator color="#06101b" /> : <Text style={styles.undxActionConfirmText}>{undxUndoLabel(component)}</Text>}
+                </Pressable>
+              ) : null}
               {card.kind === "result" && card.deepLink ? (
                 <Pressable accessibilityRole="link" accessibilityLabel={`Open ${component.content_type || "PulseSOC"} result`} style={styles.undxActionConfirm} onPress={() => openUndxResult(card.deepLink)}>
                   <Text style={styles.undxActionConfirmText}>Open</Text>
@@ -1068,7 +1327,25 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
               ) : null}
               {card.confirmationToken ? (
                 <View style={styles.undxActionButtons}>
-                  <Pressable accessibilityRole="button" accessibilityLabel="Cancel UNDX action" disabled={undxActionBusy || spent} style={styles.undxActionCancel} onPress={() => setUndxComponents([])}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel UNDX action"
+                    disabled={undxActionBusy || spent}
+                    style={styles.undxActionCancel}
+                    onPress={() => {
+                      const token = card.confirmationToken;
+                      if (!token) return;
+                      setUndxActionBusy(true);
+                      cancelPulseAiAction(token)
+                        .then((result) => {
+                          undxSpentTokens.current.add(token);
+                          setUndxComponents([]);
+                          setStatusMessage(result.message || "UNDX action cancelled.");
+                        })
+                        .catch((actionError) => setStatusMessage(actionError instanceof Error ? actionError.message : "UNDX could not cancel that action."))
+                        .finally(() => setUndxActionBusy(false));
+                    }}
+                  >
                     <Text style={styles.undxActionCancelText}>Cancel</Text>
                   </Pressable>
                   <Pressable accessibilityRole="button" accessibilityLabel="Confirm UNDX action" disabled={undxActionBusy || spent} style={styles.undxActionConfirm} onPress={() => confirmUndxAction(card.confirmationToken)}>
@@ -1079,7 +1356,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             </View>
             );
           })}
-        </View>
+        </ScrollView>
       ) : null}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={styles.composerAvoider}>
       <PulseCommandPanel style={[styles.composer, { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8) }, keyboardVisible && styles.composerKeyboard]}>
@@ -2093,6 +2370,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8
   },
+  undxActionRailViewport: { flexGrow: 0, maxHeight: 330 },
   undxActionCard: {
     backgroundColor: "rgba(15,25,46,0.98)",
     borderColor: "rgba(167,124,255,0.62)",
@@ -2105,6 +2383,12 @@ const styles = StyleSheet.create({
   undxActionTitle: { color: colors.text, fontSize: 16, fontWeight: "900" },
   undxActionBody: { color: colors.text, fontSize: 14, lineHeight: 20 },
   undxActionRisk: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+  undxAlertList: { gap: 8, marginTop: 4 },
+  undxAlertRow: { alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: 1, flexDirection: "row", justifyContent: "space-between", minHeight: 58, paddingHorizontal: 12, paddingVertical: 8 },
+  undxSavedCopy: { flex: 1, paddingRight: 10 },
+  undxAlertTitle: { color: colors.text, fontSize: 14, fontWeight: "900" },
+  undxAlertMeta: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  undxAlertOpen: { color: colors.accent, fontSize: 13, fontWeight: "900" },
   undxActionButtons: { flexDirection: "row", gap: 8, marginTop: 4 },
   undxActionCancel: { alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: 1, flex: 1, minHeight: 44, justifyContent: "center" },
   undxActionCancelText: { color: colors.text, fontWeight: "900" },

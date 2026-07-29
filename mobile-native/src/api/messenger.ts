@@ -457,6 +457,13 @@ export async function confirmPulseAiAction(confirmationToken: string) {
   });
 }
 
+export async function cancelPulseAiAction(confirmationToken: string) {
+  return pulseApi<{ ok: boolean; revoked?: boolean; message?: string }>("/api/pulse-ai/actions/cancel", {
+    method: "POST",
+    body: JSON.stringify({ confirmation_token: confirmationToken })
+  });
+}
+
 export async function syncConversation(conversationId: number, afterId = 0) {
   if (conversationId === PULSE_AI_CONVERSATION_ID) {
     const data = await getPulseAiConversation({ limit: 80 });

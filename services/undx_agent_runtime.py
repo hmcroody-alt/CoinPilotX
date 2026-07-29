@@ -283,6 +283,68 @@ def resolve_notification_arguments(text: str, arguments: dict[str, Any]) -> dict
     return derived
 
 
+def resolve_saved_arguments(text: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Narrow Saved-library reads from the user's own product wording."""
+    resolved = dict(arguments)
+    if clean(resolved.get("content_type"), 40) not in {"", "all"}:
+        return resolved
+    lowered = clean(text, MAX_TEXT_CHARS).lower()
+    types = (
+        ("reel", ("reel", "reels")),
+        ("post", ("post", "posts")),
+        ("status", ("status", "statuses")),
+        ("marketplace", ("listing", "listings", "marketplace")),
+        ("video", ("video", "videos")),
+    )
+    for content_type, words in types:
+        if any(re.search(rf"\b{word}\b", lowered) for word in words):
+            resolved["content_type"] = content_type
+            break
+    resolved.setdefault("content_type", "all")
+    return resolved
+
+
+def resolve_relationship_arguments(text: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Distinguish inbound followers from accounts the caller follows."""
+    resolved = dict(arguments)
+    if clean(resolved.get("direction"), 20) in {"followers", "following"}:
+        return resolved
+    lowered = clean(text, MAX_TEXT_CHARS).lower()
+    resolved["direction"] = (
+        "following"
+        if any(phrase in lowered for phrase in ("am i following", "i follow", "my following"))
+        else "followers"
+    )
+    return resolved
+
+
+def resolve_saved_post_write_arguments(text: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Extract an explicit post id and desired state; never infer a toggle."""
+    resolved = dict(arguments)
+    lowered = clean(text, MAX_TEXT_CHARS).lower()
+    if not resolved.get("post_id"):
+        match = re.search(r"\bpost(?:\s+#?|\s+number\s+)(\d+)\b", lowered)
+        if match:
+            resolved["post_id"] = int(match.group(1))
+    if "saved" not in resolved:
+        removing = any(
+            phrase in lowered
+            for phrase in ("unsave", "remove from saved", "remove post from saved")
+        )
+        resolved["saved"] = not removing
+    return resolved
+
+
+def resolve_user_target_arguments(text: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Extract an explicit numeric QA-safe user target; names require disambiguation."""
+    resolved = dict(arguments)
+    if not resolved.get("target_user_id"):
+        match = re.search(r"\b(?:user|account|member)\s+#?(\d+)\b", clean(text, MAX_TEXT_CHARS).lower())
+        if match:
+            resolved["target_user_id"] = int(match.group(1))
+    return resolved
+
+
 # ---------------------------------------------------------------------------
 # Native result cards
 # ---------------------------------------------------------------------------
@@ -447,6 +509,21 @@ def preview(user_id: int, spec: CapabilitySpec, arguments: dict[str, Any]) -> tu
             category = clean(arguments.get("category") or "global", 40)
             result = undx_agent_tools.notification_preferences_read(int(user_id), {"category": category})
             return (result.data or {}).get("push"), bool(arguments.get("push"))
+        if spec.capability_id == "saved.post.set" and arguments.get("post_id"):
+            from services.saved_content_service import get_post_saved
+
+            state = get_post_saved(int(user_id), int(arguments["post_id"])) or {}
+            return state.get("saved"), bool(arguments.get("saved"))
+        if spec.capability_id in {"social.follow", "social.unfollow"} and arguments.get("target_user_id"):
+            from services.social_relationship_service import is_following
+
+            before = is_following(int(user_id), int(arguments["target_user_id"]))
+            return before, spec.capability_id == "social.follow"
+        if spec.capability_id in {"feed.posts.like", "feed.posts.unlike"} and arguments.get("post_id"):
+            from services.feed_intelligence_service import get_post_like
+
+            before = get_post_like(int(user_id), int(arguments["post_id"]))
+            return before, spec.capability_id == "feed.posts.like"
     except Exception:  # pragma: no cover - a preview must never block the action
         return None, None
     return None, None
@@ -614,6 +691,32 @@ def handle(
                 Reference(0, detail="Tell UNDX whether to turn that on or off."),
                 request_id, int(user_id), started)
         arguments = derived
+    if spec.capability_id == "saved.items.list":
+        arguments = resolve_saved_arguments(text, arguments)
+    if spec.capability_id == "saved.post.set":
+        arguments = resolve_saved_post_write_arguments(text, arguments)
+    if spec.capability_id == "social.followers.list":
+        arguments = resolve_relationship_arguments(text, arguments)
+    if spec.capability_id in {"social.follow", "social.unfollow"}:
+        arguments = resolve_user_target_arguments(text, arguments)
+    if spec.capability_id == "messages.list" and not arguments.get("conversation_id"):
+        match = re.search(r"\bconversation\s*(?:id\s*)?#?\s*(\d+)\b", text, re.IGNORECASE)
+        if match:
+            arguments["conversation_id"] = int(match.group(1))
+    if spec.capability_id in {
+        "feed.posts.get", "comments.list", "feed.posts.like", "feed.posts.unlike",
+    } and not arguments.get("post_id"):
+        match = re.search(r"\bpost\s*(?:id\s*)?#?\s*(\d+)\b", text, re.IGNORECASE)
+        if match:
+            arguments["post_id"] = int(match.group(1))
+    if spec.capability_id == "feed.posts.list":
+        lowered = text.lower()
+        if "my latest" in lowered or "my posts" in lowered:
+            arguments["feed"] = "my_posts"
+        elif "trending" in lowered:
+            arguments["feed"] = "trending"
+        elif "following" in lowered:
+            arguments["feed"] = "following"
 
     # Read the before/after pair now, while nothing has changed, so a confirmation
     # card can state plainly what it is asking permission for.
@@ -666,4 +769,7 @@ __all__ = [
     "AgentResponse", "Reference", "available", "handle", "build_card",
     "match_capability", "is_explicit", "resolve_alert_reference",
     "resolve_notification_arguments",
+    "resolve_saved_arguments",
+    "resolve_relationship_arguments",
+    "resolve_saved_post_write_arguments",
 ]
