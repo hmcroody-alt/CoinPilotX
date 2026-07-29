@@ -699,12 +699,24 @@ def handle(
         arguments = resolve_relationship_arguments(text, arguments)
     if spec.capability_id in {"social.follow", "social.unfollow"}:
         arguments = resolve_user_target_arguments(text, arguments)
-    if spec.capability_id == "messages.list" and not arguments.get("conversation_id"):
+    if spec.capability_id in {
+        "messages.list", "messages.search", "conversations.summarize",
+        "messages.suggest", "messages.draft",
+    } and not arguments.get("conversation_id"):
         match = re.search(r"\bconversation\s*(?:id\s*)?#?\s*(\d+)\b", text, re.IGNORECASE)
         if match:
             arguments["conversation_id"] = int(match.group(1))
+    if spec.capability_id == "messages.search" and not arguments.get("query"):
+        match = re.search(r"(?:where|for)\s+(.+?)(?:\s+in\s+conversation\s+\d+)?[.!?]?$", text, re.IGNORECASE)
+        if match:
+            arguments["query"] = clean(match.group(1), 120)
+    if spec.capability_id == "messages.draft" and not arguments.get("body"):
+        match = re.search(r"(?:saying|say|body)\s+(.+?)(?:\s+to\s+conversation\s+\d+)?[.!?]?$", text, re.IGNORECASE)
+        if match:
+            arguments["body"] = clean(match.group(1), 2000)
     if spec.capability_id in {
         "feed.posts.get", "comments.list", "feed.posts.like", "feed.posts.unlike",
+        "feed.post.performance.summary", "feed.comments.summary",
     } and not arguments.get("post_id"):
         match = re.search(r"\bpost\s*(?:id\s*)?#?\s*(\d+)\b", text, re.IGNORECASE)
         if match:

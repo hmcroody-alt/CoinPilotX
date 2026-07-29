@@ -11,6 +11,10 @@ from unittest.mock import patch
 from services.messenger_intelligence_service import (
     list_conversation_messages,
     list_my_conversations,
+    prepare_reply_draft,
+    search_messages,
+    suggested_responses,
+    summarize_conversation,
 )
 
 
@@ -48,6 +52,8 @@ class MessengerReadPack(unittest.TestCase):
               (2,12,2,'active','',1,'','',80);
             INSERT INTO comm_v2_messages VALUES
               (101,'m101',10,2,'text','QA hello',0,'approved','2026-07-28','',''),
+              (104,'m104',10,1,'text','The launch is scheduled for Friday',0,'approved','2026-07-28','',''),
+              (105,'m105',10,2,'text','Please confirm the launch checklist',101,'approved','2026-07-28','',''),
               (102,'m102',12,2,'text','Other account secret',0,'approved','2026-07-28','',''),
               (103,'m103',10,2,'text','Removed',0,'approved','2026-07-28','','2026-07-28');
             """
@@ -91,7 +97,7 @@ class MessengerReadPack(unittest.TestCase):
 
     def test_messages_are_returned_only_after_membership_check(self) -> None:
         rows = list_conversation_messages(1, 10)
-        self.assertEqual([row["message_id"] for row in rows], [101])
+        self.assertEqual([row["message_id"] for row in rows], [101, 104, 105])
         self.assertEqual(rows[0]["body"], "QA hello")
 
     def test_foreign_conversation_messages_are_not_exposed(self) -> None:
@@ -106,6 +112,33 @@ class MessengerReadPack(unittest.TestCase):
         ).fetchone()
         conn.close()
         self.assertEqual(state, (3, 90))
+
+    def test_search_is_membership_scoped_and_bounded(self) -> None:
+        rows = search_messages(1, "launch", limit=10)
+        self.assertEqual([row["message_id"] for row in rows], [105, 104])
+        self.assertNotIn("Other account secret", {row["body"] for row in rows})
+        self.assertEqual(search_messages(1, "secret"), [])
+
+    def test_summary_is_deterministic_and_refuses_foreign_conversation(self) -> None:
+        summary = summarize_conversation(1, 10)
+        self.assertEqual(summary["conversation_id"], 10)
+        self.assertEqual(summary["message_count"], 3)
+        self.assertIn("launch checklist", summary["summary"])
+        self.assertIsNone(summarize_conversation(1, 12))
+
+    def test_suggestions_are_unsent_and_bound_to_source_message(self) -> None:
+        suggestions = suggested_responses(1, 10)
+        self.assertEqual(len(suggestions), 3)
+        self.assertEqual({row["based_on_message_id"] for row in suggestions}, {105})
+        self.assertEqual(suggested_responses(1, 12), [])
+
+    def test_draft_is_exactly_bound_and_never_send_enabled(self) -> None:
+        draft = prepare_reply_draft(1, 10, "I will review it.")
+        self.assertEqual(draft["conversation_id"], 10)
+        self.assertEqual(draft["body"], "I will review it.")
+        self.assertEqual(draft["status"], "unsent")
+        self.assertFalse(draft["send_enabled"])
+        self.assertIsNone(prepare_reply_draft(1, 12, "Do not leak"))
 
 
 if __name__ == "__main__":

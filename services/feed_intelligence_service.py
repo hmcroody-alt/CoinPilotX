@@ -25,6 +25,8 @@ def _post_record(post: dict[str, Any] | None) -> dict[str, Any]:
         "visibility": clean(post.get("visibility") or "public", 40),
         "created_at": clean(post.get("created_at"), 40),
         "comment_count": max(0, int(post.get("comment_count") or 0)),
+        "view_count": max(0, int(post.get("view_count") or 0)),
+        "repost_count": max(0, int(post.get("repost_count") or 0)),
         "reaction_count": sum(max(0, int(value or 0)) for value in reaction_counts.values()),
         "reaction_counts": {
             clean(key, 32): max(0, int(value or 0))
@@ -107,6 +109,73 @@ def list_post_comments(
     return records
 
 
+def post_performance_summary(user_id: int, post_id: int) -> dict[str, Any] | None:
+    """Return available canonical metrics for one post owned by the caller."""
+    owner_id, target_id = int(user_id or 0), int(post_id or 0)
+    post = get_post(owner_id, target_id)
+    if not post:
+        return None
+    conn = db_service.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM pulse_posts WHERE id=? AND user_id=? AND deleted_at IS NULL",
+            (target_id, owner_id),
+        )
+        if cur.fetchone() is None:
+            return None
+        cur.execute(
+            "SELECT COUNT(*) AS total FROM pulse_post_saves WHERE post_id=?",
+            (target_id,),
+        )
+        row = cur.fetchone()
+        saves = int(dict(row).get("total") or 0) if row else 0
+    finally:
+        conn.close()
+    return {
+        "post_id": target_id,
+        "title": clean(post.get("title") or "Post performance", 180),
+        "likes": int((post.get("reaction_counts") or {}).get("like") or 0),
+        "reactions": int(post.get("reaction_count") or 0),
+        "comments": int(post.get("comment_count") or 0),
+        "shares": int(post.get("repost_count") or 0),
+        "saves": max(0, saves),
+        "views": int(post.get("view_count") or 0),
+        "available_metrics": ("views", "reactions", "likes", "comments", "shares", "saves"),
+        "source_url": f"/pulse/post/{target_id}",
+    }
+
+
+def summarize_post_comments(user_id: int, post_id: int, *, limit: int = 40) -> dict[str, Any] | None:
+    """Summarize an owned post's visible comments without model inference."""
+    owner_id, target_id = int(user_id or 0), int(post_id or 0)
+    post = get_post(owner_id, target_id)
+    if not post:
+        return None
+    conn = db_service.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM pulse_posts WHERE id=? AND user_id=? AND deleted_at IS NULL",
+            (target_id, owner_id),
+        )
+        if cur.fetchone() is None:
+            return None
+    finally:
+        conn.close()
+    comments = list_post_comments(owner_id, target_id, limit=limit)
+    excerpts = [clean(item.get("body"), 140) for item in comments if clean(item.get("body"), 140)]
+    authors = {int(item.get("author_user_id") or 0) for item in comments}
+    return {
+        "post_id": target_id,
+        "title": clean(post.get("title") or "Comment summary", 180),
+        "comment_count": len(comments),
+        "participant_count": len({item for item in authors if item > 0}),
+        "summary": " · ".join(excerpts[-5:]) or "No visible comments are available.",
+        "source_url": f"/pulse/post/{target_id}",
+    }
+
+
 def get_post_like(user_id: int, post_id: int) -> bool | None:
     """Return the caller's like state, or None when the post is not viewable."""
     owner_id, target_id = int(user_id or 0), int(post_id or 0)
@@ -168,5 +237,6 @@ def set_post_like(user_id: int, post_id: int, *, liked: bool) -> dict[str, Any]:
 
 
 __all__ = [
-    "get_post", "get_post_like", "list_post_comments", "list_posts", "set_post_like",
+    "get_post", "get_post_like", "list_post_comments", "list_posts",
+    "post_performance_summary", "set_post_like", "summarize_post_comments",
 ]

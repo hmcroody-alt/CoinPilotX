@@ -842,6 +842,30 @@ _live(
               "tests/undx_agent/test_feed_intelligence_pack.py",
               "mobile-native/src/navigation/linking.ts PostDetail"),
 )
+_live(
+    "feed.post.performance.summary",
+    product_area="Feed posts", resource_type="post_performance",
+    native_screen="PostDetail", backend_route="UNDX governed tool",
+    domain_service="services.feed_intelligence_service", domain_operation="post_performance_summary",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("post_id", "int"), ("views", "int"), ("reactions", "int"),
+                   ("comments", "int"), ("shares", "int"), ("saves", "int")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/feed_intelligence_service.py:post_performance_summary",
+              "tests/undx_agent/test_feed_intelligence_pack.py"),
+)
+_live(
+    "feed.comments.summary",
+    product_area="Comments", resource_type="comment_summary",
+    native_screen="PostDetail", backend_route="UNDX governed tool",
+    domain_service="services.feed_intelligence_service", domain_operation="summarize_post_comments",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("post_id", "int"), ("comment_count", "int"),
+                   ("participant_count", "int"), ("summary", "str")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/feed_intelligence_service.py:summarize_post_comments",
+              "tests/undx_agent/test_feed_intelligence_pack.py"),
+)
 _mapped(
     "feed.posts.create",
     product_area="Feed posts", resource_type="post",
@@ -1329,6 +1353,19 @@ _live(
     evidence=("services/messenger_intelligence_service.py:list_my_conversations",
               "tests/undx_agent/test_messenger_read_pack.py"),
 )
+_live(
+    "conversations.summarize",
+    product_area="Conversations", resource_type="conversation_summary",
+    native_screen="Chat",
+    backend_route="UNDX governed tool",
+    domain_service="services.messenger_intelligence_service",
+    domain_operation="summarize_conversation",
+    authorization_scope=_MEMBER, owner_field="user_id",
+    output_schema=(("conversation_id", "int"), ("message_count", "int"), ("summary", "str")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/messenger_intelligence_service.py:summarize_conversation",
+              "tests/undx_agent/test_messenger_read_pack.py"),
+)
 _mapped(
     "conversations.get",
     product_area="Conversations", resource_type="conversation",
@@ -1419,6 +1456,40 @@ _live(
     feature_flag="UNDX_AGENT_READS_ENABLED",
     evidence=("services/messenger_intelligence_service.py:list_conversation_messages",
               "tests/undx_agent/test_messenger_read_pack.py"),
+)
+_live(
+    "messages.search",
+    product_area="Messages", resource_type="message",
+    native_screen="Chat", backend_route="UNDX governed tool",
+    domain_service="services.messenger_intelligence_service", domain_operation="search_messages",
+    authorization_scope=_MEMBER, owner_field="user_id",
+    output_schema=(("message_id", "int"), ("conversation_id", "int"), ("body", "str")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/messenger_intelligence_service.py:search_messages",
+              "tests/undx_agent/test_messenger_read_pack.py"),
+)
+_live(
+    "messages.suggest",
+    product_area="Messages", resource_type="reply_suggestion",
+    native_screen="Chat", backend_route="UNDX governed tool",
+    domain_service="services.messenger_intelligence_service", domain_operation="suggested_responses",
+    authorization_scope=_MEMBER, owner_field="user_id",
+    output_schema=(("suggestion_id", "int"), ("conversation_id", "int"), ("body", "str")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/messenger_intelligence_service.py:suggested_responses",
+              "tests/undx_agent/test_messenger_read_pack.py"),
+)
+_live(
+    "messages.draft",
+    product_area="Messages", resource_type="message_draft",
+    native_screen="Chat", backend_route="UNDX governed tool",
+    domain_service="services.messenger_intelligence_service", domain_operation="prepare_reply_draft",
+    authorization_scope=_MEMBER, owner_field="user_id",
+    output_schema=(("draft_id", "str"), ("conversation_id", "int"), ("body", "str"), ("send_enabled", "bool")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/messenger_intelligence_service.py:prepare_reply_draft",
+              "tests/undx_agent/test_messenger_read_pack.py"),
+    known_limitations=("Draft creation does not send and cannot be promoted to send without a separately certified confirmation capability.",),
 )
 _mapped(
     "messages.send",

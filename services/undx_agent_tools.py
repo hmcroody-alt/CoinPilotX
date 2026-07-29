@@ -536,6 +536,76 @@ def messages_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
         latency_ms=_timed(started),
     )
 
+def messages_search(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.messenger_intelligence_service import search_messages
+
+    conversation_id = int(arguments.get("conversation_id") or 0)
+    records = search_messages(
+        int(user_id), clean(arguments.get("query"), 120),
+        conversation_id=conversation_id, limit=int(arguments.get("limit") or 30),
+    )
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.messages.search", capability_id="messages.search",
+        canonical_resource_id=f"user:{int(user_id)}:message-search",
+        records=records,
+        data={"record_count": len(records), "conversation_id": conversation_id},
+        latency_ms=_timed(started),
+    )
+
+
+def conversation_summarize(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.messenger_intelligence_service import summarize_conversation
+
+    conversation_id = int(arguments.get("conversation_id") or 0)
+    record = summarize_conversation(
+        int(user_id), conversation_id, limit=int(arguments.get("limit") or 50),
+    )
+    if not record:
+        return _fail(
+            "pulsesoc.conversations.summarize", "conversations.summarize", "not_found",
+            "UNDX could not summarize a conversation you are allowed to view.", started=started,
+        )
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.conversations.summarize",
+        capability_id="conversations.summarize",
+        canonical_resource_id=f"conversation:{conversation_id}",
+        records=[record], data=record, latency_ms=_timed(started),
+    )
+
+
+def messages_suggest(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.messenger_intelligence_service import suggested_responses
+
+    conversation_id = int(arguments.get("conversation_id") or 0)
+    records = suggested_responses(int(user_id), conversation_id)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.messages.suggest", capability_id="messages.suggest",
+        canonical_resource_id=f"conversation:{conversation_id}:suggestions",
+        records=records, data={"conversation_id": conversation_id, "record_count": len(records)},
+        latency_ms=_timed(started),
+    )
+
+
+def message_draft(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.messenger_intelligence_service import prepare_reply_draft
+
+    conversation_id = int(arguments.get("conversation_id") or 0)
+    record = prepare_reply_draft(int(user_id), conversation_id, clean(arguments.get("body"), 2000))
+    if not record:
+        return _fail(
+            "pulsesoc.messages.draft", "messages.draft", "not_found",
+            "UNDX could not prepare a draft for that conversation.", started=started,
+        )
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.messages.draft", capability_id="messages.draft",
+        canonical_resource_id=clean(record.get("draft_id"), 100),
+        records=[record], data=record, latency_ms=_timed(started),
+    )
+
 
 def feed_posts_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
     started = time.perf_counter()
@@ -582,6 +652,45 @@ def feed_comments_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
         ok=True, tool_name="pulsesoc.feed.comments.list", capability_id="comments.list",
         canonical_resource_id=f"post:{post_id}:comments", records=records,
         data={"post_id": post_id, "record_count": len(records)}, latency_ms=_timed(started),
+    )
+
+def feed_post_performance_summary(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.feed_intelligence_service import post_performance_summary
+
+    post_id = int(arguments.get("post_id") or 0)
+    record = post_performance_summary(int(user_id), post_id)
+    if not record:
+        return _fail(
+            "pulsesoc.feed.post.performance.summary", "feed.post.performance.summary",
+            "not_found", "UNDX could not find one of your posts with that ID.", started=started,
+        )
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.feed.post.performance.summary",
+        capability_id="feed.post.performance.summary",
+        canonical_resource_id=f"post:{post_id}", records=[record], data=record,
+        latency_ms=_timed(started),
+    )
+
+
+def feed_comments_summary(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.feed_intelligence_service import summarize_post_comments
+
+    post_id = int(arguments.get("post_id") or 0)
+    record = summarize_post_comments(
+        int(user_id), post_id, limit=int(arguments.get("limit") or 40),
+    )
+    if not record:
+        return _fail(
+            "pulsesoc.feed.comments.summary", "feed.comments.summary",
+            "not_found", "UNDX could not summarize comments for a post you own.", started=started,
+        )
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.feed.comments.summary",
+        capability_id="feed.comments.summary",
+        canonical_resource_id=f"post:{post_id}:comment-summary",
+        records=[record], data=record, latency_ms=_timed(started),
     )
 
 def _set_post_like(
@@ -649,9 +758,15 @@ EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
     "social_unfollow": social_unfollow,
     "conversations_list": conversations_list,
     "messages_list": messages_list,
+    "messages_search": messages_search,
+    "conversation_summarize": conversation_summarize,
+    "messages_suggest": messages_suggest,
+    "message_draft": message_draft,
     "feed_posts_list": feed_posts_list,
     "feed_posts_get": feed_posts_get,
     "feed_comments_list": feed_comments_list,
+    "feed_post_performance_summary": feed_post_performance_summary,
+    "feed_comments_summary": feed_comments_summary,
     "feed_post_like": feed_post_like,
     "feed_post_unlike": feed_post_unlike,
 }

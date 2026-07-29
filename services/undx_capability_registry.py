@@ -544,6 +544,57 @@ _register(CapabilitySpec(
     audit_category="messenger_read",
 ))
 
+_register(CapabilitySpec(
+    capability_id="messages.search",
+    description="Search approved messages inside the authenticated user's active conversations",
+    intents=("find the message where", "search my messages for", "search conversation for"),
+    risk=RiskLevel.READ_ONLY, confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.messages.search", permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        FieldSpec("query", "str", required=True, max_length=120),
+        FieldSpec("conversation_id", "int", required=False, minimum=1, default=0),
+        FieldSpec("limit", "int", required=False, minimum=1, maximum=50, default=30),
+    ),
+    executor="messages_search", verifier="", native_route="/pulse/messages/:conversation_id",
+    result_card=CardType.CONVERSATION_RESULT, audit_category="messenger_read",
+))
+
+_register(CapabilitySpec(
+    capability_id="conversations.summarize",
+    description="Summarize a bounded window from one authenticated Messenger membership",
+    intents=("summarize conversation", "summarize chat", "what did we discuss in conversation"),
+    risk=RiskLevel.READ_ONLY, confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.conversations.summarize", permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        _CONVERSATION_ID,
+        FieldSpec("limit", "int", required=False, minimum=1, maximum=100, default=50),
+    ),
+    executor="conversation_summarize", verifier="", native_route="/pulse/messages/:conversation_id",
+    result_card=CardType.CONVERSATION_RESULT, audit_category="messenger_read",
+))
+
+_register(CapabilitySpec(
+    capability_id="messages.suggest",
+    description="Prepare unsent suggested responses for one authenticated conversation",
+    intents=("suggest replies for conversation", "suggest a response", "what should i reply"),
+    risk=RiskLevel.READ_ONLY, confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.messages.suggest", permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_CONVERSATION_ID,),
+    executor="messages_suggest", verifier="", native_route="/pulse/messages/:conversation_id",
+    result_card=CardType.CONVERSATION_RESULT, audit_category="messenger_draft",
+))
+
+_register(CapabilitySpec(
+    capability_id="messages.draft",
+    description="Prepare an unsent reply draft bound to an authenticated conversation",
+    intents=("prepare a reply to conversation", "draft a reply to conversation"),
+    risk=RiskLevel.READ_ONLY, confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.messages.draft", permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_CONVERSATION_ID, FieldSpec("body", "str", required=True, max_length=2000)),
+    executor="message_draft", verifier="", native_route="/pulse/messages/:conversation_id",
+    result_card=CardType.CONVERSATION_RESULT, audit_category="messenger_draft",
+))
+
 
 # --- Feed intelligence ----------------------------------------------------
 
@@ -602,6 +653,35 @@ _register(CapabilitySpec(
     native_route="/pulse/post/:post_id",
     result_card=CardType.CONTENT_RESULT,
     audit_category="feed_read",
+))
+
+_register(CapabilitySpec(
+    capability_id="feed.post.performance.summary",
+    description="Summarize available engagement metrics for one post owned by the authenticated user",
+    intents=("how did my post perform", "show post performance", "post engagement summary"),
+    risk=RiskLevel.READ_ONLY, confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.feed.post.performance.summary",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_POST_ID,),
+    executor="feed_post_performance_summary", verifier="",
+    native_route="/pulse/post/:post_id", result_card=CardType.CONTENT_RESULT,
+    audit_category="feed_analytics_read",
+))
+
+_register(CapabilitySpec(
+    capability_id="feed.comments.summary",
+    description="Summarize visible comments on one post owned by the authenticated user",
+    intents=("summarize comments on my post", "comment summary for post"),
+    risk=RiskLevel.READ_ONLY, confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.feed.comments.summary",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        _POST_ID,
+        FieldSpec("limit", "int", required=False, minimum=1, maximum=80, default=40),
+    ),
+    executor="feed_comments_summary", verifier="",
+    native_route="/pulse/post/:post_id", result_card=CardType.CONTENT_RESULT,
+    audit_category="feed_analytics_read",
 ))
 
 _register(CapabilitySpec(

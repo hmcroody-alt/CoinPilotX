@@ -1220,6 +1220,36 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
                   })}
                 </View>
               ) : null}
+              {component.component === "content_result" && [
+                "feed.post.performance.summary", "feed.comments.summary",
+              ].includes(String(component.capability_id || "")) && component.records?.length ? (
+                <View style={styles.undxAlertList}>
+                  {component.records.map((record, recordIndex) => {
+                    const postId = Number(record.post_id || 0);
+                    const sourceUrl = String(record.source_url || `/pulse/post/${postId}`);
+                    const isPerformance = component.capability_id === "feed.post.performance.summary";
+                    const title = String(record.title || (isPerformance ? "Post performance" : "Comment summary"));
+                    const detail = isPerformance
+                      ? `${Number(record.views || 0)} views · ${Number(record.reactions || 0)} reactions · ${Number(record.comments || 0)} comments · ${Number(record.shares || 0)} shares · ${Number(record.saves || 0)} saves`
+                      : String(record.summary || "No visible comments are available.");
+                    return (
+                      <Pressable
+                        key={`${postId}-${recordIndex}`}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open post ${postId} ${isPerformance ? "performance" : "comment summary"}`}
+                        style={styles.undxAlertRow}
+                        onPress={() => openUndxResult(sourceUrl)}
+                      >
+                        <View style={styles.undxSavedCopy}>
+                          <Text style={styles.undxAlertTitle} numberOfLines={2}>{title}</Text>
+                          <Text style={styles.undxAlertMeta} numberOfLines={3}>{detail}</Text>
+                        </View>
+                        <Text style={styles.undxAlertOpen}>Open ›</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
               {component.component === "profile_result" && component.capability_id === "social.followers.list" && component.records?.length ? (
                 <View style={styles.undxAlertList}>
                   {component.records.map((record, recordIndex) => {
@@ -1289,6 +1319,39 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
                         <View style={styles.undxSavedCopy}>
                           <Text style={styles.undxAlertTitle} numberOfLines={2}>{body}</Text>
                           <Text style={styles.undxAlertMeta} numberOfLines={1}>User {senderId} · message {messageId}</Text>
+                        </View>
+                        <Text style={styles.undxAlertOpen}>Open ›</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+              {component.component === "conversation_result" && [
+                "messages.search", "conversations.summarize", "messages.suggest", "messages.draft",
+              ].includes(String(component.capability_id || "")) && component.records?.length ? (
+                <View style={styles.undxAlertList}>
+                  {component.records.map((record, recordIndex) => {
+                    const conversationId = Number(record.conversation_id || 0);
+                    const text = String(record.summary || record.body || "Messenger result");
+                    const sourceUrl = String(record.source_url || (conversationId > 0 ? `/pulse/messages/${conversationId}` : "/pulse/messages"));
+                    const meta = record.draft_id
+                      ? `Unsent draft · ${String(record.draft_id)}`
+                      : record.message_count
+                        ? `${Number(record.message_count)} messages · ${Number(record.participant_count || 0)} participants`
+                        : record.based_on_message_id
+                          ? `Suggestion · based on message ${Number(record.based_on_message_id)}`
+                          : `Conversation ${conversationId} · message ${Number(record.message_id || 0)}`;
+                    return (
+                      <Pressable
+                        key={`${String(record.draft_id || record.suggestion_id || record.message_id || recordIndex)}-${recordIndex}`}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open Messenger result ${recordIndex + 1}`}
+                        style={styles.undxAlertRow}
+                        onPress={() => openUndxResult(sourceUrl)}
+                      >
+                        <View style={styles.undxSavedCopy}>
+                          <Text style={styles.undxAlertTitle} numberOfLines={3}>{text}</Text>
+                          <Text style={styles.undxAlertMeta} numberOfLines={1}>{meta}</Text>
                         </View>
                         <Text style={styles.undxAlertOpen}>Open ›</Text>
                       </Pressable>
