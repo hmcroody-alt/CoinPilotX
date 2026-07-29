@@ -34835,14 +34835,16 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     mobile_bottom_icons = {"chat": chat_icon_svg}
     mobile_bottom_icons = {"chat": chat_icon_svg, "profile": shell_avatar_html}
     mobile_bottom_items = [
-        ("Home", "/pulse", "⌂", "home"),
-        ("Reels", "/pulse/reels", "▶", "reels"),
-        ("Create", "#create", "＋", "create"),
-        ("Messages", "/pulse/messages", "chat", "messages"),
-        ("Profile", "/pulse/profile", "profile", "profile"),
+        ("Home", "/pulse", "⌂"),
+        ("Reels", "/pulse/reels", "▶"),
+        ("Create", "#create", "＋"),
+        ("Messages", "/pulse/messages", "chat"),
+        ("Profile", "/pulse/profile", "profile"),
     ]
+    mobile_bottom_action_by_label = {"Home": "home", "Reels": "reels", "Create": "create", "Messages": "messages", "Profile": "profile"}
     mobile_bottom_html = ""
-    for label, href, icon, action in mobile_bottom_items:
+    for label, href, icon in mobile_bottom_items:
+        action = mobile_bottom_action_by_label.get(label, label.lower())
         badge = ""
         if label == "Messages":
             badge = "<span class='pulse-notification-badge nav-badge' data-chat-unread hidden>0</span>"
@@ -37699,6 +37701,15 @@ def api_pulse_status_ai_story():
     return jsonify({"ok": True, "story": story, "captions": ai_story_service.caption_suggestions(prompt), "trace_id": secrets.token_hex(6)})
 
 
+def pulse_music_upload_requires_review(context_type="", media=None):
+    """Direct uploaded music requires rights review before it becomes creator-safe catalog audio."""
+    context_type = str(context_type or "").strip().lower()
+    media = media if isinstance(media, dict) else {}
+    media_type = str(media.get("media_type") or "").strip().lower()
+    mime_type = str(media.get("mime_type") or "").strip().lower()
+    return context_type == "pulse_status_music" or media_type == "audio" or mime_type.startswith("audio/")
+
+
 @webhook_app.route("/api/pulse/status", methods=["POST"])
 def api_pulse_status_create():
     init_db()
@@ -37823,6 +37834,21 @@ def api_pulse_status_create():
             music_payload = ai_context.get("music") or {}
             cur.execute("SELECT * FROM chat_media_uploads WHERE id=? LIMIT 1", (music_media_id,))
             media_row = dict(cur.fetchone() or {})
+            if music_media_id and not media_row:
+                conn.close()
+                return pulse_status_error("Selected sound could not be found. Please choose it again.", 400, trace_id, "music_media_not_found")
+            upload_requires_review = bool(music_media_id and not music_track_id and pulse_music_upload_requires_review("pulse_status_music", media_row))
+            if upload_requires_review:
+                ai_context["music_upload_requires_review"] = {
+                    "media_id": music_media_id,
+                    "review_status": "pending",
+                    "reason": "direct_creator_upload",
+                    "message": "Direct uploaded music is pending rights review before catalog promotion.",
+                }
+                cur.execute(
+                    "UPDATE pulse_status SET ai_context_json=? WHERE id=?",
+                    (json.dumps(ai_context, default=str)[:3000], status_id),
+                )
             cur.execute(
                 """
                 INSERT INTO pulse_status_music (status_id, audio_track_id, title, artist, waveform_json, created_at)
@@ -37832,7 +37858,7 @@ def api_pulse_status_create():
                     status_id,
                     music_media_id or 0,
                     clean_html(music_payload.get("title") or media_row.get("original_filename") or "Original PulseSoc sound")[:180],
-                    clean_html(music_payload.get("artist") or "PulseSoc creator")[:180],
+                    clean_html(music_payload.get("artist") or ("PulseSoc creator · Review pending" if upload_requires_review else "PulseSoc creator"))[:180],
                     json.dumps(music_payload.get("waveform") or [], default=str),
                     now.isoformat(timespec="seconds"),
                 ),
@@ -38281,6 +38307,81 @@ def pulse_identity_for_user(cur, user_id):
             "premium_mark": None,
             "premium_verified": False,
         }
+
+
+def pulse_identities_for_users(cur, user_ids, trace_id=""):
+    """Batch PulseSoc identity cards for list surfaces without per-row DB reads."""
+    ids = []
+    for user_id in user_ids or []:
+        try:
+            clean_id = int(user_id or 0)
+        except Exception:
+            clean_id = 0
+        if clean_id and clean_id not in ids:
+            ids.append(clean_id)
+    if not ids:
+        return {}
+    placeholders = ",".join(["?"] * len(ids))
+    rows_by_user = {user_id: {"user_id": user_id} for user_id in ids}
+    badge_keys_by_user = {user_id: [] for user_id in ids}
+    badge_labels_by_user = {user_id: [] for user_id in ids}
+    try:
+        cur.execute(
+            f"""
+            SELECT u.user_id, u.username, u.email, u.full_name, u.display_name AS user_display_name,
+                   u.display_name, u.avatar_url AS user_avatar_url, u.avatar_url, u.bio, COALESCE(u.cover_url,u.banner_url,'') AS banner_url,
+                   u.plan, u.subscription_plan, u.subscription_status, u.is_pro, u.pro_active,
+                   u.pro_expires_at, u.subscription_expires_at, u.premium_status, u.premium_expires_at,
+                   u.lifetime_premium, u.premium_glow_manual_grant, u.premium_mark_override, u.premium_mark_type,
+                   fm.founder_number, fm.founder_tier, fm.status AS founder_status,
+                   COALESCE(upp.trust_score,0) AS trust_score, COALESCE(upp.current_level,'New User') AS current_level,
+                   la.status AS livestream_status, ap.public_player_id, ap.avatar_url AS arena_avatar_url
+            FROM users u
+            LEFT JOIN founder_memberships fm ON fm.user_id=u.user_id AND fm.status='active'
+            LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
+            LEFT JOIN user_privilege_profiles upp ON upp.user_id=u.user_id
+            LEFT JOIN livestream_access la ON la.user_id=u.user_id
+            WHERE u.user_id IN ({placeholders})
+            """,
+            tuple(ids),
+        )
+        for row in cur.fetchall() or []:
+            item = dict(row)
+            rows_by_user[int(item.get("user_id") or 0)] = item
+    except Exception as exc:
+        logging.warning("PULSE_IDENTITY_BATCH_USER_QUERY_FAILED trace_id=%s count=%s error=%s", trace_id, len(ids), exc.__class__.__name__)
+    try:
+        cur.execute(
+            f"""
+            SELECT ub.user_id, ub.badge_key, COALESCE(b.label, ub.badge_key) AS label
+            FROM pulse_user_badges ub
+            LEFT JOIN pulse_badges b ON b.badge_key=ub.badge_key
+            WHERE ub.user_id IN ({placeholders}) AND COALESCE(b.active,1)=1
+            ORDER BY ub.user_id ASC, ub.id ASC
+            """,
+            tuple(ids),
+        )
+        for row in cur.fetchall() or []:
+            item = dict(row)
+            user_id = int(item.get("user_id") or 0)
+            if user_id not in badge_keys_by_user:
+                continue
+            key = str(item.get("badge_key") or "")
+            label = str(item.get("label") or key)
+            if key and len(badge_keys_by_user[user_id]) < 24:
+                badge_keys_by_user[user_id].append(key)
+            if label and len(badge_labels_by_user[user_id]) < 24:
+                badge_labels_by_user[user_id].append(label)
+    except Exception as exc:
+        logging.warning("PULSE_IDENTITY_BATCH_BADGE_QUERY_FAILED trace_id=%s count=%s error=%s", trace_id, len(ids), exc.__class__.__name__)
+    return {
+        user_id: pulse_identity_engine.build_identity(
+            rows_by_user.get(user_id) or {"user_id": user_id},
+            badge_keys_by_user.get(user_id) or [],
+            badge_labels_by_user.get(user_id) or [],
+        )
+        for user_id in ids
+    }
 
 
 def pulse_premium_mark_html(mark):
@@ -39122,6 +39223,74 @@ def pulse_conversation_summaries(cur, user_id, include_types=None, limit=80, tra
             typing_display_names = {int(dict(r)["user_id"]): dict(r)["display_name"] for r in cur.fetchall() or []}
         except Exception as exc:
             logging.warning("PULSE_CONVERSATION_LIST_TYPING_NAMES_FAILED trace_id=%s error=%s", trace_id, exc.__class__.__name__)
+    conversation_ids = [int(dict(row).get("id") or 0) for row in conversation_rows if int(dict(row).get("id") or 0)]
+    participant_preview_by_conversation = {conversation_id: [] for conversation_id in conversation_ids}
+    unread_count_by_conversation = {}
+    preview_user_ids = set()
+    identity_user_ids = {
+        int(dict(row).get("participant_user_id") or 0)
+        for row in conversation_rows
+        if int(dict(row).get("participant_user_id") or 0)
+    }
+    if conversation_ids:
+        placeholders = ",".join(["?"] * len(conversation_ids))
+        try:
+            cur.execute(
+                f"""
+                SELECT conversation_id, COUNT(*) AS total
+                FROM pulse_messages
+                WHERE conversation_id IN ({placeholders})
+                  AND sender_user_id!=?
+                  AND COALESCE(deleted_at,'')=''
+                  AND id>COALESCE((
+                    SELECT last_read_message_id
+                    FROM pulse_conversation_participants p
+                    WHERE p.conversation_id=pulse_messages.conversation_id
+                      AND p.user_id=?
+                    LIMIT 1
+                  ),0)
+                GROUP BY conversation_id
+                """,
+                tuple(conversation_ids) + (user_id, user_id),
+            )
+            unread_count_by_conversation = {
+                int(dict(row).get("conversation_id") or 0): int(dict(row).get("total") or 0)
+                for row in cur.fetchall() or []
+            }
+        except Exception as exc:
+            logging.warning("PULSE_CONVERSATION_UNREAD_BATCH_FAILED trace_id=%s count=%s error=%s", trace_id, len(conversation_ids), exc.__class__.__name__)
+        try:
+            cur.execute(
+                f"""
+                SELECT conversation_id, user_id
+                FROM (
+                    SELECT conversation_id, user_id,
+                           ROW_NUMBER() OVER (
+                             PARTITION BY conversation_id
+                             ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+                                      joined_at ASC,
+                                      created_at ASC
+                           ) AS rn
+                    FROM pulse_conversation_participants
+                    WHERE conversation_id IN ({placeholders})
+                      AND COALESCE(left_at,'')=''
+                )
+                WHERE rn<=6
+                ORDER BY conversation_id ASC, rn ASC
+                """,
+                tuple(conversation_ids),
+            )
+            for preview_row in cur.fetchall() or []:
+                preview_item = dict(preview_row)
+                conversation_id = int(preview_item.get("conversation_id") or 0)
+                preview_id = int(preview_item.get("user_id") or 0)
+                if conversation_id and preview_id:
+                    participant_preview_by_conversation.setdefault(conversation_id, []).append(preview_id)
+                    preview_user_ids.add(preview_id)
+        except Exception as exc:
+            logging.warning("PULSE_CONVERSATION_PREVIEW_BATCH_FAILED trace_id=%s count=%s error=%s", trace_id, len(conversation_ids), exc.__class__.__name__)
+    identity_user_ids.update(preview_user_ids)
+    identities_by_user = pulse_identities_for_users(cur, identity_user_ids, trace_id=trace_id)
     for row in conversation_rows:
         try:
             item = dict(row)
@@ -39132,7 +39301,8 @@ def pulse_conversation_summaries(cur, user_id, include_types=None, limit=80, tra
             convo_type = item.get("conversation_type") or "direct"
             if convo_type == "direct":
                 try:
-                    other = pulse_identity_for_user(cur, item.get("participant_user_id") or 0)
+                    other_id = int(item.get("participant_user_id") or 0)
+                    other = identities_by_user.get(other_id) or pulse_identity_engine.build_identity({"user_id": other_id}, [], [])
                 except Exception:
                     logging.exception("PULSE_CONVERSATION_IDENTITY_FAILED trace_id=%s conversation_id=%s", trace_id, conversation_id)
                     other = {"name": "PulseSoc user", "avatar_url": "", "premium_mark": None}
@@ -39141,52 +39311,21 @@ def pulse_conversation_summaries(cur, user_id, include_types=None, limit=80, tra
             latest = pulse_safe_message_preview(item.get("latest_message"), item.get("latest_message_type"))
             unread_count = int(item.get("my_unread_count") or 0)
             if not unread_count:
-                try:
-                    cur.execute(
-                        """
-                        SELECT COUNT(*) AS total
-                        FROM pulse_messages
-                        WHERE conversation_id=?
-                          AND sender_user_id!=?
-                          AND COALESCE(deleted_at,'')=''
-                          AND id>COALESCE(?,0)
-                        """,
-                        (conversation_id, user_id, int(item.get("my_last_read_message_id") or 0)),
-                    )
-                    unread_count = int(dict(cur.fetchone() or {}).get("total") or 0)
-                except Exception:
-                    logging.exception("PULSE_CONVERSATION_UNREAD_FAILED trace_id=%s conversation_id=%s", trace_id, conversation_id)
+                unread_count = int(unread_count_by_conversation.get(conversation_id) or 0)
             typing_names = [
                 typing_display_names.get(uid) or "PulseSoc member"
                 for uid in sorted(typing_by_conversation.get(str(conversation_id), {}))
             ][:3]
             preview_users = []
-            try:
-                cur.execute(
-                    """
-                    SELECT user_id
-                    FROM pulse_conversation_participants
-                    WHERE conversation_id=? AND COALESCE(left_at,'')=''
-                    ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, joined_at ASC, created_at ASC
-                    LIMIT 6
-                    """,
-                    (conversation_id,),
-                )
-                for preview_row in cur.fetchall():
-                    preview_id = int(dict(preview_row).get("user_id") or 0)
-                    try:
-                        preview_ident = pulse_identity_for_user(cur, preview_id)
-                    except Exception:
-                        preview_ident = {"name": "PulseSoc user", "avatar_url": "", "public_player_id": pulse_public_id_for_user(preview_id)}
-                    preview_users.append({
-                        "id": preview_id,
-                        "display_name": preview_ident.get("name") or "PulseSoc user",
-                        "avatar_url": preview_ident.get("avatar_url") or "",
-                        "public_pulse_id": f"@{preview_ident.get('public_player_id') or pulse_public_id_for_user(preview_id)}",
-                        "is_self": preview_id == user_id,
-                    })
-            except Exception:
-                logging.exception("PULSE_CONVERSATION_PREVIEW_FAILED trace_id=%s conversation_id=%s", trace_id, conversation_id)
+            for preview_id in participant_preview_by_conversation.get(conversation_id, [])[:6]:
+                preview_ident = identities_by_user.get(preview_id) or pulse_identity_engine.build_identity({"user_id": preview_id}, [], [])
+                preview_users.append({
+                    "id": preview_id,
+                    "display_name": preview_ident.get("name") or "PulseSoc user",
+                    "avatar_url": preview_ident.get("avatar_url") or "",
+                    "public_pulse_id": f"@{preview_ident.get('public_player_id') or pulse_public_id_for_user(preview_id)}",
+                    "is_self": preview_id == user_id,
+                })
             conversations.append({
                 "id": conversation_id,
                 "conversation_id": conversation_id,
@@ -39226,6 +39365,7 @@ def pulse_room_definition(room_id):
 
 def pulse_ensure_default_rooms(cur, current_user_id):
     rooms = []
+    room_member_ids_by_conversation = {}
     for room in PULSE_CHAT_ROOMS:
         try:
             result, _ = pulse_get_or_create_room_conversation(cur, current_user_id, room_key=room["key"])
@@ -39268,16 +39408,8 @@ def pulse_ensure_default_rooms(cur, current_user_id):
             # presence service who is actually live instead.
             cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
             member_ids = [int(dict(row).get("user_id") or 0) for row in cur.fetchall()]
+            room_member_ids_by_conversation[conversation_id] = member_ids
             online_count = 0
-            try:
-                from services import presence_service
-
-                room_presence = presence_service.presence_for(cur, int(current_user_id or 0), member_ids)
-                online_count = sum(1 for item in room_presence.values() if item.get("online"))
-            except Exception as exc:
-                # Fail closed: an unreadable presence store reports an empty
-                # room, never a full one.
-                logging.warning("PULSE_ROOM_PRESENCE_UNAVAILABLE room=%s error=%s", room.get("key"), exc.__class__.__name__)
             cur.execute("SELECT COALESCE(unread_count,0) AS unread_count, COALESCE(last_read_message_id,0) AS last_read_message_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, current_user_id))
             mine = dict(cur.fetchone() or {})
             unread_count = int(mine.get("unread_count") or 0)
@@ -39325,6 +39457,22 @@ def pulse_ensure_default_rooms(cur, current_user_id):
                 "partial": True,
             })
             continue
+    if room_member_ids_by_conversation:
+        try:
+            from services import presence_service
+
+            all_member_ids = sorted({member_id for ids in room_member_ids_by_conversation.values() for member_id in ids if member_id})
+            room_presence = presence_service.presence_for(cur, int(current_user_id or 0), all_member_ids)
+            for room in rooms:
+                conversation_id = int(room.get("conversation_id") or 0)
+                member_ids = room_member_ids_by_conversation.get(conversation_id) or []
+                online_count = sum(1 for member_id in member_ids if (room_presence.get(int(member_id)) or {}).get("online"))
+                room["online_count"] = online_count
+                room["energy"] = min(99, online_count * 12)
+        except Exception as exc:
+            # Fail closed: an unreadable presence store reports empty rooms,
+            # never fabricated activity bars.
+            logging.warning("PULSE_ROOM_PRESENCE_BATCH_UNAVAILABLE rooms=%s error=%s", len(room_member_ids_by_conversation), exc.__class__.__name__)
     return rooms
 
 
@@ -91186,6 +91334,11 @@ def api_pulse_media_upload():
         result["status_id"] = ""
         result["media_url"] = result["media"].get("valid_url") or result["media"].get("media_url") or ""
         result["message"] = result.get("message") or "Media uploaded and verified."
+        if pulse_music_upload_requires_review(context_type, result.get("media") or {}):
+            result["media"]["music_upload_requires_review"] = True
+            result["media"]["rights_review_status"] = "pending"
+            result["music_upload_requires_review"] = True
+            result["message"] = "Sound uploaded. It requires rights review before catalog promotion."
         try:
             media = result.get("media") or {}
             now = datetime.utcnow().isoformat(timespec="seconds")

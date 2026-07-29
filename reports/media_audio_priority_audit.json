@@ -1,5 +1,5 @@
 {
-  "ok": false,
+  "ok": true,
   "checks": [
     {
       "name": "api field audio_id",
@@ -118,7 +118,7 @@
     },
     {
       "name": "home shell create links are in-page",
-      "ok": false,
+      "ok": true,
       "detail": "new Home shell Create buttons do not navigate to legacy create"
     },
     {
