@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
+import {
+  activateRealtimeAudioSession,
+  applyRemoteAudioEnabled as driveRemoteAudioEnabled,
+  audioPublications,
+  ensureMicrophonePublished,
+  PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
+  PULSE_LIVE_VIDEO_PUBLISH_OPTIONS,
+  publicationHasTrack,
+  releaseRealtimeAudioSession,
+  resolveRealtimeAudioConfiguration,
+  selectRealtimeAudioOutput,
+  type RealtimeAudioMode,
+  videoPublications
+} from "../core/realtimeAudioEngine";
 import type { LiveKitCredentials } from "./liveSession";
 
 /**
@@ -71,102 +85,21 @@ const initialState: LiveBroadcastState = {
 
 let globalsRegistered = false;
 
-export type AppleAudioConfiguration = {
-  audioCategory: string;
-  audioMode: string;
-  audioCategoryOptions: string[];
-};
-
-/**
- * Pick the iOS AVAudioSession profile for a Live participant.
- *
- * Calls are the known-good native audio path. Live uses the same
- * playAndRecord/videoChat profile for host, co-host, and viewer roles so
- * LiveKit remote audio has the same call-grade output route and interruption
- * semantics instead of a media-playback-only session that can be stolen by
- * Reels/Radio/media playback.
- */
-export function resolveLiveAudioConfiguration(publish: boolean): AppleAudioConfiguration {
-  return {
-    audioCategory: "playAndRecord",
-    audioMode: "videoChat",
-    audioCategoryOptions: ["allowBluetooth", "allowBluetoothA2DP", "allowAirPlay", "defaultToSpeaker"]
-  };
-}
+export const applyRemoteAudioEnabled = driveRemoteAudioEnabled;
+export const ensureLiveMicrophonePublished = ensureMicrophonePublished;
+export const resolveLiveAudioConfiguration = resolveRealtimeAudioConfiguration;
 
 function readableError(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
 function firstVideoTrack(participant: any): any | null {
-  const publications = Array.from(participant?.videoTrackPublications?.values?.() || []) as any[];
+  const publications = videoPublications(participant);
   return publications.find((publication) => publication?.track && publication?.isSubscribed !== false)?.track || null;
-}
-
-function audioPublications(participant: any): any[] {
-  return Array.from(participant?.audioTrackPublications?.values?.() || []) as any[];
-}
-
-/**
- * Drive the viewer's remote-audio on/off preference onto EVERY currently
- * subscribed remote audio track.
- *
- * The production bug this closes: muting host audio only toggled the tracks that
- * happened to be subscribed at that instant. A track that arrives LATER — the
- * host republishing after a mic toggle, a co-host joining, or every remote track
- * being re-subscribed after a LiveKit reconnect — starts enabled, so a viewer who
- * turned the host's sound off would suddenly hear it again. Callers persist the
- * desired state in a ref and re-invoke this on TrackSubscribed and Reconnected so
- * the preference is authoritative for the whole session, not just one moment.
- *
- * Exported so the regression suite can assert the toggling against a fake room
- * without the native LiveKit stack. Returns how many tracks were actually driven.
- */
-export async function applyRemoteAudioEnabled(room: any, enabled: boolean): Promise<number> {
-  let touched = 0;
-  const tasks: Promise<unknown>[] = [];
-  for (const remote of Array.from(room?.remoteParticipants?.values?.() || []) as any[]) {
-    for (const publication of audioPublications(remote)) {
-      const track = publication?.track;
-      if (!track || publication?.isSubscribed === false) continue;
-      if (typeof track.setEnabled === "function") {
-        tasks.push(Promise.resolve(track.setEnabled(enabled)));
-        touched += 1;
-      } else if (track.mediaStreamTrack) {
-        track.mediaStreamTrack.enabled = enabled;
-        touched += 1;
-      }
-    }
-  }
-  await Promise.all(tasks).catch(() => undefined);
-  return touched;
-}
-
-export async function ensureLiveMicrophonePublished(room: any): Promise<number> {
-  const localParticipant = room?.localParticipant;
-  if (!localParticipant) return 0;
-  await localParticipant.setMicrophoneEnabled(true);
-  let count = audioPublications(localParticipant).filter(publicationHasTrack).length;
-  if (count > 0) return count;
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  count = audioPublications(localParticipant).filter(publicationHasTrack).length;
-  if (count > 0) return count;
-  await localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
-  await localParticipant.setMicrophoneEnabled(true);
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  return audioPublications(localParticipant).filter(publicationHasTrack).length;
-}
-
-function videoPublications(participant: any): any[] {
-  return Array.from(participant?.videoTrackPublications?.values?.() || []) as any[];
 }
 
 function firstAudioTrack(participant: any): any | null {
   return audioPublications(participant).find((publication) => publication?.track && publication?.isSubscribed !== false)?.track || null;
-}
-
-function publicationHasTrack(publication: any): boolean {
-  return Boolean(publication?.track && publication?.isSubscribed !== false);
 }
 
 function isAudioMuted(participant: any): boolean {
@@ -188,9 +121,15 @@ function readRole(participant: any): string {
   }
 }
 
+function liveAudioMode(credentials: LiveKitCredentials, publish: boolean): RealtimeAudioMode {
+  if (!publish) return "live_viewer";
+  return credentials.role === "cohost" || credentials.guestId > 0 ? "live_guest" : "live_host";
+}
+
 export function useLiveBroadcastRoom() {
   const roomRef = useRef<any>(null);
   const audioSessionRef = useRef<any>(null);
+  const audioOwnerIdRef = useRef("");
   const activeSpeakersRef = useRef<Set<string>>(new Set());
   // Desired viewer remote-audio state; reapplied to tracks that subscribe after
   // the user toggled sound off (co-host join, host republish, reconnect).
@@ -256,9 +195,8 @@ export function useLiveBroadcastRoom() {
     activeSpeakersRef.current = new Set();
     remoteAudioEnabledRef.current = true;
     if (room?.disconnect) await room.disconnect().catch(() => undefined);
-    if (audioSessionRef.current?.stopAudioSession) {
-      await audioSessionRef.current.stopAudioSession().catch(() => undefined);
-    }
+    await releaseRealtimeAudioSession(audioSessionRef.current, audioOwnerIdRef.current || reason).catch(() => undefined);
+    audioOwnerIdRef.current = "";
     setState((current) => ({
       ...current,
       connecting: false,
@@ -298,18 +236,15 @@ export function useLiveBroadcastRoom() {
           globalsRegistered = true;
         }
         audioSessionRef.current = livekitNative.AudioSession;
-        // AUDIO SESSION OWNERSHIP: match the known-good native call audio path.
-        // LiveKit auto audio configuration is disabled, so PulseSoc must claim a
-        // call-grade AVAudioSession before connecting. This prevents the Live viewer
-        // from rendering video while remote host audio has no call-compatible route.
-        const appleAudioConfiguration = resolveLiveAudioConfiguration(publish);
-        if (Platform.OS === "ios" && typeof livekitNative.AudioSession.setAppleAudioConfiguration === "function") {
-          await livekitNative.AudioSession.setAppleAudioConfiguration(
-            appleAudioConfiguration as Parameters<typeof livekitNative.AudioSession.setAppleAudioConfiguration>[0]
-          ).catch(() => undefined);
-        }
-        await livekitNative.AudioSession.configureAudio({ ios: { defaultOutput: "speaker" } }).catch(() => undefined);
-        await livekitNative.AudioSession.startAudioSession();
+        // AUDIO SESSION OWNERSHIP: use the canonical call-grade media engine.
+        // LiveKit auto audio configuration is disabled, so PulseSoc must claim
+        // one owner-controlled AVAudioSession before connecting or publishing.
+        const mediaMode = liveAudioMode(credentials, publish);
+        const appleAudioConfiguration = resolveLiveAudioConfiguration(mediaMode);
+        audioOwnerIdRef.current = `live:${mediaMode}:${credentials.room || credentials.identity || Date.now()}`;
+        await activateRealtimeAudioSession(livekitNative.AudioSession, mediaMode, audioOwnerIdRef.current, {
+          speaker: true
+        });
 
         const room = new livekitClient.Room({
           adaptiveStream: true,
@@ -319,7 +254,9 @@ export function useLiveBroadcastRoom() {
             noiseSuppression: true,
             autoGainControl: true
           },
+          videoCaptureDefaults: PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
           publishDefaults: {
+            ...PULSE_LIVE_VIDEO_PUBLISH_OPTIONS,
             simulcast: true,
             dtx: true,
             red: true,
@@ -392,17 +329,19 @@ export function useLiveBroadcastRoom() {
         await room.connect(credentials.url, credentials.token, { autoSubscribe: true });
         if (publish) {
           await ensureLiveMicrophonePublished(room);
-          await room.localParticipant.setCameraEnabled(true);
+          await room.localParticipant.setCameraEnabled(true, PULSE_LIVE_VIDEO_CAPTURE_OPTIONS, PULSE_LIVE_VIDEO_PUBLISH_OPTIONS);
+          await ensureLiveMicrophonePublished(room);
           await new Promise((resolve) => setTimeout(resolve, 150));
         }
-        await livekitNative.AudioSession.selectAudioOutput(Platform.OS === "ios" ? "force_speaker" : "speaker").catch(() => undefined);
+        await selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
         await applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current).catch(() => undefined);
         refresh();
         const publishedAudioCount = audioPublications(room.localParticipant).filter(publicationHasTrack).length;
         if (publish && publishedAudioCount <= 0) {
           const message = "Microphone connected, but PulseSoc could not verify a published audio track.";
           await room.disconnect?.().catch(() => undefined);
-          await livekitNative.AudioSession.stopAudioSession?.().catch(() => undefined);
+          await releaseRealtimeAudioSession(livekitNative.AudioSession, audioOwnerIdRef.current).catch(() => undefined);
+          audioOwnerIdRef.current = "";
           roomRef.current = null;
           setState((current) => ({
             ...current,
@@ -467,16 +406,17 @@ export function useLiveBroadcastRoom() {
   const setCameraEnabled = useCallback(async (enabled: boolean) => {
     const room = roomRef.current;
     if (!room) throw new Error("Broadcast media is not connected.");
-    await room.localParticipant.setCameraEnabled(enabled);
+    await room.localParticipant.setCameraEnabled(enabled, PULSE_LIVE_VIDEO_CAPTURE_OPTIONS, PULSE_LIVE_VIDEO_PUBLISH_OPTIONS);
+    const localAudioTrackCount = await ensureLiveMicrophonePublished(room);
+    if (localAudioTrackCount <= 0) throw new Error("Camera changed, but microphone audio is no longer published.");
     refreshParticipants(room);
-    setState((current) => ({ ...current, videoEnabled: enabled, error: "" }));
+    setState((current) => ({ ...current, videoEnabled: enabled, audioEnabled: true, localAudioTrackCount, error: "", diagnosticCode: "" }));
   }, [refreshParticipants]);
 
   const setSpeakerEnabled = useCallback(async (enabled: boolean) => {
     const audioSession = audioSessionRef.current;
     if (!audioSession) throw new Error("Broadcast audio session is not available.");
-    const output = Platform.OS === "ios" ? (enabled ? "force_speaker" : "default") : enabled ? "speaker" : "earpiece";
-    await audioSession.selectAudioOutput(output);
+    await selectRealtimeAudioOutput(audioSession, enabled);
     setState((current) => ({ ...current, speakerEnabled: enabled, error: "" }));
   }, []);
 
@@ -500,14 +440,21 @@ export function useLiveBroadcastRoom() {
     const publication = publications.find((item) => item?.track);
     if (!publication?.track?.switchCamera) throw new Error("Camera is not active.");
     await publication.track.switchCamera();
-  }, []);
+    const room = roomRef.current;
+    const localAudioTrackCount = await ensureLiveMicrophonePublished(room);
+    if (localAudioTrackCount <= 0) throw new Error("Camera switched, but microphone audio is no longer published.");
+    refreshParticipants(room);
+    setState((current) => ({ ...current, audioEnabled: true, localAudioTrackCount, error: "", diagnosticCode: "" }));
+  }, [refreshParticipants]);
 
   useEffect(
     () => () => {
       const room = roomRef.current;
+      const ownerId = audioOwnerIdRef.current;
       roomRef.current = null;
+      audioOwnerIdRef.current = "";
       room?.disconnect?.().catch(() => undefined);
-      audioSessionRef.current?.stopAudioSession?.().catch(() => undefined);
+      releaseRealtimeAudioSession(audioSessionRef.current, ownerId).catch(() => undefined);
     },
     []
   );
