@@ -88,13 +88,56 @@ class ReversibleWriteJourney(Journey):
     def test_a_question_is_not_an_instruction(self):
         """"Should I pause my alert?" must not pause the alert.
 
-        Hedged phrasing fails the explicitness test, so a CONTEXTUAL policy escalates
-        to a confirmation card instead of acting. This is the difference between an
-        assistant and a hazard.
+        Asserted against the database, because that is the property that matters and
+        it is the one that survives changes underneath it. An earlier version of this
+        test asserted ``status != "verified_success"``, which was true for the wrong
+        reason: the message reached ``crypto.alerts.pause``, failed the explicitness
+        test, and escalated to a confirmation card. The matcher now declines to route a
+        hedged message to a write at all, so the turn succeeds — as a *read*, listing
+        the alerts, which is a better answer to the question actually asked. Asserting
+        on the status would have flagged that improvement as a regression.
         """
         response = self.say("should i pause my bitcoin alert?")
-        self.assertNotEqual(response.status, "verified_success")
         self.assertEqual(self.fx.alert_status(self.alert_id), "active")
+        self.assertNotEqual(response.receipt.capability_id, "crypto.alerts.pause")
+
+    def test_a_negated_write_does_not_reach_the_write(self):
+        """"Do not pause my alert" shares every scoring token with "pause my alert".
+
+        A subsequence matcher cannot tell them apart, so the refusal has to be made
+        explicitly. ``crypto.alerts.pause`` confirms CONTEXTUAL and would show a card
+        here, but the capabilities that make this urgent are the reversible writes that
+        confirm ``never`` — there is nothing behind the match for those.
+        """
+        response = self.say("do not pause my bitcoin alert")
+        self.assertEqual(self.fx.alert_status(self.alert_id), "active")
+        self.assertNotEqual(response.receipt.capability_id, "crypto.alerts.pause")
+
+    def test_the_negation_has_to_scope_over_the_write(self):
+        """A message can contain "do not" and still be an instruction.
+
+        "Delete alert 3 and do not ask again" negates the asking, not the deleting.
+        Refusing it would trade one wrong behaviour for another, so the negation is
+        required to sit immediately before the capability's own verb.
+        """
+        response = self.say("pause my bitcoin alert and do not ask me again")
+        self.assertEqual(response.receipt.capability_id, "crypto.alerts.pause")
+        self.assertEqual(self.fx.alert_status(self.alert_id), "paused")
+
+    def test_a_planner_proposal_still_faces_the_explicitness_test(self):
+        """The two refusals sit at different layers, and both are load-bearing.
+
+        Routing declines hedged phrasings, but a planner can name the capability
+        directly, and then no routing happened to decline anything. What stops the act
+        there is ``is_explicit``, which sends a CONTEXTUAL write to a confirmation card.
+        Because every intent phrase for this capability contains an explicit verb, this
+        path is now the only way to observe that gate — so it is tested here rather
+        than left to be discovered missing.
+        """
+        response = self.say("should i pause my bitcoin alert?",
+                            capability_id="crypto.alerts.pause")
+        self.assertEqual(self.fx.alert_status(self.alert_id), "active")
+        self.assertIn("confirmation_token", response.card)
 
     def test_the_receipt_carries_a_native_deep_link(self):
         response = self.say("pause my bitcoin alert")
@@ -470,7 +513,13 @@ class HonestFailure(Journey):
 
 
 class OutcomeCoverage(Journey):
-    """All seven canonical outcomes are reachable, and the suite reaches them."""
+    """Every canonical outcome is reachable, and the suite reaches it.
+
+    Deliberately a scan of the test sources rather than a list maintained by hand.
+    Adding ``clarification_required`` to ``AgentOutcome`` failed this on the first run,
+    before a single Batch 11 test existed — which is what it is for. A new outcome
+    nothing asserts on is a wire value the native client may meet before any test has.
+    """
 
     def test_every_canonical_outcome_is_exercised_somewhere(self):
         from services.undx_agent_contracts import AgentOutcome

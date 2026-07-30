@@ -578,20 +578,39 @@ def create_alert_rule(
     return {"ok": True, "alert_id": alert_id, "alert": rule, "message": "Alert activated.", "warnings": channel_warnings(user_id, channel_map)}
 
 
-def list_alert_rules(user_id, limit=100, include_deleted=False):
+def list_alert_rules(user_id, limit=100, include_deleted=False, symbol=None):
+    """The caller's alert rules, newest and active first, capped at ``limit``.
+
+    ``symbol`` narrows the query rather than the result, and the difference is the
+    whole reason it exists. Callers used to read a page and filter it in memory, which
+    is correct only while the page holds everything: an account with more rules than
+    the cap would have its Bitcoin alerts filtered out of a window that never contained
+    them. ``undx_agent_runtime.resolve_alert_reference`` decides "exactly one of your
+    alerts matches" from this call, and asking the narrow question here is what lets it
+    answer about a narrow set instead of refusing about a wide one.
+
+    Optional and defaulted, so every existing caller keeps the behaviour it had.
+    """
     ensure_alert_schema()
     reconcile_legacy_alerts(user_id=user_id)
     conn = user_context.connect()
     cur = conn.cursor()
     status_clause = "" if include_deleted else "AND COALESCE(status, 'active')!='deleted' AND deleted_at IS NULL"
+    symbol_clause = ""
+    parameters = [user_id]
+    wanted = str(symbol or "").strip().upper()
+    if wanted:
+        symbol_clause = "AND UPPER(COALESCE(symbol, ''))=?"
+        parameters.append(wanted)
+    parameters.append(int(limit))
     cur.execute(
         f"""
         SELECT * FROM alert_rules
-        WHERE user_id=? {status_clause}
+        WHERE user_id=? {status_clause} {symbol_clause}
         ORDER BY CASE WHEN COALESCE(status, 'active')='active' THEN 0 ELSE 1 END, updated_at DESC, id DESC
         LIMIT ?
         """,
-        (user_id, int(limit)),
+        tuple(parameters),
     )
     rows = [_public_rule(_row_to_dict(row)) for row in cur.fetchall()]
     conn.close()

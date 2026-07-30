@@ -159,5 +159,17 @@ class AgentFixture:
         rule = alert_engine.get_alert_rule(int(alert_id), int(user_id))
         return "" if not rule else str(rule.get("status") or "active")
 
+    def alert_threshold(self, alert_id: int, user_id: int = OWNER_ID) -> float:
+        """The trigger price, read the same way and for the same reason.
 
-__all__ = ["AgentFixture", "ENABLED_FLAGS", "OWNER_ID", "OTHER_ID", "OUTSIDER_ID"]
+        Needed by tests that assert a write did *not* happen. After a confirmation card
+        the interesting claim is that the row still holds the old number, and only the
+        service can make that claim without the agent vouching for itself.
+        """
+        from services import alert_engine
+
+        rule = alert_engine.get_alert_rule(int(alert_id), int(user_id))
+        return 0.0 if not rule else float(rule.get("threshold") or 0.0)
+
+
+__all__ =["AgentFixture", "ENABLED_FLAGS", "OWNER_ID", "OTHER_ID", "OUTSIDER_ID"]

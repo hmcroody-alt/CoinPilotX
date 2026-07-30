@@ -44,7 +44,12 @@ import time
 from typing import Any
 
 from services import undx_agent_policy as policy
-from services import undx_agent_tools, undx_architecture, undx_verification
+from services import (
+    undx_agent_tools,
+    undx_architecture,
+    undx_response_intelligence,
+    undx_verification,
+)
 from services.undx_agent_contracts import (
     MAX_EXECUTION_SECONDS,
     AgentError,
@@ -127,9 +132,53 @@ def _receipt(spec: CapabilitySpec, *, user_id: int, request_id: str, task_id: st
         native_deep_link=spec.deep_link(arguments or {}),
         undo_capability_id=spec.undo_capability_id if undo_arguments is not None else "",
         undo_arguments=dict(undo_arguments or {}),
-        user_explanation=clean(explanation, 400),
+        # Bounded by the response layer's own limit rather than by a local number. The
+        # previous 400 truncated a detailed answer mid-clause, which turns an honest
+        # explanation of a partial result into a sentence that stops before the part
+        # the person needed.
+        user_explanation=clean(explanation, undx_response_intelligence.MAX_EXPLANATION_CHARS),
         risk_level=spec.risk,
         retry_count=int(retry_count),
+    )
+
+
+def _last_resort_receipt(spec: CapabilitySpec, *, user_id: int, request_id: str,
+                         task_id: str, status: str, explanation: str,
+                         evidence: dict[str, Any]) -> AgentReceipt:
+    """A receipt built without using anything that might be what just failed.
+
+    :func:`execute` used to build its final, defensive receipt by calling
+    :func:`_receipt` — the same function that may be the reason it is in the handler
+    at all. Fault injection showed that plainly: making ``_receipt`` raise made
+    ``execute`` raise too, *after* the executor had run, with the user's alert already
+    paused in the database. That is the one thing the design says cannot happen, and
+    the comment claiming the tail was wrapped "so that a defect in the defences is not
+    itself the leak" was describing an intention rather than the code. A handler that
+    re-enters the failing call is not a handler.
+
+    So this constructs the dataclass directly and touches nothing that can throw. No
+    ``deep_link()``, no ``undo_arguments()``, no ``clean()``, no attribute lookups
+    across module boundaries — only plain reads off a frozen spec and literals. The
+    status and verification state are module constants rather than computed values, so
+    ``AgentReceipt.__post_init__`` cannot reject them either.
+
+    What this gives up is real: no deep link, no undo affordance, no verification
+    detail, an explanation that says less than the situation deserves. All of that is
+    the correct trade. A thin receipt reaches the person as "something happened and I
+    could not describe it, go and look" — an exception reaches them as a chatbot
+    cheerfully discussing something else while their data has already changed.
+    """
+    return AgentReceipt(
+        task_id=str(task_id or ""),
+        request_id=str(request_id or ""),
+        capability_id=spec.capability_id,
+        action=spec.description,
+        status=status,
+        owner_user_id=int(user_id),
+        verification_state=VerificationState.IMPOSSIBLE,
+        evidence=dict(evidence),
+        user_explanation=explanation,
+        risk_level=spec.risk,
     )
 
 
@@ -163,9 +212,20 @@ def _checkpoint(cur) -> None:
         owner.commit()
 
 
+#: The same call, under a name the runtime is allowed to say.
+#:
+#: The runtime now writes a row of its own before replying — the remembered question
+#: behind a clarification — and it needs exactly the guarantee documented above: a
+#: promise shown to the person must be one the database has already made. Reaching for
+#: the underscored name across a module boundary would work and would be a lie about
+#: the interface; copying the four lines would put the reasoning in two places and
+#: leave one of them to rot. So the function is published instead.
+checkpoint = _checkpoint
+
+
 def _mint_confirmation(cur, user_id: int, spec: CapabilitySpec, arguments: dict[str, Any],
                        *, task_id: str, current_value: Any, proposed_value: Any,
-                       risk_summary: str) -> ConfirmationRequest:
+                       risk_summary: str, resource_label: str = "") -> ConfirmationRequest:
     """Create the approval a confirmation card is built from.
 
     The token is bound to the capability id and to the hash of the *validated*
@@ -178,6 +238,12 @@ def _mint_confirmation(cur, user_id: int, spec: CapabilitySpec, arguments: dict[
     # list of argument names. A gateway that knows the words ``alert_id`` and
     # ``category`` shows an unnamed card — "approve this change to *what*?" — the
     # first time a pack arrives whose target is called something else.
+    #
+    # That fixed "approve *what*" for the machine and not for the person: the target
+    # it produces for an alert is the row id, which is correct as identity and empty
+    # as description. ``resource_label`` carries the description, supplied by the
+    # caller because reading the row is the caller's job — this function is on the
+    # authorisation path and must not acquire a data dependency it could fail on.
     target = spec.canonical_target(arguments)
     grant = undx_architecture.create_confirmation(
         cur, int(user_id),
@@ -200,6 +266,7 @@ def _mint_confirmation(cur, user_id: int, spec: CapabilitySpec, arguments: dict[
         expires_at=grant["expires_at"],
         argument_hash=canonical_hash(arguments),
         task_id=task_id,
+        resource_label=clean(resource_label, 160),
     )
 
 
@@ -403,36 +470,53 @@ def _status_for(spec: CapabilitySpec, result: ToolResult, verification: Verifica
     return AgentOutcome.ACCEPTED_UNVERIFIED
 
 
+def _compose_response(spec: CapabilitySpec, status: str, result: ToolResult,
+                      verification: VerificationResult, *, question: str = "",
+                      history: tuple[str, ...] = ()) -> tuple[str, dict[str, Any]]:
+    """Build the sentence and the plan that justifies it.
+
+    This is where the old failure mode lived. Every earlier version chose its wording
+    from the *outcome code*, so four rows, one row, zero rows and zero-rows-because-a-
+    table-was-unreachable all produced the same five words — the runtime's hardest-won
+    distinctions dying one inch from the reader. The response layer composes from the
+    evidence instead, and audits its own output before handing it back.
+
+    It is also the only place a rendering fault could turn a completed action into an
+    exception, so it must not raise. A failure here degrades to a terse but true
+    sentence and an empty plan; it never costs the user their receipt.
+    """
+    try:
+        text, plan = undx_response_intelligence.compose(
+            spec, status, result, verification, question=question, history=history)
+        if text:
+            return text, plan.to_dict()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error("undx_response_intelligence_failed capability=%s error=%s",
+                     spec.capability_id, exc.__class__.__name__)
+    return _terse_explanation(spec, status, result, verification), {}
+
+
 def _explain(spec: CapabilitySpec, status: str, result: ToolResult,
-             verification: VerificationResult) -> str:
+             verification: VerificationResult, *, question: str = "",
+             history: tuple[str, ...] = ()) -> str:
     """Plain language that matches the evidence, including when the evidence is thin."""
+    return _compose_response(spec, status, result, verification,
+                            question=question, history=history)[0]
+
+
+def _terse_explanation(spec: CapabilitySpec, status: str, result: ToolResult,
+                       verification: VerificationResult) -> str:
+    """The last-resort sentence. Every branch is true without consulting the evidence."""
     if status == AgentOutcome.VERIFIED_SUCCESS:
         if not spec.is_write:
-            return "Here is what I found."
-        if spec.capability_id == "saved.post.set":
-            return (
-                "The post is saved, and I verified it in your Saved library."
-                if bool((result.data or {}).get("saved"))
-                else "The post was removed from Saved, and I verified the change."
-            )
-        if spec.capability_id == "social.follow":
-            return "You are now following that account, and I verified the relationship."
-        if spec.capability_id == "social.unfollow":
-            return "You are no longer following that account, and I verified the relationship."
-        if spec.capability_id == "feed.posts.like":
-            return "The post is liked, and I verified your reaction."
-        if spec.capability_id == "feed.posts.unlike":
-            return "Your like was removed, and I verified your reaction."
+            return "I read that from your account."
         return "Done, and I read the new state back to confirm it."
     if status == AgentOutcome.ACCEPTED_UNVERIFIED:
         if not spec.is_write:
-            # Naming the count rather than the source: the user cannot act on a
-            # table name, but "part of this is missing" changes whether they trust
-            # an empty answer, which is the whole point of saying anything at all.
             missing = len(result.degraded_sources)
-            return ("Here is what I found, but I could not reach "
+            return ("I could not reach "
                     f"{'one part of' if missing == 1 else f'{missing} parts of'} your data, "
-                    "so treat this as incomplete rather than as the full picture.")
+                    "so treat this as incomplete rather than as the whole answer.")
         return ("PulseSoc accepted the change, but I could not read it back to confirm it. "
                 "Please check the screen before relying on it.")
     if status == AgentOutcome.RECOVERABLE_FAILURE:
@@ -463,6 +547,9 @@ def execute(
     resolved_resource_count: int = 1,
     current_value: Any = None,
     proposed_value: Any = None,
+    resource_label: str = "",
+    question: str = "",
+    recent_replies: tuple[str, ...] = (),
 ) -> GatewayOutcome:
     """Run one capability under full governance. The only entry point to a mutation.
 
@@ -470,8 +557,23 @@ def execute(
     confirmation redemption and the caller's own transaction commit or roll back
     together. A gateway that opened its own connection could leave an approval
     burned by a request that then failed to record anything.
+
+    ``resource_label`` is presentation and is treated as such: it is copied onto the
+    approval and never consulted. It cannot select a capability, change a target, or
+    alter the argument hash the token is bound to — a card that named the wrong row
+    would still be an approval for the row the arguments name, which is why the label
+    has to be read back from that row by the caller rather than composed here.
+
+    ``question`` and ``recent_replies`` reach only the response layer, and only after
+    every decision has been made. They cannot select a capability, widen a permission,
+    or change an outcome — the last of the nine checks has already run by the time
+    either is read. What they can do is make the answer the right length and stop it
+    repeating the previous one, which is worth having and worth confining.
     """
     task_id = clean(task_id or request_id, 120)
+    question = clean(question, 400)
+    history = tuple(clean(reply, undx_response_intelligence.MAX_EXPLANATION_CHARS)
+                    for reply in list(recent_replies or ())[-undx_response_intelligence.HISTORY_WINDOW:])
 
     # 1. Authentication. Not a formality: every subsequent check is scoped by user id,
     #    so an unauthenticated call must not reach any of them.
@@ -514,6 +616,7 @@ def execute(
                 cur, int(user_id), spec, arguments, task_id=task_id,
                 current_value=current_value, proposed_value=proposed_value,
                 risk_summary=spec.description,
+                resource_label=resource_label,
             )
             _checkpoint(cur)
             return GatewayOutcome(
@@ -616,31 +719,40 @@ def execute(
         return _settle(
             cur, spec=spec, user_id=int(user_id), arguments=arguments, result=result,
             prepared=prepared, grant=grant, request_id=request_id, task_id=task_id,
-            correlation_id=correlation_id,
+            correlation_id=correlation_id, question=question, history=history,
         )
     except Exception as exc:  # pragma: no cover - defensive
-        logger.critical("undx_gateway_settle_failed tool=%s user=%s error=%s",
-                        spec.tool_name, int(user_id), exc.__class__.__name__)
+        try:
+            logger.critical("undx_gateway_settle_failed tool=%s user=%s error=%s",
+                            spec.tool_name, int(user_id), exc.__class__.__name__)
+        except Exception:
+            # Logging is the least important thing happening here and the only step
+            # that talks to something outside the process. It must not be the reason
+            # the receipt never gets built.
+            pass
+        # Built by :func:`_last_resort_receipt`, not :func:`_receipt`. The seam that
+        # raised may be inside ``_receipt`` itself — verified by injecting a fault
+        # there and watching ``execute`` propagate it with the row already mutated.
         return GatewayOutcome(
-            _receipt(spec, user_id=user_id, request_id=request_id, task_id=task_id,
-                     status=(AgentOutcome.ACCEPTED_UNVERIFIED if result.ok
-                             else AgentOutcome.TERMINAL_FAILURE),
-                     explanation=("PulseSoc accepted the change, but something went wrong while I was "
-                                  "recording and checking it. Please look at the screen before "
-                                  "relying on it." if result.ok else
-                                  "That did not work, and I could not record why."),
-                     arguments=arguments,
-                     canonical_ids=[result.canonical_resource_id] if result.canonical_resource_id else [],
-                     evidence={"settle_error": exc.__class__.__name__,
-                               "needs_reconciliation": bool(spec.is_write and result.ok),
-                               "operation_id": clean(prepared.get("operation_id"), 60)}),
+            _last_resort_receipt(
+                spec, user_id=int(user_id), request_id=request_id, task_id=task_id,
+                status=(AgentOutcome.ACCEPTED_UNVERIFIED if result.ok
+                        else AgentOutcome.TERMINAL_FAILURE),
+                explanation=("PulseSoc accepted the change, but something went wrong while I was "
+                             "recording and checking it. Please look at the screen before "
+                             "relying on it." if result.ok else
+                             "That did not work, and I could not record why."),
+                evidence={"settle_error": exc.__class__.__name__,
+                          "needs_reconciliation": bool(spec.is_write and result.ok),
+                          "operation_id": str(prepared.get("operation_id") or "")}),
             result=result,
         )
 
 
 def _settle(cur, *, spec: CapabilitySpec, user_id: int, arguments: dict[str, Any],
             result: ToolResult, prepared: dict[str, Any], grant: dict[str, Any] | None,
-            request_id: str, task_id: str, correlation_id: str) -> GatewayOutcome:
+            request_id: str, task_id: str, correlation_id: str,
+            question: str = "", history: tuple[str, ...] = ()) -> GatewayOutcome:
     """Verify, audit and describe an execution that has already happened.
 
     Split out of :func:`execute` so the boundary between "nothing has changed yet"
@@ -709,12 +821,18 @@ def _settle(cur, *, spec: CapabilitySpec, user_id: int, arguments: dict[str, Any
     # is what keeps "every executed action has an audit row" true even if the surrounding
     # request fails afterwards.
 
+    explanation, response_plan = _compose_response(
+        spec, status, result, verification, question=question, history=history)
     receipt = _receipt(
         spec, user_id=user_id, request_id=request_id, task_id=task_id,
-        status=status, explanation=_explain(spec, status, result, verification),
+        status=status, explanation=explanation,
         arguments=arguments, verification=verification,
         canonical_ids=[result.canonical_resource_id] if result.canonical_resource_id else [],
         evidence={
+            # The plan travels with the receipt so that the sentence a user read can be
+            # audited against the facts it was allowed to use. Without it, "why did UNDX
+            # say that?" is answerable only by re-running the turn.
+            "response_plan": response_plan,
             "verification": {
                 "state": verification.state,
                 "expected": verification.expected,

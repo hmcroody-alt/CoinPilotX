@@ -44,6 +44,36 @@ class AgentOutcome:
     VERIFIED_SUCCESS = "verified_success"
     ACCEPTED_UNVERIFIED = "accepted_unverified"
     CONFIRMATION_REQUIRED = "confirmation_required"
+    #: The agent understood the request and is waiting to be told one more thing.
+    #:
+    #: Carried as ``terminal_failure`` until now, which was wrong in a way that cost
+    #: something real: anything counting terminal failures counted every question the
+    #: runtime asked as something breaking, so the metric got *worse* the more
+    #: carefully the agent behaved. It is not a failure. Nothing was attempted, and
+    #: the next message can complete it.
+    #:
+    #: This was deferred across four batches on the belief that a native client
+    #: meeting an unknown enum value would render nothing at all. That belief was
+    #: wrong, and reading the client rather than assuming is what settled it:
+    #: ``kindOf`` in ``mobile-native/src/undx/actionCards.ts`` returns ``"failure"``
+    #: for anything it does not recognise, which is exactly what a question renders as
+    #: today. An old client is therefore no worse off, a new one is better off, and
+    #: ``contractParity.test.ts`` already fails when the server adds a card the client
+    #: has no home for — so the drift this deferral feared is the one case CI catches.
+    CLARIFICATION_REQUIRED = "clarification_required"
+    #: The person withdrew a staged action in words before it ran.
+    #:
+    #: Not a failure and not a refusal. Nothing broke, nobody was denied anything, and
+    #: the outcome is exactly what was asked for — which is why it could not be carried
+    #: as ``terminal_failure``. A cancellation drawn under "NOT DONE" tells someone who
+    #: successfully changed their mind that something went wrong, and the whole reason
+    #: this batch exists is that saying "never mind" was previously reported as nothing
+    #: at all: the turn declined, the approval stayed live, and the button on screen
+    #: still worked.
+    #:
+    #: Distinct from ``permission_denied`` in the direction that matters. That one says
+    #: the *system* refused; this one says the *person* did.
+    CANCELLED = "cancelled"
     PERMISSION_DENIED = "permission_denied"
     UNSUPPORTED_CAPABILITY = "unsupported_capability"
     RECOVERABLE_FAILURE = "recoverable_failure"
@@ -53,6 +83,8 @@ class AgentOutcome:
         VERIFIED_SUCCESS,
         ACCEPTED_UNVERIFIED,
         CONFIRMATION_REQUIRED,
+        CLARIFICATION_REQUIRED,
+        CANCELLED,
         PERMISSION_DENIED,
         UNSUPPORTED_CAPABILITY,
         RECOVERABLE_FAILURE,
@@ -61,6 +93,13 @@ class AgentOutcome:
 
     #: Outcomes a user may be told represent a completed change.
     COMPLETED = frozenset({VERIFIED_SUCCESS})
+
+    #: Outcomes where the runtime is holding a question open and the next message from
+    #: this account may close it. Named as a set rather than tested inline because
+    #: three places have to agree about it — the card the client draws, the metric that
+    #: counts failures, and the continuation store that decides whether a reply is an
+    #: answer — and those three going out of step is how a question stops being one.
+    AWAITING_USER = frozenset({CONFIRMATION_REQUIRED, CLARIFICATION_REQUIRED})
 
 
 class RiskLevel:
@@ -172,14 +211,37 @@ class CardType:
     UNSUPPORTED_CAPABILITY = "unsupported_capability"
     PERMISSION_DENIED = "permission_denied"
     RETRY_ACTION = "retry_action"
+    #: A question with a value to compose. "Which price?" — nothing to pick from.
+    CLARIFICATION_REQUIRED = "clarification_required"
+    #: A question with rows to pick from. Carries ``candidates``.
+    #:
+    #: Two card types rather than one because the client renders them differently and
+    #: has to know which without inspecting the payload: a chooser is a list of
+    #: tappable rows, a clarification is a prompt to type. Deciding that from
+    #: ``candidates.length`` would put the branch in every renderer instead of in the
+    #: contract, and a chooser that arrived with an empty list would silently become a
+    #: prompt with nothing to prompt for.
+    CHOICE_REQUIRED = "choice_required"
+    #: A staged action the person called off in words, and the grant that is now dead.
+    #:
+    #: Its own component rather than ``ACTION_FAILURE`` for the same reason
+    #: ``CHOICE_REQUIRED`` is not ``CRYPTO_ALERT_CARD``: the client draws from the
+    #: component name, and every existing name would misdescribe this one. A
+    #: cancellation is not a failure, and it is emphatically not a receipt — nothing
+    #: was written. It reports that something which was about to happen now will not.
+    ACTION_CANCELLED = "action_cancelled"
 
     ALL = frozenset({
         SEARCH_RESULTS, PROFILE_RESULT, CONTENT_RESULT, CONVERSATION_RESULT,
         MESSAGE_DRAFT_CONFIRMATION, ACTION_CONFIRMATION, ACTION_PROGRESS,
         ACTION_SUCCESS_RECEIPT, ACTION_FAILURE, SETTING_CHANGE_RECEIPT,
         CRYPTO_ALERT_CARD, RELATIONSHIP_CHANGE_RECEIPT, UNSUPPORTED_CAPABILITY,
-        PERMISSION_DENIED, RETRY_ACTION,
+        PERMISSION_DENIED, RETRY_ACTION, CLARIFICATION_REQUIRED, CHOICE_REQUIRED,
+        ACTION_CANCELLED,
     })
+
+    #: Cards that are open questions rather than reports of something attempted.
+    QUESTIONS = frozenset({CLARIFICATION_REQUIRED, CHOICE_REQUIRED})
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +559,22 @@ class ConfirmationRequest:
     expires_at: str
     argument_hash: str = ""
     task_id: str = ""
+    #: The resource in words the person has actually seen, read back from the row
+    #: this approval would change.
+    #:
+    #: ``target`` is the canonical identifier and cannot be this. It is what the
+    #: idempotency key and the audit row are built from, so it must stay stable and
+    #: machine-shaped — for an alert it is a bare row id, a number the person has
+    #: never been shown anywhere in the app. A card whose only distinguishing field
+    #: is that id says the same thing about every alert on the account, which means
+    #: approving it is not consent to anything in particular.
+    #:
+    #: Empty when the row could not be read. A blank label renders as no label; a
+    #: label guessed from the request would be worse than none, because the one
+    #: mistake this field exists to catch is a resolved id that does not match what
+    #: the person asked for, and a label built from their words would agree with
+    #: them precisely when it should not.
+    resource_label: str = ""
 
 
 @dataclass

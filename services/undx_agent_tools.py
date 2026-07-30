@@ -114,12 +114,20 @@ def crypto_alerts_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
     of your alerts matches this description" from this list, and a *truncated* list can
     contain exactly one match while the account holds several. The user would then be
     shown, and would approve, a change to whichever alert happened to fall on page one.
+
+    ``symbol`` narrows the page itself. Passing it means ``truncated`` describes the
+    coin the person named rather than the account as a whole, which is the difference
+    between "you have more Bitcoin alerts than I can compare" and "you have more alerts
+    than I can compare" — the second having been said, until this argument existed, to
+    people holding exactly one Bitcoin alert and fifty of something else.
     """
     started = time.perf_counter()
     engine = _alert_engine()
     limit = int(arguments.get("limit") or 20)
+    symbol = str(arguments.get("symbol") or "").strip().upper()
     fetched = [_alert_record(rule)
-               for rule in ((engine.list_alert_rules(int(user_id), limit=limit + 1) or {})
+               for rule in ((engine.list_alert_rules(int(user_id), limit=limit + 1,
+                                                    symbol=symbol or None) or {})
                             .get("alerts") or [])]
     records = fetched[:limit]
     return ToolResult(

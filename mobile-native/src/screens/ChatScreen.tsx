@@ -61,7 +61,7 @@ import { mergeConversationMessages } from "../api/messengerOrdering";
 import { APP_VERSION, PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
 import { buildUndxUiContext, UndxUiContext } from "../undx/undxContext";
-import { describeTransition, toActionCard } from "../undx/actionCards";
+import { choiceRowsOf, describeTransition, toActionCard } from "../undx/actionCards";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
 import { ContentTranslation } from "../components/ContentTranslation";
@@ -1154,6 +1154,47 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
                   : describeTransition(card)}
               </Text>
               {card.risk ? <Text style={styles.undxActionRisk}>{card.risk}</Text> : null}
+              {/*
+                The chooser's rows. Every other list on this card reads `records`, and a
+                chooser sends `candidates` — so until this block existed the card drew a
+                kicker, a title and "more than one of your alerts matches that", and
+                nothing else. The person was asked to choose between things they could
+                not see.
+
+                The row itself — its number, its label, and the message that answers
+                with it — is derived by `choiceRowsOf` rather than here. That is the
+                lesson this file's own header records about `isConfirmation`: a decision
+                spelled out inline in a two-thousand-line render is a decision nothing
+                tests, and the last one of those left agent confirmations unapprovable
+                for a release.
+
+                `row.reply` is the same number `row.position` draws, which is what makes
+                the tap and the typing agree: the server reads a lone number as the
+                position it published, so there is one way to answer and the card shows
+                it.
+              */}
+              {card.kind === "question" && choiceRowsOf(component).length ? (
+                <View style={styles.undxAlertList}>
+                  {choiceRowsOf(component).map((row, rowIndex) => (
+                    <Pressable
+                      key={`choice-${row.position}-${rowIndex}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Choose ${row.position}: ${row.label}`}
+                      style={styles.undxAlertRow}
+                      onPress={() => { sendPayload({ body: row.reply }).catch(() => undefined); }}
+                    >
+                      <View style={styles.undxChoiceBody}>
+                        <Text style={styles.undxChoiceIndex}>{row.position}</Text>
+                        <View>
+                          <Text style={styles.undxAlertTitle}>{row.label}</Text>
+                          {row.detail ? <Text style={styles.undxAlertMeta}>{row.detail}</Text> : null}
+                        </View>
+                      </View>
+                      <Text style={styles.undxAlertOpen}>Choose ›</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
               {component.component === "crypto_alert_card" && component.records?.length ? (
                 <View style={styles.undxAlertList}>
                   {component.records.map((record, recordIndex) => {
@@ -2602,6 +2643,10 @@ const styles = StyleSheet.create({
   undxActionBody: { color: colors.text, fontSize: 14, lineHeight: 20 },
   undxActionRisk: { color: colors.muted, fontSize: 12, lineHeight: 17 },
   undxAlertList: { gap: 8, marginTop: 4 },
+  undxChoiceBody: { alignItems: "center", flexDirection: "row", flex: 1, gap: 10, paddingRight: 10 },
+  // The number is the handle on the row. It is drawn because the server already
+  // assigned it and the person is expected to be able to type it back.
+  undxChoiceIndex: { color: colors.accent, fontSize: 15, fontWeight: "900", minWidth: 18, textAlign: "center" },
   undxAlertRow: { alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: 1, flexDirection: "row", justifyContent: "space-between", minHeight: 58, paddingHorizontal: 12, paddingVertical: 8 },
   undxSavedCopy: { flex: 1, paddingRight: 10 },
   undxAlertTitle: { color: colors.text, fontSize: 14, fontWeight: "900" },

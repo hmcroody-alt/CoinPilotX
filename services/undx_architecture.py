@@ -745,3 +745,228 @@ def revoke_confirmation(cur, user_id: int, token: str) -> dict[str, Any]:
         (timestamp, token_hash, int(user_id)),
     )
     return {"ok": True, "revoked": int(cur.rowcount or 0) > 0}
+
+
+def pending_approvals(cur, user_id: int) -> list[dict[str, Any]]:
+    """Every live approval this account is holding, newest first.
+
+    Looked up by account rather than by token, and that is the entire reason it exists.
+    :func:`revoke_confirmation` needs the bearer credential, which the client holds and
+    the text path does not: a person who types "never mind" is not echoing a token,
+    they are talking. Without a by-account read there is no way for a sentence to reach
+    the grant a button press would reach, so declining in words could only ever be
+    silence — which is precisely the defect this is written for.
+
+    Continuations are excluded, and the exclusion is load-bearing rather than tidy.
+    Both kinds of row live in this table and both are ``status='pending'``; only the
+    ``action_id`` namespace tells them apart. A remembered question is not permission
+    to do anything, so treating one as an approval would report "that is cancelled"
+    about a write nobody ever staged. ``NOT LIKE`` the prefix keeps the two meanings
+    apart in the one place a caller could confuse them.
+
+    Read-only. Nothing here is a decision; the caller still has to make one, and revoke.
+    """
+    cur.execute(
+        """SELECT confirmation_id, action_id, target_id, arguments_json, expires_at
+        FROM pulse_ai_confirmations
+        WHERE user_id=? AND status='pending' AND expires_at>? AND action_id NOT LIKE ?
+        ORDER BY id DESC""",
+        (int(user_id), now(), CONTINUATION_PREFIX + "%"),
+    )
+    grants: list[dict[str, Any]] = []
+    for row in cur.fetchall():
+        try:
+            arguments = json.loads(row["arguments_json"] or "{}")
+        except (TypeError, ValueError):
+            arguments = {}
+        grants.append({
+            "confirmation_id": clean(row["confirmation_id"], 120),
+            "action_id": clean(row["action_id"], 120),
+            "target_id": clean(row["target_id"], 160),
+            "arguments": arguments if isinstance(arguments, dict) else {},
+            "expires_at": clean(row["expires_at"], 40),
+        })
+    return grants
+
+
+def revoke_approval(cur, user_id: int, confirmation_id: str) -> bool:
+    """Withdraw one pending approval by its id. Own actor only, approvals only.
+
+    The same transition as :func:`revoke_confirmation` — ``pending`` to ``revoked``,
+    scoped to the owner, never rewriting a row that has already been spent — addressed
+    by the identifier :func:`pending_approvals` returns rather than by the bearer token
+    the text path does not hold.
+
+    The ``status='pending'`` guard is what makes the pair safe against the one race
+    that matters. If the person taps Confirm at the same moment they type "cancel",
+    exactly one of the two ``UPDATE``s finds a pending row; the other matches nothing.
+    The action therefore either happens or is cancelled, and never both, without a lock.
+
+    The namespace guard is repeated here rather than trusted from the caller. A revoke
+    is a write, and a write whose safety depends on its caller having filtered first is
+    one refactor away from quietly cancelling remembered questions instead.
+    """
+    timestamp = now()
+    cur.execute(
+        "UPDATE pulse_ai_confirmations SET status='revoked', updated_at=? "
+        "WHERE confirmation_id=? AND user_id=? AND status='pending' AND action_id NOT LIKE ?",
+        (timestamp, clean(confirmation_id, 120), int(user_id), CONTINUATION_PREFIX + "%"),
+    )
+    return int(cur.rowcount or 0) == 1
+
+
+# ---------------------------------------------------------------------------
+# Continuations
+# ---------------------------------------------------------------------------
+
+
+#: What an ``action_id`` is prefixed with when the row is a remembered question rather
+#: than a granted approval.
+#:
+#: The prefix is the whole security argument, so it is worth stating why it is enough.
+#: Every path that redeems an approval passes ``expect_action_id`` — the gateway passes
+#: the capability id, the notification path passes its own literal — and
+#: :func:`consume_confirmation` checks that binding before it burns anything. A
+#: continuation's ``action_id`` is ``undx.continuation:crypto.alerts.update``, which is
+#: not equal to ``crypto.alerts.update`` and not equal to any other literal in the
+#: codebase. So a continuation row cannot be redeemed as an approval by any existing
+#: caller, and a new caller would have to name the namespace explicitly to try.
+#:
+#: This matters because the two kinds of row are otherwise the same shape and live in
+#: the same table, which is the point — the expiry, the single-use burn, the owner
+#: scoping and the durability checkpoint are machinery that already works and did not
+#: need to be written twice. What must never be shared is the *meaning*: an approval
+#: says the person agreed to an action, a continuation says the runtime asked them
+#: something. Storing them together without separating them would turn "which post?"
+#: into a grant to act on whichever post they named.
+CONTINUATION_PREFIX = "undx.continuation:"
+
+
+#: Reserved keys in a continuation's stored blob. A continuation remembers two kinds
+#: of thing — the arguments the first sentence yielded, and, when the question was
+#: "which one?", the candidate list the person was shown — so the blob is an envelope
+#: rather than the arguments themselves.
+#:
+#: Sharing a table with approvals is deliberate and safe; sharing a *payload shape*
+#: would not be. These keys are read only by :func:`pending_continuation`, which the
+#: prefix guarantees is the only reader of these rows, so the envelope cannot reach
+#: the gateway as arguments even if the two shapes were ever confused.
+_CONTINUATION_ARGUMENTS = "undx_pending_arguments"
+_CONTINUATION_CHOICES = "undx_pending_choices"
+
+
+def create_continuation(cur, user_id: int, *, capability_id: str,
+                        arguments: dict[str, Any], missing: tuple[str, ...] | list[str],
+                        choices: list[dict[str, Any]] | None = None,
+                        ttl_seconds: int = 180) -> str:
+    """Remember a question so the next message can answer it.
+
+    The stored ``arguments`` are everything the first sentence *did* yield. Keeping the
+    partial work is what makes the second turn cheap and, more importantly, what keeps
+    it honest: "change alert 3" resolves the alert and misses the threshold, and when
+    the person replies "95000" the alert must still be 3. Re-deriving it from the
+    second message would silently retarget the write to whatever the reply happened to
+    mention.
+
+    The question itself is deliberately *not* stored. It is regenerated from the spec
+    and the missing field names when the continuation is recalled, so a question about
+    an enum stays true when the registry's choices change. A stored sentence would go
+    stale in the one direction nobody checks.
+
+    The token this mints is discarded on purpose. A confirmation token is a bearer
+    credential handed to the client; a continuation is server-side memory that the
+    client must not be able to present, replay, or forge. The row is the record.
+
+    ``choices`` is the candidate list the person was shown when the question was "which
+    one?". It is stored rather than re-derived, and that is the whole reason an ordinal
+    reply can be honoured: "the first one" is an index into what was *displayed*, and a
+    set rebuilt on the answering turn can differ from it — an alert deleted in between,
+    a new one created — at which point "the first one" would point somewhere the person
+    never saw. Storing the shown set makes the ordinal mean what the person meant.
+
+    Storing candidates confers no authority. The id an answer yields is put back through
+    the same owner-scoped read as an id the person typed themselves, so a stale or
+    tampered candidate row cannot act as permission for anything.
+    """
+    grant = create_confirmation(
+        cur, int(user_id),
+        {
+            "action_id": CONTINUATION_PREFIX + clean(capability_id, 100),
+            "action_version": "continuation.1",
+            # The fields still outstanding. Recall needs them to know what it is
+            # waiting for; nothing else reads this.
+            "target_id": ",".join(str(name) for name in missing)[:160],
+            "arguments": {
+                _CONTINUATION_ARGUMENTS: arguments,
+                _CONTINUATION_CHOICES: list(choices or []),
+            },
+        },
+        ttl_seconds=ttl_seconds,
+    )
+    return str(grant["confirmation_id"])
+
+
+def pending_continuation(cur, user_id: int) -> dict[str, Any]:
+    """The most recent live question this account has been asked, or ``{}``.
+
+    Looked up by account rather than by token, which is the whole reason this exists.
+    The person answering a question types "9"; they do not echo a credential, and the
+    native app cannot be asked to start echoing one without a new build. Recovering the
+    question server-side means every client already in the field gets the behaviour.
+
+    Most recent only, and only one. Two outstanding questions and an ambiguous reply is
+    a worse problem than a forgotten question, and the newest is the one the person is
+    looking at.
+    """
+    cur.execute(
+        """SELECT id, confirmation_id, action_id, target_id, arguments_json
+        FROM pulse_ai_confirmations
+        WHERE user_id=? AND status='pending' AND expires_at>? AND action_id LIKE ?
+        ORDER BY id DESC LIMIT 1""",
+        (int(user_id), now(), CONTINUATION_PREFIX + "%"),
+    )
+    row = cur.fetchone()
+    if not row:
+        return {}
+    try:
+        blob = json.loads(row["arguments_json"] or "{}")
+    except (TypeError, ValueError):
+        blob = {}
+    if not isinstance(blob, dict):
+        blob = {}
+    # Tolerant of the pre-envelope shape. Rows minted before candidates were stored
+    # hold the arguments at the top level and are still live for their remaining TTL;
+    # reading them as an envelope would silently blank the partial work a person had
+    # already given, which is the one thing a continuation exists to preserve.
+    if _CONTINUATION_ARGUMENTS in blob or _CONTINUATION_CHOICES in blob:
+        arguments = blob.get(_CONTINUATION_ARGUMENTS) or {}
+        choices = blob.get(_CONTINUATION_CHOICES) or []
+    else:
+        arguments, choices = blob, []
+    action_id = clean(row["action_id"], 160)
+    return {
+        "row_id": int(row["id"]),
+        "continuation_id": clean(row["confirmation_id"], 120),
+        "capability_id": action_id[len(CONTINUATION_PREFIX):],
+        "missing": tuple(name for name in clean(row["target_id"], 160).split(",") if name),
+        "arguments": arguments if isinstance(arguments, dict) else {},
+        "choices": [item for item in choices if isinstance(item, dict)]
+                   if isinstance(choices, list) else [],
+    }
+
+
+def burn_continuation(cur, user_id: int, continuation_id: str) -> bool:
+    """Spend a remembered question. Once, by its owner, whatever the answer was.
+
+    Burned on *use*, not on success — including when the reply turns out not to answer
+    the question. A question that survives being answered would re-fire on the message
+    after that, so "which post?" followed by "never mind" followed by "9" would like
+    a post the person had walked away from.
+    """
+    timestamp = now()
+    cur.execute(
+        "UPDATE pulse_ai_confirmations SET status='consumed', consumed_at=?, updated_at=? "
+        "WHERE confirmation_id=? AND user_id=? AND status='pending'",
+        (timestamp, timestamp, clean(continuation_id, 120), int(user_id)),
+    )
+    return int(cur.rowcount or 0) == 1

@@ -57,6 +57,43 @@ export const FAILURE_COMPONENTS = [
 export const PROGRESS_COMPONENTS = ["action_progress"] as const;
 
 /**
+ * Card types that are an open question rather than a report.
+ *
+ * The distinction the client did not have. A question is not a failure — nothing was
+ * attempted — and it is emphatically not a receipt, but until these names existed the
+ * server had nothing else to send, so both readings happened. A missing-field question
+ * arrived as `action_failure` and was drawn under "NOT DONE"; a chooser arrived as the
+ * capability's own result card, `crypto_alert_card`, and was classified here as a
+ * *receipt* — so "which of these two alerts?" rendered under the kicker this client
+ * reserves for something that already happened.
+ *
+ * `choice_required` carries `candidates` and is meant to be drawn as tappable rows;
+ * `clarification_required` has nothing to pick from and is a prompt to type. They are
+ * two names rather than one so a renderer does not have to decide from
+ * `candidates.length`, which would turn an empty chooser into a prompt for nothing.
+ */
+export const QUESTION_COMPONENTS = [
+  "clarification_required",
+  "choice_required",
+] as const;
+
+/**
+ * Card types reporting that a staged action was called off in words.
+ *
+ * Its own bucket for the same reason `QUESTION_COMPONENTS` is: every existing home
+ * would misdescribe it. Under `FAILURE_COMPONENTS` it draws as "NOT DONE", which tells
+ * someone who successfully changed their mind that something went wrong; under
+ * `RECEIPT_COMPONENTS` it draws as "VERIFIED RESULT", which claims a write that never
+ * happened. Nothing broke and nothing was written — the only true thing to say is that
+ * what was about to happen now will not.
+ *
+ * An older client that has never heard of `action_cancelled` falls through `kindOf` to
+ * `failure`, which is wrong but visible and harmless: the grant is already dead on the
+ * server by the time this card exists, so the worst outcome is a pessimistic kicker.
+ */
+export const CANCELLED_COMPONENTS = ["action_cancelled"] as const;
+
+/**
  * Card types that show something found rather than something done.
  *
  * `search_results` is the agent's name and `search_result_card` the V4/V5 one; both
@@ -70,7 +107,14 @@ export const RESULT_COMPONENTS = [
   "conversation_result",
 ] as const;
 
-export type UndxCardKind = "confirmation" | "receipt" | "failure" | "result" | "progress";
+export type UndxCardKind =
+  | "confirmation"
+  | "question"
+  | "receipt"
+  | "failure"
+  | "result"
+  | "progress"
+  | "cancelled";
 
 export type UndxActionCard = {
   kind: UndxCardKind;
@@ -80,6 +124,17 @@ export type UndxActionCard = {
   title: string;
   /** The resource the action names, when the server identified one. */
   target: string;
+  /**
+   * The same resource in words, when the server could read the row back.
+   *
+   * `target` is an identifier — for a crypto alert it is the row id, a number this
+   * app never displays anywhere. Two confirmations staging pauses of two different
+   * coins differ only in that number, so a person reading the card cannot tell which
+   * alert they are approving. This is what the sentence is built from when present;
+   * it is blank whenever the server could not read the row, and blank falls back to
+   * the identifier rather than to an invented description.
+   */
+  resourceLabel: string;
   /** State before the change, blank when the server could not read it. */
   before: string;
   /** State the action would leave behind, blank when not applicable. */
@@ -176,6 +231,12 @@ function kindOf(component: UndxResponseComponent): UndxCardKind {
   if (isConfirmation(component)) {
     return "confirmation";
   }
+  if (includes(QUESTION_COMPONENTS, component.component)) {
+    return "question";
+  }
+  if (includes(CANCELLED_COMPONENTS, component.component)) {
+    return "cancelled";
+  }
   if (includes(RECEIPT_COMPONENTS, component.component)) {
     return "receipt";
   }
@@ -193,11 +254,79 @@ function kindOf(component: UndxResponseComponent): UndxCardKind {
 
 const KICKERS: Record<UndxCardKind, string> = {
   confirmation: "CONFIRM ACTION",
+  // Deliberately not "ACTION REQUIRED" or anything that reads like an error. The
+  // person is not being told something went wrong; they are being asked one thing.
+  question: "ONE MORE THING",
   receipt: "VERIFIED RESULT",
   failure: "NOT DONE",
   progress: "IN PROGRESS",
   result: "MATCH",
+  // Not "NOT DONE". The action not happening is the outcome the person asked for, and
+  // a kicker that reads like an error would turn a successful change of mind into a
+  // report that something went wrong.
+  cancelled: "CANCELLED",
 };
+
+/**
+ * The rows a `choice_required` card offers, empty for every other kind.
+ *
+ * Read off the card rather than off `candidates.length` so a chooser that arrived
+ * without rows renders as a chooser with nothing in it — visibly wrong — instead of
+ * quietly turning into some other kind of card. A server bug should look like a server
+ * bug.
+ */
+export function choicesOf(component: UndxResponseComponent): Array<Record<string, unknown>> {
+  if (component.component !== "choice_required") {
+    return [];
+  }
+  return Array.isArray(component.candidates) ? component.candidates : [];
+}
+
+/** One row of a chooser, ready to draw. */
+export type UndxChoiceRow = {
+  /** The number shown beside the row, assigned by the server. */
+  position: number;
+  label: string;
+  /** Secondary line, empty when the row carries nothing worth adding. */
+  detail: string;
+  /** The message that answers the question by picking this row. */
+  reply: string;
+};
+
+/**
+ * The chooser's rows as the screen should draw them.
+ *
+ * A named function rather than a `.map` inside the JSX, for the reason the header of
+ * `ChatScreen` already records about `isConfirmation`: a decision spelled out inline in
+ * a two-thousand-line render is a decision nothing tests, and the last one of those
+ * left agent confirmations unapprovable for a release.
+ *
+ * Three things here are load-bearing. `position` is the server's `choice_index` and is
+ * never recomputed from the array index unless the server omitted it — the reply is
+ * resolved against the list the *server* remembers, so a locally renumbered row would
+ * resolve a different alert than the one under the person's finger. `reply` is that
+ * same number as text, because tapping a row and typing its number must mean the same
+ * thing; the server reads a lone number as the position it published. And a row with no
+ * usable label still gets one, because a chooser is unanswerable if a row is blank.
+ */
+export function choiceRowsOf(component: UndxResponseComponent): UndxChoiceRow[] {
+  return choicesOf(component).map((choice, index) => {
+    const position = Number(choice.choice_index) > 0 ? Number(choice.choice_index) : index + 1;
+    const named = [choice.display_name, choice.label, choice.title, choice.name, choice.symbol]
+      .map((value) => (value === undefined || value === null ? "" : String(value)))
+      .find((value) => value.length > 0);
+    const detail = [choice.condition, choice.threshold ?? choice.threshold_value, choice.status]
+      .map((value) => (value === undefined || value === null ? "" : String(value)))
+      .filter((value) => value.length > 0)
+      .join(" · ");
+    return {
+      position,
+      label: named || `Option ${position}`,
+      detail,
+      reply: String(position),
+    };
+  });
+}
 
 /**
  * Collapse either server dialect into the single shape the UI renders.
@@ -216,9 +345,16 @@ export function toActionCard(component: UndxResponseComponent): UndxActionCard {
     kind === "receipt" &&
     Boolean(component.undo_capability_id) &&
     Object.keys(component.undo_arguments || {}).length > 0;
+  // Only a receipt may claim a change was verified, and the `kind` guard belongs on
+  // both signals. It used to sit on `verification_state` alone, so the *weaker* of the
+  // two was checked against the card type and the stronger one — a bare `verified:
+  // true` — was taken at face value on any card at all. A question card carrying it,
+  // which is what a server borrowing a receipt's payload produces and what this batch
+  // found the server doing, drew a verification checkmark against a change that had
+  // not been attempted.
   const verified =
-    component.verified === true ||
-    (kind === "receipt" && component.verification_state === "verified");
+    kind === "receipt" &&
+    (component.verified === true || component.verification_state === "verified");
   const kicker =
     kind === "result"
       ? `${(component.content_type || "content").toUpperCase()} MATCH`
@@ -233,6 +369,7 @@ export function toActionCard(component: UndxResponseComponent): UndxActionCard {
         ? component.title || component.preview_text || "PulseSOC result"
         : component.action_name || component.title || "UNDX operation",
     target: component.target || "",
+    resourceLabel: component.resource_label || "",
     before: readable(component.current_value),
     after: readable(
       component.proposed_value !== undefined ? component.proposed_value : component.value,
@@ -257,9 +394,15 @@ export function toActionCard(component: UndxResponseComponent): UndxActionCard {
  * does not tell the user whether pressing Confirm changes anything. When the server
  * could not read the current value the arrow is dropped rather than filled with a
  * guess.
+ *
+ * The subject is the label before the identifier, for the same reason. "2: active →
+ * paused" names a transition and no resource; the row id is not shown anywhere else
+ * in this app, so it identifies the alert to the server and to nobody else. The
+ * identifier stays as the fallback because a card with a bare id still says more
+ * than a card that says "PulseSOC".
  */
 export function describeTransition(card: UndxActionCard): string {
-  const subject = card.target || "PulseSOC";
+  const subject = card.resourceLabel || card.target || "PulseSOC";
   if (card.kind === "result") {
     return card.risk || card.title;
   }

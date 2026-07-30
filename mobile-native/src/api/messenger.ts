@@ -174,6 +174,14 @@ export type UndxResponseComponent = {
     | "unsupported_capability"
     | "permission_denied"
     | "retry_action"
+    // Open questions, not failures. Nothing was attempted and the next message from
+    // this account can close them, which is why they are neither a receipt nor a
+    // failure and why they needed names of their own.
+    | "clarification_required"
+    | "choice_required"
+    // A staged action the person called off in words. Neither a receipt nor a failure:
+    // nothing was written, and nothing went wrong.
+    | "action_cancelled"
     | "profile_result"
     | "content_result"
     | "conversation_result";
@@ -215,9 +223,38 @@ export type UndxResponseComponent = {
   idempotent_replay?: boolean;
   record_count?: number;
   records?: Array<Record<string, unknown>>;
+  /**
+   * The rows a `choice_required` card offers.
+   *
+   * Each row carries a server-assigned `choice_index` running 1..N in the order sent.
+   * Nothing in this app reads it yet, and the gap is recorded rather than papered
+   * over: the server numbers the rows, the client does not draw the numbers, and a
+   * bare "1" typed back is refused by the server's `answer_for_choice` because a lone
+   * digit is both an id and a position and those disagree whenever the list is not in
+   * id order.
+   *
+   * When this is drawn, the numbers must be the server's. The reply is resolved
+   * against the list the *server* remembers, so a client that renumbered locally would
+   * point at a different row than the one under the person's finger.
+   */
+  candidates?: Array<Record<string, unknown>>;
+  /** True when the next message from this account can complete the request. */
+  needs_answer?: boolean;
+  /** The fields that message has to supply. */
+  awaiting_fields?: string[];
+  needs_disambiguation?: boolean;
   data?: Record<string, unknown>;
   action_name?: string;
   target?: string;
+  /**
+   * The resource named in words, read back from the row the approval would change.
+   *
+   * Distinct from `target`, which is the canonical identifier the approval is bound
+   * to and, for a crypto alert, a bare row id the app never displays. Absent on
+   * cards whose target is already a word the person typed, and absent whenever the
+   * server could not read the row.
+   */
+  resource_label?: string;
   // A preference is a boolean on the wire and a threshold is a number. These stay
   // unnarrowed and are formatted for display in one place, because `false` is a
   // meaningful before-state and a string-typed field invites a falsy check that

@@ -25,12 +25,31 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 import {
+  CANCELLED_COMPONENTS,
   CONFIRMATION_COMPONENTS,
   FAILURE_COMPONENTS,
   PROGRESS_COMPONENTS,
+  QUESTION_COMPONENTS,
   RECEIPT_COMPONENTS,
   RESULT_COMPONENTS,
 } from "../actionCards";
+
+/**
+ * Every bucket `kindOf` consults, in one place.
+ *
+ * Previously spelled out twice inside the tests below. Adding `QUESTION_COMPONENTS`
+ * to one copy and not the other would have left the second test asserting that the
+ * question cards are unclassified, which is the opposite of what it is for.
+ */
+const BUCKETS = [
+  CONFIRMATION_COMPONENTS,
+  QUESTION_COMPONENTS,
+  CANCELLED_COMPONENTS,
+  RECEIPT_COMPONENTS,
+  FAILURE_COMPONENTS,
+  PROGRESS_COMPONENTS,
+  RESULT_COMPONENTS,
+];
 
 const CONTRACTS = join(__dirname, "..", "..", "..", "..", "services", "undx_agent_contracts.py");
 const MESSENGER = join(__dirname, "..", "..", "api", "messenger.ts");
@@ -83,14 +102,7 @@ describe("UNDX card contract parity", () => {
   });
 
   it("classifies every server card type into exactly one kind", () => {
-    const buckets = [
-      CONFIRMATION_COMPONENTS,
-      RECEIPT_COMPONENTS,
-      FAILURE_COMPONENTS,
-      PROGRESS_COMPONENTS,
-      RESULT_COMPONENTS,
-    ].map((bucket) => [...bucket] as string[]);
-    const all = buckets.flat();
+    const all = BUCKETS.flatMap((bucket) => [...bucket] as string[]);
 
     // No card may be in two buckets: `kindOf` checks them in order, so an overlap
     // would make the rendered kind depend on that order rather than on the card.
@@ -106,13 +118,7 @@ describe("UNDX card contract parity", () => {
   });
 
   it("classifies every card the client type allows, including the V4/V5 names", () => {
-    const buckets = [
-      CONFIRMATION_COMPONENTS,
-      RECEIPT_COMPONENTS,
-      FAILURE_COMPONENTS,
-      PROGRESS_COMPONENTS,
-      RESULT_COMPONENTS,
-    ].flatMap((bucket) => [...bucket] as string[]);
+    const buckets = BUCKETS.flatMap((bucket) => [...bucket] as string[]);
     const declared = tsUnionValues(messenger, "component:");
     // Four legacy cards are declared in the transport type but have no agent
     // equivalent and no renderer of their own yet. They are listed explicitly rather

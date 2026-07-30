@@ -10,6 +10,8 @@
  */
 
 import {
+  choiceRowsOf,
+  choicesOf,
   describeTransition,
   isActionable,
   isConfirmation,
@@ -120,6 +122,30 @@ describe("what the confirmation says", () => {
     const card = toActionCard({ ...agentConfirmation, current_value: null });
     expect(describeTransition(card)).toBe("1: deleted");
   });
+
+  it("names the alert in words when the server sent them", () => {
+    // "1: active → deleted" is a transition attached to a row id this app never
+    // displays. Two alerts on two different coins produce cards that differ only in
+    // that number, so the sentence has to be built from the label when there is one.
+    const card = toActionCard({
+      ...agentConfirmation,
+      resource_label: "DOGE alert · above · 0.5",
+    });
+    expect(card.resourceLabel).toBe("DOGE alert · above · 0.5");
+    expect(describeTransition(card)).toBe("DOGE alert · above · 0.5: active → deleted");
+    // The identifier is not replaced by the label. It is what the approval is bound
+    // to, and a client that dropped it would have nothing to send back.
+    expect(card.target).toBe("1");
+  });
+
+  it("falls back to the identifier rather than inventing a description", () => {
+    // A blank label means the server could not read the row. A bare id says little,
+    // but it says something true; anything composed here would be the client
+    // describing a row it has never seen.
+    const card = toActionCard({ ...agentConfirmation, resource_label: "" });
+    expect(card.resourceLabel).toBe("");
+    expect(describeTransition(card)).toBe("1: active → deleted");
+  });
 });
 
 describe("what the receipt says", () => {
@@ -210,6 +236,203 @@ describe("what the receipt says", () => {
       idempotent_replay: true,
     });
     expect(replay.idempotentReplay).toBe(true);
+  });
+});
+
+/**
+ * Both question cards, copied verbatim from this runtime rather than invented — the
+ * `candidates` array is the only thing trimmed, and it is rebuilt below where it
+ * matters. Two alerts and "pause my bitcoin alert" produces the first; one alert and
+ * "change my bitcoin alert" produces the second.
+ */
+const chooser: UndxResponseComponent = {
+  component: "choice_required",
+  capability_id: "crypto.alerts.pause",
+  status: "clarification_required",
+  verification_state: "impossible_to_verify",
+  verified: false,
+  title: "Pause one crypto alert so it stops triggering",
+  message: "More than one of your alerts matches that description.",
+  risk: "reversible_write",
+  deep_link: "/pulse/alerts",
+  record_count: 2,
+  needs_answer: true,
+  needs_disambiguation: true,
+  awaiting_fields: ["alert_id"],
+  candidates: [
+    { alert_id: 2, symbol: "BTC", display_name: "BTC alert", choice_index: 1 },
+    { alert_id: 1, symbol: "BTC", display_name: "BTC alert", choice_index: 2 },
+  ],
+  task_id: "undx_req_06f1efb14faeed5ccdb0",
+  timestamp: "2026-07-30T13:53:09+00:00",
+};
+
+const clarification: UndxResponseComponent = {
+  component: "clarification_required",
+  capability_id: "crypto.alerts.update",
+  status: "clarification_required",
+  verification_state: "impossible_to_verify",
+  verified: false,
+  title: "Change the threshold or condition of an existing crypto alert",
+  message: "What price should it trigger at?",
+  risk: "consequential_write",
+  deep_link: "/pulse/alerts",
+  record_count: 0,
+  needs_answer: true,
+  needs_disambiguation: false,
+  awaiting_fields: ["threshold"],
+  task_id: "undx_req_da4ec2baeae9db382816",
+  timestamp: "2026-07-30T13:53:09+00:00",
+};
+
+describe("a question is drawn as a question", () => {
+  /**
+   * The defect this batch fixed, asserted on the side of the wire where it did damage.
+   *
+   * Before it, the chooser arrived as `crypto_alert_card` — the capability's *success*
+   * card — which lands in `RECEIPT_COMPONENTS`, so "which of these two alerts?" was
+   * drawn under the kicker reserved for something that already happened. The kind is
+   * asserted here rather than on the server because the kind is a client decision;
+   * the server's half is in `tests/undx_agent/test_question_shape.py`.
+   */
+  it("classifies both question cards as questions, not receipts or failures", () => {
+    expect(toActionCard(chooser).kind).toBe("question");
+    expect(toActionCard(clarification).kind).toBe("question");
+  });
+
+  it("uses a kicker that does not read like something went wrong", () => {
+    // The person is not being told the request failed. They are being asked one thing.
+    expect(toActionCard(chooser).kicker).toBe("ONE MORE THING");
+    expect(toActionCard(clarification).kicker).toBe("ONE MORE THING");
+  });
+
+  it("never claims a question verified anything", () => {
+    // `verified` drives the checkmark, and the second half of each pair is the part
+    // worth having: a question that arrived claiming verification — because a server
+    // regression borrowed a receipt's payload, which is exactly what this batch found
+    // it doing — still must not draw one, because only a receipt can be verified.
+    for (const component of [chooser, clarification]) {
+      expect(toActionCard(component).verified).toBe(false);
+      expect(
+        toActionCard({ ...component, verified: true, verification_state: "verified" }).verified,
+      ).toBe(false);
+    }
+  });
+
+  it("offers neither Confirm nor Undo on a question", () => {
+    // A question carries no confirmation token and nothing to reverse. The token is
+    // forced on below to prove the guard is the card kind rather than its absence.
+    for (const component of [chooser, clarification]) {
+      expect(isConfirmation(component)).toBe(false);
+      expect(isActionable({ ...component, confirmation_token: "tok-should-be-ignored" })).toBe(
+        false,
+      );
+      expect(
+        toActionCard({
+          ...component,
+          undo_capability_id: "crypto.alerts.resume",
+          undo_arguments: { alert_id: 1 },
+        }).undoCapabilityId,
+      ).toBe("");
+    }
+  });
+
+  it("hands back the chooser's rows in the server's order", () => {
+    // Order is load-bearing, not cosmetic. The reply is resolved against the list the
+    // server remembers, so a screen that sorted these locally would put a different
+    // row under the finger than the one the server would resolve.
+    const rows = choicesOf(chooser);
+    expect(rows.map((row) => row.alert_id)).toEqual([2, 1]);
+    expect(rows.map((row) => row.choice_index)).toEqual([1, 2]);
+  });
+
+  it("offers no rows on anything that is not a chooser", () => {
+    // `candidates` has historically ridden along on other cards. Only the chooser is a
+    // list of things to pick between, and a prompt-to-type that rendered rows would be
+    // asking two different questions at once.
+    expect(choicesOf(clarification)).toEqual([]);
+    expect(choicesOf({ ...clarification, candidates: [{ alert_id: 1 }] })).toEqual([]);
+    expect(
+      choicesOf({
+        component: "crypto_alert_card",
+        status: "verified_success",
+        candidates: [{ alert_id: 1 }],
+      }),
+    ).toEqual([]);
+  });
+
+  it("survives a chooser whose rows did not arrive", () => {
+    // Defensive rather than expected: the server pairs the component with the rows and
+    // `test_a_chooser_carries_the_rows_it_is_asking_about` holds it to that. A screen
+    // that read `.length` off undefined would blank on a malformed payload instead.
+    expect(choicesOf({ ...chooser, candidates: undefined })).toEqual([]);
+  });
+});
+
+describe("what a chooser's rows say", () => {
+  it("numbers each row with the server's choice_index, not its array index", () => {
+    // The distinction is the whole point and this fixture is built so the two disagree
+    // where it matters: ids run [2, 1] while the published positions run [1, 2]. A
+    // screen that numbered rows by array index would happen to agree here — so the
+    // second half of this assertion uses a chooser the server numbered from 2, where
+    // agreeing by accident is impossible.
+    expect(choiceRowsOf(chooser).map((row) => row.position)).toEqual([1, 2]);
+    const renumbered = choiceRowsOf({
+      ...chooser,
+      candidates: [
+        { alert_id: 9, display_name: "BTC alert", choice_index: 2 },
+        { alert_id: 8, display_name: "ETH alert", choice_index: 3 },
+      ],
+    });
+    expect(renumbered.map((row) => row.position)).toEqual([2, 3]);
+    expect(renumbered.map((row) => row.reply)).toEqual(["2", "3"]);
+  });
+
+  it("falls back to the array position only when the server sent none", () => {
+    // Not a licence to renumber. It is the one case where there is nothing to preserve,
+    // and drawing an unnumbered row would leave a chooser whose rows cannot be named.
+    const rows = choiceRowsOf({
+      ...chooser,
+      candidates: [{ alert_id: 2, display_name: "BTC alert" }, { alert_id: 1, display_name: "ETH alert" }],
+    });
+    expect(rows.map((row) => row.position)).toEqual([1, 2]);
+  });
+
+  it("replies with exactly the number it draws", () => {
+    // Tapping a row and typing its number must mean the same thing. The server reads a
+    // lone number as the position it published, so `reply` may not be an id, a label, or
+    // a sentence containing the number — a sentence goes through the contradiction rule
+    // and is refused.
+    for (const row of choiceRowsOf(chooser)) {
+      expect(row.reply).toBe(String(row.position));
+    }
+  });
+
+  it("never draws a blank row", () => {
+    // A chooser is unanswerable if a row has nothing on it. The person is being asked to
+    // pick between things, and an empty line is not a thing.
+    const rows = choiceRowsOf({
+      ...chooser,
+      candidates: [{ alert_id: 4, choice_index: 1 }, { symbol: "ETH", choice_index: 2 }],
+    });
+    expect(rows.map((row) => row.label)).toEqual(["Option 1", "ETH"]);
+    expect(rows.every((row) => row.label.length > 0)).toBe(true);
+  });
+
+  it("carries the secondary line only when there is something to put on it", () => {
+    expect(choiceRowsOf(chooser).map((row) => row.detail)).toEqual(["", ""]);
+    const detailed = choiceRowsOf({
+      ...chooser,
+      candidates: [
+        { alert_id: 2, display_name: "BTC alert", condition: "above", threshold: 90000, status: "active", choice_index: 1 },
+      ],
+    });
+    expect(detailed[0].detail).toBe("above · 90000 · active");
+  });
+
+  it("offers no rows on anything that is not a chooser", () => {
+    expect(choiceRowsOf(clarification)).toEqual([]);
+    expect(choiceRowsOf({ ...chooser, candidates: undefined })).toEqual([]);
   });
 });
 
