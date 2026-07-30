@@ -46,6 +46,8 @@ from services.undx_agent_contracts import (
     RiskLevel,
     VerificationState,
     clean,
+    describe_alert,
+    format_amount,
     new_id,
 )
 from services.undx_capability_registry import REGISTRY, CapabilitySpec, get, require
@@ -1939,43 +1941,13 @@ _PROPOSED_STATE = {
 }
 
 
-def _amount(value: Any) -> str:
-    """A threshold as a person would write it, or "" if it is not a number.
-
-    ``90000.0`` is what the column holds and not what anybody types. Rendering it
-    raw on a card is a small thing that reads as a machine talking to itself, and
-    the card exists to be read.
-    """
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return ""
-    if float(value) == int(value):
-        return f"{int(value):,}"
-    return f"{float(value):,.8f}".rstrip("0").rstrip(".")
-
-
-def describe_alert(record: dict[str, Any] | None) -> str:
-    """Name one alert the way the chooser named it, from the row that was read back.
-
-    Deliberately built from the *record* and from nothing else. The caller has the
-    request text in hand and must not pass it: the defect this exists to expose is
-    an id that resolved to an alert the request did not describe, and a label that
-    could draw on the request would describe that alert correctly right up until the
-    moment it mattered.
-
-    The composition matches ``choiceRowsOf`` in the client — the chooser's name line
-    followed by its detail line, same separator. A person who picked row 2 out of a
-    list and then reads the confirmation should be looking at the same words, because
-    "is this the one I chose?" is the question the card has to answer and comparing
-    two different renderings of the same row is not a fair test of it.
-    """
-    if not isinstance(record, dict) or not record:
-        return ""
-    symbol = clean(record.get("symbol"), 24)
-    name = clean(record.get("display_name"), 80) or (f"{symbol} alert" if symbol else "")
-    parts = [part for part in (name,
-                               clean(record.get("condition"), 24),
-                               _amount(record.get("threshold"))) if part]
-    return clean(" · ".join(parts), 160)
+#: Re-exported under its historical private name so the many call sites inside this
+#: module keep working. The definition moved to :mod:`services.undx_agent_contracts`
+#: when the *result* sentence had to name its subject too: response intelligence
+#: cannot import the runtime, and a second copy of the composition would have let the
+#: confirmation card and the receipt word the same alert differently — which is
+#: precisely the comparison ``describe_alert`` exists to keep fair.
+_amount = format_amount
 
 
 def preview(user_id: int, spec: CapabilitySpec,

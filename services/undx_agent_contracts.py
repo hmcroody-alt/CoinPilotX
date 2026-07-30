@@ -324,6 +324,55 @@ def clean(value: Any, limit: int = 240) -> str:
     return text[:max(0, int(limit))]
 
 
+def format_amount(value: Any) -> str:
+    """A threshold as a person would write it, or "" if it is not a number.
+
+    ``90000.0`` is what the column holds and not what anybody types. Rendering it
+    raw on a card is a small thing that reads as a machine talking to itself, and
+    the card exists to be read.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return ""
+    if float(value) == int(value):
+        return f"{int(value):,}"
+    return f"{float(value):,.8f}".rstrip("0").rstrip(".")
+
+
+def describe_alert(record: Any) -> str:
+    """Name one alert the way the chooser named it, from a row that was read.
+
+    Deliberately built from the *record* and from nothing else. The caller has the
+    request text in hand and must not pass it: the defect this exists to expose is
+    an id that resolved to an alert the request did not describe, and a label that
+    could draw on the request would describe that alert correctly right up until the
+    moment it mattered.
+
+    The composition matches ``choiceRowsOf`` in the client — the chooser's name line
+    followed by its detail line, same separator. A person who picked row 2 out of a
+    list and then reads the confirmation should be looking at the same words, because
+    "is this the one I chose?" is the question the card has to answer and comparing
+    two different renderings of the same row is not a fair test of it.
+
+    It lives here, in the module that depends on nothing, for a reason that was paid
+    for live. Batch 16 taught the *confirmation* card to name its subject and left the
+    *result* sentence saying "the current value is paused" — the same failure one
+    screen later, because the naming lived in the runtime and the sentence is written
+    in :mod:`services.undx_response_intelligence`, which cannot import it. Two copies
+    would drift; a person comparing "is this the one I approved?" against a card that
+    words it differently is doing exactly the comparison this composition exists to
+    make fair. One function, imported by both, is the only arrangement in which the
+    two screens cannot disagree.
+    """
+    if not isinstance(record, dict) or not record:
+        return ""
+    symbol = clean(record.get("symbol"), 24)
+    name = clean(record.get("display_name"), 80) or (f"{symbol} alert" if symbol else "")
+    parts = [part for part in (name,
+                               clean(record.get("condition"), 24),
+                               format_amount(record.get("threshold"))) if part]
+    return clean(" · ".join(parts), 160)
+
+
 def canonical_hash(value: Any) -> str:
     """Stable fingerprint of a JSON-serialisable value.
 
@@ -708,6 +757,7 @@ __all__ = [
     "AgentRequest", "ToolCall", "ToolResult", "VerificationResult",
     "ConfirmationRequest", "AgentReceipt", "AgentTask", "NativeCard",
     "AgentResponse", "now_iso", "clean", "canonical_hash", "new_id",
+    "describe_alert", "format_amount",
     "MAX_PLAN_STEPS", "MAX_TOOL_CALLS", "MAX_RETRIES", "MAX_EXECUTION_SECONDS",
     "CONFIRMATION_TTL_SECONDS",
 ]

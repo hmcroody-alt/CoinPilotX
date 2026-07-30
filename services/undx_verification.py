@@ -33,6 +33,7 @@ from services.undx_agent_contracts import (
     VerificationResult,
     VerificationState,
     clean,
+    describe_alert,
 )
 
 
@@ -99,6 +100,14 @@ def crypto_alert_status(user_id: int, arguments: dict[str, Any], result: ToolRes
         evidence={
             "canonical_resource_id": f"alert_rule:{alert_id}",
             "read_back": {"status": observed, "active": int(rule.get("active") or 0)},
+            # Named from the row this function just read back, and from nothing else.
+            # The prose layer has no other honest way to say *which* alert changed: it
+            # sees an id and a status, and "the current value is paused" was what that
+            # left on screen — true, unfalsifiable, and useless to somebody with four
+            # alerts. Composed here rather than there because here is where the record
+            # is, and because a label built from the request instead of the read-back
+            # would describe the alert the person meant rather than the one that moved.
+            "subject": describe_alert(rule),
             "source": "alert_engine.get_alert_rule",
         },
     )

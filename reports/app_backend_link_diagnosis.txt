@@ -1,0 +1,57 @@
+==============================================
+ diagnose_app_backend_link   2026-07-30 15:18:27
+==============================================
+
+--- 1. Is anything answering 127.0.0.1:5050? ---
+curl exit: 0  (7 = nothing listening, 0 = answered)
+body: {"flags":{"agent_enabled":true,"capability_allowlist":[],"capability_denylist":[],"qa_cohort_configured":true,"reads_enabled":true,"writes_enabled":true,"writes_kill_switch":false},"ok":true,"pid":25003,"started_at":1785449123.9131432,"uptime_seconds":783.6,"writes_available":true}
+
+--- 2. Who holds port 5050? ---
+COMMAND   PID     USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  25003 hmcherie    6u  IPv4 0xba9d40139228f164      0t0  TCP *:mmcc (LISTEN)
+Processes matching bot.py:
+25003 /opt/homebrew/Cellar/python@3.14/3.14.0_1/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python bot.py
+
+--- 3. Is a Metro/Expo dev server running? ---
+95988 npm exec expo start --dev-client --port 8082 --clear BROWSER_USE_AVAILABLE_BACKENDS=chrome,iab CODEX_CI=1 CODEX_INTERNAL_ORIGINATOR_OVERRIDE=Codex Desktop CODEX_PERMISSION_PROFILE=:danger-full-access CODEX_SHELL=1 CODEX_THREAD_ID=019f7bf0-4525-7872-b8c8-b8ba5388e7fd COLORTERM= COMMAND_MODE=unix2003 DISABLE_AUTO_UPDATE=true
+96017 node /Users/hmcherie/Desktop/CoinPilotX/mobile-native/node_modules/.bin/expo start --dev-client --port 8082 --clear
+  (nothing on 8081)
+
+--- 4. What base URL is baked into the installed app? ---
+Booted device: E859950D-B187-4897-B389-05447C5AD796
+App container: /Users/hmcherie/Library/Developer/CoreSimulator/Devices/E859950D-B187-4897-B389-05447C5AD796/data/Containers/Bundle/Application/ECBA4FE5-C6E7-4F40-BA20-7213A3CEB839/PulseSocNative.app
+JS bundle:     none found (development client — JS comes from Metro)
+
+Info.plist bundle id / name:
+com.pulsesoc.nativeapp.dev
+PulseSoc Dev
+
+--- 5. What base URL did Metro bake into the bundle the app is running? ---
+Metro listening port: 8082
+Fetching http://127.0.0.1:8082/index.bundle?platform=ios&dev=true&minify=false
+Bundle bytes:  17365229
+PULSE_API_BASE_URL assignment(s) found in the served bundle:
+PULSE_API_BASE_URL
+PULSE_API_BASE_URL = normalizeApiBaseUrl(configuredBaseUrl)
+PULSE_API_BASE_URL || (typeof extra.pulseApiBaseUrl === "string" ? extra.pulseApiBaseUrl : "https://pulsesoc.com")
+PULSE_API_BASE_URL.replace(/^https?:\/\//i
+PULSE_API_BASE_URL"
+PULSE_API_BASE_URL": { enumerable: true
+PULSE_API_BASE_URL)
+PULSE_API_BASE_URL) ? "accent" : "warning"
+PULSE_API_BASE_URL) ? "Production" : "Non-production"
+PULSE_API_BASE_URL) && _expoVirtualEnv.env.EXPO_PUBLIC_PULSESOC_QA_AUTO_LOGIN === "1" && _expoVirtualEnv.env.EXPO_PUBLIC_PULSESOC_QA_ALLOW
+Candidate base URLs in the served bundle:
+  10 https://pulsesoc.com
+   2 http://localhost:8081
+   2 http://127.0.0.1:8082
+   1 http://127.0.0.1:5051
+
+EXPO_PUBLIC_* values actually compiled into the bundle:
+
+Occurrences of a local backend port in the bundle (5050/5051):
+   1 http://127.0.0.1:5051
+
+==============================================
+Written to reports/app_backend_link_diagnosis.txt
+==============================================

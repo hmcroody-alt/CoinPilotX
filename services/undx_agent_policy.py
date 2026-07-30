@@ -31,6 +31,7 @@ Rollout is layered so that read and write access move independently:
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any
@@ -51,6 +52,8 @@ AGENT_KILL_SWITCH_ENV = "UNDX_AGENT_DISABLE_WRITES"
 AGENT_ALLOWLIST_ENV = "UNDX_AGENT_ENABLED_CAPABILITIES"
 AGENT_DENYLIST_ENV = "UNDX_AGENT_DISABLED_CAPABILITIES"
 AGENT_QA_USERS_ENV = "UNDX_AGENT_QA_USER_IDS"
+
+logger = logging.getLogger(__name__)
 
 
 def _truthy(value: Any) -> bool:
@@ -112,6 +115,21 @@ def flags() -> dict[str, Any]:
         "capability_denylist": sorted(_id_set(os.getenv(AGENT_DENYLIST_ENV, ""))),
         "qa_cohort_configured": bool(_id_set(os.getenv(AGENT_QA_USERS_ENV, ""))),
     }
+
+
+def log_rollout_surface(where: str = "import") -> dict[str, Any]:
+    """Record, in the server's own log, what this process reads the flags as.
+
+    An operator sets these in a shell; the only view that decides anything is the
+    one inside the process that answers the request. When those two disagree —
+    a launcher that failed to kill the previous server, a flag exported after
+    boot, a second worker started from a plain ``.env`` — every symptom is the
+    same refusal sentence, with nothing in the log to tell them apart. One line
+    naming the pid and the values removes the ambiguity.
+    """
+    snapshot = flags()
+    logger.info("undx_policy_flags where=%s pid=%s %s", where, os.getpid(), snapshot)
+    return snapshot
 
 
 def user_enabled(user_id: int | None) -> bool:
@@ -188,6 +206,25 @@ def evaluate(
     # 4. Read/write gates, evaluated separately so reads survive a write incident.
     if spec.is_write:
         if not writes_available():
+            # Log what this *process* actually sees, not what the operator believes
+            # they set. The two came apart once, and expensively: a launcher
+            # stopped the old server, started a new one, and printed WRITES=1
+            # from its own shell — but the stop had silently failed, the old
+            # read-only process still held the socket, and it was the one
+            # answering the app. This refusal was the only visible symptom.
+            #
+            # The pid is therefore the first thing to read, not the flags. If it
+            # is not the process the launcher started, the flags in this line are
+            # irrelevant. `GET /health/undx` answers the same question over the
+            # channel the app itself uses, which is the only channel that can
+            # name the process actually serving requests.
+            logger.warning(
+                "undx_policy_writes_unavailable pid=%s capability=%s user_id=%s "
+                "%s=%r %s=%r",
+                os.getpid(), spec.capability_id, user_id,
+                AGENT_WRITES_ENV, os.getenv(AGENT_WRITES_ENV),
+                AGENT_KILL_SWITCH_ENV, os.getenv(AGENT_KILL_SWITCH_ENV),
+            )
             return _deny(spec, "writes_disabled",
                          "UNDX is currently read-only. It can look things up but not change them.")
     elif not _truthy(os.getenv(AGENT_READS_ENV)):
@@ -226,9 +263,12 @@ def classify_risk(spec: CapabilitySpec) -> str:
     return spec.risk
 
 
+log_rollout_surface("import")
+
+
 __all__ = [
     "Decision", "ALLOW", "REQUIRE_CONFIRMATION", "DENY",
-    "evaluate", "classify_risk", "flags", "user_enabled",
+    "evaluate", "classify_risk", "flags", "log_rollout_surface", "user_enabled",
     "capability_enabled", "writes_available",
     "AGENT_ENABLED_ENV", "AGENT_READS_ENV", "AGENT_WRITES_ENV",
     "AGENT_KILL_SWITCH_ENV", "AGENT_ALLOWLIST_ENV", "AGENT_DENYLIST_ENV",

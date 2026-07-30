@@ -1185,11 +1185,41 @@ def build_plan(spec: Any, status: str, result: ToolResult,
 # ---------------------------------------------------------------------------
 
 
+def _subject_of(verification: VerificationResult) -> str:
+    """What the read-back says it read, named the way the card named it, or "".
+
+    Published by the verifier — see ``crypto_alert_status`` — and never composed here.
+    The distinction is the whole point: a subject built in the prose layer could only
+    draw on the request, and the sentence exists to report what *moved*, not what was
+    asked for. Those are the same string until the turn where they are not, and that
+    is the turn a person needs the sentence to be right.
+    """
+    evidence = getattr(verification, "evidence", None)
+    if not isinstance(evidence, dict):
+        return ""
+    return clean(evidence.get("subject") or "", 160)
+
+
 def _write_state_sentence(spec: Any, result: ToolResult,
                           verification: VerificationResult) -> str:
-    """Describe a completed write from what the read-back observed."""
+    """Describe a completed write from what the read-back observed.
+
+    The subject clause is not decoration. Every branch below used to end in a state
+    with no thing attached to it — "the current value is paused" — and that sentence
+    was demonstrated on an iPhone 17 Pro Max against a real backend one screen after
+    a confirmation card that had correctly said "BTC alert · above · 999,999". A
+    person holding several alerts could read the receipt and still not know which one
+    UNDX had touched. Naming the subject is what makes the receipt checkable, and a
+    receipt that cannot be checked is not a receipt.
+
+    It degrades to the old wording rather than inventing one. A verifier that
+    publishes no subject has not withheld a name it knew; it did not read a record
+    that carries one, and guessing at that point would be the prose layer asserting
+    something no read-back supports.
+    """
     observed = verification.observed
     fields = tuple(getattr(spec, "verified_fields", ()) or ())
+    subject = _subject_of(verification)
 
     def value_for(name: str) -> Any:
         if isinstance(observed, dict) and name in observed:
@@ -1207,9 +1237,15 @@ def _write_state_sentence(spec: Any, result: ToolResult,
         if value not in (None, ""):
             return f"{_humanise(name)} is now {clean(value, 60)}"
     if isinstance(observed, bool):
+        if subject:
+            return f"{subject} is {'on' if observed else 'off'}"
         return "that setting is on" if observed else "that setting is off"
     if observed not in (None, "", {}):
+        if subject:
+            return f"{subject} is now {clean(observed, 60)}"
         return f"the current value is {clean(observed, 60)}"
+    if subject:
+        return f"{subject} matches what you asked for"
     return "the new state matches what you asked for"
 
 

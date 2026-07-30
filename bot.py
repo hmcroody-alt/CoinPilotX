@@ -107853,6 +107853,58 @@ def route_health_check():
     return response, 200 if healthy else 503
 
 
+UNDX_PROCESS_STARTED_AT = time.time()
+
+
+@webhook_app.route("/health/undx", methods=["GET"])
+def undx_policy_health_check():
+    """Report which process is answering, and what it reads the UNDX flags as.
+
+    This exists because of a real failure that cost most of a debugging session.
+    A restart script stopped the old server, started a new one, printed a banner
+    saying WRITES=1, and ran an in-process policy self-check that agreed. Every
+    subsequent request was still refused with "UNDX is currently read-only".
+
+    The stop had silently not worked. The old, read-only process kept the
+    loopback socket; the new one bound the wildcard address with SO_REUSEADDR,
+    so it started without complaint and then answered nothing. Both wrote to the
+    same log file, so the boot banner and the requests it never served were
+    interleaved and looked like one healthy server. The giveaway was only
+    visible by timestamp: a request was served sixteen milliseconds *before* the
+    new process finished binding, and the client's polling never once broke.
+
+    Every check available at the time asked the wrong process. The launcher's
+    self-check ran in the process it had just spawned rather than the one on the
+    socket, which is precisely the process whose opinion does not matter. What
+    was missing was a way to ask over HTTP — the same channel the app uses, so
+    the answer necessarily comes from whoever is actually serving it.
+
+    `pid` and `started_at` are the point. If the pid is not the one the launcher
+    started, nothing else in the payload is worth reading and the operator has
+    a stale process to kill, not a flag to fix.
+
+    Unauthenticated for the same reason as `/health/routes`: a check you must
+    sign in to run is worthless when the thing that is broken might be sign-in.
+    Booleans and capability ids only — no secrets, no user data.
+    """
+    try:
+        from services import undx_agent_policy as _policy
+
+        payload = {
+            "ok": True,
+            "pid": os.getpid(),
+            "started_at": UNDX_PROCESS_STARTED_AT,
+            "uptime_seconds": round(time.time() - UNDX_PROCESS_STARTED_AT, 1),
+            "flags": _policy.flags(),
+            "writes_available": _policy.writes_available(),
+        }
+    except Exception as exc:
+        payload = {"ok": False, "pid": os.getpid(), "error": exc.__class__.__name__}
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response, 200 if payload.get("ok") else 503
+
+
 @webhook_app.route("/health/database", methods=["GET"])
 def database_health_check():
     diagnostics = db_service.health_check()
