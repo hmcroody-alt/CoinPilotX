@@ -466,6 +466,11 @@ async function resolveNotificationTarget(target: string): Promise<NotificationRo
     return { handled: true, target: normalized };
   }
 
+  if (normalized === "/pulse/ai" && navigationRef.isReady()) {
+    navigationRef.navigate("Tabs", { screen: "PulseAI" });
+    return { handled: true, target: normalized };
+  }
+
   if (normalized === "/pulse/compose" && navigationRef.isReady()) {
     navigationRef.navigate("Tabs", { screen: "Home", params: { openComposer: true } });
     return { handled: true, target: normalized };

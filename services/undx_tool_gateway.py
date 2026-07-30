@@ -383,11 +383,19 @@ def _status_for(spec: CapabilitySpec, result: ToolResult, verification: Verifica
     than as success. A *failed* read-back is never softened into "accepted" — it is
     a terminal failure, because the one thing worse than not knowing is telling the
     user something happened when the state says otherwise.
+
+    Reads carry the same asymmetry. A read used to reach ``verified_success`` merely
+    by not raising, which meant a query that failed, was caught, and returned an
+    empty list was recorded as verified — the audit trail agreeing, with full
+    confidence, that nothing happened. A read that reports degraded sources is
+    therefore ``accepted_unverified``: the rows it did return are real, but it
+    cannot claim to be the whole answer.
     """
     if not result.ok:
         return AgentOutcome.RECOVERABLE_FAILURE if result.retryable else AgentOutcome.TERMINAL_FAILURE
     if not spec.is_write:
-        return AgentOutcome.VERIFIED_SUCCESS
+        return (AgentOutcome.ACCEPTED_UNVERIFIED if result.degraded_sources
+                else AgentOutcome.VERIFIED_SUCCESS)
     if verification.state == VerificationState.VERIFIED:
         return AgentOutcome.VERIFIED_SUCCESS
     if verification.state == VerificationState.FAILED:
@@ -417,6 +425,14 @@ def _explain(spec: CapabilitySpec, status: str, result: ToolResult,
             return "Your like was removed, and I verified your reaction."
         return "Done, and I read the new state back to confirm it."
     if status == AgentOutcome.ACCEPTED_UNVERIFIED:
+        if not spec.is_write:
+            # Naming the count rather than the source: the user cannot act on a
+            # table name, but "part of this is missing" changes whether they trust
+            # an empty answer, which is the whole point of saying anything at all.
+            missing = len(result.degraded_sources)
+            return ("Here is what I found, but I could not reach "
+                    f"{'one part of' if missing == 1 else f'{missing} parts of'} your data, "
+                    "so treat this as incomplete rather than as the full picture.")
         return ("PulseSoc accepted the change, but I could not read it back to confirm it. "
                 "Please check the screen before relying on it.")
     if status == AgentOutcome.RECOVERABLE_FAILURE:
@@ -650,12 +666,17 @@ def _settle(cur, *, spec: CapabilitySpec, user_id: int, arguments: dict[str, Any
                 "canonical_entity_id": result.canonical_resource_id,
                 "error_code": result.error_code,
                 "latency_ms": result.latency_ms,
+                "degraded_sources": list(result.degraded_sources),
             },
             clean(correlation_id or request_id, 120),
             confirmation=grant,
             expect_action_id=spec.capability_id,
+            # A read used to pass ``None`` here and be filed as verified regardless of
+            # whether its queries ran. The audit trail is the record we would reach for
+            # to answer "was UNDX right that day", so it has to distinguish a read that
+            # saw everything from one that saw part and returned quietly.
             canonical_verified=(verification.state == VerificationState.VERIFIED
-                                if spec.is_write else None),
+                                if spec.is_write else not result.degraded_sources),
         )
     except Exception as exc:  # pragma: no cover - defensive
         # The mutation already happened and its verdict could not be recorded. Repeating

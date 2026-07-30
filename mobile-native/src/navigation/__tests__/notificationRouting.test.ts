@@ -1,4 +1,5 @@
 import {
+  navigationRef,
   notificationTargetFamily,
   routeNotificationTarget,
   setNotificationRouteReporter,
@@ -79,5 +80,21 @@ describe("notificationTargetFamily", () => {
     expect(notificationTargetFamily("/pulse/post/12345?x=1#y")).toBe("/pulse/post/:id");
     expect(notificationTargetFamily("/pulse/profile/somelongopaquehandle0123456789")).toBe("/pulse/profile/:id");
     expect(notificationTargetFamily("/terms")).toBe("/terms");
+  });
+});
+
+describe("UNDX notification routing", () => {
+  it("opens the canonical native UNDX surface instead of Activity fallback", async () => {
+    const isReady = jest.spyOn(navigationRef, "isReady").mockReturnValue(true);
+    const navigate = jest.spyOn(navigationRef, "navigate").mockImplementation(() => undefined);
+    try {
+      const result = await routeNotificationTarget("/pulse/ai");
+      expect(result).toMatchObject({ handled: true, target: "/pulse/ai" });
+      expect(result.reason).toBeUndefined();
+      expect(navigate).toHaveBeenCalledWith("Tabs", { screen: "PulseAI" });
+    } finally {
+      navigate.mockRestore();
+      isReady.mockRestore();
+    }
   });
 });

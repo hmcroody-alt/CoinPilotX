@@ -60,6 +60,43 @@ SEEDS = (
     ("profile-activity", "Show my recent activity", "profile.activity.summary"),
     ("profile-relationships", "How many followers do I have", "profile.relationship.summary"),
     ("profile-language", "Set my preferred language to Spanish", "profile.preferences.update"),
+    ("activity-daily", "What happened today", "activity.daily_summary"),
+    ("notification-inbox", "Show my notification inbox", "notifications.inbox.list"),
+    ("notification-explain", "Why did I get this notification 1", "notifications.explain"),
+    ("notification-summary", "Summarize my notifications", "notifications.group_summary"),
+    ("search-global", "Find everything about launch", "search.global"),
+    ("search-people", "Find people named Sarah", "search.people"),
+    ("search-content", "Find content about launch", "search.content"),
+    ("search-messages", "Find messages about launch", "search.messages"),
+    ("search-activity", "Find activity about launch", "search.activity"),
+    ("settings-inspect", "Show my privacy settings", "settings.inspect"),
+    ("settings-explain", "Explain my settings", "settings.explain"),
+    ("settings-recommend", "What settings should I change", "settings.recommend"),
+    ("security-sessions", "What devices are logged in", "security.sessions.list"),
+    ("security-activity", "Show my account health", "security.activity.summary"),
+    ("security-devices", "List my devices", "security.device.list"),
+    ("marketplace-search", "Search marketplace for a camera", "marketplace.search"),
+    ("marketplace-listing", "Summarize listing 1", "marketplace.listing.summary"),
+    ("marketplace-order", "Where is my order 1", "marketplace.order.status"),
+    ("premium-status", "What plan am I on", "premium.status"),
+    ("premium-entitlements", "What features do I have", "premium.entitlements"),
+    ("ads-performance", "How did my ads perform", "ads.performance.summary"),
+    ("live-search", "Find live sessions about music", "live.search"),
+    ("live-summary", "Summarize live 1", "live.summary"),
+    ("live-performance", "How did my live 1 perform", "live.performance"),
+    ("learning-search", "Find a course about editing", "learning.search"),
+    ("learning-progress", "Show my learning progress", "learning.progress"),
+    ("memory-activity", "What do you know about my PulseSoc activity", "memory.activity.inspect"),
+    ("groups-list", "Show my groups", "groups.list"),
+    ("groups-search", "Find a group for photography", "groups.search"),
+    ("events-upcoming", "What events are coming up", "events.upcoming"),
+    ("music-search", "Find music for a cinematic Reel", "music.search"),
+    ("account-health", "Is my account healthy", "account.health.summary"),
+    ("verification-status", "What is my verification status", "verification.status"),
+    ("support-tickets", "Show my support tickets", "support.tickets.list"),
+    ("creator-analytics", "How is my content performing", "creator.analytics.summary"),
+    ("localization", "Show my language and region settings", "localization.preferences"),
+    ("presence-privacy", "Who can see me online", "presence.privacy.status"),
 )
 
 PREFIXES = (
@@ -71,6 +108,8 @@ PREFIXES = (
     "From my current session, ", "As a read-only request, ",
     "Check and ", "Open UNDX and ", "In the PulseSoc app, ",
     "Using my verified identity, ", "For this QA task, ", "With no duplicate action, ",
+    "Based only on real data, ", "With sources attached, ", "Read only and ",
+    "Using authorized records, ", "Without inventing details, ", "For my account, ",
 )
 
 
@@ -112,4 +151,4 @@ def audit() -> dict:
 if __name__ == "__main__":
     report = audit()
     print(json.dumps(report, indent=2, sort_keys=True))
-    raise SystemExit(0 if report["ok"] and report["benchmark_case_count"] >= 200 else 1)
+    raise SystemExit(0 if report["ok"] and report["benchmark_case_count"] >= 2000 else 1)

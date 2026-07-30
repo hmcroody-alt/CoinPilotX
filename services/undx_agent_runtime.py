@@ -421,6 +421,12 @@ def build_card(spec: CapabilitySpec, outcome: undx_tool_gateway.GatewayOutcome) 
             card["data"] = outcome.result.data
         if outcome.result.idempotent_replay:
             card["idempotent_replay"] = True
+        if outcome.result.degraded_sources:
+            # A field rather than prose, so the client can visibly mark the answer
+            # partial. Without it a degraded read renders identically to a complete
+            # one and an empty section reads as "there is nothing here".
+            card["complete"] = False
+            card["degraded_sources"] = list(outcome.result.degraded_sources)
     if outcome.verification is not None and outcome.verification.state != VerificationState.VERIFIED:
         # Surfaced so the client can visibly downgrade its own confidence rather than
         # rendering an unverified change identically to a confirmed one.
@@ -743,6 +749,32 @@ def handle(
             arguments["feed"] = "trending"
         elif "following" in lowered:
             arguments["feed"] = "following"
+    if any(item.name == "query" for item in spec.fields) and not arguments.get("query"):
+        # Search phrases are filters, never authority. Keep the extraction bounded
+        # and let the owner-scoped domain service decide which records are visible.
+        match = re.search(
+            r"(?:about|for|named)\s+(.+?)[.!?]?$",
+            text, re.IGNORECASE,
+        )
+        if match:
+            arguments["query"] = clean(match.group(1), 120)
+    for field_name, noun in (
+        ("notification_id", "notification"),
+        ("listing_id", "listing"),
+        ("order_id", "order"),
+        ("live_id", "live"),
+    ):
+        if any(item.name == field_name for item in spec.fields) and not arguments.get(field_name):
+            match = re.search(rf"\b{noun}\s*(?:id\s*)?#?\s*(\d+)\b", text, re.IGNORECASE)
+            if match:
+                arguments[field_name] = int(match.group(1))
+    if spec.capability_id == "settings.explain" and not arguments.get("section"):
+        lowered = text.lower()
+        arguments["section"] = next(
+            (section for section in ("privacy", "notifications", "language", "accessibility")
+             if section in lowered),
+            "all",
+        )
 
     # Read the before/after pair now, while nothing has changed, so a confirmation
     # card can state plainly what it is asking permission for.

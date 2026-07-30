@@ -200,9 +200,20 @@ class KnowledgeMapTests(unittest.TestCase):
             assert record.native_screen in kmap.NATIVE_ROUTES
             if record.native_route:
                 expected = kmap.NATIVE_ROUTES[record.native_screen]
-                assert kmap._route_shape(record.native_route) == kmap._route_shape(expected), (
-                    f"{record.capability_id}: route {record.native_route!r} is not screen "
-                    f"{record.native_screen!r}'s route {expected!r}"
+                # Matching rather than comparing. Screens are declared as patterns
+                # and records name concrete paths, so ``/pulse/settings/privacy`` is
+                # served by ``/pulse/settings/:section``, and an optional trailing
+                # parameter may simply be absent. Equality rejected both of those
+                # while catching nothing equality alone could catch — the check that
+                # a record does not claim someone else's screen is the one below.
+                assert kmap._route_matches(record.native_route, expected), (
+                    f"{record.capability_id}: route {record.native_route!r} is not served by "
+                    f"screen {record.native_screen!r}'s route {expected!r}"
+                )
+                owner = kmap._LITERAL_OWNERS.get(record.native_route.rstrip("/"))
+                assert owner in (None, record.native_screen), (
+                    f"{record.capability_id}: route {record.native_route!r} belongs to "
+                    f"screen {owner!r}, not {record.native_screen!r}"
                 )
 
 
@@ -214,13 +225,13 @@ class KnowledgeMapTests(unittest.TestCase):
         in it reads ``linking.ts``. That gap is only visible from a test that holds
         both, which is this one.
         """
-        declared_shapes = {
-            kmap._route_shape(path)
+        declared = [
+            path
             for paths in _declared_routes_from_linking_ts().values()
             for path in paths
-        }
+        ]
         for spec in registry.REGISTRY.values():
-            assert kmap._route_shape(spec.native_route) in declared_shapes, (
+            assert any(kmap._route_matches(spec.native_route, path) for path in declared), (
                 f"{spec.capability_id}: native_route {spec.native_route!r} has no screen behind it"
             )
 
@@ -802,8 +813,19 @@ class KnowledgeMapTests(unittest.TestCase):
             assert not record.registered, (
                 f"{record.capability_id}: a toggling operation is registered as an executable tool"
             )
-            assert kmap.classify_readiness(record) == kmap.ReadinessClass.TOGGLE_HAZARD, (
-                f"{record.capability_id}: declares toggle semantics but is not classified as a hazard"
+            # Not an equality check, because the mandated precedence puts
+            # AUTHORIZATION DEFECT and DOMAIN SERVICE REQUIRED above TOGGLE HAZARD:
+            # ``saved.reel.set`` toggles *and* has no domain service, and the gate is
+            # required to name the more severe blocker. What must never happen is a
+            # toggle reaching the wire, so that is what is asserted.
+            readiness = kmap.classify_readiness(record)
+            assert readiness != kmap.ReadinessClass.READY_TO_WIRE, (
+                f"{record.capability_id}: declares toggle semantics but is ready to wire"
+            )
+            outranks = (kmap.ReadinessClass.AUTHORIZATION_DEFECT,
+                        kmap.ReadinessClass.DOMAIN_SERVICE_REQUIRED)
+            assert readiness in (kmap.ReadinessClass.TOGGLE_HAZARD, *outranks), (
+                f"{record.capability_id}: declares toggle semantics but classified {readiness}"
             )
 
 

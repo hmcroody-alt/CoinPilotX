@@ -815,6 +815,90 @@ def reels_unlike(u, a): return _reel_write(u, a, "reels.unlike", "set_reel_liked
 
 
 # ---------------------------------------------------------------------------
+# Phase 3B personal intelligence (read-only)
+# ---------------------------------------------------------------------------
+
+def _personal_read(user_id: int, arguments: dict[str, Any], capability: str,
+                   function: str, canonical_key: str = "") -> ToolResult:
+    started = time.perf_counter()
+    from services import undx_personal_intelligence_service as personal
+    kwargs = {key: value for key, value in arguments.items() if not key.startswith("_")}
+    # Every personal read runs inside a degradation collector, not only the read
+    # models that opened one of their own. A read whose SQL raised returns [] and is
+    # otherwise indistinguishable from a genuinely empty result, so without this the
+    # gateway would stamp a broken query 'verified' and UNDX would report an
+    # authoritative nothing. The names collected here travel on the result and are
+    # what stop the gateway calling a degraded read verified.
+    with personal.collecting() as degraded:
+        value = getattr(personal, function)(int(user_id), **kwargs)
+        degraded_sources = sorted(degraded)
+    if value is None:
+        return _fail(f"pulsesoc.{capability}", capability, "not_found",
+                     "UNDX could not find an authorized matching item.", started=started)
+    records = value if isinstance(value, list) else (
+        list(value.get("items") or value.get("facts") or value.get("campaigns") or [])
+        if isinstance(value, dict) else []
+    )
+    canonical = f"user:{int(user_id)}"
+    if canonical_key and isinstance(value, dict):
+        target = value.get(canonical_key) or (value.get("data") or {}).get(canonical_key)
+        if target:
+            canonical = f"{canonical_key.removesuffix('_id')}:{target}"
+    data = value if isinstance(value, dict) else {"count": len(records), "items": records}
+    if degraded_sources:
+        # Written unconditionally rather than merged, so a read model that computed
+        # its own optimistic 'complete' cannot outvote an observed failure.
+        data = dict(data)
+        data["complete"] = False
+        data["degraded_sources"] = degraded_sources
+    return ToolResult(
+        ok=True, tool_name=f"pulsesoc.{capability}", capability_id=capability,
+        canonical_resource_id=canonical, records=records,
+        data=data, degraded_sources=degraded_sources,
+        latency_ms=_timed(started),
+    )
+
+
+def activity_daily_summary(u, a): return _personal_read(u, a, "activity.daily_summary", "activity_daily_summary")
+def notifications_inbox_list(u, a): return _personal_read(u, a, "notifications.inbox.list", "notifications_inbox")
+def notifications_explain(u, a): return _personal_read(u, a, "notifications.explain", "notification_explain", "notification_id")
+def notifications_group_summary(u, a): return _personal_read(u, a, "notifications.group_summary", "notification_group_summary")
+def search_global(u, a): return _personal_read(u, a, "search.global", "search_global")
+def search_people(u, a): return _personal_read(u, a, "search.people", "search_people")
+def search_content(u, a): return _personal_read(u, a, "search.content", "search_content")
+def search_messages(u, a): return _personal_read(u, a, "search.messages", "search_messages")
+def search_activity(u, a): return _personal_read(u, a, "search.activity", "search_activity")
+def settings_inspect(u, a): return _personal_read(u, a, "settings.inspect", "settings_inspect")
+def settings_explain(u, a): return _personal_read(u, a, "settings.explain", "settings_explain")
+def settings_recommend(u, a): return _personal_read(u, a, "settings.recommend", "settings_recommend")
+def security_sessions_list(u, a): return _personal_read(u, a, "security.sessions.list", "security_sessions")
+def security_activity_summary(u, a): return _personal_read(u, a, "security.activity.summary", "security_activity_summary")
+def security_device_list(u, a): return _personal_read(u, a, "security.device.list", "security_devices")
+def marketplace_search(u, a): return _personal_read(u, a, "marketplace.search", "marketplace_search")
+def marketplace_listing_summary(u, a): return _personal_read(u, a, "marketplace.listing.summary", "marketplace_listing_summary", "listing_id")
+def marketplace_order_status(u, a): return _personal_read(u, a, "marketplace.order.status", "marketplace_order_status", "order_id")
+def premium_status(u, a): return _personal_read(u, a, "premium.status", "premium_status")
+def premium_entitlements(u, a): return _personal_read(u, a, "premium.entitlements", "premium_entitlements")
+def ads_performance_summary(u, a): return _personal_read(u, a, "ads.performance.summary", "ads_performance_summary")
+def live_search(u, a): return _personal_read(u, a, "live.search", "live_search")
+def live_summary(u, a): return _personal_read(u, a, "live.summary", "live_summary", "live_id")
+def live_performance(u, a): return _personal_read(u, a, "live.performance", "live_performance", "live_id")
+def learning_search(u, a): return _personal_read(u, a, "learning.search", "learning_search")
+def learning_progress(u, a): return _personal_read(u, a, "learning.progress", "learning_progress")
+def memory_activity_inspect(u, a): return _personal_read(u, a, "memory.activity.inspect", "memory_activity_inspect")
+def groups_list(u, a): return _personal_read(u, a, "groups.list", "groups_list")
+def groups_search(u, a): return _personal_read(u, a, "groups.search", "groups_search")
+def events_upcoming(u, a): return _personal_read(u, a, "events.upcoming", "events_upcoming")
+def music_search(u, a): return _personal_read(u, a, "music.search", "music_search")
+def account_health_summary(u, a): return _personal_read(u, a, "account.health.summary", "account_health_summary")
+def verification_status(u, a): return _personal_read(u, a, "verification.status", "verification_status")
+def support_tickets_list(u, a): return _personal_read(u, a, "support.tickets.list", "support_tickets_list")
+def creator_analytics_summary(u, a): return _personal_read(u, a, "creator.analytics.summary", "creator_analytics_summary")
+def localization_preferences(u, a): return _personal_read(u, a, "localization.preferences", "localization_preferences")
+def presence_privacy_status(u, a): return _personal_read(u, a, "presence.privacy.status", "presence_privacy_status")
+
+
+# ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
 
@@ -862,6 +946,43 @@ EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
     "profile_activity": profile_activity,
     "profile_relationships": profile_relationships,
     "profile_preferences_update": profile_preferences_update,
+    "activity_daily_summary": activity_daily_summary,
+    "notifications_inbox_list": notifications_inbox_list,
+    "notifications_explain": notifications_explain,
+    "notifications_group_summary": notifications_group_summary,
+    "search_global": search_global,
+    "search_people": search_people,
+    "search_content": search_content,
+    "search_messages": search_messages,
+    "search_activity": search_activity,
+    "settings_inspect": settings_inspect,
+    "settings_explain": settings_explain,
+    "settings_recommend": settings_recommend,
+    "security_sessions_list": security_sessions_list,
+    "security_activity_summary": security_activity_summary,
+    "security_device_list": security_device_list,
+    "marketplace_search": marketplace_search,
+    "marketplace_listing_summary": marketplace_listing_summary,
+    "marketplace_order_status": marketplace_order_status,
+    "premium_status": premium_status,
+    "premium_entitlements": premium_entitlements,
+    "ads_performance_summary": ads_performance_summary,
+    "live_search": live_search,
+    "live_summary": live_summary,
+    "live_performance": live_performance,
+    "learning_search": learning_search,
+    "learning_progress": learning_progress,
+    "memory_activity_inspect": memory_activity_inspect,
+    "groups_list": groups_list,
+    "groups_search": groups_search,
+    "events_upcoming": events_upcoming,
+    "music_search": music_search,
+    "account_health_summary": account_health_summary,
+    "verification_status": verification_status,
+    "support_tickets_list": support_tickets_list,
+    "creator_analytics_summary": creator_analytics_summary,
+    "localization_preferences": localization_preferences,
+    "presence_privacy_status": presence_privacy_status,
 }
 
 

@@ -232,8 +232,68 @@ def _route_shape(path: str) -> str:
     return _PARAM.sub(":*", path.rstrip("/") or "/")
 
 
+#: A trailing ``:name?`` segment, which the client may or may not supply.
+_OPTIONAL_TAIL = re.compile(r"/:[A-Za-z_][A-Za-z0-9_]*\?$")
+
+
+def _route_shapes(path: str) -> frozenset[str]:
+    """Every shape a single declaration legitimately matches.
+
+    An optional trailing parameter is exactly that. ``linking.ts`` declares
+    ``VerificationCenter`` as ``pulse/verification/:track?`` and
+    ``nativeRouteActions.ts`` navigates to it as ``/pulse/verification``; both name
+    the same screen, and a record that uses the shorter spelling is not sending the
+    user somewhere else. Comparing single shapes rejected that pair, which made the
+    map refuse a record that was correct.
+
+    Expanding the optional tails rather than deleting them is what keeps the check
+    strict: a *required* parameter still has to appear on both sides, so a record
+    that names ``/pulse/settings`` for a screen declared ``/pulse/settings/:section``
+    is still caught.
+    """
+    shapes = {_route_shape(path)}
+    trimmed = path.rstrip("/")
+    while True:
+        stripped = _OPTIONAL_TAIL.sub("", trimmed)
+        if stripped == trimmed:
+            break
+        trimmed = stripped
+        shapes.add(_route_shape(trimmed))
+    return frozenset(shapes)
+
+
 #: Every declared route, by shape, for membership tests.
-_ROUTE_SHAPES = {_route_shape(path) for path in NATIVE_ROUTES.values()}
+_ROUTE_SHAPES = {shape for path in NATIVE_ROUTES.values() for shape in _route_shapes(path)}
+
+
+def _segments_match(candidate: str, declared: str) -> bool:
+    """Whether one concrete shape satisfies another, segment by segment."""
+    left = candidate.strip("/").split("/")
+    right = declared.strip("/").split("/")
+    if len(left) != len(right):
+        return False
+    return all(a == b or ":*" in (a, b) for a, b in zip(left, right))
+
+
+def _route_matches(candidate: str, declared: str) -> bool:
+    """Whether ``candidate`` is a path the screen declared as ``declared`` serves.
+
+    Screens are declared as patterns and records name concrete paths, so string
+    comparison was the wrong instrument: ``/pulse/settings/language-region`` is
+    served by ``AccountCenter``'s ``/pulse/settings/:section``, and refusing it made
+    the map reject a record whose route the router does in fact handle.
+
+    Segment count still has to agree, so ``/pulse/settings`` does not pass for
+    ``/pulse/settings/:section`` — a required parameter is required.
+    """
+    return any(_segments_match(c, d)
+               for c in _route_shapes(candidate)
+               for d in _route_shapes(declared))
+
+
+#: Screens declared at a literal path, which therefore own it outright.
+_LITERAL_OWNERS = {path.rstrip("/"): screen
+                   for screen, path in NATIVE_ROUTES.items() if ":" not in path}
 
 
 # ---------------------------------------------------------------------------
@@ -316,15 +376,26 @@ class ProductCapabilityRecord:
             if self.native_screen not in NATIVE_ROUTES:
                 raise ValueError(f"{cid}: native_screen {self.native_screen!r} is not a declared screen")
             declared_route = NATIVE_ROUTES[self.native_screen]
-            if self.native_route and _route_shape(self.native_route) != _route_shape(declared_route):
+            if self.native_route:
+                # A screen declared at a literal path owns that path outright, so a
+                # record naming it must name that screen — otherwise a route claimed
+                # by a catch-all pattern would be filed against the catch-all while
+                # the user lands somewhere more specific.
+                owner = _LITERAL_OWNERS.get(self.native_route.rstrip("/"))
+                if owner and owner != self.native_screen:
+                    raise ValueError(
+                        f"{cid}: native_route {self.native_route!r} belongs to screen "
+                        f"{owner!r}, not {self.native_screen!r}"
+                    )
                 # Catching this pair rather than only checking membership is what
                 # stops a record from naming a screen the user would not land on:
                 # a route that exists somewhere in the app still sends the person
-                # to the wrong place if it is not the route this screen owns.
-                raise ValueError(
-                    f"{cid}: native_route {self.native_route!r} is not the route "
-                    f"declared for screen {self.native_screen!r} ({declared_route!r})"
-                )
+                # to the wrong place if it is not the route this screen serves.
+                if not owner and not _route_matches(self.native_route, declared_route):
+                    raise ValueError(
+                        f"{cid}: native_route {self.native_route!r} is not the route "
+                        f"declared for screen {self.native_screen!r} ({declared_route!r})"
+                    )
 
         if self.deep_link_template:
             if not self.deep_link_template.startswith(DEEP_LINK_PREFIXES):
@@ -967,8 +1038,8 @@ _mapped(
     result_card_type=CardType.CONTENT_RESULT,
     implementation_status=_PARTIAL,
     evidence=(
-        "bot.py:35714 /api/pulse/status/rail",
-        "bot.py:35189 /pulse/status renders a page",
+        "bot.py:36808 /api/pulse/status/rail",
+        "bot.py:36283 /pulse/status renders a page",
     ),
     known_limitations=(
         "The only JSON status endpoint is the rail, which returns the viewer's "
@@ -987,7 +1058,7 @@ _mapped(
     authorization_scope=_MEMBER, target_field="status_id",
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:32232 /pulse/status/<status_id> renders a page",
+        "bot.py:33324 /pulse/status/<status_id> renders a page",
     ),
     known_limitations=(
         "No JSON read of a single status exists; that route renders HTML. Status visibility is "
@@ -1171,7 +1242,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id", target_field="reel_id",
     undo_capability_id="saved.reel.set",
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:77186 reel save handler",),
+    evidence=("bot.py:78411 reel save handler",),
     known_limitations=(_SAVED_TOGGLE,),
     toggle_semantics=True,
 )
@@ -1186,7 +1257,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id", target_field="listing_id",
     undo_capability_id="saved.listing.set",
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:81885 marketplace save handler",),
+    evidence=("bot.py:83106 marketplace save handler",),
     known_limitations=(_SAVED_TOGGLE,),
     toggle_semantics=True,
 )
@@ -1301,7 +1372,7 @@ _mapped(
     authorization_scope=_OTHER, owner_field="user_id", target_field="request_id",
     result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:78548 friend accept handler",),
+    evidence=("bot.py:79780 friend accept handler",),
     known_limitations=("Guards on `AND status = 'pending'`, which is correct, but the "
                        "update is inline in the handler.",),
 )
@@ -1316,7 +1387,7 @@ _mapped(
     authorization_scope=_UNSCOPED, owner_field="user_id", target_field="request_id",
     result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
     implementation_status=_PARTIAL,
-    evidence=("bot.py:78587 friend decline handler", "bot.py:78548 accept, for contrast"),
+    evidence=("bot.py:79817 friend decline handler", "bot.py:79780 accept, for contrast"),
     known_limitations=(
         "Decline omits the `AND status = 'pending'` guard that accept has, so it "
         "will transition a request that is already accepted or already declined. "
@@ -1644,7 +1715,7 @@ _mapped(
     output_schema=(("live_id", "int"), ("host_id", "int"), ("title", "str")),
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:41458 /pulse/live renders a page",
+        "bot.py:42698 /pulse/live renders a page",
     ),
     known_limitations=(
         "No JSON listing of live sessions exists. The route behind the Live screen renders a "
@@ -2216,6 +2287,75 @@ _mapped(
     ),
 )
 
+# ===========================================================================
+# 31. Phase 3B personal intelligence
+# ===========================================================================
+
+for _capability_id, _area, _resource, _screen, _operation in (
+    ("activity.daily_summary", "Activity", "activity_fact", "ActivityInbox", "activity_daily_summary"),
+    ("notifications.inbox.list", "Notifications", "notification", "Notifications", "notifications_inbox"),
+    ("notifications.explain", "Notifications", "notification", "Notifications", "notification_explain"),
+    ("notifications.group_summary", "Notifications", "notification_group", "Notifications", "notification_group_summary"),
+    ("search.global", "Search", "search_result", "Search", "search_global"),
+    ("search.people", "Search", "profile", "Search", "search_people"),
+    ("search.content", "Search", "content", "Search", "search_content"),
+    ("search.messages", "Search", "message", "Messenger", "search_messages"),
+    ("search.activity", "Search", "activity_fact", "ActivityInbox", "search_activity"),
+    ("settings.inspect", "Privacy", "setting", "Settings", "settings_inspect"),
+    ("settings.explain", "Privacy", "setting", "Settings", "settings_explain"),
+    ("settings.recommend", "Privacy", "setting_recommendation", "Settings", "settings_recommend"),
+    ("security.sessions.list", "Security", "session", "AccountDevices", "security_sessions"),
+    ("security.activity.summary", "Security", "security_event", "AccountHealth", "security_activity_summary"),
+    ("security.device.list", "Security", "device", "AccountDevices", "security_devices"),
+    ("marketplace.search", "Marketplace", "listing", "Marketplace", "marketplace_search"),
+    ("marketplace.listing.summary", "Marketplace", "listing", "MarketplaceDetail", "marketplace_listing_summary"),
+    ("marketplace.order.status", "Marketplace", "order", "BuyerOrderDetail", "marketplace_order_status"),
+    ("premium.status", "Premium", "premium_status", "Premium", "premium_status"),
+    ("premium.entitlements", "Premium", "entitlement", "Premium", "premium_entitlements"),
+    ("ads.performance.summary", "Ads", "campaign_metric", "IntelligenceCenter", "ads_performance_summary"),
+    ("live.search", "Live", "live_session", "Live", "live_search"),
+    ("live.summary", "Live", "live_session", "LiveDetail", "live_summary"),
+    ("live.performance", "Live", "live_metric", "LiveDetail", "live_performance"),
+    ("learning.search", "Learning", "course", "Courses", "learning_search"),
+    ("learning.progress", "Learning", "course_progress", "Courses", "learning_progress"),
+    ("memory.activity.inspect", "UNDX memory and tasks", "sourced_fact", "UndxActionCenter", "memory_activity_inspect"),
+    ("groups.list", "Groups", "group", "Groups", "groups_list"),
+    ("groups.search", "Groups", "group", "Groups", "groups_search"),
+    ("events.upcoming", "Events", "event", "Events", "events_upcoming"),
+    ("music.search", "Music", "music_track", "Music", "music_search"),
+    ("account.health.summary", "Account health", "account_health_fact", "AccountHealth", "account_health_summary"),
+    ("verification.status", "Verification", "verification_request", "VerificationCenter", "verification_status"),
+    ("support.tickets.list", "Support", "support_ticket", "TrustSafetySupport", "support_tickets_list"),
+    ("creator.analytics.summary", "Creator", "creator_metric", "CreatorStudio", "creator_analytics_summary"),
+    # AccountCenter, not Settings: the registry routes both of these to
+    # ``/pulse/settings/<section>``, which is AccountCenter's catch-all. Naming
+    # ``Settings`` would have sent the user one level up from the screen that
+    # actually shows the setting.
+    ("localization.preferences", "Localization", "localization_preference", "AccountCenter", "localization_preferences"),
+    ("presence.privacy.status", "Presence", "presence_preference", "AccountCenter", "presence_privacy_status"),
+):
+    _live(
+        _capability_id,
+        product_area=_area,
+        resource_type=_resource,
+        native_screen=_screen,
+        backend_route="POST /api/pulse-ai/message",
+        domain_service="services.undx_personal_intelligence_service",
+        domain_operation=_operation,
+        authorization_scope=_SELF,
+        owner_field="user_id",
+        output_schema=(
+            ("source", "str"), ("timestamp", "str"), ("authorization_scope", "str"),
+            ("native_route", "str"), ("confidence", "float"),
+        ),
+        feature_flag="UNDX_AGENT_READS_ENABLED",
+        evidence=(
+            f"services/undx_personal_intelligence_service.py:{_operation}",
+            "tests/undx_agent/test_personal_intelligence_pack.py",
+        ),
+        known_limitations=("Read-only. Empty source tables produce empty results, never inferred facts.",),
+    )
+
 
 # ---------------------------------------------------------------------------
 # Indexes
@@ -2341,26 +2481,52 @@ def classify_readiness(record: ProductCapabilityRecord) -> str:
     has to name the thing that must be fixed *first*: there is no point writing
     a verifier for an operation whose authorization lets the caller reach rows
     they do not own.
+
+    The mandated precedence is::
+
+        AUTHORIZATION DEFECT -> DOMAIN SERVICE REQUIRED -> TOGGLE HAZARD
+        -> VERIFIER REQUIRED -> NATIVE CONTEXT REQUIRED -> UNSUPPORTED
+        -> READY TO WIRE
+
+    This function previously tested ``UNSUPPORTED`` first, which inverted the two
+    ends of that list. The consequence was not cosmetic: a capability that is both
+    unsupported *and* carries an authorization defect classified as the milder of
+    the two, so the defect left the matrix entirely. "Unsupported" reads as "we are
+    not building this yet" and gets skimmed past; the defect it was hiding is a
+    caller reaching rows they do not own, which stays true the day someone decides
+    to support the capability after all. Severity has to survive being combined with
+    inactivity, so ``UNSUPPORTED`` now sorts second-to-last — a statement about
+    scheduling, made only once nothing more serious is true.
+
+    ``TOGGLE HAZARD`` also sat above ``DOMAIN SERVICE REQUIRED`` here, against the
+    mandate. Restoring the mandated order is worth naming, because both toggling
+    records are also service-missing and therefore now classify as ``DOMAIN SERVICE
+    REQUIRED``, leaving ``TOGGLE HAZARD`` empty in the matrix. The hazard does not
+    thereby disappear: ``toggle_semantics`` is still on the record, still stated in
+    ``known_limitations``, and ``test_a_toggle_is_never_recorded_as_a_desired_state_write``
+    still fails if a toggling operation is registered or reaches ``READY TO WIRE``.
+    The label names what must be built first, which for these two is the service;
+    the toggle is a constraint on how that service must then be written.
     """
-    if record.implementation_status in (ImplementationStatus.UNSUPPORTED,
-                                        ImplementationStatus.INTENTIONALLY_DISABLED):
-        return ReadinessClass.UNSUPPORTED
     if record.authorization_scope in (AuthorizationScope.EXISTENCE_ORACLE,
                                       AuthorizationScope.UNSCOPED,
                                       AuthorizationScope.PRIVILEGED):
         return ReadinessClass.AUTHORIZATION_DEFECT
-    if record.toggle_semantics:
-        return ReadinessClass.TOGGLE_HAZARD
     if record.implementation_status == ImplementationStatus.SERVICE_MISSING or (
         record.is_write and not record.domain_operation
     ):
         return ReadinessClass.DOMAIN_SERVICE_REQUIRED
-    if record.requires_native_context:
-        return ReadinessClass.NATIVE_CONTEXT_REQUIRED
+    if record.toggle_semantics:
+        return ReadinessClass.TOGGLE_HAZARD
     if record.is_write and not record.verifier:
         return ReadinessClass.VERIFIER_REQUIRED
     if record.read_back_missing:
         return ReadinessClass.VERIFIER_REQUIRED
+    if record.requires_native_context:
+        return ReadinessClass.NATIVE_CONTEXT_REQUIRED
+    if record.implementation_status in (ImplementationStatus.UNSUPPORTED,
+                                        ImplementationStatus.INTENTIONALLY_DISABLED):
+        return ReadinessClass.UNSUPPORTED
     return ReadinessClass.READY_TO_WIRE
 
 

@@ -454,6 +454,12 @@ class ToolResult:
     retryable: bool = False
     latency_ms: int = 0
     idempotent_replay: bool = False
+    #: Reads that failed while producing this result. Non-empty means the records
+    #: are a partial view: ``ok`` is True but the answer is not complete. This field
+    #: exists because a failed read returns an empty list, which is otherwise
+    #: identical to a genuinely empty result — the case where a wrong answer gets
+    #: delivered with full authority. Anything here blocks ``verified_success``.
+    degraded_sources: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -97,6 +97,45 @@ import { formatFileSize, formatShortTime } from "../utils/format";
 
 const PAGE_SIZE = 40;
 const SYNC_INTERVAL_MS = 2500;
+const PERSONAL_INTELLIGENCE_CAPABILITIES = new Set([
+  "activity.daily_summary",
+  "notifications.inbox.list",
+  "notifications.explain",
+  "notifications.group_summary",
+  "search.global",
+  "search.people",
+  "search.content",
+  "search.messages",
+  "search.activity",
+  "settings.inspect",
+  "settings.explain",
+  "settings.recommend",
+  "security.sessions.list",
+  "security.activity.summary",
+  "security.device.list",
+  "marketplace.search",
+  "marketplace.listing.summary",
+  "marketplace.order.status",
+  "premium.status",
+  "premium.entitlements",
+  "ads.performance.summary",
+  "live.search",
+  "live.summary",
+  "live.performance",
+  "learning.search",
+  "learning.progress",
+  "memory.activity.inspect",
+  "groups.list",
+  "groups.search",
+  "events.upcoming",
+  "music.search",
+  "account.health.summary",
+  "verification.status",
+  "support.tickets.list",
+  "creator.analytics.summary",
+  "localization.preferences",
+  "presence.privacy.status"
+]);
 
 function isLocalMessengerFixtureConversation(conversationId: number) {
   return PULSESOC_QA_MESSENGER_FIXTURES && conversationId >= 9001 && conversationId <= 9006;
@@ -1280,6 +1319,59 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
                         <View style={styles.undxSavedCopy}>
                           <Text style={styles.undxAlertTitle} numberOfLines={2}>{title}</Text>
                           <Text style={styles.undxAlertMeta} numberOfLines={3}>{detail}</Text>
+                        </View>
+                        <Text style={styles.undxAlertOpen}>Open ›</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+              {component.component === "content_result" &&
+              PERSONAL_INTELLIGENCE_CAPABILITIES.has(String(component.capability_id || "")) &&
+              component.records?.length ? (
+                <View style={styles.undxAlertList}>
+                  {component.records.map((record, recordIndex) => {
+                    const title = String(
+                      record.title ||
+                      record.display_name ||
+                      record.name ||
+                      record.username ||
+                      record.kind ||
+                      record.source ||
+                      "PulseSoc activity"
+                    );
+                    const timestamp = String(record.timestamp || record.created_at || "");
+                    const source = String(record.source || "");
+                    const detail = String(
+                      record.detail ||
+                      record.summary ||
+                      record.body ||
+                      record.description ||
+                      [source, timestamp].filter(Boolean).join(" · ") ||
+                      "Authorized PulseSoc result"
+                    );
+                    const sourceUrl = String(
+                      record.native_route ||
+                      record.source_url ||
+                      component.deep_link ||
+                      "/pulse/ai"
+                    );
+                    return (
+                      <Pressable
+                        key={`${String(component.capability_id)}-${String(record.source_id || record.id || recordIndex)}`}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open ${title}`}
+                        style={styles.undxAlertRow}
+                        onPress={() => openUndxResult(sourceUrl)}
+                      >
+                        <View style={styles.undxSavedCopy}>
+                          <Text style={styles.undxAlertTitle} numberOfLines={2}>{title}</Text>
+                          <Text style={styles.undxAlertMeta} numberOfLines={3}>{detail}</Text>
+                          {source || timestamp ? (
+                            <Text style={styles.undxAlertMeta} numberOfLines={1}>
+                              {[source, timestamp].filter(Boolean).join(" · ")}
+                            </Text>
+                          ) : null}
                         </View>
                         <Text style={styles.undxAlertOpen}>Open ›</Text>
                       </Pressable>
