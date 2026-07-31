@@ -41,3 +41,4 @@ mobile/pulse-react-native/builds/
 
 venv/
 .venv/
+outputs/.mutate*-original

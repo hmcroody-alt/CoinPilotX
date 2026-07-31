@@ -437,7 +437,29 @@ def confirmation_evidence(user_id: int, expect_action_id: str | None, confirmati
     return {"present": True, "bound": True, "reason": "grant_consumed"}
 
 
-def begin_tool_operation(cur, user_id: int, prepared: dict[str, Any], correlation_id: str = "") -> dict[str, Any]:
+#: The three things ``pulse_ai_tool_operations.confirmation_state`` can say.
+#:
+#: ``required`` and ``not_required`` are properties of the *tool*, read from the
+#: production registry: does this tool ever need an approval. ``confirmed`` is a
+#: property of *this operation*: a human approval was redeemed for it, moments ago,
+#: in the same call.
+#:
+#: The distinction was missing, and its absence was an audit hole. A capability whose
+#: confirmation policy is contextual is registered as not needing one, so an operation
+#: that a person had explicitly approved was recorded as ``not_required`` — the same
+#: value as an operation nobody was ever asked about. The column could not answer the
+#: one question an audit column about confirmation exists to answer.
+#:
+#: ``confirmed`` is added rather than substituted. Existing readers keying off the
+#: other two keep working, and none of them lose a row they used to see: the rows that
+#: change value are exactly the rows that were previously mislabelled.
+CONFIRMATION_STATE_REQUIRED = "required"
+CONFIRMATION_STATE_NOT_REQUIRED = "not_required"
+CONFIRMATION_STATE_CONFIRMED = "confirmed"
+
+
+def begin_tool_operation(cur, user_id: int, prepared: dict[str, Any], correlation_id: str = "",
+                         *, confirmed: bool = False) -> dict[str, Any]:
     """Claim the idempotency key with a durable row *before* the mutation runs.
 
     Without this the ledger is written only after the fact, which leaves a window in
@@ -451,10 +473,21 @@ def begin_tool_operation(cur, user_id: int, prepared: dict[str, Any], correlatio
     was begun — which :func:`record_tool_result` later upgrades to a real verdict, or
     :func:`flag_operation_for_reconciliation` marks for a human to settle.
 
+    ``confirmed`` says that an approval was redeemed for this specific operation. It
+    is passed by the caller that did the redeeming rather than inferred from the tool
+    registry, because the registry only knows what the tool usually needs — see
+    :data:`CONFIRMATION_STATE_CONFIRMED`.
+
     Returns ``{"claimed": True}`` when this call created the row. ``claimed`` is
     False when a row already existed, meaning some earlier attempt got here first.
     """
     timestamp = now()
+    if confirmed:
+        state = CONFIRMATION_STATE_CONFIRMED
+    elif prepared.get("confirmation_required"):
+        state = CONFIRMATION_STATE_REQUIRED
+    else:
+        state = CONFIRMATION_STATE_NOT_REQUIRED
     cur.execute(
         """INSERT OR IGNORE INTO pulse_ai_tool_operations
         (operation_id, user_id, tool_name, idempotency_key, canonical_target,
@@ -463,8 +496,7 @@ def begin_tool_operation(cur, user_id: int, prepared: dict[str, Any], correlatio
         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, '', '{}', '{}', '{}', ?, ?)""",
         (prepared["operation_id"], int(user_id), prepared["tool_name"],
          prepared["idempotency_key"], prepared.get("canonical_target") or "",
-         "required" if prepared.get("confirmation_required") else "not_required",
-         clean(correlation_id, 120), timestamp, timestamp),
+         state, clean(correlation_id, 120), timestamp, timestamp),
     )
     return {"claimed": bool(getattr(cur, "rowcount", 0)), "operation_id": prepared["operation_id"],
             "status": "pending"}
@@ -519,8 +551,14 @@ def record_tool_result(cur, user_id: int, prepared: dict[str, Any], result: dict
     required = bool(prepared.get("confirmation_required"))
     evidence = confirmation_evidence(user_id, expect_action_id, confirmation)
     approved = (not required) or evidence["bound"]
-    confirmation_state = ("not_required" if not required
-                          else "confirmed" if evidence["bound"]
+    # A bound grant is checked first, and that ordering is the fix rather than an
+    # arrangement of clauses. ``required`` is the tool registry's view — does this tool
+    # usually need approval — and asking it first meant that an operation a person had
+    # explicitly approved was written down as ``not_required`` whenever the registry
+    # said the tool did not normally need asking. The redeemed grant is a stronger and
+    # more specific fact than the registry default, so it is the one recorded.
+    confirmation_state = ("confirmed" if evidence["bound"]
+                          else "not_required" if not required
                           else "missing" if not evidence["present"]
                           else "rejected:" + evidence["reason"])
     # ``canonical_verified`` is an actual read-after-write verdict from the backend. When
@@ -681,6 +719,98 @@ def pending_confirmation_action(cur, user_id: int, token: str) -> dict[str, Any]
         "target_id": clean(row["target_id"], 160),
         "arguments": arguments if isinstance(arguments, dict) else {},
     }
+
+
+#: The six answers to "what happened to this approval?". Five of them describe a row
+#: this account owns; ``unknown`` describes everything else, and its breadth is the
+#: point rather than an imprecision — see :func:`approval_state`.
+APPROVAL_LIVE = "live"
+APPROVAL_EXPIRED = "expired"
+APPROVAL_CONSUMED = "consumed"
+APPROVAL_REVOKED = "revoked"
+APPROVAL_SUPERSEDED = "stale_state"
+APPROVAL_UNKNOWN = "unknown"
+
+#: Terminal row statuses this function is willing to name. A status outside this map is
+#: reported as ``unknown`` rather than echoed: a column value invented by some later
+#: migration must not become a sentence shown to a person.
+_APPROVAL_TERMINAL = {
+    "consumed": APPROVAL_CONSUMED,
+    "revoked": APPROVAL_REVOKED,
+    "stale_state": APPROVAL_SUPERSEDED,
+    "verified": APPROVAL_CONSUMED,
+    "failed_verification": APPROVAL_CONSUMED,
+}
+
+
+def approval_state(cur, user_id: int, token: str) -> str:
+    """Which kind of dead an approval is, for the account that holds it. Never writes.
+
+    :func:`pending_confirmation_action` and :func:`consume_confirmation` both collapse
+    unknown, expired, spent and foreign into one empty answer, and that collapse is
+    deliberate: a caller probing with guessed tokens must not be able to tell a real
+    approval from a fabricated one, nor learn that some other account holds one.
+
+    It is also, for the owner, an unhelpful silence. A person who taps Confirm on a
+    button that no longer works is told their approval "expired, was already used, or
+    belongs to another account" — three materially different situations behind one
+    sentence, and the middle one is the dangerous member. "Already used" usually means
+    the write *succeeded*; a sentence that lumps it in with "expired" invites the person
+    to go and do it a second time.
+
+    This resolves that tension by scoping, not by loosening. The lookup is filtered on
+    ``user_id``, so a token belonging to somebody else takes the same branch as a token
+    that never existed and both come back ``unknown``. Nothing here distinguishes those
+    two, which is exactly the property the collapse was protecting. What it adds is that
+    the owner of a row learns which of the five things happened to their own approval.
+
+    ``expired`` is decided from ``expires_at`` rather than from a status, because no
+    process writes an ``expired`` status — a lapsed approval simply sits at ``pending``
+    past its deadline. A row that is both spent and lapsed is reported ``consumed``: it
+    was redeemed while it was live, and that is the fact that determines whether the
+    change happened.
+    """
+    token_hash = hashlib.sha256(clean(token, 500).encode("utf-8")).hexdigest()
+    cur.execute(
+        """SELECT status, expires_at FROM pulse_ai_confirmations
+        WHERE token_hash=? AND user_id=? LIMIT 1""",
+        (token_hash, int(user_id)),
+    )
+    row = cur.fetchone()
+    if not row:
+        return APPROVAL_UNKNOWN
+    status = clean(row["status"], 40)
+    if status == "pending":
+        return APPROVAL_LIVE if clean(row["expires_at"], 40) > now() else APPROVAL_EXPIRED
+    return _APPROVAL_TERMINAL.get(status, APPROVAL_UNKNOWN)
+
+
+#: One sentence per state, and every one of them says whether anything changed.
+#:
+#: That is the whole reason this map exists. The sentence it replaces —"That
+#: confirmation expired, was already used, or belongs to another account"— left the
+#: person to guess, and the guess a person makes after tapping a button that did not
+#: visibly work is "nothing happened, do it again". For four of these five states that
+#: guess is right. For ``consumed`` it is wrong, and acting on it repeats a write.
+#:
+#: ``consumed`` therefore speaks about the *approval*, not about the outcome. The row
+#: statuses folded into it include ``failed_verification``, where the write was
+#: attempted and could not be read back; "it was already done" would be a claim this
+#: function cannot support. "It was already used, so go and look" is one it can.
+APPROVAL_STATE_MESSAGE = {
+    APPROVAL_LIVE: ("That confirmation is still valid and has not been used, but UNDX "
+                    "cannot carry out that action right now, so nothing changed."),
+    APPROVAL_EXPIRED: ("That confirmation ran out of time before it was used, so nothing "
+                       "changed. Ask again and confirm the new one."),
+    APPROVAL_CONSUMED: ("That confirmation was already used, so what it authorised has "
+                        "already been attempted. Check where things stand before "
+                        "confirming it again."),
+    APPROVAL_REVOKED: ("That confirmation was cancelled, so nothing changed. Ask again if "
+                       "you still want it."),
+    APPROVAL_SUPERSEDED: ("What this confirmation was for changed after you approved it, so "
+                          "nothing changed. Check where things stand and confirm again."),
+    APPROVAL_UNKNOWN: "UNDX does not recognise that confirmation, so nothing changed.",
+}
 
 
 def consume_confirmation(cur, user_id: int, token: str, *,

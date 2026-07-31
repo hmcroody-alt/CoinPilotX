@@ -1324,6 +1324,20 @@ def _agent_confirm_payload(outcome, correlation_id: str) -> dict:
     return body
 
 
+#: The approval states that describe something that already finished, and so owe the
+#: person an answer even when the executor that would have run them is switched off.
+#:
+#: ``live`` and ``unknown`` are deliberately absent. A live approval blocked by a kill
+#: switch is what a 503 means, and ``unknown`` must keep saying the same thing to a
+#: stranger as to somebody with a typo.
+_DEAD_APPROVAL_STATES = frozenset({
+    undx_architecture.APPROVAL_CONSUMED,
+    undx_architecture.APPROVAL_EXPIRED,
+    undx_architecture.APPROVAL_REVOKED,
+    undx_architecture.APPROVAL_SUPERSEDED,
+})
+
+
 def confirm_action(user_id: int, payload: dict | None = None) -> dict:
     """Consume one server-bound confirmation and verify the canonical write."""
     payload = payload or {}
@@ -1369,6 +1383,29 @@ def confirm_action(user_id: int, payload: dict | None = None) -> dict:
         v4_allowed = metadata.get("v4_actions_enabled") and not metadata.get("v4_writes_disabled")
         v5_allowed = undx_policy.v5_user_enabled(int(user_id)) and metadata.get("v5_notification_actions_enabled") and not metadata.get("v4_writes_disabled")
         if not (v4_allowed or v5_allowed):
+            # An approval that is already dead is answered before this gate, and the
+            # ordering is the whole point.
+            #
+            # The legacy V4/V5 executor is switched off in every environment the agent
+            # runs in — it was replaced, not retired — so this is the branch a dead
+            # agent-minted approval actually reaches in production. Everything below is
+            # therefore unreachable there, including the answer this batch just built.
+            # A person who taps a spent Confirm button was being told "UNDX actions are
+            # currently read-only for this account", which is not merely unhelpful: the
+            # agent is enabled for them and has just performed a write. The sentence is
+            # false, and it is false in the direction that hides a completed change.
+            #
+            # Only a terminal state the caller owns is answered here. ``unknown`` covers
+            # a fabricated token and another account's token, and both keep falling
+            # through to the 503 — so this discloses nothing a stranger could probe for,
+            # and the kill switch still reports itself for every token it plausibly
+            # governs. ``live`` falls through too: an approval that is still good and
+            # cannot be executed because a switch is off is exactly what a 503 describes.
+            dead = undx_architecture.approval_state(cur, int(user_id), token) if token else ""
+            if dead in _DEAD_APPROVAL_STATES:
+                return {"ok": False, "error": "confirmation_invalid", "reason": dead,
+                        "message": undx_architecture.APPROVAL_STATE_MESSAGE[dead],
+                        "http_status": 409}
             return {"ok": False, "error": "undx_actions_disabled", "message": "UNDX actions are currently read-only for this account.", "http_status": 503}
         if not token:
             return {"ok": False, "error": "confirmation_required", "message": "A valid UNDX confirmation is required.", "http_status": 400}
@@ -1379,8 +1416,27 @@ def confirm_action(user_id: int, payload: dict | None = None) -> dict:
             cur, int(user_id), token,
             expect_action_id="notifications.preference.update")
         if not confirmation:
+            # Why the answer is composed rather than constant: ``consume_confirmation``
+            # returns ``None`` for six different situations, and one of them — an
+            # approval that was already redeemed — means the write was very likely
+            # already attempted. The sentence this replaced offered "expired, was
+            # already used, or belongs to another account" for all six, which a person
+            # holding a button that did nothing reads as "nothing happened", and acts
+            # on by confirming again.
+            #
+            # ``approval_state`` is owner-scoped, so a foreign token and a fabricated
+            # one both come back ``unknown`` and stay indistinguishable. It reads and
+            # does not write, so asking the question cannot change the answer, and it
+            # runs only on the failure path — the success path never consults it.
+            #
+            # The error code and the 409 are unchanged on purpose. Existing clients key
+            # off ``error``; what improves is the sentence they show and the ``reason``
+            # a new client can branch on.
+            state = undx_architecture.approval_state(cur, int(user_id), token)
             conn.rollback()
-            return {"ok": False, "error": "confirmation_invalid", "message": "That confirmation expired, was already used, or belongs to another account.", "http_status": 409}
+            return {"ok": False, "error": "confirmation_invalid", "reason": state,
+                    "message": undx_architecture.APPROVAL_STATE_MESSAGE[state],
+                    "http_status": 409}
         # Defence in depth. Unreachable while the boundary enforces the binding above,
         # but kept so a future caller that forgets expect_action_id still cannot execute
         # an action the approval was not for.
