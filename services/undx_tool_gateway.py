@@ -607,27 +607,47 @@ def execute(
             evidence={"reason": decision.reason, **decision.details},
         ))
 
-    # 5. Confirmation. A required approval is either redeemed now or requested now;
-    #    there is no third branch in which execution proceeds anyway.
+    # 5. Confirmation. Two independent questions, and conflating them was a real bug.
+    #
+    #    "Is an approval needed?" is the policy engine's question, and it is asked of
+    #    the request. "Is an approval being spent?" is this function's question, and it
+    #    is answered by whether a token arrived. Redemption used to hang off the first,
+    #    which meant a presented token was simply ignored whenever the policy happened
+    #    to conclude that no card was needed.
+    #
+    #    That is not hypothetical. ``_agent_confirm`` replays an approval with
+    #    ``explicit_request=True`` — truthfully, since pressing Confirm is explicit —
+    #    and for a ``CONTEXTUAL`` capability the policy engine then returns ``ALLOW``
+    #    via ``explicit_single_resource``. The write ran, was verified, and was audited
+    #    as ``confirmation_state="not_required"`` with ``confirmation_evidence="no_grant"``
+    #    while the approval row sat at ``pending`` for the rest of its TTL — replayable,
+    #    and never reaching the ``consumed`` state whose message tells a person the
+    #    change already happened. Pressing Confirm twice performed the write twice.
+    #    ``tests/undx_agent/test_spent_approval.py`` holds that case.
+    #
+    #    So: a token that was presented is redeemed, whatever the policy concluded. A
+    #    token that cannot be redeemed refuses the call rather than falling through to
+    #    an execution that the presented approval no longer authorises.
     grant: dict[str, Any] | None = None
-    if decision.needs_confirmation:
-        if not clean(confirmation_token, 500):
-            request = _mint_confirmation(
-                cur, int(user_id), spec, arguments, task_id=task_id,
-                current_value=current_value, proposed_value=proposed_value,
-                risk_summary=spec.description,
-                resource_label=resource_label,
-            )
-            _checkpoint(cur)
-            return GatewayOutcome(
-                _receipt(spec, user_id=user_id, request_id=request_id, task_id=task_id,
-                         status=AgentOutcome.CONFIRMATION_REQUIRED,
-                         explanation="I need you to confirm this before I make the change.",
-                         arguments=arguments,
-                         evidence={"confirmation_id": request.confirmation_id,
-                                   "expires_at": request.expires_at}),
-                confirmation=request,
-            )
+    presented = clean(confirmation_token, 500)
+    if decision.needs_confirmation and not presented:
+        request = _mint_confirmation(
+            cur, int(user_id), spec, arguments, task_id=task_id,
+            current_value=current_value, proposed_value=proposed_value,
+            risk_summary=spec.description,
+            resource_label=resource_label,
+        )
+        _checkpoint(cur)
+        return GatewayOutcome(
+            _receipt(spec, user_id=user_id, request_id=request_id, task_id=task_id,
+                     status=AgentOutcome.CONFIRMATION_REQUIRED,
+                     explanation="I need you to confirm this before I make the change.",
+                     arguments=arguments,
+                     evidence={"confirmation_id": request.confirmation_id,
+                               "expires_at": request.expires_at}),
+            confirmation=request,
+        )
+    if presented:
         grant = _redeem(cur, int(user_id), spec, arguments, confirmation_token)
         # Durable before the authorised write runs. See :func:`_checkpoint`.
         _checkpoint(cur)
@@ -690,7 +710,11 @@ def execute(
     if spec.is_write:
         try:
             undx_architecture.begin_tool_operation(
-                cur, int(user_id), prepared, clean(correlation_id or request_id, 120))
+                cur, int(user_id), prepared, clean(correlation_id or request_id, 120),
+                # What this operation was authorised by, not what the tool usually
+                # needs. Without it a contextual capability that a person explicitly
+                # approved audits identically to one nobody was asked about.
+                confirmed=bool(grant))
         except Exception:  # pragma: no cover - a reservation failure must not block the user
             # Losing the reservation costs crash-safety for this one action; refusing the
             # action would cost the user a capability they are authorised to use. The
