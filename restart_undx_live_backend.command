@@ -161,7 +161,28 @@ print ""
 # still looks taken and the process still looks alive, but it accepts nothing.
 # That is indistinguishable from a network problem from the client's side — the
 # app just says it is reconnecting, forever.
-python bot.py < /dev/null &
+# Output is teed to a file as well as the terminal. The terminal alone is not
+# enough evidence for anything log-shaped: a correlation id is twelve hex
+# characters, and reading twelve hex characters off a screenshot and retyping
+# them is a transcription, not a proof. `logs/undx_backend.log` can be grepped.
+#
+# The redirection is written with zsh process substitution rather than a pipe
+# for one specific reason: `python bot.py | tee ... &` sets `$!` to the *tee*
+# process, and `$!` is the entire basis of the stale-server guard below. That
+# guard would then compare the serving pid against a pid that never served
+# anything, report MISMATCH on every healthy start, and be turned off by the
+# next person to hit it. With `> >(tee -a ...)`, `$!` is still python's pid.
+#
+# `-u` is not decoration. Python line-buffers stdout when it is a tty and
+# *block*-buffers it when it is not, and the redirection above makes it a pipe.
+# The first run of this change looked like a hung server: the terminal stopped
+# updating mid-boot and the log file sat at 3,991 bytes while the process was
+# healthy and serving — the remaining output was sitting in an 8 KB buffer that
+# nothing was going to fill until the next burst. For a log-shaped demonstration
+# that is worse than no log, because the line you are waiting for arrives after
+# you have concluded it never will.
+mkdir -p logs
+python -u bot.py < /dev/null > >(tee -a logs/undx_backend.log) 2>&1 &
 server_pid=$!
 
 # Ask over HTTP, because that is the only question that identifies the process

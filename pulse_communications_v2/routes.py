@@ -93,6 +93,25 @@ def _request_debug_context(metric: str) -> dict:
     }
 
 
+def _payload_trace(payload, fallback: str) -> str:
+    """The id that identifies this request, preferring the one the payload carries.
+
+    ``correlation_id`` comes first because that is the name the services actually
+    emit — ``pulse_ai_service`` writes it eleven times and writes ``trace_id`` never.
+    ``trace_id`` is kept second for the handful of older payloads that use it, and
+    ``fallback`` — the id this route minted before calling the service — is last, so a
+    payload that is not a dict, or carries neither key, still logs something a person
+    can grep for instead of the word ``None``.
+
+    This chain is not new. It was already written inline for the call-route warning
+    below and simply was not reused by the timing line above it, which is the one that
+    runs on every request. Naming it is what stops the two drifting apart again.
+    """
+    if isinstance(payload, dict):
+        return str(payload.get("correlation_id") or payload.get("trace_id") or fallback)
+    return str(fallback)
+
+
 def _timed_json(metric: str, action):
     started = time.perf_counter()
     trace_id = service._trace()
@@ -107,7 +126,7 @@ def _timed_json(metric: str, action):
             request.path,
             bool(payload.get("ok")) if isinstance(payload, dict) else False,
             payload.get("status") if isinstance(payload, dict) else "",
-            payload.get("trace_id") if isinstance(payload, dict) else trace_id,
+            _payload_trace(payload, trace_id),
         )
         if isinstance(payload, dict):
             payload.setdefault("timing_ms", elapsed_ms)
@@ -117,7 +136,7 @@ def _timed_json(metric: str, action):
                     metric,
                     payload.get("status") or "",
                     payload.get("error_code") or "",
-                    payload.get("correlation_id") or payload.get("trace_id") or trace_id,
+                    _payload_trace(payload, trace_id),
                     request.path,
                 )
         return _json(payload)

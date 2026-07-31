@@ -1,0 +1,68 @@
+Batch 24 live evidence, extracted from coinpilotx.log on the Mac running the
+local PulseSoc backend, driven from the iPhone 17 Pro Max simulator.
+
+This file is an extract, not the log. The log is 40k+ lines and rotates at 50 MB;
+the two claims in the report are the ones reproduced below, with the commands that
+produce them so the extract can be checked against the original.
+
+==============================================================================
+1. THE REFUSAL AND ITS TIMING LINE, JOINED BY ONE ID
+
+   $ grep -n ff96be6afb90 coinpilotx.log
+
+40405: 2026-07-30 21:38:33,136 - UNDX_CONFIRM_REFUSED user_id=10910211866 correlation_id=ff96be6afb90 error=confirmation_invalid reason=expired http_status=409
+40406: 2026-07-30 21:38:33,136 - PULSE_COMM_V2_TIMING metric=pulse_ai_confirm_action duration_ms=112 method=POST path=/api/pulse-ai/actions/confirm ok=False status=None trace_id=ff96be6afb90
+
+   Two lines, same millisecond, one correlation id. Nothing else in the file
+   carries it. Before this batch the first line did not exist and the second
+   read trace_id=None.
+
+   $ grep -c UNDX_CONFIRM_REFUSED coinpilotx.log
+   1
+
+==============================================================================
+2. THE TIMING LINE, BEFORE AND AFTER THE 21:12 RESTART ONTO THE FIXED CODE
+
+   === BEFORE restart (defective code)
+         3885  metric=api_active_calls           REAL
+            1  metric=conversations_list         REAL
+            4  metric=pulse_ai_confirm_action    NONE
+         6509  metric=pulse_ai_conversation      NONE
+            4  metric=pulse_ai_message           NONE
+
+   === AFTER restart (fixed code)
+          437  metric=api_active_calls           REAL
+            1  metric=pulse_ai_confirm_action    REAL
+          731  metric=pulse_ai_conversation      REAL
+            4  metric=pulse_ai_message           REAL
+
+   api_active_calls is the control: REAL in both regimes, because its payload
+   comes from pulse_communications_v2/service.py, which sets trace_id itself
+   (line 4238 result.setdefault("trace_id", _trace()), plus 181/185/194/3955).
+   That is why the earlier draft's 'all 89 endpoints logged trace_id=None' was
+   wrong: the defect was confined to endpoints served by pulse_ai_service.
+
+==============================================================================
+3. WHAT THE REFUSAL LINE DOES NOT CONTAIN
+
+   approval row 10 confirmation_id : undx_confirm_a572425f5fe5bb52781e
+   approval row 10 token_hash      : 5b0e068e70736ca02af3d0fe5bb94826bf6d6c0eff86778c4af3d3b625349c87
+   'token' appears in refusal line : False
+   confirmation_id anywhere in log : False
+   token_hash anywhere in log      : False
+
+   A pending approval token is a live bearer credential. reason= is logged and
+   is safe to log; the token is not, and its absence is asserted rather than
+   assumed.
+
+==============================================================================
+4. NOTHING CHANGED, AS THE ANSWER CLAIMED
+
+   pulse_ai_confirmations row 10 : status='pending' consumed_at=None
+                                   expires_at=2026-07-31T04:37:25+00:00
+   alert_rules row 30            : symbol=ETH target_value=888888.0
+                                   updated_at=2026-07-31T04:30:10
+
+   The press was at 04:38:33Z, sixty-eight seconds after expires_at. The row is
+   still pending — an expired approval is refused without being spent — and the
+   alert still holds the value it had eight minutes earlier.

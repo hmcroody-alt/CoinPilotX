@@ -475,11 +475,6 @@ git add services/undx_tool_gateway.py services/undx_architecture.py \
         tests/undx_agent/test_spent_approval.py \
         reports/batch23_spent_approval.md outputs/mutate23.py
 
-# Anything left over — including this script's own edits — goes with the last
-# commit rather than being silently dropped. The explicit `git add` lines above
-# are about ordering the history, not about excluding work.
-git add -A
-
 if git diff --cached --quiet; then
   print "Nothing staged — Batch 23 was already committed."
 else
@@ -618,6 +613,136 @@ the other side — a replay through confirm_action never reaches the gateway's r
 because _agent_confirm routes on pending_confirmation_action, which selects on
 status='pending'. The refusal of a spent token is proven at the gateway by
 test_the_gateway_refuses_a_dead_token_presented_directly_to_it, not on the device.
+MSG
+  print ""
+  print "Committed:"
+  git log --oneline -1
+  print ""
+fi
+
+print -r -- "----- Batch 24 (a refused confirmation leaves a trace) -----"
+git add services/pulse_ai_service.py pulse_communications_v2/routes.py \
+        tests/undx_agent/test_confirm_trace.py \
+        reports/batch24_refusal_leaves_no_trace.md \
+        reports/evidence/batch24_live_log_extract.txt \
+        outputs/mutate24.py
+
+# Anything left over — including this script's own edits and the backend launcher
+# changed to make this batch's evidence greppable — goes with the last commit
+# rather than being silently dropped. The explicit `git add` lines above are about
+# ordering the history, not about excluding work.
+git add -A
+
+if git diff --cached --quiet; then
+  print "Nothing staged — Batch 24 was already committed."
+else
+  print "Staged:"
+  git diff --cached --name-status
+  print ""
+  git commit -F - <<'MSG'
+fix(undx): a refused confirmation leaves a record on both sides
+
+Batch 20 gave a dead Confirm button a sentence that tells the person to go and
+check where things stand. It gave them nothing to check it by, and gave the server
+nothing at all. From the server's point of view the press did not happen:
+correlation_id None, log lines 0, rows written 0.
+
+Four omissions of the same kind.
+
+Seven of confirm_action's nine return paths discarded the correlation_id it
+computes on its first line — every refusal, plus the legacy success payload. Only
+the accepted_unverified 202 and _agent_confirm_payload carried it. Nobody decided
+that; each return was written on its own day.
+
+A refusal was recorded nowhere. Not a fabricated token, not a lapsed one, not
+another account's. A support conversation opening "I pressed Confirm and it told me
+to check where things stand" had no thread to pull.
+
+_timed_json logged payload.get("trace_id"), and pulse_ai_service emits "trace_id"
+zero times and "correlation_id" eleven. The one request-level log line on those
+endpoints read trace_id=None, and the route's own freshly computed id was dead code
+because these payloads are always dicts. The correct precedence chain was already
+written twelve lines below for the call-route warning, and was not reused.
+
+record_tool_result was handed correlation_id=_trace() — a second random id for the
+audit row of an operation that already had one. The record that outlives log
+retention could not be joined to the request that caused it.
+
+The fix is a wrapper, not seven edited dictionaries: confirm_action mints the id,
+passes it into _confirm_action, and stamps the answer with setdefault, so a return
+path nobody has written yet is stamped too, and a payload naming its own downstream
+trace keeps it. One log line on refusal only. _payload_trace(payload, fallback) in
+routes.py names the precedence chain once and both call sites use it.
+
+The token is deliberately not logged. A pending approval token is a live bearer
+credential and it is the most obviously useful thing in scope when somebody decides
+a refusal log looks thin. reason is logged and is safe to log, because
+approval_state is owner-scoped upstream: a foreign token and a fictional one both
+report unknown, and a test asserts the two log lines are byte-identical modulo the
+id — a log that distinguished them would undo Batch 20's indistinguishability
+property from behind, for anybody who can read logs.
+
+tests/undx_agent/test_confirm_trace.py — 27 tests, all passing.
+outputs/mutate24.py — ten modes, 10/10 caught. Five of them do not restore the
+original defect; they restore the mistakes this fix invites, because "the response
+has a correlation_id" passes against a stamp that overwrites the payload's own id,
+against a stamp that matches nothing, and against a log line that leaks the token
+alongside it.
+
+Two modes SURVIVED on the first run and both found real holes in these tests.
+stamp_mints_a_second_id survived because its guard asserted on the success path,
+where _agent_confirm_payload has already set the key and setdefault does nothing —
+the test could not fail on the property it named. resolver_prefers_the_key_nobody_
+emits survived because its guard's payload carried only correlation_id, so swapping
+the precedence still returned it: the test asserted presence and was named for
+precedence. Both guards were rewritten onto payload shapes that can observe the
+property, and the mutation mode that exposed each is named in its docstring.
+
+Regression: the whole of tests/undx_agent re-run in three passes, 718 tests passed.
+
+Demonstrated on an iPhone 17 Pro Max simulator, iOS 26.5, against the local backend
+restarted onto this code. "Change my ethereum alert to 777777" minted an approval
+because crypto.alerts.update is risk high, confirmation True; the card printed
+"Approval expires 2026-07-31T04:37:25+00:00"; the approval was left to lapse and
+Confirm pressed at 04:38:33, sixty-eight seconds late, with the keyboard up. The app
+answered with Batch 20's expired sentence. coinpilotx.log lines 40405 and 40406:
+
+  UNDX_CONFIRM_REFUSED user_id=10910211866 correlation_id=ff96be6afb90 error=confirmation_invalid reason=expired http_status=409
+  PULSE_COMM_V2_TIMING metric=pulse_ai_confirm_action duration_ms=112 method=POST path=/api/pulse-ai/actions/confirm ok=False status=None trace_id=ff96be6afb90
+
+Same millisecond, one id, and grep returns those two and nothing else. Before this
+batch the first line did not exist and the second read trace_id=None. The approval's
+confirmation_id and token_hash appear nowhere in the log, and neither does the
+string "token" in the refusal line. Row 10 is still pending with consumed_at null —
+an expired approval is refused without being spent — and alert_rules 30 still reads
+target_value 888888.0, updated_at 04:30:10, eight minutes before the press. The
+sentence the person was shown is literally true.
+
+The timing half is proved by the same file spanning both regimes across the 21:12
+restart: 6,517 requests logged trace_id=None before and none after.
+
+A claim in the first draft of the report was wrong and the live log is what caught
+it. It said "89 endpoints route through _timed_json, and all 89 logged
+trace_id=None". The AST count is 88, and it was never all of them:
+pulse_communications_v2/service.py:4238 does result.setdefault("trace_id", _trace()),
+so metric=api_active_calls logged a real id 3,885 times before the fix and is the
+control that shows the change did not disturb payloads that already carried one. The
+report is corrected and says so in those words.
+
+No Python test exercises routes.py at runtime, here or anywhere in this repository,
+because it cannot be imported without Flask. That is the honest bound on the
+_timed_json half: its argument is asserted by AST, its helper by executing the real
+FunctionDef parsed out of the shipped source, and the wiring between them on the
+device rather than in this suite.
+
+Also in this commit: restart_undx_live_backend.command tees the server's output to
+logs/undx_backend.log. Written with zsh process substitution rather than a pipe
+because `python bot.py | tee ... &` sets $! to the tee process, and $! is the entire
+basis of the script's stale-server pid guard — it would have reported MISMATCH on
+every healthy start and been switched off by the next person to hit it. And with
+python -u, because Python block-buffers stdout when it is not a tty: the first run of
+that change looked like a hung server, terminal frozen mid-boot and the log sitting
+at 3,991 bytes while the process was healthy and serving.
 MSG
   print ""
   print "Committed:"
