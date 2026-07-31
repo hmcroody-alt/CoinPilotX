@@ -1339,9 +1339,49 @@ _DEAD_APPROVAL_STATES = frozenset({
 
 
 def confirm_action(user_id: int, payload: dict | None = None) -> dict:
-    """Consume one server-bound confirmation and verify the canonical write."""
-    payload = payload or {}
+    """Answer a confirmation request, and make the answer traceable whatever it is.
+
+    The work is done by :func:`_confirm_action`. This wrapper exists for one reason: an
+    answer that says something went wrong is worth exactly as much as an answer that
+    says it went right, and until now only the second kind could be traced.
+
+    :func:`_confirm_action` has nine return paths. Two carried the ``correlation_id``
+    and seven discarded it — including the one Batch 20 wrote, whose own text tells the
+    person to go and check where things stand, and which gave them nothing to check it
+    *by*. Stamping here rather than at each ``return`` is deliberate: a tenth path added
+    later is traceable without its author having to remember, and forgetting is precisely
+    what produced the other seven.
+
+    ``setdefault``, not assignment, so a path that already put an id in the body keeps
+    it. The two that do use this same id — but a payload naming its own trace is
+    describing something this function did not do, and overwriting it would destroy the
+    only pointer to it.
+
+    The refusal log is the other half. A rejected confirmation previously emitted no log
+    line and wrote no row, so there was no server-side record that a person had pressed a
+    dead button; the event did not exist anywhere. What is logged is the shape of the
+    refusal and nothing else — **never the token**, which is a live bearer credential for
+    as long as the approval is pending and is exactly what someone reading logs would
+    want. ``reason`` is safe because the response already carries it and it is
+    owner-scoped upstream: a fabricated token and another account's token both report
+    ``unknown``, so this discloses nothing ``approval_state`` had not already decided to.
+    """
     correlation_id = _trace()
+    answer = _confirm_action(int(user_id), payload or {}, correlation_id)
+    if not isinstance(answer, dict):
+        return answer
+    answer.setdefault("correlation_id", correlation_id)
+    if not answer.get("ok"):
+        LOGGER.info(
+            "UNDX_CONFIRM_REFUSED user_id=%s correlation_id=%s error=%s reason=%s http_status=%s",
+            int(user_id), answer.get("correlation_id"), answer.get("error") or "",
+            answer.get("reason") or "", answer.get("http_status") or 200,
+        )
+    return answer
+
+
+def _confirm_action(user_id: int, payload: dict, correlation_id: str) -> dict:
+    """Consume one server-bound confirmation and verify the canonical write."""
     token = _clean(payload.get("confirmation_token") or "", 500)
     conn, cur = _open_db()
     try:
@@ -1494,7 +1534,12 @@ def confirm_action(user_id: int, payload: dict | None = None) -> dict:
                 cur, int(user_id), prepared,
                 {"success": True, "canonical_entity_id": f"user:{int(user_id)}:{category}",
                  "observed_value": actual, "proposed_value": proposed},
-                correlation_id=_trace(),
+                # The request's id, not a fresh one. ``_trace()`` here minted a second
+                # random id for the audit row of an operation that already had one, so
+                # the only durable record of the write could not be joined to the
+                # request that caused it or to the answer the person was given. An id
+                # nothing else shares is not a trace of anything.
+                correlation_id=correlation_id,
                 confirmation=confirmation,
                 expect_action_id="notifications.preference.update",
                 canonical_verified=verified)
