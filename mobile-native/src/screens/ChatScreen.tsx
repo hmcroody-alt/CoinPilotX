@@ -61,7 +61,7 @@ import { mergeConversationMessages } from "../api/messengerOrdering";
 import { APP_VERSION, PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
 import { buildUndxUiContext, UndxUiContext } from "../undx/undxContext";
-import { choiceRowsOf, describeTransition, toActionCard } from "../undx/actionCards";
+import { choiceRowsOf, describeTransition, readTapOutcome, toActionCard, UndxTapOutcome } from "../undx/actionCards";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
 import { ContentTranslation } from "../components/ContentTranslation";
@@ -351,6 +351,12 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   // real, and a user who double-taps deserves the receipt rather than a failure. The
   // press is dropped here instead of being sent and rejected.
   const undxSpentTokens = useRef<Set<string>>(new Set());
+  // What the last press came back with, and which card it belongs to.
+  //
+  // Keyed by token rather than held as a bare string, so the sentence is drawn against
+  // the card that was actually pressed. A rail can hold more than one card, and an
+  // outcome with no owner would attach itself to whichever one rendered first.
+  const [undxTapOutcome, setUndxTapOutcome] = useState<(UndxTapOutcome & { token: string }) | null>(null);
   const [threadTitle, setThreadTitle] = useState(assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Messenger");
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingAt = useRef(0);
@@ -363,6 +369,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       return;
     }
     undxSpentTokens.current.add(token);
+    setUndxTapOutcome(null);
     setUndxActionBusy(true);
     confirmPulseAiAction(token)
       .then((result) => {
@@ -373,9 +380,18 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         setStatusMessage(result.message || "UNDX action finished.");
       })
       .catch((actionError) => {
-        // The approval may or may not have been spent server-side, so it is not
-        // returned to the unspent set: retrying is the user's call, by asking again.
-        setStatusMessage(actionError instanceof Error ? actionError.message : "UNDX action failed.");
+        // The sentence goes on the card as well as in the banner. The banner is the
+        // one that used to carry it alone, and it is not drawn while the keyboard is
+        // up — which is the state a person is in the moment they tap Confirm on a card
+        // they produced by typing. On its own it answered "did my tap do anything?"
+        // with a blank screen and two dimmed buttons.
+        const outcome = readTapOutcome(actionError);
+        // Re-armed only when the request never reached a server that answered. A token
+        // is redeemable exactly once, so a second press can produce the write or the
+        // sentence saying it already ran — never a second write.
+        if (outcome.retryable) undxSpentTokens.current.delete(token);
+        setUndxTapOutcome({ ...outcome, token });
+        setStatusMessage(outcome.message);
       })
       .finally(() => setUndxActionBusy(false));
   }, []);
@@ -1101,6 +1117,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         <FlatList
           data={visibleMessages}
           inverted
+          // Same omission as the action rail below, on the same default. A message that
+          // failed to send carries a Retry control, and a person retries it while still
+          // looking at the composer they typed it into.
+          keyboardShouldPersistTaps="handled"
           keyExtractor={(item) => `${item.id}-${item.client_message_id || ""}`}
           contentContainerStyle={styles.list}
           initialNumToRender={18}
@@ -1129,6 +1149,21 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           accessibilityLabel="UNDX action cards"
           nestedScrollEnabled
           showsVerticalScrollIndicator
+          // Without this the rail takes React Native's default of "never", under which
+          // the first touch anywhere outside the focused input is consumed to dismiss
+          // the keyboard and is never delivered to the child beneath it.
+          //
+          // A person reaches this rail by typing, so the keyboard is up when the card
+          // arrives, and the first press of Confirm was therefore swallowed every time.
+          // Observed on the iPhone 17 Pro Max simulator: two presses in a row closed the
+          // keyboard and did nothing else — no request left the device, the card did not
+          // change, and both controls stayed live. It reads exactly like a dead button.
+          //
+          // "handled" rather than "always": a tap that no control claims should still
+          // put the keyboard away, which is what a tap on the empty part of the rail
+          // means. Every other scrollable in this app already says "handled"; this one
+          // and the message list below were the omissions.
+          keyboardShouldPersistTaps="handled"
           style={styles.undxActionRailViewport}
           contentContainerStyle={styles.undxActionRail}
         >
@@ -1139,6 +1174,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             // previously left agent confirmations unapprovable.
             const card = toActionCard(component);
             const spent = Boolean(card.confirmationToken) && undxSpentTokens.current.has(card.confirmationToken);
+            // The outcome of pressing *this* card, or null. Matched on the token so a
+            // rail holding two cards cannot show one card's answer under the other.
+            const outcome =
+              card.confirmationToken && undxTapOutcome?.token === card.confirmationToken ? undxTapOutcome : null;
             return (
             <View key={`${component.component}-${component.confirmation_id || index}`} style={styles.undxActionCard}>
               <Text style={styles.undxActionKicker}>{card.kicker}</Text>
@@ -1584,7 +1623,45 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
                   <Text style={styles.undxActionCancelText}>Open in PulseSoc</Text>
                 </Pressable>
               ) : null}
-              {card.confirmationToken ? (
+              {/*
+                What the press came back with, on the card the press was on.
+
+                Drawn above the controls and unconditional on the keyboard, because the
+                banner it used to live in alone is hidden while the keyboard is up —
+                and a person taps Confirm on a card they summoned by typing, so that is
+                precisely the state they are in. The server distinguishes six ways an
+                approval can be dead and sends one sentence for each; this is where the
+                sentence is finally read.
+              */}
+              {outcome ? (
+                <Text accessibilityLabel="UNDX action outcome" style={styles.undxActionOutcome}>
+                  {outcome.message}
+                </Text>
+              ) : null}
+              {card.confirmationToken && outcome && !outcome.retryable ? (
+                /*
+                  The approval is dead and the server said so, so there is nothing left
+                  to approve or to call off — both controls could only produce the same
+                  refusal again. What is left is the card itself, which without this
+                  would sit there permanently inert: Confirm disabled by the spent set,
+                  Cancel disabled by the same flag, and no way to clear it.
+                */
+                <View style={styles.undxActionButtons}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Dismiss UNDX confirmation"
+                    style={styles.undxActionCancel}
+                    onPress={() => {
+                      setUndxComponents((previous) =>
+                        previous.filter((entry) => toActionCard(entry).confirmationToken !== card.confirmationToken),
+                      );
+                      setUndxTapOutcome(null);
+                    }}
+                  >
+                    <Text style={styles.undxActionCancelText}>Dismiss</Text>
+                  </Pressable>
+                </View>
+              ) : card.confirmationToken ? (
                 <View style={styles.undxActionButtons}>
                   <Pressable
                     accessibilityRole="button"
@@ -1599,9 +1676,16 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
                         .then((result) => {
                           undxSpentTokens.current.add(token);
                           setUndxComponents([]);
+                          setUndxTapOutcome(null);
                           setStatusMessage(result.message || "UNDX action cancelled.");
                         })
-                        .catch((actionError) => setStatusMessage(actionError instanceof Error ? actionError.message : "UNDX could not cancel that action."))
+                        .catch((actionError) => {
+                          // Same reasoning as Confirm: a refusal the person cannot see
+                          // is a button that did nothing as far as they can tell.
+                          const outcome = readTapOutcome(actionError);
+                          setUndxTapOutcome({ ...outcome, token });
+                          setStatusMessage(outcome.message);
+                        })
                         .finally(() => setUndxActionBusy(false));
                     }}
                   >
@@ -2652,6 +2736,10 @@ const styles = StyleSheet.create({
   undxAlertTitle: { color: colors.text, fontSize: 14, fontWeight: "900" },
   undxAlertMeta: { color: colors.muted, fontSize: 12, marginTop: 2 },
   undxAlertOpen: { color: colors.accent, fontSize: 13, fontWeight: "900" },
+  // Deliberately not styled as an error. Four of the six things it says are "nothing
+  // changed", which is information rather than a fault, and one of them reports a write
+  // that already ran. Red would misdescribe most of what it carries.
+  undxActionOutcome: { color: colors.text, fontSize: 13, lineHeight: 19, marginTop: 2 },
   undxActionButtons: { flexDirection: "row", gap: 8, marginTop: 4 },
   undxActionCancel: { alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: 1, flex: 1, minHeight: 44, justifyContent: "center" },
   undxActionCancelText: { color: colors.text, fontWeight: "900" },

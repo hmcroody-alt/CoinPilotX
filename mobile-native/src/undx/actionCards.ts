@@ -415,4 +415,57 @@ export function describeTransition(card: UndxActionCard): string {
   return subject;
 }
 
+/**
+ * What a press of Confirm or Cancel came back with, ready to draw on the card.
+ *
+ * The card is where this belongs, and that is the whole point of the type. The server
+ * now distinguishes the six ways an approval can be dead and sends one sentence per
+ * state — but the screen put that sentence in a status banner rendered
+ * `&& !keyboardVisible`, and the keyboard is up in exactly the moment a person taps
+ * Confirm on a card they just conjured by typing. Meanwhile a rejected press left
+ * `undxComponents` untouched, so the card stayed, and the token was already in the
+ * spent set, so Confirm *and* Cancel went grey. The entire visible consequence of the
+ * press was two buttons dimming. That is the same silence the server-side work exists
+ * to end, reproduced one layer out.
+ */
+export type UndxTapOutcome = {
+  /** What to show the person. Never empty. */
+  message: string;
+  /**
+   * Whether the press can be made again.
+   *
+   * True only when the request did not reach a server that answered. That case is
+   * safe to re-arm and wrong to bury: the approval was very likely never touched, and
+   * a token is redeemable exactly once server-side, so a second press can only produce
+   * the write or the sentence saying it already ran. It cannot produce a second write.
+   *
+   * False for anything the server answered, including every dead-approval state. Those
+   * are terminal by definition, and offering a button whose only possible outcome is
+   * the same refusal teaches the person that Confirm sometimes does nothing — the
+   * lesson `isActionable` above exists to avoid teaching.
+   */
+  retryable: boolean;
+};
+
+/** The message shown when a rejection carried nothing readable. */
+export const UNDX_TAP_FALLBACK_MESSAGE = "UNDX could not complete that, so nothing changed.";
+
+/**
+ * Read a rejected action into something the card can draw.
+ *
+ * Pure, and separate from the screen, for the reason the header of `ChatScreen` records
+ * about `isConfirmation` and `choiceRowsOf` already follows: a decision spelled out
+ * inline in a two-thousand-line render is a decision nothing tests.
+ *
+ * The `retryable` test keys on the transport code rather than on the status, because
+ * `request_unreachable` is minted by the client itself in the `catch` around `fetch`
+ * and carries a 503 — the same status a reachable server returns when a capability is
+ * switched off. Those two are opposite situations and only the code tells them apart.
+ */
+export function readTapOutcome(error: unknown): UndxTapOutcome {
+  const message = error instanceof Error && error.message ? error.message : UNDX_TAP_FALLBACK_MESSAGE;
+  const code = (error as { code?: unknown } | null)?.code;
+  return { message, retryable: code === "request_unreachable" };
+}
+
 export default toActionCard;
