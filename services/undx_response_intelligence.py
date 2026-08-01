@@ -69,6 +69,46 @@ MAX_RENDER_ATTEMPTS = 6
 #: something said twenty minutes ago is not what makes a conversation feel canned.
 HISTORY_WINDOW = 5
 
+#: The sentinel that means "do not narrow the search". Above any reachable draft count —
+#: the widest lead branch builds eleven framings and there are four clause orderings — so
+#: a deployment that never sets ``UNDX_RESPONSE_MAX_REGENERATIONS`` behaves exactly as it
+#: did before the flag had a reader. Wiring a dead flag in with a default *below* current
+#: behaviour is not wiring it in; it is a silent narrowing wearing a fix's clothes.
+_MAX_REGENERATIONS_DEFAULT = 64
+
+
+def _max_regenerations() -> int:
+    """How many rejected drafts :func:`render` may discard before it stops searching.
+
+    Reads ``UNDX_RESPONSE_MAX_REGENERATIONS``, which was declared in
+    :mod:`services.undx_brain.config` and — until this function existed — read by
+    nothing. Its own description said it governed "how many times a response failing the
+    factuality check may be regenerated before UNDX answers with the honest boundary
+    instead", and the honest boundary was reached on exactly the same schedule whatever
+    the variable said, because no code anywhere consulted it.
+
+    Its declared default was ``1`` against a maximum of ``3``. The render loop can build
+    up to forty-four drafts, so every value the flag was permitted to hold described a
+    behaviour narrower than the one that shipped — a control whose entire range is below
+    the thing it claims to govern is not a control, it is a misleading label, and wiring
+    it in as declared would have quietly cut UNDX off after its first rejected draft in
+    every deployment. The declaration now defaults above the whole search space, so
+    switching this on changes nothing until somebody deliberately lowers it, and lowering
+    it can only make UNDX give up earlier and say less. It cannot make UNDX say more.
+
+    Never raises. A configuration lookup that fails must not be the reason a person gets
+    no answer, so the fall-back is the widest value — which is also the value that
+    preserves the behaviour this function replaced.
+    """
+    try:
+        from services.undx_brain import config as brain_config
+        raw = brain_config.resolve(None).values.get(
+            "UNDX_RESPONSE_MAX_REGENERATIONS", _MAX_REGENERATIONS_DEFAULT)
+        return max(0, min(int(raw), _MAX_REGENERATIONS_DEFAULT))
+    except Exception:  # pragma: no cover - config is written not to raise
+        logger.warning("undx_response_regeneration_budget_unreadable; using the default")
+        return _MAX_REGENERATIONS_DEFAULT
+
 
 class DetailLevel:
     """How much of the plan the renderer is allowed to spend."""
@@ -397,7 +437,11 @@ _SENT_CLAIM_PATTERNS: tuple[re.Pattern[str], ...] = tuple(re.compile(p, re.IGNOR
 _COMPLETION_CLAIM_PATTERNS: tuple[re.Pattern[str], ...] = tuple(re.compile(p, re.IGNORECASE) for p in (
     r"\b(?:i|undx)\s+(?:have\s+)?(?:sent|posted|published|deleted|removed|created|updated|changed|cancell?ed|paused|resumed)\b",
     r"\b(?:has|have)\s+been\s+(?:sent|posted|published|deleted|removed|created|updated|changed|cancell?ed|paused|resumed)\b",
-    r"\bis\s+now\s+(?:saved|liked|unliked|followed|unfollowed|deleted|paused|resumed|active|inactive|off|on)\b",
+    # ``are`` as well as ``is``. The plural was missing and the omission is the same
+    # shape as every other near-miss in a hand-written list: the concept was obviously
+    # covered, and exactly one of its surface forms was. "Push notifications are now
+    # off" is a completion claim by any reading, and it went straight past the guard.
+    r"\b(?:is|are)\s+now\s+(?:saved|liked|unliked|followed|unfollowed|deleted|paused|resumed|active|inactive|off|on)\b",
     r"\ball\s+set\b",
     r"\ball\s+done\b",
     r"\bthat'?s\s+done\b",
@@ -569,7 +613,7 @@ class EvidenceView:
 
 #: Keys in a result's ``data`` that describe the envelope rather than the answer.
 _STRUCTURAL_KEYS = frozenset({
-    "items", "count", "complete", "degraded_sources", "source", "sources",
+    "items", "count", "complete", "truncated", "degraded_sources", "source", "sources",
     "timestamp", "generated_at", "authorization_scope", "native_route", "confidence",
     "id", "user_id", "owner_user_id", "conversation_id", "post_id", "reel_id",
     "status_id", "alert_id", "notification_id", "listing_id", "order_id", "live_id",
@@ -2300,8 +2344,23 @@ def render(plan: ResponsePlan, spec: Any, status: str, result: ToolResult,
     leads = _lead_forms(plan, spec, status, result, verification) or [plan.direct_answer]
     candidates: list[str] = []
     seen: set[str] = set()
+    rejected = 0
+    regeneration_budget = _max_regenerations()
     for lead in leads:
+        if rejected > regeneration_budget:
+            break
         for order in _ORDERS:
+            if rejected > regeneration_budget:
+                # ``UNDX_RESPONSE_MAX_REGENERATIONS`` spent. Stop rendering and let the
+                # fallback below answer with the honest boundary, which is what the flag
+                # says it is for. The budget counts *rejected* drafts rather than drafts
+                # built: a permutation that collapsed onto a string already seen cost
+                # nothing and claimed nothing, so charging it here would exhaust the
+                # budget on bookkeeping and silence answers that were never unsafe.
+                logger.info("undx_response_regeneration_budget_spent capability=%s "
+                            "rejected=%s budget=%s",
+                            plan.capability_id, rejected, regeneration_budget)
+                break
             text = _assemble(_clauses(plan, lead), order)
             if not text:
                 continue
@@ -2314,6 +2373,7 @@ def render(plan: ResponsePlan, spec: Any, status: str, result: ToolResult,
                 continue
             problems = validate_consistency(plan, text)
             if problems:
+                rejected += 1
                 logger.warning(
                     "undx_response_rejected capability=%s problems=%s",
                     plan.capability_id, ";".join(problems)[:200],

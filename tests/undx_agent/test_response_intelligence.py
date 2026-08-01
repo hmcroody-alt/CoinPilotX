@@ -998,6 +998,23 @@ class SilentDegradationRegressionTests(unittest.TestCase):
                     INBOX, _read("notifications.inbox.list", [], data={"count": good}))
                 self.assertEqual(expected, view.total)
 
+    def test_empty_paginated_read_does_not_narrate_truncation_metadata(self) -> None:
+        """Pagination metadata is transport structure, not user account state."""
+        result = _read(
+            "crypto.alerts.list", [], data={"count": 0, "truncated": False}
+        )
+        view = ri.build_view(ALERTS, result)
+        self.assertEqual(ri.EvidenceShape.EMPTY, view.shape)
+        self.assertNotIn(("truncated", False), view.flags)
+        text, _ = ri.compose(
+            ALERTS,
+            AgentOutcome.VERIFIED_SUCCESS,
+            result,
+            _unverified(),
+            question="Show my crypto alerts.",
+        )
+        self.assertNotIn("truncated", text.lower())
+
 
 class QuotedEvidenceTests(unittest.TestCase):
     """A record's own name is not a claim UNDX is making about a metric.
