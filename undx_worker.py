@@ -7,6 +7,7 @@ commands, or execute repository actions.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
@@ -38,6 +39,12 @@ def _status_payload() -> dict:
         "runtime_version": os.getenv("UNDX_CONFIG_VERSION", "default"),
         "deployed_sha": _build_sha(),
         "environment": os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("RAILWAY_ENVIRONMENT") or "unknown",
+        "agent_enabled": os.getenv("UNDX_AGENT_ENABLED", "false").lower() == "true",
+        "reads_enabled": os.getenv("UNDX_AGENT_READS_ENABLED", "false").lower() == "true",
+        "writes_enabled": os.getenv("UNDX_AGENT_WRITES_ENABLED", "false").lower() == "true",
+        "writes_disabled": os.getenv("UNDX_AGENT_DISABLE_WRITES", "true").lower() == "true",
+        "brain_enabled": os.getenv("UNDX_BRAIN_ENABLED", "false").lower() == "true",
+        "brain_qa_only": os.getenv("UNDX_BRAIN_QA_ONLY", "true").lower() == "true",
         "router_enabled": undx_router.router_enabled(),
         "multi_model_mode": undx_router.multi_model_mode(),
         "default_provider": undx_router.default_provider(),
@@ -54,7 +61,15 @@ def main() -> None:
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, _request_shutdown)
     bot.init_db()
-    logging.info("UNDX_WORKER_START service=%s status=%s", WORKER_NAME, _status_payload())
+    status = _status_payload()
+    # ``bot`` may establish logging before this worker is imported.  Stdout is
+    # therefore the authoritative Railway startup marker; the payload contains
+    # only release metadata and booleans, never credentials or provider values.
+    print(
+        "UNDX_WORKER_START " + json.dumps({"service": WORKER_NAME, **status}, sort_keys=True),
+        flush=True,
+    )
+    logging.info("UNDX_WORKER_START service=%s status=%s", WORKER_NAME, status)
     while not STOP_EVENT.is_set():
         try:
             undx_router.log_provider_status()
