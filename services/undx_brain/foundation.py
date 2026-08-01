@@ -656,6 +656,11 @@ FOUNDATION: tuple[Responsibility, ...] = (
             ("services.undx_brain.truth", "meets"),
             ("services.undx_brain.truth", "hedge_for"),
             ("services.undx_brain.goals", "Goal"),
+            ("services.undx_brain.calibration", "pair"),
+            ("services.undx_brain.calibration", "calibrate"),
+            ("services.undx_brain.calibration", "by_capability"),
+            ("services.undx_brain.calibration", "Verdict"),
+            ("services.undx_brain.calibration", "Calibration"),
             ("services.undx_architecture", "calibrate_confidence"),
         ),
         gap=(
@@ -664,13 +669,33 @@ FOUNDATION: tuple[Responsibility, ...] = (
             "``may_claim_live_state`` and ``may_say_done`` gate the two claims that "
             "cause the most damage when wrong, ``hedge_for`` supplies the wording, and "
             "an unsettled ``Goal`` says outright that the request does not name an "
-            "operation. What is missing is every part of it that spans turns. Nothing "
-            "observes whether its own answers were right, whether a capability keeps "
-            "being selected and then corrected, or whether one question shape reliably "
-            "goes wrong — because the table that would carry that evidence, "
-            "``pulse_ai_learning_events``, is written by eleven call sites and read by "
-            "one, which counts its rows. So the system can report uncertainty and cannot "
-            "yet notice a pattern in its own mistakes."
+            "operation. Across turns there is now one thing and only one: "
+            "``calibration.calibrate`` joins ``agent_action`` and ``message_answered`` "
+            "to ``feedback_recorded`` on the ``message_id`` all three carry, so of the "
+            "answers already given it can say which were judged wrong, and "
+            "``by_capability`` can say it per capability. So the second of the three "
+            "questions this entry used to list as unanswered — whether a capability "
+            "keeps being selected and then corrected — has an answer, and the table "
+            "that used to be read only by a row count now has a reader that opens a "
+            "row."
+            "\n\n"
+            "What is still missing is most of it. Nothing on the live path calls "
+            "``calibrate``; it is behind ``UNDX_BRAIN_CALIBRATION_ENABLED``, which "
+            "defaults off, and no module imports it. The third question — whether one "
+            "*question shape* reliably goes wrong — has no owner at all, because "
+            "nothing on the writing side records what shape a question had; "
+            "``agent_action`` carries a capability id and ``message_answered`` carries "
+            "a provider and a latency, and neither is the shape of what was asked. The "
+            "answer that arrives is also only ever the one people volunteered: "
+            "``calibrate`` reports the unjudged count beside every rate for that "
+            "reason, but reporting the bias is not correcting it, and no correctness "
+            "rate here is a rate over the answers, only over the rated ones. And "
+            "``memory_corrected`` carries a ``memory_id`` and no ``message_id``, so a "
+            "correction to something UNDX remembered cannot be attributed to the answer "
+            "that produced it — a gap in the eleven writing call sites, not something "
+            "the reader can infer around. Noticing is also still not learning: nothing "
+            "acts on any of this, by design and with a test holding the design in "
+            "place."
         ),
         note=(
             "``calibrate_confidence`` is listed for completeness and is the weakest "
@@ -679,6 +704,20 @@ FOUNDATION: tuple[Responsibility, ...] = (
             "a judgement already made into a score and a phrase, and calls nothing to "
             "check any of the four. ``evidence.derive`` is the one that reads state, and "
             "it is the one to build on."
+            "\n\n"
+            "The two halves of this entry answer different questions and must not be "
+            "read as one capability. ``evidence`` and ``truth`` decide what may be said "
+            "*now*, before the response is sent, and are binding. ``calibration`` says "
+            "what the record shows about answers already sent, and is advisory to a "
+            "human reading it — its refusal to reach ``selection`` is what keeps the "
+            "second from quietly becoming the first. That refusal is deliberate: a "
+            "capability that is often corrected has not been shown to have caused the "
+            "correction, and down-ranking it on that evidence would be a causal claim "
+            "made where nobody reviewing the selection code would see it. "
+            "``MIN_JUDGED`` is 12 because 12 is the smallest sample whose worst-case "
+            "95% Wilson interval is narrower than the coarsest distinction the rate "
+            "would ever be used to draw, and the test recomputes that rather than "
+            "asserting the number."
         ),
     ),
     Responsibility(
@@ -958,11 +997,13 @@ FOUNDATION: tuple[Responsibility, ...] = (
             "``status='active'``, because a claim that disagrees is a different string "
             "and matches nothing. The one mechanism named for contradiction flags "
             "corroboration and lets the contradiction through.\n\n"
-            "What is still not owned is reach on the live path. One module calls "
+            "What is still not owned is reach on the live path. Two modules call "
             "``facts`` now — ``services.undx_brain.learning`` uses ``facts.read`` to "
             "time-qualify a finding and ``facts.parse_moment`` to read the timestamps "
-            "it orders events by — and that is one reader behind a flag calling another "
-            "reader behind a flag, so it moves nothing closer to a request. Nothing on "
+            "it orders events by, and ``services.undx_brain.calibration`` uses "
+            "``facts.read`` for the same reason, refusing to conclude a correctness "
+            "rate it cannot date — and both are readers behind a flag calling a reader "
+            "behind a flag, so neither moves anything closer to a request. Nothing on "
             "the live path calls either: ``facts`` is behind "
             "``UNDX_BRAIN_FACTS_ENABLED``, which defaults off, and with it off every "
             "entry point answers ``ok=False``. A fact only becomes comparable if its "

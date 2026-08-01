@@ -448,6 +448,24 @@ CATALOG: tuple[Flag, ...] = (
         "layer exists to prevent.",
         fail="closed",
     ),
+    Flag(
+        "UNDX_BRAIN_CALIBRATION_ENABLED", "bool", "0",
+        "Allow the Brain to observe whether its own past answers were judged right, by "
+        "joining ``agent_action`` and ``message_answered`` to ``feedback_recorded`` on "
+        "the ``message_id`` all three carry. Off means nothing spans turns: uncertainty "
+        "can be reported within one response and no pattern in the mistakes is ever "
+        "noticed, which is the current behaviour. On means a correctness rate is "
+        "computed per account and per capability, reported as a Wilson interval rather "
+        "than a bare percentage and never below twelve judged answers, with the "
+        "unjudged count stated beside it because voluntary feedback is heavily "
+        "selection-biased and silence is not approval. Requires "
+        "UNDX_BRAIN_LEARNING_ENABLED in practice, since the window it reads comes from "
+        "``learning.load``. The result is reported and never acted on: nothing here "
+        "reaches ``selection``, because a capability that is often corrected has not "
+        "been shown to have caused the correction, and down-ranking it on that evidence "
+        "would be a causal claim made where nobody would see it.",
+        fail="closed",
+    ),
     # ------------------------------------------------------------ QA and rollout ----
     Flag(
         "UNDX_BRAIN_QA_ONLY", "bool", "1",

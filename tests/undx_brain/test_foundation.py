@@ -689,6 +689,116 @@ class TheCognitiveEntriesSayTrueThings(unittest.TestCase):
                 )
         self.assertIn("cannot undo", gap)
 
+    def test_the_metacognition_entry_stopped_claiming_the_table_is_only_counted(self):
+        item = f.by_key("metacognition")
+        self.assertIs(item.ownership, f.Ownership.PARTIAL)
+        owners = {module for module, _ in item.owners}
+        self.assertIn("services.undx_brain.calibration", owners)
+        from services.undx_brain import calibration as C
+        for module, symbol in item.owners:
+            if module == "services.undx_brain.calibration":
+                with self.subTest(symbol=symbol):
+                    self.assertTrue(hasattr(C, symbol), f"calibration has no {symbol}")
+        for stale in (
+            "is written by eleven call sites and read by one, which counts its rows",
+            "Nothing observes whether its own answers were right",
+            "cannot yet notice a pattern in its own mistakes",
+        ):
+            with self.subTest(stale=stale):
+                self.assertNotIn(
+                    stale, item.gap,
+                    f"the metacognition gap still says {stale!r}; calibration.calibrate "
+                    f"is that observer now",
+                )
+
+    def test_the_metacognition_entry_is_honest_about_what_calibration_does_not_do(self):
+        item = f.by_key("metacognition")
+        gap = item.gap
+        from services.undx_brain import calibration as C
+        from services.undx_brain import learning as L
+
+        # One: nothing on the live path calls it, and the flag is the reason.
+        self.assertEqual(_importers_of("calibration"), [])
+        self.assertIn("UNDX_BRAIN_CALIBRATION_ENABLED", gap)
+
+        # Two: the join the entry describes really is the join it performs, checked by
+        # running it. Three event types, one metadata key, two verdicts — if any of
+        # those names changes on the writing side this stops matching and the sentence
+        # in the entry expires with it.
+        on = {
+            "UNDX_BRAIN_ENABLED": "1",
+            "UNDX_BRAIN_CALIBRATION_ENABLED": "1",
+            "UNDX_BRAIN_LEARNING_ENABLED": "1",
+            "UNDX_BRAIN_FACTS_ENABLED": "1",
+        }
+
+        def event(seq, kind, at, **metadata):
+            return L.Event(
+                event_id=seq, owner_id=7, event_type=kind, source="t",
+                metadata=metadata, created_at=at,
+            )
+
+        rows = [
+            event(1, "agent_action", "2026-08-01T10:00:00Z",
+                  message_id=1, capability_id="cap.a"),
+            event(2, "feedback_recorded", "2026-08-01T10:01:00Z",
+                  message_id=1, rating="wrong"),
+            event(3, "message_answered", "2026-08-01T10:02:00Z", message_id=2),
+            event(4, "feedback_recorded", "2026-08-01T10:03:00Z",
+                  message_id=2, rating="helpful"),
+        ]
+        window = L.Window(
+            ok=True, owner_id=7, events=tuple(rows),
+            first_at=rows[0].created_at, last_at=rows[-1].created_at,
+        )
+        paired = C.pair(window, env=on)
+        self.assertEqual(
+            [(p.claim_event, p.verdict.value) for p in paired],
+            [("agent_action", "corrected"), ("message_answered", "approved")],
+            "the join named in the metacognition entry no longer produces what the "
+            "entry says it produces",
+        )
+        for named in ("agent_action", "message_answered", "feedback_recorded",
+                      "message_id", "by_capability"):
+            with self.subTest(named=named):
+                self.assertIn(named, gap)
+
+        # Three: the entry says the rate is only ever over the answers people rated.
+        # The unjudged count is what makes that readable, so it has to be named.
+        self.assertIn("unjudged", gap)
+        rated = C.calibrate(window, env=on)
+        self.assertEqual(rated.unjudged, 0)
+        self.assertFalse(rated.conclusive, "two ratings concluded something")
+
+        # Four: the two limitations the entry names in as many words are real. A
+        # corrected memory cannot be joined, and nothing acts on any of this.
+        self.assertIn("memory_corrected", gap)
+        self.assertNotIn("memory_corrected", C.CLAIM_EVENTS)
+        self.assertNotEqual(C.JOIN_KEY, "memory_id")
+        source = (ROOT / "services" / "undx_brain" / "calibration.py").read_text(
+            encoding="utf-8"
+        )
+        imports = [
+            line for line in source.splitlines()
+            if line.startswith(("import ", "from ")) and "selection" in line
+        ]
+        self.assertEqual(
+            imports, [],
+            "calibration imports selection; the metacognition entry says noticing is "
+            "still not learning",
+        )
+        self.assertIn("not learning", gap)
+
+    def test_the_metacognition_note_keeps_the_binding_half_apart_from_the_advisory_one(self):
+        # The entry now has two kinds of owner under one key, and conflating them is
+        # the specific misreading that would matter: ``truth.meets`` refusing a claim
+        # is enforcement, and a correctness rate is a report. The note has to say so.
+        note = f.by_key("metacognition").note
+        self.assertIn("advisory", note)
+        self.assertIn("binding", note)
+        from services.undx_brain import calibration as C
+        self.assertIn(str(C.MIN_JUDGED), note)
+
 
 class ThePackageNamesItsOwnModules(unittest.TestCase):
     """``__all__`` in ``services/undx_brain/__init__.py`` lists every module present.

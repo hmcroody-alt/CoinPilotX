@@ -43,6 +43,12 @@ from __future__ import annotations
 #: because it is what a chosen plan is walked through, and it is last of the acting
 #: modules for the same reason it is the smallest: it decides nothing and performs
 #: nothing, it only counts what a run has spent and stops it honestly.
+#: ``calibration`` is last of all and is the only module that looks backwards: every
+#: other one reasons about the request in front of it and is finished when the response
+#: is sent, while this one asks of the answers already given which turned out to be
+#: wrong. It is listed after the acting modules rather than before them because it reads
+#: their record, and it deliberately feeds nothing back into ``selection`` — observing
+#: is not steering.
 #: Listed exhaustively so that a module added without being named here is visible as a
 #: difference rather than merely absent — the test in ``tests/undx_brain`` walks the
 #: directory and compares.
@@ -63,5 +69,6 @@ __all__ = [
     "prediction",
     "selection",
     "execution",
+    "calibration",
     "rollout",
 ]
