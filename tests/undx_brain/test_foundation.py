@@ -40,6 +40,40 @@ from services.undx_brain import foundation as f  # noqa: E402
 REPORT = f.verify()
 
 
+def _importers_of(module_name: str) -> list[str]:
+    """Every module under ``services`` that imports ``services.undx_brain.<name>``.
+
+    Three of the drift tests below rest a claim on this: "nothing imports this yet",
+    "only ``selection`` imports this". A claim about reach is worth exactly as much as
+    the detector behind it, and the obvious detector is wrong in a way that is easy to
+    miss. ``from . import selection`` is evidence of a Brain import only when the file
+    saying it lives inside ``services/undx_brain``; ``business_os/advertising/delivery``
+    says exactly that sentence about an entirely different ``selection`` module, and an
+    earlier version of this check counted it and failed. So the relative forms are
+    searched only within the package and the absolute forms are searched everywhere,
+    which is what makes the returned list mean what the entries claim it means.
+    """
+    package = ROOT / "services" / "undx_brain"
+    relative = re.compile(
+        rf"^\s*(from\s+\.\s+import\s+.*\b{module_name}\b"
+        rf"|from\s+\.{module_name}\s+import\b)",
+        re.MULTILINE,
+    )
+    absolute = re.compile(
+        rf"^\s*(from\s+services\.undx_brain\s+import\s+.*\b{module_name}\b"
+        rf"|import\s+services\.undx_brain\.{module_name}\b)",
+        re.MULTILINE,
+    )
+    found = set()
+    for path in (ROOT / "services").rglob("*.py"):
+        if path.name == f"{module_name}.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        if absolute.search(text) or (package in path.parents and relative.search(text)):
+            found.add(path.stem)
+    return sorted(found)
+
+
 class TheMapMatchesTheCode(unittest.TestCase):
     def test_every_claimed_owner_still_exists(self):
         self.assertTrue(
@@ -376,18 +410,7 @@ class TheCognitiveEntriesSayTrueThings(unittest.TestCase):
         # that claims to describe its reach. A twelfth caller appearing without being
         # written down is still a failure; a caller appearing *and being described* is
         # not, and that is the difference between a map and a padlock.
-        importers = sorted(
-            path.stem
-            for path in (ROOT / "services").rglob("*.py")
-            if path.name != "facts.py"
-            and re.search(
-                r"^\s*(from\s+\.\s+import\s+facts|from\s+\.facts\s+import"
-                r"|from\s+services\.undx_brain\s+import\s+.*\bfacts\b"
-                r"|import\s+services\.undx_brain\.facts)",
-                path.read_text(encoding="utf-8"),
-                re.MULTILINE,
-            )
-        )
+        importers = _importers_of("facts")
         # Without this the loop below is vacuous, and it would go vacuous for the least
         # interesting reason imaginable: the import regex drifting out of step with how
         # somebody happens to spell an import. A test that passes by iterating over
@@ -459,27 +482,124 @@ class TheCognitiveEntriesSayTrueThings(unittest.TestCase):
         self.assertIn("intervention_confirmed", body)
         self.assertIn("causal_analysis", gap)
 
-        # Two: nothing on the live path reaches the new module. Same shape as the facts
-        # test above — importers are enumerated rather than assumed absent, so a caller
-        # arriving without the entry being updated is a failure and not a surprise.
-        importers = sorted(
-            path.stem
-            for path in (ROOT / "services").rglob("*.py")
-            if path.name != "prediction.py"
-            and re.search(
-                r"^\s*(from\s+\.\s+import\s+prediction|from\s+\.prediction\s+import"
-                r"|from\s+services\.undx_brain\s+import\s+.*\bprediction\b"
-                r"|import\s+services\.undx_brain\.prediction)",
-                path.read_text(encoding="utf-8"),
-                re.MULTILINE,
-            )
-        )
+        # Two: the module's reach is enumerated rather than assumed. This assertion has
+        # already earned its keep once — it read ``importers == []`` until
+        # ``undx_brain.selection`` landed and imported ``predict`` to prefer the
+        # reversible of two contested writes, and it failed on the commit that did it
+        # rather than letting the entry quietly become false. What matters is not that
+        # the list is empty but that every name on it is itself flag-gated, so the reach
+        # of prediction into a real request is still zero.
+        importers = _importers_of("prediction")
         self.assertEqual(
-            importers, [],
-            "something now imports undx_brain.prediction; the entry claims nothing does",
+            importers, ["selection"],
+            "the set of modules importing undx_brain.prediction has changed; the entry "
+            "names them, so it needs updating with them",
         )
+        for module in importers:
+            with self.subTest(module=module):
+                self.assertIn(
+                    module, gap,
+                    f"services/undx_brain/{module}.py imports prediction and the "
+                    f"prediction entry does not mention it",
+                )
         self.assertIn("UNDX_BRAIN_PREDICTION_ENABLED", gap)
         self.assertIn("defaults", gap)
+
+    def test_the_action_selection_entry_stopped_claiming_nothing_holds_two_candidates(self):
+        # The claim that went stale: "nothing ever holds two candidates at once" and
+        # "the matcher has no way to say two capabilities score alike". Both were true
+        # when written and both went false when ``undx_brain.selection`` landed.
+        item = f.by_key("action_selection")
+        self.assertIs(item.ownership, f.Ownership.PARTIAL)
+
+        owners = {module for module, _ in item.owners}
+        self.assertIn("services.undx_brain.selection", owners)
+
+        from services.undx_brain import selection as S
+        for module, symbol in item.owners:
+            if module == "services.undx_brain.selection":
+                with self.subTest(symbol=symbol):
+                    self.assertTrue(hasattr(S, symbol), f"selection has no {symbol}")
+
+        for stale in (
+            "nothing ever holds two candidates at once",
+            "the matcher has no way to say",
+        ):
+            with self.subTest(stale=stale):
+                self.assertNotIn(
+                    stale, item.gap,
+                    f"the action_selection gap still says {stale!r}; selection.rank does",
+                )
+
+    def test_the_action_selection_entry_is_honest_about_what_is_still_missing(self):
+        # Four claims the new text makes, each one checkable against the code rather
+        # than taken on the entry's word.
+        item = f.by_key("action_selection")
+        gap = item.gap
+
+        # One: nothing on the live path calls it. Enumerated, not assumed.
+        importers = _importers_of("selection")
+        self.assertEqual(
+            importers, [],
+            "something now imports undx_brain.selection; the entry claims nothing does",
+        )
+        self.assertIn("UNDX_BRAIN_SELECTION_ENABLED", gap)
+
+        # Two: ``select_skills`` really is still the thin thing the entry says it is.
+        # Asserted against the function body so that improving it makes this fail
+        # instead of leaving the entry disparaging code that has since got better.
+        source = (ROOT / "services" / "undx_architecture.py").read_text(encoding="utf-8")
+        body = source.split("def select_skills", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("select_skills", gap)
+        self.assertIn("&", body, "select_skills no longer intersects sets; the entry says it does")
+
+        # Three: the live path still takes the matcher's single answer, which is what
+        # makes "nothing on the live path calls it" more than a statement about imports.
+        # The entry used to attribute this call to ``undx_architecture`` and this
+        # assertion agreed with it; both were wrong, and the assertion caught it. The
+        # only caller of ``match_capability`` is the runtime, so that is the file to
+        # read — and the check is that the call site is still a bare single-value
+        # assignment, because the day it stops being one is the day the entry's claim
+        # expires.
+        runtime_source = (
+            ROOT / "services" / "undx_agent_runtime.py"
+        ).read_text(encoding="utf-8")
+        call_sites = [
+            line.strip()
+            for line in runtime_source.splitlines()
+            if "match_capability(" in line and not line.lstrip().startswith("def ")
+        ]
+        self.assertEqual(
+            call_sites, ["spec = match_capability(text)"],
+            "the runtime's use of match_capability has changed shape; the "
+            "action_selection entry describes it as taking the single answer",
+        )
+        self.assertIn("undx_agent_runtime", gap)
+        self.assertNotIn(
+            "``undx_architecture`` still takes ``match_capability``", gap,
+            "the entry credits the matcher call to undx_architecture; the caller is "
+            "undx_agent_runtime",
+        )
+
+        # Four: the entry claims no registered phrasing puts two writes in one band, and
+        # that this is why the separation rules are exercised with a hand-built band.
+        # Checked here too, independently of the selection suite, because the honesty of
+        # the *entry* is what this test is about.
+        from services.undx_brain import selection as S
+        env = {
+            "UNDX_BRAIN_ENABLED": "1",
+            "UNDX_BRAIN_SELECTION_ENABLED": "1",
+            "UNDX_BRAIN_PREDICTION_ENABLED": "1",
+        }
+        from services import undx_capability_registry as reg
+        for spec in reg.REGISTRY.values():
+            for phrase in spec.intents:
+                contested = [c for c in S.rank(phrase, env=env) if c.contested and c.is_write]
+                self.assertLessEqual(
+                    len(contested), 1,
+                    f"{phrase!r} now contests two writes; the action_selection entry "
+                    f"says no registered phrasing does",
+                )
 
 
 class ThePackageNamesItsOwnModules(unittest.TestCase):

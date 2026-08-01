@@ -413,6 +413,21 @@ CATALOG: tuple[Flag, ...] = (
         "description.",
         fail="closed",
     ),
+    Flag(
+        "UNDX_BRAIN_SELECTION_ENABLED", "bool", "0",
+        "Allow more than one candidate operation to be held at once, and compared. Off "
+        "means ``match_capability`` keeps returning a single best-scoring capability "
+        "and discarding the rest, which is the current behaviour: a runner-up one point "
+        "behind is indistinguishable at the call site from no runner-up at all. On "
+        "means the same scoring is kept as a ranked list, candidates within a near-tie "
+        "of the leader are named, and a contested band is separated on declared data — "
+        "a read is preferred to a write, a reversible write to an irreversible one, a "
+        "narrower blast radius to a wider one. Two contested writes that none of those "
+        "rules separate are returned undecided rather than guessed between. The "
+        "ranking is the matcher's own and not a second opinion: a test holds the top of "
+        "the list against ``match_capability`` over every registered phrasing.",
+        fail="closed",
+    ),
     # ------------------------------------------------------------ QA and rollout ----
     Flag(
         "UNDX_BRAIN_QA_ONLY", "bool", "1",

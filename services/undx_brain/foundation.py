@@ -382,8 +382,8 @@ FOUNDATION: tuple[Responsibility, ...] = (
             "would determine it; \"Help me manage my alerts\" reads as a scope no single "
             "registered capability satisfies. What is not done is the same thing that is "
             "not done for attention: nothing on the live path calls it. "
-            "``undx_architecture`` still takes ``match_capability``'s best capability as "
-            "the goal, which is the behaviour that lets \"fix my alert\" become "
+            "``undx_agent_runtime.undx_handle`` still takes ``match_capability``'s best "
+            "capability as the goal, which is the behaviour that lets \"fix my alert\" become "
             "``crypto.alerts.delete``. Two narrower gaps are honest ones. The repair and "
             "scope frames are hand-written editorial lists — every entry is defended by "
             "a test, but a phrasing nobody thought of reads as ``UNKNOWN`` rather than "
@@ -460,18 +460,39 @@ FOUNDATION: tuple[Responsibility, ...] = (
             ("services.undx_architecture", "select_skills"),
             ("services.undx_agent_policy", "evaluate"),
             ("services.undx_brain.goals", "understand"),
+            ("services.undx_brain.selection", "rank"),
+            ("services.undx_brain.selection", "select"),
+            ("services.undx_brain.selection", "Separator"),
+            ("services.undx_brain.selection", "Selection"),
+            ("services.undx_brain.selection", "NEAR_TIE"),
         ),
         gap=(
-            "What exists is *scoring a single candidate*, not choosing between "
-            "alternatives. ``match_capability`` walks the registered phrasings and "
-            "returns the best-scoring one; ``evaluate`` then says whether that one is "
-            "permitted. Nothing compares two capabilities that would both satisfy the "
-            "request and prefers the reversible, the cheaper, or the narrower — because "
-            "nothing ever holds two candidates at once. ``select_skills`` is thinner "
-            "still: a set intersection against each skill's declared tools plus four "
-            "hard-coded words in the message text. And the matcher has no way to say "
-            "\"two capabilities score alike\"; it returns one, and a near-tie is "
-            "indistinguishable from a clear win at the call site."
+            "Holding two candidates at once now has an owner and using the result does "
+            "not. ``undx_brain.selection.rank`` keeps the matcher's whole ranked list "
+            "instead of its argmax — the matcher's own scoring functions, borrowed "
+            "rather than reimplemented, with a test holding the top of the list against "
+            "``match_capability`` across all 254 registered phrasings — and ``select`` "
+            "separates a near-tie on declared data: a read over a write, a reversible "
+            "write over an irrecoverable one, a narrower blast radius over a wider one. "
+            "Two contested writes that none of those rules tell apart come back "
+            "undecided, which on the live registry is all sixteen pairs of an operation "
+            "with its own inverse. So \"two capabilities score alike\" is now sayable, "
+            "and the one-point gap between pausing somebody's alerts and listing them "
+            "is visible rather than silently resolved.\n\n"
+            "What is not done. Nothing on the live path calls any of it: ``select`` is "
+            "behind ``UNDX_BRAIN_SELECTION_ENABLED``, which defaults off, and "
+            "``undx_agent_runtime.undx_handle`` still takes ``match_capability``'s single "
+            "answer — one spec or ``None``, the runners-up discarded inside the matcher "
+            "before any caller could weigh them. "
+            "``undx_architecture.select_skills`` is untouched and still a set intersection against each "
+            "skill's declared tools plus four hard-coded words in the message text. The "
+            "write-separation rules cannot be reached through a sentence at all, because "
+            "no registered phrasing puts two writes in the same band; they are exercised "
+            "against real capability pairs with the band assembled by the test, and a "
+            "test asserts that is still true so the day a phrasing contests two writes "
+            "is a failure rather than a surprise. And the preference order is a "
+            "judgement — reversibility before width before undo cost — defended by what "
+            "it does to the registry's 120 write pairs, not derived from anything."
         ),
         note=(
             "``goals.understand`` is listed as an owner because it is the only thing "
@@ -479,7 +500,14 @@ FOUNDATION: tuple[Responsibility, ...] = (
             "the point: for a request that names no operation it returns an unsettled "
             "goal with an empty ``capability_id``, where the matcher alone would have "
             "returned its best guess and the gateway would have run it. Selection that "
-            "cannot abstain is not selection."
+            "cannot abstain is not selection.\n\n"
+            "``selection.select`` abstains in the same shape and for the same reason, "
+            "one layer down: where ``goals`` declines because the sentence names no "
+            "operation, this declines because the sentence names two and the scoring "
+            "cannot tell which. Its undecided result has no ``best_guess`` field, on "
+            "purpose — a refusal with a fallback attached is advice, and a caller that "
+            "genuinely wants the highest-scoring capability can still call "
+            "``match_capability``, which is unchanged and still returns exactly that."
         ),
     ),
     Responsibility(
@@ -510,9 +538,13 @@ FOUNDATION: tuple[Responsibility, ...] = (
             "``root_cause_confirmed`` from a flag the caller also set; nothing infers a "
             "cause from evidence, and ``prediction`` does not attempt to — it describes "
             "one proposed call and stops. Nothing on the live path calls ``predict`` "
-            "either: it is behind ``UNDX_BRAIN_PREDICTION_ENABLED``, which defaults "
-            "off, and with it off both entry points answer ``ok=False``. The gateway "
-            "still executes writes without asking what they would do first."
+            "either. It has exactly one importer, ``undx_brain.selection``, which reads "
+            "a prediction to prefer the reversible of two contested writes — one dark "
+            "module calling another, since both sit behind flags whose defaults are off. "
+            "With "
+            "``UNDX_BRAIN_PREDICTION_ENABLED`` off both entry points answer ``ok=False``, "
+            "and selection then refuses to choose rather than falling back to the score. "
+            "The gateway still executes writes without asking what they would do first."
         ),
         note=(
             "``simulate_operation`` is retained as an owner and is the weakest one "
