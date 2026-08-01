@@ -107799,9 +107799,29 @@ def admin_summary():
     )
 
 
+@webhook_app.route("/api/pulse/translations/languages", methods=["GET"])
+def api_pulse_translation_languages():
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    from services import content_translation
+
+    try:
+        languages = content_translation.supported_languages()
+        return jsonify({"ok": True, "provider": "google", "languages": languages})
+    except content_translation.TranslationError as exc:
+        return api_error(str(exc), exc.status, error=exc.code)
+
+
 @webhook_app.route("/health", methods=["GET"])
 def health_check():
-    response = jsonify({"ok": True, "service": "coinpilotx-web"})
+    from services.content_translation import health_status as translation_health
+
+    response = jsonify({
+        "ok": True,
+        "service": "coinpilotx-web",
+        "translation": translation_health(probe=False),
+    })
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response, 200
 

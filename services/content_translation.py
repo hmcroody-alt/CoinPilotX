@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import secrets
 import uuid
@@ -36,6 +37,12 @@ ALLOWED_CONTENT_TYPES = {
 }
 ALLOWED_POLICIES = {"ask", "always", "never"}
 LOCALE_PATTERN = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$", re.I)
+PROTECTED_PATTERN = re.compile(
+    r"```[\s\S]*?```|https?://[^\s]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|@[A-Za-z0-9_.]+|#[A-Za-z0-9_]+|"
+    r"\b(?:BTC|ETH|SOL|USDT|USDC|USD|EUR|GBP)\b|\$\d+(?:[.,]\d+)*",
+    re.I,
+)
+_SUPPORTED_CACHE: dict[str, Any] = {"languages": [], "checked_at": 0.0}
 
 
 class TranslationError(ValueError):
@@ -43,6 +50,48 @@ class TranslationError(ValueError):
         super().__init__(message)
         self.code = code
         self.status = status
+
+
+def supported_languages(*, force: bool = False) -> list[dict[str, Any]]:
+    """Return the provider's current language manifest; never a hard-coded claim."""
+    import time
+    from services.translation_providers import ProviderError, configured_provider
+
+    now = time.time()
+    ttl = max(300, min(int(os.getenv("TRANSLATION_CACHE_TTL_SECONDS", "86400") or 86400), 604800))
+    cached = list(_SUPPORTED_CACHE.get("languages") or [])
+    if cached and not force and now - float(_SUPPORTED_CACHE.get("checked_at") or 0) < ttl:
+        return cached
+    try:
+        languages = configured_provider().supported_languages("en")
+    except ProviderError as exc:
+        if cached:
+            return cached
+        raise TranslationError(exc.code, str(exc), 503) from exc
+    _SUPPORTED_CACHE.update({"languages": languages, "checked_at": now})
+    return list(languages)
+
+
+def health_status(*, probe: bool = False) -> dict[str, Any]:
+    from services.translation_providers import ProviderError, configured_provider
+
+    enabled = os.getenv("TRANSLATION_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        provider = configured_provider()
+        base = provider.health()
+        languages_available = bool(supported_languages(force=True)) if probe and enabled and base.get("configured") else bool(_SUPPORTED_CACHE.get("languages"))
+        return {
+            "enabled": enabled,
+            "provider": base.get("provider") or "google",
+            "configured": bool(base.get("configured")),
+            "healthy": bool(enabled and base.get("configured") and (languages_available if probe else True)),
+            "supported_languages_available": languages_available,
+            "cache": "available",
+            "degraded": bool(enabled and not base.get("configured")),
+        }
+    except ProviderError:
+        return {"enabled": enabled, "provider": "google", "configured": False, "healthy": False,
+                "supported_languages_available": False, "cache": "available", "degraded": enabled}
 
 
 def _now() -> str:
@@ -72,6 +121,114 @@ def _bounded_text(value: Any) -> str:
     if len(text) > MAX_TEXT_CHARS:
         raise TranslationError("text_too_long", f"Translation is limited to {MAX_TEXT_CHARS} characters.", 413)
     return text
+
+
+def _protect_text(text: str) -> tuple[str, dict[str, str]]:
+    protected: dict[str, str] = {}
+    def replace(match: re.Match[str]) -> str:
+        token = f"__PULSESOC_KEEP_{len(protected)}__"
+        protected[token] = match.group(0)
+        return token
+    return PROTECTED_PATTERN.sub(replace, text), protected
+
+
+def _restore_text(text: str, protected: dict[str, str]) -> str:
+    restored = text
+    for token, value in protected.items():
+        if token not in restored:
+            raise TranslationError("invalid_provider_response", "Translation did not preserve protected content.", 502)
+        restored = restored.replace(token, value)
+    return restored
+
+
+def _moderation_allows(text: str) -> bool:
+    from services.pulse_moderation_engine import moderate_text
+    return str((moderate_text(text, "comment") or {}).get("status") or "blocked") != "blocked"
+
+
+def resolve_authorized_content(user_id: int, content_type: Any, content_ref: Any) -> dict[str, str]:
+    """Resolve text through the canonical resource before cache lookup or translation."""
+    kind = _content_type(content_type)
+    try:
+        resource_id = int(str(content_ref or "").strip())
+    except (TypeError, ValueError) as exc:
+        raise TranslationError("invalid_request", "Choose canonical content to translate.") from exc
+    if resource_id <= 0:
+        raise TranslationError("invalid_request", "Choose canonical content to translate.")
+
+    record: dict[str, Any] | None = None
+    text = ""
+    version = ""
+    if kind == "post":
+        from services.feed_intelligence_service import get_post
+        record = get_post(int(user_id), resource_id)
+        text = str((record or {}).get("body") or "")
+        version = str((record or {}).get("updated_at") or (record or {}).get("created_at") or "")
+    elif kind == "reel":
+        from services.content_graph_intelligence_service import get_reel
+        record = get_reel(int(user_id), resource_id)
+        text = str((record or {}).get("caption") or "")
+        version = str((record or {}).get("updated_at") or (record or {}).get("created_at") or "")
+    elif kind == "status":
+        from services.content_graph_intelligence_service import get_status
+        record = get_status(int(user_id), resource_id)
+        text = str((record or {}).get("body") or "")
+        version = str((record or {}).get("updated_at") or (record or {}).get("created_at") or "")
+    elif kind == "profile":
+        from services.content_graph_intelligence_service import get_profile
+        record = get_profile(int(user_id), resource_id)
+        text = str((record or {}).get("bio") or "")
+        version = str((record or {}).get("updated_at") or (record or {}).get("created_at") or "")
+    elif kind in {"comment", "reply"}:
+        conn = db.connect()
+        try:
+            row = conn.execute(
+                "SELECT id,post_id,body,created_at,updated_at,deleted_at FROM pulse_comments WHERE id=? LIMIT 1",
+                (resource_id,),
+            ).fetchone()
+            raw = dict(row) if row else {}
+        finally:
+            conn.close()
+        if raw and not raw.get("deleted_at"):
+            from services.feed_intelligence_service import get_post
+            record = raw if get_post(int(user_id), int(raw.get("post_id") or 0)) else None
+            text = str((record or {}).get("body") or "")
+            version = str((record or {}).get("updated_at") or (record or {}).get("created_at") or "")
+    elif kind == "chat":
+        conn = db.connect()
+        try:
+            row = conn.execute(
+                """SELECT m.id,m.body,m.created_at,m.edited_at,m.deleted_at
+                   FROM comm_v2_messages m
+                   JOIN comm_v2_participants p ON p.conversation_id=m.conversation_id
+                   JOIN comm_v2_conversations c ON c.id=m.conversation_id
+                   WHERE m.id=? AND p.user_id=? AND p.membership_state='active'
+                     AND COALESCE(p.left_at,'')='' AND c.status='active'
+                     AND COALESCE(c.deleted_at,'')='' AND COALESCE(m.deleted_at,'')=''
+                     AND m.moderation_status='approved' LIMIT 1""",
+                (resource_id, int(user_id)),
+            ).fetchone()
+            record = dict(row) if row else None
+        finally:
+            conn.close()
+        text = str((record or {}).get("body") or "")
+        version = str((record or {}).get("edited_at") or (record or {}).get("created_at") or "")
+    else:
+        raise TranslationError(
+            "authorization_unavailable",
+            "This content type is not connected to canonical translation authorization yet.",
+            409,
+        )
+
+    if not record:
+        raise TranslationError("content_unavailable", "That content is unavailable.", 404)
+    canonical_text = _bounded_text(text)
+    return {
+        "content_type": kind,
+        "content_ref": str(resource_id),
+        "text": canonical_text,
+        "content_version": version or hashlib.sha256(canonical_text.encode("utf-8")).hexdigest(),
+    }
 
 
 def ensure_schema(conn=None) -> None:
@@ -248,14 +405,28 @@ def set_preference(user_id: int, source_language: Any, target_language: Any, pol
 
 
 def _default_provider(messages: list[dict[str, str]], correlation_id: str) -> dict:
-    from services import pulse_ai_provider_router
+    """Compatibility wrapper around the canonical non-LLM provider adapter."""
+    del correlation_id
+    from services.translation_providers import ProviderError, configured_provider
 
-    return pulse_ai_provider_router.generate_task_response(
-        messages,
-        correlation_id=correlation_id,
-        task="fast translation",
-        unavailable_message="Translation is temporarily unavailable. Please try again.",
-    )
+    payload = json.loads(messages[-1]["content"])
+    try:
+        result = configured_provider().translate(
+            str(payload.get("content") or ""),
+            str(payload.get("source_language") or "auto"),
+            str(payload.get("target_language") or ""),
+        )
+    except ProviderError as exc:
+        return {"ok": False, "message": str(exc), "error": exc.code}
+    return {
+        "ok": True,
+        "reply": json.dumps({
+            "translated_text": result["translated_text"],
+            "detected_language": result.get("detected_language") or "auto",
+        }, ensure_ascii=False),
+        "provider": result["provider"],
+        "model": result["provider_version"],
+    }
 
 
 def _translation_messages(text: str, source_language: str, target_language: str) -> list[dict[str, str]]:
@@ -312,6 +483,13 @@ def translate_content(
     conn=None,
     provider: Callable[[list[dict[str, str]], str], dict] | None = None,
 ) -> dict:
+    if provider is None:
+        canonical = resolve_authorized_content(int(user_id), content_type, content_ref)
+        content_type = canonical["content_type"]
+        content_ref = canonical["content_ref"]
+        text = canonical["text"]
+    if provider is None and os.getenv("TRANSLATION_ENABLED", "false").strip().lower() not in {"1", "true", "yes", "on"}:
+        raise TranslationError("provider_unavailable", "Translation is not enabled yet.", 503)
     kind = _content_type(content_type)
     reference = str(content_ref or "").strip()[:160]
     source = _locale(source_language, allow_auto=True)
@@ -338,6 +516,9 @@ def translate_content(
             if owned:
                 conn.commit()
             return {
+                "status": "not_required",
+                "original_text": source_text,
+                "content_version": source_hash,
                 "translated": False,
                 "skipped": True,
                 "reason": "never_translate",
@@ -347,6 +528,9 @@ def translate_content(
             }
         if source != "auto" and source.split("-", 1)[0] == target.split("-", 1)[0]:
             return {
+                "status": "not_required",
+                "original_text": source_text,
+                "content_version": source_hash,
                 "translated": False,
                 "skipped": True,
                 "reason": "same_language",
@@ -355,6 +539,7 @@ def translate_content(
                 "target_language": target,
                 "translated_text": source_text,
             }
+        cache_enabled = os.getenv("TRANSLATION_CACHE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
         cached = conn.execute(
             """
             SELECT translated_text,source_language,provider,provider_model,created_at
@@ -362,7 +547,19 @@ def translate_content(
             WHERE user_id=? AND source_hash=? AND target_language=? LIMIT 1
             """,
             (int(user_id), source_hash, target),
-        ).fetchone()
+        ).fetchone() if cache_enabled else None
+        if cached:
+            ttl = max(300, min(int(os.getenv("TRANSLATION_CACHE_TTL_SECONDS", "86400") or 86400), 604800))
+            try:
+                age = (datetime.now(timezone.utc) - datetime.fromisoformat(str(cached["created_at"]))).total_seconds()
+            except (TypeError, ValueError):
+                age = ttl + 1
+            if age > ttl:
+                conn.execute(
+                    "DELETE FROM pulse_content_translations WHERE user_id=? AND source_hash=? AND target_language=?",
+                    (int(user_id), source_hash, target),
+                )
+                cached = None
         if cached:
             _event(
                 conn,
@@ -376,6 +573,9 @@ def translate_content(
             if owned:
                 conn.commit()
             return {
+                "status": "translated",
+                "original_text": source_text,
+                "content_version": source_hash,
                 "translated": True,
                 "cached": True,
                 "translated_text": cached["translated_text"],
@@ -386,8 +586,12 @@ def translate_content(
                 "policy": preference["policy"],
             }
         correlation_id = secrets.token_hex(8)
+        protected_text, placeholders = _protect_text(source_text)
+        if os.getenv("TRANSLATION_MODERATION_BEFORE_TRANSLATION", "true").strip().lower() in {"1", "true", "yes", "on"}:
+            if not _moderation_allows(source_text):
+                raise TranslationError("moderation_blocked", "This content cannot be translated.", 422)
         result = (provider or _default_provider)(
-            _translation_messages(source_text, source, target),
+            _translation_messages(protected_text, source, target),
             correlation_id,
         )
         if not result.get("ok"):
@@ -397,14 +601,19 @@ def translate_content(
                 503,
             )
         translated_text, detected = _parsed_translation(result.get("reply"))
-        conn.execute(
+        translated_text = _restore_text(translated_text, placeholders)
+        if os.getenv("TRANSLATION_MODERATION_AFTER_TRANSLATION", "true").strip().lower() in {"1", "true", "yes", "on"}:
+            if not _moderation_allows(translated_text):
+                raise TranslationError("moderation_blocked", "The translated output could not be displayed safely.", 422)
+        if cache_enabled:
+            conn.execute(
             """
             INSERT INTO pulse_content_translations
             (translation_id,user_id,content_type,content_ref,source_hash,source_language,target_language,
              translated_text,provider,provider_model,created_at)
             VALUES (?,?,?,?,?,?,?,?,?,?,?)
             """,
-            (
+                (
                 uuid.uuid4().hex,
                 int(user_id),
                 kind,
@@ -416,8 +625,8 @@ def translate_content(
                 str(result.get("provider") or "")[:80] or None,
                 str(result.get("model") or "")[:120] or None,
                 _now(),
-            ),
-        )
+                ),
+            )
         _event(
             conn,
             int(user_id),
@@ -431,6 +640,9 @@ def translate_content(
         if owned:
             conn.commit()
         return {
+            "status": "translated",
+            "original_text": source_text,
+            "content_version": source_hash,
             "translated": True,
             "cached": False,
             "translated_text": translated_text,
@@ -438,6 +650,8 @@ def translate_content(
             "target_language": target,
             "provider": result.get("provider"),
             "provider_model": result.get("model"),
+            "translated_at": _now(),
+            "correlation_id": correlation_id,
             "policy": preference["policy"],
         }
     except Exception:

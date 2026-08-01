@@ -329,6 +329,29 @@ def feed_post_like_value(user_id: int, arguments: dict[str, Any], result: ToolRe
     )
 
 
+def feed_post_deleted(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm the owner's canonical post row is soft-deleted."""
+    from services.pulse_feed_engine import get_owned_post_deletion_state
+
+    post_id = int(arguments.get("post_id") or 0)
+    try:
+        state = get_owned_post_deletion_state(int(user_id), post_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Post read-back failed: {exc.__class__.__name__}", True)
+    observed = None if state is None else bool(state.get("deleted"))
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed is True else VerificationState.FAILED,
+        expected=True,
+        observed=observed,
+        detail="" if observed is True else "The post was still visible after the deletion request.",
+        evidence={
+            "canonical_resource_id": f"post:{post_id}",
+            "read_back": {"deleted": observed},
+            "source": "pulse_feed_engine.get_owned_post_deletion_state",
+        },
+    )
+
+
 def _reel_edge_value(user_id: int, arguments: dict[str, Any], result: ToolResult,
                      field: str) -> VerificationResult:
     from services.content_graph_intelligence_service import get_reel
@@ -385,6 +408,7 @@ VERIFIERS: dict[str, Callable[[int, dict[str, Any], ToolResult], VerificationRes
     "saved_post_value": saved_post_value,
     "social_following_value": social_following_value,
     "feed_post_like_value": feed_post_like_value,
+    "feed_post_deleted": feed_post_deleted,
     "reel_saved_value": reel_saved_value,
     "reel_liked_value": reel_liked_value,
     "profile_preference_value": profile_preference_value,

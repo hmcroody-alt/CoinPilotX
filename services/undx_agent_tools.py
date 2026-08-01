@@ -745,6 +745,29 @@ def feed_post_unlike(user_id: int, arguments: dict[str, Any]) -> ToolResult:
     )
 
 
+def feed_post_delete(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.pulse_feed_engine import delete_owned_post
+
+    post_id = int(arguments.get("post_id") or 0)
+    outcome = delete_owned_post(int(user_id), post_id)
+    if not outcome.get("ok"):
+        return _fail(
+            "pulsesoc.feed.posts.delete", "feed.posts.delete",
+            clean(outcome.get("error") or "write_rejected", 80),
+            "UNDX could not delete a matching post owned by your account.",
+            started=started,
+        )
+    return ToolResult(
+        ok=True,
+        tool_name="pulsesoc.feed.posts.delete",
+        capability_id="feed.posts.delete",
+        canonical_resource_id=f"post:{post_id}",
+        data={"post_id": post_id, "deleted": True, "changed": bool(outcome.get("changed"))},
+        latency_ms=_timed(started),
+    )
+
+
 def _content_read(user_id: int, arguments: dict[str, Any], capability: str, function: str,
                   canonical_key: str) -> ToolResult:
     started = time.perf_counter()
@@ -903,6 +926,39 @@ def verification_status(u, a): return _personal_read(u, a, "verification.status"
 def support_tickets_list(u, a): return _personal_read(u, a, "support.tickets.list", "support_tickets_list")
 def creator_analytics_summary(u, a): return _personal_read(u, a, "creator.analytics.summary", "creator_analytics_summary")
 def localization_preferences(u, a): return _personal_read(u, a, "localization.preferences", "localization_preferences")
+
+
+def translation_content_translate(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.content_translation import TranslationError, translate_content
+
+    content_ref = int(arguments.get("content_ref") or 0)
+    try:
+        outcome = translate_content(
+            int(user_id),
+            content_type=clean(arguments.get("content_type"), 24),
+            content_ref=content_ref,
+            text="",  # The service resolves canonical text and ignores caller text.
+            source_language=clean(arguments.get("source_language") or "auto", 16),
+            target_language=clean(arguments.get("target_language"), 16),
+            force=True,
+        )
+    except TranslationError as exc:
+        return _fail(
+            "pulsesoc.translation.content.translate", "translation.content.translate",
+            clean(exc.code, 80), clean(str(exc), 200), started=started,
+        )
+    return ToolResult(
+        ok=True,
+        tool_name="pulsesoc.translation.content.translate",
+        capability_id="translation.content.translate",
+        canonical_resource_id=f"{clean(arguments.get('content_type'), 24)}:{content_ref}",
+        data={key: outcome.get(key) for key in (
+            "status", "original_text", "translated_text", "source_language",
+            "target_language", "provider", "provider_model", "content_version", "cached",
+        )},
+        latency_ms=_timed(started),
+    )
 def presence_privacy_status(u, a): return _personal_read(u, a, "presence.privacy.status", "presence_privacy_status")
 
 
@@ -938,6 +994,7 @@ EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
     "feed_comments_summary": feed_comments_summary,
     "feed_post_like": feed_post_like,
     "feed_post_unlike": feed_post_unlike,
+    "feed_post_delete": feed_post_delete,
     "reels_search": reels_search,
     "reels_get": reels_get,
     "reels_performance": reels_performance,
@@ -990,6 +1047,7 @@ EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
     "support_tickets_list": support_tickets_list,
     "creator_analytics_summary": creator_analytics_summary,
     "localization_preferences": localization_preferences,
+    "translation_content_translate": translation_content_translate,
     "presence_privacy_status": presence_privacy_status,
 }
 

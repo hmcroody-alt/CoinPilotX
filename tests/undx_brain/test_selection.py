@@ -463,7 +463,7 @@ class TheSelectorRefusesRatherThanGuesses(unittest.TestCase):
             if not chosen.decided:
                 undecided.append(pair)
 
-        self.assertEqual(len(list(combinations(writes, 2))), 120)
+        self.assertEqual(len(list(combinations(writes, 2))), 136)
         self.assertEqual(len(undecided), 16, f"undecided pairs changed: {undecided}")
         self.assertEqual(
             set(undecided),

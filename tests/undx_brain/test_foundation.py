@@ -325,9 +325,9 @@ class TheCognitiveEntriesSayTrueThings(unittest.TestCase):
         item = f.by_key("specialist_domains")
         self.assertIsNotNone(item)
         self.assertEqual(len(domain.ANALYSERS), 10, "the analyser count moved")
-        self.assertEqual(len(registry.REGISTRY), 80, "the capability count moved")
+        self.assertEqual(len(registry.REGISTRY), 82, "the capability count moved")
         self.assertIn("Ten analysers", item.gap)
-        self.assertIn("eighty capabilities", item.gap)
+        self.assertIn("eighty-two capabilities", item.gap)
         self.assertIn("forty-four product areas", item.gap)
 
     def test_every_analyser_is_keyed_by_a_capability_that_exists(self):

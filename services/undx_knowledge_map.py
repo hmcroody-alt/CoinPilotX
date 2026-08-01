@@ -956,23 +956,21 @@ _mapped(
         "action confirmation.",
     ),
 )
-_mapped(
+_live(
     "feed.posts.delete",
     product_area="Feed posts", resource_type="post",
-    description="Delete one of the account's own posts.",
-    supported_intents=("delete that post",),
-    risk_class=_GRAVE, confirmation_policy=_ALWAYS,
     native_screen="PostDetail",
-    backend_route="DELETE /api/pulse/post/<post_id>",
-    domain_service="services.pulse_feed_engine", domain_operation="",
-    authorization_scope=_SELF, owner_field="user_id", target_field="post_id",
-    implementation_status=_NO_SERVICE,
-    evidence=("services/pulse_feed_engine.py:1219 hide_post — the only removal operation",),
+    backend_route="DELETE /api/pulse/posts/<post_id>",
+    domain_service="services.pulse_feed_engine", domain_operation="delete_owned_post",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("post_id", "int"), ("deleted", "bool"), ("changed", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulse_feed_engine.py:delete_owned_post",
+              "services/undx_verification.py:feed_post_deleted",
+              "tests/undx_agent/test_feed_intelligence_pack.py"),
     known_limitations=(
-        "There is no delete_post. The nearest operation, hide_post, removes the "
-        "post from one viewer's Home rather than deleting it, so a capability "
-        "named 'delete' backed by it would report a deletion that did not happen "
-        "— the worst possible mismatch between receipt and reality.",
+        "Execution remains behind the global UNDX write kill switch and requires "
+        "a one-time confirmation bound to the authenticated owner's post id.",
     ),
 )
 
@@ -2355,6 +2353,22 @@ for _capability_id, _area, _resource, _screen, _operation in (
         ),
         known_limitations=("Read-only. Empty source tables produce empty results, never inferred facts.",),
     )
+
+_live(
+    "translation.content.translate",
+    product_area="Localization", resource_type="translated_content",
+    native_screen="UndxActionCenter",
+    backend_route="POST /api/pulse/translations",
+    domain_service="services.content_translation", domain_operation="translate_content",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("translated_text", "str"), ("source_language", "str"),
+                   ("target_language", "str"), ("content_version", "str")),
+    feature_flag="",
+    evidence=("services/content_translation.py:translate_content",
+              "services/translation_providers.py:GoogleAdvancedProvider",
+              "tests/test_content_translation.py"),
+    known_limitations=("Google credentials and TRANSLATION_ENABLED are required; drafts remain unsent.",),
+)
 
 
 # ---------------------------------------------------------------------------

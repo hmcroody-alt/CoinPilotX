@@ -17,6 +17,8 @@ export type TranslatableContentType =
 export type TranslationPolicy = "ask" | "always" | "never";
 
 export type TranslationResult = {
+  status: "translated" | "not_required" | "unsupported_language" | "provider_unavailable" | "invalid_request" | "content_changed" | "degraded" | "failed";
+  original_text: string;
   translated: boolean;
   skipped?: boolean;
   cached?: boolean;
@@ -25,6 +27,19 @@ export type TranslationResult = {
   source_language: string;
   target_language: string;
   policy: TranslationPolicy;
+  content_version?: string;
+  provider?: string;
+  provider_model?: string;
+  translated_at?: string;
+  correlation_id?: string;
+};
+
+export type SupportedTranslationLanguage = {
+  code: string;
+  display_name: string;
+  translation_support: boolean;
+  source_support: boolean;
+  target_support: boolean;
 };
 
 type TranslationResponse = {
@@ -96,6 +111,15 @@ export async function translatePulseContent(input: {
     })
   });
   return response.result;
+}
+
+export async function getSupportedTranslationLanguages() {
+  const response = await pulseApi<{
+    ok: boolean;
+    provider: string;
+    languages: SupportedTranslationLanguage[];
+  }>("/api/pulse/translations/languages");
+  return response.languages;
 }
 
 export async function getTranslationPreference(sourceLanguage: string, targetLanguage: string) {

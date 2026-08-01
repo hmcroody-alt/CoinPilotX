@@ -732,6 +732,23 @@ _register(CapabilitySpec(
     undo_capability_id="feed.posts.like",
 ))
 
+_register(CapabilitySpec(
+    capability_id="feed.posts.delete",
+    description="Soft-delete one post owned by the authenticated user",
+    intents=("delete post", "delete my post"),
+    risk=RiskLevel.CONSEQUENTIAL_WRITE,
+    confirmation=ConfirmationPolicy.ALWAYS,
+    tool_name="pulsesoc.feed.posts.delete",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_POST_ID,),
+    executor="feed_post_delete",
+    verifier="feed_post_deleted",
+    native_route="/pulse/post/:post_id",
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="feed_posts_write",
+    target_field="post_id",
+))
+
 
 # --- Notification preferences ---------------------------------------------
 
@@ -840,6 +857,29 @@ for _spec in (
                    "/pulse/profile", CardType.PROFILE_RESULT, "profile_read"),
 ):
     _register(_spec)
+
+_register(CapabilitySpec(
+    capability_id="translation.content.translate",
+    description="Translate authorized PulseSoc content without changing its canonical text",
+    intents=("translate this post", "translate this content", "show this in another language"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.translation.content.translate",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        FieldSpec("content_type", "enum", required=True,
+                  choices=("post", "comment", "reply", "chat", "profile", "reel", "status")),
+        FieldSpec("content_ref", "int", required=True, minimum=1),
+        FieldSpec("target_language", "str", required=True, max_length=16),
+        FieldSpec("source_language", "str", required=False, max_length=16, default="auto"),
+    ),
+    executor="translation_content_translate",
+    verifier="",
+    native_route="/pulse/undx/actions",
+    result_card=CardType.CONTENT_RESULT,
+    audit_category="translation_read",
+    target_field="content_ref",
+))
 
 for _capability, _intent, _saved, _executor, _verifier, _undo in (
     ("reels.save", "save reel", True, "reels_save", "reel_saved_value", "reels.unsave"),

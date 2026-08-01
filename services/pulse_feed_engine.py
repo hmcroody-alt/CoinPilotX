@@ -1246,6 +1246,68 @@ def hide_post(user_id, post_id, reason="Hidden from Home"):
     return {"ok": True, "hidden": True, "post_id": post_id, "message": "Post hidden from Home."}, 200
 
 
+def get_owned_post_deletion_state(user_id, post_id):
+    """Return the owner-scoped deletion state used by routes and UNDX verification."""
+    user_id = int(user_id or 0)
+    post_id = int(post_id or 0)
+    if not user_id or not post_id:
+        return None
+    conn = user_context.connect()
+    try:
+        row = conn.execute(
+            "SELECT id, user_id, deleted_at FROM pulse_posts WHERE id=? AND user_id=? LIMIT 1",
+            (post_id, user_id),
+        ).fetchone()
+        if not row:
+            return None
+        record = _row(row) or {}
+        return {
+            "post_id": post_id,
+            "deleted": bool(record.get("deleted_at")),
+            "deleted_at": record.get("deleted_at"),
+        }
+    finally:
+        conn.close()
+
+
+def delete_owned_post(user_id, post_id):
+    """Soft-delete exactly one post owned by the authenticated account.
+
+    This is the canonical owner mutation shared by the HTTP route and governed
+    UNDX tool.  A post owned by another account is deliberately indistinguishable
+    from an unknown post, preventing the mutation path from becoming an oracle.
+    """
+    user_id = int(user_id or 0)
+    post_id = int(post_id or 0)
+    if not user_id or not post_id:
+        return {"ok": False, "error": "invalid_request", "message": "Valid user and post are required."}
+    conn = user_context.connect()
+    try:
+        row = conn.execute(
+            "SELECT id, deleted_at FROM pulse_posts WHERE id=? AND user_id=? LIMIT 1",
+            (post_id, user_id),
+        ).fetchone()
+        record = _row(row) or {}
+        if not record:
+            return {"ok": False, "error": "not_found", "message": "Post not found."}
+        if record.get("deleted_at"):
+            return {"ok": True, "post_id": post_id, "deleted": True, "changed": False}
+        now = _now()
+        conn.execute(
+            "UPDATE pulse_posts SET deleted_at=?, updated_at=?, "
+            "moderation_status=COALESCE(moderation_status,'approved') "
+            "WHERE id=? AND user_id=? AND deleted_at IS NULL",
+            (now, now, post_id, user_id),
+        )
+        conn.commit()
+        return {"ok": True, "post_id": post_id, "deleted": True, "changed": True}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def mute_user(user_id, muted_user_id, reason="Muted from Home", muted_until=""):
     user_id = int(user_id or 0)
     muted_user_id = int(muted_user_id or 0)

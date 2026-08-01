@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import unittest
+import sqlite3
+import tempfile
 from unittest.mock import MagicMock, patch
 
 from services.feed_intelligence_service import (
@@ -12,6 +14,8 @@ from services.feed_intelligence_service import (
     post_performance_summary,
     summarize_post_comments,
 )
+from services import undx_agent_tools, undx_verification
+from services.undx_capability_registry import get as get_capability
 
 
 PUBLIC_POST = {
@@ -27,6 +31,56 @@ PUBLIC_POST = {
 
 
 class FeedIntelligencePack(unittest.TestCase):
+    def test_canonical_delete_is_owner_scoped_and_read_back(self) -> None:
+        path = tempfile.mktemp(prefix="undx_post_delete_", suffix=".db")
+        conn = sqlite3.connect(path)
+        conn.execute(
+            "CREATE TABLE pulse_posts(id INTEGER PRIMARY KEY,user_id INTEGER,deleted_at TEXT,updated_at TEXT,moderation_status TEXT)"
+        )
+        conn.executemany(
+            "INSERT INTO pulse_posts(id,user_id,moderation_status) VALUES(?,?,?)",
+            [(41, 7, "approved"), (42, 8, "approved")],
+        )
+        conn.commit()
+        conn.close()
+
+        def connect():
+            db_conn = sqlite3.connect(path)
+            db_conn.row_factory = sqlite3.Row
+            return db_conn
+
+        from services import pulse_feed_engine
+        with patch.object(pulse_feed_engine.user_context, "connect", side_effect=connect):
+            self.assertTrue(pulse_feed_engine.delete_owned_post(7, 41)["changed"])
+            self.assertTrue(pulse_feed_engine.get_owned_post_deletion_state(7, 41)["deleted"])
+            self.assertEqual(pulse_feed_engine.delete_owned_post(7, 42)["error"], "not_found")
+            self.assertFalse(pulse_feed_engine.get_owned_post_deletion_state(7, 42))
+
+    def test_delete_capability_is_high_risk_confirmed_and_verifiable(self) -> None:
+        spec = get_capability("feed.posts.delete")
+        self.assertEqual(spec.confirmation, "always")
+        self.assertEqual(spec.risk, "consequential_write")
+        self.assertIn(spec.executor, undx_agent_tools.EXECUTORS)
+        self.assertIn(spec.verifier, undx_verification.VERIFIERS)
+
+    @patch("services.pulse_feed_engine.delete_owned_post")
+    def test_delete_tool_passes_authenticated_owner_and_canonical_id(self, delete_post) -> None:
+        delete_post.return_value = {"ok": True, "post_id": 41, "deleted": True, "changed": True}
+        result = undx_agent_tools.feed_post_delete(7, {"post_id": 41})
+        delete_post.assert_called_once_with(7, 41)
+        self.assertTrue(result.ok)
+        self.assertEqual(result.canonical_resource_id, "post:41")
+
+    @patch("services.pulse_feed_engine.get_owned_post_deletion_state")
+    def test_delete_verifier_independently_reads_soft_delete(self, read_state) -> None:
+        read_state.return_value = {"post_id": 41, "deleted": True}
+        tool_result = undx_agent_tools.ToolResult(
+            ok=True, tool_name="pulsesoc.feed.posts.delete",
+            capability_id="feed.posts.delete", canonical_resource_id="post:41",
+        )
+        result = undx_verification.feed_post_deleted(7, {"post_id": 41}, tool_result)
+        read_state.assert_called_once_with(7, 41)
+        self.assertEqual(result.state, "verified")
     @patch("services.feed_intelligence_service.pulse_feed_engine.list_feed")
     def test_feed_list_is_viewer_scoped_and_projects_safe_fields(self, list_feed) -> None:
         list_feed.return_value = {"posts": [dict(PUBLIC_POST)]}

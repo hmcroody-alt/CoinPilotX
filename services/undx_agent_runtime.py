@@ -81,7 +81,7 @@ _BLOCKED_OPERATIONAL_INTENTS: tuple[tuple[re.Pattern[str], str], ...] = (
      "Message sending is not enabled for UNDX."),
     (re.compile(r"^\s*(?:please\s+)?(?:buy|purchase|sell|trade|transfer|withdraw)\b", re.IGNORECASE),
      "Financial transactions are not enabled for UNDX."),
-    (re.compile(r"^\s*(?:please\s+)?(?:delete|remove)\s+(?:my\s+)?(?:(?:last|latest|recent)\s+)?(?:post|reel|status|message|account)\b", re.IGNORECASE),
+    (re.compile(r"^\s*(?:please\s+)?(?:delete|remove)\s+(?:my\s+)?(?:(?:last|latest|recent)\s+)?(?:reel|status|message|account)\b", re.IGNORECASE),
      "Destructive content actions are not enabled for UNDX."),
 )
 

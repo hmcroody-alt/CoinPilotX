@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+from unittest.mock import patch
 
 
 _TMP_DB = os.path.join(tempfile.mkdtemp(prefix="pulse_translation_"), "test.db")
@@ -16,9 +17,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from services import content_translation as translation  # noqa: E402
 from services import db  # noqa: E402
+from services.translation_providers import GoogleAdvancedProvider, GoogleConfig, ProviderError  # noqa: E402
 
 
-def _provider(reply="Bonjour 👋 #Pulse @alex", detected="fr"):
+def _provider(reply="Bonjour 👋 __PULSESOC_KEEP_0__ __PULSESOC_KEEP_1__", detected="fr"):
     calls = []
 
     def invoke(messages, correlation_id):
@@ -141,6 +143,60 @@ def test_curated_validation_and_malformed_provider_response():
         assert exc.code == "invalid_provider_response" and exc.status == 502
 
 
+def test_google_advanced_adapter_uses_v3_and_never_exposes_credentials():
+    class Response:
+        status_code = 200
+        def json(self):
+            return {"translations": [{"translatedText": "Hola", "detectedLanguageCode": "en"}]}
+
+    class Session:
+        calls = []
+        @classmethod
+        def request(cls, method, url, **kwargs):
+            cls.calls.append((method, url, kwargs))
+            return Response()
+
+    adapter = GoogleAdvancedProvider(
+        GoogleConfig(project_id="qa-project", api_key="sealed-test-key", max_retries=0),
+        session=Session,
+    )
+    result = adapter.translate("Hello", "auto", "es")
+    assert result["translated_text"] == "Hola" and result["provider"] == "google"
+    method, url, kwargs = Session.calls[0]
+    assert method == "POST" and url.endswith("projects/qa-project/locations/global:translateText")
+    assert kwargs["params"] == {"key": "sealed-test-key"}
+    assert "sealed-test-key" not in json.dumps(result)
+
+
+def test_google_adapter_fails_closed_when_unconfigured():
+    adapter = GoogleAdvancedProvider(GoogleConfig(project_id=""))
+    try:
+        adapter.translate("Hello", "en", "fr")
+        assert False, "unconfigured provider should fail"
+    except ProviderError as exc:
+        assert exc.code == "provider_not_configured"
+
+
+def test_canonical_post_authorization_ignores_caller_supplied_text():
+    with patch("services.feed_intelligence_service.get_post") as get_post:
+        get_post.return_value = {"post_id": 42, "body": "Canonical body", "updated_at": "v7"}
+        resolved = translation.resolve_authorized_content(7, "post", "42")
+    get_post.assert_called_once_with(7, 42)
+    assert resolved == {
+        "content_type": "post", "content_ref": "42",
+        "text": "Canonical body", "content_version": "v7",
+    }
+
+
+def test_inaccessible_canonical_content_is_not_translated():
+    with patch("services.feed_intelligence_service.get_post", return_value=None):
+        try:
+            translation.resolve_authorized_content(7, "post", "99")
+            assert False, "inaccessible content must not reach cache or provider"
+        except translation.TranslationError as exc:
+            assert exc.code == "content_unavailable" and exc.status == 404
+
+
 def _run_standalone():
     tests = [
         test_schema_is_additive_and_idempotent,
@@ -149,6 +205,10 @@ def _run_standalone():
         test_never_policy_blocks_provider_unless_explicitly_forced,
         test_always_and_ask_preferences_round_trip,
         test_curated_validation_and_malformed_provider_response,
+        test_google_advanced_adapter_uses_v3_and_never_exposes_credentials,
+        test_google_adapter_fails_closed_when_unconfigured,
+        test_canonical_post_authorization_ignores_caller_supplied_text,
+        test_inaccessible_canonical_content_is_not_translated,
     ]
     for test in tests:
         test()

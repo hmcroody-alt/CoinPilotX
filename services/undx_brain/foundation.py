@@ -644,7 +644,7 @@ FOUNDATION: tuple[Responsibility, ...] = (
             ("services.undx_knowledge_map", "PRODUCT_AREAS"),
         ),
         gap=(
-            "Ten analysers, against eighty capabilities across forty-four product "
+            "Ten analysers, against eighty-two capabilities across forty-four product "
             "areas. Account health, verification, support tickets, groups, events, "
             "music, creator analytics, presence privacy and localisation have a "
             "specialist reading; everything else — Marketplace, crypto alerts, feed "

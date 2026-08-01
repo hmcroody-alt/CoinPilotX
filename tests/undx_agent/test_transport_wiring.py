@@ -92,7 +92,7 @@ class TransportWiring(unittest.TestCase):
         for text, reason in (
             ("Send a message saying hello.", "Message sending"),
             ("Buy 100 dollars of Bitcoin.", "Financial transactions"),
-            ("Delete my last post.", "Destructive content actions"),
+            ("Delete my last Reel.", "Destructive content actions"),
         ):
             with self.subTest(text=text):
                 result = self.svc._agent_turn(
@@ -102,6 +102,15 @@ class TransportWiring(unittest.TestCase):
                 self.assertIsNotNone(result)
                 self.assertIn(reason, result.reply)
                 self.assertIn("did not make any change", result.reply)
+
+    def test_post_deletion_routes_to_governed_capability_and_requests_a_target(self):
+        result = self.svc._agent_turn(
+            self.fx.cur, OWNER_ID, "Delete my last post.", {}, conversation_id=1,
+            correlation_id="post-delete",
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("Which post", result.reply)
+        self.assertNotIn("not enabled", result.reply)
 
     def test_draft_without_send_and_explanatory_write_language_still_fall_through(self):
         for text in ("Draft a reply, but do not send it.", "Why would I pause an alert?"):

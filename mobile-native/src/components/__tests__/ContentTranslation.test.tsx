@@ -25,6 +25,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   peekPreferenceMock.mockReturnValue(undefined);
   translateMock.mockResolvedValue({
+    status: "translated",
+    original_text: "Hello PulseSoc",
     translated: true,
     cached: false,
     translated_text: "Bonjour PulseSoc",
