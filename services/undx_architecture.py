@@ -223,7 +223,7 @@ def build_plan(user_id: int, message: str, context: dict[str, Any], client_reque
     if context.get("tool_names"):
         nodes.append({"level": "action", "node_type": "call_tool", "objective": "Prepare authorized tool operations.", "status": "waiting_confirmation" if context.get("requires_confirmation") else "pending", "success_condition": "typed tool result received"})
     nodes.append({"level": "verification", "node_type": "verify", "objective": "Verify identity, permission, truthfulness, canonical IDs, privacy, and completion.", "status": "pending", "success_condition": "no blocking verifier finding"})
-    return {
+    plan = {
         "mission_id": mission_id,
         "objective": clean(message, 1000),
         "risk_level": risk,
@@ -234,6 +234,66 @@ def build_plan(user_id: int, message: str, context: dict[str, Any], client_reque
         "dry_run": True,
         "client_request_id": clean(client_request_id, 160),
     }
+    return apply_bounds(plan)
+
+
+#: Node types that consume PART 9's step budget. The mission, strategy and verification
+#: nodes are scaffolding — they exist on every plan and calling them "steps" would mean
+#: a one-step ceiling refused every request UNDX has ever served. What the ceiling is
+#: for is the part that grows: the acting.
+BOUNDED_NODE_TYPES = frozenset({"call_tool", "act", "write"})
+
+
+def plan_steps(plan: dict[str, Any]) -> int:
+    """How many of a plan's nodes count against the step ceiling."""
+    return sum(
+        1 for node in (plan.get("nodes") or [])
+        if isinstance(node, dict) and node.get("node_type") in BOUNDED_NODE_TYPES
+    )
+
+
+def apply_bounds(plan: dict[str, Any], env: Any = None) -> dict[str, Any]:
+    """Check a plan against PART 9's ceilings and record the outcome on it.
+
+    An over-budget plan is marked ``blocked`` and keeps all of its nodes. It is not
+    shortened to fit: a plan cut down to its budget is a plan that does part of a
+    multi-write goal and then reports that it finished, which is the exact false
+    completion claim the verification layer exists to prevent. Keeping the full node
+    list also means the record says what was refused, not what a truncation left behind.
+
+    Bounds import lazily so that ``undx_architecture`` keeps working if the Brain
+    package is absent — the layer below must not acquire a hard dependency on the layer
+    above it.
+    """
+    try:
+        from services.undx_brain import bounds as brain_bounds
+    except Exception:  # pragma: no cover - Brain package absent
+        return plan
+    steps = plan_steps(plan)
+    # A plan whose acting is entirely scaffolding — a pure question — spends no step
+    # budget and is admitted without consulting the ceiling.
+    # ``is None`` rather than a truthiness test: an ``Admission`` is falsy exactly when
+    # it refused, so ``if admission`` would treat every refusal as "no check was made"
+    # and admit the plan it had just rejected.
+    admission = brain_bounds.admit(steps, env=env) if steps else None
+    plan["bounds"] = {
+        "steps": steps,
+        "max_steps": (
+            admission.budget.effective_max_steps
+            if admission is not None
+            else brain_bounds.budget(env).effective_max_steps
+        ),
+        "admitted": admission.ok if admission is not None else True,
+    }
+    if admission is not None and not admission.ok:
+        plan["status"] = "blocked"
+        plan["bounds"]["refusal"] = {
+            "bound": admission.refusal.bound,
+            "limit": admission.refusal.limit,
+            "requested": admission.refusal.requested,
+            "message": admission.refusal.message,
+        }
+    return plan
 
 
 def persist_plan(cur, user_id: int, conversation_id: int, plan: dict[str, Any], config_version: str) -> dict[str, Any]:
@@ -346,19 +406,43 @@ def simulate_operation(tool_name: str, arguments: dict[str, Any], failure: str =
     }
 
 
-def record_fact(cur, claim: str, source: str, confidence: float, owner_user_id: int = 0, valid_until: str = "") -> dict[str, Any]:
+def record_fact(cur, claim: str, source: str, confidence: float, owner_user_id: int = 0, valid_until: str = "", metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Write one claim to the truth store.
+
+    ``metadata`` is merged into ``metadata_json`` and exists so that a fact can carry
+    the two things this function has never recorded and that
+    :mod:`services.undx_brain.facts` needs in order to compare one fact against another
+    later: *what the claim is about* and *how well it is known*. Omitting it produces
+    exactly the blob this function has always produced, so no existing caller changes.
+
+    A note on the ``contradictions`` this returns, because the name is misleading and
+    the misleading part is load-bearing. The list is built by selecting rows with the
+    *same claim text* and keeping the ones whose ``source`` differs — so it reports two
+    sources saying the identical thing, which is corroboration. A row that says the
+    threshold is a *different* number has different claim text, matches nothing, and is
+    filed as ``active`` beside the first with neither aware of the other. Detecting that
+    requires comparing a subject and a value rather than a sentence, which is what
+    :func:`services.undx_brain.facts.compare` does; this function is left as it is so
+    that its existing behaviour is not changed underneath the one caller it has.
+    """
     normalized = " ".join(clean(claim, 1000).lower().split())
     fact_id = "undx_fact_" + hashlib.sha256(f"{owner_user_id}:{normalized}:{source}".encode("utf-8")).hexdigest()[:20]
     cur.execute("SELECT * FROM pulse_ai_truth_facts WHERE owner_user_id=? AND lower(claim)=? AND status='active'", (int(owner_user_id), normalized))
     existing = [dict(row) for row in cur.fetchall()]
     timestamp = now()
+    payload: dict[str, Any] = {"contradiction_count": len(existing)}
+    for key, value in (metadata or {}).items():
+        # ``contradiction_count`` is computed here and is not the caller's to set; a
+        # caller that could overwrite it could report zero conflicts by asking.
+        if isinstance(key, str) and key != "contradiction_count":
+            payload[key] = value
     cur.execute(
         """INSERT OR IGNORE INTO pulse_ai_truth_facts
         (fact_id, owner_user_id, claim, source, confidence, valid_from, valid_until,
          superseded_by, status, metadata_json, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, '', 'active', ?, ?, ?)""",
         (fact_id, int(owner_user_id), normalized, clean(source, 240), max(0.0, min(float(confidence), 1.0)), timestamp,
-         clean(valid_until, 80), json.dumps({"contradiction_count": len(existing)}), timestamp, timestamp),
+         clean(valid_until, 80), json.dumps(payload), timestamp, timestamp),
     )
     return {"fact_id": fact_id, "contradictions": [item["fact_id"] for item in existing if item.get("source") != source], "status": "review" if existing else "active"}
 
