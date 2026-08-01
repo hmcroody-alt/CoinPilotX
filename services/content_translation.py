@@ -34,6 +34,8 @@ ALLOWED_CONTENT_TYPES = {
     "profile",
     "reel",
     "status",
+    "group",
+    "event",
 }
 ALLOWED_POLICIES = {"ask", "always", "never"}
 LOCALE_PATTERN = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$", re.I)
@@ -76,12 +78,14 @@ def health_status(*, probe: bool = False) -> dict[str, Any]:
     from services.translation_providers import ProviderError, configured_provider
 
     enabled = os.getenv("TRANSLATION_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+    qa_only = os.getenv("TRANSLATION_QA_ONLY", "true").strip().lower() in {"1", "true", "yes", "on"}
     try:
         provider = configured_provider()
         base = provider.health()
         languages_available = bool(supported_languages(force=True)) if probe and enabled and base.get("configured") else bool(_SUPPORTED_CACHE.get("languages"))
         return {
             "enabled": enabled,
+            "qa_only": qa_only,
             "provider": base.get("provider") or "google",
             "configured": bool(base.get("configured")),
             "healthy": bool(enabled and base.get("configured") and (languages_available if probe else True)),
@@ -90,7 +94,7 @@ def health_status(*, probe: bool = False) -> dict[str, Any]:
             "degraded": bool(enabled and not base.get("configured")),
         }
     except ProviderError:
-        return {"enabled": enabled, "provider": "google", "configured": False, "healthy": False,
+        return {"enabled": enabled, "qa_only": qa_only, "provider": "google", "configured": False, "healthy": False,
                 "supported_languages_available": False, "cache": "available", "degraded": enabled}
 
 
@@ -112,6 +116,25 @@ def _content_type(value: Any) -> str:
     if normalized not in ALLOWED_CONTENT_TYPES:
         raise TranslationError("unsupported_content_type", "This content type cannot be translated.")
     return normalized
+
+
+def _qa_user_ids() -> set[int]:
+    values: set[int] = set()
+    for item in os.getenv("TRANSLATION_QA_USER_IDS", "").split(","):
+        try:
+            value = int(item.strip())
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            values.add(value)
+    return values
+
+
+def _enforce_rollout(user_id: int) -> None:
+    if os.getenv("TRANSLATION_QA_ONLY", "true").strip().lower() not in {"1", "true", "yes", "on"}:
+        return
+    if int(user_id) not in _qa_user_ids():
+        raise TranslationError("rollout_restricted", "Translation is not available for this account yet.", 403)
 
 
 def _bounded_text(value: Any) -> str:
@@ -149,12 +172,18 @@ def _moderation_allows(text: str) -> bool:
 def resolve_authorized_content(user_id: int, content_type: Any, content_ref: Any) -> dict[str, str]:
     """Resolve text through the canonical resource before cache lookup or translation."""
     kind = _content_type(content_type)
-    try:
-        resource_id = int(str(content_ref or "").strip())
-    except (TypeError, ValueError) as exc:
-        raise TranslationError("invalid_request", "Choose canonical content to translate.") from exc
-    if resource_id <= 0:
-        raise TranslationError("invalid_request", "Choose canonical content to translate.")
+    raw_ref = str(content_ref or "").strip()
+    if kind == "event":
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,120}", raw_ref):
+            raise TranslationError("invalid_request", "Choose canonical content to translate.")
+        resource_id: int | str = raw_ref
+    else:
+        try:
+            resource_id = int(raw_ref)
+        except (TypeError, ValueError) as exc:
+            raise TranslationError("invalid_request", "Choose canonical content to translate.") from exc
+        if resource_id <= 0:
+            raise TranslationError("invalid_request", "Choose canonical content to translate.")
 
     record: dict[str, Any] | None = None
     text = ""
@@ -213,6 +242,82 @@ def resolve_authorized_content(user_id: int, content_type: Any, content_ref: Any
             conn.close()
         text = str((record or {}).get("body") or "")
         version = str((record or {}).get("edited_at") or (record or {}).get("created_at") or "")
+    elif kind == "group":
+        conn = db.connect()
+        try:
+            row = conn.execute(
+                """SELECT g.id,g.slug,g.name,g.description,g.rules,g.group_type,g.owner_user_id,
+                          g.status,g.deleted_at,g.updated_at,g.created_at,
+                          CASE WHEN m.user_id IS NULL THEN 0 ELSE 1 END AS is_member
+                   FROM pulse_groups g
+                   LEFT JOIN pulse_group_members m ON m.group_id=g.id AND m.user_id=?
+                   WHERE g.id=? LIMIT 1""",
+                (int(user_id), int(resource_id)),
+            ).fetchone()
+            raw = dict(row) if row else {}
+        finally:
+            conn.close()
+        allowed = bool(raw) and not raw.get("deleted_at") and str(raw.get("status") or "active") == "active"
+        allowed = allowed and (
+            str(raw.get("group_type") or "public") == "public"
+            or int(raw.get("owner_user_id") or 0) == int(user_id)
+            or bool(raw.get("is_member"))
+        )
+        record = raw if allowed else None
+        text = "\n\n".join(filter(None, [str((record or {}).get("name") or ""), str((record or {}).get("description") or ""), str((record or {}).get("rules") or "")]))
+        version = str((record or {}).get("updated_at") or (record or {}).get("created_at") or "")
+    elif kind == "event":
+        conn = db.connect()
+        try:
+            row = conn.execute(
+                """SELECT e.event_id,e.business_id,e.title,e.description,e.venue,e.status,
+                          e.updated_at,e.created_at,
+                          CASE WHEN m.user_id IS NULL THEN 0 ELSE 1 END AS is_business_member
+                   FROM business_os_events e
+                   LEFT JOIN business_os_business_members m
+                     ON m.business_id=e.business_id AND CAST(m.user_id AS TEXT)=?
+                    AND m.status='active'
+                   WHERE e.event_id=? LIMIT 1""",
+                (str(int(user_id)), str(resource_id)),
+            ).fetchone()
+            raw = dict(row) if row else {}
+        finally:
+            conn.close()
+        allowed = bool(raw) and (
+            str(raw.get("status") or "") == "published" or bool(raw.get("is_business_member"))
+        )
+        record = raw if allowed else None
+        text = "\n\n".join(filter(None, [str((record or {}).get("title") or ""), str((record or {}).get("description") or ""), str((record or {}).get("venue") or "")]))
+        version = str((record or {}).get("updated_at") or (record or {}).get("created_at") or "")
+    elif kind in {"marketplace", "product"}:
+        conn = db.connect()
+        try:
+            row = conn.execute(
+                """SELECT id,seller_user_id,title,description,short_description,status,
+                          approval_status,updated_at,created_at
+                   FROM marketplace_listings WHERE id=? LIMIT 1""",
+                (int(resource_id),),
+            ).fetchone()
+            raw = dict(row) if row else {}
+        finally:
+            conn.close()
+        public = str(raw.get("status") or "") in {"active", "approved"} and str(raw.get("approval_status") or "approved") in {"approved", "review_ready", ""}
+        record = raw if raw and (public or int(raw.get("seller_user_id") or 0) == int(user_id)) else None
+        text = "\n\n".join(filter(None, [str((record or {}).get("title") or ""), str((record or {}).get("short_description") or ""), str((record or {}).get("description") or "")]))
+        version = str((record or {}).get("updated_at") or (record or {}).get("created_at") or "")
+    elif kind == "support":
+        conn = db.connect()
+        try:
+            row = conn.execute(
+                """SELECT id,user_id,subject,message,status,updated_at,created_at
+                   FROM support_tickets WHERE id=? AND user_id=? LIMIT 1""",
+                (int(resource_id), int(user_id)),
+            ).fetchone()
+            record = dict(row) if row else None
+        finally:
+            conn.close()
+        text = "\n\n".join(filter(None, [str((record or {}).get("subject") or ""), str((record or {}).get("message") or "")]))
+        version = str((record or {}).get("updated_at") or (record or {}).get("created_at") or "")
     else:
         raise TranslationError(
             "authorization_unavailable",
@@ -228,6 +333,13 @@ def resolve_authorized_content(user_id: int, content_type: Any, content_ref: Any
         "content_ref": str(resource_id),
         "text": canonical_text,
         "content_version": version or hashlib.sha256(canonical_text.encode("utf-8")).hexdigest(),
+        "native_route": {
+            "group": f"/pulse/groups/{(record or {}).get('slug') or resource_id}",
+            "event": f"/pulse/events/{resource_id}",
+            "marketplace": f"/pulse/marketplace/listing/{resource_id}",
+            "product": f"/pulse/marketplace/listing/{resource_id}",
+            "support": "/pulse/support",
+        }.get(kind, ""),
     }
 
 
@@ -490,6 +602,8 @@ def translate_content(
         text = canonical["text"]
     if provider is None and os.getenv("TRANSLATION_ENABLED", "false").strip().lower() not in {"1", "true", "yes", "on"}:
         raise TranslationError("provider_unavailable", "Translation is not enabled yet.", 503)
+    if provider is None:
+        _enforce_rollout(int(user_id))
     kind = _content_type(content_type)
     reference = str(content_ref or "").strip()[:160]
     source = _locale(source_language, allow_auto=True)

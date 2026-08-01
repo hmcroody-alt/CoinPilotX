@@ -182,7 +182,7 @@ def test_canonical_post_authorization_ignores_caller_supplied_text():
         get_post.return_value = {"post_id": 42, "body": "Canonical body", "updated_at": "v7"}
         resolved = translation.resolve_authorized_content(7, "post", "42")
     get_post.assert_called_once_with(7, 42)
-    assert resolved == {
+    assert {key: resolved[key] for key in ("content_type", "content_ref", "text", "content_version")} == {
         "content_type": "post", "content_ref": "42",
         "text": "Canonical body", "content_version": "v7",
     }
@@ -193,6 +193,88 @@ def test_inaccessible_canonical_content_is_not_translated():
         try:
             translation.resolve_authorized_content(7, "post", "99")
             assert False, "inaccessible content must not reach cache or provider"
+        except translation.TranslationError as exc:
+            assert exc.code == "content_unavailable" and exc.status == 404
+
+
+def test_qa_rollout_is_server_authoritative():
+    with patch.dict(os.environ, {"TRANSLATION_QA_ONLY": "true", "TRANSLATION_QA_USER_IDS": "7, 9"}, clear=False):
+        translation._enforce_rollout(7)
+        try:
+            translation._enforce_rollout(8)
+            assert False, "non-QA user must not reach the provider"
+        except translation.TranslationError as exc:
+            assert exc.code == "rollout_restricted" and exc.status == 403
+
+
+def test_group_authorization_hides_private_group_existence():
+    conn = db.connect()
+    try:
+        conn.executescript("""
+            CREATE TABLE pulse_groups (
+                id INTEGER PRIMARY KEY, owner_user_id INTEGER, slug TEXT, name TEXT,
+                description TEXT, rules TEXT, group_type TEXT, status TEXT,
+                deleted_at TEXT, updated_at TEXT, created_at TEXT
+            );
+            CREATE TABLE pulse_group_members (
+                group_id INTEGER, user_id INTEGER, role TEXT, PRIMARY KEY(group_id,user_id)
+            );
+        """)
+        conn.execute("INSERT INTO pulse_groups VALUES (1,7,'private-qa','Private QA','Secret','Be kind','private','active',NULL,'v2','v1')")
+        conn.execute("INSERT INTO pulse_groups VALUES (2,7,'public-qa','Public QA','Welcome','Be kind','public','active',NULL,'v2','v1')")
+        conn.execute("INSERT INTO pulse_group_members VALUES (1,8,'member')")
+        conn.commit()
+    finally:
+        conn.close()
+    assert translation.resolve_authorized_content(8, "group", 1)["native_route"] == "/pulse/groups/private-qa"
+    assert translation.resolve_authorized_content(9, "group", 2)["text"].startswith("Public QA")
+    try:
+        translation.resolve_authorized_content(9, "group", 1)
+        assert False, "private group must not expose an existence oracle"
+    except translation.TranslationError as exc:
+        assert exc.code == "content_unavailable" and exc.status == 404
+
+
+def test_event_marketplace_and_support_authorization():
+    conn = db.connect()
+    try:
+        conn.executescript("""
+            CREATE TABLE business_os_events (
+                event_id TEXT PRIMARY KEY, business_id TEXT, title TEXT, description TEXT,
+                venue TEXT, status TEXT, updated_at TEXT, created_at TEXT
+            );
+            CREATE TABLE business_os_business_members (
+                business_id TEXT, user_id TEXT, status TEXT
+            );
+            CREATE TABLE marketplace_listings (
+                id INTEGER PRIMARY KEY, seller_user_id INTEGER, title TEXT, description TEXT,
+                short_description TEXT, status TEXT, approval_status TEXT,
+                updated_at TEXT, created_at TEXT
+            );
+            CREATE TABLE support_tickets (
+                id INTEGER PRIMARY KEY, user_id INTEGER, subject TEXT, message TEXT,
+                internal_notes TEXT, status TEXT, updated_at TEXT, created_at TEXT
+            );
+        """)
+        conn.execute("INSERT INTO business_os_events VALUES ('evt_public','biz_1','Launch','Public event','LA','published','v2','v1')")
+        conn.execute("INSERT INTO business_os_events VALUES ('evt_draft','biz_1','Draft','Private plan','LA','draft','v2','v1')")
+        conn.execute("INSERT INTO business_os_business_members VALUES ('biz_1','7','active')")
+        conn.execute("INSERT INTO marketplace_listings VALUES (1,7,'Public item','Description','Short','active','approved','v2','v1')")
+        conn.execute("INSERT INTO marketplace_listings VALUES (2,7,'Draft item','Description','Short','draft','pending_review','v2','v1')")
+        conn.execute("INSERT INTO support_tickets VALUES (1,7,'Help','Visible message','STAFF SECRET','open','v2','v1')")
+        conn.commit()
+    finally:
+        conn.close()
+    assert translation.resolve_authorized_content(9, "event", "evt_public")["text"].startswith("Launch")
+    assert translation.resolve_authorized_content(7, "event", "evt_draft")["text"].startswith("Draft")
+    assert translation.resolve_authorized_content(9, "marketplace", 1)["text"].startswith("Public item")
+    assert translation.resolve_authorized_content(7, "marketplace", 2)["text"].startswith("Draft item")
+    support = translation.resolve_authorized_content(7, "support", 1)
+    assert "Visible message" in support["text"] and "STAFF SECRET" not in support["text"]
+    for user_id, kind, ref in [(9, "event", "evt_draft"), (9, "marketplace", 2), (9, "support", 1)]:
+        try:
+            translation.resolve_authorized_content(user_id, kind, ref)
+            assert False, f"{kind} must fail closed"
         except translation.TranslationError as exc:
             assert exc.code == "content_unavailable" and exc.status == 404
 
@@ -209,6 +291,9 @@ def _run_standalone():
         test_google_adapter_fails_closed_when_unconfigured,
         test_canonical_post_authorization_ignores_caller_supplied_text,
         test_inaccessible_canonical_content_is_not_translated,
+        test_qa_rollout_is_server_authoritative,
+        test_group_authorization_hides_private_group_existence,
+        test_event_marketplace_and_support_authorization,
     ]
     for test in tests:
         test()

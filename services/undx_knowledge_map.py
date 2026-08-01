@@ -2363,7 +2363,7 @@ _live(
     authorization_scope=_SELF, owner_field="user_id",
     output_schema=(("translated_text", "str"), ("source_language", "str"),
                    ("target_language", "str"), ("content_version", "str")),
-    feature_flag="",
+    feature_flag="UNDX_AGENT_READS_ENABLED",
     evidence=("services/content_translation.py:translate_content",
               "services/translation_providers.py:GoogleAdvancedProvider",
               "tests/test_content_translation.py"),
