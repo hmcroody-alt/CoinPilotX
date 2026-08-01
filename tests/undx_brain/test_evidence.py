@@ -334,6 +334,240 @@ class _FakeSpec:
         self.description = "d"
 
 
+def _receipt(status: str, verification_state: str, capability_id: str = "crypto.alerts.pause"):
+    """A settled receipt carrying exactly the two fields both derivations read."""
+    from services.undx_agent_contracts import AgentReceipt
+
+    return AgentReceipt(
+        task_id="t", request_id="r", capability_id=capability_id, action="a",
+        status=status, owner_user_id=7, verification_state=verification_state,
+        user_explanation="ok",
+    )
+
+
+class TheGatewayActuallyConsultsThisModule(unittest.TestCase):
+    """The wiring, not the mapping. Everything above passes with nothing calling it.
+
+    That was the whole of the Foundation gap: ``derive`` was correct, complete and
+    unreached, so a real turn's completion claim still rested on the receipt's own rule
+    and this module could have been deleted without changing a single answer given to a
+    person. These tests fail if the call site goes away.
+    """
+
+    def _gw(self, status, verification_state, *, is_write=True):
+        """Not ``_outcome``: :class:`unittest.TestCase` already owns that attribute, and
+        shadowing it replaces the runner's own result object with a bound method."""
+        from services import undx_tool_gateway
+
+        return undx_tool_gateway.GatewayOutcome(
+            _receipt(status, verification_state), is_write=is_write)
+
+    def test_the_gateway_outcome_produces_an_assessment_at_all(self):
+        found = self._gw(AgentOutcome.VERIFIED_SUCCESS, VerificationState.VERIFIED).assessment
+        self.assertIsInstance(found, e.Assessment)
+        self.assertIs(found.state, EvidenceState.VERIFIED_SUCCESS)
+
+    def test_the_write_that_verified_may_still_be_claimed(self):
+        """The narrowing has to leave the true claims alone or it is just a mute button.
+
+        A safety check that refuses everything is trivially safe and useless. This is the
+        one path that must survive it.
+        """
+        outcome = self._gw(AgentOutcome.VERIFIED_SUCCESS, VerificationState.VERIFIED)
+        self.assertTrue(outcome.succeeded)
+        self.assertTrue(outcome.may_claim_done)
+
+    def test_the_dangerous_pair_is_refused_by_both_halves(self):
+        for verdict in UNCONFIRMED:
+            with self.subTest(verdict=verdict):
+                outcome = self._gw(AgentOutcome.VERIFIED_SUCCESS, verdict)
+                self.assertFalse(outcome.succeeded)
+                self.assertFalse(outcome.may_claim_done)
+                self.assertTrue(
+                    outcome.assessment.contradiction,
+                    "the outcome claimed success and the read-back did not support it; "
+                    "that disagreement must be named, not merely resolved",
+                )
+
+    def test_the_two_derivations_never_disagree_on_a_write(self):
+        """Every reachable pair, both readings, one assertion.
+
+        ``AgentReceipt.may_claim_completed`` and ``evidence.derive`` encode the same rule
+        in code written at different times for different reasons. Enumerating the whole
+        product is cheap and it is the only way to know they have not drifted apart in
+        some corner nobody exercises by hand.
+        """
+        for status in sorted(AgentOutcome.ALL):
+            for verdict in sorted(VerificationState.ALL):
+                with self.subTest(status=status, verification=verdict):
+                    outcome = self._gw(status, verdict, is_write=True)
+                    self.assertEqual(
+                        outcome.receipt.may_claim_completed,
+                        outcome.assessment.may_claim_done,
+                        f"the receipt and the evidence module disagree on "
+                        f"({status}, {verdict}) for a write; one of them has drifted",
+                    )
+
+    def test_a_read_is_the_one_place_they_are_supposed_to_disagree(self):
+        """And the disagreement runs the safe way.
+
+        A lookup that verified perfectly satisfies ``may_claim_completed`` — the status is
+        ``verified_success`` and a read-back confirmed the value — and completed nothing
+        the person could be told about. ``derive`` calls that ``RETRIEVED``. The
+        conjunction takes the narrower reading, which is the correct one: there is no
+        change to announce.
+        """
+        outcome = self._gw(
+            AgentOutcome.VERIFIED_SUCCESS, VerificationState.VERIFIED, is_write=False)
+        self.assertTrue(outcome.receipt.may_claim_completed)
+        self.assertIs(outcome.assessment.state, EvidenceState.RETRIEVED)
+        self.assertFalse(outcome.may_claim_done)
+
+    def test_the_composition_can_only_narrow_and_never_widen(self):
+        """The property that makes this safe to run unconditionally rather than behind a flag.
+
+        A default-off flag on a check that can only remove claims would leave it unreached
+        in every environment that matters, which is the same as not having written it. The
+        licence for that is this assertion: across every reachable pair and both write
+        readings, ``may_claim_done`` is never true where the receipt alone was false. A
+        defect in ``derive`` can cost a true claim; it cannot buy a false one.
+        """
+        for status in sorted(AgentOutcome.ALL):
+            for verdict in sorted(VerificationState.ALL):
+                for is_write in (True, False):
+                    with self.subTest(status=status, verification=verdict, is_write=is_write):
+                        outcome = self._gw(status, verdict, is_write=is_write)
+                        if outcome.may_claim_done:
+                            self.assertTrue(
+                                outcome.receipt.may_claim_completed,
+                                "the composed answer allowed a claim the receipt refused; "
+                                "the conjunction is supposed to be incapable of that",
+                            )
+
+    def test_it_reads_the_receipts_verdict_when_no_verification_object_came_back(self):
+        """Both derivations must be looking at the same two facts or the comparison is noise.
+
+        Several settled paths carry no ``VerificationResult`` object — an idempotent replay
+        holds the earlier operation's verdict on the receipt, a refusal holds ``impossible``
+        — and reading ``None`` there would have this module assessing a different pair than
+        ``may_claim_completed`` assesses. Every one of those turns would then log a
+        divergence that is really just two functions being handed different inputs.
+        """
+        outcome = self._gw(AgentOutcome.VERIFIED_SUCCESS, VerificationState.VERIFIED)
+        self.assertIsNone(outcome.verification)
+        self.assertIs(outcome.assessment.state, EvidenceState.VERIFIED_SUCCESS)
+        self.assertEqual(outcome.assessment.contradiction, "")
+
+    def test_a_gateway_outcome_defaults_to_the_stricter_reading(self):
+        from services import undx_tool_gateway
+
+        outcome = undx_tool_gateway.GatewayOutcome(
+            _receipt(AgentOutcome.VERIFIED_SUCCESS, VerificationState.VERIFIED))
+        self.assertTrue(outcome.is_write,
+                        "a caller that did not say what it ran must be held to the write "
+                        "rules; assessing a mutation as a lookup is the error that ends "
+                        "with somebody being told a change happened")
+
+    def test_a_broken_brain_leaves_the_gateway_exactly_where_it_was(self):
+        """Degradation, not collapse, and specifically not a widened claim.
+
+        If ``derive`` cannot be reached the gateway falls back to the receipt alone — which
+        is where the whole system already stood before this batch — rather than raising or,
+        far worse, treating the missing second opinion as agreement.
+        """
+        def explode(*_args, **_kwargs):
+            raise RuntimeError("brain down")
+
+        outcome = self._gw(AgentOutcome.VERIFIED_SUCCESS, VerificationState.VERIFIED)
+        original = e.derive
+        try:
+            e.derive = explode
+            self.assertIsNone(outcome.assessment)
+            # Falls back to the receipt, which still says yes here...
+            self.assertTrue(outcome.may_claim_done)
+            # ...and still says no where it always did. The fallback is the old behaviour,
+            # not a bypass.
+            self.assertFalse(
+                self._gw(AgentOutcome.VERIFIED_SUCCESS, VerificationState.PENDING)
+                .may_claim_done)
+        finally:
+            e.derive = original
+        self.assertIsNotNone(outcome.assessment)
+
+    def test_succeeded_and_may_claim_done_are_deliberately_different_questions(self):
+        """Collapsing these two names is how "the lookup worked" becomes "your change is done"."""
+        read = self._gw(
+            AgentOutcome.VERIFIED_SUCCESS, VerificationState.VERIFIED, is_write=False)
+        self.assertTrue(read.succeeded)
+        self.assertFalse(read.may_claim_done)
+
+
+class TheCardCarriesTheAssessment(unittest.TestCase):
+    """The responder half. The gateway settling through ``derive`` is only half the gap.
+
+    The entry named both: the gateway had to settle through ``derive`` *and* the response
+    layer had to read the resulting ``Assessment``. A card that still reports only
+    ``verified`` leaves every client free to re-derive "done" from the narrower fact and
+    reach a different answer than the one the gateway enforced.
+    """
+
+    def _card(self, status, verification_state, *, is_write=True):
+        from services import undx_agent_runtime, undx_tool_gateway
+
+        spec = _FakeSpec(is_write)
+        # ``build_card`` reads two attributes ``_status_for`` does not. Set here rather
+        # than folded into ``_FakeSpec`` so the older helper keeps describing exactly the
+        # surface its own tests rely on.
+        spec.result_card = "action_result"
+        spec.risk = "medium"
+        outcome = undx_tool_gateway.GatewayOutcome(
+            _receipt(status, verification_state), is_write=is_write)
+        return undx_agent_runtime.build_card(spec, outcome)
+
+    def test_the_card_reports_the_evidence_state(self):
+        card = self._card(AgentOutcome.VERIFIED_SUCCESS, VerificationState.VERIFIED)
+        self.assertEqual(card["evidence_state"], EvidenceState.VERIFIED_SUCCESS.value)
+        self.assertTrue(card["may_claim_done"])
+
+    def test_an_unconfirmed_write_reaches_the_client_as_sent_and_not_as_done(self):
+        card = self._card(AgentOutcome.VERIFIED_SUCCESS, VerificationState.PENDING)
+        self.assertEqual(card["evidence_state"], EvidenceState.EXECUTED.value)
+        self.assertFalse(card["may_claim_done"])
+        self.assertFalse(card["verified"])
+        self.assertTrue(card["requires_disclosure"])
+
+    def test_the_disagreement_travels_only_when_there_was_one(self):
+        """An always-present field that is usually empty stops being read."""
+        clean = self._card(AgentOutcome.VERIFIED_SUCCESS, VerificationState.VERIFIED)
+        self.assertNotIn("evidence_contradiction", clean)
+        conflicted = self._card(AgentOutcome.VERIFIED_SUCCESS, VerificationState.PENDING)
+        self.assertIn("evidence_contradiction", conflicted)
+        self.assertIn("verification", conflicted["evidence_contradiction"])
+
+    def test_a_verified_read_is_verified_and_still_not_done(self):
+        """The two card fields answer two different questions and must be allowed to differ."""
+        card = self._card(
+            AgentOutcome.VERIFIED_SUCCESS, VerificationState.VERIFIED, is_write=False)
+        self.assertTrue(card["verified"])
+        self.assertFalse(card["may_claim_done"])
+        self.assertEqual(card["evidence_state"], EvidenceState.RETRIEVED.value)
+
+    def test_the_card_stays_json_serialisable(self):
+        import json
+
+        card = self._card(AgentOutcome.VERIFIED_SUCCESS, VerificationState.PENDING)
+        json.loads(json.dumps(card))
+
+    def test_no_card_ever_says_done_where_the_receipt_refused(self):
+        for status in sorted(AgentOutcome.ALL):
+            for verdict in sorted(VerificationState.ALL):
+                with self.subTest(status=status, verification=verdict):
+                    card = self._card(status, verdict)
+                    if card["may_claim_done"]:
+                        self.assertEqual(status, AgentOutcome.VERIFIED_SUCCESS)
+                        self.assertEqual(verdict, VerificationState.VERIFIED)
+
+
 class TheFoundationMapNamesThisModule(unittest.TestCase):
     def test_evidence_state_machine_names_the_bridge(self):
         from services.undx_brain import foundation
@@ -342,6 +576,42 @@ class TheFoundationMapNamesThisModule(unittest.TestCase):
         self.assertIsNotNone(item)
         self.assertIn(("services.undx_brain.evidence", "derive"), item.owners)
         self.assertNotIn("nothing writes to it yet", item.gap)
+
+    def test_the_entry_no_longer_claims_nothing_calls_it(self):
+        """A withdrawn claim is a promise about the rest of the codebase, so pin it.
+
+        The gap said "nothing calls it on the live path" for as long as that was true. It
+        is the kind of sentence that rots quietly in either direction — the wiring gets
+        reverted, or the wiring grows past what the entry describes — so both the
+        withdrawal and the named call site are held here.
+        """
+        from services.undx_brain import foundation
+
+        gap = foundation.by_key("evidence_state_machine").gap
+        self.assertNotIn("nothing calls it on the live path", gap)
+        self.assertIn("no longer true", gap)
+        self.assertIn("GatewayOutcome.assessment", gap)
+        self.assertIn("build_card", gap)
+
+    def test_the_entry_is_honest_about_what_is_still_missing(self):
+        """It is still PARTIAL, and the reasons have to be the real ones."""
+        from services.undx_brain import foundation
+
+        item = foundation.by_key("evidence_state_machine")
+        self.assertEqual(item.ownership, foundation.Ownership.PARTIAL)
+        self.assertIn("_compose_response", item.gap)
+        self.assertIn("carried and unread", item.gap)
+
+    def test_the_call_sites_the_entry_names_are_real(self):
+        from services import undx_agent_runtime, undx_tool_gateway
+        from services.undx_brain import foundation
+
+        item = foundation.by_key("evidence_state_machine")
+        self.assertIn(("services.undx_tool_gateway", "GatewayOutcome"), item.owners)
+        self.assertIn(("services.undx_agent_runtime", "build_card"), item.owners)
+        self.assertTrue(hasattr(undx_tool_gateway.GatewayOutcome, "assessment"))
+        self.assertTrue(hasattr(undx_tool_gateway.GatewayOutcome, "may_claim_done"))
+        self.assertTrue(callable(undx_agent_runtime.build_card))
 
 
 if __name__ == "__main__":

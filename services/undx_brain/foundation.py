@@ -1209,19 +1209,38 @@ FOUNDATION: tuple[Responsibility, ...] = (
             ("services.undx_brain.evidence", "may_say_done"),
             ("services.undx_brain.evidence", "OUTCOME_FAMILY"),
             ("services.undx_agent_contracts", "VerificationState"),
+            ("services.undx_tool_gateway", "GatewayOutcome"),
+            ("services.undx_agent_runtime", "build_card"),
         ),
         gap=(
-            "The derivation exists now. ``evidence.derive`` maps the pair the runtime "
-            "really carries — an ``AgentOutcome`` and a ``VerificationResult`` — onto an "
-            "``EvidenceState``, always reading the verification, and its tests enumerate "
-            "the gateway's own ``_status_for`` output rather than hand-written pairs, so "
-            "the mapping cannot drift from what the gateway emits. What is still open is "
-            "routing: nothing calls it on the live path. ``AgentReceipt`` still carries a "
-            "``verification_state`` and the response layer still reads that, so for a real "
-            "turn the guarantee continues to rest on the receipt's own "
-            "``may_claim_completed``. Closing this means making the gateway settle through "
-            "``derive`` and the responder read the resulting ``Assessment`` — not writing "
-            "more of this module."
+            "The derivation exists and is now routed. ``evidence.derive`` maps the pair "
+            "the runtime really carries — an ``AgentOutcome`` and a verification verdict — "
+            "onto an ``EvidenceState``, always reading the verification, and its tests "
+            "enumerate the gateway's own ``_status_for`` output rather than hand-written "
+            "pairs, so the mapping cannot drift from what the gateway emits.\n\n"
+            "This entry used to add that nothing called it on the live path. That is no "
+            "longer true. ``GatewayOutcome.assessment`` derives through this module on "
+            "every settled call, ``GatewayOutcome.may_claim_done`` is the conjunction of "
+            "that reading and the receipt's own ``may_claim_completed``, and "
+            "``undx_agent_runtime.build_card`` carries ``evidence_state``, "
+            "``may_claim_done``, ``requires_disclosure`` and — only when the two facts "
+            "actually disagreed — ``evidence_contradiction`` out to the client.\n\n"
+            "The composition is a conjunction on purpose, and that is what licenses "
+            "running it unconditionally rather than behind a flag. A flag defaulting off "
+            "on a check that can only remove claims would leave it unreached in every "
+            "environment that matters. An AND can only narrow: a defect in ``derive`` can "
+            "cost a true \"it's done\", it cannot buy a false one, and a test walks every "
+            "``(AgentOutcome, VerificationState)`` pair to hold that. The two derivations "
+            "diverge in exactly one reachable place and are meant to — a verified *read* "
+            "satisfies ``may_claim_completed`` and is assessed ``RETRIEVED``, because a "
+            "lookup completed nothing. Any other divergence is a defect in one of them and "
+            "is logged rather than quietly resolved.\n\n"
+            "Two things keep this PARTIAL. The sentence the person actually reads is still "
+            "composed by ``_compose_response`` from the status and the verification "
+            "directly, so the ``Assessment`` governs the card's fields and not yet the "
+            "prose beside them. And no native client renders ``evidence_state`` or "
+            "``requires_disclosure`` yet, so today those fields are carried and unread — "
+            "which is better than unavailable, and is not the same as used."
         ),
         note=(
             "The one dangerous disagreement is an outcome of ``verified_success`` beside a "

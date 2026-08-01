@@ -1847,6 +1847,23 @@ def build_card(spec: CapabilitySpec, outcome: undx_tool_gateway.GatewayOutcome) 
         "can_undo": bool(receipt.undo_capability_id),
         "timestamp": receipt.timestamp,
     }
+    # The evidence reading, carried as fields so the client renders the conclusion the
+    # gateway enforced instead of re-deriving one from ``status`` and ``verified`` and
+    # arriving somewhere else. ``verified`` above answers "did a read-back confirm the
+    # value"; ``may_claim_done`` answers "may this be described to the person as
+    # finished". They are not the same question — a lookup can verify perfectly and have
+    # completed nothing — and a client drawing "done" from the first field alone is
+    # drawing it from a fact that does not support the sentence.
+    assessment = outcome.assessment
+    if assessment is not None:
+        card["evidence_state"] = assessment.state.value
+        card["requires_disclosure"] = bool(assessment.requires_disclosure)
+        if assessment.contradiction:
+            # Present only when the outcome and the read-back actually disagreed, so its
+            # presence in a payload is itself the signal. An always-present field that is
+            # usually empty gets filtered out of logs and stops being read.
+            card["evidence_contradiction"] = assessment.contradiction
+    card["may_claim_done"] = outcome.may_claim_done
     if outcome.confirmation is not None:
         grant = outcome.confirmation
         card.update({

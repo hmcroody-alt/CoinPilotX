@@ -84,14 +84,19 @@ class GatewayOutcome:
     "nothing came back" as "it worked".
     """
 
-    __slots__ = ("receipt", "confirmation", "result", "verification")
+    __slots__ = ("receipt", "confirmation", "result", "verification", "is_write")
 
     def __init__(self, receipt: AgentReceipt, *, confirmation: ConfirmationRequest | None = None,
-                 result: ToolResult | None = None, verification: VerificationResult | None = None) -> None:
+                 result: ToolResult | None = None, verification: VerificationResult | None = None,
+                 is_write: bool = True) -> None:
         self.receipt = receipt
         self.confirmation = confirmation
         self.result = result
         self.verification = verification
+        # Defaults to the stricter of the two readings. A caller that did not say what it
+        # ran is held to the write rules, because assessing a mutation as a lookup is the
+        # error that ends with somebody being told a change happened.
+        self.is_write = bool(is_write)
 
     @property
     def status(self) -> str:
@@ -99,7 +104,91 @@ class GatewayOutcome:
 
     @property
     def succeeded(self) -> bool:
+        """The call did what it was asked to do.
+
+        Deliberately *not* the same question as :attr:`may_claim_done`. A read that
+        answered from the account succeeded, and there is still nothing completed to tell
+        the person about. Keeping the two names apart is the point: collapsing them is how
+        "the lookup worked" turns into "your change is done".
+        """
         return self.receipt.may_claim_completed
+
+    @property
+    def assessment(self) -> Any:
+        """What :mod:`services.undx_brain.evidence` makes of this outcome, or ``None``.
+
+        The Brain's evidence module has always been able to answer this and nothing on the
+        live path ever asked it. This property is the ask. It re-derives the state from the
+        same two fields the receipt was built from — the outcome and the independent
+        read-back — using code that was written separately from the receipt's own rule, so
+        the two are genuinely independent readings rather than one reading called twice.
+
+        Imported lazily and guarded, like every other Brain call site, so that a missing or
+        broken Brain package degrades this to ``None`` instead of taking the gateway down
+        with it. ``None`` is not a permissive answer: :attr:`may_claim_done` treats it as
+        "no second opinion available" and falls back to the receipt alone, which is exactly
+        where the system already was.
+        """
+        try:
+            from services.undx_brain import evidence as brain_evidence
+        except Exception:  # pragma: no cover - Brain package absent
+            return None
+        try:
+            # The receipt's own ``verification_state`` is the fallback, not ``None``, and
+            # the distinction is not cosmetic. Several paths reach a settled receipt with
+            # no ``VerificationResult`` object attached — an idempotent replay carries the
+            # earlier operation's verdict, a refusal carries ``impossible`` — and passing
+            # ``None`` there would make this read a different pair of facts than
+            # ``may_claim_completed`` reads, which would turn every one of those turns into
+            # a logged "divergence" that is really just the two looking at different
+            # inputs. Two independent derivations are only worth comparing when they are
+            # derived from the same thing.
+            return brain_evidence.derive(
+                self.receipt.status,
+                self.verification if self.verification is not None
+                else self.receipt.verification_state,
+                is_write=self.is_write)
+        except Exception:  # pragma: no cover - derive is documented never to raise
+            logger.warning("evidence assessment failed; falling back to the receipt",
+                           exc_info=True)
+            return None
+
+    @property
+    def may_claim_done(self) -> bool:
+        """Whether this turn may tell the person their change is complete.
+
+        The conjunction of two independently written derivations of the same rule:
+        :attr:`AgentReceipt.may_claim_completed`, which compares the outcome and the
+        verification state directly, and :meth:`assessment`, which resolves the same pair
+        through the Brain's state machine. Both must say yes.
+
+        A conjunction can only ever *narrow*. That asymmetry is the reason this is safe to
+        turn on unconditionally rather than behind a flag: the worst a defect in either
+        derivation can do here is withhold a claim the system was entitled to make, and
+        withholding a true "it's done" costs a person one extra look at their settings,
+        while making a false one costs them their trust in every other thing UNDX says.
+
+        The two disagree in exactly one reachable place, and they are supposed to. A
+        successful *read* satisfies ``may_claim_completed`` — the status is
+        ``verified_success`` and the read-back verified — while the evidence module assesses
+        it as ``RETRIEVED``, which does not license a completion claim, because a lookup is
+        not a change. Any *other* disagreement is a defect in one of the two, so it is
+        logged rather than quietly resolved; the narrower answer is still returned, because
+        an unexplained disagreement is not a reason to trust the wider one.
+        """
+        receipt_says = self.receipt.may_claim_completed
+        found = self.assessment
+        if found is None:
+            return receipt_says
+        brain_says = bool(found.may_claim_done)
+        if receipt_says != brain_says and not (receipt_says and not self.is_write):
+            logger.warning(
+                "undx_evidence_divergence capability=%s status=%s verification=%s "
+                "receipt=%s brain=%s state=%s",
+                self.receipt.capability_id, self.receipt.status,
+                getattr(self.verification, "state", None), receipt_says, brain_says,
+                getattr(found, "state", None))
+        return receipt_says and brain_says
 
 
 def _receipt(spec: CapabilitySpec, *, user_id: int, request_id: str, task_id: str,
@@ -605,7 +694,7 @@ def execute(
             status=decision.outcome or AgentOutcome.PERMISSION_DENIED,
             explanation=decision.message, arguments=arguments,
             evidence={"reason": decision.reason, **decision.details},
-        ))
+        ), is_write=spec.is_write)
 
     # 5. Confirmation. Two independent questions, and conflating them was a real bug.
     #
@@ -646,6 +735,7 @@ def execute(
                      evidence={"confirmation_id": request.confirmation_id,
                                "expires_at": request.expires_at}),
             confirmation=request,
+            is_write=spec.is_write,
         )
     if presented:
         grant = _redeem(cur, int(user_id), spec, arguments, confirmation_token)
@@ -660,7 +750,7 @@ def execute(
                 status=AgentOutcome.CONFIRMATION_REQUIRED,
                 explanation="That confirmation is no longer valid. Ask me again and I will re-confirm.",
                 arguments=arguments, evidence={"reason": "grant_not_redeemable"},
-            ))
+            ), is_write=spec.is_write)
 
     # 6. Idempotency, keyed on the caller's request id and the canonical target.
     canonical_target = spec.canonical_target(arguments)
@@ -699,6 +789,7 @@ def execute(
                                    "needs_reconciliation": unsettled,
                                    "operation_id": clean(previous.get("operation_id"), 60)}),
                 result=replayed,
+                is_write=spec.is_write,
             )
 
     # 7. Reserve the ledger row before the mutation, and make it durable. This is the
@@ -770,6 +861,7 @@ def execute(
                           "needs_reconciliation": bool(spec.is_write and result.ok),
                           "operation_id": str(prepared.get("operation_id") or "")}),
             result=result,
+            is_write=spec.is_write,
         )
 
 
@@ -871,7 +963,8 @@ def _settle(cur, *, spec: CapabilitySpec, user_id: int, arguments: dict[str, Any
             "risk": spec.risk,
         },
     )
-    return GatewayOutcome(receipt, result=result, verification=verification)
+    return GatewayOutcome(receipt, result=result, verification=verification,
+                          is_write=spec.is_write)
 
 
 __all__ = ["GatewayOutcome", "execute"]
