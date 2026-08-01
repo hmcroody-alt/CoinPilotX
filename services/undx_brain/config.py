@@ -356,10 +356,15 @@ CATALOG: tuple[Flag, ...] = (
         fail="closed",
     ),
     Flag(
-        "UNDX_RESPONSE_MAX_REGENERATIONS", "int", "1",
-        "How many times a response failing the factuality check may be regenerated "
-        "before UNDX answers with the honest boundary instead.",
-        fail="n/a", minimum=0, maximum=3,
+        "UNDX_RESPONSE_MAX_REGENERATIONS", "int", "64",
+        "How many drafts rejected by the factuality check may be discarded and "
+        "re-rendered before UNDX stops searching and answers with the honest boundary "
+        "instead. The default sits above the whole search space, so this ceiling only "
+        "ever narrows; lowering it makes UNDX give up sooner and say less. It was "
+        "declared 1/max 3 while the loop could build forty-four drafts, and read by "
+        "nothing, so every value it could hold described behaviour the system did not "
+        "have.",
+        fail="n/a", minimum=0, maximum=64,
     ),
     # -------------------------------------------------------------------- memory ----
     Flag(
