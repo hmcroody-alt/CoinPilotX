@@ -601,6 +601,94 @@ class TheCognitiveEntriesSayTrueThings(unittest.TestCase):
                     f"says no registered phrasing does",
                 )
 
+    def test_the_planning_entry_stopped_claiming_three_ceilings_have_no_caller(self):
+        item = f.by_key("planning")
+        self.assertIs(item.ownership, f.Ownership.PARTIAL)
+        owners = {module for module, _ in item.owners}
+        self.assertIn("services.undx_brain.execution", owners)
+        from services.undx_brain import execution as X
+        for module, symbol in item.owners:
+            if module == "services.undx_brain.execution":
+                with self.subTest(symbol=symbol):
+                    self.assertTrue(hasattr(X, symbol), f"execution has no {symbol}")
+        for stale in (
+            "only the *step* ceiling has a caller",
+            "nothing\nexecutes plans through it yet",
+            "and not before",
+        ):
+            with self.subTest(stale=stale):
+                self.assertNotIn(
+                    stale, item.gap,
+                    f"the planning gap still says {stale!r}; execution.execute is that "
+                    f"caller now",
+                )
+
+    def test_the_planning_entry_is_honest_about_what_the_executor_does_not_do(self):
+        item = f.by_key("planning")
+        gap = item.gap
+
+        # One: nothing on the live path calls it, and the flag is the reason.
+        self.assertEqual(_importers_of("execution"), [])
+        self.assertIn("UNDX_BRAIN_EXECUTOR_ENABLED", gap)
+
+        # Two: each of the three ceilings the entry says are now spent really is spent
+        # by the executor, checked by running it rather than by reading its docstring.
+        # This is the substance of the batch, so it is asserted here as well as in the
+        # execution suite — the entry's honesty is a separate claim from the code's.
+        from services.undx_brain import execution as X
+        on = {
+            "UNDX_BRAIN_ENABLED": "1",
+            "UNDX_BRAIN_EXECUTOR_ENABLED": "1",
+            "UNDX_BRAIN_REASONING_ENABLED": "1",
+        }
+        two = [X.Step("a", is_write=False), X.Step("b", is_write=False)]
+        succeed = lambda step, attempt: X.StepOutcome.SUCCEEDED  # noqa: E731
+
+        self.assertEqual(
+            X.execute(two, succeed, env=dict(on, UNDX_PLANNER_MAX_TOOL_CALLS="1")).refusal.bound,
+            "tool_calls",
+        )
+        clock = {"now": 0.0}
+
+        def slow(step, attempt):
+            clock["now"] += 999.0
+            return X.StepOutcome.SUCCEEDED
+
+        self.assertEqual(
+            X.execute(
+                two, slow,
+                env=dict(on, UNDX_PLANNER_TASK_TIMEOUT_SECONDS="10"),
+                clock=lambda: clock["now"],
+            ).refusal.bound,
+            "timeout",
+        )
+        retried = X.execute(
+            [X.Step("r", is_write=False)],
+            lambda step, attempt: X.StepOutcome.FAILED,
+            env=dict(on, UNDX_PLANNER_MAX_RETRIES="1"),
+        )
+        self.assertEqual(retried.report["retries"], {"r": 1})
+
+        # Three: the flag really does mean nothing happens, not that it happens in one
+        # step. An executor that fell back to single-step with its flag off would make
+        # "nothing on the live path calls it" a much weaker sentence than it reads as.
+        seen = []
+        off = X.execute(two, lambda s, a: (seen.append(1), X.StepOutcome.SUCCEEDED)[1], env={})
+        self.assertFalse(off.ok)
+        self.assertEqual(seen, [])
+
+        # Four: it cannot undo anything, which the entry admits in as many words. The
+        # honest admission is checked as an absence in the code, not just in prose.
+        source = (ROOT / "services" / "undx_brain" / "execution.py").read_text(encoding="utf-8")
+        for absent in ("undo", "rollback", "revert", "compensat"):
+            with self.subTest(absent=absent):
+                self.assertNotIn(
+                    f"def {absent}", source,
+                    "execution grew a way to undo a landed write; the planning entry "
+                    "says it has none",
+                )
+        self.assertIn("cannot undo", gap)
+
 
 class ThePackageNamesItsOwnModules(unittest.TestCase):
     """``__all__`` in ``services/undx_brain/__init__.py`` lists every module present.

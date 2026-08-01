@@ -39,7 +39,10 @@ from __future__ import annotations
 #: ``selection`` sits after ``prediction`` rather than before it, which is the one place
 #: this list is not the order a request arrives in: a request meets the chooser first,
 #: but the chooser decides by reading a prediction, so prediction has to be understood
-#: first for the choosing to make any sense.
+#: first for the choosing to make any sense. ``execution`` then follows ``selection``
+#: because it is what a chosen plan is walked through, and it is last of the acting
+#: modules for the same reason it is the smallest: it decides nothing and performs
+#: nothing, it only counts what a run has spent and stops it honestly.
 #: Listed exhaustively so that a module added without being named here is visible as a
 #: difference rather than merely absent — the test in ``tests/undx_brain`` walks the
 #: directory and compares.
@@ -59,5 +62,6 @@ __all__ = [
     "goals",
     "prediction",
     "selection",
+    "execution",
     "rollout",
 ]

@@ -434,21 +434,47 @@ FOUNDATION: tuple[Responsibility, ...] = (
             ("services.undx_brain.bounds", "Budget"),
             ("services.undx_brain.bounds", "admit"),
             ("services.undx_brain.bounds", "Ledger"),
+            ("services.undx_brain.execution", "Step"),
+            ("services.undx_brain.execution", "StepOutcome"),
+            ("services.undx_brain.execution", "Run"),
+            ("services.undx_brain.execution", "execute"),
         ),
         gap=(
-            "The ceilings are read now: ``build_plan`` runs every plan through "
-            "``bounds.admit``, and an over-budget plan is blocked rather than shortened. "
-            "What is still partial is that only the *step* ceiling has a caller. "
-            "``Ledger`` enforces the tool-call, retry and timeout ceilings and nothing "
-            "executes plans through it yet, because plan execution itself is still one "
-            "step per request. Those three bounds become load-bearing on the day a "
-            "multi-step executor exists, and not before."
+            "All four ceilings have a caller now. ``build_plan`` runs every plan through "
+            "``bounds.admit``, and an over-budget plan is blocked rather than shortened; "
+            "``undx_brain.execution.execute`` walks an admitted plan through a "
+            "``Ledger``, which is what the tool-call, retry and timeout ceilings had "
+            "been waiting for. A call is spent per attempt rather than per step, so a "
+            "retry cannot buy its way past the tool-call budget; a write is never "
+            "retried, because a timeout does not say whether the first attempt landed; "
+            "and expiry stops a run where it stands instead of carrying its remaining "
+            "steps into the next request. A run that stops part-way reports ``ok=False`` "
+            "and names both the writes that landed and the ones whose outcome is "
+            "unknown, which are different lists on purpose.\n\n"
+            "What is not done. Nothing on the live path calls ``execute``: it is behind "
+            "``UNDX_BRAIN_EXECUTOR_ENABLED``, which defaults off, and with the flag off "
+            "it performs nothing rather than quietly collapsing to one step. Plan "
+            "execution in the runtime is still one step per request, so the multi-step "
+            "path is exercised only by its own tests. The executor also does not decide "
+            "what the steps are — it is handed an ordered list and never reorders it, "
+            "so plan *construction* past ``build_plan``'s fixed four-node shape still "
+            "has no owner. And it cannot undo anything: when a run stops with two of "
+            "three writes landed, it says so and stops, which is honest but leaves the "
+            "person holding a half-finished goal that nothing offers to reverse."
         ),
         note=(
             "``BOUNDED_NODE_TYPES`` decides what counts as a step. Only acting nodes do; "
             "the understand/retrieve/verify scaffolding appears on every plan, so "
             "counting it would mean a one-step ceiling refused every request ever "
-            "served."
+            "served.\n\n"
+            "``execution`` performs nothing itself and imports nothing that could — no "
+            "gateway, no registry, no policy engine, no database. It is handed a "
+            "``perform`` callable and can only count. That is the structural reason it "
+            "cannot become a second path to the gateway, and a test asserts the absence "
+            "of those imports rather than trusting the docstring. The one shape it will "
+            "not accept from ``perform`` is an ambiguous one: anything that is not a "
+            "``StepOutcome`` reads as ``UNKNOWN``, so a callable rewritten to return a "
+            "boolean fails closed instead of reporting every step done."
         ),
     ),
     Responsibility(

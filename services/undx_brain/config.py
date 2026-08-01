@@ -428,6 +428,26 @@ CATALOG: tuple[Flag, ...] = (
         "the list against ``match_capability`` over every registered phrasing.",
         fail="closed",
     ),
+    Flag(
+        "UNDX_BRAIN_EXECUTOR_ENABLED", "bool", "0",
+        "Allow a plan to run as more than one step, spending against the ceilings "
+        "``UNDX_PLANNER_MAX_TOOL_CALLS``, ``UNDX_PLANNER_MAX_RETRIES`` and "
+        "``UNDX_PLANNER_TASK_TIMEOUT_SECONDS``. Off means those three numbers are "
+        "declared and unread, which is the current behaviour: ``bounds.Ledger`` "
+        "enforces them and nothing runs a plan through it, because execution is one "
+        "step per request. On means a plan is admitted against the step ceiling first "
+        "and then walked step by step through a ledger that spends and never refunds — "
+        "a call is spent per attempt so retries cannot buy their way past the tool-call "
+        "budget, a write is never retried because a timeout does not say whether the "
+        "first attempt landed, and expiry stops the run rather than resuming it. The "
+        "executor performs nothing itself; it calls back into whatever the caller "
+        "supplies, so it cannot become a second path to the gateway. A run that stops "
+        "part-way reports ``ok=False`` and names the writes that already landed and "
+        "the ones whose outcome is unknown, because half of a multi-write goal is a "
+        "state nobody asked for and reporting it as success is the failure this whole "
+        "layer exists to prevent.",
+        fail="closed",
+    ),
     # ------------------------------------------------------------ QA and rollout ----
     Flag(
         "UNDX_BRAIN_QA_ONLY", "bool", "1",
