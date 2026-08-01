@@ -122,6 +122,7 @@ class NegationScopeTests(_RoutingAssertions):
         self.assertRoutes("delete alert 3, i do not need it", "crypto.alerts.delete")
         self.assertRoutes("delete alert 10 and do not ask again", "crypto.alerts.delete")
         self.assertRoutes("pause alert 2 and do not tell me again", "crypto.alerts.pause")
+        self.assertRoutes("delete post 999, i do not need it", "feed.posts.delete")
 
     def test_a_leading_negation_does_cancel_it(self) -> None:
         self.assertNoWrite("do not delete alert 3")

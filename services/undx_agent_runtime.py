@@ -1746,11 +1746,37 @@ def resolve_arguments(user_id: int, spec: CapabilitySpec, text: str,
             arguments["body"] = clean(match.group(1), 2000)
     if spec.capability_id in {
         "feed.posts.get", "comments.list", "feed.posts.like", "feed.posts.unlike",
-        "feed.post.performance.summary", "feed.comments.summary",
+        "feed.posts.delete", "feed.post.performance.summary", "feed.comments.summary",
     } and not arguments.get("post_id"):
         found = resource_reference(text, _RESOURCE_NOUNS["post_id"])
         if found:
             arguments["post_id"] = found
+    if spec.capability_id == "translation.content.translate":
+        lowered = text.lower()
+        if not arguments.get("content_type"):
+            arguments["content_type"] = next(
+                (kind for label, kind in (
+                    ("comment", "comment"), ("reply", "reply"), ("message", "chat"),
+                    ("profile", "profile"), ("reel", "reel"), ("status", "status"),
+                    ("post", "post"),
+                ) if label in lowered),
+                "",
+            )
+        if not arguments.get("content_ref") and arguments.get("content_type"):
+            noun = "message" if arguments["content_type"] == "chat" else arguments["content_type"]
+            found = resource_reference(text, (noun,))
+            if found:
+                arguments["content_ref"] = found
+        if not arguments.get("target_language"):
+            for label, code in (
+                ("haitian creole", "ht"), ("spanish", "es"), ("french", "fr"),
+                ("arabic", "ar"), ("hebrew", "he"), ("english", "en"),
+                ("german", "de"), ("portuguese", "pt"),
+            ):
+                if label in lowered:
+                    arguments["target_language"] = code
+                    break
+        arguments.setdefault("source_language", "auto")
     if spec.capability_id.startswith("reels.") and spec.capability_id != "reels.search" and not arguments.get("reel_id"):
         found = resource_reference(text, _RESOURCE_NOUNS["reel_id"])
         if found:

@@ -298,6 +298,17 @@ class ResolutionShapeTests(_ResolutionCase):
         resolution = self.resolve("feed.posts.get", "show post 9", post_id=41)
         self.assertEqual(41, resolution.arguments["post_id"])
 
+    def test_post_delete_and_translation_extract_canonical_targets(self) -> None:
+        deletion = self.resolve("feed.posts.delete", "delete post 999")
+        self.assertEqual(999, deletion.arguments["post_id"])
+        translated = self.resolve(
+            "translation.content.translate", "translate post 42 into Haitian Creole"
+        )
+        self.assertEqual("post", translated.arguments["content_type"])
+        self.assertEqual(42, translated.arguments["content_ref"])
+        self.assertEqual("ht", translated.arguments["target_language"])
+        self.assertEqual("auto", translated.arguments["source_language"])
+
     def test_missing_required_ignores_fields_that_have_defaults(self) -> None:
         """A message that says nothing about ``limit`` is not an incomplete message."""
         spec = REGISTRY["search.global"]
