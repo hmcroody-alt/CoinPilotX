@@ -529,5 +529,145 @@ class ItFillsAWorkspace(unittest.TestCase):
                                  "relevant")
 
 
+class ThePlannerActuallyConsultsAttention(unittest.TestCase):
+    """The wiring, not the module. Everything above this class passes with nothing
+    calling ``attend`` on a real request, which was the whole of the Foundation gap.
+    """
+
+    SIXTH_REQUEST = "Why is my account acting strange?"
+
+    def setUp(self):
+        from tests.undx_agent import bootstrap
+        bootstrap.install()
+        from services import undx_architecture
+
+        self.arch = undx_architecture
+        self.context = {"tool_names": [], "requires_confirmation": False}
+
+    def _plan(self):
+        return self.arch.build_plan(7, self.SIXTH_REQUEST, self.context, "r1")
+
+    def _retrieve(self, plan):
+        return next(n for n in plan["nodes"] if n["node_type"] == "retrieve")
+
+    # -- the gate ------------------------------------------------------------------
+
+    def test_off_the_plan_has_no_attention_key_at_all(self):
+        """Absent, not ``ok=False``: that is how a reader tells off from found-nothing."""
+        plan = self._plan()
+        self.assertNotIn("attention", plan)
+
+    def test_off_the_retrieval_objective_is_the_one_it_has_always_been(self):
+        """§28. A default-off flag that still edits the plan is not default-off."""
+        self.assertEqual(self._retrieve(self._plan())["objective"],
+                         self.arch.RETRIEVAL_OBJECTIVE)
+
+    def test_the_brain_flag_alone_is_not_enough(self):
+        plan = self.arch.apply_attention(self._plan(), self.SIXTH_REQUEST,
+                                         {"UNDX_BRAIN_ENABLED": "1"})
+        self.assertNotIn("attention", plan)
+
+    # -- what it is allowed to do --------------------------------------------------
+
+    def test_on_the_sixth_directive_example_narrows_the_retrieval_node(self):
+        plan = self.arch.apply_attention(self._plan(), self.SIXTH_REQUEST, ON)
+        objective = self._retrieve(plan)["objective"]
+        self.assertNotEqual(objective, self.arch.RETRIEVAL_OBJECTIVE)
+        self.assertIn("Account health", objective)
+        self.assertEqual(self._retrieve(plan)["attention_areas"], plan["attention"]["areas"])
+
+    def test_on_it_leaves_marketplace_music_and_crypto_shut(self):
+        """§6's second clause, asserted on the plan rather than on the Focus."""
+        plan = self.arch.apply_attention(self._plan(), self.SIXTH_REQUEST, ON)
+        for closed in ("Marketplace", "Music", "Crypto"):
+            with self.subTest(closed=closed):
+                self.assertNotIn(closed, plan["attention"]["areas"])
+
+    def test_a_cut_tail_is_reported_on_the_plan_not_silently_dropped(self):
+        plan = self.arch.apply_attention(self._plan(), self.SIXTH_REQUEST, ON)
+        self.assertTrue(plan["attention"]["crowded"])
+        self.assertTrue(plan["attention"]["withheld"])
+        self.assertIn("considered, not overlooked", self._retrieve(plan)["objective"])
+
+    # -- what it is not allowed to do ----------------------------------------------
+
+    def test_attention_never_adds_a_skill(self):
+        """The load-bearing boundary: routing is not authorisation.
+
+        ``attend`` matches on the words in the request. If those words could put a
+        skill on the plan, a phrase a user typed would be granting a capability, and
+        the text router and the permission decision would have become one mechanism.
+        """
+        before = self._plan()
+        after = self.arch.apply_attention(self._plan(), self.SIXTH_REQUEST, ON)
+        self.assertEqual(after["skills"], before["skills"])
+
+    def test_a_request_naming_a_high_impact_area_still_gets_no_extra_skill(self):
+        plan = self.arch.build_plan(7, "publish a Reel right now", self.context, "r2")
+        routed = self.arch.apply_attention(
+            self.arch.build_plan(7, "publish a Reel right now", self.context, "r2"),
+            "publish a Reel right now", ON,
+        )
+        self.assertIn("Reels", routed["attention"]["areas"])
+        self.assertEqual(routed["skills"], plan["skills"],
+                         "attention widened the skill list from the request text")
+
+    def test_it_changes_no_node_other_than_retrieve(self):
+        before = self._plan()
+        after = self.arch.apply_attention(self._plan(), self.SIXTH_REQUEST, ON)
+        for old, new in zip(before["nodes"], after["nodes"]):
+            if new["node_type"] == "retrieve":
+                continue
+            with self.subTest(node=new["node_type"]):
+                self.assertEqual(old, new)
+
+    # -- the empty focus -----------------------------------------------------------
+
+    def test_an_unmatched_request_narrows_nothing_and_asks_instead(self):
+        """"We did not understand this" must not be recorded as "there is nothing"."""
+        plan = self.arch.apply_attention(self._plan(), "zxqw fjjd plfh", ON)
+        self.assertTrue(plan["attention"]["needs_clarification"])
+        self.assertEqual(plan["attention"]["areas"], [])
+        self.assertEqual(self._retrieve(plan)["objective"], self.arch.RETRIEVAL_OBJECTIVE,
+                         "an empty focus narrowed retrieval to nothing")
+        self.assertIn("nothing in the product map matched", plan["attention"]["reason"])
+
+    def test_a_matched_request_does_not_ask_for_clarification(self):
+        plan = self.arch.apply_attention(self._plan(), self.SIXTH_REQUEST, ON)
+        self.assertFalse(plan["attention"]["needs_clarification"])
+
+    def test_an_empty_message_is_recorded_rather_than_treated_as_a_failure(self):
+        plan = self.arch.apply_attention(self._plan(), "", ON)
+        self.assertTrue(plan["attention"]["needs_clarification"])
+        self.assertIn("empty", plan["attention"]["reason"])
+
+    # -- it must never take the turn down ------------------------------------------
+
+    def test_a_plan_still_builds_when_attention_raises(self):
+        """``attend`` is documented never to raise; the caller does not rely on that."""
+        import services.undx_brain.attention as module
+
+        original = module.attend
+        module.attend = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+        try:
+            plan = self.arch.apply_attention(self._plan(), self.SIXTH_REQUEST, ON)
+        finally:
+            module.attend = original
+        self.assertNotIn("attention", plan)
+        self.assertEqual(self._retrieve(plan)["objective"], self.arch.RETRIEVAL_OBJECTIVE)
+
+    def test_the_recorded_focus_is_json_serialisable(self):
+        """``persist_plan`` writes the plan out; a tuple or a dataclass would break it."""
+        import json
+
+        plan = self.arch.apply_attention(self._plan(), self.SIXTH_REQUEST, ON)
+        json.dumps(plan)
+
+    def test_bounds_still_run_after_attention(self):
+        """Order matters: ``build_plan`` composes them, so neither may shadow the other."""
+        plan = self._plan()
+        self.assertIn("bounds", plan)
+
+
 if __name__ == "__main__":
     unittest.main()

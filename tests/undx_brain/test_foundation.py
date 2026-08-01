@@ -14,6 +14,7 @@ part, and neither may be quietly upgraded to OWNED without deleting an assertion
 
 from __future__ import annotations
 
+import inspect
 import os
 import re
 import sys
@@ -947,6 +948,63 @@ class ThePromptInjectionEntryTellsTheTruthAboutTheBoundary(unittest.TestCase):
             "prompt by the key allowlist rather than fenced, so this import means the "
             "allowlist guarantee changed and the entry needs rewriting",
         )
+
+
+class TheAttentionEntryTellsTheTruthAboutItsCallSite(unittest.TestCase):
+    """The entry withdrew "nothing on the live path calls it". Hold it to that.
+
+    A gap that says a module is unwired is a promise about the rest of the codebase,
+    and it is the kind of promise that rots silently — either because the wiring is
+    reverted, or because the wiring grows past what the entry describes.
+    """
+
+    def test_the_entry_no_longer_claims_the_module_is_unwired(self):
+        gap = f.by_key("attention").gap
+        self.assertIn("no longer true", gap)
+        self.assertIn("apply_attention", gap)
+
+    def test_the_call_site_the_entry_names_exists_and_is_reached_from_build_plan(self):
+        from services import undx_architecture
+
+        self.assertTrue(callable(undx_architecture.apply_attention))
+        source = inspect.getsource(undx_architecture.build_plan)
+        self.assertIn("apply_attention", source,
+                      "the entry says build_plan routes; it does not")
+
+    def test_the_entry_says_the_call_site_may_not_touch_skills(self):
+        gap = f.by_key("attention").gap
+        self.assertIn("plan['skills']", gap)
+        self.assertIn("authorisation", gap)
+
+    def test_and_the_call_site_actually_does_not(self):
+        """The prose above is only worth having if the code agrees with it.
+
+        The docstring is removed before scanning, because it *does* mention skills —
+        that is the whole point of it — and a check that reads the explanation as
+        though it were code would fail on a correct implementation and pass on one
+        that dropped the explanation.
+        """
+        from services import undx_architecture
+
+        source = inspect.getsource(undx_architecture.apply_attention)
+        doc = undx_architecture.apply_attention.__doc__ or ""
+        self.assertIn(doc, source)
+        body = source.replace(doc, "")
+        self.assertNotIn("skills", body,
+                         "apply_attention mentions skills outside its docstring; "
+                         "routing must not reach the authorisation decision")
+
+    def test_the_entry_says_why_it_is_still_partial(self):
+        gap = f.by_key("attention").gap
+        self.assertIn("defaults off", gap)
+        self.assertIn("did not understand", gap)
+
+    def test_the_default_off_claim_is_true_of_the_real_planner(self):
+        from services import undx_architecture
+
+        plan = undx_architecture.build_plan(7, "Why is my account acting strange?", {}, "r")
+        self.assertNotIn("attention", plan,
+                         "the entry says the gate defaults off; the plan says otherwise")
 
 
 class ThePackageNamesItsOwnModules(unittest.TestCase):

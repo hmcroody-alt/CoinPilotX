@@ -212,13 +212,19 @@ def select_skills(tool_names: list[str], message: str) -> list[str]:
     return list(dict.fromkeys(selected))
 
 
+#: The plan's retrieval objective when nothing has narrowed it. Kept as a constant so the
+#: narrowed form in :func:`apply_attention` and the §28 test that pins the unnarrowed one
+#: read the same string instead of two copies that drift.
+RETRIEVAL_OBJECTIVE = "Gather only authorized, current, request-relevant context."
+
+
 def build_plan(user_id: int, message: str, context: dict[str, Any], client_request_id: str = "") -> dict[str, Any]:
     risk = "high" if context.get("requires_confirmation") or context.get("reasoning_mode") in {"crisis", "high_stakes"} else "medium" if context.get("tool_names") else "low"
     mission_id = "undx_m_" + hashlib.sha256(f"{user_id}:{client_request_id}:{message}".encode("utf-8")).hexdigest()[:20]
     skills = select_skills(context.get("tool_names") or [], message)
     nodes = [
         {"level": "mission", "node_type": "understand", "objective": clean(message, 1000), "status": "ready", "success_condition": "goal and constraints identified"},
-        {"level": "strategy", "node_type": "retrieve", "objective": "Gather only authorized, current, request-relevant context.", "status": "pending", "success_condition": "evidence and permissions are sufficient"},
+        {"level": "strategy", "node_type": "retrieve", "objective": RETRIEVAL_OBJECTIVE, "status": "pending", "success_condition": "evidence and permissions are sufficient"},
     ]
     if context.get("tool_names"):
         nodes.append({"level": "action", "node_type": "call_tool", "objective": "Prepare authorized tool operations.", "status": "waiting_confirmation" if context.get("requires_confirmation") else "pending", "success_condition": "typed tool result received"})
@@ -234,7 +240,85 @@ def build_plan(user_id: int, message: str, context: dict[str, Any], client_reque
         "dry_run": True,
         "client_request_id": clean(client_request_id, 160),
     }
-    return apply_bounds(plan)
+    return apply_bounds(apply_attention(plan, message))
+
+
+def apply_attention(plan: dict[str, Any], message: str, env: Any = None) -> dict[str, Any]:
+    """Let salience routing narrow the plan's retrieval, and never let it widen anything.
+
+    This is the first live call site the attention module has had. Until now it was
+    exercised only by its own tests, which meant it could be correct and still change
+    nothing about what UNDX actually looked at for a real request.
+
+    Three rules govern what this function is allowed to do with a :class:`Focus`, and the
+    second is the one worth being careful about.
+
+    **It may narrow retrieval.** When attention activated areas, the strategy node stops
+    saying "gather request-relevant context" — a sentence that describes every request
+    ever made — and names the areas it found and, when there was a tail, records that a
+    tail was cut. That is the whole point of §6: an answer about a lost password should
+    not arrive with a summary of somebody's Reels.
+
+    **It may never widen permissions.** ``plan["skills"]`` is untouched here, deliberately
+    and permanently. Attention routes on the words in the request, so wiring it into skill
+    selection would mean a phrase typed by a user could add a capability to the plan — a
+    text-matching router promoted into an authorisation decision. Skills are chosen from
+    the tools the policy layer already authorised, and they stay chosen that way. What
+    attention narrows is *what UNDX looks at*; what may be *done* is decided elsewhere,
+    and these must not become the same mechanism.
+
+    **An empty focus narrows nothing.** A request that matched no capability produces an
+    activated-nothing focus, and the tempting reading — "there is nothing relevant, so
+    gather nothing" — is wrong twice over: it converts "we did not understand this" into
+    "there is nothing to find", and it does so silently. The focus is recorded, the
+    objective is left exactly as it was, and ``needs_clarification`` says out loud that
+    the honest next move is to ask the person what they mean.
+
+    Attention imports lazily, like bounds, so ``undx_architecture`` keeps working when the
+    Brain package is absent. With the flag off ``attend`` returns ``ok=False`` and this
+    function returns the plan unchanged, with no ``attention`` key at all — an absent key
+    is how a caller tells "routing is switched off" from "routing ran and found nothing".
+    """
+    try:
+        from services.undx_brain import attention as brain_attention
+    except Exception:  # pragma: no cover - Brain package absent
+        return plan
+    try:
+        focus = brain_attention.attend(message, env=env)
+    except Exception:  # pragma: no cover - attend is documented never to raise
+        logger.warning("attention routing failed; plan continues unrouted", exc_info=True)
+        return plan
+    if not focus.ok:
+        return plan
+
+    plan["attention"] = {
+        "areas": list(focus.area_names),
+        "capability_ids": list(focus.capability_ids),
+        "unreachable": list(focus.unreachable),
+        "withheld": list(focus.withheld),
+        "considered": focus.considered,
+        "crowded": focus.crowded,
+        "concerns": list(focus.concerns),
+        "terms": list(focus.terms),
+        # True exactly when routing ran and activated nothing. The caller's correct
+        # response is a question, not a guess.
+        "needs_clarification": not focus.areas,
+        "reason": focus.reason,
+    }
+    if not focus.areas:
+        return plan
+
+    narrowed = "Gather authorized, current context from " + ", ".join(focus.area_names) + "."
+    if focus.crowded:
+        narrowed += (
+            f" {len(focus.withheld)} further area(s) had evidence and were ranked below "
+            f"the ceiling; they were considered, not overlooked."
+        )
+    for node in plan.get("nodes") or []:
+        if isinstance(node, dict) and node.get("node_type") == "retrieve":
+            node["objective"] = narrowed
+            node["attention_areas"] = list(focus.area_names)
+    return plan
 
 
 #: Node types that consume PART 9's step budget. The mission, strategy and verification

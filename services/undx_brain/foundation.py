@@ -329,19 +329,32 @@ FOUNDATION: tuple[Responsibility, ...] = (
             ("services.undx_brain.attention", "Area"),
             ("services.undx_brain.attention", "Cue"),
             ("services.undx_brain.attention", "Concern"),
+            ("services.undx_architecture", "apply_attention"),
         ),
         gap=(
             "§6's worked example passes on the real map: \"Why is my account acting "
             "strange?\" opens account health, sessions and devices, notifications, "
             "settings and support tickets, and leaves Marketplace, music and crypto "
-            "shut. What is not done is that nothing on the live path calls it. "
-            "``undx_architecture`` still selects skills its own way, so this narrows "
-            "nothing in production until the flag is on and the call site moves. Two "
-            "smaller gaps are real: the routing vocabulary is the map's own text, so a "
-            "request phrased in words no capability record uses reaches nothing by "
-            "design and returns an empty focus rather than a guess; and the concern "
-            "frames are editorial, hand-written, and cover two question shapes out of "
-            "many."
+            "shut. This entry used to add that nothing on the live path called it. "
+            "That is no longer true: ``undx_architecture.apply_attention`` runs inside "
+            "``build_plan``, which ``pulse_ai_service`` calls on every send, so a real "
+            "request now routes and the plan carries the focus it produced.\n\n"
+            "What the call site is allowed to do is deliberately narrow. It rewrites "
+            "the plan's retrieval objective and nothing else. It does not touch "
+            "``plan['skills']``, and that restraint is the point rather than an "
+            "omission: ``attend`` matches on the words in the request, so letting it "
+            "add a skill would make a phrase somebody typed into a grant of capability "
+            "and would fuse a text router with an authorisation decision. Routing "
+            "decides what UNDX looks at; the policy layer decides what it may do.\n\n"
+            "Three things keep this PARTIAL. The gate defaults off, so production "
+            "still selects context the old way until it is turned on. The routing "
+            "vocabulary is the map's own text, so a request phrased in words no "
+            "capability record uses reaches nothing by design and returns an empty "
+            "focus rather than a guess — and the call site is required to leave "
+            "retrieval unnarrowed in that case, because turning \"we did not "
+            "understand this\" into \"there is nothing to find\" is the more dangerous "
+            "of the two errors. And the concern frames are editorial, hand-written, "
+            "and cover two question shapes out of many."
         ),
         note=(
             "The hard half of §6 is the negative clause, and one rule does most of it: "
