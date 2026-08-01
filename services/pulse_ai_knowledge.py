@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from services.undx_brain import envelope
+
 
 ASSISTANT_NAME = "UNDX"
 ASSISTANT_TITLE = "PulseSOC Intelligence Companion"
@@ -274,7 +276,7 @@ def quick_prompts() -> list[str]:
     ]
 
 
-def build_system_prompt(knowledge_items: list[dict[str, Any]] | None = None, user_memory: list[dict[str, Any]] | None = None, compiled_policy: str = "") -> str:
+def build_system_prompt(knowledge_items: list[dict[str, Any]] | None = None, user_memory: list[dict[str, Any]] | None = None, compiled_policy: str = "", *, env: Any = None) -> str:
     sections = [compiled_policy.strip() or CORE_SYSTEM_PROMPT.strip()]
     registry_lines = [f"- {item['name']}: {item['summary']}" for item in DEFAULT_FEATURE_REGISTRY]
     sections.append("Current PulseSoc feature map:\n" + "\n".join(registry_lines))
@@ -295,12 +297,23 @@ def build_system_prompt(knowledge_items: list[dict[str, Any]] | None = None, use
             if value:
                 memory_lines.append(f"- {key}: {value}")
         if memory_lines:
-            sections.append("User-approved personalization memory:\n" + "\n".join(memory_lines))
+            # Remembered text is the person's own words, and that is exactly why it
+            # needs a fence rather than exempting it from one. An instruction is
+            # addressed to a moment; replaying one from three weeks ago as though it
+            # were live is how a system acts on a request that was already satisfied or
+            # retracted. The heading calls it "user-approved", which is true about how
+            # it was stored and says nothing about what it may now command.
+            joined = "\n".join(memory_lines)
+            sealed = envelope.wrap(joined, envelope.Provenance.REMEMBERED, env=env)
+            sections.append(
+                sealed if envelope.is_sealed(sealed)
+                else "User-approved personalization memory:\n" + joined
+            )
     return "\n\n".join(sections)
 
 
-def build_messages(user_message: str, history: list[dict[str, Any]] | None = None, knowledge_items: list[dict[str, Any]] | None = None, user_memory: list[dict[str, Any]] | None = None, compiled_policy: str = "") -> list[dict[str, str]]:
-    messages = [{"role": "system", "content": build_system_prompt(knowledge_items, user_memory, compiled_policy)}]
+def build_messages(user_message: str, history: list[dict[str, Any]] | None = None, knowledge_items: list[dict[str, Any]] | None = None, user_memory: list[dict[str, Any]] | None = None, compiled_policy: str = "", *, env: Any = None) -> list[dict[str, str]]:
+    messages = [{"role": "system", "content": build_system_prompt(knowledge_items, user_memory, compiled_policy, env=env)}]
     for item in history or []:
         role = "assistant" if str(item.get("role") or "").lower() == "assistant" else "user"
         body = compact_text(item.get("body") or item.get("content") or "", 1600)

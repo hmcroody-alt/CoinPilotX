@@ -103,6 +103,7 @@ __all__ = [
     "neutralise",
     "seal",
     "wrap",
+    "enabled",
     "closing_fences_in",
     "is_sealed",
 ]
@@ -310,6 +311,19 @@ def wrap(
     if not _enabled(env):
         return _as_text(text)
     return seal(text, provenance, label=label).rendered
+
+
+def enabled(env: Mapping[str, str] | None = None) -> bool:
+    """Whether the envelope discipline is switched on.
+
+    Public because a call site sometimes has to branch on it rather than just pass text
+    through :func:`wrap`. ``pulse_ai_web_search.context_block`` is the case that forced
+    it: with no results to render, the legacy string is a bare preamble and the sealed
+    string should be nothing at all, and those two are indistinguishable by looking at
+    what ``wrap`` returned. Branching on the flag is honest; inferring the flag from the
+    shape of an output is the kind of cleverness that breaks quietly later.
+    """
+    return _enabled(env)
 
 
 def closing_fences_in(rendered: str) -> int:

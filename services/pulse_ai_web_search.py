@@ -17,6 +17,8 @@ from urllib.parse import quote_plus
 
 import requests
 
+from services.undx_brain import envelope
+
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_TIMEOUT_SECONDS = 6.0
@@ -305,10 +307,42 @@ def search(query: str, *, purpose: str = "pulse_ai", force: bool = False) -> dic
     }
 
 
-def context_block(search_result: dict[str, Any]) -> str:
+#: The line this function has always opened with. Kept as a constant because the
+#: enveloped form deliberately drops it — the envelope's declaration says everything
+#: this sentence said and says it about the right thing — and a test needs to be able to
+#: assert both the unchanged legacy string and its absence from the sealed form.
+LEGACY_PREAMBLE = (
+    "Live web search context. Use carefully, cite source names when helpful, and say if "
+    "information may change:"
+)
+
+
+def context_block(search_result: dict[str, Any], *, env: Any = None) -> str:
+    """Render search results for the prompt, sealed if the envelope flag allows it.
+
+    This is the most attacker-controllable input in the system: anybody who can rank for
+    a query can write into it. Until the envelope existed it was the *least* protected —
+    the string this function returns is inserted into the ``knowledge`` list by
+    ``pulse_ai_service``, and ``pulse_ai_knowledge.build_system_prompt`` renders that
+    list into the **system message** under the heading ``Approved PulseSoc knowledge``.
+    A stranger's web page was arriving labelled approved, in the message carrying the
+    most authority in the request. A preamble asking the model to "use carefully" is not
+    a boundary; it is a request, addressed to the same reader the attacker is addressing.
+
+    With ``UNDX_BRAIN_ENVELOPE_ENABLED`` off this returns exactly the string it always
+    returned, byte for byte, including the preamble and the 4000-character clamp. On, it
+    returns a sealed envelope instead: the results go inside a fence they cannot escape,
+    the declaration naming them as web text with no authority goes before them, and a
+    reassertion goes after so the payload never has the last word. The preamble is
+    dropped in that form because the declaration supersedes it.
+
+    The clamp is applied to the payload *before* sealing, never to the rendered
+    envelope. Truncating a sealed string would cut the closing fence off and produce
+    exactly the unterminated-fence state the envelope exists to make impossible.
+    """
     if not search_result.get("ok"):
         return ""
-    lines = ["Live web search context. Use carefully, cite source names when helpful, and say if information may change:"]
+    lines = []
     if search_result.get("answer"):
         lines.append(f"Summary: {search_result['answer']}")
     for item in (search_result.get("results") or [])[:MAX_RESULTS]:
@@ -317,4 +351,11 @@ def context_block(search_result: dict[str, Any]) -> str:
         url = item.get("url") or ""
         quality = item.get("quality") or "unverified"
         lines.append(f"- {title} ({quality}): {snippet} Source: {url}")
-    return "\n".join(lines)[:4000]
+    if not envelope.enabled(env):
+        return "\n".join([LEGACY_PREAMBLE, *lines])[:4000]
+    if not lines:
+        # Off, an ``ok`` result with nothing in it has always rendered the bare preamble,
+        # and that stays exactly as it was. On, an envelope around nothing is prompt
+        # budget spent to say nothing, so it renders nothing.
+        return ""
+    return envelope.seal("\n".join(lines)[:4000], envelope.Provenance.WEB_SEARCH).rendered
