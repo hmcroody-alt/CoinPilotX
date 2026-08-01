@@ -31,6 +31,7 @@ def main() -> int:
     messenger_api = read("mobile-native/src/api/messenger.ts")
     control_center = read("mobile-native/src/components/ConversationControlCenter.tsx")
     app_navigator = read("mobile-native/src/navigation/AppNavigator.tsx")
+    english_core = read("mobile-native/src/i18n/catalogs/en/core.json")
 
     forbidden_command_form = [
         "Ask UNDX",
@@ -67,7 +68,10 @@ def main() -> int:
     require("onStartCall?: (callType" in control_center, "ConversationControlCenter call handler is not optional.", failures)
     require("UNDX is pinned in Messenger" in control_center, "Assistant pin behavior is not safely handled.", failures)
 
-    require("PulseSoc Intelligence" in app_navigator, "PulseAI tab subtitle was not normalized away from Companion branding.", failures)
+    require('t("common:navSubtitles.intelligence")' in app_navigator,
+            "PulseAI tab subtitle does not use the canonical localized intelligence label.", failures)
+    require('"intelligence": "PulseSoc Intelligence"' in english_core,
+            "English UNDX subtitle was not normalized away from Companion branding.", failures)
 
     if failures:
         print("PulseSoc native UNDX chat conversation audit FAILED")

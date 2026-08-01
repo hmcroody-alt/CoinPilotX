@@ -552,9 +552,9 @@ class ObservingIsNotSteering(unittest.TestCase):
                     f"calibration imports {name}; observing has become steering",
                 )
 
-    def test_nothing_imports_calibration_either(self):
-        # Nothing on the live path calls it, which is what the flag being off means in
-        # practice and what the foundation entry claims.
+    def test_only_the_canonical_runtime_imports_calibration(self):
+        # Runtime activation gives this exactly one owner. Calibration itself still
+        # imports no selector or gateway and can only make the caller more cautious.
         import re
 
         package = ROOT / "services" / "undx_brain"
@@ -575,7 +575,7 @@ class ObservingIsNotSteering(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             if absolute.search(text) or (package in path.parents and relative.search(text)):
                 found.append(path.stem)
-        self.assertEqual(sorted(found), [])
+        self.assertEqual(sorted(found), ["undx_agent_runtime"])
 
     def test_it_opens_no_connection_and_reads_through_the_owner_scoped_layer(self):
         source = self._source()

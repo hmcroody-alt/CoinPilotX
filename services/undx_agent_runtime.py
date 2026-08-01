@@ -2684,6 +2684,36 @@ def _act(cur, spec: CapabilitySpec, *, user_id: int, text: str,
     arguments = resolution.arguments
     resolved_count = resolution.resolved_count
 
+    # Predict from the registry before the gateway is entered.  This is advisory for
+    # reads and restrictive for writes: a prediction can withhold a completion claim,
+    # but it can never authorise an operation or replace the gateway's verifier.
+    prediction = None
+    try:
+        from services.undx_brain import prediction as brain_prediction
+        prediction = brain_prediction.predict(spec.capability_id, arguments)
+    except Exception:  # pragma: no cover - Brain package is optional at runtime
+        logger.warning("undx_prediction_failed capability=%s", spec.capability_id,
+                       exc_info=True)
+    if spec.is_write:
+        try:
+            from services.undx_brain import config as brain_config
+            brain_values = brain_config.resolve().values
+            prediction_required = bool(brain_values.get("UNDX_BRAIN_ENABLED")) and bool(
+                brain_values.get("UNDX_BRAIN_PREDICTION_ENABLED")
+            )
+        except Exception:  # pragma: no cover
+            prediction_required = False
+        if prediction_required and (prediction is None or not prediction.ok):
+            return _error_response(
+                spec,
+                AgentError(
+                    "brain_prediction_unavailable",
+                    "I cannot safely predict and verify this change right now, so I did not run it.",
+                    outcome=AgentOutcome.RECOVERABLE_FAILURE,
+                ),
+                request_id, int(user_id), started,
+            )
+
     # Read the before/after pair now, while nothing has changed, so a confirmation
     # card can state plainly what it is asking permission for. The same read names
     # the resource, which is the other half of stating it plainly: a before and an
@@ -2691,25 +2721,62 @@ def _act(cur, spec: CapabilitySpec, *, user_id: int, text: str,
     current_value, proposed_value, resource_label = (
         preview(int(user_id), spec, arguments) if spec.is_write else (None, None, ""))
 
-    try:
-        outcome = undx_tool_gateway.execute(
-            cur,
-            user_id=int(user_id),
-            capability_id=spec.capability_id,
-            proposed_arguments=arguments,
-            current_value=current_value,
-            proposed_value=proposed_value,
-            resource_label=resource_label,
-            request_id=request_id,
-            task_id=request_id,
-            client_request_id=client_request_id,
-            correlation_id=correlation_id,
-            confirmation_token=confirmation_token,
-            explicit_request=is_explicit(text),
-            resolved_resource_count=resolved_count,
-            question=text,
+    def _gateway_call():
+        return undx_tool_gateway.execute(
+            cur, user_id=int(user_id), capability_id=spec.capability_id,
+            proposed_arguments=arguments, current_value=current_value,
+            proposed_value=proposed_value, resource_label=resource_label,
+            request_id=request_id, task_id=request_id,
+            client_request_id=client_request_id, correlation_id=correlation_id,
+            confirmation_token=confirmation_token, explicit_request=is_explicit(text),
+            resolved_resource_count=resolved_count, question=text,
             recent_replies=recent_replies(cur, int(user_id), int(conversation_id)),
         )
+
+    execution_run = None
+    try:
+        # When enabled, even the canonical single operation spends from the same ledger
+        # a future multi-step plan uses.  The performer remains the existing gateway;
+        # the Brain executor neither imports tools nor gains authority.
+        from services.undx_brain import execution as brain_execution
+        captured: dict[str, Any] = {}
+
+        def _perform(_step, _attempt):
+            captured["outcome"] = _gateway_call()
+            status = captured["outcome"].receipt.status
+            if status in AgentOutcome.COMPLETED:
+                return brain_execution.StepOutcome.SUCCEEDED
+            if status == AgentOutcome.RECOVERABLE_FAILURE:
+                return brain_execution.StepOutcome.FAILED
+            return brain_execution.StepOutcome.UNKNOWN
+
+        execution_run = brain_execution.execute(
+            (brain_execution.Step(
+                step_id=f"execute:{spec.capability_id}",
+                capability_id=spec.capability_id,
+                is_write=spec.is_write,
+            ),),
+            _perform,
+        )
+        if "outcome" in captured:
+            outcome = captured["outcome"]
+        elif execution_run.refusal.bound == "flag":
+            # Executor off or refused before dispatch: preserve the documented legacy
+            # path. A refusal cannot silently turn into a second call after dispatch,
+            # because captured is populated before the perform callback returns.
+            outcome = _gateway_call()
+        else:
+            return _error_response(
+                spec,
+                AgentError(
+                    "brain_execution_refused",
+                    execution_run.refusal.message or "UNDX stopped this plan at its safety bound.",
+                    outcome=AgentOutcome.RECOVERABLE_FAILURE,
+                ),
+                request_id,
+                int(user_id),
+                started,
+            )
     except AgentError as exc:
         # A typed refusal from validation or the registry. It is already a canonical
         # outcome; it should reach the user as one rather than as a 500. Every raising
@@ -2727,6 +2794,65 @@ def _act(cur, spec: CapabilitySpec, *, user_id: int, text: str,
         logger.critical("undx_card_build_failed capability=%s user=%s error=%s",
                         spec.capability_id, int(user_id), exc.__class__.__name__)
         card = None
+    if card is not None and prediction is not None and prediction.ok:
+        observed = {}
+        if outcome.verification is not None and isinstance(outcome.verification.observed, dict):
+            observed = dict(outcome.verification.observed)
+        try:
+            checked = brain_prediction.check(
+                prediction,
+                observed,
+                canonical_ids=outcome.receipt.canonical_resource_ids,
+            )
+        except Exception:  # pragma: no cover - a self-check may only narrow claims
+            checked = None
+            logger.warning("undx_prediction_check_failed capability=%s", spec.capability_id,
+                           exc_info=True)
+        card["brain_prediction"] = {
+            "target": prediction.target,
+            "expected_fields": [item.field_name for item in prediction.expected],
+            "reversal": prediction.reversal.value,
+            "verifier": "canonical_read_back",
+        }
+        if checked is not None and checked.ok:
+            card["brain_prediction"]["fidelity"] = checked.fidelity.value
+            card["brain_prediction"]["contradicted_fields"] = [
+                item[0] for item in checked.contradicted
+            ]
+            if checked.contradicted:
+                # The gateway remains authoritative about status, but a second
+                # independent mismatch is never allowed to coexist with success prose.
+                card["may_claim_done"] = False
+                card["evidence_contradiction"] = checked.reason
+                if outcome.receipt.may_claim_completed:
+                    outcome.receipt.user_explanation = (
+                        "The operation returned, but the observed state contradicted "
+                        "the expected result. I cannot claim it completed."
+                    )
+                    card["message"] = outcome.receipt.user_explanation
+    if card is not None and execution_run is not None:
+        card["brain_execution"] = {
+            "active": bool(execution_run.attempts),
+            "completed_steps": list(execution_run.completed),
+            "writes_in_doubt": list(execution_run.writes_in_doubt),
+            "bounded": True,
+        }
+    if card is not None:
+        # Final self-check: cards and prose are two renderings of one receipt.  It may
+        # change language, never facts, resource identity, or verification status.
+        completion_words = (" completed", " is paused", " is active", " was deleted")
+        if not card.get("may_claim_done") and any(word in outcome.receipt.user_explanation.lower()
+                                                   for word in completion_words):
+            outcome.receipt.user_explanation = (
+                "The request returned without enough independent evidence to claim completion."
+            )
+            card["message"] = outcome.receipt.user_explanation
+            card["metacognitive_revision"] = "completion_claim_removed"
+        card["brain_homeostasis"] = {
+            "verification_available": outcome.verification is not None or not spec.is_write,
+            "degraded": bool(outcome.result and outcome.result.degraded_sources),
+            "writes_fail_closed": True,
+        }
     return AgentResponse(
         handled=True,
         receipt=outcome.receipt,
@@ -2770,6 +2896,67 @@ def handle(
     if not available(int(user_id)):
         return AgentResponse(handled=False, reply="", latency_ms=int((time.monotonic() - started) * 1000))
 
+    # Brain activation is deliberately upstream of the deterministic matcher.  It may
+    # abstain, narrow, or choose the safer member of a contested band; it may never add
+    # a capability that the canonical registry and policy do not already expose.
+    brain_focus = None
+    brain_workspace = None
+    brain_goal = None
+    brain_selection = None
+    try:
+        from services.undx_brain import attention as brain_attention
+        from services.undx_brain import goals as brain_goals
+        from services.undx_brain import selection as brain_selection_module
+
+        brain_focus = brain_attention.attend(text)
+        brain_goal = brain_goals.understand(text, focus=brain_focus)
+        brain_selection = brain_selection_module.select(text)
+        try:
+            from services.undx_brain import workspace as brain_workspace_module
+            brain_workspace = brain_workspace_module.open_workspace(int(user_id))
+            refusals = brain_attention.place_into(brain_focus, brain_workspace)
+            if refusals:
+                logger.info(
+                    "UNDX_BRAIN_WORKSPACE correlation_id=%s accepted=%s refused=%s",
+                    correlation_id, len(brain_workspace), len(refusals),
+                )
+        except Exception:  # pragma: no cover - bounded context is optional
+            brain_workspace = None
+        if brain_goal.ok:
+            logger.info(
+                "UNDX_BRAIN_DECISION correlation_id=%s active_domains=%s goal=%s "
+                "settled=%s selected=%s clarification=%s",
+                correlation_id,
+                list(brain_goal.areas),
+                brain_goal.shape.value,
+                brain_goal.settled,
+                brain_selection.capability_id if brain_selection and brain_selection.ok else "",
+                bool(not brain_goal.settled and brain_goal.inspect_with),
+            )
+    except Exception:  # pragma: no cover - flags and package permit legacy fallback
+        logger.warning("undx_brain_decision_failed correlation_id=%s", correlation_id,
+                       exc_info=True)
+
+    # An understood repair/scope request does not name a mutation.  The old matcher
+    # could turn "fix my alert" into delete; the active goal layer instead offers the
+    # read that can settle the request and asks one focused question.
+    if brain_goal is not None and brain_goal.ok and not brain_goal.settled and brain_goal.inspect_with:
+        options = ", ".join(brain_goal.inspect_with[:3])
+        return AgentResponse(
+            handled=True,
+            reply=("I need to inspect the current state before choosing an action. "
+                   f"I can start with {options}. What outcome do you want?"),
+            card={
+                "component": CardType.CLARIFICATION_REQUIRED,
+                "status": AgentOutcome.CLARIFICATION_REQUIRED,
+                "goal_type": brain_goal.shape.value,
+                "active_domains": list(brain_goal.areas),
+                "inspect_with": list(brain_goal.inspect_with),
+                "may_claim_done": False,
+            },
+            latency_ms=int((time.monotonic() - started) * 1000),
+        )
+
     # The fields this turn just supplied by answering a question, empty on a turn that
     # stood on its own.
     answered: tuple[str, ...] = ()
@@ -2781,7 +2968,35 @@ def handle(
         spec = require(capability_id)
         _abandon_pending(cur, int(user_id))
     else:
-        spec = match_capability(text)
+        if brain_selection is not None and brain_selection.ok and not brain_selection.decided \
+                and brain_selection.contested:
+            return AgentResponse(
+                handled=True,
+                reply="I found more than one consequential action that fits. Which one do you mean?",
+                card={
+                    "component": CardType.CLARIFICATION_REQUIRED,
+                    "status": AgentOutcome.CLARIFICATION_REQUIRED,
+                    "candidate_capability_ids": list(brain_selection.contested),
+                    "may_claim_done": False,
+                },
+                latency_ms=int((time.monotonic() - started) * 1000),
+            )
+        selected_id = (
+            brain_selection.capability_id
+            if brain_selection is not None and brain_selection.ok and brain_selection.decided
+            else ""
+        )
+        # Attention is relevance, never authority.  Its only influence here is
+        # restrictive: a selection outside the bounded focus is not dispatched.
+        focus_rejected_selection = bool(
+            selected_id and brain_focus is not None and brain_focus.ok
+                and brain_focus.capability_ids
+                and selected_id not in brain_focus.capability_ids
+        )
+        if focus_rejected_selection:
+            selected_id = ""
+        spec = (get(selected_id) if selected_id else
+                None if focus_rejected_selection else match_capability(text))
         if spec is None:
             # Nothing actionable was recognised on its own. Before treating that as a
             # conversation, check whether it withdraws something already staged —
@@ -2815,6 +3030,36 @@ def handle(
             # the window in which a forgotten question eats an unrelated number three
             # messages later.
             _abandon_pending(cur, int(user_id))
+
+    # Calibration is owner-scoped and advisory until it has enough judged answers.
+    # Once conclusive, a capability corrected more often than approved is not allowed
+    # to perform a write without one focused clarification.
+    try:
+        from services.undx_brain import calibration as brain_calibration_module
+        from services.undx_brain import learning as brain_learning
+        from services.undx_brain import memory as brain_memory
+        scope = brain_memory.open_scope(int(user_id))
+        window = brain_learning.load(scope, cur)
+        calibration = brain_calibration_module.calibrate(
+            window, capability_id=spec.capability_id
+        )
+    except Exception:  # pragma: no cover - sparse/missing learning store is degradation
+        calibration = None
+    if (calibration is not None and calibration.ok and calibration.conclusive
+            and calibration.corrected > calibration.approved and spec.is_write):
+        return AgentResponse(
+            handled=True,
+            reply="Past corrections make this action uncertain. Please confirm the exact result you want.",
+            capability_id=spec.capability_id,
+            card={
+                "component": CardType.CLARIFICATION_REQUIRED,
+                "status": AgentOutcome.CLARIFICATION_REQUIRED,
+                "capability_id": spec.capability_id,
+                "calibration_scope": calibration.scope,
+                "may_claim_done": False,
+            },
+            latency_ms=int((time.monotonic() - started) * 1000),
+        )
 
     # From here the turn is an action, not a conversation. ``spec`` exists, which
     # means the message was recognised as a request PulseSoc knows how to serve, and
