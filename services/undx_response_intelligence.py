@@ -128,6 +128,98 @@ class ResponseType:
     })
 
 
+class GoalShape:
+    """What the person was trying to accomplish, as the Brain read it.
+
+    Deliberately *not* an enum and deliberately not imported from
+    :mod:`services.undx_brain.goals`. This module sits below the Brain and must keep
+    working with the Brain switched off, so it accepts the vocabulary as strings and
+    treats an unrecognised one — including the empty string a disabled Brain
+    produces — as :attr:`UNKNOWN`, falling back to the behaviour it had before any of
+    this existed.
+
+    Two members of the directive's vocabulary are absent, and their absence is the
+    design rather than an oversight:
+
+    * **find** is here, but it is not a shape the Brain reads. "Show my alerts" and
+      "find my Bitcoin alert" are the same shape — retrieval — and differ in whether
+      the sentence narrowed to one named resource. That is a fact the runtime already
+      computes when it resolves arguments, so ``find`` is derived from it by
+      :func:`services.undx_agent_runtime.goal_shape_for` rather than by a second list
+      of phrasings competing with :data:`services.undx_brain.goals.EXPLAIN_FRAMES`.
+      A second reader of intent is the failure this whole layer exists to avoid.
+    * **compare** is not here at all. The Brain has no comparison shape, and adding
+      one to satisfy a vocabulary list would be inventing a distinction nothing reads.
+      Comparison is a *response mode*, already detected from the question by
+      :data:`_COMPARISON_MARKERS`, and it stays there.
+    """
+
+    SHOW = "show"
+    FIND = "find"
+    EXPLAIN = "explain"
+    REPAIR = "repair"
+    ACT = "act"
+    MANAGE = "manage"
+    UNKNOWN = ""
+
+    ALL = frozenset({SHOW, FIND, EXPLAIN, REPAIR, ACT, MANAGE, UNKNOWN})
+
+    @classmethod
+    def read(cls, value: Any) -> str:
+        """Coerce anything to a known shape. Unknown input degrades, never raises."""
+        text = clean(str(value or ""), 24).strip().lower()
+        return text if text in cls.ALL else cls.UNKNOWN
+
+
+class ResponseMode:
+    """What the answer is *for*, which is not the same as what kind of answer it is.
+
+    :class:`ResponseType` classifies the material — a failure report is not a summary.
+    This classifies the debt: a list owes items, an explanation owes an account of
+    them, a diagnosis owes evidence for a cause. Two turns over identical evidence can
+    share a response type and differ here, which is precisely the collapse the goal
+    layer was built to stop: "show my alerts" and "explain my alerts" both return
+    ``answer`` and must not both return a bare list.
+    """
+
+    LIST = "list"
+    RESOURCE = "resource"
+    EXPLANATION = "explanation"
+    DIAGNOSIS = "diagnosis"
+    COMPARISON = "comparison"
+    RECEIPT = "receipt"
+
+    ALL = frozenset({LIST, RESOURCE, EXPLANATION, DIAGNOSIS, COMPARISON, RECEIPT})
+
+    #: Modes that owe the reader an account rather than a recital. Named once because
+    #: the detail floor, the clause set and the validator all test the same membership,
+    #: and three copies of a set eventually disagree.
+    ACCOUNTING = frozenset({EXPLANATION, DIAGNOSIS})
+
+
+#: What each mode is required to spend, named in plan-field terms so the requirement is
+#: checkable against the plan rather than against the prose. ``unmet_evidence`` reports
+#: what a plan could not supply; it does not quietly drop the requirement, because a
+#: contract that shrinks to fit the evidence is not a contract.
+_REQUIRED_EVIDENCE: dict[str, tuple[str, ...]] = {
+    ResponseMode.LIST: ("evidence",),
+    ResponseMode.RESOURCE: ("evidence",),
+    ResponseMode.EXPLANATION: ("evidence", "interpretations", "limitations"),
+    ResponseMode.DIAGNOSIS: ("evidence", "interpretations", "recommended_next_steps"),
+    ResponseMode.COMPARISON: ("evidence", "interpretations"),
+    ResponseMode.RECEIPT: ("evidence",),
+}
+
+#: Prohibitions attached to a mode, over and above the ones the evidence attaches.
+#: Every entry names a check that actually runs — see :func:`validate_consistency` and
+#: the runtime's explain-over-write guard. A ``must_not_do`` entry with no enforcer is
+#: a promise, and this file does not publish promises.
+_MODE_PROHIBITIONS: dict[str, tuple[str, ...]] = {
+    ResponseMode.EXPLANATION: ("perform_a_write", "answer_with_a_bare_list"),
+    ResponseMode.DIAGNOSIS: ("perform_a_write", "assert_a_cause_without_evidence"),
+}
+
+
 class ActionState:
     """What, if anything, the turn did to the user's data."""
 
@@ -322,7 +414,51 @@ _COMPLETION_CLAIM_PATTERNS: tuple[re.Pattern[str], ...] = tuple(re.compile(p, re
     r"\bi\s+confirmed\s+this\b",
     r"\bthe\s+change\s+went\s+through\b",
     r"\bthe\s+follow-?up\s+read\s+agrees\b",
+    # The gateway's idempotent-replay sentence. It is a completion claim in the plainest
+    # possible words and it was written in a module that never consults this list, which
+    # is exactly why it needs to be here: the replay path reports a *prior* operation,
+    # and when that operation's recorded status was ``ok`` rather than ``verified``
+    # nobody ever read the new value back. "I had already done that" is then a claim
+    # about something no part of the system observed.
+    r"\bi\s+had\s+already\s+done\s+that\b",
 ))
+
+
+def completion_claim(text: str) -> str:
+    """The completion claim this sentence makes, or ``""``.
+
+    The single reader of :data:`_COMPLETION_CLAIM_PATTERNS`, extracted so that the two
+    places which need this question — :func:`validate_consistency` here, and the
+    runtime's metacognitive self-check in
+    :func:`~services.undx_agent_runtime.build_card` — ask it of the same list.
+
+    They did not. The runtime carried its own four-entry tuple, ``(" completed",
+    " is paused", " is active", " was deleted")``, and every one of the sentences this
+    module actually produces on a write went straight past it: "Done — …", "I confirmed
+    this against your account after the change", "The change went through and the
+    follow-up read agrees", "I had already done that". A guard whose job is to catch
+    unsupported completion claims, which does not recognise the vocabulary its own
+    system uses to claim completion, is a guard that only fires on sentences nobody
+    writes.
+
+    The four-entry tuple was also *wider* than this list in the one direction that
+    hurts. ``" is paused"`` matches "your BTC alert is paused" — a true statement about
+    a thing a read just looked at, which the guard would have rewritten into "The
+    request returned without enough independent evidence to claim completion." These
+    patterns are deliberately shaped around completion *verbs* ("is now paused", "I
+    paused"), so a read describing a state it observed is not mistaken for a write
+    claiming it caused one.
+
+    Returns the matching pattern source, truncated, so callers can log *which* claim was
+    found rather than only that one was. Empty string means the sentence claims nothing.
+    """
+    body = clean(text, MAX_EXPLANATION_CHARS)
+    if not body:
+        return ""
+    for pattern in _COMPLETION_CLAIM_PATTERNS:
+        if pattern.search(body):
+            return pattern.pattern[:40]
+    return ""
 
 #: Claims that the answer is the whole answer. Forbidden whenever a source degraded,
 #: because a partial view asserted as total is precisely the confident-zero failure.
@@ -671,10 +807,32 @@ class ResponsePlan:
     exactly those keys. The trailing attributes are working state for the renderer and
     the validator; they are not part of the plan's published shape and never travel to
     a client.
+
+    Four fields were added when the goal layer got its first real consumer, and they
+    are published rather than working state on purpose: ``goal_shape`` and
+    ``response_mode`` are what a native client would need in order to lay the answer
+    out differently, and ``must_not_do`` is what an auditor needs in order to check
+    afterwards that the turn kept its own rules. A constraint nobody can read is not
+    a constraint.
     """
 
     response_type: str = ResponseType.ANSWER
     detail_level: str = DetailLevel.STANDARD
+    #: What the person was trying to accomplish, from the Brain, or "" when the goal
+    #: layer is switched off. Never derived from the question by this module: a second
+    #: reader of intent is exactly the drift the goal layer was built to prevent.
+    goal_shape: str = GoalShape.UNKNOWN
+    #: What the answer owes. Derived from :attr:`goal_shape` where there is one and
+    #: from the evidence where there is not, so the module degrades to its previous
+    #: behaviour rather than to nothing.
+    response_mode: str = ResponseMode.LIST
+    #: Plan fields this mode is required to spend. Not filtered to what the evidence
+    #: happens to supply — see :func:`unmet_evidence` for the honest difference.
+    required_evidence: list[str] = field(default_factory=list)
+    #: Named prohibitions in force for this turn. Every entry corresponds to a check
+    #: that actually runs, either here in :func:`validate_consistency` or upstream in
+    #: the runtime's explain-over-write guard.
+    must_not_do: list[str] = field(default_factory=list)
     user_goal: str = ""
     direct_answer: str = ""
     evidence: list[dict[str, Any]] = field(default_factory=list)
@@ -703,6 +861,10 @@ class ResponsePlan:
         return {
             "response_type": self.response_type,
             "detail_level": self.detail_level,
+            "goal_shape": self.goal_shape,
+            "response_mode": self.response_mode,
+            "required_evidence": list(self.required_evidence),
+            "must_not_do": list(self.must_not_do),
             "user_goal": self.user_goal,
             "direct_answer": self.direct_answer,
             "evidence": [dict(item) for item in self.evidence],
@@ -794,6 +956,93 @@ def select_response_type(spec: Any, status: str, question: str, view: EvidenceVi
     return ResponseType.ANSWER
 
 
+def select_response_mode(goal_shape: str, response_type: str, view: EvidenceView) -> str:
+    """Decide what the answer owes.
+
+    The goal shape wins wherever there is one, because it is the only input that knows
+    what the *person* was after; the evidence knows only what came back. Where there is
+    no goal shape — the Brain switched off, or a turn that reached this module without
+    passing the goal layer — the answer falls back to the classification this module
+    was already making, so the mode is never invented out of nothing.
+
+    The one place the two are combined is retrieval: ``show`` over a single record or a
+    settings-style result is a resource, not a list of one. That is not a second opinion
+    about intent, it is the same intent laid out for what actually came back.
+    """
+    shape = GoalShape.read(goal_shape)
+
+    if shape == GoalShape.EXPLAIN:
+        return ResponseMode.EXPLANATION
+    if shape in (GoalShape.REPAIR, GoalShape.MANAGE):
+        return ResponseMode.DIAGNOSIS
+    if shape == GoalShape.ACT:
+        return ResponseMode.RECEIPT
+    if shape == GoalShape.FIND:
+        return ResponseMode.RESOURCE
+    if shape == GoalShape.SHOW:
+        return (ResponseMode.RESOURCE
+                if view.shape in {EvidenceShape.SINGLE, EvidenceShape.STATE}
+                else ResponseMode.LIST)
+
+    # No goal shape. Read the classification this module already made.
+    if response_type in (ResponseType.ACTION_RECEIPT, ResponseType.CLARIFICATION):
+        return ResponseMode.RECEIPT
+    if response_type == ResponseType.COMPARISON:
+        return ResponseMode.COMPARISON
+    if response_type == ResponseType.FAILURE_REPORT:
+        return ResponseMode.DIAGNOSIS
+    if response_type in (ResponseType.EXPLANATION, ResponseType.RECOMMENDATION):
+        return ResponseMode.EXPLANATION
+    if view.shape in {EvidenceShape.SINGLE, EvidenceShape.STATE, EvidenceShape.MUTATION}:
+        return ResponseMode.RESOURCE
+    return ResponseMode.LIST
+
+
+def required_evidence_for(mode: str) -> list[str]:
+    """The plan fields this mode must spend. Fixed by the mode, never by the result."""
+    return list(_REQUIRED_EVIDENCE.get(mode, ("evidence",)))
+
+
+def must_not_do_for(mode: str, view: EvidenceView, status: str) -> list[str]:
+    """The named prohibitions in force this turn, from the mode and from the evidence.
+
+    Order is mode-first then evidence, and the list is de-duplicated while keeping that
+    order, so a reader can tell at a glance which constraints came from what the person
+    asked for and which came from what came back.
+    """
+    out: list[str] = list(_MODE_PROHIBITIONS.get(mode, ()))
+    if status != AgentOutcome.VERIFIED_SUCCESS or not view.is_write:
+        # The completion-claim guard runs on exactly this condition; naming it here
+        # keeps the published constraint and the enforced one from drifting apart.
+        out.append("claim_a_completed_change")
+    if view.is_degraded:
+        out.append("claim_the_answer_is_complete")
+    out.append("state_a_metric_pulsesoc_does_not_expose")
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for name in out:
+        if name not in seen:
+            seen.add(name)
+            ordered.append(name)
+    return ordered
+
+
+def unmet_evidence(plan: ResponsePlan) -> list[str]:
+    """Required plan fields this plan could not fill.
+
+    Reported rather than repaired, and reported rather than quietly removed from
+    ``required_evidence``. An explanation with nothing to interpret is a real event —
+    it means the capability returned material the domain layer has no reading for —
+    and the honest response is to say so in the log and let the answer be shorter,
+    not to redefine the requirement as whatever was available.
+    """
+    missing: list[str] = []
+    for name in plan.required_evidence:
+        if not getattr(plan, name, None):
+            missing.append(name)
+    return missing
+
+
 def _action_state_for(status: str, view: EvidenceView,
                       verification: VerificationResult) -> str:
     if status == AgentOutcome.CONFIRMATION_REQUIRED:
@@ -811,7 +1060,22 @@ def _action_state_for(status: str, view: EvidenceView,
         # ``verified_success`` as grounds to reject a completion claim, so returning
         # NONE here is what stops a successful *lookup* from being allowed to say
         # "I updated that".
-        return ActionState.VERIFIED_SUCCESS if view.is_write else ActionState.NONE
+        if not view.is_write:
+            return ActionState.NONE
+        # Both halves of the canonical rule, not one of them. ``may_claim_completed``
+        # requires a completed status *and* an independent read-back that verified, and
+        # this line used to require only the first — which made it a second, weaker
+        # definition of success sitting directly upstream of the sentence the person
+        # reads. The gateway's idempotent-replay path is where the gap was reachable: it
+        # returns ``verified_success`` describing an *earlier* operation while this turn
+        # verified nothing, so a write whose recorded status was ``ok`` rather than
+        # ``verified`` arrived here and was rendered "Done — …, and I read it back from
+        # PulseSoc to confirm it". Nothing had been read back. Requiring the verification
+        # state as well means this layer can only ever agree with the receipt or be
+        # more cautious than it, never less.
+        return (ActionState.VERIFIED_SUCCESS
+                if verification.state == VerificationState.VERIFIED
+                else ActionState.DEGRADED)
     if verification.state == VerificationState.FAILED:
         return ActionState.VERIFIED_FAILURE
     if status == AgentOutcome.ACCEPTED_UNVERIFIED:
@@ -1020,6 +1284,161 @@ def _limitations(view: EvidenceView, status: str) -> list[str]:
     return out
 
 
+def _account(view: EvidenceView, spec: Any, status: str) -> tuple[list[str], list[str]]:
+    """The extra interpretations and limitations an *account* owes over a recital.
+
+    Returns ``(interpretations, limitations)``, and is spent only when
+    :attr:`ResponsePlan.response_mode` is one of :attr:`ResponseMode.ACCOUNTING`. Both
+    lists are frequently empty, which is the intended behaviour: an explanation of
+    evidence that carries no configuration says less than one of evidence that does,
+    and padding the difference with sentences that are true of everything is how a
+    system starts sounding like it is explaining while explaining nothing.
+
+    Every clause here is entailed by a declared field of :class:`EvidenceView` or by the
+    capability's own registered description. Nothing is inferred about the world, and in
+    particular nothing is inferred about *what the person should conclude* — that is the
+    domain analysers' job, and where one exists its reading is folded in alongside this
+    and reaches the reader first.
+
+    **The generalisation trap, stated because the code silently invites it.**
+    :func:`_collect_scalars` merges scalars with ``setdefault``, so for a multi-record
+    result ``view.flags``, ``view.labels`` and ``view.metrics`` hold *whichever record
+    was first*, not a property of the set. Saying "these are active" from that would be
+    a fabrication dressed as a summary — the single most plausible way this function
+    could start lying. So configuration is stated only where there is exactly one thing
+    it could be about (:attr:`EvidenceShape.SINGLE` and :attr:`~EvidenceShape.STATE`),
+    and where there is more than one the honest limitation is stated instead.
+    """
+    interpretations: list[str] = []
+    limitations: list[str] = []
+
+    if status in _FAILURE_STATUSES:
+        # An account of a failure is the failure report, which the plan already builds
+        # from the status and the error. Describing what the capability *would* have
+        # returned reads as though something was read when nothing was.
+        return interpretations, limitations
+
+    # 1. What it does. The registry's own sentence about the capability, which is the
+    #    only authoritative answer to "what is this" available at this layer and is
+    #    currently spent nowhere in the prose.
+    described = clean(getattr(spec, "description", "") or "", 160).rstrip(".")
+    if described:
+        interpretations.append(
+            f"what produced this is {described[0].lower()}{described[1:]}, so it shows "
+            f"what that covers and nothing outside it"
+        )
+
+    single = view.shape in {EvidenceShape.SINGLE, EvidenceShape.STATE}
+
+    # 2. Configuration and state — the settings, not the rows. Safe only in the singular
+    #    case; see the docstring.
+    if single:
+        on = [_humanise(name) for name, value in view.flags if value]
+        off = [_humanise(name) for name, value in view.flags if not value]
+        if on or off:
+            parts = []
+            if on:
+                parts.append(f"{', '.join(on[:4])} {'is' if len(on) == 1 else 'are'} on")
+            if off:
+                parts.append(f"{', '.join(off[:4])} {'is' if len(off) == 1 else 'are'} off")
+            interpretations.append(f"as it is configured now, {' and '.join(parts)}")
+        settings = [f"{_humanise(name)} {_format_number(value)}"
+                    for name, value in view.metrics[:3]]
+        settings += [f"{_humanise(name)} {value}" for name, value in view.labels[:3]]
+        if settings:
+            interpretations.append(
+                f"the values it is set to are {', '.join(settings[:4])}"
+            )
+    elif view.flags or view.labels or view.metrics:
+        limitations.append(
+            "the settings behind these are not summarised here, because they differ "
+            "per record and this read returns them one record at a time"
+        )
+
+    # 3. Why results may or may not arrive. A read of stored configuration can say how
+    #    something is set up and cannot say whether it has ever fired — that distinction
+    #    is the substance of "explain why my alerts aren't going off", and stating it is
+    #    the difference between an account and a list.
+    #
+    #    An earlier draft withheld this whenever ``view.metrics`` was populated, on the
+    #    reasoning that activity numbers answer the question directly. That guard was
+    #    wrong, and instructively so: ``metrics`` holds every number lifted off the
+    #    record, and a *threshold* is a setting rather than an activity. Nothing at this
+    #    layer can tell the two apart — the distinction lives in the domain, not in the
+    #    type — so the guard silently suppressed the one sentence a "why isn't this
+    #    firing" question needs, on exactly the capabilities most likely to be asked it.
+    #    A claim that is true of every read is stated on every read.
+    if not view.is_write and view.shape != EvidenceShape.EMPTY:
+        limitations.append(
+            "this is a read of how things are stored, so it shows how they are set up "
+            "rather than whether they have fired"
+        )
+
+    # 4. Currency. The newest thing the read can see, which bounds every claim above.
+    if view.newest and view.shape != EvidenceShape.EMPTY:
+        interpretations.append(
+            f"the most recent of these is dated {view.newest}, which is the furthest "
+            f"forward this read can see"
+        )
+
+    return interpretations, limitations
+
+
+def _causes(view: EvidenceView, status: str,
+            verification: VerificationResult) -> list[str]:
+    """Candidate causes a diagnosis may name, each one entailed by the evidence.
+
+    Spent only for :attr:`ResponseMode.DIAGNOSIS`. The last branch is the important one
+    and is not a fallback: when nothing in the reachable evidence points at a cause, the
+    diagnosis says exactly that. A repair request is the strongest pull towards
+    inventing an explanation — the person has already told the system something is
+    broken, and agreeing with a plausible-sounding reason costs nothing and reads as
+    competence. It is also the failure mode ``assert_a_cause_without_evidence`` in
+    :data:`_MODE_PROHIBITIONS` is named for, so the prohibition and the honest sentence
+    are written here together rather than one being declared and the other assumed.
+    """
+    out: list[str] = []
+
+    if view.is_degraded:
+        named = ", ".join(view.degraded[:3])
+        out.append(
+            f"part of the data could not be read for this answer ({named}), and that "
+            f"alone is enough to explain a result that looks incomplete"
+        )
+    if view.shape == EvidenceShape.EMPTY and not view.is_degraded:
+        out.append(
+            "the lookup ran and found nothing configured, so there is nothing here that "
+            "could have produced a result"
+        )
+    if view.shape in {EvidenceShape.SINGLE, EvidenceShape.STATE}:
+        off = [_humanise(name) for name, value in view.flags if not value]
+        if off:
+            out.append(
+                f"{', '.join(off[:3])} {'is' if len(off) == 1 else 'are'} switched off, "
+                f"which would stop it doing anything"
+            )
+    if view.low_confidence:
+        out.append(
+            f"{view.low_confidence} of these records came back incomplete, so what they "
+            f"describe may not be the whole setup"
+        )
+    if verification.state == VerificationState.FAILED:
+        out.append(
+            "a change was reported as applied and the follow-up read disagreed, so the "
+            "safe reading is that it never took effect"
+        )
+    if status == AgentOutcome.PERMISSION_DENIED:
+        out.append("this stopped at a permissions boundary rather than at a fault")
+
+    if not out and status not in _FAILURE_STATUSES:
+        out.append(
+            "nothing in what I can read here points to a cause: what was returned looks "
+            "intact, so the problem is either outside this read or in something I have "
+            "not been asked to look at"
+        )
+    return out
+
+
 def _next_steps(spec: Any, view: EvidenceView, status: str) -> list[str]:
     out: list[str] = []
     label = _section_label(getattr(spec, "native_route", "") or "")
@@ -1112,19 +1531,39 @@ def _fold_reading(plan: ResponsePlan, reading: DomainReading) -> None:
 
 def build_plan(spec: Any, status: str, result: ToolResult,
                verification: VerificationResult, *, question: str = "",
-               history: Sequence[str] = ()) -> ResponsePlan:
+               history: Sequence[str] = (),
+               goal_shape: str = GoalShape.UNKNOWN) -> ResponsePlan:
     """Derive the plan from the evidence. Deterministic, and never from message text.
 
     ``question`` influences only *how much* is said and *what kind* of answer it is.
     It has no route to the facts: every claim in the plan is lifted from ``result`` or
     ``verification``, so a hostile question can make an answer longer but cannot make
     it say something untrue.
+
+    ``goal_shape`` carries the same restriction and one addition. It can raise the
+    detail floor and change which clauses are spent, because an explanation that omits
+    what the result means is not an explanation. It cannot add a fact, reach the
+    evidence, or lower a floor the evidence has raised — an answer over a degraded read
+    still says so, whatever the person was trying to accomplish.
     """
     view = build_view(spec, result)
     follow_up = is_follow_up(question, history)
+    shape = GoalShape.read(goal_shape)
+    response_type = select_response_type(spec, status, question, view)
+    mode = select_response_mode(shape, response_type, view)
+    detail = select_detail_level(question, view, status, follow_up=follow_up)
+    if mode in ResponseMode.ACCOUNTING:
+        # An account of something is longer than a recital of it, and the person asking
+        # for one has said so. This is a floor, not an override: ``at_least`` never
+        # lowers a level the question or the evidence already raised.
+        detail = DetailLevel.at_least(detail, DetailLevel.DETAILED)
     plan = ResponsePlan(
-        response_type=select_response_type(spec, status, question, view),
-        detail_level=select_detail_level(question, view, status, follow_up=follow_up),
+        response_type=response_type,
+        goal_shape=shape,
+        response_mode=mode,
+        required_evidence=required_evidence_for(mode),
+        must_not_do=must_not_do_for(mode, view, status),
+        detail_level=detail,
         user_goal=clean(question, 200) or clean(getattr(spec, "description", ""), 200),
         evidence=_evidence_items(view, result),
         cross_domain_links=_cross_domain_links(view),
@@ -1157,6 +1596,47 @@ def build_plan(spec: Any, status: str, result: ToolResult,
         # holds one sentence and is claimed by whichever reading gets there first; see
         # :func:`_fold_reading`.
         _fold_reading(plan, build_cross_reading(view.capability_id, result))
+
+    # The account, added last and only for the modes that owe one. Appended rather than
+    # prepended: where a domain analyser has a reading, its sentence is the better
+    # answer and must stay first — this is the floor beneath it, not a replacement for
+    # it. Without this, an explanation of a capability no analyser covers came back as
+    # the list plus a provenance line, which is a recital with a citation attached.
+    if plan.response_mode in ResponseMode.ACCOUNTING:
+        extra_meaning, extra_limits = _account(view, spec, status)
+        plan.interpretations = plan.interpretations + [
+            note for note in extra_meaning if _sayable(plan, note)]
+        plan.limitations = plan.limitations + [
+            note for note in extra_limits if _sayable(plan, note)]
+
+    # A diagnosis owes candidate causes before it owes anything else. Prepended, because
+    # unlike the account these *are* the answer to what was asked, and an answer that
+    # opens with what the capability does and reaches the possible cause fourth has
+    # ordered itself by what was easiest to say.
+    if plan.response_mode == ResponseMode.DIAGNOSIS:
+        causes = [note for note in _causes(view, status, verification)
+                  if _sayable(plan, note)]
+        plan.interpretations = causes + plan.interpretations
+
+    # Asking for one thing and being handed several is the ambiguity the resource mode
+    # exists to notice. Said as a limitation rather than a finding because it is a fact
+    # about the *answer* — that it did not narrow to what was asked for — and the reader
+    # needs it whether or not the list that follows is interesting.
+    if plan.response_mode == ResponseMode.RESOURCE and view.shape in {
+            EvidenceShape.FEW, EvidenceShape.MANY}:
+        note = (f"this did not narrow to a single one — {_count_phrase(view.total, *nouns_for(view))} "
+                f"match, so say which you mean if you want just one")
+        if _sayable(plan, note):
+            plan.limitations = plan.limitations + [note]
+
+    # Checked after the fold and the account, because both are where an explanation's
+    # interpretations actually come from. Logged rather than raised: a shortfall means
+    # the evidence genuinely could not support what the mode owes, and the person asking
+    # still gets the truthful shorter answer rather than an error.
+    shortfall = unmet_evidence(plan)
+    if shortfall:
+        logger.info("undx_response_unmet_evidence capability=%s mode=%s missing=%s",
+                    plan.capability_id, plan.response_mode, ",".join(shortfall))
 
     # Validated before it is stored, and not only because :func:`render` uses it as a
     # fallback. ``to_dict`` publishes ``direct_answer`` into the receipt the gateway
@@ -1429,6 +1909,27 @@ def _clauses(plan: ResponsePlan, lead: str) -> list[tuple[str, str]]:
             out.append(("links",
                         f"These arrived together from one authorised read, covering {kinds}"))
 
+    # What an account owes over and above a recital, spent at whatever detail level the
+    # turn ended up at. These are not extra colour: they are the difference between
+    # "here are your four alerts" and an answer to the question that was actually asked.
+    # Guarded on the mode rather than on the level so that "explain this quickly" still
+    # explains — brevity may shorten an account, it may not turn it back into a list.
+    if plan.response_mode in ResponseMode.ACCOUNTING and view is not None:
+        # State and configuration. ``details`` is where a settings-shaped result puts
+        # its current values, and it is skipped by the findings clause above whenever
+        # there are titles to list — which is exactly the case where an explanation
+        # needs it and a list does not.
+        if view.details and view.titles:
+            out.append(("state", view.details[0].rstrip(".")))
+        for note in plan.uncertainties[:1]:
+            out.append(("uncertainty", f"Worth knowing: {note.rstrip('.')}"))
+
+    if plan.response_mode == ResponseMode.DIAGNOSIS:
+        # A diagnosis that names no next step has not diagnosed anything the person can
+        # use. Two rather than the usual one, and spent at any detail level.
+        for note in plan.recommended_next_steps[:2]:
+            out.append(("next", _sentence_case(note.rstrip("."))))
+
     if rank >= DetailLevel.rank(DetailLevel.EXPERT):
         for note in plan.interpretations[1:3]:
             out.append(("meaning", _sentence_case(note.rstrip("."))))
@@ -1440,7 +1941,11 @@ def _clauses(plan: ResponsePlan, lead: str) -> list[tuple[str, str]]:
     for note in plan.limitations[:2]:
         out.append(("limits", _sentence_case(note.rstrip("."))))
 
-    if rank >= DetailLevel.rank(DetailLevel.STANDARD):
+    # Skipped for a diagnosis, which has already spent two of these above. Without the
+    # guard the first step is emitted twice and the answer repeats itself, which is a
+    # peculiarly bad look for the mode whose whole job is to say what to do next.
+    if rank >= DetailLevel.rank(DetailLevel.STANDARD) \
+            and plan.response_mode != ResponseMode.DIAGNOSIS:
         for note in plan.recommended_next_steps[:1]:
             out.append(("next", _sentence_case(note.rstrip("."))))
 
@@ -1450,11 +1955,18 @@ def _clauses(plan: ResponsePlan, lead: str) -> list[tuple[str, str]]:
 #: Orderings used when the first rendering collides with something recently said.
 #: These change which fact the reader meets first, which is a real difference in
 #: emphasis rather than a change of costume.
+#:
+#: Every tag :func:`_clauses` can emit appears in every ordering. ``_assemble`` does
+#: append unlisted tags rather than dropping them, but it appends them last and in
+#: arbitrary order, so a tag that is missing here still reaches the reader — just at
+#: the end of every sentence, whichever ordering was chosen. That is a silent
+#: degradation rather than a visible one, which is why "state" is listed rather than
+#: left to the fallback.
 _ORDERS: tuple[tuple[str, ...], ...] = (
-    ("lead", "domain", "findings", "evidence", "meaning", "links", "uncertainty", "limits", "next"),
-    ("limits", "lead", "domain", "findings", "meaning", "evidence", "links", "uncertainty", "next"),
-    ("domain", "lead", "limits", "meaning", "findings", "evidence", "links", "uncertainty", "next"),
-    ("findings", "domain", "lead", "links", "meaning", "evidence", "uncertainty", "limits", "next"),
+    ("lead", "domain", "findings", "state", "evidence", "meaning", "links", "uncertainty", "limits", "next"),
+    ("limits", "lead", "domain", "findings", "state", "meaning", "evidence", "links", "uncertainty", "next"),
+    ("domain", "lead", "limits", "meaning", "findings", "state", "evidence", "links", "uncertainty", "next"),
+    ("findings", "state", "domain", "lead", "links", "meaning", "evidence", "uncertainty", "limits", "next"),
 )
 
 
@@ -1659,10 +2171,9 @@ def validate_consistency(plan: ResponsePlan, text: str) -> list[str]:
         return ["empty_response"]
 
     if plan.action_state != ActionState.VERIFIED_SUCCESS:
-        for pattern in _COMPLETION_CLAIM_PATTERNS:
-            if pattern.search(body):
-                problems.append(f"unverified_completion_claim:{pattern.pattern[:40]}")
-                break
+        claim = completion_claim(body)
+        if claim:
+            problems.append(f"unverified_completion_claim:{claim}")
 
     if plan.response_type == ResponseType.DRAFT or plan.capability_id.endswith(".draft"):
         for pattern in _SENT_CLAIM_PATTERNS:
@@ -1698,6 +2209,51 @@ def validate_consistency(plan: ResponsePlan, text: str) -> list[str]:
         problems.append(f"unsupported_numbers:{','.join(unknown[:5])}")
 
     return problems
+
+
+def _carries(body: str, fragment: str) -> bool:
+    """Whether ``body`` actually says ``fragment``, ignoring case and punctuation.
+
+    A word-run test rather than a substring one, because the clause builders sentence-
+    case their input and strip its trailing stop, so the fragment as the plan holds it
+    is never byte-identical to the fragment as the reader meets it.
+    """
+    words = _normalise(fragment)
+    if not words:
+        return False
+    run = words[:6]
+    hay = _normalise(body)
+    span = len(run)
+    return any(hay[i:i + span] == run for i in range(max(0, len(hay) - span + 1)))
+
+
+def accounting_shortfall(plan: ResponsePlan, text: str) -> str:
+    """Why this rendering is a recital where an account was asked for, or "".
+
+    Deliberately not part of :func:`validate_consistency`. That function is a veto on
+    *untruth* and it also screens the plan's own one-sentence ``direct_answer``, which
+    is a lead by construction and would fail a completeness test every single time. A
+    lead that is only a lead is not a lie; it is a summary. So this is a separate,
+    weaker judgement: :func:`render` uses it to *prefer* a fuller candidate, and falls
+    back to a thin one when the plan genuinely had nothing more to say.
+    """
+    if plan.response_mode not in ResponseMode.ACCOUNTING:
+        return ""
+    owed = [note for note in (
+        plan.domain_assessment,
+        plan.interpretations[0] if plan.interpretations else "",
+        plan.limitations[0] if plan.limitations else "",
+        plan.recommended_next_steps[0] if (
+            plan.response_mode == ResponseMode.DIAGNOSIS and plan.recommended_next_steps
+        ) else "",
+    ) if note]
+    if not owed:
+        # Nothing to withhold. The shortfall is in the analysers, not in this sentence,
+        # and :func:`unmet_evidence` has already logged it.
+        return ""
+    if any(_carries(text, note) for note in owed):
+        return ""
+    return f"{plan.response_mode}_without_an_account"
 
 
 # ---------------------------------------------------------------------------
@@ -1782,6 +2338,17 @@ def render(plan: ResponsePlan, spec: Any, status: str, result: ToolResult,
                      plan.capability_id, ";".join(validate_consistency(plan, last))[:120])
         return last
 
+    # Ordered before the repetition guard runs, so that an explanation which actually
+    # explains is preferred over a shorter phrasing of the same evidence. A stable sort
+    # on a boolean, so within each group the search order above is preserved and the
+    # ranking of factual framings is untouched — this decides between a full account and
+    # a thin one, never between two accounts.
+    shortfalls = {text: accounting_shortfall(plan, text) for text in candidates}
+    candidates.sort(key=lambda text: bool(shortfalls[text]))
+    if shortfalls.get(candidates[0]):
+        logger.info("undx_response_thin_account capability=%s mode=%s reason=%s",
+                    plan.capability_id, plan.response_mode, shortfalls[candidates[0]])
+
     for candidate in candidates:
         reason = detect_repetition(candidate, history)
         if not reason:
@@ -1796,15 +2363,21 @@ def render(plan: ResponsePlan, spec: Any, status: str, result: ToolResult,
     # rendering, and certainly no invented variety — and the least similar of the
     # already-validated candidates is returned instead of whichever happened to be
     # built first.
-    return min(candidates, key=lambda text: _repetition_score(text, history))
+    #
+    # Restricted to the full accounts when there are any, for the same reason the sort
+    # above exists: on a repeated question the least-similar phrasing is worth having,
+    # but not at the price of answering "explain my alerts" with a list again.
+    full = [text for text in candidates if not shortfalls[text]] or candidates
+    return min(full, key=lambda text: _repetition_score(text, history))
 
 
 def compose(spec: Any, status: str, result: ToolResult,
             verification: VerificationResult, *, question: str = "",
-            history: Sequence[str] = ()) -> tuple[str, ResponsePlan]:
+            history: Sequence[str] = (),
+            goal_shape: str = GoalShape.UNKNOWN) -> tuple[str, ResponsePlan]:
     """Plan, render, and return both. The gateway's single call into this module."""
     plan = build_plan(spec, status, result, verification,
-                      question=question, history=history)
+                      question=question, history=history, goal_shape=goal_shape)
     text = render(plan, spec, status, result, verification, history=history)
     return text, plan
 
@@ -1814,18 +2387,26 @@ __all__ = [
     "DetailLevel",
     "EvidenceShape",
     "EvidenceView",
+    "GoalShape",
     "MAX_EXPLANATION_CHARS",
+    "ResponseMode",
     "ResponsePlan",
     "ResponseType",
+    "accounting_shortfall",
     "build_plan",
     "build_view",
+    "completion_claim",
     "compose",
     "detect_repetition",
     "draft_quality_issues",
     "is_follow_up",
+    "must_not_do_for",
     "nouns_for",
     "render",
+    "required_evidence_for",
     "select_detail_level",
+    "select_response_mode",
     "select_response_type",
+    "unmet_evidence",
     "validate_consistency",
 ]

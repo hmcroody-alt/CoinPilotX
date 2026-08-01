@@ -2640,11 +2640,116 @@ def recent_replies(cur, user_id: int, conversation_id: int, *, limit: int = 5) -
     return tuple(reversed([body for body in bodies if body]))
 
 
+#: Brain goal shape -> the vocabulary the response layer publishes. One table, in one
+#: place, so that "what did the person want" has exactly one translation between the
+#: module that reads it and the module that answers it.
+#:
+#: ``retrieve`` is absent on purpose: it splits into ``show`` and ``find``, and the
+#: split is not a second reading of the sentence. It is decided by
+#: :func:`goal_shape_for` from whether argument resolution pinned the request to one
+#: named resource — a fact the runtime has already computed by the time it asks.
+_GOAL_SHAPE_NAMES: dict[str, str] = {
+    "explain": "explain",
+    "repair": "repair",
+    "manage": "manage",
+    "act": "act",
+}
+
+#: Identifier fields that name *the actor* rather than the thing being acted on. Every
+#: other ``*_id`` a capability declares points at one resource, which is the property
+#: :func:`narrowed_to_one_resource` is actually looking for.
+_ACTOR_FIELDS = frozenset({"user_id", "owner_user_id", "actor_id"})
+
+
+def narrowed_to_one_resource(spec: Any, resolution: Any) -> bool:
+    """Whether this turn pinned the request to a single named resource.
+
+    This is the whole of the ``show`` / ``find`` distinction, and it is derived rather
+    than read off the sentence a second time: "show my alerts" and "find my Bitcoin
+    alert" are one shape to the Brain — retrieval — and differ only in whether the
+    request narrowed. Deriving it keeps intent with exactly one reader.
+
+    **What this replaced, and why the first version was wrong.** The first version asked
+    whether ``resolution.resolved_count == 1``. That attribute defaults to ``1`` and is
+    overwritten only when a capability declares an ``alert_id`` and the reference
+    resolver actually runs, so for every capability that does not — which is nearly all
+    of them — it reported "narrowed" unconditionally. The effect was that ``show`` was
+    all but unreachable and almost every retrieval rendered as ``find``, including "show
+    me my alerts". The proxy was not measuring narrowing; it was measuring whether
+    anybody had bothered to count, and reading silence as one.
+
+    The property asked for now is the one that was meant: the capability declares a
+    field naming a resource, and this turn filled it. A capability whose only fields are
+    ``limit`` and ``query`` cannot narrow to one thing by construction — a search that
+    returns a set is a set, however specific the words were — so it is a ``show``, and
+    the ambiguity note in the response layer covers the case where the person wanted
+    fewer than they got.
+    """
+    arguments = getattr(resolution, "arguments", None) or {}
+    target = clean(str(getattr(spec, "target_field", "") or ""), 80)
+    for field_spec in getattr(spec, "fields", ()) or ():
+        name = getattr(field_spec, "name", "")
+        names_a_resource = (name.endswith("_id") and name not in _ACTOR_FIELDS) \
+            or (bool(target) and name == target)
+        if names_a_resource and arguments.get(name):
+            return int(getattr(resolution, "resolved_count", 1)) == 1
+    return False
+
+
+def goal_shape_for(goal: Any, *, narrowed: bool) -> str:
+    """Translate a Brain goal into the response layer's vocabulary, or "".
+
+    Returns "" for exactly the cases in which the answer should be what it was before
+    the goal layer existed: no goal object, a goal the flags disabled, a sentence no
+    shape was read from, or a shape with no counterpart in the response vocabulary.
+
+    **Settledness is deliberately not consulted, and the reason matters.** An earlier
+    version of this function refused unsettled goals, on the stated grounds that they
+    "never reach here, because ``handle`` answers those with a question instead of an
+    action". That was false, and the falseness had a consequence. :func:`handle` diverts
+    an unsettled goal only when it also has somewhere to look — the guard is
+    ``not settled and inspect_with`` — so an unsettled goal whose activated areas
+    contain nothing readable falls straight through to :func:`_act`. Since
+    :data:`services.undx_brain.goals.Shape.REPAIR` and
+    :data:`~services.undx_brain.goals.Shape.MANAGE` are *never* settled by construction,
+    refusing unsettled goals made ``repair`` and ``manage`` unreachable, which made
+    :data:`services.undx_response_intelligence.ResponseMode.DIAGNOSIS` unreachable from
+    the runtime, which made the diagnosis branch of the response layer dead code
+    dressed as a feature.
+
+    Consulting settledness was a category error on top of a factual one.
+    :attr:`~services.undx_brain.goals.Goal.settled` answers "did the sentence name an
+    operation"; :attr:`~services.undx_brain.goals.Goal.shape` answers "what was the
+    person trying to do". The second is read confidently — a repair frame matched, or it
+    did not — and stays true whether or not the first could be resolved. The turn only
+    arrives here once something upstream has already decided to execute; all that is
+    left to choose is how the answer is written, and a request framed as "my alerts
+    aren't firing" deserves an account of the evidence rather than a recital of it
+    *especially* when the goal layer could not settle it.
+
+    Nothing is widened by this. The shape reaches the response layer and nowhere else,
+    after all nine gateway checks have run. The worst a wrong shape can do is produce a
+    longer answer about the same evidence.
+
+    ``narrowed`` is the show/find distinction and nothing more. It is supplied by the
+    caller from :func:`narrowed_to_one_resource`, so the only thing separating "show my
+    alerts" from "find my Bitcoin alert" is whether the turn actually picked one out —
+    which is what the words "show" and "find" are for, and is already known without
+    reading the sentence a second time.
+    """
+    if goal is None or not getattr(goal, "ok", False):
+        return ""
+    shape = getattr(getattr(goal, "shape", None), "value", "")
+    if shape == "retrieve":
+        return "find" if narrowed else "show"
+    return _GOAL_SHAPE_NAMES.get(shape, "")
+
+
 def _act(cur, spec: CapabilitySpec, *, user_id: int, text: str,
          arguments: dict[str, Any], answered: tuple[str, ...],
          request_id: str, conversation_id: int, confirmation_token: str,
          client_request_id: str, correlation_id: str,
-         started: float) -> AgentResponse:
+         started: float, brain_goal: Any = None) -> AgentResponse:
     """Everything that happens once the turn is known to be an action.
 
     Split out of :func:`handle` so the boundary between "this might be
@@ -2730,6 +2835,8 @@ def _act(cur, spec: CapabilitySpec, *, user_id: int, text: str,
             client_request_id=client_request_id, correlation_id=correlation_id,
             confirmation_token=confirmation_token, explicit_request=is_explicit(text),
             resolved_resource_count=resolved_count, question=text,
+            goal_shape=goal_shape_for(
+                brain_goal, narrowed=narrowed_to_one_resource(spec, resolution)),
             recent_replies=recent_replies(cur, int(user_id), int(conversation_id)),
         )
 
@@ -2840,14 +2947,33 @@ def _act(cur, spec: CapabilitySpec, *, user_id: int, text: str,
     if card is not None:
         # Final self-check: cards and prose are two renderings of one receipt.  It may
         # change language, never facts, resource identity, or verification status.
-        completion_words = (" completed", " is paused", " is active", " was deleted")
-        if not card.get("may_claim_done") and any(word in outcome.receipt.user_explanation.lower()
-                                                   for word in completion_words):
+        #
+        # The question "does this sentence claim a completion?" is asked of
+        # :func:`~services.undx_response_intelligence.completion_claim`, which is the
+        # same list :func:`validate_consistency` checks the composed answer against. It
+        # was previously asked of a four-word tuple local to this line, and the mismatch
+        # ran in both directions: the tuple missed every phrase this system actually uses
+        # to claim a completion — "Done — …", "I confirmed this against your account",
+        # "the change went through", "I had already done that" — while matching bare
+        # state descriptions like " is paused" that a *read* has every right to say. The
+        # guard fired on true sentences and let false ones through.
+        # Imported here rather than at module scope because this module is imported *by*
+        # the response layer's callers and a top-level cycle is a real risk; the failure
+        # direction is named rather than swallowed silently, because unlike the frame
+        # reader this guard genuinely has nothing behind it.
+        try:
+            from services.undx_response_intelligence import completion_claim
+            claimed = completion_claim(outcome.receipt.user_explanation)
+        except Exception:  # pragma: no cover - the response layer is a hard dependency
+            logger.exception("completion-claim self-check unavailable")
+            claimed = ""
+        if claimed and not card.get("may_claim_done"):
             outcome.receipt.user_explanation = (
                 "The request returned without enough independent evidence to claim completion."
             )
             card["message"] = outcome.receipt.user_explanation
             card["metacognitive_revision"] = "completion_claim_removed"
+            card["revised_claim"] = claimed
         card["brain_homeostasis"] = {
             "verification_available": outcome.verification is not None or not spec.is_write,
             "degraded": bool(outcome.result and outcome.result.degraded_sources),
@@ -2859,6 +2985,102 @@ def _act(cur, spec: CapabilitySpec, *, user_id: int, text: str,
         card=card,
         reply=outcome.receipt.user_explanation,
         capability_id=spec.capability_id,
+        latency_ms=int((time.monotonic() - started) * 1000),
+    )
+
+
+def question_framed_write_refusal(
+    spec: Any, text: str, *, chosen_by_caller: bool, brain_goal: Any,
+    started: float,
+) -> AgentResponse | None:
+    """Refuse to answer a question by performing the thing it asks about.
+
+    Returns a clarification response when this turn was framed as a question or a
+    problem and the capability about to run would change something, and ``None`` — the
+    overwhelmingly common case — otherwise.
+
+    **The defect this closes, stated exactly, because it was live in the default
+    configuration.** :mod:`services.undx_brain.goals` already refused to settle a goal
+    whose frame asks *about* a subject onto a write that merely shares its vocabulary:
+    "explain why my alert was deleted" matches the delete capability because the matcher
+    reads words and the word is there. That refusal was real. It was also conditional on
+    something unrelated to it. :func:`handle` acted on an unsettled goal only when the
+    goal also carried reads to offer — the guard is ``not settled and inspect_with`` —
+    so whenever the activated areas happened to contain nothing readable, the goal
+    layer's deliberate ``capability_id=""`` was discarded and the legacy matcher's write
+    ran in its place. An adversarial sweep over every registered write found 68 such
+    sentences across seven product areas. "Why did notify me when bitcoin goes above
+    90000" reached ``crypto.alerts.create``; "fix set my preferred language" reached
+    ``profile.preferences.update``. The suppression was not weak, it was contingent: it
+    held exactly when something else was true, and nothing tied the two together.
+
+    **Why this is not behind the Brain flags.** Everything in
+    :mod:`~services.undx_brain.goals` is gated, correctly, because it is reasoning, and
+    reasoning is a capacity to roll out and withdraw. This is not that. With the flags
+    off — the shipped default — the legacy matcher routes "tell me about unfollow user
+    42" straight to ``social.unfollow``, which carries ``confirmation="never"`` and so
+    reaches the executor with nothing in front of it. Four capabilities are in that
+    position: ``social.follow``, ``social.unfollow``, ``feed.posts.like`` and
+    ``saved.post.set``. Gating the refusal would leave the worst case ungoverned
+    precisely in the configuration most users are in.
+
+    **What it does not do.** It never suppresses a write the *caller* named:
+    ``chosen_by_caller`` covers an explicit ``capability_id``, a confirmation token, and
+    a turn recovered from a pending question. A tap on a confirmation card carries the
+    original sentence, question frame and all, and refusing there would make every
+    confirmation for a question-framed request unapprovable. The person can always have
+    the write — by asking for it, or by approving it — and this only declines to infer
+    it from a sentence that named a subject rather than an operation.
+
+    **Why it does not offer a read to look at instead, which it obviously should.** It
+    cannot, and the reason is worth writing down because the first draft did offer one
+    and the offer was unreachable. With the Brain on, every frame this function
+    recognises is also a frame :func:`~services.undx_brain.goals.understand` recognises,
+    so the goal always comes back unsettled; and ``handle`` diverts an unsettled goal
+    the moment it carries reads. This guard therefore runs on exactly the complement —
+    the turns where the goal layer had *nothing* to suggest — plus the turns where the
+    goal layer was switched off and so suggested nothing either. "Here is what I could
+    read instead" is the upstream branch's sentence, and it is a better one; this is the
+    branch that has to say no without it, which is why ``brain_goal`` is taken only to
+    report what the Brain concluded and not to dress the refusal up.
+
+    **Fails closed around its own dependency.** The frame reader lives in the Brain
+    package, so an ``ImportError`` is possible in a stripped deployment. It is caught and
+    treated as *no frame*, which permits the write. That is the honest failure direction
+    and it is worth naming rather than burying: the alternative — refusing every write
+    when the module is missing — would turn a packaging fault into a total loss of
+    function, and this guard is not the only thing between a request and a mutation. It
+    is the last one that can tell a question from an instruction.
+    """
+    if not getattr(spec, "is_write", False) or chosen_by_caller:
+        return None
+    try:
+        from services.undx_brain import goals as _goals
+        frame = _goals.asks_about_rather_than_for(text)
+    except Exception:  # pragma: no cover - see the docstring on failing open
+        return None
+    if not frame:
+        return None
+
+    described = clean(str(getattr(spec, "description", "") or ""), 120).rstrip(".")
+    subject = described[0].lower() + described[1:] if described else "change something"
+    goal_shape = str(getattr(getattr(brain_goal, "shape", None), "value", "") or "") if (
+        brain_goal is not None and getattr(brain_goal, "ok", False)) else ""
+    return AgentResponse(
+        handled=True,
+        reply=(f'You asked about this rather than for it — "{frame}" — and the only '
+               f"thing I found that matches would {subject}, which would answer the "
+               f"question by doing the thing. I have not done it. Tell me plainly if "
+               f"you want that and I will."),
+        card={
+            "component": CardType.CLARIFICATION_REQUIRED,
+            "status": AgentOutcome.CLARIFICATION_REQUIRED,
+            "question_frame": frame,
+            "declined_capability_id": str(getattr(spec, "capability_id", "")),
+            "declined_because": "a question was framed as one and the match was a write",
+            "goal_type": goal_shape,
+            "may_claim_done": False,
+        },
         latency_ms=int((time.monotonic() - started) * 1000),
     )
 
@@ -3031,6 +3253,16 @@ def handle(
             # messages later.
             _abandon_pending(cur, int(user_id))
 
+    # A question is not an instruction, and this is the last place that can still be
+    # true. See :func:`question_framed_write_refusal` for the whole argument.
+    refusal = question_framed_write_refusal(
+        spec, text,
+        chosen_by_caller=bool(capability_id) or bool(confirmation_token) or bool(answered),
+        brain_goal=brain_goal, started=started,
+    )
+    if refusal is not None:
+        return refusal
+
     # Calibration is owner-scoped and advisory until it has enough judged answers.
     # Once conclusive, a capability corrected more often than approved is not allowed
     # to perform a write without one focused clarification.
@@ -3070,7 +3302,7 @@ def handle(
                     conversation_id=int(conversation_id),
                     confirmation_token=confirmation_token,
                     client_request_id=client_request_id, correlation_id=correlation_id,
-                    started=started)
+                    started=started, brain_goal=brain_goal)
     except AgentError as exc:
         # A typed refusal that escaped its own handler — from ``preview`` or a
         # resolver rather than from the gateway. It already carries a canonical
@@ -3082,7 +3314,9 @@ def handle(
 
 __all__ = [
     "AgentResponse", "Reference", "available", "handle", "build_card",
-    "match_capability", "is_explicit", "recent_replies", "resolve_alert_reference",
+    "match_capability", "is_explicit", "goal_shape_for", "narrowed_to_one_resource",
+    "question_framed_write_refusal", "recent_replies",
+    "resolve_alert_reference",
     "resolve_notification_arguments",
     "resolve_saved_arguments",
     "resolve_relationship_arguments",

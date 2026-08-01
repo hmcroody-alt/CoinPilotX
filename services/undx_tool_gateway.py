@@ -203,9 +203,23 @@ def _receipt(spec: CapabilitySpec, *, user_id: int, request_id: str, task_id: st
     # and a verified creation whose row id never made it into the result gives an
     # undo with nothing to delete. Either way the affordance is withheld together
     # with the arguments, so the client never sees a capability id it cannot invoke.
+    #
+    # The test is the receipt's own rule, applied to the pair of facts this receipt is
+    # about to be built from, rather than a re-statement of half of it. It used to read
+    # ``status == VERIFIED_SUCCESS`` alone, which is the first of ``may_claim_completed``'s
+    # two conditions and not the second, so any path reaching a completed status without
+    # a read-back offered the person a button to reverse a change that may never have
+    # happened. Undo is the highest-consequence affordance in the system — it is itself a
+    # write, aimed at state whose value is in doubt — so it is the last place that should
+    # get a weaker definition of success than the sentence beside it.
+    verified_now = (
+        status in AgentOutcome.COMPLETED
+        and (verification.state if verification else VerificationState.IMPOSSIBLE)
+        == VerificationState.VERIFIED
+    )
     undo_arguments = (
         spec.undo_arguments(arguments or {}, list(canonical_ids or []))
-        if status == AgentOutcome.VERIFIED_SUCCESS
+        if verified_now
         else None
     )
     return AgentReceipt(
@@ -561,7 +575,8 @@ def _status_for(spec: CapabilitySpec, result: ToolResult, verification: Verifica
 
 def _compose_response(spec: CapabilitySpec, status: str, result: ToolResult,
                       verification: VerificationResult, *, question: str = "",
-                      history: tuple[str, ...] = ()) -> tuple[str, dict[str, Any]]:
+                      history: tuple[str, ...] = (),
+                      goal_shape: str = "") -> tuple[str, dict[str, Any]]:
     """Build the sentence and the plan that justifies it.
 
     This is where the old failure mode lived. Every earlier version chose its wording
@@ -576,7 +591,8 @@ def _compose_response(spec: CapabilitySpec, status: str, result: ToolResult,
     """
     try:
         text, plan = undx_response_intelligence.compose(
-            spec, status, result, verification, question=question, history=history)
+            spec, status, result, verification, question=question, history=history,
+            goal_shape=goal_shape)
         if text:
             return text, plan.to_dict()
     except Exception as exc:  # pragma: no cover - defensive
@@ -587,10 +603,11 @@ def _compose_response(spec: CapabilitySpec, status: str, result: ToolResult,
 
 def _explain(spec: CapabilitySpec, status: str, result: ToolResult,
              verification: VerificationResult, *, question: str = "",
-             history: tuple[str, ...] = ()) -> str:
+             history: tuple[str, ...] = (), goal_shape: str = "") -> str:
     """Plain language that matches the evidence, including when the evidence is thin."""
     return _compose_response(spec, status, result, verification,
-                            question=question, history=history)[0]
+                            question=question, history=history,
+                            goal_shape=goal_shape)[0]
 
 
 def _terse_explanation(spec: CapabilitySpec, status: str, result: ToolResult,
@@ -638,6 +655,7 @@ def execute(
     proposed_value: Any = None,
     resource_label: str = "",
     question: str = "",
+    goal_shape: str = "",
     recent_replies: tuple[str, ...] = (),
 ) -> GatewayOutcome:
     """Run one capability under full governance. The only entry point to a mutation.
@@ -653,11 +671,17 @@ def execute(
     would still be an approval for the row the arguments name, which is why the label
     has to be read back from that row by the caller rather than composed here.
 
-    ``question`` and ``recent_replies`` reach only the response layer, and only after
-    every decision has been made. They cannot select a capability, widen a permission,
-    or change an outcome — the last of the nine checks has already run by the time
-    either is read. What they can do is make the answer the right length and stop it
-    repeating the previous one, which is worth having and worth confining.
+    ``question``, ``goal_shape`` and ``recent_replies`` reach only the response layer,
+    and only after every decision has been made. They cannot select a capability, widen
+    a permission, or change an outcome — the last of the nine checks has already run by
+    the time any of them is read. What they can do is make the answer the right length,
+    make it answer the question that was actually asked, and stop it repeating the
+    previous one, which is worth having and worth confining.
+
+    ``goal_shape`` in particular is a string the caller supplies, not a privilege. The
+    worst a wrong one can do is produce a longer answer about the same evidence; there
+    is no shape that unlocks a capability, because by this point the capability has
+    already run.
     """
     task_id = clean(task_id or request_id, 120)
     question = clean(question, 400)
@@ -768,6 +792,27 @@ def execute(
             # unknown rather than told it succeeded or having it done to them twice.
             prior_status = str(previous.get("status") or "")
             unsettled = prior_status in {"pending", "needs_reconciliation"}
+            # The ledger's ``verified`` is a read-back verdict that was actually taken —
+            # by the earlier attempt, against the canonical store, and recorded. Carrying
+            # it forward as a real :class:`VerificationResult` is what lets this turn's
+            # receipt reach ``may_claim_completed`` honestly, and what stops every reader
+            # downstream from having to invent a rule for the replay case.
+            #
+            # It is deliberately *not* extended to ``ok``. ``ok`` means the executor
+            # returned without error and nothing ever looked; the status below is
+            # ``accepted_unverified`` and the verification stays ``impossible``, so the
+            # prose guard in :func:`~services.undx_agent_runtime.build_card` catches "I
+            # had already done that" and replaces it. Two ledger words that were treated
+            # identically here now diverge exactly where they always differed in meaning.
+            replay_verification = (
+                VerificationResult(
+                    state=VerificationState.VERIFIED,
+                    evidence={"source": "audit_ledger",
+                              "operation_id": clean(previous.get("operation_id"), 60)},
+                    detail="an earlier attempt was read back and recorded as verified",
+                )
+                if prior_status == "verified" else None
+            )
             replayed = ToolResult(
                 ok=prior_status in {"verified", "ok"},
                 tool_name=spec.tool_name, capability_id=spec.capability_id,
@@ -783,12 +828,14 @@ def execute(
                                       if unsettled else
                                       "I had already done that; I have not repeated it."),
                          arguments=arguments,
+                         verification=replay_verification,
                          canonical_ids=[replayed.canonical_resource_id] if replayed.canonical_resource_id else [],
                          evidence={"idempotent_replay": True,
                                    "prior_status": prior_status,
                                    "needs_reconciliation": unsettled,
                                    "operation_id": clean(previous.get("operation_id"), 60)}),
                 result=replayed,
+                verification=replay_verification,
                 is_write=spec.is_write,
             )
 
@@ -835,6 +882,7 @@ def execute(
             cur, spec=spec, user_id=int(user_id), arguments=arguments, result=result,
             prepared=prepared, grant=grant, request_id=request_id, task_id=task_id,
             correlation_id=correlation_id, question=question, history=history,
+            goal_shape=goal_shape,
         )
     except Exception as exc:  # pragma: no cover - defensive
         try:
@@ -868,7 +916,8 @@ def execute(
 def _settle(cur, *, spec: CapabilitySpec, user_id: int, arguments: dict[str, Any],
             result: ToolResult, prepared: dict[str, Any], grant: dict[str, Any] | None,
             request_id: str, task_id: str, correlation_id: str,
-            question: str = "", history: tuple[str, ...] = ()) -> GatewayOutcome:
+            question: str = "", history: tuple[str, ...] = (),
+            goal_shape: str = "") -> GatewayOutcome:
     """Verify, audit and describe an execution that has already happened.
 
     Split out of :func:`execute` so the boundary between "nothing has changed yet"
@@ -938,7 +987,8 @@ def _settle(cur, *, spec: CapabilitySpec, user_id: int, arguments: dict[str, Any
     # request fails afterwards.
 
     explanation, response_plan = _compose_response(
-        spec, status, result, verification, question=question, history=history)
+        spec, status, result, verification, question=question, history=history,
+        goal_shape=goal_shape)
     receipt = _receipt(
         spec, user_id=user_id, request_id=request_id, task_id=task_id,
         status=status, explanation=explanation,

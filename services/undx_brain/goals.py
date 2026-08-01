@@ -73,6 +73,7 @@ from .attention import Focus
 __all__ = [
     "Shape", "Goal", "MAX_INSPECTIONS", "MAX_REQUEST_CHARS",
     "REPAIR_FRAMES", "SCOPE_FRAMES", "EXPLAIN_FRAMES", "understand",
+    "asks_about_rather_than_for",
 ]
 
 
@@ -161,13 +162,24 @@ SCOPE_FRAMES: tuple[str, ...] = (
 #: fails, for the opposite reason: it is the ordinary form of a lookup, and treating
 #: every lookup as an explanation would collapse the two in the other direction and make
 #: this entire distinction meaningless.
+#:
+#: ``"break down "`` was added after an adversarial sweep, and the gap it closed is worth
+#: recording because it was invisible by construction. The list carried ``"break it
+#: down"`` and ``"break this down"`` — the two forms that need a pronoun because the
+#: subject came earlier in the conversation — and silently omitted the transitive form
+#: that names its subject directly. So "break down my notification settings" read as no
+#: frame at all, which made it a bare instruction, which routed it to
+#: ``notifications.preference.update``: a request for an account of a setting, answered
+#: by changing it. Every near-miss in a hand-written list looks like this one — the
+#: entries that are present make the omission hard to see, because the concept is
+#: obviously covered and only one of its surface forms is.
 EXPLAIN_FRAMES: tuple[str, ...] = (
     "explain ", "explain my", "explain the", "explain this", "explain that",
     "why is", "why are", "why was", "why were", "why did", "why does", "why do",
     "why am i", "why can't", "why cant", "why won't", "why wont",
     "what does it mean", "what does this mean", "what does that mean",
     "help me understand", "make sense of", "walk me through",
-    "break it down", "break this down", "tell me about",
+    "break it down", "break this down", "break down ", "tell me about",
 )
 
 
@@ -425,6 +437,43 @@ def _explain_frame(lowered: str) -> str:
         if candidate in lowered and len(candidate) > len(best):
             best = candidate
     return best
+
+
+def asks_about_rather_than_for(request: Any) -> str:
+    """The frame by which this request asks *about* something, or ``""``.
+
+    Returns the longest frame present across all three lists — explain, repair and scope
+    — without deciding which shape wins, because the caller this exists for does not
+    need to know. It needs one bit: did the person frame this as a question or a problem
+    rather than as an instruction. All three framings share the property that matters,
+    which is that the sentence names a *subject* and not an *operation*, and the
+    operation is therefore something the system would be choosing on the person's
+    behalf.
+
+    **Deliberately outside the flags, and deliberately outside this module's own
+    pipeline.** Everything else here is gated by ``UNDX_BRAIN_ENABLED`` and
+    ``UNDX_BRAIN_GOALS_ENABLED``, because everything else here is *reasoning* — a
+    capacity that can be rolled out, measured and withdrawn. This is not reasoning. It
+    is a string test over three hand-written lists, and its only caller uses it to
+    decline to mutate data. A flag whose "off" position permits "tell me about
+    unfollowing this person" to perform the unfollow is not a rollout control; it is a
+    defect with a switch attached. So the refusal holds whatever the flags say, and the
+    Brain's contribution — when it is on — is a better sentence to say instead, not the
+    decision to refuse.
+
+    Pure: no registry, no attention, no configuration, no exceptions. A caller that
+    cannot import this module is a caller with no protection at all, which is why the
+    guard is written to fail closed around it rather than to trust it.
+    """
+    lowered = " ".join(str(request or "").lower().split())[:MAX_REQUEST_CHARS]
+    if not lowered:
+        return ""
+    best = ""
+    for group in (EXPLAIN_FRAMES, REPAIR_FRAMES, SCOPE_FRAMES):
+        for candidate in group:
+            if candidate in lowered and len(candidate) > len(best):
+                best = candidate
+    return best.strip()
 
 
 def _framed(lowered: str) -> tuple[str, Shape | None]:

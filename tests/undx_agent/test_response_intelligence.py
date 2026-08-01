@@ -187,10 +187,16 @@ class DetailLevelSelectionTests(unittest.TestCase):
 class ResponsePlanShapeTests(unittest.TestCase):
     """The plan is the mission's structure, exactly — no more keys and no fewer."""
 
+    #: The original expert-response contract, plus the four fields added when the goal
+    #: layer got its first consumer. They are listed apart rather than merged into the
+    #: set above so that a future reader can see which keys the plan was born with and
+    #: which were added, and can hold each to the reason it was added.
     MISSION_KEYS = {
         "response_type", "detail_level", "user_goal", "direct_answer", "evidence",
         "cross_domain_links", "interpretations", "uncertainties", "limitations",
         "recommended_next_steps", "action_state", "native_cards", "prohibited_claims",
+    } | {
+        "goal_shape", "response_mode", "required_evidence", "must_not_do",
     }
 
     def test_the_published_plan_has_exactly_the_mission_keys(self) -> None:
@@ -1345,6 +1351,229 @@ class CrossDomainFoldTests(unittest.TestCase):
         self.assertNotIn("you published", text)
         self.assertNotIn("lands on one day", text)
         self.assertIn("unread", text)
+
+
+# ---------------------------------------------------------------------------
+# 14. The goal shape changes the answer
+# ---------------------------------------------------------------------------
+
+
+class GoalShapeChangesTheAnswerTests(unittest.TestCase):
+    """The same evidence, six goals, six different answers.
+
+    This is the acceptance test for the defect the goal layer was built to fix: "show my
+    alerts" and "explain my alerts" produced byte-identical output, because the shape was
+    computed and then read by nobody. Holding that fixed needs a test that varies *only*
+    the shape — same spec, same records, same status — so a difference in the reply can
+    only have come from the goal.
+
+    Every assertion here is semantic. None of them matches a whole sentence, because the
+    module's design is that prose varies with meaning and context, and a test that pinned
+    the wording would need rewriting every time the wording legitimately improved. What
+    is asserted instead is what each mode *owes*: that a list stays a list, that an
+    explanation carries an account of the evidence rather than a recital of it, that a
+    diagnosis names a candidate cause or says plainly that it cannot, and that a resource
+    lookup returning several things admits it did not narrow.
+    """
+
+    RECORDS = [
+        {"kind": "alert", "title": f"BTC above {i}0000", "source": "pulse_alerts",
+         "timestamp": f"2026-07-1{i}",
+         "data": {"active": True, "threshold": float(i * 10000), "direction": "above"}}
+        for i in range(1, 4)
+    ]
+
+    def compose(self, shape, question: str = "what about my alerts",
+                records=None, **kw):
+        result = _read("crypto.alerts.list",
+                       self.RECORDS if records is None else records, **kw)
+        return ri.compose(ALERTS, AgentOutcome.COMPLETED, result, _unverified(),
+                          question=question, goal_shape=shape)
+
+    # -- the modes are distinct, and the distinction reaches the reader ------------
+
+    def test_each_goal_selects_the_mode_the_directive_names(self) -> None:
+        for shape, mode in (("show", ri.ResponseMode.LIST),
+                            ("find", ri.ResponseMode.RESOURCE),
+                            ("explain", ri.ResponseMode.EXPLANATION),
+                            ("repair", ri.ResponseMode.DIAGNOSIS),
+                            ("manage", ri.ResponseMode.DIAGNOSIS),
+                            ("act", ri.ResponseMode.RECEIPT)):
+            with self.subTest(shape=shape):
+                _text, plan = self.compose(shape)
+                self.assertEqual(mode, plan.response_mode)
+                self.assertEqual(shape, plan.goal_shape)
+
+    def test_four_goals_over_identical_evidence_produce_four_different_answers(self) -> None:
+        """The headline claim, tested the only way it can honestly be tested."""
+        answers = {shape: self.compose(shape)[0]
+                   for shape in ("show", "find", "explain", "repair")}
+        for left, right in itertools.combinations(sorted(answers), 2):
+            with self.subTest(pair=f"{left}/{right}"):
+                self.assertNotEqual(
+                    answers[left], answers[right],
+                    f"{left} and {right} rendered identically, which is the collapse "
+                    f"this layer exists to prevent")
+
+    def test_the_answers_differ_by_content_and_not_by_reshuffling(self) -> None:
+        """Different orderings of the same sentences would pass the test above.
+
+        So the sentence *sets* are compared rather than the strings: an explanation must
+        say something a list does not say, rather than saying the same things in another
+        order. That is the standard :class:`VariationComesFromMeaningTests` holds the
+        repetition machinery to, applied here to the goal layer.
+        """
+        listed = {s.strip() for s in self.compose("show")[0].split(".") if s.strip()}
+        explained = {s.strip() for s in self.compose("explain")[0].split(".") if s.strip()}
+        self.assertTrue(explained - listed,
+                        "the explanation said nothing the list did not already say")
+
+    # -- what an explanation owes --------------------------------------------------
+
+    def test_an_explanation_accounts_for_the_evidence_instead_of_reciting_it(self) -> None:
+        text, plan = self.compose("explain")
+        self.assertEqual("", ri.accounting_shortfall(plan, text))
+        self.assertTrue(plan.interpretations, "an explanation with nothing to interpret")
+        self.assertTrue(plan.limitations, "an explanation that admits no limit")
+
+    def test_an_explanation_says_what_the_capability_covers(self) -> None:
+        """"What it does" is the first thing the directive asks an explanation for.
+
+        Asserted against the registry's own description rather than against a phrase, so
+        the test tracks the capability rather than the sentence built from it.
+        """
+        _text, plan = self.compose("explain")
+        wanted = {w for w in re.findall(r"[a-z]+", ALERTS.description.lower())
+                  if len(w) > 3}
+        account = set(re.findall(r"[a-z]+", " ".join(plan.interpretations).lower()))
+        self.assertTrue(wanted & account,
+                        "no interpretation refers to what the capability actually does")
+
+    def test_an_explanation_distinguishes_configuration_from_activity(self) -> None:
+        """The substance of "why isn't this firing": a read of storage cannot say.
+
+        Regression-guarded deliberately. An earlier draft suppressed this sentence
+        whenever the records carried any number, on the theory that numbers meant
+        activity — which removed it from every capability whose records carry a
+        threshold, which is exactly the set asked this question.
+        """
+        _text, plan = self.compose("explain")
+        self.assertIn("fired", " ".join(plan.limitations).lower())
+
+    def test_the_detail_floor_rises_for_an_account_and_never_falls(self) -> None:
+        for shape in ("explain", "repair"):
+            with self.subTest(shape=shape):
+                _text, plan = self.compose(shape, question="quickly, what about my alerts")
+                self.assertGreaterEqual(
+                    ri.DetailLevel.rank(plan.detail_level),
+                    ri.DetailLevel.rank(ri.DetailLevel.DETAILED),
+                    "brevity shortened an account back into a list")
+
+    def test_a_brief_question_still_leaves_a_list_brief(self) -> None:
+        """The floor is attached to the mode, not applied to every turn."""
+        _text, plan = self.compose("show", question="quickly, what about my alerts")
+        self.assertLess(ri.DetailLevel.rank(plan.detail_level),
+                        ri.DetailLevel.rank(ri.DetailLevel.DETAILED))
+
+    # -- what a diagnosis owes -----------------------------------------------------
+
+    def test_a_diagnosis_names_a_cause_the_evidence_supports(self) -> None:
+        text, plan = self.compose("repair", degraded=("pulse_prices",))
+        self.assertEqual("", ri.accounting_shortfall(plan, text))
+        self.assertTrue(any("pulse_prices" in note for note in plan.interpretations),
+                        "the unreachable source was not offered as a cause")
+
+    def test_a_diagnosis_with_no_supporting_evidence_says_so_rather_than_guessing(self) -> None:
+        """The prohibition in the plan is matched by a sentence that honours it.
+
+        A repair request is the strongest pull towards inventing a plausible cause — the
+        person has already said something is broken, and agreeing costs nothing and reads
+        as competence. So the honest non-answer is asserted as a requirement rather than
+        tolerated as a gap.
+        """
+        _text, plan = self.compose("repair")
+        self.assertIn("assert_a_cause_without_evidence", plan.must_not_do)
+        opening = plan.interpretations[0].lower()
+        self.assertIn("points to a cause", opening,
+                      f"a cause was asserted from intact evidence: {opening!r}")
+
+    def test_a_diagnosis_proposes_a_next_action(self) -> None:
+        _text, plan = self.compose("repair")
+        self.assertTrue(plan.recommended_next_steps)
+
+    def test_a_diagnosis_does_not_repeat_its_first_next_step(self) -> None:
+        """The diagnosis clause block and the standard tail both emit next steps."""
+        text, plan = self.compose("repair")
+        first = plan.recommended_next_steps[0].rstrip(".").lower()
+        self.assertEqual(1, text.lower().count(first))
+
+    # -- what a resource lookup owes -----------------------------------------------
+
+    def test_a_lookup_that_did_not_narrow_admits_it(self) -> None:
+        text, plan = self.compose("find")
+        self.assertTrue(any("narrow" in note for note in plan.limitations))
+        self.assertIn("narrow", text)
+
+    def test_a_lookup_that_found_one_thing_claims_no_ambiguity(self) -> None:
+        _text, plan = self.compose("find", records=self.RECORDS[:1])
+        self.assertFalse([note for note in plan.limitations if "narrow" in note])
+
+    # -- the goal layer may not reach the facts ------------------------------------
+
+    def test_no_goal_shape_reproduces_the_answer_from_before_the_goal_layer(self) -> None:
+        """The Brain flags genuinely gate this: switched off, nothing changed."""
+        result = _read("crypto.alerts.list", self.RECORDS)
+        before, _ = ri.compose(ALERTS, AgentOutcome.COMPLETED, result, _unverified(),
+                               question="show me my alerts")
+        after, _ = ri.compose(ALERTS, AgentOutcome.COMPLETED, result, _unverified(),
+                              question="show me my alerts", goal_shape="")
+        self.assertEqual(before, after)
+
+    def test_an_unrecognised_shape_degrades_rather_than_raising(self) -> None:
+        for junk in ("SHOW", "  explain  ", "sudo", "../../etc/passwd", None, 7):
+            with self.subTest(shape=junk):
+                text, plan = self.compose(junk)
+                self.assertIn(plan.goal_shape, ri.GoalShape.ALL)
+                self.assertTrue(text)
+
+    def test_a_goal_shape_cannot_put_an_unsupported_claim_in_the_answer(self) -> None:
+        """The layer's one hard restriction: shapes change length, never facts."""
+        for shape in ("show", "find", "explain", "repair", "manage", "act"):
+            with self.subTest(shape=shape):
+                text, plan = self.compose(shape)
+                self.assertEqual([], ri.validate_consistency(plan, text))
+
+    def test_a_goal_shape_cannot_lower_a_floor_the_evidence_raised(self) -> None:
+        """A degraded read still discloses, whatever the person was trying to do."""
+        for shape in ("show", "find", "explain", "repair", "act"):
+            with self.subTest(shape=shape):
+                text, plan = self.compose(shape, degraded=("pulse_prices",))
+                self.assertTrue(plan.limitations)
+                self.assertEqual([], ri.validate_consistency(plan, text))
+
+    def test_an_explanations_prohibitions_correspond_to_real_checks(self) -> None:
+        """``must_not_do`` is a claim about enforcement, so it is held to one."""
+        _text, plan = self.compose("explain")
+        self.assertIn("perform_a_write", plan.must_not_do)
+        self.assertIn("answer_with_a_bare_list", plan.must_not_do)
+        # The second is enforced by the account clauses, so prove the enforcement
+        # rather than trusting the label to describe it.
+        self.assertTrue(plan.interpretations or plan.limitations)
+
+    def test_a_read_never_claims_a_completed_change_whatever_the_goal(self) -> None:
+        for shape in ("show", "find", "explain", "repair", "manage", "act"):
+            with self.subTest(shape=shape):
+                _text, plan = self.compose(shape)
+                self.assertIn("claim_a_completed_change", plan.must_not_do)
+
+    def test_the_four_new_fields_reach_the_receipt(self) -> None:
+        """A native client and an auditor both read the plan through ``to_dict``."""
+        _text, plan = self.compose("explain")
+        published = plan.to_dict()
+        self.assertEqual("explain", published["goal_shape"])
+        self.assertEqual("explanation", published["response_mode"])
+        self.assertEqual(plan.required_evidence, published["required_evidence"])
+        self.assertEqual(plan.must_not_do, published["must_not_do"])
 
 
 if __name__ == "__main__":
