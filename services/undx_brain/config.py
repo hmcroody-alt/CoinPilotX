@@ -523,6 +523,23 @@ CATALOG: tuple[Flag, ...] = (
 
 BY_NAME: dict[str, Flag] = {flag.name: flag for flag in CATALOG}
 
+# The deliberately small production contract. This is the operator-facing set that
+# must travel with a release; the larger catalog above contains optional tuning knobs.
+# No entry here is a credential, and missing authorization-shaped controls deny work.
+MINIMUM_PRODUCTION_CONTRACT: tuple[dict[str, Any], ...] = (
+    {"name": "UNDX_AGENT_ENABLED", "type": "bool", "default": "0", "required": True, "secret": False, "consumer": "services.undx_agent_policy.user_enabled", "safe_missing": "agent disabled", "health_field": "agent.enabled", "rollout_stage": "qa_reads"},
+    {"name": "UNDX_AGENT_READS_ENABLED", "type": "bool", "default": "0", "required": True, "secret": False, "consumer": "services.undx_agent_policy.evaluate", "safe_missing": "reads disabled", "health_field": "agent.reads", "rollout_stage": "qa_reads"},
+    {"name": "UNDX_AGENT_WRITES_ENABLED", "type": "bool", "default": "0", "required": True, "secret": False, "consumer": "services.undx_agent_policy.writes_available", "safe_missing": "writes disabled", "health_field": "agent.writes", "rollout_stage": "post_write_gate"},
+    {"name": "UNDX_AGENT_DISABLE_WRITES", "type": "bool", "default": "1", "required": True, "secret": False, "consumer": "services.undx_agent_policy.writes_available", "safe_missing": "writes remain disabled because writes_enabled defaults off", "health_field": "agent.disable_writes", "rollout_stage": "initial"},
+    {"name": "UNDX_AGENT_REQUIRE_VERIFICATION", "type": "bool", "default": "1", "required": True, "secret": False, "consumer": "services.undx_brain.config", "safe_missing": "verification remains required", "health_field": "verification.required", "rollout_stage": "initial"},
+    {"name": "UNDX_AGENT_REQUIRE_AUDIT", "type": "bool", "default": "1", "required": True, "secret": False, "consumer": "services.undx_brain.config", "safe_missing": "audit remains required", "health_field": "audit.required", "rollout_stage": "initial"},
+    {"name": "UNDX_AGENT_FAIL_CLOSED", "type": "bool", "default": "1", "required": True, "secret": False, "consumer": "services.undx_brain.config", "safe_missing": "fail closed", "health_field": "agent.fail_closed", "rollout_stage": "initial"},
+    {"name": "UNDX_MEMORY_FAIL_CLOSED", "type": "bool", "default": "1", "required": True, "secret": False, "consumer": "services.undx_brain.memory", "safe_missing": "memory unavailable", "health_field": "brain.memory_fail_closed", "rollout_stage": "initial"},
+    {"name": "UNDX_BRAIN_ENABLED", "type": "bool", "default": "0", "required": True, "secret": False, "consumer": "services.undx_brain.config.brain_available", "safe_missing": "Brain disabled", "health_field": "brain.enabled", "rollout_stage": "qa_reads"},
+    {"name": "UNDX_BRAIN_QA_ONLY", "type": "bool", "default": "1", "required": True, "secret": False, "consumer": "services.undx_brain.rollout", "safe_missing": "QA-only", "health_field": "brain.qa_only", "rollout_stage": "qa_reads"},
+    {"name": "UNDX_AGENT_QA_USER_IDS", "type": "csv_int", "default": "", "required": True, "secret": False, "consumer": "services.undx_agent_policy.user_enabled", "safe_missing": "empty cohort", "health_field": "agent.qa_cohort_configured", "rollout_stage": "qa_reads"},
+)
+
 #: Variables owned by other, older parts of UNDX that the Brain reads but does not
 #: declare. Listed so :func:`unknown_undx_brain_vars` does not report them as typos.
 FOREIGN_PREFIXES: tuple[str, ...] = (

@@ -9,7 +9,7 @@ system_name: "UNDX"
 codename: "PULSESOC SOURCE CORPUS"
 product: "PulseSOC"
 configuration_mode: "sanitized_source_derived_training_context"
-generated_at_utc: "2026-08-01T05:23:10+00:00"
+generated_at_utc: "2026-08-01T18:49:13+00:00"
 source_root: "/Users/hmcherie/Desktop/CoinPilotX"
 output_path: "backend/undx/config/undx_training_v6_source_corpus.yaml"
 extends:
@@ -34,12 +34,12 @@ safety_policy:
   identity_rule: >
     UNDX remains the canonical PulseSOC intelligence companion and must not identify as Pulse AI or a generic assistant.
 repository_inventory:
-  source_files_indexed: 1682
+  source_files_indexed: 1725
   extensions:
     .js: 1
     .json: 24
     .md: 12
-    .py: 1234
+    .py: 1277
     .sql: 32
     .ts: 209
     .tsx: 165
@@ -55,23 +55,23 @@ repository_inventory:
     native_realtime_media: 45
     native_screen: 96
     source: 192
-    test_evidence: 20
-    undx: 54
+    test_evidence: 41
+    undx: 76
     web_backend_routes: 1
   domain_tag_counts:
-    auth: 798
-    business_os: 856
-    calls: 587
-    feed: 1250
-    i18n: 108
-    live: 721
-    media: 736
-    messenger: 943
-    notifications: 523
-    safety: 769
-    search: 217
-    settings: 249
-    undx: 293
+    auth: 812
+    business_os: 885
+    calls: 622
+    feed: 1268
+    i18n: 109
+    live: 745
+    media: 739
+    messenger: 962
+    notifications: 550
+    safety: 802
+    search: 223
+    settings: 257
+    undx: 336
 canonical_domains:
   - "authentication_and_sessions"
   - "native_pulsesoc_app"
@@ -791,7 +791,7 @@ backend_routes:
     - "GET /pulse/portfolio"
     - "GET /pulse/post/<int:post_id>"
 api_endpoint_mentions:
-  count: 1333
+  count: 1337
   paths:
     - "/api"
     - "/api/"
@@ -886,8 +886,10 @@ api_endpoint_mentions:
     - "/api/alerts/<int:alert_id>/pause"
     - "/api/alerts/<int:alert_id>/resume"
     - "/api/alerts/<int:alert_id>/test"
+    - "/api/alerts/<int:id>"
     - "/api/alerts/channel-readiness"
     - "/api/alerts/events"
+    - "/api/alerts/pause"
     - "/api/alerts/test/<channel>"
     - "/api/arena/"
     - "/api/arena/academy"
@@ -1086,6 +1088,8 @@ api_endpoint_mentions:
     - "/api/mobile/auth/session"
     - "/api/native/alerts"
     - "/api/native/notifications"
+    - "/api/network/..."
+    - "/api/network/…"
     - "/api/notification-preferences"
     - "/api/notifications/create"
     - "/api/orders"
@@ -1689,10 +1693,6 @@ api_endpoint_mentions:
     - "/dashboard/crypto/alerts"
     - "/dashboard/crypto/alerts/create"
     - "/dashboard/crypto/ask-ai"
-    - "/dashboard/crypto/calendar"
-    - "/dashboard/crypto/favorites"
-    - "/dashboard/crypto/gainers"
-    - "/dashboard/crypto/losers"
 database_contracts:
   migration_files: 20
   migrations:
@@ -2117,8 +2117,8 @@ source_records:
       - "media"
       - "business_os"
       - "undx"
-    sha256_16: "ffdc7c95c54c4440"
-    bytes: 7250436
+    sha256_16: "f053e5df3aa9c71e"
+    bytes: 7254578
     summary: >
       ========================= IMPORTS ========================= ========================= 💳 STRIPE CONFIG (RIGHT AFTER CONSTANTS) ========================= ========================= 🌐 WEBHOOK APP (RIGHT AFTER STRIPE) ========================= ========================= STATE VARIABLES ========================= ========================= LOGGING ========================= ========================= PHASE 5 DATABASE UPGRADE ==
     symbols:
@@ -27321,8 +27321,9 @@ source_records:
       - "calls"
       - "media"
       - "undx"
-    sha256_16: "c9ce8e7976fb5acf"
-    bytes: 5111
+      - "i18n"
+    sha256_16: "214a4f507eb38670"
+    bytes: 5386
     summary: "!/usr/bin/env python3 \"\"\"Audit the native UNDX chat conversion. \"\"\""
     symbols:
       functions:
@@ -37277,10 +37278,10 @@ source_records:
       - "media"
       - "business_os"
       - "undx"
-    sha256_16: "dad243843f405056"
-    bytes: 18182
+    sha256_16: "274bb9a95b6c1693"
+    bytes: 18974
     summary: >
-      """User-facing UNDX knowledge and prompt construction. This module contains only safe, public PulseSoc product knowledge. It does not """ """
+      """User-facing UNDX knowledge and prompt construction. This module contains only safe, public PulseSoc product knowledge. It does not """ """ Remembered text is the person's own words, and that is exactly why it needs a fence rather than exempting it from one. An instruction is addressed to a moment; replaying one from three weeks ago as though it were live is how a system acts on a request that was already satisfied
     symbols:
       functions:
         - "compact_text"
@@ -37461,10 +37462,10 @@ source_records:
       - "undx"
       - "safety"
       - "search"
-    sha256_16: "9b3b837c2d4149e9"
-    bytes: 11871
+    sha256_16: "6eeb7b198a5742d9"
+    bytes: 14269
     summary: >
-      """Safe, timeout-bound web search helper for Pulse AI. The service prefers configured search APIs and falls back to DuckDuckGo's public """
+      """Safe, timeout-bound web search helper for Pulse AI. The service prefers configured search APIs and falls back to DuckDuckGo's public """ : The line this function has always opened with. Kept as a constant because the : enveloped form deliberately drops it — the envelope's declaration says everything : this sentence said and says it about the right thing — and a test needs to be able to : assert both the unchanged
     symbols:
       functions:
         - "_env"
@@ -39346,8 +39347,8 @@ source_records:
       - "notifications"
       - "safety"
       - "i18n"
-    sha256_16: "7dcc4020504ea0bd"
-    bytes: 147833
+    sha256_16: "192928067a80be2a"
+    bytes: 174573
     summary: >
       """The agent runtime: turn one authenticated request into one governed outcome. This module owns the sequence — understand, resolve, plan, execute, report — but it A proposal is just an argument.** :func:`handle` accepts a capability id and a Reference resolution is a first-class step, and it is allowed to refuse. """ --------------------------------------------------------------------------- Intent matching --------
     symbols:
@@ -39400,7 +39401,10 @@ source_records:
         - "_resume_pending"
         - "available"
         - "recent_replies"
+        - "narrowed_to_one_resource"
+        - "goal_shape_for"
         - "_act"
+        - "question_framed_write_refusal"
         - "handle"
       classes:
         - "Reference"
@@ -39520,8 +39524,8 @@ source_records:
       - "undx"
       - "safety"
       - "settings"
-    sha256_16: "1becec84ccfb6a59"
-    bytes: 63343
+    sha256_16: "74def83c478239b4"
+    bytes: 72051
     summary: >
       """Shared governed architecture for UNDX v2 and v3. This extends the existing pulse_ai service and tables. It is not a second AI, """ """CREATE TABLE IF NOT EXISTS pulse_ai_missions ( """CREATE TABLE IF NOT EXISTS pulse_ai_task_nodes ( """CREATE TABLE IF NOT EXISTS pulse_ai_skill_registry ( """CREATE TABLE IF NOT EXISTS pulse_ai_capability_registry ( """CREATE TABLE IF NOT EXISTS pulse_ai_tool_registry ( """CREATE TA
     symbols:
@@ -39532,6 +39536,9 @@ source_records:
         - "seed_registries"
         - "select_skills"
         - "build_plan"
+        - "apply_attention"
+        - "plan_steps"
+        - "apply_bounds"
         - "persist_plan"
         - "resume_plan"
         - "prepare_tool_operation"
@@ -39566,6 +39573,600 @@ source_records:
     endpoint_mentions:
       - "/pulse/profile/:profileKey"
       - "/pulse/saved"
+  -
+    path: "services/undx_brain/__init__.py"
+    category: "undx"
+    domain_tags:
+      - "calls"
+      - "feed"
+      - "business_os"
+      - "undx"
+    sha256_16: "94d7fd1ddb3e2dec"
+    bytes: 4376
+    summary: >
+      """The UNDX Brain: the intelligence layer between a request and PulseSoc's systems. PulseSoc is the body. UNDX is the mind. This package is the part of the mind that is structure* rather than behaviour — the layer that decides what UNDX knows, how well it """ : Every module in the package, in the order a request would meet them: what is : configured, what is known and how well, what one turn may claim, what any text
+    symbols:
+      functions:
+        []
+      classes:
+        []
+  -
+    path: "services/undx_brain/attention.py"
+    category: "undx"
+    domain_tags:
+      - "auth"
+      - "messenger"
+      - "calls"
+      - "feed"
+      - "media"
+      - "business_os"
+      - "undx"
+      - "notifications"
+    sha256_16: "286ee8146249e213"
+    bytes: 39550
+    summary: >
+      """What a request is about, and — just as load-bearing — what it is not about. Directive §6 asks for attention and salience routing: given "Why is my account acting There is no second catalogue.** Every product area, resource type, capability id and A request that matches nothing activates nothing.** There is no default area, no Every activation names the evidence that caused it.** §6's rule is conditional: those A s
+    symbols:
+      functions:
+        - "_variants"
+        - "_words"
+        - "_parts"
+        - "_post"
+        - "_build_index"
+        - "attend"
+        - "place_into"
+        - "_clamp"
+      classes:
+        - "Concern"
+        - "Cue"
+        - "Area"
+        - "Focus"
+  -
+    path: "services/undx_brain/bounds.py"
+    category: "undx"
+    domain_tags:
+      - "messenger"
+      - "calls"
+      - "live"
+      - "business_os"
+      - "undx"
+      - "notifications"
+      - "safety"
+    sha256_16: "dbd717fedffb759c"
+    bytes: 15260
+    summary: >
+      """Ceilings on one plan, enforced rather than described. PART 9 asks that reasoning be bounded. The four numbers that bound it An over-budget plan is refused, not truncated.** Truncating is the obvious A write is never retried, whatever the retry ceiling says.** ``UNDX_PLANNER_MAX_RETRIES`` Budget is monotonic.** A :class:`Ledger` spends and never refunds. There is no Expiry is not resumption.** ``UNDX_PLANNER_TASK_T
+    symbols:
+      functions:
+        - "budget"
+        - "admit"
+        - "ledger_for"
+        - "_count"
+        - "_positive"
+        - "_non_negative"
+      classes:
+        - "Refusal"
+        - "Budget"
+        - "Admission"
+        - "Ledger"
+  -
+    path: "services/undx_brain/calibration.py"
+    category: "undx"
+    domain_tags:
+      - "messenger"
+      - "calls"
+      - "feed"
+      - "business_os"
+      - "undx"
+      - "safety"
+    sha256_16: "d75bf6e41b48015e"
+    bytes: 23944
+    summary: >
+      """Whether the answers were right, asked of the record rather than of the model. Everything else in this package reasons about one turn. :mod:`~services.undx_brain.evidence` It does not treat silence as approval.* Most answers are never rated. The unjudged are It does not fold "not helpful" into "wrong".* The five ratings the service accepts are It does not report a rate without its interval.* :data:`MIN_JUDGED` is 1
+    symbols:
+      functions:
+        - "interval"
+        - "verdict_for"
+        - "pair"
+        - "calibrate"
+        - "by_capability"
+        - "_enabled"
+        - "_reading"
+        - "_in_time"
+        - "_not_yet"
+        - "_message_id"
+        - "_text"
+      classes:
+        - "Verdict"
+        - "Answer"
+        - "Interval"
+        - "Calibration"
+  -
+    path: "services/undx_brain/config.py"
+    category: "undx"
+    domain_tags:
+      - "auth"
+      - "messenger"
+      - "calls"
+      - "live"
+      - "business_os"
+      - "undx"
+      - "safety"
+      - "settings"
+    sha256_16: "f027ebda547836fd"
+    bytes: 37534
+    summary: >
+      """Every environment variable the Brain reads, declared once, with its meaning. This module exists because of a specific failure mode rather than a preference for the set of variables that exist is not knowable without grepping, so the dashboard what a *missing* variable means is decided independently at each call site, so the a typo in a variable name is indistinguishable from a deliberate absence. Fail-closed is no
+    symbols:
+      functions:
+        - "_bool"
+        - "_ascii_int"
+        - "_coerce"
+        - "resolve"
+        - "unknown_undx_brain_vars"
+        - "flags"
+        - "describe_for_report"
+        - "brain_available"
+      classes:
+        - "Flag"
+        - "Resolution"
+  -
+    path: "services/undx_brain/corpus.py"
+    category: "undx"
+    domain_tags:
+      - "auth"
+      - "calls"
+      - "live"
+      - "business_os"
+      - "undx"
+      - "notifications"
+      - "safety"
+    sha256_16: "c768a5a77b211a6c"
+    bytes: 39533
+    summary: >
+      """Ingest the source-derived corpus as *data about the repository*, never as instruction. ``backend/undx/config/undx_training_v6_source_corpus.yaml`` is 1.38 MB describing 1,682 It is untrusted text.** Every ``summary`` field is an excerpt of a real source file: It is never loaded whole.** The prompt-facing path is bounded twice over — by Its records are claims about source, and stay labelled as such.** Every record
+    symbols:
+      functions:
+        - "_text_of"
+        - "_secret_shaped"
+        - "_injection_shaped"
+        - "_forbidden_path"
+        - "_symbol_names"
+        - "_trust_for"
+        - "_staleness"
+        - "_git_commit_for"
+        - "_audit_corpus_text"
+        - "_load_yaml"
+        - "_empty_manifest"
+        - "_fatal"
+        - "corpus_path"
+        - "ingest"
+        - "_ingest_cached"
+        - "_detect_conflicts"
+        - "staleness_report"
+        - "prompt_block"
+        - "reset_cache"
+      classes:
+        - "KnowledgeRecord"
+        - "CorpusManifest"
+        - "IngestedCorpus"
+    endpoint_mentions:
+      - "/api/alerts/<int:alert_id>"
+      - "/api/alerts/<int:id>"
+  -
+    path: "services/undx_brain/envelope.py"
+    category: "undx"
+    domain_tags:
+      - "auth"
+      - "messenger"
+      - "calls"
+      - "live"
+      - "undx"
+      - "notifications"
+      - "safety"
+      - "search"
+    sha256_16: "1ca4695c618ac585"
+    bytes: 19639
+    summary: >
+      """One untrusted-content discipline, applied the same way to every source of text. Every prompt UNDX sends is assembled from several kinds of text that arrive by very :func:`services.undx_architecture.sanitize_ui_context` key-allowlists and :func:`services.undx_brain.corpus.prompt_block` renders a proper fence with a proper :func:`services.pulse_ai_web_search.context_block` — the single most How breakout is made impo
+    symbols:
+      functions:
+        - "neutralise"
+        - "seal"
+        - "wrap"
+        - "enabled"
+        - "closing_fences_in"
+        - "is_sealed"
+        - "_declaration"
+        - "_reassertion"
+        - "_as_text"
+        - "_enabled"
+      classes:
+        - "Provenance"
+        - "Envelope"
+  -
+    path: "services/undx_brain/evidence.py"
+    category: "undx"
+    domain_tags:
+      - "calls"
+      - "business_os"
+      - "undx"
+      - "notifications"
+      - "safety"
+    sha256_16: "6a3bd98fe351cd55"
+    bytes: 12663
+    summary: >
+      """The one place where "it worked" is decided, and the two fields that decide it. :mod:`services.undx_brain.truth` defines what the evidence states *mean*. Nothing wrote """ : The verification verdict that licenses the strongest state in a family. Held as a : literal rather than imported so that a contracts package that fails to load does not : silently make every verification compare equal to nothing. : What each te
+    symbols:
+      functions:
+        - "derive"
+        - "contradiction"
+        - "may_say_done"
+        - "_assessment"
+        - "_outcome_name"
+        - "_verification_state"
+      classes:
+        - "Assessment"
+  -
+    path: "services/undx_brain/execution.py"
+    category: "undx"
+    domain_tags:
+      - "messenger"
+      - "calls"
+      - "business_os"
+      - "undx"
+      - "safety"
+    sha256_16: "b000bb59b1243d67"
+    bytes: 16026
+    summary: >
+      """Running a plan of more than one step, against ceilings that are actually spent. :mod:`services.undx_brain.bounds` enforces four numbers. Until now one of them had a It does not report success for a partial run.** A three-step plan that completes two It does not round an unknown outcome down to a failure.** If ``perform`` raises, or It does not retry a write.** ``Ledger.may_retry`` refuses on ``write=True`` before
+    symbols:
+      functions:
+        - "execute"
+        - "_run_one"
+        - "_invoke"
+        - "_stopped"
+        - "_enabled"
+      classes:
+        - "StepOutcome"
+        - "Step"
+        - "Attempt"
+        - "Run"
+  -
+    path: "services/undx_brain/facts.py"
+    category: "undx"
+    domain_tags:
+      - "calls"
+      - "live"
+      - "feed"
+      - "business_os"
+      - "undx"
+      - "notifications"
+      - "safety"
+    sha256_16: "4c071c401b520161"
+    bytes: 31189
+    summary: >
+      """What a remembered fact is still worth, and what to do when a new one disagrees. :mod:`services.undx_brain.truth` decides how well something is known. A fact ages.** ``pulse_ai_truth_facts`` records ``valid_from``, and nothing reads it. Facts disagree across time, and the one mechanism that claims to notice does not. Three decisions here are load-bearing. Resolution is never silent.* The honest outcome of a disagre
+    symbols:
+      functions:
+        - "from_row"
+        - "metadata_for"
+        - "horizon_for"
+        - "read"
+        - "compare"
+        - "reconcile"
+        - "_enabled"
+        - "_norm"
+        - "_trust_text"
+        - "_metadata"
+        - "_utcnow"
+        - "parse_moment"
+      classes:
+        - "Citability"
+        - "Resolution"
+        - "Observation"
+        - "Reading"
+        - "Disagreement"
+        - "Reconciliation"
+  -
+    path: "services/undx_brain/foundation.py"
+    category: "undx"
+    domain_tags:
+      - "auth"
+      - "calls"
+      - "live"
+      - "business_os"
+      - "undx"
+      - "notifications"
+      - "safety"
+      - "search"
+    sha256_16: "cf517a14fd01f502"
+    bytes: 89004
+    summary: >
+      """The Foundation map: which existing module owns each Brain responsibility (PART 1). This module builds nothing. It is a declaration, checked by a test, of where each of the """ """How completely a responsibility is discharged by its named owner.""" : One module owns it, and the named symbols implement it. : Implemented, but split across modules, or covering only part of the : responsibility as PART 1 describes it.
+    symbols:
+      functions:
+        - "verify"
+        - "require"
+        - "by_key"
+        - "gaps"
+        - "owning_modules"
+      classes:
+        - "Ownership"
+        - "Responsibility"
+        - "FoundationError"
+        - "VerificationReport"
+  -
+    path: "services/undx_brain/goals.py"
+    category: "undx"
+    domain_tags:
+      - "auth"
+      - "calls"
+      - "business_os"
+      - "undx"
+      - "notifications"
+      - "safety"
+    sha256_16: "4c9577343b3828ea"
+    bytes: 27074
+    summary: >
+      """What the person wants to be true afterwards — and when that is not yet knowable. Directive §7 asks for structured goal understanding, and states it through three "Find my Bitcoin alert" is retrieval. The answer *is* the goal. "Fix my Bitcoin alert" has **no knowable goal yet**. "Fix" names a desired end state, "Help me manage my alerts" is a scope, not an instruction, and may take more than one An unsettled goal i
+    symbols:
+      functions:
+        - "understand"
+        - "_explain_frame"
+        - "asks_about_rather_than_for"
+        - "_framed"
+        - "_reads_in"
+        - "_runtime"
+        - "_match"
+        - "_asks_for_the_action"
+        - "_is_explicit"
+      classes:
+        - "Shape"
+        - "Goal"
+  -
+    path: "services/undx_brain/knowledge.py"
+    category: "undx"
+    domain_tags:
+      - "messenger"
+      - "calls"
+      - "live"
+      - "feed"
+      - "undx"
+      - "notifications"
+      - "safety"
+    sha256_16: "17779b2722be0f5d"
+    bytes: 22275
+    summary: >
+      """Bounded, provenance-carrying retrieval over the source corpus (PART 5). :mod:`~services.undx_brain.corpus` answers "what does the repository contain?". This The corpus never arrives whole.** 1,682 records is roughly 1.4 MB of YAML. Retrieval Every result carries where it came from.** A record that reaches a prompt arrives with Retrieval never establishes account state.** This is the rule the whole package exists "
+    symbols:
+      functions:
+        - "_terms"
+        - "_score"
+        - "_limits"
+        - "retrieve"
+        - "_degrade"
+        - "knowledge_slices"
+      classes:
+        - "Retrieval"
+    endpoint_mentions:
+      - "/api/alerts/pause"
+      - "/api/network/…"
+  -
+    path: "services/undx_brain/learning.py"
+    category: "undx"
+    domain_tags:
+      - "messenger"
+      - "calls"
+      - "live"
+      - "feed"
+      - "business_os"
+      - "undx"
+      - "safety"
+      - "settings"
+    sha256_16: "c219de93287c63bb"
+    bytes: 30485
+    summary: >
+      """The first reader of the learning log, and the first one that opens a row. ``pulse_ai_learning_events`` has been accumulating since it was created. Eleven call Some events can never be attributed.* ``_record_learning_event`` stores The interesting dimensions live inside a JSON blob.* ``event_type`` and ``source`` are A count of a thing is not evidence about the thing.* Two guards follow from that, and """ : The one
+    symbols:
+      functions:
+        - "from_row"
+        - "load"
+        - "dimension_of"
+        - "distribution"
+        - "succession"
+        - "_enabled"
+        - "_known_dimension"
+        - "_reading"
+        - "_in_time"
+        - "_not_yet"
+        - "_gap_seconds"
+        - "_bounded"
+        - "_mapping"
+        - "_text"
+        - "_int"
+      classes:
+        - "Dimension"
+        - "Event"
+        - "Window"
+        - "Bucket"
+        - "Finding"
+  -
+    path: "services/undx_brain/memory.py"
+    category: "undx"
+    domain_tags:
+      - "auth"
+      - "messenger"
+      - "calls"
+      - "live"
+      - "feed"
+      - "business_os"
+      - "undx"
+      - "settings"
+    sha256_16: "7698e7a841aaa5ed"
+    bytes: 17200
+    summary: >
+      """Owner-scoped memory: the isolation rule, owned by a module instead of a habit. The Foundation map recorded ``memory_isolation`` as the one UNOWNED responsibility, and No new tables.* Every kind below names a table that exists today, with the owner No cross-kind reach.* A scope opened for preferences cannot address the messages No configurable isolation.* ``UNDX_MEMORY_FAIL_CLOSED`` chooses between two safe """ """
+    symbols:
+      functions:
+        - "open_scope"
+        - "read"
+        - "write"
+        - "forget"
+        - "owner_id"
+        - "_deny"
+        - "_run"
+        - "_statement_problem"
+        - "_bind_owner"
+      classes:
+        - "MemoryKind"
+        - "MemoryClass"
+        - "Scope"
+        - "MemoryResult"
+  -
+    path: "services/undx_brain/prediction.py"
+    category: "undx"
+    domain_tags:
+      - "auth"
+      - "calls"
+      - "feed"
+      - "business_os"
+      - "undx"
+      - "notifications"
+    sha256_16: "bebd3b88a70707a1"
+    bytes: 22954
+    summary: >
+      """What a write will do, said before it happens and checked after. :func:`services.undx_architecture.simulate_operation` is the function this replaces the The material was already there.** ``services.undx_capability_registry`` records, per Four things become derivable, and they are different for different capabilities. What the verifier should read back.* For every field in ``verified_fields`` that the Whether the ca
+    symbols:
+      functions:
+        - "predict"
+        - "check"
+        - "_enabled"
+        - "_resource_neighbours"
+        - "_assumptions"
+        - "_reason_for"
+        - "_outcome_reason"
+        - "_same"
+        - "_truthy"
+      classes:
+        - "Reversal"
+        - "Fidelity"
+        - "Expectation"
+        - "Prediction"
+        - "Outcome"
+  -
+    path: "services/undx_brain/rollout.py"
+    category: "undx"
+    domain_tags:
+      - "auth"
+      - "calls"
+      - "live"
+      - "business_os"
+      - "undx"
+      - "safety"
+    sha256_16: "8005587c32ee726a"
+    bytes: 14851
+    summary: >
+      """Who the Brain is actually on for — the flags that said "QA only" and nothing asked. :mod:`services.undx_brain.config` declares three variables about reach: The bucket is a digest, not ``hash()``.** Python salts string hashing per process, Writes are capped by reads.** ``UNDX_BRAIN_WRITES_ROLLOUT_PERCENT=50`` beside QA-only means the percentages are not consulted.** Not "consulted and then Nobody is a member by def
+    symbols:
+      functions:
+        - "bucket"
+        - "in_qa_cohort"
+        - "may_read"
+        - "may_write"
+        - "surface"
+        - "_decide"
+        - "_digits"
+        - "_percent"
+      classes:
+        - "Eligibility"
+  -
+    path: "services/undx_brain/selection.py"
+    category: "undx"
+    domain_tags:
+      - "auth"
+      - "messenger"
+      - "calls"
+      - "live"
+      - "media"
+      - "business_os"
+      - "undx"
+      - "notifications"
+    sha256_16: "bc5c6135a7d761ae"
+    bytes: 22886
+    summary: >
+      """Choosing between operations, rather than scoring one and discarding the rest. :func:`services.undx_agent_runtime.match_capability` walks every registered phrasing, The whole ranking survives.** :func:`rank` runs the matcher's own scoring and returns A near-tie is named.** Candidates within :data:`NEAR_TIE` of the leader are *contested A contested band is separated on declared data, or not at all.** Four rules, in
+    symbols:
+      functions:
+        - "rank"
+        - "_rank_unguarded"
+        - "select"
+        - "_separate_writes"
+        - "_reversal_rank"
+        - "_uncontested_reason"
+        - "_enabled"
+      classes:
+        - "Separator"
+        - "Candidate"
+        - "Selection"
+  -
+    path: "services/undx_brain/truth.py"
+    category: "undx"
+    domain_tags:
+      - "auth"
+      - "calls"
+      - "live"
+      - "feed"
+      - "business_os"
+      - "undx"
+      - "notifications"
+      - "safety"
+    sha256_16: "099ec1ebdfaa5da5"
+    bytes: 14172
+    summary: >
+      """Two axes that get confused with each other, kept apart on purpose. The first axis is **trust**: how well do we know this *about PulseSoc*? A route found by """ """How well a piece of *product* knowledge is known. Ordered by :func:`rank`. """ : Explicitly denied. Never retrievable, never rankable upward. Used for records a : safety classifier rejected, and for paths an operator has named as off-limits. : Superseded
+    symbols:
+      functions:
+        - "rank"
+        - "meets"
+        - "may_explain_product"
+        - "may_claim_live_state"
+        - "hedge_for"
+        - "transition"
+        - "state_supports_completion_claim"
+        - "state_requires_disclosure"
+        - "weakest"
+      classes:
+        - "TrustLevel"
+        - "EvidenceState"
+        - "EvidenceTransitionError"
+  -
+    path: "services/undx_brain/workspace.py"
+    category: "undx"
+    domain_tags:
+      - "messenger"
+      - "calls"
+      - "live"
+      - "undx"
+      - "notifications"
+      - "safety"
+    sha256_16: "e12f5a07230cc0d5"
+    bytes: 38301
+    summary: >
+      """The bounded working context for one request, and nothing else. Directive §5 asks for a global workspace: the small set of things UNDX is holding in A full slot refuses; it never evicts.** Eviction is the obvious implementation and it Evidence must name the account it is about.** :meth:`Workspace.place` requires an Nothing here is durable unless somebody said so, in the call.** ``retain`` defaults to Expiry is aban
+    symbols:
+      functions:
+        - "open_workspace"
+        - "_slot"
+        - "_secret_shaped"
+        - "_confidence"
+        - "_positive"
+      classes:
+        - "Slot"
+        - "SlotBound"
+        - "Item"
+        - "Summary"
+        - "Workspace"
   -
     path: "services/undx_capability_registry.py"
     category: "undx"
@@ -39980,16 +40581,16 @@ source_records:
     path: "services/undx_response_intelligence.py"
     category: "undx"
     domain_tags:
-      - "auth"
       - "messenger"
       - "calls"
-      - "live"
       - "feed"
       - "business_os"
       - "undx"
       - "notifications"
-    sha256_16: "d61a7a143cdb78fa"
-    bytes: 85703
+      - "safety"
+      - "search"
+    sha256_16: "030ce2600882d476"
+    bytes: 113094
     summary: >
       """Expert response intelligence: the stage that turns verified evidence into prose. Before this module existed, :func:`services.undx_tool_gateway._explain` answered every """ : The old cap was 400 characters, which is shorter than a single worked example in the : detailed-answer standard. A detailed answer carries a direct answer, the finding, the : supporting evidence, what it means, the limitation and a next step;
     symbols:
@@ -40007,6 +40608,10 @@ source_records:
         - "is_follow_up"
         - "select_detail_level"
         - "select_response_type"
+        - "select_response_mode"
+        - "required_evidence_for"
+        - "must_not_do_for"
+        - "unmet_evidence"
         - "_action_state_for"
         - "_overflow_count"
         - "_allowed_numbers"
@@ -40016,6 +40621,8 @@ source_records:
         - "_interpretations"
         - "_uncertainties"
         - "_limitations"
+        - "_account"
+        - "_causes"
         - "_next_steps"
         - "_sayable"
         - "_fold_reading"
@@ -40034,12 +40641,16 @@ source_records:
         - "draft_quality_issues"
         - "_quoted_spans"
         - "validate_consistency"
+        - "_carries"
+        - "accounting_shortfall"
         - "_last_resort"
         - "render"
         - "compose"
       classes:
         - "DetailLevel"
         - "ResponseType"
+        - "GoalShape"
+        - "ResponseMode"
         - "ActionState"
         - "EvidenceShape"
         - "EvidenceView"
@@ -40053,14 +40664,15 @@ source_records:
       - "auth"
       - "messenger"
       - "calls"
+      - "live"
       - "feed"
       - "business_os"
       - "undx"
       - "notifications"
-    sha256_16: "a8b80d6a3ef74de6"
-    bytes: 46012
+    sha256_16: "199f058ad8264e9e"
+    bytes: 52199
     summary: >
-      """The single chokepoint between a proposed action and a real mutation. Every capability invocation passes through :func:`execute`. Nothing else calls an """ --------------------------------------------------------------------------- Outcome plumbing --------------------------------------------------------------------------- """What one gateway call produced. """ Undo is offered only on a change the system independen
+      """The single chokepoint between a proposed action and a real mutation. Every capability invocation passes through :func:`execute`. Nothing else calls an """ --------------------------------------------------------------------------- Outcome plumbing --------------------------------------------------------------------------- """What one gateway call produced. """ Defaults to the stricter of the two readings. A caller
     symbols:
       functions:
         - "_receipt"
@@ -43246,6 +43858,25 @@ source_records:
       classes:
         []
   -
+    path: "tests/test_undx_promotion_contract.py"
+    category: "test_evidence"
+    domain_tags:
+      - "auth"
+      - "messenger"
+      - "media"
+      - "business_os"
+      - "undx"
+      - "notifications"
+    sha256_16: "33d208bbecb27bf1"
+    bytes: 3330
+    summary: "\"\"\"Release invariants for the UNDX production promotion path.\"\"\" from __future__ import annotations"
+    symbols:
+      functions:
+        []
+      classes:
+        - "ProductionVariableContract"
+        - "WorkerAndHealthContract"
+  -
     path: "tests/undx_agent/__init__.py"
     category: "undx"
     domain_tags:
@@ -43374,6 +44005,25 @@ source_records:
         - "LateAuditFailure"
         - "ReconciliationMarker"
         - "AuditContent"
+  -
+    path: "tests/undx_agent/test_brain_runtime_activation.py"
+    category: "undx"
+    domain_tags:
+      - "calls"
+      - "live"
+      - "feed"
+      - "business_os"
+      - "undx"
+      - "notifications"
+    sha256_16: "afab0c28ee3e61d8"
+    bytes: 9410
+    summary: >
+      """Production-shaped proof that Brain decisions reach the canonical agent runtime.""" from __future__ import annotations kwargs, """The whole thread, end to end, through the real gateway. """ A second alert, so the retrieval genuinely returns a set. With one record a ``show`` is documented to render as ``resource`` rather than ``list`` — a list of one is a thing, not a list — and asserting ``list`` against a single-r
+    symbols:
+      functions:
+        []
+      classes:
+        - "BrainRuntimeActivation"
   -
     path: "tests/undx_agent/test_confirm_path.py"
     category: "undx"
@@ -43802,6 +44452,28 @@ source_records:
         - "MatchedTurnFaultTests"
         - "LastResortReceiptTests"
   -
+    path: "tests/undx_agent/test_question_framed_writes.py"
+    category: "undx"
+    domain_tags:
+      - "live"
+      - "feed"
+      - "business_os"
+      - "undx"
+      - "notifications"
+      - "safety"
+    sha256_16: "6f975f34b5206a0d"
+    bytes: 15441
+    summary: >
+      """A question is never answered by performing the thing it asks about. The property under test is one sentence: if the person framed a request as a question Why the coverage is exhaustive rather than illustrative.** The suppression this """ : One frame from each family, chosen so the three families are all represented and so : the two that were actually broken in the field are present verbatim. ``"break down "`` : is
+    symbols:
+      functions:
+        - "_write_specs"
+        - "_is_write"
+      classes:
+        - "AQuestionNeverPerformsTheThingItAsksAbout"
+        - "TheRefusalSaysSomethingUseful"
+        - "TheFrameReaderIsPureAndUngated"
+  -
     path: "tests/undx_agent/test_question_shape.py"
     category: "undx"
     domain_tags:
@@ -43858,8 +44530,8 @@ source_records:
       - "notifications"
       - "search"
       - "i18n"
-    sha256_16: "0556c7f2eddacc19"
-    bytes: 75147
+    sha256_16: "2c342e5a8c3cf32d"
+    bytes: 87973
     summary: >
       """Batch 1 acceptance tests: the expert response intelligence layer. The mission names six requirements — detail-level selection, expert response plans, different* evidence produces different prose (no single template), which together are """ --------------------------------------------------------------------------- Fixtures --------------------------------------------------------------------------- """The five attr
     symbols:
@@ -43883,6 +44555,7 @@ source_records:
         - "QuotedEvidenceTests"
         - "DomainReadingFoldTests"
         - "CrossDomainFoldTests"
+        - "GoalShapeChangesTheAnswerTests"
   -
     path: "tests/undx_agent/test_review_hardening.py"
     category: "undx"
@@ -44024,6 +44697,535 @@ source_records:
         - "TransportWiring"
     endpoint_mentions:
       - "/api/pulse-ai/message"
+  -
+    path: "tests/undx_brain/__init__.py"
+    category: "test_evidence"
+    domain_tags:
+      - "undx"
+    sha256_16: "e3b0c44298fc1c14"
+    bytes: 0
+    summary: ""
+    symbols:
+      functions:
+        []
+      classes:
+        []
+  -
+    path: "tests/undx_brain/test_attention.py"
+    category: "test_evidence"
+    domain_tags:
+      - "auth"
+      - "messenger"
+      - "calls"
+      - "live"
+      - "feed"
+      - "business_os"
+      - "undx"
+      - "notifications"
+    sha256_16: "1558c6d547479f2d"
+    bytes: 30994
+    summary: >
+      """What a request must open, and — the harder half — what it must leave shut. Directive §6 states the acceptance test in full: "Why is my account acting strange?" """ : Everything on. Individual tests turn things off; a base of "off" would mean most : tests measured the disabled path by accident. : The §6 request, quoted exactly. """Every resource type reachable through the focus's *executable* capabilities.""" """An
+    symbols:
+      functions:
+        - "env"
+        - "attend"
+        - "resources_of"
+      classes:
+        - "ItIsOffUntilItIsTurnedOn"
+        - "TheSixthDirectiveExample"
+        - "NothingMatchedActivatesNothing"
+        - "IncidentalProseNamesNoSubject"
+        - "ASymptomAloneIsAMood"
+        - "DeferredIsNotUnreachable"
+        - "ReachableAreasRankFirst"
+        - "TheBudgetIsSpentEvenly"
+        - "ConfigurationMayNarrowAndMayNotWiden"
+        - "ACutIsReported"
+        - "SpellingsMeet"
+        - "ThereIsNoSecondCatalogue"
+        - "ItTakesNoOwner"
+        - "ItFillsAWorkspace"
+        - "ThePlannerActuallyConsultsAttention"
+  -
+    path: "tests/undx_brain/test_bounds.py"
+    category: "test_evidence"
+    domain_tags:
+      - "messenger"
+      - "calls"
+      - "undx"
+      - "notifications"
+      - "safety"
+    sha256_16: "de79968cf0d8a364"
+    bytes: 17771
+    summary: >
+      """Ceilings, tested at the point where exceeding one would be convenient. Every assertion here answers the same question: when the plan wants more than it is """ : Multi-step reasoning on, so the step ceiling under test is the configured one rather : than the single-step collapse. """A clock the tests move by hand, so expiry is measured rather than waited for.""" """The whole point of the module. These fail if the fl
+    symbols:
+      functions:
+        []
+      classes:
+        - "FakeClock"
+        - "TheCeilingsAreActuallyRead"
+        - "ReasoningIsOffUntilItIsTurnedOn"
+        - "AnOversizedPlanIsRefusedNotShortened"
+        - "ToolCallsAreSpentOnce"
+        - "AWriteIsNeverRetried"
+        - "ExpiryEndsThePlanRatherThanPausingIt"
+        - "TheReportIsHonest"
+        - "TheBudgetCannotBeEdited"
+        - "ThePlannerActuallyConsultsTheBounds"
+        - "TheFoundationMapNamesThisModule"
+  -
+    path: "tests/undx_brain/test_calibration.py"
+    category: "test_evidence"
+    domain_tags:
+      - "messenger"
+      - "calls"
+      - "feed"
+      - "undx"
+    sha256_16: "587c0fe6186af71c"
+    bytes: 30487
+    summary: >
+      """What the calibration reader must not do, held against it by running it. The module's whole value is that it declines to say things a count would let it say, so """ : Calibration needs its own flag, the Brain flag, the learning reader that supplies the : window, and facts ageing to place the result in time. All four, because the module : refuses to conclude anything it cannot date. """One claim per rating, each rat
+    symbols:
+      functions:
+        - "_event"
+        - "_window"
+        - "_answers"
+        - "_repeat"
+      classes:
+        - "TheFloorIsDerivedAndNotChosen"
+        - "SilenceIsNotApproval"
+        - "NotHelpfulIsNotWrong"
+        - "ARateWithoutAnIntervalIsNotAMeasurement"
+        - "TheJoinRefusesToGuess"
+        - "ObservingIsNotSteering"
+        - "TheFlagGatesEverything"
+        - "TheNamesMeanWhatTheyClaim"
+  -
+    path: "tests/undx_brain/test_config.py"
+    category: "test_evidence"
+    domain_tags:
+      - "calls"
+      - "business_os"
+      - "undx"
+      - "safety"
+    sha256_16: "da84f9853c490d56"
+    bytes: 13281
+    summary: >
+      """Flag resolution, tested at the point where a typo becomes a permission. Configuration is where safety properties are quietly given away. Nothing in this module ``UNDX_AGENT_REQUIRE_VERIFICATION=treu`` resolved to ``False``, because every an unrecognised trust floor fell back to the shipped default, which for an operator raising* the floor is looser than what they asked for. """ """The whole mission's reversibility
+    symbols:
+      functions:
+        []
+      classes:
+        - "UnconfiguredIsOff"
+        - "UnreadableValuesResolveToTheDocumentedDefault"
+        - "BoundsAreClampedNotObeyed"
+        - "TheCatalogIsWellFormed"
+        - "TyposAreDetected"
+        - "TheReportWithholdsSecrets"
+        - "ResolveNeverRaises"
+  -
+    path: "tests/undx_brain/test_corpus.py"
+    category: "test_evidence"
+    domain_tags:
+      - "auth"
+      - "live"
+      - "business_os"
+      - "undx"
+      - "safety"
+      - "search"
+    sha256_16: "dcfe3acfe258337b"
+    bytes: 11511
+    summary: >
+      """Corpus ingestion, tested against the real 1,682-record artifact. These run against ``backend/undx/config/undx_training_v6_source_corpus.yaml`` rather than """ A floor, not an exact count: regenerating the corpus after adding files should not fail this. A collapse to a handful should. The corpus is derived from static analysis. Nothing in it has been run, so nothing in it may claim LIVE_VERIFIED or RUNTIME_CANONICA
+    symbols:
+      functions:
+        - "_record"
+      classes:
+        - "RealCorpusIngests"
+        - "IngestIsCheapToRepeat"
+        - "PathEscapeIsRefused"
+        - "DegradesRatherThanRaises"
+        - "InjectionFilterFires"
+        - "SecretAndPathFiltersFire"
+        - "PromptBlockIsAnUntrustedEnvelope"
+  -
+    path: "tests/undx_brain/test_envelope.py"
+    category: "test_evidence"
+    domain_tags:
+      - "messenger"
+      - "live"
+      - "undx"
+      - "notifications"
+      - "safety"
+      - "search"
+    sha256_16: "c9c5f4408f324326"
+    bytes: 26524
+    summary: >
+      """What the envelope must hold, and what it must not be described as holding. The suite is in two halves and the second half matters as much as the first. The first """ : Every breakout shape worth trying. Grouped by the trick each one relies on, because a : bare list of strings stops being maintainable the moment somebody adds a matcher and : needs to know which cases were deliberate. the exact tag case, which model
+    symbols:
+      functions:
+        []
+      classes:
+        - "TheFenceHolds"
+        - "TheEdgesAreHandled"
+        - "TheDeclarationSaysTheRightThing"
+        - "TheFlagGatesThePolicyAndNotTheMechanism"
+        - "TheCorpusEscapeIsClosed"
+        - "TheWebSearchBlockIsSealedWhenTheFlagIsOn"
+        - "RememberedTextIsFencedToo"
+        - "ItDoesNotClaimToStopInjection"
+        - "TheModuleStaysWhereItBelongs"
+  -
+    path: "tests/undx_brain/test_evidence.py"
+    category: "test_evidence"
+    domain_tags:
+      - "undx"
+      - "safety"
+    sha256_16: "60960b3a4b53de33"
+    bytes: 30197
+    summary: >
+      """One pair of fields, tested from both directions. The dangerous pair is an outcome of ``verified_success`` carried alongside a """ : Every verdict that is not "the read-back confirmed it". """The property the whole module exists for.""" ``None`` is the case that looks like an omission and is actually the answer: no read-back happened, so nothing confirmed the change. Without this the module could pass everything el
+    symbols:
+      functions:
+        - "verification"
+        - "_receipt"
+      classes:
+        - "ADoneClaimNeedsAReadBack"
+        - "TheDowngradeIsVisible"
+        - "VerificationIsAVetoNotAPromotion"
+        - "EveryOutcomeIsHandledDeliberately"
+        - "NothingCanTalkItsWayIntoAClaim"
+        - "AReadIsNotAChange"
+        - "ItAgreesWithTheGatewayThatProducesTheOutcomes"
+        - "_FakeSpec"
+        - "TheGatewayActuallyConsultsThisModule"
+        - "TheCardCarriesTheAssessment"
+        - "TheFoundationMapNamesThisModule"
+  -
+    path: "tests/undx_brain/test_execution.py"
+    category: "test_evidence"
+    domain_tags:
+      - "calls"
+      - "undx"
+      - "safety"
+    sha256_16: "18b252306a5b7b26"
+    bytes: 24552
+    summary: >
+      """Three ceilings that had no caller, spent for the first time. ``bounds`` enforced four numbers and one of them was reached: ``build_plan`` admits """ : The Brain on, the executor on, and multi-step reasoning on. The third is not : optional decoration: with ``UNDX_BRAIN_REASONING_ENABLED`` off the effective step : ceiling is 1, so a suite that forgot it would refuse every multi-step plan and pass : while testing not
+    symbols:
+      functions:
+        - "_steps"
+      classes:
+        - "_Recorder"
+        - "TheCeilingsThatHadNoCaller"
+        - "APartialRunIsNeverSuccess"
+        - "AnUnknownOutcomeIsNotAFailure"
+        - "AWriteIsNeverRetried"
+        - "ExpiryIsNotResumption"
+        - "TheLedgerIsMonotonic"
+        - "TheExecutorPerformsNothingItself"
+        - "TheFlagGatesEverything"
+  -
+    path: "tests/undx_brain/test_facts.py"
+    category: "test_evidence"
+    domain_tags:
+      - "live"
+      - "business_os"
+      - "undx"
+      - "notifications"
+      - "safety"
+    sha256_16: "dbe3032683de48d1"
+    bytes: 24903
+    summary: >
+      """A remembered fact gets older, and a new one that disagrees says so out loud. The test that carries the weight here is """ : The Brain on and fact ageing on. Both are needed: the master switch alone must not : turn this on, and a test that only set the second would pass against a module that : had forgotten to read the first. : A fixed instant, so a horizon test does not become a test of how long the suite took : t
+    symbols:
+      functions:
+        - "ago"
+        - "observation"
+      classes:
+        - "TheFlagGovernsWhetherAnythingIsAnswered"
+        - "AFactGetsOlder"
+        - "NothingStoredIsEverCurrent"
+        - "TheExistingStoreGetsThisBackwards"
+        - "ADisagreementIsReported"
+        - "ReconcilingAgainstEverythingStored"
+        - "NothingHereRaises"
+  -
+    path: "tests/undx_brain/test_foundation.py"
+    category: "test_evidence"
+    domain_tags:
+      - "calls"
+      - "live"
+      - "business_os"
+      - "undx"
+      - "safety"
+      - "search"
+    sha256_16: "6b208a3c7400fd8b"
+    bytes: 59870
+    summary: >
+      """The Foundation map, checked against the code it claims to describe. A map of who-owns-what is worth exactly as much as its accuracy, and prose maps rot """ : Repository root, used by the drift tests that read a source file as text rather than : importing it — a claim about how many call sites write to a table cannot be checked : through the import system. Before importing anything under ``services``. One owner mod
+    symbols:
+      functions:
+        - "_importers_of"
+      classes:
+        - "TheMapMatchesTheCode"
+        - "TheMapCannotBeMadeVague"
+        - "TheKnownGapsAreRecorded"
+        - "LookupsWork"
+        - "TheCognitiveEntriesSayTrueThings"
+        - "ThePromptInjectionEntryTellsTheTruthAboutTheBoundary"
+        - "TheAttentionEntryTellsTheTruthAboutItsCallSite"
+        - "TheNoCallerClaimsAreFalsifiable"
+        - "ThePackageNamesItsOwnModules"
+  -
+    path: "tests/undx_brain/test_goals.py"
+    category: "test_evidence"
+    domain_tags:
+      - "calls"
+      - "feed"
+      - "business_os"
+      - "undx"
+      - "notifications"
+      - "safety"
+      - "settings"
+    sha256_16: "820dbb6c02835d8c"
+    bytes: 25859
+    summary: >
+      """When a sentence names what is wanted, and when it only names what is wrong. Directive §7 states the acceptance test as three sentences about the same object. "Find """ : Everything on. Individual tests turn things off; a base of "off" would mean most tests : measured the disabled path by accident. : Sentences used wherever a test needs to hold across the whole shape of the module : rather than at one point. : Sent
+    symbols:
+      functions:
+        - "env"
+        - "understand"
+        - "is_read"
+      classes:
+        - "ItIsOffUntilItIsTurnedOn"
+        - "TheSeventhDirectiveExample"
+        - "AnUnsettledGoalNeverBecomesAWrite"
+        - "ANamedOperationIsStillANamedOperation"
+        - "ItConsultsTheExistingMatcherRatherThanReplacingIt"
+        - "ItReusesAttentionRatherThanRoutingTwice"
+        - "NothingReadableIsSaidPlainly"
+        - "AskingForAnAccountIsNotAskingForTheThing"
+        - "TheFramesAreSmallAndJustified"
+  -
+    path: "tests/undx_brain/test_knowledge.py"
+    category: "test_evidence"
+    domain_tags:
+      - "calls"
+      - "live"
+      - "undx"
+      - "notifications"
+      - "safety"
+      - "settings"
+    sha256_16: "91c42bb88c38c163"
+    bytes: 12210
+    summary: >
+      """Bounded retrieval, tested for its bounds first and its ranking second. The ranking tests here name specific modules, which makes them look brittle. They are "the tool gateway" returned ``bot.py`` and five ``mobile-native`` files, because path "how does verification work" ranked three audit scripts first, because ``work`` was every query returned six arbitrary files, because ~900 records tied at one point and """ "
+    symbols:
+      functions:
+        []
+      classes:
+        - "BoundsAreHard"
+        - "TrustFloorIsEnforced"
+        - "NeverEstablishesAccountState"
+        - "ProvenanceSurvives"
+        - "DegradesRatherThanFails"
+        - "FlagGatesTheIntegration"
+        - "RankingRegressions"
+    endpoint_mentions:
+      - "/api/alerts/pause"
+      - "/api/network/..."
+      - "/api/network/…"
+  -
+    path: "tests/undx_brain/test_learning.py"
+    category: "test_evidence"
+    domain_tags:
+      - "messenger"
+      - "calls"
+      - "live"
+      - "feed"
+      - "business_os"
+      - "undx"
+      - "safety"
+    sha256_16: "21d80f7a6fdcab73"
+    bytes: 31626
+    summary: >
+      """The learning log gets a reader that opens a row, and one that knows when to shut up. Two tests carry the weight, and neither of them is about arithmetic. """ : ``pulse_ai_service`` pulls in the whole feed stack, which reaches werkzeug. The : bootstrap is what makes the real writer importable here, and the real writer is the : point of :class:`WhatTheWriterMakesUnreachable`. : Four flags, and every one of them is l
+    symbols:
+      functions:
+        - "ago"
+        - "event"
+        - "window"
+        - "agent_actions"
+      classes:
+        - "ADatabaseTest"
+        - "TheFlagGovernsWhetherAnythingIsAnswered"
+        - "WhatTheWriterMakesUnreachable"
+        - "LoadingIsOwnerScopedAndBounded"
+        - "ARowIsParsedNotGuessedAt"
+        - "ADistributionRefusesToNameANarrowLeader"
+        - "ASuccessionIsMeasuredAgainstTheBaseRate"
+        - "EverySentenceIsGrounded"
+        - "NothingHereRaises"
+  -
+    path: "tests/undx_brain/test_memory.py"
+    category: "test_evidence"
+    domain_tags:
+      - "messenger"
+      - "calls"
+      - "feed"
+      - "undx"
+      - "notifications"
+      - "settings"
+    sha256_16: "276bb88e2d82905f"
+    bytes: 19004
+    summary: >
+      """Memory isolation, tested by trying to break it against a real database. These build an actual sqlite database with two accounts' rows in it and then attempt, no owner clause at all — the whole table, which is the bug this module exists for a JOIN onto another memory table — a preference scope reading the message log two owner markers — the value binds to whichever the caller happened to order first """ """A databa
+    symbols:
+      functions:
+        - "_db"
+      classes:
+        - "OwnerScopeMustBeEstablished"
+        - "OneAccountCannotReadAnother"
+        - "WritesStayInsideTheScope"
+        - "TheFlagChoosesBetweenTwoSafeOutcomes"
+        - "DegradesRatherThanRaises"
+        - "TheClassTableIsHonest"
+  -
+    path: "tests/undx_brain/test_prediction.py"
+    category: "test_evidence"
+    domain_tags:
+      - "auth"
+      - "calls"
+      - "feed"
+      - "undx"
+      - "notifications"
+      - "safety"
+    sha256_16: "dbc0b0fce52805e3"
+    bytes: 19461
+    summary: >
+      """A write is described before it happens, and the description is checked afterwards. The test carrying the most weight is """ : The Brain on and prediction on. Both are needed: the master switch alone must not turn : this on, and a test that set only the second would pass against a module that had : forgotten to read the first. : One call per reversal outcome, chosen because the registry genuinely classifies them :
+    symbols:
+      functions:
+        - "_sample"
+      classes:
+        - "TheExistingSimulatorDoesNotDiscriminate"
+        - "TheFlagGatesEverything"
+        - "ThePredictionIsDerivedNotHardcoded"
+        - "ThePredictionRefusesToInvent"
+        - "ThePredictionCanBeFalsified"
+  -
+    path: "tests/undx_brain/test_rollout.py"
+    category: "test_evidence"
+    domain_tags:
+      - "business_os"
+      - "undx"
+      - "safety"
+    sha256_16: "de270b5a39c81b03"
+    bytes: 20608
+    summary: >
+      """The gate, tested at the point where letting somebody through would be convenient. A rollout gate has one job and two ways to fail it. It can keep somebody out who should """ : The master switch on. Every test that is about the *rollout* needs this, because the : master switch being off is a different refusal and would mask the one under test. """``ON`` plus overrides, so each test states only the flag it is about.
+    symbols:
+      functions:
+        - "env"
+      classes:
+        - "TheFlagIsActuallyRead"
+        - "TheMasterSwitchIsCheckedBeforeTheCohort"
+        - "AnEmptyCohortMeansNobody"
+        - "NobodyIsAMemberByAccident"
+        - "TheBucketIsStableEverywhere"
+        - "ThePercentageMeansWhatItSays"
+        - "WritesNeverOutrunReads"
+        - "TheRefusalExplainsItself"
+        - "TheSurfaceIsHonest"
+        - "TheFoundationMapNamesThisModule"
+  -
+    path: "tests/undx_brain/test_selection.py"
+    category: "test_evidence"
+    domain_tags:
+      - "calls"
+      - "live"
+      - "feed"
+      - "business_os"
+      - "undx"
+      - "notifications"
+      - "safety"
+      - "settings"
+    sha256_16: "0f80333fd05f0302"
+    bytes: 28780
+    summary: >
+      """Two candidates are held at once, compared, and sometimes refused. The test carrying the most weight is """ : The Brain on, selection on, and prediction on — the last because the write-separation : rules read predictions, and a test that left it off would be exercising the : unavailable-predictor branch while believing it exercised the rules. : Selection on, prediction off. Used to prove the module declines rather
+    symbols:
+      functions:
+        - "_all_registered_phrasings"
+        - "_write_ids"
+        - "_band"
+        - "_ranked_for"
+      classes:
+        - "TheMatcherThrowsAwayTheRunnersUp"
+        - "TheRankingIsTheMatchersOwn"
+        - "TheNearTieThresholdIsMeasured"
+        - "TheWritesTheRegistryDeclaresAreNotCloseToEachOther"
+        - "TheContestedBandIsSeparatedOnDeclaredData"
+        - "TheSelectorRefusesRatherThanGuesses"
+        - "TheFlagGatesEverything"
+        - "TheAnswersToNonQuestionsAreStillAnswers"
+  -
+    path: "tests/undx_brain/test_truth.py"
+    category: "test_evidence"
+    domain_tags:
+      - "calls"
+      - "live"
+      - "undx"
+      - "notifications"
+      - "safety"
+    sha256_16: "a7af4b874ed89f8a"
+    bytes: 6411
+    summary: >
+      """The two-axis truth model, tested at the points where collapsing it would be easy. Every test here corresponds to a specific wrong answer a user could be given: told their alert is paused because the corpus documents a pause endpoint told an action succeeded because the service accepted the request given a confident answer built on a file nobody has ever run """ """The single rule the package exists to protect."""
+    symbols:
+      functions:
+        - "_can"
+      classes:
+        - "TrustNeverBecomesEvidence"
+        - "TrustOrdering"
+        - "EvidenceTransitions"
+        - "WeakestIsAFloor"
+  -
+    path: "tests/undx_brain/test_workspace.py"
+    category: "test_evidence"
+    domain_tags:
+      - "messenger"
+      - "calls"
+      - "undx"
+      - "notifications"
+      - "safety"
+      - "settings"
+    sha256_16: "64b9762c56fc00a7"
+    bytes: 28310
+    summary: >
+      """What the bounded working context must refuse, and why each refusal matters. Every test here names a user-visible failure. The workspace is a container, and a """ : Everything on. Individual tests turn things off; a base of "off" would mean most : tests measured the disabled path by accident. """A clock the tests advance by hand, so expiry is measured rather than waited for.""" """An unconfigured deployment must be
+    symbols:
+      functions:
+        - "env"
+        - "opened"
+      classes:
+        - "FakeClock"
+        - "ItIsOffUntilItIsTurnedOn"
+        - "ItIsScopedToOneAccount"
+        - "AFullSlotRefusesRatherThanEvicting"
+        - "TheWholeContextIsBounded"
+        - "AContradictionIsRefusedNotOverwritten"
+        - "SecretsAreRefusedAtTheDoor"
+        - "ExpiryIsAbandonmentNotResumption"
+        - "NothingBecomesDurableByOmission"
+        - "CompletionIsStatedNotDefaulted"
+        - "InspectionShowsShapeNotContent"
+        - "ItReusesRatherThanRedeclares"
+        - "ConfidenceFallsToZeroWhenUnreadable"
+        - "EntriesCannotBeEditedAfterTheFact"
 training_guidance:
   answering:
     - "Prefer source-derived facts over assumptions."

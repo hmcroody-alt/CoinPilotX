@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import logging
 import os
-import time
+import signal
+import threading
 
 import bot
 import undx_router
@@ -17,11 +18,26 @@ import undx_router
 
 WORKER_NAME = "coinpilotx-undx-worker"
 SLEEP_SECONDS = int(os.getenv("UNDX_WORKER_SLEEP_SECONDS", "60"))
+STOP_EVENT = threading.Event()
+
+
+def _build_sha() -> str:
+    """Return immutable release lineage without exposing any configuration value."""
+    return (os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("APP_BUILD_SHA") or "unknown")[:40]
+
+
+def _request_shutdown(signum, _frame) -> None:
+    logging.info("UNDX_WORKER_STOP_REQUESTED service=%s signal=%s", WORKER_NAME, signum)
+    STOP_EVENT.set()
 
 
 def _status_payload() -> dict:
     providers = undx_router.provider_status()
     return {
+        "worker_type": "undx",
+        "runtime_version": os.getenv("UNDX_CONFIG_VERSION", "default"),
+        "deployed_sha": _build_sha(),
+        "environment": os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("RAILWAY_ENVIRONMENT") or "unknown",
         "router_enabled": undx_router.router_enabled(),
         "multi_model_mode": undx_router.multi_model_mode(),
         "default_provider": undx_router.default_provider(),
@@ -35,9 +51,11 @@ def _status_payload() -> dict:
 
 def main() -> None:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(signum, _request_shutdown)
     bot.init_db()
     logging.info("UNDX_WORKER_START service=%s status=%s", WORKER_NAME, _status_payload())
-    while True:
+    while not STOP_EVENT.is_set():
         try:
             undx_router.log_provider_status()
             bot.record_worker_heartbeat(WORKER_NAME, "healthy", metadata=_status_payload())
@@ -47,7 +65,8 @@ def main() -> None:
                 bot.record_worker_heartbeat(WORKER_NAME, "error", str(exc), _status_payload())
             except Exception:
                 logging.exception("UNDX worker error heartbeat failed")
-        time.sleep(max(15, SLEEP_SECONDS))
+        STOP_EVENT.wait(max(15, SLEEP_SECONDS))
+    logging.info("UNDX_WORKER_STOPPED service=%s", WORKER_NAME)
 
 
 if __name__ == "__main__":

@@ -107889,14 +107889,99 @@ def undx_policy_health_check():
     """
     try:
         from services import undx_agent_policy as _policy
+        from services import undx_agent_tools as _tools
+        from services import undx_architecture as _architecture
+        from services import undx_verification as _verification
+        from services.undx_brain import config as _brain_config
+        from services.undx_brain import corpus as _corpus
+        from services.undx_capability_registry import REGISTRY, unregistered_tool_names
 
+        policy_flags = _policy.flags()
+        brain_resolution = _brain_config.resolve()
+        brain_flags = brain_resolution.values
+        corpus_state = _corpus.ingest()
+        missing_executors = sorted(
+            spec.executor for spec in REGISTRY.values()
+            if spec.executor not in _tools.EXECUTORS
+        )
+        policy_gaps = unregistered_tool_names()
+        database_state = db_service.health_check()
+        worker_state = get_worker_heartbeat("coinpilotx-undx-worker")
+        degraded = []
+        if not database_state.get("connected"):
+            degraded.append("database")
+        if missing_executors:
+            degraded.append("registry_executor_parity")
+        if policy_gaps:
+            degraded.append("policy_parity")
+        if corpus_state.fatal:
+            degraded.append("source_corpus")
+        if not worker_state:
+            degraded.append("undx_worker_heartbeat")
+        status = "healthy" if not degraded else "degraded"
         payload = {
-            "ok": True,
+            "ok": status == "healthy",
+            "status": status,
+            "sha": service_health_commit(),
+            "runtime_version": os.getenv("UNDX_CONFIG_VERSION", "default"),
             "pid": os.getpid(),
             "started_at": UNDX_PROCESS_STARTED_AT,
             "uptime_seconds": round(time.time() - UNDX_PROCESS_STARTED_AT, 1),
-            "flags": _policy.flags(),
-            "writes_available": _policy.writes_available(),
+            "agent": {
+                "enabled": policy_flags["agent_enabled"],
+                "reads": policy_flags["reads_enabled"],
+                "writes": policy_flags["writes_enabled"],
+                "disable_writes": policy_flags["writes_kill_switch"],
+                "writes_available": _policy.writes_available(),
+                "fail_closed": bool(brain_flags["UNDX_AGENT_FAIL_CLOSED"]),
+                "qa_cohort_configured": policy_flags["qa_cohort_configured"],
+            },
+            "brain": {
+                "enabled": bool(brain_flags["UNDX_BRAIN_ENABLED"]),
+                "qa_only": bool(brain_flags["UNDX_BRAIN_QA_ONLY"]),
+                "registry_loaded": bool(REGISTRY),
+                "capability_count": len(REGISTRY),
+                "memory_fail_closed": bool(brain_flags["UNDX_MEMORY_FAIL_CLOSED"]),
+            },
+            "verification": {
+                "required": bool(brain_flags["UNDX_AGENT_REQUIRE_VERIFICATION"]),
+                "available": callable(getattr(_verification, "verify", None)),
+            },
+            "audit": {
+                "required": bool(brain_flags["UNDX_AGENT_REQUIRE_AUDIT"]),
+                "available": hasattr(_architecture, "prepare_tool_operation"),
+            },
+            "parity": {
+                "registry_executor": not missing_executors,
+                "policy": not policy_gaps,
+            },
+            "corpus": {
+                "present": os.path.isfile(corpus_state.manifest.corpus_path),
+                "audited": corpus_state.manifest.audit_status == "pass" and not bool(corpus_state.fatal),
+                "record_count": len(corpus_state.records),
+                "schema_version": corpus_state.manifest.schema_version,
+                "source_commit": corpus_state.manifest.source_commit,
+                "checksum": corpus_state.manifest.checksum_sha256,
+            },
+            "knowledge": {
+                "retrieval_available": bool(brain_flags["UNDX_KNOWLEDGE_RETRIEVAL_ENABLED"])
+                and not bool(corpus_state.fatal),
+            },
+            "worker": {
+                "heartbeat_present": bool(worker_state),
+                "status": str(worker_state.get("status") or "missing"),
+                "last_seen_at": worker_state.get("last_seen_at"),
+            },
+            "coordination": {
+                "mode": "postgresql-and-process-local",
+                "database_ok": bool(database_state.get("connected")),
+            },
+            "provider": {
+                "configured": any(undx_router.provider_status().values()),
+            },
+            "configuration_notes": list(brain_resolution.notes),
+            "unknown_variables": list(brain_resolution.unknown),
+            "degraded": degraded,
         }
     except Exception as exc:
         payload = {"ok": False, "pid": os.getpid(), "error": exc.__class__.__name__}
