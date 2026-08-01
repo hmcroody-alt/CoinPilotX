@@ -107,7 +107,7 @@ class PersonalIntelligencePackTests(unittest.TestCase):
           public_summary TEXT,created_at TEXT,updated_at TEXT,expires_at TEXT);
         CREATE TABLE account_system_events(
           id INTEGER PRIMARY KEY,user_id INTEGER,event_type TEXT,severity TEXT,status TEXT,
-          public_summary TEXT,created_at TEXT,updated_at TEXT,expires_at TEXT);
+          public_summary TEXT,created_at TEXT,resolved_at TEXT);
         CREATE TABLE verification_requests(
           id INTEGER PRIMARY KEY,user_id INTEGER,verification_type TEXT,status TEXT,
           submitted_at TEXT,reviewed_at TEXT,decision_at TEXT,updated_at TEXT,created_at TEXT);

@@ -744,11 +744,13 @@ def account_health_summary(user_id: int) -> dict[str, Any]:
     )
     for table, kind, title_column, detail_column, expiry_column, updated_column in sources:
         for row in _read(
-            f"""SELECT id, {title_column} AS title, {detail_column} AS detail,
-                       status, public_summary, created_at, {updated_column}, {expiry_column}
-                FROM {table} WHERE user_id=?
-                  AND COALESCE(status,'open') NOT IN ('resolved','expired','dismissed')
-                ORDER BY COALESCE(updated_at,created_at) DESC LIMIT 25""",
+            f"""SELECT * FROM (
+                       SELECT id, {title_column} AS title, {detail_column} AS detail,
+                              status, public_summary, created_at, {updated_column}, {expiry_column}
+                       FROM {table} WHERE user_id=?
+                         AND COALESCE(status,'open') NOT IN ('resolved','expired','dismissed')
+                   ) AS account_health_source
+                   ORDER BY COALESCE(updated_at,created_at) DESC LIMIT 25""",
             (int(user_id),), source=table,
         ):
             facts.append(_fact(
