@@ -88,6 +88,30 @@ class TransportWiring(unittest.TestCase):
         self.assertFalse(AgentResponse(handled=False))
         self.assertTrue(AgentResponse(handled=True, reply="done"))
 
+    def test_unimplemented_operational_writes_fail_closed_before_chat(self):
+        for text, reason in (
+            ("Send a message saying hello.", "Message sending"),
+            ("Buy 100 dollars of Bitcoin.", "Financial transactions"),
+            ("Delete my last post.", "Destructive content actions"),
+        ):
+            with self.subTest(text=text):
+                result = self.svc._agent_turn(
+                    self.fx.cur, OWNER_ID, text, {}, conversation_id=1,
+                    correlation_id="blocked-op",
+                )
+                self.assertIsNotNone(result)
+                self.assertIn(reason, result.reply)
+                self.assertIn("did not make any change", result.reply)
+
+    def test_draft_without_send_and_explanatory_write_language_still_fall_through(self):
+        for text in ("Draft a reply, but do not send it.", "Why would I pause an alert?"):
+            with self.subTest(text=text):
+                result = self.svc._agent_turn(
+                    self.fx.cur, OWNER_ID, text, {}, conversation_id=1,
+                    correlation_id="non-action",
+                )
+                self.assertIsNone(result)
+
     def test_ordinary_questions_still_reach_the_model_provider(self):
         """The regression that matters most, because its failure mode is silent.
 

@@ -72,6 +72,35 @@ _EXPLICIT_MARKERS = (
 _HEDGES = ("should i", "can you", "could you", "what if", "maybe", "how do i",
            "is it possible", "what happens if", "would it")
 
+# Operations intentionally outside the active registry must fail closed before the
+# conversational provider can imply that it will perform them.  These expressions are
+# anchored to imperative requests so educational questions and explicit non-action
+# drafting ("draft this, but do not send it") continue to reach normal conversation.
+_BLOCKED_OPERATIONAL_INTENTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"^\s*(?:please\s+)?send\s+(?:a\s+)?message\b", re.IGNORECASE),
+     "Message sending is not enabled for UNDX."),
+    (re.compile(r"^\s*(?:please\s+)?(?:buy|purchase|sell|trade|transfer|withdraw)\b", re.IGNORECASE),
+     "Financial transactions are not enabled for UNDX."),
+    (re.compile(r"^\s*(?:please\s+)?(?:delete|remove)\s+(?:my\s+)?(?:(?:last|latest|recent)\s+)?(?:post|reel|status|message|account)\b", re.IGNORECASE),
+     "Destructive content actions are not enabled for UNDX."),
+)
+
+
+def _blocked_operational_response(text: str, started: float) -> AgentResponse | None:
+    for pattern, reason in _BLOCKED_OPERATIONAL_INTENTS:
+        if pattern.search(text):
+            return AgentResponse(
+                handled=True,
+                reply=f"{reason} I did not make any change.",
+                card={
+                    "component": CardType.UNSUPPORTED_CAPABILITY,
+                    "status": AgentOutcome.UNSUPPORTED_CAPABILITY,
+                    "may_claim_done": False,
+                },
+                latency_ms=int((time.monotonic() - started) * 1000),
+            )
+    return None
+
 
 #: Frames in which a person *names* a write without asking for it. Three families,
 #: written out separately because they fail for different reasons and a future reader
@@ -3117,6 +3146,10 @@ def handle(
 
     if not available(int(user_id)):
         return AgentResponse(handled=False, reply="", latency_ms=int((time.monotonic() - started) * 1000))
+
+    blocked = _blocked_operational_response(text, started)
+    if blocked is not None:
+        return blocked
 
     # Brain activation is deliberately upstream of the deterministic matcher.  It may
     # abstain, narrow, or choose the safer member of a contested band; it may never add

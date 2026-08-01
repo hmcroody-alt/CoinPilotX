@@ -1034,7 +1034,7 @@ for _spec in (
                    PermissionScope.SELF_ACCOUNT_ONLY, (_QUERY, _READ_LIMIT), "music_search", "",
                    "/pulse/music", CardType.SEARCH_RESULTS, "music_read"),
     CapabilitySpec("account.health.summary", "Summarize owner-visible account health findings",
-                   ("is my account healthy", "summarize my account health"),
+                   ("is my account healthy", "summarize my account health", "explain my account health"),
                    RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.account.health.summary",
                    PermissionScope.SELF_ACCOUNT_ONLY, (), "account_health_summary", "",
                    "/pulse/account-health", CardType.CONTENT_RESULT, "account_health_read"),
