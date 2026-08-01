@@ -269,9 +269,18 @@ class TheCognitiveEntriesSayTrueThings(unittest.TestCase):
                 with self.subTest(symbol=symbol):
                     self.assertTrue(hasattr(L, symbol), f"learning has no {symbol}")
 
-        # The three things the entry admits are still missing. Reach is the one the next
-        # task closes; attribution is a boundary and is not expected to close here.
-        self.assertIn("Nothing calls ``learning``", item.gap)
+        # Reach closed and the sentence had to be rewritten by hand, which is the whole
+        # value of pinning it. This assertion used to read
+        # ``assertIn("Nothing calls ``learning``", item.gap)`` and it went on passing for
+        # a commit after ``undx_agent_runtime.handle`` started calling ``learning.load``,
+        # because a string test can only check that a sentence is *present*, never that
+        # it is *true*. That is the failure mode ``TheNoCallerClaimsAreFalsifiable``
+        # below exists to close; what is left here is the narrower job of pinning the two
+        # gaps that genuinely have not moved.
+        self.assertNotIn(
+            "Nothing calls ``learning``", item.gap,
+            "the entry still claims nothing calls learning; handle() calls load()",
+        )
         self.assertIn("UNDX_BRAIN_LEARNING_ENABLED", item.gap)
         self.assertIn("NULL ``user_id``", item.gap)
 
@@ -433,12 +442,29 @@ class TheCognitiveEntriesSayTrueThings(unittest.TestCase):
                     f"entry does not mention it",
                 )
 
-        # The part of the original claim that has *not* gone stale, and is the one that
-        # actually matters: every caller so far is itself flag-gated, so the reach of
-        # ``facts`` into a real request is still zero. ``learning`` calling it is one
-        # dark module calling another.
-        self.assertIn("Nothing on the live path calls either", gap)
+        # The rest of the original claim went stale for the same reason the list above
+        # did — the next task did its job. It used to assert
+        # ``"Nothing on the live path calls either"``, and by the time
+        # ``undx_agent_runtime.handle`` was calling ``calibration.calibrate``, which
+        # calls ``facts.read``, that sentence was simply false. What replaces it is the
+        # distinction that survived: ``facts`` is reached *through* two callers and by
+        # nothing directly, which is a real difference and worth naming rather than
+        # rounding in either direction.
+        self.assertNotIn(
+            "Nothing on the live path calls either", gap,
+            "handle() reaches facts through calibration; the entry still denies it",
+        )
+        self.assertIn("two hops", gap.lower())
         self.assertIn("UNDX_BRAIN_FACTS_ENABLED", gap)
+
+        # And the hop the sentence depends on is real, not remembered.
+        import inspect
+
+        from services.undx_brain import calibration
+
+        self.assertIn("facts.read", inspect.getsource(calibration),
+                      "calibration no longer calls facts.read; the entry's second hop "
+                      "is gone and the wording has to change again")
 
     def test_the_prediction_entry_stopped_claiming_prediction_has_no_owner(self):
         # This entry read "Real prediction ... has no owner" and was true when written.
@@ -1002,6 +1028,143 @@ class TheAttentionEntryTellsTheTruthAboutItsCallSite(unittest.TestCase):
         plan = undx_architecture.build_plan(7, "Why is my account acting strange?", {}, "r")
         self.assertNotIn("attention", plan,
                          "the entry says the gate defaults off; the plan says otherwise")
+
+
+class TheNoCallerClaimsAreFalsifiable(unittest.TestCase):
+    """A gap that says "nothing calls X" has to still be true of the import graph.
+
+    This class exists because of a specific, observed failure rather than a hypothetical
+    one. ``memory_learning_event``'s gap opened with "Reach. Nothing calls ``learning``."
+    and was pinned by an ``assertIn`` on that exact sentence. Then a commit wired
+    ``learning.load`` into ``undx_agent_runtime.handle`` — and the suite stayed green,
+    because ``assertIn`` asks whether a sentence is *present*, never whether it is
+    *true*. The map's one job is to not drift, and it had drifted into stating the
+    opposite of the code while a test stood guard over the falsehood.
+
+    So the claims are checked against the real import graph instead of against
+    themselves. "Live path" is read strictly here: a module has a live caller when some
+    module *outside* ``services/undx_brain/`` imports it, which is the smallest
+    definition that would have caught this and the only one that does not require
+    judgement about what counts as a request.
+
+    Withdrawn claims are exempt, and have to be — the honest way to correct one of these
+    sentences is to say what it used to claim and why that is no longer so, which leaves
+    the old words on the page on purpose. A sentence carrying a withdrawal marker is
+    reporting history, not asserting a present fact.
+    """
+
+    #: Ways the map says a thing is unreached. Matched case-insensitively against one
+    #: sentence at a time, so a phrase here only fires when it shares a sentence with the
+    #: name of a module that does in fact have a caller.
+    NO_CALLER = (
+        "nothing calls", "nothing on the live path calls", "no live caller",
+        "is never called", "has no caller", "nothing acts on", "nothing else calls",
+        "unreached", "no caller", "not called from",
+    )
+
+    #: Markers that turn an assertion into a report of a withdrawn one. Deliberately
+    #: narrow: "used to" and "no longer" are hard to write by accident, whereas a looser
+    #: marker like "now" appears in half the prose in the file and would exempt
+    #: everything.
+    WITHDRAWN = ("used to", "no longer", "is withdrawn", "was the wrong word",
+                 "that is not true", "stopped claiming")
+
+    @classmethod
+    def setUpClass(cls):
+        import ast
+
+        cls.brain_modules = {
+            path.stem for path in (ROOT / "services" / "undx_brain").glob("*.py")
+            if path.stem != "__init__"
+        }
+        # Parsed rather than grepped. ``undx_architecture`` mentions
+        # ``services.undx_brain.facts`` twice in a docstring explaining what it does
+        # *not* do, and a text search would read those as imports and call the module
+        # reached — inverting the test on the one entry whose reach is most contested.
+        cls.reached: dict[str, set[str]] = {}
+        for path in (ROOT / "services").rglob("*.py"):
+            if "undx_brain" in path.parts:
+                continue
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except SyntaxError:  # pragma: no cover - a broken file is another test's job
+                continue
+            for node in ast.walk(tree):
+                names: list[str] = []
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    if node.module == "services.undx_brain":
+                        names = [alias.name for alias in node.names]
+                    elif node.module.startswith("services.undx_brain."):
+                        names = [node.module.split(".")[2]]
+                elif isinstance(node, ast.Import):
+                    names = [alias.name.split(".")[2] for alias in node.names
+                             if alias.name.startswith("services.undx_brain.")]
+                for name in names:
+                    if name in cls.brain_modules:
+                        cls.reached.setdefault(name, set()).add(
+                            str(path.relative_to(ROOT)))
+
+    @staticmethod
+    def _sentences(text: str) -> list[str]:
+        # Split on sentence-ish boundaries and on the blank lines the gaps use between
+        # paragraphs, so a claim in one paragraph cannot be exempted by a withdrawal
+        # marker three paragraphs away.
+        return [part for part in re.split(r"(?<=[.:])\s+|\n\n", text or "") if part.strip()]
+
+    def test_the_import_graph_is_read_correctly_before_anything_is_judged(self):
+        # The scanner is the thing every other test here trusts, so it gets checked
+        # against two modules whose reach is not in doubt in either direction.
+        self.assertIn("envelope", self.reached,
+                      "pulse_ai_web_search imports envelope; the scanner missed it")
+        self.assertIn("evidence", self.reached,
+                      "undx_tool_gateway imports evidence; the scanner missed it")
+        self.assertNotIn(
+            "facts", self.reached,
+            "only undx_architecture's docstrings name facts; the scanner read prose "
+            "as an import",
+        )
+
+    def test_no_entry_claims_a_module_is_uncalled_while_something_calls_it(self):
+        offences = []
+        for item in f.FOUNDATION:
+            for field in ("gap", "note", "summary"):
+                for sentence in self._sentences(getattr(item, field, "") or ""):
+                    low = sentence.lower()
+                    if not any(phrase in low for phrase in self.NO_CALLER):
+                        continue
+                    if any(marker in low for marker in self.WITHDRAWN):
+                        continue
+                    for module, callers in sorted(self.reached.items()):
+                        if f"``{module}``" in sentence or f"undx_brain.{module}" in sentence:
+                            offences.append(
+                                f"{item.key}.{field}: says {module!r} is uncalled, but "
+                                f"{', '.join(sorted(callers))} import it — {sentence[:120]}"
+                            )
+        self.assertEqual(
+            offences, [],
+            "the map states the opposite of the import graph:\n  " + "\n  ".join(offences),
+        )
+
+    def test_the_learning_entry_is_the_one_this_class_was_written_for(self):
+        # Pinning the specific regression, so that if the general scan above is ever
+        # loosened this one stays red on its own.
+        item = f.by_key("memory_learning_event")
+        self.assertIn("learning", self.reached,
+                      "handle() no longer calls learning.load; the wiring was lost")
+        self.assertIn("services/undx_agent_runtime.py", self.reached["learning"])
+        self.assertIn("no longer", item.gap.lower(),
+                      "the entry corrected its reach claim without saying it had")
+
+    def test_the_modules_with_no_live_caller_are_the_ones_we_think(self):
+        # The other half of the same honesty. If a module quietly acquires a caller this
+        # goes red and somebody has to decide whether the map should say so — which is
+        # the moment the drift above was introduced and nobody was asked.
+        unreached = sorted(self.brain_modules - set(self.reached))
+        self.assertEqual(
+            unreached,
+            ["corpus", "facts", "foundation", "knowledge", "rollout", "truth"],
+            "the set of Brain modules with no caller outside the package moved",
+        )
 
 
 class ThePackageNamesItsOwnModules(unittest.TestCase):
