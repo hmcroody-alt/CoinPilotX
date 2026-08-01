@@ -33,7 +33,8 @@ from __future__ import annotations
 #: configured, what is known and how well, what one turn may claim, where knowledge
 #: comes from, what the architecture owns, what is remembered, what that memory is still
 #: worth and what the accumulated record of it says, then the bounds and the cognitive
-#: stages, then who is eligible at all.
+#: stages, then what a proposed action would do before it is taken, then who is eligible
+#: at all.
 #: Listed exhaustively so that a module added without being named here is visible as a
 #: difference rather than merely absent — the test in ``tests/undx_brain`` walks the
 #: directory and compares.
@@ -51,5 +52,6 @@ __all__ = [
     "workspace",
     "attention",
     "goals",
+    "prediction",
     "rollout",
 ]

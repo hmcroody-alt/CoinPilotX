@@ -414,6 +414,73 @@ class TheCognitiveEntriesSayTrueThings(unittest.TestCase):
         self.assertIn("Nothing on the live path calls either", gap)
         self.assertIn("UNDX_BRAIN_FACTS_ENABLED", gap)
 
+    def test_the_prediction_entry_stopped_claiming_prediction_has_no_owner(self):
+        # This entry read "Real prediction ... has no owner" and was true when written.
+        # It went false the moment ``undx_brain.prediction`` landed, and *nothing
+        # failed* — which is the one way a Foundation map rots without anybody
+        # noticing, and the reason this test exists. A gap description is a claim like
+        # any other and needs something holding it against the code.
+        item = f.by_key("prediction")
+        self.assertIs(item.ownership, f.Ownership.PARTIAL)
+
+        owners = {module for module, _ in item.owners}
+        self.assertIn("services.undx_brain.prediction", owners)
+
+        from services.undx_brain import prediction as P
+        for module, symbol in item.owners:
+            if module == "services.undx_brain.prediction":
+                with self.subTest(symbol=symbol):
+                    self.assertTrue(hasattr(P, symbol), f"prediction has no {symbol}")
+
+        # The stale claim was specifically about *prediction* having no owner. The
+        # current text does still contain the phrase "has no owner" — about causal
+        # inference, which is a different subject and genuinely still unowned — so the
+        # bare substring is too coarse to pin anything. What has to be gone is the
+        # subject of the old sentence.
+        self.assertNotIn(
+            "Real prediction", item.gap,
+            "the prediction gap still says real prediction has no owner; it has one now",
+        )
+        self.assertNotRegex(
+            item.gap, r"prediction[^.]{0,60}has no owner",
+            "the prediction gap still attributes the missing owner to prediction itself",
+        )
+
+    def test_the_prediction_entry_is_honest_about_what_still_has_no_owner(self):
+        # Two claims, both narrower than the one they replaced and both checkable.
+        gap = f.by_key("prediction").gap
+
+        # One: causal inference genuinely still has no owner. ``causal_analysis``
+        # reports ``root_cause_confirmed`` straight off a flag its own caller set, so it
+        # cannot disagree with whoever called it — which is the entire difficulty, and
+        # is not something the new module attempts.
+        source = (ROOT / "services" / "undx_architecture.py").read_text(encoding="utf-8")
+        body = source.split("def causal_analysis", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("intervention_confirmed", body)
+        self.assertIn("causal_analysis", gap)
+
+        # Two: nothing on the live path reaches the new module. Same shape as the facts
+        # test above — importers are enumerated rather than assumed absent, so a caller
+        # arriving without the entry being updated is a failure and not a surprise.
+        importers = sorted(
+            path.stem
+            for path in (ROOT / "services").rglob("*.py")
+            if path.name != "prediction.py"
+            and re.search(
+                r"^\s*(from\s+\.\s+import\s+prediction|from\s+\.prediction\s+import"
+                r"|from\s+services\.undx_brain\s+import\s+.*\bprediction\b"
+                r"|import\s+services\.undx_brain\.prediction)",
+                path.read_text(encoding="utf-8"),
+                re.MULTILINE,
+            )
+        )
+        self.assertEqual(
+            importers, [],
+            "something now imports undx_brain.prediction; the entry claims nothing does",
+        )
+        self.assertIn("UNDX_BRAIN_PREDICTION_ENABLED", gap)
+        self.assertIn("defaults", gap)
+
 
 class ThePackageNamesItsOwnModules(unittest.TestCase):
     """``__all__`` in ``services/undx_brain/__init__.py`` lists every module present.

@@ -397,6 +397,22 @@ CATALOG: tuple[Flag, ...] = (
         "floor.",
         fail="closed",
     ),
+    Flag(
+        "UNDX_BRAIN_PREDICTION_ENABLED", "bool", "0",
+        "Allow a write to be described before it happens, and the description to be "
+        "checked afterwards. Off means ``simulate_operation`` keeps returning one of "
+        "two constant strings chosen by whether the caller passed a failure, which is "
+        "the current behaviour: it reads no resource and answers identically for a "
+        "capability that can be undone and one that cannot. On means a proposed call "
+        "is read against the capability registry's undo graph, so the answer states "
+        "what the verifier should read back afterwards, whether the call can be "
+        "reversed at all, whether reversal needs an id that will not exist until the "
+        "write verifies, and which prior values will be destroyed unless they are read "
+        "first — and the prediction can then be compared against what actually "
+        "happened, which is the part that makes it a prediction rather than a "
+        "description.",
+        fail="closed",
+    ),
     # ------------------------------------------------------------ QA and rollout ----
     Flag(
         "UNDX_BRAIN_QA_ONLY", "bool", "1",

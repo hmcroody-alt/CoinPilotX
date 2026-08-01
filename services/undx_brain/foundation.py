@@ -487,31 +487,46 @@ FOUNDATION: tuple[Responsibility, ...] = (
         summary="What would happen if this ran, worked out before it runs.",
         ownership=Ownership.PARTIAL,
         owners=(
+            ("services.undx_brain.prediction", "predict"),
+            ("services.undx_brain.prediction", "check"),
+            ("services.undx_brain.prediction", "Reversal"),
+            ("services.undx_brain.prediction", "Prediction"),
+            ("services.undx_brain.prediction", "Outcome"),
             ("services.undx_architecture", "simulate_operation"),
             ("services.undx_architecture", "causal_analysis"),
         ),
         gap=(
-            "Both functions are shaped correctly and compute almost nothing, which is "
-            "worth stating plainly rather than letting the names imply otherwise. "
-            "``simulate_operation`` checks the tool is registered, redacts anything "
-            "whose key looks secret, and returns a ``predicted_outcome`` that is one of "
-            "two constants chosen by whether the caller passed a failure string — it "
-            "reads no resource, consults no history, and would return the same text for "
-            "an alert that exists and one that does not. ``causal_analysis`` partitions "
-            "a list of observations into facts and hypotheses using a ``kind`` field the "
-            "caller already set, and reports ``root_cause_confirmed`` from a flag the "
-            "caller also set. Neither infers anything. Real prediction — the expected "
-            "state after a write, what it would cost to undo, what else it would "
-            "disturb — has no owner, and the undo graph in the capability registry is "
-            "the material it would be built from."
+            "Three of the four things this responsibility names now have an owner and "
+            "one still does not. ``undx_brain.prediction.predict`` reads a proposed "
+            "call against the capability registry's undo graph and answers differently "
+            "for capabilities that differ there: the state the verifier should read "
+            "back, whether the call is reversible *now* or only after it verifies and "
+            "yields a canonical id, which prior values it destroys that are recorded "
+            "nowhere, and which other declared writes contend for the same resource. "
+            "``check`` scores that against what was actually read back, which is what "
+            "makes it falsifiable rather than descriptive. What has no owner is "
+            "causal inference. ``causal_analysis`` still partitions observations using "
+            "a ``kind`` field the caller already set and reports "
+            "``root_cause_confirmed`` from a flag the caller also set; nothing infers a "
+            "cause from evidence, and ``prediction`` does not attempt to — it describes "
+            "one proposed call and stops. Nothing on the live path calls ``predict`` "
+            "either: it is behind ``UNDX_BRAIN_PREDICTION_ENABLED``, which defaults "
+            "off, and with it off both entry points answer ``ok=False``. The gateway "
+            "still executes writes without asking what they would do first."
         ),
         note=(
-            "The placeholders are not wrong, only empty, and the distinction matters "
-            "for whoever fills them. Every field they return is either a fact "
+            "``simulate_operation`` is retained as an owner and is the weakest one "
+            "here. It checks the tool is registered, redacts anything whose key looks "
+            "secret, and returns a ``predicted_outcome`` that is one of two constants "
+            "chosen by whether the caller passed a failure string; asked about a call "
+            "that undoes itself by negating a boolean and one that destroys a row with "
+            "no undo, it returns the same answer, and a test in "
+            "``tests/undx_brain/test_prediction.py`` pins exactly that so the claim "
+            "cannot quietly go stale. It is not *wrong*, though, and the distinction "
+            "mattered for whoever filled it: every field it returns is either a fact "
             "(``production_write: False``) or an explicit statement of ignorance "
-            "(``\"Real outcome requires an authorized tool result.\"``). Nothing here "
-            "asserts a prediction it did not make, so replacing the bodies with real "
-            "inference does not require first retracting a claim."
+            "(``\"Real outcome requires an authorized tool result.\"``), so adding real "
+            "inference beside it required retracting nothing."
         ),
     ),
     Responsibility(
