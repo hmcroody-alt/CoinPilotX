@@ -50,6 +50,14 @@ CORPUS = (
     "do not delete alert 3", "asdfgh qwerty", "",
 )
 
+#: Sentences that ask for an account of something. Kept apart from :data:`CORPUS` so the
+#: safety tests above keep running against the original set unchanged — a new shape that
+#: only passes because the corpus was rewritten around it has proved nothing.
+EXPLAINED = (
+    "explain my alerts", "help me understand my alerts", "tell me about my alerts",
+    "why did you delete my alerts", "explain why my alert was deleted",
+)
+
 
 def env(**overrides: str) -> dict[str, str]:
     settings = dict(ON)
@@ -218,15 +226,26 @@ class ANamedOperationIsStillANamedOperation(unittest.TestCase):
         self.assertTrue(is_read(goal.capability_id))
 
     def test_the_shape_follows_the_registry_not_a_local_opinion(self):
-        for request in CORPUS:
+        # Write-ness is the registry's fact and nothing local may overrule it: a settled
+        # goal on a write is an ACT, always. What a *frame* may do is narrower — it can
+        # say what a read's answer owes, turning a RETRIEVE into an EXPLAIN, and that is
+        # the only latitude the frames have. Stated as two rules rather than one equality
+        # so that widening the read side later cannot silently widen the write side.
+        for request in CORPUS + EXPLAINED:
             goal = understand(request)
             if not goal.capability_id:
                 continue
             spec = runtime.get(goal.capability_id) if hasattr(runtime, "get") else None
             spec = spec or runtime.REGISTRY.get(goal.capability_id)
             self.assertIsNotNone(spec)
-            expected = g.Shape.ACT if spec.is_write else g.Shape.RETRIEVE
-            self.assertIs(goal.shape, expected)
+            if spec.is_write:
+                self.assertIs(goal.shape, g.Shape.ACT,
+                              f"{request!r} settled on the write {goal.capability_id}"
+                              f" as a {goal.shape.value}")
+            else:
+                self.assertIn(goal.shape, (g.Shape.RETRIEVE, g.Shape.EXPLAIN),
+                              f"{request!r} settled on the read {goal.capability_id}"
+                              f" as a {goal.shape.value}")
 
 
 class ItConsultsTheExistingMatcherRatherThanReplacingIt(unittest.TestCase):
@@ -323,6 +342,118 @@ class NothingReadableIsSaidPlainly(unittest.TestCase):
         self.assertNotIn("hunter2", repr(goal.inspect()))
 
 
+class AskingForAnAccountIsNotAskingForTheThing(unittest.TestCase):
+    """"Show my alerts" and "explain my alerts" ran the same read and returned the same
+    goal, byte for byte, so a responder had nothing to read that would tell it the second
+    one owes an account rather than a list. Serving a bare list to "explain my alerts" is
+    not an error anyone would see in a log — it is a correct answer to a question nobody
+    asked, which is why it survived."""
+
+    def test_the_four_framings_are_four_different_answers(self):
+        # The generalisation of §7's three: adding "explain" to show, fix and manage must
+        # add a distinct reading, not a fourth copy of retrieval. The comparison is on
+        # everything a caller can act on, so a difference confined to, say, the reason
+        # string would not count as a difference.
+        #
+        # "Find my Bitcoin alert" is deliberately *not* in this set even though §7 names
+        # it, because it and "show my alerts" are the same reading and should be — both
+        # are plain retrievals and asserting otherwise would be demanding a distinction
+        # that does not exist. The pairwise case that matters is pinned below.
+        requests = ("Show my alerts", "Explain my alerts", "Fix my alerts",
+                    "Help me manage my alerts")
+        answers = {r: (understand(r).shape, understand(r).settled,
+                       understand(r).capability_id, understand(r).inspect_with)
+                   for r in requests}
+        self.assertEqual(len(set(answers.values())), len(requests),
+                         f"the four requests collapsed: {answers}")
+
+    def test_showing_and_explaining_are_not_the_same_answer(self):
+        # The exact defect. These two were byte-identical, and ``inspect()`` is the view a
+        # responder or a log actually reads, so equality there is equality everywhere it
+        # counts.
+        self.assertNotEqual(understand("Show my alerts").inspect(),
+                            understand("Explain my alerts").inspect())
+
+    def test_explaining_a_read_still_runs_that_read(self):
+        # The fix changes what the answer owes. It must not change which operation runs,
+        # because "explain my alerts" needs the alerts in hand before it can explain
+        # anything, and quietly routing it somewhere else would trade one wrong answer
+        # for another.
+        explained = understand("Explain my alerts")
+        shown = understand("Show my alerts")
+        self.assertIs(explained.shape, g.Shape.EXPLAIN)
+        self.assertTrue(explained.settled)
+        self.assertEqual(explained.capability_id, shown.capability_id)
+        self.assertEqual(explained.capability_id, "crypto.alerts.list")
+
+    def test_an_explained_goal_names_the_frame_that_made_it_one(self):
+        # "Why are you asking me this?" and "why did this come back as an explanation?"
+        # are both answerable from the value or they are not answerable at all.
+        goal = understand("Explain my alerts")
+        self.assertEqual(goal.frame, "explain my")
+        self.assertIn("account", goal.reason)
+
+    def test_asking_why_a_write_happened_does_not_perform_it(self):
+        # The one that would have cost somebody their data. ``match_capability`` really
+        # does return ``crypto.alerts.delete`` for "why did you delete my alerts" — the
+        # word is in the sentence and the matcher reads vocabulary — so without the guard
+        # a question about a deletion resolves to a deletion. Asserted against the
+        # matcher's live answer rather than a remembered one, so the day the matcher stops
+        # doing this the test says so instead of quietly passing for a new reason.
+        for phrasing in ("why did you delete my alerts", "why did you pause alert 3",
+                         "why did you unfollow user 7"):
+            spec = runtime.match_capability(phrasing)
+            self.assertIsNotNone(spec, f"{phrasing!r} no longer matches anything")
+            self.assertTrue(getattr(spec, "is_write", False),
+                            f"{phrasing!r} no longer matches a write, so this test has "
+                            f"stopped proving what it claims to prove")
+            goal = understand(phrasing)
+            self.assertIs(goal.shape, g.Shape.EXPLAIN)
+            self.assertFalse(goal.settled, f"{phrasing!r} settled on a write")
+            self.assertEqual(goal.capability_id, "",
+                             f"{phrasing!r} carries {goal.capability_id!r}")
+            for cid in goal.inspect_with:
+                self.assertTrue(is_read(cid), f"{phrasing!r} offered the write {cid}")
+
+    def test_the_guard_can_only_withhold_a_write_never_authorise_one(self):
+        # An explain frame reaching a read keeps that read. The guard is one-directional
+        # by construction, and this pins the direction: no sentence acquires a capability
+        # by being phrased as a question.
+        for request in EXPLAINED:
+            goal = understand(request)
+            if not goal.capability_id:
+                continue
+            self.assertTrue(is_read(goal.capability_id),
+                            f"{request!r} was explained into the write {goal.capability_id}")
+
+    def test_a_repair_beats_an_explanation(self):
+        # "Explain why my alerts aren't working" contains both frames. The person wants
+        # them working; an essay about why they are not is a correct answer to the
+        # smaller half of the sentence. Repair wins outright rather than on length,
+        # because a longest-match rule here would turn on which phrasing happened to be
+        # longer, which is not a fact about what anybody wanted.
+        for phrasing in ("explain why my alerts aren't working",
+                         "explain why my alert is not working",
+                         "tell me about what's wrong with my alerts"):
+            goal = understand(phrasing)
+            self.assertIs(goal.shape, g.Shape.REPAIR, f"{phrasing!r} became an essay")
+            self.assertFalse(goal.settled)
+
+    def test_a_scope_beats_an_explanation(self):
+        goal = understand("help me understand and clean up my saved posts")
+        self.assertIs(goal.shape, g.Shape.MANAGE)
+        self.assertFalse(goal.single_step)
+
+    def test_the_plural_contraction_reaches_a_repair_frame(self):
+        # "aren't working" does not contain "not working" — the "not" is inside the
+        # contraction — so the plural phrasing reached no repair frame at all while the
+        # singular did. A gap of exactly this shape is invisible until somebody types the
+        # sentence, so both spellings are pinned.
+        for phrasing in ("my alerts aren't working", "my alerts arent working",
+                         "my alerts are not working"):
+            self.assertIs(understand(phrasing).shape, g.Shape.REPAIR, phrasing)
+
+
 class TheFramesAreSmallAndJustified(unittest.TestCase):
     def test_scope_frames_do_not_swallow_ordinary_reads(self):
         # "Review my alerts" and "check my alerts" are questions with straightforward
@@ -338,9 +469,41 @@ class TheFramesAreSmallAndJustified(unittest.TestCase):
 
     def test_frames_are_deduplicated_against_each_other(self):
         self.assertEqual(set(g.REPAIR_FRAMES) & set(g.SCOPE_FRAMES), set())
+        self.assertEqual(set(g.EXPLAIN_FRAMES) & set(g.REPAIR_FRAMES), set())
+        self.assertEqual(set(g.EXPLAIN_FRAMES) & set(g.SCOPE_FRAMES), set())
+
+    def test_how_do_i_and_what_is_are_deliberately_absent(self):
+        # Both absences are decisions the module's docstring defends, and both are the
+        # kind a later contributor would "obviously" undo, so they are asserted rather
+        # than only argued. "How do I pause my alert" is somebody trying to pause their
+        # alert, and answering with instructions leaves it running. "What is …" is the
+        # ordinary form of a lookup, and treating every lookup as an explanation collapses
+        # the two in the other direction and makes the distinction meaningless.
+        for banned in ("how do i", "how to", "what is", "what are", "what's"):
+            self.assertNotIn(banned, g.EXPLAIN_FRAMES)
+        for request in ("how do i pause my alert", "what is a price alert",
+                        "how do i delete an alert"):
+            self.assertIsNot(understand(request).shape, g.Shape.EXPLAIN, request)
+
+    def test_an_explain_frame_names_nothing_executable(self):
+        # The same membership test the repair frames carry, for the same reason: a frame
+        # that names a real operation would turn a clear instruction into an essay.
+        for frame in g.EXPLAIN_FRAMES:
+            spec = runtime.match_capability(frame.strip())
+            if spec is not None:
+                self.assertFalse(
+                    getattr(spec, "is_write", False),
+                    f"the explain frame {frame!r} names the write {spec.capability_id}",
+                )
+
+    def test_explain_frames_do_not_swallow_ordinary_reads(self):
+        for request in ("show my alerts", "list my alerts", "find my Bitcoin alert",
+                        "what devices am I signed in on"):
+            self.assertIsNot(understand(request).shape, g.Shape.EXPLAIN,
+                             f"{request!r} became an explanation")
 
     def test_the_same_request_reads_the_same_way_twice(self):
-        for request in CORPUS:
+        for request in CORPUS + EXPLAINED:
             self.assertEqual(understand(request).inspect(), understand(request).inspect())
 
 

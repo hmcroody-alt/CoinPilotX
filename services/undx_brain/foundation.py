@@ -387,6 +387,7 @@ FOUNDATION: tuple[Responsibility, ...] = (
             ("services.undx_brain.goals", "Shape"),
             ("services.undx_brain.goals", "REPAIR_FRAMES"),
             ("services.undx_brain.goals", "SCOPE_FRAMES"),
+            ("services.undx_brain.goals", "EXPLAIN_FRAMES"),
         ),
         gap=(
             "§7's three phrasings of one object read three different ways on the real "
@@ -396,13 +397,33 @@ FOUNDATION: tuple[Responsibility, ...] = (
             "would determine it; \"Help me manage my alerts\" reads as a scope no single "
             "registered capability satisfies. ``undx_agent_runtime.handle`` now calls "
             "this before matching; an unsettled repair or scope produces a clarification "
-            "card and cannot reach the gateway. The gate still defaults off, and two "
-            "narrower gaps remain. The repair and "
-            "scope frames are hand-written editorial lists — every entry is defended by "
-            "a test, but a phrasing nobody thought of reads as ``UNKNOWN`` rather than "
-            "as repair. And a goal is never settled *against state*: this layer reads no "
-            "account data at all, which is precisely why \"fix\" cannot be settled here "
-            "and must be handed back as an inspection."
+            "card and cannot reach the gateway. The shape vocabulary now also separates "
+            "retrieval from explanation: \"show my alerts\" and \"explain my alerts\" "
+            "returned byte-identical goals, so nothing downstream could tell that the "
+            "second owes an account of what the read shows rather than the list itself. "
+            "``Shape.EXPLAIN`` is the distinction, and it carries one live safety "
+            "consequence — ``match_capability`` really does return "
+            "``crypto.alerts.delete`` for \"why did you delete my alerts\", and an "
+            "explain frame over a write now settles on nothing and offers reads instead. "
+            "The gate still defaults off, and three narrower gaps remain. **The new shape "
+            "is produced and almost entirely unconsumed:** ``undx_agent_runtime.handle`` "
+            "gates its clarification on ``not settled and inspect_with``, so a settled "
+            "``EXPLAIN`` passes straight through to ordinary dispatch and runs exactly "
+            "the read \"show my alerts\" runs. Nothing branches on the shape anywhere — "
+            "``handle`` reads ``shape.value`` twice, once into the "
+            "``UNDX_BRAIN_DECISION`` log line and once into the clarification card's "
+            "``goal_type``, and both are labels, not decisions. So \"explain my alerts\" "
+            "is still answered with the same bare list today; what changed is that the "
+            "distinction now exists in the value for a responder to read. Only the "
+            "unsettled explain-over-write case changes behaviour, and its clarification "
+            "reply is the generic \"I need to inspect the current state before choosing "
+            "an action\" — safe, and a poor fit for a question about something already "
+            "done. The repair, "
+            "scope and explain frames are hand-written editorial lists — every entry is "
+            "defended by a test, but a phrasing nobody thought of reads as ``UNKNOWN`` "
+            "rather than as repair. And a goal is never settled *against state*: this "
+            "layer reads no account data at all, which is precisely why \"fix\" cannot "
+            "be settled here and must be handed back as an inspection."
         ),
         note=(
             "Everything else in the request path is built to converge. "

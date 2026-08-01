@@ -72,7 +72,7 @@ from .attention import Focus
 
 __all__ = [
     "Shape", "Goal", "MAX_INSPECTIONS", "MAX_REQUEST_CHARS",
-    "REPAIR_FRAMES", "SCOPE_FRAMES", "understand",
+    "REPAIR_FRAMES", "SCOPE_FRAMES", "EXPLAIN_FRAMES", "understand",
 ]
 
 
@@ -90,6 +90,11 @@ class Shape(str, Enum):
 
     #: The person wants to know something. The answer is the goal.
     RETRIEVE = "retrieve"
+    #: The person wants to know something *and* what it means. The same read answers it;
+    #: what differs is what the answer owes. Kept apart from :attr:`RETRIEVE` because
+    #: collapsing them is how "explain my alerts" gets served a bare list — a correct
+    #: response to a question nobody asked.
+    EXPLAIN = "explain"
     #: The person wants one named operation performed.
     ACT = "act"
     #: The person wants an end state. Which operation reaches it is unknown until the
@@ -113,6 +118,11 @@ REPAIR_FRAMES: tuple[str, ...] = (
     "fix ", "fix my", "fix the", "unbreak", "repair ",
     "sort out", "sort it out",
     "not working", "isn't working", "isnt working", "is not working",
+    # The plural contraction is listed separately because nothing else covers it.
+    # "aren't working" does not contain "not working" — the "not" is inside "aren't" —
+    # so "my alerts aren't working" reached no repair frame at all until this line, and
+    # the phrasing is at least as common as the singular it was silently missing.
+    "aren't working", "arent working", "are not working",
     "stopped working", "doesn't work", "doesnt work", "does not work",
     "won't work", "wont work", "no longer works", "not work",
     "acting up", "acting strange", "acting weird", "acting funny",
@@ -136,6 +146,28 @@ SCOPE_FRAMES: tuple[str, ...] = (
     "audit my", "take care of my", "deal with my", "deal with these",
     "help me with my", "help with my",
     "what should i do about", "what do i do about",
+)
+
+#: Frames that ask for an account of something rather than the thing itself.
+#:
+#: The membership test is narrower than it looks and is worth stating, because the
+#: obvious wider list is wrong. A frame belongs here only if it asks *about* a subject
+#: without naming an operation on it. "Explain", "why", "help me understand" pass.
+#:
+#: "How do I …" deliberately fails. It reads as a request for instructions, but in this
+#: product it is overwhelmingly a request to have the thing done — "how do I pause my
+#: alert" is somebody trying to pause their alert — and routing it here would answer a
+#: question the person did not ask while leaving their alert running. "What is …" also
+#: fails, for the opposite reason: it is the ordinary form of a lookup, and treating
+#: every lookup as an explanation would collapse the two in the other direction and make
+#: this entire distinction meaningless.
+EXPLAIN_FRAMES: tuple[str, ...] = (
+    "explain ", "explain my", "explain the", "explain this", "explain that",
+    "why is", "why are", "why was", "why were", "why did", "why does", "why do",
+    "why am i", "why can't", "why cant", "why won't", "why wont",
+    "what does it mean", "what does this mean", "what does that mean",
+    "help me understand", "make sense of", "walk me through",
+    "break it down", "break this down", "tell me about",
 )
 
 
@@ -257,6 +289,15 @@ def understand(request: Any, *, env: Mapping[str, str] | None = None,
     asks_for_action = _asks_for_the_action(text)
     explicit = _is_explicit(text)
 
+    # Checked only when no repair or scope frame was found, and the ordering is the whole
+    # design. "Explain why my alerts aren't working" contains both an explain frame and a
+    # repair frame, and it is a repair: the person wants them working, and answering with
+    # an essay about why they are not would be a correct response to the smaller half of
+    # the sentence. Repair and scope therefore win outright rather than competing on
+    # length, because a longest-match rule here would turn on which phrasing happened to
+    # be longer, which is not a fact about what anybody wanted.
+    explains = _explain_frame(lowered) if shape is None else ""
+
     if shape is not None:
         reads, _ = _reads_in(focus)
         return Goal(
@@ -287,9 +328,10 @@ def understand(request: Any, *, env: Mapping[str, str] | None = None,
         reads, only_reads = _reads_in(focus, require_all_reads=True)
         if reads and only_reads:
             return Goal(
-                shape=Shape.RETRIEVE, settled=False, single_step=True,
+                shape=Shape.EXPLAIN if explains else Shape.RETRIEVE,
+                settled=False, single_step=True,
                 inspect_with=reads, areas=areas, asks_for_action=asks_for_action,
-                explicit=explicit, ok=True,
+                explicit=explicit, frame=explains, ok=True,
                 reason="no registered phrasing matches, and everything the request "
                        "points at is a read",
                 notes=notes + extra,
@@ -301,15 +343,41 @@ def understand(request: Any, *, env: Mapping[str, str] | None = None,
             notes=notes + extra,
         )
 
+    is_write = bool(getattr(spec, "is_write", False))
+
+    if explains and is_write:
+        # "Explain why my alert was deleted" matches the delete capability, because the
+        # matcher reads vocabulary and the word is there. Settling on it would answer a
+        # question by performing the thing being asked about, which is the one outcome
+        # this layer exists to prevent. So an explain frame over a write never settles:
+        # the reads stay on offer and the runtime asks. Note this can only ever withhold
+        # a write, never authorise one — an explain frame reaching a read is handled
+        # below and keeps the capability it matched.
+        reads, _ = _reads_in(focus)
+        return Goal(
+            shape=Shape.EXPLAIN, settled=False, single_step=True, capability_id="",
+            inspect_with=reads, areas=areas, asks_for_action=asks_for_action,
+            explicit=explicit, frame=explains, ok=True,
+            reason="the request asks for an account of something and the phrasing "
+                   "matches an operation that would change it; explaining a change is "
+                   "not a request to make one",
+            notes=notes + extra,
+        )
+
     return Goal(
-        shape=Shape.ACT if getattr(spec, "is_write", False) else Shape.RETRIEVE,
+        shape=(Shape.ACT if is_write else
+               Shape.EXPLAIN if explains else Shape.RETRIEVE),
         settled=True,
         single_step=True,
         capability_id=spec.capability_id,
         areas=areas,
         asks_for_action=asks_for_action,
         explicit=explicit,
+        frame=explains,
         ok=True,
+        reason=("the same read answers this as answers the bare question; what differs "
+                "is that the answer owes an account of what it shows"
+                if explains else ""),
         notes=notes + extra,
     )
 
@@ -343,6 +411,20 @@ _NO_READS_REASON: dict[Shape, str] = {
         "activated areas can read what is in it"
     ),
 }
+
+
+def _explain_frame(lowered: str) -> str:
+    """The longest explain frame present, or ``""``.
+
+    Longest rather than first for the same reason :func:`_framed` is: the lists are
+    hand-written and will keep growing, and a first-match rule would make the answer
+    depend on the order somebody happened to append in.
+    """
+    best = ""
+    for candidate in EXPLAIN_FRAMES:
+        if candidate in lowered and len(candidate) > len(best):
+            best = candidate
+    return best
 
 
 def _framed(lowered: str) -> tuple[str, Shape | None]:
