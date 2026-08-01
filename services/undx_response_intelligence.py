@@ -70,8 +70,9 @@ MAX_RENDER_ATTEMPTS = 6
 HISTORY_WINDOW = 5
 
 #: The sentinel that means "do not narrow the search". Above any reachable draft count —
-#: the widest lead branch builds eleven framings and there are four clause orderings — so
-#: a deployment that never sets ``UNDX_RESPONSE_MAX_REGENERATIONS`` behaves exactly as it
+#: the widest lead branch is the read branch at five framings and there are four clause
+#: orderings, so the search space is twenty — and therefore a deployment that never sets
+#: ``UNDX_RESPONSE_MAX_REGENERATIONS`` behaves exactly as it
 #: did before the flag had a reader. Wiring a dead flag in with a default *below* current
 #: behaviour is not wiring it in; it is a silent narrowing wearing a fix's clothes.
 _MAX_REGENERATIONS_DEFAULT = 64
@@ -88,7 +89,7 @@ def _max_regenerations() -> int:
     the variable said, because no code anywhere consulted it.
 
     Its declared default was ``1`` against a maximum of ``3``. The render loop can build
-    up to forty-four drafts, so every value the flag was permitted to hold described a
+    up to twenty drafts, so every value the flag was permitted to hold described a
     behaviour narrower than the one that shipped — a control whose entire range is below
     the thing it claims to govern is not a control, it is a misleading label, and wiring
     it in as declared would have quietly cut UNDX off after its first rejected draft in
@@ -2340,23 +2341,39 @@ def render(plan: ResponsePlan, spec: Any, status: str, result: ToolResult,
     changes what is claimed. A candidate that fails :func:`validate_consistency` is
     dropped outright — the repetition guard is a preference, the consistency guard is
     a veto, and they are never allowed to trade against each other.
+
+    ``attempts`` may lower :data:`MAX_RENDER_ATTEMPTS` and may not raise it. It was
+    previously read as ``max(1, int(attempts))``, which clamps the floor and leaves the
+    ceiling open, so the constant documented as the thing that makes a repetitive turn
+    terminate was in fact only a default value a caller could step over. The blast
+    radius was small — the search space is twenty drafts and every extra candidate has
+    already passed the validator — but a ceiling a caller can raise is not a ceiling,
+    and this one is named in its own docstring as one.
     """
     leads = _lead_forms(plan, spec, status, result, verification) or [plan.direct_answer]
     candidates: list[str] = []
     seen: set[str] = set()
     rejected = 0
+    attempt_budget = max(1, min(int(attempts), MAX_RENDER_ATTEMPTS))
     regeneration_budget = _max_regenerations()
     for lead in leads:
-        if rejected > regeneration_budget:
+        if rejected >= regeneration_budget:
             break
         for order in _ORDERS:
-            if rejected > regeneration_budget:
+            if rejected >= regeneration_budget:
                 # ``UNDX_RESPONSE_MAX_REGENERATIONS`` spent. Stop rendering and let the
                 # fallback below answer with the honest boundary, which is what the flag
                 # says it is for. The budget counts *rejected* drafts rather than drafts
                 # built: a permutation that collapsed onto a string already seen cost
                 # nothing and claimed nothing, so charging it here would exhaust the
                 # budget on bookkeeping and silence answers that were never unsafe.
+                #
+                # ``>=`` rather than ``>``. The first spelling permitted N+1 rejected
+                # drafts for a budget of N, and permitted one for a budget of zero —
+                # which is the single value an operator would set precisely to mean
+                # "do not regenerate at all". A ceiling that is exceeded by exactly one
+                # is still exceeded, and the off-by-one lived in the value most likely
+                # to have been chosen deliberately.
                 logger.info("undx_response_regeneration_budget_spent capability=%s "
                             "rejected=%s budget=%s",
                             plan.capability_id, rejected, regeneration_budget)
@@ -2381,9 +2398,9 @@ def render(plan: ResponsePlan, spec: Any, status: str, result: ToolResult,
                 continue
             seen.add(text)
             candidates.append(text)
-            if len(candidates) >= max(1, int(attempts)):
+            if len(candidates) >= attempt_budget:
                 break
-        if len(candidates) >= max(1, int(attempts)):
+        if len(candidates) >= attempt_budget:
             break
 
     if not candidates:

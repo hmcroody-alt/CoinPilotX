@@ -33,6 +33,17 @@ steps are abandoned and a fresh plan is built, because the world moved while the
 waiting and the evidence it gathered before the pause is no longer evidence of anything
 current.
 
+**A profile's maximum is a maximum.** :func:`budget` resolves whatever the environment
+says, which is correct for an operator tuning one deployment and wrong as the only
+answer available, because it means the ceiling that applies to a *write* turn is
+whatever the ceiling for a research turn happened to be set to. :data:`PROFILES` names a
+few bounded shapes, and :func:`profile` intersects the named shape with the environment:
+configuration may lower any number in a profile and may raise none of them. That
+asymmetry is the whole point — it is the same asymmetry that lets the completion
+conjunction in :mod:`services.undx_tool_gateway` run unflagged. A mistake in the
+environment, or an environment an attacker influenced, can make UNDX do less than the
+profile allows and can never make it do more.
+
 Non-goals, stated so nobody wires them in later by accident: this module does not
 execute anything, does not talk to the gateway, and does not decide whether a step is
 *allowed* — that is policy, and it lives in :mod:`services.undx_policy_engine`. Bounds
@@ -43,6 +54,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, Callable, Mapping, Sequence
 
 from . import config as brain_config
@@ -52,7 +64,11 @@ __all__ = [
     "Ledger",
     "Admission",
     "Refusal",
+    "PROFILES",
+    "DEFAULT_PROFILE",
     "budget",
+    "profile",
+    "profile_names",
     "admit",
     "ledger_for",
     "SINGLE_STEP",
@@ -149,6 +165,97 @@ def budget(env: Mapping[str, str] | None = None) -> Budget:
         multi_step=bool(values.get("UNDX_BRAIN_REASONING_ENABLED", False)),
         notes=tuple(resolution.notes),
     )
+
+
+#: Named bounded shapes. Each value is a *fixed maximum*: :func:`profile` may lower any
+#: of these numbers from the environment and may raise none of them, so the worst a
+#: misconfiguration can do to a profile is make it stricter.
+#:
+#: The names describe the turn, not the caller, because the same subsystem answers both
+#: kinds of turn and the shape that matters is what the turn is about to do.
+#:
+#: ``write`` is deliberately the tightest and deliberately single-step. A turn that is
+#: about to change something the person owns gets one step, one call, and no retries —
+#: not because writes are slow, but because every extra step is another place for the
+#: plan to decide the goal changed, and the operation at the end of it is the one that
+#: cannot be taken back. ``multi_step=False`` here is a fixed maximum like the others: no
+#: value of ``UNDX_BRAIN_REASONING_ENABLED`` turns it on.
+PROFILES: Mapping[str, Budget] = MappingProxyType({
+    "write": Budget(
+        max_steps=1, max_tool_calls=2, max_retries=0, timeout_seconds=30,
+        multi_step=False,
+        notes=("a turn that changes state gets one step and no retries",),
+    ),
+    "read": Budget(
+        max_steps=2, max_tool_calls=4, max_retries=1, timeout_seconds=60,
+        multi_step=False,
+        notes=("a lookup and, at most, one follow-up read to resolve a reference",),
+    ),
+    "explain": Budget(
+        max_steps=3, max_tool_calls=6, max_retries=1, timeout_seconds=90,
+        multi_step=True,
+        notes=("explanation may gather from several places; it may not write",),
+    ),
+    "research": Budget(
+        max_steps=6, max_tool_calls=8, max_retries=1, timeout_seconds=120,
+        multi_step=True,
+        notes=("the widest shape, and still bounded by the module's own numbers",),
+    ),
+})
+
+#: What an unrecognised or absent profile name resolves to. ``read`` rather than
+#: ``research``: an unknown name is a bug or a typo, and the safe reading of "I don't
+#: know what kind of turn this is" is the narrow one, not the wide one.
+DEFAULT_PROFILE = "read"
+
+
+def profile_names() -> tuple[str, ...]:
+    """The declared profile names, in ascending order of what they permit."""
+    return ("write", "read", "explain", "research")
+
+
+def profile(name: Any = DEFAULT_PROFILE, *, env: Mapping[str, str] | None = None) -> Budget:
+    """Resolve the named profile against the environment, narrowing only.
+
+    A second constructor beside :func:`budget`, not a modification of it. ``budget``
+    reads the environment and nothing else, which is right for an operator tuning a
+    deployment and insufficient as the only answer available: it hands the same four
+    numbers to a turn that is about to write as to a turn that is about to read a
+    dashboard. This function starts from a fixed shape and lets configuration lower it.
+
+    Every numeric ceiling is ``min(profile, environment)`` and ``multi_step`` is
+    ``profile and environment``, so:
+
+    * an operator who tightens ``UNDX_PLANNER_MAX_TOOL_CALLS`` tightens every profile;
+    * an operator who widens it widens nothing beyond the profile's own maximum;
+    * and no environment, however it was populated, turns multi-step reasoning on for a
+      profile whose declared shape is single-step.
+
+    An unknown name resolves to :data:`DEFAULT_PROFILE` and records that it did, rather
+    than raising. The caller is a conversation; the right response to a typo'd profile
+    name is a narrower turn and a note, not no answer at all.
+    """
+    key = str(name or "").strip().lower()
+    notes: list[str] = []
+    if key not in PROFILES:
+        notes.append(
+            f"profile {key!r} is not declared; using the narrower {DEFAULT_PROFILE!r} "
+            f"rather than assuming the wider one was meant"
+        )
+        key = DEFAULT_PROFILE
+    fixed = PROFILES[key]
+    configured = budget(env)
+    narrowed = Budget(
+        max_steps=min(fixed.max_steps, configured.max_steps),
+        max_tool_calls=min(fixed.max_tool_calls, configured.max_tool_calls),
+        max_retries=min(fixed.max_retries, configured.max_retries),
+        timeout_seconds=min(fixed.timeout_seconds, configured.timeout_seconds),
+        # ``and``, not ``or``. Both must permit it, so the profile is a ceiling on the
+        # switch exactly as it is a ceiling on the counts.
+        multi_step=bool(fixed.multi_step and configured.multi_step),
+        notes=tuple([f"profile={key}", *fixed.notes, *notes, *configured.notes]),
+    )
+    return narrowed
 
 
 def admit(steps: Any, limits: Budget | None = None, *, env: Mapping[str, str] | None = None) -> Admission:
@@ -364,8 +471,17 @@ def ledger_for(
     env: Mapping[str, str] | None = None,
     *,
     clock: Callable[[], float] | None = None,
+    profile_name: str | None = None,
 ) -> Ledger:
-    return Ledger(budget(env), clock=clock)
+    """A ledger for one plan, optionally bounded by a named profile.
+
+    ``profile_name`` is optional and defaults to ``None`` rather than to
+    :data:`DEFAULT_PROFILE`, so that every existing caller keeps the environment-resolved
+    budget it already had. Passing a name is the visible act of choosing a narrower shape;
+    it cannot be used to choose a wider one, because :func:`profile` only narrows.
+    """
+    limits = budget(env) if profile_name is None else profile(profile_name, env=env)
+    return Ledger(limits, clock=clock)
 
 
 def _count(steps: Any) -> int | None:

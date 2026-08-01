@@ -1299,7 +1299,13 @@ def _agent_confirm_payload(outcome, correlation_id: str) -> dict:
     receipt = outcome.receipt
     status = receipt.status
     body = {
-        "ok": bool(receipt.may_claim_completed),
+        # ``outcome.may_claim_done``, not ``receipt.may_claim_completed``. The receipt is
+        # one of the two derivations the gateway conjoins; reading it alone here gave the
+        # HTTP boundary a wider definition of success than the sentence returned in the
+        # same body, so a turn the Brain's evidence model had rejected could still leave
+        # over the wire as ``ok: true``. A conjunction can only narrow, and the client
+        # that branches on this flag should branch on the narrower answer.
+        "ok": bool(outcome.may_claim_done),
         "status": status,
         "action_id": receipt.capability_id,
         "target": (receipt.canonical_resource_ids or [""])[0],
