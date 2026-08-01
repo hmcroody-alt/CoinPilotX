@@ -466,6 +466,27 @@ CATALOG: tuple[Flag, ...] = (
         "would be a causal claim made where nobody would see it.",
         fail="closed",
     ),
+    Flag(
+        "UNDX_BRAIN_ENVELOPE_ENABLED", "bool", "0",
+        "Allow the Brain to seal untrusted text into one uniform envelope before it "
+        "reaches a prompt, instead of each source being fenced by whatever module "
+        "happens to handle it. Off means today's arrangement: native context is "
+        "key-allowlisted and clamped but unfenced, corpus excerpts get their own fence, "
+        "the user turn is classified by ``pulse_ai_safety``, and live web search results "
+        "get no fence at all while being rendered into the system message under the "
+        "heading ``Approved PulseSoc knowledge``. On means every source is wrapped the "
+        "same way, with a declaration naming its provenance and denying it authority "
+        "placed before it and a reassertion placed after it, so a payload never has the "
+        "last word. Breakout does not depend on the payload's cooperation: reserved tags "
+        "inside it are escaped before rendering, so the closing fence appears exactly "
+        "once whatever the payload contains. This flag gates the envelope *discipline*; "
+        "it does not gate the escaping, which ``corpus.prompt_block`` applies "
+        "unconditionally because it closes a confirmed breakout and changes nothing for "
+        "any payload that was not attempting one. The envelope stops text escaping its "
+        "position and does not stop it arguing from inside — persuasion within the fence "
+        "remains a model-behaviour problem and is not claimed here.",
+        fail="closed",
+    ),
     # ------------------------------------------------------------ QA and rollout ----
     Flag(
         "UNDX_BRAIN_QA_ONLY", "bool", "1",

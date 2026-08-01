@@ -30,8 +30,9 @@ An unconfigured deployment behaves exactly as it does today.
 from __future__ import annotations
 
 #: Every module in the package, in the order a request would meet them: what is
-#: configured, what is known and how well, what one turn may claim, where knowledge
-#: comes from, what the architecture owns, what is remembered, what that memory is still
+#: configured, what is known and how well, what one turn may claim, what any text is
+#: allowed to claim at all, where knowledge comes from, what the architecture owns,
+#: what is remembered, what that memory is still
 #: worth and what the accumulated record of it says, then the bounds and the cognitive
 #: stages, then what a proposed action would do before it is taken, then which of the
 #: several things it could be is chosen — or the admission that the sentence does not
@@ -49,6 +50,12 @@ from __future__ import annotations
 #: wrong. It is listed after the acting modules rather than before them because it reads
 #: their record, and it deliberately feeds nothing back into ``selection`` — observing
 #: is not steering.
+#: ``envelope`` sits between ``evidence`` and ``corpus`` because it answers the same
+#: kind of question they do — what a piece of text is permitted to be — one level below
+#: them: ``evidence`` decides what UNDX may claim, and ``envelope`` decides what the
+#: text UNDX is reading may claim, which is the prior question. It is placed before
+#: ``corpus`` rather than after it because ``corpus`` is one of its callers, so for once
+#: the narrative order and the import order agree.
 #: Listed exhaustively so that a module added without being named here is visible as a
 #: difference rather than merely absent — the test in ``tests/undx_brain`` walks the
 #: directory and compares.
@@ -56,6 +63,7 @@ __all__ = [
     "config",
     "truth",
     "evidence",
+    "envelope",
     "corpus",
     "knowledge",
     "foundation",

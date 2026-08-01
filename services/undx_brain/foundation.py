@@ -770,13 +770,65 @@ FOUNDATION: tuple[Responsibility, ...] = (
             ("services.pulse_ai_safety", "classify_request"),
             ("services.pulse_ai_safety", "redact_sensitive_text"),
             ("services.undx_brain.corpus", "prompt_block"),
+            ("services.undx_brain.envelope", "seal"),
+            ("services.undx_brain.envelope", "neutralise"),
+            ("services.undx_brain.envelope", "wrap"),
+            ("services.undx_brain.envelope", "Provenance"),
+            ("services.undx_brain.envelope", "is_sealed"),
         ),
         gap=(
-            "Each source of untrusted text is fenced by whatever module handles it, so "
-            "the boundary is real but not uniform: ``sanitize_ui_context`` for native "
-            "context, ``prompt_block`` for corpus excerpts, ``pulse_ai_safety`` for the "
-            "user turn. A single envelope discipline across all three would make the "
-            "guarantee checkable in one place instead of three."
+            "This entry used to say that each source of untrusted text is fenced by "
+            "whatever module handles it, so the boundary was real but not uniform. That "
+            "was wrong on the facts, not merely incomplete, and correcting it is the "
+            "more useful half of this note. Two things were found by running the code "
+            "rather than by reading it. First, ``prompt_block``'s fence could be "
+            "escaped: a record whose summary contained the closing tag rendered a second "
+            "one, and everything after it read as text outside the fence — the position "
+            "that carries instruction authority. Second, and larger, live web search "
+            "results were not fenced at all. ``pulse_ai_web_search.context_block`` "
+            "renders them with a preamble and no envelope, "
+            "``pulse_ai_service`` inserts that string into the ``knowledge`` list, and "
+            "``pulse_ai_knowledge.build_system_prompt`` renders ``knowledge`` into the "
+            "**system message** under the heading ``Approved PulseSoc knowledge``. Text "
+            "from a stranger's web page — the most attacker-controllable input in the "
+            "system, since anybody who can rank for a query can write into it — was "
+            "arriving labelled as approved, in the message that carries the most "
+            "authority in the request.\n\n"
+            "``envelope`` closes the first of those and supplies the discipline for the "
+            "second; what is still missing is the wiring. ``prompt_block`` calls "
+            "``neutralise`` unconditionally, so the corpus escape is closed everywhere "
+            "rather than behind a flag. But ``context_block`` and ``sanitize_ui_context`` "
+            "are not yet routed through ``wrap``, so the web-search exposure is "
+            "described here and not yet fixed, and this entry stays PARTIAL for that "
+            "reason rather than because the envelope is unfinished. Routing them is a "
+            "prompt change in two modules outside this package and wants its own batch "
+            "and its own regression run; recording it accurately is worth more than "
+            "closing it hastily. The remaining limit is not wiring at all: an envelope "
+            "stops a payload escaping its position and does not stop it arguing from "
+            "inside, and no amount of fencing will change that."
+        ),
+        note=(
+            "The mechanism is worth stating because the obvious reading of 'envelope' is "
+            "weaker than what is implemented. Sealing does not ask the payload to avoid "
+            "the closing token; it removes the payload's ability to produce one, by "
+            "escaping every reserved tag before rendering, case-insensitively and "
+            "tolerant of whitespace inside the tag. The invariant that buys is one line "
+            "long and is asserted against every breakout shape the tests could think of: "
+            "the closing fence appears exactly once, whatever the payload is. A nonce "
+            "would give the same guarantee and was rejected for a non-security reason — "
+            "it makes the rendered prompt differ on every request, which costs "
+            "testability, log diffs and upstream caching, and escaping does not depend "
+            "on the tag being secret anyway.\n\n"
+            "``Provenance`` answers two questions per source rather than one, because "
+            "they have different answers. Exactly one source may instruct, and "
+            "remembered text is not it even though it was the person's own words: an "
+            "instruction is addressed to a moment, and replaying one from three weeks "
+            "ago is how a system acts on a request that was already satisfied or "
+            "retracted. And ``speaks_to_account_state`` is false for every source "
+            "including the person, because somebody saying they have three alerts does "
+            "not create three alerts. That property exists to be false rather than to "
+            "vary; the database and ``truth`` answer state, and this module defers to "
+            "them instead of restating them."
         ),
     ),
     Responsibility(

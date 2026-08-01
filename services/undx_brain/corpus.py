@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from services.undx_brain import config as brain_config
+from services.undx_brain import envelope
 from services.undx_brain.truth import TrustLevel
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -814,6 +815,21 @@ def prompt_block(records: Iterable[KnowledgeRecord], *, char_budget: int) -> str
     "text UNDX is reasoning about" and "text UNDX is obeying" can be stated. Quarantined
     records are dropped here as well as in retrieval — belt and braces, because this
     function is public and a future caller may reach it with a hand-built list.
+
+    The envelope used to be escapable, and that is worth recording rather than quietly
+    fixing. A record whose summary contained the string ``</pulsesoc_source_knowledge>``
+    rendered a second closing tag, and everything after it read as text *outside* the
+    fence — which is the position that carries instruction authority, and is exactly the
+    reading this function exists to prevent. The corpus is source-derived and audited, so
+    nothing hostile was ever in it; but "the data happens to be clean" is not a boundary,
+    and this function is public.
+
+    The fix is :func:`services.undx_brain.envelope.neutralise`, applied to each line
+    unconditionally rather than behind ``UNDX_BRAIN_ENVELOPE_ENABLED``. Unconditionally,
+    because escaping only touches reserved tags, so for any line that was not attempting
+    a breakout the output is byte-identical to what it was before — there is no
+    behaviour to gate — and putting a confirmed escape behind a flag that defaults off
+    would leave it open in every deployment that exists.
     """
     kept: list[str] = []
     used = 0
@@ -824,7 +840,7 @@ def prompt_block(records: Iterable[KnowledgeRecord], *, char_budget: int) -> str
         if record.stale:
             marks.append("STALE")
         suffix = f" [{', '.join(marks)}]" if marks else ""
-        line = (
+        line, _ = envelope.neutralise(
             f"- {record.path} ({record.category}, trust={record.trust_level.value}"
             f"{suffix}): {record.summary}"
         )
