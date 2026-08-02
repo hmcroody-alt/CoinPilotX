@@ -96,6 +96,12 @@ export type RootStackParamList = {
   BusinessOsAdvertising: { title?: string; accountId?: number; mode?: "manager" | "classic" } | undefined;
   BusinessOsInsights: { title?: string } | undefined;
   BusinessOsPayments: { title?: string; accountId?: number } | undefined;
+  /**
+   * One route, two perspectives. The rebuilt two-sided Orders surface; the
+   * header toggle switches between the seller fulfillment queue and the buyer's
+   * "Your orders". `perspective` sets which side it opens on (default seller).
+   */
+  BusinessOsOrders: { title?: string; perspective?: "seller" | "buyer" } | undefined;
   SellerStore: { title?: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts" | "orders"; sellerId?: string } | undefined;
   BuyerOrders: { orderId?: number; source?: string; title?: string } | undefined;
   BuyerOrderDetail: { orderId: number; source?: string; title?: string };

@@ -75,10 +75,11 @@ export type BusinessOsSection = {
  * Ordered Business OS sections. `backed` reflects verified live `/api/pulse/*`
  * coverage, not aspiration.
  *
- * Store, Orders and Payments all resolve to `SellerStore`, which is the
- * canonical seller surface. They differ by `mode` rather than by screen, so
- * Business OS unifies the existing seller tools instead of cloning them into
- * parallel implementations.
+ * Store and Payments resolve to `SellerStore`, the canonical seller surface,
+ * differing by `mode` rather than by screen so Business OS unifies the existing
+ * seller tools instead of cloning them. Orders is the exception: it now resolves
+ * to the rebuilt two-sided `BusinessOsOrders` surface, while `SellerStore
+ * mode="orders"` still resolves for any existing deep link.
  *
  * Business Profile is the exception. It used to be `SellerStore mode="profile"`
  * — three generic seller-tool panels — but the job is not seller tooling, it is
@@ -134,12 +135,16 @@ export const BUSINESS_OS_SECTIONS: BusinessOsSection[] = [
     backed: true
   },
   {
+    // Repointed from `SellerStore { mode: "orders" }` to the rebuilt two-sided
+    // Orders surface. The old route still works as a deep link (its orders panel
+    // is untouched); this card now opens the new seller/buyer manager on the
+    // seller side. Every other `SellerStore` caller is unaffected.
     key: "orders",
     label: "Orders",
     blurb: "Orders buyers placed with you.",
     icon: "receipt-outline",
-    route: "SellerStore",
-    params: { mode: "orders" },
+    route: "BusinessOsOrders",
+    params: { perspective: "seller" },
     backed: true
   },
   {
