@@ -6,7 +6,12 @@ Branch: `codex/unified-realtime-audio-foundation`
 
 Starting SHA: `b76e8721568d6b65108b0638a10592c9e3296b33`
 
-Implementation SHA: `c49897e50a97d06c4db513abcec282e99935c53c`
+Foundation implementation SHA: `c49897e50a97d06c4db513abcec282e99935c53c`
+
+Physical-failure diagnostic fix: `8bfb34a8368659359577374a1437f04ca7faab0a`
+
+Current deployed/native artifact SHA: `5e8f7989391cd150d858f5a9c193b1084a943ef9`
+
 Overall verdict: **PARTIAL / NO-GO for controlled rollout**
 
 This mission established the governed code foundation and passed automated validation. It did not produce the required two-physical-device audible evidence for calls, video calls, or Live. Installation and process launch on one paired iPhone are not classified as physical audio verification.
@@ -92,7 +97,7 @@ backend call service
 - Every acquisition rotates the lease, including reacquisition by the same semantic owner.
 - Normal cleanup requires the matching typed lease. Stale cleanup returns `false` and cannot remove the current displacement callback or stop the current session.
 - The existing priority policy remains authoritative. Higher-priority acquisition displaces through the registered callback; lower-priority acquisition fails explicitly.
-- Calls, video calls, Live host/guest/viewer, and voice message modes use the canonical iOS `playAndRecord` / `videoChat` profile through the shared engine. Playback retains the playback profile.
+- Calls, video calls, Live host/guest, and voice message modes use the canonical iOS `playAndRecord` / `videoChat` profile through the shared engine. A listen-only Live viewer now uses the playback profile without acquiring microphone ownership.
 - Feature hooks no longer activate/deactivate the global audio session, select an iOS route, or manipulate the participant microphone directly.
 - The microphone publisher uses a per-room mutex, waits for `localTrackPublished`, reconciles duplicates to one track, and returns explicit outcomes.
 - Remote subscriptions remain provider/event driven; lifecycle state records publication, subscription, playing, interruption, recovery, and terminal end.
@@ -136,7 +141,7 @@ Defaults are deliberately off:
 
 Rollback requires no code reversal: disable the platform/feature V2 flags and retain the enabled fallback. The replacement must not be globally enabled until physical and mixed-session gates pass.
 
-No Railway variables were changed and no backend deployment was performed in this mission. This branch is not evidence of production deployment.
+The original foundation mission changed no Railway variables. The 2026-08-02 diagnostic follow-up deployed the focused fix and enabled Live V2 plus privacy-safe trace mode only for the two approved QA user IDs. `LIVESTREAM_AUDIO_V2_QA_ONLY=true` and `LIVESTREAM_AUDIO_V2_PERCENT=0` keep the replacement path disabled for the normal production audience.
 
 ## 8. Observability and security
 
@@ -278,3 +283,130 @@ This is **installation/process evidence only**. The device screen and audio outp
 **PHYSICALLY VERIFIED:** signed installation only; no real-time audio behavior verified.
 
 Final status: **PARTIAL / NO-GO**. The code foundation is suitable for controlled QA activation after deployment with flags off, but it cannot be promoted or described as complete until all physical audible and mixed-session gates pass.
+
+## 16. Physical Live failure diagnostic — 2026-08-02
+
+### Required failure entry
+
+**Physical Live test: FAIL**
+
+Observed behavior: Host entered Live, but no Live audio was audibly verified.
+
+Rollout impact: Live V2 remains disabled outside the approved QA allowlist. Production rollout remains **NO-GO**.
+
+### Failed-gate determination
+
+The prior physical run did not include a separate, observable physical viewer energy trace, so it cannot truthfully be reduced to one proven A-E media gate. The evidence narrows the failure but does not prove the audible cause:
+
+| Gate | Evidence from the failed run | Status |
+|---|---|---|
+| H1-H3 permission/input/session | The host entered the room; no ordered physical client trace existed in that build | Unproven |
+| H4 local track | The native client repeatedly reported publication through `/native-publish` with HTTP 200 | Client-claimed only |
+| H5 provider/server publication | Every provider webhook request to `/api/livekit/webhook` returned HTTP 403 | **Confirmed broken observability/state ingestion** |
+| H6 local energy | No raw audio or QA-safe level was recorded | Unproven |
+| V1 room/participant | Host and viewer requested credentials for the same Live IDs (`160`, `161`, and `162`) | Partial |
+| V2-V3 discovery/subscription | No viewer-side ordered trace existed | Unproven |
+| V4 playback | The listen-only viewer was configured with the microphone-oriented `playAndRecord` / `videoChat` profile | **Confirmed configuration defect** |
+| V5 remote energy/audibility | No remote energy trace and no audible output | Failed/unproven cause |
+
+The exact audible failure gate therefore remains **unisolated**. Two concrete defects were repaired, but neither is presented as the sole physical root cause without the required post-fix two-device evidence.
+
+### Root cause and focused repair
+
+1. `pulse_communications_v2/routes.py` registered a legacy HMAC webhook at the canonical `/api/livekit/webhook` path before `bot.py` registered the LiveKit SDK-authenticated handler. Flask route order allowed the legacy handler to receive provider callbacks and reject valid LiveKit `Authorization` JWTs with HTTP 403. The legacy adapter now owns `/api/pulse/communications/v2/livekit/webhook`; the canonical provider path has one owner.
+2. `live_viewer` incorrectly activated the mic-oriented audio-session category/mode. The viewer now uses iOS playback/default configuration, does not request microphone ownership, and records the current output route. Host/guest capture remains on the capture-and-playback profile.
+3. A QA-only trace records the ordered host, viewer, and cleanup event contract, including hashed session/room/participant identifiers, role, state, lease owner, SID metadata, mute/enable/subscription state, route, and error category. Token-like values are redacted. Audio energy is quantized; raw audio is neither stored nor uploaded.
+4. Server flags now require both the Live V2 master flag and an explicit QA user allowlist. Trace mode independently requires an approved user. A boolean from the authenticated token response enables the client trace; the client cannot self-authorize it.
+
+The regression suite asserts that a Live host keeps capture-and-playback behavior, a viewer uses playback without microphone ownership, the viewer cannot publish but can subscribe, trace data is redacted, and the canonical LiveKit webhook is not shadowed. Existing lease-generation and publication tests continue to cover stale cleanup, duplicate reconciliation, session end, and second-session publication behavior.
+
+### Trace timeline
+
+Pre-fix production evidence, 2026-08-02 UTC:
+
+1. Physical iPhone host (`PulseSocNative/9`, iOS 18.x user agent) requested credentials and entered Live IDs `160`, `161`, and `162`.
+2. The simulator viewer (`PulseSocNative/9`, iOS simulator user agent) requested credentials for the same rooms shortly afterward.
+3. Host `/native-publish` calls returned HTTP 200.
+4. LiveKit provider callbacks to `/api/livekit/webhook` returned HTTP 403, preventing authoritative backend publication-state ingestion.
+5. The old client had no QA energy/route/subscription timeline, so H6 and V2-V5 could not be reconstructed after the session.
+
+Post-fix ordered trace capture is **not yet available** because no second physical authenticated viewer was available to execute the required session. The new trace code is installed and QA-authorized, but code presence is not reported as runtime trace evidence.
+
+### V2/fallback collision review
+
+- The QA token contract returns V2 only for explicitly allowlisted users; all other users remain on legacy behavior.
+- A V2 session uses the shared lease and publication gateway; fallback cannot release a different generation.
+- Tests enforce one viewer playback lease with no microphone ownership and preserve the existing one-track duplicate reconciliation.
+- No runtime collision was observed post-fix because the required session was not run. Dual activation remains an invariant to confirm from the first complete QA trace.
+
+### Files changed
+
+Focused fix commit `8bfb34a8368659359577374a1437f04ca7faab0a`:
+
+- `bot.py`
+- `mobile-native/src/core/realtimeAudioEngine.ts`
+- `mobile-native/src/core/__tests__/realtimeAudioEngine.test.ts`
+- `mobile-native/src/live/liveAudioTrace.ts`
+- `mobile-native/src/live/liveSession.ts`
+- `mobile-native/src/live/useLiveBroadcastRoom.ts`
+- `mobile-native/src/live/__tests__/cohostPublishGate.test.ts`
+- `mobile-native/src/live/__tests__/liveAudioConfiguration.test.ts`
+- `mobile-native/src/live/__tests__/liveAudioTrace.test.ts`
+- `mobile-native/src/live/__tests__/liveSession.test.ts`
+- `pulse_communications_v2/routes.py`
+- `reports/pulsesoc_communications_engine_foundation.md`
+- `scripts/pulsesoc_communications_engine_audit.py`
+- `tests/protection/test_livekit_webhook_route_owner.py`
+- `tests/protection/test_livestream_audio_token_grants.py`
+
+Deployment packaging commit `5e8f7989391cd150d858f5a9c193b1084a943ef9` adds `.railwayignore` so the backend source upload excludes native build products, reports, tests, runtime media, and other non-runtime artifacts.
+
+### Validation and deployment
+
+| Check | Result |
+|---|---:|
+| Focused native Live/audio rerun | 6 suites / 55 tests PASS |
+| Full native suite | 114 suites / 1,893 tests PASS |
+| Native TypeScript typecheck | PASS |
+| Live token and QA allowlist protection | PASS |
+| Canonical LiveKit webhook owner regression | PASS |
+| LiveKit webhook audit | PASS |
+| Communications engine audit | 55/55 PASS |
+| Affected Python compilation | PASS |
+| Railway source deployment | SUCCESS |
+| Production health (`database_ok`, service role) | PASS |
+
+Railway service `CoinPilotX`, environment `production`, active diagnostic deployment `f2e63797-8189-411f-8c32-ecc19ba7d4b1`, image digest `sha256:576c7882fd8e8a46a12ff21eec090868aeb952c462033b96fd9d3a94f4af8165`. Its source deployment message identifies `5e8f7989`. A variable-triggered deployment of stale `main` was detected and superseded; Railway marks it removed. Normal users remain outside the allowlist.
+
+### Current native build evidence
+
+- Xcode: 26.6 (`17F113`).
+- Simulator: iPhone 17 Pro Max, iOS 26.5, UUID `E859950D-B187-4897-B389-05447C5AD796`.
+- Simulator Release build/install/launch: PASS.
+- Simulator visible state: authenticated PulseSoc home rendered.
+- Physical host device: paired iPhone 16 Pro `P3r7or`, CoreDevice ID `F45E640F-6D02-514E-877C-B764E8D6818F`, iOS 18.7.3.
+- Physical Release build/sign/install/launch: PASS; running PID `16810`.
+- Bundle: `com.pulsesoc.app`; version/build: `1.0.1 (9)`; application identifier: `87ZC69AGSR.com.pulsesoc.app`.
+- Embedded Git SHA on both artifacts: `5e8f7989391cd150d858f5a9c193b1084a943ef9`.
+- Simulator evidence: `reports/evidence/live-audio-2026-08-01/simulator-current-build.png` (SHA-256 `9be34eeea03e7bce64ed04ac9bcac81ac05bb2cb476712496734da3f8864da75`) and `simulator-relaunch.png` (SHA-256 `140fcc895deeb96c32ebff795cc6f7f931c4bc71ed5e515a892d91905b4b4d7e`).
+- A custom URL attempt was intercepted by the embedded Expo development launcher; `simulator-live-screen.png` records that limitation and is not Live-screen evidence.
+
+### Required physical result matrix
+
+| Result | Status |
+|---|---|
+| Build installed | PASS |
+| Host device | iPhone 16 Pro `P3r7or` |
+| Viewer device | **Unavailable: no second paired physical participant** |
+| Viewer audibly hears host for five minutes | NOT RUN |
+| Mute/unmute | NOT RUN |
+| Viewer leave/rejoin | NOT RUN |
+| Cleanup/ownership release | Automated PASS; physical NOT RUN |
+| Second Live without restart | Automated PASS; physical NOT RUN |
+| Call after Live | NOT RUN |
+
+### Diagnostic final judgment
+
+**Code repair: PARTIAL. Physical acceptance: NO-GO.**
+
+The focused defects are fixed, tested, deployed for QA only, and installed on the physical host. Live audio remains failed for release purposes until a distinct physical viewer audibly hears the host, H6/V5 show expected energy, the five-minute/mute/rejoin/cleanup/second-session sequence passes, and an audio call succeeds after Live ends.
