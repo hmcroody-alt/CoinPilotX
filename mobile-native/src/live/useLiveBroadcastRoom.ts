@@ -21,6 +21,7 @@ import {
 } from "../core/realtimeAudioEngine";
 import {
   claimRealtimeAudioPath,
+  initializeRealtimePublisherMedia,
   releaseRealtimeAudioPath,
   startPublishingAudio,
   startReceivingAudio,
@@ -168,10 +169,17 @@ export async function stabilizeLivePublisherAudio(
   } = {}
 ): Promise<RealtimeAudioEngineStatus & { audioTrackCount: number }> {
   const audioTrackCount = await reassertRealtimeMicrophone(room, options.context);
+  const participantRole = String(options.context?.participantRole || "host").toLowerCase();
+  const mode: RealtimeAudioMode = ["approved_guest", "guest", "cohost"].includes(participantRole)
+    ? "live_guest"
+    : "live_host";
   const status = await stabilizeRealtimeAudioEngine(audioDeviceModule, {
     playout: true,
     recording: true,
     settleMs: options.settleMs,
+    audioSession,
+    mode,
+    speaker: true,
     context: options.context
   });
   await selectRealtimeAudioOutput(audioSession, true).catch(() => undefined);
@@ -191,6 +199,9 @@ export async function stabilizeLiveViewerAudio(
     playout: true,
     recording: false,
     settleMs: options.settleMs,
+    audioSession,
+    mode: "live_viewer",
+    speaker: true,
     context: options.context
   });
   await selectRealtimeAudioOutput(audioSession, true).catch(() => undefined);
@@ -294,32 +305,6 @@ async function publishMicrophoneForPath(
     });
   }
   return result.audioTrackCount;
-}
-
-/**
- * Order the host media transition around the camera/audio race observed on iOS.
- *
- * The engine guard is deliberately last. Running it before camera publication
- * can inspect WebRTC while the newly-published microphone is still starting,
- * fail closed, and disconnect a healthy room before the camera is ever added.
- * The guard exists to verify the state *after* camera startup settles.
- */
-export async function initializeLivePublisherMedia(options: {
-  useV2: boolean;
-  publishMicrophone: () => Promise<number>;
-  enableCamera: () => Promise<void>;
-  stabilizeAudio: () => Promise<number>;
-  wait?: (milliseconds: number) => Promise<void>;
-}): Promise<number> {
-  let audioTrackCount = await options.publishMicrophone();
-  await options.enableCamera();
-  audioTrackCount = await options.publishMicrophone();
-  if (options.useV2) {
-    audioTrackCount = Math.max(audioTrackCount, await options.stabilizeAudio());
-  } else {
-    await (options.wait || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))))(150);
-  }
-  return audioTrackCount;
 }
 
 export type LiveConnectOptions = {
@@ -1192,8 +1177,7 @@ export function useLiveBroadcastRoom() {
         if (publish) {
           trace.emit("local_audio_track_create_started", { room_state: String(room?.state || "connected"), enabled: true });
           trace.emit("local_audio_publish_started", { room_state: String(room?.state || "connected"), enabled: true });
-          await initializeLivePublisherMedia({
-            useV2,
+          await initializeRealtimePublisherMedia({
             publishMicrophone: () => publishMicrophoneForPath(room, useV2, {
               role: telemetryRole,
               room: roomNameRef.current,
@@ -1207,7 +1191,15 @@ export function useLiveBroadcastRoom() {
                 PULSE_LIVE_VIDEO_PUBLISH_OPTIONS
               );
             },
-            stabilizeAudio: async () => (await stabilizeLivePublisherAudio(
+            reassertMicrophone: () => reassertRealtimeMicrophone(room, {
+              sessionId: roomNameRef.current,
+              correlationId: correlationIdRef.current,
+              roomType: "livestream",
+              participantRole: telemetryRole
+            })
+          });
+          if (useV2) {
+            await stabilizeLivePublisherAudio(
               room,
               livekitNative.AudioDeviceModule,
               livekitNative.AudioSession,
@@ -1220,8 +1212,10 @@ export function useLiveBroadcastRoom() {
                   participantRole: telemetryRole
                 }
               }
-            )).audioTrackCount
-          });
+            );
+          } else {
+            await new Promise((resolve) => setTimeout(resolve, 150));
+          }
         }
         if (publish) await selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
         await receiveLiveAudio(room, remoteAudioEnabledRef.current, {

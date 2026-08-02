@@ -244,15 +244,16 @@ export async function confirmHostLivePublish(
       video_tracks: Math.max(0, Number(payload.videoTracks || 0))
     })
   });
+  const retryable = Boolean(data.retryable);
   return {
-    ok: Boolean(data.ok),
+    ok: Boolean(data.ok) && !retryable && data.ready !== false,
     status: String(data.status || ""),
     publishPath: String(data.publish_path || ""),
     audioTracks: Number(data.audio_tracks || payload.audioTracks || 0),
     videoTracks: Number(data.video_tracks || payload.videoTracks || 0),
     playback: normalizePlayback((data.playback || {}) as LivePlayback, liveId),
     message: String(data.message || ""),
-    retryable: Boolean(data.retryable),
+    retryable,
     retryAfterMs: Number(data.retry_after_ms || 0)
   };
 }

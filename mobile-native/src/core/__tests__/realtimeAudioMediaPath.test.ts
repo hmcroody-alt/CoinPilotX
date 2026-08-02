@@ -1,5 +1,6 @@
 import {
   claimRealtimeAudioPath,
+  initializeRealtimePublisherMedia,
   releaseRealtimeAudioPath,
   startPublishingAudio
 } from "../realtimeAudioMediaPath";
@@ -30,6 +31,39 @@ function connectedPublishingRoom() {
 }
 
 describe("governed realtime audio media path", () => {
+  it("uses one publisher transition for video calls and Live without duplicating a healthy microphone", async () => {
+    const events: string[] = [];
+    const publishMicrophone = jest.fn(async () => {
+      events.push("microphone:publish");
+      return 1;
+    });
+
+    await expect(initializeRealtimePublisherMedia({
+      publishMicrophone,
+      enableCamera: async () => { events.push("camera:publish"); },
+      reassertMicrophone: async () => {
+        events.push("microphone:reassert");
+        return 1;
+      }
+    })).resolves.toBe(1);
+
+    expect(events).toEqual(["microphone:publish", "camera:publish", "microphone:reassert"]);
+    expect(publishMicrophone).toHaveBeenCalledTimes(1);
+  });
+
+  it("republishes through the same controller only when camera startup removed the microphone", async () => {
+    const publishMicrophone = jest.fn()
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1);
+
+    await expect(initializeRealtimePublisherMedia({
+      publishMicrophone,
+      enableCamera: async () => undefined,
+      reassertMicrophone: async () => 0
+    })).resolves.toBe(1);
+
+    expect(publishMicrophone).toHaveBeenCalledTimes(2);
+  });
   beforeEach(async () => {
     await resetRealtimeAudioOwnership();
   });

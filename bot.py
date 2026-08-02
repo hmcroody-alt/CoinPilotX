@@ -45905,7 +45905,13 @@ def api_pulse_live_browser_publish(live_id):
                     safe_reason,
                 )
                 return jsonify({
-                    "ok": False,
+                    # The native host is authorized and connected; LiveKit is
+                    # still converging on the camera publication required for
+                    # egress. Return an accepted/in-progress response so the
+                    # typed client can honor retry_after_ms instead of treating
+                    # this expected transition as a fatal API failure.
+                    "ok": True,
+                    "ready": False,
                     "status": "waiting_for_tracks",
                     "message": "LiveKit is connected, but the host video track is not visible to the room yet. Retrying egress shortly.",
                     "trace_id": trace_id,
@@ -45920,7 +45926,7 @@ def api_pulse_live_browser_publish(live_id):
                         "participant_count": int(track_ready.get("participant_count") or 0),
                         "published_tracks": track_ready.get("published_tracks") or [],
                     },
-                }), 409
+                }), 202
         verified_audio_tracks = max(audio_tracks, safe_int(track_ready.get("audio_tracks"), 0))
         verified_video_tracks = max(video_tracks, safe_int(track_ready.get("video_tracks"), 0))
         live["audio_tracks"] = verified_audio_tracks

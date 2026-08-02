@@ -120,6 +120,26 @@ describe("native Live guest publishing API", () => {
     });
   });
 
+  it("returns a retryable in-progress result while LiveKit tracks stabilize", async () => {
+    mockPulseApi.mockResolvedValueOnce({
+      ok: true,
+      ready: false,
+      status: "waiting_for_tracks",
+      retryable: true,
+      retry_after_ms: 1500,
+      audio_tracks: 1,
+      video_tracks: 0,
+      message: "LiveKit tracks are still stabilizing."
+    });
+
+    const result = await confirmHostLivePublish(45, { audioTracks: 1, videoTracks: 1 });
+
+    expect(result.ok).toBe(false);
+    expect(result.retryable).toBe(true);
+    expect(result.retryAfterMs).toBe(1500);
+    expect(result.status).toBe("waiting_for_tracks");
+  });
+
   it("requests a co-host seat through the production join-request route", async () => {
     mockPulseApi.mockResolvedValueOnce({
       ok: true,

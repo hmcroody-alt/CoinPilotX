@@ -83,7 +83,9 @@ def main():
         bot.pulse_livekit_wait_for_host_tracks = original_ready
         bot.pulse_livekit_start_mux_egress = original_egress
 
-    require(response.status_code == 409, "browser publish returns retryable 409 while host video is missing")
+    require(response.status_code == 202, "browser publish accepts the bounded retry while host video is missing")
+    require(data.get("ok") is True, "waiting response is transport-successful so native can honor retry metadata")
+    require(data.get("ready") is False, "waiting response never claims media is ready")
     require(data.get("retryable") is True, "response tells browser to retry instead of failing hard")
     require(data.get("status") == "waiting_for_tracks", "response exposes waiting_for_tracks status")
     require(egress_calls["count"] == 0, "LiveKit egress is not started before video track readiness")

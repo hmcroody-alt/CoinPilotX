@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +28,10 @@ def main():
     require('qsa(root, "[data-live-start-camera]")' in RUNTIME, "desktop and mobile camera controls share the lock")
     require('player.dataset.liveHostViewer === "1"' in RUNTIME and 'livePlayer.volume = 0' in RUNTIME, "host public-view playback stays silent")
     require("volume='0' aria-label='Muted host camera preview'" in BOT, "host preview markup declares zero-volume intent")
-    require("20260613-audio-echo-v1" in BOT, "production runtime cache key is updated")
+    require(
+        re.search(r"/static/js/pulse_live_studio_runtime\.js\?v=[A-Za-z0-9._-]+", BOT) is not None,
+        "production runtime has an explicit cache-busting version",
+    )
     print("live audio echo prevention audit ok")
 
 

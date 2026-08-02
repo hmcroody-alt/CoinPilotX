@@ -328,6 +328,9 @@ export async function stabilizeRealtimeAudioEngine(
     playout: boolean;
     recording: boolean;
     settleMs?: number;
+    audioSession?: LiveKitAudioSession | null;
+    mode?: RealtimeAudioMode;
+    speaker?: boolean;
     context?: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string };
   }
 ): Promise<RealtimeAudioEngineStatus> {
@@ -342,6 +345,20 @@ export async function stabilizeRealtimeAudioEngine(
   const enforce = async () => {
     const before = inspectRealtimeAudioEngine(audioDeviceModule);
     const engineStopped = before.engineRunning === false;
+
+    // Camera capture can leave the WebRTC ADM stopped even though PulseSoc's
+    // generation-scoped owner is still valid. Reassert the same canonical
+    // AudioSession profile used during call/Live acquisition before asking the
+    // ADM to initialize recording again. This is an idempotent setActive(true),
+    // not a stop/start pair, so it cannot release or steal ownership.
+    if (engineStopped && options.audioSession && options.mode) {
+      const config = resolveRealtimeAudioConfiguration(options.mode);
+      await options.audioSession.setAppleAudioConfiguration?.(config).catch(() => undefined);
+      await options.audioSession.configureAudio?.({
+        ios: { defaultOutput: options.speaker === false ? "default" : "speaker" }
+      }).catch(() => undefined);
+      await options.audioSession.startAudioSession?.().catch(() => undefined);
+    }
 
     // `startRecording` only resumes an already-initialized WebRTC recorder.
     // Camera startup can tear the underlying ADM down completely, which is the

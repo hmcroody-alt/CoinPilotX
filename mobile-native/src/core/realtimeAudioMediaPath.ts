@@ -93,6 +93,33 @@ export async function startPublishingAudio(options: {
   });
 }
 
+/**
+ * Canonical local-media transition for every microphone publisher.
+ *
+ * Audio calls stop after the first publication. Video calls and Live publishers
+ * add their feature-owned camera, then reassert the exact same microphone
+ * publication and republish only if the camera transition removed it. Keeping
+ * this ordering here prevents feature adapters from inventing subtly different
+ * microphone/camera races.
+ */
+export async function initializeRealtimePublisherMedia(options: {
+  publishMicrophone: () => Promise<number>;
+  enableCamera?: () => Promise<void>;
+  reassertMicrophone?: () => Promise<number>;
+}): Promise<number> {
+  let audioTrackCount = await options.publishMicrophone();
+  if (!options.enableCamera) return audioTrackCount;
+
+  await options.enableCamera();
+  if (options.reassertMicrophone) {
+    audioTrackCount = await options.reassertMicrophone();
+  }
+  if (audioTrackCount <= 0) {
+    audioTrackCount = await options.publishMicrophone();
+  }
+  return audioTrackCount;
+}
+
 /** Shared multi-speaker receive path. It never claims microphone ownership. */
 export async function startReceivingAudio(options: {
   room: any;

@@ -59,6 +59,7 @@ type LayoutMode = "spotlight" | "grid";
 
 const STATE_POLL_MS = 5000;
 const CHAT_POLL_MS = 3500;
+const PUBLISH_CONFIRM_MAX_RETRIES = 12;
 const COMMENT_ACCESSORY_ID = "pulsesoc-live-comment-accessory";
 
 const REACTIONS: { emoji: string; type: string; label: string }[] = [
@@ -110,6 +111,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("spotlight");
   const [trayExpanded, setTrayExpanded] = useState(true);
   const [toolNote, setToolNote] = useState("");
+  const [publishConfirmAttempt, setPublishConfirmAttempt] = useState(0);
 
   // Comment composer + keyboard controller. Draft/sending/error live here so the
   // same draft survives every dismissal path and is shared by the ambient
@@ -274,26 +276,39 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
     const audioTracks = Number(room.localAudioTrackCount || 0);
     const videoTracks = room.localVideoTrack ? 1 : 0;
     if (audioTracks <= 0 && videoTracks <= 0) return;
-    const key = `${liveId}:${audioTracks}:${videoTracks}:${room.reconnectCount}`;
+    const key = `${liveId}:${audioTracks}:${videoTracks}:${room.reconnectCount}:${publishConfirmAttempt}`;
     if (publishConfirmKeyRef.current === key) return;
     publishConfirmKeyRef.current = key;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     confirmHostLivePublish(liveId, { audioTracks, videoTracks })
       .then((result) => {
+        if (cancelled) return;
         if (result.ok) {
           setToolNote(result.message || "Native LiveKit media is confirmed for viewers.");
           refreshLiveMeta().catch(() => undefined);
         } else if (result.retryable) {
-          setTimeout(() => {
+          if (publishConfirmAttempt >= PUBLISH_CONFIRM_MAX_RETRIES) {
+            setToolNote("Live media is connected, but viewer delivery is still waiting for track verification.");
+            return;
+          }
+          retryTimer = setTimeout(() => {
             publishConfirmKeyRef.current = "";
+            setPublishConfirmAttempt((current) => current + 1);
           }, Math.max(800, Math.min(result.retryAfterMs || 1500, 3000)));
         } else if (result.message) {
           setToolNote(result.message);
         }
       })
       .catch((error) => {
+        if (cancelled) return;
         setToolNote(error instanceof Error ? error.message : "PulseSoc could not confirm native Live media yet.");
       });
-  }, [liveId, refreshLiveMeta, room.connected, room.localAudioTrackCount, room.localVideoTrack, room.reconnectCount]);
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [liveId, publishConfirmAttempt, refreshLiveMeta, room.connected, room.localAudioTrackCount, room.localVideoTrack, room.reconnectCount]);
 
   const finishBroadcast = useCallback(async () => {
     if (endedRef.current) return;

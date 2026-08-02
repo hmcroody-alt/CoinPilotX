@@ -16,6 +16,7 @@ import {
 } from "../core/realtimeAudioEngine";
 import {
   claimRealtimeAudioPath,
+  initializeRealtimePublisherMedia,
   releaseRealtimeAudioPath,
   startPublishingAudio
 } from "../core/realtimeAudioMediaPath";
@@ -128,26 +129,21 @@ export async function initializeCallLocalMedia(
     lease?: RealtimeAudioLease | null;
   }
 ): Promise<number> {
-  let audioTrackCount = await ensureCallMicrophonePublished(room, {
+  const publishMicrophone = () => ensureCallMicrophonePublished(room, {
     useV2: options.useV2,
     fallbackEnabled: options.fallbackEnabled,
     context: options.context,
     lease: options.lease
   });
-  if (audioTrackCount <= 0 || !options.video) return audioTrackCount;
-  emitRealtimeAudioEvent({ name: "camera_publish_started", ...options.context });
-  await room.localParticipant.setCameraEnabled(true);
-  emitRealtimeAudioEvent({ name: "camera_published", ...options.context, outcome: "published" });
-  audioTrackCount = await reassertRealtimeMicrophone(room, options.context);
-  if (audioTrackCount <= 0) {
-    audioTrackCount = await ensureCallMicrophonePublished(room, {
-      useV2: options.useV2,
-      fallbackEnabled: options.fallbackEnabled,
-      context: options.context,
-      lease: options.lease
-    });
-  }
-  return audioTrackCount;
+  return initializeRealtimePublisherMedia({
+    publishMicrophone,
+    enableCamera: options.video ? async () => {
+      emitRealtimeAudioEvent({ name: "camera_publish_started", ...options.context });
+      await room.localParticipant.setCameraEnabled(true);
+      emitRealtimeAudioEvent({ name: "camera_published", ...options.context, outcome: "published" });
+    } : undefined,
+    reassertMicrophone: options.video ? () => reassertRealtimeMicrophone(room, options.context) : undefined
+  });
 }
 
 function readableError(error: unknown, fallback: string) {
@@ -338,6 +334,9 @@ export function useNativeCallRoom() {
                 playout: true,
                 recording: true,
                 settleMs: 250,
+                audioSession: livekitNative.AudioSession,
+                mode: "video_call",
+                speaker: true,
                 context: publicationContextRef.current
               })
             : undefined
@@ -368,6 +367,9 @@ export function useNativeCallRoom() {
               playout: true,
               recording: true,
               settleMs: 0,
+              audioSession: livekitNative.AudioSession,
+              mode: "video_call",
+              speaker: true,
               context: publicationContextRef.current
             }).catch(() => undefined);
             selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
@@ -437,6 +439,9 @@ export function useNativeCallRoom() {
           playout: true,
           recording: true,
           settleMs: 650,
+          audioSession: livekitNative.AudioSession,
+          mode: "video_call",
+          speaker: true,
           context: publicationContextRef.current
         });
       }
@@ -499,6 +504,9 @@ export function useNativeCallRoom() {
       playout: true,
       recording: true,
       settleMs: 450,
+      audioSession: audioSessionRef.current,
+      mode: "video_call",
+      speaker: true,
       context: publicationContextRef.current
     });
     await selectRealtimeAudioOutput(audioSessionRef.current, true).catch(() => undefined);
@@ -540,6 +548,9 @@ export function useNativeCallRoom() {
       playout: true,
       recording: true,
       settleMs: 450,
+      audioSession: audioSessionRef.current,
+      mode: "video_call",
+      speaker: true,
       context: publicationContextRef.current
     });
     await selectRealtimeAudioOutput(audioSessionRef.current, true).catch(() => undefined);

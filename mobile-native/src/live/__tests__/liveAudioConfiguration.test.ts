@@ -1,5 +1,4 @@
 import {
-  initializeLivePublisherMedia,
   resolveLiveAudioConfiguration,
   stabilizeLivePublisherAudio,
   stabilizeLiveViewerAudio
@@ -93,25 +92,4 @@ describe("post-camera Live audio stabilization", () => {
     expect(audioSession.selectAudioOutput).toHaveBeenCalledWith("force_speaker");
   });
 
-  it("does not run the fail-closed engine guard until after camera publication", async () => {
-    const events: string[] = [];
-
-    await initializeLivePublisherMedia({
-      useV2: true,
-      publishMicrophone: async () => {
-        events.push("microphone");
-        return 1;
-      },
-      enableCamera: async () => {
-        events.push("camera");
-      },
-      stabilizeAudio: async () => {
-        events.push("guard");
-        return 1;
-      },
-      wait: async () => undefined
-    });
-
-    expect(events).toEqual(["microphone", "camera", "microphone", "guard"]);
-  });
 });

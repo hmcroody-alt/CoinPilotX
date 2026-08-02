@@ -87,6 +87,13 @@ class RealtimeAudioArchitectureTests(unittest.TestCase):
         self.assertIn('from "../core/realtimeRemoteAudioController"', calls)
         self.assertIn('from "../core/realtimeAudioMediaPath"', live)
 
+    def test_video_calls_and_live_share_the_local_media_transition(self) -> None:
+        for relative in ("calls/useNativeCallRoom.ts", "live/useLiveBroadcastRoom.ts"):
+            text = (NATIVE / relative).read_text(encoding="utf-8")
+            self.assertIn("initializeRealtimePublisherMedia", text)
+        live = (NATIVE / "live" / "useLiveBroadcastRoom.ts").read_text(encoding="utf-8")
+        self.assertNotIn("initializeLivePublisherMedia", live)
+
 
 if __name__ == "__main__":
     unittest.main()
