@@ -128,6 +128,16 @@ export function getActiveRealtimeMicrophoneOwner(): RealtimeAudioOwner | null {
   return owner?.publishesMicrophone ? owner : null;
 }
 
+/** True only while this exact generation still owns the canonical audio session. */
+export function isRealtimeAudioLeaseActive(lease: RealtimeAudioLease | null | undefined): boolean {
+  if (!lease || !activeRealtimeAudioOwner) return false;
+  return (
+    activeRealtimeAudioOwner.ownerId === lease.ownerId &&
+    activeRealtimeAudioOwner.leaseId === lease.leaseId &&
+    activeRealtimeAudioOwner.mode === lease.mode
+  );
+}
+
 export function modePublishesMicrophone(mode: RealtimeAudioMode): boolean {
   return ["audio_call", "video_call", "live_host", "live_guest", "voice_message"].includes(mode);
 }
@@ -415,33 +425,6 @@ export function publicationHasTrack(publication: any): boolean {
 
 export function countPublishedAudioTracks(participant: any): number {
   return audioPublications(participant).filter(publicationHasTrack).length;
-}
-
-export function countSubscribedRemoteAudioTracks(room: any): number {
-  return Array.from(room?.remoteParticipants?.values?.() || []).reduce(
-    (total: number, participant: any) => total + countPublishedAudioTracks(participant),
-    0
-  );
-}
-
-export async function applyRemoteAudioEnabled(room: any, enabled: boolean): Promise<number> {
-  let touched = 0;
-  const tasks: Promise<unknown>[] = [];
-  for (const remote of Array.from(room?.remoteParticipants?.values?.() || []) as any[]) {
-    for (const publication of audioPublications(remote)) {
-      const track = publication?.track;
-      if (!track || publication?.isSubscribed === false) continue;
-      if (typeof track.setEnabled === "function") {
-        tasks.push(Promise.resolve(track.setEnabled(enabled)));
-        touched += 1;
-      } else if (track.mediaStreamTrack) {
-        track.mediaStreamTrack.enabled = enabled;
-        touched += 1;
-      }
-    }
-  }
-  await Promise.all(tasks).catch(() => undefined);
-  return touched;
 }
 
 /**

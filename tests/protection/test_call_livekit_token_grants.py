@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 def _load_token_contract() -> dict:
     source_path = ROOT / "services" / "pulsesoc_communications_engine.py"
     tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
-    names = {"_env_enabled", "_realtime_audio_v2_status", "_generate_livekit_token"}
+    names = {"_env_enabled", "_env_enabled_with_legacy", "_realtime_audio_v2_status", "_generate_livekit_token"}
     functions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
     module = ast.Module(body=functions, type_ignores=[])
     namespace = {
@@ -80,6 +80,7 @@ class CallLiveKitTokenGrantTests(unittest.TestCase):
             "authenticated_user_id": 42,
         })
         self.assertFalse(result["realtime_audio_v2_enabled"])
+        self.assertFalse(result["realtime_audio_shared_path_enabled"])
         self.assertTrue(result["realtime_audio_v2_fallback_enabled"])
 
     def test_video_call_token_allows_only_microphone_and_camera(self) -> None:
@@ -112,6 +113,19 @@ class CallLiveKitTokenGrantTests(unittest.TestCase):
 
         self.assertTrue(audio["realtime_audio_v2_enabled"])
         self.assertFalse(video["realtime_audio_v2_enabled"])
+
+    def test_shared_path_names_are_authoritative_over_legacy_aliases(self) -> None:
+        environment = {
+            **self.ENV,
+            "REALTIME_AUDIO_PLATFORM_V2_ENABLED": "true",
+            "REALTIME_AUDIO_CALLS_SHARED_PATH": "false",
+            "REALTIME_AUDIO_CALLS_V2_ENABLED": "true",
+        }
+        with patch.dict(os.environ, environment, clear=False):
+            result = CALLS["_generate_livekit_token"]("audio", 1, "audio", "caller")
+
+        self.assertFalse(result["realtime_audio_shared_path_enabled"])
+        self.assertFalse(result["realtime_audio_v2_enabled"])
 
 
 if __name__ == "__main__":

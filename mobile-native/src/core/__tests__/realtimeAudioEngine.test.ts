@@ -1,6 +1,5 @@
 import {
   activateRealtimeAudioSession,
-  applyRemoteAudioEnabled,
   getActiveRealtimeAudioOwner,
   getActiveRealtimeMicrophoneOwner,
   PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
@@ -12,6 +11,7 @@ import {
   selectRealtimeAudioOutput,
   stabilizeRealtimeAudioEngine
 } from "../realtimeAudioEngine";
+import { applyRemoteAudioEnabled } from "../realtimeRemoteAudioController";
 
 function sdkTrack() {
   const calls: boolean[] = [];

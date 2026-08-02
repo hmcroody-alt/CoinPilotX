@@ -45,6 +45,7 @@ export type PulseCallJoin = {
   can_publish?: boolean;
   can_subscribe?: boolean;
   can_publish_sources?: string[];
+  realtime_audio_shared_path_enabled?: boolean;
   realtime_audio_v2_enabled?: boolean;
   realtime_audio_v2_fallback_enabled?: boolean;
   expires_at?: string;
