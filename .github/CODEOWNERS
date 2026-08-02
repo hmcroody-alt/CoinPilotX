@@ -1,0 +1,116 @@
+# CODEOWNERS — review ownership for the protected real-time audio boundary.
+#
+# WHAT THIS FILE DOES AND DOES NOT DO
+#
+# GitHub uses this file to request review from the listed owners automatically.
+# It only *blocks* a merge when the branch protection rule for the target branch
+# has "Require review from Code Owners" enabled. Without that setting this file
+# is an advisory reviewer-suggestion list and nothing more.
+# See docs/realtime_audio_branch_protection.md for the exact settings required
+# and their current status.
+#
+# A WARNING ABOUT NONEXISTENT OWNERS
+#
+# If a pattern lists a user or team that does not exist, or that lacks write
+# access to this repository, GitHub does not error — it silently assigns no
+# owner, and the rule fails open. That is the worst outcome for a protection
+# file, so every handle below is one evidenced from this repository's own
+# configuration. Do not add a team handle here before creating the team.
+#
+# Evidenced owner: `git remote -v` resolves to
+# git@github.com:hmcroody-alt/CoinPilotX.git, so @hmcroody-alt is the account
+# that owns this repository.
+#
+# TODO(repository administration): if real-time audio should be owned by more
+# than one person, create a team (suggested: @hmcroody-alt/realtime-audio-owners)
+# and replace @hmcroody-alt on the audio blocks below. Do not add the team handle
+# until the team exists and has write access.
+
+# ---------------------------------------------------------------------------
+# Default owner for everything, so no path is unowned.
+# ---------------------------------------------------------------------------
+*                                                       @hmcroody-alt
+
+# ---------------------------------------------------------------------------
+# The lock itself. Changing the manifest, the gate, the workflow, or this file
+# changes what is enforced everywhere else, so it is owned first.
+# ---------------------------------------------------------------------------
+/config/realtime-audio-protected-paths.json             @hmcroody-alt
+/scripts/realtime_audio_change_gate.py                  @hmcroody-alt
+/.github/workflows/realtime-audio.yml                   @hmcroody-alt
+/.github/CODEOWNERS                                     @hmcroody-alt
+
+# ---------------------------------------------------------------------------
+# Shared audio-session coordinator, ownership arbitration, publication.
+# One module owns the device audio session; these are that module and the
+# arbitration around it.
+# ---------------------------------------------------------------------------
+/mobile-native/src/core/realtimeAudioEngine.ts          @hmcroody-alt
+/mobile-native/src/core/audioOwnershipPolicy.ts         @hmcroody-alt
+/mobile-native/src/core/realtimeAudioStateMachine.ts    @hmcroody-alt
+/mobile-native/src/core/realtimeMicrophonePublisher.ts  @hmcroody-alt
+/mobile-native/src/core/realtimeAudioTelemetry.ts       @hmcroody-alt
+
+# ---------------------------------------------------------------------------
+# Call adapter. Audio calls and video calls share these files, so a video-only
+# change can silence an audio call.
+# ---------------------------------------------------------------------------
+/mobile-native/src/calls/useNativeCallRoom.ts           @hmcroody-alt
+/mobile-native/src/calls/callSignalMedia.ts             @hmcroody-alt
+/mobile-native/src/calls/callKitBridge.ts               @hmcroody-alt
+/mobile-native/src/screens/CallScreen.tsx               @hmcroody-alt
+
+# ---------------------------------------------------------------------------
+# Livestream host / guest / viewer audio.
+# ---------------------------------------------------------------------------
+/mobile-native/src/live/useLiveBroadcastRoom.ts         @hmcroody-alt
+/mobile-native/src/live/liveSession.ts                  @hmcroody-alt
+/mobile-native/src/live/liveAudioPublisher.ts           @hmcroody-alt
+/mobile-native/src/live/livePlaybackOwnership.ts        @hmcroody-alt
+/mobile-native/src/live/liveAudioRecovery.ts            @hmcroody-alt
+/mobile-native/src/live/liveAudioFlags.ts               @hmcroody-alt
+/mobile-native/src/live/liveAudioTelemetry.ts           @hmcroody-alt
+/mobile-native/src/live/liveAudioTrace.ts               @hmcroody-alt
+/mobile-native/src/screens/LiveHostSessionScreen.tsx    @hmcroody-alt
+/mobile-native/src/screens/LiveScreen.tsx               @hmcroody-alt
+/mobile-native/src/components/reels/ReelLiveViewerSurface.tsx @hmcroody-alt
+
+# ---------------------------------------------------------------------------
+# Token issuance and room authorization. Publish rights are granted here, where
+# no client test can see a mistake.
+# ---------------------------------------------------------------------------
+/mobile-native/src/api/calls.ts                         @hmcroody-alt
+/mobile-native/src/api/live.ts                          @hmcroody-alt
+
+# ---------------------------------------------------------------------------
+# Tests that encode the verified invariants. Deleting or weakening a test is the
+# quietest way to remove a protection, so the tests are owned like the code.
+# ---------------------------------------------------------------------------
+/mobile-native/src/core/__tests__/realtimeAudio*        @hmcroody-alt
+/mobile-native/src/core/__tests__/audioOwnershipPolicy.test.ts @hmcroody-alt
+/mobile-native/src/calls/__tests__/                     @hmcroody-alt
+/mobile-native/src/live/__tests__/                      @hmcroody-alt
+/tests/protection/                                      @hmcroody-alt
+
+# ---------------------------------------------------------------------------
+# Dependency and native build surface. A lockfile refresh can move the media
+# stack with no code diff — the failure mode with the fewest visible symptoms.
+# ---------------------------------------------------------------------------
+/mobile-native/package.json                             @hmcroody-alt
+/mobile-native/package-lock.json                        @hmcroody-alt
+/mobile-native/app.json                                 @hmcroody-alt
+/mobile-native/eas.json                                 @hmcroody-alt
+/mobile-native/ios/Podfile                              @hmcroody-alt
+/mobile-native/ios/Podfile.lock                         @hmcroody-alt
+/mobile-native/patches/                                 @hmcroody-alt
+
+# ---------------------------------------------------------------------------
+# Baseline evidence and the change declaration. The rollback reference for
+# everything above.
+# ---------------------------------------------------------------------------
+/reports/realtime_audio_verified_baseline.md            @hmcroody-alt
+/reports/realtime_audio_change_declaration.md           @hmcroody-alt
+/docs/realtime_audio_change_policy.md                   @hmcroody-alt
+/docs/realtime_audio_release_checklist.md               @hmcroody-alt
+/docs/realtime_audio_branch_protection.md               @hmcroody-alt
+/docs/realtime_audio_safe_extension_points.md           @hmcroody-alt

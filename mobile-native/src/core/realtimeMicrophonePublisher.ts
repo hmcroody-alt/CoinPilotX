@@ -1,5 +1,6 @@
 import { audioPublications, publicationHasTrack } from "./realtimeAudioEngine";
 import { emitRealtimeAudioEvent } from "./realtimeAudioTelemetry";
+import { reportRealtimeAudioInvariant } from "./realtimeAudioInvariants";
 
 export const REALTIME_AUDIO_PUBLISH_TIMEOUT_MS = 8000;
 
@@ -40,6 +41,16 @@ async function reconcileDuplicates(room: any): Promise<number> {
       // The result exposes incomplete reconciliation without dropping the room.
     }
   }
+  if (removed > 0) {
+    // The reconciliation already happened; this records that it was needed.
+    // A duplicate track reaching production is heard as an echo, and it is the
+    // one invariant whose repair is silent by design.
+    reportRealtimeAudioInvariant({
+      id: "duplicate_microphone_tracks",
+      action: "reconciled",
+      detail: "unpublished_extra"
+    });
+  }
   return removed;
 }
 
@@ -66,6 +77,19 @@ async function runPublish(room: any, timeoutMs: number, context: RealtimePublica
   const localParticipant = room?.localParticipant;
   if (!localParticipant) return { outcome: "no_participant", audioTrackCount: 0, duplicatesRemoved: 0, durationMs: 0 };
   if (context.canPublishMicrophone === false) {
+    // Refusal is unchanged. It is recorded because a viewer reaching this line
+    // means some surface believes it may publish - either a stale role after a
+    // guest was removed, or a code path that skipped the gate. Both are
+    // invisible in a build where the refusal works.
+    reportRealtimeAudioInvariant({
+      id: "viewer_publication_attempt",
+      action: "rejected",
+      detail: "publish_denied",
+      sessionId: context.sessionId,
+      correlationId: context.correlationId,
+      roomType: context.roomType,
+      participantRole: context.participantRole
+    });
     return { outcome: "forbidden", audioTrackCount: localAudioPublications(room).length, duplicatesRemoved: 0, durationMs: 0 };
   }
   if (localAudioPublications(room).length > 0) {

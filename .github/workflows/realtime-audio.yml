@@ -1,0 +1,299 @@
+# Real-time audio protection workflow.
+#
+# The audio foundation was physically heard working at the commit recorded in
+# reports/realtime_audio_verified_baseline.md. Nothing in this file can prove a
+# human hears audio; what it can do is refuse to let the invariants that made
+# audio work drift silently, and refuse to let a protected file change without a
+# written declaration of who validated it and how to roll it back.
+#
+# Design notes that matter if you edit this file:
+#
+#  * Ordinary work must not be slowed down. The `detect` job runs in seconds and
+#    short-circuits everything else when no protected path moved. Broad, slow
+#    gating is how a protection scheme gets disabled six months later.
+#  * `architecture` runs on every pull request regardless of `detect`, because a
+#    forbidden AVAudioSession call can be added to an unrelated screen — a file
+#    that is deliberately NOT in the protected manifest. Gating the boundary scan
+#    on protected-path changes would miss exactly the case it exists to catch.
+#  * `fetch-depth: 0` is required. The change gate diffs base...head, and a
+#    shallow clone has no merge base to diff from.
+
+name: Real-time audio protection
+
+on:
+  pull_request:
+    branches: ["**"]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: realtime-audio-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Did anything protected move?
+  # ---------------------------------------------------------------------------
+  detect:
+    name: Detect protected audio changes
+    runs-on: ubuntu-latest
+    outputs:
+      protected: ${{ steps.gate.outputs.protected }}
+      declaration_ok: ${{ steps.gate.outputs.declaration_ok }}
+      hit_count: ${{ steps.gate.outputs.hit_count }}
+      indirect: ${{ steps.indirect.outputs.indirect }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve diff range
+        id: range
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "base=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            # On a push, ${{ github.event.before }} is all-zeroes for a new
+            # branch. Fall back to the first parent so the gate still has a range.
+            BASE="${{ github.event.before }}"
+            if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+              BASE="$(git rev-parse HEAD^ 2>/dev/null || git rev-parse HEAD)"
+            fi
+            echo "base=$BASE" >> "$GITHUB_OUTPUT"
+            echo "head=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The gate exits 1 when a protected path changed without an acceptable
+      # declaration. `continue-on-error` lets the reporting steps below run and
+      # lets the audio suites still execute, which is what an author needs to
+      # see; the `declaration` job re-fails the build afterwards.
+      - name: Run change-detection gate
+        id: gate
+        continue-on-error: true
+        run: |
+          python3 scripts/realtime_audio_change_gate.py \
+            --base "${{ steps.range.outputs.base }}" \
+            --head "${{ steps.range.outputs.head }}"
+
+      # Paths that are not inside the protected boundary but can still break
+      # audio from the outside: navigation that mounts or unmounts a call or
+      # Live screen, app lifecycle handling that backgrounds a session, and the
+      # auth/token services a room join depends on. These do not require a
+      # change declaration — they are not part of the audio implementation — but
+      # they must run the release-blocking suite.
+      - name: Detect indirect audio-affecting changes
+        id: indirect
+        run: |
+          git diff --name-only \
+            "${{ steps.range.outputs.base }}...${{ steps.range.outputs.head }}" > /tmp/changed.txt
+          if grep -Eq \
+            '^mobile-native/src/(navigation/|App\.tsx|core/(appLifecycle|session|auth|tokenStore|apiClient)|api/(auth|session))|^mobile-native/(app\.json|eas\.json|package(-lock)?\.json)|^backend/.*(livekit|room|token)|^requirements\.txt' \
+            /tmp/changed.txt; then
+            echo "indirect=true" >> "$GITHUB_OUTPUT"
+            echo "Indirect audio-affecting paths changed:"
+            grep -E '^mobile-native/src/(navigation/|App\.tsx|core/(appLifecycle|session|auth|tokenStore|apiClient)|api/(auth|session))|^mobile-native/(app\.json|eas\.json|package(-lock)?\.json)|^backend/.*(livekit|room|token)|^requirements\.txt' /tmp/changed.txt
+          else
+            echo "indirect=false" >> "$GITHUB_OUTPUT"
+            echo "No indirect audio-affecting paths changed."
+          fi
+
+      - name: Summarize
+        run: |
+          python3 scripts/realtime_audio_change_gate.py \
+            --base "${{ steps.range.outputs.base }}" \
+            --head "${{ steps.range.outputs.head }}" --json \
+            > /tmp/gate.json || true
+          {
+            echo "### Real-time audio change gate"
+            echo ""
+            echo '```json'
+            cat /tmp/gate.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # 2. The boundary scan. Always runs — see the header note.
+  # ---------------------------------------------------------------------------
+  architecture:
+    name: Architecture boundary (native + backend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile-native/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install native dependencies
+        working-directory: mobile-native
+        run: npm ci
+
+      - name: Manifest points at files that exist
+        run: python3 -m unittest tests.protection.test_realtime_audio_architecture -v
+
+      - name: Forbidden audio APIs stay inside their allowlists
+        working-directory: mobile-native
+        run: npm run test:realtime-audio-architecture
+
+  # ---------------------------------------------------------------------------
+  # 3. Release-blocking audio suite. Runs when the gate found a protected change
+  #    OR when a path that can indirectly break audio changed.
+  # ---------------------------------------------------------------------------
+  critical:
+    name: Critical audio golden flows
+    needs: detect
+    if: needs.detect.outputs.protected == 'true' || needs.detect.outputs.indirect == 'true' || github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile-native/package-lock.json
+
+      - name: Install native dependencies
+        working-directory: mobile-native
+        run: npm ci
+
+      - name: Critical audio suite
+        working-directory: mobile-native
+        run: npm run test:realtime-audio-critical
+
+      - name: Full audio suite
+        working-directory: mobile-native
+        run: npm run test:realtime-audio
+
+      - name: TypeScript compilation
+        working-directory: mobile-native
+        run: npm run typecheck
+
+  # ---------------------------------------------------------------------------
+  # 4. Backend token and room authorization. Publish rights are granted here,
+  #    where no client test can see a mistake.
+  # ---------------------------------------------------------------------------
+  backend:
+    name: Backend token and room policy
+    needs: detect
+    if: needs.detect.outputs.protected == 'true' || needs.detect.outputs.indirect == 'true' || github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+
+      - name: Token grant and room owner tests
+        run: |
+          python3 -m unittest \
+            tests.protection.test_call_livekit_token_grants \
+            tests.protection.test_livestream_audio_token_grants \
+            tests.protection.test_livekit_webhook_route_owner -v
+
+  # ---------------------------------------------------------------------------
+  # 5. Native build verification. A change can pass every Jest test and still
+  #    fail to produce an app that has microphone permission.
+  # ---------------------------------------------------------------------------
+  native-build:
+    name: Native build verification (prebuild)
+    needs: detect
+    if: needs.detect.outputs.protected == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile-native/package-lock.json
+
+      - name: Install native dependencies
+        working-directory: mobile-native
+        run: npm ci
+
+      - name: Expo prebuild (iOS, no pod install)
+        working-directory: mobile-native
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Microphone and background-audio entries survived prebuild
+        working-directory: mobile-native
+        run: |
+          PLIST=ios/*/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :NSMicrophoneUsageDescription" $PLIST
+          /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes" $PLIST | grep -q audio
+
+  # ---------------------------------------------------------------------------
+  # 6. The declaration requirement. This is the job that fails the build when a
+  #    protected file changed without one, and it is the job to add to branch
+  #    protection's required-checks list.
+  # ---------------------------------------------------------------------------
+  declaration:
+    name: Change declaration required
+    needs: detect
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verdict
+        run: |
+          PROTECTED="${{ needs.detect.outputs.protected }}"
+          OK="${{ needs.detect.outputs.declaration_ok }}"
+          if [ "$PROTECTED" != "true" ]; then
+            echo "No protected real-time audio path changed. Declaration not required."
+            exit 0
+          fi
+          echo "Protected real-time audio paths changed (${{ needs.detect.outputs.hit_count }} file(s))."
+          if [ "$OK" = "true" ]; then
+            echo "reports/realtime_audio_change_declaration.md accepted."
+            echo "Physical audible validation is still required before release."
+            echo "See reports/realtime_audio_verified_baseline.md section 7."
+            exit 0
+          fi
+          echo "::error::Protected real-time audio paths changed without an acceptable"
+          echo "::error::reports/realtime_audio_change_declaration.md. Run the gate locally:"
+          echo "::error::  python3 scripts/realtime_audio_change_gate.py --base <base> --head HEAD"
+          exit 1
+
+  # ---------------------------------------------------------------------------
+  # 7. The audio-critical-change label. Advisory: a label is a human signal, and
+  #    failing a build over a missing label teaches people to add labels rather
+  #    than to validate audio. The declaration job above is the hard gate.
+  # ---------------------------------------------------------------------------
+  label:
+    name: audio-critical-change label
+    needs: detect
+    if: github.event_name == 'pull_request' && needs.detect.outputs.protected == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for the label
+        run: |
+          LABELS='${{ toJSON(github.event.pull_request.labels.*.name) }}'
+          echo "Labels on this PR: $LABELS"
+          if echo "$LABELS" | grep -q "audio-critical-change"; then
+            echo "Label present."
+          else
+            echo "::warning::This pull request changes protected real-time audio paths."
+            echo "::warning::Apply the 'audio-critical-change' label so reviewers see it in the PR list."
+          fi

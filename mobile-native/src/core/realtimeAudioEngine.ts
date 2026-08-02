@@ -5,6 +5,7 @@ import {
   type OwnershipDecision
 } from "./audioOwnershipPolicy";
 import { emitRealtimeAudioEvent } from "./realtimeAudioTelemetry";
+import { reportRealtimeAudioInvariant } from "./realtimeAudioInvariants";
 
 export type RealtimeAudioMode =
   | "none"
@@ -252,7 +253,20 @@ export async function releaseRealtimeAudioSession(
 ): Promise<boolean> {
   const ownerId = typeof lease === "string" ? lease : lease.ownerId;
   if (!activeRealtimeAudioOwner || activeRealtimeAudioOwner.ownerId !== ownerId) return false;
-  if (typeof lease !== "string" && activeRealtimeAudioOwner.leaseId !== lease.leaseId) return false;
+  if (typeof lease !== "string" && activeRealtimeAudioOwner.leaseId !== lease.leaseId) {
+    // The rejection itself is unchanged - this is the lease generation doing
+    // exactly its job. It is recorded because a stale cleanup firing in
+    // production means some caller is holding a lease past its session, and
+    // that is invisible unless it is counted.
+    reportRealtimeAudioInvariant({
+      id: "stale_cleanup_of_newer_session",
+      action: "rejected",
+      detail: activeRealtimeAudioOwner.mode,
+      sessionId: ownerId,
+      roomType: activeRealtimeAudioOwner.mode
+    });
+    return false;
+  }
   displacementHandlers.delete(ownerId);
   const released = activeRealtimeAudioOwner;
   emitRealtimeAudioEvent({ name: "cleanup_started", sessionId: ownerId, roomType: released.mode });
@@ -379,7 +393,10 @@ export async function stabilizeRealtimeAudioEngine(
   return status;
 }
 
-export const PULSE_LIVE_PORTRAIT_VIDEO_RESOLUTION = {
+// Internal. Consumed only by PULSE_LIVE_VIDEO_CAPTURE_OPTIONS below; exporting
+// it invited a feature to build its own capture options from the same numbers
+// instead of using the shared ones.
+const PULSE_LIVE_PORTRAIT_VIDEO_RESOLUTION = {
   width: 720,
   height: 1280,
   frameRate: 30,

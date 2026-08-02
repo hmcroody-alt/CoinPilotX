@@ -1,0 +1,382 @@
+{
+  "manifest_version": 1,
+  "name": "PulseSoc real-time audio protected boundary",
+  "description": "Machine-readable definition of the real-time audio foundation that was physically verified at the baseline recorded in reports/realtime_audio_verified_baseline.md. This file is consumed by scripts/realtime_audio_change_gate.py, tests/protection/test_realtime_audio_architecture.py and mobile-native/src/core/__tests__/realtimeAudioArchitecture.test.ts. It is not documentation: editing it changes what CI enforces.",
+  "baseline": {
+    "document": "reports/realtime_audio_verified_baseline.md",
+    "verified_commit": "ce03e160eaf4649a8e02bc3b609a3182ca9d3859",
+    "last_audio_commit": "b252a255e675c1b3e065e602ef225adc3c31779a",
+    "snapshot_tag": "realtime-audio-stable-v1",
+    "verified_date": "2026-08-02"
+  },
+  "declaration": {
+    "path": "reports/realtime_audio_change_declaration.md",
+    "required_when": "any path in categories[].paths changes, or any path in dependency_watch.files changes",
+    "required_sections": [
+      "Why the change is required",
+      "Which feature required it",
+      "Which protected files changed",
+      "Expected behavior change",
+      "Regression risk",
+      "Tests run",
+      "Physical validation required",
+      "Rollback procedure"
+    ],
+    "label": "audio-critical-change"
+  },
+  "categories": [
+    {
+      "id": "shared_audio_session_coordinator",
+      "title": "Shared audio-session coordinator",
+      "why": "The device has exactly one AVAudioSession. This module is the only thing allowed to configure, activate, or deactivate it for real-time audio. Every other rule in this manifest exists to keep that true.",
+      "paths": ["mobile-native/src/core/realtimeAudioEngine.ts"]
+    },
+    {
+      "id": "audio_ownership_controller",
+      "title": "Microphone and session ownership arbitration",
+      "why": "Decides which of call, video call, or livestream may hold the session and the microphone, and refuses the rest. Also the generation-scoped lease that stops a stale cleanup from killing a newer session.",
+      "paths": [
+        "mobile-native/src/core/audioOwnershipPolicy.ts",
+        "mobile-native/src/core/realtimeAudioStateMachine.ts"
+      ]
+    },
+    {
+      "id": "microphone_track_and_publication_controller",
+      "title": "Microphone track creation and publication",
+      "why": "Serializes publication per room, verifies it by event rather than by polling, reconciles duplicates, and returns an explicit forbidden outcome for viewers. A second publication path would reintroduce the duplicate-track class of bug.",
+      "paths": [
+        "mobile-native/src/core/realtimeMicrophonePublisher.ts",
+        "mobile-native/src/live/liveAudioPublisher.ts"
+      ]
+    },
+    {
+      "id": "remote_subscription_and_playback_controller",
+      "title": "Remote audio subscription and viewer playback",
+      "why": "Viewer audibility depends on remote tracks being enabled and on exactly one playback owner across viewer, feed, and host scopes. applyRemoteAudioEnabled lives in the engine; playback ownership lives here.",
+      "paths": ["mobile-native/src/live/livePlaybackOwnership.ts"],
+      "also_enforced_in": [
+        "mobile-native/src/core/realtimeAudioEngine.ts#applyRemoteAudioEnabled"
+      ]
+    },
+    {
+      "id": "route_controller",
+      "title": "Speaker / receiver / Bluetooth output routing",
+      "why": "Route selection and the route picker are part of the audio-session configuration and must not be reachable from a screen. Implemented inside the coordinator; listed separately so a change-declaration can name the concern.",
+      "paths": [],
+      "also_enforced_in": [
+        "mobile-native/src/core/realtimeAudioEngine.ts#selectRealtimeAudioOutput",
+        "mobile-native/src/core/realtimeAudioEngine.ts#showRealtimeAudioRoutePicker"
+      ]
+    },
+    {
+      "id": "interruption_recovery",
+      "title": "Disconnect classification, reconnect, token refresh, interruption resume",
+      "why": "Bounded reconnect with backoff, terminal-disconnect detection, token refresh margin, route reapplication, and resume-after-interruption. Unbounded retries or a missed terminal state produce a session that looks alive and carries no audio.",
+      "paths": ["mobile-native/src/live/liveAudioRecovery.ts"]
+    },
+    {
+      "id": "audio_and_video_call_adapter",
+      "title": "Call lifecycle adapter",
+      "why": "The only bridge between call UI and the shared platform. Holds the lease, drives publication, and releases ownership on teardown. Audio calls and video calls share this file, so a video-only change can break audio calls.",
+      "paths": [
+        "mobile-native/src/calls/useNativeCallRoom.ts",
+        "mobile-native/src/calls/callSignalMedia.ts",
+        "mobile-native/src/calls/callKitBridge.ts",
+        "mobile-native/src/screens/CallScreen.tsx"
+      ]
+    },
+    {
+      "id": "livestream_audio_adapter",
+      "title": "Livestream host, guest, and viewer adapter",
+      "why": "Host publication, guest publication after approval, viewer playback, and the terminal state when the host ends Live. The viewer path must never acquire the microphone.",
+      "paths": [
+        "mobile-native/src/live/useLiveBroadcastRoom.ts",
+        "mobile-native/src/live/liveSession.ts",
+        "mobile-native/src/screens/LiveHostSessionScreen.tsx",
+        "mobile-native/src/screens/LiveScreen.tsx",
+        "mobile-native/src/components/reels/ReelLiveViewerSurface.tsx"
+      ]
+    },
+    {
+      "id": "runtime_invariant_monitor",
+      "title": "Production runtime invariant monitor",
+      "why": "Counts the eight impossible states when they happen on a real device, in a real production build. It observes and never repairs, because a second decision-maker for audio state is the failure the whole boundary exists to prevent. Weakening it, or gating it on __DEV__, removes the only evidence that the enforcement is firing in the field.",
+      "paths": ["mobile-native/src/core/realtimeAudioInvariants.ts"]
+    },
+    {
+      "id": "audio_telemetry",
+      "title": "Privacy-safe real-time audio telemetry",
+      "why": "The only evidence that the audible path is working in the field. Hashed identifiers and correlation IDs only; a change that starts emitting raw identifiers is a privacy regression, and a change that stops emitting removes the rollback signal.",
+      "paths": [
+        "mobile-native/src/core/realtimeAudioTelemetry.ts",
+        "mobile-native/src/live/liveAudioTelemetry.ts",
+        "mobile-native/src/live/liveAudioTrace.ts"
+      ]
+    },
+    {
+      "id": "audio_feature_flags",
+      "title": "Livestream audio path flags and kill switch",
+      "why": "Selects between the legacy and isolated livestream audio routes. Server-driven with no client override, so it is a real kill switch. Weakening normalizeLiveAudioV2Flag or adding a local override removes the ability to roll back without an app release.",
+      "paths": ["mobile-native/src/live/liveAudioFlags.ts"],
+      "also_enforced_in": [
+        "bot.py#pulse_live_audio_v2_enabled",
+        "bot.py#pulse_live_audio_v2_fallback_enabled",
+        "bot.py#pulse_live_audio_v2_env_flag"
+      ]
+    },
+    {
+      "id": "backend_token_and_room_policy",
+      "title": "LiveKit token issuance and room authorization",
+      "why": "Publish rights are granted here. A token that lets a viewer publish, or that omits the microphone source for a caller, breaks audio from the server side where no client test can see it.",
+      "paths": [
+        "mobile-native/src/api/calls.ts",
+        "mobile-native/src/api/live.ts"
+      ],
+      "backend_symbols": [
+        "bot.py#pulse_livekit_config",
+        "bot.py#pulse_livekit_access_token",
+        "bot.py#pulse_livekit_verify_token_claims",
+        "bot.py#pulse_livekit_http_url",
+        "bot.py#pulse_livekit_ws_url"
+      ],
+      "backend_note": "bot.py is a single very large module, so it cannot be path-protected without protecting the whole backend. The change gate treats a bot.py diff as protected only when the diff touches a line matching backend_diff_patterns below."
+    },
+    {
+      "id": "critical_audio_tests",
+      "title": "Tests that encode the verified invariants",
+      "why": "Deleting or weakening a test is the quietest way to remove a protection. These files are protected so that doing so requires a declaration.",
+      "paths": [
+        "mobile-native/src/core/__tests__/realtimeAudioEngine.test.ts",
+        "mobile-native/src/core/__tests__/audioOwnershipPolicy.test.ts",
+        "mobile-native/src/core/__tests__/realtimeAudioStateMachine.test.ts",
+        "mobile-native/src/core/__tests__/realtimeAudioTelemetry.test.ts",
+        "mobile-native/src/core/__tests__/realtimeAudioArchitecture.test.ts",
+        "mobile-native/src/core/__tests__/realtimeAudioContracts.test.ts",
+        "mobile-native/src/core/__tests__/realtimeAudioInvariants.test.ts",
+        "mobile-native/src/calls/__tests__/callAudioOwnershipRegression.test.ts",
+        "mobile-native/src/calls/__tests__/useNativeCallRoomAudio.test.ts",
+        "mobile-native/src/live/__tests__/liveAudioPublisher.test.ts",
+        "mobile-native/src/live/__tests__/liveAudioConfiguration.test.ts",
+        "mobile-native/src/live/__tests__/liveAudioRecovery.test.ts",
+        "mobile-native/src/live/__tests__/liveAudioTelemetry.test.ts",
+        "mobile-native/src/live/__tests__/liveAudioTrace.test.ts",
+        "mobile-native/src/live/__tests__/cohostPublishGate.test.ts",
+        "mobile-native/src/live/__tests__/remoteAudioReapply.test.ts",
+        "mobile-native/src/live/__tests__/liveSession.test.ts",
+        "tests/protection/test_realtime_audio_architecture.py",
+        "tests/protection/test_call_livekit_token_grants.py",
+        "tests/protection/test_livestream_audio_token_grants.py",
+        "tests/protection/test_livekit_webhook_route_owner.py",
+        "tests/protection/test_livestream_contract.py"
+      ]
+    },
+    {
+      "id": "audio_governance",
+      "title": "The lock itself",
+      "why": "The manifest, the gate, the workflow, and the ownership file. A change here changes what is enforced, so it is enforced too.",
+      "paths": [
+        "config/realtime-audio-protected-paths.json",
+        "scripts/realtime_audio_change_gate.py",
+        ".github/workflows/realtime-audio.yml",
+        ".github/CODEOWNERS"
+      ]
+    }
+  ],
+  "backend_diff_patterns": [
+    "pulse_livekit_",
+    "pulse_live_audio_v2_",
+    "LIVEKIT_",
+    "LIVESTREAM_AUDIO_V2_",
+    "can_publish",
+    "canPublish",
+    "audioV2Enabled"
+  ],
+  "forbidden_apis": [
+    {
+      "id": "realtime_audio_session_mutation",
+      "title": "Direct AVAudioSession / LiveKit audio-session mutation",
+      "markers": [
+        ".setAppleAudioConfiguration(",
+        ".startAudioSession(",
+        ".stopAudioSession(",
+        ".selectAudioOutput(",
+        "audioSession.showAudioRoutePicker(",
+        "AVAudioSession.setCategory",
+        "AVAudioSession.setMode",
+        "AVAudioSession.setActive",
+        "audioSession.setCategory(",
+        "audioSession.setMode(",
+        "audioSession.setActive(",
+        "overrideOutputAudioPort"
+      ],
+      "allowed_paths": ["mobile-native/src/core/realtimeAudioEngine.ts"],
+      "reason": "One coordinator owns the session. A second caller can deactivate a live call's session or leave the category in a state where the microphone is captured but nothing is audible.",
+      "note": "Markers are audio-qualified on purpose. A bare setCategory/setMode/setActive scan matches React setState helpers across dozens of unrelated screens and would make this rule useless."
+    },
+    {
+      "id": "unmanaged_microphone_publication",
+      "title": "Direct microphone track creation or publication",
+      "markers": [
+        "localParticipant.setMicrophoneEnabled(",
+        "localParticipant.publishTrack(",
+        "localParticipant.unpublishTrack(",
+        "createLocalAudioTrack(",
+        "createLocalTracks(",
+        "new LocalAudioTrack("
+      ],
+      "allowed_paths": [
+        "mobile-native/src/core/realtimeAudioEngine.ts",
+        "mobile-native/src/core/realtimeMicrophonePublisher.ts"
+      ],
+      "reason": "Publication must be serialized per room and verified by event. A direct call races the publisher and produces two microphone tracks, which is heard as an echo or as silence depending on which one the server keeps."
+    },
+    {
+      "id": "direct_remote_audio_subscription",
+      "title": "Direct remote audio subscription or volume control",
+      "markers": [
+        ".setSubscribed(",
+        "remoteParticipant.setVolume(",
+        ".setAudioEnabled("
+      ],
+      "allowed_paths": ["mobile-native/src/core/realtimeAudioEngine.ts"],
+      "reason": "Viewer audibility depends on a single reconciliation pass over remote tracks. A screen that subscribes on its own will fight the reapply-on-reconnect logic."
+    },
+    {
+      "id": "global_livekit_audio_manager_mutation",
+      "title": "Global LiveKit audio-manager configuration",
+      "markers": [
+        "registerGlobals(",
+        "setDefaultAudioTrackCaptureOptions(",
+        "AudioManager.",
+        "setAppleAudioConfiguration"
+      ],
+      "allowed_paths": [
+        "mobile-native/src/core/realtimeAudioEngine.ts",
+        "mobile-native/src/calls/useNativeCallRoom.ts",
+        "mobile-native/src/live/useLiveBroadcastRoom.ts"
+      ],
+      "reason": "registerGlobals({ autoConfigureAudioSession: false }) is what stops the SDK from configuring the session behind the coordinator's back. It is allowed only in the two adapters that own a room, and only with autoConfigureAudioSession disabled — see the paired assertion in the architecture test."
+    },
+    {
+      "id": "expo_av_global_audio_mode",
+      "title": "Global expo-av audio-mode mutation",
+      "markers": ["Audio.setAudioModeAsync("],
+      "allowed_paths": [
+        "mobile-native/src/core/pulseRadio.ts",
+        "mobile-native/src/core/reelsAudioSession.ts",
+        "mobile-native/src/core/voiceMessagePlayback.ts",
+        "mobile-native/src/calls/callSignalMedia.ts",
+        "mobile-native/src/screens/MusicScreen.tsx",
+        "mobile-native/src/screens/ChatScreen.tsx"
+      ],
+      "reason": "expo-av's setAudioModeAsync mutates the same AVAudioSession the real-time coordinator owns, so a media screen can take the session away from a live call. These six files already called it at the verified baseline and are frozen as a legacy allowlist rather than changed, because this hard-lock must not alter working runtime behavior. A seventh call site fails CI. New media playback must route through an existing one of these.",
+      "frozen_at_baseline": true,
+      "max_allowed_paths": 6
+    },
+    {
+      "id": "direct_realtime_cleanup",
+      "title": "Direct real-time audio cleanup outside the lease",
+      "markers": [
+        "resetRealtimeAudioOwnership(",
+        "audioOwnerIdRef"
+      ],
+      "allowed_paths": [
+        "mobile-native/src/core/realtimeAudioEngine.ts"
+      ],
+      "reason": "resetRealtimeAudioOwnership bypasses generation checking, so a delayed caller can release a session that a newer feature has since acquired. Cleanup from a feature must go through releaseRealtimeAudioSession with the lease it was given. audioOwnerIdRef is the pre-baseline owner-name pattern that this replaced; its reappearance means a regression to name-scoped cleanup."
+    }
+  ],
+  "import_boundary": {
+    "reason": "The narrow public API. The audio core is reachable only from the two room adapters and the livestream publisher that wraps them. Every screen in the product goes through those, which is why no screen has ever needed to know that an AVAudioSession exists. This rule is what keeps that true: the day a screen imports the engine directly, the boundary has widened whether or not that screen calls a forbidden API.",
+    "modules": [
+      "core/realtimeAudioEngine",
+      "core/realtimeMicrophonePublisher",
+      "core/realtimeAudioInvariants",
+      "core/realtimeAudioStateMachine"
+    ],
+    "allowed_importers": [
+      "mobile-native/src/core/realtimeAudioEngine.ts",
+      "mobile-native/src/core/realtimeMicrophonePublisher.ts",
+      "mobile-native/src/core/realtimeAudioInvariants.ts",
+      "mobile-native/src/core/realtimeAudioStateMachine.ts",
+      "mobile-native/src/core/audioOwnershipPolicy.ts",
+      "mobile-native/src/calls/useNativeCallRoom.ts",
+      "mobile-native/src/live/useLiveBroadcastRoom.ts",
+      "mobile-native/src/live/liveAudioPublisher.ts"
+    ]
+  },
+  "required_lease_discipline": {
+    "files": [
+      "mobile-native/src/calls/useNativeCallRoom.ts",
+      "mobile-native/src/live/useLiveBroadcastRoom.ts"
+    ],
+    "must_contain": [
+      "RealtimeAudioLease",
+      "audioLeaseRef",
+      "releaseRealtimeAudioSession"
+    ],
+    "must_not_contain": ["audioOwnerIdRef"],
+    "reason": "Both adapters must hold a generation-scoped lease and release it by lease, not by owner name."
+  },
+  "dependency_watch": {
+    "files": [
+      "mobile-native/package.json",
+      "mobile-native/package-lock.json",
+      "mobile-native/app.json",
+      "mobile-native/eas.json",
+      "mobile-native/ios/Podfile",
+      "mobile-native/ios/Podfile.lock",
+      "mobile-native/patches/react-native+0.81.5.patch"
+    ],
+    "must_be_exactly_pinned": [
+      "@livekit/react-native",
+      "@livekit/react-native-webrtc",
+      "livekit-client",
+      "expo-av"
+    ],
+    "baseline_versions": {
+      "@livekit/react-native": "^2.9.0",
+      "@livekit/react-native-webrtc": "144.1.1",
+      "livekit-client": "^2.15.4",
+      "expo-av": "~16.0.8",
+      "expo": "~54.0.36",
+      "react-native": "^0.81.5"
+    },
+    "required_ios_configuration": {
+      "app.json:expo.ios.infoPlist.NSMicrophoneUsageDescription": "must be present and non-empty",
+      "app.json:expo.ios.infoPlist.UIBackgroundModes": "must contain \"audio\""
+    },
+    "reason": "A floating range on a LiveKit or WebRTC package lets a lockfile refresh change the media stack with no code diff, which is the failure mode with the fewest visible symptoms."
+  },
+  "test_commands": {
+    "critical": "npm run test:realtime-audio-critical",
+    "full_audio": "npm run test:realtime-audio",
+    "architecture_native": "npm run test:realtime-audio-architecture",
+    "architecture_backend": "python3 -m unittest tests.protection.test_realtime_audio_architecture -v",
+    "backend_token": "python3 -m unittest tests.protection.test_call_livekit_token_grants tests.protection.test_livestream_audio_token_grants tests.protection.test_livekit_webhook_route_owner -v",
+    "typecheck": "npm run typecheck",
+    "change_gate": "python3 scripts/realtime_audio_change_gate.py --base <base-sha> --head <head-sha>"
+  },
+  "unrelated_mission_policy": {
+    "rule": "A mission whose subject is not real-time audio must not edit any path in categories[].paths or dependency_watch.files.",
+    "named_examples": [
+      "Marketplace",
+      "Advertising",
+      "Premium",
+      "Crypto",
+      "Profile",
+      "Feed",
+      "Settings",
+      "Search",
+      "General UI"
+    ],
+    "exception_requires_all_of": [
+      "the change is strictly required to complete the mission",
+      "reports/realtime_audio_change_declaration.md is written",
+      "the critical audio suite and architecture tests pass",
+      "physical audible regression testing is performed and recorded",
+      "a CODEOWNERS reviewer for the protected path approves"
+    ],
+    "document": "docs/realtime_audio_change_policy.md"
+  }
+}

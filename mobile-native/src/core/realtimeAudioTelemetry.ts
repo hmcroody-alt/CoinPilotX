@@ -15,7 +15,11 @@ export type RealtimeAudioTelemetryEventName =
   | "audio_engine_guard_completed"
   | "audio_engine_guard_failed"
   | "cleanup_started"
-  | "cleanup_completed";
+  | "cleanup_completed"
+  // Emitted by realtimeAudioInvariants.ts when a state that should be
+  // impossible is observed and rejected at runtime. Carries the invariant id in
+  // failureCategory and what the owning module did in outcome.
+  | "invariant_violation";
 
 export type RealtimeAudioTelemetryEvent = {
   name: RealtimeAudioTelemetryEventName;
