@@ -16,6 +16,7 @@ import { BusinessOsAdvertisingScreen } from "../screens/BusinessOsAdvertisingScr
 import { BusinessOsInsightsScreen } from "../screens/BusinessOsInsightsScreen";
 import { BusinessOsPaymentsScreen } from "../screens/BusinessOsPaymentsScreen";
 import { BusinessOsScreen } from "../screens/BusinessOsScreen";
+import { BusinessProfileScreen } from "../screens/BusinessProfileScreen";
 import { BuyerOrdersScreen } from "../screens/BuyerOrdersScreen";
 import { CameraStudioScreen } from "../screens/CameraStudioScreen";
 import { CallScreen } from "../screens/CallScreen";
@@ -56,6 +57,7 @@ import { SearchScreen } from "../screens/SearchScreen";
 import { SellerApplicationScreen } from "../screens/SellerApplicationScreen";
 import { SellerListingComposerScreen } from "../screens/SellerListingComposerScreen";
 import { SellerStoreScreen } from "../screens/SellerStoreScreen";
+import { isStoreDashboardRoute, SellerStoreRoute } from "../screens/SellerStoreRoute";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { AboutSettingsScreen } from "../screens/settings/AboutSettingsScreen";
 import { AccessibilitySettingsScreen } from "../screens/settings/AccessibilitySettingsScreen";
@@ -278,10 +280,25 @@ export function AppNavigator() {
       <Stack.Screen name="StatusDetail" component={StatusScreen} options={({ route }) => ({ title: route.params.title || t("common:screens.status") })} />
       <Stack.Screen name="MarketplaceDetail" component={MarketplaceScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.marketplace") })} />
       <Stack.Screen name="BusinessOs" component={BusinessOsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOs") })} />
+      {/* Draws its own header (back chevron, title, live badge), so the stack header is off. */}
+      <Stack.Screen name="BusinessProfile" component={BusinessProfileScreen} options={{ headerShown: false }} />
       <Stack.Screen name="BusinessOsAdvertising" component={BusinessOsAdvertisingScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsAdvertising") })} />
       <Stack.Screen name="BusinessOsInsights" component={BusinessOsInsightsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsInsights") })} />
       <Stack.Screen name="BusinessOsPayments" component={BusinessOsPaymentsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsPayments") })} />
-      <Stack.Screen name="SellerStore" component={SellerStoreScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.sellerStore") })} />
+      {/* `SellerStoreRoute` picks the rebuilt dashboard for `mode: "dashboard"`
+          and `SellerStoreScreen` for every other mode. The dashboard draws its
+          own navy header with a back chevron and title, so the stack header is
+          hidden for that mode only — leaving every other caller's header,
+          including the Orders card's, exactly as it was. */}
+      <Stack.Screen
+        name="SellerStore"
+        component={SellerStoreRoute}
+        options={({ route }) =>
+          isStoreDashboardRoute(route.params)
+            ? { headerShown: false }
+            : { title: route.params?.title || t("common:screens.sellerStore") }
+        }
+      />
       <Stack.Screen name="BuyerOrders" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.purchaseHistory") })} />
       <Stack.Screen name="BuyerOrderDetail" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.orderDetail") })} />
       <Stack.Screen name="BuyerPurchases" component={BuyerOrdersScreen} options={{ title: t("common:screens.purchaseHistory") }} />
