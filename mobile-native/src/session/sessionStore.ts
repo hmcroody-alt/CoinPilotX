@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Device from "expo-device";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { PULSE_API_BASE_URL } from "../api/config";
@@ -30,7 +31,7 @@ export async function getSessionCookie() {
   try {
     return await SecureStore.getItemAsync(COOKIE_KEY, KEYCHAIN_OPTIONS);
   } catch (error) {
-    if (!isLocalQaSession()) throw error;
+    if (!allowsInsecureQaStorageFallback()) throw error;
     return AsyncStorage.getItem(COOKIE_KEY);
   }
 }
@@ -46,13 +47,13 @@ export async function setSessionCookie(cookie: string) {
   }
   if (!cookie) {
     await SecureStore.deleteItemAsync(COOKIE_KEY, KEYCHAIN_OPTIONS).catch(async (error) => {
-      if (!isLocalQaSession()) throw error;
+      if (!allowsInsecureQaStorageFallback()) throw error;
       await AsyncStorage.removeItem(COOKIE_KEY);
     });
     return;
   }
   await SecureStore.setItemAsync(COOKIE_KEY, cookie, KEYCHAIN_OPTIONS).catch(async (error) => {
-    if (!isLocalQaSession()) throw error;
+    if (!allowsInsecureQaStorageFallback()) throw error;
     await AsyncStorage.setItem(COOKIE_KEY, cookie);
   });
 }
@@ -158,12 +159,23 @@ function isLocalQaSession() {
   return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(PULSE_API_BASE_URL);
 }
 
+/**
+ * Simulator builds are not provisioned and iOS may reject Keychain access with
+ * errSecMissingEntitlement (-34018), even though the same target is correctly
+ * entitled when signed for a physical device. Keep QA usable by falling back
+ * only in an iOS Simulator (or against the explicitly local QA backend).
+ * Physical-device sessions never persist credentials outside SecureStore.
+ */
+function allowsInsecureQaStorageFallback() {
+  return isLocalQaSession() || (Platform.OS === "ios" && !Device.isDevice);
+}
+
 async function getSecureValue(key: string) {
   if (Platform.OS === "web") return AsyncStorage.getItem(key);
   try {
     return await SecureStore.getItemAsync(key, KEYCHAIN_OPTIONS);
   } catch (error) {
-    if (!isLocalQaSession()) throw error;
+    if (!allowsInsecureQaStorageFallback()) throw error;
     return AsyncStorage.getItem(key);
   }
 }
@@ -171,7 +183,7 @@ async function getSecureValue(key: string) {
 async function setSecureValue(key: string, value: string) {
   if (Platform.OS === "web") return AsyncStorage.setItem(key, value);
   await SecureStore.setItemAsync(key, value, KEYCHAIN_OPTIONS).catch(async (error) => {
-    if (!isLocalQaSession()) throw error;
+    if (!allowsInsecureQaStorageFallback()) throw error;
     await AsyncStorage.setItem(key, value);
   });
 }
@@ -179,7 +191,7 @@ async function setSecureValue(key: string, value: string) {
 async function deleteSecureValue(key: string) {
   if (Platform.OS === "web") return AsyncStorage.removeItem(key);
   await SecureStore.deleteItemAsync(key, KEYCHAIN_OPTIONS).catch(async (error) => {
-    if (!isLocalQaSession()) throw error;
+    if (!allowsInsecureQaStorageFallback()) throw error;
     await AsyncStorage.removeItem(key);
   });
 }
