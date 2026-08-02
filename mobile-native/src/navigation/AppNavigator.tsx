@@ -57,6 +57,7 @@ import { SearchScreen } from "../screens/SearchScreen";
 import { SellerApplicationScreen } from "../screens/SellerApplicationScreen";
 import { SellerListingComposerScreen } from "../screens/SellerListingComposerScreen";
 import { SellerStoreScreen } from "../screens/SellerStoreScreen";
+import { isStoreDashboardRoute, SellerStoreRoute } from "../screens/SellerStoreRoute";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { AboutSettingsScreen } from "../screens/settings/AboutSettingsScreen";
 import { AccessibilitySettingsScreen } from "../screens/settings/AccessibilitySettingsScreen";
@@ -284,7 +285,20 @@ export function AppNavigator() {
       <Stack.Screen name="BusinessOsAdvertising" component={BusinessOsAdvertisingScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsAdvertising") })} />
       <Stack.Screen name="BusinessOsInsights" component={BusinessOsInsightsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsInsights") })} />
       <Stack.Screen name="BusinessOsPayments" component={BusinessOsPaymentsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsPayments") })} />
-      <Stack.Screen name="SellerStore" component={SellerStoreScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.sellerStore") })} />
+      {/* `SellerStoreRoute` picks the rebuilt dashboard for `mode: "dashboard"`
+          and `SellerStoreScreen` for every other mode. The dashboard draws its
+          own navy header with a back chevron and title, so the stack header is
+          hidden for that mode only — leaving every other caller's header,
+          including the Orders card's, exactly as it was. */}
+      <Stack.Screen
+        name="SellerStore"
+        component={SellerStoreRoute}
+        options={({ route }) =>
+          isStoreDashboardRoute(route.params)
+            ? { headerShown: false }
+            : { title: route.params?.title || t("common:screens.sellerStore") }
+        }
+      />
       <Stack.Screen name="BuyerOrders" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.purchaseHistory") })} />
       <Stack.Screen name="BuyerOrderDetail" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.orderDetail") })} />
       <Stack.Screen name="BuyerPurchases" component={BuyerOrdersScreen} options={{ title: t("common:screens.purchaseHistory") }} />
