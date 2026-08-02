@@ -165,6 +165,13 @@ export async function stabilizeLivePublisherAudio(
   audioSession: any,
   options: {
     settleMs?: number;
+    /**
+     * A host can begin broadcasting before any remote speaker exists, so idle
+     * playout is not a startup requirement. Once a host subscribes to a guest,
+     * the TrackSubscribed path opts in and verifies playout as well. Approved
+     * guests always require the bidirectional call-grade path.
+     */
+    requirePlayout?: boolean;
     context?: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string };
   } = {}
 ): Promise<RealtimeAudioEngineStatus & { audioTrackCount: number }> {
@@ -173,8 +180,9 @@ export async function stabilizeLivePublisherAudio(
   const mode: RealtimeAudioMode = ["approved_guest", "guest", "cohost"].includes(participantRole)
     ? "live_guest"
     : "live_host";
+  const requirePlayout = options.requirePlayout ?? mode === "live_guest";
   const status = await stabilizeRealtimeAudioEngine(audioDeviceModule, {
-    playout: true,
+    playout: requirePlayout,
     recording: true,
     settleMs: options.settleMs,
     audioSession,
@@ -1050,6 +1058,7 @@ export function useLiveBroadcastRoom() {
                 ? (publish
                     ? stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
                         settleMs: 0,
+                        requirePlayout: true,
                         context: {
                           sessionId: roomNameRef.current,
                           correlationId: correlationIdRef.current,

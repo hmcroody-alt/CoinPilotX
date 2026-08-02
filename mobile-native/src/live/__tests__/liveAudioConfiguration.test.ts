@@ -57,7 +57,7 @@ describe("post-camera Live audio stabilization", () => {
     };
   }
 
-  it("reasserts one host microphone and restores both recording and playout", async () => {
+  it("lets a host start with verified recording before any remote playout exists", async () => {
     const track = { kind: "audio", setEnabled: jest.fn().mockResolvedValue(undefined) };
     const participant = {
       audioTrackPublications: new Map([["mic", { kind: "audio", track }]]),
@@ -76,8 +76,48 @@ describe("post-camera Live audio stabilization", () => {
     expect(result.audioTrackCount).toBe(1);
     expect(participant.setMicrophoneEnabled).toHaveBeenCalledWith(true);
     expect(track.setEnabled).toHaveBeenCalledWith(true);
-    expect(audioDevice.values()).toEqual({ engine: true, playing: true, recording: true });
+    expect(audioDevice.values()).toEqual({ engine: true, playing: false, recording: true });
+    expect(audioDevice.module.startPlayout).not.toHaveBeenCalled();
     expect(audioSession.selectAudioOutput).toHaveBeenCalledWith("force_speaker");
+  });
+
+  it("requires host playout after a remote guest audio track is subscribed", async () => {
+    const track = { kind: "audio", setEnabled: jest.fn().mockResolvedValue(undefined) };
+    const participant = {
+      audioTrackPublications: new Map([["mic", { kind: "audio", track }]]),
+      setMicrophoneEnabled: jest.fn().mockResolvedValue(undefined)
+    };
+    const audioDevice = audioDeviceModule();
+
+    const result = await stabilizeLivePublisherAudio(
+      { localParticipant: participant },
+      audioDevice.module,
+      { selectAudioOutput: jest.fn().mockResolvedValue(undefined) },
+      { settleMs: 0, requirePlayout: true }
+    );
+
+    expect(result.playoutRunning).toBe(true);
+    expect(audioDevice.module.startPlayout).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps bidirectional playout mandatory for an approved guest", async () => {
+    const track = { kind: "audio", setEnabled: jest.fn().mockResolvedValue(undefined) };
+    const participant = {
+      audioTrackPublications: new Map([["mic", { kind: "audio", track }]]),
+      setMicrophoneEnabled: jest.fn().mockResolvedValue(undefined)
+    };
+    const audioDevice = audioDeviceModule();
+
+    const result = await stabilizeLivePublisherAudio(
+      { localParticipant: participant },
+      audioDevice.module,
+      { selectAudioOutput: jest.fn().mockResolvedValue(undefined) },
+      { settleMs: 0, context: { participantRole: "approved_guest" } }
+    );
+
+    expect(result.recordingRunning).toBe(true);
+    expect(result.playoutRunning).toBe(true);
+    expect(audioDevice.module.startPlayout).toHaveBeenCalledTimes(1);
   });
 
   it("restores viewer playout without ever starting microphone recording", async () => {

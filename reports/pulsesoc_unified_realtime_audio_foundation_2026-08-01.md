@@ -747,3 +747,53 @@ Installation and server connectivity do not prove audible media. A separate real
 then protected audio-call/video-call and mixed-session regressions must be repeated.
 
 **Final status for this evidence update: PARTIAL / NO-GO. The repaired code, server, simulator, and physical host device are aligned on the current SHA; the remaining gate is observed post-repair Live audibility.**
+
+## 21. Idle-playout host startup correction — 2026-08-02
+
+### New physical evidence
+
+The owner supplied a new iPhone 16 Pro screenshot at 07:03 PDT showing the signed native Live host path fail closed with:
+
+```text
+Broadcast could not start
+The native real-time audio engine did not remain active.
+```
+
+The previously installed build required all three native booleans to be true at host startup: engine, microphone recording, and playout. That is valid for bidirectional calls and approved Live guests, but not for a host starting an empty Live room. A host has no remote audio publication to play until an approved guest joins, so idle playout is not a valid prerequisite for publishing the host microphone.
+
+### Responsible divergence and repair
+
+`stabilizeLivePublisherAudio` was the remaining feature-policy divergence. It called the same governed engine as audio and video calls, but always passed `playout: true`. The repair preserves the shared engine and changes only Live role policy:
+
+- Live host startup requires the native engine and microphone recording to remain active.
+- Live host startup does not fail because remote playout is idle before any guest exists.
+- The remote-track subscription callback immediately re-runs the same guard with playout required.
+- Approved guests continue to require recording and playout from startup.
+- Viewers continue to require playout and are still prohibited from acquiring microphone ownership.
+- Audio-call and video-call adapters are unchanged.
+
+No old media path was re-enabled, no permission was widened, and the shared publication/subscription controllers remain authoritative.
+
+### Validation
+
+| Check | Result |
+|---|---:|
+| Host empty-room regression | PASS: `engine=true`, `recording=true`, `playout=false` accepted |
+| Host after guest subscription | PASS: playout required and restored |
+| Approved guest bidirectional requirement | PASS |
+| Viewer playback-only requirement | PASS |
+| Focused Live/engine suites | 2 suites / 21 tests PASS |
+| Full native suite | 126 suites / 2,110 tests PASS |
+| Native TypeScript typecheck | PASS |
+| Realtime architecture protection | 7/7 PASS |
+| Live token/rollout contract | PASS |
+| Native call audit | PASS |
+| Native Live guest/audio audit | PASS |
+| Live echo-prevention audit | PASS |
+| `git diff --check` | PASS |
+
+Separately, the simulator startup failure was traced to iOS Simulator Keychain error `-34018` in an ad-hoc Release build. The session store now uses AsyncStorage only for iOS Simulator or the existing local-QA backend mode; physical iPhones remain fail-closed on SecureStore. A freshly installed iPhone 17 Pro Max simulator build reached the authenticated PulseSoc dashboard instead of the generic startup failure screen.
+
+### Gate
+
+Implementation and automated validation are **PASS**. The new signed physical build must still be installed and the owner must retry the Live host/viewer test. Audible Live, guest, second-session, and mixed call/video/Live behavior remain **NO-GO** until directly observed; the supplied audio-call and video-call PASS results remain owner-observed evidence.
