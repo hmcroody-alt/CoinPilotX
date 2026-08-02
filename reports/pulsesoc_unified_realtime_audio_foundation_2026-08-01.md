@@ -717,3 +717,33 @@ Two Live-only transitions remained after the first shared-path migration:
 Commit `37c5b70c` contains the code and automated evidence above. A signed build containing the eventual report commit still needs to be built and installed, and the owner/Codex still needs to observe a viewer audibly hearing the host. Protected audio-call and video-call physical regressions must then be repeated.
 
 **Judgment: PARTIAL implementation; NO-GO for broad Live rollout until the post-install physical host/viewer and mixed-session gates pass.**
+
+## 20. Exact-SHA deployment and device installation — 2026-08-02
+
+The governed Live repair and its evidence are pushed on `codex/governed-realtime-audio` at
+`79d9830235602eaca700564dd62696862a4b0add`. `git ls-remote` matched the local SHA before deployment.
+
+### Production
+
+- Railway service: `CoinPilotX` in `production`.
+- Active deployment: `7eea99d8-ff9e-4565-86ff-9fb10d5ff24b` (`SUCCESS`).
+- Authoritative CLI deployment message: `deploy 79d9830235602eaca700564dd62696862a4b0add governed Live audio recovery QA-only`.
+- Image digest: `sha256:5ed5a0a2dae852b562989da32ec225ed08fd7d7c98e452bbaf9af71ff128c5a3`.
+- Worker startup completed and `GET /health` returned HTTP 200.
+- Rollout is constrained to the two configured QA user IDs: `REALTIME_LIVE_SHARED_PATH=true`,
+  `LIVESTREAM_AUDIO_V2_QA_ONLY=true`, `LIVESTREAM_AUDIO_V2_PERCENT=0`, and the legacy fallback remains enabled.
+- A Railway variable update briefly rebuilt GitHub `main` instead of retaining the CLI source. Deployment metadata exposed the mismatch; it was immediately superseded by the exact-SHA CLI deployment above. No stale-SHA deployment is being accepted as validation evidence.
+
+### Simulator and physical installation
+
+| Target | Evidence | Result |
+|---|---|---|
+| iPhone 17 Pro Max simulator, iOS 26.5 (`E859950D-B187-4897-B389-05447C5AD796`) | Release app `1.0.1 (9)` installed with embedded `PulseSocGitSHA=79d9830235602eaca700564dd62696862a4b0add` | BUILD/INSTALL/LAUNCH PASS; functional startup blocked by the existing unsigned-simulator Keychain entitlement error |
+| Paired iPhone 16 Pro `P3r7or` (`F45E640F-6D02-514E-877C-B764E8D6818F`) | Apple Development-signed Release app `1.0.1 (9)` installed and launched; signature and entitlements verified | BUILD/INSTALL/LAUNCH PASS |
+| Physical app to production | `GET /api/pulse/live-now` returned HTTP 200 from deployment `7eea99d8-ff9e-4565-86ff-9fb10d5ff24b`; correlation ID `J7H3kSOiTO-t9dIAjq4OvQ` | CONNECTIVITY PASS |
+
+The physical app was launched directly to `pulsesoc://pulse/live/studio` after the exact-SHA worker became healthy.
+Installation and server connectivity do not prove audible media. A separate real viewer still must audibly hear the host,
+then protected audio-call/video-call and mixed-session regressions must be repeated.
+
+**Final status for this evidence update: PARTIAL / NO-GO. The repaired code, server, simulator, and physical host device are aligned on the current SHA; the remaining gate is observed post-repair Live audibility.**
