@@ -16,6 +16,7 @@ import { BusinessOsAdvertisingScreen } from "../screens/BusinessOsAdvertisingScr
 import { BusinessOsInsightsScreen } from "../screens/BusinessOsInsightsScreen";
 import { BusinessOsPaymentsScreen } from "../screens/BusinessOsPaymentsScreen";
 import { BusinessOsScreen } from "../screens/BusinessOsScreen";
+import { BusinessProfileScreen } from "../screens/BusinessProfileScreen";
 import { BuyerOrdersScreen } from "../screens/BuyerOrdersScreen";
 import { CameraStudioScreen } from "../screens/CameraStudioScreen";
 import { CallScreen } from "../screens/CallScreen";
@@ -278,6 +279,8 @@ export function AppNavigator() {
       <Stack.Screen name="StatusDetail" component={StatusScreen} options={({ route }) => ({ title: route.params.title || t("common:screens.status") })} />
       <Stack.Screen name="MarketplaceDetail" component={MarketplaceScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.marketplace") })} />
       <Stack.Screen name="BusinessOs" component={BusinessOsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOs") })} />
+      {/* Draws its own header (back chevron, title, live badge), so the stack header is off. */}
+      <Stack.Screen name="BusinessProfile" component={BusinessProfileScreen} options={{ headerShown: false }} />
       <Stack.Screen name="BusinessOsAdvertising" component={BusinessOsAdvertisingScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsAdvertising") })} />
       <Stack.Screen name="BusinessOsInsights" component={BusinessOsInsightsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsInsights") })} />
       <Stack.Screen name="BusinessOsPayments" component={BusinessOsPaymentsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsPayments") })} />

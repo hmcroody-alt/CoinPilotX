@@ -27,6 +27,48 @@ export const logiNexus = {
       accentLive: colors.danger,
       accentSafety: colors.safety,
       accentCreator: colors.creator
+    },
+    /**
+     * "Live" business-profile palette. Its own nested namespace, the same shape
+     * as `home`, so this surface can be restyled without disturbing app-wide
+     * tokens.
+     *
+     * Structured so a light theme can be added later: the screen references
+     * every value by name and inlines none of them, so a `businessLiveLight`
+     * sibling swapped in at the theme boundary is the only change light mode
+     * would need. Surfaces are expressed as rgba over the known background
+     * rather than as flat hexes, because that is what lets them survive a
+     * background change.
+     */
+    businessLive: {
+      background: "#03070C",
+      /**
+       * The reference design blurs its panels. No blur library is installed
+       * (see the report's dependency note), so these sit slightly more opaque
+       * than a true blur would need, which keeps text contrast honest when a
+       * panel overlaps a busy cover image.
+       */
+      panel: "rgba(14, 24, 35, 0.72)",
+      panelStrong: "rgba(14, 24, 35, 0.92)",
+      panelRaised: "rgba(20, 33, 46, 0.86)",
+      accent: "#2EE6A8",
+      accentSoft: "rgba(46, 230, 168, 0.16)",
+      accentGlow: "rgba(46, 230, 168, 0.38)",
+      secondary: "#3FD4FF",
+      secondarySoft: "rgba(63, 212, 255, 0.16)",
+      warning: "#F5B544",
+      warningSoft: "rgba(245, 181, 68, 0.14)",
+      warningGlow: "rgba(245, 181, 68, 0.32)",
+      textPrimary: "#EEF6FB",
+      textMuted: "#8FA5B8",
+      textDim: "#5A7186",
+      hairline: "rgba(64, 224, 178, 0.14)",
+      hairlineStrong: "rgba(64, 224, 178, 0.28)",
+      /** Sheen for the rotating card border and the verification scan stripe. */
+      sheen: "rgba(238, 246, 251, 0.10)",
+      gridLine: "rgba(63, 212, 255, 0.18)",
+      overlayScrim: "rgba(3, 7, 12, 0.82)",
+      danger: colors.danger
     }
   },
   typography: {
@@ -71,6 +113,8 @@ export const logiNexus = {
     small: 8,
     medium: 12,
     large: 16,
+    /** 18px cards — the "live" surfaces sit between `large` and `panel`. */
+    card: 18,
     panel: 20,
     capsule: 999,
     circular: 999
@@ -80,7 +124,24 @@ export const logiNexus = {
     quick: 150,
     standard: 240,
     reveal: 360,
-    ambient: 1400
+    ambient: 1400,
+    /**
+     * Entrance choreography. `entrance` is the per-element fade/slide duration
+     * and `stagger` the gap between neighbours, so a section N places down
+     * starts at N * stagger. Both are read by the stagger helper rather than
+     * being restated at call sites.
+     */
+    entrance: 600,
+    stagger: 90,
+    /**
+     * Continuous ambience. These are long on purpose: anything faster reads as
+     * activity rather than atmosphere, and all of them are suppressed outright
+     * under reduce-motion.
+     */
+    tickerCycle: 26000,
+    borderShimmer: 5200,
+    scanSweep: 2600,
+    ringDraw: 1100
   },
   depth: {
     none: 0,
