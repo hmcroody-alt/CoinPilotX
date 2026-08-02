@@ -151,6 +151,15 @@ describe("normalizeLiveKitCredentials", () => {
 
     it("is ON only for an explicit server true", () => {
       expect(normalizeLiveKitCredentials({ ...base, audio_v2_enabled: true })?.audioV2Enabled).toBe(true);
+      expect(normalizeLiveKitCredentials({ ...base, audio_shared_path_enabled: true })?.audioV2Enabled).toBe(true);
+    });
+
+    it("treats the canonical shared-path kill switch as authoritative over the legacy alias", () => {
+      expect(normalizeLiveKitCredentials({
+        ...base,
+        audio_shared_path_enabled: false,
+        audio_v2_enabled: true
+      })?.audioV2Enabled).toBe(false);
     });
 
     it("KILL SWITCH: any non-true value runs the legacy path", () => {

@@ -3,7 +3,6 @@ import { AppState, Platform } from "react-native";
 import { RealtimeAudioOwnershipError, ownershipDenialMessage } from "../core/audioOwnershipPolicy";
 import {
   activateRealtimeAudioSession,
-  applyRemoteAudioEnabled as driveRemoteAudioEnabled,
   audioPublications,
   ensureMicrophonePublished,
   PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
@@ -20,11 +19,21 @@ import {
   type RealtimeAudioMode,
   videoPublications
 } from "../core/realtimeAudioEngine";
+import {
+  claimRealtimeAudioPath,
+  releaseRealtimeAudioPath,
+  startPublishingAudio,
+  startReceivingAudio,
+  type RealtimeAudioPath
+} from "../core/realtimeAudioMediaPath";
 import { setRealtimeMicrophoneEnabled } from "../core/realtimeMicrophonePublisher";
+import {
+  applyRemoteAudioEnabled as driveRemoteAudioEnabled,
+  resetRealtimeRemoteAudioTracking
+} from "../core/realtimeRemoteAudioController";
 import { RealtimeAudioStateMachine } from "../core/realtimeAudioStateMachine";
 import { createRealtimeAudioCorrelationId } from "../core/realtimeAudioTelemetry";
 import { isLiveAudioV2Enabled, resolveLiveAudioPath } from "./liveAudioFlags";
-import { publishLiveMicrophone } from "./liveAudioPublisher";
 import {
   classifyDisconnect,
   millisecondsUntilRefresh,
@@ -87,7 +96,7 @@ type LiveBroadcastState = {
   disconnectReason: string;
   diagnosticCode: string;
   /** Which audio route this broadcast is actually running, for the QA overlay. */
-  audioPath: "v2_isolated" | "v1_legacy";
+  audioPath: RealtimeAudioPath;
   /** True when another feature (an active call) holds the audio session. */
   audioBusy: boolean;
   /** True while a bounded automatic reconnect is pending. */
@@ -115,7 +124,7 @@ const initialState: LiveBroadcastState = {
   reconnectCount: 0,
   disconnectReason: "",
   diagnosticCode: "",
-  audioPath: "v1_legacy",
+  audioPath: "legacy_fallback",
   audioBusy: false,
   recovering: false
 };
@@ -125,6 +134,24 @@ let globalsRegistered = false;
 export const applyRemoteAudioEnabled = driveRemoteAudioEnabled;
 export const ensureLiveMicrophonePublished = ensureMicrophonePublished;
 export const resolveLiveAudioConfiguration = resolveRealtimeAudioConfiguration;
+
+async function receiveLiveAudio(
+  room: any,
+  enabled: boolean,
+  context: { role: string; room: string; correlationId?: string }
+): Promise<number> {
+  return (await startReceivingAudio({
+    room,
+    enabled,
+    canSubscribe: true,
+    context: {
+      sessionId: context.room,
+      correlationId: context.correlationId,
+      roomType: "livestream",
+      participantRole: context.role
+    }
+  })).enabled;
+}
 
 /**
  * Camera startup can stop iOS RemoteIO after LiveKit has already reported a
@@ -228,22 +255,29 @@ function liveAudioMode(credentials: LiveKitCredentials, publish: boolean): Realt
 async function publishMicrophoneForPath(
   room: any,
   useV2: boolean,
-  context: { role: string; room: string; correlationId?: string }
+  context: { role: string; room: string; correlationId?: string; lease: RealtimeAudioLease | null }
 ): Promise<number> {
-  if (!useV2) return ensureMicrophonePublished(room);
-  emitLiveAudioEvent({ name: "live_audio_publish_started", path: "v2_isolated", role: context.role, room: context.room });
-  const result = await publishLiveMicrophone(room, {
+  if (!useV2) {
+    claimRealtimeAudioPath(room, "legacy_fallback");
+    return ensureMicrophonePublished(room);
+  }
+  emitLiveAudioEvent({ name: "live_audio_publish_started", path: "shared_governed", role: context.role, room: context.room });
+  const result = await startPublishingAudio({
+    room,
+    lease: context.lease,
+    feature: "livestream",
+    role: context.role,
+    canPublishMicrophone: true,
     context: {
       sessionId: context.room,
       correlationId: context.correlationId,
       roomType: "livestream",
-      participantRole: context.role,
-      canPublishMicrophone: true
+      participantRole: context.role
     }
   });
   emitLiveAudioEvent({
     name: result.outcome === "timeout" ? "live_audio_publish_timeout" : "live_audio_publish_settled",
-    path: "v2_isolated",
+    path: "shared_governed",
     role: context.role,
     room: context.room,
     outcome: result.outcome,
@@ -254,7 +288,7 @@ async function publishMicrophoneForPath(
   if (result.duplicatesRemoved > 0) {
     emitLiveAudioEvent({
       name: "live_audio_duplicate_reconciled",
-      path: "v2_isolated",
+      path: "shared_governed",
       role: context.role,
       duplicatesRemoved: result.duplicatesRemoved
     });
@@ -435,6 +469,8 @@ export function useLiveBroadcastRoom() {
     roomRef.current = null;
     activeSpeakersRef.current = new Set();
     remoteAudioEnabledRef.current = true;
+    releaseRealtimeAudioPath(room);
+    resetRealtimeRemoteAudioTracking(room);
     if (room?.disconnect) await room.disconnect().catch(() => undefined);
     if (wasPublishing) {
       trace?.emit("local_audio_unpublished", { room_state: "disconnected", publicationSid: publicationSid(localPublication) });
@@ -498,7 +534,7 @@ export function useLiveBroadcastRoom() {
     );
     emitLiveAudioEvent({
       name: "live_audio_route_reapplied",
-      path: "v2_isolated",
+      path: "shared_governed",
       role: roleRef.current,
       room: roomNameRef.current,
       reason,
@@ -523,7 +559,7 @@ export function useLiveBroadcastRoom() {
     const waitMs = millisecondsUntilRefresh(credentials.expiresAt);
     emitLiveAudioEvent({
       name: "live_audio_token_refresh_scheduled",
-      path: "v2_isolated",
+      path: "shared_governed",
       role: roleRef.current,
       room: roomNameRef.current,
       durationMs: waitMs
@@ -539,7 +575,7 @@ export function useLiveBroadcastRoom() {
           tokenRefreshFailuresRef.current = 0;
           emitLiveAudioEvent({
             name: "live_audio_token_refreshed",
-            path: "v2_isolated",
+            path: "shared_governed",
             role: roleRef.current,
             room: roomNameRef.current
           });
@@ -549,7 +585,7 @@ export function useLiveBroadcastRoom() {
           // Never surface the failure body - it can contain the token.
           emitLiveAudioEvent({
             name: "live_audio_token_refresh_failed",
-            path: "v2_isolated",
+            path: "shared_governed",
             role: roleRef.current,
             room: roomNameRef.current,
             reason: error instanceof Error ? error.name : "unknown",
@@ -588,7 +624,7 @@ export function useLiveBroadcastRoom() {
     if (!shouldAttemptReconnect(reason, attempt)) {
       emitLiveAudioEvent({
         name: "live_audio_reconnect_exhausted",
-        path: "v2_isolated",
+        path: "shared_governed",
         role: roleRef.current,
         room: roomNameRef.current,
         reason,
@@ -606,7 +642,7 @@ export function useLiveBroadcastRoom() {
     reconnectAttemptRef.current = attempt;
     emitLiveAudioEvent({
       name: "live_audio_reconnect_scheduled",
-      path: "v2_isolated",
+      path: "shared_governed",
       role: roleRef.current,
       room: roomNameRef.current,
       reason,
@@ -857,6 +893,7 @@ export function useLiveBroadcastRoom() {
           }
         });
         roomRef.current = room;
+        claimRealtimeAudioPath(room, useV2 ? "shared_governed" : "legacy_fallback");
 
         const refresh = () => refreshParticipants(room);
         room.on(livekitClient.RoomEvent.ConnectionStateChanged, (connectionState: string) => {
@@ -879,12 +916,17 @@ export function useLiveBroadcastRoom() {
           if (publish) lifecycleRef.current.tryTransition("local", "publishing");
           reconnectAttemptRef.current = 0;
           setState((current) => ({ ...current, connected: true, reconnecting: false, recovering: false, connectionState: "connected", error: "" }));
-          const audioTasks: Promise<unknown>[] = [applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current)];
+          const audioTasks: Promise<unknown>[] = [receiveLiveAudio(room, remoteAudioEnabledRef.current, {
+            role: telemetryRole,
+            room: roomNameRef.current,
+            correlationId: correlationIdRef.current
+          })];
           if (publish) {
             audioTasks.push(publishMicrophoneForPath(room, useV2, {
               role: telemetryRole,
               room: roomNameRef.current,
-              correlationId: correlationIdRef.current
+              correlationId: correlationIdRef.current,
+              lease: audioLeaseRef.current
             }));
           }
           if (useV2) {
@@ -1014,7 +1056,11 @@ export function useLiveBroadcastRoom() {
               enabled: remoteAudioEnabledRef.current,
               subscription_state: "playing"
             });
-            applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current)
+            receiveLiveAudio(room, remoteAudioEnabledRef.current, {
+              role: telemetryRole,
+              room: roomNameRef.current,
+              correlationId: correlationIdRef.current
+            })
               .then(() => useV2
                 ? (publish
                     ? stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
@@ -1067,7 +1113,7 @@ export function useLiveBroadcastRoom() {
             if (nextState !== "active") return;
             emitLiveAudioEvent({
               name: "live_audio_interruption_ended",
-              path: "v2_isolated",
+              path: "shared_governed",
               role: telemetryRole,
               room: roomNameRef.current,
               reason: "app_state_active"
@@ -1077,7 +1123,8 @@ export function useLiveBroadcastRoom() {
               void publishMicrophoneForPath(roomRef.current, true, {
                 role: telemetryRole,
                 room: roomNameRef.current,
-                correlationId: correlationIdRef.current
+                correlationId: correlationIdRef.current,
+                lease: audioLeaseRef.current
               }).then(() => stabilizeLivePublisherAudio(
                 roomRef.current,
                 livekitNative.AudioDeviceModule,
@@ -1115,7 +1162,7 @@ export function useLiveBroadcastRoom() {
           if (useV2) {
             emitLiveAudioEvent({
               name: "live_audio_disconnect_classified",
-              path: "v2_isolated",
+              path: "shared_governed",
               role: telemetryRole,
               room: roomNameRef.current,
               reason: reasonText,
@@ -1150,7 +1197,8 @@ export function useLiveBroadcastRoom() {
             publishMicrophone: () => publishMicrophoneForPath(room, useV2, {
               role: telemetryRole,
               room: roomNameRef.current,
-              correlationId: correlationIdRef.current
+              correlationId: correlationIdRef.current,
+              lease: audioLeaseRef.current
             }),
             enableCamera: async () => {
               await room.localParticipant.setCameraEnabled(
@@ -1176,7 +1224,11 @@ export function useLiveBroadcastRoom() {
           });
         }
         if (publish) await selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
-        await applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current).catch(() => undefined);
+        await receiveLiveAudio(room, remoteAudioEnabledRef.current, {
+          role: telemetryRole,
+          room: roomNameRef.current,
+          correlationId: correlationIdRef.current
+        }).catch(() => undefined);
         if (useV2 && !publish) {
           await stabilizeLiveViewerAudio(livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
             settleMs: 0,
@@ -1322,7 +1374,8 @@ export function useLiveBroadcastRoom() {
     const localAudioTrackCount = await publishMicrophoneForPath(room, useV2Ref.current, {
       role: roleRef.current,
       room: roomNameRef.current,
-      correlationId: correlationIdRef.current
+      correlationId: correlationIdRef.current,
+      lease: audioLeaseRef.current
     });
     if (localAudioTrackCount <= 0) throw new Error("Camera changed, but microphone audio is no longer published.");
     if (useV2Ref.current) {
@@ -1351,7 +1404,11 @@ export function useLiveBroadcastRoom() {
     const room = roomRef.current;
     if (!room) throw new Error("Broadcast media is not connected.");
     remoteAudioEnabledRef.current = enabled;
-    await applyRemoteAudioEnabled(room, enabled);
+    await receiveLiveAudio(room, enabled, {
+      role: roleRef.current,
+      room: roomNameRef.current,
+      correlationId: correlationIdRef.current
+    });
     setState((current) => ({ ...current, remoteAudioEnabled: enabled, error: "" }));
   }, []);
 
@@ -1371,7 +1428,8 @@ export function useLiveBroadcastRoom() {
     const localAudioTrackCount = await publishMicrophoneForPath(room, useV2Ref.current, {
       role: roleRef.current,
       room: roomNameRef.current,
-      correlationId: correlationIdRef.current
+      correlationId: correlationIdRef.current,
+      lease: audioLeaseRef.current
     });
     if (localAudioTrackCount <= 0) throw new Error("Camera switched, but microphone audio is no longer published.");
     if (useV2Ref.current) {
@@ -1401,6 +1459,8 @@ export function useLiveBroadcastRoom() {
       audioLeaseRef.current = null;
       credentialsRef.current = null;
       refreshCredentialsRef.current = undefined;
+      releaseRealtimeAudioPath(room);
+      resetRealtimeRemoteAudioTracking(room);
       room?.disconnect?.().catch(() => undefined);
       if (lease) releaseRealtimeAudioSession(audioSessionRef.current, lease).catch(() => undefined);
     },

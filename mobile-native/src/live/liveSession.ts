@@ -204,7 +204,7 @@ export function normalizeLiveKitCredentials(raw: Record<string, unknown> | null 
     expiresAt: toStr(data.expires_at),
     // Strict boolean normalisation at the API boundary: anything other than an
     // explicit server `true` (missing field, "false", 0, "0") runs the legacy path.
-    audioV2Enabled: normalizeLiveAudioV2Flag(data.audio_v2_enabled),
+    audioV2Enabled: normalizeLiveAudioV2Flag(data.audio_shared_path_enabled ?? data.audio_v2_enabled),
     audioV2FallbackEnabled: data.audio_v2_fallback_enabled !== false,
     audioTraceEnabled: data.audio_trace_enabled === true
   };

@@ -230,16 +230,17 @@ def test_verifier_still_catches_tampering() -> None:
 
 def test_audio_v2_flag_defaults_off() -> None:
     with env_patch(
+        REALTIME_LIVE_SHARED_PATH=None,
         LIVESTREAM_AUDIO_V2_ENABLED=None,
         LIVESTREAM_AUDIO_V2_QA_ONLY=None,
         LIVESTREAM_AUDIO_V2_PERCENT=None,
     ):
         expect(NS["pulse_live_audio_v2_enabled"](42) is False, "audio V2 is OFF when the master switch is unset")
 
-    with env_patch(LIVESTREAM_AUDIO_V2_ENABLED="maybe"):
+    with env_patch(REALTIME_LIVE_SHARED_PATH=None, LIVESTREAM_AUDIO_V2_ENABLED="maybe"):
         expect(NS["pulse_live_audio_v2_enabled"](42) is False, "a malformed master switch is treated as OFF")
 
-    with env_patch(LIVESTREAM_AUDIO_V2_ENABLED="false", LIVESTREAM_AUDIO_V2_PERCENT="100"):
+    with env_patch(REALTIME_LIVE_SHARED_PATH=None, LIVESTREAM_AUDIO_V2_ENABLED="false", LIVESTREAM_AUDIO_V2_PERCENT="100"):
         expect(
             NS["pulse_live_audio_v2_enabled"](42) is False,
             "KILL SWITCH: master OFF beats a 100 percent rollout",
@@ -248,30 +249,30 @@ def test_audio_v2_flag_defaults_off() -> None:
 
 def test_audio_v2_rollout_controls() -> None:
     with env_patch(
-        LIVESTREAM_AUDIO_V2_ENABLED="true", LIVESTREAM_AUDIO_V2_QA_ONLY=None, LIVESTREAM_AUDIO_V2_PERCENT="100"
+        REALTIME_LIVE_SHARED_PATH=None, LIVESTREAM_AUDIO_V2_ENABLED="true", LIVESTREAM_AUDIO_V2_QA_ONLY=None, LIVESTREAM_AUDIO_V2_PERCENT="100"
     ):
         expect(NS["pulse_live_audio_v2_enabled"](42) is True, "100 percent rollout enables V2")
 
     with env_patch(
-        LIVESTREAM_AUDIO_V2_ENABLED="true", LIVESTREAM_AUDIO_V2_QA_ONLY=None, LIVESTREAM_AUDIO_V2_PERCENT="0"
+        REALTIME_LIVE_SHARED_PATH=None, LIVESTREAM_AUDIO_V2_ENABLED="true", LIVESTREAM_AUDIO_V2_QA_ONLY=None, LIVESTREAM_AUDIO_V2_PERCENT="0"
     ):
         expect(NS["pulse_live_audio_v2_enabled"](42) is False, "0 percent rollout keeps V2 off")
 
     with env_patch(
-        LIVESTREAM_AUDIO_V2_ENABLED="true", LIVESTREAM_AUDIO_V2_QA_ONLY="true", LIVESTREAM_AUDIO_V2_QA_USER_IDS=None, LIVESTREAM_AUDIO_V2_PERCENT="100"
+        REALTIME_LIVE_SHARED_PATH=None, LIVESTREAM_AUDIO_V2_ENABLED="true", LIVESTREAM_AUDIO_V2_QA_ONLY="true", LIVESTREAM_AUDIO_V2_QA_USER_IDS=None, LIVESTREAM_AUDIO_V2_PERCENT="100"
     ):
         expect(NS["pulse_live_audio_v2_enabled"](42, is_qa=True) is True, "QA-only mode admits QA accounts")
         expect(NS["pulse_live_audio_v2_enabled"](42, is_qa=False) is False, "QA-only mode excludes normal accounts")
 
     with env_patch(
-        LIVESTREAM_AUDIO_V2_ENABLED="true", LIVESTREAM_AUDIO_V2_QA_ONLY="true", LIVESTREAM_AUDIO_V2_QA_USER_IDS="1,34,invalid", LIVESTREAM_AUDIO_V2_PERCENT="0"
+        REALTIME_LIVE_SHARED_PATH=None, LIVESTREAM_AUDIO_V2_ENABLED="true", LIVESTREAM_AUDIO_V2_QA_ONLY="true", LIVESTREAM_AUDIO_V2_QA_USER_IDS="1,34,invalid", LIVESTREAM_AUDIO_V2_PERCENT="0"
     ):
         expect(NS["pulse_live_audio_v2_enabled"](1) is True, "native QA host allowlist receives V2")
         expect(NS["pulse_live_audio_v2_enabled"](34) is True, "native QA viewer allowlist receives V2")
         expect(NS["pulse_live_audio_v2_enabled"](35) is False, "native non-QA account stays on legacy")
 
     with env_patch(
-        LIVESTREAM_AUDIO_V2_ENABLED="true", LIVESTREAM_AUDIO_V2_QA_ONLY=None, LIVESTREAM_AUDIO_V2_PERCENT="50"
+        REALTIME_LIVE_SHARED_PATH=None, LIVESTREAM_AUDIO_V2_ENABLED="true", LIVESTREAM_AUDIO_V2_QA_ONLY=None, LIVESTREAM_AUDIO_V2_PERCENT="50"
     ):
         first = [NS["pulse_live_audio_v2_enabled"](uid) for uid in range(1, 200)]
         second = [NS["pulse_live_audio_v2_enabled"](uid) for uid in range(1, 200)]
@@ -279,6 +280,19 @@ def test_audio_v2_rollout_controls() -> None:
         enabled = sum(1 for value in first if value)
         expect(70 <= enabled <= 130, f"a 50 percent rollout splits the population roughly in half (got {enabled}/199)")
         expect(NS["pulse_live_audio_v2_enabled"](0) is False, "an anonymous/unknown user never gets V2")
+
+
+def test_shared_path_name_is_authoritative() -> None:
+    with env_patch(
+        REALTIME_LIVE_SHARED_PATH="false",
+        LIVESTREAM_AUDIO_V2_ENABLED="true",
+        LIVESTREAM_AUDIO_V2_QA_ONLY=None,
+        LIVESTREAM_AUDIO_V2_PERCENT="100",
+    ):
+        expect(
+            NS["pulse_live_audio_v2_enabled"](42) is False,
+            "canonical Live shared-path kill switch overrides the legacy alias",
+        )
 
 
 def test_audio_v2_fallback_defaults_on() -> None:
@@ -326,6 +340,7 @@ def main() -> None:
         test_no_secret_material_leaks_into_claims()
     test_audio_v2_flag_defaults_off()
     test_audio_v2_rollout_controls()
+    test_shared_path_name_is_authoritative()
     test_audio_v2_fallback_defaults_on()
     test_audio_trace_requires_master_and_qa_account()
     print("livestream audio token grant contract ok")
