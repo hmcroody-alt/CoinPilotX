@@ -410,3 +410,110 @@ Railway service `CoinPilotX`, environment `production`, active diagnostic deploy
 **Code repair: PARTIAL. Physical acceptance: NO-GO.**
 
 The focused defects are fixed, tested, deployed for QA only, and installed on the physical host. Live audio remains failed for release purposes until a distinct physical viewer audibly hears the host, H6/V5 show expected energy, the five-minute/mute/rejoin/cleanup/second-session sequence passes, and an audio call succeeds after Live ends.
+
+## 17. Video-call and livestream audio recovery — 2026-08-02
+
+### Starting physical evidence and protected baseline
+
+The owner-reported physical baseline for this recovery was:
+
+- audio call: bidirectionally audible (**PASS and protected**);
+- video call: connected with video, but audio inaudible (**FAIL**);
+- livestream: connected, but host/guest audio inaudible to the viewer (**FAIL**).
+
+The production LiveKit event stream corroborated the media topology without being treated as audible proof. The working audio-call room `pulsesoc-call_3jCMdRU1NWHa0g` showed both participants publishing microphone tracks. Failing video rooms `pulsesoc-call_RF44pwNiCCcwIg` and `pulsesoc-call_kKPIp9CruLQt_g` also showed both microphone publications, and failing Live rooms `pulse-webrtc-e2d2836438684a28` and `pulse-webrtc-51822d2e743246b3` showed the host microphone/camera publications and the viewer in the same room. This ruled out a blanket token or room-join failure and moved the investigation to the native capture/playout lifecycle.
+
+The decisive client trace was the iOS RemoteIO lifecycle. The working audio call kept RemoteIO running until call cleanup. In the failing video call, RemoteIO started at `23:38:57.850` and stopped at `23:38:58.320`, about 470 ms after camera startup, although LiveKit publication state remained present. The static sequence matched the trace: the video path started the camera before establishing the microphone, whereas the protected audio-only path established the microphone immediately.
+
+### Runtime comparison
+
+| Property | Audio call | Video call before repair | Live host before repair | Live viewer before repair |
+|---|---|---|---|---|
+| Audio owner | `audio_call` | `video_call` | `live_host` | `live_viewer` / playback |
+| AVAudioSession category | `playAndRecord` | `playAndRecord` | `playAndRecord` | `playback` |
+| AVAudioSession mode | `videoChat` | `videoChat` | `videoChat` | `default` |
+| Category options | Bluetooth, A2DP, AirPlay, speaker | same | same | none |
+| Auto-subscribe | true | true | true | true |
+| Local microphone publication | two-party runtime evidence | present, but engine stopped after camera startup | present | not permitted |
+| Remote subscription | working runtime result | publication present; playout inaudible | n/a as publisher | room/subscription path present; playout inaudible |
+| RemoteIO state | stable until cleanup | stopped about 470 ms after camera startup | local energy not captured | remained running in the failed run |
+| Audible result before repair | **PASS** | **FAIL** | **FAIL** | **FAIL** |
+
+These are observed runtime values where traces existed. Live host local energy and viewer remote energy were not captured in the pre-repair build and remain explicitly unproven.
+
+### Focused repair
+
+Commit `f157d83d` (`fix(video-call-audio): restore microphone and playback lifecycle`) changes only the video-specific path plus the shared engine guard:
+
+1. Video calls now establish the microphone before starting the camera.
+2. Camera start/switch/toggle reasserts the existing microphone publication instead of creating a second track.
+3. A bounded iOS audio-engine guard verifies and restores recording/playout after the camera's delayed audio-session transition and fails the initial video connection closed if the native module explicitly remains inactive.
+4. Remote audio subscription and reconnect events reassert playout and speaker routing.
+5. The protected audio-only initialization path remains microphone-only and does not invoke the new camera guard.
+
+Commit `4779303f` (`fix(live-audio): restore publisher capture and viewer playout`) applies the same verified lifecycle at the Live feature adapter:
+
+1. Host/approved-guest stabilization reasserts exactly one existing microphone publication and restores capture plus playout.
+2. Viewer stabilization restores playout only and never enables recording or microphone ownership.
+3. The guard runs after initial camera startup, reconnect, foreground recovery, remote subscription, camera toggle, and camera switch.
+4. The existing V2 publication gateway, role grant, duplicate reconciliation, and QA allowlist remain authoritative.
+
+No broad backend, token, room, or working audio-call adapter rewrite was made.
+
+### Regression evidence
+
+| Check | Result |
+|---|---:|
+| New video mic-before-camera regression | PASS |
+| Protected audio-only initialization regression | PASS |
+| Video camera-removes-publication recovery | PASS |
+| Engine restart and fail-closed verification | PASS |
+| No duplicate microphone reassertion | PASS |
+| Live publisher capture + one microphone | PASS |
+| Live viewer playout-only / no recording | PASS |
+| Focused native suites | 4 suites / 35 tests PASS |
+| Full native suite | 114 suites / 1,901 tests PASS |
+| Native TypeScript typecheck | PASS |
+| Call/LiveKit token and architecture tests | 7 tests PASS |
+| Livestream grant, QA allowlist, and tamper tests | PASS |
+| Canonical LiveKit webhook owner test | PASS |
+| Native call audit | PASS |
+| Live guest audio repair audit | PASS |
+| `git diff --check` | PASS |
+
+The repository Python environment does not provide `pytest`; affected backend suites were executed through their supported `unittest` or direct script entrypoints.
+
+### Source and release state
+
+- Starting SHA: `ba452fc6c335435422bee688a6e7ea9b91e20bb3`.
+- Video repair: `f157d83d`.
+- Live repair: `4779303feb31e1bb0d1125a7674d3fed873cba87`.
+- Branch: `codex/unified-realtime-audio-foundation`.
+- Remote verification: local and `origin/codex/unified-realtime-audio-foundation` both resolved to `4779303feb31e1bb0d1125a7674d3fed873cba87` before this evidence update.
+- Xcode: 26.6 (`17F113`).
+- Simulator: iPhone 17 Pro Max, iOS 26.5, UUID `E859950D-B187-4897-B389-05447C5AD796`.
+- Simulator app: fresh signed Debug build, `com.pulsesoc.nativeapp.dev`, version/build `1.0.1 (9)`, embedded SHA `4779303feb31e1bb0d1125a7674d3fed873cba87`.
+- Simulator launch/auth shell: PASS; fresh install correctly reached the PulseSoc login surface. Real-time media QA was not run because no controlled QA credential/session was available after the fresh install.
+- Physical target: paired iPhone 16 Pro `P3r7or`, iOS 18.7.3, CoreDevice ID `F45E640F-6D02-514E-877C-B764E8D6818F`.
+- Physical Release artifact: production bundle `com.pulsesoc.app`, version/build `1.0.1 (9)`, embedded SHA `4779303feb31e1bb0d1125a7674d3fed873cba87`, application identifier `87ZC69AGSR.com.pulsesoc.app`.
+- Signing verification: valid Apple Development signature, designated requirement satisfied, provisioning profile valid through 2027-08-02.
+- Physical install/launch: PASS at 2026-08-02 00:27 PDT; CoreDevice confirmed installation and launched PID `17161`. The existing bundle was updated in place to preserve its app data/session.
+
+### Post-repair acceptance status
+
+| Gate | Status |
+|---|---|
+| Audio-call baseline preserved by code/tests | PASS |
+| Audio-call post-repair physical regression | NOT YET OBSERVED |
+| Video-call bidirectional audible audio | NOT YET OBSERVED |
+| Camera switch preserves audible audio | NOT YET OBSERVED |
+| Video disable preserves audible audio | NOT YET OBSERVED |
+| Live viewer audibly hears host | NOT YET OBSERVED |
+| Live viewer audibly hears approved guest | NOT YET OBSERVED |
+| Mixed audio call -> video -> Live -> audio call | NOT YET OBSERVED |
+
+### Recovery judgment
+
+**Implementation and automated validation: PASS. Physical audible acceptance: NO-GO pending observation.**
+
+The confirmed video lifecycle divergence is repaired and Live capture/playout is now guarded at every feature transition. Neither telemetry nor a successful build/install substitutes for hearing both participants and the Live viewer on physical devices. Video and Live V2 must remain under independent QA controls until the required two-participant physical matrix passes and the protected audio call is heard again afterward.
