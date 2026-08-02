@@ -517,3 +517,57 @@ The repository Python environment does not provide `pytest`; affected backend su
 **Implementation and automated validation: PASS. Physical audible acceptance: NO-GO pending observation.**
 
 The confirmed video lifecycle divergence is repaired and Live capture/playout is now guarded at every feature transition. Neither telemetry nor a successful build/install substitutes for hearing both participants and the Live viewer on physical devices. Video and Live V2 must remain under independent QA controls until the required two-participant physical matrix passes and the protected audio call is heard again afterward.
+
+## Physical Live connection follow-up — 2026-08-02
+
+### Physical attempt 166: premature post-microphone verification
+
+The physical iPhone 16 Pro showed `Broadcast could not start` and `The native broadcast could not connect to LiveKit` at 00:30 PDT. Production evidence showed that authorization and LiveKit itself were reachable:
+
+- `POST /api/pulse/live/start` returned 200.
+- `POST /api/pulse/live/166/livekit/token` returned 200.
+- The host joined room `pulse-webrtc-df5c70c3467f4770`.
+- Microphone track `TR_AMEBiVa2g4xHEj` published, then unpublished about one second later.
+- The client disconnected with `CLIENT_INITIATED`; no camera track ever published.
+- `/native-publish` subsequently returned 409 because the host had already left.
+
+The V2 startup sequence was `microphone -> fail-closed engine guard -> camera`. The guard was running while the newly published WebRTC recorder was still starting, so it disconnected the room before camera publication. Commit `dd0ac0710204f2735e6a97f41b05b21d8f953bf6` moved the guard after camera startup, reasserted the existing microphone once, and preserved the exact connection error outside React's stale state closure.
+
+### Physical attempt 167: recorder required reinitialization
+
+The `dd0ac071` signed build was installed and launched on the same physical iPhone. At 00:52 PDT the next attempt showed the now-authoritative error `The native real-time audio engine did not remain active.` Production again returned 200 for Live start and token issuance, processed LiveKit webhooks, and returned 409 from `/api/pulse/live/167/native-publish` while the client remained fail-closed.
+
+This isolated the second defect inside the native guard. The guard called WebRTC `startRecording()`, which resumes an already-initialized recorder. Camera startup had torn the Audio Device Module recorder down completely, so ordinary recording and playout starts could not recover it. The installed SDK exposes the distinct `startLocalRecording()` bridge to `initAndStartRecording`; its contract initializes the recorder before starting it.
+
+Commit `b252a255e675c1b3e065e602ef225adc3c31779a` now performs this bounded recovery:
+
+1. If the engine is stopped and recording is required, call the SDK's init-and-start recorder operation.
+2. Reinspect the engine.
+3. Start playout only after the recording engine has been initialized.
+4. Preserve final fail-closed verification; a still-inactive engine remains an error.
+
+The protected audio-only call initialization path was not changed. The shared guard is used only by camera-bearing call/Live recovery and viewer playout where requested.
+
+### Exact-SHA validation and installation
+
+- Branch: `codex/unified-realtime-audio-foundation`.
+- Local and GitHub remote SHA: `b252a255e675c1b3e065e602ef225adc3c31779a`.
+- New failing-then-passing regression: camera teardown requires recorder reinitialization before playout.
+- Focused engine/Live tests: 2 suites, 20 tests PASS.
+- Full suite from a clean detached `b252a255` worktree: 114 suites, 1,903 tests PASS.
+- TypeScript from the same detached worktree: PASS.
+- Native call audit, Live guest/audio audit, token-grant contract, and canonical webhook-owner contract: PASS.
+- Xcode: 26.6 (`17F113`).
+- Simulator: iPhone 17 Pro Max, iOS 26.5, UUID `E859950D-B187-4897-B389-05447C5AD796`; exact-SHA Release build installed and visibly launched.
+- Physical device: paired iPhone 16 Pro `P3r7or`; exact-SHA signed Release build installed and launched at 01:07 PDT.
+- Installed bundle: `com.pulsesoc.app`, version/build `1.0.1 (9)`.
+- Embedded Git SHA: `b252a255e675c1b3e065e602ef225adc3c31779a`.
+- Application identifier: `87ZC69AGSR.com.pulsesoc.app`.
+- Signature: `codesign --verify --deep --strict` PASS.
+- API bundle inspection: `https://pulsesoc.com` present; no localhost or `127.0.0.1` API URL present.
+
+### Current acceptance judgment
+
+The second physical failure is diagnosed and its responsible initialization layer is repaired, tested, pushed, and installed. A post-`b252a255` physical host/viewer attempt has not yet been observed, and viewer audibility has not yet been heard. Therefore the truthful status remains:
+
+**Implementation and deployment-to-device: PASS. Physical audible acceptance: NO-GO pending the next observed host/viewer retry.**
