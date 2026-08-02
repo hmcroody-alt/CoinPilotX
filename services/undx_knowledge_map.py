@@ -1240,7 +1240,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id", target_field="reel_id",
     undo_capability_id="saved.reel.set",
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:78411 reel save handler",),
+    evidence=("bot.py:78544 reel save handler",),
     known_limitations=(_SAVED_TOGGLE,),
     toggle_semantics=True,
 )
@@ -1255,7 +1255,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id", target_field="listing_id",
     undo_capability_id="saved.listing.set",
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:83106 marketplace save handler",),
+    evidence=("bot.py:83239 marketplace save handler",),
     known_limitations=(_SAVED_TOGGLE,),
     toggle_semantics=True,
 )
@@ -1370,7 +1370,7 @@ _mapped(
     authorization_scope=_OTHER, owner_field="user_id", target_field="request_id",
     result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:79780 friend accept handler",),
+    evidence=("bot.py:79913 friend accept handler",),
     known_limitations=("Guards on `AND status = 'pending'`, which is correct, but the "
                        "update is inline in the handler.",),
 )
@@ -1385,7 +1385,7 @@ _mapped(
     authorization_scope=_UNSCOPED, owner_field="user_id", target_field="request_id",
     result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
     implementation_status=_PARTIAL,
-    evidence=("bot.py:79817 friend decline handler", "bot.py:79780 accept, for contrast"),
+    evidence=("bot.py:79950 friend decline handler", "bot.py:79913 accept, for contrast"),
     known_limitations=(
         "Decline omits the `AND status = 'pending'` guard that accept has, so it "
         "will transition a request that is already accepted or already declined. "
