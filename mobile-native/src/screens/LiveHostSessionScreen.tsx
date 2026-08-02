@@ -166,7 +166,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
         if (cancelled) return;
         if (!ok) {
           await releaseLivePlaybackOwner("host", liveId);
-          setFatalError(room.error || "The native broadcast could not connect to LiveKit.");
+          setFatalError(room.getLastConnectError?.() || room.error || "The native broadcast could not connect to LiveKit.");
           setConnecting(false);
           return;
         }

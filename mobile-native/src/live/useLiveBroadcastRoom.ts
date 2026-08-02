@@ -262,6 +262,32 @@ async function publishMicrophoneForPath(
   return result.audioTrackCount;
 }
 
+/**
+ * Order the host media transition around the camera/audio race observed on iOS.
+ *
+ * The engine guard is deliberately last. Running it before camera publication
+ * can inspect WebRTC while the newly-published microphone is still starting,
+ * fail closed, and disconnect a healthy room before the camera is ever added.
+ * The guard exists to verify the state *after* camera startup settles.
+ */
+export async function initializeLivePublisherMedia(options: {
+  useV2: boolean;
+  publishMicrophone: () => Promise<number>;
+  enableCamera: () => Promise<void>;
+  stabilizeAudio: () => Promise<number>;
+  wait?: (milliseconds: number) => Promise<void>;
+}): Promise<number> {
+  let audioTrackCount = await options.publishMicrophone();
+  await options.enableCamera();
+  audioTrackCount = await options.publishMicrophone();
+  if (options.useV2) {
+    audioTrackCount = Math.max(audioTrackCount, await options.stabilizeAudio());
+  } else {
+    await (options.wait || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))))(150);
+  }
+  return audioTrackCount;
+}
+
 export type LiveConnectOptions = {
   publish?: boolean;
   /**
@@ -286,6 +312,7 @@ export function useLiveBroadcastRoom() {
   const audioLeaseRef = useRef<RealtimeAudioLease | null>(null);
   const lifecycleRef = useRef(new RealtimeAudioStateMachine());
   const correlationIdRef = useRef("");
+  const lastConnectErrorRef = useRef("");
   const traceRef = useRef<LiveAudioTrace | null>(null);
   const activeSpeakersRef = useRef<Set<string>>(new Set());
   const localEnergySeenRef = useRef(false);
@@ -603,12 +630,15 @@ export function useLiveBroadcastRoom() {
 
   const connect = useCallback(
     async (credentials: LiveKitCredentials, options: LiveConnectOptions = {}) => {
+      lastConnectErrorRef.current = "";
       if (Platform.OS === "web") {
-        setState((current) => ({ ...current, supported: false, error: "Native LiveKit broadcasting requires an installed iOS or Android build." }));
+        lastConnectErrorRef.current = "Native LiveKit broadcasting requires an installed iOS or Android build.";
+        setState((current) => ({ ...current, supported: false, error: lastConnectErrorRef.current }));
         return false;
       }
       if (!credentials.token || !credentials.url) {
-        setState((current) => ({ ...current, error: "PulseSoc did not return a usable LiveKit token for this broadcast." }));
+        lastConnectErrorRef.current = "PulseSoc did not return a usable LiveKit token for this broadcast.";
+        setState((current) => ({ ...current, error: lastConnectErrorRef.current }));
         return false;
       }
       const publish = Boolean(options.publish && credentials.canPublish);
@@ -1115,39 +1145,35 @@ export function useLiveBroadcastRoom() {
         if (publish) {
           trace.emit("local_audio_track_create_started", { room_state: String(room?.state || "connected"), enabled: true });
           trace.emit("local_audio_publish_started", { room_state: String(room?.state || "connected"), enabled: true });
-          if (useV2) {
-            // ONE publish, event-driven. The legacy branch below publishes twice
-            // around setCameraEnabled and then sleeps 150ms; each of those calls
-            // could run its own enable/toggle cycle, so a single "go live" ran up
-            // to four cycles and could leave duplicate audio publications.
-            await publishMicrophoneForPath(room, true, {
+          await initializeLivePublisherMedia({
+            useV2,
+            publishMicrophone: () => publishMicrophoneForPath(room, useV2, {
               role: telemetryRole,
               room: roomNameRef.current,
               correlationId: correlationIdRef.current
-            });
-            await stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
-              settleMs: 650,
-              context: {
-                sessionId: roomNameRef.current,
-                correlationId: correlationIdRef.current,
-                roomType: "livestream",
-                participantRole: telemetryRole
+            }),
+            enableCamera: async () => {
+              await room.localParticipant.setCameraEnabled(
+                true,
+                PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
+                PULSE_LIVE_VIDEO_PUBLISH_OPTIONS
+              );
+            },
+            stabilizeAudio: async () => (await stabilizeLivePublisherAudio(
+              room,
+              livekitNative.AudioDeviceModule,
+              livekitNative.AudioSession,
+              {
+                settleMs: 650,
+                context: {
+                  sessionId: roomNameRef.current,
+                  correlationId: correlationIdRef.current,
+                  roomType: "livestream",
+                  participantRole: telemetryRole
+                }
               }
-            });
-            await room.localParticipant.setCameraEnabled(true, PULSE_LIVE_VIDEO_CAPTURE_OPTIONS, PULSE_LIVE_VIDEO_PUBLISH_OPTIONS);
-            // Idempotent: a room that is already publishing is left alone, and
-            // any duplicate produced by the camera publish is reconciled away.
-            await publishMicrophoneForPath(room, true, {
-              role: telemetryRole,
-              room: roomNameRef.current,
-              correlationId: correlationIdRef.current
-            });
-          } else {
-            await ensureLiveMicrophonePublished(room);
-            await room.localParticipant.setCameraEnabled(true, PULSE_LIVE_VIDEO_CAPTURE_OPTIONS, PULSE_LIVE_VIDEO_PUBLISH_OPTIONS);
-            await ensureLiveMicrophonePublished(room);
-            await new Promise((resolve) => setTimeout(resolve, 150));
-          }
+            )).audioTrackCount
+          });
         }
         if (publish) await selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
         await applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current).catch(() => undefined);
@@ -1173,6 +1199,7 @@ export function useLiveBroadcastRoom() {
         if (publish && publishedAudioCount <= 0) {
           lifecycleRef.current.tryTransition("local", "failed");
           const message = "Microphone connected, but PulseSoc could not verify a published audio track.";
+          lastConnectErrorRef.current = message;
           await room.disconnect?.().catch(() => undefined);
           const lease = audioLeaseRef.current;
           audioLeaseRef.current = null;
@@ -1268,6 +1295,7 @@ export function useLiveBroadcastRoom() {
         return true;
       } catch (error) {
         const message = readableError(error, "Native LiveKit broadcast connection failed.");
+        lastConnectErrorRef.current = message;
         await disconnect("connect_failed").catch(() => undefined);
         setState((current) => ({ ...current, connectionState: "failed", error: message, disconnectReason: "connect_failed", diagnosticCode: "LIVEKIT_CONNECT_FAILED" }));
         return false;
@@ -1390,6 +1418,7 @@ export function useLiveBroadcastRoom() {
     setRemoteAudioEnabled,
     showAudioRoutePicker,
     switchCamera,
+    getLastConnectError: () => lastConnectErrorRef.current,
     getAudioTrace: () => traceRef.current?.snapshot() || []
   };
 }
