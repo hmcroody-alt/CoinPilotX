@@ -171,6 +171,42 @@ describe("realtimeAudioEngine canonical audio ownership", () => {
     })).rejects.toMatchObject({ code: "REALTIME_AUDIO_ENGINE_INACTIVE" });
   });
 
+  it("reinitializes local recording when camera startup tears down the audio engine", async () => {
+    let engineRunning = false;
+    let playoutRunning = false;
+    let recordingRunning = false;
+    const audioDeviceModule = {
+      isEngineRunning: jest.fn(() => engineRunning),
+      isPlaying: jest.fn(() => playoutRunning),
+      isRecording: jest.fn(() => recordingRunning),
+      startPlayout: jest.fn(async () => {
+        if (!engineRunning) throw new Error("playout requires an initialized engine");
+        playoutRunning = true;
+      }),
+      startRecording: jest.fn(async () => {
+        throw new Error("recording is no longer initialized");
+      }),
+      startLocalRecording: jest.fn(async () => {
+        engineRunning = true;
+        recordingRunning = true;
+      })
+    };
+
+    await expect(stabilizeRealtimeAudioEngine(audioDeviceModule, {
+      playout: true,
+      recording: true,
+      settleMs: 0
+    })).resolves.toEqual({
+      engineRunning: true,
+      playoutRunning: true,
+      recordingRunning: true
+    });
+
+    expect(audioDeviceModule.startLocalRecording).toHaveBeenCalledTimes(1);
+    expect(audioDeviceModule.startRecording).not.toHaveBeenCalled();
+    expect(audioDeviceModule.startPlayout).toHaveBeenCalledTimes(1);
+  });
+
   it("reasserts an existing microphone without creating a second publication", async () => {
     const track = sdkTrack();
     const participant = {

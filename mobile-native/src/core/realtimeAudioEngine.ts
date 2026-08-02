@@ -47,6 +47,7 @@ type RealtimeAudioDeviceModule = {
   isRecording?: () => boolean;
   startPlayout?: () => Promise<void>;
   startRecording?: () => Promise<void>;
+  startLocalRecording?: () => Promise<void>;
 };
 
 export type RealtimeAudioEngineStatus = {
@@ -331,11 +332,23 @@ export async function stabilizeRealtimeAudioEngine(
   const enforce = async () => {
     const before = inspectRealtimeAudioEngine(audioDeviceModule);
     const engineStopped = before.engineRunning === false;
-    if (options.playout && (engineStopped || before.playoutRunning === false)) {
-      await audioDeviceModule.startPlayout?.().catch(() => undefined);
-    }
+
+    // `startRecording` only resumes an already-initialized WebRTC recorder.
+    // Camera startup can tear the underlying ADM down completely, which is the
+    // physical Live failure captured on iPhone. In that state the SDK's
+    // init-and-start operation must run first; attempting playout or ordinary
+    // recording against the uninitialized engine leaves every status false.
     if (options.recording && (engineStopped || before.recordingRunning === false)) {
-      await audioDeviceModule.startRecording?.().catch(() => undefined);
+      if (engineStopped && typeof audioDeviceModule.startLocalRecording === "function") {
+        await audioDeviceModule.startLocalRecording().catch(() => undefined);
+      } else {
+        await audioDeviceModule.startRecording?.().catch(() => undefined);
+      }
+    }
+
+    const afterRecording = inspectRealtimeAudioEngine(audioDeviceModule);
+    if (options.playout && (afterRecording.engineRunning === false || afterRecording.playoutRunning === false)) {
+      await audioDeviceModule.startPlayout?.().catch(() => undefined);
     }
   };
 
