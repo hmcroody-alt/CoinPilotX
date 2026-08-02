@@ -664,3 +664,56 @@ The governed code has not yet completed a new two-participant physical session. 
 | Shared/legacy collision rejection | Automated PASS |
 
 Final migration judgment at code-commit time: **PARTIAL / NO-GO for broad rollout**. The permanent shared architecture is implemented and automated gates pass, but Live audible success and protected call/video regression must be heard with separate real participants before the shared Live flag is expanded beyond controlled QA.
+
+## 19. Physical Live follow-up and exact governed-path alignment — 2026-08-02
+
+### Latest physical evidence
+
+The owner reported a new physical sequence after the governed-path deployment:
+
+- audio-call audio: audible in both directions (PASS reported by owner);
+- video-call audio: audible in both directions (PASS reported by owner);
+- livestream host audio: not audible to the viewer (FAIL reported by owner).
+
+The supplied native failure screen also exposed the exact fail-closed condition: `The native real-time audio engine did not remain active.` This is physical failure evidence, not a simulator inference. Codex has not yet personally heard a successful post-repair Live host/viewer session, so Live remains NO-GO.
+
+### Remaining divergences found
+
+Two Live-only transitions remained after the first shared-path migration:
+
+1. Video calls used their local-media order directly, while Live still owned a separate `initializeLivePublisherMedia` wrapper. That wrapper could drift in its microphone reassert/republish ordering after camera startup.
+2. When LiveKit had accepted the host but had not yet observed a stable camera track, `/native-publish` returned a retryable body as HTTP 409 with `ok: false`. The canonical native API correctly throws non-success responses, so the host screen's retry branch could never consume `retry_after_ms`. Its former timer also cleared a ref without changing React state, so it did not schedule another request deterministically.
+
+### Repair in `37c5b70c`
+
+- Added `initializeRealtimePublisherMedia` to the governed media layer and routed both video calls and Live hosts through it.
+- The shared transition publishes the microphone once, starts the feature-owned camera, reasserts the existing microphone publication, and republishes through the same controller only if camera startup removed it.
+- Removed the Live-only publisher initializer.
+- Extended the canonical iOS engine recovery so a stopped ADM first reasserts the same call-grade `playAndRecord` / `videoChat` AudioSession, then initializes recording and playout. It does not stop the active session or rotate/steal its ownership lease.
+- Video-call recovery now supplies the same session/mode inputs as Live, making the lower-level recovery path identical while preserving separate rooms, roles, camera controls, and signaling.
+- Changed the expected track-convergence response to HTTP 202 with `ready: false`, retained server verification, and added a bounded native retry loop. Egress still cannot start until the backend independently observes stable host video.
+- Updated the architecture gate so both call/video and Live adapters must use the canonical local-media transition.
+
+### Validation after repair
+
+| Check | Result |
+|---|---:|
+| Focused engine, media-path, call, Live, and API suites | 5 suites / 44 tests PASS |
+| Full native suite | 120 suites / 2,015 tests PASS |
+| Native TypeScript typecheck | PASS |
+| Realtime architecture protection | 7/7 PASS |
+| Call token/shared-path contract | 5/5 PASS |
+| Live host/guest/viewer token and rollout contract | PASS |
+| LiveKit webhook-owner contract | PASS |
+| LiveKit egress waiting-state route audit | PASS |
+| Native calls audit | PASS |
+| Native Live guest/audio repair audit | PASS |
+| Live echo-prevention audit | PASS |
+| Python compilation | PASS |
+| `git diff --check` | PASS |
+
+### Current gate
+
+Commit `37c5b70c` contains the code and automated evidence above. A signed build containing the eventual report commit still needs to be built and installed, and the owner/Codex still needs to observe a viewer audibly hearing the host. Protected audio-call and video-call physical regressions must then be repeated.
+
+**Judgment: PARTIAL implementation; NO-GO for broad Live rollout until the post-install physical host/viewer and mixed-session gates pass.**
