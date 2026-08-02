@@ -9,10 +9,13 @@ import {
   PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
   PULSE_LIVE_VIDEO_PUBLISH_OPTIONS,
   publicationHasTrack,
+  reassertRealtimeMicrophone,
   releaseRealtimeAudioSession,
   resolveRealtimeAudioConfiguration,
   selectRealtimeAudioOutput,
   showRealtimeAudioRoutePicker,
+  stabilizeRealtimeAudioEngine,
+  type RealtimeAudioEngineStatus,
   type RealtimeAudioLease,
   type RealtimeAudioMode,
   videoPublications
@@ -122,6 +125,50 @@ let globalsRegistered = false;
 export const applyRemoteAudioEnabled = driveRemoteAudioEnabled;
 export const ensureLiveMicrophonePublished = ensureMicrophonePublished;
 export const resolveLiveAudioConfiguration = resolveRealtimeAudioConfiguration;
+
+/**
+ * Camera startup can stop iOS RemoteIO after LiveKit has already reported a
+ * successful microphone publication. Reassert the existing publication, then
+ * restore capture/playout without creating a second microphone track.
+ */
+export async function stabilizeLivePublisherAudio(
+  room: any,
+  audioDeviceModule: any,
+  audioSession: any,
+  options: {
+    settleMs?: number;
+    context?: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string };
+  } = {}
+): Promise<RealtimeAudioEngineStatus & { audioTrackCount: number }> {
+  const audioTrackCount = await reassertRealtimeMicrophone(room, options.context);
+  const status = await stabilizeRealtimeAudioEngine(audioDeviceModule, {
+    playout: true,
+    recording: true,
+    settleMs: options.settleMs,
+    context: options.context
+  });
+  await selectRealtimeAudioOutput(audioSession, true).catch(() => undefined);
+  return { ...status, audioTrackCount };
+}
+
+/** A viewer must restore playout only; it must never acquire microphone input. */
+export async function stabilizeLiveViewerAudio(
+  audioDeviceModule: any,
+  audioSession: any,
+  options: {
+    settleMs?: number;
+    context?: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string };
+  } = {}
+): Promise<RealtimeAudioEngineStatus> {
+  const status = await stabilizeRealtimeAudioEngine(audioDeviceModule, {
+    playout: true,
+    recording: false,
+    settleMs: options.settleMs,
+    context: options.context
+  });
+  await selectRealtimeAudioOutput(audioSession, true).catch(() => undefined);
+  return status;
+}
 
 function readableError(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
@@ -235,6 +282,7 @@ export type LiveConnectOptions = {
 export function useLiveBroadcastRoom() {
   const roomRef = useRef<any>(null);
   const audioSessionRef = useRef<any>(null);
+  const audioDeviceModuleRef = useRef<any>(null);
   const audioLeaseRef = useRef<RealtimeAudioLease | null>(null);
   const lifecycleRef = useRef(new RealtimeAudioStateMachine());
   const correlationIdRef = useRef("");
@@ -387,6 +435,7 @@ export function useLiveBroadcastRoom() {
     lifecycleRef.current.tryTransition("room", "disconnected");
     credentialsRef.current = null;
     refreshCredentialsRef.current = undefined;
+    audioDeviceModuleRef.current = null;
     trace?.emit("cleanup_completed", { room_state: "disconnected", error_category: reason });
     setState((current) => ({
       ...current,
@@ -631,6 +680,7 @@ export function useLiveBroadcastRoom() {
           globalsRegistered = true;
         }
         audioSessionRef.current = livekitNative.AudioSession;
+        audioDeviceModuleRef.current = livekitNative.AudioDeviceModule;
         if (publish) {
           const permission = await import("expo-av")
             .then(({ Audio }) => Audio.getPermissionsAsync())
@@ -808,9 +858,25 @@ export function useLiveBroadcastRoom() {
             }));
           }
           if (useV2) {
-            // A reconnect can land on a different output device; reassert the
-            // route we chose rather than inheriting whatever iOS picked.
-            audioTasks.push(reapplyAudioRoute("reconnected"));
+            const engineContext = {
+              sessionId: roomNameRef.current,
+              correlationId: correlationIdRef.current,
+              roomType: "livestream",
+              participantRole: telemetryRole
+            };
+            // Reconnect can replace both the native engine and the output
+            // route. Publishers restore capture/playout; viewers restore only
+            // playout and never request microphone input.
+            audioTasks.push(publish
+              ? stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
+                  settleMs: 250,
+                  context: engineContext
+                })
+              : stabilizeLiveViewerAudio(livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
+                  settleMs: 250,
+                  context: engineContext
+                })
+            );
           }
           Promise.all(audioTasks)
             .then(() => {
@@ -918,7 +984,30 @@ export function useLiveBroadcastRoom() {
               enabled: remoteAudioEnabledRef.current,
               subscription_state: "playing"
             });
-            applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current).catch(() => undefined);
+            applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current)
+              .then(() => useV2
+                ? (publish
+                    ? stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
+                        settleMs: 0,
+                        context: {
+                          sessionId: roomNameRef.current,
+                          correlationId: correlationIdRef.current,
+                          roomType: "livestream",
+                          participantRole: telemetryRole
+                        }
+                      })
+                    : stabilizeLiveViewerAudio(livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
+                        settleMs: 0,
+                        context: {
+                          sessionId: roomNameRef.current,
+                          correlationId: correlationIdRef.current,
+                          roomType: "livestream",
+                          participantRole: telemetryRole
+                        }
+                      }))
+                : undefined
+              )
+              .catch(() => undefined);
           }
           refresh();
         });
@@ -959,7 +1048,30 @@ export function useLiveBroadcastRoom() {
                 role: telemetryRole,
                 room: roomNameRef.current,
                 correlationId: correlationIdRef.current
-              });
+              }).then(() => stabilizeLivePublisherAudio(
+                roomRef.current,
+                livekitNative.AudioDeviceModule,
+                livekitNative.AudioSession,
+                {
+                  settleMs: 250,
+                  context: {
+                    sessionId: roomNameRef.current,
+                    correlationId: correlationIdRef.current,
+                    roomType: "livestream",
+                    participantRole: telemetryRole
+                  }
+                }
+              )).catch(() => undefined);
+            } else if (!publish) {
+              void stabilizeLiveViewerAudio(livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
+                settleMs: 250,
+                context: {
+                  sessionId: roomNameRef.current,
+                  correlationId: correlationIdRef.current,
+                  roomType: "livestream",
+                  participantRole: telemetryRole
+                }
+              }).catch(() => undefined);
             }
           });
         }
@@ -1013,6 +1125,15 @@ export function useLiveBroadcastRoom() {
               room: roomNameRef.current,
               correlationId: correlationIdRef.current
             });
+            await stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
+              settleMs: 650,
+              context: {
+                sessionId: roomNameRef.current,
+                correlationId: correlationIdRef.current,
+                roomType: "livestream",
+                participantRole: telemetryRole
+              }
+            });
             await room.localParticipant.setCameraEnabled(true, PULSE_LIVE_VIDEO_CAPTURE_OPTIONS, PULSE_LIVE_VIDEO_PUBLISH_OPTIONS);
             // Idempotent: a room that is already publishing is left alone, and
             // any duplicate produced by the camera publish is reconciled away.
@@ -1030,6 +1151,17 @@ export function useLiveBroadcastRoom() {
         }
         if (publish) await selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
         await applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current).catch(() => undefined);
+        if (useV2 && !publish) {
+          await stabilizeLiveViewerAudio(livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
+            settleMs: 0,
+            context: {
+              sessionId: roomNameRef.current,
+              correlationId: correlationIdRef.current,
+              roomType: "livestream",
+              participantRole: telemetryRole
+            }
+          });
+        }
         const outputs = await livekitNative.AudioSession.getAudioOutputs?.().catch(() => []) || [];
         trace.emit("current_output_route_recorded", {
           room_state: String(room?.state || "connected"),
@@ -1165,6 +1297,17 @@ export function useLiveBroadcastRoom() {
       correlationId: correlationIdRef.current
     });
     if (localAudioTrackCount <= 0) throw new Error("Camera changed, but microphone audio is no longer published.");
+    if (useV2Ref.current) {
+      await stabilizeLivePublisherAudio(room, audioDeviceModuleRef.current, audioSessionRef.current, {
+        settleMs: 450,
+        context: {
+          sessionId: roomNameRef.current,
+          correlationId: correlationIdRef.current,
+          roomType: "livestream",
+          participantRole: roleRef.current
+        }
+      });
+    }
     refreshParticipants(room);
     setState((current) => ({ ...current, videoEnabled: enabled, audioEnabled: true, localAudioTrackCount, error: "", diagnosticCode: "" }));
   }, [refreshParticipants]);
@@ -1203,6 +1346,17 @@ export function useLiveBroadcastRoom() {
       correlationId: correlationIdRef.current
     });
     if (localAudioTrackCount <= 0) throw new Error("Camera switched, but microphone audio is no longer published.");
+    if (useV2Ref.current) {
+      await stabilizeLivePublisherAudio(room, audioDeviceModuleRef.current, audioSessionRef.current, {
+        settleMs: 450,
+        context: {
+          sessionId: roomNameRef.current,
+          correlationId: correlationIdRef.current,
+          roomType: "livestream",
+          participantRole: roleRef.current
+        }
+      });
+    }
     refreshParticipants(room);
     setState((current) => ({ ...current, audioEnabled: true, localAudioTrackCount, error: "", diagnosticCode: "" }));
   }, [refreshParticipants]);

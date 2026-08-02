@@ -1,4 +1,8 @@
-import { resolveLiveAudioConfiguration } from "../useLiveBroadcastRoom";
+import {
+  resolveLiveAudioConfiguration,
+  stabilizeLivePublisherAudio,
+  stabilizeLiveViewerAudio
+} from "../useLiveBroadcastRoom";
 
 /**
  * Regression guard for the production livestream-audio P0: native calls already
@@ -33,5 +37,58 @@ describe("resolveLiveAudioConfiguration", () => {
         expect.arrayContaining(["allowBluetooth", "allowBluetoothA2DP", "allowAirPlay"])
       );
     }
+  });
+});
+
+describe("post-camera Live audio stabilization", () => {
+  function audioDeviceModule() {
+    let engine = false;
+    let playing = false;
+    let recording = false;
+    return {
+      module: {
+        isEngineRunning: jest.fn(() => engine),
+        isPlaying: jest.fn(() => playing),
+        isRecording: jest.fn(() => recording),
+        startPlayout: jest.fn(async () => { engine = true; playing = true; }),
+        startRecording: jest.fn(async () => { engine = true; recording = true; })
+      },
+      values: () => ({ engine, playing, recording })
+    };
+  }
+
+  it("reasserts one host microphone and restores both recording and playout", async () => {
+    const track = { kind: "audio", setEnabled: jest.fn().mockResolvedValue(undefined) };
+    const participant = {
+      audioTrackPublications: new Map([["mic", { kind: "audio", track }]]),
+      setMicrophoneEnabled: jest.fn().mockResolvedValue(undefined)
+    };
+    const audioDevice = audioDeviceModule();
+    const audioSession = { selectAudioOutput: jest.fn().mockResolvedValue(undefined) };
+
+    const result = await stabilizeLivePublisherAudio(
+      { localParticipant: participant },
+      audioDevice.module,
+      audioSession,
+      { settleMs: 0 }
+    );
+
+    expect(result.audioTrackCount).toBe(1);
+    expect(participant.setMicrophoneEnabled).toHaveBeenCalledWith(true);
+    expect(track.setEnabled).toHaveBeenCalledWith(true);
+    expect(audioDevice.values()).toEqual({ engine: true, playing: true, recording: true });
+    expect(audioSession.selectAudioOutput).toHaveBeenCalledWith("force_speaker");
+  });
+
+  it("restores viewer playout without ever starting microphone recording", async () => {
+    const audioDevice = audioDeviceModule();
+    const audioSession = { selectAudioOutput: jest.fn().mockResolvedValue(undefined) };
+
+    const result = await stabilizeLiveViewerAudio(audioDevice.module, audioSession, { settleMs: 0 });
+
+    expect(result.playoutRunning).toBe(true);
+    expect(audioDevice.module.startPlayout).toHaveBeenCalledTimes(1);
+    expect(audioDevice.module.startRecording).not.toHaveBeenCalled();
+    expect(audioSession.selectAudioOutput).toHaveBeenCalledWith("force_speaker");
   });
 });
