@@ -61,7 +61,7 @@ def main() -> int:
         '"/api/calls/<path:call_id>/status"',
         '"/api/calls/active"',
         '"/api/calls/<path:call_id>/quality"',
-        '"/api/livekit/webhook"',
+        '"/api/pulse/communications/v2/livekit/webhook"',
     ]:
         require(checks, f"route {route} exists", route in routes)
 

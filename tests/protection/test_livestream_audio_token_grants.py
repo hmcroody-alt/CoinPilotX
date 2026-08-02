@@ -44,6 +44,7 @@ LIFTED = (
     "pulse_live_audio_v2_env_flag",
     "pulse_live_audio_v2_enabled",
     "pulse_live_audio_v2_fallback_enabled",
+    "pulse_live_audio_trace_enabled",
 )
 
 
@@ -257,10 +258,17 @@ def test_audio_v2_rollout_controls() -> None:
         expect(NS["pulse_live_audio_v2_enabled"](42) is False, "0 percent rollout keeps V2 off")
 
     with env_patch(
-        LIVESTREAM_AUDIO_V2_ENABLED="true", LIVESTREAM_AUDIO_V2_QA_ONLY="true", LIVESTREAM_AUDIO_V2_PERCENT="100"
+        LIVESTREAM_AUDIO_V2_ENABLED="true", LIVESTREAM_AUDIO_V2_QA_ONLY="true", LIVESTREAM_AUDIO_V2_QA_USER_IDS=None, LIVESTREAM_AUDIO_V2_PERCENT="100"
     ):
         expect(NS["pulse_live_audio_v2_enabled"](42, is_qa=True) is True, "QA-only mode admits QA accounts")
         expect(NS["pulse_live_audio_v2_enabled"](42, is_qa=False) is False, "QA-only mode excludes normal accounts")
+
+    with env_patch(
+        LIVESTREAM_AUDIO_V2_ENABLED="true", LIVESTREAM_AUDIO_V2_QA_ONLY="true", LIVESTREAM_AUDIO_V2_QA_USER_IDS="1,34,invalid", LIVESTREAM_AUDIO_V2_PERCENT="0"
+    ):
+        expect(NS["pulse_live_audio_v2_enabled"](1) is True, "native QA host allowlist receives V2")
+        expect(NS["pulse_live_audio_v2_enabled"](34) is True, "native QA viewer allowlist receives V2")
+        expect(NS["pulse_live_audio_v2_enabled"](35) is False, "native non-QA account stays on legacy")
 
     with env_patch(
         LIVESTREAM_AUDIO_V2_ENABLED="true", LIVESTREAM_AUDIO_V2_QA_ONLY=None, LIVESTREAM_AUDIO_V2_PERCENT="50"
@@ -278,6 +286,17 @@ def test_audio_v2_fallback_defaults_on() -> None:
         expect(NS["pulse_live_audio_v2_fallback_enabled"] () is True, "legacy fallback is available by default")
     with env_patch(LIVESTREAM_AUDIO_V2_FALLBACK_ENABLED="false"):
         expect(NS["pulse_live_audio_v2_fallback_enabled"]() is False, "fallback can be switched off explicitly")
+
+
+def test_audio_trace_requires_master_and_qa_account() -> None:
+    with env_patch(LIVESTREAM_AUDIO_TRACE_ENABLED=None, LIVESTREAM_AUDIO_TRACE_USER_IDS="42"):
+        expect(NS["pulse_live_audio_trace_enabled"](42) is False, "audio trace defaults OFF")
+    with env_patch(LIVESTREAM_AUDIO_TRACE_ENABLED="true", LIVESTREAM_AUDIO_TRACE_USER_IDS=None):
+        expect(NS["pulse_live_audio_trace_enabled"](42) is False, "master flag alone cannot trace ordinary users")
+        expect(NS["pulse_live_audio_trace_enabled"](42, is_qa=True) is True, "admin QA session may trace")
+    with env_patch(LIVESTREAM_AUDIO_TRACE_ENABLED="true", LIVESTREAM_AUDIO_TRACE_USER_IDS="7, 42,invalid"):
+        expect(NS["pulse_live_audio_trace_enabled"](42) is True, "explicit QA user allowlist enables trace")
+        expect(NS["pulse_live_audio_trace_enabled"](99) is False, "non-QA account remains untraced")
 
 
 def test_no_secret_material_leaks_into_claims() -> None:
@@ -308,6 +327,7 @@ def main() -> None:
     test_audio_v2_flag_defaults_off()
     test_audio_v2_rollout_controls()
     test_audio_v2_fallback_defaults_on()
+    test_audio_trace_requires_master_and_qa_account()
     print("livestream audio token grant contract ok")
 
 

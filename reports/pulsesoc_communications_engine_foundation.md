@@ -35,7 +35,11 @@ Runtime schema creation is SQLite-safe for local development while the migration
 - `GET /api/calls/<call_id>/status`
 - `GET /api/calls/active`
 - `POST /api/calls/<call_id>/quality`
-- `POST /api/livekit/webhook`
+- `POST /api/pulse/communications/v2/livekit/webhook` (legacy Communications HMAC adapter)
+
+The standard LiveKit provider webhook remains canonically owned by
+`POST /api/livekit/webhook`; the Communications adapter must not shadow that
+route because provider events use LiveKit's signed Authorization token.
 - `GET /api/admin/calls/recent`
 - `GET /api/admin/calls/<call_id>`
 - `POST /api/admin/calls/test-config`

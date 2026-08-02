@@ -1482,7 +1482,7 @@ def api_call_screen_share_stop(call_id):
     return _timed_json("api_call_screen_share_stop", lambda: call_engine.update_participant_control(user["user_id"], call_id, "screen-share-stop", request.get_json(silent=True) or {}))
 
 
-@comm_v2_blueprint.post("/api/livekit/webhook")
+@comm_v2_blueprint.post("/api/pulse/communications/v2/livekit/webhook")
 def api_livekit_webhook():
     raw = request.get_data(cache=True) or b""
     return _json(call_engine.livekit_webhook(dict(request.headers), raw, request.get_json(silent=True) or {}))

@@ -29,6 +29,7 @@ import {
   shouldAttemptReconnect
 } from "./liveAudioRecovery";
 import { emitLiveAudioEvent } from "./liveAudioTelemetry";
+import { createLiveAudioTrace, type LiveAudioTrace } from "./liveAudioTrace";
 import type { LiveKitCredentials } from "./liveSession";
 
 /**
@@ -135,6 +136,14 @@ function firstAudioTrack(participant: any): any | null {
   return audioPublications(participant).find((publication) => publication?.track && publication?.isSubscribed !== false)?.track || null;
 }
 
+function publicationSid(publication: any): string {
+  return String(publication?.trackSid || publication?.sid || publication?.track?.sid || "");
+}
+
+function trackSid(track: any): string {
+  return String(track?.sid || track?.mediaStreamTrack?.id || "");
+}
+
 function isAudioMuted(participant: any): boolean {
   const publications = audioPublications(participant);
   if (!publications.length) return true;
@@ -229,7 +238,10 @@ export function useLiveBroadcastRoom() {
   const audioLeaseRef = useRef<RealtimeAudioLease | null>(null);
   const lifecycleRef = useRef(new RealtimeAudioStateMachine());
   const correlationIdRef = useRef("");
+  const traceRef = useRef<LiveAudioTrace | null>(null);
   const activeSpeakersRef = useRef<Set<string>>(new Set());
+  const localEnergySeenRef = useRef(false);
+  const remoteEnergySeenRef = useRef(false);
   // Desired viewer remote-audio state; reapplied to tracks that subscribe after
   // the user toggled sound off (co-host join, host republish, reconnect).
   const remoteAudioEnabledRef = useRef(true);
@@ -321,6 +333,21 @@ export function useLiveBroadcastRoom() {
   }, []);
 
   const disconnect = useCallback(async (reason = "local_disconnect") => {
+    const trace = traceRef.current;
+    const wasPublishing = publishRef.current;
+    const currentRoom = roomRef.current;
+    const localPublication = audioPublications(currentRoom?.localParticipant).find(publicationHasTrack);
+    if (wasPublishing) {
+      trace?.emit("live_end_requested", { room_state: String(currentRoom?.state || "disconnecting") });
+      trace?.emit("local_audio_unpublish_started", {
+        room_state: String(currentRoom?.state || "disconnecting"),
+        trackSid: trackSid(localPublication?.track),
+        publicationSid: publicationSid(localPublication),
+        muted: localPublication?.isMuted === true,
+        enabled: localPublication?.track?.isEnabled !== false
+      });
+    }
+    trace?.emit("room_disconnect_started", { room_state: String(currentRoom?.state || "disconnecting") });
     lifecycleRef.current.markTerminal();
     lifecycleRef.current.tryTransition("room", "disconnecting");
     lifecycleRef.current.tryTransition("local", "unpublishing");
@@ -334,12 +361,19 @@ export function useLiveBroadcastRoom() {
     activeSpeakersRef.current = new Set();
     remoteAudioEnabledRef.current = true;
     if (room?.disconnect) await room.disconnect().catch(() => undefined);
+    if (wasPublishing) {
+      trace?.emit("local_audio_unpublished", { room_state: "disconnected", publicationSid: publicationSid(localPublication) });
+      trace?.emit("local_audio_track_stopped", { room_state: "disconnected", trackSid: trackSid(localPublication?.track) });
+    }
+    trace?.emit("room_disconnected", { room_state: "disconnected" });
     // Only release when we actually hold the session. The previous
     // `ownerId || reason` fallback passed a REASON STRING as the owner id, which
     // can never match the real owner, so the release silently no-opped and the
     // AVAudioSession leaked - blocking the next call or broadcast.
     if (lease) {
       await releaseRealtimeAudioSession(audioSessionRef.current, lease).catch(() => undefined);
+      trace?.emit("audio_owner_released", { room_state: "disconnected", audioOwner: lease.ownerId });
+      trace?.emit("audio_session_deactivated_if_unowned", { room_state: "disconnected", audioOwner: lease.ownerId });
       emitLiveAudioEvent({
         name: "live_audio_session_released",
         path: resolveLiveAudioPath({ audioV2Enabled: useV2Ref.current }),
@@ -353,6 +387,7 @@ export function useLiveBroadcastRoom() {
     lifecycleRef.current.tryTransition("room", "disconnected");
     credentialsRef.current = null;
     refreshCredentialsRef.current = undefined;
+    trace?.emit("cleanup_completed", { room_state: "disconnected", error_category: reason });
     setState((current) => ({
       ...current,
       connecting: false,
@@ -547,6 +582,27 @@ export function useLiveBroadcastRoom() {
       correlationIdRef.current = createRealtimeAudioCorrelationId();
       roomNameRef.current = credentials.room || credentials.identity || "";
       publishRef.current = publish;
+      localEnergySeenRef.current = false;
+      remoteEnergySeenRef.current = false;
+      traceRef.current = createLiveAudioTrace({
+        enabled: credentials.audioTraceEnabled === true,
+        correlationId: correlationIdRef.current,
+        room: roomNameRef.current,
+        participantIdentity: credentials.identity,
+        participantRole: telemetryRole
+      });
+      const trace = traceRef.current;
+      trace.emit("live_start_requested", { room_state: "new", enabled: publish });
+      if (publish && !credentials.canPublish) {
+        trace.emit("invariant_failed", { room_state: "authorization_failed", error_category: "publish_not_authorized" });
+      } else {
+        trace.emit("live_authorization_succeeded", {
+          room_state: "authorized",
+          enabled: publish ? credentials.canPublish : credentials.canSubscribe,
+          subscription_state: publish ? "publisher" : "subscriber"
+        });
+      }
+      trace.emit("live_room_connect_started", { room_state: "connecting" });
       lifecycleRef.current.transition("local", publish ? "acquiringSession" : "released");
       credentialsRef.current = credentials;
       if (options.refreshCredentials) refreshCredentialsRef.current = options.refreshCredentials;
@@ -575,15 +631,46 @@ export function useLiveBroadcastRoom() {
           globalsRegistered = true;
         }
         audioSessionRef.current = livekitNative.AudioSession;
+        if (publish) {
+          const permission = await import("expo-av")
+            .then(({ Audio }) => Audio.getPermissionsAsync())
+            .catch(() => null);
+          trace.emit("microphone_permission_checked", {
+            room_state: "connecting",
+            enabled: permission?.granted === true,
+            error_category: permission ? "none" : "permission_check_failed"
+          });
+          if (permission?.granted !== true) {
+            trace.emit("microphone_permission_denied", {
+              room_state: "failed",
+              enabled: false,
+              error_category: permission?.status || "permission_unavailable"
+            });
+            setState((current) => ({
+              ...current,
+              connecting: false,
+              connectionState: "failed",
+              error: "Microphone access is required before starting a Live broadcast.",
+              diagnosticCode: "LIVE_MICROPHONE_PERMISSION_REQUIRED"
+            }));
+            return false;
+          }
+          trace.emit("microphone_permission_granted", { room_state: "connecting", enabled: true });
+        }
         // AUDIO SESSION OWNERSHIP: use the canonical call-grade media engine.
         // LiveKit auto audio configuration is disabled, so PulseSoc must claim
         // one owner-controlled AVAudioSession before connecting or publishing.
         const mediaMode = liveAudioMode(credentials, publish);
         const appleAudioConfiguration = resolveLiveAudioConfiguration(mediaMode);
         const ownerId = `live:${mediaMode}:${credentials.room || credentials.identity || Date.now()}`;
+        const audioProfile = `${appleAudioConfiguration.audioCategory}/${appleAudioConfiguration.audioMode}`;
+        trace.emit("audio_owner_requested", { room_state: "connecting", audioOwner: ownerId, audio_profile: audioProfile });
+        trace.emit("audio_session_config_started", { room_state: "connecting", audioOwner: ownerId, audio_profile: audioProfile });
         try {
           audioLeaseRef.current = await activateRealtimeAudioSession(livekitNative.AudioSession, mediaMode, ownerId, {
-            speaker: true,
+            // A listen-only viewer needs playback, not a forced record route.
+            // Host/co-host retains the call-grade capture-and-playback profile.
+            speaker: publish,
             participantRole: telemetryRole,
             correlationId: correlationIdRef.current,
             // A higher-priority owner (an incoming call) taking the session must
@@ -604,6 +691,9 @@ export function useLiveBroadcastRoom() {
               void disconnect("audio_session_displaced");
             }
           });
+          trace.emit("audio_owner_acquired", { room_state: "connecting", audioOwner: ownerId, audio_profile: audioProfile });
+          trace.emit("audio_session_config_completed", { room_state: "connecting", audioOwner: ownerId, audio_profile: audioProfile });
+          trace.emit("audio_session_activated", { room_state: "connecting", audioOwner: ownerId, audio_profile: audioProfile });
           if (publish) lifecycleRef.current.transition("local", "publishing");
         } catch (ownershipError) {
           // A call already owns the audio session. Report it honestly instead of
@@ -629,6 +719,37 @@ export function useLiveBroadcastRoom() {
             return false;
           }
           throw ownershipError;
+        }
+        if (Platform.OS === "ios") {
+          const availability = (() => {
+            try { return livekitNative.AudioDeviceModule?.getEngineAvailability?.(); } catch { return null; }
+          })();
+          const engineRunning = (() => {
+            try { return Boolean(livekitNative.AudioDeviceModule?.isEngineRunning?.()); } catch { return false; }
+          })();
+          const inputAvailable = availability?.isInputAvailable === true;
+          const engineState = `running=${engineRunning};input=${Boolean(availability?.isInputAvailable)};output=${Boolean(availability?.isOutputAvailable)}`;
+          if (publish) {
+            trace.emit(inputAvailable ? "microphone_input_available" : "microphone_input_unavailable", {
+              room_state: "connecting",
+              enabled: inputAvailable,
+              engine_state: engineState,
+              error_category: inputAvailable ? "none" : "physical_input_unavailable"
+            });
+            if (!inputAvailable) {
+              const lease = audioLeaseRef.current;
+              audioLeaseRef.current = null;
+              if (lease) await releaseRealtimeAudioSession(livekitNative.AudioSession, lease).catch(() => undefined);
+              setState((current) => ({
+                ...current,
+                connecting: false,
+                connectionState: "failed",
+                error: "No microphone input is available for this Live broadcast.",
+                diagnosticCode: "LIVE_MICROPHONE_INPUT_UNAVAILABLE"
+              }));
+              return false;
+            }
+          }
         }
         emitLiveAudioEvent({
           name: "live_audio_session_claimed",
@@ -705,14 +826,61 @@ export function useLiveBroadcastRoom() {
         });
         room.on(livekitClient.RoomEvent.ActiveSpeakersChanged, (speakers: any[]) => {
           activeSpeakersRef.current = new Set((speakers || []).map((speaker) => String(speaker?.identity || "")));
+          for (const speaker of speakers || []) {
+            const level = Number(speaker?.audioLevel || 0);
+            if (level <= 0) continue;
+            if (speaker?.isLocal !== false && publish && !localEnergySeenRef.current) {
+              localEnergySeenRef.current = true;
+              trace.emit("local_audio_energy_detected", {
+                room_state: String(room?.state || "connected"),
+                participantIdentity: speaker?.identity,
+                audioLevel: level,
+                muted: false,
+                enabled: true
+              });
+            } else if (speaker?.isLocal === false && !remoteEnergySeenRef.current) {
+              remoteEnergySeenRef.current = true;
+              trace.emit("remote_audio_energy_detected", {
+                room_state: String(room?.state || "connected"),
+                participantIdentity: speaker?.identity,
+                audioLevel: level,
+                muted: false,
+                enabled: true,
+                subscription_state: "subscribed"
+              });
+            }
+          }
           refresh();
         });
         room.on(livekitClient.RoomEvent.MediaDevicesError, (mediaError: unknown) => {
           setState((current) => ({ ...current, error: readableError(mediaError, "Camera or microphone access failed.") }));
         });
-        room.on(livekitClient.RoomEvent.ParticipantConnected, refresh);
+        room.on(livekitClient.RoomEvent.ParticipantConnected, (participant: any) => {
+          trace.emit("remote_participant_discovered", {
+            room_state: String(room?.state || "connected"),
+            participantIdentity: participant?.identity,
+            subscription_state: "participant_connected"
+          });
+          refresh();
+        });
         room.on(livekitClient.RoomEvent.ParticipantDisconnected, refresh);
-        room.on(livekitClient.RoomEvent.TrackSubscribed, (track: any) => {
+        room.on(livekitClient.RoomEvent.TrackPublished, (publication: any, participant: any) => {
+          if (String(publication?.kind || publication?.track?.kind || "") !== "audio") return;
+          trace.emit("remote_audio_publication_discovered", {
+            room_state: String(room?.state || "connected"),
+            participantIdentity: participant?.identity,
+            publicationSid: publicationSid(publication),
+            muted: publication?.isMuted === true,
+            subscription_state: String(publication?.subscriptionStatus || "available")
+          });
+          trace.emit("remote_audio_subscribe_started", {
+            room_state: String(room?.state || "connected"),
+            participantIdentity: participant?.identity,
+            publicationSid: publicationSid(publication),
+            subscription_state: "auto_subscribe"
+          });
+        });
+        room.on(livekitClient.RoomEvent.TrackSubscribed, (track: any, publication: any, participant: any) => {
           // A newly subscribed audio track must follow the viewer's current sound
           // choice immediately. When sound is on, this mirrors the call path and
           // force-enables remote host/co-host audio instead of trusting defaults.
@@ -721,6 +889,35 @@ export function useLiveBroadcastRoom() {
             lifecycleRef.current.tryTransition("remote", "subscribing");
             lifecycleRef.current.tryTransition("remote", "subscribed");
             lifecycleRef.current.tryTransition("remote", "playing");
+            trace.emit("remote_audio_subscribed", {
+              room_state: String(room?.state || "connected"),
+              participantIdentity: participant?.identity,
+              trackSid: trackSid(track),
+              publicationSid: publicationSid(publication),
+              muted: publication?.isMuted === true,
+              enabled: track?.isEnabled !== false,
+              subscription_state: "subscribed"
+            });
+            if (publication?.isMuted !== true) {
+              trace.emit("remote_audio_track_unmuted", {
+                room_state: String(room?.state || "connected"),
+                participantIdentity: participant?.identity,
+                trackSid: trackSid(track),
+                publicationSid: publicationSid(publication),
+                muted: false,
+                enabled: track?.isEnabled !== false,
+                subscription_state: "subscribed"
+              });
+            }
+            trace.emit("remote_audio_playback_expected", {
+              room_state: String(room?.state || "connected"),
+              participantIdentity: participant?.identity,
+              trackSid: trackSid(track),
+              publicationSid: publicationSid(publication),
+              muted: publication?.isMuted === true,
+              enabled: remoteAudioEnabledRef.current,
+              subscription_state: "playing"
+            });
             applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current).catch(() => undefined);
           }
           refresh();
@@ -801,7 +998,11 @@ export function useLiveBroadcastRoom() {
 
         await room.connect(credentials.url, credentials.token, { autoSubscribe: true });
         lifecycleRef.current.tryTransition("room", "connected");
+        trace.emit("live_room_connected", { room_state: String(room?.state || "connected") });
+        if (!publish) trace.emit("viewer_room_connected", { room_state: String(room?.state || "connected"), subscription_state: "auto_subscribe" });
         if (publish) {
+          trace.emit("local_audio_track_create_started", { room_state: String(room?.state || "connected"), enabled: true });
+          trace.emit("local_audio_publish_started", { room_state: String(room?.state || "connected"), enabled: true });
           if (useV2) {
             // ONE publish, event-driven. The legacy branch below publishes twice
             // around setCameraEnabled and then sleeps 150ms; each of those calls
@@ -827,8 +1028,14 @@ export function useLiveBroadcastRoom() {
             await new Promise((resolve) => setTimeout(resolve, 150));
           }
         }
-        await selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
+        if (publish) await selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
         await applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current).catch(() => undefined);
+        const outputs = await livekitNative.AudioSession.getAudioOutputs?.().catch(() => []) || [];
+        trace.emit("current_output_route_recorded", {
+          room_state: String(room?.state || "connected"),
+          output_route: outputs.length ? outputs.join(",") : "unavailable",
+          error_category: outputs.length ? "none" : "output_route_unavailable"
+        });
         refresh();
         const publishedAudioCount = audioPublications(room.localParticipant).filter(publicationHasTrack).length;
         if (publish && publishedAudioCount <= 0) {
@@ -851,6 +1058,46 @@ export function useLiveBroadcastRoom() {
             localAudioTrackCount: 0
           }));
           return false;
+        }
+        if (publish) {
+          const localPublication = audioPublications(room.localParticipant).find(publicationHasTrack);
+          const localTrack = localPublication?.track;
+          trace.emit("local_audio_track_created", {
+            room_state: String(room?.state || "connected"),
+            trackSid: trackSid(localTrack),
+            publicationSid: publicationSid(localPublication),
+            muted: localPublication?.isMuted === true,
+            enabled: localTrack?.isEnabled !== false
+          });
+          trace.emit("local_audio_track_enabled", {
+            room_state: String(room?.state || "connected"),
+            trackSid: trackSid(localTrack),
+            publicationSid: publicationSid(localPublication),
+            muted: localPublication?.isMuted === true,
+            enabled: localTrack?.isEnabled !== false
+          });
+          trace.emit("local_audio_published", {
+            room_state: String(room?.state || "connected"),
+            trackSid: trackSid(localTrack),
+            publicationSid: publicationSid(localPublication),
+            muted: localPublication?.isMuted === true,
+            enabled: localTrack?.isEnabled !== false
+          });
+          trace.emit("local_audio_publication_sid_available", {
+            room_state: String(room?.state || "connected"),
+            trackSid: trackSid(localTrack),
+            publicationSid: publicationSid(localPublication),
+            enabled: Boolean(publicationSid(localPublication))
+          });
+          if (localPublication?.isMuted !== true) {
+            trace.emit("local_audio_unmuted", {
+              room_state: String(room?.state || "connected"),
+              trackSid: trackSid(localTrack),
+              publicationSid: publicationSid(localPublication),
+              muted: false,
+              enabled: localTrack?.isEnabled !== false
+            });
+          }
         }
         if (publish) lifecycleRef.current.tryTransition("local", "published");
         reconnectAttemptRef.current = 0;
@@ -988,6 +1235,7 @@ export function useLiveBroadcastRoom() {
     setSpeakerEnabled,
     setRemoteAudioEnabled,
     showAudioRoutePicker,
-    switchCamera
+    switchCamera,
+    getAudioTrace: () => traceRef.current?.snapshot() || []
   };
 }

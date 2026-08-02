@@ -43917,9 +43917,21 @@ def pulse_live_audio_v2_enabled(user_id=0, *, is_qa=False):
     master = pulse_live_audio_v2_env_flag("LIVESTREAM_AUDIO_V2_ENABLED")
     if master not in {"1", "true", "yes", "on"}:
         return False
+    try:
+        uid = int(user_id or 0)
+    except Exception:
+        uid = 0
     qa_only = pulse_live_audio_v2_env_flag("LIVESTREAM_AUDIO_V2_QA_ONLY") in {"1", "true", "yes", "on"}
     if qa_only:
-        return bool(is_qa)
+        qa_user_ids = set()
+        for value in pulse_live_audio_v2_env_flag("LIVESTREAM_AUDIO_V2_QA_USER_IDS").split(","):
+            try:
+                parsed = int(value.strip() or 0)
+            except Exception:
+                parsed = 0
+            if parsed > 0:
+                qa_user_ids.add(parsed)
+        return bool(is_qa or (uid > 0 and uid in qa_user_ids))
     try:
         percent = int(float(pulse_live_audio_v2_env_flag("LIVESTREAM_AUDIO_V2_PERCENT", "0") or 0))
     except Exception:
@@ -43929,10 +43941,6 @@ def pulse_live_audio_v2_enabled(user_id=0, *, is_qa=False):
         return True
     if percent <= 0:
         return False
-    try:
-        uid = int(user_id or 0)
-    except Exception:
-        uid = 0
     if uid <= 0:
         return False
     # Sticky per-user bucket: the same account always lands on the same side of
@@ -43945,6 +43953,32 @@ def pulse_live_audio_v2_fallback_enabled():
     """Whether the client may fall back to the legacy path if V2 fails at runtime."""
     raw = pulse_live_audio_v2_env_flag("LIVESTREAM_AUDIO_V2_FALLBACK_ENABLED", "true")
     return raw not in {"0", "false", "no", "off"}
+
+
+def pulse_live_audio_trace_enabled(user_id=0, *, is_qa=False):
+    """Permit privacy-safe native audio tracing only for explicit QA accounts.
+
+    The master flag alone is intentionally insufficient. A request must also
+    resolve to an admin QA session or an authenticated user id listed in
+    LIVESTREAM_AUDIO_TRACE_USER_IDS. This prevents a diagnostic app build from
+    turning trace mode on for ordinary users when the server flag is changed.
+    """
+    master = pulse_live_audio_v2_env_flag("LIVESTREAM_AUDIO_TRACE_ENABLED")
+    if master not in {"1", "true", "yes", "on"}:
+        return False
+    try:
+        uid = int(user_id or 0)
+    except Exception:
+        uid = 0
+    allowlist = set()
+    for value in pulse_live_audio_v2_env_flag("LIVESTREAM_AUDIO_TRACE_USER_IDS").split(","):
+        try:
+            parsed = int(value.strip() or 0)
+        except Exception:
+            parsed = 0
+        if parsed > 0:
+            allowlist.add(parsed)
+    return bool(is_qa or (uid > 0 and uid in allowlist))
 
 
 def pulse_livekit_b64url(raw):
@@ -45600,6 +45634,7 @@ def api_pulse_live_livekit_token(live_id):
         "role": token_role,
         "audio_v2_enabled": pulse_live_audio_v2_enabled(user.get("user_id"), is_qa=bool(admin_current_user())),
         "audio_v2_fallback_enabled": pulse_live_audio_v2_fallback_enabled(),
+        "audio_trace_enabled": pulse_live_audio_trace_enabled(user.get("user_id"), is_qa=bool(admin_current_user())),
         "guest_id": int(guest.get("id") or 0),
         "request_id": request_id,
         "participant_name": verified_claims.get("participant_name") or pulse_actor_display_name(user),

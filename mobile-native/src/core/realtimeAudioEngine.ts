@@ -79,10 +79,8 @@ function notifyDisplaced(ownerId: string) {
 /**
  * Canonical PulseSoc realtime audio profile.
  *
- * Calls are the known-good path, so Live host/guest/viewer sessions intentionally
- * use the same playAndRecord/videoChat AVAudioSession profile. Viewers still use
- * playAndRecord because LiveKit remote audio needs the WebRTC/call route to stay
- * compatible with speaker, Bluetooth, AirPlay, interruptions, and reconnects.
+ * Publishers share the known-good call path. Listen-only viewers use playback:
+ * subscribing to Live must not acquire a microphone-oriented recording profile.
  */
 export function resolveRealtimeAudioConfiguration(mode: RealtimeAudioMode | boolean): AppleAudioConfiguration {
   const normalizedMode: RealtimeAudioMode = typeof mode === "boolean" ? (mode ? "live_host" : "live_viewer") : mode;
@@ -91,7 +89,6 @@ export function resolveRealtimeAudioConfiguration(mode: RealtimeAudioMode | bool
     normalizedMode === "video_call" ||
     normalizedMode === "live_host" ||
     normalizedMode === "live_guest" ||
-    normalizedMode === "live_viewer" ||
     normalizedMode === "voice_message"
   ) {
     return {

@@ -28,8 +28,8 @@ describe("realtimeAudioEngine canonical audio ownership", () => {
     await resetRealtimeAudioOwnership();
   });
 
-  it("uses the call-grade iOS audio profile for calls, live host, live guest, and live viewer", () => {
-    for (const mode of ["audio_call", "video_call", "live_host", "live_guest", "live_viewer"] as const) {
+  it("uses the call-grade iOS audio profile for calls and Live publishers", () => {
+    for (const mode of ["audio_call", "video_call", "live_host", "live_guest"] as const) {
       const config = resolveRealtimeAudioConfiguration(mode);
       expect(config.audioCategory).toBe("playAndRecord");
       expect(config.audioMode).toBe("videoChat");
@@ -37,6 +37,13 @@ describe("realtimeAudioEngine canonical audio ownership", () => {
         expect.arrayContaining(["allowBluetooth", "allowBluetoothA2DP", "allowAirPlay", "defaultToSpeaker"])
       );
     }
+  });
+
+  it("uses playback configuration for a listen-only Live viewer", () => {
+    const config = resolveRealtimeAudioConfiguration("live_viewer");
+    expect(config.audioCategory).toBe("playback");
+    expect(config.audioMode).toBe("default");
+    expect(config.audioCategoryOptions).not.toContain("defaultToSpeaker");
   });
 
   it("tracks one active realtime audio owner and only releases that owner", async () => {

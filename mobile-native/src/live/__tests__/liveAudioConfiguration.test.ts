@@ -8,8 +8,7 @@ import { resolveLiveAudioConfiguration } from "../useLiveBroadcastRoom";
  *
  * The contract these tests lock in:
  *   - host/co-host records, so it MUST use `playAndRecord`.
- *   - listen-only viewer also uses the call-compatible session so subscribed
- *     remote host/co-host audio has the same AVAudioSession path as calls.
+ *   - listen-only viewer uses playback and never needs microphone ownership.
  */
 describe("resolveLiveAudioConfiguration", () => {
   it("gives a publisher a record-capable communication session", () => {
@@ -20,11 +19,11 @@ describe("resolveLiveAudioConfiguration", () => {
     expect(config.audioCategoryOptions).toContain("defaultToSpeaker");
   });
 
-  it("gives a listen-only viewer the same call-compatible output route as calls", () => {
+  it("gives a listen-only viewer a playback-only output route", () => {
     const config = resolveLiveAudioConfiguration(false);
-    expect(config.audioCategory).toBe("playAndRecord");
-    expect(config.audioMode).toBe("videoChat");
-    expect(config.audioCategoryOptions).toContain("defaultToSpeaker");
+    expect(config.audioCategory).toBe("playback");
+    expect(config.audioMode).toBe("default");
+    expect(config.audioCategoryOptions).not.toContain("defaultToSpeaker");
   });
 
   it("routes both roles to Bluetooth/AirPlay outputs", () => {

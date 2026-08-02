@@ -123,7 +123,22 @@ describe("normalizeLiveKitCredentials", () => {
       // Absent from this payload, so the rollout gate stays OFF and the legacy
       // fallback stays available.
       audioV2Enabled: false,
-      audioV2FallbackEnabled: true
+      audioV2FallbackEnabled: true,
+      audioTraceEnabled: false
+    });
+  });
+
+  describe("QA-only audio trace gate", () => {
+    const base = { token: "tok", livekit_url: "wss://livekit.example" };
+
+    it("is OFF when omitted or expressed as a non-boolean", () => {
+      for (const raw of [undefined, false, "true", 1, "1"]) {
+        expect(normalizeLiveKitCredentials({ ...base, audio_trace_enabled: raw })?.audioTraceEnabled).toBe(false);
+      }
+    });
+
+    it("is ON only when the server explicitly authorizes the account", () => {
+      expect(normalizeLiveKitCredentials({ ...base, audio_trace_enabled: true })?.audioTraceEnabled).toBe(true);
     });
   });
 

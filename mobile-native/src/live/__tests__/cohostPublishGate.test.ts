@@ -20,6 +20,7 @@ function creds(overrides: Partial<LiveKitCredentials> = {}): LiveKitCredentials 
     expiresAt: "2026-01-01T00:00:00Z",
     audioV2Enabled: false,
     audioV2FallbackEnabled: true,
+    audioTraceEnabled: false,
     ...overrides
   };
 }
