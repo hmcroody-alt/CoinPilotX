@@ -32,6 +32,10 @@ const mockCreateCampaign = jest.fn();
 const mockRunAction = jest.fn();
 const mockCachedAccounts = jest.fn();
 const mockCachedCampaigns = jest.fn();
+const mockGetAnalytics = jest.fn();
+const mockGetWallet = jest.fn();
+const mockGetBilling = jest.fn();
+const mockCachedAnalytics = jest.fn();
 
 jest.mock("../../api/businessOs", () => ({
   ...jest.requireActual("../../api/businessOs"),
@@ -41,7 +45,11 @@ jest.mock("../../api/businessOs", () => ({
   createAdCampaign: (...args: unknown[]) => mockCreateCampaign(...args),
   runAdCampaignAction: (...args: unknown[]) => mockRunAction(...args),
   loadCachedAdAccounts: (...args: unknown[]) => mockCachedAccounts(...args),
-  loadCachedAdCampaigns: (...args: unknown[]) => mockCachedCampaigns(...args)
+  loadCachedAdCampaigns: (...args: unknown[]) => mockCachedCampaigns(...args),
+  getAdAnalytics: (...args: unknown[]) => mockGetAnalytics(...args),
+  getAdWallet: (...args: unknown[]) => mockGetWallet(...args),
+  getAdBillingSummary: (...args: unknown[]) => mockGetBilling(...args),
+  loadCachedAdAnalytics: (...args: unknown[]) => mockCachedAnalytics(...args)
 }));
 
 import { BusinessOsAdvertisingScreen } from "../BusinessOsAdvertisingScreen";
@@ -71,6 +79,12 @@ beforeEach(() => {
   mockRunAction.mockResolvedValue({ message: "Done." });
   mockCachedAccounts.mockResolvedValue([]);
   mockCachedCampaigns.mockResolvedValue([]);
+  // Analytics / wallet / billing degrade to null: money truth only shows when the
+  // wallet call itself succeeds, so a null wallet renders no chip (never a zero).
+  mockGetAnalytics.mockResolvedValue({ analytics: null });
+  mockGetWallet.mockResolvedValue({ wallet: null });
+  mockGetBilling.mockResolvedValue({ billing: null });
+  mockCachedAnalytics.mockResolvedValue(null);
 });
 
 async function renderScreen() {
@@ -126,26 +140,31 @@ describe("Business OS advertising", () => {
     mockListCampaigns.mockResolvedValue({ campaigns: [campaign({ status: "active", campaign_name: "Running" })] });
     const view = await renderScreen();
 
-    expect(view.getByLabelText("Pause Running")).toBeTruthy();
-    expect(view.getByLabelText("Archive Running")).toBeTruthy();
+    // Pause/resume is the delivery switch, not a button; an active campaign
+    // exposes exactly one switch. Archive stays a comma-labelled secondary action.
+    expect(view.getByRole("switch")).toBeTruthy();
+    expect(view.getByLabelText("Archive, Running")).toBeTruthy();
     // An active campaign cannot be resumed or submitted; the portal rejects both.
-    expect(view.queryByLabelText("Resume Running")).toBeNull();
-    expect(view.queryByLabelText("Submit for review Running")).toBeNull();
+    expect(view.queryByLabelText("Resume, Running")).toBeNull();
+    expect(view.queryByLabelText("Submit for review, Running")).toBeNull();
   });
 
   it("leaves an archived campaign with only the action that still makes sense", async () => {
     mockListCampaigns.mockResolvedValue({ campaigns: [campaign({ status: "archived", campaign_name: "Old" })] });
     const view = await renderScreen();
-    expect(view.getByLabelText("Duplicate Old")).toBeTruthy();
-    expect(view.queryByLabelText("Pause Old")).toBeNull();
-    expect(view.queryByLabelText("Resume Old")).toBeNull();
+    expect(view.getByLabelText("Duplicate, Old")).toBeTruthy();
+    // Archived is terminal: no delivery switch, and nothing to pause or resume.
+    expect(view.queryByLabelText("Delivering")).toBeNull();
+    expect(view.queryByLabelText("Paused")).toBeNull();
+    expect(view.queryByLabelText("Archive, Old")).toBeNull();
   });
 
-  it("runs the action the button names against the campaign it belongs to", async () => {
+  it("runs the action the switch names against the campaign it belongs to", async () => {
     mockListCampaigns.mockResolvedValue({ campaigns: [campaign({ id: 33, status: "active", campaign_name: "Running" })] });
     const view = await renderScreen();
     await act(async () => {
-      fireEvent.press(view.getByLabelText("Pause Running"));
+      // Toggling the delivery switch off is a pause on the owning campaign.
+      fireEvent.press(view.getByRole("switch"));
     });
     expect(mockRunAction).toHaveBeenCalledWith(33, "pause");
   });
@@ -163,7 +182,7 @@ describe("Business OS advertising", () => {
       fireEvent.press(view.getByLabelText("Create campaign"));
     });
     await act(async () => {
-      fireEvent.press(view.getByLabelText("Pause Running"));
+      fireEvent.press(view.getByRole("switch"));
     });
     expect(mockCreateCampaign).not.toHaveBeenCalled();
     expect(mockRunAction).not.toHaveBeenCalled();

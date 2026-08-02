@@ -82,7 +82,18 @@ export type RootStackParamList = {
   MarketplaceDetail: { listingId?: number; title?: string } | undefined;
   BusinessOs: { title?: string } | undefined;
   BusinessProfile: { title?: string } | undefined;
-  BusinessOsAdvertising: { title?: string; accountId?: number } | undefined;
+  /**
+   * The seller-side Marketplace manager (Business "Sections" card #3). Distinct
+   * from `Marketplace`/`MarketplaceDetail`, which are the consumer browse
+   * surface, and from `MarketplaceCreateGateway`, which is the composer.
+   */
+  MarketplaceManager: { title?: string } | undefined;
+  /**
+   * One route, two screens. Default is the rebuilt two-sided ads manager;
+   * `mode: "classic"` renders the previous screen, which still owns the
+   * ad-account and campaign creation forms the manager routes into.
+   */
+  BusinessOsAdvertising: { title?: string; accountId?: number; mode?: "manager" | "classic" } | undefined;
   BusinessOsInsights: { title?: string } | undefined;
   BusinessOsPayments: { title?: string; accountId?: number } | undefined;
   SellerStore: { title?: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts" | "orders"; sellerId?: string } | undefined;

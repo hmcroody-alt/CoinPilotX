@@ -117,7 +117,12 @@ export const BUSINESS_OS_SECTIONS: BusinessOsSection[] = [
     label: "Marketplace",
     blurb: "List an item and manage what you sell.",
     icon: "pricetags-outline",
-    route: "MarketplaceCreateGateway",
+    // Repointed from `MarketplaceCreateGateway` to the manager screen. The
+    // gateway goes straight to the composer, which answers only the "list an
+    // item" half of this card's promise; the other half — "manage what you
+    // sell" — had nowhere to go. Every other caller of the gateway wants the
+    // composer and is untouched, and the manager's footer CTA still opens it.
+    route: "MarketplaceManager",
     backed: true
   },
   {
