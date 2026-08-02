@@ -272,11 +272,16 @@ describe("capability guards", () => {
   });
 
   it("routes tab sections through the Tabs navigator and stack sections directly", () => {
-    const messages = businessOsSection("messages")!;
-    expect(businessOsNavigationArgs(messages)).toEqual(["Tabs", { screen: "Messenger", params: undefined }]);
+    const settings = businessOsSection("settings")!;
+    expect(businessOsNavigationArgs(settings)).toEqual(["Tabs", { screen: "Settings", params: undefined }]);
 
     const store = businessOsSection("store")!;
     expect(businessOsNavigationArgs(store)).toEqual(["SellerStore", { mode: "dashboard" }]);
+  });
+
+  it("routes the rebuilt Messages card to its own stack screen (not the Messenger tab)", () => {
+    const messages = businessOsSection("messages")!;
+    expect(businessOsNavigationArgs(messages)).toEqual(["BusinessOsMessages", undefined]);
   });
 
   it("refuses to produce navigation args for an unrouted section", () => {

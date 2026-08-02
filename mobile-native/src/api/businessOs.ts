@@ -159,8 +159,7 @@ export const BUSINESS_OS_SECTIONS: BusinessOsSection[] = [
     label: "Messages",
     blurb: "Conversations with buyers.",
     icon: "chatbubbles-outline",
-    route: "Messenger",
-    tab: true,
+    route: "BusinessOsMessages",
     backed: true
   },
   {

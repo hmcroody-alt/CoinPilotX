@@ -14,6 +14,7 @@ import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
 import { AlertManagementScreen } from "../screens/AlertManagementScreen";
 import { AdvertisingRoute } from "../screens/AdvertisingRoute";
 import { OrdersRoute } from "../screens/OrdersRoute";
+import { MessagesRoute } from "../screens/MessagesRoute";
 import { BusinessOsInsightsScreen } from "../screens/BusinessOsInsightsScreen";
 import { BusinessOsPaymentsScreen } from "../screens/BusinessOsPaymentsScreen";
 import { BusinessOsScreen } from "../screens/BusinessOsScreen";
@@ -303,6 +304,14 @@ export function AppNavigator() {
       <Stack.Screen
         name="BusinessOsOrders"
         component={OrdersRoute}
+        options={{ headerShown: false }}
+      />
+      {/* `MessagesRoute` renders the rebuilt commerce inbox, which draws its own
+          navy header with a back chevron, search and compose — so the stack
+          header is hidden. The Business "Messages" card points here. */}
+      <Stack.Screen
+        name="BusinessOsMessages"
+        component={MessagesRoute}
         options={{ headerShown: false }}
       />
       <Stack.Screen name="BusinessOsInsights" component={BusinessOsInsightsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsInsights") })} />

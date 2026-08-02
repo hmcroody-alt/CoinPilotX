@@ -102,6 +102,12 @@ export type RootStackParamList = {
    * "Your orders". `perspective` sets which side it opens on (default seller).
    */
   BusinessOsOrders: { title?: string; perspective?: "seller" | "buyer" } | undefined;
+  /**
+   * The rebuilt commerce inbox (Business "Messages" card). Draws its own navy
+   * header; every row is about a money object surfaced via a context chip. The
+   * old Messenger tab stays intact — this is the Business-surface entry point.
+   */
+  BusinessOsMessages: { title?: string } | undefined;
   SellerStore: { title?: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts" | "orders"; sellerId?: string } | undefined;
   BuyerOrders: { orderId?: number; source?: string; title?: string } | undefined;
   BuyerOrderDetail: { orderId: number; source?: string; title?: string };
