@@ -1,0 +1,17 @@
+# The Railway service is the Python backend. Native/web QA artifacts are kept
+# in Git for release evidence but are not runtime inputs and push this monorepo
+# above Railway's source-upload limit.
+reports/
+release-assets/
+mobile/
+mobile-native/
+CoinPilotX:screenshots:/
+
+# Provider/runtime media and local audit recordings are not application source.
+static/uploads/
+static/audit/
+
+# Test and local tool caches are never required by the production process.
+tests/
+**/__pycache__/
+**/*.pyc
