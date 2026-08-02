@@ -1256,9 +1256,297 @@ def describe_for_model() -> list[dict[str, Any]]:
     ]
 
 
+# ---------------------------------------------------------------------------
+# The authorization boundary
+# ---------------------------------------------------------------------------
+#
+# Where a capability's authority begins and ends is written down three times.
+#
+#   1. This registry's ``CapabilitySpec`` — risk, confirmation, permission scope,
+#      verifier, verified fields.
+#   2. ``undx_policy.PRODUCTION_TOOL_REGISTRY`` — risk and a confirmation *boolean*,
+#      keyed by tool name rather than capability id.
+#   3. ``undx_knowledge_map`` — authorization scope, authentication, feature flag.
+#
+# The second is not documentation. ``undx_architecture.HIGH_IMPACT_TOOLS`` is built
+# from record 2's confirmation boolean, and the planner removes those names from the
+# allowlist it is offered. So a capability that this registry classes as
+# ``consequential_write, always`` becomes reachable without confirmation if — and
+# only if — someone edits a dict in a different file. No test today reads both.
+#
+# Three records of one boundary give three chances to disagree, and a disagreement
+# does not look like a bug. It looks like permission.
+#
+# The fix is the oldest one there is. Deuteronomy 19:14 does not say "do not take
+# your neighbour's field"; it says do not *move the marker* — the offence is making
+# the boundary unreadable, committed before anything is taken. So: derive the
+# boundary from all three records, refuse to resolve a disagreement (any resolution
+# rule would be a fourth opinion), and pin the result so that widening it requires
+# editing a baseline a human has to look at.
+#
+# The vocabularies differ, and that is itself part of the finding. Record 2 says
+# ``high`` where this file says ``consequential_write``; record 3 says
+# ``membership_scoped`` where this file says ``self_account_only``. A translation
+# has to be declared for the check to mean anything, and declaring it is what makes
+# the flattening visible: record 2's boolean cannot express ``contextual`` at all,
+# so seven capabilities that this registry marks as needing situational confirmation
+# are recorded there as needing none.
+
+
+#: Which registry risk classes each policy-ledger risk word is allowed to name.
+#:
+#: Exact where the two vocabularies are exact. ``high`` covers two registry classes
+#: because the ledger genuinely cannot tell them apart — recorded as a set rather
+#: than papered over with a lossy mapping in one direction.
+_POLICY_RISK_CLASSES: dict[str, frozenset[str]] = {
+    "read_only": frozenset({RiskLevel.READ_ONLY}),
+    "low": frozenset({RiskLevel.READ_ONLY}),
+    "medium": frozenset({RiskLevel.REVERSIBLE_WRITE}),
+    "high": frozenset({RiskLevel.CONSEQUENTIAL_WRITE, RiskLevel.HIGH_RISK}),
+}
+
+#: Which knowledge-map authorization scopes each registry permission may correspond
+#: to. Absence is the point: ``unscoped_defect``, ``existence_oracle_defect`` and
+#: ``privileged_role`` appear against no permission, so a map record that acquires
+#: one while the registry still says ``self_account_only`` is a conflict rather than
+#: a silently-accepted downgrade.
+_PERMISSION_SCOPES: dict[str, frozenset[str]] = {
+    PermissionScope.SELF_ACCOUNT_ONLY: frozenset(
+        {"self_account_only", "membership_scoped", "public"}
+    ),
+    PermissionScope.OTHER_USER_TARGET: frozenset({"directed_at_other_user"}),
+    PermissionScope.OWNED_CONTENT_TARGET: frozenset(
+        {"self_account_only", "membership_scoped", "public"}
+    ),
+}
+
+#: Confirmation policies the ledger's ``confirmation: False`` may stand for. A
+#: capability this registry marks ``always`` and the ledger marks ``False`` is the
+#: single most dangerous disagreement the two records can hold, because it is
+#: exactly the edit that removes a name from ``HIGH_IMPACT_TOOLS``.
+_UNCONFIRMED_POLICIES = frozenset({ConfirmationPolicy.NEVER, ConfirmationPolicy.CONTEXTUAL})
+
+
+class AuthorizationRecordConflict(AgentError):
+    """Two records of one capability's authority disagree.
+
+    Raised rather than resolved. Choosing which record wins would be a fourth
+    opinion about the boundary, and the safe reading of "the records disagree" is
+    that nobody currently knows where the boundary is.
+    """
+
+    def __init__(self, capability_id: str, field_name: str, detail: str) -> None:
+        super().__init__(
+            "authorization_record_conflict",
+            "UNDX cannot act on that right now.",
+            details={
+                "capability_id": clean(capability_id, 120),
+                "field": field_name,
+                "detail": clean(detail, 300),
+            },
+        )
+        self.capability_id = capability_id
+        self.field_name = field_name
+        self.detail = detail
+
+
+@dataclass(frozen=True)
+class AuthorizationBoundary:
+    """Where one capability's authority ends, agreed across every record of it."""
+
+    capability_id: str
+    risk: str
+    confirmation: str
+    permission: str
+    authorization_scope: str
+    is_write: bool
+    requires_authentication: bool
+    policy_confirms: bool
+    verifier: str
+    verified_fields: tuple[str, ...]
+    feature_flag: str
+
+    def widenings_against(self, other: "AuthorizationBoundary") -> tuple[str, ...]:
+        """How this boundary reaches further than ``other``.
+
+        Named separately rather than reported as "changed", because narrowing a
+        boundary needs no ceremony and only widening is the event that wants a
+        receipt. A drift test that fires on both trains people to refresh the
+        baseline without reading it, which costs more safety than it buys.
+        """
+        found: list[str] = []
+        if RiskLevel.ORDER.get(self.risk, 0) < RiskLevel.ORDER.get(other.risk, 0):
+            found.append(f"risk lowered {other.risk} -> {self.risk}")
+        rank = {ConfirmationPolicy.NEVER: 0, ConfirmationPolicy.CONTEXTUAL: 1, ConfirmationPolicy.ALWAYS: 2}
+        if rank.get(self.confirmation, 0) < rank.get(other.confirmation, 0):
+            found.append(f"confirmation weakened {other.confirmation} -> {self.confirmation}")
+        if other.policy_confirms and not self.policy_confirms:
+            found.append("dropped out of HIGH_IMPACT_TOOLS")
+        if self.permission != other.permission:
+            found.append(f"permission scope changed {other.permission} -> {self.permission}")
+        if self.authorization_scope != other.authorization_scope:
+            found.append(
+                f"authorization scope changed {other.authorization_scope} -> {self.authorization_scope}"
+            )
+        if other.requires_authentication and not self.requires_authentication:
+            found.append("authentication no longer required")
+        if other.verifier and not self.verifier:
+            found.append(f"verifier dropped ({other.verifier})")
+        dropped = tuple(sorted(set(other.verified_fields) - set(self.verified_fields)))
+        if dropped:
+            found.append("verified fields dropped: " + ", ".join(dropped))
+        if other.feature_flag and not self.feature_flag:
+            found.append(f"feature gate removed ({other.feature_flag})")
+        return tuple(found)
+
+
+def authorization_surface() -> dict[str, AuthorizationBoundary]:
+    """Every capability's boundary, cross-checked against all three records.
+
+    Raises ``AuthorizationRecordConflict`` on the first disagreement. Imports are
+    local because ``undx_knowledge_map`` imports this module — the map derives its
+    operational fields from the registry rather than restating them, which is why
+    the fields checked here are the ones it genuinely holds on its own.
+    """
+    from services import undx_knowledge_map, undx_policy
+
+    ledger = getattr(undx_policy, "PRODUCTION_TOOL_REGISTRY", {}) or {}
+    surface: dict[str, AuthorizationBoundary] = {}
+
+    for capability_id, spec in sorted(REGISTRY.items()):
+        entry = ledger.get(spec.tool_name)
+        if entry is None:
+            raise AuthorizationRecordConflict(
+                capability_id, "tool_name",
+                f"{spec.tool_name!r} is registered here but absent from the production ledger",
+            )
+
+        ledger_risk = str(entry.get("risk", ""))
+        allowed = _POLICY_RISK_CLASSES.get(ledger_risk)
+        if allowed is None:
+            raise AuthorizationRecordConflict(
+                capability_id, "risk", f"production ledger uses unknown risk word {ledger_risk!r}",
+            )
+        if spec.risk not in allowed:
+            raise AuthorizationRecordConflict(
+                capability_id, "risk",
+                f"registry says {spec.risk!r}; production ledger says {ledger_risk!r}",
+            )
+
+        policy_confirms = bool(entry.get("confirmation"))
+        if spec.confirmation == ConfirmationPolicy.ALWAYS and not policy_confirms:
+            raise AuthorizationRecordConflict(
+                capability_id, "confirmation",
+                "registry requires confirmation but the production ledger does not, so "
+                "undx_architecture.HIGH_IMPACT_TOOLS will offer this to the planner unguarded",
+            )
+        if policy_confirms and spec.confirmation not in (ConfirmationPolicy.ALWAYS,):
+            if spec.confirmation not in _UNCONFIRMED_POLICIES:
+                raise AuthorizationRecordConflict(
+                    capability_id, "confirmation",
+                    f"registry says {spec.confirmation!r}; production ledger requires confirmation",
+                )
+
+        record = undx_knowledge_map.BY_ID.get(capability_id)
+        if record is None:
+            raise AuthorizationRecordConflict(
+                capability_id, "knowledge_map",
+                "registered capability has no record in the product knowledge map",
+            )
+
+        permitted = _PERMISSION_SCOPES.get(spec.permission, frozenset())
+        if record.authorization_scope not in permitted:
+            raise AuthorizationRecordConflict(
+                capability_id, "authorization_scope",
+                f"registry permission {spec.permission!r} does not admit map scope "
+                f"{record.authorization_scope!r}",
+            )
+        if record.authentication_required != spec.requires_authentication:
+            raise AuthorizationRecordConflict(
+                capability_id, "authentication",
+                f"registry says requires_authentication={spec.requires_authentication}; "
+                f"map says {record.authentication_required}",
+            )
+
+        surface[capability_id] = AuthorizationBoundary(
+            capability_id=capability_id,
+            risk=spec.risk,
+            confirmation=spec.confirmation,
+            permission=spec.permission,
+            authorization_scope=record.authorization_scope,
+            is_write=spec.is_write,
+            requires_authentication=spec.requires_authentication,
+            policy_confirms=policy_confirms,
+            verifier=spec.verifier,
+            verified_fields=tuple(sorted(spec.verified_fields)),
+            feature_flag=record.feature_flag,
+        )
+    return surface
+
+
+def boundary_tuple(boundary: AuthorizationBoundary) -> tuple[Any, ...]:
+    """A boundary flattened for a baseline file, in a stable order."""
+    return (
+        boundary.capability_id,
+        boundary.risk,
+        boundary.confirmation,
+        boundary.permission,
+        boundary.authorization_scope,
+        boundary.is_write,
+        boundary.requires_authentication,
+        boundary.policy_confirms,
+        boundary.verifier,
+        boundary.verified_fields,
+        boundary.feature_flag,
+    )
+
+
+def surface_widenings(
+    baseline: dict[str, tuple[Any, ...]],
+    current: dict[str, AuthorizationBoundary] | None = None,
+) -> list[str]:
+    """Capabilities that now reach further than the baseline recorded.
+
+    Deletions are deliberately not reported. Removing a capability cannot widen
+    what UNDX may do, and a check that fails on removal teaches people to update
+    the baseline without reading it — which is the failure mode this whole
+    mechanism exists to prevent.
+    """
+    live = authorization_surface() if current is None else current
+    fields = (
+        "capability_id", "risk", "confirmation", "permission", "authorization_scope",
+        "is_write", "requires_authentication", "policy_confirms", "verifier",
+        "verified_fields", "feature_flag",
+    )
+    findings: list[str] = []
+    for capability_id, boundary in sorted(live.items()):
+        recorded = baseline.get(capability_id)
+        if recorded is None:
+            findings.append(f"{capability_id}: newly reachable, not in the recorded surface")
+            continue
+        if len(recorded) != len(fields):
+            findings.append(f"{capability_id}: recorded boundary has the wrong shape")
+            continue
+        was = AuthorizationBoundary(**{
+            name: (tuple(value) if name == "verified_fields" else value)
+            for name, value in zip(fields, recorded)
+        })
+        for note in boundary.widenings_against(was):
+            findings.append(f"{capability_id}: {note}")
+    return findings
+
+
+def authorization_baseline() -> list[tuple[Any, ...]]:
+    """The current surface, in the exact form a baseline file records."""
+    return [boundary_tuple(item) for _, item in sorted(authorization_surface().items())]
+
+
 __all__ = [
     "CapabilitySpec", "REGISTRY", "get", "require",
     "capability_ids", "write_capability_ids", "describe_for_model",
     "unregistered_tool_names",
     "NOTIFICATION_CATEGORIES", "category_choices",
+    "AuthorizationBoundary", "AuthorizationRecordConflict",
+    "authorization_surface", "authorization_baseline",
+    "boundary_tuple", "surface_widenings",
 ]
