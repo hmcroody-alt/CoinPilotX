@@ -47919,6 +47919,7 @@ def api_pulse_marketplace_search():
         f"""
         SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
+               l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type,
                COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
                COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
@@ -47957,6 +47958,7 @@ def api_pulse_marketplace_seller_listings():
         f"""
         SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
+               l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type,
                COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
                COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
@@ -47980,6 +47982,7 @@ def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
         """
         SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
+               l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type,
                COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
                COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
