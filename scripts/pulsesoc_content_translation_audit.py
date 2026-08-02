@@ -59,8 +59,11 @@ def main() -> None:
         "chat messages": NATIVE / "screens/ChatScreen.tsx",
         "marketplace listings": NATIVE / "screens/MarketplaceScreen.tsx",
         "profile bios": NATIVE / "components/ProfileHeader.tsx",
-        "post comments and replies": NATIVE / "screens/PostDetailScreen.tsx",
-        "reel comments and replies": NATIVE / "screens/ReelsScreen.tsx",
+        # Both screens render the same recursive owner. Keep the gate aligned
+        # with that shared implementation instead of requiring duplicate,
+        # screen-local translation wrappers.
+        "post comments and replies": NATIVE / "social/CommentThread.tsx",
+        "reel comments and replies": NATIVE / "social/CommentThread.tsx",
     }
     for label, path in surface_requirements.items():
         require("ContentTranslation" in text(path), f"{label} render through reusable translation controls")
