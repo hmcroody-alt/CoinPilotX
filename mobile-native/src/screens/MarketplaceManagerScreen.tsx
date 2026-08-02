@@ -1,0 +1,1790 @@
+/**
+ * Marketplace — the screen behind card #3 of the Business "Sections" grid.
+ *
+ * ## Why this is not `MarketplaceScreen`
+ *
+ * `screens/MarketplaceScreen.tsx` already exists and is the *consumer* browse
+ * surface: dark theme, bottom-nav dock, reached from the `Marketplace` tab and
+ * from `MarketplaceDetail` deep links. It is shipped and it works. This is a
+ * different job — item-by-item selling, with a buying feed attached — so it is
+ * a different file on a different route, exactly as `BusinessProfile` was added
+ * beside the profile screens rather than replacing one. Nine call sites still
+ * reach `MarketplaceCreateGateway` for the composer and none of them are
+ * touched.
+ *
+ * ## Marketplace is not Store
+ *
+ * Store (card #2) is a permanent catalogue with stock levels. Marketplace is
+ * one-off listings that get haggled over and then disappear. That difference is
+ * why this screen leads with *offers* rather than KPIs: the thing that needs a
+ * Marketplace seller today is a person waiting for an answer, not a number.
+ *
+ * ## Both panes stay mounted
+ *
+ * Switching modes toggles `display: none` rather than unmounting. The brief
+ * requires each mode's scroll position to survive the switch, and restoring an
+ * offset by hand always lands a few pixels off and re-runs the entrance. Two
+ * mounted lists cost more memory; they buy a toggle that feels like a toggle
+ * rather than like a navigation push.
+ *
+ * ## What is real and what is not
+ *
+ * The offers domain, the cart, and boost purchase have **no backend at all** —
+ * no table, no route, no column. They are built, tested (see
+ * `api/__tests__/marketplaceOffers.test.ts`) and held behind
+ * `MARKETPLACE_OFFERS_ENABLED`, `MARKETPLACE_CART_ENABLED` and
+ * `MARKETPLACE_BOOST_ENABLED`, all currently `false`. Nothing here fakes a
+ * working checkout or a successful accept. `MARKETPLACE_MOCK_DATA_GAPS` in
+ * `api/marketplaceScreen` lists every gap and the backend work it needs.
+ *
+ * The NEW and FEATURED badges, listing staleness, and the whole Add-to-cart vs
+ * Make-offer split *are* real: `created_at`, `featured` and `delivery_type`
+ * already existed in `marketplace_listings` and were simply never selected.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Animated,
+  FlatList,
+  Image,
+  Modal,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type ViewToken
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
+import {
+  MARKETPLACE_BOOST_ENABLED,
+  MARKETPLACE_CART_ENABLED,
+  MARKETPLACE_OFFERS_ENABLED,
+  applyOfferActionToList,
+  beginOfferAction,
+  isOfferFresh,
+  offersAwaitingSeller,
+  resolveExpiries,
+  type MarketplaceOffer,
+  type OfferAction
+} from "../api/marketplaceOffers";
+import {
+  boostCandidate,
+  deriveBuyingItems,
+  deriveCategories,
+  deriveSellingItems,
+  deriveSellingSummary,
+  loadLastMarketplaceMode,
+  loadMarketplaceScreen,
+  saveLastMarketplaceMode,
+  sellerSnapshotFrom,
+  sellingTabCounts,
+  type BuyingItem,
+  type MarketplaceLoadResult,
+  type SellingItem,
+  type SellingTabKey
+} from "../api/marketplaceScreen";
+import {
+  CATEGORY_ALL,
+  CategoryChipRail,
+  ItemGridCard,
+  ModeToggle,
+  OfferCard,
+  SavedSearchAlert,
+  type MarketplaceMode
+} from "../components/marketplace";
+import {
+  StoreHeader,
+  StoreOfflineNote,
+  StoreQuickLinkTile,
+  StoreRowSkeleton,
+  StoreSectionError,
+  StoreSkeletonBlock
+} from "../components/store";
+import { registerSyncInvalidation } from "../core/eventSync";
+import { useFormatters } from "../i18n/hooks";
+import { setSaved } from "../social/useSaveAction";
+import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../navigation/BottomNavVisibility";
+import { RootStackParamList } from "../navigation/types";
+import { storeLight } from "../theme/storeLight";
+import { marketplaceLight } from "../theme/marketplaceLight";
+import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
+import {
+  useStoreAmbient,
+  useStoreBadgePop,
+  useStoreEntrance,
+  useStorePress,
+  useStoreValueArrival
+} from "../theme/storeMotion";
+import {
+  MARKETPLACE_AMBIENT,
+  useMarketplaceModeSwap,
+  useMarketplaceSoldWipe
+} from "../theme/marketplaceMotion";
+
+/** Entrance slots per mode. Named so a section cannot animate out of order. */
+const SELLING_SLOT = {
+  chips: 0,
+  offers: 1,
+  tabs: 2,
+  items: 3,
+  boost: 4,
+  more: 5,
+  cta: 6
+} as const;
+const SELLING_SECTIONS = Object.keys(SELLING_SLOT).length;
+
+const BUYING_SLOT = { rail: 0, alert: 1, grid: 2, more: 3 } as const;
+const BUYING_SECTIONS = Object.keys(BUYING_SLOT).length;
+
+/** How many grid cards "Show more nearby" adds, and how many start visible. */
+const GRID_PAGE = 12;
+/** How many rows the Selling list previews before "See all N items". */
+const SELLING_PREVIEW = 6;
+
+const SELLING_TABS: readonly { key: SellingTabKey; label: string }[] = [
+  { key: "active", label: "Active" },
+  { key: "sold", label: "Sold" },
+  { key: "drafts", label: "Drafts" },
+  { key: "expired", label: "Expired" }
+];
+
+type Props = {
+  route?: { params?: RootStackParamList["BusinessOs"] };
+  navigation: { navigate: (...args: any[]) => void; goBack?: () => void };
+};
+
+export function MarketplaceManagerScreen({ navigation }: Props) {
+  const formatters = useFormatters();
+  const reducedMotion = useLogiNexusReducedMotion();
+  const insets = useSafeAreaInsets();
+
+  const [mode, setMode] = useState<MarketplaceMode>("selling");
+  const [result, setResult] = useState<MarketplaceLoadResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<SellingTabKey>("active");
+  const [expanded, setExpanded] = useState(false);
+  const [category, setCategory] = useState(CATEGORY_ALL);
+  const [gridLimit, setGridLimit] = useState(GRID_PAGE);
+  const [offers, setOffers] = useState<readonly MarketplaceOffer[]>([]);
+  const [savedIds, setSavedIds] = useState<readonly number[]>([]);
+  const [cartIds, setCartIds] = useState<readonly number[]>([]);
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
+  const [visibleIds, setVisibleIds] = useState<readonly number[]>([]);
+  const [now, setNow] = useState(() => Date.now());
+
+  const sellingEntrance = useStoreEntrance(SELLING_SECTIONS, reducedMotion);
+  const buyingEntrance = useStoreEntrance(BUYING_SECTIONS, reducedMotion);
+  const swap = useMarketplaceModeSwap(mode, reducedMotion);
+
+  /* ---------------------------------------------------------------- *
+   * Loading
+   * ---------------------------------------------------------------- */
+
+  const load = useCallback(
+    async (kind: "initial" | "refresh" = "initial", nextQuery = query) => {
+      if (kind === "refresh") setRefreshing(true);
+      else setLoading(true);
+      try {
+        setResult(await loadMarketplaceScreen({ query: nextQuery }));
+        setNow(Date.now());
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [query]
+  );
+
+  useEffect(() => {
+    load("initial").catch(() => undefined);
+    // Deliberately not in the dependency list: this is the first load, and
+    // `load` changes identity whenever the search box changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    loadLastMarketplaceMode()
+      .then(setMode)
+      .catch(() => undefined);
+  }, []);
+
+  // The same three channels the Store dashboard listens on, so a listing edited
+  // in the composer or an order placed elsewhere shows up here without a pull.
+  useEffect(() => {
+    const refresh = () => load("refresh").catch(() => undefined);
+    const unregister = [
+      registerSyncInvalidation("seller_inventory", refresh),
+      registerSyncInvalidation("marketplace", refresh),
+      registerSyncInvalidation("orders", refresh)
+    ];
+    return () => unregister.forEach((fn) => fn());
+  }, [load]);
+
+  /**
+   * Sweep expiries once a minute.
+   *
+   * An offer that lapsed while the screen was open should stop offering an
+   * Accept button, and the state machine dates the expiry at the lapse rather
+   * than at the moment anyone noticed — so a slow sweep is correct, not
+   * approximate. `resolveExpiries` returns the same array when nothing changed,
+   * so this is free on every tick that has nothing to do.
+   */
+  useEffect(() => {
+    if (!MARKETPLACE_OFFERS_ENABLED) return;
+    const timer = setInterval(() => {
+      const stamp = Date.now();
+      setNow(stamp);
+      setOffers((current) => resolveExpiries(current, stamp));
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const changeMode = useCallback((next: MarketplaceMode) => {
+    setMode(next);
+    saveLastMarketplaceMode(next).catch(() => undefined);
+  }, []);
+
+  /**
+   * Counter sheet.
+   *
+   * Countering is the one offer action that needs a number from the seller, so
+   * it cannot be a single tap like Accept and Decline. The sheet holds the
+   * target offer rather than just its id, because it has to show the buyer's
+   * figure and the listed price side by side — a counter typed with neither in
+   * view is a guess.
+   */
+  const [counterTarget, setCounterTarget] = useState<MarketplaceOffer | null>(null);
+  const [counterInput, setCounterInput] = useState("");
+
+  const openCounter = useCallback((offer: MarketplaceOffer) => {
+    setCounterTarget(offer);
+    // Seeded with the listed price, which is the seller's own asking figure and
+    // the most common counter. Seeding with the buyer's offer would prefill a
+    // number the seller has already declined by opening this sheet.
+    setCounterInput(String(Math.round(offer.listPriceMinor / 100)));
+  }, []);
+
+  const closeCounter = useCallback(() => {
+    setCounterTarget(null);
+    setCounterInput("");
+  }, []);
+
+  const counterMinor = useMemo(() => {
+    const parsed = Number(counterInput.replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return Math.round(parsed * 100);
+  }, [counterInput]);
+
+  const submitCounter = useCallback(() => {
+    if (!counterTarget || counterMinor == null) return;
+    runOfferAction(counterTarget.id, "counter", counterMinor);
+    closeCounter();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [counterTarget, counterMinor, closeCounter]);
+
+  /* ---------------------------------------------------------------- *
+   * Derivations
+   * ---------------------------------------------------------------- */
+
+  const snapshot = useMemo(
+    () => (result ? sellerSnapshotFrom(result) : { listings: [], orders: [] }),
+    [result]
+  );
+  const sellingItems = useMemo(() => deriveSellingItems(snapshot, now), [snapshot, now]);
+  const tabCounts = useMemo(() => sellingTabCounts(sellingItems), [sellingItems]);
+  const tabItems = useMemo(
+    () => sellingItems.filter((item) => item.tab === tab),
+    [sellingItems, tab]
+  );
+  const visibleSellingItems = useMemo(
+    () => (expanded ? tabItems : tabItems.slice(0, SELLING_PREVIEW)),
+    [tabItems, expanded]
+  );
+  const boost = useMemo(() => boostCandidate(sellingItems), [sellingItems]);
+
+  const waitingOffers = useMemo(() => offersAwaitingSeller(offers, now), [offers, now]);
+  const summary = useMemo(
+    () => deriveSellingSummary(sellingItems, waitingOffers.length),
+    [sellingItems, waitingOffers.length]
+  );
+
+  const feedListings = useMemo(
+    () => (result?.feed.status === "ok" ? result.feed.data : []),
+    [result]
+  );
+  const categories = useMemo(() => deriveCategories(feedListings), [feedListings]);
+  const buyingItems = useMemo(
+    () =>
+      deriveBuyingItems(feedListings, {
+        now,
+        cartEnabled: MARKETPLACE_CART_ENABLED,
+        offersEnabled: MARKETPLACE_OFFERS_ENABLED
+      }),
+    [feedListings, now]
+  );
+  const filteredBuying = useMemo(
+    () =>
+      category === CATEGORY_ALL
+        ? buyingItems
+        : buyingItems.filter((item) => item.category.toLowerCase() === category),
+    [buyingItems, category]
+  );
+  const pagedBuying = useMemo(
+    () => filteredBuying.slice(0, gridLimit),
+    [filteredBuying, gridLimit]
+  );
+
+  const savedSet = useMemo(() => new Set(savedIds), [savedIds]);
+  const visibleSet = useMemo(() => new Set(visibleIds), [visibleIds]);
+
+  // Seed the saved set from whatever the API already told us, so a heart the
+  // user filled on another screen is filled here on first paint.
+  useEffect(() => {
+    const initial = buyingItems.filter((item) => item.saved).map((item) => item.id);
+    if (initial.length) setSavedIds((current) => Array.from(new Set([...current, ...initial])));
+  }, [buyingItems]);
+
+  /* ---------------------------------------------------------------- *
+   * Actions
+   * ---------------------------------------------------------------- */
+
+  const openItem = useCallback(
+    (listingId: number, title: string) => {
+      navigation.navigate("MarketplaceDetail", { listingId, title });
+    },
+    [navigation]
+  );
+
+  const openComposer = useCallback(() => {
+    navigation.navigate("MarketplaceCreateGateway", { title: "List an item" });
+  }, [navigation]);
+
+  /**
+   * Run one offer transition.
+   *
+   * `beginOfferAction` stamps `pending` *before* anything async happens, and
+   * `offerActionsDisabled` reads that stamp to grey out all three buttons
+   * together. Disabling all three rather than only the pressed one is
+   * deliberate: Accept and Decline racing each other is a worse outcome than
+   * either being pressed twice.
+   */
+  const runOfferAction = useCallback(
+    (offerId: string, action: OfferAction, amountMinor?: number) => {
+      setOffers((current) => {
+        const target = current.find((offer) => offer.id === offerId);
+        if (!target) return current;
+        const started = beginOfferAction(target, action);
+        if (!started.ok) return current;
+        const stamped = current.map((offer) => (offer.id === offerId ? started.offer : offer));
+        const { offers: next } = applyOfferActionToList(stamped, offerId, {
+          action,
+          actor: "seller",
+          now: Date.now(),
+          counterAmountMinor: amountMinor
+        });
+        return next;
+      });
+    },
+    []
+  );
+
+  const toggleSave = useCallback(async (item: BuyingItem) => {
+    const wasSaved = savedSet.has(item.id);
+    // Optimistic, then reconciled against what the server actually stored — the
+    // same contract every other savable surface in the app uses.
+    setSavedIds((current) =>
+      wasSaved ? current.filter((id) => id !== item.id) : [...current, item.id]
+    );
+    const outcome = await setSaved({ type: "marketplace", id: item.id }, !wasSaved);
+    setSavedIds((current) => {
+      const without = current.filter((id) => id !== item.id);
+      return outcome.saved ? [...without, item.id] : without;
+    });
+  }, [savedSet]);
+
+  /**
+   * Add to cart.
+   *
+   * Guarded by the flag rather than by a disabled button, because the button is
+   * not rendered at all while the flag is off — `gridCardAction` returns null.
+   * The guard is here so that turning the flag on without wiring the cart
+   * cannot silently no-op into a "success" confirmation.
+   */
+  const addToCart = useCallback((item: BuyingItem) => {
+    if (!MARKETPLACE_CART_ENABLED) return;
+    setCartIds((current) => (current.includes(item.id) ? current : [...current, item.id]));
+    setConfirmingId(item.id);
+    setTimeout(() => setConfirmingId((current) => (current === item.id ? null : current)), 1400);
+  }, []);
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    setVisibleIds(viewableItems.map((token) => Number((token.item as BuyingItem)?.id)));
+  }).current;
+
+  /* ---------------------------------------------------------------- *
+   * Header
+   * ---------------------------------------------------------------- */
+
+  const cartCount = cartIds.length;
+  const savedCount = savedIds.length;
+
+  const header = (
+    <StoreHeader
+      title="Marketplace"
+      query={query}
+      onQueryChange={setQuery}
+      onSubmitSearch={() => load("refresh", query).catch(() => undefined)}
+      onBack={() => navigation.goBack?.()}
+      onNotifications={() => navigation.navigate("Notifications")}
+      // MOCK-DATA: no unread counter for marketplace notifications. Rather than
+      // invent one, the bell is silent and does not wiggle.
+      unreadCount={0}
+      hideNotifications={mode === "buying"}
+      searchPlaceholder={
+        mode === "selling" ? "Search your items and offers" : "Search Marketplace"
+      }
+      reducedMotion={reducedMotion}
+      accessories={
+        mode === "buying" ? (
+          <BuyingHeaderCounts
+            savedCount={savedCount}
+            cartCount={cartCount}
+            onSaved={() => navigation.navigate("Saved")}
+            onCart={() => navigation.navigate("BuyerPurchases", { title: "Cart" })}
+            reducedMotion={reducedMotion}
+          />
+        ) : null
+      }
+      below={
+        <View style={styles.headerBelow}>
+          <ModeToggle mode={mode} onChange={changeMode} reducedMotion={reducedMotion} />
+          {mode === "buying" ? <LocationStrip /> : null}
+        </View>
+      }
+    />
+  );
+
+  /* ---------------------------------------------------------------- *
+   * Render
+   * ---------------------------------------------------------------- */
+
+  const bottomPad = insets.bottom + BOTTOM_NAV_CONTENT_CLEARANCE;
+
+  return (
+    <View style={styles.root}>
+      {header}
+
+      {result?.offline ? (
+        <StoreOfflineNote
+          text={
+            result.cachedAt
+              ? `Offline — showing items saved ${formatters.relative(result.cachedAt)}`
+              : "Offline — showing saved items"
+          }
+        />
+      ) : null}
+
+      <Animated.View style={[styles.panes, { opacity: swap }]}>
+        <View style={[styles.pane, mode !== "selling" && styles.paneHidden]}>
+          <SellingPane
+            loading={loading}
+            refreshing={refreshing}
+            onRefresh={() => load("refresh").catch(() => undefined)}
+            entrance={sellingEntrance}
+            reducedMotion={reducedMotion}
+            formatters={formatters}
+            summary={summary}
+            offers={waitingOffers}
+            offersError={result?.listings.status === "error" ? null : null}
+            listingsError={
+              result?.listings.status === "error" ? result.listings.message : null
+            }
+            onRetryListings={() => load("refresh").catch(() => undefined)}
+            tab={tab}
+            tabCounts={tabCounts}
+            onTabChange={(next) => {
+              setTab(next);
+              setExpanded(false);
+            }}
+            items={visibleSellingItems}
+            totalInTab={tabItems.length}
+            expanded={expanded}
+            onExpand={() => setExpanded(true)}
+            boost={boost}
+            now={now}
+            onOfferAction={runOfferAction}
+            onCounterRequest={openCounter}
+            onOpenItem={openItem}
+            onCompose={openComposer}
+            navigation={navigation}
+            bottomPad={bottomPad}
+          />
+        </View>
+
+        <View style={[styles.pane, mode !== "buying" && styles.paneHidden]}>
+          <BuyingPane
+            loading={loading}
+            refreshing={refreshing}
+            onRefresh={() => load("refresh").catch(() => undefined)}
+            entrance={buyingEntrance}
+            reducedMotion={reducedMotion}
+            categories={categories}
+            category={category}
+            onCategoryChange={(next) => {
+              setCategory(next);
+              setGridLimit(GRID_PAGE);
+            }}
+            items={pagedBuying}
+            total={filteredBuying.length}
+            onShowMore={() => setGridLimit((current) => current + GRID_PAGE)}
+            feedError={result?.feed.status === "error" ? result.feed.message : null}
+            onRetryFeed={() => load("refresh").catch(() => undefined)}
+            savedSet={savedSet}
+            visibleSet={visibleSet}
+            confirmingId={confirmingId}
+            onToggleSave={(item) => {
+              toggleSave(item).catch(() => undefined);
+            }}
+            onAction={(item) => {
+              if (item.action === "cart") addToCart(item);
+              else if (item.action === "offer") openItem(item.id, item.title);
+            }}
+            onOpenItem={openItem}
+            onViewableItemsChanged={onViewableItemsChanged}
+            bottomPad={bottomPad}
+          />
+        </View>
+      </Animated.View>
+
+      {/* The counter sheet lives at the screen root, not inside SellingPane,
+          because the pane is one of two absolutely-positioned siblings and a
+          modal anchored inside a `display: none` subtree would vanish if the
+          user somehow toggled modes underneath it. */}
+      <CounterSheet
+        offer={counterTarget}
+        amount={counterInput}
+        amountMinor={counterMinor}
+        formatters={formatters}
+        onChangeAmount={setCounterInput}
+        onCancel={closeCounter}
+        onSubmit={submitCounter}
+      />
+    </View>
+  );
+}
+
+/**
+ * Counter-offer sheet.
+ *
+ * Deliberately plain. The seller is being asked for one number, with the two
+ * numbers that matter — what the buyer offered and what the item is listed at —
+ * held in view above the field. Submit is disabled until the input parses to a
+ * positive amount, so the sheet cannot post a counter of zero or of nothing.
+ */
+function CounterSheet({
+  offer,
+  amount,
+  amountMinor,
+  formatters,
+  onChangeAmount,
+  onCancel,
+  onSubmit
+}: {
+  offer: MarketplaceOffer | null;
+  amount: string;
+  amountMinor: number | null;
+  formatters: Formatters;
+  onChangeAmount: (next: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  const valid = amountMinor != null;
+
+  return (
+    <Modal
+      visible={offer != null}
+      transparent
+      animationType="slide"
+      onRequestClose={onCancel}
+      accessibilityViewIsModal
+    >
+      <Pressable style={styles.sheetScrim} onPress={onCancel} accessibilityLabel="Close" />
+      <View style={styles.sheet}>
+        {offer ? (
+          <>
+            <Text style={styles.sheetTitle}>Counter offer</Text>
+            <Text style={styles.sheetSub}>
+              {offer.buyerName} offered{" "}
+              {formatters.currency(offer.amountMinor / 100, { currency: offer.currency })} for{" "}
+              {offer.itemTitle}, listed at{" "}
+              {formatters.currency(offer.listPriceMinor / 100, { currency: offer.currency })}.
+            </Text>
+
+            <Text style={styles.sheetLabel}>Your counter</Text>
+            <TextInput
+              value={amount}
+              onChangeText={onChangeAmount}
+              keyboardType="numeric"
+              style={styles.sheetInput}
+              accessibilityLabel="Counter amount"
+              placeholder="0"
+              placeholderTextColor={storeLight.text.muted}
+            />
+
+            <View style={styles.sheetActions}>
+              <Pressable
+                onPress={onCancel}
+                style={[styles.sheetButton, styles.sheetCancel]}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel counter offer"
+              >
+                <Text style={styles.sheetCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={onSubmit}
+                disabled={!valid}
+                style={[styles.sheetButton, styles.sheetSend, !valid && styles.sheetSendOff]}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: !valid }}
+                accessibilityLabel={
+                  valid && amountMinor != null
+                    ? `Send counter offer of ${formatters.currency(amountMinor / 100, {
+                        currency: offer.currency
+                      })}`
+                    : "Send counter offer, enter an amount first"
+                }
+              >
+                <Text style={styles.sheetSendText}>Send counter</Text>
+              </Pressable>
+            </View>
+          </>
+        ) : null}
+      </View>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Selling mode
+ * ------------------------------------------------------------------ */
+
+type Formatters = ReturnType<typeof useFormatters>;
+
+function SellingPane({
+  loading,
+  refreshing,
+  onRefresh,
+  entrance,
+  reducedMotion,
+  formatters,
+  summary,
+  offers,
+  listingsError,
+  onRetryListings,
+  tab,
+  tabCounts,
+  onTabChange,
+  items,
+  totalInTab,
+  expanded,
+  onExpand,
+  boost,
+  now,
+  onOfferAction,
+  onCounterRequest,
+  onOpenItem,
+  onCompose,
+  navigation,
+  bottomPad
+}: {
+  loading: boolean;
+  refreshing: boolean;
+  onRefresh: () => void;
+  entrance: ReturnType<typeof useStoreEntrance>;
+  reducedMotion: boolean;
+  formatters: Formatters;
+  summary: { activeCount: number; offersWaiting: number; savesThisWeek: number | null };
+  offers: readonly MarketplaceOffer[];
+  offersError: string | null;
+  listingsError: string | null;
+  onRetryListings: () => void;
+  tab: SellingTabKey;
+  tabCounts: Record<SellingTabKey, number>;
+  onTabChange: (next: SellingTabKey) => void;
+  items: readonly SellingItem[];
+  totalInTab: number;
+  expanded: boolean;
+  onExpand: () => void;
+  boost: SellingItem | null;
+  now: number;
+  onOfferAction: (offerId: string, action: OfferAction, amountMinor?: number) => void;
+  onCounterRequest: (offer: MarketplaceOffer) => void;
+  onOpenItem: (listingId: number, title: string) => void;
+  onCompose: () => void;
+  navigation: { navigate: (...args: any[]) => void };
+  bottomPad: number;
+}) {
+  const ctaPress = useStorePress(reducedMotion, 0.98);
+
+  if (loading) {
+    return (
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomPad }]}>
+        <View style={styles.chipRow}>
+          {[0, 1, 2].map((key) => (
+            <View key={key} style={styles.chipSkeleton}>
+              <StoreSkeletonBlock width="60%" height={10} reducedMotion={reducedMotion} />
+              <StoreSkeletonBlock width="45%" height={20} reducedMotion={reducedMotion} />
+            </View>
+          ))}
+        </View>
+        {[0, 1].map((key) => (
+          <View key={key} style={styles.offerSkeleton}>
+            <StoreSkeletonBlock width="55%" height={12} reducedMotion={reducedMotion} />
+            <StoreSkeletonBlock width="35%" height={24} reducedMotion={reducedMotion} />
+            <StoreSkeletonBlock width="90%" height={40} reducedMotion={reducedMotion} />
+          </View>
+        ))}
+        {[0, 1, 2, 3].map((key) => (
+          <StoreRowSkeleton key={key} reducedMotion={reducedMotion} />
+        ))}
+      </ScrollView>
+    );
+  }
+
+  const empty = tabCounts.active + tabCounts.sold + tabCounts.drafts + tabCounts.expired === 0;
+
+  return (
+    <ScrollView
+      contentContainerStyle={[styles.scroll, { paddingBottom: bottomPad }]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={storeLight.text.link}
+        />
+      }
+    >
+      {/* 1. Summary chips */}
+      <Animated.View style={[styles.chipRow, entrance.styleFor(SELLING_SLOT.chips)]}>
+        <SummaryChip
+          label="Active items"
+          value={formatters.count(summary.activeCount)}
+          reducedMotion={reducedMotion}
+          onPress={() => onTabChange("active")}
+        />
+        <SummaryChip
+          label="Offers waiting"
+          value={summary.offersWaiting > 0 ? formatters.count(summary.offersWaiting) : "—"}
+          amber={summary.offersWaiting > 0}
+          reducedMotion={reducedMotion}
+          arrivalDelay={70}
+          onPress={() => undefined}
+          // MOCK-DATA: with no offers backend this is always zero, so the chip
+          // is not a link to anywhere.
+          disabled={!MARKETPLACE_OFFERS_ENABLED}
+        />
+        <SummaryChip
+          label="Saves this week"
+          // MOCK-DATA: no per-listing saves aggregate. A dash, not a zero — the
+          // number is unknown, not known to be none.
+          value={summary.savesThisWeek == null ? "—" : formatters.count(summary.savesThisWeek)}
+          reducedMotion={reducedMotion}
+          arrivalDelay={140}
+          disabled
+        />
+      </Animated.View>
+
+      {/* 2. Offers to answer. Hidden entirely when there is nothing waiting —
+             an empty "Offers" heading is worse than no heading. */}
+      {offers.length > 0 ? (
+        <Animated.View style={entrance.styleFor(SELLING_SLOT.offers)}>
+          <SectionHeader
+            title="Offers to answer"
+            actionLabel="All offers"
+            onAction={() => navigation.navigate("Messenger")}
+          />
+          {offers.map((offer) => (
+            <OfferCard
+              key={offer.id}
+              offer={offer}
+              fresh={isOfferFresh(offer, now)}
+              amountText={formatters.currency(offer.amountMinor / 100, {
+                currency: offer.currency
+              })}
+              listPriceText={formatters.currency(offer.listPriceMinor / 100, {
+                currency: offer.currency
+              })}
+              ageText={formatters.relative(new Date(offer.createdAt).toISOString())}
+              acceptLabel={`Accept ${formatters.currency(offer.amountMinor / 100, {
+                currency: offer.currency
+              })}`}
+              onAccept={() => onOfferAction(offer.id, "accept")}
+              onCounter={() => onCounterRequest(offer)}
+              onDecline={() => onOfferAction(offer.id, "decline")}
+              onPressItem={() => onOpenItem(Number(offer.listingId), offer.itemTitle)}
+              reducedMotion={reducedMotion}
+            />
+          ))}
+        </Animated.View>
+      ) : null}
+
+      {/* 3. Your items */}
+      <Animated.View style={entrance.styleFor(SELLING_SLOT.tabs)}>
+        <SectionHeader title="Your items" />
+        <View style={styles.tabRow} accessibilityRole="tablist">
+          {SELLING_TABS.map((entry) => {
+            const selected = entry.key === tab;
+            return (
+              <Pressable
+                key={entry.key}
+                onPress={() => onTabChange(entry.key)}
+                style={[styles.tab, selected && styles.tabActive]}
+                accessibilityRole="tab"
+                accessibilityState={{ selected }}
+                accessibilityLabel={`${entry.label}, ${tabCounts[entry.key]} items`}
+              >
+                <Text style={[styles.tabText, selected && styles.tabTextActive]}>
+                  {entry.label} {tabCounts[entry.key]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </Animated.View>
+
+      <Animated.View style={entrance.styleFor(SELLING_SLOT.items)}>
+        {listingsError ? (
+          <StoreSectionError
+            message={listingsError}
+            onRetry={onRetryListings}
+            reducedMotion={reducedMotion}
+          />
+        ) : empty ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>Nothing listed yet.</Text>
+            <Text style={styles.emptyBody}>
+              List something you no longer need. Buyers nearby will see it straight away, and
+              offers land right at the top of this screen.
+            </Text>
+          </View>
+        ) : items.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>Nothing in this tab.</Text>
+          </View>
+        ) : (
+          items.map((item) => (
+            <SellingRow
+              key={item.id}
+              item={item}
+              formatters={formatters}
+              reducedMotion={reducedMotion}
+              onPress={() => onOpenItem(item.id, item.title)}
+              onEdit={() =>
+                navigation.navigate("SellerStore", { mode: "create", title: "Edit listing" })
+              }
+            />
+          ))
+        )}
+
+        {!expanded && totalInTab > items.length ? (
+          <Pressable
+            onPress={onExpand}
+            style={styles.seeAll}
+            accessibilityRole="button"
+            accessibilityLabel={`See all ${totalInTab} items`}
+          >
+            <Text style={styles.seeAllText}>See all {totalInTab} items ›</Text>
+          </Pressable>
+        ) : null}
+      </Animated.View>
+
+      {/* 5. Boost. Only ever for one item, only ever a stale one. */}
+      {boost ? (
+        <Animated.View style={entrance.styleFor(SELLING_SLOT.boost)}>
+          <BoostCard item={boost} reducedMotion={reducedMotion} />
+        </Animated.View>
+      ) : null}
+
+      {/* 6. More */}
+      <Animated.View style={[styles.moreGrid, entrance.styleFor(SELLING_SLOT.more)]}>
+        <StoreQuickLinkTile
+          icon="chatbubble-ellipses-outline"
+          label="Buyer messages"
+          // MOCK-DATA: no unread counter scoped to marketplace conversations.
+          subtitle="Open your inbox"
+          onPress={() => navigation.navigate("Messenger")}
+          reducedMotion={reducedMotion}
+        />
+        <StoreQuickLinkTile
+          icon="star-outline"
+          label="Seller rating"
+          // MOCK-DATA: no seller review aggregate on any endpoint.
+          subtitle="No rating data yet"
+          disabled
+          reducedMotion={reducedMotion}
+        />
+        <StoreQuickLinkTile
+          icon="location-outline"
+          label="Meetup spots"
+          // MOCK-DATA: no meetup-spot storage. Kept and disabled rather than
+          // removed, because the safety affordance should not quietly vanish.
+          subtitle="Not available yet"
+          disabled
+          reducedMotion={reducedMotion}
+        />
+        <StoreQuickLinkTile
+          icon="receipt-outline"
+          label="Sold history"
+          subtitle="Your sales and payouts"
+          onPress={() => navigation.navigate("SellerStore", { mode: "orders", title: "Sales" })}
+          reducedMotion={reducedMotion}
+        />
+      </Animated.View>
+
+      {/* 7. Footer CTA */}
+      <Animated.View style={entrance.styleFor(SELLING_SLOT.cta)}>
+        <Animated.View style={ctaPress.style}>
+          <Pressable
+            onPress={onCompose}
+            onPressIn={ctaPress.onPressIn}
+            onPressOut={ctaPress.onPressOut}
+            accessibilityRole="button"
+            accessibilityLabel="List an item"
+          >
+            <LinearGradient
+              colors={[storeLight.cta.from, storeLight.cta.to]}
+              style={styles.footerCta}
+            >
+              <Text style={[styles.footerCtaText, { color: storeLight.cta.text }]}>
+                ＋ List an item
+              </Text>
+            </LinearGradient>
+          </Pressable>
+        </Animated.View>
+      </Animated.View>
+    </ScrollView>
+  );
+}
+
+/**
+ * One row in "Your items".
+ *
+ * The flag line is the row's only editorial claim, and each of the three states
+ * is derived from something real: `attention` from sales in the last seven days,
+ * `stale` from `created_at`, `rate_buyer` from a completed order. When none of
+ * them holds, the line is absent — not filled with an encouraging guess.
+ */
+function SellingRow({
+  item,
+  formatters,
+  reducedMotion,
+  onPress,
+  onEdit
+}: {
+  item: SellingItem;
+  formatters: Formatters;
+  reducedMotion: boolean;
+  onPress: () => void;
+  onEdit: () => void;
+}) {
+  const press = useStorePress(reducedMotion, 0.99);
+
+  /**
+   * The SOLD overlay wipes in on the transition, not on every render. The hook
+   * watches for the `false → true` edge, so a row already sold when the list
+   * first paints shows the banner at rest, and a row that sells while the list
+   * is on screen wipes in place — which is the whole point: no reload, the row
+   * the seller is already looking at changes underneath them.
+   */
+  const soldWipe = useMarketplaceSoldWipe(reducedMotion, item.sold);
+
+  // Engagement is entirely unbacked. Rather than "0 views · 0 saves", which is a
+  // claim, the line shows only what exists — and disappears when nothing does.
+  const engagement = [
+    item.views == null ? null : `${formatters.count(item.views)} views`,
+    item.saves == null ? null : `${formatters.count(item.saves)} saves`,
+    item.offerCount == null ? null : `${formatters.count(item.offerCount)} offers`
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <Animated.View style={press.style}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
+        style={styles.row}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.title}, ${item.priceLabel}${item.sold ? ", sold" : ""}`}
+      >
+        <View style={styles.thumbWrap}>
+          {item.thumbnailUrl ? (
+            <Image source={{ uri: item.thumbnailUrl }} style={styles.thumb} resizeMode="cover" />
+          ) : (
+            <View style={[styles.thumb, styles.thumbFallback]} />
+          )}
+          {item.sold ? (
+            <Animated.View
+              style={[
+                styles.soldBanner,
+                {
+                  opacity: soldWipe,
+                  transform: [
+                    {
+                      // Scales along the row's width from the left edge, so it
+                      // reads as a banner being stamped across the thumbnail
+                      // rather than fading in from nowhere.
+                      scaleX: soldWipe
+                    }
+                  ]
+                }
+              ]}
+            >
+              <Text style={styles.soldBannerText}>SOLD</Text>
+            </Animated.View>
+          ) : null}
+        </View>
+
+        <View style={styles.rowBody}>
+          <Text style={styles.rowTitle} numberOfLines={1}>
+            {item.title}
+          </Text>
+          <View style={styles.priceLine}>
+            <Text style={styles.rowPrice}>{item.priceLabel}</Text>
+            {item.originalPriceLabel ? (
+              <Text style={styles.rowWas}>{item.originalPriceLabel}</Text>
+            ) : null}
+          </View>
+          {engagement ? <Text style={styles.rowMeta}>{engagement}</Text> : null}
+
+          {item.flag === "attention" ? (
+            <Text style={styles.flagGood}>Getting attention — priced well</Text>
+          ) : item.flag === "stale" ? (
+            <Text style={styles.flagWarn}>Listing is getting stale · Renew or drop price</Text>
+          ) : item.flag === "rate_buyer" ? (
+            <Pressable
+              onPress={onEdit}
+              style={styles.ratePill}
+              accessibilityRole="button"
+              accessibilityLabel={`Leave a rating for the buyer of ${item.title}`}
+            >
+              <Text style={styles.ratePillText}>Rate buyer</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        <Pressable
+          onPress={onEdit}
+          style={styles.editButton}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`Edit ${item.title}`}
+        >
+          <Text style={styles.editText}>Edit</Text>
+        </Pressable>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+/**
+ * The Boost promo.
+ *
+ * The button carries no price. The brief asks for "Boost $X.XX", but nothing in
+ * this app prices a boost — there is no product, no SKU and no payment path for
+ * one — and a made-up price on a button that takes money is the single worst
+ * place to invent a number. It reads "See boost options" and is disabled behind
+ * `MARKETPLACE_BOOST_ENABLED` until a real price and the existing payment
+ * infrastructure are wired to it.
+ */
+function BoostCard({ item, reducedMotion }: { item: SellingItem; reducedMotion: boolean }) {
+  const bob = useStoreAmbient(MARKETPLACE_AMBIENT.rocketBob, reducedMotion, {
+    resetTo: 0,
+    pingPong: true
+  });
+
+  return (
+    <LinearGradient
+      colors={[marketplaceLight.boost.from, marketplaceLight.boost.to]}
+      style={styles.boostCard}
+    >
+      <Animated.View
+        style={{
+          transform: [{ translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [2, -4] }) }]
+        }}
+        accessibilityElementsHidden
+        importantForAccessibility="no"
+      >
+        <Ionicons name="rocket-outline" size={22} color={storeLight.status.warning} />
+      </Animated.View>
+      <View style={styles.boostBody}>
+        <Text style={styles.boostTitle} numberOfLines={2}>
+          “{item.title}” has been quiet
+        </Text>
+        <Text style={styles.boostSub}>
+          A boost puts it at the top of nearby feeds and marks it Featured for a few days.
+        </Text>
+      </View>
+      <Pressable
+        disabled={!MARKETPLACE_BOOST_ENABLED}
+        style={[styles.boostButton, !MARKETPLACE_BOOST_ENABLED && styles.boostButtonOff]}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !MARKETPLACE_BOOST_ENABLED }}
+        accessibilityLabel={
+          MARKETPLACE_BOOST_ENABLED
+            ? `See boost options for ${item.title}`
+            : "Boost is not available yet"
+        }
+        onPress={() => undefined}
+      >
+        <Text style={styles.boostButtonText}>
+          {MARKETPLACE_BOOST_ENABLED ? "See boost options" : "Coming soon"}
+        </Text>
+      </Pressable>
+    </LinearGradient>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Buying mode
+ * ------------------------------------------------------------------ */
+
+function BuyingPane({
+  loading,
+  refreshing,
+  onRefresh,
+  entrance,
+  reducedMotion,
+  categories,
+  category,
+  onCategoryChange,
+  items,
+  total,
+  onShowMore,
+  feedError,
+  onRetryFeed,
+  savedSet,
+  visibleSet,
+  confirmingId,
+  onToggleSave,
+  onAction,
+  onOpenItem,
+  onViewableItemsChanged,
+  bottomPad
+}: {
+  loading: boolean;
+  refreshing: boolean;
+  onRefresh: () => void;
+  entrance: ReturnType<typeof useStoreEntrance>;
+  reducedMotion: boolean;
+  categories: readonly { key: string; label: string }[];
+  category: string;
+  onCategoryChange: (next: string) => void;
+  items: readonly BuyingItem[];
+  total: number;
+  onShowMore: () => void;
+  feedError: string | null;
+  onRetryFeed: () => void;
+  savedSet: Set<number>;
+  visibleSet: Set<number>;
+  confirmingId: number | null;
+  onToggleSave: (item: BuyingItem) => void;
+  onAction: (item: BuyingItem) => void;
+  onOpenItem: (listingId: number, title: string) => void;
+  onViewableItemsChanged: (info: { viewableItems: ViewToken[] }) => void;
+  bottomPad: number;
+}) {
+  const rail = useMemo(
+    () => [{ key: CATEGORY_ALL, label: "For you" }, ...categories],
+    [categories]
+  );
+
+  return (
+    <View style={styles.buyingRoot}>
+      {/* The rail sits outside the list on purpose: the brief requires that a
+          feed failure never hide the category rail or the search field, and the
+          reliable way to guarantee that is for them not to be part of the thing
+          that failed. */}
+      <Animated.View style={entrance.styleFor(BUYING_SLOT.rail)}>
+        <CategoryChipRail categories={rail} active={category} onChange={onCategoryChange} />
+      </Animated.View>
+
+      {loading ? (
+        <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomPad }]}>
+          <View style={styles.gridSkeleton}>
+            {[0, 1, 2, 3, 4, 5].map((key) => (
+              <View key={key} style={styles.gridCardSkeleton}>
+                <StoreSkeletonBlock width="100%" height={140} reducedMotion={reducedMotion} />
+                <StoreSkeletonBlock width="45%" height={14} reducedMotion={reducedMotion} />
+                <StoreSkeletonBlock width="85%" height={12} reducedMotion={reducedMotion} />
+                <StoreSkeletonBlock width="60%" height={10} reducedMotion={reducedMotion} />
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      ) : (
+        <FlatList
+          data={items}
+          keyExtractor={(item) => String(item.id)}
+          numColumns={2}
+          columnWrapperStyle={styles.gridRow}
+          contentContainerStyle={[styles.scroll, { paddingBottom: bottomPad }]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={storeLight.text.link}
+            />
+          }
+          // Virtualization plus a viewability feed into every card's `visible`
+          // prop, which is what parks the ambient glows off-screen.
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={5}
+          removeClippedSubviews
+          onViewableItemsChanged={onViewableItemsChanged}
+          ListHeaderComponent={
+            <View>
+              <Animated.View style={entrance.styleFor(BUYING_SLOT.alert)}>
+                {/* MOCK-DATA: saved searches have no backend, so this never
+                    renders. Wired rather than removed so turning the data on is
+                    a data change, not a UI change. */}
+                <SavedSearchAlert
+                  searchCount={0}
+                  matchCount={0}
+                  onPress={() => undefined}
+                  reducedMotion={reducedMotion}
+                />
+              </Animated.View>
+              <SectionHeader title="Just listed near you" />
+            </View>
+          }
+          ListEmptyComponent={
+            feedError ? (
+              <StoreSectionError
+                message={feedError}
+                onRetry={onRetryFeed}
+                reducedMotion={reducedMotion}
+              />
+            ) : (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyTitle}>Nothing nearby right now.</Text>
+                <Text style={styles.emptyBody}>
+                  {/* MOCK-DATA: no radius setting exists to widen, so this
+                      cannot offer the one-tap expansion the brief describes. */}
+                  Try another category, or pull down to check again.
+                </Text>
+              </View>
+            )
+          }
+          ListFooterComponent={
+            items.length < total ? (
+              <Animated.View style={entrance.styleFor(BUYING_SLOT.more)}>
+                <Pressable
+                  onPress={onShowMore}
+                  style={styles.showMore}
+                  accessibilityRole="button"
+                  accessibilityLabel="Show more nearby items"
+                >
+                  <Text style={styles.showMoreText}>Show more nearby</Text>
+                </Pressable>
+              </Animated.View>
+            ) : null
+          }
+          renderItem={({ item, index }) => (
+            <View style={styles.gridCell}>
+              <ItemGridCard
+                id={String(item.id)}
+                title={item.title}
+                priceText={item.priceLabel}
+                originalPriceText={item.originalPriceLabel}
+                imageUrl={item.imageUrl}
+                badge={item.badge}
+                metaText={metaLineFor(item)}
+                metaIsFulfillment={item.distanceMeters == null}
+                saved={savedSet.has(item.id)}
+                onToggleSave={() => onToggleSave(item)}
+                onPress={() => onOpenItem(item.id, item.title)}
+                action={
+                  item.action
+                    ? {
+                        variant: item.action,
+                        label: item.action === "cart" ? "Add to cart" : "Make offer",
+                        accessibilityLabel:
+                          item.action === "cart"
+                            ? `Add ${item.title} to cart, ${item.priceLabel}`
+                            : `Make an offer on ${item.title}, listed at ${item.priceLabel}`,
+                        confirming: confirmingId === item.id,
+                        onPress: () => onAction(item)
+                      }
+                    : null
+                }
+                visible={visibleSet.has(item.id)}
+                index={index}
+                reducedMotion={reducedMotion}
+              />
+            </View>
+          )}
+        />
+      )}
+    </View>
+  );
+}
+
+/**
+ * The card's meta line.
+ *
+ * Distance first when there is one — there is not, because listings carry no
+ * geo — then the fulfillment promise, which is real and comes from
+ * `delivery_type`. Seller name last. Never a star rating, because no endpoint
+ * aggregates one.
+ */
+function metaLineFor(item: BuyingItem): string {
+  if (item.fulfillment === "platform") return "Ships";
+  if (item.fulfillment === "local") return "Local pickup";
+  if (item.fulfillment === "both") return "Ships or pickup";
+  return item.sellerName;
+}
+
+/* ------------------------------------------------------------------ *
+ * Small pieces
+ * ------------------------------------------------------------------ */
+
+function SectionHeader({
+  title,
+  actionLabel,
+  onAction
+}: {
+  title: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle} accessibilityRole="header">
+        {title}
+      </Text>
+      {actionLabel && onAction ? (
+        <Pressable onPress={onAction} accessibilityRole="button" accessibilityLabel={actionLabel}>
+          <Text style={styles.sectionAction}>{actionLabel} ›</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function SummaryChip({
+  label,
+  value,
+  amber = false,
+  disabled = false,
+  onPress,
+  reducedMotion,
+  arrivalDelay = 0
+}: {
+  label: string;
+  value: string;
+  amber?: boolean;
+  disabled?: boolean;
+  onPress?: () => void;
+  reducedMotion: boolean;
+  arrivalDelay?: number;
+}) {
+  const press = useStorePress(reducedMotion, 0.97);
+
+  /**
+   * The label lands with the card; the number arrives after it. The hook's own
+   * delay already offsets it to half the entrance, and `arrivalDelay` staggers
+   * the three chips against each other so they do not all land at once.
+   */
+  const arrival = useStoreValueArrival(reducedMotion, arrivalDelay);
+  const valueStyle = {
+    opacity: arrival,
+    transform: [
+      {
+        translateY: arrival.interpolate({ inputRange: [0, 1], outputRange: [8, 0] })
+      }
+    ]
+  };
+
+  return (
+    <Animated.View style={[styles.chip, amber && styles.chipAmber, press.style]}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
+        disabled={disabled || !onPress}
+        accessibilityRole={disabled || !onPress ? "text" : "button"}
+        accessibilityLabel={`${label}: ${value}`}
+        style={styles.chipInner}
+      >
+        <Text style={styles.chipLabel} numberOfLines={2}>
+          {label}
+        </Text>
+        <Animated.Text style={[styles.chipValue, amber && styles.chipValueAmber, valueStyle]}>
+          {value}
+        </Animated.Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+/** Heart and cart, for the buying header's top row. */
+function BuyingHeaderCounts({
+  savedCount,
+  cartCount,
+  onSaved,
+  onCart,
+  reducedMotion
+}: {
+  savedCount: number;
+  cartCount: number;
+  onSaved: () => void;
+  onCart: () => void;
+  reducedMotion: boolean;
+}) {
+  const press = useStorePress(reducedMotion, 0.94);
+
+  /**
+   * The brief asks for a confirmation that flies from the card to the cart, or
+   * failing that, a spring on the badge. A flight would need the grid card's
+   * screen position measured and an overlay above the header — real work in a
+   * stack with no shared-element transition — so this is the stated fallback:
+   * the badge springs when the count crosses from nothing to something.
+   */
+  const cartPop = useStoreBadgePop(reducedMotion, cartCount > 0);
+  const savedPop = useStoreBadgePop(reducedMotion, savedCount > 0);
+
+  return (
+    <View style={styles.headerCounts}>
+      <Pressable
+        onPress={onSaved}
+        style={styles.headerIcon}
+        hitSlop={6}
+        accessibilityRole="button"
+        accessibilityLabel={`Saved items, ${savedCount} saved`}
+      >
+        <Ionicons name="heart-outline" size={22} color={storeLight.text.onDark} />
+        {savedCount > 0 ? (
+          <Animated.View style={[styles.headerBadge, { transform: [{ scale: savedPop }] }]}>
+            <Text style={styles.headerBadgeText}>{savedCount > 99 ? "99+" : savedCount}</Text>
+          </Animated.View>
+        ) : null}
+      </Pressable>
+      <Animated.View style={press.style}>
+        <Pressable
+          onPress={onCart}
+          onPressIn={press.onPressIn}
+          onPressOut={press.onPressOut}
+          style={styles.headerIcon}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel={`Cart, ${cartCount} items`}
+        >
+          <Ionicons name="cart-outline" size={22} color={storeLight.text.onDark} />
+          {cartCount > 0 ? (
+            <Animated.View style={[styles.headerBadge, { transform: [{ scale: cartPop }] }]}>
+              <Text style={styles.headerBadgeText}>{cartCount > 99 ? "99+" : cartCount}</Text>
+            </Animated.View>
+          ) : null}
+        </Pressable>
+      </Animated.View>
+    </View>
+  );
+}
+
+/**
+ * The location strip.
+ *
+ * MOCK-DATA: there is no stored radius, no city, and no geo on a listing. The
+ * strip says so plainly rather than printing "Within 10 mi of San Francisco",
+ * which would be a fabricated claim about where the user is and what they are
+ * being shown.
+ */
+function LocationStrip() {
+  return (
+    <View style={styles.locationStrip}>
+      <Ionicons name="location-outline" size={14} color={storeLight.text.onDarkMuted} />
+      <Text style={styles.locationText}>Location not set — showing all listings</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: storeLight.bg.page },
+  panes: { flex: 1 },
+  pane: { ...StyleSheet.absoluteFillObject },
+  /** Kept mounted so each mode's scroll offset survives the toggle. */
+  paneHidden: { display: "none" },
+  headerBelow: { gap: 8, marginTop: 10 },
+  headerCounts: { flexDirection: "row", alignItems: "center" },
+  headerIcon: {
+    minWidth: storeLight.size.tapTarget,
+    minHeight: storeLight.size.tapTarget,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  headerBadge: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 3,
+    borderRadius: 8,
+    backgroundColor: storeLight.cta.from,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  headerBadgeText: { fontSize: 10, fontWeight: "800", color: storeLight.text.primary },
+  locationStrip: { flexDirection: "row", alignItems: "center", gap: 5 },
+  locationText: { fontSize: 12, color: storeLight.text.onDarkMuted },
+
+  scroll: { padding: storeLight.space.card, gap: 12 },
+  buyingRoot: { flex: 1 },
+
+  chipRow: { flexDirection: "row", gap: 8 },
+  chip: {
+    flex: 1,
+    borderRadius: storeLight.radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: storeLight.border.hairline,
+    backgroundColor: storeLight.bg.card
+  },
+  chipAmber: {
+    backgroundColor: marketplaceLight.boost.from,
+    borderColor: marketplaceLight.boost.border
+  },
+  chipInner: { minHeight: 72, padding: 10, justifyContent: "space-between" },
+  chipLabel: { fontSize: 11, color: storeLight.text.muted, fontWeight: "600" },
+  chipValue: { fontSize: 22, fontWeight: "800", color: storeLight.text.primary },
+  chipValueAmber: { color: storeLight.status.warning },
+  chipSkeleton: {
+    flex: 1,
+    gap: 8,
+    minHeight: 72,
+    padding: 10,
+    borderRadius: storeLight.radius.card,
+    backgroundColor: storeLight.bg.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: storeLight.border.hairline,
+    justifyContent: "center"
+  },
+  offerSkeleton: {
+    gap: 8,
+    padding: storeLight.space.card,
+    borderRadius: storeLight.radius.card,
+    backgroundColor: storeLight.bg.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: storeLight.border.hairline
+  },
+
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 32
+  },
+  sectionTitle: { fontSize: 16, fontWeight: "800", color: storeLight.text.primary },
+  sectionAction: { fontSize: 13, fontWeight: "700", color: storeLight.text.link },
+
+  tabRow: { flexDirection: "row", gap: 6, marginTop: 4 },
+  tab: {
+    minHeight: 34,
+    paddingHorizontal: 12,
+    borderRadius: storeLight.radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: storeLight.border.hairline,
+    backgroundColor: storeLight.bg.card,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  tabActive: {
+    backgroundColor: marketplaceLight.chip.activeBg,
+    borderColor: marketplaceLight.chip.activeBg
+  },
+  tabText: { fontSize: 12, fontWeight: "700", color: storeLight.text.muted },
+  tabTextActive: { color: marketplaceLight.chip.activeText },
+
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: storeLight.space.card,
+    borderRadius: storeLight.radius.card,
+    backgroundColor: storeLight.bg.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: storeLight.border.hairline
+  },
+  thumbWrap: { width: 64, height: 64, borderRadius: storeLight.radius.thumb, overflow: "hidden" },
+  thumb: { width: 64, height: 64 },
+  thumbFallback: { backgroundColor: storeLight.bg.skeleton },
+  soldBanner: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: marketplaceLight.badge.soldOverlay
+  },
+  soldBannerText: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1,
+    color: marketplaceLight.badge.soldText
+  },
+  rowBody: { flex: 1, gap: 2 },
+  rowTitle: { fontSize: 14, fontWeight: "700", color: storeLight.text.primary },
+  priceLine: { flexDirection: "row", alignItems: "baseline", gap: 6 },
+  rowPrice: { fontSize: 14, fontWeight: "800", color: storeLight.text.primary },
+  rowWas: {
+    fontSize: 12,
+    color: storeLight.text.muted,
+    textDecorationLine: "line-through"
+  },
+  rowMeta: { fontSize: 11, color: storeLight.text.muted },
+  flagGood: { fontSize: 11, fontWeight: "700", color: storeLight.status.success },
+  flagWarn: { fontSize: 11, fontWeight: "700", color: storeLight.status.warning },
+  ratePill: {
+    alignSelf: "flex-start",
+    minHeight: 30,
+    paddingHorizontal: 10,
+    justifyContent: "center",
+    borderRadius: storeLight.radius.pill,
+    backgroundColor: storeLight.status.success
+  },
+  ratePillText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
+  editButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  editText: { fontSize: 13, fontWeight: "700", color: storeLight.text.link },
+
+  seeAll: { minHeight: 44, justifyContent: "center", paddingHorizontal: 4 },
+  seeAllText: { fontSize: 13, fontWeight: "700", color: storeLight.text.link },
+
+  emptyCard: {
+    gap: 6,
+    padding: storeLight.space.card,
+    borderRadius: storeLight.radius.card,
+    backgroundColor: storeLight.bg.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: storeLight.border.hairline
+  },
+  emptyTitle: { fontSize: 15, fontWeight: "800", color: storeLight.text.primary },
+  emptyBody: { fontSize: 13, lineHeight: 19, color: storeLight.text.muted },
+
+  boostCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: storeLight.space.card,
+    borderRadius: storeLight.radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: marketplaceLight.boost.border
+  },
+  boostBody: { flex: 1, gap: 2 },
+  boostTitle: { fontSize: 13, fontWeight: "800", color: storeLight.text.primary },
+  boostSub: { fontSize: 11, lineHeight: 16, color: storeLight.text.muted },
+  boostButton: {
+    minHeight: 36,
+    paddingHorizontal: 12,
+    borderRadius: storeLight.radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: storeLight.cta.from
+  },
+  boostButtonOff: { backgroundColor: storeLight.bg.skeleton },
+  boostButtonText: { fontSize: 12, fontWeight: "800", color: storeLight.text.primary },
+
+  moreGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+
+  gridRow: { gap: marketplaceLight.grid.gutter },
+  gridCell: { flex: 1 },
+  gridSkeleton: { flexDirection: "row", flexWrap: "wrap", gap: marketplaceLight.grid.gutter },
+  gridCardSkeleton: {
+    width: "47%",
+    gap: 6,
+    padding: 8,
+    borderRadius: marketplaceLight.grid.radius,
+    backgroundColor: storeLight.bg.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: storeLight.border.hairline
+  },
+
+  showMore: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: storeLight.radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: storeLight.border.hairline,
+    backgroundColor: storeLight.bg.card
+  },
+  showMoreText: { fontSize: 13, fontWeight: "700", color: storeLight.text.link },
+
+  footerCta: {
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: storeLight.radius.pill
+  },
+  footerCtaText: { fontSize: 15, fontWeight: "800" },
+
+  /* Counter sheet */
+  sheetScrim: { flex: 1, backgroundColor: "rgba(19,26,34,0.5)" },
+  sheet: {
+    backgroundColor: storeLight.bg.card,
+    borderTopLeftRadius: storeLight.radius.card,
+    borderTopRightRadius: storeLight.radius.card,
+    padding: storeLight.space.gutter,
+    paddingBottom: storeLight.space.gutter * 2,
+    gap: 10
+  },
+  sheetTitle: { fontSize: 18, fontWeight: "800", color: storeLight.text.primary },
+  sheetSub: { fontSize: 13, lineHeight: 19, color: storeLight.text.muted },
+  sheetLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: storeLight.text.primary,
+    marginTop: 4
+  },
+  sheetInput: {
+    borderWidth: 1,
+    borderColor: storeLight.border.hairline,
+    borderRadius: storeLight.radius.control,
+    paddingHorizontal: 12,
+    // Tall enough to clear the 44pt target on its own, without a hitSlop that
+    // would not apply to a text field anyway.
+    minHeight: storeLight.size.tapTarget,
+    fontSize: 20,
+    fontWeight: "700",
+    color: storeLight.text.primary
+  },
+  sheetActions: { flexDirection: "row", gap: 10, marginTop: 6 },
+  sheetButton: {
+    flex: 1,
+    minHeight: storeLight.size.tapTarget,
+    borderRadius: storeLight.radius.pill,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  sheetCancel: {
+    borderWidth: 1,
+    borderColor: storeLight.border.secondaryButton
+  },
+  sheetCancelText: { fontSize: 15, fontWeight: "700", color: storeLight.text.primary },
+  sheetSend: { backgroundColor: storeLight.status.success },
+  // Opacity rather than a grey fill, so the button stays recognisably the same
+  // control it will be once the amount is valid.
+  sheetSendOff: { opacity: 0.45 },
+  sheetSendText: { fontSize: 15, fontWeight: "800", color: storeLight.text.onDark }
+});

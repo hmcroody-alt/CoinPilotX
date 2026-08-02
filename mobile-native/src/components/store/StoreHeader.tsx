@@ -12,7 +12,7 @@
  * be a quietly wrong screen.
  */
 
-import { forwardRef } from "react";
+import { forwardRef, type ReactNode } from "react";
 import {
   Animated,
   Pressable,
@@ -44,6 +44,24 @@ export type StoreHeaderProps = {
   unreadCount: number;
   searchPlaceholder: string;
   reducedMotion: boolean;
+  /**
+   * Extra controls for the top row, placed between the title and the bell.
+   *
+   * The Marketplace screen's buying mode needs a saved-items heart and a cart
+   * badge up here. They are passed in rather than built in because they are not
+   * things a *store* header has — Store passes nothing and renders exactly as it
+   * did before this prop existed.
+   */
+  accessories?: ReactNode;
+  /**
+   * Rendered below the search row, still inside the navy gradient. The
+   * Marketplace mode toggle and location strip live here: they belong to the
+   * header visually, and putting them in the scroll view would let them slide
+   * away from the search field they modify.
+   */
+  below?: ReactNode;
+  /** Hides the bell entirely — buying mode has no seller notifications. */
+  hideNotifications?: boolean;
 };
 
 export const StoreHeader = forwardRef<TextInputType, StoreHeaderProps>(function StoreHeader(
@@ -56,7 +74,10 @@ export const StoreHeader = forwardRef<TextInputType, StoreHeaderProps>(function 
     onNotifications,
     unreadCount,
     searchPlaceholder,
-    reducedMotion
+    reducedMotion,
+    accessories,
+    below,
+    hideNotifications = false
   },
   ref
 ) {
@@ -111,10 +132,14 @@ export const StoreHeader = forwardRef<TextInputType, StoreHeaderProps>(function 
           {title}
         </Text>
 
+        {accessories}
+
         <Pressable
           onPress={onNotifications}
-          style={styles.iconButton}
+          style={[styles.iconButton, hideNotifications && styles.hidden]}
           accessibilityRole="button"
+          accessibilityElementsHidden={hideNotifications}
+          importantForAccessibility={hideNotifications ? "no-hide-descendants" : "auto"}
           accessibilityLabel={
             unreadCount > 0
               ? `Notifications, ${unreadCount} unread`
@@ -174,6 +199,8 @@ export const StoreHeader = forwardRef<TextInputType, StoreHeaderProps>(function 
           </Pressable>
         </Animated.View>
       </View>
+
+      {below}
     </LinearGradient>
   );
 });
@@ -239,6 +266,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center"
   },
+  /** `display: none` rather than a conditional render, so the row's spacing is
+      identical in both modes and the title does not shift when modes swap. */
+  hidden: { display: "none" },
   title: {
     flex: 1,
     fontSize: 20,

@@ -12,11 +12,12 @@ import { AccountCenterScreen } from "../screens/AccountCenterScreen";
 import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScreen";
 import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
 import { AlertManagementScreen } from "../screens/AlertManagementScreen";
-import { BusinessOsAdvertisingScreen } from "../screens/BusinessOsAdvertisingScreen";
+import { AdvertisingRoute } from "../screens/AdvertisingRoute";
 import { BusinessOsInsightsScreen } from "../screens/BusinessOsInsightsScreen";
 import { BusinessOsPaymentsScreen } from "../screens/BusinessOsPaymentsScreen";
 import { BusinessOsScreen } from "../screens/BusinessOsScreen";
 import { BusinessProfileScreen } from "../screens/BusinessProfileScreen";
+import { MarketplaceManagerScreen } from "../screens/MarketplaceManagerScreen";
 import { BuyerOrdersScreen } from "../screens/BuyerOrdersScreen";
 import { CameraStudioScreen } from "../screens/CameraStudioScreen";
 import { CallScreen } from "../screens/CallScreen";
@@ -282,7 +283,19 @@ export function AppNavigator() {
       <Stack.Screen name="BusinessOs" component={BusinessOsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOs") })} />
       {/* Draws its own header (back chevron, title, live badge), so the stack header is off. */}
       <Stack.Screen name="BusinessProfile" component={BusinessProfileScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="BusinessOsAdvertising" component={BusinessOsAdvertisingScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsAdvertising") })} />
+      {/* Also draws its own navy header, with the search field and mode toggle in it. */}
+      <Stack.Screen name="MarketplaceManager" component={MarketplaceManagerScreen} options={{ headerShown: false }} />
+      {/* `AdvertisingRoute` picks the rebuilt ads manager by default and the
+          previous screen for `mode: "classic"`. The manager draws its own navy
+          header, so the stack header is hidden for it and kept for classic. */}
+      <Stack.Screen
+        name="BusinessOsAdvertising"
+        component={AdvertisingRoute}
+        options={({ route }) => ({
+          title: route.params?.title || t("common:screens.businessOsAdvertising"),
+          headerShown: route.params?.mode === "classic"
+        })}
+      />
       <Stack.Screen name="BusinessOsInsights" component={BusinessOsInsightsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsInsights") })} />
       <Stack.Screen name="BusinessOsPayments" component={BusinessOsPaymentsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsPayments") })} />
       {/* `SellerStoreRoute` picks the rebuilt dashboard for `mode: "dashboard"`

@@ -34,6 +34,24 @@ export type MarketplaceListing = {
   gallery_json?: string | string[];
   media?: PulseMedia[];
   media_assets?: PulseMedia[];
+  /**
+   * The four fields below live in `marketplace_listings` and were, until the
+   * Marketplace screen needed them, absent from every SELECT — so they never
+   * reached a client despite being real data. They are now selected by
+   * `/marketplace/search`, `/seller/listings` and the seller-store query, and
+   * `pulse_marketplace_listing_payload` spreads the row, so they arrive intact.
+   *
+   * They are optional because a cached payload written before that change has
+   * none of them. Every reader must treat absence as "unknown" rather than as a
+   * default — an item with no `created_at` is not new, and one with no
+   * `delivery_type` gets no action button rather than a guessed one.
+   */
+  created_at?: string;
+  updated_at?: string;
+  /** 1 when the seller has an active Boost. Already drives search ordering. */
+  featured?: number | boolean;
+  /** 'digital' | 'physical' | 'pickup' | 'shipping' — drives the buying-card action. */
+  delivery_type?: string;
 };
 
 export type MarketplaceSearchResponse = {

@@ -1,33 +1,77 @@
-import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+/**
+ * Advertising — the two-sided ads manager.
+ *
+ * One screen, two ad products switched by the header ModeToggle without a
+ * navigation push:
+ *
+ *   • MARKETPLACE ADS (gold = money) is fully backed. Accounts, campaigns,
+ *     analytics and the wallet come from the live `/api/pulse/ads/*` surface via
+ *     `loadAdsMarketplace`. Every money figure is read from the server and
+ *     formatted — nothing is computed on the client and presented as truth.
+ *
+ *   • POST ADS (violet = content) is an unbacked, flag-gated preview. Behind
+ *     `EXPO_PUBLIC_ADS_POST_MODE` it shows clearly-tagged MOCK-DATA promotions
+ *     and one suggestion; with the flag off it says the product is coming rather
+ *     than inventing content. It never shows a fabricated balance or spend — the
+ *     one real wallet chip funds both modes and lives on the header.
+ *
+ * Both mode panes stay mounted (the inactive one is `display:'none'`) so each
+ * keeps its own scroll position across a swap, and the last mode is persisted so
+ * the screen re-opens where the advertiser left it. This view derives campaign
+ * controls from `availableAdCampaignActions`, so no button offers a transition
+ * the backend would reject.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   AD_BUDGET_TYPES,
   AD_CAMPAIGN_OBJECTIVES,
-  AdAccount,
   AdBudgetType,
   AdCampaign,
   AdCampaignAction,
   AdCampaignObjective,
-  adAccountCanTransact,
-  availableAdCampaignActions,
   createAdAccount,
   createAdCampaign,
-  formatCampaignBudget,
   formatCents,
   formatObjective,
-  listAdAccounts,
-  listAdCampaigns,
-  loadCachedAdAccounts,
-  loadCachedAdCampaigns,
   runAdCampaignAction
 } from "../api/businessOs";
-import { Panel } from "../components/Panel";
-import { Screen } from "../components/Screen";
-import { colors } from "../theme/colors";
+import {
+  ADS_POST_MODE_FLAG,
+  AdsMarketplaceModel,
+  AdsMode,
+  adsPostModeEnabled,
+  availableAdCampaignActions,
+  campaignBlockedByVerification,
+  campaignPhase,
+  campaignPhaseLabel,
+  campaignPhaseTone,
+  loadAdsMarketplace,
+  loadMockPostPromotions,
+  loadMockSuggestion,
+  promotionPhaseLabel,
+  promotionPhaseTone
+} from "../api/adsDashboard";
+import {
+  AdsHeader,
+  CampaignCard,
+  CampaignCardAction,
+  CampaignCardBudget,
+  PromotedPostCard,
+  SpendBarChart,
+  SuggestionCard
+} from "../components/ads";
+import { readJsonCache, writeJsonCache } from "../core/cache";
+import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
+import { adsLight } from "../theme/adsLight";
 
 type Props = {
-  navigation?: { navigate: (...args: any[]) => void };
+  navigation?: { navigate: (...args: any[]) => void; goBack?: () => void };
 };
+
+const MODE_CACHE_KEY = "ads.lastMode.v1";
 
 const ACTION_LABELS: Record<AdCampaignAction, string> = {
   pause: "Pause",
@@ -38,66 +82,113 @@ const ACTION_LABELS: Record<AdCampaignAction, string> = {
   complete: "Mark complete"
 };
 
+/** Weekday initials for the last seven days, oldest first, ending today. */
+function lastSevenDayLabels(): string[] {
+  const letters = ["S", "M", "T", "W", "T", "F", "S"];
+  const today = new Date().getDay();
+  const out: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    out.push(letters[(today - i + 7) % 7]);
+  }
+  return out;
+}
+
+/** Compact reach, e.g. 12400 → "12.4k reached". Preview-only figures. */
+function formatReach(n: number): string {
+  if (n >= 1000) {
+    const k = (n / 1000).toFixed(1).replace(/\.0$/, "");
+    return `${k}k reached`;
+  }
+  return `${n} reached`;
+}
+
 /**
- * Advertising inside Business OS.
- *
- * Bound to the live `/api/pulse/ads/*` surface. Campaign controls are derived
- * from the campaign's current status via `availableAdCampaignActions`, so the
- * screen only offers transitions the backend will accept — no button here can
- * be tapped into a guaranteed error.
+ * A campaign's budget row for the card, or null when no budget is set. Reads the
+ * daily or lifetime figure the backend stored and the real spent figure; the
+ * fraction is a pacing ratio for the bar, never presented as a money truth.
  */
-export function BusinessOsAdvertisingScreen(_props: Props) {
-  const [accounts, setAccounts] = useState<AdAccount[]>([]);
-  const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
+function deriveCampaignBudget(campaign: AdCampaign): CampaignCardBudget | null {
+  const isDaily = campaign.budget_type === "daily";
+  const budgetCents = Number((isDaily ? campaign.daily_budget_cents : campaign.lifetime_budget_cents) || 0);
+  if (budgetCents <= 0) return null;
+  const spent = Number(campaign.spent_cents || 0);
+  const fraction = Math.min(1, spent / budgetCents);
+  return {
+    spentLabel: formatCents(spent),
+    budgetLabel: `${formatCents(budgetCents)}${isDaily ? "/day" : ""}`,
+    fraction,
+    hot: fraction >= 0.85
+  };
+}
+
+export function BusinessOsAdvertisingScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
+  const reducedMotion = useLogiNexusReducedMotion();
+  const postEnabled = useMemo(() => adsPostModeEnabled(), []);
+
+  const [model, setModel] = useState<AdsMarketplaceModel | null>(null);
   const [loading, setLoading] = useState(true);
-  const [offline, setOffline] = useState(false);
+  const [mode, setMode] = useState<AdsMode>("marketplace");
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
+  const [suggestionDismissed, setSuggestionDismissed] = useState(false);
 
   const [businessName, setBusinessName] = useState("");
   const [businessEmail, setBusinessEmail] = useState("");
-
   const [campaignName, setCampaignName] = useState("");
   const [objective, setObjective] = useState<AdCampaignObjective>("awareness");
   const [budgetType, setBudgetType] = useState<AdBudgetType>("daily");
   const [budgetDollars, setBudgetDollars] = useState("");
-  const [selectedAccountId, setSelectedAccountId] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setOffline(false);
-    const [accountResult, campaignResult] = await Promise.allSettled([listAdAccounts(), listAdCampaigns()]);
-
-    if (accountResult.status === "fulfilled") {
-      setAccounts(accountResult.value.accounts);
-      setSelectedAccountId((current) => current || accountResult.value.accounts[0]?.id || 0);
-    } else {
-      const cached = await loadCachedAdAccounts().catch(() => []);
-      setAccounts(cached);
-      setSelectedAccountId((current) => current || cached[0]?.id || 0);
+    try {
+      const next = await loadAdsMarketplace();
+      setModel(next);
+    } finally {
+      setLoading(false);
     }
-
-    if (campaignResult.status === "fulfilled") {
-      setCampaigns(campaignResult.value.campaigns);
-    } else {
-      setCampaigns(await loadCachedAdCampaigns().catch(() => []));
-    }
-
-    if (accountResult.status === "rejected" && campaignResult.status === "rejected") {
-      setOffline(true);
-      setMessage(
-        accountResult.reason instanceof Error ? accountResult.reason.message : "Advertising could not reach PulseSoc."
-      );
-    }
-
-    setLoading(false);
   }, []);
 
   useEffect(() => {
     load().catch(() => undefined);
   }, [load]);
 
+  // Restore the last mode. Post is only restored when the preview flag is on, so
+  // a build without the flag never lands the user on the unavailable product.
+  useEffect(() => {
+    let active = true;
+    readJsonCache<{ mode: AdsMode }>(MODE_CACHE_KEY, (value) => value)
+      .then((cached) => {
+        if (!active || !cached) return;
+        if (cached.mode === "post" && !postEnabled) return;
+        if (cached.mode === "post" || cached.mode === "marketplace") setMode(cached.mode);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [postEnabled]);
+
+  const changeMode = useCallback((next: AdsMode) => {
+    setMode(next);
+    writeJsonCache(MODE_CACHE_KEY, { mode: next }).catch(() => undefined);
+  }, []);
+
+  const openWallet = useCallback(() => {
+    const accountId = model?.wallet?.accountId ?? model?.primaryAccount?.id;
+    navigation?.navigate("BusinessOsPayments", { title: "Ad wallet", accountId });
+  }, [navigation, model]);
+
+  const openVerification = useCallback(() => {
+    navigation?.navigate("VerificationCenter", { title: "Verification Center", track: "business" });
+  }, [navigation]);
+
   async function submitAccount() {
+    if (model?.offline) {
+      setMessage("You are offline. Reconnect to create an ad account.");
+      return;
+    }
     if (!businessName.trim()) {
       setMessage("Business name is required.");
       return;
@@ -125,7 +216,12 @@ export function BusinessOsAdvertisingScreen(_props: Props) {
   }
 
   async function submitCampaign() {
-    if (!selectedAccountId) {
+    if (model?.offline) {
+      setMessage("You are offline. Reconnect to create a campaign.");
+      return;
+    }
+    const account = model?.primaryAccount;
+    if (!account) {
       setMessage("Create an ad account first.");
       return;
     }
@@ -138,7 +234,7 @@ export function BusinessOsAdvertisingScreen(_props: Props) {
     setMessage("");
     try {
       await createAdCampaign({
-        ad_account_id: selectedAccountId,
+        ad_account_id: account.id,
         campaign_name: campaignName.trim(),
         objective,
         budget_type: budgetType,
@@ -157,6 +253,7 @@ export function BusinessOsAdvertisingScreen(_props: Props) {
   }
 
   async function applyAction(campaign: AdCampaign, action: AdCampaignAction) {
+    if (busy || model?.offline) return;
     setBusy(`campaign-${campaign.id}-${action}`);
     setMessage("");
     try {
@@ -170,28 +267,35 @@ export function BusinessOsAdvertisingScreen(_props: Props) {
     }
   }
 
-  const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
+  function toggleDelivery(campaign: AdCampaign, next: boolean) {
+    applyAction(campaign, next ? "resume" : "pause").catch(() => undefined);
+  }
 
-  return (
-    <Screen title="Advertising" subtitle="Ad accounts, campaigns and budgets for your business.">
-      {loading ? (
-        <Panel>
-          <View style={styles.row}>
-            <ActivityIndicator color={colors.accent} />
-            <Text style={styles.muted}>Loading advertising…</Text>
-          </View>
-        </Panel>
-      ) : null}
+  const offline = Boolean(model?.offline);
 
-      {message ? (
-        <Panel>
-          <Text style={styles.muted}>{message}</Text>
-        </Panel>
-      ) : null}
+  const walletProp = loading
+    ? { balanceLabel: "—", fundingLive: false, loading: true }
+    : model?.wallet
+    ? { balanceLabel: model.wallet.balanceLabel, fundingLive: model.wallet.fundingLive, loading: false }
+    : null;
 
-      {offline && !loading ? (
-        <Panel>
-          <Text style={styles.panelTitle}>Showing saved data</Text>
+  const contentPad = { paddingBottom: Math.max(insets.bottom, 16) + 24 };
+
+  /* ----------------------------- Marketplace ---------------------------- */
+
+  const dayLabels = useMemo(() => lastSevenDayLabels(), []);
+  const spend = model?.spend;
+  const spendEmpty = !spend || spend.daysCents.length === 0;
+  const spendTotalLabel = formatCents(spend?.totalCents || 0);
+  const spendSummary = spendEmpty
+    ? `Spend, last 7 days. ${spendTotalLabel} total to date. A day-by-day view is not available yet.`
+    : `Spend, last 7 days: ${spendTotalLabel} total. Preview distribution of the real total.`;
+
+  const marketplaceBody = (
+    <View style={styles.stack}>
+      {model?.offline ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Showing saved data</Text>
           <Text style={styles.muted}>Campaign controls are unavailable until PulseSoc can be reached.</Text>
           <Pressable
             accessibilityRole="button"
@@ -201,12 +305,47 @@ export function BusinessOsAdvertisingScreen(_props: Props) {
           >
             <Text style={styles.secondaryButtonText}>Retry</Text>
           </Pressable>
-        </Panel>
+        </View>
       ) : null}
 
-      {!loading && !accounts.length ? (
-        <Panel>
-          <Text style={styles.panelTitle}>Create your ad account</Text>
+      {model?.needsVerification ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Verify your business to deliver campaigns"
+          onPress={openVerification}
+          style={styles.verifyBanner}
+        >
+          <Text style={styles.verifyTitle}>Verify your business</Text>
+          <Text style={styles.verifyText}>
+            Your ad account can’t deliver campaigns until PulseSoc verifies your business.
+          </Text>
+          <Text style={styles.verifyAction}>Open Verification Center ›</Text>
+        </Pressable>
+      ) : null}
+
+      {model?.primaryAccount ? (
+        <SpendBarChart
+          values={spend?.daysCents || []}
+          dayLabels={dayLabels}
+          summary={spendSummary}
+          mock={Boolean(spend?.mock)}
+          empty={spendEmpty}
+          totalLabel={spendTotalLabel}
+          reducedMotion={reducedMotion}
+          seriesKey={spend?.totalCents ?? 0}
+        />
+      ) : null}
+
+      {loading && !model ? (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator color={adsLight.money.budget} />
+          <Text style={styles.muted}>Loading advertising…</Text>
+        </View>
+      ) : null}
+
+      {!loading && model && !model.accounts.length ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Create your ad account</Text>
           <Text style={styles.muted}>
             An ad account is how PulseSoc bills and verifies your advertising. New accounts start unverified and cannot
             deliver campaigns until they are approved.
@@ -214,7 +353,7 @@ export function BusinessOsAdvertisingScreen(_props: Props) {
           <TextInput
             accessibilityLabel="Business name"
             placeholder="Business name"
-            placeholderTextColor={colors.muted}
+            placeholderTextColor={adsLight.text.muted}
             value={businessName}
             onChangeText={setBusinessName}
             style={styles.input}
@@ -222,7 +361,7 @@ export function BusinessOsAdvertisingScreen(_props: Props) {
           <TextInput
             accessibilityLabel="Business email"
             placeholder="Business email (optional)"
-            placeholderTextColor={colors.muted}
+            placeholderTextColor={adsLight.text.muted}
             autoCapitalize="none"
             keyboardType="email-address"
             value={businessEmail}
@@ -239,39 +378,57 @@ export function BusinessOsAdvertisingScreen(_props: Props) {
           >
             <Text style={styles.primaryButtonText}>{busy === "account" ? "Creating…" : "Create ad account"}</Text>
           </Pressable>
-        </Panel>
+        </View>
       ) : null}
 
-      {accounts.length ? (
-        <Panel>
-          <Text style={styles.panelTitle}>Ad accounts</Text>
-          {accounts.map((account) => (
-            <Pressable
-              key={account.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Select ${account.business_name}. Status ${account.status}.`}
-              accessibilityState={{ selected: account.id === selectedAccountId }}
-              onPress={() => setSelectedAccountId(account.id)}
-              style={[styles.accountRow, account.id === selectedAccountId && styles.accountRowSelected]}
-            >
-              <Text style={styles.accountName}>{account.business_name}</Text>
-              <Text style={styles.muted}>
-                {adAccountCanTransact(account)
-                  ? "Active — campaigns can deliver."
-                  : `${String(account.status).replace(/_/g, " ")} — campaigns cannot deliver yet.`}
-              </Text>
-            </Pressable>
-          ))}
-        </Panel>
+      {!loading && model && model.campaigns.length
+        ? model.campaigns.map((campaign) => {
+            const phase = campaignPhase(campaign);
+            const blocked = campaignBlockedByVerification(campaign, model.primaryAccount || undefined);
+            const actions: CampaignCardAction[] = availableAdCampaignActions(campaign)
+              .filter((a) => a !== "pause" && a !== "resume")
+              .map((a) => ({
+                key: `${campaign.id}-${a}`,
+                label: ACTION_LABELS[a],
+                onPress: () => applyAction(campaign, a)
+              }));
+            return (
+              <CampaignCard
+                key={campaign.id}
+                name={campaign.campaign_name || "Untitled campaign"}
+                objectiveLabel={formatObjective(campaign.objective)}
+                phase={phase}
+                phaseLabel={campaignPhaseLabel(phase)}
+                phaseTone={campaignPhaseTone(phase)}
+                budget={deriveCampaignBudget(campaign)}
+                showSwitch={phase === "delivering" || phase === "paused"}
+                delivering={phase === "delivering"}
+                onToggleDelivery={(next) => toggleDelivery(campaign, next)}
+                toggleBusy={busy.startsWith(`campaign-${campaign.id}-`)}
+                blockedVerification={blocked}
+                onVerify={openVerification}
+                actions={actions}
+                onPress={() => undefined}
+                reducedMotion={reducedMotion}
+              />
+            );
+          })
+        : null}
+
+      {!loading && model && model.accounts.length && !model.campaigns.length ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>No campaigns yet</Text>
+          <Text style={styles.muted}>Campaigns you create appear here with their delivery status and spend.</Text>
+        </View>
       ) : null}
 
-      {selectedAccount ? (
-        <Panel>
-          <Text style={styles.panelTitle}>New campaign</Text>
+      {!loading && model && model.primaryAccount ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>New campaign</Text>
           <TextInput
             accessibilityLabel="Campaign name"
             placeholder="Campaign name"
-            placeholderTextColor={colors.muted}
+            placeholderTextColor={adsLight.text.muted}
             value={campaignName}
             onChangeText={setCampaignName}
             style={styles.input}
@@ -315,7 +472,7 @@ export function BusinessOsAdvertisingScreen(_props: Props) {
           <TextInput
             accessibilityLabel="Budget amount in dollars"
             placeholder={budgetType === "daily" ? "Daily budget, e.g. 25.00" : "Lifetime budget, e.g. 500.00"}
-            placeholderTextColor={colors.muted}
+            placeholderTextColor={adsLight.text.muted}
             keyboardType="decimal-pad"
             value={budgetDollars}
             onChangeText={setBudgetDollars}
@@ -332,166 +489,196 @@ export function BusinessOsAdvertisingScreen(_props: Props) {
           >
             <Text style={styles.primaryButtonText}>{busy === "campaign" ? "Creating…" : "Create campaign"}</Text>
           </Pressable>
-          <Text style={styles.footnote}>Campaigns start as drafts. Nothing is charged and nothing delivers until you submit for review.</Text>
-        </Panel>
+          <Text style={styles.footnote}>
+            Campaigns start as drafts. Nothing is charged and nothing delivers until you submit for review.
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+
+  /* -------------------------------- Post -------------------------------- */
+
+  const suggestion = useMemo(() => loadMockSuggestion(), [postEnabled]);
+  const promotions = useMemo(() => loadMockPostPromotions(), [postEnabled]);
+
+  const postBody = (
+    <View style={styles.stack}>
+      <View style={styles.previewNote} accessibilityRole="summary">
+        <Text style={styles.previewNoteTitle}>Post ads · Preview</Text>
+        <Text style={styles.muted}>
+          {postEnabled
+            ? "Promoting posts, Reels and live replays is a preview. Figures below are sample data — nothing is charged and no promotion is running."
+            : "Promoting posts, Reels and live replays isn’t available yet. Your ad wallet still funds Marketplace ads."}
+        </Text>
+      </View>
+
+      {postEnabled && suggestion && !suggestionDismissed ? (
+        <SuggestionCard
+          contentType={suggestion.contentType}
+          title={suggestion.title}
+          reason={suggestion.reason}
+          onPromote={() => setMessage("Promoting posts is a preview — nothing is charged.")}
+          onDismiss={() => setSuggestionDismissed(true)}
+          reducedMotion={reducedMotion}
+        />
       ) : null}
 
-      {!loading && campaigns.length ? (
-        <Panel>
-          <Text style={styles.panelTitle}>Campaigns</Text>
-          {campaigns.map((campaign) => (
-            <View key={campaign.id} style={styles.campaign}>
-              <Text style={styles.campaignName}>{campaign.campaign_name}</Text>
-              <Text style={styles.muted}>
-                {formatObjective(campaign.objective)} · {String(campaign.status).replace(/_/g, " ")} ·{" "}
-                {formatCampaignBudget(campaign)}
-              </Text>
-              <Text style={styles.muted}>Spent {formatCents(campaign.spent_cents)}</Text>
-              <View style={styles.chips}>
-                {availableAdCampaignActions(campaign).map((action) => {
-                  const key = `campaign-${campaign.id}-${action}`;
-                  return (
-                    <Pressable
-                      key={action}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${ACTION_LABELS[action]} ${campaign.campaign_name}`}
-                      accessibilityState={{ disabled: Boolean(busy) || offline }}
-                      disabled={Boolean(busy) || offline}
-                      onPress={() => applyAction(campaign, action)}
-                      style={[styles.chip, (Boolean(busy) || offline) && styles.buttonDisabled]}
-                    >
-                      <Text style={styles.chipText}>{busy === key ? "Working…" : ACTION_LABELS[action]}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-          ))}
-        </Panel>
+      {postEnabled
+        ? promotions.map((promotion) => (
+            <PromotedPostCard
+              key={promotion.id}
+              contentType={promotion.contentType}
+              title={promotion.title}
+              phase={promotion.phase}
+              phaseLabel={promotionPhaseLabel(promotion.phase)}
+              phaseTone={promotionPhaseTone(promotion.phase)}
+              reachLabel={promotion.reach != null ? formatReach(promotion.reach) : null}
+              spendLabel={promotion.spendCents != null ? formatCents(promotion.spendCents) : null}
+              rejectionReason={promotion.rejectionReason ?? null}
+              onPress={() => setMessage("Post promotions are a preview — nothing is charged.")}
+              reducedMotion={reducedMotion}
+            />
+          ))
+        : null}
+
+      {!postEnabled ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Not available yet</Text>
+          <Text style={styles.muted}>
+            Post promotions turn on behind the {ADS_POST_MODE_FLAG} feature flag. Until then this product stays a
+            preview and shows no invented promotions or spend.
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+
+  return (
+    <View style={styles.root}>
+      <AdsHeader
+        title="Advertising"
+        mode={mode}
+        onChangeMode={changeMode}
+        onBack={() => navigation?.goBack?.()}
+        postIsPreview
+        wallet={walletProp}
+        onWallet={openWallet}
+        reducedMotion={reducedMotion}
+      />
+
+      {message ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${message}. Tap to dismiss.`}
+          onPress={() => setMessage("")}
+          style={styles.notice}
+        >
+          <Text style={styles.noticeText}>{message}</Text>
+        </Pressable>
       ) : null}
 
-      {!loading && accounts.length && !campaigns.length ? (
-        <Panel>
-          <Text style={styles.panelTitle}>No campaigns yet</Text>
-          <Text style={styles.muted}>Campaigns you create appear here with their delivery status and spend.</Text>
-        </Panel>
-      ) : null}
-    </Screen>
+      <View style={[styles.pane, mode === "marketplace" ? null : styles.hidden]}>
+        <ScrollView contentContainerStyle={[styles.scroll, contentPad]} keyboardShouldPersistTaps="handled">
+          {marketplaceBody}
+        </ScrollView>
+      </View>
+
+      <View style={[styles.pane, mode === "post" ? null : styles.hidden]}>
+        <ScrollView contentContainerStyle={[styles.scroll, contentPad]} keyboardShouldPersistTaps="handled">
+          {postBody}
+        </ScrollView>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  accountName: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "700"
-  },
-  accountRow: {
-    backgroundColor: colors.surfaceRaised,
-    borderColor: colors.border,
-    borderRadius: 8,
+  root: { flex: 1, backgroundColor: adsLight.bg.page },
+  pane: { flex: 1 },
+  hidden: { display: "none" },
+  scroll: { padding: adsLight.space.card, gap: 12 },
+  stack: { gap: 12 },
+  notice: {
+    marginHorizontal: adsLight.space.card,
+    marginTop: 10,
+    padding: 12,
+    borderRadius: adsLight.radius.control,
+    backgroundColor: adsLight.bg.card,
     borderWidth: StyleSheet.hairlineWidth,
+    borderColor: adsLight.border.hairline
+  },
+  noticeText: { fontSize: 13, color: adsLight.text.primary, lineHeight: 18 },
+  card: {
+    backgroundColor: adsLight.bg.card,
+    borderRadius: adsLight.radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: adsLight.border.hairline,
+    padding: adsLight.space.card,
+    gap: 10
+  },
+  cardTitle: { fontSize: 16, fontWeight: "700", color: adsLight.text.primary },
+  muted: { fontSize: 13, color: adsLight.text.muted, lineHeight: 19 },
+  loadingRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: adsLight.space.card },
+  verifyBanner: {
+    padding: adsLight.space.card,
     gap: 4,
-    padding: 12
+    borderRadius: adsLight.radius.card,
+    backgroundColor: adsLight.bg.warning,
+    borderWidth: 1,
+    borderColor: adsLight.border.warning
   },
-  accountRowSelected: {
-    borderColor: colors.accent
+  verifyTitle: { fontSize: 15, fontWeight: "800", color: adsLight.text.primary },
+  verifyText: { fontSize: 13, color: adsLight.text.primary, lineHeight: 18 },
+  verifyAction: { fontSize: 13, fontWeight: "800", color: adsLight.status.warning, marginTop: 2 },
+  previewNote: {
+    padding: adsLight.space.card,
+    gap: 4,
+    borderRadius: adsLight.radius.card,
+    backgroundColor: adsLight.bg.postSurface,
+    borderWidth: 1,
+    borderColor: adsLight.suggestion.border
   },
-  buttonDisabled: {
-    opacity: 0.5
-  },
-  campaign: {
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: 8,
-    gap: 6,
-    padding: 12
-  },
-  campaignName: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "700"
-  },
-  chip: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 12,
-    paddingVertical: 7
-  },
-  chipSelected: {
-    borderColor: colors.accent
-  },
-  chipText: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: "600"
-  },
-  chipTextSelected: {
-    color: colors.text
-  },
-  chips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8
-  },
-  fieldLabel: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "700"
-  },
-  footnote: {
-    color: colors.muted,
-    fontSize: 12,
-    lineHeight: 18
-  },
+  previewNoteTitle: { fontSize: 14, fontWeight: "800", color: adsLight.post.base },
   input: {
-    backgroundColor: colors.surfaceRaised,
-    borderColor: colors.border,
-    borderRadius: 8,
+    backgroundColor: adsLight.bg.page,
+    borderColor: adsLight.border.hairline,
+    borderRadius: adsLight.radius.control,
     borderWidth: StyleSheet.hairlineWidth,
-    color: colors.text,
+    color: adsLight.text.primary,
     fontSize: 15,
     paddingHorizontal: 12,
     paddingVertical: 10
   },
-  muted: {
-    color: colors.muted,
-    fontSize: 13,
-    lineHeight: 19
+  fieldLabel: { fontSize: 13, fontWeight: "700", color: adsLight.text.primary },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    backgroundColor: adsLight.bg.page,
+    borderColor: adsLight.border.hairline,
+    borderRadius: adsLight.radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingVertical: 7
   },
-  panelTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "700"
-  },
+  chipSelected: { borderColor: adsLight.money.budget, backgroundColor: adsLight.bg.card },
+  chipText: { fontSize: 13, fontWeight: "600", color: adsLight.text.muted },
+  chipTextSelected: { color: adsLight.text.primary },
   primaryButton: {
     alignItems: "center",
-    backgroundColor: colors.accent,
-    borderRadius: 8,
-    paddingVertical: 11
+    backgroundColor: adsLight.cta.from,
+    borderRadius: adsLight.radius.control,
+    paddingVertical: 12
   },
-  primaryButtonText: {
-    color: colors.background,
-    fontSize: 15,
-    fontWeight: "800"
-  },
-  row: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10
-  },
+  primaryButtonText: { fontSize: 15, fontWeight: "800", color: adsLight.cta.text },
+  buttonDisabled: { opacity: 0.5 },
+  footnote: { fontSize: 12, color: adsLight.text.muted, lineHeight: 18 },
   secondaryButton: {
     alignSelf: "flex-start",
-    borderColor: colors.border,
-    borderRadius: 8,
+    borderColor: adsLight.border.hairline,
+    borderRadius: adsLight.radius.control,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 14,
     paddingVertical: 8
   },
-  secondaryButtonText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "600"
-  }
+  secondaryButtonText: { fontSize: 14, fontWeight: "600", color: adsLight.text.primary }
 });
