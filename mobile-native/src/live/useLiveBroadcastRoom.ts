@@ -23,6 +23,13 @@ import {
 import { setRealtimeMicrophoneEnabled } from "../core/realtimeMicrophonePublisher";
 import { RealtimeAudioStateMachine } from "../core/realtimeAudioStateMachine";
 import { createRealtimeAudioCorrelationId } from "../core/realtimeAudioTelemetry";
+import { parseMediaQualityFlags } from "../core/mediaQualityFlags";
+import {
+  buildRoomQualityOptions,
+  resolveMediaQualityPlan,
+  type MediaQualityPlan
+} from "../core/mediaQualityPolicy";
+import { emitMediaQualityEvent } from "../core/mediaQualityTelemetry";
 import { isLiveAudioV2Enabled, resolveLiveAudioPath } from "./liveAudioFlags";
 import { publishLiveMicrophone } from "./liveAudioPublisher";
 import {
@@ -210,7 +217,17 @@ function readRole(participant: any): string {
   }
 }
 
-function liveAudioMode(credentials: LiveKitCredentials, publish: boolean): RealtimeAudioMode {
+/**
+ * Return type narrowed to the three livestream surfaces rather than the full
+ * RealtimeAudioMode union. The narrower type is what it always returned; naming
+ * it means the same value can drive both the audio lease and the quality policy
+ * without a cast, so there is no way for the two to end up classifying one
+ * participant differently.
+ */
+function liveAudioMode(
+  credentials: LiveKitCredentials,
+  publish: boolean
+): Extract<RealtimeAudioMode, "live_host" | "live_guest" | "live_viewer"> {
   if (!publish) return "live_viewer";
   return credentials.role === "cohost" || credentials.guestId > 0 ? "live_guest" : "live_host";
 }
@@ -328,6 +345,9 @@ export function useLiveBroadcastRoom() {
   const roleRef = useRef("");
   const roomNameRef = useRef("");
   const publishRef = useRef(false);
+  // Resolved once per connection. Read by setCameraEnabled so a mid-session
+  // camera toggle reuses the configuration the session was published with.
+  const qualityPlanRef = useRef<MediaQualityPlan | null>(null);
   const credentialsRef = useRef<LiveKitCredentials | null>(null);
   const refreshCredentialsRef = useRef<LiveConnectOptions["refreshCredentials"]>(undefined);
   const reconnectAttemptRef = useRef(0);
@@ -839,23 +859,33 @@ export function useLiveBroadcastRoom() {
           outcome: mediaMode
         });
 
-        const room = new livekitClient.Room({
-          adaptiveStream: true,
-          dynacast: true,
-          audioCaptureDefaults: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          },
-          videoCaptureDefaults: PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
-          publishDefaults: {
-            ...PULSE_LIVE_VIDEO_PUBLISH_OPTIONS,
-            simulcast: true,
-            dtx: true,
-            red: true,
-            stopMicTrackOnMute: false
-          }
+        // Resolved once, before the Room exists, and never recomputed for the
+        // life of the session. `mediaMode` is already exactly "live_host",
+        // "live_guest" or "live_viewer", so the surface the policy sees is the
+        // same one the audio lease sees — there is no second classification to
+        // disagree with the first.
+        //
+        // With every flag off, buildRoomQualityOptions returns exactly the
+        // literal that used to be written here, including
+        // videoCaptureDefaults: PULSE_LIVE_VIDEO_CAPTURE_OPTIONS and the
+        // 2.3 Mbps encoding. mediaQualityPolicy.test.ts asserts that.
+        const qualityPlan = resolveMediaQualityPlan({
+          feature: mediaMode,
+          flags: parseMediaQualityFlags(credentials.mediaQuality)
         });
+        qualityPlanRef.current = qualityPlan;
+        emitMediaQualityEvent({
+          name: "quality_plan_resolved",
+          sessionId: roomNameRef.current,
+          feature: qualityPlan.feature,
+          profile: qualityPlan.profile,
+          requestedProfile: qualityPlan.requestedProfile,
+          contentMode: qualityPlan.contentMode,
+          reasons: qualityPlan.reasons,
+          audioPathUnchanged: true
+        });
+
+        const room = new livekitClient.Room(buildRoomQualityOptions(qualityPlan));
         roomRef.current = room;
 
         const refresh = () => refreshParticipants(room);
@@ -1153,10 +1183,13 @@ export function useLiveBroadcastRoom() {
               correlationId: correlationIdRef.current
             }),
             enableCamera: async () => {
+              // At `stable` these resolve to PULSE_LIVE_VIDEO_CAPTURE_OPTIONS
+              // and PULSE_LIVE_VIDEO_PUBLISH_OPTIONS, so the call made here is
+              // the same call the verified baseline made.
               await room.localParticipant.setCameraEnabled(
                 true,
-                PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
-                PULSE_LIVE_VIDEO_PUBLISH_OPTIONS
+                qualityPlan.videoCaptureDefaults || PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
+                qualityPlan.videoPublishDefaults || PULSE_LIVE_VIDEO_PUBLISH_OPTIONS
               );
             },
             stabilizeAudio: async () => (await stabilizeLivePublisherAudio(
@@ -1318,7 +1351,15 @@ export function useLiveBroadcastRoom() {
   const setCameraEnabled = useCallback(async (enabled: boolean) => {
     const room = roomRef.current;
     if (!room) throw new Error("Broadcast media is not connected.");
-    await room.localParticipant.setCameraEnabled(enabled, PULSE_LIVE_VIDEO_CAPTURE_OPTIONS, PULSE_LIVE_VIDEO_PUBLISH_OPTIONS);
+    // Same options the session connected with. Re-enabling a camera mid-session
+    // with a different configuration than it was published with is how a stream
+    // silently changes resolution partway through.
+    const plan = qualityPlanRef.current;
+    await room.localParticipant.setCameraEnabled(
+      enabled,
+      plan?.videoCaptureDefaults || PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
+      plan?.videoPublishDefaults || PULSE_LIVE_VIDEO_PUBLISH_OPTIONS
+    );
     const localAudioTrackCount = await publishMicrophoneForPath(room, useV2Ref.current, {
       role: roleRef.current,
       room: roomNameRef.current,

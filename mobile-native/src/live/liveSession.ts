@@ -58,6 +58,13 @@ export type LiveKitCredentials = {
   audioV2FallbackEnabled: boolean;
   /** Server-authoritative, QA-account-only privacy-safe diagnostic timeline. */
   audioTraceEnabled: boolean;
+  /**
+   * Media quality V2 rollout flags, decided entirely server-side. Kept as the
+   * raw payload and normalised by parseMediaQualityFlags at the point of use,
+   * so this module does not become a second place where flag semantics live.
+   * Absent means the verified stable configuration.
+   */
+  mediaQuality?: Record<string, unknown> | null;
 };
 
 /**
@@ -206,7 +213,11 @@ export function normalizeLiveKitCredentials(raw: Record<string, unknown> | null 
     // explicit server `true` (missing field, "false", 0, "0") runs the legacy path.
     audioV2Enabled: normalizeLiveAudioV2Flag(data.audio_v2_enabled),
     audioV2FallbackEnabled: data.audio_v2_fallback_enabled !== false,
-    audioTraceEnabled: data.audio_trace_enabled === true
+    audioTraceEnabled: data.audio_trace_enabled === true,
+    mediaQuality:
+      data.media_quality && typeof data.media_quality === "object" && !Array.isArray(data.media_quality)
+        ? (data.media_quality as Record<string, unknown>)
+        : null
   };
 }
 

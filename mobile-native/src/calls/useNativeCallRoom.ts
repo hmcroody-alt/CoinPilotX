@@ -23,6 +23,13 @@ import {
 } from "../core/realtimeMicrophonePublisher";
 import { RealtimeAudioStateMachine } from "../core/realtimeAudioStateMachine";
 import { createRealtimeAudioCorrelationId, emitRealtimeAudioEvent } from "../core/realtimeAudioTelemetry";
+import { parseMediaQualityFlags } from "../core/mediaQualityFlags";
+import {
+  buildRoomQualityOptions,
+  resolveMediaQualityPlan,
+  type MediaQualityPlan
+} from "../core/mediaQualityPolicy";
+import { emitMediaQualityEvent } from "../core/mediaQualityTelemetry";
 
 type NativeCallRoomState = {
   supported: boolean;
@@ -94,6 +101,12 @@ export async function initializeCallLocalMedia(
     useV2?: boolean;
     fallbackEnabled?: boolean;
     context?: RealtimePublicationContext;
+    /**
+     * Resolved quality plan. At `stable` a video call carries no capture or
+     * publish options, so the call below stays literally `setCameraEnabled(true)`
+     * — the exact call the verified baseline made.
+     */
+    quality?: MediaQualityPlan | null;
   }
 ): Promise<number> {
   let audioTrackCount = await ensureCallMicrophonePublished(room, {
@@ -101,9 +114,17 @@ export async function initializeCallLocalMedia(
     fallbackEnabled: options.fallbackEnabled,
     context: options.context
   });
+  // Audio first, always. The camera is only ever enabled once the microphone is
+  // confirmed published, and a camera failure below cannot unpublish it.
   if (audioTrackCount <= 0 || !options.video) return audioTrackCount;
   emitRealtimeAudioEvent({ name: "camera_publish_started", ...options.context });
-  await room.localParticipant.setCameraEnabled(true);
+  const capture = options.quality?.videoCaptureDefaults;
+  const publish = options.quality?.videoPublishDefaults;
+  if (capture && publish) {
+    await room.localParticipant.setCameraEnabled(true, capture, publish);
+  } else {
+    await room.localParticipant.setCameraEnabled(true);
+  }
   emitRealtimeAudioEvent({ name: "camera_published", ...options.context, outcome: "published" });
   audioTrackCount = await reassertRealtimeMicrophone(room, options.context);
   if (audioTrackCount <= 0) {
@@ -128,6 +149,7 @@ export function useNativeCallRoom() {
   const lifecycleRef = useRef(new RealtimeAudioStateMachine());
   const audioV2Ref = useRef(false);
   const audioV2FallbackRef = useRef(true);
+  const qualityPlanRef = useRef<MediaQualityPlan | null>(null);
   const publicationContextRef = useRef<RealtimePublicationContext>({ roomType: "audio_call", participantRole: "member" });
   const [state, setState] = useState<NativeCallRoomState>(initialState);
 
@@ -236,21 +258,35 @@ export function useNativeCallRoom() {
       );
       lifecycleRef.current.transition("local", "publishing");
 
-      const room = new livekitClient.Room({
-        adaptiveStream: true,
-        dynacast: true,
-        audioCaptureDefaults: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        },
-        publishDefaults: {
-          simulcast: true,
-          dtx: true,
-          red: true,
-          stopMicTrackOnMute: false
-        }
+      // The quality plan is resolved once, before the Room exists, and never
+      // recomputed mid-session. Resolving it later would mean a Room whose
+      // configuration depends on when a flag happened to be read.
+      //
+      // With every flag off — the shipping state — buildRoomQualityOptions
+      // returns exactly the literal that used to be written here:
+      //   { adaptiveStream: true, dynacast: true,
+      //     audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      //     publishDefaults: { simulcast: true, dtx: true, red: true, stopMicTrackOnMute: false } }
+      // mediaQualityPolicy.test.ts asserts that equality against this file's
+      // own source, so the claim cannot rot.
+      const plan = resolveMediaQualityPlan({
+        feature: options.video ? "video_call" : "audio_call",
+        flags: parseMediaQualityFlags(join.media_quality)
       });
+      qualityPlanRef.current = plan;
+      emitMediaQualityEvent({
+        name: "quality_plan_resolved",
+        correlationId: publicationContextRef.current.correlationId,
+        sessionId: join.room_name,
+        feature: plan.feature,
+        profile: plan.profile,
+        requestedProfile: plan.requestedProfile,
+        contentMode: plan.contentMode,
+        reasons: plan.reasons,
+        audioPathUnchanged: true
+      });
+
+      const room = new livekitClient.Room(buildRoomQualityOptions(plan));
       roomRef.current = room;
 
       const refresh = () => refreshMediaState(room);
@@ -369,7 +405,8 @@ export function useNativeCallRoom() {
         video: Boolean(options.video),
         useV2: audioV2Ref.current,
         fallbackEnabled: audioV2FallbackRef.current,
-        context: publicationContextRef.current
+        context: publicationContextRef.current,
+        quality: qualityPlanRef.current
       });
       if (localAudioTrackCount <= 0) {
         lifecycleRef.current.tryTransition("local", "failed");

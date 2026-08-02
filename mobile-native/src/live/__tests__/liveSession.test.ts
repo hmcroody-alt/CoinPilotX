@@ -124,7 +124,12 @@ describe("normalizeLiveKitCredentials", () => {
       // fallback stays available.
       audioV2Enabled: false,
       audioV2FallbackEnabled: true,
-      audioTraceEnabled: false
+      audioTraceEnabled: false,
+      // Also absent, so the client carries no quality flags at all and the
+      // policy resolver falls back to the verified stable configuration. This
+      // assertion is exhaustive on purpose: a new field appearing here should
+      // require someone to say so.
+      mediaQuality: null
     });
   });
 

@@ -1,135 +1,133 @@
 # Real-Time Audio Change Declaration
 
-**Change:** Mission D — PulseSoc real-time audio hard-lock
-**Base commit:** `ce03e160eaf4649a8e02bc3b609a3182ca9d3859`
-**Baseline of record:** `reports/realtime_audio_verified_baseline.md`
+**Change:** Mission E — PulseSoc elite live media quality, governed quality policy layer
+**Base commit:** `985c3886944fdcb343dc3a84915d139dad553cbf`
+**Baseline of record:** `reports/realtime_audio_verified_baseline.md`, tag `realtime-audio-stable-v1`
 **Label required:** `audio-critical-change`
 **Declared on:** 2026-08-02
 
-> This is the first filled instance of this declaration. It covers the change that
-> built the boundary itself. That is deliberate: a gate whose own introducing
-> commit bypasses it is a gate nobody believes in afterwards.
->
-> The template that used to live here is preserved verbatim at the bottom of this
-> file, under "Template for the next change", so the next author has the blank
-> form without needing to dig it out of git history.
+> The previous declaration (Mission D, the hard-lock itself) is preserved in full at
+> `reports/realtime_audio_change_declaration_history.md`.
 
 ## Why the change is required
 
-The audio foundation was physically heard working on 2026-08-02 and nothing in the
-repository prevented the next commit from silently taking it apart. A forbidden
-`Audio.setAudioModeAsync` added to an unrelated media screen can steal the session
-from a live call, and the symptom is silence on a real device in production — not a
-failing build, not a type error, not a red diff in review.
+Mission E's objective is measurably better audio and video across eight surfaces. Every
+setting that governs that quality — capture constraints, publish defaults, encoding,
+simulcast — was written as an object literal inside `new Room({...})` in the two room
+adapters. Two literals, drifting independently, with no way to change either one without
+an app release and no way to change one for a QA cohort only.
 
-Section 12 of the mission required runtime invariants that hold in **production**
-builds, not only under `__DEV__`. Counting an impossible state at the moment it
-occurs means reporting from the place that already detects it, and those places are
-inside protected files:
+So the quality settings had to move out of the adapters and behind a server-driven flag.
+That is the change. It cannot be made from outside the adapters, because the adapters are
+where the literals were.
 
-- the stale-lease rejection lives in `realtimeAudioEngine.ts`
-- the viewer publication refusal and the duplicate-track reconciliation live in
-  `realtimeMicrophonePublisher.ts`
-- the event vocabulary that carries the report lives in `realtimeAudioTelemetry.ts`
+The mission's own non-negotiable condition set the shape of the solution: *"Do not alter
+the proven audio ownership, publication, subscription, routing, or cleanup architecture."*
+The literals moved; nothing around them did. The lease is still acquired before the Room
+is constructed, the microphone is still published by the one publisher, and with every
+flag off the object handed to `new Room(...)` is byte-equivalent to the literal that was
+there before.
 
-There is no way to observe those three rejections from outside the modules that
-perform them. Instrumenting from a wrapper would mean re-deriving the state a second
-time, which is exactly the second-decision-maker failure this boundary exists to
-prevent. So these three protected files had to be touched, and every edit was
-confined to a branch that already returned a rejection.
-
-The remaining protected files changed are the boundary's own machinery: the manifest,
-the two architecture-test readers, the gate script, CODEOWNERS, the workflow, and the
-`package.json` script that names the critical suite. Those cannot be added from
-outside themselves.
+Two things this change is deliberately **not**: it is not a filter layer, and it is not a
+new media path. The four new modules cannot act. They are pure functions that return a
+plain object; they hold no room handle, import no LiveKit SDK, read no clock, and call no
+audio API. That is enforced by source-scanning tests, not by intention.
 
 ## Which feature required it
 
-**Mission D — PulseSoc real-time audio hard-lock.** This is not an unrelated mission.
-Its entire purpose is the protection of the audio foundation, so
-`docs/realtime_audio_change_policy.md`'s unrelated-mission rule does not apply; the
-policy's ordinary requirements (declaration, label, full validation, physical
-re-validation before release) do.
+**Mission E — PulseSoc elite live media quality.** Its subject is real-time media, so
+`docs/realtime_audio_change_policy.md`'s unrelated-mission rule does not apply. The
+ordinary requirements do: this declaration, the `audio-critical-change` label, full
+validation, and physical re-validation before any rollout past the QA cohort.
 
-No product feature was added. No new audio route was created. No audio behavior was
-redesigned.
+Concurrent unrelated work (Commerce Inbox, Orders, Business OS) was present in the working
+tree and is **excluded** from this change set by explicit file staging. No protected path
+in this declaration was touched by that work.
 
 ## Which protected files changed
 
-Output of `python3 scripts/realtime_audio_change_gate.py` against this change set:
+Output of `python3 scripts/realtime_audio_change_gate.py --changed-files-from ...` against
+this change set — 14 protected files:
 
 | File | Manifest category | What changed |
 | --- | --- | --- |
-| `mobile-native/src/core/realtimeAudioEngine.ts` | `shared_audio_session_coordinator` | +21 lines. Added the `realtimeAudioInvariants` import and one `reportRealtimeAudioInvariant({ id: "stale_cleanup_of_newer_session", action: "rejected" })` call inside the existing lease-generation mismatch branch, immediately before its unchanged `return false`. Also un-exported the dead constant `PULSE_LIVE_PORTRAIT_VIDEO_RESOLUTION`, which had no importers; it is still consumed internally by `PULSE_LIVE_VIDEO_CAPTURE_OPTIONS`. No control flow, no ordering, no session call changed. |
-| `mobile-native/src/core/realtimeMicrophonePublisher.ts` | `microphone_track_and_publication_controller` | +24 lines. Added the same import and two reports: `duplicate_microphone_tracks` / `"reconciled"` after `reconcileDuplicates` has already unpublished extras (`removed > 0`), and `viewer_publication_attempt` / `"rejected"` inside the existing `canPublishMicrophone === false` branch, before its unchanged `forbidden` return. No publication path, no timeout, no reconciliation logic changed. |
-| `mobile-native/src/core/realtimeAudioTelemetry.ts` | `audio_telemetry` | +6 lines. Added one member to the event-name union: `"invariant_violation"`. No emitter, sink, sampling, or redaction behavior changed. |
-| `mobile-native/src/core/realtimeAudioInvariants.ts` | `runtime_invariant_monitor` | **New file.** The production runtime invariant monitor: eight invariant ids, six pure check functions, a bounded 32-entry history, `safeDetail()` vocabulary replacement so no free-form string (token, URL, user id) can reach telemetry, and a report sink that never repairs state. Escalation to `RealtimeAudioInvariantError` is opt-in via `setRealtimeAudioInvariantPolicy` and off by default. Runs unconditionally — it is not `__DEV__`-gated. |
-| `mobile-native/src/core/__tests__/realtimeAudioInvariants.test.ts` | `critical_audio_tests` | **New file.** 18 tests: detection of all eight invariants (asserting the covered set size is exactly 8), privacy-safe emission, vocabulary replacement of a token-bearing detail, bounded history under 50 reports, no-throw for the seven already-handled ids, opt-in escalation, sink-failure resilience, non-`__DEV__` operation, and the four livestream-flag exclusivity tests over a ten-input matrix. |
-| `mobile-native/src/core/__tests__/realtimeAudioArchitecture.test.ts` | `critical_audio_tests` | Now manifest-driven end to end, 21 tests. Added the `import_boundary` type and two tests: the audio core is importable only from the eight approved files, and every approved importer is a real file. |
-| `mobile-native/src/core/__tests__/realtimeAudioContracts.test.ts` | `critical_audio_tests` | The 42 contract tests for every verified invariant, including all eight mixed-session transitions. |
-| `tests/protection/test_realtime_audio_architecture.py` | `critical_audio_tests` | +246 / -54. Replaced a hard-coded two-file allowlist (which was narrower than reality — it did not know about `Audio.setAudioModeAsync`) with a manifest-derived reader: 13 tests across manifest integrity, forbidden APIs, import boundary, lease discipline, and dependency lock. |
-| `config/realtime-audio-protected-paths.json` | `audio_governance` | **New file.** The single machine-readable source of truth, `manifest_version: 1`. Read by the Jest architecture test, the Python protection test, and the change gate, so the rules cannot drift from what CI enforces. |
-| `scripts/realtime_audio_change_gate.py` | `audio_governance` | **New file.** The change-detection gate. Maps changed paths to manifest categories, applies content-based matching to `bot.py` via `backend_diff_patterns`, and rejects an unfilled or incomplete declaration. |
-| `.github/workflows/realtime-audio.yml` | `audio_governance` | **New file.** Seven jobs: `detect`, `architecture`, `critical`, `backend`, `native-build`, `declaration`, `label`. `architecture` runs on every pull request regardless of `detect`, because a forbidden call added to an unprotected screen is precisely the case a gated scan would miss. |
-| `.github/CODEOWNERS` | `audio_governance` | **New file.** Owner `@hmcroody-alt`, taken from `git remote -v`, not invented. The team handle is deliberately withheld behind a `TODO(repository administration)` because GitHub silently assigns no owner for a nonexistent team — the rule would fail open. |
-| `mobile-native/package.json` | `dependency_watch` | +3 lines. `test:realtime-audio-critical` now includes `realtimeAudioInvariants.test.ts`. **No dependency version changed**; the pinned media stack is byte-identical to the baseline and the dependency-lock test asserts equality against it. |
+| `mobile-native/src/core/mediaQualityPolicy.ts` | `media_quality_policy` | **New module.** The resolver. Freezes the verified baseline as `BASELINE_AUDIO_CAPTURE`, `BASELINE_AUDIO_PUBLISH`, `BASELINE_LIVE_VIDEO_CAPTURE`, `BASELINE_LIVE_VIDEO_PUBLISH`, and returns exactly those for every feature when V2 is off. Four profiles (`stable`, `balanced`, `elite`, `resilient`), five features, a one-way condition clamp, and `buildRoomQualityOptions` — the single builder both adapters now call. |
+| `mobile-native/src/core/mediaAdaptationController.ts` | `media_quality_policy` | **New module.** A pure reducer for network/thermal/battery adaptation. The mission's degradation order is stored as data (`DEGRADATION_LADDER`) so a test can assert it verbatim. `AUDIO_DEGRADATION_RUNGS` is the empty array and every decision carries `audioPreserved: true`: audio is not on the ladder at all, and that is checkable rather than inferable. Asymmetric hysteresis (2 samples down, 5 up; 4 s cooldown, 15 s upgrade dwell) prevents oscillation. |
+| `mobile-native/src/core/mediaQualityFlags.ts` | `media_quality_policy` | **New module.** Strict-boolean normalisation of the eight mission flags, mirroring `normalizeLiveAudioV2Flag`: only a literal server `true` enables anything. Accepts both camelCase and the snake_case wire names. Defaults are all-off with `realtimeMediaQualityV2QaOnly: true`, so an older backend that omits the field runs stable. |
+| `mobile-native/src/core/mediaQualityTelemetry.ts` | `media_quality_policy` | **New module.** Fifteen event names over a closed field list — enums, bitrates, resolutions, frame rates, loss/RTT/jitter, hashed identifiers. It never spreads its input; every field is rebuilt explicitly. Reason codes must match `/^[a-z0-9_]{1,48}$/` and are **dropped** rather than redacted if they do not. No raw audio, video, token, or credential can pass through it. |
+| `mobile-native/src/calls/useNativeCallRoom.ts` | `audio_and_video_call_adapter` | The 15-line `new livekitClient.Room({...})` literal was replaced by `resolveMediaQualityPlan(...)` → one telemetry event → `new livekitClient.Room(buildRoomQualityOptions(plan))`. `initializeCallLocalMedia` gained an optional `quality` plan and branches: with capture+publish options it calls `setCameraEnabled(true, capture, publish)`, otherwise the unchanged bare `setCameraEnabled(true)`. At stable the branch is never taken. No lease, publication, ordering, or cleanup code changed. |
+| `mobile-native/src/live/useLiveBroadcastRoom.ts` | `livestream_audio_adapter` | Same substitution at the Room construction site. `enableCamera` and the exported `setCameraEnabled` now prefer the plan's options and fall back to the existing `PULSE_LIVE_VIDEO_*` constants. `liveAudioMode`'s declared return type was narrowed to `Extract<RealtimeAudioMode, "live_host" \| "live_guest" \| "live_viewer">` — the narrower type is what it always returned, and naming it lets one value drive both the audio lease and the quality policy, so the two cannot disagree about what this participant is. |
+| `mobile-native/src/live/liveSession.ts` | `livestream_audio_adapter` | Added `mediaQuality?: Record<string, unknown> \| null` to `LiveKitCredentials` and one normalisation branch in `normalizeLiveKitCredentials` that accepts a plain object and yields `null` otherwise. The raw payload is carried, not interpreted — flag semantics stay in one module. |
+| `mobile-native/src/api/calls.ts` | `backend_token_and_room_policy` | One optional field on `PulseCallJoin`: `media_quality?: Record<string, unknown>`. No token, grant, or room-policy change. |
+| `mobile-native/src/core/__tests__/mediaQualityPolicy.test.ts` | `critical_audio_tests` | **New file.** Nine gate groups. Gate 1 is load-bearing: it now cross-checks the frozen constants against the adapter sources **at the tagged commit `realtime-audio-stable-v1`**, because wiring deliberately removed those literals from the working tree. A constant cannot be edited into agreement with a commit that is already history. If the tag is unreachable (shallow clone) the cross-check warns rather than passing silently. |
+| `mobile-native/src/core/__tests__/mediaAdaptationController.test.ts` | `critical_audio_tests` | **New file.** Eight gate groups, including a 100-sample flapping network that must produce at most 2 rung changes, and a 200-sample noisy sequence capped at 12. |
+| `mobile-native/src/core/__tests__/mediaQualityWiring.test.ts` | `critical_audio_tests` | **New file.** The independent witness. It transcribes both baseline Room-options literals rather than importing the constants, precisely so a change to a constant cannot move both sides of the assertion. It also asserts the adapters contain no second hand-written `new livekitClient.Room({` literal, resolve the plan exactly once each, still acquire the lease before constructing the Room, and never reference `createLocalAudioTrack`, `getUserMedia`, `setPermissions`, or `updateParticipant(`. |
+| `mobile-native/src/live/__tests__/liveSession.test.ts` | `critical_audio_tests` | One field added to an exhaustive `toEqual`: `mediaQuality: null`. The assertion stays exhaustive on purpose — a new field appearing on the credentials object should require someone to say so. |
+| `config/realtime-audio-protected-paths.json` | `audio_governance` | New `media_quality_policy` category covering the four modules; three new test files added to `critical_audio_tests`; the four modules added to `import_boundary.modules` with their own files added to `allowed_importers`. That last part is the tightening: the quality resolver is now reachable only from the two adapters that hold the audio lease, so no screen can resolve its own plan and produce a second set of Room options. |
+| `mobile-native/package.json` | `dependency_watch` | Script-only. `test:realtime-audio-critical` and `test:realtime-audio` now include the three new suites. **No dependency version changed** — the pinned media stack is byte-identical to the baseline and the dependency-lock test asserts equality against it. |
 
-Unprotected files also changed in this commit (no declaration consequence, listed for
-completeness): `reports/realtime_audio_verified_baseline.md`, this file,
-`docs/realtime_audio_branch_protection.md`, `docs/realtime_audio_change_policy.md`,
-`docs/realtime_audio_release_checklist.md`,
-`docs/realtime_audio_safe_extension_points.md`.
+Unprotected files also changed (listed for completeness, no declaration consequence):
+`reports/realtime_audio_change_declaration_history.md` (new), this file, and
+`reports/pulsesoc_elite_media_quality_report.md` (new).
 
 ## Expected behavior change
 
-**None.** Nothing a person holding a phone can hear, see, or measure should differ.
+**None, with every flag off — which is the shipped state.**
 
-Stated precisely, because "none expected" is the claim the physical validation is
-testing:
+`REALTIME_MEDIA_QUALITY_V2_ENABLED` defaults false and is server-driven with no client
+override, so a build with no backend change behaves exactly as the verified baseline did.
+Stated precisely, because "none expected" is the claim the physical validation tests:
 
-- No `AVAudioSession` category, mode, or activation call was added, removed, or
-  reordered.
-- No microphone track is created, published, unpublished, muted, or unmuted at a
-  different time than before.
-- No remote audio subscription changed.
-- No route selection (speaker / receiver / Bluetooth) changed.
-- No cleanup ordering changed. The lease-generation check still returns `false` for a
-  stale lease at the same point, with the same value.
-- No ownership arbitration priority or outcome changed.
+- The object passed to `new Room(...)` is deep-equal to the previous literal, for all
+  five features. Asserted against independently transcribed literals in
+  `mediaQualityWiring.test.ts`, and against the tagged baseline commit in
+  `mediaQualityPolicy.test.ts`.
+- A stable video call still calls `setCameraEnabled(true)` with no arguments, because
+  `videoCaptureFor("stable", "video_call")` returns `undefined` on purpose. The baseline
+  passed no camera options for video calls; returning the livestream's options here would
+  be a behaviour change wearing the word "stable".
+- No `AVAudioSession` call was added, removed, or reordered. No screen-level audio-session
+  mutation exists.
+- The audio lease is still acquired before the Room is constructed (asserted by index
+  ordering in the wiring test), and released by lease, not by owner name.
+- No microphone track is created, published, unpublished, muted, or unmuted at a different
+  time. There is no second publication path.
+- No remote subscription, route selection, reconnect, or cleanup logic changed.
+- No participant permission is touched. The quality layer cannot call `setPermissions` or
+  `updateParticipant` — asserted as an absence in both adapters.
+- A viewer still gets no publish configuration at any profile, including elite.
 - No dependency version changed.
-- No feature flag default changed. `LIVESTREAM_AUDIO_V2_ENABLED` remains off, and
-  `resolveLiveAudioPath()` still returns `v1_legacy` absent a strict server-sent
-  `true`.
 
-The single observable difference is additive telemetry: three previously-silent
-rejection branches now emit an `invariant_violation` event carrying an enum id and an
-enum-constrained detail. Each of those branches already returned the same rejection
-before this change.
+The only observable difference with flags off is one additional telemetry event per room
+construction (`quality_plan_resolved`), carrying enums and hashed identifiers.
 
-The one deletion — the `export` keyword on `PULSE_LIVE_PORTRAIT_VIDEO_RESOLUTION` — is
-compile-time only and was verified to have zero importers before removal;
-`npm run typecheck` passes.
+**With flags on (QA cohort only, not shipped):** audio gains a named bitrate where the
+baseline left it to the SDK (40 kbps speech at elite); the live host rises to 1080×1920
+with `degradationPreference: "maintain-framerate"`; video calls receive capture and publish
+configuration they never had. Echo cancellation is never disabled at any profile, and
+music mode — which relaxes noise suppression and AGC — still leaves echo cancellation on.
 
 ## Regression risk
 
 | Verified surface | Can this change affect it? | Why |
 | --- | --- | --- |
-| Audio call | No | Engine edit is confined to the stale-lease branch, which already returned `false`. A normal call never enters that branch; when it does, the outcome is unchanged. |
-| Video-call audio | No | Same code path as audio call. Video capture options were not modified — only the visibility of a constant they consume internally. |
-| Livestream host audio | Low | The publisher edits sit in `reconcileDuplicates` (post-hoc, after the unpublish has already happened) and in the `canPublishMicrophone === false` refusal. A host is permitted to publish, so it never reaches the refusal; the reconciliation report is emitted after the reconciliation completes. |
-| Livestream guest audio | Low | Same publisher path as host, via the approved-guest publish gate. The gate logic itself is untouched. |
-| Livestream viewer playback | No | Viewers do not publish. The new `viewer_publication_attempt` report fires only on the already-existing refusal, which viewers do not trigger in normal operation. |
-| Speaker / receiver / Bluetooth routing | No | No routing call was added or moved. `checkRouteState` is a pure function that is not wired into any runtime path in this change. |
-| Interruption recovery | No | No interruption handler was modified. |
-| Cleanup | No | The lease-generation rejection is byte-identical in effect. This is the branch most likely to fire in the field, which is why it is now counted. |
-| Mixed-session transitions | No | Arbitration priorities, outcomes, and the eight transitions are unchanged; the 42 contract tests covering them pass unmodified in substance. |
+| Audio call | No, with flags off | The Room options are deep-equal to the previous literal, proven against a commit and against an independent transcription. Nothing else in the adapter moved. |
+| Video-call audio | No, with flags off | Same construction site, same options. The camera branch that could differ is not taken at stable, and the bare `setCameraEnabled(true)` call is asserted to still exist. |
+| Livestream host audio | No, with flags off | Same substitution. `PULSE_LIVE_VIDEO_*` remain the fallback when no plan options are present. |
+| Livestream guest audio | No, with flags off | Guest publication is gated by `canConnectAsCohostPublisher`, which is untouched. The quality plan cannot grant publish rights — it never sees a token. |
+| Livestream viewer playback | No | Viewers publish nothing at any profile; asserted at stable and at elite. `mediaQuality` normalising to `null` on an older backend yields stable. |
+| Routing (speaker / receiver / Bluetooth) | No | No routing call added or moved. |
+| Interruption recovery | No | No interruption handler modified. |
+| Cleanup | No | Lease discipline unchanged; the manifest's `required_lease_discipline` check passes on both adapters. |
+| Mixed-session transitions | No | Ownership arbitration untouched. `liveAudioMode` now drives both the lease and the plan, which removes a way for them to disagree rather than adding one. |
 
-The residual risk that automation cannot retire: the monitor allocates a small object
-per report and appends to a 32-entry ring. If an invariant fired in a tight loop this
-would add allocation pressure on a hot path. Mitigation is structural — the history is
-bounded, the detail is enum-constrained rather than string-formatted, and all three
-call sites are on rejection paths that should be rare. Physical validation below is
-what actually confirms it.
+Residual risk automation cannot retire: with flags **on**, elite raises the live host to
+1080p and gives video calls encoder settings they never had. That is a real encoder and
+thermal change on real hardware, and no unit test can tell you how a phone behaves at
+1080p in a warm room. It is why the flags ship off, why `REALTIME_MEDIA_QUALITY_V2_QA_ONLY`
+defaults true, and why the adaptation reducer clamps to `resilient` on `serious` thermal
+state before anything else is considered. The physical A/B below is what actually retires
+this risk.
 
 ## Tests run
 
@@ -137,31 +135,21 @@ Measured 2026-08-02 on this change set, not claimed.
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Critical audio suite | `npm run test:realtime-audio-critical` | **PASS** — 10 suites, 147 tests, 4.5s test time / 15s wall |
-| Full audio suite | `npm run test:realtime-audio` | **PASS** — 17 suites, 227 tests, 5.5s. Confirms the critical suite is the faster of the two, as section 6 requires. |
+| Critical audio suite | `npm run test:realtime-audio-critical` | **PASS** — 13 suites, 283 tests, 5.4 s |
+| Full audio suite | `npm run test:realtime-audio` | **PASS** — 20 suites, 361 tests, 6.1 s |
 | Architecture (native) | `npm run test:realtime-audio-architecture` | **PASS** — 21 tests |
 | Architecture (backend) | `python3 -m unittest tests.protection.test_realtime_audio_architecture` | **PASS** — 13 tests, `OK` |
-| Contract suite | `jest src/core/__tests__/realtimeAudioContracts.test.ts` | **PASS** — 42 tests |
 | Backend token grants | `python3 -m unittest tests.protection.test_call_livekit_token_grants tests.protection.test_livestream_audio_token_grants tests.protection.test_livekit_webhook_route_owner` | **PASS** — 4 tests, `OK` |
+| Quality policy + adaptation + wiring | `jest src/core/__tests__/mediaQuality src/core/__tests__/mediaAdaptation` | **PASS** — 3 suites, 134 tests |
 | TypeScript | `npm run typecheck` | **PASS** — no errors |
+| Change gate | `python3 scripts/realtime_audio_change_gate.py --changed-files-from ...` | Correctly identified all 14 protected paths and demanded this declaration |
 | Native build | `npx expo prebuild --platform ios --no-install` or an EAS build | **NOT RUN** — no macOS/Xcode toolchain in this environment. Required before release; the workflow's `native-build` job runs it in CI. |
-
-Enforcement proofs performed and reverted, per section 19:
-
-| Proof | Injection | Native result | Backend result | Reverted |
-| --- | --- | --- | --- | --- |
-| Forbidden API reaches an unprotected file | `setAppleAudioConfiguration` appended to `mobile-native/src/screens/SettingsScreen.tsx` | `EXIT=1`, 2 failed / 19 passed, named the file and the marker | `EXIT=1`, `FAILED (failures=1)`, named the file plus the rule's reason | Yes — restored from backup, `git diff --name-only` returned 0 files, backend re-ran 13 tests `OK` |
-| Protected path changed without a declaration | `realtimeAudioEngine.ts` passed via `--changed-files-from` (no repository mutation) | — | `EXIT=1`: "is still the unfilled template" **and** "does not name these changed protected files" | N/A — no file was modified |
-| Control: unprotected paths only | `MarketplaceScreen.tsx` + `bot.py` (non-matching diff) | — | `EXIT=0`, "No protected real-time audio path changed (2 file(s) inspected)" | N/A |
-
-No intentional failure files or test mutations remain in the repository.
 
 ## Physical validation required
 
-Automated tests show the invariants still hold. They cannot show that a human still
-hears sound, and this change touches the coordinator and the publisher. Every surface
-below is therefore **required** before this change reaches production, on a physical
-device — not a simulator, which does not exercise `AVAudioSession` arbitration.
+Automated tests prove the resolver returns the baseline and the adapters use it. They
+cannot prove a human heard anything. This change edits both room adapters, so every audio
+row is required before it reaches production even with flags off.
 
 Record results in `reports/realtime_audio_verified_baseline.md` section 7, not here.
 
@@ -175,35 +163,46 @@ Record results in `reports/realtime_audio_verified_baseline.md` section 7, not h
 | Interruption recovery (incoming PSTN call, then resume) | Required | NOT PERFORMED | | |
 | Mixed session without app restart | Required | NOT PERFORMED | | |
 
+Additionally required **before any flag is enabled for the QA cohort**, and not satisfied
+by the rows above:
+
+| Quality check | Required? | Performed? | Result |
+| --- | --- | --- | --- |
+| A/B stable vs elite, audio call — clarity, no robotic artefacts | Required | NOT PERFORMED | |
+| A/B stable vs elite, live host camera — sharpness, no forced zoom | Required | NOT PERFORMED | |
+| Elite live host at 1080p, sustained 10 min — thermal and battery | Required | NOT PERFORMED | |
+| Degradation under a throttled network — audio must stay continuous | Required | NOT PERFORMED | |
+| Recovery after the network returns — no oscillation | Required | NOT PERFORMED | |
+
 **NOT PERFORMED** is recorded honestly rather than left blank. This environment has no
-physical device and no macOS build toolchain. The release checklist
-(`docs/realtime_audio_release_checklist.md`) blocks on these rows, and its rule stands:
-the only acceptable positive result is that a person heard the audio.
+physical device and no macOS build toolchain. The release checklist blocks on these rows,
+and its rule stands: the only acceptable positive result is that a person heard the audio
+and saw the video.
 
 ## Rollback procedure
 
-- **Immediate mitigation (no app release):** none of these edits is flag-gated,
-  because none of them changes behavior. The nearest server-side lever is
-  `LIVESTREAM_AUDIO_V2_ENABLED=0`, which forces `resolveLiveAudioPath()` to
-  `v1_legacy` — but it is already the default and disables the isolated livestream
-  path, not this change. If telemetry volume from `invariant_violation` becomes a
-  problem, disable that event at the telemetry sink; the monitor tolerates a throwing
-  or absent sink by design (covered by the sink-failure-resilience test).
-- **Code rollback:** `git revert <sha>` of this commit. It is safe to revert whole:
-  the three runtime edits are additive telemetry, and reverting the manifest, tests,
-  gate, workflow, and CODEOWNERS together removes the enforcement without leaving a
-  half-configured boundary. Alternatively `git checkout realtime-audio-stable-v1`,
-  the immutable snapshot of the physically-validated audio foundation.
-- **Backend rollback:** none required. No backend file changed. `bot.py`,
-  `requirements.txt`, and the LiveKit token grants are untouched, and the backend
-  token tests pass unmodified.
-- **Who to notify:** the real-time audio owner in `.github/CODEOWNERS`
-  (`@hmcroody-alt`), plus whoever is on release duty for the affected build.
-- **How to confirm the rollback worked:** a person places an audio call and hears
-  both directions; a person joins a livestream and hears the host. Nothing less
-  counts. A green test run after a rollback confirms only that the code compiles and
-  the invariants are stated — it is not evidence of sound.
-
+- **Immediate mitigation (no app release):** set `REALTIME_MEDIA_QUALITY_V2_ENABLED=0`
+  server-side. `normalizeMediaQualityFlag` requires a literal `true`, so this restores
+  the frozen baseline configuration for every feature on the next room construction. This
+  is a real kill switch, not a code path that hopes to be equivalent — the same builder
+  runs, with the stable plan, producing the object the baseline used. It requires no
+  client change and takes effect for new sessions immediately. Narrower levers exist per
+  surface: `LIVE_ELITE_AUDIO_ENABLED`, `LIVE_ELITE_VIDEO_ENABLED`,
+  `CALL_ELITE_AUDIO_ENABLED`, `VIDEO_CALL_ELITE_QUALITY_ENABLED`.
+- **Code rollback:** `git revert <sha>` of this commit. Safe to revert whole: the four
+  new modules have no importers outside the two adapters, and reverting restores both
+  literals together. Alternatively `git checkout realtime-audio-stable-v1`, the immutable
+  snapshot of the physically-validated foundation.
+- **Backend rollback:** remove `media_quality` from the call-join and LiveKit-token
+  responses. The client treats an absent or malformed payload as stable — asserted for
+  `undefined`, `null`, `{}`, `""`, `0`, `[]`, and `{ nonsense: true }` — so an older
+  backend needs no client change.
+- **Who to notify:** the real-time audio owner in `.github/CODEOWNERS` (`@hmcroody-alt`),
+  plus whoever is on release duty for the affected build.
+- **How to confirm the rollback worked:** a person places an audio call and hears both
+  directions; a person joins a livestream and hears the host. Nothing less counts. A green
+  test run after a rollback confirms only that the code compiles and the invariants are
+  stated — it is not evidence of sound.
 ---
 
 ## Template for the next change

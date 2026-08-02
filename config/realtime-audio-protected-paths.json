@@ -142,6 +142,18 @@
       "backend_note": "bot.py is a single very large module, so it cannot be path-protected without protecting the whole backend. The change gate treats a bot.py diff as protected only when the diff touches a line matching backend_diff_patterns below."
     },
     {
+      "id": "media_quality_policy",
+      "title": "Governed media quality policy and adaptation",
+      "why": "Resolves the audio and video settings both room adapters hand to `new Room({...})`, so it now decides the capture and publish configuration that the verified baseline used to hard-code. Its stable profile IS the verified baseline: an edit here that changes what `stable` returns changes what the kill switch falls back to, silently and for every feature at once. The adaptation reducer is protected for the opposite reason — it is the thing that must never place audio on the degradation ladder.",
+      "paths": [
+        "mobile-native/src/core/mediaQualityPolicy.ts",
+        "mobile-native/src/core/mediaAdaptationController.ts",
+        "mobile-native/src/core/mediaQualityFlags.ts",
+        "mobile-native/src/core/mediaQualityTelemetry.ts"
+      ],
+      "note": "These four modules are pure by construction: no LiveKit import, no Room handle, no clock, no randomness. That is enforced by mediaQualityPolicy.test.ts and mediaAdaptationController.test.ts, not by convention. A change that gives any of them the ability to act on a room has turned a policy into a second media owner."
+    },
+    {
       "id": "critical_audio_tests",
       "title": "Tests that encode the verified invariants",
       "why": "Deleting or weakening a test is the quietest way to remove a protection. These files are protected so that doing so requires a declaration.",
@@ -163,6 +175,9 @@
         "mobile-native/src/live/__tests__/cohostPublishGate.test.ts",
         "mobile-native/src/live/__tests__/remoteAudioReapply.test.ts",
         "mobile-native/src/live/__tests__/liveSession.test.ts",
+        "mobile-native/src/core/__tests__/mediaQualityPolicy.test.ts",
+        "mobile-native/src/core/__tests__/mediaAdaptationController.test.ts",
+        "mobile-native/src/core/__tests__/mediaQualityWiring.test.ts",
         "tests/protection/test_realtime_audio_architecture.py",
         "tests/protection/test_call_livekit_token_grants.py",
         "tests/protection/test_livestream_audio_token_grants.py",
@@ -287,12 +302,16 @@
     }
   ],
   "import_boundary": {
-    "reason": "The narrow public API. The audio core is reachable only from the two room adapters and the livestream publisher that wraps them. Every screen in the product goes through those, which is why no screen has ever needed to know that an AVAudioSession exists. This rule is what keeps that true: the day a screen imports the engine directly, the boundary has widened whether or not that screen calls a forbidden API.",
+    "reason": "The narrow public API. The audio core is reachable only from the two room adapters and the livestream publisher that wraps them. Every screen in the product goes through those, which is why no screen has ever needed to know that an AVAudioSession exists. This rule is what keeps that true: the day a screen imports the engine directly, the boundary has widened whether or not that screen calls a forbidden API. The media quality modules are held to the same rule for a different reason: they are harmless on their own, but a screen that resolves its own plan is a screen deciding capture and publish settings outside the two adapters that hold the audio lease, and the first symptom of that is a second set of Room options nobody knows about.",
     "modules": [
       "core/realtimeAudioEngine",
       "core/realtimeMicrophonePublisher",
       "core/realtimeAudioInvariants",
-      "core/realtimeAudioStateMachine"
+      "core/realtimeAudioStateMachine",
+      "core/mediaQualityPolicy",
+      "core/mediaAdaptationController",
+      "core/mediaQualityFlags",
+      "core/mediaQualityTelemetry"
     ],
     "allowed_importers": [
       "mobile-native/src/core/realtimeAudioEngine.ts",
@@ -300,6 +319,10 @@
       "mobile-native/src/core/realtimeAudioInvariants.ts",
       "mobile-native/src/core/realtimeAudioStateMachine.ts",
       "mobile-native/src/core/audioOwnershipPolicy.ts",
+      "mobile-native/src/core/mediaQualityPolicy.ts",
+      "mobile-native/src/core/mediaAdaptationController.ts",
+      "mobile-native/src/core/mediaQualityFlags.ts",
+      "mobile-native/src/core/mediaQualityTelemetry.ts",
       "mobile-native/src/calls/useNativeCallRoom.ts",
       "mobile-native/src/live/useLiveBroadcastRoom.ts",
       "mobile-native/src/live/liveAudioPublisher.ts"

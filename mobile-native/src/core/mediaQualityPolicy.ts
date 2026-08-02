@@ -29,7 +29,10 @@
  * validated by ear.
  */
 
-import type { MediaConditionSnapshot } from "./mediaAdaptationController";
+import {
+  NEUTRAL_MEDIA_CONDITIONS,
+  type MediaConditionSnapshot
+} from "./mediaAdaptationController";
 
 export type MediaQualityProfileName = "stable" | "balanced" | "elite" | "resilient";
 
@@ -462,14 +465,12 @@ export type MediaQualityInput = {
   conditions?: MediaConditionSnapshot | null;
 };
 
-export const NEUTRAL_CONDITIONS: MediaConditionSnapshot = Object.freeze({
-  networkTier: "good",
-  thermalState: "nominal",
-  batteryLevel: 1,
-  charging: false,
-  deviceTier: "high",
-  supportsVoiceIsolation: false
-});
+/**
+ * Aliased rather than redeclared. Two literals both claiming to be "neutral
+ * conditions" is two things to keep in sync, and the one that drifts is the one
+ * the tests do not cover.
+ */
+export const NEUTRAL_CONDITIONS: MediaConditionSnapshot = NEUTRAL_MEDIA_CONDITIONS;
 
 /**
  * The single entry point. Deterministic: same input, same plan, every time.
@@ -519,7 +520,8 @@ export function resolveMediaQualityPlan(input: MediaQualityInput): MediaQualityP
     audioCaptureDefaults: audioCaptureFor(guarded, feature, contentMode, conditions, reasons),
     audioPublishDefaults: audioPublishFor(guarded, contentMode, reasons),
     videoCaptureDefaults: videoCaptureFor(guarded, feature, reasons),
-    videoPublishDefaults: videoPublishFor(guarded, feature, reasons)
+    videoPublishDefaults: videoPublishFor(guarded, feature, reasons),
+    reasons
   };
 }
 
@@ -600,4 +602,70 @@ export function applyConditionGuards(
   }
 
   return result;
+}
+
+/* -------------------------------------------------------------------------- */
+/* ROOM OPTIONS                                                                */
+/* -------------------------------------------------------------------------- */
+
+export type RoomQualityOptions = {
+  adaptiveStream: boolean;
+  dynacast: boolean;
+  audioCaptureDefaults: AudioCaptureConfig;
+  videoCaptureDefaults?: VideoCaptureConfig;
+  publishDefaults: Record<string, unknown>;
+};
+
+/**
+ * Turn a plan into the exact object literal shape both adapters already hand to
+ * `new Room({...})`.
+ *
+ * This exists so there is ONE place that decides what a Room's quality options
+ * look like. Two adapters each assembling their own object from the same plan
+ * is two places for the stable path to drift, and the whole guarantee of this
+ * mission is that stable does not drift.
+ *
+ * Verified by test: for every feature, the `stable` output of this function is
+ * deep-equal to the literal that was in the adapter before this layer existed —
+ * including the absence of keys. A video call gets no videoCaptureDefaults and
+ * no videoEncoding, because that is what it had.
+ */
+export function buildRoomQualityOptions(plan: MediaQualityPlan): RoomQualityOptions {
+  const publishDefaults: Record<string, unknown> = {};
+
+  if (plan.videoPublishDefaults) {
+    publishDefaults.videoEncoding = { ...plan.videoPublishDefaults.videoEncoding };
+    if (plan.videoPublishDefaults.degradationPreference) {
+      publishDefaults.degradationPreference = plan.videoPublishDefaults.degradationPreference;
+    }
+  }
+
+  // simulcast stays true even for audio-only features. That is what the
+  // baseline did, and an audio-only room ignores it.
+  publishDefaults.simulcast = plan.videoPublishDefaults ? plan.videoPublishDefaults.simulcast : true;
+  publishDefaults.dtx = plan.audioPublishDefaults.dtx;
+  publishDefaults.red = plan.audioPublishDefaults.red;
+  publishDefaults.stopMicTrackOnMute = plan.audioPublishDefaults.stopMicTrackOnMute;
+  if (plan.audioPublishDefaults.audioBitrate !== undefined) {
+    publishDefaults.audioBitrate = plan.audioPublishDefaults.audioBitrate;
+  }
+
+  const options: RoomQualityOptions = {
+    // Both were already explicitly true at the baseline. They are restated
+    // rather than omitted so that reading this function tells you the whole
+    // Room configuration, not the part that changed.
+    adaptiveStream: true,
+    dynacast: true,
+    audioCaptureDefaults: { ...plan.audioCaptureDefaults },
+    publishDefaults
+  };
+
+  if (plan.videoCaptureDefaults) {
+    options.videoCaptureDefaults = {
+      ...plan.videoCaptureDefaults,
+      resolution: { ...plan.videoCaptureDefaults.resolution }
+    };
+  }
+
+  return options;
 }

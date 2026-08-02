@@ -47,6 +47,12 @@ export type PulseCallJoin = {
   can_publish_sources?: string[];
   realtime_audio_v2_enabled?: boolean;
   realtime_audio_v2_fallback_enabled?: boolean;
+  /**
+   * Media quality V2 rollout flags, decided entirely server-side and delivered
+   * on this response. Absent means the verified stable configuration, which is
+   * what every client runs today.
+   */
+  media_quality?: Record<string, unknown>;
   expires_at?: string;
   message?: string;
 };
