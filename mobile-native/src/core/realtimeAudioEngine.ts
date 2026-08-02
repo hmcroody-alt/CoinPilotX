@@ -4,6 +4,7 @@ import {
   resolveOwnershipDecision,
   type OwnershipDecision
 } from "./audioOwnershipPolicy";
+import { emitRealtimeAudioEvent } from "./realtimeAudioTelemetry";
 
 export type RealtimeAudioMode =
   | "none"
@@ -23,9 +24,13 @@ export type AppleAudioConfiguration = {
 
 export type RealtimeAudioOwner = {
   ownerId: string;
+  leaseId: number;
   mode: RealtimeAudioMode;
   startedAt: number;
+  publishesMicrophone: boolean;
 };
+
+export type RealtimeAudioLease = Pick<RealtimeAudioOwner, "ownerId" | "leaseId" | "mode">;
 
 type LiveKitAudioSession = {
   setAppleAudioConfiguration?: (config: any) => Promise<void>;
@@ -37,6 +42,7 @@ type LiveKitAudioSession = {
 };
 
 let activeRealtimeAudioOwner: RealtimeAudioOwner | null = null;
+let nextRealtimeAudioLeaseId = 0;
 
 /**
  * Teardown callbacks keyed by ownerId. When a higher-priority feature takes the
@@ -48,6 +54,8 @@ const displacementHandlers = new Map<string, () => void>();
 export type ClaimOptions = {
   /** Invoked when a higher-priority owner takes the session from this owner. */
   onDisplaced?: () => void;
+  correlationId?: string;
+  participantRole?: string;
 };
 
 /** Last arbitration outcome, exposed for telemetry and tests. */
@@ -103,6 +111,15 @@ export function getActiveRealtimeAudioOwner(): RealtimeAudioOwner | null {
   return activeRealtimeAudioOwner ? { ...activeRealtimeAudioOwner } : null;
 }
 
+export function getActiveRealtimeMicrophoneOwner(): RealtimeAudioOwner | null {
+  const owner = getActiveRealtimeAudioOwner();
+  return owner?.publishesMicrophone ? owner : null;
+}
+
+export function modePublishesMicrophone(mode: RealtimeAudioMode): boolean {
+  return ["audio_call", "video_call", "live_host", "live_guest", "voice_message"].includes(mode);
+}
+
 /**
  * Claim the single device audio session.
  *
@@ -118,10 +135,26 @@ export function claimRealtimeAudioSession(
   ownerId: string,
   options: ClaimOptions = {}
 ): RealtimeAudioOwner {
+  emitRealtimeAudioEvent({
+    name: "audio_owner_requested",
+    sessionId: ownerId,
+    correlationId: options.correlationId,
+    roomType: mode,
+    participantRole: options.participantRole
+  });
   const decision = resolveOwnershipDecision(activeRealtimeAudioOwner, { ownerId, mode });
   lastOwnershipDecision = decision;
 
   if (decision.outcome === "denied") {
+    emitRealtimeAudioEvent({
+      name: "audio_owner_rejected",
+      sessionId: ownerId,
+      correlationId: options.correlationId,
+      roomType: mode,
+      participantRole: options.participantRole,
+      outcome: decision.outcome,
+      failureCategory: "higher_priority_owner"
+    });
     throw new RealtimeAudioOwnershipError(decision.blockedBy, decision.blockedByMode);
   }
   if (decision.outcome === "displaced") {
@@ -138,7 +171,25 @@ export function claimRealtimeAudioSession(
       ? activeRealtimeAudioOwner.startedAt
       : Date.now();
 
-  activeRealtimeAudioOwner = { ownerId, mode, startedAt };
+  // Every acquisition rotates the lease, even when the semantic ownerId is the
+  // same. A delayed cleanup holding the previous lease can therefore never
+  // stop the newer room/session instance.
+  nextRealtimeAudioLeaseId += 1;
+  activeRealtimeAudioOwner = {
+    ownerId,
+    leaseId: nextRealtimeAudioLeaseId,
+    mode,
+    startedAt,
+    publishesMicrophone: modePublishesMicrophone(mode)
+  };
+  emitRealtimeAudioEvent({
+    name: "audio_owner_acquired",
+    sessionId: ownerId,
+    correlationId: options.correlationId,
+    roomType: mode,
+    participantRole: options.participantRole,
+    outcome: decision.outcome
+  });
   return getActiveRealtimeAudioOwner() as RealtimeAudioOwner;
 }
 
@@ -146,11 +197,15 @@ export async function activateRealtimeAudioSession(
   audioSession: LiveKitAudioSession,
   mode: RealtimeAudioMode,
   ownerId: string,
-  options: { speaker?: boolean; onDisplaced?: () => void } = {}
+  options: { speaker?: boolean; onDisplaced?: () => void; correlationId?: string; participantRole?: string } = {}
 ): Promise<RealtimeAudioOwner> {
   // Throws RealtimeAudioOwnershipError if a higher-priority owner holds the
   // session. Callers surface this as a user-facing "audio is busy" state.
-  const owner = claimRealtimeAudioSession(mode, ownerId, { onDisplaced: options.onDisplaced });
+  const owner = claimRealtimeAudioSession(mode, ownerId, {
+    onDisplaced: options.onDisplaced,
+    correlationId: options.correlationId,
+    participantRole: options.participantRole
+  });
   const reacquired = lastOwnershipDecision?.outcome === "reacquired";
 
   const config = resolveRealtimeAudioConfiguration(mode);
@@ -169,15 +224,30 @@ export async function activateRealtimeAudioSession(
   if (options.speaker !== false) {
     await selectRealtimeAudioOutput(audioSession, true).catch(() => undefined);
   }
+  emitRealtimeAudioEvent({
+    name: "audio_session_activated",
+    sessionId: ownerId,
+    correlationId: options.correlationId,
+    roomType: mode,
+    participantRole: options.participantRole
+  });
   return owner;
 }
 
-export async function releaseRealtimeAudioSession(audioSession: LiveKitAudioSession | null | undefined, ownerId: string): Promise<boolean> {
-  displacementHandlers.delete(ownerId);
+export async function releaseRealtimeAudioSession(
+  audioSession: LiveKitAudioSession | null | undefined,
+  lease: string | RealtimeAudioLease
+): Promise<boolean> {
+  const ownerId = typeof lease === "string" ? lease : lease.ownerId;
   if (!activeRealtimeAudioOwner || activeRealtimeAudioOwner.ownerId !== ownerId) return false;
+  if (typeof lease !== "string" && activeRealtimeAudioOwner.leaseId !== lease.leaseId) return false;
+  displacementHandlers.delete(ownerId);
+  const released = activeRealtimeAudioOwner;
+  emitRealtimeAudioEvent({ name: "cleanup_started", sessionId: ownerId, roomType: released.mode });
   activeRealtimeAudioOwner = null;
   lastOwnershipDecision = null;
   await audioSession?.stopAudioSession?.().catch(() => undefined);
+  emitRealtimeAudioEvent({ name: "cleanup_completed", sessionId: ownerId, roomType: released.mode });
   return true;
 }
 
@@ -198,6 +268,10 @@ export async function resetRealtimeAudioOwnership(audioSession?: LiveKitAudioSes
 export async function selectRealtimeAudioOutput(audioSession: LiveKitAudioSession, speakerEnabled: boolean): Promise<void> {
   const output = Platform.OS === "ios" ? (speakerEnabled ? "force_speaker" : "default") : speakerEnabled ? "speaker" : "earpiece";
   await audioSession.selectAudioOutput?.(output);
+}
+
+export async function showRealtimeAudioRoutePicker(audioSession: LiveKitAudioSession): Promise<void> {
+  if (Platform.OS === "ios") await audioSession.showAudioRoutePicker?.();
 }
 
 export const PULSE_LIVE_PORTRAIT_VIDEO_RESOLUTION = {

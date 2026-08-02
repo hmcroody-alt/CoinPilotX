@@ -469,26 +469,58 @@ def _require_livekit() -> dict[str, Any] | None:
     )
 
 
-def _generate_livekit_token(room_name: str, user_id: int, call_type: str = "audio") -> dict[str, Any]:
+def _env_enabled(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _realtime_audio_v2_status(call_type: str) -> dict[str, bool]:
+    platform_enabled = _env_enabled("REALTIME_AUDIO_PLATFORM_V2_ENABLED", False)
+    feature_flag = "REALTIME_VIDEO_CALLS_V2_ENABLED" if str(call_type).strip().lower() == "video" else "REALTIME_AUDIO_CALLS_V2_ENABLED"
+    return {
+        "realtime_audio_v2_enabled": platform_enabled and _env_enabled(feature_flag, False),
+        "realtime_audio_v2_fallback_enabled": _env_enabled("REALTIME_AUDIO_V2_FALLBACK_ENABLED", True),
+    }
+
+
+def _generate_livekit_token(
+    room_name: str,
+    user_id: int,
+    call_type: str = "audio",
+    participant_role: str = "member",
+) -> dict[str, Any]:
     missing = _require_livekit()
     if missing:
         return missing
     api_key = os.getenv("LIVEKIT_API_KEY", "").strip()
     api_secret = os.getenv("LIVEKIT_API_SECRET", "").strip()
     now = int(time.time())
+    normalized_call_type = "video" if str(call_type).strip().lower() == "video" else "audio"
+    room_type = "video_call" if normalized_call_type == "video" else "audio_call"
+    normalized_role = str(participant_role or "member").strip().lower()
+    if normalized_role not in {"caller", "callee"}:
+        normalized_role = "member"
+    publish_sources = ["microphone", "camera"] if normalized_call_type == "video" else ["microphone"]
     grants = {
         "roomJoin": True,
         "room": room_name,
         "canPublish": True,
         "canSubscribe": True,
         "canPublishData": True,
+        "canPublishSources": publish_sources,
     }
-    if call_type == "audio":
-        grants["canPublishSources"] = ["microphone"]
+    participant_identity = f"user-{int(user_id)}"
     payload = {
         "iss": api_key,
-        "sub": f"user-{int(user_id)}",
+        "sub": participant_identity,
         "name": f"PulseSoc member {int(user_id)}",
+        "metadata": _json_dumps({
+            "room_type": room_type,
+            "participant_role": normalized_role,
+            "authenticated_user_id": int(user_id),
+        }),
         "nbf": now - 10,
         "exp": now + 60 * 60,
         "video": grants,
@@ -502,6 +534,13 @@ def _generate_livekit_token(room_name: str, user_id: int, call_type: str = "audi
         "token": f"{signing_input}.{_base64url(signature)}",
         "livekit_url": _livekit_ws_url(),
         "room_name": room_name,
+        "room_type": room_type,
+        "participant_identity": participant_identity,
+        "participant_role": normalized_role,
+        "can_publish": True,
+        "can_subscribe": True,
+        "can_publish_sources": publish_sources,
+        **_realtime_audio_v2_status(normalized_call_type),
         "expires_at": datetime.fromtimestamp(payload["exp"], timezone.utc).isoformat(timespec="seconds"),
     }
 
@@ -706,7 +745,12 @@ def _serialize_call(cur: Any, call: dict[str, Any], user_id: int = 0, include_to
         "livekit": livekit_config_status(),
     }
     if include_token and user_id:
-        payload["join"] = _generate_livekit_token(payload["room_name"], int(user_id), payload["call_type"])
+        payload["join"] = _generate_livekit_token(
+            payload["room_name"],
+            int(user_id),
+            payload["call_type"],
+            str(me.get("role") or "member"),
+        )
     return payload
 
 
@@ -1269,7 +1313,12 @@ def join_token(user_id: int, call_ref: str | int) -> dict[str, Any]:
             return denied
         if str(call.get("status") or "") in FINAL_STATUSES:
             return _err("This call has ended.", 409, "call_final")
-        token = _generate_livekit_token(call.get("room_name") or "", int(user_id), call.get("call_type") or "audio")
+        token = _generate_livekit_token(
+            call.get("room_name") or "",
+            int(user_id),
+            call.get("call_type") or "audio",
+            str(participant.get("role") or "member"),
+        )
         if not token.get("ok"):
             return token
         now = _now()
@@ -1308,7 +1357,12 @@ def accept_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | Non
         _event(cur, int(call["id"]), int(user_id), "accepted", {})
         refreshed = _get_call(cur, call_ref)
         _emit_call_sync_event(cur, refreshed, "call_accepted", int(user_id), status="accepted")
-        token = _generate_livekit_token(refreshed.get("room_name") or "", int(user_id), refreshed.get("call_type") or "audio")
+        token = _generate_livekit_token(
+            refreshed.get("room_name") or "",
+            int(user_id),
+            refreshed.get("call_type") or "audio",
+            str(participant.get("role") or "member"),
+        )
         if not token.get("ok"):
             return token
         _transition(cur, refreshed, "connecting", int(user_id), "accepted_joining")

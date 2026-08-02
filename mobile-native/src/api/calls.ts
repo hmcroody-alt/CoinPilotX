@@ -40,6 +40,13 @@ export type PulseCallJoin = {
   livekit_url?: string;
   url?: string;
   room_name?: string;
+  room_type?: "audio_call" | "video_call" | string;
+  participant_role?: "caller" | "callee" | string;
+  can_publish?: boolean;
+  can_subscribe?: boolean;
+  can_publish_sources?: string[];
+  realtime_audio_v2_enabled?: boolean;
+  realtime_audio_v2_fallback_enabled?: boolean;
   expires_at?: string;
   message?: string;
 };

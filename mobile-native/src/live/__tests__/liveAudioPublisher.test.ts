@@ -142,4 +142,15 @@ describe("deterministic livestream microphone publishing", () => {
       expect.objectContaining({ outcome: "no_participant" })
     );
   });
+
+  it("refuses microphone publication for a viewer even when client code calls the publisher", async () => {
+    const room = fakeRoom();
+    const result = await publishLiveMicrophone(room, {
+      context: { participantRole: "viewer", roomType: "livestream", canPublishMicrophone: false }
+    });
+
+    expect(result.outcome).toBe("forbidden");
+    expect(result.audioTrackCount).toBe(0);
+    expect(room.setMicrophoneEnabledCalls).toEqual([]);
+  });
 });

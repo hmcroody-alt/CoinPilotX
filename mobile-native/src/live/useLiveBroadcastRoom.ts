@@ -12,9 +12,14 @@ import {
   releaseRealtimeAudioSession,
   resolveRealtimeAudioConfiguration,
   selectRealtimeAudioOutput,
+  showRealtimeAudioRoutePicker,
+  type RealtimeAudioLease,
   type RealtimeAudioMode,
   videoPublications
 } from "../core/realtimeAudioEngine";
+import { setRealtimeMicrophoneEnabled } from "../core/realtimeMicrophonePublisher";
+import { RealtimeAudioStateMachine } from "../core/realtimeAudioStateMachine";
+import { createRealtimeAudioCorrelationId } from "../core/realtimeAudioTelemetry";
 import { isLiveAudioV2Enabled, resolveLiveAudioPath } from "./liveAudioFlags";
 import { publishLiveMicrophone } from "./liveAudioPublisher";
 import {
@@ -164,10 +169,22 @@ function liveAudioMode(credentials: LiveKitCredentials, publish: boolean): Realt
  * speaker. That is the duplicate-audio defect. The legacy branch is preserved
  * byte-for-byte so a flag flip is a true A/B, not a rewrite.
  */
-async function publishMicrophoneForPath(room: any, useV2: boolean, context: { role: string; room: string }): Promise<number> {
+async function publishMicrophoneForPath(
+  room: any,
+  useV2: boolean,
+  context: { role: string; room: string; correlationId?: string }
+): Promise<number> {
   if (!useV2) return ensureMicrophonePublished(room);
   emitLiveAudioEvent({ name: "live_audio_publish_started", path: "v2_isolated", role: context.role, room: context.room });
-  const result = await publishLiveMicrophone(room);
+  const result = await publishLiveMicrophone(room, {
+    context: {
+      sessionId: context.room,
+      correlationId: context.correlationId,
+      roomType: "livestream",
+      participantRole: context.role,
+      canPublishMicrophone: true
+    }
+  });
   emitLiveAudioEvent({
     name: result.outcome === "timeout" ? "live_audio_publish_timeout" : "live_audio_publish_settled",
     path: "v2_isolated",
@@ -183,7 +200,6 @@ async function publishMicrophoneForPath(room: any, useV2: boolean, context: { ro
       name: "live_audio_duplicate_reconciled",
       path: "v2_isolated",
       role: context.role,
-      room: context.room,
       duplicatesRemoved: result.duplicatesRemoved
     });
   }
@@ -210,7 +226,9 @@ export type LiveConnectOptions = {
 export function useLiveBroadcastRoom() {
   const roomRef = useRef<any>(null);
   const audioSessionRef = useRef<any>(null);
-  const audioOwnerIdRef = useRef("");
+  const audioLeaseRef = useRef<RealtimeAudioLease | null>(null);
+  const lifecycleRef = useRef(new RealtimeAudioStateMachine());
+  const correlationIdRef = useRef("");
   const activeSpeakersRef = useRef<Set<string>>(new Set());
   // Desired viewer remote-audio state; reapplied to tracks that subscribe after
   // the user toggled sound off (co-host join, host republish, reconnect).
@@ -303,8 +321,12 @@ export function useLiveBroadcastRoom() {
   }, []);
 
   const disconnect = useCallback(async (reason = "local_disconnect") => {
+    lifecycleRef.current.markTerminal();
+    lifecycleRef.current.tryTransition("room", "disconnecting");
+    lifecycleRef.current.tryTransition("local", "unpublishing");
     const room = roomRef.current;
-    const ownerId = audioOwnerIdRef.current;
+    const lease = audioLeaseRef.current;
+    audioLeaseRef.current = null;
     intentionalTeardownRef.current = true;
     clearRecoveryTimers();
     reconnectAttemptRef.current = 0;
@@ -316,8 +338,8 @@ export function useLiveBroadcastRoom() {
     // `ownerId || reason` fallback passed a REASON STRING as the owner id, which
     // can never match the real owner, so the release silently no-opped and the
     // AVAudioSession leaked - blocking the next call or broadcast.
-    if (ownerId) {
-      await releaseRealtimeAudioSession(audioSessionRef.current, ownerId).catch(() => undefined);
+    if (lease) {
+      await releaseRealtimeAudioSession(audioSessionRef.current, lease).catch(() => undefined);
       emitLiveAudioEvent({
         name: "live_audio_session_released",
         path: resolveLiveAudioPath({ audioV2Enabled: useV2Ref.current }),
@@ -326,7 +348,9 @@ export function useLiveBroadcastRoom() {
         reason
       });
     }
-    audioOwnerIdRef.current = "";
+    lifecycleRef.current.tryTransition("local", "released");
+    lifecycleRef.current.tryTransition("remote", "ended");
+    lifecycleRef.current.tryTransition("room", "disconnected");
     credentialsRef.current = null;
     refreshCredentialsRef.current = undefined;
     setState((current) => ({
@@ -445,7 +469,7 @@ export function useLiveBroadcastRoom() {
    * equally wrong, hence the classification plus a hard attempt budget.
    */
   const scheduleReconnect = useCallback((reason: string) => {
-    if (!useV2Ref.current || intentionalTeardownRef.current) return false;
+    if (!useV2Ref.current || intentionalTeardownRef.current || !lifecycleRef.current.mayReconnect()) return false;
     const credentials = credentialsRef.current;
     if (!credentials) return false;
 
@@ -515,11 +539,15 @@ export function useLiveBroadcastRoom() {
 
       if (roomRef.current) await disconnect("replaced_room");
       clearRecoveryTimers();
+      lifecycleRef.current = new RealtimeAudioStateMachine();
+      lifecycleRef.current.transition("room", "connecting");
       intentionalTeardownRef.current = false;
       useV2Ref.current = useV2;
       roleRef.current = telemetryRole;
+      correlationIdRef.current = createRealtimeAudioCorrelationId();
       roomNameRef.current = credentials.room || credentials.identity || "";
       publishRef.current = publish;
+      lifecycleRef.current.transition("local", publish ? "acquiringSession" : "released");
       credentialsRef.current = credentials;
       if (options.refreshCredentials) refreshCredentialsRef.current = options.refreshCredentials;
       emitLiveAudioEvent({
@@ -552,10 +580,12 @@ export function useLiveBroadcastRoom() {
         // one owner-controlled AVAudioSession before connecting or publishing.
         const mediaMode = liveAudioMode(credentials, publish);
         const appleAudioConfiguration = resolveLiveAudioConfiguration(mediaMode);
-        audioOwnerIdRef.current = `live:${mediaMode}:${credentials.room || credentials.identity || Date.now()}`;
+        const ownerId = `live:${mediaMode}:${credentials.room || credentials.identity || Date.now()}`;
         try {
-          await activateRealtimeAudioSession(livekitNative.AudioSession, mediaMode, audioOwnerIdRef.current, {
+          audioLeaseRef.current = await activateRealtimeAudioSession(livekitNative.AudioSession, mediaMode, ownerId, {
             speaker: true,
+            participantRole: telemetryRole,
+            correlationId: correlationIdRef.current,
             // A higher-priority owner (an incoming call) taking the session must
             // tear this broadcast down rather than leave it silently muted.
             onDisplaced: () => {
@@ -574,11 +604,12 @@ export function useLiveBroadcastRoom() {
               void disconnect("audio_session_displaced");
             }
           });
+          if (publish) lifecycleRef.current.transition("local", "publishing");
         } catch (ownershipError) {
           // A call already owns the audio session. Report it honestly instead of
           // stealing the session and cutting the user's call off mid-sentence.
           if (ownershipError instanceof RealtimeAudioOwnershipError) {
-            audioOwnerIdRef.current = "";
+            audioLeaseRef.current = null;
             emitLiveAudioEvent({
               name: "live_audio_session_denied",
               path: audioPath,
@@ -637,21 +668,34 @@ export function useLiveBroadcastRoom() {
           }));
         });
         room.on(livekitClient.RoomEvent.Reconnecting, () => {
+          lifecycleRef.current.tryTransition("room", "reconnecting");
+          if (publish) lifecycleRef.current.tryTransition("local", "recovering");
+          lifecycleRef.current.tryTransition("remote", "recovering");
           setState((current) => ({ ...current, connected: false, reconnecting: true, connectionState: "reconnecting", reconnectCount: current.reconnectCount + 1 }));
         });
         room.on(livekitClient.RoomEvent.Reconnected, () => {
+          lifecycleRef.current.tryTransition("room", "connected");
+          if (publish) lifecycleRef.current.tryTransition("local", "publishing");
           reconnectAttemptRef.current = 0;
           setState((current) => ({ ...current, connected: true, reconnecting: false, recovering: false, connectionState: "connected", error: "" }));
           const audioTasks: Promise<unknown>[] = [applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current)];
           if (publish) {
-            audioTasks.push(publishMicrophoneForPath(room, useV2, { role: telemetryRole, room: roomNameRef.current }));
+            audioTasks.push(publishMicrophoneForPath(room, useV2, {
+              role: telemetryRole,
+              room: roomNameRef.current,
+              correlationId: correlationIdRef.current
+            }));
           }
           if (useV2) {
             // A reconnect can land on a different output device; reassert the
             // route we chose rather than inheriting whatever iOS picked.
             audioTasks.push(reapplyAudioRoute("reconnected"));
           }
-          Promise.all(audioTasks).catch(() => undefined);
+          Promise.all(audioTasks)
+            .then(() => {
+              if (publish) lifecycleRef.current.tryTransition("local", "published");
+            })
+            .catch(() => lifecycleRef.current.tryTransition("local", "failed"));
           refresh();
         });
         room.on(livekitClient.RoomEvent.ConnectionQualityChanged, (quality: unknown, participant: any) => {
@@ -673,6 +717,10 @@ export function useLiveBroadcastRoom() {
           // choice immediately. When sound is on, this mirrors the call path and
           // force-enables remote host/co-host audio instead of trusting defaults.
           if (String(track?.kind || "") === "audio") {
+            lifecycleRef.current.tryTransition("remote", "publicationAvailable");
+            lifecycleRef.current.tryTransition("remote", "subscribing");
+            lifecycleRef.current.tryTransition("remote", "subscribed");
+            lifecycleRef.current.tryTransition("remote", "playing");
             applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current).catch(() => undefined);
           }
           refresh();
@@ -710,7 +758,11 @@ export function useLiveBroadcastRoom() {
             });
             void reapplyAudioRoute("app_state_active");
             if (publish && roomRef.current) {
-              void publishMicrophoneForPath(roomRef.current, true, { role: telemetryRole, room: roomNameRef.current });
+              void publishMicrophoneForPath(roomRef.current, true, {
+                role: telemetryRole,
+                room: roomNameRef.current,
+                correlationId: correlationIdRef.current
+              });
             }
           });
         }
@@ -718,6 +770,9 @@ export function useLiveBroadcastRoom() {
         room.on(livekitClient.RoomEvent.Disconnected, (reason: unknown) => {
           const reasonText = String(reason || "provider_disconnected");
           const classification = classifyDisconnect(reasonText);
+          if (classification === "terminal") lifecycleRef.current.markTerminal();
+          lifecycleRef.current.tryTransition("room", classification === "terminal" ? "disconnected" : "reconnecting");
+          if (classification === "terminal") lifecycleRef.current.tryTransition("remote", "ended");
           if (useV2) {
             emitLiveAudioEvent({
               name: "live_audio_disconnect_classified",
@@ -745,17 +800,26 @@ export function useLiveBroadcastRoom() {
         });
 
         await room.connect(credentials.url, credentials.token, { autoSubscribe: true });
+        lifecycleRef.current.tryTransition("room", "connected");
         if (publish) {
           if (useV2) {
             // ONE publish, event-driven. The legacy branch below publishes twice
             // around setCameraEnabled and then sleeps 150ms; each of those calls
             // could run its own enable/toggle cycle, so a single "go live" ran up
             // to four cycles and could leave duplicate audio publications.
-            await publishMicrophoneForPath(room, true, { role: telemetryRole, room: roomNameRef.current });
+            await publishMicrophoneForPath(room, true, {
+              role: telemetryRole,
+              room: roomNameRef.current,
+              correlationId: correlationIdRef.current
+            });
             await room.localParticipant.setCameraEnabled(true, PULSE_LIVE_VIDEO_CAPTURE_OPTIONS, PULSE_LIVE_VIDEO_PUBLISH_OPTIONS);
             // Idempotent: a room that is already publishing is left alone, and
             // any duplicate produced by the camera publish is reconciled away.
-            await publishMicrophoneForPath(room, true, { role: telemetryRole, room: roomNameRef.current });
+            await publishMicrophoneForPath(room, true, {
+              role: telemetryRole,
+              room: roomNameRef.current,
+              correlationId: correlationIdRef.current
+            });
           } else {
             await ensureLiveMicrophonePublished(room);
             await room.localParticipant.setCameraEnabled(true, PULSE_LIVE_VIDEO_CAPTURE_OPTIONS, PULSE_LIVE_VIDEO_PUBLISH_OPTIONS);
@@ -768,10 +832,12 @@ export function useLiveBroadcastRoom() {
         refresh();
         const publishedAudioCount = audioPublications(room.localParticipant).filter(publicationHasTrack).length;
         if (publish && publishedAudioCount <= 0) {
+          lifecycleRef.current.tryTransition("local", "failed");
           const message = "Microphone connected, but PulseSoc could not verify a published audio track.";
           await room.disconnect?.().catch(() => undefined);
-          await releaseRealtimeAudioSession(livekitNative.AudioSession, audioOwnerIdRef.current).catch(() => undefined);
-          audioOwnerIdRef.current = "";
+          const lease = audioLeaseRef.current;
+          audioLeaseRef.current = null;
+          if (lease) await releaseRealtimeAudioSession(livekitNative.AudioSession, lease).catch(() => undefined);
           roomRef.current = null;
           setState((current) => ({
             ...current,
@@ -786,6 +852,7 @@ export function useLiveBroadcastRoom() {
           }));
           return false;
         }
+        if (publish) lifecycleRef.current.tryTransition("local", "published");
         reconnectAttemptRef.current = 0;
         if (useV2) scheduleTokenRefresh();
         setState((current) => ({
@@ -834,7 +901,9 @@ export function useLiveBroadcastRoom() {
   const setMicrophoneEnabled = useCallback(async (enabled: boolean) => {
     const room = roomRef.current;
     if (!room) throw new Error("Broadcast media is not connected.");
-    await room.localParticipant.setMicrophoneEnabled(enabled);
+    if (!publishRef.current) throw new Error("Viewers cannot publish microphone audio.");
+    await setRealtimeMicrophoneEnabled(room, enabled);
+    lifecycleRef.current.tryTransition("local", enabled ? "published" : "muted");
     refreshParticipants(room);
     setState((current) => ({ ...current, audioEnabled: enabled, error: "" }));
   }, [refreshParticipants]);
@@ -845,7 +914,8 @@ export function useLiveBroadcastRoom() {
     await room.localParticipant.setCameraEnabled(enabled, PULSE_LIVE_VIDEO_CAPTURE_OPTIONS, PULSE_LIVE_VIDEO_PUBLISH_OPTIONS);
     const localAudioTrackCount = await publishMicrophoneForPath(room, useV2Ref.current, {
       role: roleRef.current,
-      room: roomNameRef.current
+      room: roomNameRef.current,
+      correlationId: correlationIdRef.current
     });
     if (localAudioTrackCount <= 0) throw new Error("Camera changed, but microphone audio is no longer published.");
     refreshParticipants(room);
@@ -870,7 +940,7 @@ export function useLiveBroadcastRoom() {
   const showAudioRoutePicker = useCallback(async () => {
     const audioSession = audioSessionRef.current;
     if (!audioSession) throw new Error("Broadcast audio session is not available.");
-    if (Platform.OS === "ios") await audioSession.showAudioRoutePicker();
+    await showRealtimeAudioRoutePicker(audioSession);
   }, []);
 
   const switchCamera = useCallback(async () => {
@@ -882,7 +952,8 @@ export function useLiveBroadcastRoom() {
     const room = roomRef.current;
     const localAudioTrackCount = await publishMicrophoneForPath(room, useV2Ref.current, {
       role: roleRef.current,
-      room: roomNameRef.current
+      room: roomNameRef.current,
+      correlationId: correlationIdRef.current
     });
     if (localAudioTrackCount <= 0) throw new Error("Camera switched, but microphone audio is no longer published.");
     refreshParticipants(room);
@@ -892,23 +963,24 @@ export function useLiveBroadcastRoom() {
   useEffect(
     () => () => {
       const room = roomRef.current;
-      const ownerId = audioOwnerIdRef.current;
+      const lease = audioLeaseRef.current;
       // Unmount must not leave a pending reconnect or refresh timer alive - it
       // would fire against a torn-down room and reclaim the audio session.
       intentionalTeardownRef.current = true;
       clearRecoveryTimers();
       roomRef.current = null;
-      audioOwnerIdRef.current = "";
+      audioLeaseRef.current = null;
       credentialsRef.current = null;
       refreshCredentialsRef.current = undefined;
       room?.disconnect?.().catch(() => undefined);
-      if (ownerId) releaseRealtimeAudioSession(audioSessionRef.current, ownerId).catch(() => undefined);
+      if (lease) releaseRealtimeAudioSession(audioSessionRef.current, lease).catch(() => undefined);
     },
     [clearRecoveryTimers]
   );
 
   return {
     ...state,
+    lifecycle: lifecycleRef.current.getState(),
     connect,
     disconnect,
     setMicrophoneEnabled,

@@ -73,23 +73,28 @@ describe("useNativeCallRoom audio publication helpers", () => {
     expect(raw.mediaStreamTrack.enabled).toBe(false);
   });
 
-  it("retries local microphone publication when the first enable returns before the publication exists", async () => {
-    let enabledCalls = 0;
+  it("waits for the LiveKit publication event without toggling the microphone off", async () => {
+    const listeners = new Set<(publication: any) => void>();
     const participant = {
       audioTrackPublications: new Map(),
       setMicrophoneEnabled: jest.fn(async (enabled: boolean) => {
         if (enabled) {
-          enabledCalls += 1;
-          if (enabledCalls >= 2) participant.audioTrackPublications.set("mic", { track: sdkTrack() });
+          const publication = { kind: "audio", track: sdkTrack() };
+          participant.audioTrackPublications.set("mic", publication);
+          listeners.forEach((listener) => listener(publication));
         }
       })
     };
+    const room = {
+      localParticipant: participant,
+      on: (_event: string, listener: (publication: any) => void) => listeners.add(listener),
+      off: (_event: string, listener: (publication: any) => void) => listeners.delete(listener)
+    };
 
-    const count = await ensureCallMicrophonePublished({ localParticipant: participant });
+    const count = await ensureCallMicrophonePublished(room, { timeoutMs: 50 });
 
     expect(count).toBe(1);
-    expect(participant.setMicrophoneEnabled).toHaveBeenCalledWith(true);
-    expect(participant.setMicrophoneEnabled).toHaveBeenCalledWith(false);
+    expect(participant.setMicrophoneEnabled.mock.calls).toEqual([[true]]);
   });
 
   it("returns zero when no local microphone publication can be verified", async () => {
@@ -98,6 +103,6 @@ describe("useNativeCallRoom audio publication helpers", () => {
       setMicrophoneEnabled: jest.fn().mockResolvedValue(undefined)
     };
 
-    await expect(ensureCallMicrophonePublished({ localParticipant: participant })).resolves.toBe(0);
+    await expect(ensureCallMicrophonePublished({ localParticipant: participant }, { timeoutMs: 10 })).resolves.toBe(0);
   });
 });
