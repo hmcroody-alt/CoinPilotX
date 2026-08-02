@@ -171,6 +171,7 @@ describe("elite changes only what it is supposed to change", () => {
     video_quality_profile: "elite",
     live_elite_audio_enabled: true,
     live_elite_video_enabled: true,
+    live_publisher_quality_enabled: true,
     call_elite_audio_enabled: true,
     video_call_elite_quality_enabled: true
   };
@@ -205,6 +206,25 @@ describe("elite changes only what it is supposed to change", () => {
     expect(options.videoCaptureDefaults?.resolution.width).toBe(1080);
     expect(options.videoCaptureDefaults?.resolution.height).toBe(1920);
     expect(options.publishDefaults.degradationPreference).toBe("maintain-framerate");
+  });
+
+  it("does not let legacy Live quality flags move publishers off the verified audio baseline", () => {
+    const legacyLiveFlags = {
+      realtime_media_quality_v2_enabled: true,
+      realtime_media_quality_v2_qa_only: false,
+      audio_quality_profile: "elite",
+      video_quality_profile: "elite",
+      live_elite_audio_enabled: true,
+      live_elite_video_enabled: true
+    };
+    const host = buildRoomQualityOptions(
+      resolveMediaQualityPlan({ feature: "live_host", flags: parseMediaQualityFlags(legacyLiveFlags) })
+    );
+    const guest = buildRoomQualityOptions(
+      resolveMediaQualityPlan({ feature: "live_guest", flags: parseMediaQualityFlags(legacyLiveFlags) })
+    );
+    expect(host).toEqual(LIVE_BASELINE_ROOM_OPTIONS);
+    expect(guest).toEqual(LIVE_BASELINE_ROOM_OPTIONS);
   });
 
   it("gives a video call the capture configuration it never had", () => {

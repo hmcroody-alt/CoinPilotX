@@ -19,6 +19,7 @@
  *   VIDEO_QUALITY_PROFILE               -> videoQualityProfile
  *   LIVE_ELITE_VIDEO_ENABLED            -> liveEliteVideoEnabled
  *   LIVE_ELITE_AUDIO_ENABLED            -> liveEliteAudioEnabled
+ *   LIVE_PUBLISHER_QUALITY_ENABLED      -> livePublisherQualityEnabled
  *   CALL_ELITE_AUDIO_ENABLED            -> callEliteAudioEnabled
  *   VIDEO_CALL_ELITE_QUALITY_ENABLED    -> videoCallEliteQualityEnabled
  */
@@ -42,6 +43,7 @@ export const MEDIA_QUALITY_FLAG_KEYS = Object.freeze([
   "videoQualityProfile",
   "liveEliteVideoEnabled",
   "liveEliteAudioEnabled",
+  "livePublisherQualityEnabled",
   "callEliteAudioEnabled",
   "videoCallEliteQualityEnabled",
   "mediaContentMode",
@@ -60,6 +62,7 @@ export const DEFAULT_MEDIA_QUALITY_FLAGS: Readonly<Required<MediaQualityFlagSour
   videoQualityProfile: "stable" as MediaQualityProfileName,
   liveEliteVideoEnabled: false,
   liveEliteAudioEnabled: false,
+  livePublisherQualityEnabled: false,
   callEliteAudioEnabled: false,
   videoCallEliteQualityEnabled: false,
   mediaContentMode: "auto",
@@ -91,6 +94,7 @@ const WIRE_ALIASES: Record<string, string> = {
   videoQualityProfile: "video_quality_profile",
   liveEliteVideoEnabled: "live_elite_video_enabled",
   liveEliteAudioEnabled: "live_elite_audio_enabled",
+  livePublisherQualityEnabled: "live_publisher_quality_enabled",
   callEliteAudioEnabled: "call_elite_audio_enabled",
   videoCallEliteQualityEnabled: "video_call_elite_quality_enabled",
   mediaContentMode: "media_content_mode",
@@ -117,6 +121,7 @@ export function parseMediaQualityFlags(raw: unknown): Required<MediaQualityFlagS
     videoQualityProfile: normalizeProfileName(pick(source, "videoQualityProfile")),
     liveEliteVideoEnabled: normalizeMediaQualityFlag(pick(source, "liveEliteVideoEnabled")),
     liveEliteAudioEnabled: normalizeMediaQualityFlag(pick(source, "liveEliteAudioEnabled")),
+    livePublisherQualityEnabled: normalizeMediaQualityFlag(pick(source, "livePublisherQualityEnabled")),
     callEliteAudioEnabled: normalizeMediaQualityFlag(pick(source, "callEliteAudioEnabled")),
     videoCallEliteQualityEnabled: normalizeMediaQualityFlag(pick(source, "videoCallEliteQualityEnabled")),
     mediaContentMode: normalizeContentMode(pick(source, "mediaContentMode")),
@@ -138,6 +143,7 @@ export function describeMediaQualityFlags(flags: Required<MediaQualityFlagSource
     `v=${flags.videoQualityProfile}`,
     `lv=${flags.liveEliteVideoEnabled ? 1 : 0}`,
     `la=${flags.liveEliteAudioEnabled ? 1 : 0}`,
+    `lp=${flags.livePublisherQualityEnabled ? 1 : 0}`,
     `ca=${flags.callEliteAudioEnabled ? 1 : 0}`,
     `vc=${flags.videoCallEliteQualityEnabled ? 1 : 0}`
   ].join(" ");

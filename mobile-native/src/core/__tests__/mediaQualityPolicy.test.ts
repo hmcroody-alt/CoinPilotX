@@ -70,6 +70,7 @@ const MAX_FLAGS: MediaQualityFlagSource = {
   videoQualityProfile: "elite",
   liveEliteVideoEnabled: true,
   liveEliteAudioEnabled: true,
+  livePublisherQualityEnabled: true,
   callEliteAudioEnabled: true,
   videoCallEliteQualityEnabled: true,
   qaCohort: true
@@ -263,6 +264,7 @@ describe("the kill switch", () => {
     expect(DEFAULT_MEDIA_QUALITY_FLAGS.realtimeMediaQualityV2Enabled).toBe(false);
     expect(DEFAULT_MEDIA_QUALITY_FLAGS.liveEliteAudioEnabled).toBe(false);
     expect(DEFAULT_MEDIA_QUALITY_FLAGS.liveEliteVideoEnabled).toBe(false);
+    expect(DEFAULT_MEDIA_QUALITY_FLAGS.livePublisherQualityEnabled).toBe(false);
     expect(DEFAULT_MEDIA_QUALITY_FLAGS.callEliteAudioEnabled).toBe(false);
     expect(DEFAULT_MEDIA_QUALITY_FLAGS.videoCallEliteQualityEnabled).toBe(false);
     expect(DEFAULT_MEDIA_QUALITY_FLAGS.audioQualityProfile).toBe("stable");
@@ -332,10 +334,27 @@ describe("flag normalisation", () => {
     const callsOnly: MediaQualityFlagSource = {
       ...MAX_FLAGS,
       liveEliteAudioEnabled: false,
-      liveEliteVideoEnabled: false
+      liveEliteVideoEnabled: false,
+      livePublisherQualityEnabled: false
     };
     expect(resolveMediaQualityPlan({ feature: "audio_call", flags: callsOnly }).profile).toBe("elite");
     expect(resolveMediaQualityPlan({ feature: "live_host", flags: callsOnly }).profile).toBe("stable");
+  });
+
+  it("keeps Live publishers on the verified baseline unless the publisher gate is explicit", () => {
+    const legacyLiveFlags: MediaQualityFlagSource = {
+      ...MAX_FLAGS,
+      livePublisherQualityEnabled: false
+    };
+    for (const feature of ["live_host", "live_guest"] as const) {
+      const plan = resolveMediaQualityPlan({ feature, flags: legacyLiveFlags });
+      expect(plan.profile).toBe("stable");
+      expect(plan.reasons).toContain("feature_not_opted_in");
+      expect(plan.audioCaptureDefaults).toEqual(BASELINE_AUDIO_CAPTURE);
+      expect(plan.audioPublishDefaults).toEqual(BASELINE_AUDIO_PUBLISH);
+      expect(plan.videoCaptureDefaults).toEqual(BASELINE_LIVE_VIDEO_CAPTURE);
+      expect(plan.videoPublishDefaults).toEqual(BASELINE_LIVE_VIDEO_PUBLISH);
+    }
   });
 });
 

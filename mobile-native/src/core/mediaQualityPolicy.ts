@@ -60,6 +60,15 @@ export type MediaQualityFlagSource = {
   videoQualityProfile?: unknown;
   liveEliteVideoEnabled?: unknown;
   liveEliteAudioEnabled?: unknown;
+  /**
+   * Emergency Live-audio recovery gate.
+   *
+   * Host/co-host Live sessions are the only surface that records microphone
+   * and publishes camera while also driving the viewer playout path. They stay
+   * on the physically verified stable baseline unless the server opts into
+   * this narrower publisher flag in addition to the general Live quality flags.
+   */
+  livePublisherQualityEnabled?: unknown;
   callEliteAudioEnabled?: unknown;
   videoCallEliteQualityEnabled?: unknown;
   mediaContentMode?: unknown;
@@ -220,8 +229,9 @@ function isFeatureEliteEnabled(
     case "live_host":
     case "live_guest":
       return (
-        normalizeMediaQualityFlag(source?.liveEliteAudioEnabled) ||
-        normalizeMediaQualityFlag(source?.liveEliteVideoEnabled)
+        normalizeMediaQualityFlag(source?.livePublisherQualityEnabled) &&
+        (normalizeMediaQualityFlag(source?.liveEliteAudioEnabled) ||
+          normalizeMediaQualityFlag(source?.liveEliteVideoEnabled))
       );
     case "live_viewer":
       return normalizeMediaQualityFlag(source?.liveEliteVideoEnabled);
