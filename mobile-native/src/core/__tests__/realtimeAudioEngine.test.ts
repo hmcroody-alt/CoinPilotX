@@ -5,10 +5,12 @@ import {
   getActiveRealtimeMicrophoneOwner,
   PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
   PULSE_LIVE_VIDEO_PUBLISH_OPTIONS,
+  reassertRealtimeMicrophone,
   releaseRealtimeAudioSession,
   resetRealtimeAudioOwnership,
   resolveRealtimeAudioConfiguration,
-  selectRealtimeAudioOutput
+  selectRealtimeAudioOutput,
+  stabilizeRealtimeAudioEngine
 } from "../realtimeAudioEngine";
 
 function sdkTrack() {
@@ -122,6 +124,65 @@ describe("realtimeAudioEngine canonical audio ownership", () => {
     await expect(applyRemoteAudioEnabled(room, false)).resolves.toBe(2);
     expect(a.setEnabledCalls).toEqual([false]);
     expect(b.setEnabledCalls).toEqual([false]);
+  });
+
+  it("restarts required playout and recording after camera startup stops the native engine", async () => {
+    let engineRunning = false;
+    let playoutRunning = false;
+    let recordingRunning = false;
+    const audioDeviceModule = {
+      isEngineRunning: jest.fn(() => engineRunning),
+      isPlaying: jest.fn(() => playoutRunning),
+      isRecording: jest.fn(() => recordingRunning),
+      startPlayout: jest.fn(async () => {
+        engineRunning = true;
+        playoutRunning = true;
+      }),
+      startRecording: jest.fn(async () => {
+        engineRunning = true;
+        recordingRunning = true;
+      })
+    };
+
+    const status = await stabilizeRealtimeAudioEngine(audioDeviceModule, {
+      playout: true,
+      recording: true,
+      settleMs: 0
+    });
+
+    expect(status).toEqual({ engineRunning: true, playoutRunning: true, recordingRunning: true });
+    expect(audioDeviceModule.startPlayout).toHaveBeenCalledTimes(1);
+    expect(audioDeviceModule.startRecording).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails verification when the native engine remains stopped after repair", async () => {
+    const audioDeviceModule = {
+      isEngineRunning: jest.fn(() => false),
+      isPlaying: jest.fn(() => false),
+      isRecording: jest.fn(() => false),
+      startPlayout: jest.fn().mockResolvedValue(undefined),
+      startRecording: jest.fn().mockResolvedValue(undefined)
+    };
+
+    await expect(stabilizeRealtimeAudioEngine(audioDeviceModule, {
+      playout: true,
+      recording: true,
+      settleMs: 0
+    })).rejects.toMatchObject({ code: "REALTIME_AUDIO_ENGINE_INACTIVE" });
+  });
+
+  it("reasserts an existing microphone without creating a second publication", async () => {
+    const track = sdkTrack();
+    const participant = {
+      audioTrackPublications: new Map([["mic", { kind: "audio", track }]]),
+      setMicrophoneEnabled: jest.fn().mockResolvedValue(undefined)
+    };
+
+    await expect(reassertRealtimeMicrophone({ localParticipant: participant })).resolves.toBe(1);
+
+    expect(participant.setMicrophoneEnabled).toHaveBeenCalledWith(true);
+    expect(track.setEnabledCalls).toEqual([true]);
+    expect(participant.audioTrackPublications.size).toBe(1);
   });
 });
 

@@ -26,6 +26,7 @@ def main() -> int:
     calls_api = read("mobile-native/src/api/calls.ts")
     call_screen = read("mobile-native/src/screens/CallScreen.tsx")
     call_hook = read("mobile-native/src/calls/useNativeCallRoom.ts")
+    audio_engine = read("mobile-native/src/core/realtimeAudioEngine.ts")
     chat = read("mobile-native/src/screens/ChatScreen.tsx")
     incoming_layer = read("mobile-native/src/calls/IncomingCallLayer.tsx")
     control_center = read("mobile-native/src/components/ConversationControlCenter.tsx")
@@ -77,8 +78,9 @@ def main() -> int:
     require(call_hook, 'await import("livekit-client")', "dynamic LiveKit client import")
     require(call_hook, "registerGlobals", "LiveKit native globals registration")
     for snippet in [
-        "AudioSession.startAudioSession",
-        "AudioSession.selectAudioOutput",
+        "activateRealtimeAudioSession",
+        "releaseRealtimeAudioSession",
+        "selectRealtimeAudioOutput",
         "RoomEvent.Reconnecting",
         "RoomEvent.Reconnected",
         "RoomEvent.ConnectionQualityChanged",
@@ -89,6 +91,17 @@ def main() -> int:
         "autoGainControl: true",
     ]:
         require(call_hook, snippet, "production-parity native media behavior")
+
+    # Global AVAudioSession mutation deliberately lives in the shared platform
+    # owner. Requiring it in the feature hook would reward the exact duplicated
+    # ownership that the realtime architecture guard rejects.
+    for snippet in [
+        "audioSession.startAudioSession",
+        "audioSession?.stopAudioSession",
+        "audioSession.selectAudioOutput",
+        "stabilizeRealtimeAudioEngine",
+    ]:
+        require(audio_engine, snippet, "shared realtime audio lifecycle")
 
     for snippet in [
         "startConversationCall",

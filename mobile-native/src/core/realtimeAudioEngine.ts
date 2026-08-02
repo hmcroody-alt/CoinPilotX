@@ -41,6 +41,20 @@ type LiveKitAudioSession = {
   showAudioRoutePicker?: () => Promise<void>;
 };
 
+type RealtimeAudioDeviceModule = {
+  isEngineRunning?: () => boolean;
+  isPlaying?: () => boolean;
+  isRecording?: () => boolean;
+  startPlayout?: () => Promise<void>;
+  startRecording?: () => Promise<void>;
+};
+
+export type RealtimeAudioEngineStatus = {
+  engineRunning: boolean | null;
+  playoutRunning: boolean | null;
+  recordingRunning: boolean | null;
+};
+
 let activeRealtimeAudioOwner: RealtimeAudioOwner | null = null;
 let nextRealtimeAudioLeaseId = 0;
 
@@ -271,6 +285,87 @@ export async function showRealtimeAudioRoutePicker(audioSession: LiveKitAudioSes
   if (Platform.OS === "ios") await audioSession.showAudioRoutePicker?.();
 }
 
+function readAudioEngineBoolean(reader: (() => boolean) | undefined): boolean | null {
+  if (typeof reader !== "function") return null;
+  try {
+    return Boolean(reader());
+  } catch {
+    return null;
+  }
+}
+
+export function inspectRealtimeAudioEngine(audioDeviceModule: RealtimeAudioDeviceModule | null | undefined): RealtimeAudioEngineStatus {
+  return {
+    engineRunning: readAudioEngineBoolean(audioDeviceModule?.isEngineRunning?.bind(audioDeviceModule)),
+    playoutRunning: readAudioEngineBoolean(audioDeviceModule?.isPlaying?.bind(audioDeviceModule)),
+    recordingRunning: readAudioEngineBoolean(audioDeviceModule?.isRecording?.bind(audioDeviceModule))
+  };
+}
+
+/**
+ * Reassert the native WebRTC engine after camera startup.
+ *
+ * Production CoreAudio evidence showed the failing video path stopping its
+ * RemoteIO engine less than half a second after camera startup while LiveKit
+ * still reported both microphone publications. A published SID is therefore
+ * necessary but not sufficient: the adapter must also prove that the native
+ * playout/recording engine is running after the camera transition settles.
+ */
+export async function stabilizeRealtimeAudioEngine(
+  audioDeviceModule: RealtimeAudioDeviceModule | null | undefined,
+  options: {
+    playout: boolean;
+    recording: boolean;
+    settleMs?: number;
+    context?: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string };
+  }
+): Promise<RealtimeAudioEngineStatus> {
+  const context = options.context || {};
+  emitRealtimeAudioEvent({ name: "audio_engine_guard_started", ...context });
+  if (!audioDeviceModule || Platform.OS !== "ios") {
+    const status = inspectRealtimeAudioEngine(audioDeviceModule);
+    emitRealtimeAudioEvent({ name: "audio_engine_guard_completed", ...context, outcome: "not_required" });
+    return status;
+  }
+
+  const enforce = async () => {
+    const before = inspectRealtimeAudioEngine(audioDeviceModule);
+    const engineStopped = before.engineRunning === false;
+    if (options.playout && (engineStopped || before.playoutRunning === false)) {
+      await audioDeviceModule.startPlayout?.().catch(() => undefined);
+    }
+    if (options.recording && (engineStopped || before.recordingRunning === false)) {
+      await audioDeviceModule.startRecording?.().catch(() => undefined);
+    }
+  };
+
+  await enforce();
+  const settleMs = Math.max(0, Math.min(Number(options.settleMs ?? 650), 1500));
+  if (settleMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, settleMs));
+    // Camera initialization can stop RemoteIO asynchronously after its promise
+    // resolves, so the second pass is the one that catches the observed race.
+    await enforce();
+  }
+  const status = inspectRealtimeAudioEngine(audioDeviceModule);
+  const failed =
+    (options.playout && status.playoutRunning === false) ||
+    (options.recording && status.recordingRunning === false) ||
+    ((options.playout || options.recording) && status.engineRunning === false);
+  emitRealtimeAudioEvent({
+    name: failed ? "audio_engine_guard_failed" : "audio_engine_guard_completed",
+    ...context,
+    outcome: `engine=${status.engineRunning};playout=${status.playoutRunning};recording=${status.recordingRunning}`,
+    failureCategory: failed ? "native_engine_not_running" : undefined
+  });
+  if (failed) {
+    const error = new Error("The native real-time audio engine did not remain active.");
+    Object.assign(error, { code: "REALTIME_AUDIO_ENGINE_INACTIVE", status });
+    throw error;
+  }
+  return status;
+}
+
 export const PULSE_LIVE_PORTRAIT_VIDEO_RESOLUTION = {
   width: 720,
   height: 1280,
@@ -334,6 +429,34 @@ export async function applyRemoteAudioEnabled(room: any, enabled: boolean): Prom
   }
   await Promise.all(tasks).catch(() => undefined);
   return touched;
+}
+
+/**
+ * Reassert an already-published microphone after camera or route transitions.
+ * This never unpublishes or creates a second track: LiveKit resolves an enabled
+ * source to the existing publication, while the explicit track enable repairs
+ * a native media track left disabled by a camera transition.
+ */
+export async function reassertRealtimeMicrophone(
+  room: any,
+  context: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string } = {}
+): Promise<number> {
+  const participant = room?.localParticipant;
+  if (!participant) return 0;
+  await participant.setMicrophoneEnabled?.(true);
+  const publications = audioPublications(participant).filter(publicationHasTrack);
+  for (const publication of publications) {
+    const track = publication?.track;
+    if (typeof track?.setEnabled === "function") await Promise.resolve(track.setEnabled(true)).catch(() => undefined);
+    else if (track?.mediaStreamTrack) track.mediaStreamTrack.enabled = true;
+  }
+  emitRealtimeAudioEvent({
+    name: "microphone_reasserted",
+    ...context,
+    outcome: publications.length > 0 ? "published" : "missing",
+    audioTrackCount: publications.length
+  });
+  return publications.length;
 }
 
 export async function ensureMicrophonePublished(room: any): Promise<number> {

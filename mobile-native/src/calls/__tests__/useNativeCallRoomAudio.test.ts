@@ -2,7 +2,8 @@ import {
   applyCallRemoteAudioEnabled,
   countPublishedAudioTracks,
   countSubscribedRemoteAudioTracks,
-  ensureCallMicrophonePublished
+  ensureCallMicrophonePublished,
+  initializeCallLocalMedia
 } from "../useNativeCallRoom";
 
 function sdkTrack() {
@@ -104,5 +105,69 @@ describe("useNativeCallRoom audio publication helpers", () => {
     };
 
     await expect(ensureCallMicrophonePublished({ localParticipant: participant }, { timeoutMs: 10 })).resolves.toBe(0);
+  });
+
+  it("starts video media from the working microphone path and reasserts audio after camera startup", async () => {
+    const order: string[] = [];
+    const participant = {
+      audioTrackPublications: new Map(),
+      setMicrophoneEnabled: jest.fn(async (enabled: boolean) => {
+        order.push(`microphone:${enabled}`);
+        if (enabled && participant.audioTrackPublications.size === 0) {
+          participant.audioTrackPublications.set("mic", { kind: "audio", track: sdkTrack() });
+        }
+      }),
+      setCameraEnabled: jest.fn(async (enabled: boolean) => {
+        order.push(`camera:${enabled}`);
+      })
+    };
+
+    const count = await initializeCallLocalMedia(
+      { localParticipant: participant },
+      { video: true, useV2: false, fallbackEnabled: true }
+    );
+
+    expect(count).toBe(1);
+    expect(order).toEqual(["microphone:true", "camera:true", "microphone:true"]);
+  });
+
+  it("does not touch camera startup for the protected audio-call path", async () => {
+    const participant = {
+      audioTrackPublications: new Map(),
+      setMicrophoneEnabled: jest.fn(async (enabled: boolean) => {
+        if (enabled) participant.audioTrackPublications.set("mic", { kind: "audio", track: sdkTrack() });
+      }),
+      setCameraEnabled: jest.fn().mockResolvedValue(undefined)
+    };
+
+    await expect(
+      initializeCallLocalMedia(
+        { localParticipant: participant },
+        { video: false, useV2: false, fallbackEnabled: true }
+      )
+    ).resolves.toBe(1);
+
+    expect(participant.setMicrophoneEnabled).toHaveBeenCalledTimes(1);
+    expect(participant.setCameraEnabled).not.toHaveBeenCalled();
+  });
+
+  it("recovers the microphone when camera startup removes its publication", async () => {
+    const participant = {
+      audioTrackPublications: new Map<string, any>(),
+      setMicrophoneEnabled: jest.fn(async (enabled: boolean) => {
+        if (enabled) participant.audioTrackPublications.set("mic", { kind: "audio", track: sdkTrack() });
+      }),
+      setCameraEnabled: jest.fn(async () => {
+        participant.audioTrackPublications.clear();
+      })
+    };
+
+    await expect(initializeCallLocalMedia(
+      { localParticipant: participant },
+      { video: true, useV2: false, fallbackEnabled: true }
+    )).resolves.toBe(1);
+
+    expect(participant.setMicrophoneEnabled.mock.calls).toEqual([[true], [true]]);
+    expect(participant.audioTrackPublications.size).toBe(1);
   });
 });

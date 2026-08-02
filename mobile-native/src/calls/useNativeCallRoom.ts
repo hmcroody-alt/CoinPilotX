@@ -8,9 +8,11 @@ import {
   countPublishedAudioTracks,
   countSubscribedRemoteAudioTracks,
   ensureMicrophonePublished,
+  reassertRealtimeMicrophone,
   releaseRealtimeAudioSession,
   selectRealtimeAudioOutput,
   showRealtimeAudioRoutePicker,
+  stabilizeRealtimeAudioEngine,
   videoPublications,
   type RealtimeAudioLease
 } from "../core/realtimeAudioEngine";
@@ -20,7 +22,7 @@ import {
   type RealtimePublicationContext
 } from "../core/realtimeMicrophonePublisher";
 import { RealtimeAudioStateMachine } from "../core/realtimeAudioStateMachine";
-import { createRealtimeAudioCorrelationId } from "../core/realtimeAudioTelemetry";
+import { createRealtimeAudioCorrelationId, emitRealtimeAudioEvent } from "../core/realtimeAudioTelemetry";
 
 type NativeCallRoomState = {
   supported: boolean;
@@ -85,6 +87,35 @@ export async function ensureCallMicrophonePublished(
   return ensureMicrophonePublished(room);
 }
 
+export async function initializeCallLocalMedia(
+  room: any,
+  options: {
+    video: boolean;
+    useV2?: boolean;
+    fallbackEnabled?: boolean;
+    context?: RealtimePublicationContext;
+  }
+): Promise<number> {
+  let audioTrackCount = await ensureCallMicrophonePublished(room, {
+    useV2: options.useV2,
+    fallbackEnabled: options.fallbackEnabled,
+    context: options.context
+  });
+  if (audioTrackCount <= 0 || !options.video) return audioTrackCount;
+  emitRealtimeAudioEvent({ name: "camera_publish_started", ...options.context });
+  await room.localParticipant.setCameraEnabled(true);
+  emitRealtimeAudioEvent({ name: "camera_published", ...options.context, outcome: "published" });
+  audioTrackCount = await reassertRealtimeMicrophone(room, options.context);
+  if (audioTrackCount <= 0) {
+    audioTrackCount = await ensureCallMicrophonePublished(room, {
+      useV2: options.useV2,
+      fallbackEnabled: options.fallbackEnabled,
+      context: options.context
+    });
+  }
+  return audioTrackCount;
+}
+
 function readableError(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -92,6 +123,7 @@ function readableError(error: unknown, fallback: string) {
 export function useNativeCallRoom() {
   const roomRef = useRef<any>(null);
   const audioSessionRef = useRef<any>(null);
+  const audioDeviceModuleRef = useRef<any>(null);
   const audioLeaseRef = useRef<RealtimeAudioLease | null>(null);
   const lifecycleRef = useRef(new RealtimeAudioStateMachine());
   const audioV2Ref = useRef(false);
@@ -130,6 +162,7 @@ export function useNativeCallRoom() {
     lifecycleRef.current.tryTransition("local", "unpublishing");
     const room = roomRef.current;
     roomRef.current = null;
+    audioDeviceModuleRef.current = null;
     // Restore normal presence the moment we leave the room, so the caller stops
     // reading as "In audio/video call" without waiting for the activity TTL.
     reportPresenceActivity("idle", "").catch(() => undefined);
@@ -189,6 +222,7 @@ export function useNativeCallRoom() {
         globalsRegistered = true;
       }
       audioSessionRef.current = livekitNative.AudioSession;
+      audioDeviceModuleRef.current = livekitNative.AudioDeviceModule;
       const ownerId = `call:${join.room_name || Date.now()}`;
       audioLeaseRef.current = await activateRealtimeAudioSession(
         livekitNative.AudioSession,
@@ -262,6 +296,16 @@ export function useNativeCallRoom() {
             } else lifecycleRef.current.tryTransition("local", "published");
             return applyCallRemoteAudioEnabled(room, true);
           })
+          .then(() => options.video
+            ? stabilizeRealtimeAudioEngine(livekitNative.AudioDeviceModule, {
+                playout: true,
+                recording: true,
+                settleMs: 250,
+                context: publicationContextRef.current
+              })
+            : undefined
+          )
+          .then(() => options.video ? selectRealtimeAudioOutput(livekitNative.AudioSession, true) : undefined)
           .catch(() => undefined);
         refresh();
       });
@@ -282,6 +326,15 @@ export function useNativeCallRoom() {
           lifecycleRef.current.tryTransition("remote", "subscribed");
           lifecycleRef.current.tryTransition("remote", "playing");
           applyCallRemoteAudioEnabled(room, true).catch(() => undefined);
+          if (options.video) {
+            stabilizeRealtimeAudioEngine(livekitNative.AudioDeviceModule, {
+              playout: true,
+              recording: true,
+              settleMs: 0,
+              context: publicationContextRef.current
+            }).catch(() => undefined);
+            selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
+          }
         }
         refresh();
       });
@@ -312,8 +365,8 @@ export function useNativeCallRoom() {
 
       await room.connect(join.livekit_url, join.token, { autoSubscribe: true });
       lifecycleRef.current.tryTransition("room", "connected");
-      if (options.video) await room.localParticipant.setCameraEnabled(true);
-      const localAudioTrackCount = await ensureCallMicrophonePublished(room, {
+      const localAudioTrackCount = await initializeCallLocalMedia(room, {
+        video: Boolean(options.video),
         useV2: audioV2Ref.current,
         fallbackEnabled: audioV2FallbackRef.current,
         context: publicationContextRef.current
@@ -340,6 +393,14 @@ export function useNativeCallRoom() {
         return false;
       }
       lifecycleRef.current.tryTransition("local", "published");
+      if (options.video) {
+        await stabilizeRealtimeAudioEngine(livekitNative.AudioDeviceModule, {
+          playout: true,
+          recording: true,
+          settleMs: 650,
+          context: publicationContextRef.current
+        });
+      }
       await selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
       await applyCallRemoteAudioEnabled(room, true).catch(() => undefined);
       refresh();
@@ -385,14 +446,22 @@ export function useNativeCallRoom() {
     const room = roomRef.current;
     if (!room) throw new Error("Call media is not connected.");
     await room.localParticipant.setCameraEnabled(enabled);
-    const localAudioTrackCount = enabled
-      ? await ensureCallMicrophonePublished(room, {
-          useV2: audioV2Ref.current,
-          fallbackEnabled: audioV2FallbackRef.current,
-          context: publicationContextRef.current
-        })
-      : countPublishedAudioTracks(room.localParticipant);
+    let localAudioTrackCount = await reassertRealtimeMicrophone(room, publicationContextRef.current);
+    if (localAudioTrackCount <= 0) {
+      localAudioTrackCount = await ensureCallMicrophonePublished(room, {
+        useV2: audioV2Ref.current,
+        fallbackEnabled: audioV2FallbackRef.current,
+        context: publicationContextRef.current
+      });
+    }
     if (localAudioTrackCount <= 0) throw new Error("Camera changed, but microphone audio is no longer published.");
+    await stabilizeRealtimeAudioEngine(audioDeviceModuleRef.current, {
+      playout: true,
+      recording: true,
+      settleMs: 450,
+      context: publicationContextRef.current
+    });
+    await selectRealtimeAudioOutput(audioSessionRef.current, true).catch(() => undefined);
     refreshMediaState(room);
     setState((current) => ({ ...current, videoEnabled: enabled, audioEnabled: true, localAudioTrackCount, error: "", diagnosticCode: "" }));
   }, [refreshMediaState]);
@@ -417,8 +486,22 @@ export function useNativeCallRoom() {
     if (!publication?.track?.switchCamera) throw new Error("Camera is not active.");
     await publication.track.switchCamera();
     const room = roomRef.current;
-    const localAudioTrackCount = countPublishedAudioTracks(room?.localParticipant);
+    let localAudioTrackCount = await reassertRealtimeMicrophone(room, publicationContextRef.current);
+    if (localAudioTrackCount <= 0) {
+      localAudioTrackCount = await ensureCallMicrophonePublished(room, {
+        useV2: audioV2Ref.current,
+        fallbackEnabled: audioV2FallbackRef.current,
+        context: publicationContextRef.current
+      });
+    }
     if (localAudioTrackCount <= 0) throw new Error("Camera switched, but microphone audio is no longer published.");
+    await stabilizeRealtimeAudioEngine(audioDeviceModuleRef.current, {
+      playout: true,
+      recording: true,
+      settleMs: 450,
+      context: publicationContextRef.current
+    });
+    await selectRealtimeAudioOutput(audioSessionRef.current, true).catch(() => undefined);
     refreshMediaState(room);
   }, [refreshMediaState]);
 
@@ -426,6 +509,7 @@ export function useNativeCallRoom() {
     const room = roomRef.current;
     const lease = audioLeaseRef.current;
     roomRef.current = null;
+    audioDeviceModuleRef.current = null;
     audioLeaseRef.current = null;
     room?.disconnect?.().catch(() => undefined);
     if (lease) releaseRealtimeAudioSession(audioSessionRef.current, lease).catch(() => undefined);

@@ -7,6 +7,13 @@ export type RealtimeAudioTelemetryEventName =
   | "microphone_publish_started"
   | "microphone_published"
   | "microphone_publish_failed"
+  | "microphone_reasserted"
+  | "camera_publish_started"
+  | "camera_published"
+  | "remote_audio_subscribed"
+  | "audio_engine_guard_started"
+  | "audio_engine_guard_completed"
+  | "audio_engine_guard_failed"
   | "cleanup_started"
   | "cleanup_completed";
 
