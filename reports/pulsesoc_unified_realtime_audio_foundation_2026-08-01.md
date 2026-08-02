@@ -571,3 +571,96 @@ The protected audio-only call initialization path was not changed. The shared gu
 The second physical failure is diagnosed and its responsible initialization layer is repaired, tested, pushed, and installed. A post-`b252a255` physical host/viewer attempt has not yet been observed, and viewer audibility has not yet been heard. Therefore the truthful status remains:
 
 **Implementation and deployment-to-device: PASS. Physical audible acceptance: NO-GO pending the next observed host/viewer retry.**
+
+## 18. Single governed audio path migration — 2026-08-02
+
+### Starting evidence and precise Live divergence
+
+The owner-reported physical baseline for this migration is audio calls audible in both directions, video-call audio audible in both directions, and Live connected but inaudible to viewers. Those call/video results are accepted as supplied test evidence, not as personally observed Codex evidence.
+
+The static and automated trace found one remaining architectural divergence: calls and video could use `realtimeMicrophonePublisher`, but Live could still select the polling/toggle-based legacy microphone path. Remote subscription and track enablement were also feature-hook concerns instead of one multi-speaker controller. That allowed the passing call lifecycle and the failing Live lifecycle to drift even though both used the same AVAudioSession coordinator.
+
+### Governed architecture
+
+The resulting execution path is:
+
+```text
+AudioCallAdapter / VideoCallAdapter / LivestreamAdapter
+    -> realtimeAudioMediaPath
+       - connected-room invariant
+       - feature and server-authorized role
+       - current generation-scoped audio lease
+       - mutually exclusive shared or legacy room path
+    -> realtimeMicrophonePublisher
+       - one in-flight publication
+       - event-confirmed publication
+       - duplicate reconciliation
+    -> realtimeRemoteAudioController
+       - all remote publications
+       - host plus approved guests
+       - subscribe once
+       - shared playback enablement
+    -> realtimeAudioEngine
+       - AVAudioSession, ownership, route, recovery, cleanup
+```
+
+Room types, tokens, signaling, participant roles, and termination remain feature-specific. The shared engine cannot elevate a viewer: a Live viewer has subscribe permission only, never receives a publishing mode, and the governed publisher rejects missing, stale, wrong-mode, or unauthorized leases before touching the microphone.
+
+The room-path guard records either `shared_governed` or `legacy_fallback` for each LiveKit room and rejects any attempt to activate the other path in the same room. Rollback therefore requires a fresh token/room connection and cannot run both microphone paths simultaneously.
+
+### Feature configuration and rollback
+
+New canonical variable names reuse the existing server rollout decision rather than creating a second flag system:
+
+- `REALTIME_AUDIO_CALLS_SHARED_PATH`
+- `REALTIME_VIDEO_CALLS_SHARED_PATH`
+- `REALTIME_LIVE_SHARED_PATH`
+
+The existing V2 names remain backward-compatible aliases. If a canonical variable is present, it is authoritative, including `false`; tests prove a legacy `true` cannot override the canonical kill switch. Platform, QA allowlist, sticky percentage, trace, and fallback controls remain unchanged.
+
+### Automated evidence
+
+| Check | Result |
+|---|---:|
+| Full native suite | 116 suites / 1,912 tests PASS |
+| Native TypeScript typecheck | PASS |
+| Governed media-path tests | 6/6 PASS |
+| Focused call, video, Live, engine, publisher, remote controller suites | 74/74 PASS |
+| Realtime architecture protection | 6/6 PASS |
+| Call token/shared-path contract | 5/5 PASS |
+| Live host/guest/viewer token and rollout contract | PASS |
+| Affected Python compilation | PASS |
+| `git diff --check` | PASS |
+
+The architecture audit now fails if feature code directly activates/deactivates AVAudioSession, creates/publishes/unpublishes microphone tracks, manages remote subscriptions, or enables remote audio tracks outside the approved shared controllers.
+
+### Commits and files
+
+- `d14e11b1` — `refactor(realtime-audio): expose governed shared media path`
+- `d50c4f92` — `fix(live-audio): migrate host viewer and guests to shared engine`
+
+Primary new files:
+
+- `mobile-native/src/core/realtimeAudioMediaPath.ts`
+- `mobile-native/src/core/realtimeRemoteAudioController.ts`
+- `mobile-native/src/core/__tests__/realtimeAudioMediaPath.test.ts`
+- `mobile-native/src/core/__tests__/realtimeRemoteAudioController.test.ts`
+
+The protected call/video hook received only narrow routing changes: it now supplies its existing lease and role to the shared publisher and imports the shared remote controller. Camera, call signaling, room type, and user controls are unchanged.
+
+### Physical and rollout status
+
+The governed code has not yet completed a new two-participant physical session. At this report stage:
+
+| Gate | Status |
+|---|---|
+| Audio-call audible baseline | Owner-reported PASS; post-migration physical regression NOT YET OBSERVED |
+| Video-call audible baseline | Owner-reported PASS; post-migration physical regression NOT YET OBSERVED |
+| Live viewer hears host | NOT YET OBSERVED |
+| Live viewer hears approved guest | NOT YET OBSERVED |
+| Second Live without restart | NOT YET OBSERVED |
+| Mixed call -> video -> Live -> call | NOT YET OBSERVED |
+| Unauthorized viewer publication | Automated PASS |
+| Shared/legacy collision rejection | Automated PASS |
+
+Final migration judgment at code-commit time: **PARTIAL / NO-GO for broad rollout**. The permanent shared architecture is implemented and automated gates pass, but Live audible success and protected call/video regression must be heard with separate real participants before the shared Live flag is expanded beyond controlled QA.
