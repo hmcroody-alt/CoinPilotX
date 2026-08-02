@@ -43894,15 +43894,80 @@ def pulse_livekit_config():
     }
 
 
+PULSE_LIVE_AUDIO_V2_SALT = "pulsesoc.live.audio.v2"
+
+
+def pulse_live_audio_v2_env_flag(name, default=""):
+    return (os.getenv(name) or default).strip().lower()
+
+
+def pulse_live_audio_v2_enabled(user_id=0, *, is_qa=False):
+    """Server-authoritative rollout gate for the isolated livestream audio route.
+
+    The decision is made here and shipped to the client on the LiveKit token
+    response it already fetches for every broadcast, so flipping
+    LIVESTREAM_AUDIO_V2_ENABLED to a falsy value is a real kill switch: the very
+    next token fetch runs the legacy path, with no app release and no client
+    override. Default is OFF - an unset or malformed env var disables V2.
+
+    LIVESTREAM_AUDIO_V2_ENABLED   master switch, default off
+    LIVESTREAM_AUDIO_V2_QA_ONLY   when on, only QA accounts get V2
+    LIVESTREAM_AUDIO_V2_PERCENT   0-100 sticky percentage rollout
+    """
+    master = pulse_live_audio_v2_env_flag("LIVESTREAM_AUDIO_V2_ENABLED")
+    if master not in {"1", "true", "yes", "on"}:
+        return False
+    qa_only = pulse_live_audio_v2_env_flag("LIVESTREAM_AUDIO_V2_QA_ONLY") in {"1", "true", "yes", "on"}
+    if qa_only:
+        return bool(is_qa)
+    try:
+        percent = int(float(pulse_live_audio_v2_env_flag("LIVESTREAM_AUDIO_V2_PERCENT", "0") or 0))
+    except Exception:
+        percent = 0
+    percent = max(0, min(100, percent))
+    if percent >= 100:
+        return True
+    if percent <= 0:
+        return False
+    try:
+        uid = int(user_id or 0)
+    except Exception:
+        uid = 0
+    if uid <= 0:
+        return False
+    # Sticky per-user bucket: the same account always lands on the same side of
+    # the rollout, so a user does not flip paths between broadcasts.
+    digest = hashlib.sha256(f"{PULSE_LIVE_AUDIO_V2_SALT}:{uid}".encode("utf-8")).hexdigest()
+    return (int(digest[:8], 16) % 100) < percent
+
+
+def pulse_live_audio_v2_fallback_enabled():
+    """Whether the client may fall back to the legacy path if V2 fails at runtime."""
+    raw = pulse_live_audio_v2_env_flag("LIVESTREAM_AUDIO_V2_FALLBACK_ENABLED", "true")
+    return raw not in {"0", "false", "no", "off"}
+
+
 def pulse_livekit_b64url(raw):
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
 
-def pulse_livekit_access_token(identity, room_name, *, can_publish=False, name="", metadata=None, ttl_seconds=3600):
+def pulse_livekit_access_token(identity, room_name, *, can_publish=False, name="", metadata=None, ttl_seconds=3600, can_publish_data=None, can_update_own_metadata=None):
+    """Mint a least-privilege LiveKit access token for a PulseSoc livestream.
+
+    canPublishData / canUpdateOwnMetadata now default to the publish grant
+    rather than to True. A listen-only viewer that can rewrite its own metadata
+    can set role="host" and impersonate the broadcaster in every other
+    participant's participant list, because clients read the displayed role from
+    participant metadata. Publishers keep both grants: the web Live Studio
+    requires them on the cohost path (static/js/pulse_live_studio_runtime.js).
+    """
     config = pulse_livekit_config()
     if not config.get("configured"):
         return ""
     now = int(time.time())
+    grant_publish = bool(can_publish)
+    grant_publish_data = grant_publish if can_publish_data is None else bool(can_publish_data)
+    grant_update_metadata = grant_publish if can_update_own_metadata is None else bool(can_update_own_metadata)
     claims = {
         "iss": config["api_key"],
         "sub": str(identity),
@@ -43913,9 +43978,9 @@ def pulse_livekit_access_token(identity, room_name, *, can_publish=False, name="
             "room": str(room_name),
             "roomJoin": True,
             "canSubscribe": True,
-            "canPublish": bool(can_publish),
-            "canPublishData": True,
-            "canUpdateOwnMetadata": True,
+            "canPublish": grant_publish,
+            "canPublishData": grant_publish_data,
+            "canUpdateOwnMetadata": grant_update_metadata,
         },
     }
     if metadata:
@@ -43929,7 +43994,15 @@ def pulse_livekit_access_token(identity, room_name, *, can_publish=False, name="
     return f"{signing_input}.{pulse_livekit_b64url(signature)}"
 
 
-def pulse_livekit_verify_token_claims(token, *, identity="", room_name="", role="", require_publish=False):
+def pulse_livekit_verify_token_claims(token, *, identity="", room_name="", role="", require_publish=False, expect_publish_data=None, expect_update_own_metadata=None):
+    """Verify a freshly minted token actually carries the grants we intended.
+
+    The data grants are checked against what was requested, not hard-required to
+    be True. A listen-only viewer is now minted without canPublishData /
+    canUpdateOwnMetadata, and this verifier asserts that absence rather than
+    treating it as a defect - that assertion is what stops a future change from
+    silently re-widening viewer grants.
+    """
     config = pulse_livekit_config()
     result = {"ok": False, "error_code": "TOKEN_CLAIMS_INVALID", "message": "LiveKit token claims are invalid.", "claims": {}}
     try:
@@ -43946,6 +44019,8 @@ def pulse_livekit_verify_token_claims(token, *, identity="", room_name="", role=
         video = claims.get("video") if isinstance(claims.get("video"), dict) else {}
         metadata = json.loads(claims.get("metadata") or "{}") if isinstance(claims.get("metadata"), str) else (claims.get("metadata") or {})
         now = int(time.time())
+        expected_publish_data = bool(require_publish) if expect_publish_data is None else bool(expect_publish_data)
+        expected_update_metadata = bool(require_publish) if expect_update_own_metadata is None else bool(expect_update_own_metadata)
         checks = {
             "identity": str(claims.get("sub") or "") == str(identity or ""),
             "room": str(video.get("room") or "") == str(room_name or ""),
@@ -43954,8 +44029,8 @@ def pulse_livekit_verify_token_claims(token, *, identity="", room_name="", role=
             "room_join": video.get("roomJoin") is True,
             "publish": video.get("canPublish") is True if require_publish else isinstance(video.get("canPublish"), bool),
             "subscribe": video.get("canSubscribe") is True,
-            "publish_data": video.get("canPublishData") is True,
-            "update_own_metadata": video.get("canUpdateOwnMetadata") is True,
+            "publish_data": video.get("canPublishData") is expected_publish_data,
+            "update_own_metadata": video.get("canUpdateOwnMetadata") is expected_update_metadata,
             "expiration": int(claims.get("exp") or 0) > now,
             "metadata": isinstance(metadata, dict) and int((metadata or {}).get("live_id") or 0) > 0,
         }
@@ -45430,12 +45505,18 @@ def api_pulse_live_livekit_token(live_id):
     identity = clean_html(guest.get("livekit_identity") or f"pulse-user-{int(user.get('user_id') or 0)}")[:120] if is_guest_request else f"pulse-user-{int(user.get('user_id') or 0)}"
     token_role = "cohost" if requested_role in {"cohost", "co-host"} else "guest" if is_guest_request else "host" if can_publish else "viewer"
     request_id = int(guest.get("request_id") or 0)
+    # Least privilege: the data channel and self-metadata grants follow the
+    # publish grant. Clients render a participant's role from its LiveKit
+    # metadata, so a viewer able to rewrite its own metadata could set
+    # role="host" and impersonate the broadcaster for everyone in the room.
+    grant_publish_data = bool(can_publish)
+    grant_update_own_metadata = bool(can_publish)
     token_permissions = {
         "roomJoin": True,
         "canSubscribe": True,
         "canPublish": bool(can_publish),
-        "canPublishData": True,
-        "canUpdateOwnMetadata": True,
+        "canPublishData": grant_publish_data,
+        "canUpdateOwnMetadata": grant_update_own_metadata,
     }
     pulse_live_cohost_step_log(
         trace_id,
@@ -45468,11 +45549,13 @@ def api_pulse_live_livekit_token(live_id):
         name=pulse_actor_display_name(user),
         metadata={"live_id": live_id, "role": token_role, "guest_id": int(guest.get("id") or 0)},
         ttl_seconds=1800 if is_guest_request else 7200 if can_publish else 3600,
+        can_publish_data=grant_publish_data,
+        can_update_own_metadata=grant_update_own_metadata,
     )
     if not token:
         conn.rollback(); conn.close()
         return pulse_live_cohost_error("TOKEN_GENERATION_FAILED", status=503, trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"), request_id=guest.get("request_id"))
-    verification = pulse_livekit_verify_token_claims(token, identity=identity, room_name=room_name, role=token_role, require_publish=can_publish)
+    verification = pulse_livekit_verify_token_claims(token, identity=identity, room_name=room_name, role=token_role, require_publish=can_publish, expect_publish_data=grant_publish_data, expect_update_own_metadata=grant_update_own_metadata)
     logging.info("PULSE_COHOST_TOKEN_CLAIMS trace_id=%s live_id=%s user_id=%s claims=%s checks=%s", trace_id, live_id, user["user_id"], json.dumps(verification.get("claims") or {}, default=str)[:3000], json.dumps(verification.get("checks") or {}, default=str)[:2000])
     if not verification.get("ok"):
         if is_guest_request:
@@ -45511,10 +45594,12 @@ def api_pulse_live_livekit_token(live_id):
         "identity": identity,
         "can_publish": can_publish,
         "can_subscribe": True,
-        "can_publish_data": True,
-        "can_update_own_metadata": True,
+        "can_publish_data": grant_publish_data,
+        "can_update_own_metadata": grant_update_own_metadata,
         "room_join": True,
         "role": token_role,
+        "audio_v2_enabled": pulse_live_audio_v2_enabled(user.get("user_id"), is_qa=bool(admin_current_user())),
+        "audio_v2_fallback_enabled": pulse_live_audio_v2_fallback_enabled(),
         "guest_id": int(guest.get("id") or 0),
         "request_id": request_id,
         "participant_name": verified_claims.get("participant_name") or pulse_actor_display_name(user),

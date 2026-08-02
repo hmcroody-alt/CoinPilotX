@@ -456,7 +456,15 @@ export function LiveScreen({ route, navigation }: Props) {
       if (!canConnectAsCohostPublisher(credentials)) {
         throw new Error("PulseSoc has not returned a verified co-host publishing token yet.");
       }
-      const ok = await connectLiveRoom(credentials, { publish: true });
+      // Guest publish tokens are deliberately short-lived (30 min) so a removed
+      // co-host cannot rejoin on a stale token. Refreshing in place is what makes
+      // that short TTL survivable across a mid-session reconnect: the refresh
+      // re-hits the endpoint, which re-checks the active guest slot, so a guest
+      // who has been removed simply gets no new token.
+      const ok = await connectLiveRoom(credentials, {
+        publish: true,
+        refreshCredentials: () => getLiveKitToken(activeLiveId, "cohost")
+      });
       if (!ok || room.error) {
         throw new Error(room.error || "Co-host media could not connect.");
       }

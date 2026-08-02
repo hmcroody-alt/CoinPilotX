@@ -7,6 +7,7 @@
  * network, or the LiveKit native module.
  */
 
+import { normalizeLiveAudioV2Flag } from "./liveAudioFlags";
 import type { LiveAudience, LiveStudioDraft, LiveTypeKey } from "./liveStudioReadiness";
 
 export type LiveStartPayload = {
@@ -47,6 +48,14 @@ export type LiveKitCredentials = {
   participantName: string;
   traceId: string;
   expiresAt: string;
+  /**
+   * Server-authoritative livestream audio V2 rollout decision, delivered on the
+   * token response the client already fetches for every broadcast. Default OFF:
+   * an older backend that omits the field runs the legacy path.
+   */
+  audioV2Enabled: boolean;
+  /** Whether the client may drop back to the legacy path if V2 fails at runtime. */
+  audioV2FallbackEnabled: boolean;
 };
 
 /**
@@ -190,7 +199,11 @@ export function normalizeLiveKitCredentials(raw: Record<string, unknown> | null 
     requestId: toNum(data.request_id),
     participantName: toStr(data.participant_name),
     traceId: toStr(data.trace_id),
-    expiresAt: toStr(data.expires_at)
+    expiresAt: toStr(data.expires_at),
+    // Strict boolean normalisation at the API boundary: anything other than an
+    // explicit server `true` (missing field, "false", 0, "0") runs the legacy path.
+    audioV2Enabled: normalizeLiveAudioV2Flag(data.audio_v2_enabled),
+    audioV2FallbackEnabled: data.audio_v2_fallback_enabled !== false
   };
 }
 

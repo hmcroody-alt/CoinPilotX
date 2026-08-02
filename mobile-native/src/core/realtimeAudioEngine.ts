@@ -1,4 +1,9 @@
 import { Platform } from "react-native";
+import {
+  RealtimeAudioOwnershipError,
+  resolveOwnershipDecision,
+  type OwnershipDecision
+} from "./audioOwnershipPolicy";
 
 export type RealtimeAudioMode =
   | "none"
@@ -32,6 +37,36 @@ type LiveKitAudioSession = {
 };
 
 let activeRealtimeAudioOwner: RealtimeAudioOwner | null = null;
+
+/**
+ * Teardown callbacks keyed by ownerId. When a higher-priority feature takes the
+ * audio session, the incumbent is invoked here so it can stop its own media
+ * instead of silently believing it still owns a session it has lost.
+ */
+const displacementHandlers = new Map<string, () => void>();
+
+export type ClaimOptions = {
+  /** Invoked when a higher-priority owner takes the session from this owner. */
+  onDisplaced?: () => void;
+};
+
+/** Last arbitration outcome, exposed for telemetry and tests. */
+let lastOwnershipDecision: OwnershipDecision | null = null;
+
+export function getLastOwnershipDecision(): OwnershipDecision | null {
+  return lastOwnershipDecision;
+}
+
+function notifyDisplaced(ownerId: string) {
+  const handler = displacementHandlers.get(ownerId);
+  displacementHandlers.delete(ownerId);
+  if (!handler) return;
+  try {
+    handler();
+  } catch {
+    // A failing teardown handler must never block the incoming owner.
+  }
+}
 
 /**
  * Canonical PulseSoc realtime audio profile.
@@ -68,12 +103,42 @@ export function getActiveRealtimeAudioOwner(): RealtimeAudioOwner | null {
   return activeRealtimeAudioOwner ? { ...activeRealtimeAudioOwner } : null;
 }
 
-export function claimRealtimeAudioSession(mode: RealtimeAudioMode, ownerId: string): RealtimeAudioOwner {
-  activeRealtimeAudioOwner = {
-    ownerId,
-    mode,
-    startedAt: Date.now()
-  };
+/**
+ * Claim the single device audio session.
+ *
+ * Arbitration is delegated to the pure policy module. A claim that loses
+ * arbitration throws `RealtimeAudioOwnershipError` rather than silently
+ * stealing the session - this is what stops a livestream from cutting the
+ * audio out from under an active call.
+ *
+ * @throws {RealtimeAudioOwnershipError} when a higher-priority owner holds the session.
+ */
+export function claimRealtimeAudioSession(
+  mode: RealtimeAudioMode,
+  ownerId: string,
+  options: ClaimOptions = {}
+): RealtimeAudioOwner {
+  const decision = resolveOwnershipDecision(activeRealtimeAudioOwner, { ownerId, mode });
+  lastOwnershipDecision = decision;
+
+  if (decision.outcome === "denied") {
+    throw new RealtimeAudioOwnershipError(decision.blockedBy, decision.blockedByMode);
+  }
+  if (decision.outcome === "displaced") {
+    notifyDisplaced(decision.displaces);
+  }
+
+  if (options.onDisplaced) displacementHandlers.set(ownerId, options.onDisplaced);
+  else displacementHandlers.delete(ownerId);
+
+  // Re-acquiring preserves the original startedAt so session duration telemetry
+  // measures the real session, not the latest reconnect.
+  const startedAt =
+    decision.outcome === "reacquired" && activeRealtimeAudioOwner
+      ? activeRealtimeAudioOwner.startedAt
+      : Date.now();
+
+  activeRealtimeAudioOwner = { ownerId, mode, startedAt };
   return getActiveRealtimeAudioOwner() as RealtimeAudioOwner;
 }
 
@@ -81,9 +146,13 @@ export async function activateRealtimeAudioSession(
   audioSession: LiveKitAudioSession,
   mode: RealtimeAudioMode,
   ownerId: string,
-  options: { speaker?: boolean } = {}
+  options: { speaker?: boolean; onDisplaced?: () => void } = {}
 ): Promise<RealtimeAudioOwner> {
-  const owner = claimRealtimeAudioSession(mode, ownerId);
+  // Throws RealtimeAudioOwnershipError if a higher-priority owner holds the
+  // session. Callers surface this as a user-facing "audio is busy" state.
+  const owner = claimRealtimeAudioSession(mode, ownerId, { onDisplaced: options.onDisplaced });
+  const reacquired = lastOwnershipDecision?.outcome === "reacquired";
+
   const config = resolveRealtimeAudioConfiguration(mode);
   if (Platform.OS === "ios" && typeof audioSession.setAppleAudioConfiguration === "function") {
     await audioSession.setAppleAudioConfiguration(config).catch(() => undefined);
@@ -91,7 +160,10 @@ export async function activateRealtimeAudioSession(
   if (typeof audioSession.configureAudio === "function") {
     await audioSession.configureAudio({ ios: { defaultOutput: options.speaker === false ? "default" : "speaker" } }).catch(() => undefined);
   }
-  if (typeof audioSession.startAudioSession === "function") {
+  // Idempotent: re-activating an owner that already holds the session must not
+  // start a second session. Unbalanced start/stop pairs leak the mic indicator
+  // and leave the route stuck after the feature exits.
+  if (!reacquired && typeof audioSession.startAudioSession === "function") {
     await audioSession.startAudioSession();
   }
   if (options.speaker !== false) {
@@ -101,10 +173,26 @@ export async function activateRealtimeAudioSession(
 }
 
 export async function releaseRealtimeAudioSession(audioSession: LiveKitAudioSession | null | undefined, ownerId: string): Promise<boolean> {
+  displacementHandlers.delete(ownerId);
   if (!activeRealtimeAudioOwner || activeRealtimeAudioOwner.ownerId !== ownerId) return false;
   activeRealtimeAudioOwner = null;
+  lastOwnershipDecision = null;
   await audioSession?.stopAudioSession?.().catch(() => undefined);
   return true;
+}
+
+/**
+ * Force-clear ownership regardless of holder. Reserved for logout, fatal
+ * teardown, and test setup - never for ordinary feature exit, which must use
+ * the owner-scoped release above.
+ */
+export async function resetRealtimeAudioOwnership(audioSession?: LiveKitAudioSession | null): Promise<void> {
+  const owner = activeRealtimeAudioOwner;
+  activeRealtimeAudioOwner = null;
+  lastOwnershipDecision = null;
+  if (owner) notifyDisplaced(owner.ownerId);
+  displacementHandlers.clear();
+  await audioSession?.stopAudioSession?.().catch(() => undefined);
 }
 
 export async function selectRealtimeAudioOutput(audioSession: LiveKitAudioSession, speakerEnabled: boolean): Promise<void> {

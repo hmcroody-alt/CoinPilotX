@@ -119,7 +119,35 @@ describe("normalizeLiveKitCredentials", () => {
       requestId: 0,
       participantName: "Roody",
       traceId: "trace-1",
-      expiresAt: "1700000000"
+      expiresAt: "1700000000",
+      // Absent from this payload, so the rollout gate stays OFF and the legacy
+      // fallback stays available.
+      audioV2Enabled: false,
+      audioV2FallbackEnabled: true
+    });
+  });
+
+  describe("livestream audio V2 rollout gate", () => {
+    const base = { token: "tok", livekit_url: "wss://livekit.example" };
+
+    it("is OFF when the server omits the field, so an older backend runs the legacy path", () => {
+      expect(normalizeLiveKitCredentials(base)?.audioV2Enabled).toBe(false);
+    });
+
+    it("is ON only for an explicit server true", () => {
+      expect(normalizeLiveKitCredentials({ ...base, audio_v2_enabled: true })?.audioV2Enabled).toBe(true);
+    });
+
+    it("KILL SWITCH: any non-true value runs the legacy path", () => {
+      for (const raw of [false, "true", "false", 1, 0, "1", "0", null, undefined, {}]) {
+        expect(normalizeLiveKitCredentials({ ...base, audio_v2_enabled: raw })?.audioV2Enabled).toBe(false);
+      }
+    });
+
+    it("keeps the legacy fallback available unless the server explicitly disables it", () => {
+      expect(normalizeLiveKitCredentials(base)?.audioV2FallbackEnabled).toBe(true);
+      expect(normalizeLiveKitCredentials({ ...base, audio_v2_fallback_enabled: true })?.audioV2FallbackEnabled).toBe(true);
+      expect(normalizeLiveKitCredentials({ ...base, audio_v2_fallback_enabled: false })?.audioV2FallbackEnabled).toBe(false);
     });
   });
 

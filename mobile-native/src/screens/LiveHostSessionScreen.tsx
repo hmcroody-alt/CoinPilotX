@@ -153,7 +153,16 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
           setConnecting(false);
           return;
         }
-        const ok = await room.connect(credentials, { publish: true });
+        // The host token is minted with a 2h TTL, but LiveKit reuses the ORIGINAL
+        // join token on every reconnect, so a broadcast that runs past the TTL
+        // cannot recover from a network drop unless the client re-mints. This
+        // fetcher is what the room uses to refresh in place; it re-hits the
+        // endpoint, which re-checks host authority server-side, so a host whose
+        // broadcast was ended will not be re-issued a publish token.
+        const ok = await room.connect(credentials, {
+          publish: true,
+          refreshCredentials: () => getLiveKitToken(liveId, "host")
+        });
         if (cancelled) return;
         if (!ok) {
           await releaseLivePlaybackOwner("host", liveId);
