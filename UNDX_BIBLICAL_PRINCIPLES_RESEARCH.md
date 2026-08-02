@@ -1161,7 +1161,3 @@ anything at all.**
 
 *Verse references should be checked against a critical text before this document is quoted
 anywhere outside the team. See section 2, "On my own reliability as a source".*
-
-
-
-
