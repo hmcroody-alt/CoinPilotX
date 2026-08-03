@@ -1,0 +1,19 @@
+diff --git a/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/VideoCaptureController.m b/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/VideoCaptureController.m
+index 8ae5ce1..c1463c6 100644
+--- a/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/VideoCaptureController.m
++++ b/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/VideoCaptureController.m
+@@ -64,6 +64,14 @@ - (void)startCapture {
+     self.selectedFormat = format;
+ 
+     AVCaptureSession *session = self.capturer.captureSession;
++    // Do NOT let the camera's AVCaptureSession reconfigure the app's shared
++    // AVAudioSession. When this is YES (the default), starting video capture
++    // fires an AVAudioSession interruption ("Stop Now") that tears down and
++    // removes the WebRTC RemoteIO record engine mid-broadcast, leaving the Live
++    // host silent to viewers. The app owns audio-session configuration itself
++    // (registerGlobals autoConfigureAudioSession:false), so the capture session
++    // must leave that session alone.
++    session.automaticallyConfiguresApplicationAudioSession = NO;
+     if (@available(iOS 16.0, *)) {
+         BOOL enable = self.enableMultitaskingCameraAccess;
+         BOOL shouldChange = session.multitaskingCameraAccessEnabled != enable;
