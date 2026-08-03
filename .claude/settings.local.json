@@ -426,7 +426,8 @@
       "Bash(echo \"npm install exit=$?\")",
       "Bash(git -C mobile-native diff --stat)",
       "Bash(grep -c \"BUILD SUCCEEDED\\\\|BUILD FAILED\\\\|error:\" build/lastbuild.log)",
-      "Bash(ps -p 56575)"
+      "Bash(ps -p 56575)",
+      "Bash(nohup xcodebuild *)"
     ]
   }
 }
