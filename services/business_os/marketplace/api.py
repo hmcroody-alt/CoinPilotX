@@ -50,7 +50,7 @@ DISPUTE_FIELDS = {"reason"}
 REVIEW_FIELDS = {"product_id", "order_id", "rating", "body"}
 ASSISTANT_FIELDS = {"tool", "params", "confirmation_token"}
 # Governed admin fields — a reason is mandatory server-side.
-ADMIN_REFUND_FIELDS = {"amount_cents", "reason"}
+ADMIN_REFUND_FIELDS = {"amount_cents", "reason", "idempotency_key"}
 ADMIN_DISPUTE_FIELDS = {"decision", "reason", "refund_amount_cents"}
 ADMIN_REASON_FIELDS = {"reason"}
 ADMIN_PAYOUT_NOTE_FIELDS = {"amount_cents", "provider_reference", "reason", "currency"}
@@ -441,7 +441,8 @@ def admin_refund_order(actor: Any, order_id: str, payload: Any = None):
     try:
         f = _allowlist(payload, ADMIN_REFUND_FIELDS)
         out = mkadmin.admin_refund_order(order_id, actor=actor, reason=f.get("reason"),
-                                         amount_cents=f.get("amount_cents"))
+                                         amount_cents=f.get("amount_cents"),
+                                         idempotency_key=f.get("idempotency_key"))
     except MarketplaceError as exc:
         return _err(exc)
     return (200, {"ok": True, "refund": out})

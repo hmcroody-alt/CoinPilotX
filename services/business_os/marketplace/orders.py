@@ -247,8 +247,41 @@ def pay_order(order_id: Any, buyer_user_id: Any, *, context: Optional[dict] = No
     NOTE: this models the *post-capture* bookkeeping. Collecting the card payment
     itself (Stripe PaymentIntent) is the provider's job and is done before this call;
     we record the captured funds moving into escrow.
+
+    **This function will not run inside a caller's transaction, and says so.**
+    ``post_entry`` opens, commits, and closes its own connection by design, so
+    the capture can never be part of a transaction this function did not open.
+    The old code accepted a caller's ``conn`` anyway and produced two concrete
+    failures from it. It committed the inventory decrement only when it owned the
+    connection, so a borrowed connection left an *uncommitted* decrement beside a
+    *committed* ledger post. And it compensated on a second connection, which
+    could not see that uncommitted decrement, so the ``+ quantity`` reversal
+    landed on the committed value instead: a failed capture created stock.
+
+    Rather than half-support that, a supplied ``conn`` is now refused. Nothing in
+    the codebase passed one — the parameter was an invitation to a bug rather
+    than a feature anyone used — and a loud refusal is worth more than a silent
+    path that mis-states inventory.
+
+    On the owned path the order writes are committed before the capture is
+    attempted, which is not merely convenient: on SQLite ``post_entry`` takes a
+    database-wide write lock via ``BEGIN IMMEDIATE``, so holding this
+    transaction open across the capture deadlocks against it. Compensation and
+    the ``capture_txn_ref`` write now both run on this function's own connection
+    instead of on two further ones.
+
+    That leaves one irreducible window: the capture succeeds and the
+    ``capture_txn_ref`` write then fails. It is the safe direction — the money is
+    in escrow and the order is marked paid — and unlike before it is
+    *detectable*: see :func:`reconcile_captures`, the drift check whose absence
+    was the standing reason this defect was recorded as open.
     """
     _svc._require_enabled()
+    if conn is not None:
+        raise MarketplaceError(
+            "pay_order cannot run inside a caller-supplied transaction: the "
+            "ledger capture commits on its own connection and cannot be rolled "
+            "back with yours.", 500, "capture_needs_own_transaction")
     _svc._require_not_held(buyer_user_id, context)
     owned = conn is None
     if owned:
@@ -282,8 +315,11 @@ def pay_order(order_id: Any, buyer_user_id: Any, *, context: Optional[dict] = No
             "UPDATE business_os_mkt_orders SET status = 'paid', updated_at = ? "
             "WHERE order_id = ?", (_now_iso(), str(order_id)))
         _record_event(conn, order_id, "created", "paid", buyer_user_id)
-        if owned:
-            conn.commit()
+        # Committed before the capture, and it has to be: `post_entry` opens its
+        # own connection and on SQLite takes a database-wide write lock, so a
+        # write transaction still open here deadlocks against it. The commit is
+        # what releases that lock.
+        conn.commit()
 
         # 2) capture into escrow (idempotent).
         try:
@@ -298,33 +334,30 @@ def pay_order(order_id: Any, buyer_user_id: Any, *, context: Optional[dict] = No
                 reason="Marketplace order captured into escrow.",
                 related_object=str(order_id))
         except Exception:
-            # Compensate: restore inventory + revert state so nothing is stranded.
-            c2 = db.connect()
-            try:
-                for it in items:
-                    c2.execute(
-                        "UPDATE business_os_mkt_products SET inventory_qty = inventory_qty + ? "
-                        "WHERE product_id = ? AND inventory_qty IS NOT NULL",
-                        (it["quantity"], it["product_id"]))
-                c2.execute(
-                    "UPDATE business_os_mkt_orders SET status = 'created', updated_at = ? "
-                    "WHERE order_id = ?", (_now_iso(), str(order_id)))
-                _record_event(c2, order_id, "paid", "created", buyer_user_id,
-                              reason="capture_failed")
-                c2.commit()
-            finally:
-                c2.close()
+            # Compensate on the SAME connection that made the decrement, rather
+            # than opening a second one. Two connections were how a reversal
+            # could ever be applied to a value that did not include the change it
+            # was reversing.
+            for it in items:
+                conn.execute(
+                    "UPDATE business_os_mkt_products SET inventory_qty = inventory_qty + ? "
+                    "WHERE product_id = ? AND inventory_qty IS NOT NULL",
+                    (it["quantity"], it["product_id"]))
+            conn.execute(
+                "UPDATE business_os_mkt_orders SET status = 'created', updated_at = ? "
+                "WHERE order_id = ?", (_now_iso(), str(order_id)))
+            _record_event(conn, order_id, "paid", "created", buyer_user_id,
+                          reason="capture_failed")
+            # Committed because it is the record of the reversal; losing it would
+            # leave the order 'paid' with nothing behind it.
+            conn.commit()
             raise MarketplaceError("Payment capture failed.", 502, "capture_failed")
 
-        c3 = db.connect()
-        try:
-            c3.execute(
-                "UPDATE business_os_mkt_orders SET capture_txn_ref = ?, updated_at = ? "
-                "WHERE order_id = ?",
-                (txn.get("transaction_id"), _now_iso(), str(order_id)))
-            c3.commit()
-        finally:
-            c3.close()
+        conn.execute(
+            "UPDATE business_os_mkt_orders SET capture_txn_ref = ?, updated_at = ? "
+            "WHERE order_id = ?",
+            (txn.get("transaction_id"), _now_iso(), str(order_id)))
+        conn.commit()
 
         _emit(order.get("seller_user_id"), "order_paid", order_id)
         return get_order(order_id, conn=conn)
@@ -476,6 +509,117 @@ def order_money_summary(order_id: Any, conn=None) -> dict:
         "platform_fee_cents": order.get("platform_fee_cents"),
         "currency": cur,
     }
+
+
+# --- reconciliation ---------------------------------------------------------
+_CAPTURE_KEY_PREFIX = "mkt_capture:"
+
+# Statuses in which the money has legitimately left escrow again. `completed`
+# settles escrow out to the fee and payable accounts, and `refunded` sends it
+# back, so an empty escrow in those states is correct rather than drift.
+_SETTLED_STATUSES = {"completed", "refunded", "cancelled"}
+
+
+def reconcile_captures(*, limit: int = 500, conn=None) -> dict:
+    """Find orders whose state and whose captured money disagree.
+
+    :func:`pay_order` cannot make the order write and the ledger write one
+    transaction, because ``post_entry`` owns and commits its own connection. The
+    window is small and it always fails in the safe direction, but "small" is not
+    "never" and an undetected discrepancy in a money system is the one that grows.
+    This is the detector the fix would otherwise have been missing — the reason
+    money bug #4 was previously recorded as deliberately open.
+
+    Reports, never repairs. Two orders can look identical here and need opposite
+    treatment — one is a crash mid-commit, the other is a support agent who moved
+    money by hand — and a job that guesses is a job that will eventually guess
+    wrong with somebody's money. Each finding names the order, the kind of drift,
+    and both numbers, so the decision belongs to a person.
+
+    Three kinds of drift are looked for:
+
+    * ``captured_not_paid`` — escrow holds the money but the order never reached
+      ``paid``. This is the irreducible window: capture succeeded and the
+      surrounding commit did not. Re-running :func:`pay_order` is safe and is
+      usually the repair, because the capture key is derived from the order id
+      and the second capture is a no-op.
+    * ``paid_not_captured`` — the order says ``paid`` and escrow is empty. Under
+      the current code this should be unreachable; if it appears, something wrote
+      the status outside this module.
+    * ``missing_capture_ref`` — captured and paid, but ``capture_txn_ref`` is
+      unset, so the order cannot name the transaction that funded it. Harmless to
+      balances and awkward for anyone doing an investigation.
+    """
+    _svc._require_enabled()
+    owned = conn is None
+    if owned:
+        conn = db.connect()
+    try:
+        rows = _rows_list(conn.execute(
+            "SELECT order_id, status, total_cents, currency, capture_txn_ref "
+            "FROM business_os_mkt_orders ORDER BY created_at DESC LIMIT ?",
+            (int(limit),)).fetchall())
+        findings = []
+        for row in rows:
+            order_id = str(row.get("order_id"))
+            status = str(row.get("status") or "")
+            currency = row.get("currency") or "usd"
+            escrow = _ledger.get_balance(escrow_account(order_id), currency)
+            captured = _capture_transaction(order_id, conn=conn)
+            if status in _SETTLED_STATUSES:
+                # Escrow has legitimately moved on; nothing here is comparable.
+                continue
+            if captured is not None and status == "created":
+                findings.append({
+                    "order_id": order_id, "kind": "captured_not_paid",
+                    "status": status, "escrow_balance_cents": escrow,
+                    "captured_cents": int(captured.get("amount_cents") or 0),
+                    "capture_transaction_id": captured.get("transaction_id"),
+                })
+            elif captured is None and status in {"paid", "fulfilled"}:
+                findings.append({
+                    "order_id": order_id, "kind": "paid_not_captured",
+                    "status": status, "escrow_balance_cents": escrow,
+                    "captured_cents": 0, "capture_transaction_id": None,
+                })
+            elif captured is not None and not row.get("capture_txn_ref"):
+                findings.append({
+                    "order_id": order_id, "kind": "missing_capture_ref",
+                    "status": status, "escrow_balance_cents": escrow,
+                    "captured_cents": int(captured.get("amount_cents") or 0),
+                    "capture_transaction_id": captured.get("transaction_id"),
+                })
+        return {
+            "scanned": len(rows),
+            "drift_count": len(findings),
+            "findings": findings,
+        }
+    finally:
+        if owned:
+            conn.close()
+
+
+def _capture_transaction(order_id: Any, conn=None) -> Optional[dict]:
+    """The capture posting for an order, or None if it was never made.
+
+    Looked up by the derived idempotency key rather than by scanning entries,
+    because that key is the thing the ledger enforces uniqueness on: if a row
+    exists under it, exactly one capture happened for this order, which is the
+    fact this function is asked for.
+    """
+    try:
+        return _ledger.get_transaction(f"{_CAPTURE_KEY_PREFIX}{order_id}", conn=conn)
+    except Exception:
+        return None
+
+
+def _rows_list(rows) -> list:
+    out = []
+    for r in rows or []:
+        d = _row(r)
+        if d is not None:
+            out.append(d)
+    return out
 
 
 def _emit(user_id, kind, order_id):

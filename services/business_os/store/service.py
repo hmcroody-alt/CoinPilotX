@@ -1,11 +1,23 @@
 """Business OS — Section 2: Store service (flag-gated pure logic).
 
-The canonical storefront + catalog logic for a Section-1 Business. Every access
-decision is resolved against S1 canonical membership/RBAC (imported, never re-modeled):
-this module reads the caller's effective role on the business via
-``business.service._effective_role`` and compares it against a Store-local permission
-matrix using the same role-rank ordering. There is exactly ONE identity/permission
-system and it lives in S1.
+The canonical storefront + catalog logic for a Section-1 Business.
+
+Two independent questions are asked here, and they are not the same question:
+
+  * *May this person act for this business?* — resolved against S1 canonical
+    membership/RBAC (imported, never re-modeled): this module reads the caller's
+    effective role via ``business.service._effective_role`` and compares it
+    against a Store-local permission matrix using the same role-rank ordering.
+    There is exactly ONE identity/permission system and it lives in S1.
+  * *May this business sell to the public?* — resolved against the business
+    owner's row in ``business_os_mkt_sellers``, the same approval record the
+    marketplace enforces through ``require_active_seller``. One approval, two
+    selling surfaces. Applied only to the verbs that make commerce live
+    (publishing or restoring a storefront, activating a product) and re-checked
+    on the public read, so a revoked approval goes dark immediately.
+
+Holding an admin role on a business says nothing about whether that business was
+ever reviewed, which is why the first check cannot stand in for the second.
 
 Contract mirrors the other Business OS services:
 
@@ -14,6 +26,9 @@ Contract mirrors the other Business OS services:
   * account hold beats every write (``403 account_hold``) via the live ``context``;
   * access is enforced against the S1 business; a caller with no role on the business
     gets ``404 not_found`` (existence is not leaked);
+  * an unapproved business gets ``403 seller_not_approved`` when it tries to go
+    live, and ``503 seller_review_unavailable`` when approval cannot be checked
+    at all — refused either way, but an operator can tell the two apart;
   * server-authoritative ids/status/timestamps — clients never set them;
   * every mutation writes an append-only audit row.
 
@@ -184,6 +199,119 @@ def _require_biz_permission(conn, business_id: str, actor_user_id: Any,
         raise StoreError(
             f"Your role ({role}) cannot perform this action.", 403, "forbidden")
     return role
+
+
+# --- selling eligibility (reuse the marketplace's seller record) -------------
+_MISSING_TABLE_PATTERNS = (
+    "no such table",            # SQLite
+    "does not exist",           # PostgreSQL: relation "x" does not exist
+    "undefined table",          # psycopg error class name
+    "doesn't exist",            # MySQL, for completeness
+)
+
+
+def _is_missing_table_error(exc: BaseException) -> bool:
+    """Is this "the seller table was never provisioned", or something else?
+
+    Only the first is a fact about the environment that will still be true on
+    retry. A dropped connection, a lock timeout, a statement timeout — those are
+    facts about *this moment*, and answering an authorization question with them
+    means answering it wrong.
+
+    SQLSTATE is checked first because it is unambiguous: PostgreSQL's 42P01 is
+    *undefined_table* and nothing else. The message patterns are the fallback for
+    drivers that do not surface a code, and they are matched against the
+    exception text rather than its type so this keeps working whether the
+    connection is raw sqlite3, psycopg2, or the ``CompatConnection`` wrapper.
+    """
+    code = getattr(exc, "pgcode", None) or getattr(exc, "sqlstate", None)
+    if code:
+        return str(code) == "42P01"
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(pattern in text for pattern in _MISSING_TABLE_PATTERNS)
+
+
+def _seller_status(conn, business_id: str) -> tuple:
+    """The business owner's seller-approval status, and how we know.
+
+    Returns ``(status, owner_user_id)``. ``status`` is ``None`` when the record
+    is absent, and the sentinel ``"__unavailable__"`` when the seller table does
+    not exist in this database at all — a provisioning fact, not a fact about
+    this seller, and the two must not be reported as the same thing.
+
+    A query that fails for any *other* reason is a third case and it is raised,
+    not returned. This function used to catch bare ``Exception`` and report every
+    failure as ``"__unavailable__"``, which meant a dropped connection or a lock
+    timeout was indistinguishable from a database that had never had the table —
+    and on :func:`public_storefront` that took a live, approved shop dark until
+    someone happened to look. The whole point of the sentinel was to keep "we
+    cannot check" apart from "we checked and no"; folding "we failed to check"
+    into the first undoes it one layer down.
+
+    Read from ``business_os_mkt_sellers``, which is already the one authority on
+    who may sell (see ``marketplace.service.require_active_seller``). Read here
+    rather than delegated to that function because it also asserts the *
+    marketplace* feature flag, and Store's availability must not depend on
+    whether the marketplace is switched on — they are two selling surfaces over
+    one approval record, not one feature.
+
+    Keyed on the business *owner*, not the caller. An admin or manager acts on
+    the business's behalf; the owner is the party who applied and was vetted.
+    Gating on the caller would let an approved individual front for a business
+    that was never reviewed, which is the exact substitution the approval exists
+    to prevent.
+    """
+    row = _row(conn.execute(
+        "SELECT owner_user_id FROM business_os_business WHERE business_id = ?",
+        (_sid(business_id),)).fetchone())
+    owner = None if row is None else row.get("owner_user_id")
+    if owner is None:
+        return None, None
+    try:
+        seller = _row(conn.execute(
+            "SELECT status FROM business_os_mkt_sellers WHERE seller_user_id = ?",
+            (_sid(owner),)).fetchone())
+    except Exception as exc:  # noqa: BLE001
+        if _is_missing_table_error(exc):
+            return "__unavailable__", owner
+        # Not a provisioning fact. Refusing loudly is the only honest option: a
+        # 503 is retryable and gets looked at, whereas silently reporting
+        # "not approved" hides an outage inside a permission decision and bills
+        # the merchant for it.
+        raise StoreError(
+            "Seller approval could not be checked right now. Please try again.",
+            503, "seller_review_failed") from exc
+    return (None if seller is None else str(seller.get("status") or "")), owner
+
+
+def _require_seller_approved(conn, business_id: str, what: str) -> None:
+    """Refuse to make commerce live unless the owner is an approved seller.
+
+    Applied only to the verbs that expose goods for sale — publishing or
+    restoring a storefront, activating a product. Drafting is deliberately left
+    open: a business should be able to build its catalogue while its application
+    is in review, and the review is about selling, not about typing.
+
+    Taking a store *down* is never gated. Suspending and archiving stay
+    available to a rejected or suspended seller, because a gate that traps a
+    live storefront online is worse than no gate at all.
+    """
+    status, owner = _seller_status(conn, business_id)
+    if status == "approved":
+        return
+    if status == "__unavailable__":
+        raise StoreError(
+            "Seller review is not available in this environment, so a store "
+            "cannot be published here.", 503, "seller_review_unavailable")
+    if owner is None:
+        raise StoreError("Store not found.", 404, "not_found")
+    if status in (None, ""):
+        raise StoreError(
+            f"This business has not been approved to sell, so its {what} cannot "
+            f"go live.", 403, "seller_not_approved")
+    raise StoreError(
+        f"This business's seller status is '{status}', so its {what} cannot go "
+        f"live.", 403, "seller_not_approved")
 
 
 # --- validation -------------------------------------------------------------
@@ -433,6 +561,8 @@ def set_storefront_status(business_id: str, actor_user_id: Any, action: str,
         row = _get_storefront_row(conn, business_id)
         if row is None:
             raise StoreError("Storefront not found.", 404, "not_found")
+        if target == "published":
+            _require_seller_approved(conn, business_id, "storefront")
         cur = str(row.get("status"))
         if target not in STOREFRONT_TRANSITIONS.get(cur, set()):
             raise StoreError(
@@ -603,6 +733,8 @@ def set_product_status(business_id: str, actor_user_id: Any, product_id: str,
         row = _get_product_row(conn, business_id, product_id)
         if row is None:
             raise StoreError("Product not found.", 404, "not_found")
+        if target == "active":
+            _require_seller_approved(conn, business_id, "products")
         cur = str(row.get("status"))
         if target == cur:
             raise StoreError(f"Product is already {cur}.", 409, "conflict")
@@ -766,12 +898,34 @@ def list_collection_products(business_id: str, actor_user_id: Any,
 def public_storefront(business_id: str) -> Optional[dict]:
     """Anonymous, read-only storefront view: only a *published* storefront and its
     *active* products. No RBAC (public), no account context. Returns None if there is
-    no published storefront."""
+    no published storefront.
+
+    Also returns None when the owner is no longer an approved seller. Checking on
+    read is what makes a revocation take effect: a seller suspended at 3am must
+    be dark at 3am, not whenever a sweep job next runs, and the stored status
+    stays 'published' so restoring approval restores the store without anyone
+    having to remember to re-publish it.
+
+    Absent or unavailable approval reads as not-approved and yields None rather
+    than an error, because this is the unauthenticated shopper path — the
+    correct response to "you may not sell here" is the same 404 an unpublished
+    store gives, not a 503 that tells a stranger about our provisioning.
+
+    A read that *fails* is the one case that does not collapse into None. It
+    propagates as a 503, because a 404 here is a lie with consequences: it tells
+    the shopper the shop is gone, tells the crawler to drop the page, and tells
+    the merchant nothing at all. A 503 is honest, retryable, and shows up in the
+    error rate where someone will see it. This is the same distinction the write
+    path draws — "we cannot check" is not "we checked and no" — carried onto the
+    read path, where it had been quietly lost.
+    """
     _require_enabled()
     conn = db.connect()
     try:
         sf = _get_storefront_row(conn, business_id)
         if sf is None or str(sf.get("status")) != "published":
+            return None
+        if _seller_status(conn, business_id)[0] != "approved":
             return None
         rows = conn.execute(
             "SELECT * FROM business_os_store_products "

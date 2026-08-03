@@ -23,6 +23,17 @@
  * so folding chat into the bell would double-count. `messageCount` is exposed
  * separately for the surfaces that badge messages. `totalCount` (notifications +
  * messages) is available for callers that intentionally want the combined number.
+ *
+ * COMMERCE SCOPE DECISION (documented): business↔customer threads are counted in
+ * `commerceCount`, never in `messageCount`. The social Messages list requests
+ * `include_types={"direct"}` from the server and so has never rendered a
+ * business thread; a chat badge that counted them was pointing at a conversation
+ * the screen would not show, which is an unread the user cannot clear. The split
+ * is made server-side (`notification_service.pulse_badge_counts` returns
+ * `commerce_unread_count` alongside `chat_unread_count`); this store only carries
+ * it through. `totalCount` mirrors the server's `total_unread_count` and stays
+ * notifications + social messages — see `totalUnreadCount` for why that number
+ * has to agree with the client's own fallback arithmetic.
  */
 
 import { useSyncExternalStore } from "react";
@@ -30,6 +41,7 @@ import {
   NotificationBadgeCounts,
   alertUnreadCount,
   chatUnreadCount,
+  commerceUnreadCount,
   getNotificationBadgeCounts,
   totalUnreadCount
 } from "../api/notifications";
@@ -39,9 +51,15 @@ import { envFlagOn } from "./envFlag";
 export type UnreadSnapshot = {
   /** The bell number: notification unreads (messages excluded — see header doc). */
   bellCount: number;
-  /** Message unreads, badged separately from the bell. */
+  /** Social message unreads, badged separately from the bell. */
   messageCount: number;
-  /** Notifications + messages, for callers that want the combined figure. */
+  /**
+   * Business↔customer thread unreads, for the Commerce Inbox badge. Kept out of
+   * `messageCount` because the social Messages list does not render business
+   * threads — counting them there produced an unread nothing could clear.
+   */
+  commerceCount: number;
+  /** Notifications + social messages, for callers that want the combined figure. */
   totalCount: number;
   /** Epoch ms of the last successful refresh, or 0 if never loaded. */
   loadedAt: number;
@@ -57,6 +75,7 @@ function deriveSnapshot(counts: NotificationBadgeCounts, loadedAt: number): Unre
   return {
     bellCount: alertUnreadCount(counts),
     messageCount: chatUnreadCount(counts),
+    commerceCount: commerceUnreadCount(counts),
     totalCount: totalUnreadCount(counts),
     loadedAt,
     raw: counts
@@ -82,6 +101,7 @@ export function setUnreadCounts(counts: NotificationBadgeCounts | undefined, loa
   if (
     next.bellCount === snapshot.bellCount &&
     next.messageCount === snapshot.messageCount &&
+    next.commerceCount === snapshot.commerceCount &&
     next.totalCount === snapshot.totalCount
   ) {
     // Numbers unchanged; keep the newer loadedAt but skip the notify.
@@ -99,7 +119,9 @@ export function setUnreadCounts(counts: NotificationBadgeCounts | undefined, loa
  * confirmed response reconciles. `scope` lets a message-only mark-read leave the
  * bell alone, and vice-versa.
  */
-export function applyOptimisticRead(scope: "notifications" | "messages" | "all" = "notifications"): UnreadSnapshot {
+export function applyOptimisticRead(
+  scope: "notifications" | "messages" | "commerce" | "all" = "notifications"
+): UnreadSnapshot {
   const raw = { ...snapshot.raw };
   if (scope === "notifications" || scope === "all") {
     raw.alert_unread_count = 0;
@@ -108,6 +130,12 @@ export function applyOptimisticRead(scope: "notifications" | "messages" | "all" 
   }
   if (scope === "messages" || scope === "all") {
     raw.chat_unread_count = 0;
+  }
+  // Separate scope, because clearing the Commerce Inbox must not blank the
+  // social Messages badge and vice-versa — the same reason the two counts were
+  // split server-side in the first place.
+  if (scope === "commerce" || scope === "all") {
+    raw.commerce_unread_count = 0;
   }
   raw.total_unread_count = (scope === "all" ? 0 : undefined) as number | undefined;
   snapshot = deriveSnapshot(raw, snapshot.loadedAt);
@@ -215,7 +243,7 @@ export function scopedBadgesEnabled(): boolean {
  * from the count it labels; one written here cannot, because it is returned
  * alongside it.
  */
-export type BadgeScope = "notifications" | "messages" | "combined";
+export type BadgeScope = "notifications" | "messages" | "commerce" | "combined";
 
 export type BadgeDescriptor = {
   scope: BadgeScope;
@@ -234,7 +262,9 @@ export function badgeFor(scope: BadgeScope, from: UnreadSnapshot = snapshot): Ba
       ? from.bellCount
       : scope === "messages"
         ? from.messageCount
-        : from.totalCount;
+        : scope === "commerce"
+          ? from.commerceCount
+          : from.totalCount + from.commerceCount;
   return { scope, count, spokenLabel: badgeSpokenLabel(scope, count) };
 }
 
@@ -255,9 +285,13 @@ export function badgeSpokenLabel(scope: BadgeScope, count: number): string {
         ? count === 1
           ? "unread message"
           : "unread messages"
-        : count === 1
-          ? "unread notification or message"
-          : "unread notifications and messages";
+        : scope === "commerce"
+          ? count === 1
+            ? "unread order message"
+            : "unread order messages"
+          : count === 1
+            ? "unread notification or message"
+            : "unread notifications and messages";
   return count === 0 ? `No ${noun}` : `${count} ${noun}`;
 }
 
@@ -269,20 +303,27 @@ export function badgeSpokenLabel(scope: BadgeScope, count: number): string {
  * same unread twice on one strip. The combined figure still exists — it is what
  * the phone's app icon wants, where there is no second badge to double against —
  * and is returned as `combined` rather than quietly reused as `activity`.
+ *
+ * `commerce` is its own strip badge for the same reason `messages` is: the two
+ * lists are different lists. It IS folded into `combined`, because the app icon
+ * is the one badge with nothing beside it — an unread the icon omits is an
+ * unread that never brings anyone back to the app.
  */
 export function navigationBadgesFrom(from: UnreadSnapshot = snapshot): {
   activity: number;
   messages: number;
+  commerce: number;
   alerts: number;
   combined: number;
 } {
   return {
     activity: from.bellCount,
     messages: from.messageCount,
+    commerce: from.commerceCount,
     // The header's "N alerts" chip and the bell are the same notifications, so
     // they must be the same number. They were two fields reading two functions.
     alerts: from.bellCount,
-    combined: from.totalCount
+    combined: from.totalCount + from.commerceCount
   };
 }
 

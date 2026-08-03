@@ -546,6 +546,40 @@ def _has_conflict_clause(sql):
     return bool(re.search(r"\bON\s+CONFLICT\b", sql, flags=re.I))
 
 
+_SAVEPOINT_RE = re.compile(r"^\s*SAVEPOINT\s+([A-Za-z_][A-Za-z0-9_]*)", re.I)
+_RELEASE_RE = re.compile(r"^\s*RELEASE\s+(?:SAVEPOINT\s+)?([A-Za-z_][A-Za-z0-9_]*)", re.I)
+_ROLLBACK_TO_RE = re.compile(r"^\s*ROLLBACK\s+(?:WORK\s+)?TO\s+(?:SAVEPOINT\s+)?([A-Za-z_][A-Za-z0-9_]*)", re.I)
+_TXN_END_RE = re.compile(r"^\s*(COMMIT|ROLLBACK|END)\s*;?\s*$", re.I)
+
+
+def _savepoint_op(sql):
+    """Classify a statement's effect on the savepoint stack.
+
+    Returns ``(kind, name)`` where kind is one of ``"savepoint"``,
+    ``"release"``, ``"rollback_to"``, ``"txn_end"`` or ``""``.
+
+    The connection has to know which savepoints are live in order to decide
+    whether a failed statement may be recovered from. It cannot ask the driver —
+    neither DBAPI nor psycopg exposes the savepoint stack — so it reads the
+    statements going past. ``ROLLBACK TO`` is checked before the bare-transaction
+    pattern because "ROLLBACK TO SAVEPOINT x" starts with the word ROLLBACK and
+    means the opposite of one.
+    """
+    text = str(sql or "")
+    match = _ROLLBACK_TO_RE.match(text)
+    if match:
+        return ("rollback_to", match.group(1).lower())
+    match = _SAVEPOINT_RE.match(text)
+    if match:
+        return ("savepoint", match.group(1).lower())
+    match = _RELEASE_RE.match(text)
+    if match:
+        return ("release", match.group(1).lower())
+    if _TXN_END_RE.match(text):
+        return ("txn_end", "")
+    return ("", "")
+
+
 class CompatCursor:
     def __init__(self, cursor, owner=None):
         self._cursor = cursor
@@ -587,14 +621,40 @@ class CompatCursor:
             print(message, flush=True)
             logging.error(message)
             if self._owner is not None:
-                try:
-                    self._owner.rollback()
-                    print("SQL_EXECUTE_ROLLBACK_OK", flush=True)
-                    logging.error("SQL_EXECUTE_ROLLBACK_OK")
-                except Exception as rollback_exc:
-                    print(f"SQL_EXECUTE_ROLLBACK_FAILED error={rollback_exc!r}", flush=True)
-                    logging.exception("SQL_EXECUTE_ROLLBACK_FAILED error=%s", rollback_exc)
+                sp_kind, _sp_name = _savepoint_op(sql)
+                if sp_kind == "rollback_to":
+                    # The recovery itself failed, so the savepoint is not usable
+                    # and there is nothing finer-grained left to roll back to.
+                    self._owner.forget_savepoints()
+                if self._owner.has_savepoint():
+                    # Deliberately no rollback. The blanket rollback here existed
+                    # to un-poison a Postgres transaction — after a failed
+                    # statement every later statement in the same transaction
+                    # fails with "current transaction is aborted" until something
+                    # unwinds it. But a full rollback discards the caller's
+                    # savepoint too, so the `ROLLBACK TO SAVEPOINT` that was
+                    # written to handle exactly this failure then died with
+                    # SQLSTATE 3B001 ("no such savepoint") and the caller got an
+                    # opaque error instead of the duplicate-key branch it asked
+                    # for.
+                    #
+                    # When a savepoint is open, `ROLLBACK TO SAVEPOINT` un-poisons
+                    # the transaction just as well and keeps the work before it.
+                    # So the recovery belongs to the caller that opened the
+                    # savepoint, and this layer must not pre-empt it.
+                    print("SQL_EXECUTE_ROLLBACK_DEFERRED_TO_SAVEPOINT", flush=True)
+                    logging.error("SQL_EXECUTE_ROLLBACK_DEFERRED_TO_SAVEPOINT")
+                else:
+                    try:
+                        self._owner.rollback()
+                        print("SQL_EXECUTE_ROLLBACK_OK", flush=True)
+                        logging.error("SQL_EXECUTE_ROLLBACK_OK")
+                    except Exception as rollback_exc:
+                        print(f"SQL_EXECUTE_ROLLBACK_FAILED error={rollback_exc!r}", flush=True)
+                        logging.exception("SQL_EXECUTE_ROLLBACK_FAILED error=%s", rollback_exc)
             raise
+        if self._owner is not None:
+            self._owner.note_savepoint(*_savepoint_op(sql))
         self.description = self._cursor.description
         self.lastrowid = None
         self._pending_rows = []
@@ -629,6 +689,44 @@ class CompatConnection:
 
     def __init__(self, raw_connection):
         self._conn = raw_connection
+        # Names of the savepoints currently open on this connection, outermost
+        # first. Tracked per connection rather than per cursor because callers
+        # open a savepoint and fail inside it through two different cursors:
+        # `conn.execute(...)` mints a fresh one on every call.
+        self._savepoints = []
+
+    def has_savepoint(self):
+        """Is there a savepoint the caller could still roll back to?"""
+        return bool(self._savepoints)
+
+    def forget_savepoints(self):
+        """Drop the whole stack — used when a rollback destroys every savepoint."""
+        self._savepoints = []
+
+    def note_savepoint(self, kind, name):
+        """Record the effect of a statement that has already run successfully.
+
+        Only called after the statement succeeded, so the stack describes
+        savepoints the database really holds. ``ROLLBACK TO`` keeps its target
+        open — in SQL a savepoint survives being rolled back to and may be rolled
+        back to again — while ``RELEASE`` removes it along with anything opened
+        after it. Re-using a name is legal, so removal walks back to the *last*
+        occurrence rather than the first.
+        """
+        if kind == "savepoint":
+            self._savepoints.append(name)
+        elif kind == "release":
+            for index in range(len(self._savepoints) - 1, -1, -1):
+                if self._savepoints[index] == name:
+                    del self._savepoints[index:]
+                    break
+        elif kind == "rollback_to":
+            for index in range(len(self._savepoints) - 1, -1, -1):
+                if self._savepoints[index] == name:
+                    del self._savepoints[index + 1:]
+                    break
+        elif kind == "txn_end":
+            self._savepoints = []
 
     def cursor(self):
         return CompatCursor(self._conn.cursor(), owner=self)
@@ -639,9 +737,12 @@ class CompatConnection:
         return cur
 
     def commit(self):
+        # Committing ends the transaction, and every savepoint in it with it.
+        self._savepoints = []
         return self._conn.commit()
 
     def rollback(self):
+        self._savepoints = []
         return self._conn.rollback()
 
     def set_autocommit(self, enabled):

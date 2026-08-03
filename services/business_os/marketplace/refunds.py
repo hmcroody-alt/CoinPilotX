@@ -22,6 +22,7 @@ prohibited in this environment and deliberately not attempted here.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from datetime import datetime, timezone
@@ -52,13 +53,69 @@ def _row(row) -> Optional[dict]:
         return {k: row[k] for k in row.keys()}
 
 
+def _is_unique_violation(exc: Exception) -> bool:
+    """Engine-agnostic detection of a UNIQUE / primary-key violation."""
+    name = exc.__class__.__name__.lower()
+    msg = str(exc).lower()
+    if "integrityerror" in name or "uniqueviolation" in name:
+        return True
+    return "unique" in msg or "duplicate key" in msg
+
+
+def _derive_refund_id(order_id: Any, idempotency_key: str) -> str:
+    """Derive a stable ``refund_id`` from the caller's key.
+
+    Deterministic derivation is what makes a retry land on the same row. Because
+    ``refund_id`` is the table's PRIMARY KEY, uniqueness is then enforced by the
+    database rather than by caller discipline — the same property the ledger
+    docstring claims for its own ``idempotency_key``, and the reason this fix
+    needs no new column and no migration.
+
+    Scoped by ``order_id`` so a caller reusing a key like "retry-1" across two
+    different orders does not accidentally alias them together.
+    """
+    digest = hashlib.sha256(
+        f"{order_id}\x00{idempotency_key}".encode("utf-8")).hexdigest()
+    return "mktr_" + digest[:32]
+
+
+def _existing_refund(conn, refund_id: str) -> Optional[dict]:
+    try:
+        return _row(conn.execute(
+            "SELECT * FROM business_os_mkt_refunds WHERE refund_id = ?",
+            (refund_id,)).fetchone())
+    except Exception:
+        return None
+
+
 # --- refunds ----------------------------------------------------------------
 def refund_order(order_id: Any, *, amount_cents: Optional[int] = None, reason: str,
-                 actor: Any, kind: str = "refund", conn=None) -> dict:
+                 actor: Any, kind: str = "refund",
+                 idempotency_key: Optional[str] = None, conn=None) -> dict:
     """Governed refund primitive. ``actor`` and ``reason`` are REQUIRED (this is a
     money-moving admin/seller action). Refunds only while funds are still in escrow
     (order ``paid`` or ``fulfilled``). ``amount_cents=None`` refunds the full remaining
-    escrow. A full refund transitions the order to ``refunded``."""
+    escrow. A full refund transitions the order to ``refunded``.
+
+    ## idempotency_key
+
+    Pass one for anything that can be retried — an HTTP handler, a job runner, a
+    user double-tapping a button. The refund id and the ledger key are both
+    derived from it, so a second call with the same key returns the original
+    refund and moves no additional money.
+
+    Without a key this function used to mint a fresh ``uuid4`` and hand it to the
+    ledger as the idempotency key. That is not an idempotency key: the ledger
+    deduplicates correctly, but it was being asked a different question every
+    time, so every retry posted a *new* refund and escrow drained one retry at a
+    time. The ledger's overdraft guard capped the damage at the escrow balance —
+    it did not prevent it.
+
+    The unkeyed path still exists, because a caller with genuinely two distinct
+    partial refunds of the same amount needs to be able to say so. It is no
+    longer the default anything reaches by accident: the API and admin layers
+    both thread a key through.
+    """
     _svc._require_enabled()
     if actor is None or not str(actor).strip():
         raise MarketplaceError("actor is required.", 400, "actor_required")
@@ -67,7 +124,22 @@ def refund_order(order_id: Any, *, amount_cents: Optional[int] = None, reason: s
     owned = conn is None
     if owned:
         conn = db.connect()
+    keyed = idempotency_key is not None and str(idempotency_key).strip() != ""
     try:
+        if keyed:
+            # Answer a replay before touching escrow state. Checking first keeps
+            # the common retry cheap; the UNIQUE violation caught on the INSERT
+            # below is the authority, for the case where two retries interleave.
+            replay = _existing_refund(conn, _derive_refund_id(order_id, idempotency_key))
+            if replay is not None:
+                return {"refund_id": replay.get("refund_id"),
+                        "order_id": str(order_id),
+                        "amount_cents": int(replay.get("amount_cents") or 0),
+                        "currency": replay.get("currency"),
+                        "order_status": (_ord.get_order(order_id, conn=conn) or {}).get("status"),
+                        "ledger_txn_ref": replay.get("ledger_txn_ref"),
+                        "duplicate": True}
+
         order = _ord.get_order(order_id, conn=conn)
         if order is None:
             raise MarketplaceError("Order not found.", 404, "not_found")
@@ -87,7 +159,8 @@ def refund_order(order_id: Any, *, amount_cents: Optional[int] = None, reason: s
             raise MarketplaceError(
                 "Refund exceeds remaining escrow.", 409, "refund_exceeds_escrow")
 
-        rid = "mktr_" + uuid.uuid4().hex
+        rid = (_derive_refund_id(order_id, idempotency_key) if keyed
+               else "mktr_" + uuid.uuid4().hex)
         try:
             txn = _ledger.post_entry(
                 idempotency_key=f"mkt_refund:{rid}",
@@ -100,12 +173,28 @@ def refund_order(order_id: Any, *, amount_cents: Optional[int] = None, reason: s
             raise MarketplaceError(str(exc), 409, "refund_rejected")
 
         now = _now_iso()
-        conn.execute(
-            "INSERT INTO business_os_mkt_refunds "
-            "(refund_id, order_id, amount_cents, currency, reason, kind, actor, "
-            "ledger_txn_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (rid, str(order_id), amt, cur, reason, kind, _svc._sid(actor),
-             txn.get("transaction_id"), now))
+        try:
+            conn.execute(
+                "INSERT INTO business_os_mkt_refunds "
+                "(refund_id, order_id, amount_cents, currency, reason, kind, actor, "
+                "ledger_txn_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (rid, str(order_id), amt, cur, reason, kind, _svc._sid(actor),
+                 txn.get("transaction_id"), now))
+        except Exception as exc:  # noqa: BLE001
+            # Two retries interleaved past the pre-check above. The ledger post
+            # was already a no-op (same derived key), so nothing extra moved;
+            # return the row the winner wrote.
+            if not keyed or not _is_unique_violation(exc):
+                raise
+            replay = _existing_refund(conn, rid)
+            if replay is None:
+                raise
+            return {"refund_id": rid, "order_id": str(order_id),
+                    "amount_cents": int(replay.get("amount_cents") or 0),
+                    "currency": replay.get("currency"),
+                    "order_status": order.get("status"),
+                    "ledger_txn_ref": replay.get("ledger_txn_ref"),
+                    "duplicate": True}
         new_refunded = int(order.get("refunded_cents") or 0) + amt
         new_status = order.get("status")
         if new_refunded >= int(order["total_cents"]):
@@ -124,7 +213,8 @@ def refund_order(order_id: Any, *, amount_cents: Optional[int] = None, reason: s
         _emit(order.get("buyer_user_id"), "order_refunded", order_id)
         return {"refund_id": rid, "order_id": str(order_id), "amount_cents": amt,
                 "currency": cur, "order_status": new_status,
-                "ledger_txn_ref": txn.get("transaction_id")}
+                "ledger_txn_ref": txn.get("transaction_id"),
+                "duplicate": False}
     finally:
         if owned:
             conn.close()
@@ -218,10 +308,21 @@ def resolve_dispute(dispute_id: Any, *, resolution: str, actor: Any, reason: str
 
         refund_out = None
         if resolution == "refund":
+            # Keyed on the dispute, which is the entity that resolves exactly
+            # once. The `status != 'open'` check above is a read followed by a
+            # write, so two concurrent resolutions can both pass it and both
+            # issue a refund; the status guard cannot close that window because
+            # it is the thing racing. A derived key can, because it makes the
+            # second refund a replay of the first rather than a second refund.
+            #
+            # This path had no key at all, which meant the one refund caller
+            # that provably issues at most one refund per entity was the one
+            # caller not saying so.
             refund_out = refund_order(
                 dispute["order_id"], amount_cents=refund_amount_cents,
                 reason=f"Dispute resolution: {reason}", actor=actor,
-                kind="dispute_refund", conn=conn)
+                kind="dispute_refund", conn=conn,
+                idempotency_key=f"dispute:{dispute_id}")
         conn.execute(
             "UPDATE business_os_mkt_disputes SET status = 'resolved', resolution = ?, "
             "resolver = ?, updated_at = ? WHERE dispute_id = ?",

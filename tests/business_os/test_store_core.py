@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from services.business_os.business import schema as biz_schema  # noqa: E402
 from services.business_os.business import service as biz_svc  # noqa: E402
+from services.business_os.marketplace import schema as mkt_schema  # noqa: E402
 from services.business_os.store import schema as store_schema  # noqa: E402
 from services.business_os.store import service as svc  # noqa: E402
 from services.business_os.store.service import StoreError  # noqa: E402
@@ -49,10 +50,37 @@ def _ctx(status="active", access=1):
 def setup_module(module=None):
     biz_schema.ensure_schema()
     store_schema.ensure_schema()
+    # The seller-approval table lives in the marketplace schema; Store now reads
+    # it before letting anything go live, so it has to exist here.
+    mkt_schema.ensure_schema()
 
 
-def _mk_business(owner=OWNER, name="Store Co"):
+def _approve_seller(user_id, status="approved"):
+    """Set the owner's row in the one seller-approval table.
+
+    Written with raw SQL rather than through ``marketplace.service`` because
+    that module asserts its own feature flag, and this suite is about Store.
+    Store reads the record without the flag for the same reason: two selling
+    surfaces, one approval, independently switchable.
+    """
+    from services import db
+    conn = db.connect()
+    try:
+        now = "2026-01-01T00:00:00.000000Z"
+        conn.execute(
+            "INSERT INTO business_os_mkt_sellers "
+            "(seller_user_id, status, created_at, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(seller_user_id) DO UPDATE SET status = excluded.status",
+            (str(user_id), status, now, now))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _mk_business(owner=OWNER, name="Store Co", seller_status="approved"):
     biz = biz_svc.create_business(owner, {"display_name": name}, context=_ctx())
+    if seller_status is not None:
+        _approve_seller(owner, seller_status)
     return biz["business_id"]
 
 

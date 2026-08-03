@@ -64,7 +64,75 @@ def _begin(conn) -> None:
             pass
         # IMMEDIATE takes the write lock now, so concurrent posters serialize
         # instead of racing into a "database is locked" mid-transaction.
+        #
+        # This is a whole-database lock and it is the *only* thing that made the
+        # overdraft guard below correct. On every other engine this function did
+        # nothing at all, which meant the guard — a plain unlocked SELECT — was a
+        # no-op in production while passing every test on SQLite. See
+        # `_lock_balance_rows` for the portable replacement; this line is now a
+        # fast path, not the mechanism.
         conn.execute("BEGIN IMMEDIATE")
+
+
+def _ensure_balance_row(conn, account: str, currency: str, now: str) -> None:
+    """Create the balance row if absent, then hold its row lock until commit.
+
+    The lock is what makes both the overdraft check and the balance recompute
+    correct under concurrency. An `UPDATE` takes a row-level exclusive lock on
+    every engine and holds it for the rest of the transaction, so a second poster
+    touching the same account blocks here rather than racing ahead on a stale
+    read. Nothing but `updated_at` is written — the write exists for the lock.
+
+    `FOR UPDATE` would be the more obvious spelling, but it locks nothing when
+    the row does not exist yet, which is exactly the case a brand-new account
+    hits. Bootstrapping the row and locking it are therefore the same operation.
+
+    The INSERT is wrapped in a savepoint because two posters can bootstrap the
+    same new account at once; the loser takes a UNIQUE violation, and on Postgres
+    an un-savepointed failed statement poisons the whole transaction so every
+    later statement — including the ones that do the actual work — fails with
+    "current transaction is aborted".
+    """
+    cur = conn.execute(
+        "UPDATE ledger_balances SET updated_at = ? WHERE account = ? AND currency = ?",
+        (now, account, currency),
+    )
+    if getattr(cur, "rowcount", 0) != 0:
+        return
+
+    conn.execute("SAVEPOINT ledger_balance_bootstrap")
+    try:
+        conn.execute(
+            "INSERT INTO ledger_balances (account, currency, balance_cents, updated_at) "
+            "VALUES (?, ?, 0, ?)",
+            (account, currency, now),
+        )
+    except Exception as exc:  # noqa: BLE001
+        conn.execute("ROLLBACK TO SAVEPOINT ledger_balance_bootstrap")
+        if not _is_unique_violation(exc):
+            conn.execute("RELEASE SAVEPOINT ledger_balance_bootstrap")
+            raise
+        # The other poster won the bootstrap and has since committed, so the row
+        # exists now. Take the lock the ordinary way.
+        conn.execute("RELEASE SAVEPOINT ledger_balance_bootstrap")
+        conn.execute(
+            "UPDATE ledger_balances SET updated_at = ? WHERE account = ? AND currency = ?",
+            (now, account, currency),
+        )
+        return
+    conn.execute("RELEASE SAVEPOINT ledger_balance_bootstrap")
+
+
+def _lock_balance_rows(conn, accounts, currency: str, now: str) -> None:
+    """Lock every account this transaction will touch, in a deterministic order.
+
+    Sorted, because two transactions moving money in opposite directions between
+    the same pair of accounts would otherwise each hold the row the other wants
+    and deadlock. Sorting makes every poster in the system acquire the same locks
+    in the same sequence, which is the standard defence and costs nothing.
+    """
+    for account in sorted({a for a in accounts if a}):
+        _ensure_balance_row(conn, account, currency, now)
 
 
 def _commit(conn) -> None:
@@ -469,7 +537,15 @@ def post_entry(
             _rollback(conn)
             raise
 
-        # 2) Overdraft guard for the debited (source) account.
+        # 2) Take the row locks before reading anything, so the guard below and
+        #    the recompute in step 4 both see a balance nobody else can move.
+        #    Both accounts, not just the debited one: two concurrent credits to
+        #    the same destination would otherwise each SUM the entries without
+        #    seeing the other's, and the second writer would clobber the first's
+        #    balance with a total that omits it.
+        _lock_balance_rows(conn, (source, destination), currency, now)
+
+        # 3) Overdraft guard for the debited (source) account.
         if not allow_negative and not source.startswith(_ALLOW_NEGATIVE_PREFIXES):
             current = get_balance(source, currency, conn=conn)
             if current - amount_cents < 0:
@@ -479,7 +555,7 @@ def post_entry(
                     f"debit={amount_cents}"
                 )
 
-        # 3) Double-entry: debit source, credit destination.
+        # 4) Double-entry: debit source, credit destination.
         conn.execute(
             "INSERT INTO ledger_entries (transaction_id, account, direction, "
             "amount_cents, signed_amount_cents, currency, entry_type, created_at) "
@@ -493,7 +569,7 @@ def post_entry(
             (transaction_id, destination, amount_cents, amount_cents, currency, entry_type, now),
         )
 
-        # 4) Re-derive both balances from entries inside the same transaction.
+        # 5) Re-derive both balances from entries inside the same transaction.
         source_balance = _recompute_balance_in_tx(conn, source, currency)
         dest_balance = _recompute_balance_in_tx(conn, destination, currency)
 

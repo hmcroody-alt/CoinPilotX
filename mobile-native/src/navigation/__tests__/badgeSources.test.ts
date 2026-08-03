@@ -157,7 +157,67 @@ describe("badges reconcile with the store", () => {
     const badges = navigationBadgesFrom();
     expect(badgeFor("notifications").count).toBe(badges.activity);
     expect(badgeFor("messages").count).toBe(badges.messages);
+    expect(badgeFor("commerce").count).toBe(badges.commerce);
     expect(badgeFor("combined").count).toBe(badges.combined);
+  });
+
+  /**
+   * The same partition argument, one domain further out. A business thread is
+   * not on the Messages list — the server sends `include_types={"direct"}` — so
+   * a messages badge that counted it pointed at a screen that would not show it.
+   */
+  it("keeps commerce unreads off the social messages badge", () => {
+    setUnreadCounts({
+      alert_unread_count: 2,
+      chat_unread_count: 3,
+      commerce_unread_count: 6,
+      total_unread_count: 5
+    });
+    const badges = navigationBadgesFrom();
+    expect(badges.messages).toBe(3);
+    expect(badges.commerce).toBe(6);
+    expect(badges.activity + badges.messages).not.toBe(badges.combined);
+  });
+
+  /**
+   * The app icon is the one badge with nothing beside it to double against, so
+   * it is the one place every unread has to land. A commerce unread the icon
+   * omits is a customer who never learns their order was answered.
+   */
+  it("folds commerce into the combined figure the app icon uses", () => {
+    setUnreadCounts({
+      alert_unread_count: 2,
+      chat_unread_count: 3,
+      commerce_unread_count: 6,
+      total_unread_count: 5
+    });
+    expect(navigationBadgesFrom().combined).toBe(11);
+  });
+
+  /** An older server omits the key entirely; that must read as zero, not NaN. */
+  it("treats a server with no commerce key as zero commerce", () => {
+    setUnreadCounts({ alert_unread_count: 4, chat_unread_count: 7, total_unread_count: 11 });
+    const badges = navigationBadgesFrom();
+    expect(badges.commerce).toBe(0);
+    expect(badges.combined).toBe(11);
+  });
+
+  /**
+   * Without this the snapshot's change-detection would swallow the update: it
+   * compared bell/messages/total, and a commerce-only change moves none of them.
+   */
+  it("republishes when only the commerce number moved", () => {
+    setUnreadCounts({ alert_unread_count: 1, chat_unread_count: 1, total_unread_count: 2 });
+    const before = navigationBadgesFrom();
+    setUnreadCounts({
+      alert_unread_count: 1,
+      chat_unread_count: 1,
+      commerce_unread_count: 9,
+      total_unread_count: 2
+    });
+    const after = navigationBadgesFrom();
+    expect(after.commerce).toBe(9);
+    expect(after).not.toEqual(before);
   });
 
   /** A badge that survives a refresh with a stale number is the same bug again. */
@@ -172,7 +232,7 @@ describe("badges reconcile with the store", () => {
 });
 
 describe("badges say what they count", () => {
-  const SCOPES: BadgeScope[] = ["notifications", "messages", "combined"];
+  const SCOPES: BadgeScope[] = ["notifications", "messages", "commerce", "combined"];
 
   /**
    * A badge is a number with no noun. Spoken aloud, "3" beside an icon is
@@ -189,7 +249,7 @@ describe("badges say what they count", () => {
     }
   });
 
-  it("gives the three scopes three different sentences", () => {
+  it("gives every scope its own sentence", () => {
     for (const count of [0, 1, 5]) {
       const spoken = SCOPES.map((scope) => badgeSpokenLabel(scope, count));
       expect(new Set(spoken).size).toBe(SCOPES.length);

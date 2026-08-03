@@ -28,6 +28,13 @@ export type NotificationBadgeCounts = {
   unread_count?: number;
   alert_unread_count?: number;
   chat_unread_count?: number;
+  /**
+   * Business↔customer thread unreads, counted apart from `chat_unread_count`.
+   * The social Messages list never renders business threads, so folding these
+   * into the chat badge produced an unread the user could not clear. Belongs to
+   * the Commerce Inbox, and is deliberately NOT part of `total_unread_count`.
+   */
+  commerce_unread_count?: number;
   total_unread_count?: number;
   legacy_pulse_unread_count?: number;
 };
@@ -128,6 +135,17 @@ export function chatUnreadCount(counts?: NotificationBadgeCounts) {
   return normalizeCount(counts?.chat_unread_count);
 }
 
+/** Commerce Inbox unreads. Absent on older servers, which read as 0. */
+export function commerceUnreadCount(counts?: NotificationBadgeCounts) {
+  return normalizeCount(counts?.commerce_unread_count);
+}
+
+/**
+ * Notifications + social messages. Commerce is excluded on both sides of this
+ * function on purpose: the server sends `total_unread_count` as alert + chat,
+ * and the fallback below reproduces exactly that sum, so the number cannot
+ * change meaning depending on which branch runs.
+ */
 export function totalUnreadCount(counts?: NotificationBadgeCounts) {
   const explicitTotal = normalizeCount(counts?.total_unread_count);
   if (explicitTotal > 0) return explicitTotal;

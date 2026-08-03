@@ -113,10 +113,15 @@ def admin_list_orders(*, buyer_user_id: Optional[Any] = None,
 
 # --- refund / dispute resolution (governed) ---------------------------------
 def admin_refund_order(order_id: Any, *, actor: Any, reason: Any,
-                       amount_cents: Optional[int] = None) -> dict:
+                       amount_cents: Optional[int] = None,
+                       idempotency_key: Optional[str] = None) -> dict:
     """Governed admin refund. Delegates to the canonical ``refund_order`` money
     primitive (escrow-state checks + ledger post live there); this layer requires a
-    role + explicit reason and adds an admin-scoped audit row with before/after."""
+    role + explicit reason and adds an admin-scoped audit row with before/after.
+
+    ``idempotency_key`` is threaded straight through. An admin refund is issued
+    from a form that can be submitted twice, so this is the caller that most
+    needed it and the one that had no way to supply it."""
     _svc._require_enabled()
     actor = _need_actor(actor)
     reason = _need_reason(reason)
@@ -124,18 +129,25 @@ def admin_refund_order(order_id: Any, *, actor: Any, reason: Any,
     if before is None:
         raise MarketplaceError("Order not found.", 404, "not_found")
     out = _rf.refund_order(order_id, amount_cents=amount_cents, reason=reason,
-                           actor=actor, kind="admin_refund")
-    conn = db.connect()
-    try:
-        _svc._audit(conn, subject_type="order", subject_ref=order_id,
-                    action="admin_refund", actor=actor, reason=reason,
-                    before={"status": before.get("status"),
-                            "refunded_cents": before.get("refunded_cents")},
-                    after={"status": out.get("order_status"),
-                           "refunded_amount_cents": out.get("amount_cents")})
-        conn.commit()
-    finally:
-        conn.close()
+                           actor=actor, kind="admin_refund",
+                           idempotency_key=idempotency_key)
+    # A replay moved no money and changed no state, so it must not write a second
+    # "admin refunded this order" audit row — one refund is one governed action
+    # however many times the form was submitted. The envelope is still built the
+    # same way: a caller retrying a request should get back the shape it got the
+    # first time, with `duplicate` on the inner refund as the only difference.
+    if not out.get("duplicate"):
+        conn = db.connect()
+        try:
+            _svc._audit(conn, subject_type="order", subject_ref=order_id,
+                        action="admin_refund", actor=actor, reason=reason,
+                        before={"status": before.get("status"),
+                                "refunded_cents": before.get("refunded_cents")},
+                        after={"status": out.get("order_status"),
+                               "refunded_amount_cents": out.get("amount_cents")})
+            conn.commit()
+        finally:
+            conn.close()
     return {"order_id": _svc._sid(order_id), "action": "admin_refund",
             "before": {"status": before.get("status"),
                        "refunded_cents": before.get("refunded_cents")},

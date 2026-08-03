@@ -20697,6 +20697,20 @@ def _bo_mkt_form_payload(allowed):
     return out
 
 
+def _bo_mkt_idempotency_header():
+    """The retry key a client sent as a header, if any.
+
+    Both spellings, because both are in the wild: Stripe uses
+    ``Idempotency-Key`` and most in-house APIs prefix it ``X-``. Returns "" when
+    absent, which callers treat as "no key supplied" rather than as a key.
+    """
+    try:
+        return (request.headers.get("Idempotency-Key")
+                or request.headers.get("X-Idempotency-Key") or "").strip()
+    except Exception:
+        return ""
+
+
 # --- buyer/seller routes (authenticated; identity = the session/token user) --
 @webhook_app.route("/api/business-os/marketplace/seller", methods=["GET"])
 def api_business_os_marketplace_get_seller():
@@ -21122,7 +21136,20 @@ def admin_business_os_marketplace_refund_order(order_id):
     if not _business_os_ent_csrf_ok():
         return jsonify({"ok": False, "error": "CSRF check failed."}), 400
     from services.business_os.marketplace import api as _mktapi
-    payload = _bo_mkt_form_payload({"amount_cents", "reason"})
+    # `idempotency_key` must be in the allowlist or `_bo_mkt_form_payload`
+    # strips it and `refund_order` falls back to a fresh uuid — so a
+    # double-submitted refund form issues two refunds. The JSON API path
+    # allowlisted it (`api.ADMIN_REFUND_FIELDS`); this one did not, which left
+    # the caller the idempotency work was written for as the caller it did not
+    # reach.
+    payload = _bo_mkt_form_payload({"amount_cents", "reason", "idempotency_key"})
+    # A client that sends the key as a header — where payment APIs conventionally
+    # put it — is honoured too. The header only fills a gap; an explicit form
+    # field wins.
+    if not payload.get("idempotency_key"):
+        header_key = _bo_mkt_idempotency_header()
+        if header_key:
+            payload["idempotency_key"] = header_key
     resp_status, body = _mktapi.admin_refund_order(admin["id"], order_id, payload)
     if body.get("ok"):
         log_admin_audit(
@@ -32585,6 +32612,10 @@ def _pulse_notification_os_badge_counts(user_id):
     legacy_counts = notification_service.pulse_badge_counts(user_id)
     legacy_alert_count = int((legacy_counts or {}).get("alert_unread_count") or (legacy_counts or {}).get("unread_count") or (legacy_counts or {}).get("count") or 0)
     legacy_chat_count = int((legacy_counts or {}).get("chat_unread_count") or 0)
+    # Commerce unreads are counted apart from social chat and must survive this
+    # merge: the notification-OS badge_counts() knows nothing about business
+    # threads, so rebuilding the dict from it would silently drop the key.
+    legacy_commerce_count = int((legacy_counts or {}).get("commerce_unread_count") or 0)
     counts = pulsesoc_notification_system.badge_counts(
         user_id,
         chat_unread_count=legacy_chat_count,
@@ -32594,6 +32625,7 @@ def _pulse_notification_os_badge_counts(user_id):
         "alert_unread_count": alert_count,
         "count": alert_count,
         "unread_count": alert_count,
+        "commerce_unread_count": legacy_commerce_count,
         "total_unread_count": alert_count + int(counts.get("chat_unread_count") or legacy_chat_count),
         "legacy_pulse_unread_count": legacy_alert_count,
     })
