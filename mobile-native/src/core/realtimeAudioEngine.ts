@@ -100,8 +100,11 @@ function notifyDisplaced(ownerId: string) {
 /**
  * Canonical PulseSoc realtime audio profile.
  *
- * Publishers share the known-good call path. Listen-only viewers use playback:
- * subscribing to Live must not acquire a microphone-oriented recording profile.
+ * LiveKit real-time media shares the known-good call path. Listen-only viewers
+ * still do not publish or start microphone capture (`modePublishesMicrophone`
+ * remains false for `live_viewer`), but iOS remote WebRTC audio is rendered
+ * through the same communication session profile as calls. A playback-only
+ * profile can show host video while leaving subscribed host audio silent.
  */
 export function resolveRealtimeAudioConfiguration(mode: RealtimeAudioMode | boolean): AppleAudioConfiguration {
   const normalizedMode: RealtimeAudioMode = typeof mode === "boolean" ? (mode ? "live_host" : "live_viewer") : mode;
@@ -110,6 +113,7 @@ export function resolveRealtimeAudioConfiguration(mode: RealtimeAudioMode | bool
     normalizedMode === "video_call" ||
     normalizedMode === "live_host" ||
     normalizedMode === "live_guest" ||
+    normalizedMode === "live_viewer" ||
     normalizedMode === "voice_message"
   ) {
     return {

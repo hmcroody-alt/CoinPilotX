@@ -42,6 +42,7 @@ export type LiveKitCredentials = {
   identity: string;
   canPublish: boolean;
   canSubscribe: boolean;
+  canPublishSources: string[];
   canPublishData: boolean;
   canUpdateOwnMetadata: boolean;
   roomJoin: boolean;
@@ -84,11 +85,17 @@ export type LiveKitCredentials = {
 export function canConnectAsCohostPublisher(
   credentials: LiveKitCredentials | null | undefined
 ): credentials is LiveKitCredentials {
+  const publishSources = credentials?.canPublishSources?.length
+    ? credentials.canPublishSources
+    : credentials?.canPublish
+      ? ["microphone", "camera"]
+      : [];
   return Boolean(
     credentials &&
       credentials.token &&
       credentials.url &&
       credentials.canPublish &&
+      publishSources.includes("microphone") &&
       credentials.guestId > 0
   );
 }
@@ -152,6 +159,13 @@ function toBool(value: unknown): boolean {
   return false;
 }
 
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => toStr(entry).trim().toLowerCase())
+    .filter(Boolean);
+}
+
 /** Map a validated Live Studio draft into the backend go-live request body. */
 export function buildLiveStartPayload(draft: LiveStudioDraft): LiveStartPayload {
   const title = draft.title.trim().slice(0, 120) || "PulseSoc Live";
@@ -207,6 +221,7 @@ export function normalizeLiveKitCredentials(raw: Record<string, unknown> | null 
     identity: toStr(data.identity),
     canPublish: toBool(data.can_publish),
     canSubscribe: toBool(data.can_subscribe ?? true),
+    canPublishSources: toStringArray(data.can_publish_sources),
     canPublishData: toBool(data.can_publish_data ?? true),
     canUpdateOwnMetadata: toBool(data.can_update_own_metadata),
     roomJoin: toBool(data.room_join ?? true),

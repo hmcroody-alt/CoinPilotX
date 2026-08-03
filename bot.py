@@ -44062,7 +44062,7 @@ def pulse_livekit_b64url(raw):
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
 
-def pulse_livekit_access_token(identity, room_name, *, can_publish=False, name="", metadata=None, ttl_seconds=3600, can_publish_data=None, can_update_own_metadata=None):
+def pulse_livekit_access_token(identity, room_name, *, can_publish=False, name="", metadata=None, ttl_seconds=3600, can_publish_data=None, can_update_own_metadata=None, can_publish_sources=None):
     """Mint a least-privilege LiveKit access token for a PulseSoc livestream.
 
     canPublishData / canUpdateOwnMetadata now default to the publish grant
@@ -44079,6 +44079,11 @@ def pulse_livekit_access_token(identity, room_name, *, can_publish=False, name="
     grant_publish = bool(can_publish)
     grant_publish_data = grant_publish if can_publish_data is None else bool(can_publish_data)
     grant_update_metadata = grant_publish if can_update_own_metadata is None else bool(can_update_own_metadata)
+    grant_publish_sources = [str(source).strip().lower() for source in (can_publish_sources or []) if str(source).strip()]
+    if grant_publish and not grant_publish_sources:
+        grant_publish_sources = ["microphone", "camera"]
+    if not grant_publish:
+        grant_publish_sources = []
     claims = {
         "iss": config["api_key"],
         "sub": str(identity),
@@ -44092,6 +44097,7 @@ def pulse_livekit_access_token(identity, room_name, *, can_publish=False, name="
             "canPublish": grant_publish,
             "canPublishData": grant_publish_data,
             "canUpdateOwnMetadata": grant_update_metadata,
+            "canPublishSources": grant_publish_sources,
         },
     }
     if metadata:
@@ -44105,7 +44111,7 @@ def pulse_livekit_access_token(identity, room_name, *, can_publish=False, name="
     return f"{signing_input}.{pulse_livekit_b64url(signature)}"
 
 
-def pulse_livekit_verify_token_claims(token, *, identity="", room_name="", role="", require_publish=False, expect_publish_data=None, expect_update_own_metadata=None):
+def pulse_livekit_verify_token_claims(token, *, identity="", room_name="", role="", require_publish=False, expect_publish_data=None, expect_update_own_metadata=None, expect_publish_sources=None):
     """Verify a freshly minted token actually carries the grants we intended.
 
     The data grants are checked against what was requested, not hard-required to
@@ -44132,6 +44138,8 @@ def pulse_livekit_verify_token_claims(token, *, identity="", room_name="", role=
         now = int(time.time())
         expected_publish_data = bool(require_publish) if expect_publish_data is None else bool(expect_publish_data)
         expected_update_metadata = bool(require_publish) if expect_update_own_metadata is None else bool(expect_update_own_metadata)
+        expected_sources = [str(source).strip().lower() for source in (expect_publish_sources or (["microphone", "camera"] if require_publish else [])) if str(source).strip()]
+        actual_sources = [str(source).strip().lower() for source in (video.get("canPublishSources") or []) if str(source).strip()]
         checks = {
             "identity": str(claims.get("sub") or "") == str(identity or ""),
             "room": str(video.get("room") or "") == str(room_name or ""),
@@ -44142,6 +44150,7 @@ def pulse_livekit_verify_token_claims(token, *, identity="", room_name="", role=
             "subscribe": video.get("canSubscribe") is True,
             "publish_data": video.get("canPublishData") is expected_publish_data,
             "update_own_metadata": video.get("canUpdateOwnMetadata") is expected_update_metadata,
+            "publish_sources": actual_sources == expected_sources,
             "expiration": int(claims.get("exp") or 0) > now,
             "metadata": isinstance(metadata, dict) and int((metadata or {}).get("live_id") or 0) > 0,
         }
@@ -44154,6 +44163,7 @@ def pulse_livekit_verify_token_claims(token, *, identity="", room_name="", role=
             "subscribe": bool(video.get("canSubscribe")),
             "publish_data": bool(video.get("canPublishData")),
             "update_own_metadata": bool(video.get("canUpdateOwnMetadata")),
+            "publish_sources": actual_sources,
             "room_join": bool(video.get("roomJoin")),
             "expiration": int(claims.get("exp") or 0),
             "metadata": pulse_live_safe_debug_payload(metadata if isinstance(metadata, dict) else {}),
@@ -45628,6 +45638,7 @@ def api_pulse_live_livekit_token(live_id):
         "canPublish": bool(can_publish),
         "canPublishData": grant_publish_data,
         "canUpdateOwnMetadata": grant_update_own_metadata,
+        "canPublishSources": ["microphone", "camera"] if can_publish else [],
     }
     pulse_live_cohost_step_log(
         trace_id,
@@ -45662,11 +45673,12 @@ def api_pulse_live_livekit_token(live_id):
         ttl_seconds=1800 if is_guest_request else 7200 if can_publish else 3600,
         can_publish_data=grant_publish_data,
         can_update_own_metadata=grant_update_own_metadata,
+        can_publish_sources=token_permissions["canPublishSources"],
     )
     if not token:
         conn.rollback(); conn.close()
         return pulse_live_cohost_error("TOKEN_GENERATION_FAILED", status=503, trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"), request_id=guest.get("request_id"))
-    verification = pulse_livekit_verify_token_claims(token, identity=identity, room_name=room_name, role=token_role, require_publish=can_publish, expect_publish_data=grant_publish_data, expect_update_own_metadata=grant_update_own_metadata)
+    verification = pulse_livekit_verify_token_claims(token, identity=identity, room_name=room_name, role=token_role, require_publish=can_publish, expect_publish_data=grant_publish_data, expect_update_own_metadata=grant_update_own_metadata, expect_publish_sources=token_permissions["canPublishSources"])
     logging.info("PULSE_COHOST_TOKEN_CLAIMS trace_id=%s live_id=%s user_id=%s claims=%s checks=%s", trace_id, live_id, user["user_id"], json.dumps(verification.get("claims") or {}, default=str)[:3000], json.dumps(verification.get("checks") or {}, default=str)[:2000])
     if not verification.get("ok"):
         if is_guest_request:
@@ -45691,6 +45703,7 @@ def api_pulse_live_livekit_token(live_id):
         return pulse_live_cohost_error("DB_TRANSACTION_FAILED", status=500, message="The co-host token was created, but the joining state could not be committed.", step="token_state_transition", trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"), request_id=request_id, debug_error=exc, diagnostic=owner_debug.get("db_error"))
     conn.close()
     verified_claims = verification.get("claims") or {}
+    audio_v2_enabled = pulse_live_audio_v2_enabled(user.get("user_id"), is_qa=bool(admin_current_user()))
     if is_guest_request:
         try:
             pulse_emit_event("live_cohost_token_ready", {"live_id": live_id, "guest_id": int(guest.get("id") or 0), "request_id": request_id, "viewer_user_id": user["user_id"], "host_user_id": int(live.get("user_id") or 0), "trace_id": trace_id, "state": "joining"}, user["user_id"], int(live.get("feed_post_id") or 0))
@@ -45705,11 +45718,13 @@ def api_pulse_live_livekit_token(live_id):
         "identity": identity,
         "can_publish": can_publish,
         "can_subscribe": True,
+        "can_publish_sources": token_permissions["canPublishSources"],
         "can_publish_data": grant_publish_data,
         "can_update_own_metadata": grant_update_own_metadata,
         "room_join": True,
         "role": token_role,
-        "audio_v2_enabled": pulse_live_audio_v2_enabled(user.get("user_id"), is_qa=bool(admin_current_user())),
+        "audio_v2_enabled": audio_v2_enabled,
+        "publisher_audio_v2_enabled": bool(can_publish and audio_v2_enabled),
         "audio_v2_fallback_enabled": pulse_live_audio_v2_fallback_enabled(),
         "audio_trace_enabled": pulse_live_audio_trace_enabled(user.get("user_id"), is_qa=bool(admin_current_user())),
         "guest_id": int(guest.get("id") or 0),

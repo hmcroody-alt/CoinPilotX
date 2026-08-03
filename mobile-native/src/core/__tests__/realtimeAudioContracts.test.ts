@@ -268,12 +268,11 @@ describe("shared: session configuration by mode", () => {
     });
   });
 
-  it("gives a viewer a playback category, not a recording one", () => {
+  it("gives a viewer the call-grade output route without microphone ownership", () => {
     const config = resolveRealtimeAudioConfiguration("live_viewer");
-    // A viewer on playAndRecord shows the microphone indicator and degrades
-    // output quality on Bluetooth for no reason.
-    expect(config.audioCategory).toBe("playback");
-    expect(config.audioMode).toBe("default");
+    expect(config.audioCategory).toBe("playAndRecord");
+    expect(config.audioMode).toBe("videoChat");
+    expect(modePublishesMicrophone("live_viewer")).toBe(false);
   });
 });
 

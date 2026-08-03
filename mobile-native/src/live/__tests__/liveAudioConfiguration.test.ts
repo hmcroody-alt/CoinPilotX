@@ -33,7 +33,8 @@ describe("emergency publisher V2 rollback", () => {
  *
  * The contract these tests lock in:
  *   - host/co-host records, so it MUST use `playAndRecord`.
- *   - listen-only viewer uses playback and never needs microphone ownership.
+ *   - listen-only viewer uses the call-grade communication output route but
+ *     never publishes microphone ownership.
  */
 describe("resolveLiveAudioConfiguration", () => {
   it("gives a publisher a record-capable communication session", () => {
@@ -44,11 +45,11 @@ describe("resolveLiveAudioConfiguration", () => {
     expect(config.audioCategoryOptions).toContain("defaultToSpeaker");
   });
 
-  it("gives a listen-only viewer a playback-only output route", () => {
+  it("gives a listen-only viewer the call-grade output route without publisher ownership", () => {
     const config = resolveLiveAudioConfiguration(false);
-    expect(config.audioCategory).toBe("playback");
-    expect(config.audioMode).toBe("default");
-    expect(config.audioCategoryOptions).not.toContain("defaultToSpeaker");
+    expect(config.audioCategory).toBe("playAndRecord");
+    expect(config.audioMode).toBe("videoChat");
+    expect(config.audioCategoryOptions).toContain("defaultToSpeaker");
   });
 
   it("routes both roles to Bluetooth/AirPlay outputs", () => {

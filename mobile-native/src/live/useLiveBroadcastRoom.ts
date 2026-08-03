@@ -264,7 +264,7 @@ export function shouldForceLiveSpeakerRoute() {
 async function publishMicrophoneForPath(
   room: any,
   useV2: boolean,
-  context: { role: string; room: string; correlationId?: string }
+  context: { role: string; room: string; correlationId?: string; canPublishMicrophone?: boolean }
 ): Promise<number> {
   if (!useV2) return ensureMicrophonePublished(room);
   emitLiveAudioEvent({ name: "live_audio_publish_started", path: "v2_isolated", role: context.role, room: context.room });
@@ -274,7 +274,7 @@ async function publishMicrophoneForPath(
       correlationId: context.correlationId,
       roomType: "livestream",
       participantRole: context.role,
-      canPublishMicrophone: true
+      canPublishMicrophone: context.canPublishMicrophone
     }
   });
   emitLiveAudioEvent({
@@ -754,7 +754,13 @@ export function useLiveBroadcastRoom() {
         setState((current) => ({ ...current, error: lastConnectErrorRef.current }));
         return false;
       }
-      const publish = Boolean(options.publish && credentials.canPublish);
+      const publishSources = credentials.canPublishSources?.length
+        ? credentials.canPublishSources
+        : credentials.canPublish
+          ? ["microphone", "camera"]
+          : [];
+      const canPublishMicrophone = publishSources.includes("microphone");
+      const publish = Boolean(options.publish && credentials.canPublish && canPublishMicrophone);
 
       // SERVER-AUTHORITATIVE GATE. The decision arrives on the token response the
       // client already fetches for every broadcast, so flipping the backend flag
@@ -788,6 +794,8 @@ export function useLiveBroadcastRoom() {
       trace.emit("live_session_created", { room_state: "new", caller: "useLiveBroadcastRoom.connect" });
       if (publish && !credentials.canPublish) {
         trace.emit("invariant_failed", { room_state: "authorization_failed", error_category: "publish_not_authorized" });
+      } else if (options.publish && credentials.canPublish && !canPublishMicrophone) {
+        trace.emit("invariant_failed", { room_state: "authorization_failed", error_category: "microphone_source_not_authorized" });
       } else {
         trace.emit("live_authorization_succeeded", {
           room_state: "authorized",
@@ -1047,11 +1055,12 @@ export function useLiveBroadcastRoom() {
           setState((current) => ({ ...current, connected: true, reconnecting: false, recovering: false, connectionState: "connected", error: "" }));
           const audioTasks: Promise<unknown>[] = [applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current)];
           if (publish) {
-            audioTasks.push(publishMicrophoneForPath(room, useV2, {
-              role: telemetryRole,
-              room: roomNameRef.current,
-              correlationId: correlationIdRef.current
-            }));
+          audioTasks.push(publishMicrophoneForPath(room, useV2, {
+            role: telemetryRole,
+            room: roomNameRef.current,
+            correlationId: correlationIdRef.current,
+            canPublishMicrophone
+          }));
           }
           if (useV2 || !publish) {
             const engineContext = {
@@ -1247,7 +1256,8 @@ export function useLiveBroadcastRoom() {
               void publishMicrophoneForPath(roomRef.current, true, {
                 role: telemetryRole,
                 room: roomNameRef.current,
-                correlationId: correlationIdRef.current
+                correlationId: correlationIdRef.current,
+                canPublishMicrophone
               }).then(() => stabilizeLivePublisherAudio(
                 roomRef.current,
                 livekitNative.AudioDeviceModule,
@@ -1326,7 +1336,8 @@ export function useLiveBroadcastRoom() {
             publishMicrophone: () => publishMicrophoneForPath(room, useV2, {
               role: telemetryRole,
               room: roomNameRef.current,
-              correlationId: correlationIdRef.current
+              correlationId: correlationIdRef.current,
+              canPublishMicrophone
             }),
             enableCamera: async () => {
               // At `stable` these resolve to PULSE_LIVE_VIDEO_CAPTURE_OPTIONS

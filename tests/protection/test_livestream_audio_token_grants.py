@@ -143,6 +143,7 @@ def test_viewer_grants_are_least_privilege() -> None:
     token = mint("viewer", False)
     grants = decode_grants(token)
     expect(grants.get("canPublish") is False, "viewer token cannot publish")
+    expect(grants.get("canPublishSources") == [], "viewer token cannot publish microphone or camera sources")
     expect(grants.get("canSubscribe") is True, "viewer token can still subscribe (playback works)")
     expect(grants.get("canPublishData") is False, "viewer token cannot publish data")
     expect(
@@ -155,6 +156,7 @@ def test_publisher_keeps_both_grants() -> None:
     for role in ("host", "guest", "cohost"):
         grants = decode_grants(mint(role, True))
         expect(grants.get("canPublish") is True, f"{role} token can publish")
+        expect(grants.get("canPublishSources") == ["microphone", "camera"], f"{role} token can publish microphone and camera sources")
         expect(grants.get("canPublishData") is True, f"{role} token keeps the data channel")
         expect(
             grants.get("canUpdateOwnMetadata") is True,
@@ -191,6 +193,7 @@ def test_verifier_accepts_the_grants_it_asked_for() -> None:
         require_publish=True,
         expect_publish_data=True,
         expect_update_own_metadata=True,
+        expect_publish_sources=["microphone", "camera"],
     )
     expect(result.get("ok") is True, "host token verifies against host expectations")
     expect(all((result.get("checks") or {}).values()), "every individual host claim check passes")

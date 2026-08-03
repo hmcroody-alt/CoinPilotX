@@ -12,6 +12,7 @@ function creds(overrides: Partial<LiveKitCredentials> = {}): LiveKitCredentials 
     identity: "user-9",
     canPublish: true,
     canSubscribe: true,
+    canPublishSources: ["microphone", "camera"],
     canPublishData: true,
     canUpdateOwnMetadata: false,
     roomJoin: true,
@@ -41,6 +42,10 @@ describe("canConnectAsCohostPublisher (Issue 5: guest joining fails)", () => {
 
   it("refuses a viewer token that cannot publish (the silent on-stage bubble bug)", () => {
     expect(canConnectAsCohostPublisher(creds({ canPublish: false }))).toBe(false);
+  });
+
+  it("refuses a publish-capable token without microphone source authority", () => {
+    expect(canConnectAsCohostPublisher(creds({ canPublishSources: ["camera"] }))).toBe(false);
   });
 
   it("refuses a publish-capable token that is not bound to a guest slot", () => {

@@ -114,6 +114,7 @@ describe("normalizeLiveKitCredentials", () => {
       identity: "pulse-user-7",
       canPublish: true,
       canSubscribe: true,
+      canPublishSources: [],
       canPublishData: true,
       canUpdateOwnMetadata: true,
       roomJoin: true,
@@ -163,6 +164,20 @@ describe("normalizeLiveKitCredentials", () => {
       expect(normalizeLiveKitCredentials({ ...base, audio_v2_enabled: true })?.audioV2Enabled).toBe(true);
     });
 
+    it("normalizes publisher audio and source grants from the server token response", () => {
+      const creds = normalizeLiveKitCredentials({
+        ...base,
+        can_publish: true,
+        can_publish_sources: ["microphone", "camera"],
+        audio_v2_enabled: true,
+        publisher_audio_v2_enabled: true
+      });
+      expect(creds?.canPublish).toBe(true);
+      expect(creds?.canPublishSources).toEqual(["microphone", "camera"]);
+      expect(creds?.audioV2Enabled).toBe(true);
+      expect(creds?.publisherAudioV2Enabled).toBe(true);
+    });
+
     it("KILL SWITCH: any non-true value runs the legacy path", () => {
       for (const raw of [false, "true", "false", 1, 0, "1", "0", null, undefined, {}]) {
         expect(normalizeLiveKitCredentials({ ...base, audio_v2_enabled: raw })?.audioV2Enabled).toBe(false);
@@ -191,6 +206,7 @@ describe("normalizeLiveKitCredentials", () => {
       role: "cohost",
       can_publish: true,
       can_subscribe: true,
+      can_publish_sources: ["microphone", "camera"],
       can_publish_data: true,
       can_update_own_metadata: true,
       room_join: true,
@@ -205,6 +221,7 @@ describe("normalizeLiveKitCredentials", () => {
       role: "cohost",
       canPublish: true,
       canSubscribe: true,
+      canPublishSources: ["microphone", "camera"],
       canPublishData: true,
       canUpdateOwnMetadata: true,
       roomJoin: true,
