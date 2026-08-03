@@ -30,8 +30,12 @@ export async function getSessionCookie() {
   try {
     return await SecureStore.getItemAsync(COOKIE_KEY, KEYCHAIN_OPTIONS);
   } catch (error) {
-    if (!isLocalQaSession()) throw error;
-    return AsyncStorage.getItem(COOKIE_KEY);
+    if (isLocalQaSession()) return AsyncStorage.getItem(COOKIE_KEY);
+    // Keychain unreadable (e.g. an adhoc/simulator build lacks the
+    // keychain-access-groups entitlement → -34018, or a transient fault).
+    // Degrade to signed-out instead of rejecting startup: a re-login is a far
+    // better failure mode than a fatal "couldn't start PulseSoc" screen.
+    return null;
   }
 }
 
@@ -45,15 +49,15 @@ export async function setSessionCookie(cookie: string) {
     return;
   }
   if (!cookie) {
-    await SecureStore.deleteItemAsync(COOKIE_KEY, KEYCHAIN_OPTIONS).catch(async (error) => {
-      if (!isLocalQaSession()) throw error;
-      await AsyncStorage.removeItem(COOKIE_KEY);
+    await SecureStore.deleteItemAsync(COOKIE_KEY, KEYCHAIN_OPTIONS).catch(async () => {
+      if (isLocalQaSession()) await AsyncStorage.removeItem(COOKIE_KEY);
+      // Off-QA: nothing persisted when the keychain is unavailable — swallow.
     });
     return;
   }
-  await SecureStore.setItemAsync(COOKIE_KEY, cookie, KEYCHAIN_OPTIONS).catch(async (error) => {
-    if (!isLocalQaSession()) throw error;
-    await AsyncStorage.setItem(COOKIE_KEY, cookie);
+  await SecureStore.setItemAsync(COOKIE_KEY, cookie, KEYCHAIN_OPTIONS).catch(async () => {
+    if (isLocalQaSession()) await AsyncStorage.setItem(COOKIE_KEY, cookie);
+    // Off-QA: session won't persist across cold start; do not write plaintext.
   });
 }
 
@@ -163,23 +167,35 @@ async function getSecureValue(key: string) {
   try {
     return await SecureStore.getItemAsync(key, KEYCHAIN_OPTIONS);
   } catch (error) {
-    if (!isLocalQaSession()) throw error;
-    return AsyncStorage.getItem(key);
+    if (isLocalQaSession()) return AsyncStorage.getItem(key);
+    // See getSessionCookie: an unreadable keychain degrades to signed-out
+    // rather than throwing and taking down app startup.
+    return null;
   }
 }
 
 async function setSecureValue(key: string, value: string) {
   if (Platform.OS === "web") return AsyncStorage.setItem(key, value);
-  await SecureStore.setItemAsync(key, value, KEYCHAIN_OPTIONS).catch(async (error) => {
-    if (!isLocalQaSession()) throw error;
-    await AsyncStorage.setItem(key, value);
+  await SecureStore.setItemAsync(key, value, KEYCHAIN_OPTIONS).catch(async () => {
+    if (isLocalQaSession()) {
+      await AsyncStorage.setItem(key, value);
+      return;
+    }
+    // Keychain unwritable (adhoc/simulator entitlement gap, or transient).
+    // Swallow rather than crash: the session simply won't persist across a
+    // cold start. We deliberately do NOT fall back to plaintext AsyncStorage
+    // off-QA, to avoid writing tokens outside the keychain on a real device.
   });
 }
 
 async function deleteSecureValue(key: string) {
   if (Platform.OS === "web") return AsyncStorage.removeItem(key);
-  await SecureStore.deleteItemAsync(key, KEYCHAIN_OPTIONS).catch(async (error) => {
-    if (!isLocalQaSession()) throw error;
-    await AsyncStorage.removeItem(key);
+  await SecureStore.deleteItemAsync(key, KEYCHAIN_OPTIONS).catch(async () => {
+    if (isLocalQaSession()) {
+      await AsyncStorage.removeItem(key);
+      return;
+    }
+    // Nothing was persisted off-QA when the keychain is unavailable, so there
+    // is nothing to delete — swallow rather than crash sign-out.
   });
 }
