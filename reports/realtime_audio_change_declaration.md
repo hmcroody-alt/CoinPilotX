@@ -42,6 +42,7 @@ Emergency Live host/co-host audio recovery. No Marketplace, Advertising, Premium
 | `mobile-native/src/core/realtimePublisherMedia.ts` | shared audio-session coordinator | Defines the call-grade microphone/camera/reassert/stabilize sequence used by both video calls and Live. |
 | `mobile-native/src/calls/useNativeCallRoom.ts` | call lifecycle adapter | Delegates its existing verified media ordering to the shared coordinator without changing call policy or room ownership. |
 | `mobile-native/src/core/__tests__/realtimeAudioArchitecture.test.ts` | critical tests | Enforces that both adapters depend on the shared publisher coordinator. |
+| `mobile-native/src/core/__tests__/mediaQualityWiring.test.ts` | critical tests | Moves the audio-before-camera ordering assertion to the shared coordinator that now owns that invariant. |
 
 ## Expected behavior change
 
