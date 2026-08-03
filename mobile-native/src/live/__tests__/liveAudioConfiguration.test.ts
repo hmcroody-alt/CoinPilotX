@@ -1,6 +1,7 @@
 import {
   initializeLivePublisherMedia,
   resolveLiveAudioConfiguration,
+  shouldForceLiveSpeakerRoute,
   stabilizeLivePublisherAudio,
   stabilizeLiveViewerAudio
 } from "../useLiveBroadcastRoom";
@@ -57,6 +58,10 @@ describe("resolveLiveAudioConfiguration", () => {
         expect.arrayContaining(["allowBluetooth", "allowBluetoothA2DP", "allowAirPlay"])
       );
     }
+  });
+
+  it("keeps every Live role on an audible speaker route", () => {
+    expect(shouldForceLiveSpeakerRoute()).toBe(true);
   });
 });
 
@@ -134,7 +139,7 @@ describe("post-camera Live audio stabilization", () => {
     expect(events).toEqual(["microphone", "camera", "microphone", "guard"]);
   });
 
-  it("keeps the legacy publisher path off the mid-broadcast audio-session guard", async () => {
+  it("keeps the legacy publisher path off the mid-broadcast audio-session guard but recovers the recorder", async () => {
     const events: string[] = [];
 
     await initializeLivePublisherMedia({
@@ -153,10 +158,17 @@ describe("post-camera Live audio stabilization", () => {
         events.push("guard");
         return 1;
       },
+      // Legacy MUST proactively restart the recorder the camera interruption
+      // tore down (without reconfiguring the session) so the host is audible.
+      recoverRecordingEngine: async () => {
+        events.push("recover");
+      },
       wait: async () => undefined
     });
 
-    expect(events).toEqual(["microphone", "camera", "microphone"]);
+    // No mid-broadcast session guard; recovery runs after the post-camera
+    // microphone republish.
+    expect(events).toEqual(["microphone", "camera", "microphone", "recover"]);
   });
 
   it("fails closed only after the bounded post-camera guard retries are exhausted", async () => {

@@ -49,6 +49,11 @@ type RealtimeAudioDeviceModule = {
   startPlayout?: () => Promise<void>;
   startRecording?: () => Promise<void>;
   startLocalRecording?: () => Promise<void>;
+  // Native ADM lever: keeps the WebRTC record engine "prepared" so it can be
+  // resumed after an AVAudioSession interruption instead of being fully torn
+  // down. Enabling this for publishers hardens the recorder against the
+  // camera-start interruption that otherwise silences the Live host.
+  setRecordingAlwaysPreparedMode?: (enabled: boolean) => void | Promise<void>;
 };
 
 export type RealtimeAudioEngineStatus = {
@@ -426,6 +431,110 @@ export async function stabilizeRealtimeAudioEngine(
     Object.assign(error, { code: "REALTIME_AUDIO_ENGINE_INACTIVE", status });
     throw error;
   }
+  return status;
+}
+
+/**
+ * Ask the native ADM to keep the WebRTC recorder permanently prepared.
+ *
+ * On iPhone, starting the camera fires an AVAudioSession interruption that stops
+ * AURemoteIO (the record engine); iOS never delivers an interruption-*ended*
+ * event while the camera holds the session, so nothing restarts the recorder and
+ * the Live host goes silent. "Always prepared" mode makes the ADM keep the
+ * record graph resumable across that interruption so a later start resumes it
+ * rather than finding it fully torn down. Best-effort and iOS-only; a missing
+ * native method or failure must never block going Live.
+ */
+export async function enableRealtimeRecordingAlwaysPrepared(
+  audioDeviceModule: RealtimeAudioDeviceModule | null | undefined
+): Promise<boolean> {
+  if (!audioDeviceModule || Platform.OS !== "ios") return false;
+  if (typeof audioDeviceModule.setRecordingAlwaysPreparedMode !== "function") return false;
+  try {
+    await audioDeviceModule.setRecordingAlwaysPreparedMode(true);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Proactively restart a torn-down WebRTC record engine WITHOUT touching the
+ * shared AVAudioSession.
+ *
+ * This is the recovery for the camera-start interruption described above: after
+ * the camera settles, re-init and start the recorder ourselves because iOS will
+ * never signal that the interruption ended. Unlike stabilizeRealtimeAudioEngine
+ * this never reconfigures the audio session (reconfiguring mid-broadcast was
+ * observed to disrupt the running WebRTC video pipeline on the legacy publisher
+ * path) and never throws - a recovery attempt must not fail a healthy broadcast
+ * closed. Returns the observed engine status for logging.
+ */
+export async function recoverRealtimeRecordingEngine(
+  audioDeviceModule: RealtimeAudioDeviceModule | null | undefined,
+  options?: {
+    /**
+     * Re-activate the shared AVAudioSession when the engine is found stopped.
+     * Device syslog proves the camera transition leaves the session INACTIVE
+     * (`cmsSetIsActive ... going inactive` right after camera startup), so the
+     * recorder cannot be started until the session is activated again. This must
+     * be a plain setActive(true) (LiveKit `startAudioSession`) - NOT a category
+     * reassert, which is what disrupts the running video pipeline.
+     */
+    reactivateSession?: () => Promise<void>;
+    settleMs?: number;
+    passes?: number;
+    context?: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string };
+  }
+): Promise<RealtimeAudioEngineStatus> {
+  const context = options?.context || {};
+  emitRealtimeAudioEvent({ name: "audio_engine_guard_started", ...context, outcome: "legacy_recover" });
+  if (!audioDeviceModule || Platform.OS !== "ios") {
+    return inspectRealtimeAudioEngine(audioDeviceModule);
+  }
+
+  const enforce = async () => {
+    const before = inspectRealtimeAudioEngine(audioDeviceModule);
+    if (before.engineRunning === false || before.recordingRunning === false) {
+      // Restore the (now inactive) session before touching the ADM, otherwise
+      // the restart below runs against a session it cannot start into.
+      if (before.engineRunning === false && options?.reactivateSession) {
+        await options.reactivateSession().catch(() => undefined);
+      }
+      // A completely torn-down engine must be re-initialized (init-and-start);
+      // startRecording alone only resumes an already-initialized recorder.
+      if (before.engineRunning === false && typeof audioDeviceModule.startLocalRecording === "function") {
+        await audioDeviceModule.startLocalRecording().catch(() => undefined);
+      } else {
+        await audioDeviceModule.startRecording?.().catch(() => undefined);
+      }
+    }
+    const after = inspectRealtimeAudioEngine(audioDeviceModule);
+    if (after.engineRunning === false || after.playoutRunning === false) {
+      await audioDeviceModule.startPlayout?.().catch(() => undefined);
+    }
+  };
+
+  // Camera startup stops RemoteIO asynchronously (~1s after the camera promise
+  // resolves on iPhone) and the exact moment varies run-to-run, so a single pass
+  // can fire before the teardown. Sweep several passes across the window and stop
+  // as soon as the recorder is confirmed back up.
+  const settleMs = Math.max(0, Math.min(Number(options?.settleMs ?? 400), 1500));
+  const maxPasses = Math.max(1, Math.floor(options?.passes ?? 4));
+  let status = inspectRealtimeAudioEngine(audioDeviceModule);
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    await enforce();
+    status = inspectRealtimeAudioEngine(audioDeviceModule);
+    if (status.engineRunning !== false && status.recordingRunning !== false && status.playoutRunning !== false) break;
+    if (pass < maxPasses - 1 && settleMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, settleMs));
+    }
+  }
+  emitRealtimeAudioEvent({
+    name: "audio_engine_guard_completed",
+    ...context,
+    outcome: `legacy_recover;engine=${status.engineRunning};playout=${status.playoutRunning};recording=${status.recordingRunning}`
+  });
   return status;
 }
 

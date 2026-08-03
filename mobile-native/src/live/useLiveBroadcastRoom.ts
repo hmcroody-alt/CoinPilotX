@@ -5,7 +5,9 @@ import {
   activateRealtimeAudioSession,
   applyRemoteAudioEnabled as driveRemoteAudioEnabled,
   audioPublications,
+  enableRealtimeRecordingAlwaysPrepared,
   ensureMicrophonePublished,
+  recoverRealtimeRecordingEngine,
   PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
   PULSE_LIVE_VIDEO_PUBLISH_OPTIONS,
   publicationHasTrack,
@@ -239,6 +241,17 @@ function liveAudioMode(
 }
 
 /**
+ * Live is a foreground real-time media experience, so every role should start
+ * on an audible output route. `liveAudioMode` controls whether the session is
+ * record-capable; this helper controls output only. Keeping it separate avoids
+ * regressing viewers into a silent default/earpiece route when publishers are
+ * the only roles that need microphone input.
+ */
+export function shouldForceLiveSpeakerRoute() {
+  return true;
+}
+
+/**
  * The single place the V2 and legacy publish paths diverge.
  *
  * V2 (`publishLiveMicrophone`) waits on LiveKit's own `localTrackPublished`
@@ -316,6 +329,16 @@ export async function initializeLivePublisherMedia(options: {
    * device logs without perturbing the running media pipeline.
    */
   probeAudio?: (phase: "after_microphone" | "after_camera") => Promise<void> | void;
+  /**
+   * Legacy-path recovery for the camera-start audio interruption. Starting the
+   * camera fires an AVAudioSession interruption that stops the native WebRTC
+   * record engine, and iOS never delivers an interruption-ended event while the
+   * camera holds the session - so the recorder must be restarted proactively.
+   * Unlike `stabilizeAudio` (V2), this must NOT reconfigure the shared audio
+   * session and must NOT throw: it restarts the torn-down recorder in place so
+   * the legacy host is heard, without perturbing the running video pipeline.
+   */
+  recoverRecordingEngine?: () => Promise<void>;
   trace?: (event: "microphone_track_create_started" | "microphone_track_created" | "microphone_publish_started" | "microphone_published" | "camera_initialization_started" | "camera_initialized" | "live_audio_active_verification_started" | "live_audio_active_verification_passed" | "live_audio_active_verification_retrying" | "live_audio_active_verification_failed") => void;
 }): Promise<number> {
   const wait = options.wait || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
@@ -353,13 +376,15 @@ export async function initializeLivePublisherMedia(options: {
       }
     }
   } else {
-    // Legacy publisher path stays byte-for-byte on the verified baseline: settle
-    // after the post-camera republish and do NOT reconfigure the shared
-    // AVAudioSession mid-broadcast. Reasserting the Apple audio configuration
-    // here was observed to disrupt the running WebRTC video pipeline (degraded
-    // quality / slow reload / capture-session restart) without restoring a
-    // recorder the native camera transition had already torn down.
+    // Legacy publisher path does NOT reconfigure the shared AVAudioSession
+    // mid-broadcast: reasserting the Apple audio configuration here was observed
+    // to disrupt the running WebRTC video pipeline (degraded quality / slow
+    // reload / capture-session restart). But settling alone left the host
+    // silent, because the camera-start interruption tears the native recorder
+    // down and iOS never signals that it ended. Restart the recorder in place -
+    // no session reconfiguration - so the legacy host is actually heard.
     await wait(150);
+    await options.recoverRecordingEngine?.();
   }
   return audioTrackCount;
 }
@@ -867,9 +892,13 @@ export function useLiveBroadcastRoom() {
         trace.emit("audio_session_config_started", { room_state: "connecting", audioOwner: ownerId, audio_profile: audioProfile });
         try {
           audioLeaseRef.current = await activateRealtimeAudioSession(livekitNative.AudioSession, mediaMode, ownerId, {
-            // A listen-only viewer needs playback, not a forced record route.
-            // Host/co-host retains the call-grade capture-and-playback profile.
-            speaker: publish,
+            // Live viewers still need an audible route. The mode decides whether
+            // the session records (`live_host`/`live_guest`) or only plays back
+            // (`live_viewer`); the speaker flag only selects output. Keep it on
+            // for every Live role so native Live follows the working call route
+            // and does not render host video silently through an unavailable
+            // default/earpiece path.
+            speaker: shouldForceLiveSpeakerRoute(),
             participantRole: telemetryRole,
             correlationId: correlationIdRef.current,
             // A higher-priority owner (an incoming call) taking the session must
@@ -898,7 +927,13 @@ export function useLiveBroadcastRoom() {
           trace.emit("av_audio_session_activated", { room_state: "connecting", currentOwner: ownerId, audioGeneration: audioLeaseRef.current.leaseId, caller: "realtimeAudioEngine.activate" });
           runtime.attachResources({ audioLease: audioLeaseRef.current });
           runtime.update({ audio: "active", audioOwnerActive: true }, "audio_activated", "AudioCoordinator", "lease_active");
-          if (publish) lifecycleRef.current.transition("local", "publishing");
+          if (publish) {
+            lifecycleRef.current.transition("local", "publishing");
+            // Harden the recorder against the camera-start AVAudioSession
+            // interruption before any media is published, so the record engine
+            // can be resumed rather than found fully torn down. Best-effort.
+            await enableRealtimeRecordingAlwaysPrepared(livekitNative.AudioDeviceModule);
+          }
         } catch (ownershipError) {
           // A call already owns the audio session. Report it honestly instead of
           // stealing the session and cutting the user's call off mid-sentence.
@@ -1018,7 +1053,7 @@ export function useLiveBroadcastRoom() {
               correlationId: correlationIdRef.current
             }));
           }
-          if (useV2) {
+          if (useV2 || !publish) {
             const engineContext = {
               sessionId: roomNameRef.current,
               correlationId: correlationIdRef.current,
@@ -1028,16 +1063,17 @@ export function useLiveBroadcastRoom() {
             // Reconnect can replace both the native engine and the output
             // route. Publishers restore capture/playout; viewers restore only
             // playout and never request microphone input.
-            audioTasks.push(publish
-              ? stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
-                  settleMs: 250,
-                  context: engineContext
-                })
-              : stabilizeLiveViewerAudio(livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
-                  settleMs: 250,
-                  context: engineContext
-                })
-            );
+            if (publish && useV2) {
+              audioTasks.push(stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
+                settleMs: 250,
+                context: engineContext
+              }));
+            } else if (!publish) {
+              audioTasks.push(stabilizeLiveViewerAudio(livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
+                settleMs: 250,
+                context: engineContext
+              }));
+            }
           }
           Promise.all(audioTasks)
             .then(() => {
@@ -1146,28 +1182,31 @@ export function useLiveBroadcastRoom() {
               subscription_state: "playing"
             });
             applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current)
-              .then(() => useV2
-                ? (publish
-                    ? stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
-                        settleMs: 0,
-                        context: {
-                          sessionId: roomNameRef.current,
-                          correlationId: correlationIdRef.current,
-                          roomType: "livestream",
-                          participantRole: telemetryRole
-                        }
-                      })
-                    : stabilizeLiveViewerAudio(livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
-                        settleMs: 0,
-                        context: {
-                          sessionId: roomNameRef.current,
-                          correlationId: correlationIdRef.current,
-                          roomType: "livestream",
-                          participantRole: telemetryRole
-                        }
-                      }))
-                : undefined
-              )
+              .then(() => {
+                if (publish && useV2) {
+                  return stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
+                    settleMs: 0,
+                    context: {
+                      sessionId: roomNameRef.current,
+                      correlationId: correlationIdRef.current,
+                      roomType: "livestream",
+                      participantRole: telemetryRole
+                    }
+                  });
+                }
+                if (!publish) {
+                  return stabilizeLiveViewerAudio(livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
+                    settleMs: 0,
+                    context: {
+                      sessionId: roomNameRef.current,
+                      correlationId: correlationIdRef.current,
+                      roomType: "livestream",
+                      participantRole: telemetryRole
+                    }
+                  });
+                }
+                return undefined;
+              })
               .catch(() => undefined);
           }
           refresh();
@@ -1313,6 +1352,24 @@ export function useLiveBroadcastRoom() {
                 }
               }
             )).audioTrackCount,
+            // Legacy-path recovery: restart the native recorder the camera
+            // interruption tore down, WITHOUT reconfiguring the shared audio
+            // session (that disrupts the running video pipeline). This is what
+            // actually makes the legacy host audible again.
+            recoverRecordingEngine: async () => {
+              await recoverRealtimeRecordingEngine(livekitNative.AudioDeviceModule, {
+                // Plain setActive(true) - re-activates the session the camera
+                // transition left inactive, WITHOUT reasserting the audio
+                // category (which would disrupt the running video pipeline).
+                reactivateSession: async () => { await livekitNative.AudioSession.startAudioSession?.(); },
+                context: {
+                  sessionId: roomNameRef.current,
+                  correlationId: correlationIdRef.current,
+                  roomType: "livestream",
+                  participantRole: telemetryRole
+                }
+              });
+            },
             // Read-only engine probe. Surfaces the native record/playout state
             // around the camera transition at error level (visible in Release
             // device syslog) without reconfiguring the session - the missing
@@ -1351,7 +1408,7 @@ export function useLiveBroadcastRoom() {
         }
         if (publish) await selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
         await applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current).catch(() => undefined);
-        if (useV2 && !publish) {
+        if (!publish) {
           await stabilizeLiveViewerAudio(livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
             settleMs: 0,
             context: {

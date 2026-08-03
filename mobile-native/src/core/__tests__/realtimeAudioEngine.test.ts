@@ -1,12 +1,14 @@
 import {
   activateRealtimeAudioSession,
   applyRemoteAudioEnabled,
+  enableRealtimeRecordingAlwaysPrepared,
   getActiveRealtimeAudioOwner,
   getActiveRealtimeMicrophoneOwner,
   PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
   PULSE_LIVE_VIDEO_PUBLISH_OPTIONS,
   reapplyRealtimeAudioConfiguration,
   reassertRealtimeMicrophone,
+  recoverRealtimeRecordingEngine,
   releaseRealtimeAudioSession,
   resetRealtimeAudioOwnership,
   resolveRealtimeAudioConfiguration,
@@ -254,6 +256,76 @@ describe("realtimeAudioEngine canonical audio ownership", () => {
 
     expect(reactivateSession).not.toHaveBeenCalled();
     expect(audioDeviceModule.startRecording).not.toHaveBeenCalled();
+  });
+
+  it("recoverRealtimeRecordingEngine re-inits a torn-down recorder without reconfiguring the session", async () => {
+    let engineRunning = false;
+    let playoutRunning = false;
+    let recordingRunning = false;
+    const audioDeviceModule = {
+      isEngineRunning: jest.fn(() => engineRunning),
+      isPlaying: jest.fn(() => playoutRunning),
+      isRecording: jest.fn(() => recordingRunning),
+      startPlayout: jest.fn(async () => {
+        if (!engineRunning) throw new Error("playout requires an initialized engine");
+        playoutRunning = true;
+      }),
+      startRecording: jest.fn(async () => {
+        throw new Error("recording is no longer initialized");
+      }),
+      startLocalRecording: jest.fn(async () => {
+        engineRunning = true;
+        recordingRunning = true;
+      })
+    };
+
+    const order: string[] = [];
+    audioDeviceModule.startLocalRecording.mockImplementation(async () => {
+      order.push("startLocalRecording");
+      engineRunning = true;
+      recordingRunning = true;
+    });
+    const reactivateSession = jest.fn(async () => { order.push("reactivate"); });
+
+    const status = await recoverRealtimeRecordingEngine(audioDeviceModule, { settleMs: 0, reactivateSession });
+
+    expect(status).toEqual({ engineRunning: true, playoutRunning: true, recordingRunning: true });
+    expect(audioDeviceModule.startLocalRecording).toHaveBeenCalled();
+    expect(audioDeviceModule.startPlayout).toHaveBeenCalled();
+    // The inactive session must be re-activated BEFORE the recorder restart,
+    // otherwise startLocalRecording runs against an inactive session and no-ops.
+    expect(reactivateSession).toHaveBeenCalled();
+    expect(order.indexOf("reactivate")).toBeLessThan(order.indexOf("startLocalRecording"));
+  });
+
+  it("recoverRealtimeRecordingEngine leaves a healthy engine untouched and never throws", async () => {
+    const audioDeviceModule = {
+      isEngineRunning: () => true,
+      isPlaying: () => true,
+      isRecording: () => true,
+      startPlayout: jest.fn().mockResolvedValue(undefined),
+      startRecording: jest.fn().mockResolvedValue(undefined),
+      startLocalRecording: jest.fn().mockResolvedValue(undefined)
+    };
+
+    await expect(recoverRealtimeRecordingEngine(audioDeviceModule, { settleMs: 0 })).resolves.toEqual({
+      engineRunning: true,
+      playoutRunning: true,
+      recordingRunning: true
+    });
+    expect(audioDeviceModule.startLocalRecording).not.toHaveBeenCalled();
+    expect(audioDeviceModule.startPlayout).not.toHaveBeenCalled();
+    expect(audioDeviceModule.startRecording).not.toHaveBeenCalled();
+  });
+
+  it("enableRealtimeRecordingAlwaysPrepared toggles the ADM lever when present", async () => {
+    const setRecordingAlwaysPreparedMode = jest.fn().mockResolvedValue(undefined);
+    await expect(enableRealtimeRecordingAlwaysPrepared({ setRecordingAlwaysPreparedMode })).resolves.toBe(true);
+    expect(setRecordingAlwaysPreparedMode).toHaveBeenCalledWith(true);
+
+    // Missing native method or absent module must be a no-op, never a throw.
+    await expect(enableRealtimeRecordingAlwaysPrepared({})).resolves.toBe(false);
+    await expect(enableRealtimeRecordingAlwaysPrepared(null)).resolves.toBe(false);
   });
 
   it("reapplyRealtimeAudioConfiguration restores a record-capable publisher session", async () => {
