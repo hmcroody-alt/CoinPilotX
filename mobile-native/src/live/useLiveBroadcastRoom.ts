@@ -175,6 +175,7 @@ export async function stabilizeLiveViewerAudio(
     context?: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string };
   } = {}
 ): Promise<RealtimeAudioEngineStatus> {
+  await reapplyRealtimeAudioConfiguration(audioSession, "live_viewer");
   const status = await stabilizeRealtimeAudioEngine(audioDeviceModule, {
     playout: true,
     recording: false,
@@ -183,6 +184,21 @@ export async function stabilizeLiveViewerAudio(
   });
   await selectRealtimeAudioOutput(audioSession, true).catch(() => undefined);
   return status;
+}
+
+export async function stabilizeLiveRemotePlayback(
+  room: any,
+  audioDeviceModule: any,
+  audioSession: any,
+  enabled: boolean,
+  options: {
+    settleMs?: number;
+    context?: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string };
+  } = {}
+): Promise<RealtimeAudioEngineStatus & { remoteAudioTrackCount: number }> {
+  const remoteAudioTrackCount = await applyRemoteAudioEnabled(room, enabled);
+  const status = await stabilizeLiveViewerAudio(audioDeviceModule, audioSession, options);
+  return { ...status, remoteAudioTrackCount };
 }
 
 function readableError(error: unknown, fallback: string) {
@@ -1053,8 +1069,8 @@ export function useLiveBroadcastRoom() {
           if (publish) lifecycleRef.current.tryTransition("local", "publishing");
           reconnectAttemptRef.current = 0;
           setState((current) => ({ ...current, connected: true, reconnecting: false, recovering: false, connectionState: "connected", error: "" }));
-          const audioTasks: Promise<unknown>[] = [applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current)];
-          if (publish) {
+            const audioTasks: Promise<unknown>[] = [];
+            if (publish) {
           audioTasks.push(publishMicrophoneForPath(room, useV2, {
             role: telemetryRole,
             room: roomNameRef.current,
@@ -1078,11 +1094,13 @@ export function useLiveBroadcastRoom() {
                 context: engineContext
               }));
             } else if (!publish) {
-              audioTasks.push(stabilizeLiveViewerAudio(livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
+              audioTasks.push(stabilizeLiveRemotePlayback(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, remoteAudioEnabledRef.current, {
                 settleMs: 250,
                 context: engineContext
               }));
             }
+          } else {
+            audioTasks.push(applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current));
           }
           Promise.all(audioTasks)
             .then(() => {
@@ -1190,21 +1208,18 @@ export function useLiveBroadcastRoom() {
               enabled: remoteAudioEnabledRef.current,
               subscription_state: "playing"
             });
-            applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current)
+            stabilizeLiveRemotePlayback(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, remoteAudioEnabledRef.current, {
+              settleMs: 0,
+              context: {
+                sessionId: roomNameRef.current,
+                correlationId: correlationIdRef.current,
+                roomType: "livestream",
+                participantRole: telemetryRole
+              }
+            })
               .then(() => {
                 if (publish && useV2) {
                   return stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
-                    settleMs: 0,
-                    context: {
-                      sessionId: roomNameRef.current,
-                      correlationId: correlationIdRef.current,
-                      roomType: "livestream",
-                      participantRole: telemetryRole
-                    }
-                  });
-                }
-                if (!publish) {
-                  return stabilizeLiveViewerAudio(livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
                     settleMs: 0,
                     context: {
                       sessionId: roomNameRef.current,
@@ -1418,9 +1433,8 @@ export function useLiveBroadcastRoom() {
           runtime.assertReady("LiveReadinessController");
         }
         if (publish) await selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
-        await applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current).catch(() => undefined);
         if (!publish) {
-          await stabilizeLiveViewerAudio(livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
+          await stabilizeLiveRemotePlayback(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, remoteAudioEnabledRef.current, {
             settleMs: 0,
             context: {
               sessionId: roomNameRef.current,
@@ -1622,7 +1636,15 @@ export function useLiveBroadcastRoom() {
     const room = roomRef.current;
     if (!room) throw new Error("Broadcast media is not connected.");
     remoteAudioEnabledRef.current = enabled;
-    await applyRemoteAudioEnabled(room, enabled);
+    await stabilizeLiveRemotePlayback(room, audioDeviceModuleRef.current, audioSessionRef.current, enabled, {
+      settleMs: 0,
+      context: {
+        sessionId: roomNameRef.current,
+        correlationId: correlationIdRef.current,
+        roomType: "livestream",
+        participantRole: roleRef.current
+      }
+    });
     setState((current) => ({ ...current, remoteAudioEnabled: enabled, error: "" }));
   }, []);
 

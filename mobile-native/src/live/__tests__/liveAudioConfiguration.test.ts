@@ -3,6 +3,7 @@ import {
   resolveLiveAudioConfiguration,
   shouldForceLiveSpeakerRoute,
   stabilizeLivePublisherAudio,
+  stabilizeLiveRemotePlayback,
   stabilizeLiveViewerAudio
 } from "../useLiveBroadcastRoom";
 import { isLiveAudioV2EnabledForSession, resolveLiveAudioPathForSession } from "../liveAudioFlags";
@@ -108,13 +109,45 @@ describe("post-camera Live audio stabilization", () => {
 
   it("restores viewer playout without ever starting microphone recording", async () => {
     const audioDevice = audioDeviceModule();
-    const audioSession = { selectAudioOutput: jest.fn().mockResolvedValue(undefined) };
+    const audioSession = {
+      selectAudioOutput: jest.fn().mockResolvedValue(undefined),
+      setAppleAudioConfiguration: jest.fn().mockResolvedValue(undefined)
+    };
 
     const result = await stabilizeLiveViewerAudio(audioDevice.module, audioSession, { settleMs: 0 });
 
     expect(result.playoutRunning).toBe(true);
     expect(audioDevice.module.startPlayout).toHaveBeenCalledTimes(1);
     expect(audioDevice.module.startRecording).not.toHaveBeenCalled();
+    expect(audioSession.setAppleAudioConfiguration).toHaveBeenCalledWith(expect.objectContaining({
+      audioCategory: "playAndRecord",
+      audioMode: "videoChat"
+    }));
+    expect(audioSession.selectAudioOutput).toHaveBeenCalledWith("force_speaker");
+  });
+
+  it("uses the call-grade viewer path to enable remote Live audio and restart playout", async () => {
+    const audioDevice = audioDeviceModule();
+    const track = { kind: "audio", setEnabled: jest.fn().mockResolvedValue(undefined) };
+    const room = {
+      remoteParticipants: new Map([
+        ["host", { audioTrackPublications: new Map([["mic", { track }]]) }]
+      ])
+    };
+    const audioSession = {
+      selectAudioOutput: jest.fn().mockResolvedValue(undefined),
+      setAppleAudioConfiguration: jest.fn().mockResolvedValue(undefined)
+    };
+
+    const result = await stabilizeLiveRemotePlayback(room, audioDevice.module, audioSession, true, { settleMs: 0 });
+
+    expect(result.remoteAudioTrackCount).toBe(1);
+    expect(track.setEnabled).toHaveBeenCalledWith(true);
+    expect(audioDevice.values()).toEqual({ engine: true, playing: true, recording: false });
+    expect(audioSession.setAppleAudioConfiguration).toHaveBeenCalledWith(expect.objectContaining({
+      audioCategory: "playAndRecord",
+      audioMode: "videoChat"
+    }));
     expect(audioSession.selectAudioOutput).toHaveBeenCalledWith("force_speaker");
   });
 

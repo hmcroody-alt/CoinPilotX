@@ -199,7 +199,12 @@ export function LiveScreen({ route, navigation }: Props) {
     async (liveId: number) => {
       if (room.connected || room.connecting) return;
       setLiveKitPlaybackFailed(false);
-      await claimLivePlaybackOwner("viewer", liveId, () => disconnectLiveRoom("viewer_backgrounded").then(() => undefined)).catch(() => undefined);
+      const playbackGranted = await claimLivePlaybackOwner("viewer", liveId, () => disconnectLiveRoom("viewer_backgrounded").then(() => undefined)).catch(() => false);
+      if (!playbackGranted) {
+        setLiveKitPlaybackFailed(true);
+        setError("Live audio is currently held by another active media session. Stop the other audio and retry.");
+        return;
+      }
       const credentials = await getLiveKitToken(liveId, "viewer");
       if (!credentials) {
         await releaseLivePlaybackOwner("viewer", liveId);

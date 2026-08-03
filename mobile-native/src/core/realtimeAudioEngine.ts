@@ -595,6 +595,9 @@ export async function applyRemoteAudioEnabled(room: any, enabled: boolean): Prom
   const tasks: Promise<unknown>[] = [];
   for (const remote of Array.from(room?.remoteParticipants?.values?.() || []) as any[]) {
     for (const publication of audioPublications(remote)) {
+      if (enabled && publication?.isSubscribed === false && typeof publication?.setSubscribed === "function") {
+        tasks.push(Promise.resolve(publication.setSubscribed(true)));
+      }
       const track = publication?.track;
       if (!track || publication?.isSubscribed === false) continue;
       if (typeof track.setEnabled === "function") {

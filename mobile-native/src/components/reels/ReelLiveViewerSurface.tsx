@@ -55,7 +55,11 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
         return;
       }
       setMode("connecting");
-      await claimLivePlaybackOwner("feed", liveId || reel.id || "unknown", () => disconnect("feed_live_backgrounded").then(() => undefined)).catch(() => undefined);
+      const playbackGranted = await claimLivePlaybackOwner("feed", liveId || reel.id || "unknown", () => disconnect("feed_live_backgrounded").then(() => undefined)).catch(() => false);
+      if (!playbackGranted) {
+        setMode("error");
+        return;
+      }
       try {
         const credentials = await getLiveKitToken(liveId, "viewer");
         if (cancelled) return;

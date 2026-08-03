@@ -66,6 +66,19 @@ describe("applyRemoteAudioEnabled (Issue 5: viewer mute must stick across new tr
     expect(await applyRemoteAudioEnabled(roomWithUnsubscribedPub, true)).toBe(0);
     expect(a.setEnabledCalls).toEqual([]);
   });
+
+  it("requests subscription for available remote audio when enabling Live sound", async () => {
+    const a = sdkTrack();
+    const publication = {
+      track: a,
+      isSubscribed: false,
+      setSubscribed: jest.fn().mockResolvedValue(undefined)
+    };
+    const roomWithUnsubscribedPub = { remoteParticipants: new Map([["r", { audioTrackPublications: new Map([["0", publication]]) }]]) };
+
+    expect(await applyRemoteAudioEnabled(roomWithUnsubscribedPub, true)).toBe(0);
+    expect(publication.setSubscribed).toHaveBeenCalledWith(true);
+  });
 });
 
 describe("ensureLiveMicrophonePublished", () => {
