@@ -134,7 +134,7 @@ describe("post-camera Live audio stabilization", () => {
     expect(events).toEqual(["microphone", "camera", "microphone", "guard"]);
   });
 
-  it("still restores the record engine after camera on the legacy publisher path", async () => {
+  it("keeps the legacy publisher path off the mid-broadcast audio-session guard", async () => {
     const events: string[] = [];
 
     await initializeLivePublisherMedia({
@@ -146,6 +146,9 @@ describe("post-camera Live audio stabilization", () => {
       enableCamera: async () => {
         events.push("camera");
       },
+      // Legacy must NOT run the stabilize guard: reconfiguring the shared
+      // AVAudioSession after camera startup disrupted the live video pipeline
+      // without reviving a natively torn-down recorder.
       stabilizeAudio: async () => {
         events.push("guard");
         return 1;
@@ -153,25 +156,7 @@ describe("post-camera Live audio stabilization", () => {
       wait: async () => undefined
     });
 
-    // The camera/audio race is native, so legacy must also reassert the recorder
-    // after camera startup - re-enabling the LiveKit track alone leaves it silent.
-    expect(events).toEqual(["microphone", "camera", "microphone", "guard"]);
-  });
-
-  it("keeps the legacy path fail-open when post-camera audio restoration throws", async () => {
-    const audioTrackCount = await initializeLivePublisherMedia({
-      useV2: false,
-      publishMicrophone: async () => 1,
-      enableCamera: async () => undefined,
-      // A permanently dead engine on legacy must not fail the broadcast closed:
-      // legacy keeps its verified fail-open contract.
-      stabilizeAudio: async () => {
-        throw new Error("The native real-time audio engine did not remain active.");
-      },
-      wait: async () => undefined
-    });
-
-    expect(audioTrackCount).toBe(1);
+    expect(events).toEqual(["microphone", "camera", "microphone"]);
   });
 
   it("fails closed only after the bounded post-camera guard retries are exhausted", async () => {
