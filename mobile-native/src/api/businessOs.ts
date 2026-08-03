@@ -94,6 +94,29 @@ export type BusinessOsSection = {
 };
 
 /**
+ * Whether the Business OS hub renders the light redesign with live per-card
+ * state, or the original dark sections screen.
+ *
+ * OFF, and deliberately so. The redesign's data wiring worked — live states,
+ * error retry and real zeros all rendered from the correct sources — but its
+ * typography and layout did not survive real device font scales: card titles
+ * truncated to "Busine…" and "Payme…", state lines wrapped mid-word
+ * ("complet e", "campai gn"), and the varying line lengths broke the grid into
+ * uneven, cramped rows. The product owner reverted the visuals.
+ *
+ * This flag governs presentation only. Every source the redesign consumed is
+ * still live and still consumed by the section screens; the hub simply stops
+ * reading them. `screens/BusinessHubRoute.tsx` is the only reader of this flag,
+ * and it defers its import of the light screen so nothing behind this flag is
+ * evaluated while it is false.
+ *
+ * Before turning it back on, read `docs/business_os/BUSINESS_HUB_REVERT.md`:
+ * the failure was layout robustness, so any revisit has to be proven at maximum
+ * font scale on a narrow device before it ships.
+ */
+export const HUB_LIVE_CARDS = false;
+
+/**
  * Ordered Business OS sections. `backed` reflects verified live `/api/pulse/*`
  * coverage, not aspiration.
  *

@@ -290,18 +290,12 @@ export function AppNavigator() {
       <Stack.Screen name="ReelDetail" component={ReelsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="StatusDetail" component={StatusScreen} options={({ route }) => ({ title: route.params.title || t("common:screens.status") })} />
       <Stack.Screen name="MarketplaceDetail" component={MarketplaceScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.marketplace") })} />
-      {/* `BusinessHubRoute` picks the rebuilt hub by default and the previous
-          sections screen for `mode: "classic"`. The hub draws its own navy
-          header (business name, verification tick, context line, bell), so the
-          stack header is hidden for it and kept for classic. */}
-      <Stack.Screen
-        name="BusinessOs"
-        component={BusinessHubRoute}
-        options={({ route }) => ({
-          title: route.params?.title || t("common:screens.businessOs"),
-          headerShown: route.params?.mode === "classic"
-        })}
-      />
+      {/* Back to the original stack header, unconditionally. The light hub drew
+          its own navy header, so this was briefly conditional on `mode`; the
+          redesign is reverted and the dark sections screen relies on the stack
+          header for its title, its "Native PulseSoc route" sub-line and the back
+          chevron. `BusinessHubRoute` still owns which screen renders. */}
+      <Stack.Screen name="BusinessOs" component={BusinessHubRoute} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOs") })} />
       {/* Draws its own header (back chevron, title, live badge), so the stack header is off. */}
       <Stack.Screen name="BusinessProfile" component={BusinessProfileScreen} options={{ headerShown: false }} />
       {/* Also draws its own navy header, with the search field and mode toggle in it. */}

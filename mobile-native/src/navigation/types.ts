@@ -81,9 +81,14 @@ export type RootStackParamList = {
   StatusDetail: { statusId: number; title?: string };
   MarketplaceDetail: { listingId?: number; title?: string } | undefined;
   /**
-   * One route, two screens. Default is the rebuilt Business Hub; `mode:
-   * "classic"` renders the previous sections screen. Deep links that pass
-   * neither keep working and get the hub.
+   * The dark Business OS sections screen. `mode` is retained but currently
+   * inert: the light hub redesign was reverted, so every value — including
+   * `"hub"` — renders the dark screen while `HUB_LIVE_CARDS` is false.
+   *
+   * The param is kept rather than dropped because removing it would be a
+   * breaking change to a route that push payloads and deep links already
+   * target, and because it is the opt-in half of the switch if the redesign is
+   * ever revisited. `"classic"` is now a synonym for the default.
    */
   BusinessOs: { title?: string; mode?: "hub" | "classic" } | undefined;
   BusinessProfile: { title?: string } | undefined;
