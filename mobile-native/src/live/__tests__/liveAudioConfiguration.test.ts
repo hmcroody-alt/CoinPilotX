@@ -114,4 +114,25 @@ describe("post-camera Live audio stabilization", () => {
 
     expect(events).toEqual(["microphone", "camera", "microphone", "guard"]);
   });
+
+  it("records the regression-producing camera/audio order and fails closed", async () => {
+    const events: string[] = [];
+    await expect(initializeLivePublisherMedia({
+      useV2: true,
+      publishMicrophone: async () => 1,
+      enableCamera: async () => undefined,
+      stabilizeAudio: async () => { throw new Error("The native real-time audio engine did not remain active."); },
+      trace: (event) => events.push(event)
+    })).rejects.toThrow("did not remain active");
+    expect(events).toEqual([
+      "microphone_track_create_started",
+      "microphone_publish_started",
+      "microphone_track_created",
+      "microphone_published",
+      "camera_initialization_started",
+      "camera_initialized",
+      "live_audio_active_verification_started",
+      "live_audio_active_verification_failed"
+    ]);
+  });
 });
