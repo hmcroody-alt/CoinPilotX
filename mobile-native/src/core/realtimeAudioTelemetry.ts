@@ -66,7 +66,10 @@ type EventInput = Omit<RealtimeAudioTelemetryEvent, "sessionHash" | "correlation
 };
 
 type Sink = (event: RealtimeAudioTelemetryEvent) => void;
-const defaultSink: Sink = (event) => console.info("PulseSocRealtimeAudio", event);
+// console.error (not info): iOS os_log/idevicesyslog drops info/debug in Release,
+// so these engine-state events must log at error level to reach a device's syslog
+// and reveal exactly when the native record engine stops after camera startup.
+const defaultSink: Sink = (event) => console.error("PulseSocRealtimeAudio", event);
 let sink: Sink = defaultSink;
 let correlationSequence = 0;
 

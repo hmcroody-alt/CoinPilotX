@@ -141,10 +141,12 @@ export function buildLiveAudioEvent(input: LiveAudioEventInput): LiveAudioEvent 
 type LiveAudioSink = (event: LiveAudioEvent) => void;
 
 const defaultSink: LiveAudioSink = (event) => {
-  // console.info keeps this visible in Metro/device logs without adding a
-  // dependency. Swap via setLiveAudioTelemetrySink to forward to an analytics
-  // pipeline later; the redaction happens before the sink either way.
-  console.info("PulseSocLiveAudio", event);
+  // console.error (not info): iOS os_log/idevicesyslog discards info/debug in
+  // Release, so console.info traces are invisible on a device build. error-level
+  // survives Release syslog, which is required to diagnose the on-device live
+  // audio failure. Swap via setLiveAudioTelemetrySink to forward elsewhere; the
+  // redaction happens before the sink either way.
+  console.error("PulseSocLiveAudio", event);
 };
 
 let sink: LiveAudioSink = defaultSink;

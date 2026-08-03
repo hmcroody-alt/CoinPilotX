@@ -9,6 +9,7 @@ import {
   PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
   PULSE_LIVE_VIDEO_PUBLISH_OPTIONS,
   publicationHasTrack,
+  inspectRealtimeAudioEngine,
   reapplyRealtimeAudioConfiguration,
   reassertRealtimeMicrophone,
   releaseRealtimeAudioSession,
@@ -308,6 +309,13 @@ export async function initializeLivePublisherMedia(options: {
    */
   stabilizeAttempts?: number;
   stabilizeRetryWaitMs?: number;
+  /**
+   * Read-only observation of the native audio engine at labelled points in the
+   * startup sequence. Must NOT reconfigure the session or restart the engine -
+   * it exists purely to make the post-camera recorder teardown visible in
+   * device logs without perturbing the running media pipeline.
+   */
+  probeAudio?: (phase: "after_microphone" | "after_camera") => Promise<void> | void;
   trace?: (event: "microphone_track_create_started" | "microphone_track_created" | "microphone_publish_started" | "microphone_published" | "camera_initialization_started" | "camera_initialized" | "live_audio_active_verification_started" | "live_audio_active_verification_passed" | "live_audio_active_verification_retrying" | "live_audio_active_verification_failed") => void;
 }): Promise<number> {
   const wait = options.wait || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
@@ -316,10 +324,12 @@ export async function initializeLivePublisherMedia(options: {
   let audioTrackCount = await options.publishMicrophone();
   options.trace?.("microphone_track_created");
   options.trace?.("microphone_published");
+  await options.probeAudio?.("after_microphone");
   options.trace?.("camera_initialization_started");
   await options.enableCamera();
   options.trace?.("camera_initialized");
   audioTrackCount = await options.publishMicrophone();
+  await options.probeAudio?.("after_camera");
   if (options.useV2) {
     const maxAttempts = Math.max(1, Math.floor(options.stabilizeAttempts ?? 3));
     const retryWaitMs = Math.max(0, options.stabilizeRetryWaitMs ?? 250);
@@ -1303,6 +1313,22 @@ export function useLiveBroadcastRoom() {
                 }
               }
             )).audioTrackCount,
+            // Read-only engine probe. Surfaces the native record/playout state
+            // around the camera transition at error level (visible in Release
+            // device syslog) without reconfiguring the session - the missing
+            // signal that made the legacy silent-mic failure impossible to
+            // diagnose on hardware.
+            probeAudio: (phase) => {
+              const status = inspectRealtimeAudioEngine(livekitNative.AudioDeviceModule);
+              console.error("PulseSocLiveAudioProbe", {
+                phase,
+                useV2,
+                engineRunning: status.engineRunning,
+                playoutRunning: status.playoutRunning,
+                recordingRunning: status.recordingRunning,
+                localAudioTracks: audioPublications(room.localParticipant).filter(publicationHasTrack).length
+              });
+            },
             trace: (event) => trace.emit(event, {
               room_state: String(room?.state || "connected"),
               audioGeneration: audioLeaseRef.current?.leaseId,
@@ -1431,7 +1457,7 @@ export function useLiveBroadcastRoom() {
           (total: number, remote: any) => total + audioPublications(remote).filter(publicationHasTrack).length,
           0
         );
-        console.info("PulseSoc Live media connected", {
+        console.error("PulseSoc Live media connected", {
           role: credentials.role || (publish ? "host" : "viewer"),
           room: credentials.room || "unknown",
           canPublish: credentials.canPublish,

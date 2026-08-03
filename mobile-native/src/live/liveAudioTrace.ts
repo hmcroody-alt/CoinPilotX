@@ -132,7 +132,10 @@ type TracePatch = Partial<Pick<
 
 type TraceSink = (event: LiveAudioTraceEvent) => void;
 
-const defaultSink: TraceSink = (event) => console.info("PulseSocLiveAudioTrace", event);
+// console.error (not info): iOS os_log/idevicesyslog drops info/debug in Release
+// builds, so info-level traces never reach a physical device's syslog. error
+// level survives, which is what makes the on-device audio failure observable.
+const defaultSink: TraceSink = (event) => console.error("PulseSocLiveAudioTrace", event);
 let sink: TraceSink = defaultSink;
 
 export function setLiveAudioTraceSink(next?: TraceSink | null) {
