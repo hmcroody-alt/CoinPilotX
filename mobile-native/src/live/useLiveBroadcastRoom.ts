@@ -9,6 +9,7 @@ import {
   PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
   PULSE_LIVE_VIDEO_PUBLISH_OPTIONS,
   publicationHasTrack,
+  reapplyRealtimeAudioConfiguration,
   reassertRealtimeMicrophone,
   releaseRealtimeAudioSession,
   resolveRealtimeAudioConfiguration,
@@ -153,6 +154,9 @@ export async function stabilizeLivePublisherAudio(
     playout: true,
     recording: true,
     settleMs: options.settleMs,
+    // Publishers share one record-capable config (live_host === live_guest), so
+    // restoring the host configuration is correct for any on-stage participant.
+    reactivateSession: () => reapplyRealtimeAudioConfiguration(audioSession, "live_host"),
     context: options.context
   });
   await selectRealtimeAudioOutput(audioSession, true).catch(() => undefined);
@@ -294,8 +298,19 @@ export async function initializeLivePublisherMedia(options: {
   enableCamera: () => Promise<void>;
   stabilizeAudio: () => Promise<number>;
   wait?: (milliseconds: number) => Promise<void>;
-  trace?: (event: "microphone_track_create_started" | "microphone_track_created" | "microphone_publish_started" | "microphone_published" | "camera_initialization_started" | "camera_initialized" | "live_audio_active_verification_started" | "live_audio_active_verification_passed" | "live_audio_active_verification_failed") => void;
+  /**
+   * Bounded retry budget for the post-camera engine guard. Camera startup can
+   * stop iOS RemoteIO *asynchronously*, after `stabilizeAudio`'s own settle
+   * window has closed, so a single guard pass can still observe (and fail on) an
+   * engine the SDK is about to restart. A temporary post-camera engine stop is a
+   * recoverable audio interruption, not a terminal failure: reassert the
+   * microphone and re-run the guard before failing the whole broadcast closed.
+   */
+  stabilizeAttempts?: number;
+  stabilizeRetryWaitMs?: number;
+  trace?: (event: "microphone_track_create_started" | "microphone_track_created" | "microphone_publish_started" | "microphone_published" | "camera_initialization_started" | "camera_initialized" | "live_audio_active_verification_started" | "live_audio_active_verification_passed" | "live_audio_active_verification_retrying" | "live_audio_active_verification_failed") => void;
 }): Promise<number> {
+  const wait = options.wait || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
   options.trace?.("microphone_track_create_started");
   options.trace?.("microphone_publish_started");
   let audioTrackCount = await options.publishMicrophone();
@@ -306,16 +321,29 @@ export async function initializeLivePublisherMedia(options: {
   options.trace?.("camera_initialized");
   audioTrackCount = await options.publishMicrophone();
   if (options.useV2) {
-    options.trace?.("live_audio_active_verification_started");
-    try {
-      audioTrackCount = Math.max(audioTrackCount, await options.stabilizeAudio());
-      options.trace?.("live_audio_active_verification_passed");
-    } catch (error) {
-      options.trace?.("live_audio_active_verification_failed");
-      throw error;
+    const maxAttempts = Math.max(1, Math.floor(options.stabilizeAttempts ?? 3));
+    const retryWaitMs = Math.max(0, options.stabilizeRetryWaitMs ?? 250);
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      options.trace?.("live_audio_active_verification_started");
+      try {
+        audioTrackCount = Math.max(audioTrackCount, await options.stabilizeAudio());
+        options.trace?.("live_audio_active_verification_passed");
+        return audioTrackCount;
+      } catch (error) {
+        if (attempt >= maxAttempts) {
+          options.trace?.("live_audio_active_verification_failed");
+          throw error;
+        }
+        options.trace?.("live_audio_active_verification_retrying");
+        // Reassert the microphone the camera transition may have torn, then let
+        // the async RemoteIO teardown settle before the next guard pass. The V2
+        // publisher reconciles duplicates, so this reassert is idempotent.
+        audioTrackCount = Math.max(audioTrackCount, await options.publishMicrophone().catch(() => audioTrackCount));
+        await wait(retryWaitMs);
+      }
     }
   } else {
-    await (options.wait || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))))(150);
+    await wait(150);
   }
   return audioTrackCount;
 }
@@ -1408,10 +1436,26 @@ export function useLiveBroadcastRoom() {
         });
         return true;
       } catch (error) {
-        const message = readableError(error, "Native LiveKit broadcast connection failed.");
+        // The exact internal reason (e.g. "native real-time audio engine did not
+        // remain active", REALTIME_AUDIO_ENGINE_INACTIVE) is already in the audio
+        // trace/telemetry. Do not surface raw engine internals as the only
+        // user-facing diagnostic (mission Error Model); map the known audio-startup
+        // failure to a typed code and a plain, actionable message instead.
+        const engineInactive =
+          (error as { code?: string } | null)?.code === "REALTIME_AUDIO_ENGINE_INACTIVE" ||
+          /engine did not remain active/i.test(readableError(error, ""));
+        const message = engineInactive
+          ? "Broadcast audio could not stay active while the camera started. Please try going live again."
+          : readableError(error, "Native LiveKit broadcast connection failed.");
         lastConnectErrorRef.current = message;
         await disconnect("connect_failed").catch(() => undefined);
-        setState((current) => ({ ...current, connectionState: "failed", error: message, disconnectReason: "connect_failed", diagnosticCode: "LIVEKIT_CONNECT_FAILED" }));
+        setState((current) => ({
+          ...current,
+          connectionState: "failed",
+          error: message,
+          disconnectReason: "connect_failed",
+          diagnosticCode: engineInactive ? "LIVE_AUDIO_PUBLICATION_FAILED" : "LIVEKIT_CONNECT_FAILED"
+        }));
         return false;
       }
     },

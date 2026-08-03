@@ -291,6 +291,28 @@ export async function resetRealtimeAudioOwnership(audioSession?: LiveKitAudioSes
   await audioSession?.stopAudioSession?.().catch(() => undefined);
 }
 
+/**
+ * Re-apply a publisher's Apple audio configuration onto the shared session.
+ *
+ * Enabling the camera on iOS routes through the same AVAudioSession the WebRTC
+ * engine records from. Camera capture can reconfigure that session's category or
+ * mode away from `playAndRecord`/`videoChat`, which is a state the record engine
+ * cannot restart into — the physical "engine did not remain active" failure.
+ * Re-asserting our owner-chosen configuration restores a record-capable session
+ * before the engine guard tries to restart the ADM. It is idempotent: when the
+ * session already holds this configuration, the native call is a no-op.
+ */
+export async function reapplyRealtimeAudioConfiguration(
+  audioSession: LiveKitAudioSession | null | undefined,
+  mode: RealtimeAudioMode
+): Promise<void> {
+  if (Platform.OS !== "ios" || !audioSession) return;
+  const config = resolveRealtimeAudioConfiguration(mode);
+  if (typeof audioSession.setAppleAudioConfiguration === "function") {
+    await audioSession.setAppleAudioConfiguration(config).catch(() => undefined);
+  }
+}
+
 export async function selectRealtimeAudioOutput(audioSession: LiveKitAudioSession, speakerEnabled: boolean): Promise<void> {
   const output = Platform.OS === "ios" ? (speakerEnabled ? "force_speaker" : "default") : speakerEnabled ? "speaker" : "earpiece";
   await audioSession.selectAudioOutput?.(output);
@@ -332,6 +354,13 @@ export async function stabilizeRealtimeAudioEngine(
     playout: boolean;
     recording: boolean;
     settleMs?: number;
+    /**
+     * Re-establish the owner's AVAudioSession configuration when the engine is
+     * found stopped, BEFORE the ADM restart. Camera startup can leave the shared
+     * session in a non-record-capable state; restarting the recorder against it
+     * silently no-ops. Supplied by the publisher path only.
+     */
+    reactivateSession?: () => Promise<void>;
     context?: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string };
   }
 ): Promise<RealtimeAudioEngineStatus> {
@@ -346,6 +375,13 @@ export async function stabilizeRealtimeAudioEngine(
   const enforce = async () => {
     const before = inspectRealtimeAudioEngine(audioDeviceModule);
     const engineStopped = before.engineRunning === false;
+
+    // The camera can reconfigure the shared AVAudioSession out from under the
+    // WebRTC recorder. Restore the record-capable session first, otherwise the
+    // ADM restart below runs against a session it cannot start into.
+    if (engineStopped && options.reactivateSession) {
+      await options.reactivateSession().catch(() => undefined);
+    }
 
     // `startRecording` only resumes an already-initialized WebRTC recorder.
     // Camera startup can tear the underlying ADM down completely, which is the

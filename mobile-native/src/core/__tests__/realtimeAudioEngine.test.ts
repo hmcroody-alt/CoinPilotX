@@ -5,6 +5,7 @@ import {
   getActiveRealtimeMicrophoneOwner,
   PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
   PULSE_LIVE_VIDEO_PUBLISH_OPTIONS,
+  reapplyRealtimeAudioConfiguration,
   reassertRealtimeMicrophone,
   releaseRealtimeAudioSession,
   resetRealtimeAudioOwnership,
@@ -205,6 +206,62 @@ describe("realtimeAudioEngine canonical audio ownership", () => {
     expect(audioDeviceModule.startLocalRecording).toHaveBeenCalledTimes(1);
     expect(audioDeviceModule.startRecording).not.toHaveBeenCalled();
     expect(audioDeviceModule.startPlayout).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-establishes the audio session before restarting the ADM when the engine is stopped", async () => {
+    const order: string[] = [];
+    let engineRunning = false;
+    const audioDeviceModule = {
+      isEngineRunning: () => engineRunning,
+      isPlaying: () => engineRunning,
+      isRecording: () => engineRunning,
+      startPlayout: jest.fn(async () => { order.push("startPlayout"); engineRunning = true; }),
+      startRecording: jest.fn(async () => { order.push("startRecording"); engineRunning = true; })
+    };
+    const reactivateSession = jest.fn(async () => { order.push("reactivate"); });
+
+    const status = await stabilizeRealtimeAudioEngine(audioDeviceModule, {
+      playout: true,
+      recording: true,
+      settleMs: 0,
+      reactivateSession
+    });
+
+    expect(status.engineRunning).toBe(true);
+    expect(reactivateSession).toHaveBeenCalledTimes(1);
+    // The record-capable session must be restored BEFORE the recorder restart,
+    // otherwise startRecording runs against the camera-reconfigured session.
+    expect(order[0]).toBe("reactivate");
+    expect(order.indexOf("reactivate")).toBeLessThan(order.indexOf("startRecording"));
+  });
+
+  it("does not disturb a healthy running engine with a session re-activation", async () => {
+    const audioDeviceModule = {
+      isEngineRunning: () => true,
+      isPlaying: () => true,
+      isRecording: () => true,
+      startPlayout: jest.fn().mockResolvedValue(undefined),
+      startRecording: jest.fn().mockResolvedValue(undefined)
+    };
+    const reactivateSession = jest.fn().mockResolvedValue(undefined);
+
+    await stabilizeRealtimeAudioEngine(audioDeviceModule, {
+      playout: true,
+      recording: true,
+      settleMs: 0,
+      reactivateSession
+    });
+
+    expect(reactivateSession).not.toHaveBeenCalled();
+    expect(audioDeviceModule.startRecording).not.toHaveBeenCalled();
+  });
+
+  it("reapplyRealtimeAudioConfiguration restores a record-capable publisher session", async () => {
+    const audioSession = { setAppleAudioConfiguration: jest.fn().mockResolvedValue(undefined) };
+    await reapplyRealtimeAudioConfiguration(audioSession, "live_host");
+    expect(audioSession.setAppleAudioConfiguration).toHaveBeenCalledWith(
+      expect.objectContaining({ audioCategory: "playAndRecord", audioMode: "videoChat" })
+    );
   });
 
   it("reasserts an existing microphone without creating a second publication", async () => {

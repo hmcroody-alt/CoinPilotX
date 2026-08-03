@@ -20,6 +20,7 @@ export type LiveAudioTraceEventName =
   | "microphone_published"
   | "live_audio_active_verification_started"
   | "live_audio_active_verification_passed"
+  | "live_audio_active_verification_retrying"
   | "live_audio_active_verification_failed"
   | "audio_owner_release_requested"
   | "audio_session_deactivation_requested"
