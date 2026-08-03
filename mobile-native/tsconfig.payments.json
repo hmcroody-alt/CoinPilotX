@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "skipLibCheck": true },
+  "include": [
+    "src/api/paymentsHub.ts",
+    "src/theme/paymentsLight.ts",
+    "src/theme/paymentsMotion.ts",
+    "src/components/payments/**/*.ts",
+    "src/components/payments/**/*.tsx",
+    "src/screens/BusinessOsPaymentsScreen.tsx"
+  ]
+}

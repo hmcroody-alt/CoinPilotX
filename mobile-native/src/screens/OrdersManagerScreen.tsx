@@ -35,7 +35,9 @@ import {
   SellerOrdersModel,
   UnifiedOrder,
   loadBuyerOrdersModel,
-  loadSellerOrdersModel
+  loadSellerOrdersModel,
+  ordersAwaitingSeller,
+  ordersInTransitForBuyer
 } from "../api/ordersDashboard";
 import {
   BuyAgainRail,
@@ -161,18 +163,10 @@ export function OrdersManagerScreen({ route, navigation }: Props) {
   const sellerOrders = sellerModel?.orders || [];
   const buyerOrders = buyerModel?.orders || [];
 
-  const sellerUrgency = useMemo(
-    () =>
-      sellerOrders.filter(
-        (o) => o.overlay === "none" && o.status !== "delivered" && o.status !== "complete"
-      ).length,
-    [sellerOrders]
-  );
-  const buyerUrgency = useMemo(
-    () =>
-      buyerOrders.filter((o) => o.status === "shipped" || o.status === "pickup_scheduled").length,
-    [buyerOrders]
-  );
+  // Both counts come from `api/ordersDashboard` rather than being filtered here,
+  // so the Business Hub's Orders card and this strip cannot drift apart.
+  const sellerUrgency = useMemo(() => ordersAwaitingSeller(sellerOrders), [sellerOrders]);
+  const buyerUrgency = useMemo(() => ordersInTransitForBuyer(buyerOrders), [buyerOrders]);
 
   /* -------------------------------------------------------------- *
    * Bodies — both mounted, inactive one display:none, so each keeps
