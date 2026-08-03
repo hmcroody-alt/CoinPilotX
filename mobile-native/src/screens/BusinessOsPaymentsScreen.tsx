@@ -43,6 +43,29 @@
  * The ad wallet comes through `fetchAdWallet`, which is Advertising's own call.
  * The refund count comes from the same query behind Orders' "Returns & issues"
  * tile. Divergence between screens is a bug, so neither figure is recomputed.
+ *
+ * One shell, one header, one error
+ * --------------------------------
+ * This screen shipped with two of each. It was the only Business OS screen
+ * registered *without* `headerShown: false` while still drawing its own
+ * gradient header, so the stack header and the screen header both rendered:
+ * two titles, two back chevrons, one of them stacked on the other. The route is
+ * now registered like every other business screen and this header is the only
+ * one. It renders `route.params.title` rather than a hard-coded "Payments",
+ * because Advertising arrives here saying "Ad wallet" and Orders saying
+ * "Payouts" — that context used to be carried by the stack header, and dropping
+ * it along with the duplicate would have been a quieter regression than the one
+ * being fixed.
+ *
+ * The failure story was told three times over: an em dash in the hero with a
+ * Retry hung off it, a hero sub-line saying the balance could not be read, and
+ * a separate error card below with a second Retry. Three statements of one fact
+ * read as three faults. The hero now shows the dash alone — a statement about
+ * the number — and `PaymentsError` is the single place that explains the
+ * failure, offers the one retry, and carries a support reference the seller can
+ * quote. The "display problem, not a change to your money" sentence is kept
+ * verbatim, because it is the most important sentence on the screen; it is now
+ * said once.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -71,6 +94,7 @@ import {
   payoutIsScheduled,
   payoutMethodState,
   statementsAreLive,
+  supportReferenceFor,
   taxDocumentsAreLive
 } from "../api/paymentsHub";
 import {
@@ -102,8 +126,19 @@ type Navigation = {
   goBack?: () => void;
 };
 
-export function BusinessOsPaymentsScreen({ navigation }: { navigation?: Navigation } = {}) {
+/**
+ * Callers arrive here with a context word — Advertising sends "Ad wallet",
+ * Orders sends "Payouts". It used to land in the stack header; now that this
+ * screen owns the only header, it lands here.
+ */
+type PaymentsRoute = { params?: { title?: string; accountId?: number } };
+
+export function BusinessOsPaymentsScreen({
+  navigation,
+  route
+}: { navigation?: Navigation; route?: PaymentsRoute } = {}) {
   const insets = useSafeAreaInsets();
+  const headerTitle = route?.params?.title || "Payments";
 
   const [overview, setOverview] = useState<SellerMoneyOverview | null>(null);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
@@ -115,8 +150,15 @@ export function BusinessOsPaymentsScreen({ navigation }: { navigation?: Navigati
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  /** A *fresh* balance read that failed. Drives "—" plus retry, never a cache. */
+  /** A *fresh* balance read that failed. Drives "—" plus one error card, never a cache. */
   const [balanceError, setBalanceError] = useState(false);
+  /**
+   * Minted at the moment of failure and held until the next successful read, so
+   * the code the seller reads to support is the time it broke rather than the
+   * time they got through. Cleared on success — a reference with no live failure
+   * behind it would be a code for nothing.
+   */
+  const [supportReference, setSupportReference] = useState<string | null>(null);
   /** Set only when figures on screen came from cache. Always paired with a time. */
   const [offlineAsOf, setOfflineAsOf] = useState<string | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -176,6 +218,7 @@ export function BusinessOsPaymentsScreen({ navigation }: { navigation?: Navigati
       if (moneyResult.status === "fulfilled") {
         setOverview(moneyResult.value);
         setBalanceError(false);
+        setSupportReference(null);
       } else {
         // A cached balance may be shown only under an "as of" label, so the
         // label is the precondition — not a decoration added afterwards. If the
@@ -188,10 +231,12 @@ export function BusinessOsPaymentsScreen({ navigation }: { navigation?: Navigati
         if (cached && clock) {
           setOverview(cached.overview);
           setBalanceError(false);
+          setSupportReference(null);
           stale = clock;
         } else {
           setOverview(null);
           setBalanceError(true);
+          setSupportReference(supportReferenceFor());
         }
       }
 
@@ -284,11 +329,14 @@ export function BusinessOsPaymentsScreen({ navigation }: { navigation?: Navigati
   );
 
   const heroAmount = balanceError ? "—" : formatMoney(overview?.available_cents ?? null, currency);
-  const heroSubline = overview
-    ? describeAvailability(overview)
-    : balanceError
-      ? "We could not read your balance just now."
-      : "";
+  /**
+   * Empty on failure, deliberately. The hero's job during an outage is to stop
+   * asserting a number; explaining the outage is `PaymentsError`'s job, and it
+   * used to be done in both places at once. The hero still announces
+   * "Unavailable" to assistive technology, so nothing is lost for a seller who
+   * cannot see the dash.
+   */
+  const heroSubline = overview ? describeAvailability(overview) : "";
 
   return (
     <View style={styles.screen}>
@@ -308,12 +356,26 @@ export function BusinessOsPaymentsScreen({ navigation }: { navigation?: Navigati
           >
             <Ionicons name="chevron-back" size={22} color={paymentsLight.text.onDark} />
           </Pressable>
-          <Text style={styles.headerTitle} allowFontScaling numberOfLines={1}>
-            Payments
+          {/* The only title on this screen. Two lines rather than one, and a
+              ceiling on growth, because "Ad wallet" at a large text size on a
+              narrow device is the same clipping failure Tier 0.1 closed on the
+              quick-link tiles — a header is not exempt from it. */}
+          <Text
+            style={styles.headerTitle}
+            allowFontScaling
+            numberOfLines={2}
+            ellipsizeMode="tail"
+            maxFontSizeMultiplier={1.5}
+            accessibilityRole="header"
+          >
+            {headerTitle}
           </Text>
           <View style={styles.back} />
         </View>
 
+        {/* No `onRetry`. The single retry lives on the error card below, where
+            the sentence explaining what to retry is. Two retries for one action
+            invited the seller to wonder whether they did different things. */}
         <BalanceHero
           availableCents={balanceError ? null : overview?.available_cents ?? null}
           formattedAmount={heroAmount}
@@ -322,7 +384,6 @@ export function BusinessOsPaymentsScreen({ navigation }: { navigation?: Navigati
           asOfLabel={offlineAsOf}
           reducedMotion={reducedMotion}
           ready={!loading}
-          onRetry={balanceError ? () => load("refresh").catch(() => undefined) : undefined}
         />
       </LinearGradient>
 
@@ -342,7 +403,10 @@ export function BusinessOsPaymentsScreen({ navigation }: { navigation?: Navigati
         {!loading && offlineAsOf ? <PaymentsOffline asOf={offlineAsOf} /> : null}
 
         {!loading && balanceError ? (
-          <PaymentsError onRetry={() => load("refresh").catch(() => undefined)} />
+          <PaymentsError
+            onRetry={() => load("refresh").catch(() => undefined)}
+            supportReference={supportReference}
+          />
         ) : null}
 
         {!loading && !balanceError ? (
@@ -577,8 +641,10 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: paymentsLight.text.onDark,
+    flex: 1,
     fontSize: 16,
-    fontWeight: "700"
+    fontWeight: "700",
+    textAlign: "center"
   },
   ledger: {
     marginTop: paymentsLight.space.section

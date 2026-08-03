@@ -140,8 +140,14 @@ beforeEach(() => {
   mockCachedActivity.mockResolvedValue(null);
 });
 
-async function renderScreen() {
-  const view = render(<BusinessOsPaymentsScreen />);
+/**
+ * `route` is optional because the screen is reached two ways: from the Business
+ * hub with no params, and from Advertising or Orders with a context title. Both
+ * paths have to be renderable here, since the header this screen draws is now
+ * the *only* header — there is no stack header behind it to fall back on.
+ */
+async function renderScreen(route?: { params?: { title?: string; accountId?: number } }) {
+  const view = render(<BusinessOsPaymentsScreen route={route} />);
   await waitFor(() => expect(view.queryByLabelText("Loading your balances")).toBeNull());
   return view;
 }
@@ -295,6 +301,79 @@ describe("Payments money hub", () => {
     mockLedger.mockResolvedValue(page([]));
     const view = await renderScreen();
     expect(view.getByText("No money movement yet")).toBeTruthy();
+  });
+
+  /**
+   * Tier 0.2. The shell defect was structural, not cosmetic: this screen was the
+   * only Business OS route left without `headerShown: false` while drawing its
+   * own gradient header, so it rendered two titles and two back chevrons. The
+   * error surface had the matching problem — one failure stated three times with
+   * two retries attached. Both classes of defect are invisible to a test that
+   * only checks that the right words appear *somewhere*, so these assert counts.
+   */
+  describe("one shell, one header, one error", () => {
+    it("renders exactly one header title, and no second title behind it", async () => {
+      const view = await renderScreen();
+      expect(view.getAllByText("Payments")).toHaveLength(1);
+      expect(view.getAllByRole("header").filter((n) => n.props.children === "Payments")).toHaveLength(
+        1
+      );
+    });
+
+    /**
+     * Advertising and Orders arrive here with their own context. That title used
+     * to be rendered by the stack header; now that the stack header is gone, the
+     * screen has to render it or the context is silently lost.
+     */
+    it("carries the caller's context title instead of a hard-coded 'Payments'", async () => {
+      const view = await renderScreen({ params: { title: "Ad wallet", accountId: 7 } });
+      const headers = view.getAllByRole("header").filter((n) => n.props.children === "Ad wallet");
+      expect(headers).toHaveLength(1);
+      expect(view.queryAllByText("Payments")).toHaveLength(0);
+    });
+
+    it("states a failed balance read once, with one retry and not two", async () => {
+      mockOverview.mockRejectedValue(new Error("Balances unavailable."));
+      const view = await renderScreen();
+
+      expect(view.getAllByText("Try again")).toHaveLength(1);
+      expect(view.getAllByText("Balances unavailable")).toHaveLength(1);
+      expect(
+        view.queryAllByText(/we could not read your balance just now/i)
+      ).toHaveLength(0);
+      expect(
+        view.getAllByText(/this is a display problem, not a change to your money/i)
+      ).toHaveLength(1);
+    });
+
+    /**
+     * "It was broken" is not something a seller can usefully tell support about
+     * their own money. The reference is minted at failure time and shaped so it
+     * can be read aloud over the phone.
+     */
+    it("gives the seller a quotable reference for the failure", async () => {
+      mockOverview.mockRejectedValue(new Error("Balances unavailable."));
+      const view = await renderScreen();
+
+      const reference = view.getByText(/^Reference PAY-/);
+      expect(String(reference.props.children)).toMatch(/^Reference PAY-\d{8}-\d{4}-[0-9A-Z]{2}$/);
+      // Copyable rather than transcribable, and spelled out to assistive tech.
+      expect(reference.props.selectable).toBe(true);
+    });
+
+    /** A reference with no live failure behind it would be a code for nothing. */
+    it("clears the reference once the retry succeeds", async () => {
+      mockOverview.mockRejectedValueOnce(new Error("Balances unavailable."));
+      const view = await renderScreen();
+      expect(view.getByText(/^Reference PAY-/)).toBeTruthy();
+
+      await act(async () => {
+        fireEvent.press(view.getByText("Try again"));
+      });
+
+      await waitFor(() => expect(view.getByLabelText(/Available for payout, \$42\.00/)).toBeTruthy());
+      expect(view.queryByText(/^Reference PAY-/)).toBeNull();
+    });
   });
 
   it("surfaces a failed payout with the provider's real reason", async () => {

@@ -7,7 +7,7 @@
  * Each component below is written against a specific way that could go wrong.
  */
 
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { paymentsLight } from "../../theme/paymentsLight";
 
 /**
@@ -63,15 +63,36 @@ export function PaymentsEmpty({ hasPayoutMethod }: { hasPayoutMethod: boolean })
 }
 
 /**
- * A balance read that failed.
+ * A balance read that failed. **The only place on this screen that says so.**
  *
  * Says what it does not know, not what the money is. There is no cached figure
  * shown here on purpose — a stale balance rendered during a fresh-read failure
  * is a number presented as current, which is the one thing the brief rules out
  * for balances specifically. Cached figures appear only in `PaymentsOffline`,
  * where they carry a timestamp.
+ *
+ * ## Why this is the single error surface
+ *
+ * The screen used to state the same failure three times: an em dash in the hero
+ * with a Retry attached to it, a sub-line reading "We could not read your
+ * balance just now", and then this card with a second Try again underneath.
+ * Three statements of one fact read as three faults, and two retries for one
+ * action leaves the seller wondering whether they do different things. The hero
+ * now shows only the dash — which is a statement about the number, not about
+ * the system — and everything the seller needs to *understand and act on* the
+ * failure is here, once.
+ *
+ * `supportReference` exists because "it was broken" is not a thing a seller can
+ * usefully tell support about their money. See `supportReferenceFor` for why it
+ * is a timestamp rather than an opaque token.
  */
-export function PaymentsError({ onRetry }: { onRetry?: () => void }) {
+export function PaymentsError({
+  onRetry,
+  supportReference
+}: {
+  onRetry?: () => void;
+  supportReference?: string | null;
+}) {
   return (
     <View style={styles.message} accessible accessibilityLiveRegion="polite">
       <Text style={styles.messageTitle} allowFontScaling>
@@ -82,8 +103,31 @@ export function PaymentsError({ onRetry }: { onRetry?: () => void }) {
         display problem, not a change to your money.
       </Text>
       {onRetry ? (
-        <Text style={styles.retryHint} allowFontScaling onPress={onRetry} accessibilityRole="button">
-          Try again
+        <Pressable
+          onPress={onRetry}
+          style={styles.retry}
+          accessibilityRole="button"
+          accessibilityLabel="Try again"
+          hitSlop={8}
+        >
+          <Text style={styles.retryText} allowFontScaling>
+            Try again
+          </Text>
+        </Pressable>
+      ) : null}
+      {supportReference ? (
+        // Selectable so the seller can copy it rather than transcribe it, and
+        // spoken as separated characters because a screen reader reading
+        // "PAY-20260803-0914-3O" as a word helps nobody quote it.
+        <Text
+          style={styles.reference}
+          allowFontScaling
+          selectable
+          accessibilityLabel={`If you contact support, quote reference ${supportReference
+            .split("")
+            .join(" ")}`}
+        >
+          {`Reference ${supportReference}`}
         </Text>
       ) : null}
     </View>
@@ -193,13 +237,26 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18
   },
-  retryHint: {
+  retry: {
+    alignSelf: "flex-start",
+    borderColor: paymentsLight.border.secondaryButton,
+    borderRadius: paymentsLight.radius.control,
+    borderWidth: 1,
+    justifyContent: "center",
     marginTop: 12,
+    minHeight: paymentsLight.size.tapTarget,
+    paddingHorizontal: 18
+  },
+  retryText: {
     color: paymentsLight.text.link,
     fontSize: 14,
-    fontWeight: "700",
-    minHeight: paymentsLight.size.tapTarget,
-    textAlignVertical: "center"
+    fontWeight: "700"
+  },
+  reference: {
+    marginTop: 10,
+    color: paymentsLight.text.muted,
+    fontSize: 12,
+    fontVariant: ["tabular-nums"]
   },
   offline: {
     marginHorizontal: paymentsLight.space.gutter,

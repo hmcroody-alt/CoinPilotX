@@ -355,7 +355,23 @@ export function AppNavigator() {
           headerShown: false
         })}
       />
-      <Stack.Screen name="BusinessOsPayments" component={BusinessOsPaymentsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsPayments") })} />
+      {/* Payments draws its own gradient header — back chevron, title and the
+          balance hero, all inside it — but was the one business screen still
+          registered with the stack header on, so it shipped with two headers,
+          two titles and two back chevrons stacked on each other. It now matches
+          Insights above. The title is still declared so the route keeps its
+          name for deep links and history, and the screen reads
+          `route.params.title` for the header it draws, so the context word
+          callers send ("Ad wallet" from Advertising, "Payouts" from Orders)
+          survives the stack header going away. */}
+      <Stack.Screen
+        name="BusinessOsPayments"
+        component={BusinessOsPaymentsScreen}
+        options={({ route }) => ({
+          title: route.params?.title || t("common:screens.businessOsPayments"),
+          headerShown: false
+        })}
+      />
       {/* `SellerStoreRoute` picks the rebuilt dashboard for `mode: "dashboard"`
           and `SellerStoreScreen` for every other mode. The dashboard draws its
           own navy header with a back chevron and title, so the stack header is

@@ -469,6 +469,38 @@ export function formatMoney(cents: number | null | undefined, currency = "USD"):
   }
 }
 
+/**
+ * A quotable reference for a money failure the seller is looking at.
+ *
+ * A seller staring at an em dash where their balance should be needs something
+ * to say when they contact support beyond "it was broken". This is that thing.
+ *
+ * It is deliberately derived from the wall clock and nothing else. There is no
+ * server-issued correlation id on these endpoints, and minting a random opaque
+ * token would look like one — a code that appears to identify a record support
+ * can look up, when in fact no record exists, is worse than no code at all. A
+ * timestamp is the one identifier that is genuinely useful here: support can
+ * correlate it against server logs for that seller at that minute, and it is
+ * honest about being nothing more than "when this happened".
+ *
+ * Minute resolution, not second, so that a seller reading it aloud over the
+ * phone gets it right and so that two failures inside the same minute do not
+ * imply two different incidents. The two trailing characters are the local UTC
+ * offset in quarter-hours, base-36, which is what makes a code from a seller in
+ * Lagos distinguishable from one in Los Angeles without asking them.
+ */
+export function supportReferenceFor(when: Date = new Date()): string {
+  if (Number.isNaN(when.getTime())) return "";
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const date = `${when.getFullYear()}${pad(when.getMonth() + 1)}${pad(when.getDate())}`;
+  const time = `${pad(when.getHours())}${pad(when.getMinutes())}`;
+  // `getTimezoneOffset` is minutes *behind* UTC, so it is negated to read the
+  // way a person would say it. Offset by 48 quarter-hours keeps it non-negative
+  // across the whole −12…+14 range so the code never contains a sign.
+  const quarterHours = Math.round(-when.getTimezoneOffset() / 15) + 48;
+  return `PAY-${date}-${time}-${quarterHours.toString(36).toUpperCase().padStart(2, "0")}`;
+}
+
 /** The amount as it appears on a ledger row, sign included. */
 export function formatSignedAmount(entry: LedgerEntry): string {
   const magnitude = formatMoney(Math.abs(entry.amount_cents), entry.currency);
