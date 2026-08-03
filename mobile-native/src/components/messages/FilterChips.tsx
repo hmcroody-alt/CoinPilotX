@@ -1,8 +1,13 @@
 /**
- * The triage rail: All / Unread / Offers / Orders / Starred / Archived, each with
- * a live count. The Unread count turns hot-orange when nonzero to pull the eye to
- * the one control that means "money-relevant threads are waiting" — every other
- * count stays quiet.
+ * The triage rail, each chip with a live count. The Unread count turns hot-orange
+ * when nonzero to pull the eye to the one control that means "money-relevant
+ * threads are waiting" — every other count stays quiet.
+ *
+ * Which chips appear depends on `inboxFilterRail()`. With the Tier 0.4 split on
+ * the rail is All / Unread / Marketplace / Store support / Orders / Returns /
+ * Disputes; with it off the pre-0.4 rail is unchanged. This rail is the commerce
+ * side's own control and is never shared with the Messenger tab — the two inboxes
+ * do not sit behind one list component.
  *
  * Selection persistence is the screen's job (it writes the chosen filter to
  * storage); this component is controlled — it renders `active` and reports taps.
@@ -11,16 +16,20 @@
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Pressable } from "react-native";
 import { messagesLight } from "../../theme/messagesLight";
-import { FilterCounts, InboxFilter } from "../../api/commerceInbox";
+import { FilterCounts, InboxFilter, inboxFilterRail } from "../../api/commerceInbox";
 
-const ORDER: { key: InboxFilter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "unread", label: "Unread" },
-  { key: "offers", label: "Offers" },
-  { key: "orders", label: "Orders" },
-  { key: "starred", label: "Starred" },
-  { key: "archived", label: "Archived" }
-];
+export const FILTER_LABELS: Record<InboxFilter, string> = {
+  all: "All",
+  unread: "Unread",
+  marketplace: "Marketplace",
+  store_support: "Store support",
+  orders: "Orders",
+  returns: "Returns",
+  disputes: "Disputes",
+  offers: "Offers",
+  starred: "Starred",
+  archived: "Archived"
+};
 
 export function FilterChips({
   active,
@@ -38,7 +47,8 @@ export function FilterChips({
       contentContainerStyle={styles.rail}
       accessibilityRole="tablist"
     >
-      {ORDER.map(({ key, label }) => {
+      {inboxFilterRail().map((key) => {
+        const label = FILTER_LABELS[key];
         const isActive = active === key;
         const count = counts[key] ?? 0;
         const hot = key === "unread" && count > 0;

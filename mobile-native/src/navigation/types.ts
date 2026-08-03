@@ -116,8 +116,13 @@ export type RootStackParamList = {
    * The rebuilt commerce inbox (Business "Messages" card). Draws its own navy
    * header; every row is about a money object surfaced via a context chip. The
    * old Messenger tab stays intact — this is the Business-surface entry point.
+   *
+   * `focusConversationId` is how a commerce entry point ("Contact Seller") hands
+   * a thread over: the inbox is pushed first and opens the thread itself, so Back
+   * lands in the commerce inbox rather than in the social messenger — which is the
+   * whole reason the entry point routes through it.
    */
-  BusinessOsMessages: { title?: string } | undefined;
+  BusinessOsMessages: { title?: string; focusConversationId?: number } | undefined;
   /**
    * The rebuilt hosted-events manager (Business "Events" card, EVENTS_CARD_CONFIG).
    * Draws its own navy header with the Upcoming/Past/Drafts tabs. Distinct from

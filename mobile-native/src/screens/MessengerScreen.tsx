@@ -13,6 +13,7 @@ import {
   PULSE_AI_DISPLAY_NAME,
   subscribeConversationUpdates
 } from "../api/messenger";
+import { conversationSplitEnabled } from "../api/conversationDomain";
 import { PulseApiError } from "../api/pulseApi";
 import { PulseCommandAvatar, PulseCommandPanel, PulseCommandSegmentRail } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
@@ -37,6 +38,7 @@ const LAST_CONVERSATION_KEY = "pulsesoc.native.messenger.last_conversation";
 const DEFAULT_UNDX_AI_CONVERSATION: MessengerConversation = {
   id: PULSE_AI_CONVERSATION_ID,
   conversation_id: PULSE_AI_CONVERSATION_ID,
+  conversation_domain: "SOCIAL",
   title: PULSE_AI_DISPLAY_NAME,
   conversation_type: "ai",
   latest_message: "Message UNDX",
@@ -73,7 +75,9 @@ export function MessengerScreen() {
     else setLoading(true);
     setError("");
     try {
-      const nextConversations = await listConversations();
+      // "social" is not a display filter — it is the scope the query runs in, so
+      // a marketplace or dispute thread is never in the result to begin with.
+      const nextConversations = await listConversations("social");
       if (sequence !== loadSequence.current) return;
       setConversations(nextConversations);
     } catch (loadError) {
@@ -81,7 +85,7 @@ export function MessengerScreen() {
       if (loadError instanceof PulseApiError && loadError.status === 401) {
         requestReauthentication("/pulse/messages");
       }
-      const cached = await loadCachedConversations();
+      const cached = await loadCachedConversations("social");
       setConversations(cached);
       setError(loadError instanceof Error ? loadError.message : "Messenger could not load.");
     } finally {
@@ -96,14 +100,18 @@ export function MessengerScreen() {
     if (!validQaFilter) AsyncStorage.getItem(FILTER_KEY).then((value) => {
       if (["all", "direct", "groups", "rooms", "ai", "unread"].includes(value || "")) setSelectedFilter(value as ConversationFilter);
     }).catch(() => undefined);
-    loadCachedConversations().then((cached) => cached.length && setConversations(cached));
+    loadCachedConversations("social").then((cached) => cached.length && setConversations(cached));
     return subscribeConversationUpdates((conversation) => {
+      // The live listener is shared plumbing (see the Tier 0.4 shared-infra rule),
+      // so the social list has to reject a commerce thread on arrival rather than
+      // trust that only social threads are broadcast.
+      if (conversationSplitEnabled() && conversation.conversation_domain !== "SOCIAL") return;
       setConversations((current) => [conversation, ...current.filter((item) => item.id !== conversation.id)]);
     });
   }, []);
 
   useFocusEffect(useCallback(() => {
-    loadCachedConversations().then((cached) => cached.length && setConversations(cached)).catch(() => undefined);
+    loadCachedConversations("social").then((cached) => cached.length && setConversations(cached)).catch(() => undefined);
     load().catch(() => undefined);
   }, []));
 

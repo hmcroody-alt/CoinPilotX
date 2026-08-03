@@ -47,6 +47,7 @@ import {
   listConversations,
   loadCachedConversations
 } from "./messenger";
+import { ConversationDomain, conversationSplitEnabled } from "./conversationDomain";
 import {
   MarketplaceOffer,
   MARKETPLACE_OFFERS_ENABLED,
@@ -132,10 +133,29 @@ export const INBOX_MOCK_DATA_GAPS: InboxMockGap[] = [
     field: "offer expiry TTL (72h)",
     backendWork: "Confirm the real offer TTL once an offers backend exists.",
     gatedBy: "marketplaceOffers OFFER_TTL_HOURS (proposed); banner gated by MARKETPLACE_OFFERS_ENABLED"
+  },
+  {
+    field: "conversation_domain (SOCIAL / MARKETPLACE / STORE_SUPPORT / DISPUTE / EVENT)",
+    backendWork:
+      "Stamp every conversation with its domain at creation and return it on the conversation list, so the split stops being a client-side guess.",
+    gatedBy:
+      "derived at the read boundary by deriveConversationDomain; explicit field → conversation_type → commerce association → SOCIAL fallback. Split behaviour behind EXPO_PUBLIC_MESSAGES_COMMERCE_SPLIT"
+  },
+  {
+    field: "returns / return requests",
+    backendWork:
+      "There is no returns object anywhere in the app — no model, no route, no state machine. Build one, then link its threads.",
+    gatedBy: "Returns filter ships with an honest empty state and can never be non-empty until then"
+  },
+  {
+    field: "store-support vs. dispute distinction on a thread",
+    backendWork:
+      "Distinguish a support question from a contested order; today only an explicit conversation type can tell them apart.",
+    gatedBy: "derivation reads conversation_type only; unlabelled commerce threads land in Marketplace"
   }
 ];
 
-export const INBOX_MOCK_DATA_GAP_COUNT = 8;
+export const INBOX_MOCK_DATA_GAP_COUNT = 11;
 
 /* ------------------------------------------------------------------ *
  * Deterministic avatar colour
@@ -477,6 +497,11 @@ export function __resetChipCache() {
 
 export type InboxRow = {
   id: number;
+  /**
+   * Carried through from the conversation, never re-derived here. The rail reads
+   * it; nothing in this file guesses it.
+   */
+  domain: ConversationDomain;
   title: string;
   avatarUrl?: string;
   /** Stable key that drives the deterministic avatar colour. */
@@ -508,6 +533,7 @@ export function toInboxRow(conversation: MessengerConversation): InboxRow {
   );
   return {
     id: conversation.id,
+    domain: conversation.conversation_domain,
     title: conversation.title || conversation.name || "Conversation",
     avatarUrl: conversation.avatar_url,
     colorKey: String(conversation.other_public_player_id || conversation.public_player_id || conversation.id),
@@ -528,16 +554,69 @@ export function toInboxRow(conversation: MessengerConversation): InboxRow {
  * Filters
  * ------------------------------------------------------------------ */
 
-export type InboxFilter = "all" | "unread" | "offers" | "orders" | "starred" | "archived";
+/**
+ * The triage vocabulary.
+ *
+ * Tier 0.4 replaces the old rail (Offers / Orders / Starred / Archived) with the
+ * one the review asked for: Marketplace / Store support / Orders / Returns /
+ * Disputes. `all` and `unread` survive because they were carrying weight — `all`
+ * is the only way to reach a domain nobody drew a chip for, and `unread` is the
+ * one control that means "somebody is waiting on you".
+ *
+ * The pre-0.4 keys stay in the union rather than being deleted, because the rail
+ * itself is behind `EXPO_PUBLIC_MESSAGES_COMMERCE_SPLIT` and the old rail has to
+ * keep working while the flag is off. Every function below answers for every key,
+ * so neither rail can reach an undefined branch.
+ */
+export type InboxFilter =
+  // Shared by both rails.
+  | "all"
+  | "unread"
+  // The Tier 0.4 rail.
+  | "marketplace"
+  | "store_support"
+  | "orders"
+  | "returns"
+  | "disputes"
+  // The pre-0.4 rail, live until the split flag is on.
+  | "offers"
+  | "starred"
+  | "archived";
+
+/** The rail the person actually sees, which depends on the split flag. */
+export const COMMERCE_SPLIT_FILTERS: InboxFilter[] = [
+  "all",
+  "unread",
+  "marketplace",
+  "store_support",
+  "orders",
+  "returns",
+  "disputes"
+];
+
+export const LEGACY_INBOX_FILTERS: InboxFilter[] = [
+  "all",
+  "unread",
+  "offers",
+  "orders",
+  "starred",
+  "archived"
+];
+
+export function inboxFilterRail(): InboxFilter[] {
+  return conversationSplitEnabled() ? COMMERCE_SPLIT_FILTERS : LEGACY_INBOX_FILTERS;
+}
 
 /**
  * Which rows a filter shows. Spam and blocked threads are excluded from every
  * filter here (they live only behind the Spam & blocked tool) — the one exception
  * being that `archived` still shows archived non-spam threads.
  *
- * "Offers" = rows whose chip is an open offer; "Orders" = order or pickup chips.
- * A row with an unresolved chip is treated as non-commerce for these two filters
- * until its chip fills in, which is correct: the row still appears under All.
+ * Marketplace / Store support / Disputes read the conversation's DOMAIN, which is
+ * the discriminator the data layer owns. Orders reads the resolved context chip,
+ * because an order thread is identified by the money object it points at rather
+ * than by which half of the app it lives in. Returns reads a field that does not
+ * exist yet and therefore always answers false — see the MOCK-DATA ledger.
  */
 export function rowMatchesFilter(row: InboxRow, filter: InboxFilter): boolean {
   if (row.blocked) return false;
@@ -549,6 +628,16 @@ export function rowMatchesFilter(row: InboxRow, filter: InboxFilter): boolean {
       return true;
     case "unread":
       return row.unreadCount > 0;
+    case "marketplace":
+      return row.domain === "MARKETPLACE";
+    case "store_support":
+      return row.domain === "STORE_SUPPORT";
+    case "disputes":
+      return row.domain === "DISPUTE";
+    case "returns":
+      // No returns object exists anywhere in the app. The filter ships and stays
+      // honestly empty rather than being hidden and quietly forgotten.
+      return false;
     case "offers":
       return row.chip?.kind === "offer";
     case "orders":
@@ -565,6 +654,10 @@ export function filterCounts(rows: InboxRow[]): FilterCounts {
   return {
     all: base.length,
     unread: base.filter((r) => r.unreadCount > 0).length,
+    marketplace: base.filter((r) => r.domain === "MARKETPLACE").length,
+    store_support: base.filter((r) => r.domain === "STORE_SUPPORT").length,
+    disputes: base.filter((r) => r.domain === "DISPUTE").length,
+    returns: 0,
     offers: base.filter((r) => r.chip?.kind === "offer").length,
     orders: base.filter((r) => r.chip?.kind === "order" || r.chip?.kind === "pickup").length,
     starred: base.filter((r) => r.starred).length,
@@ -693,11 +786,13 @@ export type InboxModel = {
  */
 export async function loadInboxModel(): Promise<InboxModel> {
   try {
-    const conversations = await listConversations();
+    // "commerce" scope, not a filter: a social thread is never in the result, so
+    // this list and the Messenger tab's list can never be the same query.
+    const conversations = await listConversations("commerce");
     return { rows: conversations.map(toInboxRow), conversations, offline: false };
   } catch (error) {
     try {
-      const cached = await loadCachedConversations();
+      const cached = await loadCachedConversations("commerce");
       return {
         rows: cached.map(toInboxRow),
         conversations: cached,

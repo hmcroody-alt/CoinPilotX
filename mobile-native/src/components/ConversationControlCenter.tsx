@@ -127,6 +127,9 @@ function createAssistantControlData(messageCount: number, connected: boolean): C
     conversation: {
       id: PULSE_AI_CONVERSATION_ID,
       conversation_id: PULSE_AI_CONVERSATION_ID,
+      // The assistant is a social thread: it lives in the Messenger tab and has
+      // no money object behind it.
+      conversation_domain: "SOCIAL",
       title: PULSE_AI_DISPLAY_NAME,
       name: PULSE_AI_DISPLAY_NAME,
       conversation_type: "ai",

@@ -2,8 +2,23 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File } from "expo-file-system";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "./config";
 import { PulseApiError, pulseApi } from "./pulseApi";
+import {
+  ConversationDomain,
+  ConversationScope,
+  conversationSplitEnabled,
+  deriveConversationDomain,
+  domainScope,
+  scopeIncludes
+} from "./conversationDomain";
 
 const CONVERSATION_CACHE_KEY = "pulsesoc.native.messenger.v2.conversations";
+/**
+ * Commerce threads live under their own key so a social read cannot reach them
+ * even by accident — the partition is in storage, not only in a filter. With the
+ * split flag off nothing is written here and the legacy key stays the whole
+ * cache, so turning the flag on costs one cold load and never a wrong list.
+ */
+const COMMERCE_CONVERSATION_CACHE_KEY = "pulsesoc.native.messenger.v2.conversations.commerce";
 const messageCacheKey = (conversationId: number) => `pulsesoc.native.messenger.v2.messages.${conversationId}`;
 const OUTBOUND_QUEUE_KEY = "pulsesoc.native.messenger.v2.outbound_queue";
 const MESSENGER_API = "/api/pulse/communications/v2";
@@ -28,6 +43,14 @@ export const ASSISTANT_PRESENCE = "assistant";
 export type MessengerConversation = {
   id: number;
   conversation_id: number;
+  /**
+   * Which half of the app this thread belongs to. Required, not optional: an
+   * optional discriminator stops discriminating the first time somebody writes
+   * `?? "SOCIAL"` in a component. Filled once, at the read boundary, by
+   * `deriveConversationDomain` — see `./conversationDomain` for the derivation
+   * order and the documented SOCIAL fallback.
+   */
+  conversation_domain: ConversationDomain;
   title: string;
   name?: string;
   conversation_type?: string;
@@ -49,6 +72,13 @@ export type MessengerConversation = {
   trust_state?: string;
   verified?: boolean;
 };
+
+/**
+ * A conversation as it arrives — from the wire, from a fixture, or from a caller
+ * building one by hand. It has no domain yet; `normalizeConversations` is what
+ * turns a raw conversation into a `MessengerConversation` by giving it one.
+ */
+export type RawConversation = Partial<MessengerConversation> & Record<string, unknown>;
 
 export type MessengerMessage = {
   id: number;
@@ -122,8 +152,8 @@ export type DirectConversationResult = {
 
 export type ConversationListResponse = {
   ok: boolean;
-  conversations?: MessengerConversation[];
-  items?: MessengerConversation[];
+  conversations?: RawConversation[];
+  items?: RawConversation[];
 };
 
 export type ConversationResponse = {
@@ -411,26 +441,111 @@ export type MediaUploadResult = {
   media?: Record<string, unknown>;
 };
 
-export async function listConversations() {
-  const data = await pulseApi<ConversationListResponse>(`${MESSENGER_API}/conversations`);
-  const conversations = withQaConversations(normalizeConversations(data.conversations || data.items || []));
-  await cacheConversations(conversations);
-  return conversations;
+function cacheKeyForScope(scope: ConversationScope) {
+  return scope === "commerce" ? COMMERCE_CONVERSATION_CACHE_KEY : CONVERSATION_CACHE_KEY;
 }
 
-export async function loadCachedConversations() {
+/**
+ * Keep only the conversations that belong to a scope.
+ *
+ * This is THE exclusion. Every social read and every commerce read goes through
+ * it, so "a marketplace thread never appears in a social list" is a property of
+ * the query layer rather than a rule each screen has to remember. With the split
+ * flag off it is the identity function, which is what makes the flag safe.
+ */
+export function conversationsInScope(
+  conversations: MessengerConversation[],
+  scope?: ConversationScope
+) {
+  if (!scope || !conversationSplitEnabled()) return conversations;
+  return conversations.filter((item) => scopeIncludes(scope, item.conversation_domain));
+}
+
+async function readCachePartition(key: string) {
   try {
-    const cached = await AsyncStorage.getItem(CONVERSATION_CACHE_KEY);
-    if (!cached) return withQaConversations([]);
-    return withQaConversations(normalizeConversations(JSON.parse(cached) as MessengerConversation[]));
+    const cached = await AsyncStorage.getItem(key);
+    if (!cached) return [] as MessengerConversation[];
+    return normalizeConversations(JSON.parse(cached) as MessengerConversation[]);
   } catch {
-    await AsyncStorage.removeItem(CONVERSATION_CACHE_KEY).catch(() => undefined);
-    return [];
+    await AsyncStorage.removeItem(key).catch(() => undefined);
+    return [] as MessengerConversation[];
   }
 }
 
-export async function cacheConversations(conversations: MessengerConversation[]) {
-  await AsyncStorage.setItem(CONVERSATION_CACHE_KEY, JSON.stringify(conversations.slice(0, 100)));
+/**
+ * Fetch the conversation list. Pass a scope and you get that half only — the
+ * Messenger tab asks for "social", the Commerce Inbox asks for "commerce", and
+ * neither can be handed the other's threads.
+ */
+export async function listConversations(scope?: ConversationScope) {
+  const data = await pulseApi<ConversationListResponse>(`${MESSENGER_API}/conversations`);
+  const conversations = withQaConversations(normalizeConversations(data.conversations || data.items || []));
+  await cacheConversations(conversations);
+  return conversationsInScope(conversations, scope);
+}
+
+export async function loadCachedConversations(scope?: ConversationScope) {
+  if (!conversationSplitEnabled()) {
+    const legacy = await readCachePartition(CONVERSATION_CACHE_KEY);
+    return withQaConversations(legacy);
+  }
+  if (scope) {
+    const partition = await readCachePartition(cacheKeyForScope(scope));
+    return conversationsInScope(withQaConversations(partition), scope);
+  }
+  const [social, commerce] = await Promise.all([
+    readCachePartition(CONVERSATION_CACHE_KEY),
+    readCachePartition(COMMERCE_CONVERSATION_CACHE_KEY)
+  ]);
+  return withQaConversations(normalizeConversations([...social, ...commerce]));
+}
+
+export async function cacheConversations(
+  conversations: MessengerConversation[],
+  scope?: ConversationScope
+) {
+  if (!conversationSplitEnabled()) {
+    await AsyncStorage.setItem(CONVERSATION_CACHE_KEY, JSON.stringify(conversations.slice(0, 100)));
+    return;
+  }
+  if (scope) {
+    // A one-partition write. Writing both from a one-scope list would blank the
+    // other partition, which is how a "separation" quietly becomes a deletion.
+    const only = conversations.filter((item) => scopeIncludes(scope, item.conversation_domain));
+    await AsyncStorage.setItem(cacheKeyForScope(scope), JSON.stringify(only.slice(0, 100)));
+    return;
+  }
+  const social: MessengerConversation[] = [];
+  const commerce: MessengerConversation[] = [];
+  conversations.forEach((item) => {
+    (domainScope(item.conversation_domain) === "commerce" ? commerce : social).push(item);
+  });
+  await Promise.all([
+    AsyncStorage.setItem(CONVERSATION_CACHE_KEY, JSON.stringify(social.slice(0, 100))),
+    AsyncStorage.setItem(COMMERCE_CONVERSATION_CACHE_KEY, JSON.stringify(commerce.slice(0, 100)))
+  ]);
+}
+
+/**
+ * The one social conversation-search entry point.
+ *
+ * The Messenger tab has no search field today, and that is exactly why this
+ * exists now rather than later: whoever adds the field should find a search that
+ * already cannot reach a marketplace thread, instead of writing a fresh
+ * `conversations.filter(...)` that can. Scope is applied before the text match,
+ * so no query string can widen the result set past the social half.
+ */
+export async function searchSocialConversations(query: string) {
+  const text = query.trim().toLowerCase();
+  const social = await loadCachedConversations("social");
+  if (!text) return social;
+  return social.filter((item) => {
+    const haystack = [item.title, item.name, item.latest_message, item.last_message_preview]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(text);
+  });
 }
 
 export async function getConversation(conversationId: number, params: { limit?: number; beforeId?: number } = {}) {
@@ -790,11 +905,14 @@ export async function openDirectConversation(target: MessengerUserSearchResult) 
   return request;
 }
 
-export async function upsertCachedConversation(conversation: MessengerConversation) {
+export async function upsertCachedConversation(conversation: RawConversation) {
   const normalized = normalizeConversations([conversation])[0];
   if (!normalized) return;
-  const cached = await loadCachedConversations();
-  await cacheConversations([normalized, ...cached.filter((item) => item.id !== normalized.id)]);
+  // Write into the partition the thread's own domain names, so a commerce thread
+  // touched from a social code path still lands on the commerce side.
+  const scope = conversationSplitEnabled() ? domainScope(normalized.conversation_domain) : undefined;
+  const cached = await loadCachedConversations(scope);
+  await cacheConversations([normalized, ...cached.filter((item) => item.id !== normalized.id)], scope);
   conversationListeners.forEach((listener) => listener(normalized));
 }
 
@@ -958,11 +1076,11 @@ function messengerFoundationMimeType(mimeType: string, name: string, voice?: boo
   return "application/octet-stream";
 }
 
-export function normalizeConversations(items: MessengerConversation[]) {
+export function normalizeConversations(items: RawConversation[]): MessengerConversation[] {
   const normalized = items
-    .map((item) => {
+    .map((item): MessengerConversation => {
       const id = Number(item.conversation_id || item.id || 0);
-      const raw = item as MessengerConversation & {
+      const raw = item as RawConversation & {
         display_name?: unknown;
         last_message?: unknown;
         presence?: unknown;
@@ -972,6 +1090,9 @@ export function normalizeConversations(items: MessengerConversation[]) {
         ...item,
         id,
         conversation_id: id,
+        // The single place the discriminator is filled. Nothing downstream may
+        // re-derive it, and nothing downstream may default it.
+        conversation_domain: deriveConversationDomain(item),
         title: safeText(item.title) || safeText(item.name) || safeText(raw.display_name) || `Conversation ${id}`,
         name: safeText(item.name),
         conversation_type: safeText(item.conversation_type) || safeText(raw.type) || "direct",
@@ -1000,7 +1121,7 @@ export function normalizeConversations(items: MessengerConversation[]) {
   return Array.from(byId.values()).sort((a, b) => conversationSortTime(b) - conversationSortTime(a));
 }
 
-function normalizePulseAiConversation(item?: MessengerConversation): MessengerConversation {
+function normalizePulseAiConversation(item?: RawConversation): MessengerConversation {
   const now = new Date().toISOString();
   const normalized = normalizeConversations([
     {
@@ -1245,7 +1366,7 @@ function qaConversations(): MessengerConversation[] {
   ];
 }
 
-function qaConversation(id: number, title: string, preview: string, timestamp: number, extra: Partial<MessengerConversation> = {}): MessengerConversation {
+function qaConversation(id: number, title: string, preview: string, timestamp: number, extra: RawConversation = {}): MessengerConversation {
   return normalizeConversations([
     {
       id,

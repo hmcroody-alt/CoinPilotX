@@ -30,6 +30,7 @@ import {
   filterCounts,
   formatMinor,
   formatRemaining,
+  inboxFilterRail,
   resolveContextChips,
   rowMatchesFilter,
   toInboxRow
@@ -71,6 +72,7 @@ beforeEach(() => {
   __resetChipCache();
   delete process.env.EXPO_PUBLIC_MESSAGES_MOCK_CHIPS;
   delete process.env.EXPO_PUBLIC_MESSAGES_REPLY_BADGE;
+  delete process.env.EXPO_PUBLIC_MESSAGES_COMMERCE_SPLIT;
 });
 
 describe("context-chip contract", () => {
@@ -171,6 +173,63 @@ describe("filters", () => {
   });
 });
 
+/**
+ * Tier 0.4's rail. The three domain filters read `row.domain` — the discriminator
+ * the data layer owns — rather than re-deriving anything from a title or a chip.
+ */
+describe("Tier 0.4 filter rail", () => {
+  const rows: InboxRow[] = [
+    row({ id: 1, domain: "MARKETPLACE" }),
+    row({ id: 2, domain: "STORE_SUPPORT" }),
+    row({ id: 3, domain: "DISPUTE" }),
+    row({ id: 4, domain: "EVENT" }),
+    row({ id: 5, domain: "MARKETPLACE", chip: chipOf({ kind: "order", orderId: 5, statusLine: "in transit" }) })
+  ];
+
+  it("splits the inbox by domain rather than by chip kind", () => {
+    expect(rows.filter((r) => rowMatchesFilter(r, "marketplace")).map((r) => r.id)).toEqual([1, 5]);
+    expect(rows.filter((r) => rowMatchesFilter(r, "store_support")).map((r) => r.id)).toEqual([2]);
+    expect(rows.filter((r) => rowMatchesFilter(r, "disputes")).map((r) => r.id)).toEqual([3]);
+  });
+
+  it("still identifies an order thread by the money object it points at", () => {
+    expect(rows.filter((r) => rowMatchesFilter(r, "orders")).map((r) => r.id)).toEqual([5]);
+  });
+
+  it("keeps an EVENT thread reachable under All even with no chip of its own", () => {
+    expect(rows.filter((r) => rowMatchesFilter(r, "all")).map((r) => r.id)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("shows Returns as honestly empty because nothing can create a return yet", () => {
+    expect(rows.filter((r) => rowMatchesFilter(r, "returns"))).toEqual([]);
+    expect(filterCounts(rows).returns).toBe(0);
+  });
+
+  it("counts the domain filters the same way it matches them", () => {
+    const counts = filterCounts(rows);
+    expect(counts.marketplace).toBe(2);
+    expect(counts.store_support).toBe(1);
+    expect(counts.disputes).toBe(1);
+    expect(counts.all).toBe(5);
+  });
+
+  it("swaps the visible rail on the split flag and never mixes the two", () => {
+    delete process.env.EXPO_PUBLIC_MESSAGES_COMMERCE_SPLIT;
+    expect(inboxFilterRail()).toEqual(["all", "unread", "offers", "orders", "starred", "archived"]);
+    process.env.EXPO_PUBLIC_MESSAGES_COMMERCE_SPLIT = "1";
+    expect(inboxFilterRail()).toEqual([
+      "all",
+      "unread",
+      "marketplace",
+      "store_support",
+      "orders",
+      "returns",
+      "disputes"
+    ]);
+    delete process.env.EXPO_PUBLIC_MESSAGES_COMMERCE_SPLIT;
+  });
+});
+
 describe("expiry banner is flag-gated off", () => {
   it("returns null with no offers backend even when an offer is minutes from expiry", () => {
     const soon = offer({ createdAt: NOW - 71.5 * HOUR }); // ~30m left
@@ -218,6 +277,7 @@ function chipOf(link: CommerceLink) {
 
 function row(overrides: Partial<InboxRow> & { id: number }): InboxRow {
   return {
+    domain: "MARKETPLACE",
     title: "Buyer",
     colorKey: String(overrides.id),
     snippet: "hi",

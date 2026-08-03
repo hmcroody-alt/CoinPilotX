@@ -24,6 +24,7 @@ import {
   startMarketplaceSellerChat
 } from "../api/marketplace";
 import { DIGITAL_COMMERCE_ENABLED } from "../api/config";
+import { conversationSplitEnabled } from "../api/conversationDomain";
 import { mediaDisplayUrl } from "../api/feed";
 import { profileNavigationParams, resolveProfileTarget } from "../api/profileTarget";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
@@ -130,7 +131,17 @@ export function MarketplaceScreen({ route, navigation }: Props) {
     try {
       const result = await startMarketplaceSellerChat(listing.seller_user_id);
       if (result.conversation_id && navigation) {
-        navigation.navigate("Chat", { conversationId: result.conversation_id, title: listing.seller_name || "Seller" });
+        // A message about a listing is commerce, so it belongs to the Commerce
+        // Inbox. Routing through it (rather than straight to the thread) is what
+        // makes Back land on the seller's commerce list instead of their friends.
+        if (conversationSplitEnabled()) {
+          navigation.navigate("BusinessOsMessages", {
+            title: "Messages",
+            focusConversationId: result.conversation_id
+          });
+        } else {
+          navigation.navigate("Chat", { conversationId: result.conversation_id, title: listing.seller_name || "Seller" });
+        }
       } else {
         setError("Seller chat is not available for this listing yet.");
       }

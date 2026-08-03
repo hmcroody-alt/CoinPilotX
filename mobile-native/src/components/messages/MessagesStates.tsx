@@ -42,11 +42,24 @@ export function MessagesEmpty() {
   );
 }
 
+/**
+ * Per-filter empty copy. Returns says the honest thing: the app has no returns to
+ * show because nothing in it can create one yet, so the filter is present and
+ * empty rather than hidden. Hiding it would have made a missing feature look like
+ * a finished one.
+ */
 const FILTER_EMPTY: Record<InboxFilter, { title: string; body: string }> = {
   all: { title: "No conversations yet", body: "Buyer messages will show up here." },
   unread: { title: "You're all caught up", body: "No unread conversations right now." },
-  offers: { title: "No offer threads", body: "Conversations tied to an active offer will appear here." },
+  marketplace: { title: "No marketplace threads", body: "Messages about a listing or an offer will appear here." },
+  store_support: { title: "No store questions", body: "Messages about your store or a purchase will appear here." },
   orders: { title: "No order threads", body: "Conversations tied to an order or pickup will appear here." },
+  returns: {
+    title: "No returns yet",
+    body: "Returns are not something you can start in the app yet, so nothing appears here."
+  },
+  disputes: { title: "No disputes", body: "A contested order will appear here while it is being worked out." },
+  offers: { title: "No offer threads", body: "Conversations tied to an active offer will appear here." },
   starred: { title: "No starred conversations", body: "Star a thread to keep it here." },
   archived: { title: "Nothing archived", body: "Archived conversations will appear here." }
 };

@@ -49,6 +49,7 @@ import {
   deriveExpiryBanner,
   deriveReplyStat,
   filterCounts,
+  inboxFilterRail,
   loadInboxModel,
   messagesAwayModeEnabled,
   messagesPresenceEnabled,
@@ -79,7 +80,6 @@ import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const FILTER_KEY = "business_os_messages_filter";
-const VALID_FILTERS: InboxFilter[] = ["all", "unread", "offers", "orders", "starred", "archived"];
 
 type Nav = { navigate: (...args: any[]) => void; goBack?: () => void };
 type Props = {
@@ -129,7 +129,10 @@ export function CommerceInboxScreen({ route, navigation }: Props) {
   useEffect(() => {
     AsyncStorage.getItem(FILTER_KEY)
       .then((value) => {
-        if (value && (VALID_FILTERS as string[]).includes(value)) {
+        // Only restore a filter the rail currently shows. A filter saved under the
+        // other rail would otherwise leave the list filtered by a chip nobody can
+        // see or clear.
+        if (value && (inboxFilterRail() as string[]).includes(value)) {
           setFilter(value as InboxFilter);
         }
       })
@@ -295,6 +298,19 @@ export function CommerceInboxScreen({ route, navigation }: Props) {
   const compose = useCallback(() => {
     navigation?.navigate("NewChat");
   }, [navigation]);
+
+  /* -------------------------------------------------------------- *
+   * Commerce hand-off — a thread pushed here from Marketplace/Store.
+   * The inbox is the parent screen, so closing the thread comes back
+   * here rather than to the social messenger.
+   * -------------------------------------------------------------- */
+  const focusConversationId = route?.params?.focusConversationId;
+  const focusedOnce = useRef(false);
+  useEffect(() => {
+    if (!focusConversationId || focusedOnce.current) return;
+    focusedOnce.current = true;
+    navigation?.navigate("Chat", { conversationId: focusConversationId });
+  }, [focusConversationId, navigation]);
 
   const goBack = useCallback(() => {
     navigation?.goBack?.();
