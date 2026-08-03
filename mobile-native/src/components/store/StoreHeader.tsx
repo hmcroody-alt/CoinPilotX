@@ -62,6 +62,26 @@ export type StoreHeaderProps = {
   below?: ReactNode;
   /** Hides the bell entirely — buying mode has no seller notifications. */
   hideNotifications?: boolean;
+  /**
+   * Rendered immediately to the right of the title text, inside the same flex
+   * row, so it reads as part of the title rather than as a separate control.
+   *
+   * The Business Hub is the case this exists for: its title is the seller's
+   * business name and the verification tick belongs against the name, the way a
+   * tick does everywhere else in the product. `accessories` could not do it —
+   * that slot sits after the title's flex spacer and lands at the far right,
+   * beside the bell. When omitted the row renders exactly as it did before.
+   */
+  titleAdornment?: ReactNode;
+  /**
+   * Hides the search row entirely.
+   *
+   * Insights is the case this exists for: it is one screen showing one period,
+   * with nothing on it to search. A search field that filtered nothing would be
+   * a promise the screen cannot keep, and leaving it there "for consistency"
+   * would be consistency with a control rather than with a behaviour.
+   */
+  hideSearch?: boolean;
 };
 
 export const StoreHeader = forwardRef<TextInputType, StoreHeaderProps>(function StoreHeader(
@@ -77,7 +97,9 @@ export const StoreHeader = forwardRef<TextInputType, StoreHeaderProps>(function 
     reducedMotion,
     accessories,
     below,
-    hideNotifications = false
+    titleAdornment,
+    hideNotifications = false,
+    hideSearch = false
   },
   ref
 ) {
@@ -128,9 +150,12 @@ export const StoreHeader = forwardRef<TextInputType, StoreHeaderProps>(function 
           <Ionicons name="chevron-back" size={24} color={storeLight.text.onDark} />
         </Pressable>
 
-        <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
-          {title}
-        </Text>
+        <View style={styles.titleWrap}>
+          <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
+            {title}
+          </Text>
+          {titleAdornment}
+        </View>
 
         {accessories}
 
@@ -173,7 +198,7 @@ export const StoreHeader = forwardRef<TextInputType, StoreHeaderProps>(function 
         </Pressable>
       </View>
 
-      <View style={styles.searchRow}>
+      <View style={[styles.searchRow, hideSearch && styles.hidden]}>
         <TextInput
           ref={ref}
           style={styles.search}
@@ -269,8 +294,11 @@ const styles = StyleSheet.create({
   /** `display: none` rather than a conditional render, so the row's spacing is
       identical in both modes and the title does not shift when modes swap. */
   hidden: { display: "none" },
+  /** Takes the flex the title Text used to hold, so layout is unchanged when
+      `titleAdornment` is absent. */
+  titleWrap: { flex: 1, flexDirection: "row", alignItems: "center", gap: 6 },
   title: {
-    flex: 1,
+    flexShrink: 1,
     fontSize: 20,
     fontWeight: "700",
     color: storeLight.text.onDark

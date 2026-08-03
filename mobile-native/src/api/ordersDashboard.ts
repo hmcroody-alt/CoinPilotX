@@ -329,6 +329,41 @@ export async function loadSellerOrdersModel(): Promise<SellerOrdersModel> {
 }
 
 /* ------------------------------------------------------------------ *
+ * Attention counts — the one place that decides how many orders are waiting
+ * on someone.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Seller orders still awaiting the seller: live (no cancelled/refunded/expired
+ * overlay) and not yet handed over to the buyer.
+ *
+ * This lived inline in `OrdersManagerScreen` as the number behind its urgency
+ * strip. It moved here because the Business Hub needs the same figure on its
+ * Orders card, and two copies of "how many orders need me" is exactly the kind
+ * of duplicate that drifts until the hub and the section disagree in front of
+ * the seller. The screen and the hub now read this function.
+ *
+ * Deliberately NOT a deadline count. The live seller-orders payload carries no
+ * fulfillment SLA (see `ORDERS_MOCK_DATA_GAPS`), so "due today" and "ships by
+ * 4 PM" cannot be computed from it. This counts what is genuinely knowable —
+ * orders that are open and unfulfilled — and callers that want urgency phrasing
+ * must say "to fulfill", never "due today".
+ */
+export function ordersAwaitingSeller(orders: readonly UnifiedOrder[]): number {
+  return orders.filter(
+    (order) => order.overlay === "none" && order.status !== "delivered" && order.status !== "complete"
+  ).length;
+}
+
+/**
+ * Buyer orders currently in motion — the count behind the buyer-side urgency
+ * strip. Extracted alongside its seller twin so the pair stays symmetrical.
+ */
+export function ordersInTransitForBuyer(orders: readonly UnifiedOrder[]): number {
+  return orders.filter((order) => order.status === "shipped" || order.status === "pickup_scheduled").length;
+}
+
+/* ------------------------------------------------------------------ *
  * Seller fulfillment action model — what the seller may do to an order, and
  * why a control is disabled when it is. Mirrors the advertising delivery-switch
  * discipline: never offer an action the backend will reject or cannot perform.

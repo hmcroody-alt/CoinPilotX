@@ -401,6 +401,34 @@ export function attentionCount(rows: StoreListingRow[]): number {
   return rows.filter((row) => NEEDS_ATTENTION.includes(row.health)).length;
 }
 
+export type StoreHealthCounts = {
+  /** Listings a buyer can order right now — in stock or low, but not zero. */
+  active: number;
+  low: number;
+  out: number;
+};
+
+/**
+ * The three numbers any summary of this store needs. `deriveTabs` already
+ * produces them, but keyed by tab, and a caller that wants "how is the store
+ * doing" should not have to know the tab vocabulary to find out.
+ *
+ * Added for the Business Hub's Store card, which states the same thing in one
+ * line that the Store dashboard states in a banner and a tab bar. Sharing this
+ * function is what keeps the two from disagreeing.
+ */
+export function storeHealthCounts(rows: readonly StoreListingRow[]): StoreHealthCounts {
+  let active = 0;
+  let low = 0;
+  let out = 0;
+  for (const row of rows) {
+    if (row.health === "low_stock") low += 1;
+    if (row.health === "out_of_stock") out += 1;
+    if (row.health === "in_stock" || row.health === "low_stock") active += 1;
+  }
+  return { active, low, out };
+}
+
 /* ------------------------------------------------------------------ *
  * Store status
  * ------------------------------------------------------------------ */

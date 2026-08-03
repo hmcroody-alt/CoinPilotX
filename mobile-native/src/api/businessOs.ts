@@ -48,6 +48,28 @@ export type BusinessOsSectionKey =
   | "verification"
   | "settings";
 
+/**
+ * Card #9 destination config — the single knob for the "Events" card.
+ *
+ * DECISION (owner sign-off: PENDING): card #9 stays the seller's *hosted-events*
+ * manager (workshops, live sales, pop-ups you run), NOT the notification/activity
+ * feed. The activity feed is reachable from every seller header's bell instead,
+ * because it is a cross-cutting inbox, not one of the business sections. Keeping
+ * the two apart matches how sellers think ("my events" vs "what happened") and
+ * avoids overloading a dashboard tile with an unrelated feed.
+ *
+ * Everything renamable about the card is driven from here, so re-labelling it or
+ * repointing it (e.g. if an owner later decides the tile should open the feed) is
+ * a one-line change with no edit to the section list below.
+ */
+export const EVENTS_CARD_CONFIG = {
+  label: "Events",
+  blurb: "Events you host and promote.",
+  icon: "calendar-outline",
+  /** The rebuilt hosted-events manager. Was `Events` (the live discovery feed). */
+  route: "BusinessOsEvents"
+} as const;
+
 export type BusinessOsSection = {
   key: BusinessOsSectionKey;
   label: string;
@@ -179,11 +201,15 @@ export const BUSINESS_OS_SECTIONS: BusinessOsSection[] = [
     backed: true
   },
   {
+    // Repointed from `Events` (the live discovery feed) to the rebuilt hosted-
+    // events manager. Everything renamable lives in EVENTS_CARD_CONFIG above, so
+    // this entry never has to change to relabel or redirect the card. The old
+    // `Events` route is untouched and still answers every existing deep link.
     key: "events",
-    label: "Events",
-    blurb: "Events you host and promote.",
-    icon: "calendar-outline",
-    route: "Events",
+    label: EVENTS_CARD_CONFIG.label,
+    blurb: EVENTS_CARD_CONFIG.blurb,
+    icon: EVENTS_CARD_CONFIG.icon,
+    route: EVENTS_CARD_CONFIG.route,
     backed: true
   },
   {
