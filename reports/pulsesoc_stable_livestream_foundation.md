@@ -41,6 +41,12 @@ Host/co-host sessions default to `v1_legacy` publisher audio even when general L
 
 Automated checks validate state, readiness, idempotency, stale cleanup, remount survival, audio ownership, publication, backend grants, and architecture boundaries. They do not prove physical audio/video.
 
+Native simulator build gate: **PASS**. On 2026-08-02, the checked-in `PulseSocNative` workspace and scheme completed a clean Debug build for the iPhone Simulator with code signing disabled:
+
+`xcodebuild -workspace ios/PulseSocNative.xcworkspace -scheme PulseSocNative -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,id=C980AEE0-2D07-4D98-8A37-D0447A6A908B' CODE_SIGNING_ALLOWED=NO build`
+
+Terminal result: `** BUILD SUCCEEDED **`. The resulting app installed and launched successfully on `PulseSoc iPhone 16 Pro` (`C980AEE0-2D07-4D98-8A37-D0447A6A908B`) as bundle `com.pulsesoc.nativeapp.dev`. Dependency warnings remain, including legacy Pod deployment-target and always-run build-script warnings; none failed the build. This is compile/install/launch evidence only and does not establish physical microphone, speaker, camera, route, or recovery behavior.
+
 Still required for PASS:
 
 - Corrected physical build installed.
