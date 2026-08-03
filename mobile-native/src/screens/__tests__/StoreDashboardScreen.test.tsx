@@ -44,6 +44,17 @@ jest.mock("../../theme/logiNexusMotion", () => ({
   useLogiNexusReducedMotion: () => mockReducedMotion()
 }));
 
+// The header bell now reads the shared unread store rather than counting open
+// orders off the dashboard payload. That store talks to the network on mount,
+// which a screen test has no business doing, so the count is supplied directly
+// and each test states the badge it wants to exercise.
+const mockBellCount = jest.fn(() => 0);
+jest.mock("../../core/unreadCounts", () => ({
+  ...jest.requireActual("../../core/unreadCounts"),
+  useBellCount: () => mockBellCount(),
+  refreshUnreadCounts: jest.fn(async () => undefined)
+}));
+
 const mockLoad = jest.fn();
 jest.mock("../../api/storeDashboard", () => ({
   ...jest.requireActual("../../api/storeDashboard"),
@@ -113,6 +124,7 @@ async function renderScreen(nav = navigation()) {
 beforeEach(() => {
   mockLoad.mockReset();
   mockReducedMotion.mockReturnValue(false);
+  mockBellCount.mockReturnValue(0);
   mockLoad.mockResolvedValue(result());
 });
 
@@ -431,12 +443,16 @@ describe("navigation", () => {
   });
 
   it("only navigates to routes that exist in the stack", async () => {
+    mockBellCount.mockReturnValue(1);
     const view = await renderScreen();
     const known = new Set([
       "SellerStore",
       "Tabs",
       "MarketplaceCreateGateway",
       "BusinessOsInsights",
+      // The bell opens the seller activity feed, which is where the shared
+      // unread count is actually cleared. Registered in AppNavigator.
+      "BusinessOsActivity",
       "Notifications"
     ]);
 

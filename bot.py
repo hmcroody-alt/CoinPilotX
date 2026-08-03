@@ -83050,6 +83050,133 @@ def api_payments_list_seller_orders():
     return jsonify({"ok": True, "orders": creator_orders + seller_orders})
 
 
+# --- the seller money hub, read-only ----------------------------------------
+# Two GETs. Neither writes, neither moves money, and neither takes a seller id
+# from the request — the wallet owner is the session user, so there is no
+# parameter to tamper with in order to read somebody else's balances.
+#
+# These exist because the route above cannot answer "what am I owed". It returns
+# order rows, and a balance derived from order rows on the client is exactly the
+# client-side balance arithmetic the money screen forbids. The real balances live
+# in `creator_wallets` / `creator_ledger_entries`, written by the Stripe webhook
+# handler, and until now had no JSON reader at all.
+#
+# See services/seller_money.py for what this surface CANNOT source (there is no
+# release path, no payout initiation, no stored bank destination and no per-order
+# escrow) and why each of those is returned as an explicit absence.
+@webhook_app.route("/api/pulse/payments/seller/money", methods=["GET"])
+def api_payments_seller_money():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    from services import seller_money as _seller_money
+    currency = (request.args.get("currency") or "USD").strip().upper()
+    try:
+        overview = _seller_money.seller_money_overview(user["user_id"], currency)
+    except Exception as exc:
+        trace_id = secrets.token_hex(6)
+        logging.exception("SELLER_MONEY_READ_FAILED trace_id=%s user_id=%s",
+                          trace_id, user["user_id"])
+        return api_error("Balances could not be loaded right now.", 503,
+                         trace_id, error=str(exc))
+    response = jsonify({"ok": True, "money": overview})
+    # A balance must never be served from a cache. The screen is allowed to show
+    # a cached figure only when it says "as of {time}" over the top of it, and
+    # that decision belongs to the client, not to an intermediary.
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/pulse/payments/seller/money/activity", methods=["GET"])
+def api_payments_seller_money_activity():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    from services import seller_money as _seller_money
+    currency = (request.args.get("currency") or "USD").strip().upper()
+    cursor = (request.args.get("cursor") or "").strip() or None
+    try:
+        limit = int(request.args.get("limit") or 25)
+    except (TypeError, ValueError):
+        limit = 25
+    try:
+        activity = _seller_money.seller_activity(
+            user["user_id"], currency, limit=limit, before_cursor=cursor)
+    except _seller_money.SellerMoneyError as exc:
+        # A cursor the client invented is a client mistake, not a server fault.
+        return api_error(str(exc), 400)
+    except Exception as exc:
+        trace_id = secrets.token_hex(6)
+        logging.exception("SELLER_MONEY_ACTIVITY_FAILED trace_id=%s user_id=%s",
+                          trace_id, user["user_id"])
+        return api_error("Activity could not be loaded right now.", 503,
+                         trace_id, error=str(exc))
+    response = jsonify({"ok": True, "activity": activity})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/pulse/insights/seller/summary", methods=["GET"])
+def api_pulse_insights_seller_summary():
+    """Per-period seller analytics for the Insights screen.
+
+    This exists because the route directly above it cannot answer the question. It is
+    ``LIMIT 100`` per table and takes no date range, so a total derived from it is the
+    sum of the newest hundred rows — an understatement that grows as the seller sells
+    more. Insights aggregates over the whole table inside an explicit window instead.
+
+    Query parameters:
+
+      ``period``     one of today / 7d / 30d / 90d (default 7d; anything else falls back)
+      ``tz_offset``  minutes to add to UTC to reach the seller's local time, i.e.
+                     ``-new Date().getTimezoneOffset()``. Period edges land on the
+                     seller's midnight, not on UTC's.
+      ``top``        how many ranked listings to return (1–50, default 5)
+
+    The response carries an ``unavailable`` list naming the metrics this platform has no
+    source for. That is deliberate: the client renders nothing in their place rather
+    than a zero that reads like a measurement.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+
+    period = (request.args.get("period") or "7d").strip().lower()
+    try:
+        tz_offset = int(request.args.get("tz_offset") or 0)
+    except (TypeError, ValueError):
+        tz_offset = 0
+    try:
+        top = int(request.args.get("top") or 5)
+    except (TypeError, ValueError):
+        top = 5
+
+    # Imported inside the handler, as every other Business OS route in this file does.
+    # A module-level import would put an analytics read on the critical path of app
+    # boot, and a failure there would take down routes that have nothing to do with it.
+    try:
+        from services.business_os.insights import seller_analytics as _seller_analytics
+
+        summary = _seller_analytics.seller_summary(
+            int(user["user_id"]),
+            period=period,
+            tz_offset_minutes=tz_offset,
+            top_limit=top,
+        )
+    except Exception:
+        logging.exception("[insights] seller summary failed")
+        return api_error("Insights could not be calculated right now.", 503)
+
+    response = jsonify({"ok": True, "insights": summary})
+    # These figures move whenever an order lands. A stale cache here would have the
+    # seller reading yesterday's revenue as today's.
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @webhook_app.route("/api/payments/entitlements", methods=["GET"])
 @webhook_app.route("/api/pulse/payments/entitlements", methods=["GET"])
 def api_payments_entitlements():
