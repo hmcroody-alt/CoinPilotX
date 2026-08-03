@@ -159,7 +159,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
         // fetcher is what the room uses to refresh in place; it re-hits the
         // endpoint, which re-checks host authority server-side, so a host whose
         // broadcast was ended will not be re-issued a publish token.
-        const ok = await room.connect(credentials, {
+        const ok = await room.startBroadcast(credentials, {
           publish: true,
           refreshCredentials: () => getLiveKitToken(liveId, "host")
         });
@@ -300,7 +300,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
     endedRef.current = true;
     setEnding(true);
     await endLive(liveId).catch(() => undefined);
-    await room.disconnect("host_ended").catch(() => undefined);
+    await room.stopBroadcast("host_ended").catch(() => undefined);
     setEnding(false);
     navigation.goBack();
   }, [liveId, navigation, room]);

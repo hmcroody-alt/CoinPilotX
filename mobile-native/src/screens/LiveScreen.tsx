@@ -84,8 +84,8 @@ export function LiveScreen({ route, navigation }: Props) {
   const videoRef = useRef<Video>(null);
   const guestPublishKeyRef = useRef("");
   const room = useLiveBroadcastRoom();
-  const connectLiveRoom = room.connect;
-  const disconnectLiveRoom = room.disconnect;
+  const connectLiveRoom = room.joinAsViewer;
+  const disconnectLiveRoom = room.leaveViewer;
   const setRemoteAudioEnabled = room.setRemoteAudioEnabled;
 
   useEffect(() => {

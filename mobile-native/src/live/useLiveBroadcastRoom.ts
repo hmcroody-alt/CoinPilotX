@@ -30,6 +30,7 @@ import {
   type MediaQualityPlan
 } from "../core/mediaQualityPolicy";
 import { emitMediaQualityEvent } from "../core/mediaQualityTelemetry";
+import { getLiveRuntime } from "./liveRuntime";
 import { isLiveAudioV2EnabledForSession, resolveLiveAudioPath, resolveLiveAudioPathForSession } from "./liveAudioFlags";
 import { publishLiveMicrophone } from "./liveAudioPublisher";
 import {
@@ -337,10 +338,12 @@ export type LiveConnectOptions = {
 };
 
 export function useLiveBroadcastRoom() {
-  const roomRef = useRef<any>(null);
+  const runtimeRef = useRef(getLiveRuntime());
+  const existingResources = runtimeRef.current.getResources();
+  const roomRef = useRef<any>(existingResources.room || null);
   const audioSessionRef = useRef<any>(null);
   const audioDeviceModuleRef = useRef<any>(null);
-  const audioLeaseRef = useRef<RealtimeAudioLease | null>(null);
+  const audioLeaseRef = useRef<RealtimeAudioLease | null>((existingResources.audioLease as RealtimeAudioLease) || null);
   const lifecycleRef = useRef(new RealtimeAudioStateMachine());
   const correlationIdRef = useRef("");
   const lastConnectErrorRef = useRef("");
@@ -501,6 +504,10 @@ export function useLiveBroadcastRoom() {
     refreshCredentialsRef.current = undefined;
     audioDeviceModuleRef.current = null;
     trace?.emit("cleanup_completed", { room_state: "disconnected", error_category: reason });
+    const runtimeSession = runtimeRef.current.getSnapshot().session;
+    if (runtimeSession) {
+      await runtimeRef.current.cleanup(runtimeSession.generation, async () => undefined, reason);
+    }
     setState((current) => ({
       ...current,
       connecting: false,
@@ -665,7 +672,7 @@ export function useLiveBroadcastRoom() {
     return true;
   }, []);
 
-  const connect = useCallback(
+  const connectTransaction = useCallback(
     async (credentials: LiveKitCredentials, options: LiveConnectOptions = {}) => {
       lastConnectErrorRef.current = "";
       if (Platform.OS === "web") {
@@ -783,6 +790,24 @@ export function useLiveBroadcastRoom() {
         const qualityFlags = parseMediaQualityFlags(credentials.mediaQuality);
         const qualityPlan = resolveMediaQualityPlan({ feature: mediaMode, flags: qualityFlags });
         qualityPlanRef.current = qualityPlan;
+        const runtime = runtimeRef.current;
+        runtime.createSession({
+          sessionId: correlationIdRef.current,
+          broadcastId: credentials.broadcastId,
+          roomName: roomNameRef.current,
+          hostUserId: credentials.hostUserId,
+          authorizationVersion: credentials.authorizationVersion,
+          featureFlags: {
+            audioV2: useV2,
+            publisherAudioV2: credentials.publisherAudioV2Enabled,
+            qualityV2: qualityFlags.realtimeMediaQualityV2Enabled === true
+          },
+          qualityProfile: qualityPlan.profile
+        });
+        runtime.transition("authorizing", "LiveAuthorizationController", "token_validation_started");
+        runtime.update({ authorized: true }, "authorization_succeeded", "LiveAuthorizationController", "server_token_valid");
+        runtime.transition("authorized", "LiveAuthorizationController", "server_authorized");
+        runtime.transition("acquiringMedia", "LiveMediaCoordinator", "ownership_requested");
         const qualityTrace = {
           quality_profile: qualityPlan.profile,
           feature_flags: describeMediaQualityFlags(qualityFlags),
@@ -827,6 +852,8 @@ export function useLiveBroadcastRoom() {
           trace.emit("audio_session_config_completed", { room_state: "connecting", audioOwner: ownerId, audio_profile: audioProfile });
           trace.emit("audio_session_activated", { room_state: "connecting", audioOwner: ownerId, audio_profile: audioProfile });
           trace.emit("av_audio_session_activated", { room_state: "connecting", currentOwner: ownerId, audioGeneration: audioLeaseRef.current.leaseId, caller: "realtimeAudioEngine.activate" });
+          runtime.attachResources({ audioLease: audioLeaseRef.current });
+          runtime.update({ audio: "active", audioOwnerActive: true }, "audio_activated", "AudioCoordinator", "lease_active");
           if (publish) lifecycleRef.current.transition("local", "publishing");
         } catch (ownershipError) {
           // A call already owns the audio session. Report it honestly instead of
@@ -915,6 +942,8 @@ export function useLiveBroadcastRoom() {
 
         const room = new livekitClient.Room(buildRoomQualityOptions(qualityPlan));
         roomRef.current = room;
+        runtime.attachResources({ room });
+        runtime.update({ room: "creating", camera: publish ? "acquiring" : "idle" }, "room_created", "LiveRoomController", "one_room_for_generation");
 
         const refresh = () => refreshParticipants(room);
         room.on(livekitClient.RoomEvent.ConnectionStateChanged, (connectionState: string) => {
@@ -1196,13 +1225,17 @@ export function useLiveBroadcastRoom() {
           if (classification !== "terminal") scheduleReconnect(reasonText);
         });
 
+        runtime.transition("connecting", "LiveRoomController", "connect_requested");
+        runtime.update({ room: "connecting" }, "room_connect_started", "LiveRoomController", "connect_requested");
         trace.emit("livekit_room_connect_started", { room_state: "connecting", caller: "LiveKit.Room.connect" });
         await room.connect(credentials.url, credentials.token, { autoSubscribe: true });
         lifecycleRef.current.tryTransition("room", "connected");
         trace.emit("live_room_connected", { room_state: String(room?.state || "connected") });
         trace.emit("livekit_room_connected", { room_state: String(room?.state || "connected"), caller: "LiveKit.Room.connect" });
+        runtime.update({ room: "connected" }, "room_connected", "LiveRoomController", "provider_connected");
         if (!publish) trace.emit("viewer_room_connected", { room_state: String(room?.state || "connected"), subscription_state: "auto_subscribe" });
         if (publish) {
+          runtime.transition("publishing", "LiveMediaCoordinator", "publish_required_media");
           trace.emit("local_audio_track_create_started", { room_state: String(room?.state || "connected"), enabled: true });
           trace.emit("local_audio_publish_started", { room_state: String(room?.state || "connected"), enabled: true });
           await initializeLivePublisherMedia({
@@ -1245,6 +1278,16 @@ export function useLiveBroadcastRoom() {
               caller: event.startsWith("camera_") ? "LiveKit.setCameraEnabled" : event.startsWith("live_audio_active_") ? "realtimeAudioEngine.guard" : "realtimeMicrophonePublisher"
             })
           });
+          runtime.update({
+            audio: "published",
+            microphoneTrackCreated: true,
+            microphonePublished: true,
+            camera: "published",
+            cameraOwnerActive: true,
+            cameraTrackCreated: true,
+            cameraPublished: true
+          }, "required_media_published", "PublicationController", "audio_and_camera_confirmed");
+          runtime.assertReady("LiveReadinessController");
         }
         if (publish) await selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
         await applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current).catch(() => undefined);
@@ -1374,6 +1417,11 @@ export function useLiveBroadcastRoom() {
     },
     [clearRecoveryTimers, disconnect, reapplyAudioRoute, refreshParticipants, scheduleReconnect, scheduleTokenRefresh]
   );
+  const connect = useCallback(
+    (credentials: LiveKitCredentials, options: LiveConnectOptions = {}) =>
+      runtimeRef.current.runStart(() => connectTransaction(credentials, options)),
+    [connectTransaction]
+  );
   connectRef.current = connect;
 
   const setMicrophoneEnabled = useCallback(async (enabled: boolean) => {
@@ -1477,12 +1525,10 @@ export function useLiveBroadcastRoom() {
       // would fire against a torn-down room and reclaim the audio session.
       intentionalTeardownRef.current = true;
       clearRecoveryTimers();
-      roomRef.current = null;
-      audioLeaseRef.current = null;
-      credentialsRef.current = null;
-      refreshCredentialsRef.current = undefined;
-      room?.disconnect?.().catch(() => undefined);
-      if (lease) releaseRealtimeAudioSession(audioSessionRef.current, lease).catch(() => undefined);
+      // Navigation/remount is not broadcast termination. The module-scoped
+      // runtime retains the current room and generation; only an explicit
+      // stop/terminal command may disconnect or release media ownership.
+      runtimeRef.current.attachResources({ room, audioLease: lease });
     },
     [clearRecoveryTimers]
   );
@@ -1492,6 +1538,10 @@ export function useLiveBroadcastRoom() {
     lifecycle: lifecycleRef.current.getState(),
     connect,
     disconnect,
+    startBroadcast: connect,
+    stopBroadcast: disconnect,
+    joinAsViewer: connect,
+    leaveViewer: disconnect,
     setMicrophoneEnabled,
     setCameraEnabled,
     setSpeakerEnabled,

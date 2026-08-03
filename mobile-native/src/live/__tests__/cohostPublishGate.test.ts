@@ -3,6 +3,9 @@ import type { LiveKitCredentials } from "../liveSession";
 
 function creds(overrides: Partial<LiveKitCredentials> = {}): LiveKitCredentials {
   return {
+    broadcastId: 1,
+    hostUserId: 9,
+    authorizationVersion: "auth-v1",
     token: "tok-abc",
     url: "wss://live.example",
     room: "room-1",

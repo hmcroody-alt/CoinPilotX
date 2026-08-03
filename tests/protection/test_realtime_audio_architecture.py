@@ -191,6 +191,26 @@ class LiveStartupTraceContractTests(unittest.TestCase):
         self.assertIn(contract["critical_test"], critical)
 
 
+class AuthoritativeLiveRuntimeTests(unittest.TestCase):
+    def test_live_ui_uses_runtime_commands_not_transport_commands(self) -> None:
+        paths = [
+            "mobile-native/src/screens/LiveHostSessionScreen.tsx",
+            "mobile-native/src/screens/LiveScreen.tsx",
+            "mobile-native/src/components/reels/ReelLiveViewerSurface.tsx",
+        ]
+        forbidden = ("room.connect(", "room.disconnect(", "{ connect, disconnect")
+        for rel in paths:
+            text = (ROOT / rel).read_text(encoding="utf-8")
+            for marker in forbidden:
+                self.assertNotIn(marker, text, f"{rel} bypasses LiveRuntime with {marker}")
+
+    def test_screens_do_not_import_livekit_room_transport(self) -> None:
+        for folder in (ROOT / "mobile-native/src/screens", ROOT / "mobile-native/src/components"):
+            for path in list(folder.rglob("*.ts")) + list(folder.rglob("*.tsx")):
+                text = path.read_text(encoding="utf-8")
+                self.assertNotRegex(text, r"from\s+['\"]livekit-client['\"]", f"{_relative(path)} imports LiveKit transport")
+
+
 class DependencyLockTests(unittest.TestCase):
     def test_audio_critical_dependencies_match_the_verified_baseline(self) -> None:
         pkg = json.loads((ROOT / "mobile-native" / "package.json").read_text(encoding="utf-8"))

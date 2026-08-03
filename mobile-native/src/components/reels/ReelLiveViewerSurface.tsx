@@ -26,7 +26,7 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
   const liveId = reelLiveSessionId(reel);
   const hlsUrl = String(reel.live?.playback_url || "");
   const room = useLiveBroadcastRoom();
-  const { connect, disconnect, setRemoteAudioEnabled } = room;
+  const { joinAsViewer: connect, leaveViewer: disconnect, setRemoteAudioEnabled } = room;
   const [mode, setMode] = useState<ViewerMode>("connecting");
   const [VideoTileView, setVideoTileView] = useState<React.ComponentType<any> | null>(null);
 

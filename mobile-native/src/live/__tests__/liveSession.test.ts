@@ -105,6 +105,9 @@ describe("normalizeLiveKitCredentials", () => {
       expires_at: 1700000000
     });
     expect(creds).toEqual({
+      broadcastId: 0,
+      hostUserId: 0,
+      authorizationVersion: "trace-1",
       token: "tok",
       url: "wss://livekit.example",
       room: "pulse-live-1",

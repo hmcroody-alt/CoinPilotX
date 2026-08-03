@@ -86,6 +86,15 @@
       ]
     },
     {
+      "id": "authoritative_live_runtime",
+      "title": "Canonical Live session runtime and transaction state",
+      "why": "Owns stable session identity, generation, readiness, typed failures, idempotent commands, resource attachment across remounts, and generation-scoped cleanup.",
+      "paths": [
+        "mobile-native/src/live/liveRuntime.ts",
+        "mobile-native/src/live/__tests__/liveRuntime.test.ts"
+      ]
+    },
+    {
       "id": "livestream_audio_adapter",
       "title": "Livestream host, guest, and viewer adapter",
       "why": "Host publication, guest publication after approval, viewer playback, and the terminal state when the host ends Live. The viewer path must never acquire the microphone.",
@@ -175,6 +184,7 @@
         "mobile-native/src/live/__tests__/cohostPublishGate.test.ts",
         "mobile-native/src/live/__tests__/remoteAudioReapply.test.ts",
         "mobile-native/src/live/__tests__/liveSession.test.ts",
+        "mobile-native/src/live/__tests__/liveRuntime.test.ts",
         "mobile-native/src/core/__tests__/mediaQualityPolicy.test.ts",
         "mobile-native/src/core/__tests__/mediaAdaptationController.test.ts",
         "mobile-native/src/core/__tests__/mediaQualityWiring.test.ts",

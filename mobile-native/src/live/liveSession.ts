@@ -33,6 +33,9 @@ export type LiveStartResult = {
 };
 
 export type LiveKitCredentials = {
+  broadcastId: number;
+  hostUserId: number;
+  authorizationVersion: string;
   token: string;
   url: string;
   room: string;
@@ -195,6 +198,9 @@ export function normalizeLiveKitCredentials(raw: Record<string, unknown> | null 
   const url = toStr(data.livekit_url ?? data.url);
   if (!token || !url) return null;
   return {
+    broadcastId: toNum(data.live_id ?? data.broadcast_id),
+    hostUserId: toNum(data.host_user_id),
+    authorizationVersion: toStr(data.authorization_version ?? data.trace_id, "v1"),
     token,
     url,
     room: toStr(data.room),
