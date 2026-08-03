@@ -51,7 +51,7 @@ import {
   StoreKpiSkeleton,
   StoreListingRow,
   StoreOfflineNote,
-  StoreQuickLinkTile,
+  StoreQuickLinkGrid,
   StoreRowSkeleton,
   StoreSectionError,
   StoreSparkline,
@@ -286,72 +286,76 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
     </View>
   );
 
+  /**
+   * This screen's hand-composed two-tile rows were the pattern the other
+   * surfaces got wrong, so the pattern moved into `StoreQuickLinkGrid` and this
+   * screen now consumes it like everyone else. Behaviour is unchanged — three
+   * rows of two, in the same order — but the row count is derived rather than
+   * typed, which is what stops the next screen from typing four.
+   */
   const quickLinks = (
     <View style={styles.linkGrid}>
-      <View style={styles.linkRow}>
-        <StoreQuickLinkTile
-          icon="cube-outline"
-          label="Inventory"
-          subtitle={
-            loading
+      <StoreQuickLinkGrid
+        reducedMotion={reducedMotion}
+        items={[
+          {
+            icon: "cube-outline",
+            label: "Inventory",
+            subtitle: loading
               ? "Checking stock…"
               : lowCount > 0
                 ? `${allRows.length} items · ${lowCount} low`
-                : `${allRows.length} items · all stocked`
+                : `${allRows.length} items · all stocked`,
+            onPress: () => {
+              setTab(lowCount > 0 ? "low" : "all");
+              setExpanded(true);
+            },
+            reducedMotion
+          },
+          {
+            icon: "pricetags-outline",
+            label: "Collections",
+            subtitle: `${new Set(snapshot.listings.map((item) => item.category).filter(Boolean)).size} categories`,
+            onPress: () => {
+              setTab("all");
+              setExpanded(true);
+            },
+            reducedMotion
+          },
+          {
+            icon: "bar-chart-outline",
+            label: "Reports",
+            subtitle: "Sales, orders and trends",
+            onPress: () => navigation.navigate("BusinessOsInsights", { title: "Store reports" }),
+            reducedMotion
+          },
+          {
+            icon: "storefront-outline",
+            label: "Storefront",
+            subtitle: "See your store the way buyers do",
+            onPress: openBuyerView,
+            reducedMotion
+          },
+          // Shipping settings and a returns policy have no screen in this app,
+          // and neither has a backend to point at. Marked unavailable with an
+          // honest subtitle rather than wired to something unrelated — a tile
+          // that opens the wrong screen is worse than one that says "not yet".
+          {
+            icon: "airplane-outline",
+            label: "Shipping",
+            subtitle: "Not available in the app yet",
+            disabled: true,
+            reducedMotion
+          },
+          {
+            icon: "return-down-back-outline",
+            label: "Returns",
+            subtitle: "Not available in the app yet",
+            disabled: true,
+            reducedMotion
           }
-          onPress={() => {
-            setTab(lowCount > 0 ? "low" : "all");
-            setExpanded(true);
-          }}
-          reducedMotion={reducedMotion}
-        />
-        <StoreQuickLinkTile
-          icon="pricetags-outline"
-          label="Collections"
-          subtitle={`${new Set(snapshot.listings.map((item) => item.category).filter(Boolean)).size} categories`}
-          onPress={() => {
-            setTab("all");
-            setExpanded(true);
-          }}
-          reducedMotion={reducedMotion}
-        />
-      </View>
-      <View style={styles.linkRow}>
-        <StoreQuickLinkTile
-          icon="bar-chart-outline"
-          label="Reports"
-          subtitle="Sales, orders and trends"
-          onPress={() => navigation.navigate("BusinessOsInsights", { title: "Store reports" })}
-          reducedMotion={reducedMotion}
-        />
-        <StoreQuickLinkTile
-          icon="storefront-outline"
-          label="Storefront"
-          subtitle="See your store the way buyers do"
-          onPress={openBuyerView}
-          reducedMotion={reducedMotion}
-        />
-      </View>
-      <View style={styles.linkRow}>
-        {/* Shipping settings and a returns policy have no screen in this app,
-            and neither has a backend to point at. Greyed with an honest
-            subtitle rather than wired to something unrelated — a tile that
-            opens the wrong screen is worse than one that says "not yet". */}
-        <StoreQuickLinkTile
-          icon="airplane-outline"
-          label="Shipping"
-          subtitle="Not available in the app yet"
-          disabled
-          reducedMotion={reducedMotion}
-        />
-        <StoreQuickLinkTile
-          icon="return-down-back-outline"
-          label="Returns"
-          subtitle="Not available in the app yet"
-          disabled
-          reducedMotion={reducedMotion}
-        />
-      </View>
+        ]}
+      />
     </View>
   );
 
@@ -632,8 +636,14 @@ const styles = StyleSheet.create({
     borderBottomColor: storeLight.border.hairline
   },
   linkHeading: { paddingHorizontal: storeLight.space.card },
-  linkGrid: { gap: storeLight.space.gutter, paddingHorizontal: storeLight.space.card, marginTop: 8 },
-  linkRow: { flexDirection: "row", gap: storeLight.space.gutter },
+  /**
+   * Page inset only. The gap between tiles and between rows now belongs to
+   * `StoreQuickLinkGrid`, so it is not repeated here — two owners of the same
+   * spacing is how the rows drifted out of alignment with each other in the
+   * first place. `linkRow` is gone for the same reason: the row is no longer
+   * something a screen composes.
+   */
+  linkGrid: { paddingHorizontal: storeLight.space.card, marginTop: 8 },
   ctas: { gap: 10, paddingHorizontal: storeLight.space.card },
   primaryCta: {
     minHeight: storeLight.size.tapTarget + 4,

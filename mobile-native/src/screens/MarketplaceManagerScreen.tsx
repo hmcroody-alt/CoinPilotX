@@ -100,7 +100,7 @@ import {
 import {
   StoreHeader,
   StoreOfflineNote,
-  StoreQuickLinkTile,
+  StoreQuickLinkGrid,
   StoreRowSkeleton,
   StoreSectionError,
   StoreSkeletonBlock
@@ -922,39 +922,50 @@ function SellingPane({
         </Animated.View>
       ) : null}
 
-      {/* 6. More */}
-      <Animated.View style={[styles.moreGrid, entrance.styleFor(SELLING_SLOT.more)]}>
-        <StoreQuickLinkTile
-          icon="chatbubble-ellipses-outline"
-          label="Buyer messages"
-          // MOCK-DATA: no unread counter scoped to marketplace conversations.
-          subtitle="Open your inbox"
-          onPress={() => navigation.navigate("Messenger")}
+      {/* 6. More
+          Two per row, laid out by the grid rather than by this screen. These
+          four tiles used to sit in a wrapping row, which gave each of them a
+          quarter of the width and rendered the labels as "S…" and "M…". The
+          row count is no longer this screen's decision — see the note in
+          `StoreQuickLinkTile.tsx`. */}
+      <Animated.View style={entrance.styleFor(SELLING_SLOT.more)}>
+        <StoreQuickLinkGrid
           reducedMotion={reducedMotion}
-        />
-        <StoreQuickLinkTile
-          icon="star-outline"
-          label="Seller rating"
-          // MOCK-DATA: no seller review aggregate on any endpoint.
-          subtitle="No rating data yet"
-          disabled
-          reducedMotion={reducedMotion}
-        />
-        <StoreQuickLinkTile
-          icon="location-outline"
-          label="Meetup spots"
-          // MOCK-DATA: no meetup-spot storage. Kept and disabled rather than
-          // removed, because the safety affordance should not quietly vanish.
-          subtitle="Not available yet"
-          disabled
-          reducedMotion={reducedMotion}
-        />
-        <StoreQuickLinkTile
-          icon="receipt-outline"
-          label="Sold history"
-          subtitle="Your sales and payouts"
-          onPress={() => navigation.navigate("SellerStore", { mode: "orders", title: "Sales" })}
-          reducedMotion={reducedMotion}
+          items={[
+            {
+              icon: "chatbubble-ellipses-outline",
+              label: "Buyer messages",
+              // MOCK-DATA: no unread counter scoped to marketplace conversations.
+              subtitle: "Open your inbox",
+              onPress: () => navigation.navigate("Messenger"),
+              reducedMotion
+            },
+            {
+              icon: "star-outline",
+              label: "Seller rating",
+              // MOCK-DATA: no seller review aggregate on any endpoint.
+              subtitle: "No rating data yet",
+              disabled: true,
+              reducedMotion
+            },
+            {
+              icon: "location-outline",
+              label: "Meetup spots",
+              // MOCK-DATA: no meetup-spot storage. Kept and disabled rather than
+              // removed, because the safety affordance should not quietly vanish.
+              subtitle: "Not available yet",
+              disabled: true,
+              reducedMotion
+            },
+            {
+              icon: "receipt-outline",
+              label: "Sold history",
+              subtitle: "Your sales and payouts",
+              onPress: () =>
+                navigation.navigate("SellerStore", { mode: "orders", title: "Sales" }),
+              reducedMotion
+            }
+          ]}
         />
       </Animated.View>
 
@@ -1715,7 +1726,9 @@ const styles = StyleSheet.create({
   boostButtonOff: { backgroundColor: storeLight.bg.skeleton },
   boostButtonText: { fontSize: 12, fontWeight: "800", color: storeLight.text.primary },
 
-  moreGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  /* `moreGrid` is gone. It was `flexDirection: "row", flexWrap: "wrap"` around
+     four `flex: 1` tiles, which is how "Seller rating" became "S…". The grid
+     component owns that layout now. */
 
   gridRow: { gap: marketplaceLight.grid.gutter },
   gridCell: { flex: 1 },

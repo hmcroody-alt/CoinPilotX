@@ -88,7 +88,7 @@ import {
   SpendBarChart,
   SuggestionCard
 } from "../components/ads";
-import { StoreKpiCard, StoreQuickLinkTile } from "../components/store";
+import { StoreKpiCard, StoreQuickLinkGrid } from "../components/store";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { useFormatters } from "../i18n/hooks";
@@ -628,40 +628,52 @@ export function AdsManagerScreen({ route, navigation }: Props) {
 
       <Animated.View style={[styles.section, entrance.styleFor(SLOT.tools)]}>
         <Text style={styles.sectionTitle}>Tools</Text>
+        {/* Two per row, laid out by the grid. These four used to sit in a
+            wrapping row and took a quarter of the width each, which is how
+            "Audiences" rendered as "A…" and "Creative library" as "Cr…".
+            "Wallet & billing" and "Creative library" are the longest labels in
+            the surface, so this is where the defect showed first. */}
         <View style={styles.toolGrid}>
-          <StoreQuickLinkTile
-            icon="wallet-outline"
-            label="Wallet & billing"
-            subtitle={
-              model?.wallet ? model.wallet.balanceLabel : walletFailed ? "Tap to retry" : "Ad wallet"
+        <StoreQuickLinkGrid
+          reducedMotion={reducedMotion}
+          items={[
+            {
+              icon: "wallet-outline",
+              label: "Wallet & billing",
+              subtitle: model?.wallet
+                ? model.wallet.balanceLabel
+                : walletFailed
+                  ? "Tap to retry"
+                  : "Ad wallet",
+              onPress: openWallet,
+              reducedMotion
+            },
+            {
+              icon: "bar-chart-outline",
+              label: "Reports",
+              subtitle: spendTotalLabel + " spent to date",
+              onPress: openReports,
+              reducedMotion
+            },
+            // Audiences and the creative library have no endpoint in this app.
+            // A tile that opens the wrong screen is worse than one that says
+            // "not yet", so both are disabled and say why.
+            {
+              icon: "people-outline",
+              label: "Audiences",
+              subtitle: "Not available in the app yet",
+              disabled: true,
+              reducedMotion
+            },
+            {
+              icon: "images-outline",
+              label: "Creative library",
+              subtitle: "Not available in the app yet",
+              disabled: true,
+              reducedMotion
             }
-            onPress={openWallet}
-            reducedMotion={reducedMotion}
-          />
-          <StoreQuickLinkTile
-            icon="bar-chart-outline"
-            label="Reports"
-            subtitle={spendTotalLabel + " spent to date"}
-            onPress={openReports}
-            reducedMotion={reducedMotion}
-          />
-          {/* Audiences and the creative library have no endpoint in this app.
-              A tile that opens the wrong screen is worse than one that says
-              "not yet", so both are disabled and say why. */}
-          <StoreQuickLinkTile
-            icon="people-outline"
-            label="Audiences"
-            subtitle="Not available in the app yet"
-            disabled
-            reducedMotion={reducedMotion}
-          />
-          <StoreQuickLinkTile
-            icon="images-outline"
-            label="Creative library"
-            subtitle="Not available in the app yet"
-            disabled
-            reducedMotion={reducedMotion}
-          />
+          ]}
+        />
         </View>
       </Animated.View>
 
@@ -951,12 +963,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: adsLight.space.card
   },
   sectionAction: { fontSize: 13, fontWeight: "700", color: adsLight.chart.axis },
-  toolGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    paddingHorizontal: adsLight.space.card
-  },
+  /* Was `flexDirection: "row", flexWrap: "wrap"` around four `flex: 1` tiles,
+     which gave each a quarter of the width and clipped "Audiences" to "A…".
+     `StoreQuickLinkGrid` owns the rows now; this keeps only the inset. */
+  toolGrid: { paddingHorizontal: adsLight.space.card },
   noMatches: { paddingHorizontal: adsLight.space.card, paddingVertical: 20 },
   noMatchesText: { fontSize: 13, color: adsLight.text.muted, textAlign: "center" },
   message: {

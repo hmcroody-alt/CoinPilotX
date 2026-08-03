@@ -26,8 +26,16 @@ export type { StoreListingRowProps } from "./StoreListingRow";
 export { StoreAttentionBanner } from "./StoreAttentionBanner";
 export type { StoreAttentionBannerProps } from "./StoreAttentionBanner";
 
-export { StoreQuickLinkTile } from "./StoreQuickLinkTile";
-export type { StoreQuickLinkTileProps } from "./StoreQuickLinkTile";
+export {
+  StoreQuickLinkTile,
+  StoreQuickLinkGrid,
+  QUICK_LINK_TILES_PER_ROW,
+  QUICK_LINK_LABEL_LINES,
+  QUICK_LINK_SUBTITLE_LINES,
+  QUICK_LINK_LABEL_MAX_FONT_SCALE,
+  QUICK_LINK_SUBTITLE_MAX_FONT_SCALE
+} from "./StoreQuickLinkTile";
+export type { StoreQuickLinkTileProps, StoreQuickLinkGridProps } from "./StoreQuickLinkTile";
 
 export { StoreTabBar } from "./StoreTabBar";
 export type { StoreTabBarProps } from "./StoreTabBar";
