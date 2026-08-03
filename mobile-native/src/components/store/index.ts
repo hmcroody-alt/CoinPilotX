@@ -37,6 +37,13 @@ export {
 } from "./StoreQuickLinkTile";
 export type { StoreQuickLinkTileProps, StoreQuickLinkGridProps } from "./StoreQuickLinkTile";
 
+export {
+  StoreSetupChecklist,
+  CHECKLIST_LABEL_MAX_FONT_SCALE,
+  CHECKLIST_DETAIL_MAX_FONT_SCALE
+} from "./StoreSetupChecklist";
+export type { StoreSetupChecklistProps } from "./StoreSetupChecklist";
+
 export { StoreTabBar } from "./StoreTabBar";
 export type { StoreTabBarProps } from "./StoreTabBar";
 

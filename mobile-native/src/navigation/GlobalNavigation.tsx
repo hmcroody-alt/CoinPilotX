@@ -7,6 +7,9 @@ import { AccessibilityInfo, Animated, Image, LayoutChangeEvent, Pressable, Style
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LogiNexusBadge, LogiNexusSignalIndicator } from "../components/LogiNexus";
 import { getPulseRadioState, playNextTrack, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
+// The scope wording lives with the counts, in the unread store — not here, where
+// it could drift from the number it describes.
+import { badgeSpokenLabel, scopedBadgesEnabled } from "../core/unreadCounts";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { useBottomNavVisibility } from "./BottomNavVisibility";
@@ -136,8 +139,36 @@ export function LogiNexusGlobalHeader({
 
         <View style={styles.headerActions}>
           {onOpenSearch ? <IconButton label="Search PulseSoc" icon="search" home={homeMode} testID="global-header-search" onPress={onOpenSearch} /> : null}
-          {onOpenMessages ? <IconButton label="Open Messages" icon="chatbubble-ellipses-outline" home={homeMode} badge={messageCount} testID="global-header-messages" onPress={onOpenMessages} /> : null}
-          {onOpenActivity ? <IconButton label="Open Activity Inbox" icon="notifications-outline" home={homeMode} badge={activityCount} testID="global-header-activity" onPress={onOpenActivity} /> : null}
+          {/* Each badge names its own scope. A bare number beside an icon is
+              ambiguous sighted and meaningless spoken, and it was the reason
+              nobody noticed the bell was counting messages too. The scope text
+              comes from the unread store, next to the number's definition, so a
+              label cannot drift from the count it labels. */}
+          {onOpenMessages ? (
+            <IconButton
+              label="Open Messages"
+              scopeLabel={badgeSpokenLabel("messages", messageCount)}
+              icon="chatbubble-ellipses-outline"
+              home={homeMode}
+              badge={messageCount}
+              testID="global-header-messages"
+              onPress={onOpenMessages}
+            />
+          ) : null}
+          {onOpenActivity ? (
+            <IconButton
+              label="Open Activity Inbox"
+              scopeLabel={badgeSpokenLabel(
+                scopedBadgesEnabled() ? "notifications" : "combined",
+                activityCount
+              )}
+              icon="notifications-outline"
+              home={homeMode}
+              badge={activityCount}
+              testID="global-header-activity"
+              onPress={onOpenActivity}
+            />
+          ) : null}
           {onOpenProfile ? (
             <Pressable
               accessibilityRole="button"
@@ -155,7 +186,18 @@ export function LogiNexusGlobalHeader({
       {!homeMode ? <View style={styles.headerMetaRow}>
         <LogiNexusBadge label={intelligenceMode ? "UNDX" : "PulseSoc"} tone={intelligenceMode ? "intelligence" : "default"} />
         {identity?.attention ? <LogiNexusBadge label="attention" tone="warning" /> : null}
-        {badges?.alerts ? <LogiNexusBadge label={`${formatBadge(badges.alerts)} alerts`} tone="intelligence" /> : null}
+        {/* "3 alerts" named a fourth thing that matched none of the three
+            numbers above it. It is the notification count, so it says so. */}
+        {badges?.alerts ? (
+          <LogiNexusBadge
+            label={
+              scopedBadgesEnabled()
+                ? badgeSpokenLabel("notifications", normalizeBadgeCount(badges.alerts))
+                : `${formatBadge(badges.alerts)} alerts`
+            }
+            tone="intelligence"
+          />
+        ) : null}
       </View> : null}
     </View>
   );
@@ -225,7 +267,13 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
             <Pressable
               key={item.name}
               accessibilityRole="tab"
-              accessibilityLabel={item.accessibilityLabel}
+              // The Messages tab is the only one that badges, and it says what
+              // the number is. Every other tab keeps its plain label.
+              accessibilityLabel={
+                badge === undefined
+                  ? item.accessibilityLabel
+                  : `${item.accessibilityLabel}, ${badgeSpokenLabel("messages", badge)}`
+              }
               accessibilityState={{ selected: active, disabled }}
               accessibilityActions={item.name === "Reels" && active ? [{ name: "refresh", label: "Refresh Reels" }] : undefined}
               onAccessibilityAction={
@@ -369,11 +417,28 @@ export function openPrimaryCreate(navigation: NavigationProp<ParamListBase>) {
   (navigation as any).navigate("Home", { openComposer: true });
 }
 
-function IconButton({ label, icon, badge, testID, home, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; badge?: number; testID?: string; home?: boolean; onPress?: () => void }) {
+function IconButton({
+  label,
+  scopeLabel,
+  icon,
+  badge,
+  testID,
+  home,
+  onPress
+}: {
+  label: string;
+  /** What the badge counts, appended to the spoken label. Omit for no badge. */
+  scopeLabel?: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  badge?: number;
+  testID?: string;
+  home?: boolean;
+  onPress?: () => void;
+}) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={scopeLabel ? `${label}, ${scopeLabel}` : label}
       disabled={!onPress}
       testID={testID}
       style={({ pressed }) => [styles.iconButton, home && styles.iconButtonHome, pressed && styles.pressed, !onPress && styles.disabled]}

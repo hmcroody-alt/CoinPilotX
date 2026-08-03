@@ -186,3 +186,105 @@ export function useUnreadCounts(): UnreadSnapshot {
 export function useBellCount(): number {
   return useUnreadCounts().bellCount;
 }
+
+/* ------------------------------------------------------------------ *
+ * Badge scopes
+ * ------------------------------------------------------------------ */
+
+export const SCOPED_BADGES_FLAG = "EXPO_PUBLIC_SCOPED_BADGES";
+
+/** True when a build has opted into scope-stating badges. Off by default. */
+export function scopedBadgesEnabled(): boolean {
+  return String(process.env[SCOPED_BADGES_FLAG] || "").trim() === "1";
+}
+
+/**
+ * What a badge is counting.
+ *
+ * The defect this closes: `AppNavigator` kept its own copy of the counts and
+ * gave the Activity bell `totalUnreadCount` — notifications *plus* messages —
+ * while a messages badge sat directly beside it showing the message half again.
+ * Two badges, one number counted twice, and neither of them said what it was
+ * counting, so there was no way to notice from the screen.
+ *
+ * A badge is a number with no noun. The noun has to come from somewhere, and the
+ * only safe place for it is next to the number's definition — which is here, in
+ * the store the number comes from. A label written at the call site can drift
+ * from the count it labels; one written here cannot, because it is returned
+ * alongside it.
+ */
+export type BadgeScope = "notifications" | "messages" | "combined";
+
+export type BadgeDescriptor = {
+  scope: BadgeScope;
+  count: number;
+  /**
+   * What the number counts, spelled out for a screen reader. A bare "3" beside
+   * an icon is ambiguous even to a sighted reader and meaningless spoken.
+   */
+  spokenLabel: string;
+};
+
+/** One badge, read from the shared snapshot. Never from a second source. */
+export function badgeFor(scope: BadgeScope, from: UnreadSnapshot = snapshot): BadgeDescriptor {
+  const count =
+    scope === "notifications"
+      ? from.bellCount
+      : scope === "messages"
+        ? from.messageCount
+        : from.totalCount;
+  return { scope, count, spokenLabel: badgeSpokenLabel(scope, count) };
+}
+
+/**
+ * The sentence a badge announces.
+ *
+ * Zero is spoken as "no unread…" rather than left silent because the label is
+ * attached to a control that is still there: a bell with nothing on it should
+ * say so, not go quiet and leave the reader wondering whether it failed to load.
+ */
+export function badgeSpokenLabel(scope: BadgeScope, count: number): string {
+  const noun =
+    scope === "notifications"
+      ? count === 1
+        ? "unread notification"
+        : "unread notifications"
+      : scope === "messages"
+        ? count === 1
+          ? "unread message"
+          : "unread messages"
+        : count === 1
+          ? "unread notification or message"
+          : "unread notifications and messages";
+  return count === 0 ? `No ${noun}` : `${count} ${noun}`;
+}
+
+/**
+ * The three numbers the global navigation renders, all from this store.
+ *
+ * `activity` is the bell count, not the total. That is the whole correction: the
+ * bell sits beside a messages badge, so a bell carrying messages too counts the
+ * same unread twice on one strip. The combined figure still exists — it is what
+ * the phone's app icon wants, where there is no second badge to double against —
+ * and is returned as `combined` rather than quietly reused as `activity`.
+ */
+export function navigationBadgesFrom(from: UnreadSnapshot = snapshot): {
+  activity: number;
+  messages: number;
+  alerts: number;
+  combined: number;
+} {
+  return {
+    activity: from.bellCount,
+    messages: from.messageCount,
+    // The header's "N alerts" chip and the bell are the same notifications, so
+    // they must be the same number. They were two fields reading two functions.
+    alerts: from.bellCount,
+    combined: from.totalCount
+  };
+}
+
+/** Subscribe a component to one scoped badge. */
+export function useBadge(scope: BadgeScope): BadgeDescriptor {
+  return badgeFor(scope, useUnreadCounts());
+}

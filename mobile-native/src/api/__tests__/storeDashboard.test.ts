@@ -34,12 +34,17 @@ import {
   deriveStatus,
   deriveTabs,
   filterRows,
+  listingAwaitsReview,
   listingHealth,
   loadStoreDashboard,
   LOW_STOCK_THRESHOLD,
   snapshotFrom,
   STORE_MOCK_DATA_GAPS,
+  STORE_READINESS_FLAG,
+  storeReadiness,
+  storeReadinessEnabled,
   type StoreListingRow,
+  type StoreReadiness,
   type StoreTabKey
 } from "../storeDashboard";
 import type {
@@ -108,7 +113,7 @@ function rowsOf(listings: MarketplaceListing[], orders: MarketplaceSellerOrder[]
 describe("STORE_MOCK_DATA_GAPS", () => {
   it("names every field the design asks for that has no backend source", () => {
     // Pinned deliberately. Faking one of these changes a number a reviewer reads.
-    expect(STORE_MOCK_DATA_GAPS).toHaveLength(7);
+    expect(STORE_MOCK_DATA_GAPS).toHaveLength(8);
     expect(STORE_MOCK_DATA_GAPS.map((gap) => gap.field)).toEqual([
       "Views · 7 days",
       "Seller rating",
@@ -116,7 +121,9 @@ describe("STORE_MOCK_DATA_GAPS", () => {
       "Open orders — N ship today",
       "Listing rating and review count",
       "Store open / paused",
-      "Stock tracked / not tracked"
+      "Stock tracked / not tracked",
+      // Added with the readiness ladder: five rungs ship, two cannot be sourced.
+      "Store restricted / suspended"
     ]);
   });
 
@@ -627,5 +634,301 @@ describe("snapshotFrom", () => {
     // Rows still render; only the order-derived figures go to zero.
     const rows: StoreListingRow[] = deriveRows(snap, NOW);
     expect(rows[0].unitsSold7d).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Readiness ladder
+ * ------------------------------------------------------------------ */
+
+/**
+ * One real store per rung, derived rather than declared.
+ *
+ * The cross-rung assertions below could have read the copy table directly, but
+ * then they would prove the table has five distinct entries and nothing about
+ * whether a store can reach them. These go through `storeReadiness` from
+ * listings, so a rung that has become unreachable fails the `toBe(rung)` check
+ * here rather than passing quietly.
+ */
+const READINESS_FIXTURES: Record<StoreReadiness, ReturnType<typeof storeReadiness>> = (() => {
+  const cases: Record<StoreReadiness, MarketplaceListing[]> = {
+    not_set_up: [],
+    incomplete: [listing({ status: "draft" })],
+    pending_review: [listing({ status: "active", approval_status: "pending" })],
+    live: [listing({ status: "active", quantity: 40 })],
+    paused: [listing({ status: "active", quantity: 0 })]
+  };
+  const built = {} as Record<StoreReadiness, ReturnType<typeof storeReadiness>>;
+  for (const [rung, listings] of Object.entries(cases) as [StoreReadiness, MarketplaceListing[]][]) {
+    const state = storeReadiness({ listings, rows: rowsOf(listings) });
+    // The fixture is only useful if it actually lands on the rung it claims.
+    expect(state.readiness).toBe(rung);
+    built[rung] = state;
+  }
+  return built;
+})();
+
+/**
+ * The regression these tests exist for is one sentence: a seller who had never
+ * listed anything opened the Store screen and read "Open for orders". The
+ * screen was not missing a source — `deriveStatus` asked a yes/no question of
+ * data that has at least five answers, and an empty catalogue fell through to
+ * the cheerful one.
+ *
+ * So the assertions below are mostly about the rungs *below* live. The one
+ * worth reading twice is the sweep at the end: it walks every rung the type
+ * allows rather than the ones anyone thought to write a case for, because
+ * falling through to a default is precisely how the original defect looked.
+ */
+describe("storeReadiness", () => {
+  const ALL_RUNGS: StoreReadiness[] = [
+    "not_set_up",
+    "incomplete",
+    "pending_review",
+    "live",
+    "paused"
+  ];
+
+  /** Build the readiness state the way the screen does: raw listings plus rows. */
+  function readinessOf(listings: MarketplaceListing[]) {
+    return storeReadiness({ listings, rows: rowsOf(listings) });
+  }
+
+  it("is off unless the build sets the flag to exactly 1", () => {
+    const original = process.env[STORE_READINESS_FLAG];
+    try {
+      for (const value of ["", "0", "true", "yes", "2"]) {
+        process.env[STORE_READINESS_FLAG] = value;
+        expect(storeReadinessEnabled()).toBe(false);
+      }
+      process.env[STORE_READINESS_FLAG] = "1";
+      expect(storeReadinessEnabled()).toBe(true);
+    } finally {
+      if (original === undefined) delete process.env[STORE_READINESS_FLAG];
+      else process.env[STORE_READINESS_FLAG] = original;
+    }
+  });
+
+  /** The exact defect. */
+  it("does not call an empty store open for orders", () => {
+    const state = readinessOf([]);
+    expect(state.readiness).toBe("not_set_up");
+    expect(state.openForOrders).toBe(false);
+    expect(state.statusLabel).not.toMatch(/open for orders/i);
+    // Nor may it be called paused: nothing was ever started, let alone stopped.
+    expect(state.statusLabel).not.toMatch(/paused/i);
+  });
+
+  it("separates a store with only drafts from a store that was never started", () => {
+    const drafts = readinessOf([listing({ status: "draft" })]);
+    expect(drafts.readiness).toBe("incomplete");
+    expect(drafts.openForOrders).toBe(false);
+    expect(drafts.statusLabel).not.toBe(readinessOf([]).statusLabel);
+  });
+
+  it("holds a store at review while nothing is orderable yet", () => {
+    const state = readinessOf([listing({ status: "active", approval_status: "pending" })]);
+    expect(state.readiness).toBe("pending_review");
+    expect(state.openForOrders).toBe(false);
+  });
+
+  /**
+   * The subtle one. A listing can be `active` with stock *and* awaiting
+   * approval — reading stock alone would call that store live while no buyer
+   * can order from it.
+   */
+  it("does not count a listing awaiting approval as something a buyer can order", () => {
+    const pending = readinessOf([
+      listing({ id: 1, listing_id: 1, status: "active", quantity: 40, approval_status: "pending" })
+    ]);
+    expect(pending.readiness).toBe("pending_review");
+
+    const approved = readinessOf([
+      listing({ id: 1, listing_id: 1, status: "active", quantity: 40, approval_status: "approved" })
+    ]);
+    expect(approved.readiness).toBe("live");
+  });
+
+  it("goes live as soon as one listing is orderable, even alongside drafts and reviews", () => {
+    const state = readinessOf([
+      listing({ id: 1, listing_id: 1, status: "active", quantity: 40 }),
+      listing({ id: 2, listing_id: 2, status: "draft" }),
+      listing({ id: 3, listing_id: 3, status: "active", approval_status: "submitted" })
+    ]);
+    expect(state.readiness).toBe("live");
+    expect(state.openForOrders).toBe(true);
+  });
+
+  it("counts a low-stock listing as orderable, because it is", () => {
+    const state = readinessOf([listing({ status: "active", quantity: LOW_STOCK_THRESHOLD })]);
+    expect(state.readiness).toBe("live");
+  });
+
+  it("calls a store paused only when it has listings that none of the other rungs claim", () => {
+    const state = readinessOf([listing({ status: "active", quantity: 0 })]);
+    expect(state.readiness).toBe("paused");
+    expect(state.openForOrders).toBe(false);
+  });
+
+  /**
+   * The ladder's whole purpose is that the strip cannot say the same thing in
+   * two different situations. Asserting on the set catches a future edit that
+   * makes two rungs agree, which reads fine in review.
+   */
+  it("gives every rung its own status label and its own headline", () => {
+    const labels = ALL_RUNGS.map((rung) => READINESS_FIXTURES[rung].statusLabel);
+    const headlines = ALL_RUNGS.map((rung) => READINESS_FIXTURES[rung].headline);
+    expect(new Set(labels).size).toBe(ALL_RUNGS.length);
+    expect(new Set(headlines).size).toBe(ALL_RUNGS.length);
+  });
+
+  it("binds openForOrders to live and to nothing else", () => {
+    for (const rung of ALL_RUNGS) {
+      expect(READINESS_FIXTURES[rung].openForOrders).toBe(rung === "live");
+    }
+  });
+
+  /** Every rung has a next move, so the strip's button is never dead. */
+  it("offers a control at every rung", () => {
+    for (const rung of ALL_RUNGS) {
+      const action = READINESS_FIXTURES[rung].action;
+      expect(action.label.length).toBeGreaterThan(0);
+      expect(action.key.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("the setup checklist", () => {
+  function readinessOf(listings: MarketplaceListing[]) {
+    return storeReadiness({ listings, rows: rowsOf(listings) });
+  }
+
+  it("marks nothing complete for a store that has not started", () => {
+    const state = readinessOf([]);
+    expect(state.steps.every((step) => !step.complete)).toBe(true);
+    expect(state.remaining).toBe(state.steps.length);
+  });
+
+  const CHECKLIST_CASES: MarketplaceListing[][] = [
+    [],
+    [listing({ status: "draft" })],
+    [listing({ status: "active", quantity: 0 })],
+    [listing({ status: "active", approval_status: "pending" })],
+    [listing({ status: "active", quantity: 40 })]
+  ];
+
+  /**
+   * The brief asks for "a working action per step", but the literal reading is
+   * wrong and the code is right: an empty store's "take a listing out of draft"
+   * step is outstanding and has no button, because there is nothing to publish
+   * until something is added. A button there would open an empty drawer.
+   *
+   * So the real guarantee is the one below — the seller is never left looking
+   * at an unfinished checklist with nothing to press.
+   */
+  it("always leaves the seller something to press while work remains", () => {
+    for (const listings of CHECKLIST_CASES) {
+      const state = readinessOf(listings);
+      if (state.remaining === 0) continue;
+      const outstanding = state.steps.filter((step) => !step.complete);
+      // The one exception: waiting on a review is the whole task at that rung.
+      if (outstanding.every((step) => step.key === "review")) {
+        expect(outstanding.every((step) => step.action === null)).toBe(true);
+        continue;
+      }
+      expect(outstanding.some((step) => step.action !== null)).toBe(true);
+    }
+  });
+
+  /** A step is only unbuttoned when pressing one could not have helped. */
+  it("withholds a button only where there is nothing for it to open", () => {
+    // Nothing added: publish and stock have no subject yet.
+    const empty = readinessOf([]);
+    expect(empty.steps.find((step) => step.key === "add")?.action).not.toBeNull();
+    expect(empty.steps.find((step) => step.key === "publish")?.action).toBeNull();
+
+    // A draft exists: now the drafts drawer has something in it.
+    const drafted = readinessOf([listing({ status: "draft" })]);
+    expect(drafted.steps.find((step) => step.key === "publish")?.action).not.toBeNull();
+  });
+
+  it("never puts a button on a step that is already done", () => {
+    const state = readinessOf([listing({ status: "active", quantity: 40 })]);
+    for (const step of state.steps) {
+      if (step.complete) expect(step.action).toBeNull();
+    }
+  });
+
+  it("shows the review step only while something is actually in review", () => {
+    const keys = (listings: MarketplaceListing[]) =>
+      readinessOf(listings).steps.map((step) => step.key);
+    expect(keys([listing({ status: "active", quantity: 40 })])).not.toContain("review");
+    expect(keys([listing({ status: "active", approval_status: "pending" })])).toContain("review");
+  });
+
+  it("clears the checklist once a store is genuinely live", () => {
+    const state = readinessOf([listing({ status: "active", quantity: 40 })]);
+    expect(state.remaining).toBe(0);
+    expect(state.steps.every((step) => step.complete)).toBe(true);
+  });
+
+  it("counts remaining as the steps that are not complete", () => {
+    const state = readinessOf([listing({ status: "draft" })]);
+    expect(state.remaining).toBe(state.steps.filter((step) => !step.complete).length);
+    expect(state.remaining).toBeGreaterThan(0);
+  });
+
+  it("keeps the publish step outstanding while every listing is a draft", () => {
+    const state = readinessOf([listing({ id: 1, listing_id: 1, status: "draft" })]);
+    const publish = state.steps.find((step) => step.key === "publish");
+    expect(publish?.complete).toBe(false);
+    expect(publish?.action?.key).toBe("open_drafts");
+  });
+
+  it("points an out-of-stock store at its out-of-stock listings", () => {
+    const state = readinessOf([listing({ status: "active", quantity: 0 })]);
+    const stock = state.steps.find((step) => step.key === "stock");
+    expect(stock?.complete).toBe(false);
+    expect(stock?.action?.key).toBe("open_out_of_stock");
+  });
+
+  it("writes every step's label and detail as a sentence a seller could act on", () => {
+    for (const listings of CHECKLIST_CASES) {
+      for (const step of readinessOf(listings).steps) {
+        expect(step.label.length).toBeGreaterThan(0);
+        expect(step.detail.length).toBeGreaterThan(0);
+        expect(step.detail).not.toMatch(/—/);
+      }
+    }
+  });
+});
+
+describe("listingAwaitsReview", () => {
+  it("reads approval status ahead of listing status, because they answer different questions", () => {
+    // Active *and* pending approval: the second field is the one about review.
+    expect(listingAwaitsReview(listing({ status: "active", approval_status: "pending" }))).toBe(true);
+    expect(listingAwaitsReview(listing({ status: "active", approval_status: "approved" }))).toBe(false);
+  });
+
+  it("falls back to the listing status when no approval status is present", () => {
+    expect(listingAwaitsReview(listing({ status: "pending_review", approval_status: "" }))).toBe(true);
+    expect(listingAwaitsReview(listing({ status: "active", approval_status: "" }))).toBe(false);
+  });
+
+  it("recognises the review vocabulary the marketplace actually uses", () => {
+    for (const value of ["pending", "in_review", "submitted", "awaiting_approval"]) {
+      expect(listingAwaitsReview(listing({ approval_status: value }))).toBe(true);
+    }
+  });
+
+  /**
+   * `listingHealth` is deliberately left alone: it maps an in-review listing to
+   * `in_stock`, which is right for the tab counts and wrong for readiness. Two
+   * questions, two functions.
+   */
+  it("disagrees with listingHealth on purpose", () => {
+    const pending = listing({ status: "active", quantity: 40, approval_status: "pending" });
+    expect(listingHealth(pending)).toBe("in_stock");
+    expect(listingAwaitsReview(pending)).toBe(true);
   });
 });

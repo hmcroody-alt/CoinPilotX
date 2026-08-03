@@ -81,6 +81,9 @@ export function StoreRowSkeleton({ reducedMotion }: { reducedMotion: boolean }) 
   );
 }
 
+/** What the recovery button says when the recovery is simply "try that again". */
+const RETRY_LABEL = "Try again";
+
 /**
  * Inline failure for one section. Names what failed — the caller passes
  * "Listings didn't load", never a generic apology — and offers the retry right
@@ -89,28 +92,45 @@ export function StoreRowSkeleton({ reducedMotion }: { reducedMotion: boolean }) 
 export function StoreSectionError({
   message,
   onRetry,
+  actionLabel = RETRY_LABEL,
+  // The button reads "Try again" and has always been announced as "Retry" — a
+  // verb rather than a phrase, which is what a screen reader's control list
+  // wants. Kept as a separate default so that a caller overriding the label
+  // ("Sign in") changes both together and nobody has to remember two props.
+  spokenActionLabel = actionLabel === RETRY_LABEL ? "Retry" : actionLabel,
   reducedMotion
 }: {
   message: string;
-  onRetry: () => void;
+  /**
+   * `null` when nothing the reader could press would help — an account without
+   * the entitlement, say, where a second identical attempt fails identically.
+   * The button is then absent rather than present and useless.
+   */
+  onRetry: (() => void) | null;
+  /** Overridden when the recovery is not a retry, e.g. "Sign in". */
+  actionLabel?: string;
+  /** The spoken form, when it should differ from the printed one. */
+  spokenActionLabel?: string;
   reducedMotion: boolean;
 }) {
   const press = useStorePress(reducedMotion, 0.97);
   return (
     <View style={styles.error} accessibilityLiveRegion="polite">
       <Text style={styles.errorText}>{message}</Text>
-      <Animated.View style={press.style}>
-        <Pressable
-          style={styles.retry}
-          onPress={onRetry}
-          onPressIn={press.onPressIn}
-          onPressOut={press.onPressOut}
-          accessibilityRole="button"
-          accessibilityLabel={`Retry. ${message}`}
-        >
-          <Text style={styles.retryText}>Try again</Text>
-        </Pressable>
-      </Animated.View>
+      {onRetry ? (
+        <Animated.View style={press.style}>
+          <Pressable
+            style={styles.retry}
+            onPress={onRetry}
+            onPressIn={press.onPressIn}
+            onPressOut={press.onPressOut}
+            accessibilityRole="button"
+            accessibilityLabel={`${spokenActionLabel}. ${message}`}
+          >
+            <Text style={styles.retryText}>{actionLabel}</Text>
+          </Pressable>
+        </Animated.View>
+      ) : null}
     </View>
   );
 }

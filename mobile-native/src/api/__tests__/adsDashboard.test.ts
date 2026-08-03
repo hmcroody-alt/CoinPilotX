@@ -19,8 +19,12 @@
  */
 
 import {
+  ACCOUNT_NAME_FIRST_FLAG,
   ADS_MOCK_DATA_GAPS,
   ADS_POST_MODE_FLAG,
+  accountNameFirstEnabled,
+  adAccountDisplay,
+  adCampaignDisplay,
   adsKpis,
   adsPostModeEnabled,
   campaignBudget,
@@ -30,6 +34,7 @@ import {
   campaignTabs,
   blockedCampaigns,
   deliverySwitchState,
+  entityDisplay,
   filterCampaigns,
   loadMockPostKpis,
   loadMockRecentPosts,
@@ -303,5 +308,163 @@ describe("spendChartWeekdays", () => {
     expect(days).toHaveLength(7);
     expect(days[6]).toBe(6);
     expect(days[0]).toBe(0);
+  });
+});
+
+/* --------------------------------------------------------- naming records */
+
+/**
+ * "Ad account 8" was the most prominent text on the Advertising screen: a
+ * database key, rendered at heading weight, in the slot where the seller's own
+ * name for the thing belongs. It reads as an error code. Worse, for an account
+ * with no name the line rendered as "Ad account · Ad account 8" — the same
+ * phrase twice, one instance of it a number.
+ *
+ * These tests are written against `entityDisplay` rather than against the two
+ * wrappers wherever possible, because the brief asked for the *class* to be
+ * fixed rather than the instance, and a helper only closes a class if it holds
+ * for a noun nobody has used yet.
+ */
+describe("entityDisplay", () => {
+  it("never puts a bare number in the name slot", () => {
+    for (const id of [8, "8", 0, null, undefined]) {
+      for (const name of [null, undefined, "", "   "]) {
+        const display = entityDisplay({ id, name, noun: "account" });
+        expect(display.name).not.toMatch(/^\d+$/);
+        expect(display.name.length).toBeGreaterThan(0);
+        expect(display.named).toBe(false);
+      }
+    }
+  });
+
+  it("leads with the seller's own name whenever there is one", () => {
+    const display = entityDisplay({ id: 8, name: "Bright Coffee", noun: "account" });
+    expect(display.name).toBe("Bright Coffee");
+    expect(display.named).toBe(true);
+  });
+
+  it("trims a name rather than rendering whitespace as a name", () => {
+    expect(entityDisplay({ id: 8, name: "  Bright Coffee  ", noun: "account" }).name).toBe("Bright Coffee");
+    expect(entityDisplay({ id: 8, name: "   ", noun: "account" }).named).toBe(false);
+  });
+
+  /**
+   * A stand-in that describes the record — "Unnamed account" — tells the seller
+   * something they can act on. A number tells them something they cannot.
+   */
+  it("describes an unnamed record instead of labelling it with its key", () => {
+    const display = entityDisplay({ id: 8, name: "", noun: "account" });
+    expect(display.name).toBe("Unnamed account");
+    expect(display.name).not.toContain("8");
+  });
+
+  /** The number never appears without a word saying what it is. */
+  it("introduces the number with the word for what it counts", () => {
+    expect(entityDisplay({ id: 8, name: "", noun: "account" }).reference).toBe("Account number 8");
+    expect(entityDisplay({ id: 3, name: "", noun: "campaign" }).reference).toBe("Campaign number 3");
+  });
+
+  it("keeps name and reference as separate fields so they can be rendered at separate weights", () => {
+    const display = entityDisplay({ id: 8, name: "Bright Coffee", noun: "account", showReference: true });
+    expect(display.name).toBe("Bright Coffee");
+    expect(display.reference).toBe("Account number 8");
+    // A single pre-joined string would force both onto one line at one size,
+    // which is the layout half of the same mistake.
+    expect(display.name).not.toContain(display.reference!);
+  });
+
+  it("omits the reference when there is nothing to disambiguate", () => {
+    expect(entityDisplay({ id: 8, name: "Bright Coffee", noun: "account" }).reference).toBeNull();
+  });
+
+  it("omits the reference when there is no id to show", () => {
+    for (const id of [null, undefined, ""]) {
+      expect(entityDisplay({ id, name: "", noun: "account", showReference: true }).reference).toBeNull();
+    }
+  });
+
+  /** The class test: a noun no screen has used yet gets the same treatment. */
+  it("holds for any noun, not just the two in use today", () => {
+    const display = entityDisplay({ id: 12, name: "", noun: "audience" });
+    expect(display.name).toBe("Unnamed audience");
+    expect(display.reference).toBe("Audience number 12");
+  });
+});
+
+describe("adAccountDisplay", () => {
+  const named = { id: 8, business_name: "Bright Coffee" } as AdAccount;
+  const unnamed = { id: 8, business_name: "" } as AdAccount;
+
+  /** The exact string from the screenshots must be unreachable. */
+  it("cannot produce 'Ad account 8'", () => {
+    for (const account of [named, unnamed]) {
+      for (const accountCount of [0, 1, 2, 5]) {
+        const display = adAccountDisplay(account, { accountCount });
+        const rendered = [display.name, display.reference].filter(Boolean).join(" · ");
+        expect(rendered).not.toMatch(/Ad account 8/);
+        // Nor the doubled phrase the unnamed case produced.
+        expect(rendered).not.toMatch(/(Ad account.*){2}/);
+      }
+    }
+  });
+
+  it("shows the number for an unnamed account, because it is all there is", () => {
+    expect(adAccountDisplay(unnamed).reference).toBe("Account number 8");
+  });
+
+  /**
+   * With one account the number is noise. With several, two of them possibly
+   * unnamed, it is the only thing separating them — so the caller passes the
+   * count and the helper decides.
+   */
+  it("shows the number for a named account only when there is more than one", () => {
+    expect(adAccountDisplay(named, { accountCount: 1 }).reference).toBeNull();
+    expect(adAccountDisplay(named, { accountCount: 4 }).reference).toBe("Account number 8");
+  });
+
+  it("survives a missing account without rendering a key", () => {
+    for (const account of [null, undefined]) {
+      const display = adAccountDisplay(account);
+      expect(display.name).toBe("Unnamed account");
+      expect(display.reference).toBeNull();
+    }
+  });
+
+  it("is off unless the build sets the flag to exactly 1", () => {
+    const original = process.env[ACCOUNT_NAME_FIRST_FLAG];
+    try {
+      for (const value of ["", "0", "true", "2"]) {
+        process.env[ACCOUNT_NAME_FIRST_FLAG] = value;
+        expect(accountNameFirstEnabled()).toBe(false);
+      }
+      process.env[ACCOUNT_NAME_FIRST_FLAG] = "1";
+      expect(accountNameFirstEnabled()).toBe(true);
+    } finally {
+      if (original === undefined) delete process.env[ACCOUNT_NAME_FIRST_FLAG];
+      else process.env[ACCOUNT_NAME_FIRST_FLAG] = original;
+    }
+  });
+});
+
+describe("adCampaignDisplay", () => {
+  it("leads with the campaign's own name", () => {
+    const display = adCampaignDisplay({ id: 3, campaign_name: "Autumn beans" } as AdCampaign);
+    expect(display.name).toBe("Autumn beans");
+    expect(display.reference).toBeNull();
+  });
+
+  /**
+   * A campaign created from a post has no name of its own, and this was the
+   * second place a bare id reached the screen — in a toast, where the seller
+   * has no context at all to interpret it.
+   */
+  it("describes an unnamed campaign and demotes its number", () => {
+    const display = adCampaignDisplay({ id: 3, campaign_name: "" } as AdCampaign);
+    expect(display.name).toBe("Unnamed campaign");
+    expect(display.reference).toBe("Campaign number 3");
+  });
+
+  it("survives a missing campaign", () => {
+    expect(adCampaignDisplay(null).name).toBe("Unnamed campaign");
   });
 });

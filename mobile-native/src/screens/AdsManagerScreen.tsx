@@ -43,6 +43,9 @@ import {
   AdsMarketplaceModel,
   AdsMode,
   CampaignTabKey,
+  accountNameFirstEnabled,
+  adAccountDisplay,
+  adCampaignDisplay,
   adsKpis,
   adsPostModeEnabled,
   blockedCampaigns,
@@ -97,6 +100,7 @@ import { RootStackParamList } from "../navigation/types";
 import { adsLight } from "../theme/adsLight";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { useStoreEntrance, STORE_STAGGER_MS } from "../theme/storeMotion";
+import { absentValueTextOr, type SurfaceState } from "../api/stateLanguage";
 
 const MODE_CACHE_KEY = "ads.lastMode.v1";
 
@@ -245,8 +249,12 @@ export function AdsManagerScreen({ route, navigation }: Props) {
       setMessage("");
       try {
         const result = await runAdCampaignAction(campaign.id, action);
+        // An unnamed campaign used to make this read "Pause applied to ." The
+        // display helper is the same one the strip uses, so the sentence names
+        // the campaign the same way the list does.
         setMessage(
-          result.message || `${ACTION_LABELS[action]} applied to ${campaign.campaign_name}.`
+          result.message ||
+            `${ACTION_LABELS[action]} applied to ${adCampaignDisplay(campaign).name}.`
         );
         await load("refresh");
       } catch (error) {
@@ -315,12 +323,35 @@ export function AdsManagerScreen({ route, navigation }: Props) {
    * Marketplace mode
    * -------------------------------------------------------------- */
 
+  /**
+   * The account name, with its number demoted.
+   *
+   * The old line read `{business_name || "Ad account"} · Ad account {id}`, which
+   * put a database key in the most prominent text on the screen and, for an
+   * account with no name, said "Ad account · Ad account 8" — the same phrase
+   * twice, one of them a number. Name first, number second and only when it
+   * separates one account from another.
+   */
+  const accountLabel = adAccountDisplay(account, { accountCount: model?.accounts.length ?? 0 });
   const accountStrip = account ? (
     <View style={styles.accountStrip}>
       <View style={styles.accountDot} accessibilityElementsHidden importantForAccessibility="no" />
-      <Text style={styles.accountText} numberOfLines={1}>
-        {account.business_name || "Ad account"} · Ad account {account.id}
-      </Text>
+      {accountNameFirstEnabled() ? (
+        <View style={styles.accountTextGroup}>
+          <Text style={styles.accountName} numberOfLines={1}>
+            {accountLabel.name}
+          </Text>
+          {accountLabel.reference ? (
+            <Text style={styles.accountReference} numberOfLines={1}>
+              {accountLabel.reference}
+            </Text>
+          ) : null}
+        </View>
+      ) : (
+        <Text style={styles.accountText} numberOfLines={1}>
+          {account.business_name || "Ad account"} · Ad account {account.id}
+        </Text>
+      )}
       {model && model.accounts.length > 1 ? (
         <Pressable
           onPress={() => openClassic("Ad accounts")}
@@ -380,7 +411,13 @@ export function AdsManagerScreen({ route, navigation }: Props) {
         />
         <StoreKpiCard
           label="Cost per click"
-          value={kpis.cpcCents == null ? "—" : money(kpis.cpcCents)}
+          // No clicks means the figure is undefined, not zero — a cost per click
+          // of nothing would be a claim that the clicks were free.
+          value={absentValueTextOr(
+            kpis.cpcCents == null ? "—" : money(kpis.cpcCents),
+            kpis.cpcCents == null ? "no_activity" : "ready",
+            { notConfiguredText: "No clicks yet" }
+          )}
           // MOCK-DATA guard: no prior period exists to compare against, so no
           // tile shows a trend arrow — including the "▼ cheaper" treatment the
           // design specifies here.
@@ -461,21 +498,48 @@ export function AdsManagerScreen({ route, navigation }: Props) {
             (entry) => Number(entry.campaign_id) === Number(campaign.id)
           );
           const clicks = Number(row?.clicks || 0);
+          /**
+           * The dash on these three rows meant two different things and there
+           * was no way to tell which from the card: the analytics call failed,
+           * or this campaign has not run yet and there is nothing to report.
+           * The first is a fault worth retrying, the second is a new campaign
+           * behaving normally.
+           */
+          const metricState = (): SurfaceState => {
+            if (!model?.analytics) return "unavailable";
+            return row ? "ready" : "no_activity";
+          };
           const metrics: CampaignCardMetric[] = [
             { key: "spent", label: "Spent", value: money(spentCents) },
             {
               key: "impressions",
               label: "Impressions",
-              value: row ? formatters.count(Number(row.impressions || 0)) : "—"
+              value: absentValueTextOr(
+                row ? formatters.count(Number(row.impressions || 0)) : "—",
+                metricState(),
+                { zeroText: formatters.count(0) }
+              )
             },
-            { key: "clicks", label: "Clicks", value: row ? formatters.count(clicks) : "—" },
+            {
+              key: "clicks",
+              label: "Clicks",
+              value: absentValueTextOr(
+                row ? formatters.count(clicks) : "—",
+                metricState(),
+                { zeroText: formatters.count(0) }
+              )
+            },
             {
               key: "cpc",
               label: "CPC",
-              value:
+              value: absentValueTextOr(
                 row && clicks > 0 && Number(row.estimated_cpc || 0) > 0
                   ? money(Math.round(Number(row.estimated_cpc) * 100))
-                  : "—"
+                  : "—",
+                // A campaign with no clicks has no cost per click — that is an
+                // undefined figure, not a zero one.
+                !model?.analytics ? "unavailable" : clicks > 0 ? "ready" : "no_activity"
+              )
             }
           ];
           // Pause and resume belong to the switch; everything else the server
@@ -492,7 +556,8 @@ export function AdsManagerScreen({ route, navigation }: Props) {
           return (
             <CampaignCard
               key={campaign.id}
-              name={campaign.campaign_name || "Untitled campaign"}
+              name={adCampaignDisplay(campaign).name}
+              reference={adCampaignDisplay(campaign).reference}
               objectiveLabel={formatObjective(campaign.objective)}
               phase={phase}
               phaseLabel={campaignPhaseLabel(phase)}
@@ -949,6 +1014,11 @@ const styles = StyleSheet.create({
     backgroundColor: adsLight.status.success
   },
   accountText: { flex: 1, fontSize: 12, color: adsLight.text.onDarkMuted, fontWeight: "600" },
+  // Two lines rather than one joined string: the weight difference is what makes
+  // the number secondary, and a single `Text` could not express it.
+  accountTextGroup: { flex: 1 },
+  accountName: { fontSize: 13, color: adsLight.text.onDark, fontWeight: "700" },
+  accountReference: { fontSize: 11, color: adsLight.text.onDarkMuted, fontWeight: "600" },
   accountAction: { fontSize: 12, fontWeight: "800", color: adsLight.text.onDark },
   sectionHead: {
     flexDirection: "row",

@@ -50,13 +50,17 @@ import {
   compareToPrior,
   createInsightsRequestGate,
   INSIGHTS_PERIODS,
+  insightsErrorCausesEnabled,
   insightsErrorMessage,
+  insightsExportBlockedReason,
+  insightsFailure,
   isGap,
   loadInsights,
   readSavedPeriod,
   sourceShare,
   writeSavedPeriod,
   type InsightsComparison,
+  type InsightsFailure,
   type InsightsLoad,
   type InsightsPeriod,
   type InsightsSummary
@@ -93,6 +97,7 @@ import { insightsLight } from "../theme/insightsLight";
 import { useInsightsPeriodFade } from "../theme/insightsMotion";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { STORE_STAGGER_MS, useStoreEntrance } from "../theme/storeMotion";
+import { absentValueTextOr } from "../api/stateLanguage";
 
 /** Dismissed tips, per rule and subject. Device-local: it is a view preference. */
 const DISMISSALS_KEY = "pulse.insights.tipDismissals.v1";
@@ -149,7 +154,16 @@ export function BusinessOsInsightsScreen({ route, navigation }: Props = {}) {
   const [load, setLoad] = useState<InsightsLoad | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /**
+   * The failure, with its cause — not just a sentence.
+   *
+   * The screen previously kept a string, which meant every failure got the same
+   * treatment: a line and a Retry. Keeping the cause lets the entitlement case
+   * drop the button it cannot use and the sign-in case send the seller somewhere
+   * that would actually fix it.
+   */
+  const [failure, setFailure] = useState<InsightsFailure | null>(null);
+  const error = failure?.message ?? null;
   const [available, setAvailable] = useState<InsightsPeriod[] | null>(null);
   const [dismissals, setDismissals] = useState<TipDismissals>({});
   const [exporting, setExporting] = useState(false);
@@ -168,7 +182,7 @@ export function BusinessOsInsightsScreen({ route, navigation }: Props = {}) {
     async (next: InsightsPeriod, mode: "initial" | "switch" | "refresh") => {
       if (mode === "refresh") setRefreshing(true);
       else setLoading(true);
-      setError(null);
+      setFailure(null);
       try {
         const result = await gate.current.run(() => loadInsights(next));
         setLoad(result);
@@ -176,7 +190,18 @@ export function BusinessOsInsightsScreen({ route, navigation }: Props = {}) {
         // A superseded request is not a failure and must never be shown: the
         // newer request is still in flight and owns the screen.
         if (gate.current.isStale(caught)) return;
-        setError(insightsErrorMessage(caught, "Insights"));
+        // With the flag off the wording is the shipped one, wrapped in the same
+        // shape so only one code path renders it.
+        setFailure(
+          insightsErrorCausesEnabled()
+            ? insightsFailure(caught, "Your insights")
+            : {
+                cause: "unexpected",
+                message: insightsErrorMessage(caught, "Insights"),
+                actionLabel: "Try again",
+                retries: true
+              }
+        );
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -462,6 +487,23 @@ export function BusinessOsInsightsScreen({ route, navigation }: Props = {}) {
     fetchPeriod(period, "switch").catch(() => undefined);
   }, [fetchPeriod, period]);
 
+  /**
+   * The recovery, chosen by cause rather than assumed to be a retry.
+   *
+   * Three outcomes, and each of them is a different control: retry the request,
+   * go and sign in, or offer nothing because nothing would help. Passing `null`
+   * removes the button rather than disabling it, because a disabled Retry on a
+   * failure the reader cannot fix is still a control that promises a way out.
+   */
+  const failureAction: { onPress: (() => void) | null; label: string } = (() => {
+    if (!failure) return { onPress: retry, label: "Try again" };
+    if (!failure.actionLabel) return { onPress: null, label: "" };
+    if (failure.cause === "authentication") {
+      return { onPress: () => go("Login"), label: failure.actionLabel };
+    }
+    return { onPress: failure.retries ? retry : null, label: failure.actionLabel };
+  })();
+
   const periodOptions = useMemo(
     (): PeriodOption[] =>
       INSIGHTS_PERIODS.map((key) => ({
@@ -491,7 +533,12 @@ export function BusinessOsInsightsScreen({ route, navigation }: Props = {}) {
       );
     }
     if (error && !summary) {
-      return <StoreSectionError message={error} onRetry={retry} reducedMotion={reducedMotion} />;
+      return <StoreSectionError
+          message={error}
+          onRetry={failureAction.onPress}
+          actionLabel={failureAction.label || "Try again"}
+          reducedMotion={reducedMotion}
+        />;
     }
     if (!summary) return null;
 
@@ -542,7 +589,12 @@ export function BusinessOsInsightsScreen({ route, navigation }: Props = {}) {
               instead of showing a zero that would read as a measurement. */}
           <StoreKpiCard
             label="Store views"
-            value="—"
+            // The caption already said "Not measured yet" while the value said
+            // the same character the loading, failed and zero tiles said. One of
+            // those two lines was carrying the meaning; now it is the value.
+            value={absentValueTextOr("—", "not_configured", {
+              notConfiguredText: "Not measured yet"
+            })}
             caption="Not measured yet"
             onPress={openStore}
             destinationHint="your store"
@@ -774,9 +826,27 @@ export function BusinessOsInsightsScreen({ route, navigation }: Props = {}) {
    * identical to a fresh one is the dishonest option, so the pill dims and says
    * why out loud rather than quietly producing yesterday's revenue.
    */
-  const exportBlockedReason = load?.fromCache
+  const legacyExportBlockedReason = load?.fromCache
     ? "Not available while offline — these figures are from a saved copy."
     : null;
+
+  /**
+   * Why Export is off, in one sentence, or `null` when it is on.
+   *
+   * The cached case was the only one the screen covered. Three others reached
+   * the same dimmed pill with nothing said: still loading, the request failed,
+   * and — the one that actually produces an empty file — a period with no
+   * orders in it. `insightsExportBlockedReason` covers all four in the api
+   * layer, so the screen renders a reason instead of deciding one.
+   */
+  const exportBlockedReason = insightsErrorCausesEnabled()
+    ? insightsExportBlockedReason({
+        summary,
+        loading: loading && !summary,
+        failed: Boolean(failure) && !summary,
+        fromCache: Boolean(load?.fromCache)
+      })
+    : legacyExportBlockedReason;
   const exportDisabled = !summary || exporting || Boolean(exportBlockedReason);
 
   return (
@@ -805,9 +875,13 @@ export function BusinessOsInsightsScreen({ route, navigation }: Props = {}) {
               exportBlockedReason || "Shares a CSV of the figures on screen"
             }
             accessibilityState={{ disabled: exportDisabled }}
+            testID="insights-export"
           >
+            {/* Opacity alone read as a rendering fault. The lock is a second,
+                non-colour signal that the control is off on purpose, and it is
+                what the reason line below refers to. */}
             <Ionicons
-              name="share-outline"
+              name={exportDisabled ? "lock-closed-outline" : "share-outline"}
               size={14}
               color={insightsLight.text.onDark}
               accessibilityElementsHidden
@@ -817,12 +891,22 @@ export function BusinessOsInsightsScreen({ route, navigation }: Props = {}) {
           </Pressable>
         }
         below={
-          <PeriodPicker
-            options={periodOptions}
-            value={period}
-            onChange={onPeriodChange}
-            reducedMotion={reducedMotion}
-          />
+          <>
+            <PeriodPicker
+              options={periodOptions}
+              value={period}
+              onChange={onPeriodChange}
+              reducedMotion={reducedMotion}
+            />
+            {/* The reason is on screen, not only in the accessibility hint. A
+                hint is read by a screen reader and by nobody else, so a sighted
+                seller was left with a dimmed button and no explanation. */}
+            {exportBlockedReason ? (
+              <Text style={styles.exportReason} testID="insights-export-reason">
+                {exportBlockedReason}
+              </Text>
+            ) : null}
+          </>
         }
       />
 
@@ -851,7 +935,12 @@ export function BusinessOsInsightsScreen({ route, navigation }: Props = {}) {
         </Animated.View>
 
         {error && summary ? (
-          <StoreSectionError message={error} onRetry={retry} reducedMotion={reducedMotion} />
+          <StoreSectionError
+          message={error}
+          onRetry={failureAction.onPress}
+          actionLabel={failureAction.label || "Try again"}
+          reducedMotion={reducedMotion}
+        />
         ) : null}
       </ScrollView>
     </View>
@@ -902,5 +991,14 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.14)"
   },
   exportPillDisabled: { opacity: 0.45 },
+  // No `numberOfLines`: the reason is the only explanation the pill has, and a
+  // truncated reason is no reason at all.
+  exportReason: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: insightsLight.text.onDarkMuted,
+    paddingHorizontal: insightsLight.space.card,
+    paddingBottom: 8
+  },
   exportText: { fontSize: 12, fontWeight: "700", color: insightsLight.text.onDark }
 });

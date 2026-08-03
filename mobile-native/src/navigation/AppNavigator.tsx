@@ -4,11 +4,21 @@ import { useNavigation } from "@react-navigation/native";
 import * as Notifications from "expo-notifications";
 import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
-import { alertUnreadCount, chatUnreadCount, getNotificationBadgeCounts, totalUnreadCount } from "../api/notifications";
+// Badge counts are NOT imported from `api/notifications` here on purpose. This
+// file used to call `getNotificationBadgeCounts` itself and hold the result in
+// local state — a second source alongside `UnreadCountStore`, which is how the
+// bell and the seller headers came to disagree. `navigation/__tests__/badgeSources.test.ts`
+// fails if this import comes back.
 import { getMyProfile, PulseProfile } from "../api/profile";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { invalidateNativeSync, registerSyncInvalidation, startNativeEventSync } from "../core/eventSync";
-import { initUnreadCountSync } from "../core/unreadCounts";
+import {
+  initUnreadCountSync,
+  navigationBadgesFrom,
+  refreshUnreadCounts,
+  scopedBadgesEnabled,
+  useUnreadCounts
+} from "../core/unreadCounts";
 import { AccountCenterScreen } from "../screens/AccountCenterScreen";
 import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScreen";
 import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
@@ -173,20 +183,27 @@ export function AppNavigator() {
   const { authState } = useAuth();
   const { t } = useTranslation();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [badges, setBadges] = useState<GlobalNavigationBadges>({});
   const [profile, setProfile] = useState<PulseProfile | null>(null);
 
+  /**
+   * The one source. Every badge on this strip is now a field of the same
+   * snapshot, so the bell and the messages bubble cannot disagree, and neither
+   * can disagree with the seller headers that already read this store.
+   */
+  const unread = useUnreadCounts();
+  const scoped = navigationBadgesFrom(unread);
+  const badges: GlobalNavigationBadges = scopedBadgesEnabled()
+    ? { activity: scoped.activity, messages: scoped.messages, alerts: scoped.alerts }
+    : { activity: scoped.combined, messages: scoped.messages, alerts: scoped.alerts };
+
+  /**
+   * Refresh publishes into the store rather than into local state, and the app
+   * icon keeps the combined figure — the icon is the one badge with nothing
+   * beside it, so it is the one place the total does not double-count.
+   */
   const refreshBadges = useCallback(async () => {
-    try {
-      const counts = await getNotificationBadgeCounts();
-      const activity = totalUnreadCount(counts);
-      const messages = chatUnreadCount(counts);
-      const alerts = alertUnreadCount(counts);
-      setBadges({ activity, messages, alerts });
-      await Notifications.setBadgeCountAsync(activity).catch(() => undefined);
-    } catch {
-      setBadges({});
-    }
+    const next = await refreshUnreadCounts();
+    await Notifications.setBadgeCountAsync(next.totalCount).catch(() => undefined);
   }, []);
 
   useEffect(() => {

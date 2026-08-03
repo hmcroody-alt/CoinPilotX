@@ -39,8 +39,12 @@ import {
   filterRows,
   loadStoreDashboard,
   snapshotFrom,
+  storeReadiness,
+  storeReadinessEnabled,
   type StoreListingRow as StoreListingRowData,
   type StoreLoadResult,
+  type StoreSetupActionKey,
+  type StoreSetupStep,
   type StoreTabKey
 } from "../api/storeDashboard";
 import {
@@ -54,6 +58,7 @@ import {
   StoreQuickLinkGrid,
   StoreRowSkeleton,
   StoreSectionError,
+  StoreSetupChecklist,
   StoreSparkline,
   StoreStatusStrip,
   StoreTabBar
@@ -77,12 +82,19 @@ const PREVIEW_COUNT = 6;
 const SLOT = {
   header: 0,
   status: 1,
-  kpis: 2,
-  banner: 3,
-  tabs: 4,
-  list: 5,
-  links: 6,
-  ctas: 7
+  /**
+   * The setup checklist sits directly under the strip, because it is the "why"
+   * for the sentence the strip just made. It only renders behind the readiness
+   * flag; when the flag is off this slot is simply unused, which costs nothing
+   * because `SECTION_COUNT` is derived rather than typed.
+   */
+  setup: 2,
+  kpis: 3,
+  banner: 4,
+  tabs: 5,
+  list: 6,
+  links: 7,
+  ctas: 8
 } as const;
 const SECTION_COUNT = Object.keys(SLOT).length;
 
@@ -147,6 +159,20 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
   const status = useMemo(() => deriveStatus(allRows), [allRows]);
 
   /**
+   * Where the store actually stands, read from the listings it already loaded.
+   *
+   * The flag is read once per render rather than at module load so a test can
+   * turn it on without re-importing the screen, matching every other flag in
+   * this app. With it off, `status` above still drives the strip and this screen
+   * behaves exactly as the shipped build does.
+   */
+  const readinessOn = storeReadinessEnabled();
+  const readiness = useMemo(
+    () => storeReadiness({ listings: snapshot.listings, rows: allRows }),
+    [snapshot.listings, allRows]
+  );
+
+  /**
    * Search filters the seller's own catalogue in place rather than navigating,
    * so the KPIs above stay visible while they look. Title and price label are
    * the two fields a seller actually types — SKU has no field in this API.
@@ -190,6 +216,42 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
   const openBuyerView = useCallback(() => {
     navigation.navigate("Tabs", { screen: "Marketplace" });
   }, [navigation]);
+
+  /**
+   * The four setup actions, each mapped to something that already exists.
+   *
+   * Every key resolves to a destination this app ships today — the create
+   * gateway, a tab of this screen's own list, or the buyer view. The ladder
+   * deliberately has no fifth action, because a fifth would have had nowhere to
+   * go, and a checklist button that lands nowhere is worse than no button.
+   */
+  const runSetupAction = useCallback(
+    (key: StoreSetupActionKey) => {
+      switch (key) {
+        case "add_listing":
+          navigation.navigate("MarketplaceCreateGateway", { title: "Create Listing" });
+          return;
+        case "open_drafts":
+          setTab("drafts");
+          setExpanded(true);
+          return;
+        case "open_out_of_stock":
+          setTab("out");
+          setExpanded(true);
+          return;
+        default:
+          openBuyerView();
+      }
+    },
+    [navigation, openBuyerView]
+  );
+
+  const onSetupStep = useCallback(
+    (step: StoreSetupStep) => {
+      if (step.action) runSetupAction(step.action.key);
+    },
+    [runSetupAction]
+  );
 
   /* -------------------------------------------------------------- *
    * Formatted values
@@ -420,15 +482,25 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
       </Animated.View>
 
       <Animated.View style={entrance.styleFor(SLOT.status)}>
+        {/* The strip says where the store stands and nothing more. Under the
+            readiness flag the sentence comes from the ladder, which read the
+            listings; without it the old two-way open/paused split is kept
+            byte-for-byte so an un-flagged build is unchanged. */}
         <StoreStatusStrip
           text={
-            status.open
-              ? `${sellerName} · Open for orders`
-              : `${sellerName} · Paused — buyers can't order`
+            readinessOn
+              ? `${sellerName} · ${readiness.statusLabel}`
+              : status.open
+                ? `${sellerName} · Open for orders`
+                : `${sellerName} · Paused — buyers can't order`
           }
-          open={status.open}
-          actionLabel={status.open ? "Manage" : "Reopen"}
+          open={readinessOn ? readiness.openForOrders : status.open}
+          actionLabel={readinessOn ? readiness.action.label : status.open ? "Manage" : "Reopen"}
           onAction={() => {
+            if (readinessOn) {
+              runSetupAction(readiness.action.key);
+              return;
+            }
             setTab(status.open ? "all" : "out");
             setExpanded(true);
           }}
@@ -452,6 +524,24 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
               <StoreOfflineNote
                 text={`Offline — showing your store as of ${formatters.relative(result.cachedAt)}.`}
               />
+            ) : null}
+
+            {/* Shown only while something is outstanding. A checklist with every
+                row ticked is a screen that has stopped telling the seller
+                anything, so at `remaining === 0` it disappears and the strip
+                carries the state on its own. The loading guard keeps it from
+                claiming "not set up" about a store that simply hasn't answered
+                yet. */}
+            {readinessOn && !loading && !listingsFailed && readiness.remaining > 0 ? (
+              <Animated.View style={[styles.checklistWrap, entrance.styleFor(SLOT.setup)]}>
+                <StoreSetupChecklist
+                  headline={readiness.headline}
+                  steps={readiness.steps}
+                  remaining={readiness.remaining}
+                  onStepAction={onSetupStep}
+                  reducedMotion={reducedMotion}
+                />
+              </Animated.View>
             ) : null}
 
             <Animated.View style={entrance.styleFor(SLOT.kpis)}>{kpiGrid}</Animated.View>
@@ -616,6 +706,8 @@ const styles = StyleSheet.create({
   kpiGrid: { gap: storeLight.space.gutter, paddingHorizontal: storeLight.space.card, paddingTop: storeLight.space.section },
   kpiRow: { flexDirection: "row", gap: storeLight.space.gutter },
   bannerWrap: { paddingHorizontal: storeLight.space.card },
+  // The card carries its own horizontal margin, so this only adds the gap above.
+  checklistWrap: { paddingTop: storeLight.space.section },
   sectionHead: {
     flexDirection: "row",
     alignItems: "center",

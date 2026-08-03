@@ -80,6 +80,8 @@ import {
   deriveSellingSummary,
   loadLastMarketplaceMode,
   loadMarketplaceScreen,
+  marketplaceLocation,
+  marketplaceLocationHonestyEnabled,
   saveLastMarketplaceMode,
   sellerSnapshotFrom,
   sellingTabCounts,
@@ -126,6 +128,7 @@ import {
   useMarketplaceModeSwap,
   useMarketplaceSoldWipe
 } from "../theme/marketplaceMotion";
+import { absentValueTextOr, valueState } from "../api/stateLanguage";
 
 /** Entrance slots per mode. Named so a section cannot animate out of order. */
 const SELLING_SLOT = {
@@ -179,6 +182,17 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [visibleIds, setVisibleIds] = useState<readonly number[]>([]);
   const [now, setNow] = useState(() => Date.now());
+
+  /**
+   * What this feed may claim about location.
+   *
+   * No city is passed because nothing in this app knows one. The moment
+   * something does, it is passed here and the heading, the strip and the footer
+   * all change together — which is the reason this is one derivation rather
+   * than three strings scattered through the render.
+   */
+  const locationOn = marketplaceLocationHonestyEnabled();
+  const place = marketplaceLocation({ categoryFiltered: category !== CATEGORY_ALL });
 
   const sellingEntrance = useStoreEntrance(SELLING_SECTIONS, reducedMotion);
   const buyingEntrance = useStoreEntrance(BUYING_SECTIONS, reducedMotion);
@@ -475,7 +489,12 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
       below={
         <View style={styles.headerBelow}>
           <ModeToggle mode={mode} onChange={changeMode} reducedMotion={reducedMotion} />
-          {mode === "buying" ? <LocationStrip /> : null}
+          {mode === "buying" ? (
+            <LocationStrip
+              text={locationOn ? place.stripText : "Location not set — showing all listings"}
+              reason={locationOn ? place.unavailableReason : null}
+            />
+          ) : null}
         </View>
       }
     />
@@ -791,7 +810,14 @@ function SellingPane({
         />
         <SummaryChip
           label="Offers waiting"
-          value={summary.offersWaiting > 0 ? formatters.count(summary.offersWaiting) : "—"}
+          // Two different situations shared this dash: no offers backend at all,
+          // and a seller who genuinely has none waiting. The first is a missing
+          // feature, the second is good news, and a zero is a figure either way.
+          value={absentValueTextOr(
+            summary.offersWaiting > 0 ? formatters.count(summary.offersWaiting) : "—",
+            valueState({ value: summary.offersWaiting, configured: MARKETPLACE_OFFERS_ENABLED }),
+            { zeroText: formatters.count(0) }
+          )}
           amber={summary.offersWaiting > 0}
           reducedMotion={reducedMotion}
           arrivalDelay={70}
@@ -802,9 +828,14 @@ function SellingPane({
         />
         <SummaryChip
           label="Saves this week"
-          // MOCK-DATA: no per-listing saves aggregate. A dash, not a zero — the
-          // number is unknown, not known to be none.
-          value={summary.savesThisWeek == null ? "—" : formatters.count(summary.savesThisWeek)}
+          // MOCK-DATA: no per-listing saves aggregate. The number is unknown,
+          // not known to be none — and "Not measured yet" says which, where the
+          // dash left the seller to guess between an absence and a zero.
+          value={absentValueTextOr(
+            summary.savesThisWeek == null ? "—" : formatters.count(summary.savesThisWeek),
+            valueState({ value: summary.savesThisWeek, configured: summary.savesThisWeek != null }),
+            { notConfiguredText: "Not measured yet", zeroText: formatters.count(0) }
+          )}
           reducedMotion={reducedMotion}
           arrivalDelay={140}
           disabled
@@ -1228,6 +1259,17 @@ function BuyingPane({
     [categories]
   );
 
+  /**
+   * Recomputed here rather than passed down. It is a pure function of the
+   * category this pane already owns, so threading it through props would add a
+   * way for the heading and the strip to disagree without adding anything.
+   */
+  const locationOn = marketplaceLocationHonestyEnabled();
+  const place = useMemo(
+    () => marketplaceLocation({ categoryFiltered: category !== CATEGORY_ALL }),
+    [category]
+  );
+
   return (
     <View style={styles.buyingRoot}>
       {/* The rail sits outside the list on purpose: the brief requires that a
@@ -1285,7 +1327,9 @@ function BuyingPane({
                   reducedMotion={reducedMotion}
                 />
               </Animated.View>
-              <SectionHeader title="Just listed near you" />
+              {/* "near you" was a claim about geography over listings that
+                  carry none, contradicted by the strip directly above it. */}
+              <SectionHeader title={locationOn ? place.feedTitle : "Just listed near you"} />
             </View>
           }
           ListEmptyComponent={
@@ -1295,6 +1339,25 @@ function BuyingPane({
                 onRetry={onRetryFeed}
                 reducedMotion={reducedMotion}
               />
+            ) : locationOn ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyTitle}>{place.empty.title}</Text>
+                <Text style={styles.emptyBody}>{place.empty.body}</Text>
+                {/* The brief asked for "Set your location" here. There is no
+                    location feature to set, so the action is the one filter
+                    that really exists and really is narrowing this list. A
+                    button that opens nothing would be worse than none. */}
+                {place.empty.action ? (
+                  <Pressable
+                    onPress={() => onCategoryChange(CATEGORY_ALL)}
+                    style={styles.emptyAction}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${place.empty.action.label}. ${place.empty.title}`}
+                  >
+                    <Text style={styles.emptyActionText}>{place.empty.action.label}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             ) : (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyTitle}>Nothing nearby right now.</Text>
@@ -1313,9 +1376,13 @@ function BuyingPane({
                   onPress={onShowMore}
                   style={styles.showMore}
                   accessibilityRole="button"
-                  accessibilityLabel="Show more nearby items"
+                  accessibilityLabel={
+                    locationOn ? `${place.moreLabel} listings` : "Show more nearby items"
+                  }
                 >
-                  <Text style={styles.showMoreText}>Show more nearby</Text>
+                  <Text style={styles.showMoreText}>
+                    {locationOn ? place.moreLabel : "Show more nearby"}
+                  </Text>
                 </Pressable>
               </Animated.View>
             ) : null
@@ -1529,12 +1596,32 @@ function BuyingHeaderCounts({
  * strip says so plainly rather than printing "Within 10 mi of San Francisco",
  * which would be a fabricated claim about where the user is and what they are
  * being shown.
+ *
+ * `reason` turns the row into an unavailable control that explains itself. The
+ * previous version was a bare line of text next to a location pin, which reads
+ * as something to press; it was not, and there is nothing to press it to, so
+ * saying why is the only honest option. The strip carries no button precisely
+ * because the app has no location feature to send anyone to.
  */
-function LocationStrip() {
+function LocationStrip({ text, reason }: { text: string; reason: string | null }) {
   return (
-    <View style={styles.locationStrip}>
-      <Ionicons name="location-outline" size={14} color={storeLight.text.onDarkMuted} />
-      <Text style={styles.locationText}>Location not set — showing all listings</Text>
+    <View
+      style={styles.locationStrip}
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={reason ? `${text}. ${reason}` : text}
+    >
+      <Ionicons
+        name={reason ? "location-outline" : "location"}
+        size={14}
+        color={storeLight.text.onDarkMuted}
+        accessibilityElementsHidden
+        importantForAccessibility="no"
+      />
+      <View style={styles.locationTextGroup}>
+        <Text style={styles.locationText}>{text}</Text>
+        {reason ? <Text style={styles.locationReason}>{reason}</Text> : null}
+      </View>
     </View>
   );
 }
@@ -1566,8 +1653,13 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   headerBadgeText: { fontSize: 10, fontWeight: "800", color: storeLight.text.primary },
-  locationStrip: { flexDirection: "row", alignItems: "center", gap: 5 },
+  // `flex-start` rather than `center`: with a reason underneath, a centred pin
+  // floats between the two lines instead of marking the first.
+  locationStrip: { flexDirection: "row", alignItems: "flex-start", gap: 5 },
+  locationTextGroup: { flex: 1, gap: 1 },
   locationText: { fontSize: 12, color: storeLight.text.onDarkMuted },
+  // No `numberOfLines`: a truncated explanation explains nothing.
+  locationReason: { fontSize: 11, lineHeight: 15, color: storeLight.text.onDarkMuted },
 
   scroll: { padding: storeLight.space.card, gap: 12 },
   buyingRoot: { flex: 1 },
@@ -1702,6 +1794,17 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 15, fontWeight: "800", color: storeLight.text.primary },
   emptyBody: { fontSize: 13, lineHeight: 19, color: storeLight.text.muted },
+  emptyAction: {
+    minHeight: storeLight.size.tapTarget,
+    alignSelf: "flex-start",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+    marginTop: 4,
+    borderRadius: storeLight.radius.pill,
+    borderWidth: 1,
+    borderColor: storeLight.border.secondaryButton
+  },
+  emptyActionText: { fontSize: 13, fontWeight: "700", color: storeLight.text.primary },
 
   boostCard: {
     flexDirection: "row",

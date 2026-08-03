@@ -198,6 +198,103 @@ export type CampaignPhase =
 
 export type CampaignTone = "neutral" | "info" | "success" | "warning" | "error";
 
+/* ------------------------------------------------------------------ *
+ * Naming things the seller can recognise
+ * ------------------------------------------------------------------ */
+
+export const ACCOUNT_NAME_FIRST_FLAG = "EXPO_PUBLIC_ACCOUNT_NAME_FIRST";
+
+/** True when a build has opted into name-first labelling. Off by default. */
+export function accountNameFirstEnabled(): boolean {
+  return String(process.env[ACCOUNT_NAME_FIRST_FLAG] || "").trim() === "1";
+}
+
+/**
+ * How one record is named on screen.
+ *
+ * The defect this closes is "Ad account 8" — a row whose most prominent text was
+ * a database key. It reads as an error code, it is not what the seller called
+ * the thing, and when several accounts exist it is the *only* way to tell them
+ * apart, which means the screen has offloaded its naming job onto the reader.
+ *
+ * The shape is deliberately three fields rather than one string, so that the
+ * caller can render the name at one weight and the reference at another. A
+ * single pre-joined string would have forced every surface to show them at the
+ * same size, which is the layout half of the same mistake.
+ */
+export type EntityDisplay = {
+  /** What the seller reads first. Never a bare number. */
+  name: string;
+  /**
+   * The number, already introduced by a word that says what it is, or `null`
+   * when there is nothing to disambiguate. Rendered secondary.
+   */
+  reference: string | null;
+  /** True when `name` is a stand-in because the record has no name of its own. */
+  named: boolean;
+};
+
+/**
+ * One record, named.
+ *
+ * `noun` is the reader's word for the thing — "account", "campaign" — and is
+ * interpolated so this stays one function instead of one per record type. That
+ * is the whole reason correction 5 is a helper and not an edit to line 322: the
+ * next screen that renders a record gets the same treatment for free, and the
+ * class stays closed.
+ *
+ * `showReference` is passed by the caller because only the caller knows whether
+ * the number distinguishes anything. With a single account it is noise; with
+ * four accounts, two of them unnamed, it is the only thing that separates them.
+ */
+export function entityDisplay(input: {
+  id: number | string | null | undefined;
+  name?: string | null;
+  noun: string;
+  showReference?: boolean;
+}): EntityDisplay {
+  const trimmed = String(input.name || "").trim();
+  const idText = input.id === null || input.id === undefined ? "" : String(input.id).trim();
+  const named = trimmed.length > 0;
+  // The stand-in is a description, not a label with a number glued on. "Unnamed
+  // account" tells the seller the record has no name — which is a fact they can
+  // act on — where "Ad account 8" told them a number they cannot.
+  const name = named ? trimmed : `Unnamed ${input.noun}`;
+  const wantsReference = input.showReference ?? !named;
+  const reference = wantsReference && idText ? `${capitalise(input.noun)} number ${idText}` : null;
+  return { name, reference, named };
+}
+
+function capitalise(value: string): string {
+  return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
+}
+
+/**
+ * The seller's ad account, named.
+ *
+ * `showReference` defaults to "only when it disambiguates": an unnamed account
+ * needs the number, and so does any account on a login that has more than one.
+ */
+export function adAccountDisplay(
+  account: Pick<AdAccount, "id" | "business_name"> | null | undefined,
+  options: { accountCount?: number } = {}
+): EntityDisplay {
+  const named = String(account?.business_name || "").trim().length > 0;
+  return entityDisplay({
+    id: account?.id,
+    name: account?.business_name,
+    noun: "account",
+    showReference: !named || (options.accountCount ?? 1) > 1
+  });
+}
+
+/** The same treatment for a campaign, whose name is the seller's own text. */
+export function adCampaignDisplay(
+  campaign: Pick<AdCampaign, "id" | "campaign_name"> | null | undefined
+): EntityDisplay {
+  return entityDisplay({ id: campaign?.id, name: campaign?.campaign_name, noun: "campaign" });
+}
+
 /** Backend campaign status → the phase the UI shows. Backed, deterministic. */
 export function campaignPhase(campaign?: AdCampaign): CampaignPhase {
   const status = String(campaign?.status || "draft").toLowerCase();

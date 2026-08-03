@@ -42,6 +42,8 @@ import {
   ADS_POST_MODE_FLAG,
   AdsMarketplaceModel,
   AdsMode,
+  adAccountDisplay,
+  adCampaignDisplay,
   adsPostModeEnabled,
   availableAdCampaignActions,
   campaignBlockedByVerification,
@@ -202,9 +204,12 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
       });
       setBusinessName("");
       setBusinessEmail("");
+      // Through the shared helper rather than reading `business_name` raw: an
+      // account created with a blank name produced " created." here, a sentence
+      // beginning with a space. Same class as "Ad account 8", same fix.
       setMessage(
         result.account
-          ? `${result.account.business_name} created. It stays in verification until PulseSoc approves it.`
+          ? `${adAccountDisplay(result.account).name} created. It stays in verification until PulseSoc approves it.`
           : "Ad account created."
       );
       await load();
@@ -258,7 +263,11 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
     setMessage("");
     try {
       const result = await runAdCampaignAction(campaign.id, action);
-      setMessage(result.message || `${ACTION_LABELS[action]} applied to ${campaign.campaign_name}.`);
+      // Same helper as the card below, so the confirmation names the campaign
+      // exactly as the list does — and never as an empty space.
+      setMessage(
+        result.message || `${ACTION_LABELS[action]} applied to ${adCampaignDisplay(campaign).name}.`
+      );
       await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : `${ACTION_LABELS[action]} could not be applied.`);
@@ -395,7 +404,8 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
             return (
               <CampaignCard
                 key={campaign.id}
-                name={campaign.campaign_name || "Untitled campaign"}
+                name={adCampaignDisplay(campaign).name}
+                reference={adCampaignDisplay(campaign).reference}
                 objectiveLabel={formatObjective(campaign.objective)}
                 phase={phase}
                 phaseLabel={campaignPhaseLabel(phase)}

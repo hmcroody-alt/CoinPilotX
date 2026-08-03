@@ -45,6 +45,15 @@ export type CampaignCardMetric = {
 
 export type CampaignCardProps = {
   name: string;
+  /**
+   * The campaign's number, already introduced by a word that says what it is.
+   *
+   * Present only when the name does not identify the campaign on its own — an
+   * unnamed one. It renders beside the objective at the objective's weight, so
+   * the name stays the largest text on the card and the number never competes
+   * with it. `null` on a named campaign, which is the common case.
+   */
+  reference?: string | null;
   objectiveLabel: string;
   phase: CampaignPhase;
   phaseLabel: string;
@@ -81,6 +90,7 @@ export type CampaignCardProps = {
 
 export function CampaignCard({
   name,
+  reference = null,
   objectiveLabel,
   phase,
   phaseLabel,
@@ -119,7 +129,7 @@ export function CampaignCard({
               {name}
             </Text>
             <Text style={styles.objective} numberOfLines={1}>
-              {objectiveLabel}
+              {reference ? `${objectiveLabel} · ${reference}` : objectiveLabel}
             </Text>
           </View>
           <AdsStatusPill label={phaseLabel} tone={phaseTone} reducedMotion={reducedMotion} />

@@ -142,6 +142,92 @@ export const MARKETPLACE_MOCK_DATA_GAPS: readonly MarketplaceDataGap[] = [
 ] as const;
 
 /* ------------------------------------------------------------------ *
+ * Location honesty
+ * ------------------------------------------------------------------ */
+
+export const MARKETPLACE_LOCATION_FLAG = "EXPO_PUBLIC_MARKETPLACE_LOCATION_HONESTY";
+
+/** True when a build has opted into the honest location wording. Off by default. */
+export function marketplaceLocationHonestyEnabled(): boolean {
+  return String(process.env[MARKETPLACE_LOCATION_FLAG] || "").trim() === "1";
+}
+
+/**
+ * What the buying feed may claim about where its listings are.
+ *
+ * The screen headed a list "Just listed near you" over listings with no geo on
+ * them, sorted by recency and nothing else. Three words of that heading were
+ * false, and the strip underneath already said so — "Location not set" — which
+ * means the screen contradicted itself on one page.
+ *
+ * The correction the brief asks for is a working "Set your location" button.
+ * There is nothing to wire it to: no `expo-location` in this app, no city or
+ * country on the account, no coordinates on a listing, and `distanceMeters` is
+ * hard-coded `null` (see the location entry in `MARKETPLACE_MOCK_DATA_GAPS`).
+ * A button that opens nothing is the dead control this tier exists to remove,
+ * so the claim is dropped instead and the empty state is given an action that
+ * really works — clearing the category filter, which is a filter that exists.
+ *
+ * `known` is an input rather than a constant so that the day geo lands, the
+ * heading flips back to "near you" by passing a city in, with no edit here and
+ * none in the screen.
+ */
+export type MarketplaceLocationState = {
+  /** True when the app actually knows where the reader is. */
+  known: boolean;
+  /** The feed heading. Only claims "near you" when `known`. */
+  feedTitle: string;
+  /** The strip's sentence. */
+  stripText: string;
+  /**
+   * Why the strip cannot be acted on, or `null` when it can. Rendered as the
+   * strip's own explanation, so the row is an unavailable control with a stated
+   * reason rather than a line of text that looks tappable and is not.
+   */
+  unavailableReason: string | null;
+  /** The "show more" footer label, which claimed "nearby" for the same reason. */
+  moreLabel: string;
+  empty: {
+    title: string;
+    body: string;
+    /** `null` when there is no filter to clear and nothing else would help. */
+    action: { key: "clear_category"; label: string } | null;
+  };
+};
+
+export function marketplaceLocation(input: {
+  /** The reader's town, when one is known. Nothing supplies this yet. */
+  city?: string | null;
+  /** True when a category filter is narrowing the feed. */
+  categoryFiltered?: boolean;
+} = {}): MarketplaceLocationState {
+  const city = String(input.city || "").trim();
+  const known = city.length > 0;
+  const filtered = Boolean(input.categoryFiltered);
+
+  return {
+    known,
+    feedTitle: known ? `Just listed near ${city}` : "Just listed",
+    stripText: known ? `Showing listings near ${city}` : "Showing every listing",
+    unavailableReason: known
+      ? null
+      : "Location isn't part of the app yet, so listings aren't sorted by distance.",
+    moreLabel: known ? "Show more nearby" : "Show more",
+    empty: filtered
+      ? {
+          title: "Nothing in this category right now.",
+          body: "Other categories may have something. Pull down to check again.",
+          action: { key: "clear_category", label: "Show all categories" }
+        }
+      : {
+          title: "Nothing has been listed yet.",
+          body: "New listings appear here as sellers add them. Pull down to check again.",
+          action: null
+        }
+  };
+}
+
+/* ------------------------------------------------------------------ *
  * Shared helpers
  * ------------------------------------------------------------------ */
 

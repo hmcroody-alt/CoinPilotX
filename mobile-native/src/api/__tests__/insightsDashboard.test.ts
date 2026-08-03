@@ -31,7 +31,12 @@ import {
   attributionAvailable,
   compareToPrior,
   createInsightsRequestGate,
+  INSIGHTS_ERROR_CAUSES_FLAG,
+  insightsErrorCausesEnabled,
   insightsErrorMessage,
+  insightsExportBlockedReason,
+  insightsFailure,
+  insightsHasExportableData,
   insightsRevenueMajor,
   isGap,
   isInsightsPeriod,
@@ -333,5 +338,166 @@ describe("insightsErrorMessage", () => {
     expect(insightsErrorMessage(new Error("boom"), "Top performers")).toBe(
       "Top performers didn't load."
     );
+  });
+});
+
+/* ------------------------------------------------------- failures & export */
+
+/**
+ * `insightsErrorMessage` collapsed five situations into three sentences and
+ * gave all of them one treatment: a line of text with a Retry beside it. Two of
+ * those situations do not retry — an account without the entitlement was told
+ * to try again forever, and an expired session was told the same while the only
+ * thing that would help was signing in. Being offline and the service being
+ * down were the same sentence, though only one of them is fixed by reconnecting.
+ */
+describe("insightsFailure", () => {
+  const CAUSES = ["offline", "authentication", "entitlement", "service_unavailable", "unexpected"] as const;
+
+  it("is off unless the build sets the flag to exactly 1", () => {
+    const original = process.env[INSIGHTS_ERROR_CAUSES_FLAG];
+    try {
+      for (const value of ["", "0", "true", "2"]) {
+        process.env[INSIGHTS_ERROR_CAUSES_FLAG] = value;
+        expect(insightsErrorCausesEnabled()).toBe(false);
+      }
+      process.env[INSIGHTS_ERROR_CAUSES_FLAG] = "1";
+      expect(insightsErrorCausesEnabled()).toBe(true);
+    } finally {
+      if (original === undefined) delete process.env[INSIGHTS_ERROR_CAUSES_FLAG];
+      else process.env[INSIGHTS_ERROR_CAUSES_FLAG] = original;
+    }
+  });
+
+  /** The specific regression: one sentence for four different problems. */
+  it("says something different for each cause", () => {
+    const messages = CAUSES.map((cause) => {
+      const error =
+        cause === "offline"
+          ? new PulseApiError("x", 503, "request_unreachable")
+          : cause === "authentication"
+            ? new PulseApiError("x", 401)
+            : cause === "entitlement"
+              ? new PulseApiError("x", 403)
+              : cause === "service_unavailable"
+                ? new PulseApiError("x", 503)
+                : new Error("x");
+      const failure = insightsFailure(error);
+      expect(failure.cause).toBe(cause);
+      return failure.message;
+    });
+    expect(new Set(messages).size).toBe(CAUSES.length);
+  });
+
+  it("tells someone who is offline that they are, not that the service is down", () => {
+    const offline = insightsFailure(new PulseApiError("x", 503, "request_unreachable"));
+    const down = insightsFailure(new PulseApiError("x", 503));
+    expect(offline.message).toMatch(/offline/i);
+    expect(down.message).not.toMatch(/offline/i);
+  });
+
+  /** A retry that cannot work implies the reader did something wrong. */
+  it("does not offer a retry where a second identical attempt would fail identically", () => {
+    const blocked = insightsFailure(new PulseApiError("x", 403));
+    expect(blocked.retries).toBe(false);
+    expect(blocked.actionLabel).toBeNull();
+  });
+
+  it("sends an expired session to sign in rather than round the retry loop", () => {
+    const expired = insightsFailure(new PulseApiError("x", 401));
+    expect(expired.retries).toBe(false);
+    expect(expired.actionLabel).toBe("Sign in");
+  });
+
+  it("still retries the two causes a retry can actually fix", () => {
+    for (const error of [new PulseApiError("x", 503, "request_unreachable"), new PulseApiError("x", 503)]) {
+      const failure = insightsFailure(error);
+      expect(failure.retries).toBe(true);
+      expect(failure.actionLabel).toBe("Try again");
+    }
+  });
+
+  it("names what failed, in the reader's words, in every case", () => {
+    for (const error of [new PulseApiError("x", 401), new PulseApiError("x", 403), new Error("x")]) {
+      expect(insightsFailure(error, "Your sales").message).toContain("Your sales");
+    }
+  });
+});
+
+/**
+ * Export was enabled whenever a summary existed, so a seller with no trade in
+ * the window could press it and receive a file of nothing. The disabled pill
+ * was drawn at reduced opacity with no reason, which reads as a rendering fault
+ * rather than a decision — so the reason is now part of the derivation and
+ * cannot be forgotten at a call site.
+ */
+describe("insightsHasExportableData", () => {
+  it("refuses a window with no orders even when a summary loaded fine", () => {
+    expect(insightsHasExportableData(summary({ totals: { revenue_minor: 0, orders: 0 }, series: [] }))).toBe(false);
+  });
+
+  it("allows a window whose orders are only visible in the series", () => {
+    const windowed = summary({
+      totals: { revenue_minor: 0, orders: 0 },
+      series: [{ label: "Mon", start: "2026-07-27 00:00:00", revenue_minor: 0, orders: 2 } as never]
+    });
+    expect(insightsHasExportableData(windowed)).toBe(true);
+  });
+
+  /**
+   * Revenue alone is the wrong test: a period holding a refund can net to zero
+   * revenue while still carrying rows worth exporting.
+   */
+  it("counts orders rather than revenue, so a refunded period still exports", () => {
+    expect(insightsHasExportableData(summary({ totals: { revenue_minor: 0, orders: 4 } }))).toBe(true);
+  });
+
+  it("refuses when there is no summary at all", () => {
+    expect(insightsHasExportableData(null)).toBe(false);
+  });
+});
+
+describe("insightsExportBlockedReason", () => {
+  const EMPTY = summary({ totals: { revenue_minor: 0, orders: 0 }, series: [] });
+
+  it("gives a reason for every state that disables the control", () => {
+    const reasons = [
+      insightsExportBlockedReason({ summary: null, loading: true }),
+      insightsExportBlockedReason({ summary: null, failed: true }),
+      insightsExportBlockedReason({ summary: null }),
+      insightsExportBlockedReason({ summary: EMPTY, fromCache: true }),
+      insightsExportBlockedReason({ summary: EMPTY })
+    ];
+    for (const reason of reasons) {
+      expect(typeof reason).toBe("string");
+      // Never an empty string: the caller must not be able to render a blank.
+      expect(String(reason).length).toBeGreaterThan(0);
+    }
+    // Five states, five sentences — a shared one would be a shrug again.
+    expect(new Set(reasons).size).toBe(reasons.length);
+  });
+
+  it("returns null, and only null, when the export would contain something", () => {
+    expect(insightsExportBlockedReason({ summary: summary() })).toBeNull();
+  });
+
+  /**
+   * Ordering matters. A window still loading is not an empty window, and
+   * telling a seller they had no orders while the request is in flight is a
+   * claim the screen cannot yet support.
+   */
+  it("reports loading ahead of emptiness, and failure ahead of both", () => {
+    expect(insightsExportBlockedReason({ summary: EMPTY, loading: true })).toMatch(/loading/i);
+    expect(insightsExportBlockedReason({ summary: EMPTY, loading: true, failed: true })).toMatch(/loading/i);
+    expect(insightsExportBlockedReason({ summary: EMPTY, failed: true })).toMatch(/didn't load/i);
+  });
+
+  it("blocks an export of cached figures and says they are cached", () => {
+    const reason = insightsExportBlockedReason({ summary: summary(), fromCache: true });
+    expect(reason).toMatch(/last visit/i);
+  });
+
+  it("tells an empty period why it is empty rather than only that it is", () => {
+    expect(insightsExportBlockedReason({ summary: EMPTY })).toMatch(/no orders in this period/i);
   });
 });

@@ -73,6 +73,15 @@ export const STORE_MOCK_DATA_GAPS: readonly StoreDataGap[] = [
   {
     field: "Stock tracked / not tracked",
     needs: "quantity preserved as null through listing normalization, or an explicit tracks_stock flag"
+  },
+  // MOCK-DATA: store restriction and suspension. `storeReadiness` has five rungs
+  // where the review's ladder has seven; Restricted and Suspended are missing
+  // because no seller-level enforcement flag reaches this app. Guessing them
+  // from listing statuses would tell a seller they were suspended whenever a
+  // moderator happened to reject their whole catalogue.
+  {
+    field: "Store restricted / suspended",
+    needs: "a seller-level enforcement state (restricted, suspended) with the reason and the appeal route"
   }
 ] as const;
 
@@ -440,11 +449,234 @@ export type StoreStatus = { open: boolean };
  * honest reading is that a store with listings, none of which are orderable, is
  * effectively paused. A store with no listings at all is not paused — it is
  * empty, which is a different screen state.
+ *
+ * @deprecated Superseded by {@link storeReadiness}. `{open: true}` for a store
+ * with no listings is the exact claim ADR-0003 names as wrong: an empty store
+ * is not an open store, it is an unconfigured one. Kept because other callers
+ * still read it, and removing a two-state answer while the five-state one is
+ * behind a flag would leave those callers with nothing.
  */
 export function deriveStatus(rows: StoreListingRow[]): StoreStatus {
   if (rows.length === 0) return { open: true };
   return { open: rows.some((row) => row.health === "in_stock" || row.health === "low_stock") };
 }
+
+/* ------------------------------------------------------------------ *
+ * Readiness ladder
+ * ------------------------------------------------------------------ */
+
+export const STORE_READINESS_FLAG = "EXPO_PUBLIC_STORE_READINESS";
+
+/** True when a build has opted into the readiness ladder. Off by default. */
+export function storeReadinessEnabled(): boolean {
+  return String(process.env[STORE_READINESS_FLAG] || "").trim() === "1";
+}
+
+/**
+ * Where a store actually stands, as one value from a closed ladder.
+ *
+ * `deriveStatus` answered a yes/no question — open, or paused — and a store
+ * that had never been set up came back "open". The strip then read
+ * "Open for orders" over an empty catalogue, which is the single dishonest
+ * sentence this correction exists to remove.
+ *
+ * Five rungs, in the order a store climbs them:
+ *
+ * * `not_set_up` — nothing has been listed. Not paused; never started.
+ * * `incomplete` — listings exist but every one is still a draft.
+ * * `pending_review` — something has been sent for review and nothing is
+ *   orderable yet. Nothing is required of the seller at this rung.
+ * * `live` — at least one listing a buyer can order right now.
+ * * `paused` — listings exist, none is a draft, none is in review, and none is
+ *   orderable. This is the only rung `deriveStatus` got right.
+ *
+ * `restricted` and `suspended` from the review's ladder are deliberately absent:
+ * there is no seller-level suspension flag anywhere in the marketplace data, so
+ * a rung for it could only ever be guessed at from listing statuses. Recorded as
+ * a gap rather than shipped as a state that would be wrong whenever it fired.
+ */
+export type StoreReadiness = "not_set_up" | "incomplete" | "pending_review" | "live" | "paused";
+
+/**
+ * Listing statuses that mean "somebody is looking at this".
+ *
+ * Read from `approval_status` before `status` because the two are different
+ * questions — a listing can be active *and* awaiting approval — and only the
+ * first one is about review.
+ */
+const REVIEW_STATUSES = ["pending", "review", "submitted", "awaiting"];
+
+/**
+ * Whether this listing is waiting on a decision.
+ *
+ * `listingHealth` cannot answer this and is deliberately left alone: it maps an
+ * in-review listing to `in_stock`, which is right for the tab counts (the seller
+ * has one item, with stock) and wrong for readiness (a buyer cannot order it
+ * yet). Two questions, two functions, rather than one function that is subtly
+ * wrong for one of its callers.
+ */
+export function listingAwaitsReview(listing: MarketplaceListing): boolean {
+  const approval = String(listing.approval_status || "").toLowerCase();
+  if (approval) return REVIEW_STATUSES.some((candidate) => approval.includes(candidate));
+  const status = String(listing.status || "").toLowerCase();
+  return REVIEW_STATUSES.some((candidate) => status.includes(candidate));
+}
+
+/** What a checklist step's button does. The screen maps these to navigation. */
+export type StoreSetupActionKey =
+  | "add_listing"
+  | "open_drafts"
+  | "open_out_of_stock"
+  | "preview_storefront";
+
+export type StoreSetupStep = {
+  key: "add" | "publish" | "stock" | "review";
+  label: string;
+  detail: string;
+  complete: boolean;
+  /**
+   * `null` when the step is done, or when waiting is the only thing left to do.
+   * A checklist row whose button does nothing is the dead control this tier
+   * exists to remove, so a step with no action carries no button at all.
+   */
+  action: { key: StoreSetupActionKey; label: string } | null;
+};
+
+export type StoreReadinessState = {
+  readiness: StoreReadiness;
+  /** One sentence saying where the store stands, in the seller's terms. */
+  headline: string;
+  /** The short form for the status strip, e.g. "Waiting on review". */
+  statusLabel: string;
+  /** The strip's one control. Never absent — every rung has a next move. */
+  action: { key: StoreSetupActionKey; label: string };
+  /** True only at `live`. This is what the green dot may be bound to. */
+  openForOrders: boolean;
+  steps: StoreSetupStep[];
+  /** How many steps are still outstanding. 0 means the checklist can collapse. */
+  remaining: number;
+};
+
+/**
+ * Derive the ladder, the strip copy and the checklist from real listings.
+ *
+ * Everything below is read from data the screen already loads — no new call and
+ * no new field. That is the point: the previous "Open for orders" was not
+ * missing a source, it was ignoring the one it had.
+ *
+ * The raw listings are taken alongside the derived rows because review state
+ * survives only on the listing (see {@link listingAwaitsReview}); rows carry
+ * stock and visibility, which is what the rest of the screen needs.
+ */
+export function storeReadiness(input: {
+  listings: readonly MarketplaceListing[];
+  rows: readonly StoreListingRow[];
+}): StoreReadinessState {
+  const rows = input.rows;
+  const listings = input.listings;
+
+  const orderable = rows.filter((row) => row.health === "in_stock" || row.health === "low_stock");
+  const drafts = rows.filter((row) => row.health === "draft");
+  const inReview = listings.filter(listingAwaitsReview);
+
+  // A listing that is both orderable and awaiting review is not yet on sale, so
+  // it cannot be what makes a store live.
+  const reviewIds = new Set(inReview.map((listing) => Number(listing.listing_id ?? listing.id)));
+  const liveNow = orderable.filter((row) => !reviewIds.has(row.id));
+
+  const readiness: StoreReadiness =
+    rows.length === 0
+      ? "not_set_up"
+      : liveNow.length > 0
+        ? "live"
+        : inReview.length > 0
+          ? "pending_review"
+          : drafts.length > 0
+            ? "incomplete"
+            : "paused";
+
+  const steps: StoreSetupStep[] = [
+    {
+      key: "add",
+      label: "Add a listing",
+      detail: "Your store has nothing in it until you list something.",
+      complete: rows.length > 0,
+      action: rows.length > 0 ? null : { key: "add_listing", label: "Add a listing" }
+    },
+    {
+      key: "publish",
+      label: "Take a listing out of draft",
+      detail: "A draft is saved but hidden. Buyers only see listings you publish.",
+      complete: rows.length > 0 && rows.length > drafts.length,
+      action:
+        rows.length > 0 && drafts.length > 0 ? { key: "open_drafts", label: "Open drafts" } : null
+    },
+    {
+      key: "stock",
+      label: "Keep something in stock",
+      detail: "A listing with nothing left cannot be ordered, even while it is on show.",
+      complete: orderable.length > 0,
+      action:
+        rows.length > 0 && orderable.length === 0
+          ? { key: "open_out_of_stock", label: "Open out of stock" }
+          : null
+    }
+  ];
+
+  // The review step only appears while something is actually in review. A row
+  // that is permanently ticked teaches the seller to stop reading the list.
+  if (inReview.length > 0) {
+    steps.push({
+      key: "review",
+      label: "Wait for the review to finish",
+      detail: "Someone is checking what you sent. Nothing is needed from you.",
+      complete: false,
+      action: null
+    });
+  }
+
+  const copy = READINESS_COPY[readiness];
+  return {
+    readiness,
+    headline: copy.headline,
+    statusLabel: copy.statusLabel,
+    action: copy.action,
+    openForOrders: readiness === "live",
+    steps,
+    remaining: steps.filter((step) => !step.complete).length
+  };
+}
+
+const READINESS_COPY: Record<
+  StoreReadiness,
+  { headline: string; statusLabel: string; action: { key: StoreSetupActionKey; label: string } }
+> = {
+  not_set_up: {
+    headline: "Your store isn't set up yet. There's nothing listed, so buyers can't order.",
+    statusLabel: "Not set up yet",
+    action: { key: "add_listing", label: "Add a listing" }
+  },
+  incomplete: {
+    headline: "Everything you've added is still a draft, so none of it is on sale.",
+    statusLabel: "Setup unfinished",
+    action: { key: "open_drafts", label: "Finish setup" }
+  },
+  pending_review: {
+    headline: "Your listings are being checked. Nothing is needed from you right now.",
+    statusLabel: "Waiting on review",
+    action: { key: "open_drafts", label: "Manage" }
+  },
+  live: {
+    headline: "Your store is open. Buyers can order from you now.",
+    statusLabel: "Open for orders",
+    action: { key: "preview_storefront", label: "Manage" }
+  },
+  paused: {
+    headline: "Nothing in your store can be ordered right now.",
+    statusLabel: "Paused — buyers can't order",
+    action: { key: "open_out_of_stock", label: "Reopen" }
+  }
+};
 
 /* ------------------------------------------------------------------ *
  * Loading, with per-section outcomes

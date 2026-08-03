@@ -29,6 +29,9 @@
 
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { pulseApi, PulseApiError } from "./pulseApi";
+// The shared state and failure vocabulary. Insights names a failure with the
+// same five causes and the same five sentences every other surface uses.
+import { failureFrom, type FailureCopy } from "./stateLanguage";
 
 /* ------------------------------------------------------------------ periods */
 
@@ -532,6 +535,81 @@ export function createInsightsRequestGate(): InsightsRequestGate {
       return error instanceof InsightsStaleResponse;
     }
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * Cause-specific failure, and whether there is anything to export
+ * ------------------------------------------------------------------ */
+
+export const INSIGHTS_ERROR_CAUSES_FLAG = "EXPO_PUBLIC_INSIGHTS_ERROR_CAUSES";
+
+/** True when a build has opted into cause-specific insights errors. Off by default. */
+export function insightsErrorCausesEnabled(): boolean {
+  return String(process.env[INSIGHTS_ERROR_CAUSES_FLAG] || "").trim() === "1";
+}
+
+export type InsightsFailure = FailureCopy & {
+  /**
+   * True when pressing the action would send the same request again. False for
+   * the entitlement case, where a second identical attempt fails identically,
+   * and for the sign-in case, which goes somewhere else entirely.
+   */
+  retries: boolean;
+};
+
+/**
+ * Why insights did not load, and what to do about it.
+ *
+ * `insightsErrorMessage` above collapsed five situations into three sentences
+ * and gave all of them the same treatment: a line of text and a Retry. Two of
+ * those situations do not retry. Being offline and the service being down look
+ * identical to it, though only one of them is fixed by reconnecting. And an
+ * account without the entitlement was told to try again forever.
+ *
+ * The causes themselves are not decided here — they come from
+ * {@link failureFrom}, which is the app-wide vocabulary from ADR-0003, so the
+ * Store, Advertising and Insights all name the same failure the same way.
+ */
+export function insightsFailure(error: unknown, subject = "Your insights"): InsightsFailure {
+  const copy = failureFrom(error, subject);
+  return { ...copy, retries: copy.cause !== "entitlement" && copy.cause !== "authentication" };
+}
+
+/**
+ * Whether an export would contain anything.
+ *
+ * Export was previously enabled whenever a summary existed, so a seller with no
+ * trade in the window could press it and receive a file of nothing — and a
+ * disabled pill was drawn at 45% opacity with no reason given, which reads as a
+ * rendering fault rather than a decision.
+ *
+ * "Anything" means at least one order in the window. Revenue alone is not the
+ * test: a period can hold a refund and net to zero revenue while still having
+ * rows worth exporting, and orders is the count of rows the file would carry.
+ */
+export function insightsHasExportableData(summary: InsightsSummary | null): boolean {
+  if (!summary) return false;
+  return summary.totals.orders > 0 || summary.series.some((bucket) => bucket.orders > 0);
+}
+
+/**
+ * The one sentence a disabled Export explains itself with, or `null` when it is
+ * enabled. Never an empty string, so the caller cannot render a blank reason.
+ */
+export function insightsExportBlockedReason(input: {
+  summary: InsightsSummary | null;
+  loading?: boolean;
+  failed?: boolean;
+  fromCache?: boolean;
+}): string | null {
+  if (input.loading) return "Still loading your figures.";
+  if (input.failed) return "Your insights didn't load, so there's nothing to export.";
+  if (!input.summary) return "There's nothing to export yet.";
+  if (input.fromCache) return "These figures are from your last visit. Reconnect to export them.";
+  if (!insightsHasExportableData(input.summary)) {
+    return "You had no orders in this period, so an export would be empty.";
+  }
+  return null;
 }
 
 /** A user-facing failure line. Named so retries can be per-module. */
