@@ -2,6 +2,34 @@ import { hashIdentifier, redact } from "./liveAudioTelemetry";
 
 export type LiveAudioTraceEventName =
   | "live_start_requested"
+  | "live_session_created"
+  | "live_audio_owner_requested"
+  | "live_audio_owner_acquired"
+  | "live_audio_generation_created"
+  | "live_audio_policy_requested"
+  | "live_audio_policy_applied"
+  | "av_audio_session_activation_started"
+  | "av_audio_session_activated"
+  | "camera_initialization_started"
+  | "camera_initialized"
+  | "livekit_room_connect_started"
+  | "livekit_room_connected"
+  | "microphone_track_create_started"
+  | "microphone_track_created"
+  | "microphone_publish_started"
+  | "microphone_published"
+  | "live_audio_active_verification_started"
+  | "live_audio_active_verification_passed"
+  | "live_audio_active_verification_failed"
+  | "audio_owner_release_requested"
+  | "audio_session_deactivation_requested"
+  | "audio_session_deactivated"
+  | "audio_generation_replaced"
+  | "stale_cleanup_rejected"
+  | "cleanup_started"
+  | "feature_flag_changed"
+  | "quality_profile_changed"
+  | "component_unmounted"
   | "live_authorization_succeeded"
   | "live_room_connect_started"
   | "live_room_connected"
@@ -64,6 +92,15 @@ export type LiveAudioTraceEvent = {
   audio_level: number | null;
   audio_profile: string;
   engine_state: string;
+  audio_generation: number | null;
+  current_owner: string;
+  requested_owner: string;
+  room_id: string;
+  screen_instance_id: string;
+  quality_profile: string;
+  feature_flags: string;
+  caller: string;
+  reason: string;
 };
 
 type TracePatch = Partial<Pick<
@@ -77,12 +114,19 @@ type TracePatch = Partial<Pick<
   | "error_category"
   | "audio_profile"
   | "engine_state"
+  | "quality_profile"
+  | "feature_flags"
+  | "caller"
+  | "reason"
 >> & {
   participantIdentity?: unknown;
   audioOwner?: unknown;
   trackSid?: unknown;
   publicationSid?: unknown;
   audioLevel?: unknown;
+  audioGeneration?: unknown;
+  currentOwner?: unknown;
+  requestedOwner?: unknown;
 };
 
 type TraceSink = (event: LiveAudioTraceEvent) => void;
@@ -110,12 +154,14 @@ export function createLiveAudioTrace(options: {
   room: unknown;
   participantIdentity: unknown;
   participantRole: string;
+  screenInstanceId?: unknown;
 }) {
   let sequence = 0;
   const events: LiveAudioTraceEvent[] = [];
   const sessionId = safeId(`${options.room || "room"}:${options.correlationId}`);
   const roomName = safeId(options.room);
   const participantIdentity = safeId(options.participantIdentity);
+  const screenInstanceId = safeId(options.screenInstanceId || options.correlationId);
 
   function emit(event: LiveAudioTraceEventName, patch: TracePatch = {}): LiveAudioTraceEvent | null {
     if (!options.enabled) return null;
@@ -140,7 +186,16 @@ export function createLiveAudioTrace(options: {
       error_category: redact(patch.error_category) || "none",
       audio_level: safeLevel(patch.audioLevel),
       audio_profile: redact(patch.audio_profile) || "unknown",
-      engine_state: redact(patch.engine_state) || "unknown"
+      engine_state: redact(patch.engine_state) || "unknown",
+      audio_generation: Number.isFinite(Number(patch.audioGeneration)) ? Number(patch.audioGeneration) : null,
+      current_owner: patch.currentOwner ? safeId(patch.currentOwner) : "none",
+      requested_owner: patch.requestedOwner ? safeId(patch.requestedOwner) : "none",
+      room_id: roomName,
+      screen_instance_id: screenInstanceId,
+      quality_profile: redact(patch.quality_profile) || "unknown",
+      feature_flags: redact(patch.feature_flags) || "unknown",
+      caller: redact(patch.caller) || "unknown",
+      reason: redact(patch.reason) || "none"
     };
     events.push(item);
     try { sink(item); } catch { /* tracing must not interrupt a broadcast */ }

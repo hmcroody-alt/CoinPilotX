@@ -23,7 +23,7 @@ import {
 import { setRealtimeMicrophoneEnabled } from "../core/realtimeMicrophonePublisher";
 import { RealtimeAudioStateMachine } from "../core/realtimeAudioStateMachine";
 import { createRealtimeAudioCorrelationId } from "../core/realtimeAudioTelemetry";
-import { parseMediaQualityFlags } from "../core/mediaQualityFlags";
+import { describeMediaQualityFlags, parseMediaQualityFlags } from "../core/mediaQualityFlags";
 import {
   buildRoomQualityOptions,
   resolveMediaQualityPlan,
@@ -293,12 +293,26 @@ export async function initializeLivePublisherMedia(options: {
   enableCamera: () => Promise<void>;
   stabilizeAudio: () => Promise<number>;
   wait?: (milliseconds: number) => Promise<void>;
+  trace?: (event: "microphone_track_create_started" | "microphone_track_created" | "microphone_publish_started" | "microphone_published" | "camera_initialization_started" | "camera_initialized" | "live_audio_active_verification_started" | "live_audio_active_verification_passed" | "live_audio_active_verification_failed") => void;
 }): Promise<number> {
+  options.trace?.("microphone_track_create_started");
+  options.trace?.("microphone_publish_started");
   let audioTrackCount = await options.publishMicrophone();
+  options.trace?.("microphone_track_created");
+  options.trace?.("microphone_published");
+  options.trace?.("camera_initialization_started");
   await options.enableCamera();
+  options.trace?.("camera_initialized");
   audioTrackCount = await options.publishMicrophone();
   if (options.useV2) {
-    audioTrackCount = Math.max(audioTrackCount, await options.stabilizeAudio());
+    options.trace?.("live_audio_active_verification_started");
+    try {
+      audioTrackCount = Math.max(audioTrackCount, await options.stabilizeAudio());
+      options.trace?.("live_audio_active_verification_passed");
+    } catch (error) {
+      options.trace?.("live_audio_active_verification_failed");
+      throw error;
+    }
   } else {
     await (options.wait || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))))(150);
   }
@@ -466,9 +480,12 @@ export function useLiveBroadcastRoom() {
     // can never match the real owner, so the release silently no-opped and the
     // AVAudioSession leaked - blocking the next call or broadcast.
     if (lease) {
+      trace?.emit("audio_owner_release_requested", { room_state: "disconnecting", currentOwner: lease.ownerId, audioGeneration: lease.leaseId, caller: "useLiveBroadcastRoom.disconnect", reason });
+      trace?.emit("audio_session_deactivation_requested", { room_state: "disconnecting", currentOwner: lease.ownerId, audioGeneration: lease.leaseId, caller: "realtimeAudioEngine.release", reason });
       await releaseRealtimeAudioSession(audioSessionRef.current, lease).catch(() => undefined);
       trace?.emit("audio_owner_released", { room_state: "disconnected", audioOwner: lease.ownerId });
       trace?.emit("audio_session_deactivated_if_unowned", { room_state: "disconnected", audioOwner: lease.ownerId });
+      trace?.emit("audio_session_deactivated", { room_state: "disconnected", currentOwner: lease.ownerId, audioGeneration: lease.leaseId, caller: "realtimeAudioEngine.release", reason });
       emitLiveAudioEvent({
         name: "live_audio_session_released",
         path: resolveLiveAudioPath({ audioV2Enabled: useV2Ref.current }),
@@ -692,6 +709,7 @@ export function useLiveBroadcastRoom() {
       });
       const trace = traceRef.current;
       trace.emit("live_start_requested", { room_state: "new", enabled: publish });
+      trace.emit("live_session_created", { room_state: "new", caller: "useLiveBroadcastRoom.connect" });
       if (publish && !credentials.canPublish) {
         trace.emit("invariant_failed", { room_state: "authorization_failed", error_category: "publish_not_authorized" });
       } else {
@@ -761,10 +779,22 @@ export function useLiveBroadcastRoom() {
         // LiveKit auto audio configuration is disabled, so PulseSoc must claim
         // one owner-controlled AVAudioSession before connecting or publishing.
         const mediaMode = liveAudioMode(credentials, publish);
+        trace.emit("live_audio_policy_requested", { room_state: "connecting", caller: "mediaQualityPolicy.resolve" });
+        const qualityFlags = parseMediaQualityFlags(credentials.mediaQuality);
+        const qualityPlan = resolveMediaQualityPlan({ feature: mediaMode, flags: qualityFlags });
+        qualityPlanRef.current = qualityPlan;
+        const qualityTrace = {
+          quality_profile: qualityPlan.profile,
+          feature_flags: describeMediaQualityFlags(qualityFlags),
+          caller: "mediaQualityPolicy.resolve"
+        };
+        trace.emit("live_audio_policy_applied", { room_state: "connecting", ...qualityTrace });
         const appleAudioConfiguration = resolveLiveAudioConfiguration(mediaMode);
         const ownerId = `live:${mediaMode}:${credentials.room || credentials.identity || Date.now()}`;
         const audioProfile = `${appleAudioConfiguration.audioCategory}/${appleAudioConfiguration.audioMode}`;
         trace.emit("audio_owner_requested", { room_state: "connecting", audioOwner: ownerId, audio_profile: audioProfile });
+        trace.emit("live_audio_owner_requested", { room_state: "connecting", requestedOwner: ownerId, caller: "realtimeAudioEngine.claim" });
+        trace.emit("av_audio_session_activation_started", { room_state: "connecting", requestedOwner: ownerId, caller: "realtimeAudioEngine.activate" });
         trace.emit("audio_session_config_started", { room_state: "connecting", audioOwner: ownerId, audio_profile: audioProfile });
         try {
           audioLeaseRef.current = await activateRealtimeAudioSession(livekitNative.AudioSession, mediaMode, ownerId, {
@@ -792,8 +822,11 @@ export function useLiveBroadcastRoom() {
             }
           });
           trace.emit("audio_owner_acquired", { room_state: "connecting", audioOwner: ownerId, audio_profile: audioProfile });
+          trace.emit("live_audio_owner_acquired", { room_state: "connecting", currentOwner: ownerId, audioGeneration: audioLeaseRef.current.leaseId, caller: "realtimeAudioEngine.claim" });
+          trace.emit("live_audio_generation_created", { room_state: "connecting", currentOwner: ownerId, audioGeneration: audioLeaseRef.current.leaseId, caller: "realtimeAudioEngine.claim" });
           trace.emit("audio_session_config_completed", { room_state: "connecting", audioOwner: ownerId, audio_profile: audioProfile });
           trace.emit("audio_session_activated", { room_state: "connecting", audioOwner: ownerId, audio_profile: audioProfile });
+          trace.emit("av_audio_session_activated", { room_state: "connecting", currentOwner: ownerId, audioGeneration: audioLeaseRef.current.leaseId, caller: "realtimeAudioEngine.activate" });
           if (publish) lifecycleRef.current.transition("local", "publishing");
         } catch (ownershipError) {
           // A call already owns the audio session. Report it honestly instead of
@@ -869,11 +902,6 @@ export function useLiveBroadcastRoom() {
         // literal that used to be written here, including
         // videoCaptureDefaults: PULSE_LIVE_VIDEO_CAPTURE_OPTIONS and the
         // 2.3 Mbps encoding. mediaQualityPolicy.test.ts asserts that.
-        const qualityPlan = resolveMediaQualityPlan({
-          feature: mediaMode,
-          flags: parseMediaQualityFlags(credentials.mediaQuality)
-        });
-        qualityPlanRef.current = qualityPlan;
         emitMediaQualityEvent({
           name: "quality_plan_resolved",
           sessionId: roomNameRef.current,
@@ -1168,9 +1196,11 @@ export function useLiveBroadcastRoom() {
           if (classification !== "terminal") scheduleReconnect(reasonText);
         });
 
+        trace.emit("livekit_room_connect_started", { room_state: "connecting", caller: "LiveKit.Room.connect" });
         await room.connect(credentials.url, credentials.token, { autoSubscribe: true });
         lifecycleRef.current.tryTransition("room", "connected");
         trace.emit("live_room_connected", { room_state: String(room?.state || "connected") });
+        trace.emit("livekit_room_connected", { room_state: String(room?.state || "connected"), caller: "LiveKit.Room.connect" });
         if (!publish) trace.emit("viewer_room_connected", { room_state: String(room?.state || "connected"), subscription_state: "auto_subscribe" });
         if (publish) {
           trace.emit("local_audio_track_create_started", { room_state: String(room?.state || "connected"), enabled: true });
@@ -1205,7 +1235,15 @@ export function useLiveBroadcastRoom() {
                   participantRole: telemetryRole
                 }
               }
-            )).audioTrackCount
+            )).audioTrackCount,
+            trace: (event) => trace.emit(event, {
+              room_state: String(room?.state || "connected"),
+              audioGeneration: audioLeaseRef.current?.leaseId,
+              currentOwner: audioLeaseRef.current?.ownerId,
+              quality_profile: qualityPlan.profile,
+              feature_flags: describeMediaQualityFlags(qualityFlags),
+              caller: event.startsWith("camera_") ? "LiveKit.setCameraEnabled" : event.startsWith("live_audio_active_") ? "realtimeAudioEngine.guard" : "realtimeMicrophonePublisher"
+            })
           });
         }
         if (publish) await selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
@@ -1434,6 +1472,7 @@ export function useLiveBroadcastRoom() {
     () => () => {
       const room = roomRef.current;
       const lease = audioLeaseRef.current;
+      traceRef.current?.emit("component_unmounted", { room_state: String(room?.state || "unmounting"), currentOwner: lease?.ownerId, audioGeneration: lease?.leaseId, caller: "useLiveBroadcastRoom.effectCleanup", reason: "component_unmounted" });
       // Unmount must not leave a pending reconnect or refresh timer alive - it
       // would fire against a torn-down room and reclaim the audio session.
       intentionalTeardownRef.current = true;
