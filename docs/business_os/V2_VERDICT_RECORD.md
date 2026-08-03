@@ -181,6 +181,32 @@ it is the largest single item in this mission. It also explains Tier 0.1: nine
 independent implementations of a quick-link tile is precisely how the same
 truncation defect appears in three places with no shared code to fix.
 
+### Correction 5 — the commerce/social premise names a surface that does not exist natively
+
+Added after Tier 0.4 was implemented, from evidence found during that work.
+
+The review's top-priority finding describes Offers and Orders filters sitting
+over social threads. They do not exist in the native social messenger.
+`MessengerScreen.tsx` filters are `all | unread | direct | groups | rooms | ai`.
+The Offers and Orders chips live only in `components/messages/FilterChips.tsx`
+and `api/commerceInbox.ts`, consumed by `CommerceInboxScreen.tsx` — which is the
+commerce surface, where they belong. The screenshot is either a web surface or a
+build that predates the commerce inbox.
+
+Tier 0.4 stands regardless, for a different reason than the review gave. The
+defect is not that the chips are in the wrong place; it is that nothing in the
+data layer prevented them from being. Conversations had no domain, so the two
+inboxes were separated only by which query a screen happened to call. The fix is
+therefore the required `conversation_domain` and the partitioned caches, not a
+removal.
+
+A second finding fell out of the same work: **the app has no conversation search
+at all.** The review's "marketplace threads must never appear in social search"
+could not be implemented as a fix to an existing leak. `searchSocialConversations`
+was built as the single social search entry point, scoped by construction before
+the text match, so that when a search field is eventually added it cannot reach a
+marketplace thread. This is a spec gap the review found by accident.
+
 ## Tier 0 verdicts — launch blockers
 
 ### 0.1 Layout resilience — DEVIATION
