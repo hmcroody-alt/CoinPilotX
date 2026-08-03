@@ -123,6 +123,7 @@ describe("normalizeLiveKitCredentials", () => {
       // Absent from this payload, so the rollout gate stays OFF and the legacy
       // fallback stays available.
       audioV2Enabled: false,
+      publisherAudioV2Enabled: false,
       audioV2FallbackEnabled: true,
       audioTraceEnabled: false,
       // Also absent, so the client carries no quality flags at all and the
@@ -152,6 +153,7 @@ describe("normalizeLiveKitCredentials", () => {
 
     it("is OFF when the server omits the field, so an older backend runs the legacy path", () => {
       expect(normalizeLiveKitCredentials(base)?.audioV2Enabled).toBe(false);
+      expect(normalizeLiveKitCredentials(base)?.publisherAudioV2Enabled).toBe(false);
     });
 
     it("is ON only for an explicit server true", () => {

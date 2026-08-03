@@ -54,6 +54,7 @@ export type LiveKitCredentials = {
    * an older backend that omits the field runs the legacy path.
    */
   audioV2Enabled: boolean;
+  publisherAudioV2Enabled: boolean;
   /** Whether the client may drop back to the legacy path if V2 fails at runtime. */
   audioV2FallbackEnabled: boolean;
   /** Server-authoritative, QA-account-only privacy-safe diagnostic timeline. */
@@ -212,6 +213,7 @@ export function normalizeLiveKitCredentials(raw: Record<string, unknown> | null 
     // Strict boolean normalisation at the API boundary: anything other than an
     // explicit server `true` (missing field, "false", 0, "0") runs the legacy path.
     audioV2Enabled: normalizeLiveAudioV2Flag(data.audio_v2_enabled),
+    publisherAudioV2Enabled: normalizeLiveAudioV2Flag(data.publisher_audio_v2_enabled),
     audioV2FallbackEnabled: data.audio_v2_fallback_enabled !== false,
     audioTraceEnabled: data.audio_trace_enabled === true,
     mediaQuality:

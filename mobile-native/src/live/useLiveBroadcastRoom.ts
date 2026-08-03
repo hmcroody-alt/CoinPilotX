@@ -30,7 +30,7 @@ import {
   type MediaQualityPlan
 } from "../core/mediaQualityPolicy";
 import { emitMediaQualityEvent } from "../core/mediaQualityTelemetry";
-import { isLiveAudioV2Enabled, resolveLiveAudioPath } from "./liveAudioFlags";
+import { isLiveAudioV2EnabledForSession, resolveLiveAudioPath, resolveLiveAudioPathForSession } from "./liveAudioFlags";
 import { publishLiveMicrophone } from "./liveAudioPublisher";
 import {
   classifyDisconnect,
@@ -684,8 +684,8 @@ export function useLiveBroadcastRoom() {
       // client already fetches for every broadcast, so flipping the backend flag
       // takes effect on the next token fetch with no app release. There is no
       // local override on purpose - a client-side flag is not a kill switch.
-      const useV2 = isLiveAudioV2Enabled(credentials);
-      const audioPath = resolveLiveAudioPath(credentials);
+      const useV2 = isLiveAudioV2EnabledForSession(credentials, publish);
+      const audioPath = resolveLiveAudioPathForSession(credentials, publish);
       const telemetryRole = credentials.role || (publish ? "host" : "viewer");
 
       if (roomRef.current) await disconnect("replaced_room");

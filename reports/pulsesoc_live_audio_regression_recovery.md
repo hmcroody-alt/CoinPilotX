@@ -17,7 +17,7 @@ Production rollout: **NO-GO pending physical validation**
 
 ## Root-cause status
 
-Confirmed category: the media-quality rollout admitted Live host/co-host into a not-yet-physically-validated publisher configuration during the camera/microphone startup window.
+Confirmed category after subsequent physical evidence: the first recovery gated media-quality V2, but the displayed exception is emitted only by the separate Live-audio V2 publisher engine guard. The existing general `audio_v2_enabled` token flag could therefore keep host/co-host sessions on the failing V2 startup path even when media quality was stable.
 
 Exact component that deactivated the engine: **not yet proven**. The failure occurred after ownership/activation and the guard observed a stopped native engine, but the failed physical run did not include caller- and generation-complete tracing. It would be inaccurate to claim that the quality policy itself deactivated AVAudioSession: the policy modules are pure and contain no room or audio-session handle. Camera/RemoteIO interaction remains the leading hypothesis until a traced physical reproduction names the transition immediately preceding engine loss.
 
@@ -26,6 +26,7 @@ The fail-closed `REALTIME_AUDIO_ENGINE_INACTIVE` guard remains intact.
 ## Recovery changes
 
 - Live publisher quality stays on the exact stable baseline by default and requires the additional server-authoritative `live_publisher_quality_enabled` opt-in.
+- Live publisher audio V2 now independently requires `publisher_audio_v2_enabled`; absent or malformed values restore host/co-host to `v1_legacy` while leaving viewer rollout behavior unchanged.
 - Media-quality flags and the resolved plan are snapshotted once per Live session.
 - The ordered Live startup trace now records policy, owner, generation, AVAudioSession activation, room connection, microphone creation/publication, camera initialization, and post-camera active verification.
 - Stop-capable lifecycle events record correlation ID, session, generation, current/requested owner, room, screen instance, profile, flags, caller, reason, and timestamp.

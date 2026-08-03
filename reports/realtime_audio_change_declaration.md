@@ -9,6 +9,8 @@ Required label: `audio-critical-change`
 
 Physical Live startup failed with `The native real-time audio engine did not remain active.` The stable rollback was already present, but the failed run lacked generation- and caller-complete evidence, and the release-blocking suite omitted the post-camera engine lifecycle test. The guard must remain fail-closed while the transition that invalidates the engine becomes observable and regression-tested.
 
+A subsequent physical screenshot proved the first recovery was incomplete: it gated media-quality V2, while the exception is thrown only by the separate Live-audio V2 publisher path. Host/co-host publisher V2 must therefore require its own explicit server opt-in; the existing general audio V2 flag is no longer sufficient to move a publisher away from the stable path.
+
 ## Which feature required it
 
 Emergency Live host/co-host audio recovery. No Marketplace, Advertising, Premium, Crypto, feed, or unrelated UI files are included.
@@ -23,10 +25,14 @@ Emergency Live host/co-host audio recovery. No Marketplace, Advertising, Premium
 | `mobile-native/package.json` | dependency watch | Adds Live configuration and trace suites to the critical command; no dependency version changed. |
 | `config/realtime-audio-protected-paths.json` | audio governance | Declares the required startup trace schema and critical lifecycle suite. |
 | `tests/protection/test_realtime_audio_architecture.py` | critical tests | Enforces the trace contract and critical-suite inclusion. |
+| `mobile-native/src/live/liveAudioFlags.ts` | audio feature flags | Adds a publisher-specific V2 gate that defaults off. |
+| `mobile-native/src/live/liveSession.ts` | livestream audio adapter | Strictly normalizes the optional server publisher gate. |
+| `mobile-native/src/live/__tests__/liveSession.test.ts` | critical tests | Locks the absent/malformed publisher gate to false. |
+| `mobile-native/src/live/__tests__/cohostPublishGate.test.ts` | critical tests | Updates the exhaustive credential fixture for the new safe default. |
 
 ## Expected behavior change
 
-Live publishers remain on the stable profile unless the server explicitly enables `live_publisher_quality_enabled`. Audio ownership, microphone publication, routing, cleanup, and the inactive-engine guard are unchanged. When QA tracing is enabled, a failed startup now identifies the active generation and initiating module instead of reporting only the terminal guard error.
+Live publishers remain on both the stable quality profile and stable audio path unless the server explicitly enables `live_publisher_quality_enabled` and `publisher_audio_v2_enabled`, respectively. Audio ownership, microphone publication, routing, cleanup, and the inactive-engine guard are unchanged. When QA tracing is enabled, a failed V2 startup identifies the active generation and initiating module instead of reporting only the terminal guard error.
 
 ## Regression risk
 

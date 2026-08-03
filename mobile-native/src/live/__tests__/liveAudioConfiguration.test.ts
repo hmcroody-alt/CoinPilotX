@@ -4,6 +4,25 @@ import {
   stabilizeLivePublisherAudio,
   stabilizeLiveViewerAudio
 } from "../useLiveBroadcastRoom";
+import { isLiveAudioV2EnabledForSession, resolveLiveAudioPathForSession } from "../liveAudioFlags";
+
+describe("emergency publisher V2 rollback", () => {
+  it("holds publishers on the stable path when the general V2 flag is on", () => {
+    const flags = { audioV2Enabled: true };
+    expect(isLiveAudioV2EnabledForSession(flags, true)).toBe(false);
+    expect(resolveLiveAudioPathForSession(flags, true)).toBe("v1_legacy");
+  });
+
+  it("requires an additional explicit server opt-in for publisher V2", () => {
+    const flags = { audioV2Enabled: true, publisherAudioV2Enabled: true };
+    expect(isLiveAudioV2EnabledForSession(flags, true)).toBe(true);
+    expect(resolveLiveAudioPathForSession(flags, true)).toBe("v2_isolated");
+  });
+
+  it("does not change the listen-only viewer rollout", () => {
+    expect(isLiveAudioV2EnabledForSession({ audioV2Enabled: true }, false)).toBe(true);
+  });
+});
 
 /**
  * Regression guard for the production livestream-audio P0: native calls already
