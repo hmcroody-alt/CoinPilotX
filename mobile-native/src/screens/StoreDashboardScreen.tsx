@@ -59,6 +59,7 @@ import {
   StoreTabBar
 } from "../components/store";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { refreshUnreadCounts, useBellCount } from "../core/unreadCounts";
 import { useFormatters } from "../i18n/hooks";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
@@ -102,6 +103,14 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
   const [tab, setTab] = useState<StoreTabKey>("all");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState(false);
+
+  // The header bell reads the ONE shared unread store — the same number every
+  // seller header and the Activity feed show. Pull the authoritative count on
+  // mount; the eventSync wiring (initUnreadCountSync) keeps it fresh after that.
+  const bellCount = useBellCount();
+  useEffect(() => {
+    void refreshUnreadCounts();
+  }, []);
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
     if (mode === "refresh") setRefreshing(true);
@@ -396,11 +405,11 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
           onQueryChange={setQuery}
           onSubmitSearch={() => setExpanded(true)}
           onBack={() => navigation.goBack?.()}
-          onNotifications={() => navigation.navigate("Notifications")}
-          // MOCK-DATA: no seller-notification count endpoint exists, so the
-          // badge is driven by open orders — the one thing genuinely waiting on
-          // the seller — rather than by a number nobody produces.
-          unreadCount={ordersFailed ? 0 : kpis.openOrders}
+          onNotifications={() => navigation.navigate("BusinessOsActivity")}
+          // The bell number and its destination are now the shared Activity feed
+          // and its unread store — not open-orders, which double-counted with the
+          // orders card and diverged from every other header.
+          unreadCount={bellCount}
           searchPlaceholder="Search your listings and orders"
           reducedMotion={reducedMotion}
         />

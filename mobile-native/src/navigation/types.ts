@@ -80,7 +80,12 @@ export type RootStackParamList = {
   ReelDetail: { reelId: number; title?: string };
   StatusDetail: { statusId: number; title?: string };
   MarketplaceDetail: { listingId?: number; title?: string } | undefined;
-  BusinessOs: { title?: string } | undefined;
+  /**
+   * One route, two screens. Default is the rebuilt Business Hub; `mode:
+   * "classic"` renders the previous sections screen. Deep links that pass
+   * neither keep working and get the hub.
+   */
+  BusinessOs: { title?: string; mode?: "hub" | "classic" } | undefined;
   BusinessProfile: { title?: string } | undefined;
   /**
    * The seller-side Marketplace manager (Business "Sections" card #3). Distinct
@@ -108,6 +113,18 @@ export type RootStackParamList = {
    * old Messenger tab stays intact — this is the Business-surface entry point.
    */
   BusinessOsMessages: { title?: string } | undefined;
+  /**
+   * The rebuilt hosted-events manager (Business "Events" card, EVENTS_CARD_CONFIG).
+   * Draws its own navy header with the Upcoming/Past/Drafts tabs. Distinct from
+   * the legacy `Events` live-discovery route, which is untouched.
+   */
+  BusinessOsEvents: { title?: string } | undefined;
+  /**
+   * The unified Activity feed (the bell in every seller header). Aggregates
+   * social / marketplace / orders / ads / payments / system notifications; its
+   * unread total is the same number the header bells show.
+   */
+  BusinessOsActivity: { title?: string; filter?: "all" | "social" | "marketplace" | "orders" | "system" } | undefined;
   SellerStore: { title?: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts" | "orders"; sellerId?: string } | undefined;
   BuyerOrders: { orderId?: number; source?: string; title?: string } | undefined;
   BuyerOrderDetail: { orderId: number; source?: string; title?: string };

@@ -8,6 +8,7 @@ import { alertUnreadCount, chatUnreadCount, getNotificationBadgeCounts, totalUnr
 import { getMyProfile, PulseProfile } from "../api/profile";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { invalidateNativeSync, registerSyncInvalidation, startNativeEventSync } from "../core/eventSync";
+import { initUnreadCountSync } from "../core/unreadCounts";
 import { AccountCenterScreen } from "../screens/AccountCenterScreen";
 import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScreen";
 import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
@@ -15,9 +16,11 @@ import { AlertManagementScreen } from "../screens/AlertManagementScreen";
 import { AdvertisingRoute } from "../screens/AdvertisingRoute";
 import { OrdersRoute } from "../screens/OrdersRoute";
 import { MessagesRoute } from "../screens/MessagesRoute";
+import { EventsRoute } from "../screens/EventsRoute";
+import { ActivityRoute } from "../screens/ActivityRoute";
 import { BusinessOsInsightsScreen } from "../screens/BusinessOsInsightsScreen";
 import { BusinessOsPaymentsScreen } from "../screens/BusinessOsPaymentsScreen";
-import { BusinessOsScreen } from "../screens/BusinessOsScreen";
+import { BusinessHubRoute } from "../screens/BusinessHubRoute";
 import { BusinessProfileScreen } from "../screens/BusinessProfileScreen";
 import { MarketplaceManagerScreen } from "../screens/MarketplaceManagerScreen";
 import { BuyerOrdersScreen } from "../screens/BuyerOrdersScreen";
@@ -195,6 +198,10 @@ export function AppNavigator() {
       fullResyncOnStart: true,
       subsystems: ["activity", "notifications", "orders", "marketplace", "seller_inventory", "status", "reels"]
     });
+    // The shared bell store (every seller header + Activity read from this one
+    // source). Opt-in so importing the store never triggers network; wired once
+    // here alongside the rest of the app-level sync lifecycle.
+    const stopUnreadSync = initUnreadCountSync();
     const appState = AppState.addEventListener("change", (state) => {
       if (state === "active") refreshBadges().catch(() => undefined);
     });
@@ -206,6 +213,7 @@ export function AppNavigator() {
       unregisterNotifications();
       unregisterActivity();
       stopSync();
+      stopUnreadSync();
       appState.remove();
       received.remove();
     };
@@ -282,7 +290,18 @@ export function AppNavigator() {
       <Stack.Screen name="ReelDetail" component={ReelsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="StatusDetail" component={StatusScreen} options={({ route }) => ({ title: route.params.title || t("common:screens.status") })} />
       <Stack.Screen name="MarketplaceDetail" component={MarketplaceScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.marketplace") })} />
-      <Stack.Screen name="BusinessOs" component={BusinessOsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOs") })} />
+      {/* `BusinessHubRoute` picks the rebuilt hub by default and the previous
+          sections screen for `mode: "classic"`. The hub draws its own navy
+          header (business name, verification tick, context line, bell), so the
+          stack header is hidden for it and kept for classic. */}
+      <Stack.Screen
+        name="BusinessOs"
+        component={BusinessHubRoute}
+        options={({ route }) => ({
+          title: route.params?.title || t("common:screens.businessOs"),
+          headerShown: route.params?.mode === "classic"
+        })}
+      />
       {/* Draws its own header (back chevron, title, live badge), so the stack header is off. */}
       <Stack.Screen name="BusinessProfile" component={BusinessProfileScreen} options={{ headerShown: false }} />
       {/* Also draws its own navy header, with the search field and mode toggle in it. */}
@@ -314,7 +333,34 @@ export function AppNavigator() {
         component={MessagesRoute}
         options={{ headerShown: false }}
       />
-      <Stack.Screen name="BusinessOsInsights" component={BusinessOsInsightsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsInsights") })} />
+      {/* `EventsRoute` renders the rebuilt hosted-events manager, which draws its
+          own navy header with the Upcoming/Past/Drafts tabs — so the stack header
+          is hidden. The Business "Events" card points here (EVENTS_CARD_CONFIG). */}
+      <Stack.Screen
+        name="BusinessOsEvents"
+        component={EventsRoute}
+        options={{ headerShown: false }}
+      />
+      {/* `ActivityRoute` renders the unified Activity feed reached from every
+          seller header's bell. It draws its own navy header (back / Activity /
+          Mark all read / filter chips), so the stack header is hidden. */}
+      <Stack.Screen
+        name="BusinessOsActivity"
+        component={ActivityRoute}
+        options={{ headerShown: false }}
+      />
+      {/* Insights draws its own navy header — back chevron, title, Export pill and
+          the period picker, all inside the gradient. A stack header above that
+          would be a second title bar and a second back affordance. The title is
+          still declared so the route keeps its name for deep links and history. */}
+      <Stack.Screen
+        name="BusinessOsInsights"
+        component={BusinessOsInsightsScreen}
+        options={({ route }) => ({
+          title: route.params?.title || t("common:screens.businessOsInsights"),
+          headerShown: false
+        })}
+      />
       <Stack.Screen name="BusinessOsPayments" component={BusinessOsPaymentsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOsPayments") })} />
       {/* `SellerStoreRoute` picks the rebuilt dashboard for `mode: "dashboard"`
           and `SellerStoreScreen` for every other mode. The dashboard draws its

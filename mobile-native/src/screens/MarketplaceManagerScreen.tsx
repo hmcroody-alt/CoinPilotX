@@ -106,6 +106,7 @@ import {
   StoreSkeletonBlock
 } from "../components/store";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { refreshUnreadCounts, useBellCount } from "../core/unreadCounts";
 import { useFormatters } from "../i18n/hooks";
 import { setSaved } from "../social/useSaveAction";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../navigation/BottomNavVisibility";
@@ -213,6 +214,14 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
     loadLastMarketplaceMode()
       .then(setMode)
       .catch(() => undefined);
+  }, []);
+
+  // Header bell reads the ONE shared unread store (same as every seller header
+  // and the Activity feed). Pull the authoritative count on mount; eventSync
+  // keeps it fresh.
+  const bellCount = useBellCount();
+  useEffect(() => {
+    void refreshUnreadCounts();
   }, []);
 
   // The same three channels the Store dashboard listens on, so a listing edited
@@ -442,10 +451,11 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
       onQueryChange={setQuery}
       onSubmitSearch={() => load("refresh", query).catch(() => undefined)}
       onBack={() => navigation.goBack?.()}
-      onNotifications={() => navigation.navigate("Notifications")}
-      // MOCK-DATA: no unread counter for marketplace notifications. Rather than
-      // invent one, the bell is silent and does not wiggle.
-      unreadCount={0}
+      onNotifications={() => navigation.navigate("BusinessOsActivity")}
+      // The bell now reads the ONE shared unread store (was hard-coded 0) and
+      // routes to the unified Activity feed — the same number and destination as
+      // every other seller header.
+      unreadCount={bellCount}
       hideNotifications={mode === "buying"}
       searchPlaceholder={
         mode === "selling" ? "Search your items and offers" : "Search Marketplace"
