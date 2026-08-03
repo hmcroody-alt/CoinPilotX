@@ -1,104 +1,78 @@
 # PulseSoc Live Audio Regression Recovery
 
 Date: 2026-08-02
-Branch: `codex/store-dashboard-live`
-Starting SHA: `8f99e54235ffd9954fc23af6b90bb4b5d5d82075`
+Recovery branch: `codex/emergency-live-audio-recovery`
+Production rollout: **NO-GO pending physical validation**
 
-## Incident
+## Immutable references
 
-Physical testing reported that Live broadcast startup failed with:
+- Last physically verified tag: `realtime-audio-stable-v1`
+- Last known-good tag SHA: `fc25cd163b8802113df1b3b3d98cb7aab10891bb`
+- Baseline report's physically verified commit: `ce03e160eaf4649a8e02bc3b609a3182ca9d3859`
+- First bad commit: `8f99e54235ffd9954fc23af6b90bb4b5d5d82075`
+- Regression-producing change: `feat(media-quality): add governed quality policy layer`
+- Prior rollback commit: `c5e523d625166414573e618c1c043092794e7163`
 
-`The native real-time audio engine did not remain active.`
+`8f99e542` is the first post-tag commit that changes Live publisher room, capture, and publish configuration. The later `c5e523d6` commit restores Live publishers to the stable profile unless the new server-side `live_publisher_quality_enabled` flag is explicitly true.
 
-This is the fail-closed guard from the shared real-time audio engine. The guard was intentionally preserved; the fix does not remove, weaken, or mask it.
+## Root-cause status
 
-## Baseline Comparison
+Confirmed category: the media-quality rollout admitted Live host/co-host into a not-yet-physically-validated publisher configuration during the camera/microphone startup window.
 
-Verified stable reference: `realtime-audio-stable-v1`
+Exact component that deactivated the engine: **not yet proven**. The failure occurred after ownership/activation and the guard observed a stopped native engine, but the failed physical run did not include caller- and generation-complete tracing. It would be inaccurate to claim that the quality policy itself deactivated AVAudioSession: the policy modules are pure and contain no room or audio-session handle. Camera/RemoteIO interaction remains the leading hypothesis until a traced physical reproduction names the transition immediately preceding engine loss.
 
-The latest media-quality layer introduced a route where Live host/co-host sessions could leave the physically verified Live baseline when the existing `live_elite_audio_enabled` or `live_elite_video_enabled` flags were present. That meant a production or QA token could alter Live publisher room/capture/publish defaults before the host camera/microphone path had been revalidated on device.
+The fail-closed `REALTIME_AUDIO_ENGINE_INACTIVE` guard remains intact.
 
-Calls continue to use their known-good shared real-time audio engine. The emergency recovery therefore restores Live publisher sessions to the stable baseline unless the server sends a new, explicit `live_publisher_quality_enabled` flag.
+## Recovery changes
 
-## Root Cause
+- Live publisher quality stays on the exact stable baseline by default and requires the additional server-authoritative `live_publisher_quality_enabled` opt-in.
+- Media-quality flags and the resolved plan are snapshotted once per Live session.
+- The ordered Live startup trace now records policy, owner, generation, AVAudioSession activation, room connection, microphone creation/publication, camera initialization, and post-camera active verification.
+- Stop-capable lifecycle events record correlation ID, session, generation, current/requested owner, room, screen instance, profile, flags, caller, reason, and timestamp.
+- The camera-then-engine-loss event order is reproduced by a fail-closed regression test.
+- The post-camera lifecycle and trace suites now run inside `test:realtime-audio-critical`.
+- The protected manifest and backend architecture test enforce the required lifecycle events/fields and critical-suite inclusion.
 
-Root cause category: media-quality rollout guard was too broad for Live publishers.
+## Why the hard lock missed it
 
-Specific cause:
-- `live_host` and `live_guest` treated existing Live elite audio/video flags as enough to move away from the verified baseline.
-- That could apply quality changes to the same startup window where LiveKit camera startup and iOS RemoteIO stabilization are most sensitive.
-- The real-time audio engine guard correctly detected that the native engine did not remain active after startup and failed closed.
+The protected manifest, forbidden API scan, workflow, CODEOWNERS, change declaration, stable tag, and release checklist existed before quality work. The quality-policy directory was added to the manifest by `8f99e542`, and no new direct AVAudioSession mutation was found outside the coordinator.
 
-## Repair
+The gap was behavioral: the release-blocking critical command covered policy purity and baseline option equality but omitted `liveAudioConfiguration.test.ts`, the suite that owns post-camera engine stabilization. It therefore could not reproduce the physical camera/RemoteIO lifecycle. The guard now makes that suite release-blocking and enforces its inclusion from the manifest reader.
 
-Implemented an explicit Live-publisher quality gate:
+## Corrective commits
 
-- Added `livePublisherQualityEnabled` / `live_publisher_quality_enabled`.
-- Default is `false`.
-- Existing `live_elite_audio_enabled` and `live_elite_video_enabled` no longer affect `live_host` or `live_guest` unless this new publisher gate is also explicitly true.
-- The verified stable Live baseline remains unchanged.
-- The guard error remains active and will still fail loudly if the native engine stops.
+- `623afc8f` — `fix(live-audio): prevent quality policy from releasing active engine`
+- `14ac7302` — `test(live-audio): lock engine activation through broadcast startup`
+- `0f11cc0a` (pre-report-amend SHA) — `chore(audio-guard): extend protected paths to media quality lifecycle`
 
-## Files Changed
+Local HEAD and remote SHA must be recorded after the final report commit/push. No push was performed during this recovery.
 
-- `mobile-native/src/core/mediaQualityPolicy.ts`
-  - Added the Live-publisher opt-in field and required it for Live host/co-host quality upgrades.
-- `mobile-native/src/core/mediaQualityFlags.ts`
-  - Added parsing, defaults, wire alias, and telemetry descriptor for the new server flag.
-- `mobile-native/src/core/__tests__/mediaQualityPolicy.test.ts`
-  - Added regression coverage proving Live publishers stay baseline without explicit publisher opt-in.
-- `mobile-native/src/core/__tests__/mediaQualityWiring.test.ts`
-  - Added wiring coverage for legacy Live elite flags without the new publisher gate.
+## Validation actually run
 
-## Validation
+- Focused Jest: 4 suites, 112 tests passed.
+- Release-blocking critical Jest: 15 suites, 295 tests passed.
+- Python architecture enforcement: 15 tests passed.
+- TypeScript `tsc --noEmit`: passed.
+- `git diff --check`: passed before the focused commits.
 
-Focused automated validation:
+An initial critical-suite invocation was run from the repository root and failed because the native `package.json` is under `mobile-native/`; it was immediately rerun from the correct directory and passed.
 
-```text
-npm test -- --runInBand \
-  mobile-native/src/core/__tests__/mediaQualityPolicy.test.ts \
-  mobile-native/src/core/__tests__/mediaQualityWiring.test.ts \
-  mobile-native/src/live/__tests__/liveAudioConfiguration.test.ts
-```
+## Physical and rollout matrix
 
-Result:
+| Gate | Result |
+|---|---|
+| Corrected build installed | Not performed |
+| Physical Live startup | Not observed |
+| Host-to-viewer audible audio | Not observed |
+| Five-minute Live | Not observed |
+| Second Live without restart | Not observed |
+| Audio-call regression | Not observed |
+| Video-call regression | Not observed |
+| Stable profile | Code/tests pass; physical result not observed |
+| Elite profile | QA-only opt-in; physical result not observed |
+| Feature flags | Stable by default; publisher quality requires explicit server opt-in |
+| Rollback | Code path verified; remote kill-switch operation not exercised |
 
-```text
-PASS src/core/__tests__/mediaQualityPolicy.test.ts
-PASS src/core/__tests__/mediaQualityWiring.test.ts
-PASS src/live/__tests__/liveAudioConfiguration.test.ts
-Test Suites: 3 passed, 3 total
-Tests: 108 passed, 108 total
-```
+## Final judgment
 
-Full TypeScript validation:
-
-```text
-npx tsc --noEmit
-```
-
-Result: blocked by pre-existing unrelated Business OS/activity dirty work:
-
-```text
-src/screens/ActivityRoute.tsx(9,32): Cannot find module './ActivityScreen'
-src/screens/EventsManagerScreen.tsx: "events" / "live" / "advertising" are not assignable to NativeSyncSubsystem
-```
-
-Those files are unrelated to Live audio and were not changed by this recovery.
-
-## Physical QA
-
-Not completed in this run.
-
-Required before declaring PASS:
-
-- Start Live as host on physical iPhone.
-- Verify no `REALTIME_AUDIO_ENGINE_INACTIVE` failure.
-- Verify host microphone remains active after camera startup.
-- Join from a second physical device.
-- Confirm viewer hears host audio.
-- Confirm guest request and co-host publish path remain stable.
-
-## Final Judgment
-
-PARTIAL — the regression path was isolated and repaired in code, and focused tests pass. Full validation is blocked by unrelated dirty TypeScript errors, and physical two-device Live audio proof remains required.
+**PARTIAL / production NO-GO.** The rollback, trace, regression test, and architecture enforcement are in place and local automated checks pass. PASS requires the complete two-device physical sequence in the emergency brief, including two consecutive Live sessions, five-minute audibility, audio call, video call, stable profile, and elite QA profile. Quality expansion remains stopped until that evidence exists.

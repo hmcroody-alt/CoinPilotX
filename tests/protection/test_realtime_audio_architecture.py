@@ -175,6 +175,22 @@ class LeaseDisciplineTests(unittest.TestCase):
                 self.assertIn("autoConfigureAudioSession: false", call, f"{rel}: {call}")
 
 
+class LiveStartupTraceContractTests(unittest.TestCase):
+    def test_trace_schema_cannot_drop_required_lifecycle_evidence(self) -> None:
+        contract = MANIFEST["live_startup_trace_contract"]
+        trace = (ROOT / contract["path"]).read_text(encoding="utf-8")
+        for event in contract["required_events"]:
+            self.assertIn(f'"{event}"', trace, f"trace no longer declares required event {event}")
+        for field in contract["required_fields"]:
+            self.assertRegex(trace, rf"\b{re.escape(field)}\b", f"trace no longer declares required field {field}")
+
+    def test_camera_engine_lifecycle_regression_runs_in_critical_ci(self) -> None:
+        contract = MANIFEST["live_startup_trace_contract"]
+        pkg = json.loads((ROOT / "mobile-native" / "package.json").read_text(encoding="utf-8"))
+        critical = pkg["scripts"]["test:realtime-audio-critical"]
+        self.assertIn(contract["critical_test"], critical)
+
+
 class DependencyLockTests(unittest.TestCase):
     def test_audio_critical_dependencies_match_the_verified_baseline(self) -> None:
         pkg = json.loads((ROOT / "mobile-native" / "package.json").read_text(encoding="utf-8"))

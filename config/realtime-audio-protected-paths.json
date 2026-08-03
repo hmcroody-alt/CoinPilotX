@@ -341,6 +341,27 @@
     "must_not_contain": ["audioOwnerIdRef"],
     "reason": "Both adapters must hold a generation-scoped lease and release it by lease, not by owner name."
   },
+  "live_startup_trace_contract": {
+    "path": "mobile-native/src/live/liveAudioTrace.ts",
+    "critical_test": "src/live/__tests__/liveAudioConfiguration.test.ts",
+    "required_events": [
+      "live_start_requested", "live_session_created", "live_audio_owner_requested",
+      "live_audio_owner_acquired", "live_audio_generation_created", "live_audio_policy_requested",
+      "live_audio_policy_applied", "av_audio_session_activation_started", "av_audio_session_activated",
+      "camera_initialization_started", "camera_initialized", "livekit_room_connect_started",
+      "livekit_room_connected", "microphone_track_create_started", "microphone_track_created",
+      "microphone_publish_started", "microphone_published", "live_audio_active_verification_started",
+      "live_audio_active_verification_passed", "live_audio_active_verification_failed",
+      "audio_owner_release_requested", "audio_session_deactivation_requested", "audio_session_deactivated",
+      "audio_generation_replaced", "stale_cleanup_rejected", "cleanup_started",
+      "feature_flag_changed", "quality_profile_changed", "component_unmounted", "room_disconnected"
+    ],
+    "required_fields": [
+      "correlation_id", "session_id", "audio_generation", "current_owner", "requested_owner",
+      "room_id", "screen_instance_id", "quality_profile", "feature_flags", "caller", "reason", "timestamp"
+    ],
+    "reason": "A physical engine-loss failure is actionable only when the ordered trace identifies the exact owner generation and caller before and after camera startup."
+  },
   "dependency_watch": {
     "files": [
       "mobile-native/package.json",
