@@ -235,7 +235,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>Alert Management</Text>
-        <Text style={styles.subtitle}>{offline ? "Showing cached alert state." : "Crypto and market alerts stay server-authoritative through PulseSoc."}</Text>
+        <Text style={styles.subtitle}>{offline ? "Showing cached alert state." : "Your crypto and market alerts, as PulseSoc has them set."}</Text>
       </View>
 
       <View style={styles.topActions}>
@@ -267,7 +267,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
           <View key={channel} style={styles.readinessRow}>
             <View style={styles.readinessCopy}>
               <Text style={styles.rowTitle}>{channel.replace("_", " ")}</Text>
-              <Text style={styles.muted}>{readiness[channel]?.message || "Readiness is controlled by the backend."}</Text>
+              <Text style={styles.muted}>{readiness[channel]?.message || "PulseSoc decides when this is ready."}</Text>
             </View>
             <Text style={[styles.pill, readiness[channel]?.ready ? styles.readyPill : styles.warnPill]}>{readiness[channel]?.label || "Needs setup"}</Text>
             <ActionButton label={busy === `channel:${channel}` ? "Testing" : "Test"} variant="secondary" disabled={busy === `channel:${channel}`} onPress={() => runChannelTest(channel)} />

@@ -125,7 +125,7 @@ export function UserDashboardScreen() {
         </View>
       </Section>
 
-      <Section title="Dashboard Systems" subtitle="Native cards reuse existing PulseSoc APIs, database rules, permissions, and provider boundaries.">
+      <Section title="Dashboard Systems" subtitle="Everything here follows the same permissions as the rest of PulseSoc.">
         <View style={styles.cardGrid}>
           {dashboardCards.map((card) => (
             <SystemCard key={card.key} card={card} onPress={() => openModule(navigation, card.key)} />
@@ -133,7 +133,7 @@ export function UserDashboardScreen() {
         </View>
       </Section>
 
-      <Section title="Production Dashboard Map" subtitle="Current PulseSoc dashboard module groups represented natively with provider boundaries where advanced modules are still server-owned.">
+      <Section title="Production Dashboard Map" subtitle="Your dashboard, grouped. A few advanced modules still open on the PulseSoc website.">
         <View style={styles.moduleRail}>
           {moduleGroups.map((group) => (
             <Pressable accessibilityRole="button" key={`rail-${group.key}`} style={styles.railChip} onPress={() => undefined}>
@@ -151,7 +151,7 @@ export function UserDashboardScreen() {
         <ModuleGroupSection key={group.key} group={group} onOpen={(module) => openDashboardModule(navigation, group, module)} />
       ))}
 
-      <Section title="Dashboard Quick Actions" subtitle="Production quick-action routes are wired to native destinations or native provider boundaries.">
+      <Section title="Dashboard Quick Actions" subtitle="Jump straight to the things you use most.">
         <View style={styles.quickLinkGrid}>
           {(state?.dashboardQuickActionLinks || []).map((action) => (
             <DashboardQuickLink key={action.label} action={action} onPress={() => openDashboardQuickAction(navigation, action)} />
@@ -159,7 +159,7 @@ export function UserDashboardScreen() {
         </View>
       </Section>
 
-      <Section title="Recent Activity" subtitle="Server-authoritative activity and commerce events feed this timeline.">
+      <Section title="Recent Activity" subtitle="Your activity and purchases, in the order they happened.">
         {state?.recentActivity.length ? (
           state.recentActivity.map((item) => (
             <Pressable accessibilityRole="button" key={item.id} style={styles.timelineRow} onPress={() => openActivityTarget(navigation, item.target)}>

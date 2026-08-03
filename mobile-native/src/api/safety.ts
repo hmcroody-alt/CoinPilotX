@@ -118,7 +118,7 @@ export async function recordMuteHandoff(input: { target: string; duration: strin
     targetLabel: input.target,
     reason: `${input.duration}: ${input.reason}`,
     status: "native provider boundary",
-    message: "Native user mute is not exposed as a server-authoritative API yet.",
+    message: "Muting someone is not available in the app yet.",
     serverAuthoritative: false
   });
 }
@@ -130,7 +130,7 @@ export async function recordUnblockHandoff(input: { target: string; reason: stri
     targetLabel: input.target,
     reason: input.reason || "User requested unblock controls.",
     status: "native provider boundary",
-    message: "Unblock requires protected PulseSoc network safety controls until a user-safe API is exposed.",
+    message: "Unblocking has to be done on the PulseSoc website for now.",
     serverAuthoritative: false
   });
 }
@@ -141,7 +141,7 @@ export async function openSafetyWebFallback(path = "/dashboard/network/network-s
     ok: false,
     path: safePath,
     status: "native_provider_boundary",
-    message: "Safety controls remain inside the native Safety Hub until this protected mutation is available."
+    message: "Use the Safety Hub for the controls that are available in the app."
   };
 }
 

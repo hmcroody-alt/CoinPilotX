@@ -433,7 +433,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
       navigation.navigate("MarketplaceCreateGateway", { title: "Create Listing" });
       return;
     }
-    setError("This camera destination is held inside a native provider boundary until its contract is available.");
+    setError("This camera mode is not available in the app yet.");
   }
 
   return (

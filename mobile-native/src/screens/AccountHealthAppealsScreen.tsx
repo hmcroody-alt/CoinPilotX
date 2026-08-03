@@ -111,7 +111,7 @@ export function AccountHealthAppealsScreen({ navigation }: Props) {
         <Text style={styles.eyebrow}>PulseSoc trust grid</Text>
         <Text style={styles.title}>Account Health</Text>
         <Text style={styles.subtitle}>
-          {offline ? "Showing cached account health. Pull to reconnect." : "Warnings, strikes, restrictions, appeals, reports, and recovery actions stay server-authoritative."}
+          {offline ? "Showing cached account health. Pull to reconnect." : "Warnings, strikes, restrictions, appeals, and reports, as PulseSoc has them recorded."}
         </Text>
       </View>
 
@@ -175,7 +175,7 @@ export function AccountHealthAppealsScreen({ navigation }: Props) {
           accessibilityLabel="Account health appeal note"
           multiline
           onChangeText={setAppealNote}
-          placeholder="Add an appeal note when the selected server-owned appeal path supports native submission."
+          placeholder="Add a note explaining what you would like reconsidered."
           placeholderTextColor={colors.muted}
           style={[styles.input, styles.textArea]}
           value={appealNote}

@@ -239,7 +239,7 @@ export function classifyDashboardActionRoute(route: string): DashboardActionRout
     return {
       kind: "native_provider_boundary",
       label: "Native boundary",
-      detail: "Opens a native dashboard boundary while the backend-owned operation remains protected.",
+      detail: "Opens the part of this you can use in the app.",
       route: raw
     };
   }

@@ -841,7 +841,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
 
   const uploadAndSend = useCallback(async (input: { uri: string; name: string; mimeType: string; sizeBytes?: number; voice?: boolean; durationSeconds?: number }) => {
     if (assistantConversation) {
-      setStatusMessage("UNDX supports text conversation in native chat right now. Attachments stay in human chats until the backend enables assistant media.");
+      setStatusMessage("UNDX can chat in text for now. Attachments work in chats with people, but not yet with UNDX.");
       return;
     }
     if (uploading) return;

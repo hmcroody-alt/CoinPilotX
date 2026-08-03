@@ -273,7 +273,7 @@ export async function openAccountWebFallback(path = "/pulse/settings/account") {
     ok: false,
     path: safePath,
     status: "native_provider_boundary",
-    message: "Account action remains inside the native Account Center until this protected operation exposes a native mutation."
+    message: "This has to be done on the PulseSoc website for now."
   };
 }
 

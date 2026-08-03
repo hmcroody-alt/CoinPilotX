@@ -1,5 +1,5 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, AppState, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   loadCachedVerificationState,
@@ -7,9 +7,11 @@ import {
   pickAndUploadVerificationDocument,
   startVerificationRequest,
   submitVerificationAppeal,
+  verificationActions,
   VerificationState,
   VerificationTrackKey,
-  verificationStatusLabel
+  verificationStatusLabel,
+  verificationTrackLabel
 } from "../api/verification";
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
@@ -32,6 +34,23 @@ export function VerificationCenterScreen({ navigation, route }: Props) {
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+
+  /**
+   * Every control on this screen asks the same question — what is this person
+   * allowed to do right now — so it is answered once, here, from the derivation
+   * in `api/verification`. The screen renders the answer and does not second
+   * guess it.
+   */
+  const actions = useMemo(
+    () =>
+      verificationActions({
+        status: state?.status || "not_started",
+        requestId: state?.requestId,
+        selectedTrack,
+        currentTrack: state?.verificationType
+      }),
+    [state?.status, state?.requestId, state?.verificationType, selectedTrack]
+  );
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
     setError("");
@@ -145,7 +164,9 @@ export function VerificationCenterScreen({ navigation, route }: Props) {
         <Text style={styles.eyebrow}>PulseSoc trust passport</Text>
         <Text style={styles.title}>Verification Center</Text>
         <Text style={styles.subtitle}>
-          {offline ? "Showing cached verification status. Pull to reconnect." : "Badge, identity, and document review stay server-authoritative through existing PulseSoc verification systems."}
+          {offline
+            ? "This is the last status we saved. Pull down to check for a newer one."
+            : "Your checkmark, your identity, and any documents you send are reviewed by people at PulseSoc. This screen shows you where that review has got to."}
         </Text>
       </View>
 
@@ -159,8 +180,14 @@ export function VerificationCenterScreen({ navigation, route }: Props) {
           </View>
           <View style={styles.statusCopy}>
             <Text style={styles.panelTitle}>{verificationStatusLabel(state?.status)}</Text>
-            <Text style={styles.muted}>{state?.primaryAction || "Continue Verification"}</Text>
-            <Text style={styles.muted}>Request #{state?.requestId || "not started"} · {state?.verificationType || "identity"}</Text>
+            {/* The derived headline, not the server's `primaryAction` string:
+                that field says "Continue Verification" even to someone already
+                approved, which is the same defect as the button below it. */}
+            <Text style={styles.muted}>{actions.headline}</Text>
+            <Text style={styles.muted}>
+              {verificationTrackLabel(state?.verificationType || "identity")}
+              {state?.requestId ? ` · Request #${state.requestId}, worth quoting if you contact support` : ""}
+            </Text>
           </View>
         </View>
       </Panel>
@@ -197,44 +224,88 @@ export function VerificationCenterScreen({ navigation, route }: Props) {
       </Panel>
 
       <Panel>
-        <Text style={styles.panelTitle}>Choose verification path</Text>
-        <Text style={styles.muted}>Selected path: {trackLabel(selectedTrack)}</Text>
+        <Text style={styles.panelTitle}>Choose what to verify</Text>
+        <Text style={styles.muted}>Chosen: {verificationTrackLabel(selectedTrack)}</Text>
         <View style={styles.choiceRow}>
           {(state?.tracks || []).map((track) => (
-            <Pressable key={track.key} accessibilityRole="button" style={[styles.choice, selectedTrack === track.key && styles.choiceActive]} onPress={() => setSelectedTrack(track.key)}>
+            <Pressable
+              key={track.key}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !actions.canChooseTrack, selected: selectedTrack === track.key }}
+              disabled={!actions.canChooseTrack}
+              style={[styles.choice, selectedTrack === track.key && styles.choiceActive, !actions.canChooseTrack && styles.disabled]}
+              onPress={() => setSelectedTrack(track.key)}
+            >
               <Text style={[styles.choiceTitle, selectedTrack === track.key && styles.choiceTitleActive]}>{track.label}</Text>
               <Text style={styles.choiceDetail}>{track.detail}</Text>
             </Pressable>
           ))}
         </View>
-        <ActionButton label={busy === "request" ? "Submitting..." : "Start verification request"} disabled={Boolean(busy)} onPress={submitRequest} />
+        {/* No action here means there is genuinely nothing to press, so the
+            panel says why rather than offering a button that would fail. */}
+        {actions.path.length ? (
+          actions.path.map((action) => (
+            <ActionButton
+              key={action.key}
+              label={busy === "request" ? "Sending..." : action.label}
+              variant={action.variant}
+              disabled={Boolean(busy)}
+              onPress={submitRequest}
+            />
+          ))
+        ) : (
+          <Text style={styles.muted}>You cannot change or resend this while your request is with a reviewer.</Text>
+        )}
       </Panel>
 
       <Panel>
-        <Text style={styles.panelTitle}>Private document handoff</Text>
-        <Text style={styles.muted}>Documents are uploaded only to the existing private verification route. Native does not inspect, store, or review identity documents.</Text>
-        <View style={styles.choiceRow}>
-          {documentTypes.map((type) => (
-            <Pressable key={type} accessibilityRole="button" style={[styles.docPill, documentType === type && styles.docPillActive]} onPress={() => setDocumentType(type)}>
-              <Text style={[styles.docPillText, documentType === type && styles.docPillTextActive]}>{type.replace(/_/g, " ")}</Text>
-            </Pressable>
-          ))}
-        </View>
-        <ActionButton label={busy === "document" ? "Uploading..." : "Choose private document"} disabled={Boolean(busy)} onPress={uploadDocument} />
+        <Text style={styles.panelTitle}>Send a document</Text>
+        <Text style={styles.muted}>Anything you send here is kept private and seen only by the review team. This app never opens, keeps, or checks your documents itself.</Text>
+        {actions.document.length ? (
+          <>
+            <View style={styles.choiceRow}>
+              {documentTypes.map((type) => (
+                <Pressable
+                  key={type}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: documentType === type }}
+                  style={[styles.docPill, documentType === type && styles.docPillActive]}
+                  onPress={() => setDocumentType(type)}
+                >
+                  <Text style={[styles.docPillText, documentType === type && styles.docPillTextActive]}>{documentTypeLabel(type)}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {actions.document.map((action) => (
+              <ActionButton key={action.key} label={busy === "document" ? "Sending..." : action.label} variant={action.variant} disabled={Boolean(busy)} onPress={uploadDocument} />
+            ))}
+          </>
+        ) : (
+          <Text style={styles.muted}>{documentUnavailableReason(state?.status)}</Text>
+        )}
       </Panel>
 
       <Panel>
-        <Text style={styles.panelTitle}>Appeal or review</Text>
-        <TextInput
-          accessibilityLabel="Verification appeal note"
-          multiline
-          onChangeText={setAppealNote}
-          placeholder="Add a short appeal note if a request was rejected, suspended, or needs more information."
-          placeholderTextColor={colors.muted}
-          style={[styles.input, styles.textArea]}
-          value={appealNote}
-        />
-        <ActionButton label={busy === "appeal" ? "Submitting..." : "Submit appeal"} disabled={Boolean(busy)} onPress={submitAppeal} />
+        <Text style={styles.panelTitle}>Ask for another look</Text>
+        {actions.appeal.length ? (
+          <>
+            <Text style={styles.muted}>Tell the review team what they may have missed. A person reads this.</Text>
+            <TextInput
+              accessibilityLabel="What you would like the review team to reconsider"
+              multiline
+              onChangeText={setAppealNote}
+              placeholder="What would you like them to look at again?"
+              placeholderTextColor={colors.muted}
+              style={[styles.input, styles.textArea]}
+              value={appealNote}
+            />
+            {actions.appeal.map((action) => (
+              <ActionButton key={action.key} label={busy === "appeal" ? "Sending..." : action.label} variant={action.variant} disabled={Boolean(busy)} onPress={submitAppeal} />
+            ))}
+          </>
+        ) : (
+          <Text style={styles.muted}>{appealUnavailableReason(state?.status)}</Text>
+        )}
       </Panel>
 
       <Panel>
@@ -273,8 +344,28 @@ function normalizeRouteTrack(track?: string): VerificationTrackKey {
   return "identity";
 }
 
-function trackLabel(track: VerificationTrackKey) {
-  return track.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+function documentTypeLabel(type: (typeof documentTypes)[number]) {
+  if (type === "government_id") return "Passport or ID";
+  if (type === "business_document") return "Business paperwork";
+  return "Photo of you";
+}
+
+/**
+ * Why the document panel has no button. Each reason names the state the person
+ * is actually in, so the absence of a control reads as an explanation rather
+ * than as something broken.
+ */
+function documentUnavailableReason(status?: string) {
+  if (status === "approved") return "You are verified, so there is nothing more to send.";
+  if (status === "rejected" || status === "suspended") return "Sending more documents will not reopen this. Ask for another look instead.";
+  return "Send a request first. Once it exists, you can attach documents to it.";
+}
+
+function appealUnavailableReason(status?: string) {
+  if (status === "appealed") return "Your appeal is already with the review team. They will come back to you.";
+  if (status === "approved") return "You are verified, so there is nothing to appeal.";
+  if (status === "not_started" || status === "draft") return "There is no decision to appeal yet.";
+  return "Your request has not been decided yet, so there is nothing to appeal.";
 }
 
 const styles = StyleSheet.create({

@@ -274,7 +274,7 @@ export function GroupsScreen({ route, navigation }: Props) {
           </View>
         }
         ListEmptyComponent={
-          <LogiNexusStatePanel state={error ? "error" : "empty"} title={error ? "Communities unavailable" : "No communities found"} body={error || "PulseSoc communities will appear here when the existing backend returns them."} style={styles.statePanel} />
+          <LogiNexusStatePanel state={error ? "error" : "empty"} title={error ? "Communities unavailable" : "No communities found"} body={error || "Your communities will appear here once you join or create one."} style={styles.statePanel} />
         }
         renderItem={({ item }) => (
           <GroupCard
@@ -306,7 +306,7 @@ export function GroupsScreen({ route, navigation }: Props) {
           busyKey={busyKey}
           onClose={() => setSelectedRoom(null)}
           onOpen={handleOpenRoom}
-          onReport={(room) => setError(`Report boundary ready for ${roomDisplayTitle(room)}. Room-specific moderation endpoint is not exposed to native yet.`)}
+          onReport={(room) => setError(`Reporting for ${roomDisplayTitle(room)} is not available in the app yet. You can report it on the PulseSoc website.`)}
         />
       ) : null}
     </View>
@@ -444,8 +444,8 @@ function GroupDetailSectionView({ group, section }: { group: PulseGroup; section
   if (section === "overview") return <GroupOverview group={group} />;
   if (section === "members") return <GroupMembers group={group} />;
   if (section === "invitations") return <GroupInvitations group={group} />;
-  if (section === "media") return <GroupAssets title="Media" assets={group.media || []} emptyTitle="No indexed group media" emptyBody="Native will show photos and videos here when the backend returns an authoritative group media index. Existing media from group posts is shown when available." />;
-  if (section === "files") return <GroupAssets title="Files" assets={group.files || []} emptyTitle="No group files yet" emptyBody="File indexing is a backend contract boundary. Native does not scan private chat history to fabricate a file library." />;
+  if (section === "media") return <GroupAssets title="Media" assets={group.media || []} emptyTitle="No indexed group media" emptyBody="Photos and videos shared in this group appear here, including anything attached to group posts." />;
+  if (section === "files") return <GroupAssets title="Files" assets={group.files || []} emptyTitle="No group files yet" emptyBody="Files shared in chat are not listed here. This app does not read private chat history to build a file list." />;
   if (section === "links") return <GroupAssets title="Links" assets={group.links || []} emptyTitle="No shared links yet" emptyBody="Link indexing is not exposed to native yet. Links will appear here when the server provides a safe group link index." />;
   return <GroupSettings group={group} />;
 }
@@ -518,7 +518,7 @@ function GroupInvitations({ group }: { group: PulseGroup }) {
     <View>
       <Text style={styles.sectionTitle}>Invitations</Text>
       {invitations.length ? invitations.map((invite) => <GroupInvitationRow key={invite.id} invitation={invite} />) : (
-        <BoundaryPanel title="No pending invitations exposed" body="Invite/search actions are provider-backed by existing PulseSoc routes. Pending invitations will render here when the backend returns them to native." />
+        <BoundaryPanel title="No pending invitations exposed" body="Invitations you send appear here while they are waiting to be accepted." />
       )}
       <Text style={styles.sectionTitle}>Membership Requests</Text>
       {requests.length ? requests.map((invite) => <GroupInvitationRow key={invite.id} invitation={invite} request />) : (
@@ -584,10 +584,10 @@ function GroupSettings({ group }: { group: PulseGroup }) {
       {actions.map((action) => (
         <View key={action.key} style={styles.permissionRow}>
           <Text style={styles.cardTitle}>{action.label}</Text>
-          <Text style={styles.cardText}>{action.available ? "Available through the existing server-authoritative contract." : "Hidden by current role or provider state."}</Text>
+          <Text style={styles.cardText}>{action.available ? "Available in this group." : "Hidden by current role or provider state."}</Text>
         </View>
       ))}
-      {!group.can_manage ? <BoundaryPanel title="Admin settings gated" body="Edit group, member moderation, and deletion remain hidden unless the existing backend marks the viewer as owner, admin, or moderator." /> : null}
+      {!group.can_manage ? <BoundaryPanel title="Admin settings gated" body="Editing the group, managing members, and deleting it are shown only to owners, admins, and moderators." /> : null}
     </View>
   );
 }

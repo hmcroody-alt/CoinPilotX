@@ -117,7 +117,7 @@ export function normalizeGrowthState(input: GrowthState): GrowthState {
     },
     hero: input.hero || {
       title: "Grow your reach.",
-      body: "PulseSoc growth state is managed by the backend.",
+      body: "PulseSoc keeps track of your growth.",
       cta: "Explore Growth"
     }
   };

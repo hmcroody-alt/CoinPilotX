@@ -194,7 +194,7 @@ function buildDashboardCards(state: DashboardLoadedState): DashboardCard[] {
       key: "messenger",
       title: "Messenger",
       value: `${state.conversations.length} conversations`,
-      detail: "Unread chat summaries are server-owned and feed the Activity Inbox.",
+      detail: "Unread chats, summarised in your Activity Inbox.",
       state: "ready"
     },
     {
@@ -208,14 +208,14 @@ function buildDashboardCards(state: DashboardLoadedState): DashboardCard[] {
       key: "home",
       title: "Content Pulse",
       value: `${state.posts.length} feed items`,
-      detail: "Posts, status, reels, comments, reactions, and saves stay backend-authoritative.",
+      detail: "Your posts, status, reels, comments, reactions, and saves.",
       state: "ready"
     },
     {
       key: "marketplace",
       title: "Marketplace",
       value: `${state.marketplaceListings.length} listings`,
-      detail: "Native browse and media payloads reuse existing marketplace contracts.",
+      detail: "Browse listings and their photos.",
       state: "ready"
     },
     {

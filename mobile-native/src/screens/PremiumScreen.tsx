@@ -90,7 +90,7 @@ export function PremiumScreen({ navigation }: Props) {
   }
 
   return (
-    <Screen title="Premium" subtitle="Server-authoritative Premium, Founder, billing, and entitlement status.">
+    <Screen title="Premium" subtitle="Your Premium, Founder, and billing status.">
       <RefreshControlShim refreshing={refreshing} onRefresh={() => load("refresh").catch(() => undefined)} />
       {offline ? <Text style={styles.warning}>Showing cached Premium status. Pull to refresh when online.</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -100,7 +100,7 @@ export function PremiumScreen({ navigation }: Props) {
           <View style={styles.headingCopy}>
             <Text style={styles.eyebrow}>{premiumStateLabel(status)}</Text>
             <Text style={styles.plan}>{premiumPlanLabel(status)}</Text>
-            <Text style={styles.body}>{status?.message || "Premium status is controlled by PulseSoc backend verification."}</Text>
+            <Text style={styles.body}>{status?.message || "PulseSoc confirms your Premium status."}</Text>
           </View>
           <View style={[styles.statusDot, status?.premium_active ? styles.statusDotActive : undefined]} />
         </View>

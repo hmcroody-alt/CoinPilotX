@@ -285,7 +285,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
   async function runPublish(): Promise<PreviewPublishResult> {
     setPublishing(true);
     setError("");
-    setNote("Transmitting through the PulseSoc backend.");
+    setNote("Sending your post.");
     try {
       const uploaded = media.items.length
         ? await media.uploadAll({
@@ -326,7 +326,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
         };
         setLastFailedPublish({ kind: "status", payload: statusPayload, startedAt: new Date().toISOString() });
         const status = await createStatus(statusPayload);
-        if (!status.status_id) throw new Error("Status was not confirmed by the PulseSoc backend. Your draft is preserved.");
+        if (!status.status_id) throw new Error("We could not confirm your status went out. Your draft is saved.");
         await completePublish(undefined, "Status transmitted. Refreshing PulseSoc.");
         return { ok: true, message: "Status transmitted." };
       }
@@ -493,7 +493,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
   function selectVisibility(nextVisibility: Visibility) {
     setVisibility(nextVisibility);
     setShowAudience(false);
-    setNote("Audience selector uses existing server-side visibility rules.");
+    setNote("Choose who can see this.");
   }
 
   async function completePublish(post: PulsePost | undefined, message: string) {
@@ -567,7 +567,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
     setError("");
     setNote(ALL_MODES.find((item) => item.key === nextMode)?.note || "Ready to publish.");
     if (nextMode === "reel" && (media.items.length !== 1 || media.items[0]?.asset.mediaType !== "video")) {
-      setNote("Reel mode requires video media. Use Video or Reel Camera for backend-safe creation.");
+      setNote("Reels need a video. Use Video or Reel Camera to record one.");
     }
   }
 
@@ -699,7 +699,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
           <ComposerAction label={topic || "Topic"} icon="#" onPress={() => {
             const next = topic ? "" : "pulse";
             setTopic(next);
-            setNote(next ? "Topic tag added for backend publish." : "Topic tag cleared.");
+            setNote(next ? "Topic tag added." : "Topic tag cleared.");
           }} />
           {SECONDARY_MODES.map((item) => <ComposerAction key={item.key} label={item.label} icon={item.icon} selected={mode === item.key} onPress={() => selectMode(item.key)} />)}
           {PRODUCTION_CREATION_ROUTES.map((item) => <ComposerAction key={item.label} label={item.label} icon={item.icon} onPress={() => onOpenRoute(item.route)} />)}

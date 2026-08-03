@@ -187,7 +187,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
         <View style={styles.hero}>
           <Text style={styles.kicker}>Learning Gateway</Text>
           <Text style={styles.title}>{selectedLesson.title}</Text>
-          <Text style={styles.subtitle}>{selectedLesson.summary || "Structured PulseSoc lesson from the existing education backend."}</Text>
+          <Text style={styles.subtitle}>{selectedLesson.summary || "A structured PulseSoc lesson."}</Text>
           <View style={styles.metaRow}>
             <Text style={styles.pill}>{selectedLesson.difficulty || "Guided"}</Text>
             <Text style={styles.pill}>{selectedLesson.estimated_time || "Self paced"}</Text>
@@ -198,7 +198,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <Panel>
           <Text style={styles.sectionTitle}>Lesson overview</Text>
-          <Text style={styles.bodyText}>{selectedLesson.content || selectedLesson.summary || "Lesson content is available through the PulseSoc education backend."}</Text>
+          <Text style={styles.bodyText}>{selectedLesson.content || selectedLesson.summary || "This lesson is ready to read."}</Text>
           <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={completeLesson}>
             <Text style={styles.primaryText}>Mark Complete</Text>
           </Pressable>
@@ -277,7 +277,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
           <View style={styles.hero}>
             <Text style={styles.kicker}>Courses + Learning</Text>
             <Text style={styles.title}>Learning Gateway</Text>
-            <Text style={styles.subtitle}>{offline ? "Showing saved lessons" : "Native lesson discovery powered by the existing PulseSoc education backend, with course payments and teacher tools kept inside provider-owned boundaries."}</Text>
+            <Text style={styles.subtitle}>{offline ? "Showing saved lessons" : "Find lessons here. Paying for courses and teacher tools are on the PulseSoc website."}</Text>
           </View>
           {error ? <Text style={styles.error}>{error}</Text> : null}
           {offline ? <Text style={styles.offline}>Showing saved learning data</Text> : null}

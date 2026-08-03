@@ -82,7 +82,7 @@ export function GrowthCenterScreen({ route, navigation }: Props) {
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>Growth Center</Text>
-        <Text style={styles.subtitle}>{offline ? "Showing saved growth state" : state?.hero?.body || "Native growth dashboard over existing PulseSoc APIs"}</Text>
+        <Text style={styles.subtitle}>{offline ? "Showing saved growth state" : state?.hero?.body || "Your growth, at a glance"}</Text>
       </View>
       <Pressable style={styles.refreshButton} onPress={() => load("refresh").catch(() => undefined)}>
         <Text style={styles.refreshText}>{refreshing ? "Refreshing..." : "Refresh Growth Center"}</Text>

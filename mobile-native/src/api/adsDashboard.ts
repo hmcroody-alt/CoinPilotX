@@ -916,7 +916,7 @@ export function promotionSwitchState(promotion: PostPromotion): DeliverySwitchSt
     show: true,
     on: phase === "promoting",
     disabled: true,
-    reason: "Preview — pausing a promotion isn't wired to a backend yet.",
+    reason: "Preview only — pausing a promotion isn't available yet.",
     action: null
   };
 }

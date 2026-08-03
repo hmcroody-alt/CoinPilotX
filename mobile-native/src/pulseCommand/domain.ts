@@ -503,7 +503,7 @@ export function roomActionRules(room: PulseRoom): PulseCommandCommunityActionRul
       label: roomProviderStateLabel(room),
       available: providerBoundary,
       providerBoundary: true,
-      accessibilityLabel: `${roomDisplayTitle(room)} has a provider boundary`
+      accessibilityLabel: `${roomDisplayTitle(room)} is not available in the app yet`
     }
   ];
 }

@@ -328,7 +328,7 @@ function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onCo
         </View>
         <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canNavigateProfile }} style={styles.sellerPanel} disabled={!canNavigateProfile} onPress={() => onProfile(listing)}>
           <Text style={styles.sellerTitle}>{listing.seller_name || "PulseSoc Seller"}</Text>
-          <Text style={styles.sellerMeta}>{canNavigateProfile ? "Open profile" : "Seller profile link unavailable in this payload"}</Text>
+          <Text style={styles.sellerMeta}>{canNavigateProfile ? "Open profile" : "This seller has no profile to open"}</Text>
         </Pressable>
         <Text style={styles.safetyNotice}>Safety notice: marketplace business rules, checkout, seller approval, moderation, refunds, disputes, and payout release remain server-authoritative.</Text>
         <View style={styles.detailActions}>

@@ -160,14 +160,14 @@ function normalizeAccountHealthState(account: Record<string, unknown>, tickets: 
         label: "Strikes",
         count: strikes,
         status: strikes > 0 ? "appeal-ready" : "clear",
-        detail: strikes > 0 ? "Strike details and account-health appeals remain server-owned." : "No active strikes returned by account health."
+        detail: strikes > 0 ? "Strikes and appeals are decided by PulseSoc's review team." : "No active strikes returned by account health."
       },
       {
         key: "restrictions",
         label: "Restrictions",
         count: restrictions,
         status: restrictions > 0 ? "restricted" : "clear",
-        detail: restrictions > 0 ? "Restrictions are enforced by the backend and should be reviewed before appeal." : "No active restrictions returned by account health."
+        detail: restrictions > 0 ? "Read what each restriction covers before you appeal it." : "No active restrictions returned by account health."
       }
     ],
     appeals: normalizeAppeals(appealsAvailable, verificationStatus, verificationRequestId),
@@ -202,7 +202,7 @@ function normalizeAppeals(appealsAvailable: number, verificationStatus: string, 
       key: "account_health",
       title: "Account health appeal",
       status: appealsAvailable > 0 ? "available" : "not needed",
-      detail: appealsAvailable > 0 ? "Warnings, strikes, or restrictions may be appealable through the protected Account Health flow." : "No active account-health appeal need returned by the backend.",
+      detail: appealsAvailable > 0 ? "Warnings, strikes, or restrictions may be appealable through the protected Account Health flow." : "You have no appeals open right now.",
       supported: false
     }
   ];
@@ -212,7 +212,7 @@ function normalizeAppeals(appealsAvailable: number, verificationStatus: string, 
       key: "verification",
       title: "Verification appeal",
       status: verificationStatus,
-      detail: verificationAppealable ? "Verification appeal submission is supported by the existing verification appeal API." : "Verification appeal is only available after a review decision needs action.",
+      detail: verificationAppealable ? "You can appeal a verification decision from the Verification Center." : "Verification appeal is only available after a review decision needs action.",
       requestId: verificationRequestId || undefined,
       supported: verificationAppealable && verificationRequestId > 0
     });

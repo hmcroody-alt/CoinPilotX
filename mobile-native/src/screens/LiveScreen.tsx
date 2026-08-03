@@ -694,7 +694,7 @@ export function LiveScreen({ route, navigation }: Props) {
                     ? "Tap Join Guest to publish camera and microphone natively. PulseSoc confirms audio/video with the server before marking you live."
                     : currentJoinRequest
                       ? "Waiting for the host to accept. This screen will promote you into the Live automatically after approval."
-                      : "Request a server-authoritative co-host seat. Camera and microphone publish only after host approval."}
+                      : "Ask to co-host. Your camera and microphone stay off until the host says yes."}
               </Text>
               {guestError ? <Text style={styles.guestJoinError}>{guestError}</Text> : null}
               <Pressable

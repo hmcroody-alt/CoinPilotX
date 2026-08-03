@@ -96,7 +96,7 @@ export function IntelligenceCenterScreen({ route, navigation }: Props) {
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>Intelligence Center</Text>
-        <Text style={styles.subtitle}>{offline ? "Showing saved intelligence state" : "Server-owned PulseSoc intelligence, alerts, forecasts, and delivery state."}</Text>
+        <Text style={styles.subtitle}>{offline ? "Showing saved intelligence state" : "Your alerts, forecasts, and what has been sent to you."}</Text>
       </View>
       <Pressable style={styles.refreshButton} onPress={() => load("refresh").catch(() => undefined)}>
         <Text style={styles.refreshText}>{refreshing ? "Refreshing..." : "Refresh Intelligence"}</Text>
@@ -141,7 +141,7 @@ export function IntelligenceCenterScreen({ route, navigation }: Props) {
 
       <Panel>
         <Text style={styles.sectionTitle}>Daily brief</Text>
-        <Text style={styles.muted}>{hub.personalized_daily_brief || "PulseSoc will show your daily intelligence brief when the backend has enough safe signals."}</Text>
+        <Text style={styles.muted}>{hub.personalized_daily_brief || "Your daily brief will appear once there is enough to report."}</Text>
         {recommendations.slice(0, 4).map((item) => <Text key={item} style={styles.recommendation}>{item}</Text>)}
       </Panel>
 

@@ -68,7 +68,7 @@ export const masterNavigationSections: MasterNavigationSection[] = [
     title: "Economy",
     description: "Marketplace, seller, buyer, premium, and orders.",
     actions: [
-      { label: "Marketplace", route: "/pulse/marketplace", status: "native", description: "Native marketplace browse and media payloads." },
+      { label: "Marketplace", route: "/pulse/marketplace", status: "native", description: "Browse marketplace listings and their photos." },
       { label: "Seller Store", route: "/pulse/seller-store", status: "native", description: "Seller lifecycle and store management." },
       { label: "Create Listing", route: "/pulse/marketplace/create", status: "native", description: "Seller listing composer." },
       { label: "Seller Inventory", route: "/dashboard/economy/seller-tools", status: "shell", description: "Seller-owned listings and inventory controls." },
@@ -108,8 +108,8 @@ export const masterNavigationSections: MasterNavigationSection[] = [
     actions: [
       { label: "Notifications", route: "/pulse/notifications", status: "native", description: "Notification and activity categories." },
       { label: "Notification Preferences", route: "/dashboard/network/notifications", status: "shell", description: "Notification settings shell." },
-      { label: "Terms", route: "/terms", status: "provider", description: "Legal document provider boundary." },
-      { label: "Privacy Policy", route: "/privacy", status: "provider", description: "Legal document provider boundary." },
+      { label: "Terms", route: "/terms", status: "provider", description: "Opens on the PulseSoc website." },
+      { label: "Privacy Policy", route: "/privacy", status: "provider", description: "Opens on the PulseSoc website." },
       { label: "System Status", route: "/dashboard/system/feed", status: "shell", description: "Native dashboard module shell." }
     ]
   }

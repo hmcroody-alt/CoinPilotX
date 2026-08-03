@@ -226,18 +226,18 @@ function modeCopy(mode: PlannerMode, offline: boolean) {
   if (mode === "scheduler") {
     return {
       title: "Scheduled Publishing",
-      subtitle: offline ? "Showing saved creator state" : "Schedule owned drafts through the existing Content Planner backend."
+      subtitle: offline ? "Showing saved creator state" : "Schedule your own drafts to publish later."
     };
   }
   if (mode === "drafts") {
     return {
       title: "Draft Studio",
-      subtitle: offline ? "Showing saved creator state" : "Create and refine private drafts using the existing planner API."
+      subtitle: offline ? "Showing saved creator state" : "Write and refine drafts only you can see."
     };
   }
   return {
     title: "Content Planner",
-    subtitle: offline ? "Showing saved creator state" : "Plan drafts, scheduled content, and creator workflow without bypassing backend publishing rules."
+    subtitle: offline ? "Showing saved creator state" : "Plan drafts and scheduled posts. The same posting rules apply here as anywhere else."
   };
 }
 

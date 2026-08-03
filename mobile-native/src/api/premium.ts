@@ -155,25 +155,25 @@ export function normalizePremiumEntitlements(status: PremiumStatus): PremiumEnti
       key: "premium_access",
       label: "Premium access",
       status: active ? "active" : "locked",
-      detail: active ? "Server confirms Premium access for this account." : "Requires backend-confirmed Premium access."
+      detail: active ? "Server confirms Premium access for this account." : "Included with Premium."
     },
     {
       key: "founder_identity",
       label: "Founder identity",
       status: founder ? "active" : "locked",
-      detail: founder ? "Founder badge and number are backend-confirmed." : "Founder badge remains locked until the server confirms membership."
+      detail: founder ? "Your Founder badge and number are confirmed by PulseSoc." : "Founder badge remains locked until the server confirms membership."
     },
     {
       key: "profile_theme",
       label: "Profile themes",
       status: active ? "active" : "locked",
-      detail: "Theme availability is enforced by existing Premium profile-theme APIs."
+      detail: "Profile themes are part of Premium."
     },
     {
       key: "creator_readiness",
       label: "Creator readiness",
       status: active ? "active" : "locked",
-      detail: "Creator capability decisions remain server-owned."
+      detail: "PulseSoc unlocks creator tools as your account qualifies."
     },
     {
       key: "premium_intelligence",

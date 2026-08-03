@@ -43,7 +43,7 @@ export function EventsScreen({ route, navigation }: Props) {
     if (routeMode === "schedule") {
       return {
         title: "Schedule Live",
-        subtitle: "Native scheduling gateway. Stream setup, eligibility, and review stay on the existing PulseSoc Live backend."
+        subtitle: "Schedule an event here. Setting up the stream itself happens in PulseSoc Live."
       };
     }
     if (routeMode === "create") {
@@ -212,7 +212,7 @@ export function EventsScreen({ route, navigation }: Props) {
       ListFooterComponent={
         <View style={styles.footer}>
           <Text style={styles.sectionTitle}>Go live</Text>
-          <GatewayRow title="Create Live Event" body="Uses the current Live Studio and backend eligibility rules." onPress={() => navigation?.navigate("LiveStudio", { title: "Live Studio" })} />
+          <GatewayRow title="Create Live Event" body="Opens in Live Studio. The usual eligibility rules apply." onPress={() => navigation?.navigate("LiveStudio", { title: "Live Studio" })} />
           <GatewayRow title="Live Studio" body="Set up your device, camera, and network, then broadcast natively in-app." onPress={() => navigation?.navigate("LiveStudio", { title: "Live Studio" })} />
         </View>
       }

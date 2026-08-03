@@ -75,7 +75,7 @@ const COMING_SOON: Record<string, string> = {
   watch_party: "Watch Party co-viewing is coming to native soon.",
   games: "Live Games launch inside the broadcast in a later build.",
   filters: "Camera filters & effects arrive in a later build.",
-  replay: "Replays are captured server-side and will surface here soon."
+  replay: "Replays are being saved and will appear here soon."
 };
 
 function signalMeta(quality: string) {

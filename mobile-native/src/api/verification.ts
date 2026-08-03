@@ -80,7 +80,7 @@ export const verificationTracks: VerificationTrack[] = [
   {
     key: "blue_check",
     label: "Blue Check",
-    detail: "Requests the public verification badge path already owned by PulseSoc account review.",
+    detail: "Asks for the public checkmark shown next to your name.",
     documentRequired: false
   },
   {
@@ -92,7 +92,7 @@ export const verificationTracks: VerificationTrack[] = [
   {
     key: "government_id",
     label: "Government ID",
-    detail: "Uses the existing private document review route for sensitive identity evidence.",
+    detail: "For proving who you are with a passport, licence, or ID card.",
     documentRequired: true
   }
 ];
@@ -169,6 +169,160 @@ export function verificationStatusLabel(status?: string) {
   return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+export function verificationTrackLabel(track: VerificationTrackKey | string) {
+  return String(track || "identity")
+    .replace(/_/g, " ")
+    .replace(/\bid\b/i, "ID")
+    .replace(/\b(?!ID\b)\w/g, (letter) => letter.toUpperCase());
+}
+
+export type VerificationActionKey = "start" | "continue" | "update" | "add_another" | "document" | "appeal";
+
+export type VerificationAction = {
+  key: VerificationActionKey;
+  label: string;
+  variant: "primary" | "secondary";
+};
+
+export type VerificationActionSet = {
+  /** One sentence saying where the request actually stands, in the person's
+   *  own terms. Shown in place of a call to action when there is nothing for
+   *  them to do. */
+  headline: string;
+  /** Offered in the "Choose verification path" panel. */
+  path: VerificationAction[];
+  /** Offered in the "Private document handoff" panel. */
+  document: VerificationAction[];
+  /** Offered in the "Appeal or review" panel. */
+  appeal: VerificationAction[];
+  /** False once a request is with reviewers: the track is fixed until they
+   *  decide, so the chooser must not invite a change it cannot make. */
+  canChooseTrack: boolean;
+};
+
+/**
+ * What the Verification Center offers at each status.
+ *
+ * This is derived here, once, rather than in the screen, because "may this
+ * person start a request" is a fact about verification rather than about a
+ * layout. The screen previously derived nothing at all — it rendered "Start
+ * verification request" unconditionally — so someone already approved was
+ * invited to begin a request they had finished, and someone whose request was
+ * under review could fire a duplicate.
+ *
+ * Two actions the review asked for are deliberately absent. "View" has no
+ * destination: the status and badge panels above the button *are* the view, and
+ * a button that scrolls nowhere is the same dead control this work exists to
+ * remove. "Update" is not a separate action either — re-submitting the approved
+ * track is the only update the request endpoint supports, so it is the same
+ * control as "Add another" with a different label, chosen by which track is
+ * selected. Both are recorded as gaps rather than shipped as buttons.
+ */
+export function verificationActions(input: {
+  status: VerificationStatus;
+  requestId?: number;
+  selectedTrack?: VerificationTrackKey;
+  currentTrack?: VerificationTrackKey;
+}): VerificationActionSet {
+  const status = normalizeStatus(input.status);
+  const requestId = Number(input.requestId || 0);
+  const selected = normalizeTrack(String(input.selectedTrack || "identity"));
+  const current = normalizeTrack(String(input.currentTrack || "identity"));
+  const track = verificationTrackLabel(selected);
+
+  // Evidence can only be attached to a request that exists and is still open.
+  const documentable = ["draft", "submitted", "in_review", "needs_more_info", "appealed"].includes(status) && requestId > 0;
+  const document: VerificationAction[] = documentable
+    ? [{ key: "document", label: "Choose a document", variant: status === "needs_more_info" ? "primary" : "secondary" }]
+    : [];
+
+  // An appeal needs a decision to appeal against, and one that has not already
+  // been appealed.
+  const appealable = ["rejected", "suspended", "needs_more_info"].includes(status) && requestId > 0;
+  const appeal: VerificationAction[] = appealable ? [{ key: "appeal", label: "Submit appeal", variant: status === "needs_more_info" ? "secondary" : "primary" }] : [];
+
+  switch (status) {
+    case "draft":
+      return {
+        headline: "Your request is saved but has not been sent yet.",
+        path: [{ key: "continue", label: `Send your ${track} request`, variant: "primary" }],
+        document,
+        appeal,
+        canChooseTrack: true
+      };
+    case "submitted":
+      return {
+        headline: "Your request has been sent and is waiting to be picked up.",
+        path: [],
+        document,
+        appeal,
+        canChooseTrack: false
+      };
+    case "in_review":
+      return {
+        headline: "Someone is reviewing your request. Nothing is needed from you.",
+        path: [],
+        document,
+        appeal,
+        canChooseTrack: false
+      };
+    case "needs_more_info":
+      return {
+        headline: "Reviewers need something more from you before they can decide.",
+        path: [],
+        document,
+        appeal,
+        canChooseTrack: false
+      };
+    case "approved":
+      return {
+        headline:
+          selected === current
+            ? `You are verified. You can send your ${track} details again if they have changed.`
+            : `You are verified. You can add ${track} verification as well.`,
+        path:
+          selected === current
+            ? [{ key: "update", label: `Update your ${track} details`, variant: "secondary" }]
+            : [{ key: "add_another", label: `Add ${track} verification`, variant: "secondary" }],
+        document,
+        appeal,
+        canChooseTrack: true
+      };
+    case "rejected":
+      return {
+        headline: "Your request was not approved. You can appeal, or start again.",
+        path: [{ key: "start", label: `Start a new ${track} request`, variant: "secondary" }],
+        document,
+        appeal,
+        canChooseTrack: true
+      };
+    case "suspended":
+      return {
+        headline: "Your verification is suspended. Appealing is the only way to reopen it.",
+        path: [],
+        document,
+        appeal,
+        canChooseTrack: false
+      };
+    case "appealed":
+      return {
+        headline: "Your appeal has been sent and is waiting on a decision.",
+        path: [],
+        document,
+        appeal,
+        canChooseTrack: false
+      };
+    default:
+      return {
+        headline: "You have not started a verification request yet.",
+        path: [{ key: "start", label: `Start ${track} verification`, variant: "primary" }],
+        document,
+        appeal,
+        canChooseTrack: true
+      };
+  }
+}
+
 function normalizeVerificationState(
   subsystem: VerificationSubsystem,
   account: Record<string, unknown>,
@@ -204,11 +358,11 @@ function normalizeVerificationState(
       plan: String(premium.plan || (premium.founder_active ? "founder_premium" : premium.premium_active ? "premium" : "free"))
     },
     checklist: [
-      { key: "profile", label: "Profile identity completed", complete: profileComplete, detail: "Display name, handle, and avatar are loaded from the existing Profile APIs." },
-      { key: "email", label: "Email trust confirmed", complete: emailVerified, detail: "Email verification remains owned by Account/Security APIs." },
-      { key: "request", label: "Verification request submitted", complete: hasRequest, detail: "Requests use `/api/dashboard/account/verification/request`." },
-      { key: "document", label: "Private evidence ready", complete: !needsDocument || status === "approved" || status === "in_review", detail: "Sensitive documents use the existing private verification upload route." },
-      { key: "review", label: "Admin review completed", complete: approved, detail: "Review, approval, rejection, revocation, and audit logs remain admin/server-owned." }
+      { key: "profile", label: "Your profile is filled in", complete: profileComplete, detail: "Your name, handle, and photo are set." },
+      { key: "email", label: "Your email is confirmed", complete: emailVerified, detail: "You have confirmed the email address on your account." },
+      { key: "request", label: "You have sent a request", complete: hasRequest, detail: "Reviewers cannot begin until a request is sent." },
+      { key: "document", label: "Your documents are in", complete: !needsDocument || status === "approved" || status === "in_review", detail: "Documents you send are held privately and are seen only by the review team." },
+      { key: "review", label: "A reviewer has decided", complete: approved, detail: "A person reviews every request. Approvals and refusals are theirs to make, not this app's." }
     ],
     tracks: verificationTracks,
     loadedAt: new Date().toISOString()

@@ -445,7 +445,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
     const fallback = () => setNotice(`${label} needs text input; use the web control center if this device does not show the native prompt.`);
     const prompt = (Alert as unknown as { prompt?: (title: string, message?: string, callbackOrButtons?: ((text: string) => void) | Array<Record<string, unknown>>, type?: string, defaultValue?: string, keyboardType?: string) => void }).prompt;
     if (!prompt) return fallback();
-    prompt(label, "Saved through the production Conversation Control Center action endpoint.", async (body: string) => {
+    prompt(label, "Saved.", async (body: string) => {
       if (!body?.trim()) return;
       setSavingKey(action);
       try {
@@ -774,8 +774,8 @@ function buildRows(input: {
       action("Mark Unread", "◌", "mark-unread", "Server-backed unread state.", !can("mark_unread") ? unavailable("Mark unread is not enabled for this conversation.") : undefined),
       setting("Favorite Conversation", "★", "productivity", "favorite", "toggle", "Server-backed favorite state."),
       setting("Reminder", "⏱", "productivity", "reminder", "select", "Server-backed reminder preference.", OPTIONS.reminder),
-      action("Create Note", "✎", "create-note", "Uses the production control action endpoint."),
-      action("Create Task", "☑", "create-task", "Uses the production control action endpoint.")
+      action("Create Note", "✎", "create-note", "Applies to this conversation right away."),
+      action("Create Task", "☑", "create-task", "Applies to this conversation right away.")
     ],
     storage: [
       valueRow("Conversation Size", "◉", formatFileSize(stats.storage_used_bytes), "Known server attachment bytes."),

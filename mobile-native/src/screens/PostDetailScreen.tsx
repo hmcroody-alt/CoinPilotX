@@ -295,7 +295,7 @@ export function PostDetailScreen({ route, navigation }: Props) {
   if (loading && !post) {
     return (
       <LogiNexusScreenShell>
-        <LogiNexusStatePanel state="loading" title="Loading post" body="Opening the latest server-authoritative signal." loading />
+        <LogiNexusStatePanel state="loading" title="Loading post" body="Opening the latest update." loading />
       </LogiNexusScreenShell>
     );
   }

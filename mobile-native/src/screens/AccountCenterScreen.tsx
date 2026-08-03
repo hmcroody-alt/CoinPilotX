@@ -179,7 +179,7 @@ export function AccountCenterScreen({ route, navigation }: Props) {
   }
 
   function confirmRevokeSessions() {
-    Alert.alert("Sign out other sessions?", "PulseSoc will revoke other active sessions using the existing backend session controls.", [
+    Alert.alert("Sign out other sessions?", "PulseSoc will sign you out on every other device.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Revoke",
@@ -208,7 +208,7 @@ export function AccountCenterScreen({ route, navigation }: Props) {
         <Text style={styles.eyebrow}>PulseSoc identity core</Text>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.subtitle}>
-          {offline ? "Showing the last trusted snapshot. Pull to reconnect." : "Server-authoritative account, security, privacy, and device controls."}
+          {offline ? "Showing the last trusted snapshot. Pull to reconnect." : "Your account, security, privacy, and device settings."}
         </Text>
       </View>
 

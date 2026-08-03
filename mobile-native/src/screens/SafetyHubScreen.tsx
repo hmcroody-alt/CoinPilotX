@@ -130,7 +130,7 @@ export function SafetyHubScreen({ navigation, route }: Props) {
       return;
     }
     await recordMuteHandoff({ target: muteTarget.trim(), duration: muteDuration, reason: muteReason.trim() || "Native mute handoff" });
-    setNotice("Mute request recorded locally. Open protected network controls for server-authoritative mute state.");
+    setNotice("Saved on this device only. Mute them on the PulseSoc website to make it apply everywhere.");
     setMuteTarget("");
     await load("refresh");
     setTab("mutes");
@@ -168,7 +168,7 @@ export function SafetyHubScreen({ navigation, route }: Props) {
         <Text style={styles.eyebrow}>PulseSoc safety control layer</Text>
         <Text style={styles.title}>Safety Hub</Text>
         <Text style={styles.subtitle}>
-          {offline ? "Showing cached safety controls. Pull to reconnect." : "Blocks, mutes, and reports stay governed by PulseSoc moderation systems. Native controls never override backend authority."}
+          {offline ? "Showing cached safety controls. Pull to reconnect." : "Blocks, mutes, and reports are handled by PulseSoc moderation. What you set here follows those decisions."}
         </Text>
       </View>
 

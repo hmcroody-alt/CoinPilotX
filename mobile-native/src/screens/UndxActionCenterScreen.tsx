@@ -118,7 +118,7 @@ export function UndxActionCenterScreen({ route }: Props) {
         <Metric label="Permissions" value={permissions.length} tone="safety" />
       </View>
 
-      <Section title="Pending actions" empty="No pending UNDX actions returned by the backend.">
+      <Section title="Pending actions" empty="UNDX has nothing waiting for you.">
         {pending.slice(0, 12).map((item, index) => <ActionRow key={rowKey(item, index, "pending")} item={item} />)}
       </Section>
 

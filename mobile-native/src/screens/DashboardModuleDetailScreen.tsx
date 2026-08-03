@@ -246,7 +246,7 @@ function relatedNativeRoutes(group: DashboardModuleGroup, module: DashboardModul
   }
   if (groupKey === "system-status") {
     return [
-      { label: "Activity Inbox", route: "/pulse/activity", body: "Inspect current server-authoritative activity and notification state." },
+      { label: "Activity Inbox", route: "/pulse/activity", body: "See your current activity and notifications." },
       { label: "Intelligence", route: "/dashboard/intelligence", body: "Review system, safety, market, and event intelligence." },
       { label: "Settings", route: "/dashboard/account/settings", body: "Open account and notification controls." }
     ];

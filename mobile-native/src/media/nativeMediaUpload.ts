@@ -178,7 +178,7 @@ export function cameraCompressionPolicy(mode: "photo" | "video" | "status" | "re
     maxVideoBytes: video ? Math.min(MAX_VIDEO_BYTES, status ? 350 * 1024 * 1024 : 700 * 1024 * 1024) : 0,
     serverAuthoritative: true,
     deviceVerified: false,
-    note: "Native client requests efficient capture settings; PulseSoc backend validation, storage, moderation, and processing remain authoritative."
+    note: "The app asks your camera for efficient settings. PulseSoc checks, stores, and reviews whatever you upload."
   };
 }
 

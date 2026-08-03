@@ -226,7 +226,7 @@ export function SearchScreen({ route, navigation }: Props) {
                 <Text style={styles.emptyTitle}>{unsupportedTab ? "Discovery tab is not native yet" : "No PulseSoc results found"}</Text>
                 <Text style={styles.emptyText}>
                   {unsupportedTab
-                    ? "This tab will stay on the existing PulseSoc backend with a native provider boundary until a destination exists."
+                    ? "There is nothing to open here yet."
                     : "Try another creator, topic, video, listing, room, reel, or signal."}
                 </Text>
               </View>
