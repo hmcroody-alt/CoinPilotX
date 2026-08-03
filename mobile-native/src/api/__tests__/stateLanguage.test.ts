@@ -62,13 +62,19 @@ function withFlag<T>(value: string, run: () => T): T {
 }
 
 describe("the flag", () => {
-  it("is off unless the build sets it to exactly 1", () => {
-    for (const value of ["", "0", "false", "true", "yes", "2", " "]) {
+  it('is off unless the build opts in, and accepts every spelling of "on"', () => {
+    // The accepted spellings are the shared set in core/envFlag.ts. This flag
+    // shipped taking the literal "1" alone while flags on adjacent screens also
+    // took "true", so setting it to "true" was a silent no-op.
+    for (const value of ["", "0", "false", "off", "no", "2", " "]) {
       expect(withFlag(value, stateLanguageEnabled)).toBe(false);
     }
-    expect(withFlag("1", stateLanguageEnabled)).toBe(true);
+    for (const value of ["1", "true", "on", "yes", "YES", "On"]) {
+      expect(withFlag(value, stateLanguageEnabled)).toBe(true);
+    }
     // Trailing whitespace from a .env file must not silently disable it.
     expect(withFlag(" 1 ", stateLanguageEnabled)).toBe(true);
+    expect(withFlag("\ttrue\n", stateLanguageEnabled)).toBe(true);
   });
 
   it("leaves every absent state rendering exactly as it does today when off", () => {

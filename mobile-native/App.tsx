@@ -21,6 +21,7 @@ import { registerPushDevice, syncPushDeviceRegistration } from "./src/api/push";
 import { startPresenceSession, stopPresenceSession } from "./src/api/presenceSession";
 import { registerSessionInvalidationHandler } from "./src/api/pulseApi";
 import { configurePerfTracing, perfNow, recordDuration, setPerfContext, startSpan } from "./src/core/perfTrace";
+import { envFlagOn } from "./src/core/envFlag";
 import { PerfOverlay } from "./src/components/PerfOverlay";
 import { TranslationPreferencesBootstrap } from "./src/components/TranslationPreferencesBootstrap";
 import { configurePulseShareCenter } from "./src/sharing/nativeShare";
@@ -31,9 +32,15 @@ setPerfContext({ osVersion: String(Platform.Version) });
 
 // Perf tracing is on automatically in dev; the QA flag turns it on (plus the
 // on-device overlay) for Release/QA device builds so real baselines can be captured.
+//
+// The `__DEV__` term short-circuits the flag and is kept exactly as it was: in a
+// development build the overlay is on whatever the environment says, and the flag
+// only ever has to answer for Release and QA builds. The flag read itself moved
+// onto the shared reader — it had been the app's sixth parsing rule, accepting
+// "1", "true" and "on" but not "yes", which no other flag rejected.
 const PERF_OVERLAY_ENABLED =
   (typeof __DEV__ !== "undefined" && __DEV__) ||
-  ["1", "true", "on"].includes(String(process.env.EXPO_PUBLIC_PULSESOC_PERF_OVERLAY || "").trim().toLowerCase());
+  envFlagOn("EXPO_PUBLIC_PULSESOC_PERF_OVERLAY");
 if (PERF_OVERLAY_ENABLED) configurePerfTracing({ enabled: true });
 
 /**

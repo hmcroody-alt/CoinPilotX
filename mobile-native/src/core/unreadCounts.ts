@@ -34,6 +34,7 @@ import {
   totalUnreadCount
 } from "../api/notifications";
 import { registerSyncInvalidation } from "./eventSync";
+import { envFlagOn } from "./envFlag";
 
 export type UnreadSnapshot = {
   /** The bell number: notification unreads (messages excluded — see header doc). */
@@ -193,9 +194,10 @@ export function useBellCount(): number {
 
 export const SCOPED_BADGES_FLAG = "EXPO_PUBLIC_SCOPED_BADGES";
 
-/** True when a build has opted into scope-stating badges. Off by default. */
+/** True when a build has opted into scope-stating badges. Off by default.
+ *  Reads the shared truthy set — see `./envFlag`. */
 export function scopedBadgesEnabled(): boolean {
-  return String(process.env[SCOPED_BADGES_FLAG] || "").trim() === "1";
+  return envFlagOn(SCOPED_BADGES_FLAG);
 }
 
 /**

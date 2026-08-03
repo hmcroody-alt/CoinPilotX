@@ -468,4 +468,14 @@ export const ACTIVITY_MOCK_DATA_GAPS: ActivityGap[] = [
   }
 ];
 
-export const ACTIVITY_MOCK_DATA_GAP_COUNT = ACTIVITY_MOCK_DATA_GAPS.length;
+/**
+ * The row count, written out.
+ *
+ * A literal rather than `ACTIVITY_MOCK_DATA_GAPS.length`, which is what this was
+ * and which made the test comparing the two a tautology: the array's length
+ * equalled itself for every possible value, so a faked field could be added or a
+ * real gap quietly dropped with the suite still green. Written down, the number
+ * has to be edited deliberately, and that edit is the moment somebody decides
+ * whether a gap was actually closed or merely papered over.
+ */
+export const ACTIVITY_MOCK_DATA_GAP_COUNT = 4;

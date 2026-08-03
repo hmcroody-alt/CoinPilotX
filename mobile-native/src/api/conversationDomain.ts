@@ -59,6 +59,8 @@
  * derived and still correct, but every list reads the way it read before.
  */
 
+import { envFlagOn } from "../core/envFlag";
+
 export const CONVERSATION_DOMAINS = [
   "SOCIAL",
   "MARKETPLACE",
@@ -92,8 +94,7 @@ export const COMMERCE_DOMAINS: readonly ConversationDomain[] = [
  * is a lost conversation and therefore has to ship dark first.
  */
 export function conversationSplitEnabled(): boolean {
-  const raw = String(process.env.EXPO_PUBLIC_MESSAGES_COMMERCE_SPLIT || "").toLowerCase();
-  return raw === "1" || raw === "true" || raw === "on" || raw === "yes";
+  return envFlagOn("EXPO_PUBLIC_MESSAGES_COMMERCE_SPLIT");
 }
 
 export function isCommerceDomain(domain: ConversationDomain): boolean {

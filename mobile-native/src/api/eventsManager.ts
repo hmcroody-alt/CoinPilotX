@@ -26,6 +26,7 @@
 
 import { formatMinor } from "./commerceInbox";
 import type { AdAnalyticsRow } from "./businessOs";
+import { envFlagOn } from "../core/envFlag";
 
 const HOUR_MS = 60 * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
@@ -33,19 +34,18 @@ const DAY_MS = 24 * HOUR_MS;
 
 /* ------------------------------------------------------------------ *
  * Feature flags (all OFF by default; read at call time)
+ *
+ * `envFlagOn` is the shared reader in `core/envFlag.ts`. The local parser it
+ * replaced accepted the same four values, so nothing here changed except that
+ * the rule is no longer this file's to decide.
  * ------------------------------------------------------------------ */
 
-function flagOn(name: string): boolean {
-  const raw = String(process.env[name] || "").toLowerCase();
-  return raw === "1" || raw === "true" || raw === "on" || raw === "yes";
-}
-
 /** Live commerce stats (watching / orders-in-10-min) on the live banner. */
-export const eventsLiveStatsEnabled = () => flagOn("EXPO_PUBLIC_EVENTS_LIVE_STATS");
+export const eventsLiveStatsEnabled = () => envFlagOn("EXPO_PUBLIC_EVENTS_LIVE_STATS");
 /** Attributed-sales figures on past-event results. Off — no attribution model. */
-export const eventAttributionEnabled = () => flagOn("EXPO_PUBLIC_EVENTS_ATTRIBUTION");
+export const eventAttributionEnabled = () => envFlagOn("EXPO_PUBLIC_EVENTS_ATTRIBUTION");
 /** Deterministic mock events for design review. Off — real events only. */
-export const eventsMockEnabled = () => flagOn("EXPO_PUBLIC_EVENTS_MOCK");
+export const eventsMockEnabled = () => envFlagOn("EXPO_PUBLIC_EVENTS_MOCK");
 
 /* ------------------------------------------------------------------ *
  * Model
@@ -549,4 +549,13 @@ export const EVENTS_MOCK_DATA_GAPS: MockDataGap[] = [
   }
 ];
 
-export const EVENTS_MOCK_DATA_GAP_COUNT = EVENTS_MOCK_DATA_GAPS.length;
+/**
+ * The row count, written out — a literal, not `EVENTS_MOCK_DATA_GAPS.length`.
+ *
+ * Derived from the array, it made the accompanying test compare the length to
+ * itself, which passes for every value and locks nothing. `INBOX_MOCK_DATA_GAP_COUNT`
+ * is what the convention was meant to look like: Tier 0.4 raised that table and
+ * had to edit its literal to do it, which is the deliberate, visible change the
+ * ledger exists to force.
+ */
+export const EVENTS_MOCK_DATA_GAP_COUNT = 6;

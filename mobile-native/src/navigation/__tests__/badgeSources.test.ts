@@ -218,15 +218,23 @@ describe("badges say what they count", () => {
 });
 
 describe("the flag", () => {
-  it("is off unless the build sets it to exactly 1", () => {
+  it('is off unless the build opts in, and accepts every spelling of "on"', () => {
+    // The accepted spellings are the shared set in core/envFlag.ts, not this
+    // module's own idea of one. This flag shipped taking the literal "1" alone
+    // while flags on adjacent screens also took "true" — so a build that set it
+    // to "true" got a silent no-op. Both work now; unset is still off.
     const original = process.env[SCOPED_BADGES_FLAG];
     try {
-      for (const value of ["", "0", "true", "2"]) {
+      for (const value of ["", " ", "0", "false", "off", "no", "2"]) {
         process.env[SCOPED_BADGES_FLAG] = value;
         expect(scopedBadgesEnabled()).toBe(false);
       }
-      process.env[SCOPED_BADGES_FLAG] = "1";
-      expect(scopedBadgesEnabled()).toBe(true);
+      for (const value of ["1", "true", "on", "yes", " TRUE ", "Yes"]) {
+        process.env[SCOPED_BADGES_FLAG] = value;
+        expect(scopedBadgesEnabled()).toBe(true);
+      }
+      delete process.env[SCOPED_BADGES_FLAG];
+      expect(scopedBadgesEnabled()).toBe(false);
     } finally {
       if (original === undefined) delete process.env[SCOPED_BADGES_FLAG];
       else process.env[SCOPED_BADGES_FLAG] = original;

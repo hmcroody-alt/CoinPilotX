@@ -228,6 +228,15 @@ describe("publish validation + tabs + selection", () => {
   });
 
   it("locks the MOCK-DATA gap ledger length", () => {
-    expect(EVENTS_MOCK_DATA_GAPS.length).toBe(EVENTS_MOCK_DATA_GAP_COUNT);
+    // Against a literal. This read `.toBe(EVENTS_MOCK_DATA_GAP_COUNT)` while that
+    // constant was `EVENTS_MOCK_DATA_GAPS.length`, so it compared the array's
+    // length to itself and could never fail. Six is the count as it stands;
+    // moving it is a deliberate edit in two places.
+    expect(EVENTS_MOCK_DATA_GAPS).toHaveLength(6);
+    expect(EVENTS_MOCK_DATA_GAP_COUNT).toBe(6);
+    for (const gap of EVENTS_MOCK_DATA_GAPS) {
+      expect(gap.field.length).toBeGreaterThan(0);
+      expect(gap.backendWork.length).toBeGreaterThan(20);
+    }
   });
 });

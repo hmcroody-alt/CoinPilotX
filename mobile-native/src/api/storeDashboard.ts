@@ -29,6 +29,7 @@ import {
   type MarketplaceSellerOrder,
   type SellerStoreSnapshot
 } from "./marketplace";
+import { envFlagOn } from "../core/envFlag";
 
 /* ------------------------------------------------------------------ *
  * Unsourced fields
@@ -467,9 +468,17 @@ export function deriveStatus(rows: StoreListingRow[]): StoreStatus {
 
 export const STORE_READINESS_FLAG = "EXPO_PUBLIC_STORE_READINESS";
 
-/** True when a build has opted into the readiness ladder. Off by default. */
+/**
+ * True when a build has opted into the readiness ladder. Off by default.
+ *
+ * This accessor is the reason `core/envFlag.ts` exists. It shipped accepting
+ * the literal `1` and nothing else, while every flag that preceded it also took
+ * `true`, `on` and `yes` — so a build that set this one to `true` got a silent
+ * no-op with no way to tell a stricter parser from a ladder that did not work.
+ * It reads the shared set now. Still off unless somebody sets it.
+ */
 export function storeReadinessEnabled(): boolean {
-  return String(process.env[STORE_READINESS_FLAG] || "").trim() === "1";
+  return envFlagOn(STORE_READINESS_FLAG);
 }
 
 /**

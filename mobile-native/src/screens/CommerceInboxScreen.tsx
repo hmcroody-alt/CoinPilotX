@@ -21,8 +21,10 @@
  *   • The expiring-offer banner reads the Marketplace offer state machine via
  *     `deriveExpiryBanner`. There is no offers backend, so it is dark by default;
  *     it collects offers from resolved chip links so flipping the flag lights it.
- *   • Typing, presence and the reorder animation are all flag-gated and off by
- *     default — the inbox is then a correct pull-to-refresh list.
+ *   • Typing and presence are flag-gated and off by default — the inbox is then
+ *     a correct pull-to-refresh list. The reorder below is NOT gated and never
+ *     was; the flag that claimed to gate it named an animation nobody built and
+ *     has been removed rather than left saying something untrue.
  *
  * ## Real-time mechanism
  *

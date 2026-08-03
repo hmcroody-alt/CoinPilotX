@@ -354,15 +354,23 @@ describe("insightsErrorMessage", () => {
 describe("insightsFailure", () => {
   const CAUSES = ["offline", "authentication", "entitlement", "service_unavailable", "unexpected"] as const;
 
-  it("is off unless the build sets the flag to exactly 1", () => {
+  it('is off unless the build opts in, and accepts every spelling of "on"', () => {
+    // The accepted spellings are the shared set in core/envFlag.ts, not this
+    // module's own idea of one. This flag shipped taking the literal "1" alone
+    // while flags on adjacent screens also took "true" — so a build that set it
+    // to "true" got a silent no-op. Both work now; unset is still off.
     const original = process.env[INSIGHTS_ERROR_CAUSES_FLAG];
     try {
-      for (const value of ["", "0", "true", "2"]) {
+      for (const value of ["", " ", "0", "false", "off", "no", "2"]) {
         process.env[INSIGHTS_ERROR_CAUSES_FLAG] = value;
         expect(insightsErrorCausesEnabled()).toBe(false);
       }
-      process.env[INSIGHTS_ERROR_CAUSES_FLAG] = "1";
-      expect(insightsErrorCausesEnabled()).toBe(true);
+      for (const value of ["1", "true", "on", "yes", " TRUE ", "Yes"]) {
+        process.env[INSIGHTS_ERROR_CAUSES_FLAG] = value;
+        expect(insightsErrorCausesEnabled()).toBe(true);
+      }
+      delete process.env[INSIGHTS_ERROR_CAUSES_FLAG];
+      expect(insightsErrorCausesEnabled()).toBe(false);
     } finally {
       if (original === undefined) delete process.env[INSIGHTS_ERROR_CAUSES_FLAG];
       else process.env[INSIGHTS_ERROR_CAUSES_FLAG] = original;

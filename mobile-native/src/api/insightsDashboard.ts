@@ -28,6 +28,7 @@
  */
 
 import { readJsonCache, writeJsonCache } from "../core/cache";
+import { envFlagOn } from "../core/envFlag";
 import { pulseApi, PulseApiError } from "./pulseApi";
 // The shared state and failure vocabulary. Insights names a failure with the
 // same five causes and the same five sentences every other surface uses.
@@ -543,9 +544,10 @@ export function createInsightsRequestGate(): InsightsRequestGate {
 
 export const INSIGHTS_ERROR_CAUSES_FLAG = "EXPO_PUBLIC_INSIGHTS_ERROR_CAUSES";
 
-/** True when a build has opted into cause-specific insights errors. Off by default. */
+/** True when a build has opted into cause-specific insights errors. Off by default.
+ *  Reads the shared truthy set — see `core/envFlag.ts`. */
 export function insightsErrorCausesEnabled(): boolean {
-  return String(process.env[INSIGHTS_ERROR_CAUSES_FLAG] || "").trim() === "1";
+  return envFlagOn(INSIGHTS_ERROR_CAUSES_FLAG);
 }
 
 export type InsightsFailure = FailureCopy & {

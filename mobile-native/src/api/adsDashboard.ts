@@ -42,6 +42,7 @@ import {
   loadCachedAdAnalytics,
   loadCachedAdCampaigns
 } from "./businessOs";
+import { envFlagOn } from "../core/envFlag";
 
 /* ------------------------------------------------------------------ *
  * Modes
@@ -69,8 +70,7 @@ export const ADS_POST_MODE_FLAG = "EXPO_PUBLIC_ADS_POST_MODE";
  * falls back to an honest unsourced state.
  */
 export function adsPostModeEnabled(): boolean {
-  const raw = String(process.env[ADS_POST_MODE_FLAG] || "").trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "on" || raw === "yes";
+  return envFlagOn(ADS_POST_MODE_FLAG);
 }
 
 /* ------------------------------------------------------------------ *
@@ -204,9 +204,15 @@ export type CampaignTone = "neutral" | "info" | "success" | "warning" | "error";
 
 export const ACCOUNT_NAME_FIRST_FLAG = "EXPO_PUBLIC_ACCOUNT_NAME_FIRST";
 
-/** True when a build has opted into name-first labelling. Off by default. */
+/**
+ * True when a build has opted into name-first labelling. Off by default.
+ *
+ * This shipped accepting the literal `1` and nothing else, while the flag two
+ * screens over accepted `true` as well. Both now read the same set — see
+ * `core/envFlag.ts`.
+ */
 export function accountNameFirstEnabled(): boolean {
-  return String(process.env[ACCOUNT_NAME_FIRST_FLAG] || "").trim() === "1";
+  return envFlagOn(ACCOUNT_NAME_FIRST_FLAG);
 }
 
 /**

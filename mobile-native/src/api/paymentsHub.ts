@@ -49,6 +49,7 @@ import {
   listAdAccounts
 } from "./businessOs";
 import { readJsonCache, writeJsonCache } from "../core/cache";
+import { envFlagOn } from "../core/envFlag";
 import { pulseApi } from "./pulseApi";
 
 /* ------------------------------------------------------------------ *
@@ -173,12 +174,12 @@ export type LedgerPage = {
  * ABSENT — not greyed out, not showing a placeholder. A disabled "Pay out now"
  * still tells the seller a payout is a thing they can nearly do; an absent one
  * tells the truth.
+ *
+ * `envFlagOn` is the shared reader in `core/envFlag.ts`. This module's own
+ * `envFlag` was one of the four parsers it consolidated, and it was the one
+ * whose behaviour the shared reader adopted — trim, lowercase, four accepted
+ * values — so none of the six gates below changed when they moved onto it.
  * ------------------------------------------------------------------ */
-
-function envFlag(name: string): boolean {
-  const raw = (process.env[name] || "").trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "on" || raw === "yes";
-}
 
 /**
  * Gates "Pay out now". No endpoint initiates a payout anywhere in this codebase
@@ -186,31 +187,31 @@ function envFlag(name: string): boolean {
  * Turning this on before that exists ships a button that cannot do anything.
  */
 export function payoutInitiationIsLive(): boolean {
-  return envFlag("EXPO_PUBLIC_PAYMENTS_PAYOUT_INITIATION");
+  return envFlagOn("EXPO_PUBLIC_PAYMENTS_PAYOUT_INITIATION");
 }
 
 /** Gates instant payout and its fee quote. Requires a backend quote endpoint,
  *  which does not exist; a client-computed fee is forbidden outright. */
 export function instantPayoutIsLive(): boolean {
-  return envFlag("EXPO_PUBLIC_PAYMENTS_INSTANT_PAYOUT");
+  return envFlagOn("EXPO_PUBLIC_PAYMENTS_INSTANT_PAYOUT");
 }
 
 /** Gates the statements list. No statement is generated anywhere. */
 export function statementsAreLive(): boolean {
-  return envFlag("EXPO_PUBLIC_PAYMENTS_STATEMENTS");
+  return envFlagOn("EXPO_PUBLIC_PAYMENTS_STATEMENTS");
 }
 
 /** Gates the tax-document centre. No 1099-K or equivalent is ever issued, and
  *  a "no form this year" message would itself assert a threshold determination
  *  that nothing in this backend performs. */
 export function taxDocumentsAreLive(): boolean {
-  return envFlag("EXPO_PUBLIC_PAYMENTS_TAX_DOCUMENTS");
+  return envFlagOn("EXPO_PUBLIC_PAYMENTS_TAX_DOCUMENTS");
 }
 
 /** Gates the escrow balance card. Per-order escrow is Business OS only, and
  *  that vertical is dark in production. */
 export function escrowCardIsLive(): boolean {
-  return envFlag("EXPO_PUBLIC_PAYMENTS_ESCROW");
+  return envFlagOn("EXPO_PUBLIC_PAYMENTS_ESCROW");
 }
 
 /**
@@ -229,7 +230,7 @@ export function escrowCardIsLive(): boolean {
  */
 export function adTopUpIsLive(billing: AdBilling | null | undefined): boolean {
   if (!billing) return false;
-  return envFlag("EXPO_PUBLIC_PAYMENTS_AD_TOPUP") && adFundingIsLive(billing);
+  return envFlagOn("EXPO_PUBLIC_PAYMENTS_AD_TOPUP") && adFundingIsLive(billing);
 }
 
 /* ------------------------------------------------------------------ *
@@ -324,6 +325,18 @@ export const PAYMENTS_MOCK_DATA_GAPS: MoneyGap[] = [
       "before any of those flags is turned on."
   }
 ];
+
+/**
+ * The row count, written out, so a test can hold this ledger to it.
+ *
+ * These are the money rows, and one of them is a declared security gap rather
+ * than a data gap — yet this was the one table of the nine that no test read at
+ * all, which made the most consequential line in the ledger the least protected.
+ * A literal rather than `PAYMENTS_MOCK_DATA_GAPS.length`: derived from the array
+ * it would only ever restate the array, and the point is to make closing a money
+ * gap an edit somebody has to mean.
+ */
+export const PAYMENTS_MOCK_DATA_GAP_COUNT = 9;
 
 /* ------------------------------------------------------------------ *
  * Reads.

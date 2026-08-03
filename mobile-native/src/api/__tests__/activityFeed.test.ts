@@ -230,6 +230,18 @@ describe("relative time + gap ledger", () => {
   });
 
   it("locks the MOCK-DATA gap ledger length", () => {
-    expect(ACTIVITY_MOCK_DATA_GAPS.length).toBe(ACTIVITY_MOCK_DATA_GAP_COUNT);
+    // Against a literal, deliberately. This assertion used to read
+    // `.toBe(ACTIVITY_MOCK_DATA_GAP_COUNT)` while that constant was itself
+    // `ACTIVITY_MOCK_DATA_GAPS.length` — the array's length compared to itself,
+    // which passes for every possible value and locks nothing. If four moves,
+    // either a gap was closed with a real source (good — update both numbers) or
+    // one was faked or dropped (not good). Both now have to be edited on purpose.
+    expect(ACTIVITY_MOCK_DATA_GAPS).toHaveLength(4);
+    expect(ACTIVITY_MOCK_DATA_GAP_COUNT).toBe(4);
+    for (const gap of ACTIVITY_MOCK_DATA_GAPS) {
+      // A gap without a stated remedy is a shrug, not a ledger entry.
+      expect(gap.field.length).toBeGreaterThan(0);
+      expect(gap.backendWork.length).toBeGreaterThan(20);
+    }
   });
 });

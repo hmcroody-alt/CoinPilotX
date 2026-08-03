@@ -39,6 +39,7 @@ import {
   type SellerStoreSnapshot
 } from "./marketplace";
 import { listingHealth, type StoreListingHealth } from "./storeDashboard";
+import { envFlagOn } from "../core/envFlag";
 
 /* ------------------------------------------------------------------ *
  * Unsourced fields
@@ -147,9 +148,10 @@ export const MARKETPLACE_MOCK_DATA_GAPS: readonly MarketplaceDataGap[] = [
 
 export const MARKETPLACE_LOCATION_FLAG = "EXPO_PUBLIC_MARKETPLACE_LOCATION_HONESTY";
 
-/** True when a build has opted into the honest location wording. Off by default. */
+/** True when a build has opted into the honest location wording. Off by default.
+ *  Reads the shared truthy set — see `core/envFlag.ts`. */
 export function marketplaceLocationHonestyEnabled(): boolean {
-  return String(process.env[MARKETPLACE_LOCATION_FLAG] || "").trim() === "1";
+  return envFlagOn(MARKETPLACE_LOCATION_FLAG);
 }
 
 /**

@@ -44,9 +44,13 @@ import {
   loadCachedSellerStore,
   loadSellerStoreSnapshot
 } from "./marketplace";
+import { envFlagOn } from "../core/envFlag";
 
 /* ------------------------------------------------------------------ *
  * Feature flags — read at call time so tests can toggle them.
+ *
+ * Both go through `envFlagOn` in `core/envFlag.ts`, which accepts exactly what
+ * the inline parser here used to accept.
  * ------------------------------------------------------------------ */
 
 /**
@@ -57,8 +61,7 @@ import {
  * backend does not confirm. When on, every escrow figure is tagged Preview.
  */
 export function ordersEscrowIsLive(): boolean {
-  const raw = (process.env.EXPO_PUBLIC_ORDERS_ESCROW || "").trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "on" || raw === "yes";
+  return envFlagOn("EXPO_PUBLIC_ORDERS_ESCROW");
 }
 
 /**
@@ -69,8 +72,7 @@ export function ordersEscrowIsLive(): boolean {
  * actions render as a disabled Preview until the canonical order routes are live.
  */
 export function ordersFulfillmentIsLive(): boolean {
-  const raw = (process.env.EXPO_PUBLIC_ORDERS_FULFILLMENT || "").trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "on" || raw === "yes";
+  return envFlagOn("EXPO_PUBLIC_ORDERS_FULFILLMENT");
 }
 
 /* ------------------------------------------------------------------ *

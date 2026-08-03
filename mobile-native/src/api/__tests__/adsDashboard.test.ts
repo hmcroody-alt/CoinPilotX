@@ -430,15 +430,23 @@ describe("adAccountDisplay", () => {
     }
   });
 
-  it("is off unless the build sets the flag to exactly 1", () => {
+  it('is off unless the build opts in, and accepts every spelling of "on"', () => {
+    // The accepted spellings are the shared set in core/envFlag.ts, not this
+    // module's own idea of one. This flag shipped taking the literal "1" alone
+    // while flags on adjacent screens also took "true" — so a build that set it
+    // to "true" got a silent no-op. Both work now; unset is still off.
     const original = process.env[ACCOUNT_NAME_FIRST_FLAG];
     try {
-      for (const value of ["", "0", "true", "2"]) {
+      for (const value of ["", " ", "0", "false", "off", "no", "2"]) {
         process.env[ACCOUNT_NAME_FIRST_FLAG] = value;
         expect(accountNameFirstEnabled()).toBe(false);
       }
-      process.env[ACCOUNT_NAME_FIRST_FLAG] = "1";
-      expect(accountNameFirstEnabled()).toBe(true);
+      for (const value of ["1", "true", "on", "yes", " TRUE ", "Yes"]) {
+        process.env[ACCOUNT_NAME_FIRST_FLAG] = value;
+        expect(accountNameFirstEnabled()).toBe(true);
+      }
+      delete process.env[ACCOUNT_NAME_FIRST_FLAG];
+      expect(accountNameFirstEnabled()).toBe(false);
     } finally {
       if (original === undefined) delete process.env[ACCOUNT_NAME_FIRST_FLAG];
       else process.env[ACCOUNT_NAME_FIRST_FLAG] = original;

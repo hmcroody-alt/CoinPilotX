@@ -55,32 +55,40 @@ import {
   resolveExpiry
 } from "./marketplaceOffers";
 import { MESSAGES_AVATAR_GRADIENTS, MessagesChipKind } from "../theme/messagesLight";
+import { envFlagOn } from "../core/envFlag";
 
 /* ------------------------------------------------------------------ *
  * Feature flags — all read at call time so tests can toggle them.
+ *
+ * `envFlagOn` is the shared reader in `core/envFlag.ts`. It replaced a local
+ * copy of the same four-value rule; the accepted set is unchanged here and is
+ * now the set every other flag in the app answers to as well.
  * ------------------------------------------------------------------ */
 
-function flagOn(name: string): boolean {
-  const raw = String(process.env[name] || "").toLowerCase();
-  return raw === "1" || raw === "true" || raw === "on" || raw === "yes";
-}
-
 /** Typing indicators. No live push exists, so off = static "typing…" for AT only. */
-export const messagesTypingEnabled = () => flagOn("EXPO_PUBLIC_MESSAGES_TYPING");
+export const messagesTypingEnabled = () => envFlagOn("EXPO_PUBLIC_MESSAGES_TYPING");
 /** Presence dots. Only shown when the product exposes mutual presence. */
-export const messagesPresenceEnabled = () => flagOn("EXPO_PUBLIC_MESSAGES_PRESENCE");
-/** The new-message row-reorder animation. Off = list still updates, no motion. */
-export const messagesRealtimeReorderEnabled = () => flagOn("EXPO_PUBLIC_MESSAGES_REALTIME");
+export const messagesPresenceEnabled = () => envFlagOn("EXPO_PUBLIC_MESSAGES_PRESENCE");
+/*
+ * `messagesRealtimeReorderEnabled` / `EXPO_PUBLIC_MESSAGES_REALTIME` was removed.
+ *
+ * It was documented as gating the new-message row-reorder animation and had no
+ * callers anywhere in the app. The reorder it named is real and unconditional —
+ * `CommerceInboxScreen` upserts a touched conversation to the top of the list on
+ * every cache write — and the motion the flag claimed to gate was never built,
+ * so there was nothing left for it to switch. Setting it changed nothing, which
+ * is the one thing a flag must never do.
+ */
 /** Deterministic MOCK commerce associations for design review only. */
-export const messagesMockChipsEnabled = () => flagOn("EXPO_PUBLIC_MESSAGES_MOCK_CHIPS");
+export const messagesMockChipsEnabled = () => envFlagOn("EXPO_PUBLIC_MESSAGES_MOCK_CHIPS");
 /** Away mode / auto-reply. No live field, so the toggle is optimistic-local only. */
-export const messagesAwayModeEnabled = () => flagOn("EXPO_PUBLIC_MESSAGES_AWAY");
+export const messagesAwayModeEnabled = () => envFlagOn("EXPO_PUBLIC_MESSAGES_AWAY");
 /**
  * The "under {X} keeps your fast-responder badge" incentive framing. No badge /
  * ranking system was found in the app, so this is OFF: the stat is shown without
  * the unsourced ranking claim. Flip only when a real badge rule exists.
  */
-export const replyBadgeIncentiveEnabled = () => flagOn("EXPO_PUBLIC_MESSAGES_REPLY_BADGE");
+export const replyBadgeIncentiveEnabled = () => envFlagOn("EXPO_PUBLIC_MESSAGES_REPLY_BADGE");
 
 /* ------------------------------------------------------------------ *
  * MOCK-DATA ledger — every field with no live backend source.

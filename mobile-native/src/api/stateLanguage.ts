@@ -36,6 +36,7 @@
  */
 
 import { PulseApiError } from "./pulseApi";
+import { envFlagOn } from "../core/envFlag";
 
 /** The character the app currently uses for all four meanings. Retired below. */
 export const LEGACY_ABSENT_TEXT = "—";
@@ -45,9 +46,10 @@ export const ZERO_TEXT = "0";
 
 export const STATE_LANGUAGE_FLAG = "EXPO_PUBLIC_STATE_LANGUAGE";
 
-/** True when a build has opted into the ADR-0003 wording. Off by default. */
+/** True when a build has opted into the ADR-0003 wording. Off by default.
+ *  Reads the shared truthy set — see `core/envFlag.ts`. */
 export function stateLanguageEnabled(): boolean {
-  return String(process.env[STATE_LANGUAGE_FLAG] || "").trim() === "1";
+  return envFlagOn(STATE_LANGUAGE_FLAG);
 }
 
 /**
