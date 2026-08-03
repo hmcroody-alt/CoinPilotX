@@ -234,6 +234,157 @@ def get_balance(account: str, currency: str = "usd", conn=None) -> int:
             conn.close()
 
 
+MAX_LIST_LIMIT = 100
+DEFAULT_LIST_LIMIT = 25
+
+
+def list_account_transactions(
+    accounts: Any,
+    currency: str = "usd",
+    *,
+    limit: int = DEFAULT_LIST_LIMIT,
+    before_cursor: Optional[str] = None,
+    entry_types: Optional[Any] = None,
+    conn=None,
+) -> dict:
+    """Read one page of an account set's transaction history, newest first.
+
+    This is the read side of the ledger and the only sanctioned way to render a
+    money activity feed. It exists so that no caller has to compose a feed out of
+    orders + payouts + ad charges and hope the union is right: the union happens
+    here, in one SQL statement, over the canonical entries table.
+
+    ``accounts`` may be a single account string or an iterable of them. Passing
+    several is the normal case — a seller's activity is their payable account
+    *plus* every per-order escrow account, which are different accounts by
+    design. Because the query reads ``ledger_entries`` rather than
+    ``ledger_transactions``, a transaction that touches two of the requested
+    accounts (escrow ─▶ payable at settlement) correctly yields a row for each
+    side, each with its own direction.
+
+    ``signed_amount_cents`` is the amount **from the requested account's point of
+    view**: positive when money entered it, negative when money left it. Callers
+    render that sign directly. They must not infer a sign from ``entry_type``,
+    because the same type means opposite things to the two sides of a posting.
+
+    Pagination is a keyset cursor on ``ledger_entries.id``, which is a monotonic
+    unique primary key. Timestamps are not used as a cursor: two postings inside
+    the same millisecond would make a timestamp cursor silently skip rows.
+
+    Returns ``{"accounts", "currency", "transactions", "next_cursor",
+    "has_more"}``. ``next_cursor`` is None when the page is the last one.
+    """
+    if isinstance(accounts, str):
+        account_list = [accounts]
+    else:
+        account_list = [str(a) for a in (accounts or []) if str(a or "").strip()]
+    account_list = list(dict.fromkeys(account_list))  # de-dupe, keep order
+    if not account_list:
+        return {"accounts": [], "currency": str(currency or "usd").lower(),
+                "transactions": [], "next_cursor": None, "has_more": False}
+
+    cur_code = str(currency or "usd").lower()
+
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = DEFAULT_LIST_LIMIT
+    limit = max(1, min(limit, MAX_LIST_LIMIT))
+
+    types: list = []
+    if entry_types:
+        if isinstance(entry_types, str):
+            types = [entry_types]
+        else:
+            types = [str(t) for t in entry_types if str(t or "").strip()]
+
+    cursor_id: Optional[int] = None
+    if before_cursor not in (None, ""):
+        try:
+            cursor_id = int(before_cursor)
+        except (TypeError, ValueError):
+            raise LedgerError("before_cursor must be a numeric ledger entry id.")
+
+    owned = conn is None
+    if owned:
+        conn = db.connect()
+    try:
+        where = ["e.currency = ?", "e.account IN (%s)" % ",".join("?" * len(account_list))]
+        params: list = [cur_code, *account_list]
+        if cursor_id is not None:
+            where.append("e.id < ?")
+            params.append(cursor_id)
+        if types:
+            where.append("t.entry_type IN (%s)" % ",".join("?" * len(types)))
+            params.extend(types)
+
+        # One extra row is fetched purely to answer "is there a next page?"
+        # without a second COUNT query over the same predicate.
+        params.append(limit + 1)
+
+        sql = (
+            "SELECT e.id AS entry_id, e.account, e.direction, "
+            "       e.amount_cents AS entry_amount_cents, e.signed_amount_cents, "
+            "       e.currency, e.created_at, "
+            "       t.transaction_id, t.entry_type, t.amount_cents AS transaction_amount_cents, "
+            "       t.source_account, t.destination_account, t.reason, t.related_object, "
+            "       t.provider_reference, t.status, t.metadata_json "
+            "FROM ledger_entries e "
+            "JOIN ledger_transactions t ON t.transaction_id = e.transaction_id "
+            "WHERE " + " AND ".join(where) + " "
+            "ORDER BY e.id DESC LIMIT ?"
+        )
+        rows = [_row_to_dict(r) for r in conn.execute(sql, tuple(params)).fetchall()]
+
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+
+        out = []
+        for r in rows:
+            metadata = None
+            raw_meta = r.get("metadata_json")
+            if raw_meta:
+                try:
+                    metadata = json.loads(raw_meta)
+                except (TypeError, ValueError):
+                    # A malformed blob is reported as absent rather than raised:
+                    # one bad metadata row must not take down a money feed.
+                    metadata = None
+            out.append({
+                "cursor": str(r.get("entry_id")),
+                "transaction_id": r.get("transaction_id"),
+                "account": r.get("account"),
+                "direction": r.get("direction"),
+                "entry_type": r.get("entry_type"),
+                "amount_cents": int(r.get("entry_amount_cents") or 0),
+                "signed_amount_cents": int(r.get("signed_amount_cents") or 0),
+                "transaction_amount_cents": int(r.get("transaction_amount_cents") or 0),
+                "currency": r.get("currency"),
+                "source_account": r.get("source_account"),
+                "destination_account": r.get("destination_account"),
+                "reason": r.get("reason") or "",
+                "related_object": r.get("related_object") or "",
+                "provider_reference": r.get("provider_reference") or "",
+                # Reported verbatim. A voided or pending transaction stays in the
+                # feed wearing its real status; it is never filtered out to make
+                # the list look tidier.
+                "status": r.get("status") or "posted",
+                "created_at": r.get("created_at"),
+                "metadata": metadata,
+            })
+
+        return {
+            "accounts": account_list,
+            "currency": cur_code,
+            "transactions": out,
+            "next_cursor": out[-1]["cursor"] if (out and has_more) else None,
+            "has_more": has_more,
+        }
+    finally:
+        if owned:
+            conn.close()
+
+
 def post_entry(
     *,
     idempotency_key: str,

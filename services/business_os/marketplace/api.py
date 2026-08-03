@@ -31,6 +31,7 @@ from services.business_os import results as _results
 from services.business_os.marketplace import service as mkt
 from services.business_os.marketplace import orders as mko
 from services.business_os.marketplace import refunds as mkr
+from services.business_os.marketplace import money as mkmoney
 from services.business_os.marketplace import assistant as mka
 from services.business_os.marketplace import admin as mkadmin
 from services.business_os.marketplace.service import MarketplaceError
@@ -329,6 +330,52 @@ def seller_payout_balance(seller_user_id: Any, *, currency: str = "usd"):
     if not _enabled():
         return _dark()
     return (200, {"ok": True, "payout": mkr.seller_payout_balance(seller_user_id, currency)})
+
+
+# --- seller money read surface (balances, activity, disputes) ---------------
+# Read-only by construction: every one of these delegates to money.py, which
+# holds no write primitive. A payments client needs all three and should not be
+# assembling any of them itself.
+def seller_money_overview(seller_user_id: Any, *, currency: str = "usd"):
+    if not _enabled():
+        return _dark()
+    try:
+        return (200, {"ok": True,
+                      "money": mkmoney.seller_money_overview(seller_user_id, currency)})
+    except MarketplaceError as exc:
+        return _err(exc)
+
+
+def seller_activity(seller_user_id: Any, *, currency: str = "usd",
+                    limit: int = 25, cursor: Optional[str] = None,
+                    entry_types: Optional[Any] = None):
+    if not _enabled():
+        return _dark()
+    from services.business_os.ledger.ledger import LedgerError
+    try:
+        return (200, {"ok": True,
+                      "activity": mkmoney.seller_activity(
+                          seller_user_id, currency, limit=limit,
+                          before_cursor=cursor, entry_types=entry_types)})
+    except MarketplaceError as exc:
+        return _err(exc)
+    except LedgerError as exc:
+        # A cursor the client invented is a client error, not a 500. Any other
+        # failure propagates: a ledger that is genuinely unhappy must not be
+        # dressed up as a user mistake.
+        return (400, {"ok": False, "error": str(exc), "code": "bad_cursor"})
+
+
+def seller_disputes(seller_user_id: Any, *, status: Optional[str] = "open",
+                    limit: int = 50):
+    if not _enabled():
+        return _dark()
+    try:
+        return (200, {"ok": True,
+                      "disputes": mkmoney.seller_disputes(
+                          seller_user_id, status=status, limit=limit)})
+    except MarketplaceError as exc:
+        return _err(exc)
 
 
 # --- governed assistant -----------------------------------------------------

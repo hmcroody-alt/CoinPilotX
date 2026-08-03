@@ -273,6 +273,22 @@ def get_funding(owner_user_id: Any, campaign_id: str):
     return (200, {"ok": True, "funding": view})
 
 
+def get_wallet(owner_user_id: Any, *, currency: str = "usd"):
+    """The caller's own ad wallet: spendable ledger balance + reserved total.
+
+    This is the single object both the Advertising screen and the Payments
+    screen's ad-wallet card render. Two surfaces computing the same balance two
+    ways is how they end up disagreeing, so neither computes it: they read this.
+    """
+    if not _enabled():
+        return _dark()
+    try:
+        view = adf.wallet_view(owner_user_id, currency)
+    except ad.AdvertisingError as exc:
+        return _err(exc)
+    return (200, {"ok": True, "wallet": view})
+
+
 def set_budget(owner_user_id: Any, campaign_id: str, payload: Any = None, *,
                context: Optional[dict] = None):
     """Configure/update an owned campaign's total budget before funding."""

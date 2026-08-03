@@ -18403,6 +18403,31 @@ def api_business_os_advertising_get_funding(campaign_id):
     return _bo_ad_reply(_adapi.get_funding(user.get("user_id"), campaign_id))
 
 
+# The Business OS advertising wallet: the ledger balance of `advertiser:<uid>:wallet`
+# plus the total currently reserved in campaign escrow, summed server-side.
+#
+# Read §5 of docs/business_os/PAYMENTS_MONEY_SOURCE_MAP.md before wiring a screen
+# to this. There are two advertiser wallets in this codebase and they are separate
+# systems, not two views of one. The Advertising screen renders the *Pulse Ads*
+# wallet (/api/pulse/ads/accounts/<id>/wallet), and so must the Payments money
+# hub's ad-wallet card — divergence between those two screens is a bug. This
+# endpoint is the single owner of the ledger balance and the account-name scheme
+# for this vertical's own surfaces; it is not the money hub's source.
+#
+# The wallet owner is the session user — there is no advertiser id in the request
+# to swap, so there is nothing here to enumerate.
+@webhook_app.route("/api/business-os/advertising/wallet", methods=["GET"])
+def api_business_os_advertising_get_wallet():
+    if not _business_os_advertising_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.advertising import api as _adapi
+    currency = (request.args.get("currency") or "usd").strip().lower()
+    return _bo_ad_reply(_adapi.get_wallet(user.get("user_id"), currency=currency))
+
+
 @webhook_app.route("/api/business-os/advertising/campaigns/<campaign_id>/budget", methods=["POST"])
 def api_business_os_advertising_set_budget(campaign_id):
     if not _business_os_advertising_enabled():
@@ -20953,6 +20978,58 @@ def api_business_os_marketplace_payouts():
         return denied
     from services.business_os.marketplace import api as _mktapi
     return _bo_ad_reply(_mktapi.seller_payout_balance(user.get("user_id")))
+
+
+# --- seller money read surface ---------------------------------------------
+# Three GETs, all read-only, all scoped to the authenticated caller. The seller
+# id is never taken from the request: it comes from the session user, so there
+# is no parameter to tamper with in order to read somebody else's money.
+@webhook_app.route("/api/business-os/marketplace/money", methods=["GET"])
+def api_business_os_marketplace_money():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    currency = (request.args.get("currency") or "usd").strip().lower()
+    return _bo_ad_reply(_mktapi.seller_money_overview(
+        user.get("user_id"), currency=currency))
+
+
+@webhook_app.route("/api/business-os/marketplace/money/activity", methods=["GET"])
+def api_business_os_marketplace_money_activity():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    currency = (request.args.get("currency") or "usd").strip().lower()
+    cursor = (request.args.get("cursor") or "").strip() or None
+    try:
+        limit = int(request.args.get("limit") or 25)
+    except (TypeError, ValueError):
+        limit = 25
+    types = [t for t in (request.args.get("types") or "").split(",") if t.strip()]
+    return _bo_ad_reply(_mktapi.seller_activity(
+        user.get("user_id"), currency=currency, limit=limit, cursor=cursor,
+        entry_types=types or None))
+
+
+@webhook_app.route("/api/business-os/marketplace/money/disputes", methods=["GET"])
+def api_business_os_marketplace_money_disputes():
+    if not _business_os_marketplace_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.marketplace import api as _mktapi
+    raw = (request.args.get("status") or "open").strip().lower()
+    # "all" is spelled explicitly rather than by omitting the parameter, so a
+    # dropped query string cannot silently widen the result set.
+    status = None if raw == "all" else raw
+    return _bo_ad_reply(_mktapi.seller_disputes(user.get("user_id"), status=status))
 
 
 @webhook_app.route("/api/business-os/marketplace/appeals", methods=["POST"])

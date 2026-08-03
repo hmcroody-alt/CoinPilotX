@@ -580,6 +580,91 @@ def release_funds(campaign_id: str, *, requester_user_id: Any,
     return get_funding_view(campaign_id, requester_user_id=requester_user_id)
 
 
+# --- the advertiser wallet, as one shared object ----------------------------
+def wallet_account(user_id: Any) -> str:
+    """The public name of an advertiser's wallet account.
+
+    Exported because more than one screen renders this balance, and the account
+    naming scheme must have exactly one owner. A second surface that built the
+    string ``f"advertiser:{uid}:wallet"`` for itself would be correct right up
+    until this module changed the scheme, at which point the two screens would
+    disagree about a balance while both looked authoritative.
+    """
+    return _wallet_account(user_id)
+
+
+def wallet_view(user_id: Any, currency: str = "usd", *, conn=None) -> dict:
+    """The advertiser's spendable ad wallet: one ledger balance, plus the truth
+    about how money gets into it.
+
+    ``balance_cents`` is a real ledger balance — not a sum of campaign budgets,
+    not budget minus spend. Reserving a campaign's budget moves cents out of this
+    account into ``ad_campaign_escrow:<campaign_id>``, so the wallet balance is
+    already net of every live reservation and nothing needs to be subtracted from
+    it afterwards.
+
+    ``reserved_cents`` is the total currently sitting in that campaign escrow —
+    reported separately because it is the advertiser's money but is not
+    spendable. It is summed here, server-side, from ledger balances.
+
+    **Top-up does not exist in this environment, and this function says so
+    rather than leaving a caller to discover it.** Every posting that touches a
+    wallet account in this codebase moves cents between the wallet and a campaign
+    escrow; nothing credits the wallet from an external funding source. The
+    wallet is also overdraft-guarded. So an advertiser who has never had cents
+    posted in by some other means has a wallet balance of exactly zero and no
+    in-product way to change that. ``funding_source`` reports this as
+    ``"none_in_product"`` and ``auto_topup`` as ``"unsupported"`` so a client
+    ships the top-up affordance absent instead of rendering a button that cannot
+    work. Building that path is a payment-path decision, not a rendering one.
+    """
+    _svc._require_enabled()
+    cur_code = str(currency or "usd").strip().lower()
+    owned = conn is None
+    if owned:
+        conn = db.connect()
+    try:
+        account = _wallet_account(user_id)
+        balance = _ledger.get_balance(account, cur_code, conn=conn)
+
+        # Reserved = what this advertiser's campaigns are holding in escrow.
+        # Scoped by campaign ownership, so one advertiser can never see another's
+        # reservation folded into their own figure.
+        rows = conn.execute(
+            "SELECT c.campaign_id FROM business_os_ad_campaigns c "
+            "WHERE c.advertiser_user_id = ?",
+            (_svc._sid(user_id),)).fetchall()
+        reserved = 0
+        escrow_accounts = []
+        for r in rows:
+            cid = (_svc._row_to_dict(r) or {}).get("campaign_id")
+            if not cid:
+                continue
+            acct = _escrow_account(cid)
+            held = _ledger.get_balance(acct, cur_code, conn=conn)
+            if held > 0:
+                reserved += held
+                escrow_accounts.append(acct)
+
+        return {
+            "advertiser_user_id": _svc._sid(user_id),
+            "currency": cur_code,
+            "account": account,
+            # Spendable now. Already net of reservations.
+            "balance_cents": balance,
+            # Advertiser's money, currently committed to campaigns.
+            "reserved_cents": reserved,
+            "reserved_campaign_count": len(escrow_accounts),
+            "accounts": {"wallet": account, "campaign_escrow": escrow_accounts},
+            # Stated, not omitted — see the docstring.
+            "funding_source": "none_in_product",
+            "auto_topup": "unsupported",
+        }
+    finally:
+        if owned:
+            conn.close()
+
+
 # --- admin visibility (trusted callers; RBAC enforced at the route) ---------
 def admin_get_funding(campaign_id: str, *, conn=None) -> dict:
     """Admin funding view: state + ledger references + escrow balance + the full
