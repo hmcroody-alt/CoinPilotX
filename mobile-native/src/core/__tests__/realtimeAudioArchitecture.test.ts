@@ -206,6 +206,16 @@ describe("real-time audio protected boundary", () => {
     );
   });
 
+  it("keeps calls and Live on the shared call-grade publisher sequence", () => {
+    ["mobile-native/src/calls/useNativeCallRoom.ts", "mobile-native/src/live/useLiveBroadcastRoom.ts"].forEach(
+      (rel) => {
+        const text = fs.readFileSync(path.join(REPO_ROOT, rel), "utf8");
+        expect(text).toContain('from "../core/realtimePublisherMedia"');
+        expect(text).toContain("initializeCallGradePublisherMedia({");
+      }
+    );
+  });
+
   it("pins every audio-critical dependency to a version the baseline verified", () => {
     const pkg = JSON.parse(
       fs.readFileSync(path.join(REPO_ROOT, "mobile-native", "package.json"), "utf8")

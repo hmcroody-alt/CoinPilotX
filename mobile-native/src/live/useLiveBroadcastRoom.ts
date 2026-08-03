@@ -7,7 +7,6 @@ import {
   audioPublications,
   enableRealtimeRecordingAlwaysPrepared,
   ensureMicrophonePublished,
-  recoverRealtimeRecordingEngine,
   PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
   PULSE_LIVE_VIDEO_PUBLISH_OPTIONS,
   publicationHasTrack,
@@ -27,6 +26,7 @@ import {
 import { setRealtimeMicrophoneEnabled } from "../core/realtimeMicrophonePublisher";
 import { RealtimeAudioStateMachine } from "../core/realtimeAudioStateMachine";
 import { createRealtimeAudioCorrelationId } from "../core/realtimeAudioTelemetry";
+import { initializeCallGradePublisherMedia } from "../core/realtimePublisherMedia";
 import { describeMediaQualityFlags, parseMediaQualityFlags } from "../core/mediaQualityFlags";
 import {
   buildRoomQualityOptions,
@@ -327,17 +327,6 @@ export async function initializeLivePublisherMedia(options: {
   publishMicrophone: () => Promise<number>;
   enableCamera: () => Promise<void>;
   stabilizeAudio: () => Promise<number>;
-  wait?: (milliseconds: number) => Promise<void>;
-  /**
-   * Bounded retry budget for the post-camera engine guard. Camera startup can
-   * stop iOS RemoteIO *asynchronously*, after `stabilizeAudio`'s own settle
-   * window has closed, so a single guard pass can still observe (and fail on) an
-   * engine the SDK is about to restart. A temporary post-camera engine stop is a
-   * recoverable audio interruption, not a terminal failure: reassert the
-   * microphone and re-run the guard before failing the whole broadcast closed.
-   */
-  stabilizeAttempts?: number;
-  stabilizeRetryWaitMs?: number;
   /**
    * Read-only observation of the native audio engine at labelled points in the
    * startup sequence. Must NOT reconfigure the session or restart the engine -
@@ -345,64 +334,35 @@ export async function initializeLivePublisherMedia(options: {
    * device logs without perturbing the running media pipeline.
    */
   probeAudio?: (phase: "after_microphone" | "after_camera") => Promise<void> | void;
-  /**
-   * Legacy-path recovery for the camera-start audio interruption. Starting the
-   * camera fires an AVAudioSession interruption that stops the native WebRTC
-   * record engine, and iOS never delivers an interruption-ended event while the
-   * camera holds the session - so the recorder must be restarted proactively.
-   * Unlike `stabilizeAudio` (V2), this must NOT reconfigure the shared audio
-   * session and must NOT throw: it restarts the torn-down recorder in place so
-   * the legacy host is heard, without perturbing the running video pipeline.
-   */
-  recoverRecordingEngine?: () => Promise<void>;
   trace?: (event: "microphone_track_create_started" | "microphone_track_created" | "microphone_publish_started" | "microphone_published" | "camera_initialization_started" | "camera_initialized" | "live_audio_active_verification_started" | "live_audio_active_verification_passed" | "live_audio_active_verification_retrying" | "live_audio_active_verification_failed") => void;
 }): Promise<number> {
-  const wait = options.wait || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
-  options.trace?.("microphone_track_create_started");
-  options.trace?.("microphone_publish_started");
-  let audioTrackCount = await options.publishMicrophone();
-  options.trace?.("microphone_track_created");
-  options.trace?.("microphone_published");
-  await options.probeAudio?.("after_microphone");
-  options.trace?.("camera_initialization_started");
-  await options.enableCamera();
-  options.trace?.("camera_initialized");
-  audioTrackCount = await options.publishMicrophone();
-  await options.probeAudio?.("after_camera");
-  if (options.useV2) {
-    const maxAttempts = Math.max(1, Math.floor(options.stabilizeAttempts ?? 3));
-    const retryWaitMs = Math.max(0, options.stabilizeRetryWaitMs ?? 250);
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      options.trace?.("live_audio_active_verification_started");
-      try {
-        audioTrackCount = Math.max(audioTrackCount, await options.stabilizeAudio());
-        options.trace?.("live_audio_active_verification_passed");
-        return audioTrackCount;
-      } catch (error) {
-        if (attempt >= maxAttempts) {
-          options.trace?.("live_audio_active_verification_failed");
-          throw error;
-        }
-        options.trace?.("live_audio_active_verification_retrying");
-        // Reassert the microphone the camera transition may have torn, then let
-        // the async RemoteIO teardown settle before the next guard pass. The V2
-        // publisher reconciles duplicates, so this reassert is idempotent.
-        audioTrackCount = Math.max(audioTrackCount, await options.publishMicrophone().catch(() => audioTrackCount));
-        await wait(retryWaitMs);
+  try {
+    return await initializeCallGradePublisherMedia({
+      video: true,
+      publishMicrophone: options.publishMicrophone,
+      enableCamera: options.enableCamera,
+      reassertMicrophone: options.publishMicrophone,
+      stabilizeAfterCamera: async () => { await options.stabilizeAudio(); },
+      onPhase: async (phase) => {
+        if (phase === "microphone_publishing") {
+          options.trace?.("microphone_track_create_started");
+          options.trace?.("microphone_publish_started");
+        } else if (phase === "microphone_published") {
+          options.trace?.("microphone_track_created");
+          options.trace?.("microphone_published");
+          await options.probeAudio?.("after_microphone");
+        } else if (phase === "camera_publishing") options.trace?.("camera_initialization_started");
+        else if (phase === "camera_published") {
+          options.trace?.("camera_initialized");
+          await options.probeAudio?.("after_camera");
+        } else if (phase === "audio_stabilizing") options.trace?.("live_audio_active_verification_started");
+        else if (phase === "audio_stabilized") options.trace?.("live_audio_active_verification_passed");
       }
-    }
-  } else {
-    // Legacy publisher path does NOT reconfigure the shared AVAudioSession
-    // mid-broadcast: reasserting the Apple audio configuration here was observed
-    // to disrupt the running WebRTC video pipeline (degraded quality / slow
-    // reload / capture-session restart). But settling alone left the host
-    // silent, because the camera-start interruption tears the native recorder
-    // down and iOS never signals that it ended. Restart the recorder in place -
-    // no session reconfiguration - so the legacy host is actually heard.
-    await wait(150);
-    await options.recoverRecordingEngine?.();
+    });
+  } catch (error) {
+    options.trace?.("live_audio_active_verification_failed");
+    throw error;
   }
-  return audioTrackCount;
 }
 
 export type LiveConnectOptions = {
@@ -1364,11 +1324,14 @@ export function useLiveBroadcastRoom() {
                 qualityPlan.videoPublishDefaults || PULSE_LIVE_VIDEO_PUBLISH_OPTIONS
               );
             },
-            stabilizeAudio: async () => (await stabilizeLivePublisherAudio(
-              room,
-              livekitNative.AudioDeviceModule,
-              livekitNative.AudioSession,
-              {
+            // Use the same post-camera engine stabilization as working video
+            // calls. The shared audio session was already configured and
+            // activated before Room.connect; do not introduce a Live-only
+            // category reset or recorder recovery branch here.
+            stabilizeAudio: async () => {
+              await stabilizeRealtimeAudioEngine(livekitNative.AudioDeviceModule, {
+                playout: true,
+                recording: true,
                 settleMs: 650,
                 context: {
                   sessionId: roomNameRef.current,
@@ -1376,25 +1339,8 @@ export function useLiveBroadcastRoom() {
                   roomType: "livestream",
                   participantRole: telemetryRole
                 }
-              }
-            )).audioTrackCount,
-            // Legacy-path recovery: restart the native recorder the camera
-            // interruption tore down, WITHOUT reconfiguring the shared audio
-            // session (that disrupts the running video pipeline). This is what
-            // actually makes the legacy host audible again.
-            recoverRecordingEngine: async () => {
-              await recoverRealtimeRecordingEngine(livekitNative.AudioDeviceModule, {
-                // Plain setActive(true) - re-activates the session the camera
-                // transition left inactive, WITHOUT reasserting the audio
-                // category (which would disrupt the running video pipeline).
-                reactivateSession: async () => { await livekitNative.AudioSession.startAudioSession?.(); },
-                context: {
-                  sessionId: roomNameRef.current,
-                  correlationId: correlationIdRef.current,
-                  roomType: "livestream",
-                  participantRole: telemetryRole
-                }
               });
+              return audioPublications(room.localParticipant).filter(publicationHasTrack).length;
             },
             // Read-only engine probe. Surfaces the native record/playout state
             // around the camera transition at error level (visible in Release

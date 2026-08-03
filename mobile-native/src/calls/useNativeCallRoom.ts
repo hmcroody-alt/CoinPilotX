@@ -23,6 +23,7 @@ import {
 } from "../core/realtimeMicrophonePublisher";
 import { RealtimeAudioStateMachine } from "../core/realtimeAudioStateMachine";
 import { createRealtimeAudioCorrelationId, emitRealtimeAudioEvent } from "../core/realtimeAudioTelemetry";
+import { initializeCallGradePublisherMedia } from "../core/realtimePublisherMedia";
 import { parseMediaQualityFlags } from "../core/mediaQualityFlags";
 import {
   buildRoomQualityOptions,
@@ -109,32 +110,24 @@ export async function initializeCallLocalMedia(
     quality?: MediaQualityPlan | null;
   }
 ): Promise<number> {
-  let audioTrackCount = await ensureCallMicrophonePublished(room, {
-    useV2: options.useV2,
-    fallbackEnabled: options.fallbackEnabled,
-    context: options.context
-  });
-  // Audio first, always. The camera is only ever enabled once the microphone is
-  // confirmed published, and a camera failure below cannot unpublish it.
-  if (audioTrackCount <= 0 || !options.video) return audioTrackCount;
-  emitRealtimeAudioEvent({ name: "camera_publish_started", ...options.context });
-  const capture = options.quality?.videoCaptureDefaults;
-  const publish = options.quality?.videoPublishDefaults;
-  if (capture && publish) {
-    await room.localParticipant.setCameraEnabled(true, capture, publish);
-  } else {
-    await room.localParticipant.setCameraEnabled(true);
-  }
-  emitRealtimeAudioEvent({ name: "camera_published", ...options.context, outcome: "published" });
-  audioTrackCount = await reassertRealtimeMicrophone(room, options.context);
-  if (audioTrackCount <= 0) {
-    audioTrackCount = await ensureCallMicrophonePublished(room, {
+  const publishMicrophone = () => ensureCallMicrophonePublished(room, {
       useV2: options.useV2,
       fallbackEnabled: options.fallbackEnabled,
       context: options.context
     });
-  }
-  return audioTrackCount;
+  return initializeCallGradePublisherMedia({
+    video: options.video,
+    publishMicrophone,
+    enableCamera: async () => {
+      emitRealtimeAudioEvent({ name: "camera_publish_started", ...options.context });
+      const capture = options.quality?.videoCaptureDefaults;
+      const publish = options.quality?.videoPublishDefaults;
+      if (capture && publish) await room.localParticipant.setCameraEnabled(true, capture, publish);
+      else await room.localParticipant.setCameraEnabled(true);
+      emitRealtimeAudioEvent({ name: "camera_published", ...options.context, outcome: "published" });
+    },
+    reassertMicrophone: () => reassertRealtimeMicrophone(room, options.context)
+  });
 }
 
 function readableError(error: unknown, fallback: string) {

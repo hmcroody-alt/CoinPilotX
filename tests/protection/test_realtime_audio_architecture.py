@@ -149,6 +149,19 @@ class ImportBoundaryTests(unittest.TestCase):
 
 
 class LeaseDisciplineTests(unittest.TestCase):
+    def test_calls_and_live_share_the_call_grade_publisher_coordinator(self) -> None:
+        for rel in (
+            "mobile-native/src/calls/useNativeCallRoom.ts",
+            "mobile-native/src/live/useLiveBroadcastRoom.ts",
+        ):
+            text = (ROOT / rel).read_text(encoding="utf-8")
+            self.assertIn(
+                'from "../core/realtimePublisherMedia"',
+                text,
+                f"{rel} no longer uses the shared call-grade publisher sequence",
+            )
+            self.assertIn("initializeCallGradePublisherMedia({", text)
+
     def test_both_room_adapters_release_audio_by_lease_not_by_owner_name(self) -> None:
         discipline = MANIFEST["required_lease_discipline"]
         for rel in discipline["files"]:

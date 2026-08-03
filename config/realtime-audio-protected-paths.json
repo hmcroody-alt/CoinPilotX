@@ -29,7 +29,10 @@
       "id": "shared_audio_session_coordinator",
       "title": "Shared audio-session coordinator",
       "why": "The device has exactly one AVAudioSession. This module is the only thing allowed to configure, activate, or deactivate it for real-time audio. Every other rule in this manifest exists to keep that true.",
-      "paths": ["mobile-native/src/core/realtimeAudioEngine.ts"]
+      "paths": [
+        "mobile-native/src/core/realtimeAudioEngine.ts",
+        "mobile-native/src/core/realtimePublisherMedia.ts"
+      ]
     },
     {
       "id": "audio_ownership_controller",

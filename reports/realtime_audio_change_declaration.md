@@ -13,6 +13,8 @@ A subsequent physical screenshot proved the first recovery was incomplete: it ga
 
 The permanent correction is an authoritative module-scoped Live runtime: stable session identity, explicit state transitions, event-derived readiness, idempotent commands, resource retention across UI remounts, and generation-scoped cleanup. This replaces screen navigation as an implicit lifecycle owner.
 
+The remaining publisher divergence is removed by extracting the working video-call media order into `realtimePublisherMedia.ts`. Calls and Live now share one microphone-first coordinator: publish microphone, start camera, reassert microphone, then run the same post-camera native engine stabilization. Live retains its authorized role, portrait capture settings, and runtime state, but no longer owns a separate legacy/V2 AVAudioSession recovery sequence.
+
 ## Which feature required it
 
 Emergency Live host/co-host audio recovery. No Marketplace, Advertising, Premium, Crypto, feed, or unrelated UI files are included.
@@ -37,23 +39,28 @@ Emergency Live host/co-host audio recovery. No Marketplace, Advertising, Premium
 | `mobile-native/src/screens/LiveScreen.tsx` | livestream adapter consumer | Uses viewer join/leave commands. |
 | `mobile-native/src/components/reels/ReelLiveViewerSurface.tsx` | livestream adapter consumer | Uses viewer join/leave commands. |
 | `mobile-native/package.json` | dependency watch | Adds the Live runtime suite to critical and full audio commands; dependency versions unchanged. |
+| `mobile-native/src/core/realtimePublisherMedia.ts` | shared audio-session coordinator | Defines the call-grade microphone/camera/reassert/stabilize sequence used by both video calls and Live. |
+| `mobile-native/src/calls/useNativeCallRoom.ts` | call lifecycle adapter | Delegates its existing verified media ordering to the shared coordinator without changing call policy or room ownership. |
+| `mobile-native/src/core/__tests__/realtimeAudioArchitecture.test.ts` | critical tests | Enforces that both adapters depend on the shared publisher coordinator. |
 
 ## Expected behavior change
 
-Live publishers remain on both the stable quality profile and stable audio path unless the server explicitly enables `live_publisher_quality_enabled` and `publisher_audio_v2_enabled`, respectively. Audio ownership, microphone publication, routing, cleanup, and the inactive-engine guard are unchanged. When QA tracing is enabled, a failed V2 startup identifies the active generation and initiating module instead of reporting only the terminal guard error.
+Live publishers use the same call-grade media startup order and post-camera engine stabilization as working video calls. Server flags may still select the microphone publication implementation, but they no longer select a separate AVAudioSession recovery lifecycle. Audio ownership, routing, cleanup, Live authorization, portrait video quality, and runtime readiness remain governed by their existing owners.
 
 ## Regression risk
 
-The runtime change is diagnostic around an existing sequence. It resolves the pure quality plan before AVAudioSession activation, but still constructs the Room only after ownership is acquired. Trace sinks remain non-throwing and carry hashed identifiers. Residual risk is physical iOS camera/RemoteIO behavior, which automated tests cannot retire.
+The shared coordinator changes Live startup and touches the call adapter to extract existing behavior. Architecture tests lock both consumers to the same coordinator, and focused call tests verify that audio-only calls never touch the camera. Residual risk is physical iOS camera/RemoteIO behavior, which automated tests cannot retire.
 
 ## Tests run
 
-- Focused Jest: 4 suites / 112 tests passed.
-- Critical audio Jest: 15 suites / 295 tests passed.
-- Python architecture: 15 tests passed.
+- Focused call/Live Jest: 2 suites / 22 tests passed.
+- Critical audio Jest: 16 suites / 317 tests passed.
+- Full audio Jest: 21 suites / 387 tests passed.
+- Python architecture and token policy: 22 tests passed.
 - TypeScript: passed.
 - Change gate: rerun after this declaration.
-- Native build and two-device audible QA: not run.
+- Native iOS Simulator Debug build: `** BUILD SUCCEEDED **`.
+- Two-device audible QA: not run.
 
 ## Physical validation required
 
@@ -61,4 +68,4 @@ Install the corrected build on a physical iPhone; run two consecutive five-minut
 
 ## Rollback procedure
 
-Keep `REALTIME_MEDIA_QUALITY_V2_ENABLED=0` and `live_publisher_quality_enabled=false` server-side. If this recovery must be reverted, revert the three focused recovery commits together and retain `c5e523d6`, which defaults Live publishers to stable. Confirm rollback on two physical devices before rollout.
+Keep `REALTIME_MEDIA_QUALITY_V2_ENABLED=0` and `live_publisher_quality_enabled=false` server-side. If the shared call-grade branch must be rolled back, revert its focused commit; the previous Live-specific recovery paths remain in history. Confirm rollback on two physical devices before rollout.

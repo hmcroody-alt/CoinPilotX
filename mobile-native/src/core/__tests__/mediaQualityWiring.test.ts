@@ -28,6 +28,7 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..", "..");
 const NATIVE_SRC = path.join(REPO_ROOT, "mobile-native", "src");
 const CALL_ADAPTER = path.join(NATIVE_SRC, "calls", "useNativeCallRoom.ts");
 const LIVE_ADAPTER = path.join(NATIVE_SRC, "live", "useLiveBroadcastRoom.ts");
+const PUBLISHER_MEDIA = path.join(NATIVE_SRC, "core", "realtimePublisherMedia.ts");
 
 /**
  * Source with comments removed.
@@ -307,14 +308,12 @@ describe("the wiring did not disturb the audio foundation", () => {
   });
 
   it("still enables the camera only after audio is confirmed", () => {
-    // initializeCallLocalMedia returns early on audioTrackCount <= 0, before it
-    // reaches the camera. The ordering is the guarantee, not the comment.
-    const body = callSource.slice(
-      callSource.indexOf("export async function initializeCallLocalMedia"),
-      callSource.indexOf("function readableError")
-    );
+    // The shared call-grade coordinator returns early on audioTrackCount <= 0,
+    // before it reaches the camera. Both adapters are locked to this owner by
+    // realtimeAudioArchitecture.test.ts.
+    const body = read(PUBLISHER_MEDIA);
     const guard = body.indexOf("if (audioTrackCount <= 0 || !options.video) return audioTrackCount;");
-    const camera = body.indexOf("setCameraEnabled");
+    const camera = body.indexOf("await options.enableCamera()");
     expect(guard).toBeGreaterThan(-1);
     expect(guard).toBeLessThan(camera);
   });

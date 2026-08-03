@@ -167,13 +167,12 @@ describe("post-camera Live audio stabilization", () => {
         events.push("guard");
         return 1;
       },
-      wait: async () => undefined
     });
 
     expect(events).toEqual(["microphone", "camera", "microphone", "guard"]);
   });
 
-  it("keeps the legacy publisher path off the mid-broadcast audio-session guard but recovers the recorder", async () => {
+  it("runs legacy publishers through the same call-grade post-camera stabilizer", async () => {
     const events: string[] = [];
 
     await initializeLivePublisherMedia({
@@ -185,27 +184,16 @@ describe("post-camera Live audio stabilization", () => {
       enableCamera: async () => {
         events.push("camera");
       },
-      // Legacy must NOT run the stabilize guard: reconfiguring the shared
-      // AVAudioSession after camera startup disrupted the live video pipeline
-      // without reviving a natively torn-down recorder.
       stabilizeAudio: async () => {
         events.push("guard");
         return 1;
-      },
-      // Legacy MUST proactively restart the recorder the camera interruption
-      // tore down (without reconfiguring the session) so the host is audible.
-      recoverRecordingEngine: async () => {
-        events.push("recover");
-      },
-      wait: async () => undefined
+      }
     });
 
-    // No mid-broadcast session guard; recovery runs after the post-camera
-    // microphone republish.
-    expect(events).toEqual(["microphone", "camera", "microphone", "recover"]);
+    expect(events).toEqual(["microphone", "camera", "microphone", "guard"]);
   });
 
-  it("fails closed only after the bounded post-camera guard retries are exhausted", async () => {
+  it("uses the video-call single stabilization boundary", async () => {
     const events: string[] = [];
     let guardAttempts = 0;
     await expect(initializeLivePublisherMedia({
@@ -216,11 +204,9 @@ describe("post-camera Live audio stabilization", () => {
         guardAttempts += 1;
         throw new Error("The native real-time audio engine did not remain active.");
       },
-      wait: async () => undefined,
       trace: (event) => events.push(event)
     })).rejects.toThrow("did not remain active");
-    // A permanently dead engine is retried the full budget, then fails closed.
-    expect(guardAttempts).toBe(3);
+    expect(guardAttempts).toBe(1);
     expect(events).toEqual([
       "microphone_track_create_started",
       "microphone_publish_started",
@@ -228,67 +214,9 @@ describe("post-camera Live audio stabilization", () => {
       "microphone_published",
       "camera_initialization_started",
       "camera_initialized",
-      "live_audio_active_verification_started",
-      "live_audio_active_verification_retrying",
-      "live_audio_active_verification_started",
-      "live_audio_active_verification_retrying",
       "live_audio_active_verification_started",
       "live_audio_active_verification_failed"
     ]);
   });
 
-  it("recovers when a transient post-camera engine stop clears on a later guard pass", async () => {
-    const events: string[] = [];
-    let guardAttempts = 0;
-    let microphonePublishes = 0;
-    const audioTrackCount = await initializeLivePublisherMedia({
-      useV2: true,
-      publishMicrophone: async () => {
-        microphonePublishes += 1;
-        return 1;
-      },
-      enableCamera: async () => undefined,
-      stabilizeAudio: async () => {
-        guardAttempts += 1;
-        // The camera stops RemoteIO asynchronously; the SDK restarts it, so the
-        // second guard pass observes a healthy engine.
-        if (guardAttempts < 2) throw new Error("The native real-time audio engine did not remain active.");
-        return 1;
-      },
-      wait: async () => undefined,
-      trace: (event) => events.push(event)
-    });
-    expect(audioTrackCount).toBe(1);
-    expect(guardAttempts).toBe(2);
-    // Two startup publishes (pre + post camera) plus one reassert before the retry.
-    expect(microphonePublishes).toBe(3);
-    expect(events).toEqual([
-      "microphone_track_create_started",
-      "microphone_publish_started",
-      "microphone_track_created",
-      "microphone_published",
-      "camera_initialization_started",
-      "camera_initialized",
-      "live_audio_active_verification_started",
-      "live_audio_active_verification_retrying",
-      "live_audio_active_verification_started",
-      "live_audio_active_verification_passed"
-    ]);
-  });
-
-  it("honours an explicit single-attempt guard budget (no retries)", async () => {
-    let guardAttempts = 0;
-    await expect(initializeLivePublisherMedia({
-      useV2: true,
-      publishMicrophone: async () => 1,
-      enableCamera: async () => undefined,
-      stabilizeAudio: async () => {
-        guardAttempts += 1;
-        throw new Error("The native real-time audio engine did not remain active.");
-      },
-      stabilizeAttempts: 1,
-      wait: async () => undefined
-    })).rejects.toThrow("did not remain active");
-    expect(guardAttempts).toBe(1);
-  });
 });
