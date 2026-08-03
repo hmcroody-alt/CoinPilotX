@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, Animated, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { deletePost, listFeed, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
 import { describeDeleteError } from "../api/deleteErrors";
 import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
@@ -13,6 +13,7 @@ import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/P
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { invalidateNativeSync } from "../core/eventSync";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
+import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { RootStackParamList } from "../navigation/types";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { colors } from "../theme/colors";
@@ -23,6 +24,7 @@ type TabKey = "posts" | "media" | "about";
 
 export function ProfileScreen({ route, navigation }: Props) {
   const dock = useBottomNavSurface();
+  const listRef = useRef<FlatList<PulsePost>>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const onScroll = useMemo(
     () => Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true, listener: dock.handlers.onScroll }),
@@ -45,6 +47,7 @@ export function ProfileScreen({ route, navigation }: Props) {
   const [errorState, setErrorState] = useState<ReturnType<typeof profileErrorState> | null>(null);
   const [actionMessage, setActionMessage] = useState("");
   const [followBusy, setFollowBusy] = useState(false);
+  const refreshingRef = useRef(false);
   // Replaces a `busyPostId` scalar. A scalar can mark at most one card, so acting
   // on one post greyed out every other card's buttons, and the handlers guarded
   // themselves by reading state that React had not committed yet. The guard locks
@@ -57,7 +60,11 @@ export function ProfileScreen({ route, navigation }: Props) {
     setErrorState(null);
     setOffline(false);
     if (mode === "initial") setLoading(true);
-    if (mode === "refresh") setRefreshing(true);
+    if (mode === "refresh") {
+      if (refreshingRef.current) return;
+      refreshingRef.current = true;
+      setRefreshing(true);
+    }
     try {
       if (owner) {
         const me = await getMyProfile();
@@ -85,12 +92,25 @@ export function ProfileScreen({ route, navigation }: Props) {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      if (mode === "refresh") refreshingRef.current = false;
     }
   }
 
   useEffect(() => {
     load("initial").catch(() => undefined);
   }, [profileKey]);
+
+  useEffect(() => {
+    if (!owner) return undefined;
+    return registerRefreshDestination("profile", {
+      scrollToTop: () => listRef.current?.scrollToOffset({ offset: 0, animated: true }),
+      refresh: async () => {
+        await load("refresh");
+        AccessibilityInfo.announceForAccessibility?.("Profile refreshed");
+      },
+      isRefreshing: () => refreshingRef.current
+    });
+  }, [owner, profileKey]);
 
   async function followProfile() {
     if (!profile || owner || followBusy) return;
@@ -304,6 +324,7 @@ export function ProfileScreen({ route, navigation }: Props) {
 
   return (
     <Animated.FlatList
+      ref={listRef}
       style={styles.list}
       contentContainerStyle={[styles.content, dock.contentPadding]}
       data={tab === "about" ? [] : visiblePosts}

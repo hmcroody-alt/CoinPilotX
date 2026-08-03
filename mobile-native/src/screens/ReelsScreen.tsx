@@ -58,7 +58,7 @@ import { ContentTranslation } from "../components/ContentTranslation";
 import { classifyReelMedia } from "../reels/reelMediaKind";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
-import { registerReelsReselectHandler } from "../navigation/reelsReselect";
+import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { RootStackParamList } from "../navigation/types";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { peekSaveState } from "../social/savedStore";
@@ -204,31 +204,35 @@ export function ReelsScreen({ route, navigation }: Props) {
     if (commentReel) refreshComments(commentReel).catch(() => undefined);
   }), [lane, initialReelId, commentReel?.id]);
 
-  // Double-tapping the Reels bottom-tab while Reels is already the active route
-  // scrolls the feed back to the top and refreshes the CURRENTLY-selected lane
-  // (For You / Following / Trending / Music / Live) — it never forces the lane
-  // back to "For You". Momentum is cancelled by the scrollToOffset, the keyboard
-  // and any non-critical overlays (comments / reactions / music / more / share)
-  // are dismissed, and playback resumes on the new top item via activeIndex 0.
-  // A single re-tap is a no-op; only the double-tap reaches this handler.
-  useEffect(() => registerReelsReselectHandler(async () => {
-    listRef.current?.scrollToOffset({ offset: 0, animated: true });
-    Keyboard.dismiss();
-    setCommentReel(null);
-    setReactionReel(null);
-    setMusicReel(null);
-    setMoreReel(null);
-    setShareOpen(false);
-    setActiveIndex(0);
-    if (reselectingRef.current) return;
-    reselectingRef.current = true;
-    try {
-      await load("refresh");
-      AccessibilityInfo.announceForAccessibility?.("Reels refreshed");
-    } finally {
-      reselectingRef.current = false;
-    }
-  }), [lane, initialReelId]);
+  // Governed bottom-tab refresh: the first active Reels tap returns the current
+  // lane to its first visible item, while a second tap inside the shared window
+  // refreshes that same lane. It does not reset For You/Following/Live.
+  useEffect(() => {
+    if (route.name !== "Reels") return undefined;
+    return registerRefreshDestination("reels", {
+      scrollToTop: () => {
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+        Keyboard.dismiss();
+        setCommentReel(null);
+        setReactionReel(null);
+        setMusicReel(null);
+        setMoreReel(null);
+        setShareOpen(false);
+        setActiveIndex(0);
+      },
+      refresh: async () => {
+        if (reselectingRef.current) return;
+        reselectingRef.current = true;
+        try {
+          await load("refresh");
+          AccessibilityInfo.announceForAccessibility?.("Reels refreshed");
+        } finally {
+          reselectingRef.current = false;
+        }
+      },
+      isRefreshing: () => reselectingRef.current || refreshing
+    });
+  }, [initialReelId, lane, load, refreshing, route.name]);
 
   useEffect(() => {
     configureReelsAudioSession().catch(() => undefined);

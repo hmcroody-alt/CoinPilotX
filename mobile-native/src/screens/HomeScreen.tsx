@@ -40,7 +40,7 @@ import { BOTTOM_NAV_CONTENT_CLEARANCE, useBottomNavScrollVisibility } from "../n
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlobalNavigationBadges, GlobalNavigationIdentity, LogiNexusGlobalHeader } from "../navigation/GlobalNavigation";
 import { openDashboardRoute } from "../navigation/dashboardRouting";
-import { registerHomeReselectHandler } from "../navigation/homeReselect";
+import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { AppTabParamList, RootStackParamList } from "../navigation/types";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
@@ -298,14 +298,16 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     };
   }, [load]);
 
-  useEffect(() => registerHomeReselectHandler(async () => {
-    listRef.current?.scrollToOffset({ offset: 0, animated: true });
-    loadStatuses().catch(() => undefined);
-    if (!refreshingRef.current) {
+  useEffect(() => registerRefreshDestination("home", {
+    scrollToTop: () => listRef.current?.scrollToOffset({ offset: 0, animated: true }),
+    refresh: async () => {
+      loadStatuses().catch(() => undefined);
       await load("refresh");
       AccessibilityInfo.announceForAccessibility?.("Home refreshed");
-    }
-  }), [load, loadStatuses]);
+    },
+    isRefreshing: () => refreshingRef.current,
+    canRefresh: () => isAuthenticated
+  }), [isAuthenticated, load, loadStatuses]);
 
   const updatePost = useCallback((postId: number, next: Partial<PulsePost>) => {
     setPosts((current) => current.map((post) => (post.id === postId ? { ...post, ...next } : post)));

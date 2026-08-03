@@ -21,8 +21,13 @@ import {
   BOTTOM_NAV_DOCK_PANEL_PADDING
 } from "./bottomNavMetrics";
 import { resolveBottomNavPolicy } from "./bottomNavPolicy";
-import { triggerHomeReselect } from "./homeReselect";
-import { triggerReelsReselect } from "./reelsReselect";
+import {
+  cancelRefreshTapWindow,
+  RefreshDestination,
+  resolveNavigationTap,
+  scrollRefreshDestinationToTop,
+  triggerRefreshDestination
+} from "./refreshCoordinator";
 import { AppTabParamList } from "./types";
 
 export type GlobalNavigationBadges = {
@@ -57,23 +62,19 @@ type HeaderProps = {
   testID?: string;
 };
 
-// Max gap between two taps on the already-active Reels tab to count as a
-// double-tap. 320ms matches the platform double-tap feel without being so long
-// that two deliberate single taps are misread as one gesture.
-const REELS_DOUBLE_TAP_MS = 320;
-
 const PRIMARY_TABS: Array<{
   name: keyof AppTabParamList;
   label: string;
   routeName: keyof AppTabParamList;
   icon: keyof typeof Ionicons.glyphMap;
   accessibilityLabel: string;
+  refreshDestination: RefreshDestination | null;
 }> = [
-  { name: "Home", routeName: "Home", label: "Home", icon: "home-outline", accessibilityLabel: "Open Home" },
-  { name: "Reels", routeName: "Reels", label: "Reels", icon: "play-circle-outline", accessibilityLabel: "Open Reels" },
-  { name: "Create", routeName: "Create", label: "Create", icon: "add", accessibilityLabel: "Open Create" },
-  { name: "Messenger", routeName: "Messenger", label: "Messages", icon: "chatbubble-ellipses-outline", accessibilityLabel: "Open Messages" },
-  { name: "Profile", routeName: "Profile", label: "Profile", icon: "person-circle-outline", accessibilityLabel: "Open Profile" }
+  { name: "Home", routeName: "Home", label: "Home", icon: "home-outline", accessibilityLabel: "Open Home", refreshDestination: "home" },
+  { name: "Reels", routeName: "Reels", label: "Reels", icon: "play-circle-outline", accessibilityLabel: "Open Reels", refreshDestination: "reels" },
+  { name: "Create", routeName: "Create", label: "Create", icon: "add", accessibilityLabel: "Open Create", refreshDestination: null },
+  { name: "Messenger", routeName: "Messenger", label: "Messages", icon: "chatbubble-ellipses-outline", accessibilityLabel: "Open Messages", refreshDestination: "social-messages" },
+  { name: "Profile", routeName: "Profile", label: "Profile", icon: "person-circle-outline", accessibilityLabel: "Open Profile", refreshDestination: "profile" }
 ];
 
 export function LogiNexusGlobalHeader({
@@ -206,12 +207,10 @@ export function LogiNexusGlobalHeader({
 export function LogiNexusBottomNavigation({ state, descriptors, navigation, badges }: BottomTabBarProps & { badges?: GlobalNavigationBadges }) {
   const insets = useSafeAreaInsets();
   const activeRoute = state.routes[state.index]?.name as keyof AppTabParamList | undefined;
-  // Timestamp of the last tap on the Reels tab while it was already active, used
-  // to recognise a double-tap (second tap within DOUBLE_TAP_MS) → reselect.
-  const lastReelsTapRef = useRef(0);
   const { hidden: requestedHidden, showBottomNav } = useBottomNavVisibility();
   const hidden = resolveBottomNavPolicy(activeRoute) === "always-visible" ? false : requestedHidden;
   const hiddenProgress = useRef(new Animated.Value(0)).current;
+  const lastCreateTapRef = useRef(0);
   const [shellHeight, setShellHeight] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
 
@@ -230,6 +229,7 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
   }, [hidden, hiddenProgress, reduceMotion]);
 
   useEffect(() => {
+    cancelRefreshTapWindow();
     showBottomNav();
   }, [activeRoute, showBottomNav]);
 
@@ -263,6 +263,7 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
           const badge = item.name === "Messenger" ? normalizeBadgeCount(badges?.messages) : undefined;
           const options = route ? descriptors[route.key]?.options : undefined;
           const disabled = !route && item.name !== "Create";
+          const refreshDestination = item.refreshDestination;
           return (
             <Pressable
               key={item.name}
@@ -275,11 +276,19 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
                   : `${item.accessibilityLabel}, ${badgeSpokenLabel("messages", badge)}`
               }
               accessibilityState={{ selected: active, disabled }}
-              accessibilityActions={item.name === "Reels" && active ? [{ name: "refresh", label: "Refresh Reels" }] : undefined}
+              accessibilityActions={refreshDestination && active ? [{ name: "refresh", label: `Refresh ${item.label}` }] : undefined}
               onAccessibilityAction={
-                item.name === "Reels" && active
+                refreshDestination && active
                   ? (event) => {
-                      if (event.nativeEvent.actionName === "refresh") triggerReelsReselect();
+                      if (event.nativeEvent.actionName === "refresh") {
+                        triggerRefreshDestination({
+                          destination: refreshDestination,
+                          source: "double-tap",
+                          scrollToTop: true,
+                          preserveFilters: true,
+                          preserveDrafts: true
+                        });
+                      }
                     }
                   : undefined
               }
@@ -294,24 +303,24 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
               onPress={() => {
                 Haptics.selectionAsync().catch(() => undefined);
                 if (item.name === "Create") {
+                  const now = Date.now();
+                  if (now - lastCreateTapRef.current <= 600) return;
+                  lastCreateTapRef.current = now;
                   navigation.navigate("Home", { openComposer: true });
                   return;
                 }
-                if (item.name === "Home" && active) {
-                  triggerHomeReselect();
+                const tap = resolveNavigationTap({
+                  active,
+                  destination: item.refreshDestination,
+                  controlId: `bottom:${String(item.name)}`
+                });
+                if (tap.type === "root") {
+                  scrollRefreshDestinationToTop(tap.destination);
                   return;
                 }
-                if (item.name === "Reels" && active) {
-                  // Already on Reels: only a DOUBLE-tap (two taps within the
-                  // window) triggers scroll-to-top + refresh. A lone tap is a
-                  // no-op (we're already here) and simply arms the window.
-                  const now = Date.now();
-                  if (now - lastReelsTapRef.current <= REELS_DOUBLE_TAP_MS) {
-                    lastReelsTapRef.current = 0;
-                    triggerReelsReselect();
-                  } else {
-                    lastReelsTapRef.current = now;
-                  }
+                if (tap.type === "refresh") {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+                  triggerRefreshDestination(tap.intent);
                   return;
                 }
                 const event = route

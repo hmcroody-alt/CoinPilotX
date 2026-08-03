@@ -2,7 +2,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ASSISTANT_PRESENCE,
@@ -18,6 +18,7 @@ import { PulseApiError } from "../api/pulseApi";
 import { PulseCommandAvatar, PulseCommandPanel, PulseCommandSegmentRail } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
+import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
 import {
@@ -54,7 +55,9 @@ export function MessengerScreen() {
   const insets = useSafeAreaInsets();
   const dock = useBottomNavSurface();
   const { authState, requestReauthentication } = useAuth();
+  const listRef = useRef<FlatList<MessengerConversation>>(null);
   const loadSequence = useRef(0);
+  const refreshingRef = useRef(false);
   const [conversations, setConversations] = useState<MessengerConversation[]>([]);
   const qaFilter = String(process.env.EXPO_PUBLIC_PULSESOC_QA_MESSENGER_FILTER || "").toLowerCase();
   const validQaFilter = ["all", "direct", "groups", "rooms", "ai", "unread"].includes(qaFilter)
@@ -71,7 +74,11 @@ export function MessengerScreen() {
 
   async function load({ refresh = false } = {}) {
     const sequence = ++loadSequence.current;
-    if (refresh) setRefreshing(true);
+    if (refresh) {
+      if (refreshingRef.current) return;
+      refreshingRef.current = true;
+      setRefreshing(true);
+    }
     else setLoading(true);
     setError("");
     try {
@@ -92,6 +99,7 @@ export function MessengerScreen() {
       if (sequence === loadSequence.current) {
         setRefreshing(false);
         setLoading(false);
+        if (refresh) refreshingRef.current = false;
       }
     }
   }
@@ -118,6 +126,15 @@ export function MessengerScreen() {
   useEffect(() => {
     AsyncStorage.setItem(FILTER_KEY, selectedFilter).catch(() => undefined);
   }, [selectedFilter]);
+
+  useEffect(() => registerRefreshDestination("social-messages", {
+    scrollToTop: () => listRef.current?.scrollToOffset({ offset: 0, animated: true }),
+    refresh: async () => {
+      await load({ refresh: true });
+      AccessibilityInfo.announceForAccessibility?.("Messages refreshed");
+    },
+    isRefreshing: () => refreshingRef.current
+  }), []);
 
   const unreadTotal = useMemo(() => conversations.reduce((total, item) => total + Number(item.unread_count || 0), 0), [conversations]);
   const conversationsWithUndxAi = useMemo(
@@ -159,6 +176,7 @@ export function MessengerScreen() {
   return (
     <LogiNexusScreenShell>
       <FlatList
+        ref={listRef}
         data={filteredConversations}
         keyExtractor={(item) => `chat-${item.id}`}
         contentContainerStyle={[styles.list, { paddingTop: Math.max(insets.top + 4, 36) }, dock.contentPadding]}
