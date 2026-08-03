@@ -343,6 +343,20 @@ export async function initializeLivePublisherMedia(options: {
       }
     }
   } else {
+    // The camera/audio race is a native iOS reality, not a V2-only concern:
+    // setCameraEnabled reconfigures the shared AVAudioSession and can leave the
+    // WebRTC recorder stopped. Re-enabling the LiveKit track (the republish
+    // above) does not restart a torn-down native recorder, so the legacy path
+    // would otherwise publish a live-but-silent microphone. Restore the record
+    // engine here too, but best-effort: legacy stays fail-open, so this can only
+    // recover audio, never fail a broadcast the verified baseline would allow.
+    options.trace?.("live_audio_active_verification_started");
+    try {
+      audioTrackCount = Math.max(audioTrackCount, await options.stabilizeAudio());
+      options.trace?.("live_audio_active_verification_passed");
+    } catch {
+      options.trace?.("live_audio_active_verification_failed");
+    }
     await wait(150);
   }
   return audioTrackCount;

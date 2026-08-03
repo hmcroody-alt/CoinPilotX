@@ -134,6 +134,46 @@ describe("post-camera Live audio stabilization", () => {
     expect(events).toEqual(["microphone", "camera", "microphone", "guard"]);
   });
 
+  it("still restores the record engine after camera on the legacy publisher path", async () => {
+    const events: string[] = [];
+
+    await initializeLivePublisherMedia({
+      useV2: false,
+      publishMicrophone: async () => {
+        events.push("microphone");
+        return 1;
+      },
+      enableCamera: async () => {
+        events.push("camera");
+      },
+      stabilizeAudio: async () => {
+        events.push("guard");
+        return 1;
+      },
+      wait: async () => undefined
+    });
+
+    // The camera/audio race is native, so legacy must also reassert the recorder
+    // after camera startup - re-enabling the LiveKit track alone leaves it silent.
+    expect(events).toEqual(["microphone", "camera", "microphone", "guard"]);
+  });
+
+  it("keeps the legacy path fail-open when post-camera audio restoration throws", async () => {
+    const audioTrackCount = await initializeLivePublisherMedia({
+      useV2: false,
+      publishMicrophone: async () => 1,
+      enableCamera: async () => undefined,
+      // A permanently dead engine on legacy must not fail the broadcast closed:
+      // legacy keeps its verified fail-open contract.
+      stabilizeAudio: async () => {
+        throw new Error("The native real-time audio engine did not remain active.");
+      },
+      wait: async () => undefined
+    });
+
+    expect(audioTrackCount).toBe(1);
+  });
+
   it("fails closed only after the bounded post-camera guard retries are exhausted", async () => {
     const events: string[] = [];
     let guardAttempts = 0;
