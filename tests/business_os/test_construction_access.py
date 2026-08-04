@@ -19,6 +19,16 @@ def test_owner_admin_gets_developer_access_without_display_name_check():
     assert result["can_access_private_business_os"] is True
 
 
+def test_display_name_alone_never_grants_access():
+    result = resolve_business_construction_access(
+        {"user_id": 12, "display_name": "Roody Cherie"},
+        is_owner_admin=False,
+        public_release=False,
+        owner_ids=set(),
+    )
+    assert result["can_access_private_business_os"] is False
+
+
 def test_public_release_opens_authenticated_access():
     result = resolve_business_construction_access({"user_id": 22}, public_release=True, owner_ids=set())
     assert result["mode"] == "public"

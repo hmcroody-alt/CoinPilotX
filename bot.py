@@ -5784,7 +5784,10 @@ def pulse_business_construction_access(user):
     from services.business_os.construction_access import resolve_business_construction_access
 
     user = user or {}
-    is_owner_admin = False
+    # The canonical owner account is server-configured by immutable email and
+    # super-user state. The admin-table check below supports the same owner
+    # across production account records without ever trusting display_name.
+    is_owner_admin = user_is_owner_account(user) or user_is_super_user(user)
     email = normalize_email(user.get("email") or "")
     if email:
         conn = db()
