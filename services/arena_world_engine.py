@@ -82,7 +82,7 @@ def player_story(profile: dict | None, badges=None):
     streak = int(profile.get("streak_count") or 0)
     xp = int(profile.get("xp") or 0)
     badge_names = ", ".join([b.get("name", "") for b in badges[:3] if b.get("name")])
-    story = f"{profile.get('username') or 'This pilot'} is evolving as {archetype}, currently ranked {rank} with {xp} XP."
+    story = f"{profile.get('username') or 'This member'} is evolving as {archetype}, currently ranked {rank} with {xp} XP."
     if streak:
         story += f" They have survived {streak} Arena training streak checks."
     if badge_names:

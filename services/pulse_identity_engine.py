@@ -39,6 +39,7 @@ def build_identity(row=None, badge_keys=None, badge_labels=None) -> dict:
     badge_labels = list(badge_labels or [])
     user_id = int(row.get("user_id") or 0)
     public_id = row.get("public_player_id") or f"PulseSoc-{str(user_id)[-6:]}"
+    pulse_id = row.get("pulse_id") or (f"PLS-{user_id:06d}" if user_id > 0 else "")
     name = (
         row.get("user_display_name")
         or row.get("display_name")
@@ -51,6 +52,7 @@ def build_identity(row=None, badge_keys=None, badge_labels=None) -> dict:
     badge_set = set(badge_keys)
     return {
         "user_id": user_id,
+        "pulse_id": pulse_id,
         "public_player_id": public_id,
         "display_name": str(name)[:80],
         "name": str(name)[:80],

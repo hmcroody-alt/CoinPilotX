@@ -8,7 +8,7 @@ from urllib.parse import quote
 def share_text(kind, profile=None, achievement=None):
     profile = profile or {}
     achievement = achievement or {}
-    name = profile.get("display_name") or profile.get("public_player_id") or "an Arena pilot"
+    name = profile.get("display_name") or profile.get("public_player_id") or "an Arena member"
     if kind == "rank":
         return f"{name} just reached {profile.get('rank', 'a new rank')} in CoinPlotXAI Arena."
     if kind == "boss":
@@ -34,7 +34,7 @@ def share_urls(url, text):
 
 def share_card(profile=None, achievement=None, base_url="https://pulsesoc.com"):
     profile = profile or {}
-    public_id = profile.get("public_player_id") or profile.get("username") or "arena-pilot"
+    public_id = profile.get("public_player_id") or profile.get("username") or "arena-member"
     name = profile.get("display_name") or public_id
     rank = profile.get("rank") or "Rookie"
     arena_iq = int(profile.get("arena_iq") or 50)

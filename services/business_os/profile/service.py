@@ -1025,6 +1025,7 @@ def owner_profile(user_id: int, *, conn=None) -> Dict[str, Any]:
 
         return {
             "user_id": int(user_id),
+            "pulse_id": str(user.get("pulse_id") or ""),
             "handle": normalize_handle(user.get("username") or application.get("pulse_username")),
             "business_name": _text(profile.get("business_name"), NAME_MAX),
             "legal_name": _text(profile.get("legal_name"), NAME_MAX),
@@ -1094,7 +1095,7 @@ def owner_profile(user_id: int, *, conn=None) -> Dict[str, Any]:
 def normalize_handle(value: Any) -> str:
     """One leading ``@``, however many the stored value happens to carry.
 
-    The screen produced ``@@Pilot-8919`` by prefixing ``@`` onto a value the seller
+    The screen produced a doubled ``@`` by prefixing it onto a stored handle
     had typed *with* an ``@`` into the application form. Normalising on read, at the
     single point that builds the handle, is what stops the next caller repeating it.
     """
@@ -1214,6 +1215,7 @@ def public_profile(user_id: int, *, viewer_has_purchased: bool = False,
         }
 
         return {
+            "pulse_id": str(user.get("pulse_id") or ""),
             "handle": normalize_handle(user.get("username") or application.get("pulse_username")),
             "business_name": _text(profile.get("business_name"), NAME_MAX),
             "business_category": str(profile.get("business_category") or ""),

@@ -3,7 +3,7 @@
 These tests are the executable form of the defects the brief listed. Each one names
 the symptom it prevents from coming back:
 
-  * ``@@Pilot-8919``            -> test_handle_is_normalised_once
+  * ``@@LegacyMember-8919``            -> test_handle_is_normalised_once
   * "in review" AND "Approved"  -> test_verification_has_one_authoritative_state
   * whole profile frozen        -> test_review_narrows_to_identity_fields_only
   * one typo loses five edits   -> test_partial_save_keeps_the_valid_fields
@@ -83,7 +83,7 @@ def _fixture_tables():
 
         conn.execute(
             "INSERT INTO users (user_id, username, verified_badge, created_at) "
-            "VALUES (?, ?, ?, ?)", (SELLER, "Pilot-8919", 0, "2024-03-02T00:00:00Z"))
+            "VALUES (?, ?, ?, ?)", (SELLER, "LegacyMember-8919", 0, "2024-03-02T00:00:00Z"))
         conn.execute(
             "INSERT INTO users (user_id, username, avatar_url, verified_badge, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
@@ -98,14 +98,14 @@ def _fixture_tables():
             "VALUES (?, ?, ?, ?)", (SUSPENDED, "suspended-shop", 1, "2022-01-01T00:00:00Z"))
 
         # The seller typed the handle *with* an @ into the application form. This one
-        # row is the origin of "@@Pilot-8919".
+        # row is the origin of "@@LegacyMember-8919".
         conn.execute(
             "INSERT INTO marketplace_merchant_applications "
             "(user_id, status, seller_type, business_name, business_description, "
             " pulse_username, email, phone, website, state_region, country, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (SELLER, "submitted", "individual", "Pilot Supply", "NNNNNN",
-             "@Pilot-8919", "shop@example.com", "+15550100", "https://pilot.example",
+            (SELLER, "submitted", "individual", "Legacy Supply", "NNNNNN",
+             "@LegacyMember-8919", "shop@example.com", "+15550100", "https://legacy.example",
              "New York", "United States", "2024-03-02T00:00:00Z"))
         conn.execute(
             "INSERT INTO marketplace_merchant_applications "
@@ -160,10 +160,10 @@ def _expect(fn, code=None):
 # --------------------------------------------------------------------------- #
 
 def test_handle_is_normalised_once():
-    assert svc.normalize_handle("@@Pilot-8919") == "@Pilot-8919"
-    assert svc.normalize_handle("@@@Pilot-8919") == "@Pilot-8919"
-    assert svc.normalize_handle("Pilot-8919") == "@Pilot-8919"
-    assert svc.normalize_handle("  @Pilot-8919  ") == "@Pilot-8919"
+    assert svc.normalize_handle("@@LegacyMember-8919") == "@LegacyMember-8919"
+    assert svc.normalize_handle("@@@LegacyMember-8919") == "@LegacyMember-8919"
+    assert svc.normalize_handle("LegacyMember-8919") == "@LegacyMember-8919"
+    assert svc.normalize_handle("  @LegacyMember-8919  ") == "@LegacyMember-8919"
     # Empty stays empty: "@" alone is not a handle, it is a stray glyph on a header.
     assert svc.normalize_handle("") == ""
     assert svc.normalize_handle(None) == ""
@@ -171,7 +171,7 @@ def test_handle_is_normalised_once():
 
     # And through the real read path, with the application row that caused it.
     owner = svc.owner_profile(SELLER)
-    assert owner["handle"] == "@Pilot-8919", owner["handle"]
+    assert owner["handle"] == "@LegacyMember-8919", owner["handle"]
     assert not owner["handle"].startswith("@@")
 
 
@@ -179,10 +179,10 @@ def test_handle_availability_is_answered_before_the_save():
     taken = svc.check_handle(SELLER, "approved-shop")
     assert taken["available"] is False and "taken" in taken["reason"].lower()
 
-    mine = svc.check_handle(SELLER, "@Pilot-8919")
+    mine = svc.check_handle(SELLER, "@LegacyMember-8919")
     assert mine["available"] is True and mine["is_current"] is True
 
-    free = svc.check_handle(SELLER, "pilot-supply-co")
+    free = svc.check_handle(SELLER, "legacy-supply-co")
     assert free["available"] is True and free["is_current"] is False
 
     for bad in ("ab", "has spaces", "no/slashes", "x" * 41):
@@ -454,7 +454,7 @@ def test_contact_defaults_to_private_and_visibility_is_honoured():
 # --------------------------------------------------------------------------- #
 
 def test_public_profile_publishes_nothing_private():
-    svc.update_profile(SELLER, {"legal_name": "Pilot Supply Holdings LLC"})
+    svc.update_profile(SELLER, {"legal_name": "Legacy Supply Holdings LLC"})
     public = svc.public_profile(SELLER)
 
     for forbidden in svc.NEVER_PUBLIC:
@@ -464,7 +464,7 @@ def test_public_profile_publishes_nothing_private():
     assert set(public).issubset(set(svc.PUBLIC_FIELDS)), set(public) - set(svc.PUBLIC_FIELDS)
 
     blob = repr(public)
-    assert "Pilot Supply Holdings LLC" not in blob
+    assert "Legacy Supply Holdings LLC" not in blob
     assert "Hangar Row" not in blob          # the pickup address
     assert "+15550100" not in blob           # phone is still private
 
@@ -534,9 +534,9 @@ def test_every_handler_returns_status_and_ok():
         api.update_profile(SELLER, {"tagline": "x"}),
         api.set_hours(SELLER, {"mode": "by_appointment"}),
         api.set_hours_override(SELLER, {"date": "2026-01-01", "closed": True}),
-        api.set_link(SELLER, {"kind": "website", "url": "https://pilot.example"}),
+        api.set_link(SELLER, {"kind": "website", "url": "https://legacy.example"}),
         api.set_address(SELLER, {"kind": "shipping_origin", "city": "Newark"}),
-        api.check_handle(SELLER, "pilot-supply"),
+        api.check_handle(SELLER, "legacy-supply"),
         api.publish(SELLER),
         api.sync_status(SELLER),
         api.get_public_profile(SELLER),

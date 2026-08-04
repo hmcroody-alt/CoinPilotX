@@ -31,6 +31,7 @@ import { ProfileHeader } from "../ProfileHeader";
 function baseProfile(overrides: Partial<PulseProfile> = {}): PulseProfile {
   return {
     user_id: 7,
+    pulse_id: "PLS-000007",
     display_name: "Ada Pulse",
     username: "ada",
     public_player_id: "PULSE-ADA",
@@ -52,6 +53,7 @@ describe("ProfileHeader (Profile V6)", () => {
     expect(getByTestId("profile-v6-header")).toBeTruthy();
     expect(getByText("Ada Pulse")).toBeTruthy();
     expect(getByText("@ada")).toBeTruthy();
+    expect(getByText("Pulse ID • PLS-000007")).toBeTruthy();
     expect(getByText("12K")).toBeTruthy();
     expect(getByText("Pulse DNA")).toBeTruthy();
     expect(getByText("Marketplace")).toBeTruthy();

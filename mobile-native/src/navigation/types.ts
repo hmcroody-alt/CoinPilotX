@@ -92,6 +92,7 @@ export type RootStackParamList = {
    */
   BusinessOs: { title?: string; mode?: "hub" | "classic" } | undefined;
   BusinessProfile: { title?: string } | undefined;
+  PulseIdentity: undefined;
   /**
    * "View as buyer" — the public business profile, read-only, on its own route.
    *

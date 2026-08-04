@@ -22,7 +22,7 @@ def _row_to_dict(row):
 
 def _slug(value):
     slug = re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")
-    return slug[:40] or "arena-pilot"
+    return slug[:40] or "arena-member"
 
 
 def _clean_call_sign(value):
@@ -35,10 +35,10 @@ def _call_sign_for_user(cur, user_id):
         row = cur.fetchone()
         if row:
             data = _row_to_dict(row)
-            return data.get("roast_call_sign") or f"Arena Pilot #{int(user_id)}"
+            return data.get("roast_call_sign") or f"Arena Member #{int(user_id)}"
     except Exception:
         pass
-    return f"Arena Pilot #{int(user_id)}"
+    return f"Arena Member #{int(user_id)}"
 
 
 def set_call_sign(user_id, call_sign):
@@ -99,7 +99,7 @@ def _format_participant(row):
     balance = float(row.get("current_balance") or DEFAULT_STAGE_BALANCE)
     status = "Dominating" if balance >= 1_075_000 else "Hot" if balance >= 1_025_000 else "Shaken" if balance < 960_000 else "Recovering"
     public_id = row.get("public_player_id") or f"PulseSoc-{int(row.get('user_id') or 0)}"
-    call_sign = row.get("call_sign") or row.get("roast_call_sign") or f"Arena Pilot #{int(row.get('user_id') or 0)}"
+    call_sign = row.get("call_sign") or row.get("roast_call_sign") or f"Arena Member #{int(row.get('user_id') or 0)}"
     return {
         "player_id": public_id,
         "public_player_id": public_id,

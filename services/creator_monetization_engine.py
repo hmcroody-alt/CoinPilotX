@@ -36,7 +36,7 @@ def creator_candidates(limit=20):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT u.user_id, COALESCE(u.roast_call_sign, u.display_name, u.username, 'Arena Pilot') AS display_name,
+        SELECT u.user_id, COALESCE(u.roast_call_sign, u.display_name, u.username, 'Arena Member') AS display_name,
                COUNT(p.id) AS posts, COALESCE(cp.verification_status,'candidate') AS verification_status
         FROM users u
         LEFT JOIN pulse_posts p ON p.user_id=u.user_id

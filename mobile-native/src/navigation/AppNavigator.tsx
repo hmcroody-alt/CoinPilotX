@@ -73,6 +73,7 @@ import { ProfileEditScreen } from "../screens/ProfileEditScreen";
 import { PulseShareScreen } from "../screens/PulseShareScreen";
 import { PulseAiScreen } from "../screens/PulseAiScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
+import { PulseIdentityScreen } from "../screens/PulseIdentityScreen";
 import { ReelsScreen } from "../screens/ReelsScreen";
 import { ReplayViewerScreen } from "../screens/ReplayViewerScreen";
 import { SavedScreen } from "../screens/SavedScreen";
@@ -430,6 +431,7 @@ export function AppNavigator() {
       <Stack.Screen name="LiveScheduleGateway" component={EventsScreen} options={{ title: t("common:screens.scheduleLive") }} />
       <Stack.Screen name="LiveEventCreateGateway" component={EventsScreen} options={{ title: t("common:screens.createLiveEvent") }} />
       <Stack.Screen name="ProfileDetail" component={ProfileScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.profile") })} />
+      <Stack.Screen name="PulseIdentity" component={PulseIdentityScreen} options={{ title: "Pulse Identity" }} />
       <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} options={{ title: t("common:screens.editProfile") }} />
       <Stack.Screen name="Premium" component={PremiumScreen} options={{ title: t("common:screens.premium") }} />
       <Stack.Screen name="CreatorStudio" component={CreatorStudioScreen} options={{ title: t("common:screens.creatorStudio") }} />

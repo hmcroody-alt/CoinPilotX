@@ -9,8 +9,8 @@
  * category, email and phone, the account-wide verification request for the badge,
  * and `users.verified_badge` as a tiebreak. Four sources produce four answers, which
  * is how the same screen came to print "your application is in review" beside
- * "Verification · Approved", and how `@Pilot-8919` — typed with an `@` into an
- * application form — became `@@Pilot-8919` when the screen prefixed another one.
+ * "Verification · Approved", and how a handle typed with an `@` into an
+ * application form gained a duplicate prefix when the screen added another one.
  * `GET /api/pulse/business/profile` returns the whole owner view already reconciled,
  * and this module does not second-guess it.
  *
@@ -241,6 +241,7 @@ export type SyncInfo = {
 /** The owner view: everything the editor needs, in one round trip. */
 export type OwnerProfile = {
   userId: number;
+  pulseId: string;
   /** Exactly one leading `@`, normalised on the server. */
   handle: string;
   businessName: string;
@@ -286,6 +287,7 @@ export type OwnerProfile = {
  * allowlist for the same reason.
  */
 export type PublicProfile = {
+  pulseId: string;
   handle: string;
   businessName: string;
   businessCategory: string;
@@ -398,7 +400,7 @@ function stringList(value: unknown): string[] {
  *
  * The server already does this, and doing it again here is not redundancy for its
  * own sake: the header also renders handles that arrive from the Pulse profile and
- * from cached payloads written before the server fix, and `@@Pilot-8919` reaching a
+ * from cached payloads written before the server fix, and doubled-prefix handles reaching a
  * buyer once is one time too many. Cheap, total, idempotent.
  */
 export function normalizeHandle(value: unknown): string {
@@ -547,6 +549,7 @@ export function normalizeOwnerProfile(value: unknown): OwnerProfile {
   const location = (raw.public_location ?? {}) as Record<string, unknown>;
   return {
     userId: num(raw.user_id),
+    pulseId: str(raw.pulse_id).toUpperCase(),
     handle: normalizeHandle(raw.handle),
     businessName: str(raw.business_name),
     legalName: str(raw.legal_name),
@@ -608,6 +611,7 @@ export function normalizePublicProfile(value: unknown): PublicProfile {
   // that way: a spread would carry through whatever the server sent, and the whole
   // point of this type is that it cannot carry `legal_name` or `addresses`.
   const out: PublicProfile = {
+    pulseId: str(raw.pulse_id).toUpperCase(),
     handle: normalizeHandle(raw.handle),
     businessName: str(raw.business_name),
     businessCategory: str(raw.business_category),

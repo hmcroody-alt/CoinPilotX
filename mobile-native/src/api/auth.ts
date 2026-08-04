@@ -2,6 +2,7 @@ import { pulseApi } from "./pulseApi";
 
 export type PulseUser = {
   user_id: number;
+  pulse_id?: string;
   username?: string;
   display_name?: string;
   full_name?: string;

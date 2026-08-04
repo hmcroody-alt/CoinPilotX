@@ -6,7 +6,7 @@ from . import arena_psychology
 
 
 def trade_commentary(player_name: str, symbol: str, side: str, quantity: float, price: float, psychology: dict):
-    player = player_name or "This pilot"
+    player = player_name or "This member"
     symbol = (symbol or "BTC").upper()
     side = (side or "trade").lower()
     discipline = int((psychology or {}).get("discipline_score") or 50)
@@ -25,7 +25,7 @@ def match_recap(match: dict, participants: list, events: list):
         leader = sorted(participants, key=lambda item: item.get("score", 0), reverse=True)[0]
     if leader:
         return (
-            f"{leader.get('display_name') or 'The leading pilot'} currently leads this educational battle "
+            f"{leader.get('display_name') or 'The leading member'} currently leads this educational battle "
             f"with {int(leader.get('score') or 0)} points. Risk-adjusted discipline matters more than simulated profit."
         )
     if events:

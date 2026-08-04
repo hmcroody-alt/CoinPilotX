@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { MessengerUserSearchResult, openDirectConversation, searchMessengerUsers } from "../api/messenger";
 import { PulseApiError } from "../api/pulseApi";
+import { PulseIdBadge } from "../components/PulseIdBadge";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
@@ -169,6 +170,7 @@ function RecipientRow({ item, opening, disabled, onPress }: { item: MessengerUse
       <View style={styles.recipientCopy}>
         <View style={styles.nameRow}><Text style={styles.name} numberOfLines={1}>{item.display_name}</Text>{item.premium ? <Text style={styles.premium}>PRO</Text> : null}</View>
         <Text style={styles.handle} numberOfLines={1}>{handle}{item.label ? ` · ${item.label}` : ""}</Text>
+        {item.pulse_id ? <PulseIdBadge pulseId={item.pulse_id} compact /> : null}
       </View>
       {opening ? <ActivityIndicator color={colors.accent} /> : <Text style={styles.messageAction}>Message</Text>}
     </Pressable>

@@ -253,6 +253,7 @@ from services import (
     pulsesoc_growth_engine,
     pulsesoc_promotions,
     pulse_identity_engine,
+    pulse_id_service,
     pro_access as pro_access_service,
     pulse_feed_engine,
     pulse_feed_ranking_engine,
@@ -772,6 +773,7 @@ def init_db():
         preferred_language TEXT DEFAULT 'en'
     )
     """)
+    pulse_id_service.ensure_schema(cur, is_postgres=db_service.IS_POSTGRES)
 
     # WATCHLIST
     cur.execute("""
@@ -5115,6 +5117,7 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
             )
         )
         user_id = cur.lastrowid
+        pulse_id_service.ensure_user_pulse_id(cur, user_id)
         logging.info("database insert generated user_id=%s email=%s", user_id, mask_email(email))
         pulsesoc_notification_system.ensure_user_notification_defaults(user_id, conn=conn)
         cur.execute(
@@ -5765,6 +5768,7 @@ def pulse_mobile_user_payload(user):
     user = user or {}
     return {
         "user_id": int(user.get("user_id") or 0),
+        "pulse_id": user.get("pulse_id") or "",
         "email": user.get("email") or "",
         "username": user.get("username") or "",
         "display_name": user.get("display_name") or user.get("full_name") or user.get("username") or "PulseSoc member",
@@ -10271,7 +10275,7 @@ def fan_messages_page():
         return redirect(url_for("signup_page", next="/chat/fan-messages"))
     payload = chat_realtime_service.list_threads(user["user_id"], limit=80)
     cards = "".join(
-        f"<article class='card'><h3>{clean_html(item.get('title') or 'Arena Pilot')}</h3><p class='muted'>{clean_html(item.get('latest_message') or 'No message preview yet.')}</p><p class='muted'>{int(item.get('unread_count') or 0)} unread</p><div class='actions'><a class='button primary' href='/chat/thread/{int(item.get('id') or 0)}'>Reply</a><button data-chat-block='{int(item.get('other_user_id') or 0)}'>Block</button><button data-chat-report='{int(item.get('other_user_id') or 0)}'>Report</button></div></article>"
+        f"<article class='card'><h3>{clean_html(item.get('title') or 'Arena Member')}</h3><p class='muted'>{clean_html(item.get('latest_message') or 'No message preview yet.')}</p><p class='muted'>{int(item.get('unread_count') or 0)} unread</p><div class='actions'><a class='button primary' href='/chat/thread/{int(item.get('id') or 0)}'>Reply</a><button data-chat-block='{int(item.get('other_user_id') or 0)}'>Block</button><button data-chat-report='{int(item.get('other_user_id') or 0)}'>Report</button></div></article>"
         for item in payload.get("conversations", [])
     ) or "<article class='card'><h3>No fan messages yet</h3><p class='muted'>Messages from leaderboards, profiles, and Roast Battle will appear here with call signs only.</p></article>"
     body = f"<section class='hero'><article class='card wide'><div class='kicker'>Fan Messages</div><h1>Reply to Arena players fast.</h1><p>Only public call signs and Arena IDs are shown. Real names, emails, phone numbers, and billing data stay private.</p></article></section><section class='grid'>{cards}</section>"
@@ -26779,7 +26783,7 @@ ARENA_RANKS = [
     (1500, "Guardian"),
     (2500, "Oracle"),
     (4000, "Titan"),
-    (6500, "Galaxy Pilot"),
+    (6500, "Galaxy Navigator"),
 ]
 
 ARENA_BADGE_SEEDS = [
@@ -26898,7 +26902,7 @@ def public_arena_player(profile):
     # does exactly that -- rather than reading a flag off the card.
     return {
         "public_player_id": profile.get("public_player_id") or profile.get("username"),
-        "display_name": profile.get("display_name") or profile.get("public_player_id") or "Arena Pilot",
+        "display_name": profile.get("display_name") or profile.get("public_player_id") or "Arena Member",
         "avatar_url": profile.get("avatar_url") or "",
         "country": profile.get("country") if show_country else "",
         "rank": profile.get("rank") or "Rookie",
@@ -27346,7 +27350,7 @@ def arena_leaderboard_payload(limit=20, country=None, sort_key="arena_iq"):
 
 def arena_player_style_summary(profile):
     if not profile:
-        return "New Arena pilot building their intelligence profile."
+        return "New Arena member building their intelligence profile."
     strengths = []
     if int(profile.get("discipline_score") or 0) >= 70:
         strengths.append("disciplined")
@@ -27589,7 +27593,7 @@ def arena_match_can_join(match, user_id, participants=None):
 
 def arena_user_display(user_id):
     user = load_account_by_id(user_id) or {}
-    return account_display_name(user) if user else f"Pilot {user_id}"
+    return account_display_name(user) if user else f"Member {user_id}"
 
 
 def create_arena_match(creator_id, opponent_id=0, match_type="btc_duel", rules=None, status="active"):
@@ -28293,10 +28297,10 @@ def arena_page_shell(title, body, user=None, public=False, meta_tags=""):
     document.addEventListener('click',e=>{if(e.target.closest('[data-arena-drawer-open]'))setArenaDrawer(true);if(e.target.closest('[data-arena-drawer-close]'))setArenaDrawer(false);});
     document.addEventListener('keydown',e=>{if(e.key==='Escape')setArenaDrawer(false);});
     document.addEventListener('change',async e=>{const i=e.target.closest('[data-arena-pref]');if(!i)return;await fetch('/api/arena/preferences',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({[i.dataset.arenaPref]:i.checked})});location.reload();});
-    function arenaPopup(item){if(!item)return;let box=document.querySelector('[data-arena-popup]');if(!box){box=document.createElement('div');box.dataset.arenaPopup='1';box.style.cssText='position:fixed;right:18px;bottom:18px;z-index:60;max-width:360px;border:1px solid rgba(110,223,246,.35);border-radius:16px;background:linear-gradient(180deg,rgba(10,22,38,.96),rgba(6,12,24,.96));box-shadow:0 24px 80px rgba(0,0,0,.45),0 0 32px rgba(110,223,246,.18);padding:14px;color:#f2fbff';document.body.appendChild(box);}const title=item.type==='challenge'?'Challenge Received':'New Arena Message';const action=item.type==='challenge'?`<button data-arena-accept='${item.id}' data-arena-kind='challenge'>Accept</button><button data-arena-reject='${item.id}' data-arena-kind='challenge'>Decline</button>`:`<button data-arena-accept='${item.id}' data-arena-kind='message'>Open Chat</button><button data-arena-reject='${item.id}' data-arena-kind='message'>Dismiss</button>`;box.innerHTML=`<strong>${title}</strong><p><b>${arenaEsc(item.sender?.display_name||'Arena Pilot')}</b><br>${arenaEsc(item.message_preview||'Arena request')}</p><div class='actions'>${action}<a class='button' href='/arena/inbox'>Inbox</a></div>`;}
+    function arenaPopup(item){if(!item)return;let box=document.querySelector('[data-arena-popup]');if(!box){box=document.createElement('div');box.dataset.arenaPopup='1';box.style.cssText='position:fixed;right:18px;bottom:18px;z-index:60;max-width:360px;border:1px solid rgba(110,223,246,.35);border-radius:16px;background:linear-gradient(180deg,rgba(10,22,38,.96),rgba(6,12,24,.96));box-shadow:0 24px 80px rgba(0,0,0,.45),0 0 32px rgba(110,223,246,.18);padding:14px;color:#f2fbff';document.body.appendChild(box);}const title=item.type==='challenge'?'Challenge Received':'New Arena Message';const action=item.type==='challenge'?`<button data-arena-accept='${item.id}' data-arena-kind='challenge'>Accept</button><button data-arena-reject='${item.id}' data-arena-kind='challenge'>Decline</button>`:`<button data-arena-accept='${item.id}' data-arena-kind='message'>Open Chat</button><button data-arena-reject='${item.id}' data-arena-kind='message'>Dismiss</button>`;box.innerHTML=`<strong>${title}</strong><p><b>${arenaEsc(item.sender?.display_name||'Arena Member')}</b><br>${arenaEsc(item.message_preview||'Arena request')}</p><div class='actions'>${action}<a class='button' href='/arena/inbox'>Inbox</a></div>`;}
     async function loadArenaInboxPulse(){try{const r=await fetch('/api/arena/inbox',{cache:'no-store'});if(!r.ok)return;const d=await r.json();const count=(d.counts&&d.counts.pending_requests)||0;const badge=document.querySelector('[data-arena-badge]');if(badge)badge.textContent=count?`🔴 ${count}`:'';const first=(d.requests||[])[0];if(first&&String(localStorage.getItem('arenaLastPopup')||'')!==`${first.type}:${first.id}`){localStorage.setItem('arenaLastPopup',`${first.type}:${first.id}`);arenaPopup(first);if(navigator.vibrate)navigator.vibrate([200,100,200]);}}catch(e){}}
     async function updateArenaPresence(){try{await fetch('/api/arena/presence/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:location.pathname.includes('/match/')?'battling':location.pathname.includes('/room/')?'joined room':location.pathname.includes('/chat/')?'typing-ready':'online',path:location.pathname})});}catch(e){}}
-    async function loadArenaPresence(){try{const r=await fetch('/api/arena/presence',{cache:'no-store'});if(!r.ok)return;const d=await r.json();const panel=document.querySelector('[data-arena-presence-panel]');if(panel)panel.innerHTML=(d.presence||[]).slice(0,6).map(p=>`<span class="presence-pill"><i></i>${arenaEsc(p.display_name||'Pilot')} · ${arenaEsc(p.status||'online')}</span>`).join('')||'<span class="presence-pill"><i></i>Arena world warming up</span>';const feed=document.querySelector('[data-arena-world-feed]');if(feed)feed.innerHTML=(d.activity||[]).slice(0,5).map(x=>`<div>${arenaEsc(x)}</div>`).join('');}catch(e){}}
+    async function loadArenaPresence(){try{const r=await fetch('/api/arena/presence',{cache:'no-store'});if(!r.ok)return;const d=await r.json();const panel=document.querySelector('[data-arena-presence-panel]');if(panel)panel.innerHTML=(d.presence||[]).slice(0,6).map(p=>`<span class="presence-pill"><i></i>${arenaEsc(p.display_name||'Member')} · ${arenaEsc(p.status||'online')}</span>`).join('')||'<span class="presence-pill"><i></i>Arena world warming up</span>';const feed=document.querySelector('[data-arena-world-feed]');if(feed)feed.innerHTML=(d.activity||[]).slice(0,5).map(x=>`<div>${arenaEsc(x)}</div>`).join('');}catch(e){}}
     document.addEventListener('click',async e=>{const a=e.target.closest('[data-arena-accept]');const r=e.target.closest('[data-arena-reject]');const target=a||r;if(!target)return;target.disabled=true;const kind=target.dataset.arenaKind;const accept=!!a;const url=kind==='challenge'?(accept?'/api/arena/challenge/accept':'/api/arena/challenge/reject'):(accept?'/api/arena/message/accept':'/api/arena/message/reject');const key=kind==='challenge'?'challenge_id':'request_id';const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({[key]:Number(target.dataset.arenaAccept||target.dataset.arenaReject)})});const d=await res.json();if(d.next_url)location.href=d.next_url;else if(d.chat_url)location.href=d.chat_url;else if(d.match_id)location.href='/arena/match/'+d.match_id;else{const box=document.querySelector('[data-arena-popup]');if(box)box.remove();loadArenaInboxPulse();}});
     loadArenaPrefs();
     loadArenaInboxPulse();
@@ -28324,7 +28328,7 @@ def arena_commentator_studio(active_battles=0, active_rooms=0, crowd_level=72):
         "Crowd energy is rising in Room 1.",
         "Discipline score is climbing fast.",
         "Scam Hunter event intensity is increasing.",
-        "A ranked pilot just avoided a FOMO entry.",
+        "A ranked competitor just avoided a FOMO entry.",
         "Psychology pressure is building near the final move.",
         "AI tactical desk is tracking comeback conditions.",
     ]
@@ -28617,9 +28621,9 @@ def arena_home_page():
     top_html = "".join(
         f"<div class='player-card elite'><strong>#{p.get('leaderboard_rank')} {clean_html(p.get('display_name'))}</strong><span class='rank'>{clean_html(p.get('rank'))}</span><span>Arena IQ {int(p.get('arena_iq') or 0)} · XP {int(p.get('xp') or 0)}</span><p>{clean_html(p.get('ai_summary'))}</p><div class='actions'><a class='button' href='/arena/player/{clean_html(p.get('public_player_id'))}'>View</a><button data-challenge='{clean_html(p.get('public_player_id'))}'>Challenge</button></div></div>"
         for p in leaderboard
-    ) or "<p class='muted'>Complete a mission to become the first ranked pilot.</p>"
+    ) or "<p class='muted'>Complete a mission to become the first ranked competitor.</p>"
     activity_items = "".join(
-        f"<div><strong>{clean_html((item.get('sender') or {}).get('display_name') or 'Arena Pilot')}</strong><p>{clean_html(item.get('message_preview') or 'Arena request')}</p><div class='actions'><a class='button' href='/arena/inbox'>Respond</a><a class='button' href='/arena/player/{clean_html((item.get('sender') or {}).get('public_player_id') or '')}'>Profile</a></div></div>"
+        f"<div><strong>{clean_html((item.get('sender') or {}).get('display_name') or 'Arena Member')}</strong><p>{clean_html(item.get('message_preview') or 'Arena request')}</p><div class='actions'><a class='button' href='/arena/inbox'>Respond</a><a class='button' href='/arena/player/{clean_html((item.get('sender') or {}).get('public_player_id') or '')}'>Profile</a></div></div>"
         for item in (inbox.get("requests") or [])[:4]
     ) or "<div><strong>All clear</strong><p>No pending Arena requests. Challenge a top player or start a quick battle anytime.</p><a class='button' href='/arena/players'>Find Players</a></div>"
     body = f"""
@@ -28878,7 +28882,7 @@ def arena_chat_page(thread_id):
     other = payload.get("other") or {}
     body = f"""
     <section class="hero">
-      <article class="card wide"><div class="kicker">Arena Live Chat</div><h1>{clean_html(other.get('display_name') or 'Arena Pilot')}</h1><p><span class="rank">{clean_html(other.get('rank') or 'Rookie')}</span> <span class="muted">· live thread · public Arena identity only</span></p></article>
+      <article class="card wide"><div class="kicker">Arena Live Chat</div><h1>{clean_html(other.get('display_name') or 'Arena Member')}</h1><p><span class="rank">{clean_html(other.get('rank') or 'Rookie')}</span> <span class="muted">· live thread · public Arena identity only</span></p></article>
       <article class="card"><h2>Presence</h2><p class="muted" data-arena-chat-presence>Checking presence...</p></article>
     </section>
     <section class="card" style="min-height:58vh;display:grid;grid-template-rows:auto 1fr auto;gap:12px">
@@ -28926,7 +28930,7 @@ def arena_inbox_page():
     def card(item):
         sender = item.get("sender") or {}
         public_id = clean_html(sender.get("public_player_id") or "")
-        name = clean_html(sender.get("display_name") or "Arena Pilot")
+        name = clean_html(sender.get("display_name") or "Arena Member")
         rank = clean_html(sender.get("rank") or "Rookie")
         faction = clean_html(sender.get("faction") or "Arena Faction")
         preview = clean_html(item.get("message_preview") or "Arena request")
@@ -29348,10 +29352,10 @@ def arena_roast_battle_page(room_id=None, match_id=None):
     function roastStorm(emoji){{const layer=document.createElement('div');layer.className='emoji-storm';for(let i=0;i<18;i++){{const s=document.createElement('span');s.textContent=emoji||['🔥','😂','👑','🚀','🧠'][i%5];s.style.left=Math.random()*100+'vw';s.style.animationDelay=(Math.random()*.35)+'s';s.style.setProperty('--drift',((Math.random()-.5)*120)+'px');layer.appendChild(s);}}document.body.appendChild(layer);setTimeout(()=>layer.remove(),3200);}}
     function addFeed(sel,html){{const el=document.querySelector(sel);if(!el)return;el.insertAdjacentHTML('afterbegin',html);while(el.children.length>24)el.lastElementChild.remove();}}
     function money(v){{return '$'+Number(v||0).toLocaleString(undefined,{{maximumFractionDigits:0}});}}
-    function renderPlayers(players){{const grid=document.querySelector('[data-roast-players]');const targets=document.querySelector('[data-roast-targets]');const votes=document.querySelector('[data-roast-vote-buttons]');if(!grid)return;grid.innerHTML=(players||[]).map((p,i)=>`<div class="roast-avatar" data-roast-player="${{esc(p.public_player_id||p.player_id||'')}}"><div><div class="roast-face">${{['😎','😤','🧠','👑'][i%4]}}</div><strong>${{esc(p.call_sign||'Arena Pilot')}}</strong><p class="roast-balance">Stage Balance: ${{money(p.current_balance)}}</p><p class="muted">${{esc(p.status||'Ready')}} · Crowd ${{Math.round(Number(p.crowd_score||0))}}</p><div class="actions"><button data-message-player="${{esc(p.public_player_id||p.player_id||'')}}">Message</button></div></div></div>`).join('')||'<div class="roast-avatar"><div><strong>Waiting for players</strong><p class="roast-balance">Stage Balance: $1,000,000</p></div></div>';if(targets)targets.innerHTML='<option value="">Auto target</option>'+(players||[]).map(p=>`<option value="${{esc(p.public_player_id||p.player_id||'')}}">${{esc(p.call_sign||'Arena Pilot')}}</option>`).join('');if(votes)votes.innerHTML=(players||[]).map(p=>`<button data-roast-vote="${{esc(p.public_player_id||p.player_id||'')}}">${{esc('Vote '+(p.call_sign||'Arena Pilot'))}}</button>`).join('')||'<p class="muted">Waiting for active call signs.</p>';}}
+    function renderPlayers(players){{const grid=document.querySelector('[data-roast-players]');const targets=document.querySelector('[data-roast-targets]');const votes=document.querySelector('[data-roast-vote-buttons]');if(!grid)return;grid.innerHTML=(players||[]).map((p,i)=>`<div class="roast-avatar" data-roast-player="${{esc(p.public_player_id||p.player_id||'')}}"><div><div class="roast-face">${{['😎','😤','🧠','👑'][i%4]}}</div><strong>${{esc(p.call_sign||'Arena Member')}}</strong><p class="roast-balance">Stage Balance: ${{money(p.current_balance)}}</p><p class="muted">${{esc(p.status||'Ready')}} · Crowd ${{Math.round(Number(p.crowd_score||0))}}</p><div class="actions"><button data-message-player="${{esc(p.public_player_id||p.player_id||'')}}">Message</button></div></div></div>`).join('')||'<div class="roast-avatar"><div><strong>Waiting for players</strong><p class="roast-balance">Stage Balance: $1,000,000</p></div></div>';if(targets)targets.innerHTML='<option value="">Auto target</option>'+(players||[]).map(p=>`<option value="${{esc(p.public_player_id||p.player_id||'')}}">${{esc(p.call_sign||'Arena Member')}}</option>`).join('');if(votes)votes.innerHTML=(players||[]).map(p=>`<button data-roast-vote="${{esc(p.public_player_id||p.player_id||'')}}">${{esc('Vote '+(p.call_sign||'Arena Member'))}}</button>`).join('')||'<p class="muted">Waiting for active call signs.</p>';}}
     async function loadRoastState(){{try{{const d=await fetch(`/api/arena/roast/match/${{roastMatchId}}/state`,{{cache:'no-store'}}).then(r=>r.json());if(d.ok){{renderPlayers(d.participants||[]);const turn=document.querySelector('[data-roast-turn]');if(turn)turn.textContent=`${{d.match?.match_type==='four_player'?'Four-player chaos':'Two-player duel'}} · 30-second timed turns · virtual dollars decide the room`;}}}}catch(e){{}}}}
     function applySnapshot(snapshot){{if(!snapshot)return;const count=document.querySelector('[data-roast-world-count]');const heat=document.querySelector('[data-roast-crowd]');const label=document.querySelector('[data-roast-heat-label]');const ticker=document.querySelector('[data-roast-ticker]');if(count)count.textContent=Number(snapshot.watching_worldwide||0).toLocaleString()+' watching worldwide';if(heat)heat.style.width=Math.min(100,Number(snapshot.heat_meter||52))+'%';if(label)label.textContent=(snapshot.heat_meter||0)>82?'Arena exploding':'Arena heating up';if(ticker&&snapshot.ticker)ticker.textContent=snapshot.ticker.join(' · ')+' · ';}}
-    function renderRoastEvent(ev){{if(!ev||roastSeen.has(String(ev.id)))return;roastSeen.add(String(ev.id));const p=ev.payload||{{}};if(ev.event_type==='roast_message'){{const m=p.message||{{}};const up=Number(p.balance_delta_sender||0)>=0;addFeed('[data-roast-feed]',`<div><strong>${{esc(m.call_sign||'Arena Pilot')}}:</strong> ${{esc(m.body)}}<br><small>${{esc(p.impact_label||'Clean Hit')}} · Weight ${{Number((p.line_weight||{{}}).weight||(p.score||{{}}).total||0)}} · <span class="roast-delta ${{up?'up':'down'}}">${{up?'+':''}}${{money(p.balance_delta_sender||0)}}</span></small></div>`);addFeed('[data-roast-commentator-feed]',`<div>${{esc(p.commentator_line||'The room felt that one.')}}</div>`);renderPlayers(p.participants||[]);const card=document.querySelector(`[data-roast-player="${{esc(m.public_player_id||m.player_id||'')}}"]`);if(card){{card.classList.add(up?'balance-up':'balance-down');setTimeout(()=>card.classList.remove('balance-up','balance-down'),760);}}const face=document.querySelector('[data-roast-avatar-a]');if(face)face.textContent=p.avatar_reaction==='laughing'?'😂':'😤';roastStorm(up?'🔥':'💀');}}if(ev.event_type==='crowd_reaction'){{const r=p.reaction||{{}};addFeed('[data-roast-crowd-chat]',`<div><strong>Crowd:</strong> ${{esc(r.emoji||'🔥')}} reaction landed.</div>`);addFeed('[data-roast-commentator-feed]',`<div>${{esc(p.commentator_line||'Chat is lighting up.')}}</div>`);roastStorm(r.emoji||'🔥');}}if(ev.event_type==='crowd_vote'){{const v=p.vote||{{}};addFeed('[data-roast-crowd-chat]',`<div><strong>Vote:</strong> Crowd backed ${{esc(v.call_sign||'Arena Pilot')}} · heat ${{Number(v.crowd_heat||0)}}</div>`);}}}}
+    function renderRoastEvent(ev){{if(!ev||roastSeen.has(String(ev.id)))return;roastSeen.add(String(ev.id));const p=ev.payload||{{}};if(ev.event_type==='roast_message'){{const m=p.message||{{}};const up=Number(p.balance_delta_sender||0)>=0;addFeed('[data-roast-feed]',`<div><strong>${{esc(m.call_sign||'Arena Member')}}:</strong> ${{esc(m.body)}}<br><small>${{esc(p.impact_label||'Clean Hit')}} · Weight ${{Number((p.line_weight||{{}}).weight||(p.score||{{}}).total||0)}} · <span class="roast-delta ${{up?'up':'down'}}">${{up?'+':''}}${{money(p.balance_delta_sender||0)}}</span></small></div>`);addFeed('[data-roast-commentator-feed]',`<div>${{esc(p.commentator_line||'The room felt that one.')}}</div>`);renderPlayers(p.participants||[]);const card=document.querySelector(`[data-roast-player="${{esc(m.public_player_id||m.player_id||'')}}"]`);if(card){{card.classList.add(up?'balance-up':'balance-down');setTimeout(()=>card.classList.remove('balance-up','balance-down'),760);}}const face=document.querySelector('[data-roast-avatar-a]');if(face)face.textContent=p.avatar_reaction==='laughing'?'😂':'😤';roastStorm(up?'🔥':'💀');}}if(ev.event_type==='crowd_reaction'){{const r=p.reaction||{{}};addFeed('[data-roast-crowd-chat]',`<div><strong>Crowd:</strong> ${{esc(r.emoji||'🔥')}} reaction landed.</div>`);addFeed('[data-roast-commentator-feed]',`<div>${{esc(p.commentator_line||'Chat is lighting up.')}}</div>`);roastStorm(r.emoji||'🔥');}}if(ev.event_type==='crowd_vote'){{const v=p.vote||{{}};addFeed('[data-roast-crowd-chat]',`<div><strong>Vote:</strong> Crowd backed ${{esc(v.call_sign||'Arena Member')}} · heat ${{Number(v.crowd_heat||0)}}</div>`);}}}}
     async function pollRoastLive(){{try{{const d=await fetch(`/api/arena/roast/match/${{roastMatchId}}/new?after_id=${{roastLastEventId}}`,{{cache:'no-store'}}).then(r=>r.json());if(d.ok){{(d.events||[]).forEach(ev=>{{roastLastEventId=Math.max(roastLastEventId,Number(ev.id||0));renderRoastEvent(ev);}});applySnapshot(d.snapshot);}}}}catch(e){{}}}}
     document.querySelector('[data-roast-call-sign]')?.addEventListener('submit',async e=>{{e.preventDefault();const call_sign=new FormData(e.target).get('call_sign');const d=await fetch('/api/arena/roast/call-sign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{call_sign}})}}).then(r=>r.json()).catch(()=>({{ok:false,message:'Call sign could not be saved.'}}));addFeed('[data-roast-commentator-feed]',`<div>${{esc(d.ok?'Call sign locked: '+d.call_sign:(d.message||'Choose a different call sign.'))}}</div>`);if(d.ok)loadRoastState();}});
     document.querySelector('[data-roast-message]').addEventListener('submit',async e=>{{e.preventDefault();const fd=new FormData(e.target);const message=fd.get('message');if(!String(message||'').trim())return;const btn=e.target.querySelector('button');btn.disabled=true;addFeed('[data-roast-feed]',`<div><strong>You:</strong> ${{esc(message)}}<br><small>Sending live...</small></div>`);const d=await fetch(`/api/arena/roast/match/${{roastMatchId}}/say`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message,target_type:fd.get('target_type')||'single',target_public_player_id:fd.get('target_user_id')||''}})}}).then(r=>r.json()).catch(()=>({{ok:false,message:'Connection hiccup. Try again.'}}));btn.disabled=false;if(d.ok){{e.target.reset();pollRoastLive();loadRoastState();}}else{{addFeed('[data-roast-commentator-feed]',`<div>${{esc(d.message||'Too personal. Keep it clever, not harmful.')}}</div>`);loadRoastState();}}}});
@@ -29485,7 +29489,7 @@ def arena_phase_two_page(room_id=None, match_id=None):
           emojiStorm(data.effects?.emoji_storm);
           const overlay=document.createElement('div');
           overlay.className='victory-overlay';
-          overlay.innerHTML=`<div class="victory-card"><div class="kicker">Victory Cinematic</div><h2 class="victory-title">VICTORY</h2><p><strong>${{esc(data.winner_display_name||'Arena Pilot')}}</strong></p><p>${{esc(data.commentator_line||'DISCIPLINE WINS AGAIN!')}}</p><div class="crowd-meter"><span style="width:${{Math.min(100,Number(data.crowd?.hype_meter||82))}}%"></span></div><p class="muted">${{esc(data.crowd?.state||'Arena exploding')}} · +${{Number(data.xp_awarded||0)}} XP</p><div class="actions"><a class="button primary" href="${{esc(data.replay?.replay_url||('/arena/replay/'+matchId))}}">Watch Replay</a><button type="button" data-close-victory>Queue Again</button></div></div>`;
+          overlay.innerHTML=`<div class="victory-card"><div class="kicker">Victory Cinematic</div><h2 class="victory-title">VICTORY</h2><p><strong>${{esc(data.winner_display_name||'Arena Member')}}</strong></p><p>${{esc(data.commentator_line||'DISCIPLINE WINS AGAIN!')}}</p><div class="crowd-meter"><span style="width:${{Math.min(100,Number(data.crowd?.hype_meter||82))}}%"></span></div><p class="muted">${{esc(data.crowd?.state||'Arena exploding')}} · +${{Number(data.xp_awarded||0)}} XP</p><div class="actions"><a class="button primary" href="${{esc(data.replay?.replay_url||('/arena/replay/'+matchId))}}">Watch Replay</a><button type="button" data-close-victory>Queue Again</button></div></div>`;
           document.body.appendChild(overlay);
           overlay.addEventListener('click',e=>{{if(e.target.closest('[data-close-victory]'))overlay.remove();}});
           setTimeout(()=>overlay.remove(),8200);
@@ -29503,12 +29507,12 @@ def arena_phase_two_page(room_id=None, match_id=None):
           joinBtn.hidden=!d.can_join;
           document.querySelector('[data-arena-trade]').hidden=!d.can_trade;
           document.querySelector('[data-trade-gate]').innerHTML=d.can_trade?'':(d.can_join?'<p class="muted">Join this battle to enable the simulated trade ticket.</p>':'<p class="muted">Spectator mode. Simulated trading is only available to participants.</p>');
-          document.querySelector('[data-participants]').innerHTML = (d.participants || []).map(p => `<div class="player-card"><strong>${{esc(p.display_name || 'Arena Pilot')}}</strong><span class="rank">${{p.score || 0}} pts</span><p>Virtual cash $${{Number(p.fake_balance || 0).toLocaleString()}}</p><p class="muted">${{esc(p.rank||'Rookie')}}</p></div>`).join('') || '<p class="muted">Waiting for pilots.</p>';
+          document.querySelector('[data-participants]').innerHTML = (d.participants || []).map(p => `<div class="player-card"><strong>${{esc(p.display_name || 'Arena Member')}}</strong><span class="rank">${{p.score || 0}} pts</span><p>Virtual cash $${{Number(p.fake_balance || 0).toLocaleString()}}</p><p class="muted">${{esc(p.rank||'Rookie')}}</p></div>`).join('') || '<p class="muted">Waiting for competitors.</p>';
           document.querySelector('[data-positions]').innerHTML = (d.positions || []).map(p => `<div class="player-card"><strong>${{esc(p.symbol)}}</strong><p>Qty ${{Number(p.quantity || 0).toFixed(6)}} · Avg $${{Number(p.average_price || 0).toLocaleString()}} · Realized P/L $${{Number(p.realized_pnl || 0).toFixed(2)}}</p></div>`).join('') || '<p class="muted">No simulated positions yet.</p>';
           document.querySelector('[data-match-events]').innerHTML = (d.events || []).map(e => `<div><strong>${{esc(e.title || e.event_type)}}</strong><p>${{esc(e.body || '')}}</p><small>${{esc(e.created_at || '')}}</small></div>`).join('') || '<div>Waiting for the first Arena event.</div>';
           const m=d.market_context||{{}};
           document.querySelector('[data-market-context]').innerHTML=`<p><strong>BTC</strong> $${{Number(m.BTC||0).toLocaleString()}}</p><p><strong>ETH</strong> $${{Number(m.ETH||0).toLocaleString()}}</p><small class="muted">${{esc(m.source||'live/cached')}} · ${{esc(m.updated_at||'')}}</small>`;
-          document.querySelector('[data-match-recap]').innerHTML=(d.match?.status==='completed')?`<div class="player-card elite"><strong>Winner: ${{esc(d.winner_display_name||'Arena Pilot')}}</strong><p>${{esc(d.ai_commentary||'AI recap ready.')}}</p><p class="muted">Smartest move, discipline score, XP movement, and shareable highlight are ready for this completed virtual-dollar battle.</p></div>`:'<p class="muted">Recap appears when the battle is completed.</p>';
+          document.querySelector('[data-match-recap]').innerHTML=(d.match?.status==='completed')?`<div class="player-card elite"><strong>Winner: ${{esc(d.winner_display_name||'Arena Member')}}</strong><p>${{esc(d.ai_commentary||'AI recap ready.')}}</p><p class="muted">Smartest move, discipline score, XP movement, and shareable highlight are ready for this completed virtual-dollar battle.</p></div>`:'<p class="muted">Recap appears when the battle is completed.</p>';
           if(d.match?.status==='completed'&&!victoryShown) showVictory({{winner_display_name:d.winner_display_name,commentator_line:d.ai_commentary,xp_awarded:120,crowd:{{hype_meter:Math.min(100,28+Number(d.cheer_count||0)*8),state:'Arena exploding'}},effects:{{emoji_storm:['📣','🔥','🚀','👑','💎','⚡','🌊','🎯','🧠','🏆']}},replay:{{replay_url:'/arena/replay/'+matchId}}}});
         }}
         document.querySelector('[data-arena-trade]').addEventListener('submit', async e => {{
@@ -29546,7 +29550,7 @@ def arena_phase_two_page(room_id=None, match_id=None):
         <section class="grid"><article class="card wide"><h2>Room Chat</h2><form data-room-chat><input name="message" placeholder="Share a respectful training insight"><button class="primary">Send</button></form><div class="feed" data-room-messages></div></article><article class="card"><h2>Trending Battles</h2><div data-room-matches></div></article><article class="card wide"><h2>Top Players</h2><div class="grid" data-room-players></div></article></section>
         <script>
         const roomId={room_id}; const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
-        async function loadRoom(){{const r=await fetch(`/api/arena/rooms/${{roomId}}/live`,{{credentials:'same-origin',cache:'no-store'}});const d=await r.json();if(!d.ok)return;document.querySelector('[data-room-commentary]').textContent=d.ai_commentary||'Room active.';document.querySelector('[data-room-messages]').innerHTML=(d.messages||[]).map(m=>`<div><strong>${{esc(m.display_name||'Pilot')}}</strong><p>${{esc(m.message)}}</p></div>`).join('')||'<div>No room messages yet.</div>';document.querySelector('[data-room-matches]').innerHTML=(d.active_matches||[]).map(m=>`<div class="player-card" data-battle-card="${{m.id||0}}"><strong>${{esc(m.match_label||m.name||'Arena Battle')}}</strong><span class="rank">${{esc(m.status||'open')}}</span><p>${{esc(m.description||'Virtual-dollar training battle.')}}</p><p class="muted">${{esc(m.xp_reward||'XP')}} · ${{esc(m.difficulty||'Adaptive')}} · Players live now</p><div class="actions"><button data-join-battle-card data-match-id="${{m.id||0}}" data-battle-type="${{esc(m.match_type||'btc_duel')}}">Join</button>${{m.id?`<a class="button" href="/arena/match/${{m.id}}?spectate=1">Watch</a>`:''}}</div></div>`).join('')||'<p class="muted">No active battles yet.</p>';document.querySelector('[data-room-players]').innerHTML=(d.top_players||[]).map(p=>`<div class="player-card"><strong>${{esc(p.display_name||p.username)}}</strong><span class="rank">${{esc(p.rank)}}</span><p>Arena IQ ${{p.arena_iq||50}}</p></div>`).join('')||'<p class="muted">Complete missions to appear here.</p>'}}
+        async function loadRoom(){{const r=await fetch(`/api/arena/rooms/${{roomId}}/live`,{{credentials:'same-origin',cache:'no-store'}});const d=await r.json();if(!d.ok)return;document.querySelector('[data-room-commentary]').textContent=d.ai_commentary||'Room active.';document.querySelector('[data-room-messages]').innerHTML=(d.messages||[]).map(m=>`<div><strong>${{esc(m.display_name||'Member')}}</strong><p>${{esc(m.message)}}</p></div>`).join('')||'<div>No room messages yet.</div>';document.querySelector('[data-room-matches]').innerHTML=(d.active_matches||[]).map(m=>`<div class="player-card" data-battle-card="${{m.id||0}}"><strong>${{esc(m.match_label||m.name||'Arena Battle')}}</strong><span class="rank">${{esc(m.status||'open')}}</span><p>${{esc(m.description||'Virtual-dollar training battle.')}}</p><p class="muted">${{esc(m.xp_reward||'XP')}} · ${{esc(m.difficulty||'Adaptive')}} · Players live now</p><div class="actions"><button data-join-battle-card data-match-id="${{m.id||0}}" data-battle-type="${{esc(m.match_type||'btc_duel')}}">Join</button>${{m.id?`<a class="button" href="/arena/match/${{m.id}}?spectate=1">Watch</a>`:''}}</div></div>`).join('')||'<p class="muted">No active battles yet.</p>';document.querySelector('[data-room-players]').innerHTML=(d.top_players||[]).map(p=>`<div class="player-card"><strong>${{esc(p.display_name||p.username)}}</strong><span class="rank">${{esc(p.rank)}}</span><p>Arena IQ ${{p.arena_iq||50}}</p></div>`).join('')||'<p class="muted">Complete missions to appear here.</p>'}}
         document.querySelector('[data-room-chat]').addEventListener('submit',async e=>{{e.preventDefault();const message=new FormData(e.target).get('message');await fetch(`/api/arena/rooms/${{roomId}}/message`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message}})}});e.target.reset();loadRoom();}});
         document.addEventListener('click',async e=>{{const btn=e.target.closest('[data-join-battle-card]');if(!btn)return;btn.disabled=true;btn.textContent='Joining...';const d=await fetch('/api/arena/battle/join',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{match_id:Number(btn.dataset.matchId||0),battle_type:btn.dataset.battleType}})}}).then(r=>r.json());if(d.next_url)location.href=d.next_url;else{{btn.disabled=false;btn.textContent=d.message||'Join';}}}});
         loadRoom(); setInterval(loadRoom,5000);
@@ -29671,7 +29675,7 @@ def admin_roast_battle_page():
     )
     unsafe_rows = cur.fetchall()
     conn.close()
-    top = "".join(f"<tr><td>{clean_html(row['call_sign'] or 'Arena Pilot')}</td><td>${float(row['balance'] or 0):,.0f}</td><td>{float(row['crowd'] or 0):.0f}</td></tr>" for row in top_rows)
+    top = "".join(f"<tr><td>{clean_html(row['call_sign'] or 'Arena Member')}</td><td>${float(row['balance'] or 0):,.0f}</td><td>{float(row['crowd'] or 0):.0f}</td></tr>" for row in top_rows)
     unsafe = "".join(f"<tr><td>{clean_html(row['message'] or '')}</td><td>{clean_html(row['impact_label'] or '')}</td><td>{clean_html(row['moderation_reason'] or '')}</td><td>{clean_html(row['created_at'] or '')}</td></tr>" for row in unsafe_rows)
     body = f"""
     <div class='grid'>
@@ -30358,7 +30362,7 @@ def api_arena_room_live(room_id):
     )
     messages = [dict(row) for row in cur.fetchall()]
     for message in messages:
-        message["display_name"] = message.get("display_name") or message.get("full_name") or f"Pilot {message.get('user_id')}"
+        message["display_name"] = message.get("display_name") or message.get("full_name") or f"Member {message.get('user_id')}"
     cur.execute("SELECT id, match_type, status, starts_at, ends_at, rules_json FROM arena_matches WHERE status='active' ORDER BY created_at DESC LIMIT 8")
     matches = []
     for row in cur.fetchall():
@@ -30589,7 +30593,7 @@ def api_arena_match_join(match_id):
     profile = public_arena_player(get_or_create_arena_profile(user["user_id"]) or {})
     cur.execute(
         "INSERT INTO arena_match_events (match_id, user_id, event_type, title, body, payload_json, created_at) VALUES (?, ?, 'joined', 'Player joined battle', ?, '{}', ?)",
-        (match_id, user["user_id"], f"{profile.get('display_name') or 'Arena Pilot'} joined the virtual-dollar battle.", now),
+        (match_id, user["user_id"], f"{profile.get('display_name') or 'Arena Member'} joined the virtual-dollar battle.", now),
     )
     conn.commit()
     conn.close()
@@ -30704,7 +30708,7 @@ def api_arena_match_victory(match_id):
                 winner_id,
                 "arena_victory",
                 "Alpha Arena victory",
-                f"{result.get('winner_display_name') or 'Arena Pilot'} just won an Alpha Arena match.",
+                f"{result.get('winner_display_name') or 'Arena Member'} just won an Alpha Arena match.",
                 {"match_id": match_id, "replay_url": (result.get("replay") or {}).get("replay_url"), "victory_id": result.get("victory_id")},
                 channels=["in_app", "telegram"],
             )
@@ -31649,7 +31653,7 @@ def api_arena_message_player():
         notification_service.send_push_alert(
             receiver_id,
             "New Arena message",
-            f"{sender_public.get('display_name') or 'Arena Pilot'}: {message[:120]}",
+            f"{sender_public.get('display_name') or 'Arena Member'}: {message[:120]}",
             {"request_id": request_id, "url": f"/chat/thread/{private_thread_id}", "push_type": "private_message"},
         )
     except Exception as exc:
@@ -31940,7 +31944,7 @@ def api_arena_share_profile(public_player_id):
     if not row:
         return jsonify({"ok": False, "message": "Arena player not found."}), 404
     profile = public_arena_player(dict(row))
-    card = arena_share_service.share_card(profile=profile, achievement={"title": f"{profile.get('rank')} Arena Pilot"})
+    card = arena_share_service.share_card(profile=profile, achievement={"title": f"{profile.get('rank')} Arena Member"})
     if (request.args.get("format") or "").lower() == "svg":
         return Response(card["svg"], mimetype="image/svg+xml")
     return jsonify({"ok": True, "profile": profile, "share": card, "urls": arena_share_service.share_urls(card["url"], arena_share_service.share_text("profile", profile=profile))})
@@ -34018,9 +34022,9 @@ def api_messages_start():
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
     target_user_id = safe_int(payload.get("target_user_id") or payload.get("user_id"), 0)
-    query = clean_html(payload.get("query") or payload.get("public_pulse_id") or payload.get("public_player_id") or payload.get("email") or payload.get("username") or "").strip()
+    query = clean_html(payload.get("query") or payload.get("pulse_id") or payload.get("public_pulse_id") or payload.get("public_player_id") or payload.get("pilot_id") or payload.get("email") or payload.get("username") or "").strip()
     if not query and not target_user_id:
-        return jsonify({"ok": False, "message": "Search by name or public PulseSoc ID."}), 400
+        return jsonify({"ok": False, "message": "Search by username, display name, or Pulse ID."}), 400
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -34056,10 +34060,10 @@ def api_chat_start():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
-    query = clean_html(payload.get("query") or payload.get("public_pulse_id") or payload.get("public_player_id") or payload.get("username") or "").strip()
+    query = clean_html(payload.get("query") or payload.get("pulse_id") or payload.get("public_pulse_id") or payload.get("public_player_id") or payload.get("pilot_id") or payload.get("username") or "").strip()
     target_user_id = safe_int(payload.get("target_user_id") or payload.get("user_id"), 0)
     if not query and not target_user_id:
-        return jsonify({"ok": False, "message": "Search by name or public PulseSoc ID."}), 400
+        return jsonify({"ok": False, "message": "Search by username, display name, or Pulse ID."}), 400
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     if not target_user_id:
         matches = pulse_search_users(cur, query, viewer_user_id=user["user_id"], limit=8, allow_email=bool(user.get("is_admin") or user.get("is_owner")))
@@ -35978,13 +35982,14 @@ def api_pulse_search():
                 "user_id": creator.get("user_id"),
                 "public_player_id": creator.get("public_player_id") or "",
                 "public_pulse_id": creator.get("public_pulse_id") or "",
+                "pulse_id": creator.get("pulse_id") or "",
                 "username": creator.get("username") or "",
                 "title": creator.get("display_name") or creator.get("username") or creator.get("public_pulse_id") or "PulseSoc creator",
-                "description": creator.get("public_pulse_id") or creator.get("username") or "Creator on PulseSoc",
+                "description": f"@{creator.get('username')}" if creator.get("username") else "Creator on PulseSoc",
                 "type": "creator",
                 "url": pulse_profile_canonical_path(creator.get("user_id"), cur),
                 "avatar_url": creator.get("avatar_url") or creator.get("avatar_thumbnail_url") or "",
-                "meta": "Creator",
+                "meta": f"Pulse ID • {creator.get('pulse_id')}" if creator.get("pulse_id") else "Creator",
             }
             for creator in safe_creators
         ]
@@ -38384,7 +38389,7 @@ def get_pulse_identity_display(user_id, cur=None):
     try:
         cur.execute(
             """
-            SELECT u.user_id, u.username, u.email, u.full_name, u.display_name AS user_display_name,
+            SELECT u.user_id, u.pulse_id, u.username, u.email, u.full_name, u.display_name AS user_display_name,
                    u.display_name, u.avatar_url AS user_avatar_url, u.avatar_url, u.bio, COALESCE(u.cover_url,u.banner_url,'') AS banner_url,
                    u.plan, u.subscription_plan, u.subscription_status, u.is_pro, u.pro_active,
                    u.pro_expires_at, u.subscription_expires_at, u.premium_status, u.premium_expires_at,
@@ -38485,7 +38490,7 @@ def pulse_identities_for_users(cur, user_ids, trace_id=""):
     try:
         cur.execute(
             f"""
-            SELECT u.user_id, u.username, u.email, u.full_name, u.display_name AS user_display_name,
+            SELECT u.user_id, u.pulse_id, u.username, u.email, u.full_name, u.display_name AS user_display_name,
                    u.display_name, u.avatar_url AS user_avatar_url, u.avatar_url, u.bio, COALESCE(u.cover_url,u.banner_url,'') AS banner_url,
                    u.plan, u.subscription_plan, u.subscription_status, u.is_pro, u.pro_active,
                    u.pro_expires_at, u.subscription_expires_at, u.premium_status, u.premium_expires_at,
@@ -40440,6 +40445,13 @@ def pulse_public_id_for_user(user_id):
     return f"@PulseSoc-{suffix}"
 
 
+def pulse_id_for_user(cur, user_id):
+    try:
+        return pulse_id_service.ensure_user_pulse_id(cur, int(user_id or 0))
+    except Exception:
+        return pulse_id_service.canonical_pulse_id(int(user_id or 0))
+
+
 def pulse_media_url(url):
     return media_service.normalize_url(url)
 
@@ -40478,11 +40490,12 @@ def pulse_search_users(cur, query, viewer_user_id=0, limit=12, allow_email=False
     params.append(int(limit or 12))
     cur.execute(
         f"""
-        SELECT u.user_id, u.display_name, u.full_name, u.username, u.email, u.avatar_url,
+        SELECT u.user_id, u.pulse_id, u.display_name, u.full_name, u.username, u.email, u.avatar_url,
                ap.public_player_id, ap.display_name AS arena_name
         FROM users u
         LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
-        WHERE lower(COALESCE(ap.public_player_id,''))=lower(?)
+        WHERE upper(COALESCE(u.pulse_id,''))=upper(?)
+           OR lower(COALESCE(ap.public_player_id,''))=lower(?)
            OR lower(COALESCE(u.username,''))=lower(?)
            OR lower(COALESCE(u.display_name,'')) LIKE ?
            OR lower(COALESCE(u.full_name,'')) LIKE ?
@@ -40493,7 +40506,7 @@ def pulse_search_users(cur, query, viewer_user_id=0, limit=12, allow_email=False
         ORDER BY CASE WHEN u.user_id=? THEN 1 ELSE 0 END, u.user_id DESC
         LIMIT ?
         """,
-        params[:-1] + [int(viewer_user_id or 0), params[-1]],
+        [q_lower] + params[:-1] + [int(viewer_user_id or 0), params[-1]],
     )
     users = []
     for row in cur.fetchall():
@@ -40505,6 +40518,7 @@ def pulse_search_users(cur, query, viewer_user_id=0, limit=12, allow_email=False
         users.append({
             "id": int(item.get("user_id") or 0),
             "user_id": int(item.get("user_id") or 0),
+            "pulse_id": ident.get("pulse_id") or item.get("pulse_id") or pulse_id_for_user(cur, item.get("user_id")),
             "display_name": ident.get("name") or item.get("display_name") or item.get("full_name") or item.get("username") or "PulseSoc user",
             "username": ident.get("username") or item.get("username") or "",
             "public_pulse_id": public_id,
@@ -40523,6 +40537,9 @@ def pulse_user_id_from_public(cur, public_player_id):
     if not public_player_id:
         return None
     lookup = public_player_id[1:] if public_player_id.startswith("@") else public_player_id
+    pulse_id_user = pulse_id_service.resolve_user_id(cur, lookup)
+    if pulse_id_user:
+        return pulse_id_user
     try:
         cur.execute("SELECT user_id FROM arena_profiles WHERE lower(public_player_id)=lower(?) LIMIT 1", (lookup,))
         row = cur.fetchone()
@@ -40577,6 +40594,9 @@ def pulse_user_id_from_profile_key(cur, profile_key):
     lookup = lookup.strip().lstrip("@")
     if not lookup or any(ch.isspace() for ch in lookup):
         return None
+    pulse_id_user = pulse_id_service.resolve_user_id(cur, lookup)
+    if pulse_id_user:
+        return pulse_id_user
     try:
         cur.execute("SELECT user_id FROM arena_profiles WHERE lower(public_player_id)=lower(?) LIMIT 1", (lookup,))
         row = cur.fetchone()
@@ -74475,7 +74495,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         <aside class="pulse-dashboard-chat-list">
           <section class="pulse-dashboard-chat-section" data-panel="direct">
             <form class="pulse-dashboard-chat-search" data-chat-start-form>
-              <input name="query" type="text" placeholder="Search by name or public PulseSoc ID" maxlength="160" autocomplete="off">
+              <input name="query" type="text" placeholder="Search by username, display name, or Pulse ID" maxlength="160" autocomplete="off">
               <button class="primary" type="submit">Start</button>
             </form>
             <p class="muted" data-chat-start-message></p>
@@ -75909,7 +75929,7 @@ def pulse_group_detail_page(group_slug):
     if groups_advanced:
         action_html = f"<button class='primary' data-join-group-id='{group_id}'>Join Group</button><button data-open-group-chat-id='{group_id}'>Open Group Chat</button><button data-invite-group-id='{group_id}'>Invite</button><button data-report-group-id='{group_id}'>Report</button><button data-leave-group-id='{group_id}'>Leave</button>"
     composer_html = f"<section class='card'><h2>Share With Group</h2><textarea id='groupPostBody' placeholder='Share an update, lesson, warning, question, photo, or video caption.'></textarea><label>Attach photo or video<input id='groupMediaFile' type='file' accept='image/*,video/*'></label><div class='group-composer-actions'><a class='button' href='/pulse/camera/photo?target=group&group={slug}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=group&group={slug}'>Record Video</a><button class='primary' id='groupPostBtn'>Post</button></div></section>" if groups_advanced else "<section class='card'><h2>Groups Stabilization</h2><p class='muted'>Advanced posting, media, invites, moderation, and chat controls are temporarily paused. Group browsing, creation, joining, and leaving remain available.</p></section>"
-    modal_html = f"<section class='group-report-modal' id='groupReportModal'><div class='group-report-sheet'><h2 id='groupReportTitle'>Report Post</h2><select id='groupReportReason'><option value='spam'>Spam</option><option value='harassment'>Harassment</option><option value='scam'>Scam</option><option value='impersonation'>Impersonation</option><option value='misleading financial claims'>Misleading financial claims</option><option value='nudity'>Nudity</option><option value='violence'>Violence</option><option value='misinformation'>Misinformation</option><option value='illegal'>Illegal</option><option value='other'>Other</option></select><textarea id='groupReportNotes' placeholder='Add context for moderators'></textarea><div class='actions'><button type='button' id='cancelGroupReport'>Cancel</button><button class='primary' type='button' id='submitGroupReport'>Submit Report</button></div></div></section><section class='group-report-modal' id='groupInviteModal'><div class='group-report-sheet'><h2>Invite to Group</h2><form id='groupInviteSearch'><input name='q' placeholder='Search by name or public PulseSoc ID'><button class='primary'>Search</button></form><div class='messenger-search-results' id='groupInviteResults'></div><button type='button' id='copyGroupInvite'>Copy Invite Link</button><button type='button' id='cancelGroupInvite'>Close</button></div></section>" if groups_advanced else ""
+    modal_html = f"<section class='group-report-modal' id='groupReportModal'><div class='group-report-sheet'><h2 id='groupReportTitle'>Report Post</h2><select id='groupReportReason'><option value='spam'>Spam</option><option value='harassment'>Harassment</option><option value='scam'>Scam</option><option value='impersonation'>Impersonation</option><option value='misleading financial claims'>Misleading financial claims</option><option value='nudity'>Nudity</option><option value='violence'>Violence</option><option value='misinformation'>Misinformation</option><option value='illegal'>Illegal</option><option value='other'>Other</option></select><textarea id='groupReportNotes' placeholder='Add context for moderators'></textarea><div class='actions'><button type='button' id='cancelGroupReport'>Cancel</button><button class='primary' type='button' id='submitGroupReport'>Submit Report</button></div></div></section><section class='group-report-modal' id='groupInviteModal'><div class='group-report-sheet'><h2>Invite to Group</h2><form id='groupInviteSearch'><input name='q' placeholder='Search by username, display name, or Pulse ID'><button class='primary'>Search</button></form><div class='messenger-search-results' id='groupInviteResults'></div><button type='button' id='copyGroupInvite'>Copy Invite Link</button><button type='button' id='cancelGroupInvite'>Close</button></div></section>" if groups_advanced else ""
     post_empty = '<article class="card"><p>No group posts yet.</p></article>'
     main = f"{style}<section class='card' data-group-shell='{group_id}'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p class='group-meta-pills'><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'><span data-group-member-count>{members}</span> members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='group-community-actions'>{action_html}</div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section>{delete_group_html}{composer_html}<section>{post_html or post_empty}</section>{modal_html}"
     script = f"""
@@ -80427,7 +80447,7 @@ def api_pulse_message_start():
     ).strip()
     target_user_id = safe_int(payload.get("target_user_id") or payload.get("receiver_user_id") or payload.get("user_id"), 0)
     if not query and not target_user_id:
-        return jsonify({"ok": False, "message": "Search by name or public PulseSoc ID."}), 400
+        return jsonify({"ok": False, "message": "Search by username, display name, or Pulse ID."}), 400
     conn = None
     try:
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
@@ -92412,6 +92432,7 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
     theme["modules"] = modules if isinstance(modules, list) else []
     payload = pulse_mobile_user_payload(account)
     payload.update({
+        "pulse_id": ident.get("pulse_id") or payload.get("pulse_id"),
         "display_name": ident.get("name") or ident.get("display_name") or payload.get("display_name"),
         "username": ident.get("username") or payload.get("username"),
         "public_player_id": ident.get("public_player_id") or payload.get("public_player_id"),
@@ -92437,6 +92458,30 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
         "theme": theme or {"theme_key": "deep_space", "accent_color": "#32e6b3", "layout_key": "classic", "motion_level": "balanced", "modules": []},
     })
     return payload
+
+
+@webhook_app.route("/api/pulse/identity/<path:pulse_id>", methods=["GET"])
+def api_pulse_identity(pulse_id):
+    """Resolve a permanent Pulse ID to its canonical PulseSoc profile."""
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    target_user_id = pulse_id_service.resolve_user_id(cur, pulse_id)
+    if not target_user_id:
+        conn.close()
+        return api_error("Pulse ID not found.", 404)
+    payload = pulse_native_profile_payload(cur, target_user_id, user["user_id"])
+    conn.close()
+    if not payload:
+        return api_error("Pulse ID not found.", 404)
+    return jsonify({
+        "ok": True,
+        "pulse_id": payload.get("pulse_id"),
+        "canonical_profile_key": payload.get("canonical_profile_key"),
+        "profile": payload,
+    })
 
 
 @webhook_app.route("/api/pulse/profile/<path:profile_key>", methods=["GET"])

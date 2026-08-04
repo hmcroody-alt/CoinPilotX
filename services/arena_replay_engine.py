@@ -25,7 +25,7 @@ def generate_replay(match_id, winner_id=0, base_url="https://pulsesoc.com"):
     events = _rows(cur)
     cur.execute("SELECT * FROM arena_profiles WHERE user_id=? LIMIT 1", (int(winner_id or 0),))
     winner = user_context.row_to_dict(cur.fetchone()) or {}
-    title = f"{winner.get('display_name') or 'Arena Pilot'} victory replay"
+    title = f"{winner.get('display_name') or 'Arena Member'} victory replay"
     highlights = []
     for event in events[-8:]:
         highlights.append({

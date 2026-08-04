@@ -28,7 +28,7 @@ UNDX_DESCRIPTION = "PulseSOC Intelligence Companion"
 MAX_MESSAGE_CHARS = 4000
 UNDX_IDENTITY_REPLY = (
     "I’m UNDX — PulseSOC’s AGI-class digital intelligence companion. "
-    "Think of me as your absurdly well-read digital co-pilot: sharp, fast, "
+    "Think of me as your absurdly well-read digital partner: sharp, fast, "
     "useful, and thankfully not asking for a coffee break."
 )
 UNDX_UNAVAILABLE_MESSAGE = "UNDX is temporarily unavailable. Please try again soon."

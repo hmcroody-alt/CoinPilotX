@@ -19,6 +19,7 @@ import {
   sendConversationMessage
 } from "../api/messenger";
 import { RootStackParamList } from "../navigation/types";
+import { PulseIdBadge } from "../components/PulseIdBadge";
 import { buildNativeSharePayload, openSystemShare } from "../sharing/nativeShare";
 import { saveShareComposerHandoff, ShareComposerMode } from "../sharing/shareComposerHandoff";
 import { colors } from "../theme/colors";
@@ -184,6 +185,7 @@ export function PulseShareScreen({ route, navigation }: Props) {
               <View style={styles.personCopy}>
                 <Text style={styles.personName}>{person.display_name}</Text>
                 <Text style={styles.personHandle}>{person.public_pulse_id || person.public_player_id || "PulseSoc member"}</Text>
+                {person.pulse_id ? <PulseIdBadge pulseId={person.pulse_id} compact /> : null}
               </View>
               {sendingUserId === person.user_id ? <ActivityIndicator color={colors.accent} /> : <Text style={styles.sendLabel}>Send</Text>}
             </Pressable>

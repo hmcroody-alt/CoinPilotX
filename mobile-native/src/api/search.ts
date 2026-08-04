@@ -20,6 +20,7 @@ export type PulseSearchResult = {
   id?: number | string;
   user_id?: number | string;
   profile_id?: number | string;
+  pulse_id?: string;
   public_player_id?: string;
   public_pulse_id?: string;
   username?: string;
@@ -130,6 +131,7 @@ function normalizeResultList(items: PulseSearchResult[]) {
   return (items || []).map((item) => ({
     ...item,
     user_id: item.user_id || (isCreatorResult(item) ? item.id : undefined),
+    pulse_id: item.pulse_id ? String(item.pulse_id).toUpperCase() : undefined,
     public_player_id: String(item.public_player_id || item.public_pulse_id || "").replace(/^@/, ""),
     public_pulse_id: item.public_pulse_id || (item.public_player_id ? `@${String(item.public_player_id).replace(/^@/, "")}` : undefined),
     username: item.username ? String(item.username).replace(/^@/, "") : undefined,

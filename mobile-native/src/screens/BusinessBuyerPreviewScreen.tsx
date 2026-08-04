@@ -52,6 +52,7 @@ import {
 } from "../api/businessProfile";
 import { failureFrom, type FailureCopy } from "../api/stateLanguage";
 import { logiNexus } from "../theme/logiNexus";
+import { PulseIdBadge } from "../components/PulseIdBadge";
 
 const palette = logiNexus.colors.businessLive;
 const { spacing, typography, radius } = logiNexus;
@@ -300,8 +301,9 @@ function BuyerHeader({ profile }: { profile: PublicProfile }) {
               />
             ) : null}
           </View>
-          {/* Normalised on both sides. This is the line that printed "@@Pilot-8919". */}
+          {/* Normalised on both sides to prevent doubled handle prefixes. */}
           {profile.handle ? <Text style={styles.handle}>{profile.handle}</Text> : null}
+          <PulseIdBadge pulseId={profile.pulseId} compact />
           {profile.businessCategoryLabel ? (
             <Text style={styles.category}>{profile.businessCategoryLabel}</Text>
           ) : null}

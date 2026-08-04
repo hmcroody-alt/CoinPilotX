@@ -28,6 +28,7 @@ export type PulseProfileTheme = {
 
 export type PulseProfile = {
   user_id: number;
+  pulse_id?: string;
   email?: string;
   username?: string;
   display_name: string;
@@ -252,6 +253,7 @@ export function normalizeProfile(input: Partial<PulseProfile>): PulseProfile {
   return {
     ...profile,
     user_id: Number(profile.user_id || 0),
+    pulse_id: String(profile.pulse_id || "").toUpperCase(),
     display_name: display,
     username: String(profile.username || "").replace(/^@/, ""),
     avatar_url: absoluteProfileUrl(profile.avatar_url || profile.avatar_thumbnail_url || ""),

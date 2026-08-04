@@ -87,7 +87,7 @@ def trigger_victory_event(match_id, winner_id, loser_id=0, mode="", metadata=Non
     mode = mode or match.get("match_type") or "ranked"
     cur.execute("SELECT * FROM arena_profiles WHERE user_id=? LIMIT 1", (winner_id,))
     winner = user_context.row_to_dict(cur.fetchone()) or {}
-    display_name = winner.get("display_name") or winner.get("public_player_id") or "Arena Pilot"
+    display_name = winner.get("display_name") or winner.get("public_player_id") or "Arena Member"
     logic = mode_win_logic(mode)
     commentator_line = COMMENTARY_LINES.get("scam_hunter" if "scam" in mode else "ranked")
     if metadata.get("comeback"):

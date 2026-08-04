@@ -8,6 +8,7 @@ import { colors } from "../theme/colors";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { ContentTranslation } from "./ContentTranslation";
+import { PulseIdBadge } from "./PulseIdBadge";
 
 export const PROFILE_HERO_HEIGHT = 320;
 
@@ -31,7 +32,7 @@ export type ProfileModuleKey =
 type ModuleDef = { key: ProfileModuleKey; label: string; icon: keyof typeof Ionicons.glyphMap };
 
 const MODULES: ModuleDef[] = [
-  { key: "identity", label: "Identity", icon: "person-circle-outline" },
+  { key: "identity", label: "Pulse Identity", icon: "person-circle-outline" },
   { key: "media", label: "Media", icon: "images-outline" },
   { key: "music", label: "Music", icon: "musical-notes-outline" },
   { key: "trust", label: "Trust", icon: "shield-checkmark-outline" },
@@ -192,6 +193,7 @@ export function ProfileHeader({
             {verified ? <Ionicons name="checkmark-circle" size={22} color={accent} style={styles.nameVerified} /> : null}
           </View>
           <Text style={styles.handle} numberOfLines={1}>{handle ? `@${handle}` : "PulseSoc identity"}</Text>
+          <PulseIdBadge pulseId={profile.pulse_id} />
 
           <View style={styles.badges}>
             {verified ? <Badge label="Verified" icon="shield-checkmark" accent={accent} /> : null}

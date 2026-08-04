@@ -59,7 +59,7 @@ MUTATIONS = [
     ),
     (
         "double_at_handle",
-        'the ``@@Pilot-8919`` handle — an "@" prefixed onto a value that already '
+        'the ``@@LegacyMember-8919`` handle — an "@" prefixed onto a value that already '
         "carried one",
         '    text = re.sub(r"^@+", "", text)\n',
         '',

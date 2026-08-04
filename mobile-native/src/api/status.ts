@@ -322,7 +322,7 @@ export function statusQaFixtures(): PulseStatus[] {
   const fixture = (id: number, status_type: StatusType, body: string, options: Partial<PulseStatus> = {}): PulseStatus => normalizeStatus({
     id, status_id: id, user_id: 7000 + id, status_type, body, visibility: "public",
     created_at: new Date(now - id * 42_000).toISOString(), expires_at: new Date(now + 86_400_000).toISOString(),
-    author: { id: 7000 + id, user_id: 7000 + id, display_name: `Status Pilot ${id - 9100}`, username: `status_pilot_${id}`, avatar_url: "" },
+    author: { id: 7000 + id, user_id: 7000 + id, display_name: `Status Member ${id - 9100}`, username: `status_member_${id}`, avatar_url: "" },
     story_count: 1, unseen_count: 1, view_count: 18 + id % 9, reaction_count: id % 5, reply_count: id % 3, share_count: id % 4,
     ...options
   });

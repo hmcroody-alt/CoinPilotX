@@ -177,7 +177,7 @@ export function ProfileScreen({ route, navigation }: Props) {
   function handleModule(key: ProfileModuleKey) {
     switch (key) {
       case "identity":
-        return owner ? navigation?.navigate("ProfileEdit") : setTab("about");
+        return owner ? navigation?.navigate("PulseIdentity") : setTab("about");
       case "media":
         return setTab("media");
       case "music":
