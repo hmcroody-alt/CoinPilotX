@@ -68,6 +68,7 @@ import { NotificationPreferencesScreen } from "../screens/NotificationPreference
 import { RegionTimeScreen } from "../screens/RegionTimeScreen";
 import { PulseQueueScreen } from "../screens/PulseQueueScreen";
 import { PostDetailScreen } from "../screens/PostDetailScreen";
+import { ProfilePostViewerScreen } from "../screens/ProfilePostViewerScreen";
 import { PremiumScreen } from "../screens/PremiumScreen";
 import { ProfileEditScreen } from "../screens/ProfileEditScreen";
 import { PulseShareScreen } from "../screens/PulseShareScreen";
@@ -307,6 +308,7 @@ export function AppNavigator() {
       <Stack.Screen name="NewChat" component={NewChatScreen} options={{ title: t("common:screens.newChat") }} />
       <Stack.Screen name="PulseShare" component={PulseShareScreen} options={{ title: t("common:screens.share"), presentation: "modal" }} />
       <Stack.Screen name="PostDetail" component={PostDetailScreen} options={({ route }) => ({ title: route.params.title || t("common:screens.post") })} />
+      <Stack.Screen name="ProfilePostViewer" component={ProfilePostViewerScreen} options={{ title: "Profile posts" }} />
       <Stack.Screen name="Reels" component={ReelsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="ReelDetail" component={ReelsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="StatusDetail" component={StatusScreen} options={({ route }) => ({ title: route.params.title || t("common:screens.status") })} />

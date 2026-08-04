@@ -76,6 +76,7 @@ export type RootStackParamList = {
     previewImageUrl?: string;
   };
   PostDetail: { postId: number; title?: string };
+  ProfilePostViewer: { profileId: number; profileKey: string; postId: number; postIds: number[]; owner: boolean; source: "PROFILE_GRID" };
   Reels: { reelId?: number; title?: string } | undefined;
   ReelDetail: { reelId: number; title?: string };
   StatusDetail: { statusId: number; title?: string };

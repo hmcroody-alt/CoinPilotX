@@ -1,12 +1,12 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, Animated, FlatList, Image, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { deletePost, listFeed, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
 import { describeDeleteError } from "../api/deleteErrors";
 import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
 import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
 import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, resolveProfileTarget } from "../api/profileTarget";
-import { PostCard } from "../components/PostCard";
 import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/ProfileHeader";
@@ -40,6 +40,9 @@ export function ProfileScreen({ route, navigation }: Props) {
   const owner = !profileTarget;
   const [profile, setProfile] = useState<PulseProfile | null>(null);
   const [posts, setPosts] = useState<PulsePost[]>([]);
+  const [nextOffset, setNextOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [tab, setTab] = useState<TabKey>("posts");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -70,11 +73,15 @@ export function ProfileScreen({ route, navigation }: Props) {
         const me = await getMyProfile();
         setProfile(me);
         const key = me.public_player_id || me.username || "";
-        const feed = key ? await listFeed({ feed: "for_you", profile: key, limit: 20, offset: 0 }) : { posts: [] };
+        const feed = key ? await listFeed({ feed: "for_you", profile: key, limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
         setPosts(feed.posts || []);
+        setNextOffset(Number(feed.next_offset || feed.posts?.length || 0));
+        setHasMore(Boolean(feed.has_more));
       } else {
         const [publicProfile, feedPosts] = await Promise.all([getPublicProfile(profileTarget), listPublicProfilePosts(profileTarget)]);
         setPosts(feedPosts);
+        setNextOffset(feedPosts.length);
+        setHasMore(feedPosts.length >= 20);
         setProfile(publicProfile);
       }
     } catch (loadError) {
@@ -93,6 +100,26 @@ export function ProfileScreen({ route, navigation }: Props) {
       setLoading(false);
       setRefreshing(false);
       if (mode === "refresh") refreshingRef.current = false;
+    }
+  }
+
+  async function loadMorePosts() {
+    if (loadingMore || !hasMore || !profile) return;
+    const key = profile.public_player_id || profile.username || profileKey;
+    if (!key) return;
+    setLoadingMore(true);
+    try {
+      const page = await listFeed({ feed: "for_you", profile: key, limit: 20, offset: nextOffset });
+      setPosts((current) => {
+        const seen = new Set(current.map((item) => item.id));
+        return current.concat((page.posts || []).filter((item) => !seen.has(item.id)));
+      });
+      setNextOffset(Number(page.next_offset || nextOffset + (page.posts || []).length));
+      setHasMore(Boolean(page.has_more));
+    } catch {
+      setActionMessage("More posts could not load. Your current grid is preserved.");
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -328,6 +355,8 @@ export function ProfileScreen({ route, navigation }: Props) {
       style={styles.list}
       contentContainerStyle={[styles.content, dock.contentPadding]}
       data={tab === "about" ? [] : visiblePosts}
+      numColumns={3}
+      columnWrapperStyle={tab === "about" ? undefined : styles.gridRow}
       keyExtractor={(item) => String(item.id)}
       refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
       ListHeaderComponent={
@@ -363,38 +392,47 @@ export function ProfileScreen({ route, navigation }: Props) {
           </View>
         </View>
       }
-      ListEmptyComponent={tab === "about" ? null : <Text style={styles.empty}>{tab === "media" ? "No media posts loaded." : "No profile posts loaded."}</Text>}
-      renderItem={({ item }) => (
-        <View style={styles.postWrap}>
-          <PostCard
-            post={item}
-            busy={guard.isItemBusy(item.id)}
-            onOpen={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Post" })}
-            onReact={handleReact}
-            onSave={handleSave}
-            onRepost={handleRepost}
-            onComment={(post) => navigation?.navigate("PostDetail", { postId: post.id, title: "Comments" })}
-            onShare={(post) => sharePulseObject({
-              kind: "post",
-              url: pulsePostUrl(post.id),
-              title: post.title || "PulseSoc post",
-              description: post.body || post.text || post.content,
-              author: post.author?.display_name || post.author?.name || post.author?.username || post.author_name,
-              previewImageUrl: post.thumbnail_url || post.image_url
-            }).catch(() => undefined)}
-            onDelete={owner ? handleDeletePost : undefined}
-            onAuthorPress={(post) => {
-              const target = profileTargetFromAuthor(post.author as Record<string, unknown> | undefined, post as unknown as Record<string, unknown>);
-              const params = profileNavigationParams(target, post.author?.display_name || "Profile");
-              if (params) navigation?.navigate("ProfileDetail", params);
-            }}
-          />
-        </View>
-      )}
+      ListEmptyComponent={tab === "about" ? null : <Text style={styles.empty}>{owner ? "No posts yet\nShare your first post and it will appear here." : "No posts yet\nThis profile has not shared any posts."}</Text>}
+      ListFooterComponent={loadingMore ? <Text style={styles.loadingMore}>Loading more posts…</Text> : null}
+      renderItem={({ item }) => <ProfilePostGridTile post={item} onPress={() => navigation?.navigate("ProfilePostViewer", {
+        profileId: profile.user_id,
+        profileKey: profile.public_player_id || profile.username || profileKey,
+        postId: item.id,
+        postIds: visiblePosts.map((post) => post.id),
+        owner,
+        source: "PROFILE_GRID"
+      })} />}
+      onEndReached={() => loadMorePosts().catch(() => undefined)}
+      onEndReachedThreshold={0.55}
       onScroll={onScroll}
       onScrollBeginDrag={dock.handlers.onScrollBeginDrag}
       scrollEventThrottle={dock.handlers.scrollEventThrottle}
     />
+  );
+}
+
+export function ProfilePostGridTile({ post, onPress }: { post: PulsePost; onPress: () => void }) {
+  const media = post.media?.[0] || post.media_assets?.[0] || post.attachments?.[0];
+  const kind = String(media?.media_type || media?.type || (post.video_url ? "video" : post.image_url ? "image" : post.music ? "music" : "text")).toLowerCase();
+  const thumbnail = media?.thumbnail_url || media?.poster_url || post.thumbnail_url || (kind === "image" ? media?.media_url || media?.url : "") || post.image_url || post.original_post?.thumbnail_url || post.original_post?.image_url || "";
+  const excerpt = String(post.body || post.text || post.content || post.title || "PulseSoc post").trim();
+  const duration = Number(media?.duration_seconds || (media?.duration_ms ? media.duration_ms / 1000 : 0));
+  const durationLabel = duration > 0 ? `${Math.floor(duration / 60)}:${String(Math.floor(duration % 60)).padStart(2, "0")}` : "";
+  const multi = Number(post.media?.length || post.media_assets?.length || post.attachments?.length || 0) > 1;
+  const pinned = Boolean((post as PulsePost & { pinned?: boolean; is_pinned?: boolean }).pinned || (post as PulsePost & { is_pinned?: boolean }).is_pinned);
+  const label = `${kind === "text" ? "Text" : kind === "video" ? "Video" : kind === "music" ? "Music" : "Image"} post. ${excerpt.slice(0, 80)}${durationLabel ? `. Duration ${durationLabel}` : ""}${pinned ? ". Pinned" : ""}`;
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} testID={`profile-grid-tile-${post.id}`} style={styles.gridTile} onPress={onPress}>
+      {thumbnail ? <Image source={{ uri: thumbnail }} resizeMode="cover" style={styles.gridImage} /> : <View style={styles.textTile}><Text numberOfLines={6} adjustsFontSizeToFit style={styles.textTileCopy}>{excerpt || "Post"}</Text></View>}
+      <View style={styles.tileSignals}>
+        {kind === "video" ? <Ionicons name="play" size={14} color="#fff" /> : null}
+        {kind === "music" || post.music ? <Ionicons name="musical-note" size={14} color="#fff" /> : null}
+        {post.repost || post.original_post ? <Ionicons name="repeat" size={14} color="#fff" /> : null}
+        {multi ? <Ionicons name="copy-outline" size={14} color="#fff" /> : null}
+        {pinned ? <Ionicons name="pin" size={14} color="#fff" /> : null}
+        {durationLabel ? <Text style={styles.duration}>{durationLabel}</Text> : null}
+      </View>
+    </Pressable>
   );
 }
 
@@ -487,9 +525,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 4
   },
-  postWrap: {
-    paddingHorizontal: 16
-  },
+  gridRow: { gap: 2, paddingHorizontal: 2 },
+  gridTile: { aspectRatio: 1, backgroundColor: colors.surface, flex: 1, marginBottom: 2, maxWidth: "33.333%", overflow: "hidden" },
+  gridImage: { height: "100%", width: "100%" },
+  textTile: { alignItems: "center", backgroundColor: "#0D2030", flex: 1, justifyContent: "center", padding: 10 },
+  textTileCopy: { color: colors.text, fontSize: 13, fontWeight: "800", lineHeight: 17, textAlign: "center" },
+  tileSignals: { alignItems: "center", flexDirection: "row", gap: 4, left: 7, position: "absolute", right: 7, top: 7 },
+  duration: { color: "#fff", fontSize: 10, fontWeight: "900", marginLeft: "auto", textShadowColor: "#000", textShadowRadius: 4 },
+  loadingMore: { color: colors.muted, padding: 16, textAlign: "center" },
   empty: {
     color: colors.muted,
     padding: 20,
