@@ -39840,45 +39840,6 @@ def pulse_finalize_message_delivery(result, sender, trace_id=""):
             "suppress_push": suppress_push,
             "push_skip_reason": str((recipient or {}).get("skip_reason") or "")[:80],
         }
-        event_conn = None
-        try:
-            event_conn = db()
-            event_cur = event_conn.cursor()
-            pulse_emit_comms_safety_event(
-                event_cur,
-                recipient_id,
-                "message_received",
-                "message",
-                message_id,
-                actor_user_id=sender_id,
-                target_url=deep_link,
-                title=title,
-                body=f"{actor_name}: {preview}",
-                category="messages",
-                extra={
-                    **metadata,
-                    "recipient_user_id": recipient_id,
-                    "sender_user_id": sender_id,
-                    "conversation_id": conversation_id,
-                    "message_id": message_id,
-                },
-            )
-            event_conn.commit()
-            event_conn.close()
-        except Exception as exc:
-            try:
-                if event_conn:
-                    event_conn.rollback()
-                    event_conn.close()
-            except Exception:
-                pass
-            logging.warning(
-                "PUSH_TRACE stage=message_received_sync_event_failed trace_id=%s recipient_id=%s message_id=%s error_type=%s",
-                trace_id,
-                recipient_id,
-                message_id,
-                exc.__class__.__name__,
-            )
         try:
             notification = notification_service.create_pulse_notification(
                 recipient_id,

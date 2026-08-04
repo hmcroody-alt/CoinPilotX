@@ -525,6 +525,37 @@ def save_subscription(user_id, subscription, user_agent="", device_type="", brow
     conn = user_context.connect()
     cur = conn.cursor()
     _ensure_user_device_tokens(cur)
+    explicit_device_id = (
+        (subscription or {}).get("device_id")
+        or (subscription or {}).get("deviceId")
+        or (subscription or {}).get("installation_id")
+    )
+    device_id = explicit_device_id or _endpoint_hash(endpoint)
+    if explicit_device_id:
+        # A refreshed Expo token replaces the old endpoint for this exact app
+        # installation. Leaving both active makes one message fan out twice.
+        cur.execute(
+            "SELECT push_token FROM user_device_tokens WHERE user_id=? AND device_id=? AND COALESCE(enabled,1)=1",
+            (int(user_id), str(device_id)[:180]),
+        )
+        previous_tokens = {
+            str((row["push_token"] if hasattr(row, "keys") else row[0]) or "")
+            for row in cur.fetchall()
+        }
+        previous_tokens.discard("")
+        previous_tokens.discard(str(endpoint))
+        for previous_token in previous_tokens:
+            cur.execute(
+                "UPDATE push_subscriptions SET active=0, is_active=0, updated_at=? WHERE user_id=? AND endpoint=?",
+                (_now(), int(user_id), previous_token),
+            )
+            try:
+                cur.execute(
+                    "UPDATE pulse_notification_devices SET active=0, updated_at=? WHERE user_id=? AND endpoint=?",
+                    (_now(), int(user_id), previous_token),
+                )
+            except Exception:
+                pass
     cur.execute(
         """
         INSERT INTO push_subscriptions
@@ -544,12 +575,6 @@ def save_subscription(user_id, subscription, user_agent="", device_type="", brow
             last_seen_at=excluded.last_seen_at
         """,
         (user_id, endpoint, json.dumps(subscription)[:8000], p256dh, auth, user_agent[:600], device_type[:80], browser[:120], _now(), _now(), _now()),
-    )
-    device_id = (
-        (subscription or {}).get("device_id")
-        or (subscription or {}).get("deviceId")
-        or (subscription or {}).get("installation_id")
-        or _endpoint_hash(endpoint)
     )
     platform = (subscription or {}).get("platform") or device_type or ("ios" if "iphone" in (user_agent or "").lower() else "android" if "android" in (user_agent or "").lower() else "web")
     environment = (subscription or {}).get("environment") or os.getenv("PUSH_ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT_NAME") or "production"

@@ -1041,6 +1041,7 @@ def create_pulse_notification(
     )
     conn.commit()
     conn.close()
+    central_delivery_managed = False
     try:
         central = pulsesoc_notification_system.notify_legacy_event(
             int(user_id),
@@ -1059,6 +1060,7 @@ def create_pulse_notification(
         )
         if central.get("notification_id"):
             metadata["central_notification_id"] = central.get("notification_id")
+        central_delivery_managed = bool(central.get("ok"))
     except Exception as exc:
         logging.info(
             "PULSESOC_CENTRAL_LEGACY_BRIDGE_SKIPPED user_id=%s note_type=%s notification_id=%s error=%s",
@@ -1118,6 +1120,25 @@ def create_pulse_notification(
                 "skipped",
                 push_result,
                 push_result["message"],
+            )
+        elif central_delivery_managed:
+            # The central notification OS owns the delivery jobs created above.
+            # Sending again through the legacy adapter produces two locked-screen
+            # banners for one message/event.
+            push_result = {
+                "ok": True,
+                "status": "delegated",
+                "provider": "pulsesoc_notification_system",
+                "message": "Push delivery is managed by the central notification pipeline.",
+            }
+            _log_pulse_delivery(
+                notification_id,
+                user_id,
+                "push",
+                "pulsesoc_notification_system",
+                "delegated",
+                push_result,
+                "",
             )
         elif defaults.get("push"):
             is_message_like = _message_like_notification(note_type, entity_type, deep_link)
