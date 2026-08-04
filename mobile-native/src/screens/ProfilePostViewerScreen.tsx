@@ -1,7 +1,7 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, LayoutChangeEvent, ScrollView, StyleSheet, Text, useWindowDimensions, View, ViewToken } from "react-native";
-import { deletePost, getPostDetail, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
+import { ActivityIndicator, FlatList, StyleSheet, Text, View, ViewToken } from "react-native";
+import { deletePost, getPostDetail, listFeed, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
 import { PostCard } from "../components/PostCard";
 import { invalidateNativeSync } from "../core/eventSync";
 import { RootStackParamList } from "../navigation/types";
@@ -14,51 +14,96 @@ import { colors } from "../theme/colors";
 type Props = NativeStackScreenProps<RootStackParamList, "ProfilePostViewer">;
 
 export function ProfilePostViewerScreen({ route, navigation }: Props) {
-  const { height: windowHeight } = useWindowDimensions();
   const [postIds, setPostIds] = useState(() => dedupe(route.params.postIds));
   const [posts, setPosts] = useState<Record<number, PulsePost>>({});
   const [message, setMessage] = useState("");
-  const [viewportHeight, setViewportHeight] = useState(() => Math.max(1, Math.round(windowHeight)));
-  const [activeIndex, setActiveIndex] = useState(() => Math.max(0, dedupe(route.params.postIds).indexOf(route.params.postId)));
+  const [activePostId, setActivePostId] = useState(route.params.postId);
+  const [nextOffset, setNextOffset] = useState(() => Number(route.params.nextOffset ?? route.params.postIds.length));
+  const [hasMore, setHasMore] = useState(Boolean(route.params.hasMore));
   const loading = useRef(new Set<number>());
+  const loadingMore = useRef(false);
+  const postsRef = useRef(posts);
+  const postIdsRef = useRef(postIds);
+  const nextOffsetRef = useRef(nextOffset);
+  const hasMoreRef = useRef(hasMore);
+  const displayPostIdsRef = useRef<number[]>([]);
   const listRef = useRef<FlatList<number>>(null);
   const guard = useSocialActionGuard();
-  const initialIndex = Math.max(0, postIds.indexOf(route.params.postId));
+
+  postsRef.current = posts;
+  postIdsRef.current = postIds;
+  nextOffsetRef.current = nextOffset;
+  hasMoreRef.current = hasMore;
+
+  // Start with the exact tapped post, continue toward older posts, then expose
+  // the newer posts that preceded it. Every canonical id appears exactly once.
+  const displayPostIds = useMemo(() => rotateFrom(postIds, route.params.postId), [postIds, route.params.postId]);
+  displayPostIdsRef.current = displayPostIds;
 
   const loadPost = useCallback(async (postId: number) => {
-    if (!postId || posts[postId] || loading.current.has(postId)) return;
+    if (!postId || postsRef.current[postId] || loading.current.has(postId)) return;
     loading.current.add(postId);
     try {
       const detail = await getPostDetail(postId);
-      if (detail.post) setPosts((current) => ({ ...current, [postId]: detail.post as PulsePost }));
+      if (detail.post) {
+        setPosts((current) => ({ ...current, [postId]: detail.post as PulsePost }));
+      }
       else setPostIds((current) => current.filter((id) => id !== postId));
     } catch {
       setMessage("A post could not load. Swipe again to retry.");
     } finally {
       loading.current.delete(postId);
     }
-  }, [posts]);
+  }, []);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore.current || !hasMoreRef.current || !route.params.profileKey) return;
+    loadingMore.current = true;
+    try {
+      const page = await listFeed({
+        feed: "for_you",
+        profile: route.params.profileKey,
+        limit: 20,
+        offset: nextOffsetRef.current
+      });
+      const pagePosts = (page.posts || []).filter((post) => route.params.contentTab !== "media" || Boolean(post.media?.length || post.media_assets?.length || post.attachments?.length));
+      if (pagePosts.length) {
+        setPosts((current) => {
+          const next = { ...current };
+          pagePosts.forEach((post) => { next[post.id] = post; });
+          return next;
+        });
+        setPostIds((current) => dedupe(current.concat(pagePosts.map((post) => post.id))));
+      }
+      const offset = Number(page.next_offset ?? nextOffsetRef.current + (page.posts || []).length);
+      nextOffsetRef.current = offset;
+      hasMoreRef.current = Boolean(page.has_more);
+      setNextOffset(offset);
+      setHasMore(Boolean(page.has_more));
+      setMessage("");
+    } catch {
+      setMessage("More posts could not load. Your current posts are preserved.");
+    } finally {
+      loadingMore.current = false;
+    }
+  }, [route.params.contentTab, route.params.profileKey]);
 
   useEffect(() => {
-    [postIds[initialIndex - 1], postIds[initialIndex], postIds[initialIndex + 1]].forEach((id) => id && loadPost(id));
-  }, []);
+    displayPostIds.slice(0, 3).forEach((id) => loadPost(id));
+    if (postIds.indexOf(route.params.postId) >= Math.max(0, postIds.length - 3)) loadMore().catch(() => undefined);
+  }, []); // Route context is immutable for the lifetime of this viewer.
 
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken<number>[] }) => {
-    const centered = viewableItems.find((item) => item.isViewable && item.index != null);
-    const index = Number(centered?.index || 0);
-    setActiveIndex(index);
-    [postIds[index - 1], postIds[index], postIds[index + 1]].forEach((id) => id && loadPost(id));
-  }, [loadPost, postIds]);
-
-  const measureViewport = useCallback((event: LayoutChangeEvent) => {
-    const next = Math.round(event.nativeEvent.layout.height);
-    if (next > 0) setViewportHeight((current) => current === next ? current : next);
-  }, []);
-
-  useEffect(() => {
-    if (!viewportHeight) return;
-    requestAnimationFrame(() => listRef.current?.scrollToIndex({ index: Math.min(activeIndex, Math.max(0, postIds.length - 1)), animated: false }));
-  }, [activeIndex, postIds.length, viewportHeight]);
+    const visible = viewableItems.find((item) => item.isViewable && item.item);
+    const postId = Number(visible?.item || 0);
+    if (!postId) return;
+    setActivePostId(postId);
+    const ids = displayPostIdsRef.current;
+    const index = ids.indexOf(postId);
+    [ids[index - 1], ids[index], ids[index + 1], ids[index + 2]].forEach((id) => id && loadPost(id));
+    const canonicalIndex = postIdsRef.current.indexOf(postId);
+    if (canonicalIndex >= Math.max(0, postIdsRef.current.length - 4)) loadMore().catch(() => undefined);
+  }, [loadMore, loadPost]);
 
   function patch(postId: number, values: Partial<PulsePost>) {
     setPosts((current) => current[postId] ? ({ ...current, [postId]: { ...current[postId], ...values } }) : current);
@@ -97,32 +142,30 @@ export function ProfilePostViewerScreen({ route, navigation }: Props) {
     const remaining = postIds.filter((id) => id !== post.id);
     setPostIds(remaining);
     setPosts((current) => { const next = { ...current }; delete next[post.id]; return next; });
+    if (activePostId === post.id && remaining.length) setActivePostId(remaining[0]);
     invalidateNativeSync(["activity", "notifications"], "profile_viewer_delete").catch(() => undefined);
     if (!remaining.length) navigation.goBack();
   }
 
-  const layoutHeight = viewportHeight;
-  const viewabilityConfig = useMemo(() => ({ itemVisiblePercentThreshold: 80, minimumViewTime: 80 }), []);
+  const viewabilityConfig = useMemo(() => ({ itemVisiblePercentThreshold: 50, minimumViewTime: 80 }), []);
   return (
-    <View style={styles.root} onLayout={measureViewport}>
+    <View style={styles.root}>
       {message ? <Text accessibilityLiveRegion="polite" style={styles.message}>{message}</Text> : null}
-      {layoutHeight > 0 ? <FlatList
+      <FlatList
         ref={listRef}
-        data={postIds}
+        data={displayPostIds}
         keyExtractor={String}
-        pagingEnabled
-        disableIntervalMomentum
-        decelerationRate="fast"
-        initialScrollIndex={initialIndex}
-        getItemLayout={(_, index) => ({ length: layoutHeight, offset: layoutHeight * index, index })}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
-        showsVerticalScrollIndicator={false}
+        onEndReached={() => loadMore().catch(() => undefined)}
+        onEndReachedThreshold={0.6}
+        contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
         renderItem={({ item: postId }) => {
           const post = posts[postId];
-          return <View style={[styles.page, { height: layoutHeight }]}>{post ? <ScrollView contentContainerStyle={styles.pageContent} showsVerticalScrollIndicator={false}><PostCard
+          return <View style={styles.post}>{post ? <PostCard
             post={post}
-            active={postId === postIds[activeIndex]}
+            active={postId === activePostId}
             busy={guard.isItemBusy(post.id)}
             onOpen={() => undefined}
             onReact={react}
@@ -131,20 +174,28 @@ export function ProfilePostViewerScreen({ route, navigation }: Props) {
             onComment={(item) => navigation.navigate("PostDetail", { postId: item.id, title: "Comments" })}
             onShare={(item) => sharePulseObject({ kind: "post", url: pulsePostUrl(item.id), title: item.title || "PulseSoc post", description: item.body || item.text, previewImageUrl: item.thumbnail_url || item.image_url }).catch(() => undefined)}
             onDelete={route.params.owner ? remove : undefined}
-          /></ScrollView> : <View style={styles.loading}><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Loading post…</Text></View>}</View>;
+          /> : <View style={styles.loading}><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Loading post…</Text></View>}</View>;
         }}
-      /> : <View style={styles.loading}><ActivityIndicator color={colors.accent} /></View>}
+      />
     </View>
   );
 }
 
 function dedupe(ids: number[]) { return Array.from(new Set(ids.map(Number).filter((id) => id > 0))); }
 
+function rotateFrom(ids: number[], selectedId: number) {
+  const unique = dedupe(ids);
+  const index = unique.indexOf(Number(selectedId));
+  if (index <= 0) return unique;
+  return unique.slice(index).concat(unique.slice(0, index));
+}
+
 const styles = StyleSheet.create({
   root: { backgroundColor: colors.background, flex: 1 },
-  page: { backgroundColor: colors.background },
-  pageContent: { flexGrow: 1, justifyContent: "center", paddingBottom: 18, paddingTop: 18 },
-  loading: { alignItems: "center", flex: 1, justifyContent: "center" },
+  listContent: { paddingBottom: 32, paddingTop: 12 },
+  post: { backgroundColor: colors.background, minHeight: 240 },
+  separator: { backgroundColor: colors.border, height: StyleSheet.hairlineWidth, marginVertical: 8 },
+  loading: { alignItems: "center", minHeight: 240, justifyContent: "center" },
   loadingText: { color: colors.muted, marginTop: 10 },
   message: { backgroundColor: colors.signalSoft, color: colors.text, left: 0, paddingHorizontal: 14, paddingVertical: 8, position: "absolute", right: 0, top: 0, zIndex: 4 }
 });

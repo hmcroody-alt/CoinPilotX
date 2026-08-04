@@ -4,7 +4,7 @@ import { AccessibilityInfo, Animated, FlatList, Image, Pressable, RefreshControl
 import { Ionicons } from "@expo/vector-icons";
 import { deletePost, listFeed, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
 import { describeDeleteError } from "../api/deleteErrors";
-import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
+import { getMyProfile, getPublicProfile, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
 import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
 import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, resolveProfileTarget } from "../api/profileTarget";
 import { peekSaveState } from "../social/savedStore";
@@ -79,10 +79,12 @@ export function ProfileScreen({ route, navigation }: Props) {
         setNextOffset(Number(feed.next_offset || feed.posts?.length || 0));
         setHasMore(Boolean(feed.has_more));
       } else {
-        const [publicProfile, feedPosts] = await Promise.all([getPublicProfile(profileTarget), listPublicProfilePosts(profileTarget)]);
-        setPosts(feedPosts);
-        setNextOffset(feedPosts.length);
-        setHasMore(feedPosts.length >= 20);
+        const publicProfile = await getPublicProfile(profileTarget);
+        const key = publicProfile.public_player_id || publicProfile.username || profileKey;
+        const feed = key ? await listFeed({ feed: "for_you", profile: key, limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
+        setPosts(feed.posts || []);
+        setNextOffset(Number(feed.next_offset || feed.posts?.length || 0));
+        setHasMore(Boolean(feed.has_more));
         setProfile(publicProfile);
       }
     } catch (loadError) {
@@ -402,6 +404,9 @@ export function ProfileScreen({ route, navigation }: Props) {
         profileKey: profile.public_player_id || profile.username || profileKey,
         postId: item.id,
         postIds: visiblePosts.map((post) => post.id),
+        nextOffset,
+        hasMore,
+        contentTab: tab === "media" ? "media" : "posts",
         owner,
         source: "PROFILE_GRID"
       })} />}

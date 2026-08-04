@@ -5,10 +5,11 @@ import { PulsePost } from "../../api/feed";
 
 const navigate = jest.fn();
 const mockListFeed = jest.fn();
+const mockGetPublicProfile = jest.fn(async () => ({ user_id: 8, display_name: "Maria Cherie", username: "mariacherie", public_player_id: "Pilot-8008", post_count: 5 }));
 
 jest.mock("../../api/profile", () => ({
   getMyProfile: jest.fn(async () => ({ user_id: 7, display_name: "Roody Cherie", username: "roodycherie", public_player_id: "roodycherie", post_count: 4 })),
-  getPublicProfile: jest.fn(),
+  getPublicProfile: (...args: unknown[]) => mockGetPublicProfile(...args),
   listPublicProfilePosts: jest.fn(),
   loadCachedProfile: jest.fn(),
   profileErrorState: jest.fn(() => ({ title: "Error", body: "Error", retryable: true, offline: false })),
@@ -57,7 +58,7 @@ describe("Profile posts grid", () => {
     const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
     await waitFor(() => screen.getByTestId("profile-grid-tile-3"));
     fireEvent.press(screen.getByTestId("profile-grid-tile-3"));
-    expect(navigate).toHaveBeenCalledWith("ProfilePostViewer", expect.objectContaining({ postId: 3, postIds: [1, 2, 3, 4], source: "PROFILE_GRID" }));
+    expect(navigate).toHaveBeenCalledWith("ProfilePostViewer", expect.objectContaining({ postId: 3, postIds: [1, 2, 3, 4], nextOffset: 4, hasMore: false, contentTab: "posts", source: "PROFILE_GRID" }));
   });
 
   it("renders a readable designed tile for text-only posts", () => {
@@ -80,6 +81,20 @@ describe("Profile posts grid", () => {
     await waitFor(() => screen.getByTestId("profile-grid-tile-4"));
     fireEvent(screen.UNSAFE_getByType(require("react-native").FlatList), "onEndReached");
     await waitFor(() => expect(screen.getByTestId("profile-grid-tile-5")).toBeTruthy());
+    expect(screen.getAllByTestId("profile-grid-tile-4")).toHaveLength(1);
+  });
+
+  it("paginates another user's canonical profile instead of repeating its first page", async () => {
+    mockListFeed
+      .mockResolvedValueOnce({ posts, next_offset: 4, has_more: true })
+      .mockResolvedValueOnce({ posts: [posts[3], { id: 5, post_id: 5, body: "Visitor next" }], next_offset: 6, has_more: false });
+    const screen = render(<ProfileScreen route={{ params: { profileKey: "mariacherie" } } as never} navigation={{ navigate } as never} />);
+    await waitFor(() => screen.getByTestId("profile-grid-tile-4"));
+    fireEvent(screen.UNSAFE_getByType(require("react-native").FlatList), "onEndReached");
+
+    await waitFor(() => expect(screen.getByTestId("profile-grid-tile-5")).toBeTruthy());
+    expect(mockListFeed).toHaveBeenNthCalledWith(1, { feed: "for_you", profile: "Pilot-8008", limit: 20, offset: 0 });
+    expect(mockListFeed).toHaveBeenNthCalledWith(2, { feed: "for_you", profile: "Pilot-8008", limit: 20, offset: 4 });
     expect(screen.getAllByTestId("profile-grid-tile-4")).toHaveLength(1);
   });
 });
