@@ -93,6 +93,19 @@ export type RootStackParamList = {
   BusinessOs: { title?: string; mode?: "hub" | "classic" } | undefined;
   BusinessProfile: { title?: string } | undefined;
   /**
+   * "View as buyer" — the public business profile, read-only, on its own route.
+   *
+   * A separate route rather than a `preview` param on `BusinessProfile` because the
+   * two screens must not share a component tree: the preview is typed against the
+   * server's public allowlist, so a component that tried to render `legal_name` or a
+   * payout account would fail to compile rather than fail in review.
+   *
+   * `sellerUserId` is absent for the owner's own preview and set when a buyer opens
+   * a real shop — the same screen serves both, because the owner's preview showing
+   * anything the buyer's view does not would defeat its purpose.
+   */
+  BusinessBuyerPreview: { sellerUserId?: number; returnScrollY?: number } | undefined;
+  /**
    * The seller-side Marketplace manager (Business "Sections" card #3). Distinct
    * from `Marketplace`/`MarketplaceDetail`, which are the consumer browse
    * surface, and from `MarketplaceCreateGateway`, which is the composer.

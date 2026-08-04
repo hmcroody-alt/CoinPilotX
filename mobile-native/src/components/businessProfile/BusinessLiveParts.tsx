@@ -496,6 +496,7 @@ export function EditableDetailRow({
   placeholder,
   emptyConsequence,
   error,
+  note,
   onChangeValue,
   keyboardType
 }: {
@@ -505,6 +506,13 @@ export function EditableDetailRow({
   placeholder: string;
   emptyConsequence: string;
   error?: string;
+  /**
+   * Standing context about the field — kept separate from `error` and styled
+   * differently. Routing a note through `error` would paint "Also linked:
+   * Instagram" in the refusal colour and tell the seller something is wrong when
+   * nothing is.
+   */
+  note?: string;
   onChangeValue: (next: string) => void;
   keyboardType?: "default" | "email-address" | "url";
 }) {
@@ -533,6 +541,7 @@ export function EditableDetailRow({
             style={styles.rowInput}
           />
           {error ? <Text style={styles.rowError}>{error}</Text> : null}
+          {note ? <Text style={styles.rowNote}>{note}</Text> : null}
         </View>
         <Pressable
           onPress={() => setEditing(false)}
@@ -567,9 +576,59 @@ export function EditableDetailRow({
           </Text>
         )}
         {error ? <Text style={styles.rowError}>{error}</Text> : null}
+        {note ? <Text style={styles.rowNote}>{note}</Text> : null}
       </View>
       <Ionicons name="create-outline" size={16} color={palette.textDim} />
     </Pressable>
+  );
+}
+
+/**
+ * A row whose value is real and read-only on this screen.
+ *
+ * Distinct from {@link UnbackedDetailRow}, which says "there is no data". This one
+ * says "here is your data, and this screen is not where you change it". It is not
+ * tappable because there is no editor to open yet, and a chevron that leads
+ * nowhere is worse than an honest blank — but it must not borrow the unbacked
+ * row's voice either, because the value below it is a fact about the seller's
+ * business, not a placeholder.
+ *
+ * When the value is empty the row explains what the gap costs the seller, which
+ * is a true statement about their profile rather than a promise about a feature.
+ */
+export function StaticDetailRow({
+  icon,
+  label,
+  value,
+  emptyConsequence
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  emptyConsequence: string;
+}) {
+  const isEmpty = !value.trim();
+  return (
+    <View
+      style={styles.row}
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={isEmpty ? `${label}. Not set. ${emptyConsequence}` : `${label}. ${value}`}
+    >
+      <View style={[styles.iconTile, isEmpty && styles.iconTileEmpty]}>
+        <Ionicons name={icon} size={16} color={isEmpty ? palette.warning : palette.accent} />
+      </View>
+      <View style={styles.rowCopy}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        {isEmpty ? (
+          <Text style={styles.rowEmpty}>Not set — {emptyConsequence}</Text>
+        ) : (
+          <Text style={styles.rowValue} numberOfLines={2}>
+            {value}
+          </Text>
+        )}
+      </View>
+    </View>
   );
 }
 

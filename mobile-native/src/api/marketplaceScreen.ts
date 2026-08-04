@@ -162,43 +162,60 @@ export function marketplaceLocationHonestyEnabled(): boolean {
  * false, and the strip underneath already said so — "Location not set" — which
  * means the screen contradicted itself on one page.
  *
- * The correction the brief asks for is a working "Set your location" button.
- * There is nothing to wire it to: no `expo-location` in this app, no city or
- * country on the account, no coordinates on a listing, and `distanceMeters` is
- * hard-coded `null` (see the location entry in `MARKETPLACE_MOCK_DATA_GAPS`).
- * A button that opens nothing is the dead control this tier exists to remove,
- * so the claim is dropped instead and the empty state is given an action that
- * really works — clearing the category filter, which is a filter that exists.
- *
- * `known` is an input rather than a constant so that the day geo lands, the
- * heading flips back to "near you" by passing a city in, with no edit here and
- * none in the screen.
+ * The correction: with no location set, no line of the screen claims proximity
+ * — the feed is "Recently listed", the strip says "Location not set", and the
+ * strip is a working control that opens a location sheet. The city it collects
+ * is a stored, self-reported preference (`loadMarketplaceCity` below), not a
+ * geo lookup: listings still carry no coordinates and `distanceMeters` is still
+ * `null` (see the location entry in `MARKETPLACE_MOCK_DATA_GAPS`), so setting a
+ * city changes what the screen *claims*, not what the feed *contains*. The
+ * heading, strip, footer and empty state all derive from the one `city` input
+ * here so they can never disagree again.
  */
+export type MarketplaceLocationActionKey = "set_location" | "edit_location" | "clear_category";
+
+export type MarketplaceLocationAction = {
+  key: MarketplaceLocationActionKey;
+  label: string;
+};
+
 export type MarketplaceLocationState = {
-  /** True when the app actually knows where the reader is. */
+  /** True when the reader has told us where they are. */
   known: boolean;
+  /** The stored city, or `null` when none is set. */
+  city: string | null;
   /** The feed heading. Only claims "near you" when `known`. */
   feedTitle: string;
   /** The strip's sentence. */
   stripText: string;
-  /**
-   * Why the strip cannot be acted on, or `null` when it can. Rendered as the
-   * strip's own explanation, so the row is an unavailable control with a stated
-   * reason rather than a line of text that looks tappable and is not.
-   */
+  /** Why distance cannot be promised; null only when location-backed data exists. */
   unavailableReason: string | null;
+  /**
+   * What tapping the strip does. Always a real control now that the city is a
+   * stored preference — set it when absent, change it when present.
+   */
+  stripAction: MarketplaceLocationAction;
   /** The "show more" footer label, which claimed "nearby" for the same reason. */
   moreLabel: string;
   empty: {
     title: string;
     body: string;
-    /** `null` when there is no filter to clear and nothing else would help. */
-    action: { key: "clear_category"; label: string } | null;
+    /** Only controls the screen can actually honour. Never empty-for-show. */
+    actions: MarketplaceLocationAction[];
+    /** Primary action retained for the current screen contract. */
+    action: MarketplaceLocationAction | null;
   };
 };
 
+const SET_LOCATION: MarketplaceLocationAction = { key: "set_location", label: "Set location" };
+const EDIT_LOCATION: MarketplaceLocationAction = { key: "edit_location", label: "Change location" };
+const CLEAR_CATEGORY: MarketplaceLocationAction = {
+  key: "clear_category",
+  label: "Show all categories"
+};
+
 export function marketplaceLocation(input: {
-  /** The reader's town, when one is known. Nothing supplies this yet. */
+  /** The reader's town, from the stored preference. */
   city?: string | null;
   /** True when a category filter is narrowing the feed. */
   categoryFiltered?: boolean;
@@ -207,23 +224,50 @@ export function marketplaceLocation(input: {
   const known = city.length > 0;
   const filtered = Boolean(input.categoryFiltered);
 
+  if (known) {
+    return {
+      known,
+      city,
+      feedTitle: `Just listed near ${city}`,
+      stripText: `Showing listings near ${city}`,
+      unavailableReason: null,
+      stripAction: EDIT_LOCATION,
+      moreLabel: "Show more nearby",
+      empty: filtered
+        ? {
+            title: "Nothing in this category right now.",
+            body: "Other categories may have something. Pull down to check again.",
+            actions: [CLEAR_CATEGORY],
+            action: CLEAR_CATEGORY
+          }
+        : {
+            title: "Nothing nearby right now.",
+            body: `No listings near ${city} at the moment. Pull down to check again.`,
+            actions: [EDIT_LOCATION],
+            action: EDIT_LOCATION
+          }
+    };
+  }
+
   return {
     known,
-    feedTitle: known ? `Just listed near ${city}` : "Just listed",
-    stripText: known ? `Showing listings near ${city}` : "Showing every listing",
-    unavailableReason: known
-      ? null
-      : "Location isn't part of the app yet, so listings aren't sorted by distance.",
-    moreLabel: known ? "Show more nearby" : "Show more",
+    city: null,
+    feedTitle: "Just listed",
+    stripText: "Showing every listing",
+    unavailableReason: "Distance sorting isn't part of the app yet.",
+    stripAction: SET_LOCATION,
+    moreLabel: "Show more",
     empty: filtered
       ? {
           title: "Nothing in this category right now.",
           body: "Other categories may have something. Pull down to check again.",
-          action: { key: "clear_category", label: "Show all categories" }
+          actions: [CLEAR_CATEGORY],
+          action: CLEAR_CATEGORY
         }
       : {
           title: "Nothing has been listed yet.",
           body: "New listings appear here as sellers add them. Pull down to check again.",
+          actions: [],
           action: null
         }
   };

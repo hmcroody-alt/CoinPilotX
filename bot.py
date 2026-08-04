@@ -5780,6 +5780,51 @@ def pulse_mobile_user_payload(user):
     }
 
 
+def pulse_business_construction_access(user):
+    from services.business_os.construction_access import resolve_business_construction_access
+
+    user = user or {}
+    is_owner_admin = False
+    email = normalize_email(user.get("email") or "")
+    if email:
+        conn = db()
+        cur = conn.cursor()
+        if table_exists(cur, "admin_users"):
+            cur.execute(
+                "SELECT role, status FROM admin_users WHERE lower(COALESCE(email,''))=lower(?) LIMIT 1",
+                (email,),
+            )
+            admin = dict(cur.fetchone() or {})
+            role = str(admin.get("role") or "").strip().lower()
+            status = str(admin.get("status") or "active").strip().lower()
+            is_owner_admin = status == "active" and role in {"owner", "super_admin", "superadmin"}
+        conn.close()
+    return resolve_business_construction_access(user, is_owner_admin=is_owner_admin)
+
+
+@webhook_app.route("/api/pulse/business/construction-access", methods=["GET"])
+def api_pulse_business_construction_access():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Authentication required.", 401, error="authentication_required")
+    return jsonify(pulse_business_construction_access(load_account_by_id(user["user_id"]) or user))
+
+
+@webhook_app.before_request
+def enforce_private_business_os_construction_boundary():
+    if not request.path.startswith("/api/business-os/"):
+        return None
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Authentication required.", 401, error="authentication_required")
+    access = pulse_business_construction_access(load_account_by_id(user["user_id"]) or user)
+    if access["can_access_private_business_os"]:
+        return None
+    return api_error("This PulseSoc sector is under construction.", 403, error="business_os_under_construction")
+
+
 @webhook_app.route("/api/mobile/auth/session", methods=["GET"])
 @webhook_app.route("/api/pulse/mobile/auth/session", methods=["GET"])
 def api_mobile_auth_session():
@@ -83299,6 +83344,266 @@ def api_pulse_insights_seller_summary():
     # seller reading yesterday's revenue as today's.
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
+
+
+# ---------------------------------------------------------------------------
+# Seller business profile — the authoritative identity layer
+#
+# These routes live in the ungated ``/api/pulse/*`` namespace rather than behind
+# ``BUSINESS_OS_BUSINESS`` on purpose. That flag is set in no deployment file in this
+# repository, so every canonical ``business_os`` route 404s in production; registering
+# the profile there would ship a screen that cannot load.
+#
+# The controller is framework-agnostic and returns ``(status, body)``. Everything
+# below is the adapter: authenticate, parse, delegate, serialise. No decisions here —
+# a decision in this file is a decision no test can reach.
+# ---------------------------------------------------------------------------
+
+def _seller_profile_api():
+    """Imported inside the handler, as every other Business OS route in this file is.
+
+    A module-level import would put schema creation on the critical path of app boot,
+    and a failure there would take down routes with nothing to do with the profile.
+    """
+    from services.business_os.profile import api as _profile_api
+    return _profile_api
+
+
+def _seller_profile_response(result):
+    status, body = result
+    response = jsonify(body)
+    response.status_code = int(status)
+    # Identity, verification state and publish freshness all change under the seller's
+    # hands. A cached copy is how a screen comes to show a name the seller has already
+    # changed, or a verification state the reviewer has already moved on from.
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+def _seller_profile_failure(where):
+    logging.exception("[business-profile] %s failed", where)
+    return api_error("Your business profile could not be loaded right now.", 503)
+
+
+def _viewer_has_purchased(conn, viewer_user_id, seller_user_id):
+    """Has this viewer actually bought from this seller?
+
+    Gates the ``Visible after purchase`` contact settings. Only settled money counts —
+    the same status allowlist the platform's own volume reporting uses. An abandoned
+    checkout must not unlock a seller's phone number, and this is the single place
+    that decides it, so the profile module never has to guess.
+    """
+    try:
+        if not viewer_user_id or int(viewer_user_id) == int(seller_user_id):
+            return False
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM seller_transactions WHERE buyer_user_id=? AND seller_user_id=? "
+            "AND status IN ('paid','checkout_completed','succeeded') LIMIT 1",
+            (int(viewer_user_id), int(seller_user_id)),
+        )
+        return bool(cur.fetchone())
+    except Exception:
+        # Fail closed. Showing a private number because a lookup errored is the one
+        # outcome that cannot be walked back.
+        return False
+
+
+@webhook_app.route("/api/pulse/business/profile", methods=["GET"])
+def api_pulse_business_profile_get():
+    """Everything the owner screen needs in one round trip.
+
+    One call rather than six because the completeness card, the lock explainer and the
+    Live Sync badge are all derived from the same verification state. Fetching them
+    separately is precisely how the old screen came to render "your application is in
+    review" and "Verification · Approved" beside each other.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    try:
+        return _seller_profile_response(
+            _seller_profile_api().get_profile(int(user["user_id"])))
+    except Exception:
+        return _seller_profile_failure("profile read")
+
+
+@webhook_app.route("/api/pulse/business/profile", methods=["POST"])
+def api_pulse_business_profile_update():
+    """Partial save: valid fields land, invalid ones come back named.
+
+    Returns 200 even when some fields were rejected. Failing the whole request because
+    one URL had a typo would lose the seller four good edits to save them from one bad
+    one, and a field awaiting verification review must not hold the rest hostage.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    try:
+        return _seller_profile_response(
+            _seller_profile_api().update_profile(int(user["user_id"]), payload))
+    except Exception:
+        return _seller_profile_failure("profile update")
+
+
+@webhook_app.route("/api/pulse/business/profile/hours", methods=["POST"])
+def api_pulse_business_profile_hours():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    try:
+        handler = _seller_profile_api()
+        if payload.get("date") or payload.get("on_date"):
+            return _seller_profile_response(
+                handler.set_hours_override(int(user["user_id"]), payload))
+        return _seller_profile_response(handler.set_hours(int(user["user_id"]), payload))
+    except Exception:
+        return _seller_profile_failure("hours update")
+
+
+@webhook_app.route("/api/pulse/business/profile/link", methods=["POST"])
+def api_pulse_business_profile_link():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    try:
+        return _seller_profile_response(
+            _seller_profile_api().set_link(int(user["user_id"]), payload))
+    except Exception:
+        return _seller_profile_failure("link update")
+
+
+@webhook_app.route("/api/pulse/business/profile/address", methods=["POST"])
+def api_pulse_business_profile_address():
+    """Operational addresses only. There is no ``legal`` kind and there must not be:
+    a registered address is verification evidence, not profile copy."""
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    try:
+        return _seller_profile_response(
+            _seller_profile_api().set_address(int(user["user_id"]), payload))
+    except Exception:
+        return _seller_profile_failure("address update")
+
+
+@webhook_app.route("/api/pulse/business/profile/handle-check", methods=["GET"])
+def api_pulse_business_profile_handle_check():
+    """Pre-flight availability, so the handle editor can warn before the seller commits.
+
+    Always 200, including when the handle is taken — "unavailable" is an answer to
+    this question, not a failed request.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    candidate = (request.args.get("handle") or request.args.get("username") or "")[:80]
+    try:
+        return _seller_profile_response(
+            _seller_profile_api().check_handle(int(user["user_id"]), candidate))
+    except Exception:
+        return _seller_profile_failure("handle check")
+
+
+@webhook_app.route("/api/pulse/business/profile/publish", methods=["POST"])
+def api_pulse_business_profile_publish():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    try:
+        return _seller_profile_response(
+            _seller_profile_api().publish(int(user["user_id"])))
+    except Exception:
+        return _seller_profile_failure("publish")
+
+
+@webhook_app.route("/api/pulse/business/profile/sync", methods=["GET"])
+def api_pulse_business_profile_sync():
+    """The Live Sync sheet. Reports only the three states the server can honestly
+    assert; ``saving``, ``offline`` and ``sync_failed`` describe the client's own
+    request and stay the client's to display."""
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    try:
+        return _seller_profile_response(
+            _seller_profile_api().sync_status(int(user["user_id"])))
+    except Exception:
+        return _seller_profile_failure("sync status")
+
+
+@webhook_app.route("/api/pulse/business/profile/vocabularies", methods=["GET"])
+def api_pulse_business_profile_vocabularies():
+    """The pickers the editors offer, served rather than duplicated in the app.
+
+    Registered as its own route because the alternative — shipping the category list
+    inside the client — is how the app and the server come to disagree about what a
+    valid category is, and the seller finds out by having a save rejected for choosing
+    an option the app itself offered them.
+
+    Unauthenticated on purpose: this is a static vocabulary, it contains nothing about
+    any seller, and gating it would mean the editor cannot render its own options
+    while a token refresh is in flight.
+    """
+    init_db()
+    try:
+        return _seller_profile_response(_seller_profile_api().vocabularies())
+    except Exception:
+        return _seller_profile_failure("profile options")
+
+
+@webhook_app.route("/api/pulse/business/profile/preview", methods=["GET"])
+def api_pulse_business_profile_preview():
+    """"View as buyer" — a dedicated read-only route, not a scroll position.
+
+    Deliberately does not accept a ``viewer_has_purchased`` hint. The preview shows
+    the owner the strictest public view, which is what most visitors get; showing them
+    the post-purchase view would be the flattering answer rather than the true one.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    try:
+        return _seller_profile_response(
+            _seller_profile_api().preview_profile(int(user["user_id"])))
+    except Exception:
+        return _seller_profile_failure("buyer preview")
+
+
+@webhook_app.route("/api/pulse/business/profile/<int:seller_user_id>", methods=["GET"])
+def api_pulse_business_profile_public(seller_user_id):
+    """The buyer-facing profile. Unauthenticated reads are allowed — this is a shop
+    window — but they never unlock the after-purchase contact fields."""
+    init_db()
+    user = api_account_user()
+    viewer_id = int(user["user_id"]) if user else None
+
+    purchased = False
+    if viewer_id:
+        conn = db()
+        try:
+            purchased = _viewer_has_purchased(conn, viewer_id, seller_user_id)
+        finally:
+            conn.close()
+
+    try:
+        return _seller_profile_response(_seller_profile_api().get_public_profile(
+            seller_user_id, viewer_user_id=viewer_id, viewer_has_purchased=purchased))
+    except Exception:
+        return _seller_profile_failure("public profile")
 
 
 @webhook_app.route("/api/payments/entitlements", methods=["GET"])
