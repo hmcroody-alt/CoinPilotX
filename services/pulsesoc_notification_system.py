@@ -2530,8 +2530,47 @@ def _dispatch_push(cur: Any, notification: dict[str, Any], prefs: dict[str, Any]
     results = []
     if legacy_count:
         results.append(push_service.send_push(user_id, notification.get("title") or "PulseSoc", preview_body, payload, push_type=str(notification.get("type") or "notification")))
-    fcm_tokens = [d for d in devices if (str(d.get("push_provider") or "").lower() == "fcm" or str(d.get("platform") or "").lower() == "android") and d.get("push_token")]
-    apns_tokens = [d for d in devices if (str(d.get("push_provider") or "").lower() == "apns" or str(d.get("platform") or "").lower() == "ios") and d.get("push_token")]
+    expo_tokens = [
+        d for d in devices
+        if str(d.get("push_provider") or "").lower() == "expo"
+        and str(d.get("push_token") or "").startswith(("ExponentPushToken[", "ExpoPushToken["))
+    ]
+    fcm_tokens = [
+        d for d in devices
+        if (
+            str(d.get("push_provider") or "").lower() == "fcm"
+            or (
+                str(d.get("platform") or "").lower() == "android"
+                and str(d.get("push_provider") or "").lower() not in {"expo", "web_push", "webpush"}
+            )
+        ) and d.get("push_token")
+    ]
+    apns_tokens = [
+        d for d in devices
+        if (
+            str(d.get("push_provider") or "").lower() == "apns"
+            or (
+                str(d.get("platform") or "").lower() == "ios"
+                and str(d.get("push_provider") or "").lower() not in {"expo", "web_push", "webpush"}
+            )
+        ) and d.get("push_token")
+    ]
+    # Registration mirrors Expo tokens into the legacy subscription table. If
+    # that mirror exists it already sends through Expo, so skip the OS copy to
+    # prevent duplicate banners. If the mirror is missing, the OS registry is
+    # now sufficient to recover delivery through the same Expo adapter.
+    if not legacy_count:
+        for device in expo_tokens:
+            result = push_service.send_expo_push_token(
+                str(device.get("push_token") or ""),
+                notification.get("title") or "PulseSoc",
+                preview_body,
+                payload,
+                push_type=str(notification.get("type") or "notification"),
+            )
+            if result.get("status") in {"invalid", "invalid_device"}:
+                _disable_invalid_push_token(cur, user_id, device, result.get("message") or "invalid_expo_token")
+            results.append(result)
     for device in fcm_tokens:
         result = _send_fcm_token(str(device.get("push_token") or ""), notification, {**payload, "body": preview_body})
         if result.get("status") == "invalid_device":

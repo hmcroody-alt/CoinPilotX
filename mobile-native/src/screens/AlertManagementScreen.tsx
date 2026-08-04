@@ -41,7 +41,7 @@ const emptyForm: AlertFormPayload = {
   condition: "above",
   notifyInApp: true,
   notifyEmail: false,
-  notifyPush: false,
+  notifyPush: true,
   notifySMS: false,
   notifyTelegram: false,
   note: ""

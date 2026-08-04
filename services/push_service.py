@@ -706,6 +706,21 @@ def _send_expo_push(endpoint, payload):
         return {"ok": False, "status": "failed", "provider": "expo", "message": "Expo push service request failed.", "error_type": type(exc).__name__}
 
 
+def send_expo_push_token(token, title, body, data=None, push_type="general"):
+    """Deliver to a registered Expo token without requiring a legacy row.
+
+    The notification OS stores native devices independently from the legacy
+    push-subscription table. Keep one canonical Expo adapter while allowing
+    that newer registry to recover delivery if the legacy mirror is absent.
+    """
+    token = str(token or "").strip()
+    if not _is_expo_token(token):
+        return {"ok": False, "status": "invalid", "provider": "expo", "message": "Expo push token is invalid."}
+    payload = _payload(title, body, data or {}, push_type)
+    payload["subscription"] = {"expo_push_token": token, "token": token}
+    return _send_expo_push(token, payload)
+
+
 def send_push(user_id, title, body, data=None, push_type="general"):
     data = data or {}
     trace_id = data.get("push_trace_id") or data.get("trace_id") or secrets.token_hex(6)

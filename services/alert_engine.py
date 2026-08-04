@@ -84,6 +84,19 @@ def _table_exists(cur, table_name):
         return False
 
 
+def _table_columns(cur, table_name):
+    if not _table_exists(cur, table_name):
+        return set()
+    if db_service.IS_POSTGRES:
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?",
+            (table_name,),
+        )
+        return {str(row[0]) for row in cur.fetchall()}
+    cur.execute(f"PRAGMA table_info({table_name})")
+    return {str(row[1]) for row in cur.fetchall()}
+
+
 def _add_columns_if_missing(cur, table_name, columns):
     if db_service.IS_POSTGRES:
         cur.execute(
@@ -333,20 +346,120 @@ def _sms_provider_ready():
     return sms_service.is_sms_configured()
 
 
-def _push_provider_ready():
-    return bool(os.getenv("VAPID_PUBLIC_KEY") and os.getenv("VAPID_PRIVATE_KEY"))
+def _web_push_provider_ready():
+    return bool(
+        (os.getenv("WEB_PUSH_PUBLIC_KEY") or os.getenv("VAPID_PUBLIC_KEY"))
+        and (os.getenv("WEB_PUSH_PRIVATE_KEY") or os.getenv("VAPID_PRIVATE_KEY"))
+    )
+
+
+def _apns_provider_ready():
+    return all(os.getenv(key) for key in ("APNS_TEAM_ID", "APNS_KEY_ID", "APNS_PRIVATE_KEY", "APNS_BUNDLE_ID"))
+
+
+def _fcm_provider_ready():
+    return bool(
+        os.getenv("FCM_SERVER_KEY")
+        or all(os.getenv(key) for key in ("FCM_PROJECT_ID", "FCM_CLIENT_EMAIL", "FCM_PRIVATE_KEY"))
+    )
+
+
+def _active_filter(columns):
+    active_columns = [column for column in ("is_active", "active", "enabled") if column in columns]
+    filters = [f"COALESCE({column},1)=1" for column in active_columns]
+    if "deleted_at" in columns:
+        filters.append("deleted_at IS NULL")
+    return " AND ".join(filters)
+
+
+def _push_delivery_inventory(user_id=None):
+    """Return registered push routes without assuming every route is Web Push."""
+    inventory = {"expo": 0, "web_push": 0, "apns": 0, "fcm": 0, "registered": 0}
+    if not user_id:
+        return inventory
+    identities = set()
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        subscription_columns = _table_columns(cur, "push_subscriptions")
+        if "user_id" in subscription_columns and "endpoint" in subscription_columns:
+            selected = ["endpoint"]
+            if "subscription_json" in subscription_columns:
+                selected.append("subscription_json")
+            active_filter = _active_filter(subscription_columns)
+            cur.execute(
+                f"SELECT {', '.join(selected)} FROM push_subscriptions WHERE user_id=?"
+                + (f" AND {active_filter}" if active_filter else ""),
+                (int(user_id),),
+            )
+            for row in cur.fetchall():
+                record = _row_to_dict(row)
+                endpoint = str(record.get("endpoint") or "")
+                subscription = _json_loads(record.get("subscription_json"), {}) or {}
+                token = str(subscription.get("expo_push_token") or subscription.get("token") or endpoint)
+                identity = token or endpoint
+                if identity:
+                    identities.add(identity)
+                if token.startswith(("ExponentPushToken[", "ExpoPushToken[")):
+                    inventory["expo"] += 1
+                elif endpoint:
+                    inventory["web_push"] += 1
+        device_columns = _table_columns(cur, "notification_device_tokens")
+        selected = [column for column in ("platform", "push_provider", "push_token", "endpoint") if column in device_columns]
+        if "user_id" in device_columns and selected:
+            active_filter = _active_filter(device_columns)
+            cur.execute(
+                f"SELECT {', '.join(selected)} FROM notification_device_tokens WHERE user_id=?"
+                + (f" AND {active_filter}" if active_filter else ""),
+                (int(user_id),),
+            )
+            for row in cur.fetchall():
+                record = _row_to_dict(row)
+                provider = str(record.get("push_provider") or "").strip().lower()
+                platform = str(record.get("platform") or "").strip().lower()
+                token = str(record.get("push_token") or record.get("endpoint") or "")
+                if token:
+                    identities.add(token)
+                if provider == "expo" or token.startswith(("ExponentPushToken[", "ExpoPushToken[")):
+                    inventory["expo"] += 1
+                elif provider == "fcm" or (platform == "android" and provider not in {"web_push", "webpush"}):
+                    inventory["fcm"] += 1
+                elif provider == "apns" or (platform == "ios" and provider not in {"web_push", "webpush"}):
+                    inventory["apns"] += 1
+                elif token:
+                    inventory["web_push"] += 1
+    finally:
+        conn.close()
+    inventory["registered"] = len(identities)
+    return inventory
+
+
+def _push_provider_ready(user_id=None, inventory=None):
+    inventory = inventory or _push_delivery_inventory(user_id)
+    return bool(
+        inventory["expo"]
+        or (inventory["web_push"] and _web_push_provider_ready())
+        or (inventory["apns"] and _apns_provider_ready())
+        or (inventory["fcm"] and _fcm_provider_ready())
+    )
 
 
 def _push_subscription_count(user_id=None):
     conn = user_context.connect()
     cur = conn.cursor()
-    if user_id:
-        cur.execute(
-            "SELECT COUNT(*) AS total FROM push_subscriptions WHERE user_id=? AND COALESCE(is_active, active, 1)=1",
-            (user_id,),
-        )
-    else:
-        cur.execute("SELECT COUNT(*) AS total FROM push_subscriptions WHERE COALESCE(is_active, active, 1)=1")
+    columns = _table_columns(cur, "push_subscriptions")
+    if not columns:
+        conn.close()
+        return 0
+    active_filter = _active_filter(columns)
+    where = []
+    params = []
+    if user_id and "user_id" in columns:
+        where.append("user_id=?")
+        params.append(int(user_id))
+    if active_filter:
+        where.append(active_filter)
+    cur.execute("SELECT COUNT(*) AS total FROM push_subscriptions" + (" WHERE " + " AND ".join(where) if where else ""), tuple(params))
     row = _row_to_dict(cur.fetchone())
     conn.close()
     return int((row or {}).get("total") or 0)
@@ -408,17 +521,18 @@ def _require_recent_test(payload, user_id, channel):
 
 def channel_readiness(user_id, browser_permission=None, require_recent_test=True):
     user = _user_record(user_id)
-    push_subscriptions = _push_subscription_count(user_id)
-    vapid_ready = _push_provider_ready()
+    push_inventory = _push_delivery_inventory(user_id)
+    push_subscriptions = push_inventory["registered"]
+    push_provider_ready = _push_provider_ready(user_id, push_inventory)
     sms_ready = _sms_provider_ready()
     telegram_token_ready = bool(_telegram_token())
     permission = (browser_permission or "").strip().lower()
     if permission == "denied":
         push = _status_payload(False, "permission_denied", "Failed", "Browser push permission is denied. Enable notifications in browser settings.", "/notifications")
-    elif not vapid_ready:
-        push = _status_payload(False, "not_configured", "Needs setup", "Push keys are not configured yet.", "/notifications")
     elif push_subscriptions <= 0:
         push = _status_payload(False, "not_configured", "Needs setup", "Enable Push Notifications before using push alerts.", "/notifications")
+    elif not push_provider_ready:
+        push = _status_payload(False, "not_configured", "Needs setup", "The registered push provider is not configured yet.", "/notifications")
     else:
         push = _status_payload(True, "ready", "Ready", "Push alerts are ready.", "/notifications")
     phone = user.get("phone_number") or user.get("phone")
@@ -442,7 +556,13 @@ def channel_readiness(user_id, browser_permission=None, require_recent_test=True
     readiness = {
         "in_app": _status_payload(True, "ready", "Ready", "In-app alerts are always available.", "/notifications"),
         "email": _status_payload(email_ready, "ready" if email_ready else "not_configured", "Ready" if email_ready else "Needs setup", "Email alerts are ready." if email_ready else "Email provider or account email is missing.", "/account/settings"),
-        "push": {**push, "subscription_count": push_subscriptions, "vapid_configured": vapid_ready},
+        "push": {
+            **push,
+            "subscription_count": push_subscriptions,
+            "provider_configured": push_provider_ready,
+            "vapid_configured": _web_push_provider_ready(),
+            "routes": push_inventory,
+        },
         "sms": {**sms, "provider_configured": sms_ready, "phone_configured": bool(phone), "phone_verified": bool(user.get("phone_verified")), "sms_opt_in": bool(int(user.get("sms_opt_in") or 0))},
         "telegram": {**telegram, "bot_configured": telegram_token_ready, "connected": bool(user.get("telegram_chat_id"))},
     }
@@ -1727,7 +1847,7 @@ def provider_status():
     return {
         "brevo_email": email_service.provider_status(),
         "brevo_sms": {"provider": "brevo_sms", "ready": _sms_provider_ready()},
-        "vapid_push": {"ready": _push_provider_ready(), "active_subscriptions": _push_subscription_count()},
+        "vapid_push": {"ready": _web_push_provider_ready(), "active_subscriptions": _push_subscription_count()},
         "telegram": {"ready": bool(_telegram_token()), "connected_users": _telegram_connected_count()},
         "live_market_provider": live_market_service.health().get("providers", {}).get("coingecko_or_fallback", {}),
     }

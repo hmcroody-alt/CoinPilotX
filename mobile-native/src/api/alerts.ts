@@ -1,4 +1,5 @@
 import { readJsonCache, writeJsonCache } from "../core/cache";
+import { Platform } from "react-native";
 import { pulseApi } from "./pulseApi";
 
 const ALERT_MANAGEMENT_CACHE_KEY = "pulsesoc.native.alert.management";
@@ -342,6 +343,10 @@ function normalizeChannels(input: Partial<Record<AlertChannel, boolean>>) {
 }
 
 function currentPushPermission() {
+  // Notification is a browser API. Native permission/token authority lives in
+  // expo-notifications and is registered with the backend, so do not label a
+  // real iOS/Android installation as "unsupported".
+  if (Platform.OS !== "web") return "native";
   const notificationApi = (globalThis as { Notification?: { permission?: string } }).Notification;
   return String(notificationApi?.permission || "unsupported");
 }

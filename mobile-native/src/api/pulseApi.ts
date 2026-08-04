@@ -42,6 +42,7 @@ type SessionInvalidation = { path: string; code: string };
 export type RefreshResult = "refreshed" | "invalid" | "temporary" | "unavailable";
 let refreshPromise: Promise<RefreshResult> | null = null;
 let sessionInvalidationHandler: ((event: SessionInvalidation) => void) | null = null;
+const inFlightReads = new Map<string, Promise<unknown>>();
 
 export function registerSessionInvalidationHandler(handler: ((event: SessionInvalidation) => void) | null) {
   sessionInvalidationHandler = handler;
@@ -54,13 +55,36 @@ export async function pulseApi<T>(path: string, options: RequestInit = {}): Prom
   const method = String(options.method || "GET").toUpperCase();
   const span = startSpan("api.request", { route: perfRouteLabel(path), method });
   try {
-    const result = await pulseApiRequest<T>(path, options, true);
+    const coalescingKey = readCoalescingKey(path, options, method);
+    let request = coalescingKey ? inFlightReads.get(coalescingKey) as Promise<T> | undefined : undefined;
+    if (!request) {
+      request = pulseApiRequest<T>(path, options, true);
+      if (coalescingKey) {
+        inFlightReads.set(coalescingKey, request);
+        request.then(
+          () => { if (inFlightReads.get(coalescingKey) === request) inFlightReads.delete(coalescingKey); },
+          () => { if (inFlightReads.get(coalescingKey) === request) inFlightReads.delete(coalescingKey); }
+        );
+      }
+    }
+    const result = await request;
     span.end({ ok: true });
     return result;
   } catch (error) {
     span.end({ ok: false, status: error instanceof PulseApiError ? error.status : 0 });
     throw error;
   }
+}
+
+/**
+ * Components that enter focus together often ask for the same canonical GET in
+ * the same frame. Share only the in-flight work; never cache the response here,
+ * so server authority, refresh semantics, and explicit reloads stay intact.
+ */
+function readCoalescingKey(path: string, options: RequestInit, method: string) {
+  if (method !== "GET" || options.body || options.signal || options.headers) return "";
+  if (options.cache === "no-store" || options.cache === "reload") return "";
+  return path;
 }
 
 async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefresh: boolean): Promise<T> {
