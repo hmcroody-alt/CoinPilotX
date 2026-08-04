@@ -30,6 +30,7 @@ import {
   View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import {
   cacheMessages,
   cancelPulseAiAction,
@@ -200,29 +201,6 @@ function LiveStatusDot({ warning }: { warning: boolean }) {
     <View style={styles.threadStatusSignal}>
       <Animated.View style={[styles.threadStatusHalo, warning && styles.threadStatusWarning, { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.08, 0.42] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1.75] }) }] }]} />
       <View style={[styles.threadStatusDot, warning && styles.threadStatusWarning]} />
-    </View>
-  );
-}
-
-function AmbientPulseField() {
-  const drift = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    let loop: Animated.CompositeAnimation | null = null;
-    AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
-      if (reduced) return;
-      loop = Animated.loop(Animated.sequence([
-        Animated.timing(drift, { toValue: 1, duration: 9000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(drift, { toValue: 0, duration: 9000, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
-      ]));
-      loop.start();
-    }).catch(() => undefined);
-    return () => loop?.stop();
-  }, [drift]);
-  return (
-    <View pointerEvents="none" style={styles.ambientField}>
-      <Animated.View style={[styles.ambientOrbLarge, { opacity: drift.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }), transform: [{ translateX: drift.interpolate({ inputRange: [0, 1], outputRange: [0, -34] }) }, { translateY: drift.interpolate({ inputRange: [0, 1], outputRange: [0, 24] }) }, { scale: drift.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1.08] }) }] }]} />
-      <Animated.View style={[styles.ambientOrbSmall, { opacity: drift.interpolate({ inputRange: [0, 1], outputRange: [1, 0.55] }), transform: [{ translateX: drift.interpolate({ inputRange: [0, 1], outputRange: [0, 20] }) }, { translateY: drift.interpolate({ inputRange: [0, 1], outputRange: [0, -18] }) }] }]} />
-      <View style={styles.ambientSignalLine} />
     </View>
   );
 }
@@ -1113,7 +1091,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         </LogiNexusStatePanel>
       ) : (
         <>
-        <AmbientPulseField />
+        <GalacticAtmosphere variant="messages" testID="messages-galactic-atmosphere" />
         <FlatList
           data={visibleMessages}
           inverted

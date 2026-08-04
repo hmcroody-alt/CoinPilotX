@@ -10,6 +10,7 @@ import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, 
 import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/ProfileHeader";
+import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { invalidateNativeSync } from "../core/eventSync";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
@@ -350,7 +351,9 @@ export function ProfileScreen({ route, navigation }: Props) {
   }
 
   return (
-    <Animated.FlatList
+    <View style={styles.root}>
+      <GalacticAtmosphere variant="profile" scrollY={scrollY} testID="profile-galactic-atmosphere" />
+      <Animated.FlatList
       ref={listRef}
       style={styles.list}
       contentContainerStyle={[styles.content, dock.contentPadding]}
@@ -407,7 +410,8 @@ export function ProfileScreen({ route, navigation }: Props) {
       onScroll={onScroll}
       onScrollBeginDrag={dock.handlers.onScrollBeginDrag}
       scrollEventThrottle={dock.handlers.scrollEventThrottle}
-    />
+      />
+    </View>
   );
 }
 
@@ -472,6 +476,7 @@ function AboutPanel({ profile, owner, onVerification, onSafety, onSellerStore }:
 }
 
 const styles = StyleSheet.create({
+  root: { backgroundColor: colors.background, flex: 1 },
   actionMessage: {
     backgroundColor: colors.signalSoft,
     borderColor: colors.border,
@@ -552,7 +557,7 @@ const styles = StyleSheet.create({
     marginBottom: 12
   },
   list: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   offline: {

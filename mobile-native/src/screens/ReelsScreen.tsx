@@ -55,6 +55,7 @@ import { describeDeleteError } from "../api/deleteErrors";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
 import { ContentTranslation } from "../components/ContentTranslation";
+import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import { classifyReelMedia } from "../reels/reelMediaKind";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
@@ -990,43 +991,8 @@ function cacheAge(cachedAt: number) {
 }
 
 function GalaxyField() {
-  const pulse = useRef(new Animated.Value(0)).current;
-  const [reduceMotion, setReduceMotion] = useState(false);
-
-  useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => undefined);
-    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
-    return () => subscription.remove();
-  }, []);
-
-  useEffect(() => {
-    if (reduceMotion) {
-      pulse.setValue(0.35);
-      return;
-    }
-    const animation = Animated.loop(Animated.sequence([
-      Animated.timing(pulse, { toValue: 1, duration: 2_800, useNativeDriver: true }),
-      Animated.timing(pulse, { toValue: 0, duration: 2_800, useNativeDriver: true })
-    ]));
-    animation.start();
-    return () => animation.stop();
-  }, [pulse, reduceMotion]);
-
-  return (
-    <View pointerEvents="none" style={styles.galaxy} accessibilityElementsHidden>
-      <Animated.View style={[styles.nebula, styles.nebulaOne, { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.22, 0.5] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1.08] }) }] }]} />
-      <Animated.View style={[styles.nebula, styles.nebulaTwo, { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.34, 0.14] }) }]} />
-      {GALAXY_STARS.map((star, index) => <View key={index} style={[styles.star, { left: star.left, top: star.top, width: star.size, height: star.size, opacity: star.opacity }]} />)}
-    </View>
-  );
+  return <GalacticAtmosphere variant="feed" testID="reels-galactic-atmosphere" />;
 }
-
-const GALAXY_STARS = [
-  { left: "8%", top: "18%", size: 2, opacity: 0.7 }, { left: "21%", top: "34%", size: 3, opacity: 0.4 },
-  { left: "78%", top: "23%", size: 2, opacity: 0.8 }, { left: "88%", top: "46%", size: 3, opacity: 0.35 },
-  { left: "16%", top: "67%", size: 2, opacity: 0.5 }, { left: "72%", top: "76%", size: 2, opacity: 0.65 },
-  { left: "43%", top: "12%", size: 2, opacity: 0.45 }, { left: "54%", top: "58%", size: 3, opacity: 0.3 }
-] as const;
 
 const RECOVERY_COPY: Record<Exclude<ConnectionState, "ready" | "cached">, { icon: string; title: string; body: string; action: string }> = {
   loading: { icon: "◎", title: "Your Galaxy is loading", body: "Finding the newest signals from across PulseSoc.", action: "Loading" },

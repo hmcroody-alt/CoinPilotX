@@ -24,14 +24,13 @@ import { profileTargetFromPost } from "../api/profile";
 import { profileNavigationParams } from "../api/profileTarget";
 import { listStatuses, loadCachedStatuses, PulseStatus, statusPosterUrl } from "../api/status";
 import { HomePulseComposer } from "../components/HomePulseComposer";
+import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import { LogiNexusBadge, LogiNexusEmptyState, LogiNexusPanel } from "../components/LogiNexus";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { PostCard } from "../components/PostCard";
 import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { SponsoredAdCard } from "../components/SponsoredAdCard";
-import { WelcomeUfoOverlay } from "../components/WelcomeUfoOverlay";
-import { StaticUFOField } from "../components/StaticUFOField";
 import { fetchSponsoredAds, SponsoredAd } from "../api/ads";
 import { FeedRow, injectAds } from "../feed/injectAds";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
@@ -573,16 +572,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
 
   return (
     <View style={styles.root}>
-      <View pointerEvents="none" style={styles.homeAtmosphereRoot}>
-        <View style={[styles.homeNebula, styles.homeNebulaLeft]} />
-        <View style={[styles.homeNebula, styles.homeNebulaRight]} />
-        <View style={styles.homeGridPlane} />
-        <View style={[styles.homeStar, styles.homeStarOne]} />
-        <View style={[styles.homeStar, styles.homeStarTwo]} />
-        <View style={[styles.homeStar, styles.homeStarThree]} />
-        <View style={[styles.homeSignalWave, styles.homeSignalWaveOne]} />
-        <View style={[styles.homeSignalWave, styles.homeSignalWaveTwo]} />
-      </View>
+      <GalacticAtmosphere variant="feed" />
       {/*
         `error` used to be reachable only through ListEmptyComponent, so a failed
         like, comment, follow or delete set a message that nothing rendered as
@@ -742,9 +732,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
       />
-      <StaticUFOField />
       <MasterNavigationDrawer visible={drawerOpen} onClose={() => setDrawerOpen(false)} onOpenRoute={openHomeRoute} />
-      <WelcomeUfoOverlay active={isFocused && currentUserId > 0} />
     </View>
   );
 }
@@ -998,39 +986,6 @@ function PulseNetworkHero({
   onOpenLive: () => void;
   onOpenSafety: () => void;
 }) {
-  const planetDrift = useRef(new Animated.Value(0)).current;
-  const networkBreath = useRef(new Animated.Value(0)).current;
-  const glowBreath = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const animations = [planetDrift, networkBreath, glowBreath];
-    animations.forEach((animation) => animation.stopAnimation());
-    if (!ambientMotionEnabled) {
-      animations.forEach((animation) => animation.setValue(0));
-      return;
-    }
-    const planet = Animated.loop(Animated.sequence([
-      Animated.timing(planetDrift, { toValue: 1, duration: 24000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      Animated.timing(planetDrift, { toValue: 0, duration: 24000, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
-    ]));
-    const network = Animated.loop(Animated.sequence([
-      Animated.timing(networkBreath, { toValue: 1, duration: 9000, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      Animated.timing(networkBreath, { toValue: 0, duration: 9000, easing: Easing.inOut(Easing.quad), useNativeDriver: true })
-    ]));
-    const glow = Animated.loop(Animated.sequence([
-      Animated.timing(glowBreath, { toValue: 1, duration: 12000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      Animated.timing(glowBreath, { toValue: 0, duration: 12000, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
-    ]));
-    planet.start();
-    network.start();
-    glow.start();
-    return () => {
-      planet.stop();
-      network.stop();
-      glow.stop();
-    };
-  }, [ambientMotionEnabled, glowBreath, networkBreath, planetDrift]);
-
   const creatorCount = new Set(
     [
       ...posts.map((post) => post.author?.id || post.author?.user_id || post.author_username || post.author_name),
@@ -1049,27 +1004,7 @@ function PulseNetworkHero({
   return (
     <LogiNexusPanel style={[styles.hero, compact && styles.heroCompact]} tone="default">
       <View pointerEvents="none" style={styles.heroAtmosphere}>
-        <Animated.View style={[styles.heroGlow, styles.heroGlowPrimary, { opacity: glowBreath.interpolate({ inputRange: [0, 1], outputRange: [0.12, 0.2] }), transform: [{ scale: glowBreath.interpolate({ inputRange: [0, 1], outputRange: [1, 1.015] }) }] }]} />
-        <View style={[styles.heroGlow, styles.heroGlowSecondary]} />
-        <Animated.View style={[styles.heroPlanet, { transform: [{ translateX: planetDrift.interpolate({ inputRange: [0, 1], outputRange: [0, 5] }) }, { translateY: planetDrift.interpolate({ inputRange: [0, 1], outputRange: [0, 3] }) }, { rotate: "-8deg" }] }]}>
-          <View style={styles.heroPlanetLight} />
-          <View style={styles.heroPlanetShadow} />
-        </Animated.View>
-        <View style={styles.heroSkyline}>
-          {[18, 34, 24, 46, 30, 58, 38, 50, 27, 42, 22].map((height, index) => (
-            <View key={`${height}-${index}`} style={[styles.heroSkylineTower, { height }]}>
-              <View style={styles.heroSkylineLight} />
-            </View>
-          ))}
-        </View>
-        <Animated.View style={[styles.heroNetworkLayer, { opacity: networkBreath.interpolate({ inputRange: [0, 1], outputRange: [0.52, 0.9] }) }]}>
-          <View style={[styles.heroSignalLine, styles.heroSignalLineOne]} />
-          <View style={[styles.heroSignalLine, styles.heroSignalLineTwo]} />
-          <View style={[styles.heroSignalLine, styles.heroSignalLineThree]} />
-          <View style={[styles.heroNetworkNode, styles.heroNetworkNodeOne]} />
-          <View style={[styles.heroNetworkNode, styles.heroNetworkNodeTwo]} />
-          <View style={[styles.heroNetworkNode, styles.heroNetworkNodeThree]} />
-        </Animated.View>
+        <GalacticAtmosphere variant="feed" testID="pulse-network-galactic-atmosphere" />
       </View>
       <View style={styles.heroTopLine}>
         <LogiNexusBadge label="Pulse Network" />

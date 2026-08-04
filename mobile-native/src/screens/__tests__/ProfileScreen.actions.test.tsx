@@ -19,6 +19,7 @@ jest.mock("../../api/feed", () => ({
   pulsePostUrl: jest.fn(), reactToPost: jest.fn(), repostPost: jest.fn(), deletePost: jest.fn(), savablePostId: (post: PulsePost) => post.id
 }));
 jest.mock("../../components/ProfileHeader", () => ({ ProfileHeader: () => null }));
+jest.mock("../../components/GalacticAtmosphere", () => ({ GalacticAtmosphere: () => null }));
 jest.mock("../../components/Screen", () => ({
   LogiNexusScreenShell: ({ children }: { children: React.ReactNode }) => children,
   LogiNexusStatePanel: ({ title }: { title: string }) => title
