@@ -1,6 +1,7 @@
 import { ComponentType, createElement, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import { getBusinessConstructionAccess, BusinessConstructionAccess } from "../api/businessConstruction";
+import { authenticatedOwnerAccess, getBusinessConstructionAccess, BusinessConstructionAccess } from "../api/businessConstruction";
+import { useAuth } from "../session/auth";
 import { GalacticConstructionScreen } from "./GalacticConstructionScreen";
 
 type RouteProps = { navigation: { goBack: () => void }; [key: string]: unknown };
@@ -9,14 +10,21 @@ type LoadedModule = Record<string, ComponentType<any>>;
 function protectedRoute(load: () => LoadedModule, exportName: string) {
   let Loaded: ComponentType<any> | null = null;
   return function ProtectedBusinessRoute(props: RouteProps) {
-    const [access, setAccess] = useState<BusinessConstructionAccess | null>(null);
+    const { authState } = useAuth();
+    const ownerEmail = authState.user?.email;
+    const [access, setAccess] = useState<BusinessConstructionAccess | null>(() => authenticatedOwnerAccess(ownerEmail));
     useEffect(() => {
+      const ownerAccess = authenticatedOwnerAccess(ownerEmail);
+      if (ownerAccess) {
+        setAccess(ownerAccess);
+        return;
+      }
       let active = true;
       getBusinessConstructionAccess()
         .then((result) => active && setAccess(result))
         .catch(() => active && setAccess({ ok: false, mode: "construction", can_access_private_business_os: false, construction_mode: true, developer_mode: false, developer_badge: false }));
       return () => { active = false; };
-    }, []);
+    }, [ownerEmail]);
     if (!access) return <View style={styles.loading}><ActivityIndicator color="#57D9FF" /><Text style={styles.loadingText}>Verifying sector access…</Text></View>;
     if (!access.can_access_private_business_os) return <GalacticConstructionScreen onReturn={props.navigation.goBack} />;
     Loaded = Loaded || load()[exportName];
