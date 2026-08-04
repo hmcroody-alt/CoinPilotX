@@ -13,6 +13,18 @@ import re
 PULSE_ID_RE = re.compile(r"^PLS-[A-Z0-9]+(?:-[A-Z0-9]+)*$")
 
 
+def _row_value(row, key: str, index: int = 0):
+    """Read SQLite mapping rows and PostgreSQL tuple rows identically."""
+    if row is None:
+        return None
+    if hasattr(row, "get"):
+        return row.get(key)
+    try:
+        return row[key]
+    except (KeyError, TypeError, IndexError):
+        return row[index]
+
+
 def canonical_pulse_id(user_id: int) -> str:
     value = int(user_id or 0)
     if value <= 0:
@@ -31,7 +43,7 @@ def _columns(cur, table: str, *, is_postgres: bool = False) -> set[str]:
             "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=%s",
             (table,),
         )
-        return {str(row[0]) for row in cur.fetchall()}
+        return {str(_row_value(row, "column_name", 0)) for row in cur.fetchall()}
     cur.execute(f"PRAGMA table_info({table})")
     return {str(row[1]) for row in cur.fetchall()}
 
@@ -41,7 +53,13 @@ def ensure_schema(cur, *, is_postgres: bool = False) -> int:
     if "pulse_id" not in columns:
         cur.execute("ALTER TABLE users ADD COLUMN pulse_id TEXT")
     cur.execute("SELECT user_id, pulse_id FROM users ORDER BY user_id ASC")
-    rows = [dict(row) for row in cur.fetchall()]
+    rows = [
+        {
+            "user_id": _row_value(row, "user_id", 0),
+            "pulse_id": _row_value(row, "pulse_id", 1),
+        }
+        for row in cur.fetchall()
+    ]
     used: set[str] = set()
     changed = 0
     for row in rows:
@@ -65,7 +83,7 @@ def ensure_user_pulse_id(cur, user_id: int) -> str:
     user_id = int(user_id or 0)
     cur.execute("SELECT pulse_id FROM users WHERE user_id=? LIMIT 1", (user_id,))
     row = cur.fetchone()
-    current = normalize_pulse_id(dict(row or {}).get("pulse_id"))
+    current = normalize_pulse_id(_row_value(row, "pulse_id", 0))
     if current:
         return current
     candidate = canonical_pulse_id(user_id)
@@ -86,4 +104,4 @@ def resolve_user_id(cur, value: object) -> int | None:
         return None
     cur.execute("SELECT user_id FROM users WHERE upper(pulse_id)=? LIMIT 1", (pulse_id,))
     row = cur.fetchone()
-    return int(dict(row).get("user_id") or 0) if row else None
+    return int(_row_value(row, "user_id", 0) or 0) if row else None

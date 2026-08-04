@@ -98671,6 +98671,12 @@ def _init_db_impl():
         ("suspended_reason", "TEXT"),
     ], conn=conn)
 
+    # This is the production initializer. Keep the permanent identity migration
+    # here (rather than only in the legacy initializer near the top of this
+    # module) so every deployed database is backfilled before profile queries
+    # can select users.pulse_id.
+    pulse_id_service.ensure_schema(cur, is_postgres=db_service.IS_POSTGRES)
+
     ensure_user_presence_schema(cur, conn)
     ensure_mobile_security_session_schema(cur)
     cur.execute("""

@@ -36,3 +36,30 @@ def test_new_account_receives_canonical_pulse_id():
     conn.execute("INSERT INTO users(user_id, username) VALUES (298311, 'newmember')")
     assert pulse_id_service.ensure_user_pulse_id(conn.cursor(), 298311) == "PLS-298311"
     assert conn.execute("SELECT pulse_id FROM users WHERE user_id=298311").fetchone()["pulse_id"] == "PLS-298311"
+
+
+class TupleCursor:
+    """Small PostgreSQL-style cursor proving tuple rows remain supported."""
+
+    def __init__(self):
+        self.rows = [(1, None), (8919, "PLS-8919")]
+        self.executed = []
+
+    def execute(self, sql, params=()):
+        self.executed.append((sql, tuple(params or ())))
+
+    def fetchall(self):
+        if "information_schema.columns" in self.executed[-1][0]:
+            return [("user_id",), ("pulse_id",)]
+        return list(self.rows)
+
+    def fetchone(self):
+        return (8919,)
+
+
+def test_postgres_tuple_rows_are_supported_during_schema_and_resolution():
+    cur = TupleCursor()
+    changed = pulse_id_service.ensure_schema(cur, is_postgres=True)
+    assert changed == 1
+    assert any("UPDATE users SET pulse_id" in sql for sql, _params in cur.executed)
+    assert pulse_id_service.resolve_user_id(cur, "pls-8919") == 8919

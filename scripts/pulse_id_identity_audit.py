@@ -27,6 +27,11 @@ require(
     "upper(COALESCE(u.pulse_id,''))=upper(?)",
     '/api/pulse/identity/<path:pulse_id>',
 )
+bot_text = (ROOT / "bot.py").read_text(encoding="utf-8")
+production_initializer = bot_text.split("def _init_db_impl():", 1)[1]
+assert "pulse_id_service.ensure_schema" in production_initializer, (
+    "bot.py: production _init_db_impl must run the Pulse ID schema migration"
+)
 require("migrations/pulse_id_identity.sql", "ADD COLUMN IF NOT EXISTS pulse_id", "UNIQUE INDEX")
 require("mobile-native/src/components/ProfileHeader.tsx", "PulseIdBadge", "Pulse Identity")
 require("mobile-native/src/screens/PulseIdentityScreen.tsx", "QR Identity", "Connected Wallets")
