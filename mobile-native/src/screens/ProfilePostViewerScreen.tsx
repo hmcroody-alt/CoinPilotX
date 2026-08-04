@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, useWindowDimensions, View, ViewToken } from "react-native";
+import { ActivityIndicator, FlatList, LayoutChangeEvent, ScrollView, StyleSheet, Text, useWindowDimensions, View, ViewToken } from "react-native";
 import { deletePost, getPostDetail, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
 import { PostCard } from "../components/PostCard";
 import { invalidateNativeSync } from "../core/eventSync";
@@ -14,11 +14,14 @@ import { colors } from "../theme/colors";
 type Props = NativeStackScreenProps<RootStackParamList, "ProfilePostViewer">;
 
 export function ProfilePostViewerScreen({ route, navigation }: Props) {
-  const { height } = useWindowDimensions();
+  const { height: windowHeight } = useWindowDimensions();
   const [postIds, setPostIds] = useState(() => dedupe(route.params.postIds));
   const [posts, setPosts] = useState<Record<number, PulsePost>>({});
   const [message, setMessage] = useState("");
+  const [viewportHeight, setViewportHeight] = useState(() => Math.max(1, Math.round(windowHeight)));
+  const [activeIndex, setActiveIndex] = useState(() => Math.max(0, dedupe(route.params.postIds).indexOf(route.params.postId)));
   const loading = useRef(new Set<number>());
+  const listRef = useRef<FlatList<number>>(null);
   const guard = useSocialActionGuard();
   const initialIndex = Math.max(0, postIds.indexOf(route.params.postId));
 
@@ -41,9 +44,21 @@ export function ProfilePostViewerScreen({ route, navigation }: Props) {
   }, []);
 
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken<number>[] }) => {
-    const index = Number(viewableItems[0]?.index || 0);
+    const centered = viewableItems.find((item) => item.isViewable && item.index != null);
+    const index = Number(centered?.index || 0);
+    setActiveIndex(index);
     [postIds[index - 1], postIds[index], postIds[index + 1]].forEach((id) => id && loadPost(id));
   }, [loadPost, postIds]);
+
+  const measureViewport = useCallback((event: LayoutChangeEvent) => {
+    const next = Math.round(event.nativeEvent.layout.height);
+    if (next > 0) setViewportHeight((current) => current === next ? current : next);
+  }, []);
+
+  useEffect(() => {
+    if (!viewportHeight) return;
+    requestAnimationFrame(() => listRef.current?.scrollToIndex({ index: Math.min(activeIndex, Math.max(0, postIds.length - 1)), animated: false }));
+  }, [activeIndex, postIds.length, viewportHeight]);
 
   function patch(postId: number, values: Partial<PulsePost>) {
     setPosts((current) => current[postId] ? ({ ...current, [postId]: { ...current[postId], ...values } }) : current);
@@ -86,15 +101,18 @@ export function ProfilePostViewerScreen({ route, navigation }: Props) {
     if (!remaining.length) navigation.goBack();
   }
 
-  const layoutHeight = Math.max(500, height - 88);
-  const viewabilityConfig = useMemo(() => ({ itemVisiblePercentThreshold: 70 }), []);
+  const layoutHeight = viewportHeight;
+  const viewabilityConfig = useMemo(() => ({ itemVisiblePercentThreshold: 80, minimumViewTime: 80 }), []);
   return (
-    <View style={styles.root}>
+    <View style={styles.root} onLayout={measureViewport}>
       {message ? <Text accessibilityLiveRegion="polite" style={styles.message}>{message}</Text> : null}
-      <FlatList
+      {layoutHeight > 0 ? <FlatList
+        ref={listRef}
         data={postIds}
         keyExtractor={String}
         pagingEnabled
+        disableIntervalMomentum
+        decelerationRate="fast"
         initialScrollIndex={initialIndex}
         getItemLayout={(_, index) => ({ length: layoutHeight, offset: layoutHeight * index, index })}
         onViewableItemsChanged={onViewableItemsChanged}
@@ -102,8 +120,9 @@ export function ProfilePostViewerScreen({ route, navigation }: Props) {
         showsVerticalScrollIndicator={false}
         renderItem={({ item: postId }) => {
           const post = posts[postId];
-          return <View style={[styles.page, { height: layoutHeight }]}>{post ? <ScrollView contentContainerStyle={styles.pageContent}><PostCard
+          return <View style={[styles.page, { height: layoutHeight }]}>{post ? <ScrollView contentContainerStyle={styles.pageContent} showsVerticalScrollIndicator={false}><PostCard
             post={post}
+            active={postId === postIds[activeIndex]}
             busy={guard.isItemBusy(post.id)}
             onOpen={() => undefined}
             onReact={react}
@@ -114,7 +133,7 @@ export function ProfilePostViewerScreen({ route, navigation }: Props) {
             onDelete={route.params.owner ? remove : undefined}
           /></ScrollView> : <View style={styles.loading}><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Loading post…</Text></View>}</View>;
         }}
-      />
+      /> : <View style={styles.loading}><ActivityIndicator color={colors.accent} /></View>}
     </View>
   );
 }
@@ -124,8 +143,8 @@ function dedupe(ids: number[]) { return Array.from(new Set(ids.map(Number).filte
 const styles = StyleSheet.create({
   root: { backgroundColor: colors.background, flex: 1 },
   page: { backgroundColor: colors.background },
-  pageContent: { paddingBottom: 28 },
+  pageContent: { flexGrow: 1, justifyContent: "center", paddingBottom: 18, paddingTop: 18 },
   loading: { alignItems: "center", flex: 1, justifyContent: "center" },
   loadingText: { color: colors.muted, marginTop: 10 },
-  message: { backgroundColor: colors.signalSoft, color: colors.text, paddingHorizontal: 14, paddingVertical: 8 }
+  message: { backgroundColor: colors.signalSoft, color: colors.text, left: 0, paddingHorizontal: 14, paddingVertical: 8, position: "absolute", right: 0, top: 0, zIndex: 4 }
 });

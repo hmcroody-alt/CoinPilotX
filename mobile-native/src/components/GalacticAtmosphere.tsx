@@ -44,7 +44,7 @@ export const GalacticAtmosphere = memo(function GalacticAtmosphere({
   scrollY,
   testID = "galactic-atmosphere"
 }: Props) {
-  const lowPower = Battery.useLowPowerMode();
+  const [lowPower, setLowPower] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [foreground, setForeground] = useState(AppState.currentState === "active");
   const drift = useRef(new Animated.Value(0)).current;
@@ -52,10 +52,12 @@ export const GalacticAtmosphere = memo(function GalacticAtmosphere({
   const accents = ACCENTS[variant];
 
   useEffect(() => {
+    Battery.isLowPowerModeEnabledAsync().then(setLowPower).catch(() => setLowPower(false));
+    const battery = Battery.addLowPowerModeListener(({ lowPowerMode }) => setLowPower(lowPowerMode));
     AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => setReduceMotion(false));
     const motion = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
     const app = AppState.addEventListener("change", (state) => setForeground(state === "active"));
-    return () => { motion.remove(); app.remove(); };
+    return () => { battery?.remove?.(); motion.remove(); app.remove(); };
   }, []);
 
   useEffect(() => {

@@ -1061,6 +1061,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   return (
     <View style={styles.root}>
       <LogiNexusScreenShell bottomDock={false} contentStyle={styles.shellContent}>
+      {/* The atmosphere is the first paint layer. Keeping it after the header
+          lets its opaque deep-space gradient cover the identity and call
+          controls even though it cannot receive touches. */}
+      <GalacticAtmosphere variant="messages" testID="messages-galactic-atmosphere" />
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 10) }]}>
         <View style={styles.threadHeader}>
           <Pressable accessibilityRole="button" accessibilityLabel="Back to conversations" style={styles.backButton} onPress={() => navigation.goBack()}><Text style={styles.backButtonText}>‹</Text></Pressable>
@@ -1091,7 +1095,6 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         </LogiNexusStatePanel>
       ) : (
         <>
-        <GalacticAtmosphere variant="messages" testID="messages-galactic-atmosphere" />
         <FlatList
           data={visibleMessages}
           inverted
@@ -2264,7 +2267,9 @@ const styles = StyleSheet.create({
     borderBottomColor: "rgba(97,216,255,0.26)",
     borderBottomWidth: 1,
     padding: logiNexus.spacing.sm,
-    paddingBottom: logiNexus.spacing.sm
+    paddingBottom: logiNexus.spacing.sm,
+    position: "relative",
+    zIndex: 3
   },
   threadHeader: { alignItems: "center", flexDirection: "row", gap: 8, minHeight: 56 },
   backButton: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.035)", borderColor: colors.border, borderRadius: 13, borderWidth: 1, height: 46, justifyContent: "center", width: 42 },
