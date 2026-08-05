@@ -176,6 +176,10 @@ async function renderScreen(overrides: Record<string, unknown> = {}) {
   return { ...utils, navigation };
 }
 
+function latestCardFor(reelId: number) {
+  return [...mockCardProps].reverse().find((props) => props.reel?.id === reelId);
+}
+
 beforeEach(() => {
   mockCardProps.length = 0;
   jest.clearAllMocks();
@@ -186,6 +190,34 @@ beforeEach(() => {
   // Must be a snapshot object, not null: the screen reads `snapshot.reels.length`
   // directly on both the happy and the recovery path.
   mockCached.mockResolvedValue({ reels: [], cachedAt: 0 });
+});
+
+describe("ReelsScreen visibility playback", () => {
+  it("deactivates every Reel when none is visible and ignores non-viewable tokens", async () => {
+    Object.defineProperty(require("react-native").AppState, "currentState", { configurable: true, value: "active" });
+    const first = reel({ id: 88, reel_id: 88 });
+    const second = reel({ id: 89, reel_id: 89 });
+    mockList.mockResolvedValue({ ok: true, reels: [first, second], has_more: false, next_offset: 2 });
+    const screen = render(<ReelsScreen route={{ params: {} } as never} navigation={{ navigate: jest.fn(), goBack: jest.fn(), addListener: jest.fn(() => () => undefined) } as never} />);
+    await waitFor(() => expect(latestCardFor(88)).toBeTruthy());
+    const list = screen.UNSAFE_getByType(require("react-native").FlatList);
+
+    await act(async () => list.props.onViewableItemsChanged({ viewableItems: [{ isViewable: true, index: 0, item: first }] }));
+    await waitFor(() => expect(latestCardFor(88)?.active).toBe(true));
+
+    await act(async () => list.props.onViewableItemsChanged({ viewableItems: [] }));
+    await waitFor(() => expect(latestCardFor(88)?.active).toBe(false));
+    expect(latestCardFor(89)?.active).toBe(false);
+
+    await act(async () => list.props.onViewableItemsChanged({
+      viewableItems: [
+        { isViewable: false, index: 0, item: first },
+        { isViewable: true, index: 1, item: second }
+      ]
+    }));
+    await waitFor(() => expect(latestCardFor(89)?.active).toBe(true));
+    expect(latestCardFor(88)?.active).toBe(false);
+  });
 });
 
 describe("ReelsScreen save", () => {

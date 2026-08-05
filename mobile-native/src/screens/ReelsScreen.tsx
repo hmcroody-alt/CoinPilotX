@@ -271,10 +271,11 @@ export function ReelsScreen({ route, navigation }: Props) {
   }, [reels]);
 
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    const next = viewableItems[0]?.index;
-    const item = viewableItems[0]?.item as PulseReel | undefined;
-    if (item?.id) activeReelId.current = item.id;
-    if (typeof next === "number") setActiveIndex(next);
+    const visible = viewableItems.find((token) => token.isViewable);
+    const next = visible?.index;
+    const item = visible?.item as PulseReel | undefined;
+    activeReelId.current = item?.id || 0;
+    setActiveIndex(typeof next === "number" ? next : -1);
   });
 
   useEffect(() => {
