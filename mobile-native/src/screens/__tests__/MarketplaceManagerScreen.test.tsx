@@ -25,6 +25,10 @@ jest.mock("expo-linear-gradient", () => ({ LinearGradient: "LinearGradient" }));
 jest.mock("../../core/eventSync", () => ({
   registerSyncInvalidation: jest.fn(() => () => undefined)
 }));
+jest.mock("../../core/unreadCounts", () => ({
+  refreshUnreadCounts: jest.fn(async () => undefined),
+  useBellCount: jest.fn(() => 0)
+}));
 jest.mock("../../theme/logiNexusMotion", () => ({
   ...jest.requireActual("../../theme/logiNexusMotion"),
   useLogiNexusReducedMotion: () => mockReducedMotion()

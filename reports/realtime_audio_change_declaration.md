@@ -5,6 +5,68 @@ Base: `c5e523d625166414573e618c1c043092794e7163`
 Baseline: `realtime-audio-stable-v1` (`fc25cd163b8802113df1b3b3d98cb7aab10891bb`)  
 Required label: `audio-critical-change`
 
+## Build 13 release-manifest addendum
+
+This addendum records the protected manifest change in the release range
+`02fee21c4e8c94c9e3f445fd24539a4c89f3ebba...5d3e5b7f3f965c73239e6be74b52cc2c36a236e3`.
+The original push correctly failed the protection gate because the release
+manifest changed without being named in this declaration. This corrective
+record is intentionally explicit and does not reinterpret that failure as an
+audio-runtime failure.
+
+### Why the change is required
+
+`mobile-native/app.json` was changed only to set the approved PulseSoc app icon
+and the production iOS build number to `13` for the requested App Store build.
+Those release fields are required for the production package, while the file is
+also watched by the real-time audio guard because other manifest fields can
+affect native dependencies and permissions.
+
+### Which feature required it
+
+PulseSoc production iOS build 13 packaging and approved app-icon delivery.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/app.json` | dependency watch | Updated release icon configuration and iOS build number only. No microphone permission, background-audio mode, native dependency, LiveKit setting, feature flag, or audio-session owner changed. |
+
+### Expected behavior change
+
+The production package uses the approved PulseSoc icon and reports build 13.
+Call, video-call, and livestream audio behavior is unchanged.
+
+### Regression risk
+
+Audio-runtime risk is low because no audio setting, permission, dependency, or
+implementation changed in the manifest diff. The broader release range still
+ran the complete audio architecture, golden-flow, backend token, TypeScript,
+native archive, simulator, and physical-device installation gates.
+
+### Tests run
+
+- Critical real-time audio suite: 16 suites / 317 tests passed.
+- Full real-time audio suite: 21 suites / 387 tests passed.
+- Native architecture gate: 1 suite / 22 tests passed.
+- Backend architecture and LiveKit token/room policy: 22 tests passed.
+- TypeScript compilation: passed.
+- Signed production archive: `com.pulsesoc.app`, version `1.0.1`, build `13`, `** ARCHIVE SUCCEEDED **`.
+- Exact archived app installed and launched on physical device `P3r7or`.
+
+### Physical validation required
+
+The manifest-only release metadata change does not alter the audio path, but
+installing and launching a signed build is not audible proof. Paired host/viewer
+livestream audibility and call/video-call regression remain release gates and
+must not be claimed as newly performed by this addendum.
+
+### Rollback procedure
+
+Revert the build-13 release metadata commit and rebuild with the prior icon/build
+configuration. No LiveKit, AVAudioSession, microphone publication, or backend
+flag rollback is required for this manifest-only change.
+
 ## Why the change is required
 
 Physical Live startup failed with `The native real-time audio engine did not remain active.` The stable rollback was already present, but the failed run lacked generation- and caller-complete evidence, and the release-blocking suite omitted the post-camera engine lifecycle test. The guard must remain fail-closed while the transition that invalidates the engine becomes observable and regression-tested.
