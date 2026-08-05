@@ -132,3 +132,140 @@ Install the corrected build on a physical iPhone; run two consecutive five-minut
 ## Rollback procedure
 
 Keep `REALTIME_MEDIA_QUALITY_V2_ENABLED=0` and `live_publisher_quality_enabled=false` server-side. If the shared call-grade branch must be rolled back, revert its focused commit; the previous Live-specific recovery paths remain in history. Confirm rollback on two physical devices before rollout.
+
+---
+
+# Addendum — post-camera recorder recovery is wired in (2026-08-05)
+
+Change: repair the post-camera engine stabilization so it can actually restart
+the recorder instead of failing the broadcast closed.
+Required label: `audio-critical-change`
+
+## Why the change is required
+
+Physical Live startup still failed with `The native real-time audio engine did
+not remain active.` after the shared call-grade coordinator landed. Tracing the
+whole path shows why the previous fixes could not have worked at this call site.
+
+`initializeCallGradePublisherMedia` calls the caller-supplied
+`stabilizeAfterCamera` hook once, and lets it throw. In
+`useLiveBroadcastRoom.connectTransaction` that hook was
+`stabilizeRealtimeAudioEngine({ playout: true, recording: true, settleMs: 650 })`
+with **no `reactivateSession`**. Device syslog recorded in the baseline shows the
+camera transition leaves the shared AVAudioSession INACTIVE
+(`cmsSetIsActive ... going inactive`) and iOS never delivers an
+interruption-ended event while the camera holds the session. An ADM restart
+issued against an inactive session silently no-ops. The guard therefore ran its
+two passes against a session it could not start into, observed
+`recordingRunning === false` both times, and threw — terminating a broadcast
+whose microphone track had already been published successfully.
+
+`recoverRealtimeRecordingEngine` was written for exactly this failure — it
+re-activates the session with a plain `setActive(true)` before each ADM restart,
+sweeps four passes across the asynchronous RemoteIO teardown window, and never
+throws. It had **zero call sites**. It was dead code.
+
+Separately, `stabilizeLivePublisherAudio` (which does pass `reactivateSession`)
+is reached only from reconnect and camera-toggle handlers gated on
+`publish && useV2`. `pulse_live_audio_v2_enabled()` in `bot.py` defaults OFF and
+ships `LIVESTREAM_AUDIO_V2_ENABLED=false`. Production hosts therefore received
+the throwing guard but none of the session-reactivating recovery.
+
+## Which feature required it
+
+Live host/co-host broadcast startup on physical iPhone. No unrelated subsystem
+is touched.
+
+## Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/live/useLiveBroadcastRoom.ts` | livestream audio adapter | The `stabilizeAudio` hook now runs `recoverRealtimeRecordingEngine` (non-throwing, 4 passes, plain `startAudioSession` reactivation) before the authoritative guard, and supplies `reactivateSession` to the guard itself. Documents `useV2` as non-branching at `initializeLivePublisherMedia`. |
+
+No other protected path changed. `realtimeAudioEngine.ts`,
+`realtimePublisherMedia.ts`, the ownership policy, the microphone publisher, and
+the protected-paths manifest are untouched.
+
+## Expected behavior change
+
+A camera-induced recorder teardown is now recovered instead of being reported as
+a fatal broadcast failure. The fail-closed invariant is preserved: the
+authoritative `stabilizeRealtimeAudioEngine` still runs last and still throws if
+the engine is genuinely dead, so a silent broadcast can never be reported as
+healthy. The only broadcasts that change outcome are those that previously
+aborted while the engine was recoverable.
+
+Startup ordering is unchanged. No AVAudioSession category is reasserted at this
+site — reactivation is a plain `setActive(true)`, deliberately not a category
+reassert, which the baseline recorded as disruptive to the running WebRTC video
+pipeline. No second microphone track, no second publication path, no new global
+audio singleton, no screen-level session setup, no ownership bypass.
+
+## Regression risk
+
+The added recovery is best-effort and swallows its own errors, so it cannot
+introduce a new failure mode of its own. The residual risk is timing: recovery
+adds up to ~1.6s of settle passes to a startup that is already failing, and only
+on the path where the engine is observed stopped. Healthy startups skip every
+pass on the first inspection. Physical iOS camera/RemoteIO behavior remains
+untestable in CI.
+
+## Tests run
+
+Re-run in full on 2026-08-05. The earlier entry recorded the Python protection
+suite as unrunnable here; that is no longer true, and the suite itself has since
+been rebuilt (see below), so the numbers are restated rather than appended.
+
+- TypeScript (`tsc --noEmit`): passed, no diagnostics.
+- Jest, entire native app: **160 suites / 2,820 tests passed** (run as six
+  shards; no failures in any shard).
+- Jest, audio-critical set only (the 13 paths named by
+  `test:realtime-audio-critical`): **181 tests passed**.
+- i18n catalogue validation: OK, 11 locales. Three advisory `many`-plural
+  warnings for es/fr/pt are pre-existing and unrelated.
+- Python protection suite: **200 checks across 12 suites, passed**
+  (`scripts/protection/run_protection_suite.py`).
+
+  This line is worth reading carefully rather than as a green tick. Before this
+  mission the runner named three files explicitly and the CI job invoked
+  `python3 -m unittest` against modules that define plain functions and no
+  `TestCase` — so it collected nothing, printed "Ran 0 tests ... OK", and exited
+  zero. The job guarding LiveKit publish grants, which is the authorization
+  deciding who may turn on a microphone, was green while measuring nothing. The
+  runner now discovers every suite and fails any suite that exits zero having
+  executed zero checks. The 200 is the first count from this file that could
+  have been a smaller number.
+
+- Change gate (`scripts/realtime_audio_change_gate.py --base origin/main
+  --head HEAD`): reports no protected path changed, because the working-tree
+  edit to `useLiveBroadcastRoom.ts` is not yet committed and the gate diffs
+  commits. `useLiveBroadcastRoom` **is** in the protected manifest, so the gate
+  will fire on the pushed range and this declaration is what it will look for.
+- Native iOS `Info.plist` invariants, read from the checked-in project
+  (`ios/PulseSocNative/Info.plist`): `NSMicrophoneUsageDescription` present,
+  `UIBackgroundModes` contains `audio`. `app.json` declares both, so prebuild
+  reproduces them.
+- Native iOS build (`expo prebuild` on macOS) and two-device audible QA:
+  **NOT RUN.** See below.
+
+## Physical validation required
+
+Not yet performed and explicitly not claimed. No simulator was used either, and
+a simulator result would not change this section: the simulator does not
+reproduce AVAudioSession hardware arbitration, RemoteIO teardown on camera
+transition, or route changes, which are the exact mechanics this change exists
+to survive.
+
+The full procedure is `docs/realtime_audio_live_test_matrix.md`. The minimum bar
+before shipping: install on a physical iPhone; start a Live broadcast and
+confirm a separate viewer hears the host; toggle the camera mid-broadcast and
+confirm audio survives; switch front/rear camera and confirm audio survives; run
+two consecutive five-minute sessions without an app restart; then confirm a
+bidirectional audio call and a video call still have audio.
+
+## Rollback procedure
+
+Revert this single commit. It touches one file and adds one call; the previous
+behavior (single guard, no reactivation) is restored exactly. No server flag,
+no schema, and no native dependency is involved, so no coordinated rollback is
+required.

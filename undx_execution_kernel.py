@@ -51,6 +51,34 @@ PROTECTED_PATTERNS = (
     "coinpilotx.db",
 )
 
+#: Paths that define what the kernel is allowed to do at all.
+#:
+#: PROTECTED_PATTERNS above stops UNDX writing to secrets. Nothing stopped it
+#: writing to *this file*. A single approved change to `undx_execution_kernel.py`
+#: can empty PROTECTED_PATTERNS, change APPROVAL_PHRASE to the empty string, or
+#: delete the repository-containment check - and every write after that is
+#: unguarded, with the operator having approved only what looked like a routine
+#: refactor. The same holds for the protection suite and the CI workflows that
+#: run it: rewriting those turns the safety net green without fixing anything.
+#:
+#: These are deliberately not forbidden. UNDX improving its own guards is a
+#: legitimate and desirable thing, and a flat ban would just get deleted the
+#: first time it was inconvenient. They require a *second, different* approval
+#: phrase, so that "yes, apply this refactor" can never silently also mean "and
+#: remove the safety rails". The escalation is the point, not the prohibition.
+SELF_GOVERNING_PATTERNS = (
+    "undx_execution_kernel.py",
+    "undx_agent_policy.py",
+    "tests/protection/",
+    "scripts/protection/",
+    ".github/workflows/",
+    "config/realtime-audio-protected-paths.json",
+)
+
+#: Distinct from APPROVAL_PHRASE on purpose. Reusing the same phrase would make
+#: the escalation invisible: any already-approved batch would carry it along.
+GUARD_APPROVAL_PHRASE = "APPROVE UNDX GUARD CHANGE"
+
 TEXT_EXTENSIONS = {
     ".py",
     ".html",
@@ -163,6 +191,21 @@ def resolve_repository_path(path_value: str | os.PathLike[str] | None = None) ->
 def is_protected_path(path: Path) -> bool:
     normalized = path.as_posix().lower()
     return any(pattern in normalized for pattern in PROTECTED_PATTERNS)
+
+
+def is_self_governing_path(path: Path, root: Path | None = None) -> bool:
+    """Does this write change the rules the kernel operates under?
+
+    Matched against the repository-relative path when a root is supplied.
+    Matching the absolute path would let a checkout directory that happens to
+    contain one of these strings mark the entire tree as self-governing - which
+    fails safe, but noisily enough that someone would relax the check.
+    """
+    try:
+        normalized = path.resolve().relative_to(root.resolve()).as_posix().lower() if root else path.as_posix().lower()
+    except (ValueError, OSError):
+        normalized = path.as_posix().lower()
+    return any(pattern in normalized for pattern in SELF_GOVERNING_PATTERNS)
 
 
 def is_text_file(path: Path) -> bool:
@@ -675,18 +718,44 @@ def write_log(event: dict[str, Any]) -> None:
         handle.write(json.dumps(event, sort_keys=True) + "\n")
 
 
-def apply_approved_changes(path_value: str | None, proposal: dict[str, Any], approval: str, approved_ids: list[str] | None = None) -> dict[str, Any]:
+def apply_approved_changes(
+    path_value: str | None,
+    proposal: dict[str, Any],
+    approval: str,
+    approved_ids: list[str] | None = None,
+    guard_approval: str = "",
+) -> dict[str, Any]:
     if approval != APPROVAL_PHRASE:
         raise KernelError("Exact approval phrase required before UNDX can write files.")
     repo = resolve_repository_path(path_value)
     allowed_ids = set(approved_ids or [])
     applied: list[dict[str, str]] = []
+    guarded: list[str] = []
     backup_dir = BACKUP_ROOT / datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     changes = proposal.get("changes") or []
-    for item in changes:
+
+    # Screen the whole batch for guard changes before writing anything. Checking
+    # inside the write loop would let a batch apply its first few files and then
+    # refuse the one that touches the kernel, leaving the tree half-modified -
+    # and leaving the operator to reconcile it by hand under time pressure.
+    selected = [
+        item for item in changes
+        if not allowed_ids or str(item.get("id") or "") in allowed_ids
+    ]
+    for item in selected:
+        rel = str(item.get("path") or "").strip()
+        if is_self_governing_path((repo.root / rel), repo.root):
+            guarded.append(rel)
+    if guarded and guard_approval != GUARD_APPROVAL_PHRASE:
+        raise KernelError(
+            "This change edits the files that constrain UNDX itself "
+            f"({', '.join(sorted(set(guarded))[:5])}). Applying it needs the "
+            f"separate phrase '{GUARD_APPROVAL_PHRASE}' in addition to the write "
+            "approval, so that approving a refactor cannot also remove the guards."
+        )
+
+    for item in selected:
         change_id = str(item.get("id") or "")
-        if allowed_ids and change_id not in allowed_ids:
-            continue
         rel = str(item.get("path") or "").strip()
         target = (repo.root / rel).resolve()
         try:
@@ -709,8 +778,22 @@ def apply_approved_changes(path_value: str | None, proposal: dict[str, Any], app
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(str(after), encoding="utf-8")
         applied.append({"path": rel, "changeId": change_id})
-    write_log({"event": "apply_approved_changes", "proposalId": proposal.get("proposalId"), "applied": applied})
-    return {"ok": True, "applied": applied, "backupDirectory": backup_dir.as_posix() if backup_dir.exists() else "", "logPath": LOG_PATH.as_posix()}
+    # Record guard edits explicitly. `undx_execution_log.jsonl` is the only
+    # durable account of what UNDX changed, and "the kernel rewrote its own
+    # rules on this date" is the single entry most worth being able to find.
+    write_log({
+        "event": "apply_approved_changes",
+        "proposalId": proposal.get("proposalId"),
+        "applied": applied,
+        "guardPathsChanged": sorted(set(guarded)),
+    })
+    return {
+        "ok": True,
+        "applied": applied,
+        "guardPathsChanged": sorted(set(guarded)),
+        "backupDirectory": backup_dir.as_posix() if backup_dir.exists() else "",
+        "logPath": LOG_PATH.as_posix(),
+    }
 
 
 SAFE_VALIDATION_COMMANDS = {

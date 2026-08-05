@@ -144,8 +144,13 @@ jobs:
         working-directory: mobile-native
         run: npm ci
 
+      # Run as a script, not via `python3 -m unittest <module>`. unittest
+      # collects only TestCase subclasses, so naming a module that uses plain
+      # test functions silently collects nothing and reports OK - which is
+      # exactly what happened to the token-grant suites in the backend job.
+      # Every suite here exits non-zero on failure when run directly.
       - name: Manifest points at files that exist
-        run: python3 -m unittest tests.protection.test_realtime_audio_architecture -v
+        run: python3 tests/protection/test_realtime_audio_architecture.py -v
 
       - name: Forbidden audio APIs stay inside their allowlists
         working-directory: mobile-native
@@ -186,13 +191,14 @@ jobs:
         run: npm run typecheck
 
   # ---------------------------------------------------------------------------
-  # 4. Backend token and room authorization. Publish rights are granted here,
-  #    where no client test can see a mistake.
+  # 4. Backend protection suite. Publish rights are granted here, where no client
+  #    test can see a mistake - and since this runner also covers admin
+  #    accountability, metric truthfulness and the environment contract, it runs
+  #    unconditionally. Gating it on `detect` would mean a pull request that
+  #    removes a CSRF check or an audit row never runs the suite that catches it.
   # ---------------------------------------------------------------------------
   backend:
-    name: Backend token and room policy
-    needs: detect
-    if: needs.detect.outputs.protected == 'true' || needs.detect.outputs.indirect == 'true' || github.event_name != 'pull_request'
+    name: Backend protection suite
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -205,12 +211,24 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r requirements.txt
 
-      - name: Token grant and room owner tests
-        run: |
-          python3 -m unittest \
-            tests.protection.test_call_livekit_token_grants \
-            tests.protection.test_livestream_audio_token_grants \
-            tests.protection.test_livekit_webhook_route_owner -v
+      # This step used to be:
+      #
+      #   python3 -m unittest tests.protection.test_call_livekit_token_grants \
+      #     tests.protection.test_livestream_audio_token_grants \
+      #     tests.protection.test_livekit_webhook_route_owner -v
+      #
+      # Two of those three modules define module-level test functions and no
+      # TestCase subclass, so unittest collected nothing from them and the step
+      # printed "Ran 0 tests ... OK". The job guarding LiveKit publish grants -
+      # the authorization that decides who can turn on a microphone - was green
+      # while verifying nothing at all.
+      #
+      # The runner below discovers every suite in tests/protection/, runs each as
+      # a subprocess, and fails when a suite exits 0 having executed zero checks.
+      # A new protection test is enforced by existing, and a suite cannot go
+      # quiet without failing the build.
+      - name: Protection suite (token grants, room policy, audio, admin, env)
+        run: python3 scripts/protection/run_protection_suite.py
 
   # ---------------------------------------------------------------------------
   # 5. Native build verification. A change can pass every Jest test and still

@@ -12,6 +12,10 @@ APP_TEMPLATE = (ROOT / "templates/app.html").read_text(encoding="utf-8")
 
 
 def expect(condition: bool, label: str) -> None:
+    # Counted so scripts/protection/run_protection_suite.py can prove this file
+    # actually executed. A suite that exits 0 having checked nothing is the
+    # failure mode the runner exists to catch.
+    expect.calls = getattr(expect, "calls", 0) + 1
     if not condition:
         raise AssertionError(label)
     print(f"ok - {label}")
@@ -39,6 +43,7 @@ def main() -> None:
     expect("alert_unread_count" in BOT or "alert_unread_count" in APP_TEMPLATE, "alert unread count contract remains present")
     expect("support@pulsesoc.com" in BOT or "support@pulsesoc.com" in APP_TEMPLATE, "PulseSoc support address remains present")
     expect("coinpilotx.app" in BOT.lower(), "legacy coinpilotx.app support remains for migration safety")
+    print(f"PROTECTION_TESTS_RUN={getattr(expect, 'calls', 0)}")
     print("core platform protection contract ok")
 
 

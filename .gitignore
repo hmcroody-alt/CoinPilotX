@@ -15,6 +15,12 @@ coinpilotx.db-wal
 coinpilotx.db-shm
 *.sqlite
 *.sqlite3
+# Database dumps from scripts/ops/backup_database.py. These are a byte-for-byte
+# copy of production: every user row, every message, every token. Committing one
+# publishes the database to anyone with repository access and, because git keeps
+# history, a later `git rm` does not take it back.
+backups/
+*.sql.gz
 # Rotated logs. `*.log` above does not match `coinpilotx.log.1`.
 *.log.[0-9]
 # FUSE leaves one of these behind for every file deleted while still open. They

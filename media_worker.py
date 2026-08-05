@@ -26,7 +26,7 @@ print("CoinPilotX media engine boot starting", flush=True)
 print("DATABASE_URL present=", bool(os.getenv("DATABASE_URL")), flush=True)
 print("REDIS_URL present=", bool(os.getenv("REDIS_URL")), flush=True)
 print("MEDIA_STORAGE_PROVIDER=", os.getenv("MEDIA_STORAGE_PROVIDER", "local"), flush=True)
-print("R2_BUCKET present=", bool(os.getenv("R2_BUCKET")), flush=True)
+print("bucket present (R2_BUCKET or S3_BUCKET)=", bool(os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET")), flush=True)
 print("R2_PUBLIC_BASE_URL present=", bool(os.getenv("R2_PUBLIC_BASE_URL")), flush=True)
 print("ffmpeg present=", bool(shutil.which("ffmpeg")), flush=True)
 
@@ -76,10 +76,22 @@ def _handle_stop(_signum, _frame) -> None:
 
 def dependency_snapshot() -> dict:
     storage_provider = os.getenv("MEDIA_STORAGE_PROVIDER", "local").strip().lower() or "local"
-    r2_bucket = bool(os.getenv("R2_BUCKET"))
+    # These checks must accept exactly the aliases services/media_storage.py
+    # accepts. Reading only the R2_* names made a valid S3_BUCKET / AWS_* setup
+    # report "storage not configured" while uploads were in fact working - a
+    # readiness signal that disagrees with the code it claims to describe.
+    r2_bucket = bool(os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET"))
     r2_public_base_url = bool(os.getenv("R2_PUBLIC_BASE_URL"))
-    r2_endpoint = bool(os.getenv("R2_ENDPOINT_URL") or os.getenv("R2_ENDPOINT") or os.getenv("R2_ACCOUNT_ID"))
-    r2_credentials = bool(os.getenv("R2_ACCESS_KEY_ID") and os.getenv("R2_SECRET_ACCESS_KEY"))
+    r2_endpoint = bool(
+        os.getenv("R2_ENDPOINT_URL")
+        or os.getenv("R2_ENDPOINT")
+        or os.getenv("R2_ACCOUNT_ID")
+        or os.getenv("S3_ENDPOINT_URL")
+    )
+    r2_credentials = bool(
+        (os.getenv("R2_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID"))
+        and (os.getenv("R2_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY"))
+    )
     storage_configured = True
     if storage_provider in {"r2", "s3"}:
         storage_configured = r2_bucket and r2_public_base_url and r2_endpoint and r2_credentials

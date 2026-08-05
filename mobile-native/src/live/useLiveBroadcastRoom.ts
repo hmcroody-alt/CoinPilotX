@@ -13,6 +13,7 @@ import {
   inspectRealtimeAudioEngine,
   reapplyRealtimeAudioConfiguration,
   reassertRealtimeMicrophone,
+  recoverRealtimeRecordingEngine,
   releaseRealtimeAudioSession,
   resolveRealtimeAudioConfiguration,
   selectRealtimeAudioOutput,
@@ -323,6 +324,13 @@ async function publishMicrophoneForPath(
  * The guard exists to verify the state *after* camera startup settles.
  */
 export async function initializeLivePublisherMedia(options: {
+  /**
+   * Retained for call-site clarity and telemetry only. The publisher startup
+   * ORDERING is deliberately identical on both paths - legacy publishers were
+   * routed through the same call-grade stabilizer in f385024d - so this value
+   * must not branch behaviour here. It is asserted by
+   * "runs legacy publishers through the same call-grade post-camera stabilizer".
+   */
   useV2: boolean;
   publishMicrophone: () => Promise<number>;
   enableCamera: () => Promise<void>;
@@ -1324,21 +1332,50 @@ export function useLiveBroadcastRoom() {
                 qualityPlan.videoPublishDefaults || PULSE_LIVE_VIDEO_PUBLISH_OPTIONS
               );
             },
-            // Use the same post-camera engine stabilization as working video
-            // calls. The shared audio session was already configured and
-            // activated before Room.connect; do not introduce a Live-only
-            // category reset or recorder recovery branch here.
+            // Post-camera engine stabilization, in two stages.
+            //
+            // RECOVER, then VERIFY. Device syslog shows the camera transition
+            // leaves the shared session INACTIVE (`cmsSetIsActive ... going
+            // inactive`) and iOS never delivers interruption-ended while the
+            // camera holds it, so an ADM restart issued against that inactive
+            // session silently no-ops. The single-shot guard therefore could
+            // never bring the recorder back: it retried twice against a session
+            // it could not start into and then threw, killing a broadcast whose
+            // microphone track was already published.
+            //
+            // Stage 1 is the non-throwing multi-pass recovery written for
+            // exactly this failure, re-activating the session with a plain
+            // setActive(true) (NOT a category reassert, which disrupts the
+            // running WebRTC video pipeline) before each ADM restart, and
+            // sweeping several passes across the asynchronous teardown window
+            // because the exact moment RemoteIO stops varies run-to-run.
+            //
+            // Stage 2 keeps the fail-closed invariant: after recovery has had
+            // its chance, the authoritative guard still runs and still throws if
+            // the engine is genuinely dead, so a silent broadcast can never be
+            // reported as healthy.
             stabilizeAudio: async () => {
+              const engineContext = {
+                sessionId: roomNameRef.current,
+                correlationId: correlationIdRef.current,
+                roomType: "livestream",
+                participantRole: telemetryRole
+              };
+              const reactivateSession = async () => {
+                await livekitNative.AudioSession.startAudioSession?.();
+              };
+              await recoverRealtimeRecordingEngine(livekitNative.AudioDeviceModule, {
+                reactivateSession,
+                settleMs: 400,
+                passes: 4,
+                context: engineContext
+              });
               await stabilizeRealtimeAudioEngine(livekitNative.AudioDeviceModule, {
                 playout: true,
                 recording: true,
                 settleMs: 650,
-                context: {
-                  sessionId: roomNameRef.current,
-                  correlationId: correlationIdRef.current,
-                  roomType: "livestream",
-                  participantRole: telemetryRole
-                }
+                reactivateSession,
+                context: engineContext
               });
               return audioPublications(room.localParticipant).filter(publicationHasTrack).length;
             },

@@ -679,6 +679,64 @@ MANIFEST-UNDX-0001
 
 This is a simulation layer. It should not read real files.
 
+## 18b. Guard Changes Need A Second Phrase
+
+`APPROVE UNDX WRITE` lets the kernel write files. It refuses to write outside the
+repository root and refuses to touch secrets, and those refusals are implemented
+in `undx_execution_kernel.py`.
+
+Until this was fixed, that file was not itself protected. A single approved
+change to it — arriving inside a batch labelled as a refactor, alongside a dozen
+innocuous edits — could empty `PROTECTED_PATTERNS`, blank `APPROVAL_PHRASE`, or
+delete the containment check, and every write afterwards would be unguarded. The
+operator would have approved something that looked routine. The same applied to
+`tests/protection/`, `scripts/protection/` and `.github/workflows/`: rewriting
+those makes the safety net report green without anything having been fixed.
+
+These paths are now **self-governing**, and changing them requires a second,
+different phrase in addition to the write approval:
+
+```text
+APPROVE UNDX GUARD CHANGE
+```
+
+Self-governing paths:
+
+```text
+undx_execution_kernel.py
+undx_agent_policy.py
+tests/protection/
+scripts/protection/
+.github/workflows/
+config/realtime-audio-protected-paths.json
+```
+
+Three properties are worth knowing, because each was a deliberate choice:
+
+**This is escalation, not prohibition.** UNDX improving its own guards is a
+thing you want it to be able to do. A flat ban would be removed the first time
+it got in the way; a second phrase survives, because it costs nothing on the
+common path and everything on the dangerous one.
+
+**A mixed batch is refused before anything is written.** If a batch contains one
+ordinary edit and one guard edit and only the write phrase is supplied, neither
+file is written. Refusing halfway through would leave the tree part-modified for
+someone to reconcile by hand, which is how partial states become permanent.
+
+**Narrowing a proposal narrows the requirement.** If you pass
+`approved_change_ids` and the guard edit is not among them, no guard phrase is
+needed. Demanding one for a change that will never be written would teach
+operators to supply the guard phrase reflexively, which defeats the whole
+mechanism.
+
+Every apply that touches these paths records `guardPathsChanged` in
+`undx_execution_log.jsonl`. "The kernel rewrote its own rules on this date" is
+the single log entry most worth being able to find later.
+
+Behaviour is locked by `tests/protection/test_undx_kernel_guard.py`, which
+exercises the kernel against a temporary repository rather than grepping for the
+strings that implement it.
+
 ## 19. Approval Protocol
 
 Open:

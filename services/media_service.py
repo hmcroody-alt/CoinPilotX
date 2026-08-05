@@ -603,7 +603,10 @@ def _cdn_url_from_r2_private_url(value):
     if "r2.cloudflarestorage.com" not in host:
         return ""
     key = (parsed.path or "").lstrip("/")
-    bucket = os.getenv("R2_BUCKET", "").strip().strip("/")
+    # media_storage resolves the bucket as `R2_BUCKET or S3_BUCKET`. Reading only
+    # R2_BUCKET here meant an S3_BUCKET-configured deployment stripped no prefix
+    # and produced a CDN URL with the bucket name doubled into the path.
+    bucket = (os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET") or "").strip().strip("/")
     if bucket and key.startswith(bucket + "/"):
         key = key[len(bucket) + 1 :]
     return cdn_url_for_key(key)
@@ -1092,7 +1095,9 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
             (
                 storage.get("provider") or media_storage.provider(),
                 storage.get("storage_key") or stored,
-                os.getenv("R2_BUCKET", "") if (storage.get("provider") or media_storage.provider()) in {"r2", "s3"} else "",
+                # Same alias fallback media_storage uses; recording an empty bucket
+                # here would leave the row unable to name where its object lives.
+                (os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET") or "") if (storage.get("provider") or media_storage.provider()) in {"r2", "s3"} else "",
                 storage.get("storage_key") or stored,
                 cdn_url or url,
                 url,

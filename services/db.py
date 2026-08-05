@@ -803,6 +803,62 @@ def session_scope():
         SessionLocal.remove()
 
 
+#: `ping()` result cache. A platform liveness probe hits its endpoint every few
+#: seconds; `health_check()` below runs three statements including an
+#: `information_schema` scan, which is far too expensive to run at that rate.
+#: Without a cheap probe the only options are an expensive endpoint or a
+#: constant - and the constant is what `/health` shipped with.
+_PING_CACHE: dict[str, object] = {"checked_at": 0.0, "result": None}
+_PING_TTL_SECONDS = 5.0
+_PING_LOCK = threading.Lock()
+
+
+def ping(*, max_age_seconds: float = _PING_TTL_SECONDS) -> dict:
+    """Cheapest possible "is the database actually reachable" answer.
+
+    One `SELECT 1`, cached for a few seconds, never raising. This exists so that
+    a health endpoint can report something a failure could change. `/health`
+    previously returned a literal `"ok": True` that no outage could falsify: a
+    web process whose database had gone away answered 200 OK with ok=true, which
+    is the same defect class as a dashboard metric hard-coded to zero.
+
+    Returns `{"connected": bool, "latency_ms": float, "error": str, "cached": bool}`.
+    """
+    now = time.time()
+    cached = _PING_CACHE.get("result")
+    if cached is not None and (now - float(_PING_CACHE.get("checked_at") or 0)) < max_age_seconds:
+        return {**cached, "cached": True}
+
+    with _PING_LOCK:
+        # Re-check inside the lock: several probes can arrive together and only
+        # one of them needs to pay for the round trip.
+        now = time.time()
+        cached = _PING_CACHE.get("result")
+        if cached is not None and (now - float(_PING_CACHE.get("checked_at") or 0)) < max_age_seconds:
+            return {**cached, "cached": True}
+
+        start = time.time()
+        result = {"connected": False, "latency_ms": None, "error": ""}
+        try:
+            if IS_POSTGRES:
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+            else:
+                conn = connect()
+                try:
+                    conn.cursor().execute("SELECT 1")
+                finally:
+                    conn.close()
+            result["connected"] = True
+        except Exception as exc:
+            result["error"] = str(exc)[:200]
+            logging.warning("Database ping failed: %s", str(exc)[:200])
+        result["latency_ms"] = round((time.time() - start) * 1000, 2)
+        _PING_CACHE["result"] = result
+        _PING_CACHE["checked_at"] = time.time()
+        return {**result, "cached": False}
+
+
 def health_check():
     start = time.time()
     result = {

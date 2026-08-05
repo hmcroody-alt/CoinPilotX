@@ -243,6 +243,120 @@ CATALOG: tuple[Flag, ...] = (
         "enough to sound authoritative and not enough to be right.",
         fail="closed",
     ),
+    # ----------------------------------------------------------- runtime safety ----
+    Flag(
+        "UNDX_EMERGENCY_KILL_SWITCH", "bool", "0",
+        "Highest-precedence stop for governed UNDX reads, writes, and worker mission "
+        "claims. No lower capability flag may override it.",
+        fail="closed", required=True,
+    ),
+    Flag(
+        "UNDX_WRITE_KILL_SWITCH", "bool", "0",
+        "Global stop for all governed UNDX writes while leaving eligible reads online.",
+        fail="closed", required=True,
+    ),
+    Flag(
+        "UNDX_READ_KILL_SWITCH", "bool", "0",
+        "Stop governed UNDX reads independently of the write controls.",
+        fail="closed",
+    ),
+    Flag(
+        "UNDX_AGENT_REQUIRE_AUTHORIZATION", "bool", "1",
+        "Declare that the server-side authorization gate is mandatory for writes. An "
+        "explicit false value blocks the write surface.",
+        fail="closed", required=True,
+    ),
+    Flag(
+        "UNDX_AGENT_REQUIRE_IDEMPOTENCY", "bool", "1",
+        "Declare that the durable idempotency gate is mandatory for writes.",
+        fail="closed", required=True,
+    ),
+    Flag(
+        "UNDX_VERIFICATION_FAILURE_FAIL_CLOSED", "bool", "1",
+        "Refuse a completion claim when independent verification fails or is unavailable.",
+        fail="closed", required=True,
+    ),
+    Flag(
+        "UNDX_COMPLETION_REQUIRE_VERIFIED_SUCCESS", "bool", "1",
+        "Require verified success before a governed write can be called complete.",
+        fail="closed", required=True,
+    ),
+    Flag(
+        "UNDX_COMPLETION_ALLOW_EXECUTOR_ONLY_SUCCESS", "bool", "0",
+        "Unsafe compatibility control. When enabled the write surface is blocked; an "
+        "executor return value alone is never sufficient completion evidence.",
+        fail="closed",
+    ),
+    Flag(
+        "UNDX_PLANNER_ENABLED", "bool", "0",
+        "Allow new persistent missions to opt into the existing bounded planner.",
+        fail="closed",
+    ),
+    Flag(
+        "UNDX_TASK_GRAPH_ENABLED", "bool", "0",
+        "Allow persistent task nodes from the canonical pulse_ai task graph to be worker managed.",
+        fail="closed",
+    ),
+    Flag(
+        "UNDX_WORKER_ENABLED", "bool", "0",
+        "Allow the dedicated Railway worker to claim eligible persistent missions.",
+        fail="closed",
+    ),
+    Flag(
+        "UNDX_WORKER_FAIL_CLOSED", "bool", "1",
+        "Stop mission advancement when policy, storage, or verification is unavailable.",
+        fail="closed", required=True,
+    ),
+    Flag(
+        "UNDX_WORKER_HEARTBEAT_ENABLED", "bool", "1",
+        "Persist the dedicated worker heartbeat in the shared database.",
+        fail="open",
+    ),
+    Flag(
+        "UNDX_WORKER_RECONCILIATION_ENABLED", "bool", "1",
+        "Permit the worker to reclaim expired leases without replaying completed nodes.",
+        fail="closed",
+    ),
+    Flag(
+        "UNDX_RECONCILIATION_ENABLED", "bool", "1",
+        "Permit canonical mission reconciliation after interrupted worker execution.",
+        fail="closed",
+    ),
+    Flag(
+        "UNDX_WORKER_LEASE_SECONDS", "int", "90",
+        "Fixed lease duration for one claimed mission.",
+        fail="n/a", minimum=15, maximum=900,
+    ),
+    Flag(
+        "UNDX_WORKER_SLEEP_SECONDS", "int", "60",
+        "Fixed delay between worker polls when no mission is advanced.",
+        fail="n/a", minimum=15, maximum=300,
+    ),
+    Flag(
+        "UNDX_PLANNER_DYNAMIC_LIMIT_ESCALATION_ALLOWED", "bool", "0",
+        "Must remain off. Runtime difficulty never increases a mission's fixed bounds.",
+        fail="closed", required=True,
+    ),
+    Flag(
+        "UNDX_HEALTH_ENDPOINT_ENABLED", "bool", "1",
+        "Enable the secret-free UNDX runtime health route.",
+        fail="open",
+    ),
+    Flag(
+        "UNDX_CORRELATION_IDS_ENABLED", "bool", "1",
+        "Attach bounded correlation identifiers to governed runtime evidence.",
+        fail="open",
+    ),
+    Flag(
+        "UNDX_VERIFICATION_METRICS_ENABLED", "bool", "1",
+        "Emit aggregate verification outcomes without record content.",
+        fail="open",
+    ),
+    Flag(
+        "UNDX_TOOL_LATENCY_ENABLED", "bool", "1",
+        "Measure aggregate governed tool latency without recording arguments.",
+        fail="open",
+    ),
     # ----------------------------------------------------------------- execution ----
     Flag(
         "UNDX_AGENT_REQUIRE_VERIFICATION", "bool", "1",

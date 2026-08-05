@@ -134,6 +134,30 @@ def _api_key(provider: str) -> str:
     return (os.getenv(config.key_env) or "").strip()
 
 
+def _safe_error(exc: Exception) -> str:
+    """Exception text for a log line, with any credential removed.
+
+    `requests` puts the full request URL into the string form of its exceptions,
+    so anything a provider carries in a query string is reproduced verbatim in
+    whatever the caller logs. The Gemini call used to pass `?key=<API_KEY>` and
+    therefore wrote the key into the application log on every failed request.
+
+    That call now sends a header instead, so this is defence in depth rather
+    than the fix. It stays because the next provider added here will be written
+    by copying an existing one, and a redaction that only exists in the caller's
+    memory is not a redaction. Known key material is matched by value as well,
+    which catches a leak through a parameter name nobody thought of.
+    """
+    text = str(exc)
+    text = re.sub(r"([?&])(key|api_key|access_token|token)=[^&\s\"']+", r"\1\2=***", text, flags=re.I)
+    for provider in PROVIDERS:
+        secret = _api_key(provider)
+        # Short values are not credentials and would redact ordinary words.
+        if secret and len(secret) >= 8:
+            text = text.replace(secret, "***")
+    return text[:400]
+
+
 def _model(provider: str) -> str:
     config = PROVIDERS[provider]
     return (os.getenv(config.model_env) or config.default_model).strip()
@@ -380,8 +404,13 @@ def _call_gemini(system_prompt: str, message: str, history: Any, timeout: int) -
     model = _model("gemini")
     response = requests.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-        params={"key": _api_key("gemini")},
-        headers={"Content-Type": "application/json"},
+        # The key travels as a header, never as `?key=`. Google accepts both, but
+        # a query parameter is copied into every proxy access log, every browser
+        # referer, and - the reason this was found - into the string form of
+        # requests.RequestException, which this module logs on failure. Sending
+        # it as a query parameter meant a Gemini outage wrote the API key into
+        # the application log once per failed request.
+        headers={"Content-Type": "application/json", "x-goog-api-key": _api_key("gemini")},
         json={
             "systemInstruction": {"parts": [{"text": system_prompt}]},
             "contents": contents,
@@ -446,10 +475,10 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
             logging.warning("UNDX router provider timeout user_id=%s provider=%s", user_id, provider)
             attempts.append({"provider": config.label, "status": "timeout"})
         except requests.RequestException as exc:
-            logging.warning("UNDX router provider request failed provider=%s error=%s", provider, exc)
+            logging.warning("UNDX router provider request failed provider=%s error=%s", provider, _safe_error(exc))
             attempts.append({"provider": config.label, "status": "request_failed"})
         except Exception as exc:
-            logging.warning("UNDX router provider response failed provider=%s error=%s", provider, exc)
+            logging.warning("UNDX router provider response failed provider=%s error=%s", provider, _safe_error(exc))
             attempts.append({"provider": config.label, "status": "response_failed"})
 
     openai_configured = bool(_api_key("openai"))

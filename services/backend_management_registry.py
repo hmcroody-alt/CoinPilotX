@@ -87,18 +87,18 @@ FEATURES: tuple[BackendFeature, ...] = (
     BackendFeature("creator.analytics", "Creator Analytics", "creator", "/admin/creator-command-center/analytics", "admin", "analytics.view", "active", "Analytics", "dashboard_creator_command_center", "admin_audit_logs", "medium", False, True, "Platform analytics can inspect creator activity safely."),
     BackendFeature("moderation.reports", "Reports Queue", "moderation", "/admin/pulse-moderation", "moderator", "pulse.moderate", "active", "Trust", "pulse_moderation_engine", "moderation_cases", "critical", True, True, "Core report review queue."),
     BackendFeature("moderation.security", "Security Events", "moderation", "/admin/security", "admin", "security.view", "active", "Security", "security_monitoring", "admin_audit_logs", "critical", True, True, "Failed login and security monitoring dashboard."),
-    BackendFeature("moderation.scam_shield", "Scam Shield", "moderation", "/admin/scam-shield", "admin", "trust_safety.manage", "active", "Trust", "autonomous_safety_engine", "command_center_security_events", "critical", True, True, "Scam and suspicious activity command surface."),
-    BackendFeature("ads.review", "Ads Review Board", "ads", "/admin/pulse-ads-review-board", "admin", "command_center.view", "active", "Ads", "pulse_ads_service", "pulse_ad_review_logs", "critical", True, True, "Creative review, approval, rejection, and campaign safety."),
-    BackendFeature("ads.delivery", "Ad Delivery", "ads", "/admin/pulse-ads-delivery-intelligence", "admin", "analytics.view", "active", "Ads", "pulse_ads_service", "pulse_ad_events", "high", True, True, "Delivery methods, tracking, and placement control."),
+    BackendFeature("moderation.scam_shield", "Scam Shield", "moderation", "/admin/scam-shield", "admin", "trust_safety.manage", "active", "Trust", "autonomous_safety_engine", "security_events", "critical", True, True, "Scam and suspicious activity command surface."),
+    BackendFeature("ads.review", "Ads Review Board", "ads", "/admin/pulse-ads-review-board", "admin", "command_center.view", "active", "Ads", "pulse_ads_service", "pulse_ad_review_board", "critical", True, True, "Creative review, approval, rejection, and campaign safety."),
+    BackendFeature("ads.delivery", "Ad Delivery", "ads", "/admin/ads-command-center/delivery-engine", "admin", "analytics.view", "active", "Ads", "pulse_ads_service", "pulse_ad_events", "high", True, True, "Delivery methods, tracking, and placement control."),
     BackendFeature("ads.finance", "Ad Wallets", "ads", "/admin/financial-audit", "admin", "billing.view", "active", "Ads Finance", "pulse_ad_payments", "pulse_ad_wallet_transactions", "critical", True, True, "Funding, spend ledger, and advertiser finance oversight."),
     BackendFeature("economy.payments", "Payments", "economy", "/admin/payments-command-center", "admin", "billing.view", "active", "Billing", "payment_provider", "admin_audit_logs", "critical", True, True, "Payment command center."),
     BackendFeature("economy.premium", "Premium", "economy", "/admin/transactions", "admin", "billing.view", "active", "Billing", "premium_entitlement_service", "checkout_attempts", "critical", True, True, "Subscription and entitlement review."),
     BackendFeature("economy.marketplace", "Marketplace", "economy", "/admin/monetization", "admin", "monetization.manage", "partial", "Marketplace", "marketplace_engine", "admin_tasks", "high", False, True, "Marketplace controls are routed through monetization command tasks."),
-    BackendFeature("media.music", "Music Review", "media", "/admin/pulse-music-review", "moderator", "pulse.moderate", "active", "Media", "music_service", "music_review_logs", "high", True, True, "Uploaded music review and approval queue."),
+    BackendFeature("media.music", "Music Review", "media", "/admin/pulse-music-review", "moderator", "pulse.moderate", "active", "Media", "music_service", "pulse_music_events", "high", True, True, "Uploaded music review and approval queue."),
     BackendFeature("media.uploads", "Uploads", "media", "/admin/pulse-infrastructure", "admin", "system.view", "partial", "Media", "media_storage", "admin_tasks", "critical", True, True, "Storage and upload health are surfaced through infrastructure."),
     BackendFeature("media.radio", "Pulse Radio", "media", "/admin/departments/pulsesoc", "admin", "command_center.view", "active", "Media", "music_service", "admin_tasks", "medium", False, True, "Radio is powered by approved music pool and backend command tasks."),
-    BackendFeature("ai.usage", "AI Usage", "ai", "/admin/ai-usage", "admin", "ai.view", "active", "AI", "ai_router", "ai_usage_logs", "high", False, True, "AI usage and provider visibility."),
-    BackendFeature("ai.safety", "AI Safety", "ai", "/admin/scam-shield", "admin", "trust_safety.manage", "partial", "AI Safety", "autonomous_safety_engine", "command_center_ai_events", "critical", True, True, "AI safety hooks remain optional and review-gated."),
+    BackendFeature("ai.usage", "AI Usage", "ai", "/admin/ai-usage", "admin", "ai.view", "active", "AI", "ai_router", "pulse_ai_provider_events", "high", False, True, "AI usage and provider visibility."),
+    BackendFeature("ai.safety", "AI Safety", "ai", "/admin/scam-shield", "admin", "trust_safety.manage", "partial", "AI Safety", "autonomous_safety_engine", "pulse_ai_provider_events", "critical", True, True, "AI safety hooks remain optional and review-gated."),
     BackendFeature("system.health", "System Health", "system", "/admin/system", "admin", "system.view", "active", "Engineering", "production_hardening_engine", "admin_audit_logs", "critical", True, True, "Service status, env safety, and diagnostics."),
     BackendFeature("system.performance", "Performance", "system", "/admin/performance", "admin", "system.view", "active", "Engineering", "performance_monitor", "admin_audit_logs", "critical", True, True, "Latency and platform performance view."),
     BackendFeature("system.audit", "Audit Logs", "system", "/admin/audit-logs", "admin", "audit.view", "active", "Security", "admin_ai_assistant", "admin_audit_logs", "critical", True, True, "Audit trails for sensitive backend operations."),
@@ -139,22 +139,22 @@ FEATURES = FEATURES + (
     BackendFeature("creator.content_planner", "Content Planner", "creator", "/admin/creator-command-center/content-planner", "admin", "command_center.view", "partial", "Creator", "dashboard_creator_command_center", "admin_tasks", "medium", False, True, "Planning console is functional and staged for richer scheduled content persistence."),
     BackendFeature("creator.post_scheduler", "Post Scheduler", "creator", "/admin/creator-command-center/post-scheduler", "admin", "command_center.view", "partial", "Creator", "dashboard_creator_command_center", "admin_tasks", "medium", False, True, "Scheduler diagnostics and timing state are visible; automated publish remains staged."),
     BackendFeature("creator.draft_studio", "Draft Studio", "creator", "/admin/creator-command-center/draft-studio", "admin", "command_center.view", "partial", "Creator", "dashboard_creator_command_center", "admin_tasks", "medium", False, True, "Draft inventory, recovery, safe deletion, and privacy state are diagnostics-ready."),
-    BackendFeature("creator.ai_assistant", "Creator AI", "creator", "/admin/creator-command-center/ai-creator-assistant", "admin", "ai.view", "active", "AI", "dashboard_creator_command_center", "ai_usage_logs", "medium", False, True, "AI creator assistance is optional, gated, and audit-visible when enabled."),
+    BackendFeature("creator.ai_assistant", "Creator AI", "creator", "/admin/creator-command-center/ai-creator-assistant", "admin", "ai.view", "active", "AI", "dashboard_creator_command_center", "pulse_ai_provider_events", "medium", False, True, "AI creator assistance is optional, gated, and audit-visible when enabled."),
     BackendFeature("creator.engagement_prediction", "Engagement Prediction", "creator", "/admin/creator-command-center/engagement-prediction", "admin", "analytics.view", "partial", "Creator", "dashboard_creator_command_center", "admin_audit_logs", "medium", False, True, "Predictive estimates are diagnostics-ready and clearly marked partial until model-backed."),
     BackendFeature("creator.reputation", "Creator Reputation", "creator", "/admin/creator-command-center/creator-reputation", "admin", "trust_safety.manage", "active", "Trust", "dashboard_creator_command_center", "moderation_cases", "high", True, True, "Creator trust, copyright state, warnings, reports, eligibility, and appeals."),
     BackendFeature("creator.viral_opportunities", "Viral Opportunity Scanner", "creator", "/admin/creator-command-center/viral-opportunity-scanner", "admin", "analytics.view", "partial", "Creator", "dashboard_creator_command_center", "admin_audit_logs", "medium", False, True, "Opportunity scanner is staged with safe aggregate signals and no private data exposure."),
     BackendFeature("moderation.content_removals", "Content Removals", "moderation", "/admin/pulse-moderation", "moderator", "pulse.moderate", "active", "Trust", "pulse_moderation_engine", "moderation_cases", "critical", True, True, "Removals, appeals, and status changes must stay reviewable and audited."),
     BackendFeature("ads.advertiser_portal", "Advertiser Portal", "ads", "/advertiser", "admin", "command_center.view", "active", "Ads", "pulse_ads_service", "pulse_ad_audit_logs", "high", True, True, "Advertiser account, campaign, wallet, and creative workflows are registry-visible."),
-    BackendFeature("ads.sponsored_layers", "Sci-Fi Sponsored Layers", "ads", "/admin/pulse-ads-delivery-intelligence", "admin", "analytics.view", "active", "Ads", "pulse_ads_service", "pulse_ad_events", "high", True, True, "UFO, hologram, radio, and sponsored placements are delivery-method tracked."),
+    BackendFeature("ads.sponsored_layers", "Sci-Fi Sponsored Layers", "ads", "/admin/ads-command-center/delivery-engine", "admin", "analytics.view", "active", "Ads", "pulse_ads_service", "pulse_ad_events", "high", True, True, "UFO, hologram, radio, and sponsored placements are delivery-method tracked."),
     BackendFeature("ads.kill_switch", "Ads Kill Switch", "ads", "/admin/pulse-ads-review-board", "admin", "command_center.view", "active", "Ads", "pulse_ads_service", "pulse_ad_platform_settings", "critical", True, True, "Ad serving can be disabled globally or by method without exposing internals."),
     BackendFeature("economy.wallets", "Wallet Management", "economy", "/admin/economy-command-center/wallets", "admin", "billing.view", "active", "Finance", "pulse_ad_payments", "pulse_ad_wallet_transactions", "critical", True, True, "Ad wallet balances, funding sessions, reserves, and spend ledger are admin-visible."),
     BackendFeature("economy.subscriptions", "Premium / Subscriptions", "economy", "/admin/transactions", "admin", "billing.view", "active", "Billing", "premium_entitlement_service", "payment_audit_logs", "critical", True, True, "Subscriptions are observable while native iOS paid-digital routes stay blocked."),
     BackendFeature("economy.payouts", "Payouts / Refunds", "economy", "/admin/payments-command-center", "admin", "billing.view", "partial", "Finance", "payment_provider", "payment_audit_logs", "critical", True, True, "Payout and refund readiness is visible; risky provider mutations require owner approval."),
     BackendFeature("media.r2_storage", "Media Storage / R2", "media", "/admin/pulse-infrastructure", "admin", "system.view", "partial", "Media", "media_storage", "admin_tasks", "critical", True, True, "Storage health and configured/missing state are shown without exposing bucket credentials."),
-    BackendFeature("media.pulse_radio_management", "Pulse Radio Management", "media", "/admin/pulse-music-review", "moderator", "pulse.moderate", "active", "Media", "music_service", "music_review_logs", "high", True, True, "Approved music automatically powers radio and creator-safe sound pools."),
+    BackendFeature("media.pulse_radio_management", "Pulse Radio Management", "media", "/admin/pulse-music-review", "moderator", "pulse.moderate", "active", "Media", "music_service", "pulse_music_events", "high", True, True, "Approved music automatically powers radio and creator-safe sound pools."),
     BackendFeature("media.marketplace_media", "Marketplace Media", "media", "/admin/monetization", "admin", "monetization.manage", "partial", "Marketplace", "marketplace_engine", "admin_tasks", "medium", False, True, "Listing media is visible through marketplace operations."),
-    BackendFeature("ai.routing", "AI Model Routing", "ai", "/admin/ai-usage", "admin", "ai.view", "partial", "AI", "ai_router", "ai_usage_logs", "high", False, True, "Provider routing is status-visible; provider credentials and provider credentials stay hidden."),
-    BackendFeature("ai.safety_blocks", "AI Safety Blocks", "ai", "/admin/scam-shield", "admin", "trust_safety.manage", "active", "AI Safety", "autonomous_safety_engine", "command_center_ai_events", "critical", True, True, "Safety blocks and scam explanations remain review-gated."),
+    BackendFeature("ai.routing", "AI Model Routing", "ai", "/admin/ai-usage", "admin", "ai.view", "partial", "AI", "ai_router", "pulse_ai_provider_events", "high", False, True, "Provider routing is status-visible; provider credentials and provider credentials stay hidden."),
+    BackendFeature("ai.safety_blocks", "AI Safety Blocks", "ai", "/admin/scam-shield", "admin", "trust_safety.manage", "active", "AI Safety", "autonomous_safety_engine", "pulse_ai_provider_events", "critical", True, True, "Safety blocks and scam explanations remain review-gated."),
     BackendFeature("system.railway", "Railway Services", "system", "/admin/system", "admin", "system.view", "partial", "Infrastructure", "railway_runtime", "admin_audit_logs", "critical", True, True, "Deployment/service status is shown as configured/missing and must not expose Railway credentials."),
     BackendFeature("system.database", "PostgreSQL", "system", "/admin/system", "admin", "system.view", "active", "Infrastructure", "database", "admin_audit_logs", "critical", True, True, "Database health and compatibility audits are launch-critical."),
     BackendFeature("system.cache", "Cache / Redis", "system", "/admin/system", "admin", "system.view", "partial", "Infrastructure", "redis_manager", "admin_audit_logs", "critical", True, True, "Cache presence and latency are visible while PostgreSQL remains source of truth."),
@@ -183,21 +183,21 @@ FEATURES = FEATURES + (
 
 
 FEATURES = FEATURES + (
-    BackendFeature("intelligence.scam_shield", "Scam Intelligence", "intelligence", "/admin/intelligence-command-center/scam-intelligence", "admin", "trust_safety.manage", "active", "Trust", "dashboard_intelligence_command_center", "command_center_security_events", "critical", True, True, "Scam patterns, fake account/giveaway/crypto/job/marketplace/link signals, community reports, and safety recommendations."),
+    BackendFeature("intelligence.scam_shield", "Scam Intelligence", "intelligence", "/admin/intelligence-command-center/scam-intelligence", "admin", "trust_safety.manage", "active", "Trust", "dashboard_intelligence_command_center", "security_events", "critical", True, True, "Scam patterns, fake account/giveaway/crypto/job/marketplace/link signals, community reports, and safety recommendations."),
     BackendFeature("intelligence.alerts", "Alert Management", "intelligence", "/admin/intelligence-command-center/alert-management", "admin", "command_center.view", "active", "Notifications", "dashboard_intelligence_command_center", "notification_delivery_logs", "high", True, True, "Active/local/global/trending scam alerts, priority, dismissals, notification queue integration, and alert audit."),
     BackendFeature("intelligence.pulse_brain", "Pulse Brain", "intelligence", "/admin/intelligence-command-center/pulse-brain", "admin", "analytics.view", "active", "Intelligence", "dashboard_intelligence_command_center", "admin_audit_logs", "high", True, True, "Community mood, platform health, topics, creators, safety signals, summaries, and daily briefing state."),
-    BackendFeature("intelligence.ai_advisor", "AI Advisor", "intelligence", "/admin/intelligence-command-center/ai-advisor", "admin", "ai.view", "partial", "AI", "dashboard_intelligence_command_center", "command_center_ai_events", "high", True, True, "Daily recommendations, suggested actions, explanations, and provider-disabled safe behavior."),
+    BackendFeature("intelligence.ai_advisor", "AI Advisor", "intelligence", "/admin/intelligence-command-center/ai-advisor", "admin", "ai.view", "partial", "AI", "dashboard_intelligence_command_center", "pulse_ai_provider_events", "high", True, True, "Daily recommendations, suggested actions, explanations, and provider-disabled safe behavior."),
     BackendFeature("intelligence.safety_scanner", "Safety Scanner", "intelligence", "/admin/intelligence-command-center/safety-scanner", "admin", "security.view", "active", "Security", "dashboard_intelligence_command_center", "security_events", "critical", True, True, "Message, link, file, device, session, suspicious activity, recovery action, and threat integration scans."),
     BackendFeature("intelligence.recommendations", "Recommendation Engine", "intelligence", "/admin/intelligence-command-center/recommendation-engine", "admin", "analytics.view", "partial", "Recommendations", "dashboard_intelligence_command_center", "dashboard_recommendations", "medium", True, True, "Privacy-safe people, groups, content, marketplace, music, creator suggestions, and ranking signals."),
     BackendFeature("intelligence.security_operations", "Security Operations", "intelligence", "/admin/intelligence-command-center/security-operations", "admin", "security.view", "active", "Security", "dashboard_intelligence_command_center", "admin_audit_logs", "critical", True, True, "Overall safety score, checklist, device/login/privacy health, recovery status, and security timeline."),
     BackendFeature("intelligence.threats", "Threat Intelligence", "intelligence", "/admin/intelligence-command-center/threat-intelligence", "admin", "security.view", "active", "Security", "dashboard_intelligence_command_center", "security_events", "critical", True, True, "Current threats, timelines, suspicious accounts, blocked threats, emerging risks, severity, and resolution history."),
-    BackendFeature("intelligence.risk", "Risk Assessment", "intelligence", "/admin/intelligence-command-center/risk-assessment", "admin", "security.view", "partial", "Risk", "dashboard_intelligence_command_center", "command_center_security_events", "critical", True, True, "Account, device, network, financial, reputation, marketplace, confidence, and timeline risk."),
+    BackendFeature("intelligence.risk", "Risk Assessment", "intelligence", "/admin/intelligence-command-center/risk-assessment", "admin", "security.view", "partial", "Risk", "dashboard_intelligence_command_center", "security_events", "critical", True, True, "Account, device, network, financial, reputation, marketplace, confidence, and timeline risk."),
     BackendFeature("intelligence.trust", "Trust Intelligence", "intelligence", "/admin/intelligence-command-center/trust-intelligence", "admin", "trust_safety.manage", "partial", "Trust", "dashboard_intelligence_command_center", "moderation_cases", "high", True, True, "Reputation, trust, reports, copyright, violations, appeals, improvement plan, and trust timeline."),
     BackendFeature("intelligence.signals", "Signal Intelligence", "intelligence", "/admin/intelligence-command-center/signal-intelligence", "admin", "analytics.view", "partial", "Signals", "dashboard_intelligence_command_center", "admin_audit_logs", "medium", True, True, "Feed, community, trend, creator, engagement, safety, and recommendation signal processing."),
-    BackendFeature("intelligence.research", "Research Engine", "intelligence", "/admin/intelligence-command-center/research-engine", "admin", "ai.view", "partial", "AI", "dashboard_intelligence_command_center", "command_center_ai_events", "medium", True, True, "Topic research, source summaries, saved research, citations, export readiness, and usage limits."),
-    BackendFeature("intelligence.feed", "Feed Intelligence", "intelligence", "/admin/intelligence-command-center/feed-intelligence", "admin", "analytics.view", "partial", "Feed", "dashboard_intelligence_command_center", "posts", "medium", True, True, "Feed summaries, hidden trends, recommended reading, creator opportunities, and personalized briefing."),
+    BackendFeature("intelligence.research", "Research Engine", "intelligence", "/admin/intelligence-command-center/research-engine", "admin", "ai.view", "partial", "AI", "dashboard_intelligence_command_center", "pulse_ai_provider_events", "medium", True, True, "Topic research, source summaries, saved research, citations, export readiness, and usage limits."),
+    BackendFeature("intelligence.feed", "Feed Intelligence", "intelligence", "/admin/intelligence-command-center/feed-intelligence", "admin", "analytics.view", "partial", "Feed", "dashboard_intelligence_command_center", "admin_audit_logs", "medium", True, True, "Feed summaries, hidden trends, recommended reading, creator opportunities, and personalized briefing."),
     BackendFeature("intelligence.predictions", "Prediction Engine", "intelligence", "/admin/intelligence-command-center/prediction-engine", "admin", "analytics.view", "partial", "Predictions", "dashboard_intelligence_command_center", "dashboard_recommendations", "medium", True, True, "Future risks, opportunities, creator predictions, trend forecasts, confidence levels, and history."),
-    BackendFeature("intelligence.heatmaps", "Heatmap Engine", "intelligence", "/admin/intelligence-command-center/heatmap-engine", "admin", "analytics.view", "partial", "Heatmaps", "dashboard_intelligence_command_center", "posts", "medium", True, True, "Aggregate-only global/community/topic/engagement/safety/discovery heatmaps."),
+    BackendFeature("intelligence.heatmaps", "Heatmap Engine", "intelligence", "/admin/intelligence-command-center/heatmap-engine", "admin", "analytics.view", "partial", "Heatmaps", "dashboard_intelligence_command_center", "admin_audit_logs", "medium", True, True, "Aggregate-only global/community/topic/engagement/safety/discovery heatmaps."),
     BackendFeature("intelligence.audit", "Intelligence Audit Logs", "intelligence", "/admin/intelligence-command-center/audit", "admin", "audit.view", "active", "Security", "admin_ai_assistant", "admin_audit_logs", "critical", True, True, "Sensitive intelligence actions, recommendations, scans, alerts, and admin changes remain audit-visible."),
 )
 
@@ -263,7 +263,7 @@ MODULE_OPERATING_BLUEPRINTS: dict[str, dict[str, Any]] = {
         "failure_behavior": "Detection flags do not auto-ban; human review remains required.",
     },
     "ads": {
-        "surface": "/admin/pulse-ads-review-board, /admin/pulse-ads-delivery-intelligence",
+        "surface": "/admin/pulse-ads-review-board, /admin/ads-command-center/delivery-engine",
         "operators": "Ads ops, finance, owner",
         "visible_state": "creative review, campaigns, wallets, delivery methods, frequency caps",
         "actions": ["approve", "reject", "pause", "kill switch", "audit spend"],
@@ -321,25 +321,141 @@ MODULE_OPERATING_BLUEPRINTS: dict[str, dict[str, Any]] = {
 }
 
 
+# Each `env` entry is either a variable name or a tuple of interchangeable names,
+# any one of which satisfies the requirement. The alias form exists because the
+# runtime accepts aliases: services/media_storage.py resolves the bucket as
+# `R2_BUCKET or S3_BUCKET` and the credentials as `R2_* or AWS_*`. A readiness row
+# that names only one spelling reports a working deployment as unconfigured.
+#
+# `scope` separates what the running web service reads from what only a release
+# pipeline reads. Both belong on this page - an operator needs to know a build
+# credential is missing - but a build credential absent from the web service's
+# environment is not a runtime degradation, and previously it was shown as one.
+#
+# Every "runtime" name below is verified by tests/protection/test_environment_contract.py
+# to be a variable production code actually reads. `R2_BUCKET_NAME` was listed here
+# for the life of this file and is read by nothing; the Cloudflare R2 row could
+# therefore never reach "configured".
 EXTERNAL_SERVICE_CHECKS: tuple[dict[str, Any], ...] = (
-    {"key": "railway", "label": "Railway", "module": "system", "env": ("RAILWAY_ENVIRONMENT", "RAILWAY_SERVICE_ID", "RAILWAY_DEPLOYMENT_ID")},
-    {"key": "postgres", "label": "PostgreSQL", "module": "system", "env": ("DATABASE_URL",)},
-    {"key": "redis", "label": "Redis", "module": "system", "env": ("REDIS_URL",)},
-    {"key": "cloudflare_r2", "label": "Cloudflare R2", "module": "media", "env": ("R2_BUCKET_NAME", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY")},
-    {"key": "stripe", "label": "Stripe", "module": "economy", "env": ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET")},
-    {"key": "brevo", "label": "Brevo", "module": "network", "env": ("BREVO_API_KEY",)},
-    {"key": "firebase", "label": "Firebase / FCM", "module": "system", "env": ("FCM_PROJECT_ID", "FCM_CLIENT_EMAIL", "FCM_PRIVATE_KEY")},
-    {"key": "apns", "label": "Apple APNs", "module": "system", "env": ("APNS_BUNDLE_ID", "APNS_KEY_ID", "APNS_TEAM_ID", "APNS_PRIVATE_KEY")},
-    {"key": "expo", "label": "Expo / EAS", "module": "system", "env": ("EXPO_ACCESS_TOKEN",)},
-    {"key": "livekit", "label": "LiveKit", "module": "system", "env": ("LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "LIVEKIT_URL")},
-    {"key": "mux", "label": "Mux", "module": "system", "env": ("MUX_TOKEN_ID", "MUX_TOKEN_SECRET")},
-    {"key": "app_store", "label": "App Store Connect", "module": "launch", "env": ("APP_STORE_CONNECT_KEY_ID", "APP_STORE_CONNECT_ISSUER_ID")},
-    {"key": "google_play", "label": "Google Play", "module": "launch", "env": ("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON",)},
+    {"key": "railway", "label": "Railway", "module": "system", "scope": "runtime", "env": ("RAILWAY_ENVIRONMENT", "RAILWAY_SERVICE_ID", "RAILWAY_DEPLOYMENT_ID")},
+    {"key": "postgres", "label": "PostgreSQL", "module": "system", "scope": "runtime", "env": ("DATABASE_URL",)},
+    {"key": "redis", "label": "Redis", "module": "system", "scope": "runtime", "env": ("REDIS_URL",)},
+    {"key": "cloudflare_r2", "label": "Cloudflare R2", "module": "media", "scope": "runtime", "env": (
+        ("R2_BUCKET", "S3_BUCKET"),
+        ("R2_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID"),
+        ("R2_SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY"),
+        ("R2_ENDPOINT_URL", "R2_ENDPOINT", "R2_ACCOUNT_ID", "S3_ENDPOINT_URL"),
+        "R2_PUBLIC_BASE_URL",
+    )},
+    {"key": "stripe", "label": "Stripe", "module": "economy", "scope": "runtime", "env": ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET")},
+    {"key": "brevo", "label": "Brevo", "module": "network", "scope": "runtime", "env": ("BREVO_API_KEY",)},
+    {"key": "firebase", "label": "Firebase / FCM", "module": "system", "scope": "runtime", "env": ("FCM_PROJECT_ID", "FCM_CLIENT_EMAIL", "FCM_PRIVATE_KEY")},
+    {"key": "apns", "label": "Apple APNs", "module": "system", "scope": "runtime", "env": ("APNS_BUNDLE_ID", "APNS_KEY_ID", "APNS_TEAM_ID", "APNS_PRIVATE_KEY")},
+    {"key": "livekit", "label": "LiveKit", "module": "system", "scope": "runtime", "env": ("LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "LIVEKIT_URL")},
+    {"key": "mux", "label": "Mux", "module": "system", "scope": "runtime", "env": ("MUX_TOKEN_ID", "MUX_TOKEN_SECRET")},
+    # Build and release credentials. Read by EAS and the store upload steps, never
+    # by this web service, so they are expected to be absent from the Railway
+    # runtime environment and must not be counted as a runtime provider outage.
+    {"key": "expo", "label": "Expo / EAS", "module": "system", "scope": "build", "env": ("EXPO_ACCESS_TOKEN",)},
+    {"key": "app_store", "label": "App Store Connect", "module": "launch", "scope": "build", "env": ("APP_STORE_CONNECT_KEY_ID", "APP_STORE_CONNECT_ISSUER_ID")},
+    {"key": "google_play", "label": "Google Play", "module": "launch", "scope": "build", "env": ("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON",)},
 )
 
 
 def all_features() -> list[dict[str, Any]]:
     return [feature.safe_dict() for feature in FEATURES]
+
+
+# --- Runtime verification --------------------------------------------------
+#
+# Every field on a BackendFeature is a hand-written literal. `status="active"`
+# is a claim a developer typed, not a fact anyone measured. Left alone, the
+# Launch Readiness card can only ever report "Blocked: 0", because no code path
+# in this module has ever been able to produce a blocked feature - a subsystem
+# can 404 in production, or log to a table that was never created, and the
+# registry will keep reporting it green.
+#
+# These helpers close that gap. They compare the registry's declarations
+# against two runtime facts supplied by the caller: which URL rules the Flask
+# app actually registered, and which tables the database actually has. A
+# feature that fails verification is downgraded to "blocked" regardless of what
+# its literal says.
+
+def _rule_matcher(registered_rules):
+    """Return a predicate that tells whether a declared route is reachable.
+
+    Flask rules carry converters (`/admin/calls/<path:call_id>`), so an exact
+    string comparison under-reports. Declared routes are matched literally
+    first, then against parameterised rules.
+    """
+    import re as _re
+
+    literals = {str(rule) for rule in (registered_rules or [])}
+    patterns = []
+    for rule in literals:
+        if "<" not in rule:
+            continue
+        try:
+            patterns.append(_re.compile("^" + _re.sub(r"<[^>]+>", "[^/]+", rule) + "$"))
+        except _re.error:
+            continue
+
+    def is_registered(route: str) -> bool:
+        route = str(route or "").strip()
+        if not route:
+            return False
+        if route in literals:
+            return True
+        return any(pattern.match(route) for pattern in patterns)
+
+    return is_registered
+
+
+def verify_features(
+    registered_rules=None,
+    existing_tables=None,
+    features: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Annotate features with measured route and audit-table reachability.
+
+    `registered_rules` - iterable of Flask url_map rule strings. `existing_tables`
+    - iterable of table names present in the live schema. Either may be None,
+    in which case that dimension is reported as "unverified" rather than being
+    silently assumed to pass. Unverified is not the same as verified; callers
+    that render readiness must say which one they have.
+    """
+    rows = features if features is not None else all_features()
+    is_registered = _rule_matcher(registered_rules) if registered_rules is not None else None
+    tables = {str(name).lower() for name in existing_tables} if existing_tables is not None else None
+
+    verified: list[dict[str, Any]] = []
+    for item in rows:
+        row = dict(item)
+        route = str(row.get("route") or "")
+        audit_table = str(row.get("audit_log_table") or "")
+
+        if is_registered is None:
+            row["route_registered"] = None
+        else:
+            row["route_registered"] = bool(route) and is_registered(route)
+
+        if tables is None:
+            row["audit_table_exists"] = None
+        else:
+            row["audit_table_exists"] = bool(audit_table) and audit_table.lower() in tables
+
+        failures = []
+        if row["route_registered"] is False:
+            failures.append("route not registered")
+        if row["audit_table_exists"] is False:
+            failures.append("audit table missing")
+        row["verification_failures"] = failures
+        # A feature whose surface does not exist is not "active", whatever the
+        # literal says. Audit-table gaps are recorded but do not by themselves
+        # blank a working surface - they are reported as gaps.
+        row["effective_status"] = "blocked" if row["route_registered"] is False else row.get("status")
+        verified.append(row)
+    return verified
 
 
 def feature_by_key(feature_key: str) -> dict[str, Any] | None:
@@ -376,6 +492,11 @@ def visible_features(admin: dict[str, Any] | None, permission_checker=None) -> l
     return visible
 
 
+def _effective_status(item: dict[str, Any]) -> str:
+    """Prefer a verified status over the hand-written literal when one exists."""
+    return str(item.get("effective_status") or item.get("status") or "")
+
+
 def category_summary(features: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     rows = features if features is not None else all_features()
     grouped: dict[str, list[dict[str, Any]]] = {key: [] for key in REQUIRED_MODULES}
@@ -385,9 +506,9 @@ def category_summary(features: list[dict[str, Any]] | None = None) -> list[dict[
     for key, title in REQUIRED_MODULES.items():
         items = grouped.get(key, [])
         manageable = sum(1 for item in items if item.get("manageable_from_backend"))
-        active = sum(1 for item in items if item.get("status") == "active")
+        active = sum(1 for item in items if _effective_status(item) == "active")
         critical = sum(1 for item in items if item.get("launch_critical"))
-        gaps = [item for item in items if item.get("status") in {"partial", "planned", "blocked"} or not item.get("manageable_from_backend")]
+        gaps = [item for item in items if _effective_status(item) in {"partial", "planned", "blocked"} or not item.get("manageable_from_backend")]
         score = 100 if not items else round(((active + manageable) / (len(items) * 2)) * 100)
         summary.append({
             "category": key,
@@ -418,16 +539,24 @@ def service_readiness_from_env(env: dict[str, str] | None = None) -> list[dict[s
     import os
 
     source = env if env is not None else os.environ
+
+    def satisfied(requirement: Any) -> bool:
+        names = (requirement,) if isinstance(requirement, str) else tuple(requirement)
+        return any(str(source.get(name) or "").strip() for name in names)
+
+    def label(requirement: Any) -> str:
+        return requirement if isinstance(requirement, str) else " or ".join(requirement)
+
     rows: list[dict[str, Any]] = []
     for check in EXTERNAL_SERVICE_CHECKS:
-        env_names = tuple(check.get("env") or ())
-        configured = [name for name in env_names if bool(source.get(name))]
-        missing = [name for name in env_names if not source.get(name)]
-        if not env_names:
+        requirements = tuple(check.get("env") or ())
+        met = [req for req in requirements if satisfied(req)]
+        missing = [label(req) for req in requirements if not satisfied(req)]
+        if not requirements:
             state = "not_tracked"
-        elif len(configured) == len(env_names):
+        elif not missing:
             state = "configured"
-        elif configured:
+        elif met:
             state = "partial"
         else:
             state = "missing"
@@ -435,9 +564,13 @@ def service_readiness_from_env(env: dict[str, str] | None = None) -> list[dict[s
             "key": check["key"],
             "label": check["label"],
             "module": check["module"],
+            # "runtime" credentials are read by this web service; "build" credentials
+            # are read only by the release pipeline. A caller that treats every gap
+            # as a production outage will page someone about a missing Expo token.
+            "scope": check.get("scope", "runtime"),
             "state": state,
-            "configured_count": len(configured),
-            "required_count": len(env_names),
+            "configured_count": len(met),
+            "required_count": len(requirements),
             "missing_env_names": missing,
         })
     return rows
@@ -448,13 +581,25 @@ def operating_system_snapshot(features: list[dict[str, Any]] | None = None, env:
     modules = category_summary(rows)
     services = service_readiness_from_env(env)
     unmanaged = [item for item in rows if not item.get("manageable_from_backend")]
-    partial = [item for item in rows if item.get("status") == "partial"]
-    blocked = [item for item in rows if item.get("status") in {"blocked", "planned"}]
+    partial = [item for item in rows if _effective_status(item) == "partial"]
+    blocked = [item for item in rows if _effective_status(item) in {"blocked", "planned"}]
     audit_missing = [item for item in rows if not str(item.get("audit_log_table") or "").strip()]
     routes_missing = [item for item in rows if not str(item.get("route") or "").strip()]
     critical = [item for item in rows if item.get("launch_critical")]
     configured_services = [item for item in services if item.get("state") == "configured"]
-    service_gaps = [item for item in services if item.get("state") in {"missing", "partial"}]
+    # Only runtime credentials count toward the operational gap headline. The Expo,
+    # App Store Connect and Google Play tokens are read by the release pipeline and
+    # are expected to be absent from the web service's environment; counting them
+    # here reported three permanent "external service gaps" that no change to the
+    # running system could ever clear, which trains operators to ignore the number.
+    service_gaps = [
+        item for item in services
+        if item.get("state") in {"missing", "partial"} and item.get("scope") != "build"
+    ]
+    build_credential_gaps = [
+        item for item in services
+        if item.get("state") in {"missing", "partial"} and item.get("scope") == "build"
+    ]
     module_cards: list[dict[str, Any]] = []
     for module in modules:
         blueprint = module_blueprint(str(module.get("category") or ""))
@@ -482,6 +627,7 @@ def operating_system_snapshot(features: list[dict[str, Any]] | None = None, env:
         "external_services": services,
         "external_services_configured": len(configured_services),
         "external_service_gaps": len(service_gaps),
+        "build_credential_gaps": len(build_credential_gaps),
         "modules": module_cards,
         "risk_summary": {
             "critical": len([item for item in rows if item.get("risk_level") == "critical"]),
@@ -493,21 +639,29 @@ def operating_system_snapshot(features: list[dict[str, Any]] | None = None, env:
 
 
 def _module_risk(items: list[dict[str, Any]]) -> str:
-    if any(item.get("risk_level") == "critical" and item.get("status") in {"partial", "blocked", "planned"} for item in items):
+    if any(item.get("risk_level") == "critical" and _effective_status(item) in {"partial", "blocked", "planned"} for item in items):
         return "critical"
-    if any(item.get("risk_level") in {"critical", "high"} and item.get("status") != "active" for item in items):
+    if any(item.get("risk_level") in {"critical", "high"} and _effective_status(item) != "active" for item in items):
         return "high"
-    if any(item.get("status") != "active" for item in items):
+    if any(_effective_status(item) != "active" for item in items):
         return "medium"
     return "low"
 
 
-def launch_readiness() -> dict[str, Any]:
-    features = all_features()
+def launch_readiness(registered_rules=None, existing_tables=None) -> dict[str, Any]:
+    """Launch readiness measured against runtime facts where they are available.
+
+    Pass the live Flask url_map rules and the live table list to get a verified
+    answer. Called with neither, the result is explicitly marked unverified, so
+    no caller can mistake a registry transcript for a system check.
+    """
+    features = verify_features(registered_rules, existing_tables)
     critical = [item for item in features if item.get("launch_critical")]
-    blocked = [item for item in critical if item.get("status") in {"blocked", "planned"} or not item.get("manageable_from_backend")]
-    partial = [item for item in critical if item.get("status") == "partial"]
-    active = [item for item in critical if item.get("status") == "active" and item.get("manageable_from_backend")]
+    blocked = [item for item in critical if item.get("effective_status") in {"blocked", "planned"} or not item.get("manageable_from_backend")]
+    partial = [item for item in critical if item.get("effective_status") == "partial"]
+    active = [item for item in critical if item.get("effective_status") == "active" and item.get("manageable_from_backend")]
+    unreachable = [item for item in features if item.get("route_registered") is False]
+    audit_gaps = [item for item in features if item.get("audit_table_exists") is False]
     score = 100 if not critical else round((len(active) / len(critical)) * 100)
     os_snapshot = operating_system_snapshot(features)
     gaps = gap_audit()
@@ -515,10 +669,26 @@ def launch_readiness() -> dict[str, Any]:
         "generated_at": datetime.utcnow().isoformat(timespec="seconds"),
         "score": score,
         "status": "ready" if not blocked and score >= 90 else "watch" if not blocked else "blocked",
+        "verified": registered_rules is not None,
+        "verification_note": (
+            "Route reachability checked against the live URL map."
+            if registered_rules is not None else
+            "UNVERIFIED: statuses are registry declarations, not measured system state."
+        ),
         "critical_total": len(critical),
         "critical_active": len(active),
         "critical_partial": len(partial),
         "critical_blocked": len(blocked),
+        "unreachable_route_count": len(unreachable),
+        "unreachable_routes": [
+            {"feature_key": item["feature_key"], "route": item.get("route"), "launch_critical": item.get("launch_critical")}
+            for item in unreachable
+        ],
+        "audit_table_missing_count": len(audit_gaps),
+        "audit_table_missing": [
+            {"feature_key": item["feature_key"], "audit_log_table": item.get("audit_log_table")}
+            for item in audit_gaps
+        ],
         "modules": category_summary(features),
         "remaining_gaps": gaps["gaps"],
         "total_features_discovered": os_snapshot["total_features"],

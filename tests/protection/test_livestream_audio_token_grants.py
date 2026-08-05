@@ -92,6 +92,10 @@ TEST_ENV = {
 
 
 def expect(condition: bool, label: str) -> None:
+    # Counted so scripts/protection/run_protection_suite.py can prove this file
+    # actually executed. A suite that exits 0 having checked nothing is the
+    # failure mode the runner exists to catch.
+    expect.calls = getattr(expect, "calls", 0) + 1
     if not condition:
         raise AssertionError(label)
     print(f"ok - {label}")
@@ -331,6 +335,7 @@ def main() -> None:
     test_audio_v2_rollout_controls()
     test_audio_v2_fallback_defaults_on()
     test_audio_trace_requires_master_and_qa_account()
+    print(f"PROTECTION_TESTS_RUN={getattr(expect, 'calls', 0)}")
     print("livestream audio token grant contract ok")
 
 

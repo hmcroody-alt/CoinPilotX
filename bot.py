@@ -79,8 +79,35 @@ import undx_router
 import undx_execution_kernel
 
 COINPILOTX_ENV_MODE = os.getenv("ENV") or os.getenv("FLASK_ENV") or os.getenv("RAILWAY_ENVIRONMENT") or ("production" if _deployment_environment_enabled() else "local")
-COINPILOTX_SECRET_KEY = os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY") or os.getenv("SESSION_SECRET") or secrets.token_hex(32)
-COINPILOTX_RANDOM_SECRET_USED = not bool(os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY") or os.getenv("SESSION_SECRET"))
+COINPILOTX_CONFIGURED_SECRET_KEY = os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY") or os.getenv("SESSION_SECRET")
+COINPILOTX_RANDOM_SECRET_USED = not bool(COINPILOTX_CONFIGURED_SECRET_KEY)
+# A per-process random key is a correct default for a laptop and a silent outage
+# in production. This value signs Flask sessions *and* the mobile bearer tokens
+# minted in issue_mobile_access_token() and verified on every /api/mobile call.
+# Procfile runs `gunicorn --workers 2`, and each worker executes this line
+# separately, so an unset secret gives the two workers different keys: a token
+# minted by worker A fails hmac.compare_digest on worker B. The user-visible
+# symptom is not "sessions reset on deploy", it is random 401s and random
+# logouts on roughly half of all requests, forever, with nothing in the logs
+# except the auth failures themselves.
+#
+# So refuse to boot instead. A deploy that fails loudly is recoverable in the
+# time it takes to set a variable; intermittent auth failure gets debugged as a
+# client bug for weeks. PULSESOC_ALLOW_EPHEMERAL_SECRET exists so an operator
+# who genuinely wants the old behaviour can have it, but has to say so.
+if COINPILOTX_RANDOM_SECRET_USED and _deployment_environment_enabled() and not _env_bool(
+    "PULSESOC_ALLOW_EPHEMERAL_SECRET", False
+):
+    raise RuntimeError(
+        "FLASK_SECRET_KEY (or SECRET_KEY / SESSION_SECRET) is not set in a deployed "
+        "environment. Refusing to boot with a per-process random key: it would sign "
+        "mobile access tokens that other gunicorn workers reject, producing "
+        "intermittent 401s that look like a client bug. Set FLASK_SECRET_KEY to a "
+        "stable random value (`python3 -c \"import secrets; print(secrets.token_hex(32))\"`), "
+        "or set PULSESOC_ALLOW_EPHEMERAL_SECRET=1 to accept the broken behaviour "
+        "deliberately."
+    )
+COINPILOTX_SECRET_KEY = COINPILOTX_CONFIGURED_SECRET_KEY or secrets.token_hex(32)
 COINPILOTX_SESSION_COOKIE_SECURE = _env_bool("SESSION_COOKIE_SECURE", _deployment_environment_enabled())
 PERSISTENT_SESSION_COOKIE = os.getenv("PULSESOC_REFRESH_COOKIE_NAME", "pulse_refresh_session")
 PERSISTENT_SESSION_DAYS = max(3650, int(os.getenv("PULSESOC_PERSISTENT_SESSION_DAYS", "3650")))
@@ -509,7 +536,13 @@ logging.warning("Active database type: %s", db_service.ENGINE_NAME)
 logging.warning("Environment mode: %s", COINPILOTX_ENV_MODE)
 logging.warning("Session cookie secure: %s", COINPILOTX_SESSION_COOKIE_SECURE)
 if COINPILOTX_RANDOM_SECRET_USED:
-    logging.warning("No FLASK_SECRET_KEY, SECRET_KEY, or SESSION_SECRET was configured; generated one-time secret will invalidate local sessions on restart.")
+    # Reaching this line in a deployed environment means the boot guard above was
+    # explicitly overridden, so say plainly what was bought with that override.
+    logging.warning(
+        "No FLASK_SECRET_KEY, SECRET_KEY, or SESSION_SECRET was configured; this process "
+        "generated its own key. Sessions reset on restart, and any sibling gunicorn worker "
+        "has a different key, so mobile access tokens will fail verification across workers."
+    )
 MAIL_STARTUP_STATUS = email_service_service.provider_status()
 logging.info(
     "MAIL_PROVIDER_READY provider=%s ready=%s sender_address=%s sender_name=%s",
@@ -2644,16 +2677,36 @@ def interactive_security_guard():
     return None
 
 
+def visitor_logging_enabled():
+    """Whether request-level visitor logging is writing rows at all.
+
+    This gate defaults OFF and the variable is not documented anywhere else in
+    the repo, so on any deployment that has not explicitly set it `visitor_logs`
+    is empty and every visitor metric reads a truthful-looking `0`. Callers that
+    display those metrics MUST consult this so the dashboard can say "not
+    instrumented" instead of asserting that nobody visited.
+    """
+    return os.getenv("PULSESOC_VISITOR_LOGGING_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 @webhook_app.before_request
 def log_visitor_request():
-    if os.getenv("PULSESOC_VISITOR_LOGGING_ENABLED", "").strip().lower() not in {"1", "true", "yes", "on"}:
+    if not visitor_logging_enabled():
         return None
     if request.path.startswith(("/static/", "/icons/", "/manifest", "/site.webmanifest", "/sw.js")):
         return None
+    # `/api/` stays excluded deliberately: this hook does a SELECT + INSERT +
+    # COMMIT per logged request, and the native app drives almost all of its
+    # traffic through /api/. Logging it would add a write to every mobile call on
+    # a 2-worker gunicorn. API traffic is measured by analytics_events instead.
     if request.path.startswith(("/api/", "/internal/", "/webhook/", "/stripe-webhook")):
         return None
-    if request.path in {"/", "/login", "/logout", "/signup", "/health", "/health/database"}:
+    if request.path in {"/health", "/health/database"}:
         return None
+    # `/`, `/login`, `/signup` and `/logout` were previously excluded here. They
+    # are the landing and entry pages - the single most meaningful visitor signal
+    # on the product - so excluding them meant even an instrumented deployment
+    # undercounted arrivals. They are now logged.
     try:
         visitor_session_id = session.get("visitor_session_id")
         if not visitor_session_id:
@@ -2756,6 +2809,104 @@ def get_csrf_token():
 
 def verify_csrf():
     return request.form.get("csrf_token") and request.form.get("csrf_token") == session.get("csrf_token")
+
+
+# --- CSRF: default-deny for cookie-authenticated admin form posts ------------
+#
+# Before this block, CSRF verification was opt-in per handler. An audit of every
+# state-changing admin route found 79 form-driven POST endpoints under /admin or
+# /api/admin, of which 42 never called verify_csrf() - including entitlement
+# grants, advertising spend halts, advertiser restriction, merchant document
+# review and arena event creation. Separately, 39 of the 79 rendered forms never
+# emitted a csrf_token field at all, so simply adding verify_csrf() calls would
+# have broken those pages.
+#
+# SESSION_COOKIE_SAMESITE is "Lax", which blocks the classic cross-site form
+# POST in current browsers. That is a useful mitigation but it is a property of
+# the visitor's browser, not an application control, and it does not cover
+# same-site subdomain origins. Two hooks below make the control structural:
+#
+#   * inject_admin_form_csrf   - every POST form on an admin page gets a token
+#                                by construction, so a new form cannot forget.
+#   * enforce_admin_form_csrf  - a form post that arrives without a valid token
+#                                is rejected before any handler runs.
+#
+# The enforcement scope is deliberately narrow so it cannot break non-browser
+# callers: state-changing methods only, admin paths only, form-encoded bodies
+# only (JSON and bearer-token API traffic is untouched), and only when the
+# request actually carries an admin session cookie - which is the only case in
+# which a browser supplies ambient authority, and therefore the only case in
+# which CSRF exists at all. Callers using the shared admin password header send
+# no cookie and are unaffected.
+
+CSRF_EXEMPT_ADMIN_PATHS = frozenset({"/admin/login", "/admin/logout"})
+_ADMIN_POST_FORM_TAG = re.compile(rb"<form\b[^>]*\bmethod\s*=\s*['\"]?post['\"]?[^>]*>", re.I)
+
+
+@webhook_app.after_request
+def inject_admin_form_csrf(response):
+    """Give every admin POST form a CSRF token without touching 79 call sites.
+
+    A duplicate hidden field is harmless: both copies carry the same session
+    token and `request.form.get` returns the first.
+    """
+    try:
+        path = request.path or ""
+        if not path.startswith("/admin"):
+            return response
+        if response.direct_passthrough or response.status_code != 200:
+            return response
+        if "text/html" not in (response.content_type or ""):
+            return response
+        body = response.get_data()
+        if b"<form" not in body:
+            return response
+        field = (
+            "<input type='hidden' name='csrf_token' value='%s'>" % get_csrf_token()
+        ).encode("utf-8")
+        patched = _ADMIN_POST_FORM_TAG.sub(lambda m: m.group(0) + field, body)
+        if patched != body:
+            response.set_data(patched)
+    except Exception:
+        # A rendering helper must never be the reason an admin page fails to
+        # load. The enforcement hook is what provides the guarantee; this one
+        # only removes the need to remember.
+        logging.exception("CSRF token injection failed for %s", request.path)
+    return response
+
+
+@webhook_app.before_request
+def enforce_admin_form_csrf():
+    if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+        return None
+    path = request.path or ""
+    if not (path.startswith("/admin") or path.startswith("/api/admin")):
+        return None
+    if path in CSRF_EXEMPT_ADMIN_PATHS:
+        return None
+    content_type = (request.content_type or "").split(";")[0].strip().lower()
+    if content_type not in ("application/x-www-form-urlencoded", "multipart/form-data"):
+        return None
+    if not session.get("admin_user_id"):
+        return None
+    if verify_csrf():
+        return None
+    logging.warning(
+        "Rejected admin form post with missing or stale CSRF token: %s %s",
+        request.method,
+        path,
+    )
+    if path.startswith("/api/"):
+        return jsonify({
+            "ok": False,
+            "error": "csrf_failed",
+            "message": "Security check failed. Reload the page and try again.",
+        }), 400
+    return Response(
+        "Security check failed. Reload the admin page and submit again.",
+        status=400,
+        mimetype="text/plain",
+    )
 
 
 def set_persistent_session_cookie(response, refresh_token):
@@ -12541,6 +12692,21 @@ def admin_test_email():
       <p>If you received this, server-side email delivery is connected.</p>
     """)
     sent = send_platform_email(email, "PulseSoc Brevo test email", text, html, 0)
+    # A diagnostic that can send platform-branded mail to any address the caller
+    # names is a small but real outbound vector. Record the recipient domain and
+    # the outcome; the shared-password auth path has no attributable actor.
+    _test_actor = (admin_current_user() or {}).get("id") or 0
+    log_admin_audit(
+        _test_actor,
+        "platform_test_email_sent",
+        "email",
+        mask_email(email),
+        {
+            "actor_attribution": "admin_session" if _test_actor else "shared_admin_password_unattributed",
+            "recipient_domain": email.split("@")[-1],
+            "delivered": bool(sent),
+        },
+    )
     return jsonify({
         "ok": bool(sent),
         "provider": (os.getenv("EMAIL_PROVIDER") or ("brevo" if os.getenv("BREVO_API_KEY") else "unconfigured")),
@@ -13604,6 +13770,11 @@ def admin_saas_summary():
     events_today = cur.fetchone()[0]
     cur.execute("SELECT COUNT(DISTINCT session_id) FROM visitor_logs WHERE timestamp>=?", (since_day,))
     visitors_24h = cur.fetchone()[0] or 0
+    # A `0` here is ambiguous and was being rendered as fact. Visitor logging is
+    # gated behind PULSESOC_VISITOR_LOGGING_ENABLED, which defaults OFF, so an
+    # uninstrumented deployment reports "0 visitors" next to hundreds of
+    # analytics events - the exact contradiction seen on the Operations Center.
+    visitors_instrumented = visitor_logging_enabled()
     cur.execute("SELECT COALESCE(SUM(COALESCE(amount, 14.99)), 0) FROM payment_records WHERE status='succeeded'")
     total_revenue = cur.fetchone()[0] or 0
     cur.execute(
@@ -13644,6 +13815,7 @@ def admin_saas_summary():
         "emails_today": emails_today,
         "events_today": events_today,
         "visitors_24h": visitors_24h,
+        "visitors_instrumented": visitors_instrumented,
         "total_revenue": round(float(total_revenue), 2),
         "mrr_estimate": round(mrr_estimate, 2),
         "audit_count": audit_count,
@@ -14273,9 +14445,17 @@ def admin_dashboard_page():
         f"<div class='muted' style='font-size:.82rem'>{_n(stats['paid_pro'])} paying members</div></div>"
         f"<div class='card ops-kpi'><div class='muted'>Total Revenue</div><div class='metric'>{_money(stats['total_revenue'])}</div>"
         "<div class='muted' style='font-size:.82rem'>lifetime succeeded payments</div></div>"
-        f"<div class='card ops-kpi'><div class='muted'>Visitors &middot; 24h</div><div class='metric'>{_n(stats['visitors_24h'])}</div>"
-        f"<div class='muted' style='font-size:.82rem'>{_n(stats['events_today'])} events today</div></div>"
-        "</div>"
+        # Never render an uninstrumented metric as a measured zero.
+        + (
+            f"<div class='card ops-kpi'><div class='muted'>Visitors &middot; 24h</div><div class='metric'>{_n(stats['visitors_24h'])}</div>"
+            f"<div class='muted' style='font-size:.82rem'>{_n(stats['events_today'])} events today</div></div>"
+            if stats.get("visitors_instrumented")
+            else
+            f"<div class='card ops-kpi'><div class='muted'>Visitors &middot; 24h</div><div class='metric' title='Visitor logging is disabled'>&mdash;</div>"
+            f"<div class='muted' style='font-size:.82rem'>Not instrumented &mdash; set PULSESOC_VISITOR_LOGGING_ENABLED=true. "
+            f"{_n(stats['events_today'])} events today.</div></div>"
+        )
+        + "</div>"
     )
     def _pct(num, den):
         try:
@@ -17441,6 +17621,22 @@ def admin_super_users_page():
                         message = "Super user access disabled."
                     conn.commit()
                     log_product_event(owner.get("user_id") or 0, "super_user_status_changed", {"target_user_id": target_user_id, "action": action})
+                    # Granting or revoking super-user is the highest-privilege
+                    # change in the system. log_product_event() is an analytics
+                    # stream, not an accountability record - it is not the table
+                    # /admin/audit-logs reads, so before this line a privilege
+                    # escalation left no trace on the surface reviewers use.
+                    log_admin_audit(
+                        owner.get("user_id") or 0,
+                        f"super_user_{action}",
+                        "user",
+                        str(target_user_id),
+                        {
+                            "target_email": mask_email(target.get("email")),
+                            "previous_is_super_user": safe_int(target.get("is_super_user"), 0),
+                            "multiple_super_users_allowed": bool(owner_allows_multiple_super_users()),
+                        },
+                    )
                     ensure_owner_super_user()
                 except Exception as exc:
                     conn.rollback()
@@ -23892,6 +24088,24 @@ def admin_brevo_resync():
         result = sync_brevo_contact_safe({**user, "source": "website_account"}, entity_type="user", entity_id=user.get("user_id"))
         synced += 1 if result.get("ok") else 0
         failed += 0 if result.get("ok") else 1
+    # This route transmits every lead and user email address to a third-party
+    # processor. A bulk personal-data export must leave a record even when the
+    # caller authenticated with the shared admin password and therefore has no
+    # attributable identity - say so rather than logging actor 0 silently.
+    _resync_actor = (admin_current_user() or {}).get("id") or 0
+    log_admin_audit(
+        _resync_actor,
+        "brevo_contact_resync",
+        "integration",
+        "brevo",
+        {
+            "actor_attribution": "admin_session" if _resync_actor else "shared_admin_password_unattributed",
+            "leads_checked": len(leads),
+            "users_checked": len(users),
+            "synced": synced,
+            "failed": failed,
+        },
+    )
     return jsonify({"ok": True, "synced": synced, "failed": failed, "leads_checked": len(leads), "users_checked": len(users)})
 
 
@@ -24066,7 +24280,22 @@ def admin_repair_user_pro():
                 "stripe_session_id": clean_html(payload.get("stripe_subscription_id", "")).strip() or "manual_repair",
                 "next_billing_date": format_date(pro_expires_at),
             })
-        log_admin_audit(0, "manual_pro_repair", "user", str(activated_user_id), {"email": mask_email(email)})
+        # This route authenticates with a shared admin password, so there is no
+        # admin identity to attribute the action to. Record that fact explicitly
+        # rather than logging actor 0 silently - an audit row that looks like it
+        # has an actor but does not is worse than one that admits it cannot say.
+        _repair_actor = (admin_current_user() or {}).get("id") or 0
+        log_admin_audit(
+            _repair_actor,
+            "manual_pro_repair",
+            "user",
+            str(activated_user_id),
+            {
+                "email": mask_email(email),
+                "actor_attribution": "admin_session" if _repair_actor else "shared_admin_password_unattributed",
+                "days_granted": DEFAULT_MANUAL_PRO_DAYS,
+            },
+        )
     logging.warning("Admin Stripe repair executed email=%s user_id=%s activated_user_id=%s", email, user["user_id"], activated_user_id)
     return jsonify({
         "ok": bool(activated_user_id),
@@ -24913,6 +25142,10 @@ def api_undx_kernel_apply():
             payload.get("proposal") or {},
             payload.get("approval") or "",
             payload.get("approved_change_ids") or [],
+            # Second, distinct phrase, required only when the batch edits the
+            # files that constrain UNDX itself. Defaulting to "" means a caller
+            # that does not know about guard changes cannot make one by accident.
+            guard_approval=payload.get("guard_approval") or "",
         )
         log_product_event(user["user_id"], "undx_kernel_changes_applied", {"applied": len(result.get("applied") or [])})
         response = jsonify(result)
@@ -37701,9 +37934,14 @@ def admin_pulse_music_review_page():
 @webhook_app.route("/api/admin/pulse/music/import-metadata", methods=["POST"])
 def api_admin_pulse_music_import_metadata():
     init_db()
-    admin = admin_current_user()
-    if not admin:
-        return api_error("Admin required.", 403)
+    # This route writes a row with safety_status='approved' - a licensing
+    # assertion about third-party music. The registry declares media.music as
+    # `pulse.moderate` gated and audited to pulse_music_events; before this
+    # change it accepted any admin session and left no record of who asserted
+    # the licence or what proof they supplied.
+    admin, denied = require_admin_api("pulse.moderate")
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     title = clean_html(payload.get("title") or "")[:180]
     artist = clean_html(payload.get("artist") or "")[:180]
@@ -37756,17 +37994,48 @@ def api_admin_pulse_music_import_metadata():
         ),
     )
     track_id = int(cur.lastrowid or 0)
+    pulse_music_event(
+        cur,
+        track_id=track_id,
+        user_id=(admin or {}).get("id") or 0,
+        event_type="admin_metadata_import",
+        surface="admin_music_review",
+        metadata={
+            "source_provider": source,
+            "license_type": license_type,
+            "proof_url": proof_url[:400],
+            "proof_file": proof_file[:400],
+            "attribution_required": bool(attribution),
+        },
+    )
     conn.commit()
     conn.close()
+    log_admin_audit(
+        (admin or {}).get("id") or 0,
+        "music_metadata_imported",
+        "pulse_audio_track",
+        str(track_id),
+        {
+            "title": title[:120],
+            "artist": artist[:120],
+            "source_provider": source,
+            "license_type": license_type,
+            "proof": "url" if proof_url else "file",
+        },
+    )
     return jsonify({"ok": True, "message": "Music metadata imported for admin approval.", "track_id": track_id, "approved_by_admin": False, "active": False})
 
 
 @webhook_app.route("/api/admin/pulse/music/<int:track_id>/approval", methods=["POST"])
 def api_admin_pulse_music_approval(track_id):
     init_db()
-    admin = admin_current_user()
-    if not admin:
-        return api_error("Admin required.", 403)
+    # The registry declares this feature as `pulse.moderate` gated and audited to
+    # pulse_music_events. Before this change it checked only that *some* admin
+    # session existed and wrote no record at all - so approving a track for
+    # commercial use was an unattributable, unlogged rights decision.
+    admin, denied = require_admin_api("pulse.moderate")
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     approved = bool(payload.get("approved"))
     active = bool(payload.get("active", approved))
@@ -37789,17 +38058,36 @@ def api_admin_pulse_music_approval(track_id):
         "UPDATE pulse_audio_tracks SET approved_by_admin=?, active=?, safety_status=?, updated_at=? WHERE id=?",
         (1 if approved else 0, 1 if active and approved else 0, "approved" if approved else "pending", now, track_id),
     )
+    pulse_music_event(
+        cur,
+        track_id=track_id,
+        user_id=(admin or {}).get("id") or 0,
+        event_type="admin_approval" if approved else "admin_unapproval",
+        surface="admin_music_review",
+        metadata={
+            "previous_approved": safe_int(track.get("approved_by_admin"), 0),
+            "previous_safety_status": str(track.get("safety_status") or ""),
+            "active": bool(active and approved),
+        },
+    )
     conn.commit()
     conn.close()
+    log_admin_audit(
+        (admin or {}).get("id") or 0,
+        "music_approval_set" if approved else "music_approval_cleared",
+        "pulse_audio_track",
+        str(track_id),
+        {"active": bool(active and approved), "title": clean_html(str(track.get("title") or ""))[:120]},
+    )
     return jsonify({"ok": True, "message": "Music approval updated.", "track_id": track_id, "approved_by_admin": approved, "active": active and approved})
 
 
 @webhook_app.route("/api/admin/pulse/music/<int:track_id>/remove", methods=["POST"])
 def api_admin_pulse_music_remove(track_id):
     init_db()
-    admin = admin_current_user()
-    if not admin:
-        return api_error("Admin required.", 403)
+    admin, denied = require_admin_api("pulse.moderate")
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     note = clean_html(payload.get("note") or payload.get("reason") or "Removed by admin review.")[:1000]
     now = datetime.utcnow().isoformat(timespec="seconds")
@@ -37844,8 +38132,23 @@ def api_admin_pulse_music_remove(track_id):
             body="Your music report was reviewed by PulseSoc safety.",
             extra={"report_id": report.get("id"), "target_type": "music_track", "target_id": track_id, "admin_action": "remove"},
         )
+    pulse_music_event(
+        cur,
+        track_id=track_id,
+        user_id=(admin or {}).get("id") or 0,
+        event_type="admin_removal",
+        surface="admin_music_review",
+        metadata={"note": note[:400], "open_reports_closed": len(open_reports)},
+    )
     conn.commit()
     conn.close()
+    log_admin_audit(
+        (admin or {}).get("id") or 0,
+        "music_track_removed",
+        "pulse_audio_track",
+        str(track_id),
+        {"note": note[:400], "open_reports_closed": len(open_reports)},
+    )
     return jsonify({"ok": True, "message": "Song removed from PulseSoc Music.", "track_id": track_id})
 
 
@@ -88321,12 +88624,60 @@ ADMIN_DEPARTMENTS = {
 }
 
 
+# Delivery statuses that represent a real, actionable operator problem.
+# Everything else a delivery row can hold - sent, created, queued, pending,
+# processing, skipped, delegated, read - is either success or in-flight and must
+# never be counted as a warning. The previous `status != 'sent'` test counted all
+# of them, which is most of why the messaging department reported five figures.
+DELIVERY_WARNING_STATUSES = (
+    "failed",
+    "error",
+    "not_configured",
+    "permission_denied",
+    "invalid_phone",
+    "rate_limited",
+    "no_credits_or_provider_error",
+)
+_DELIVERY_WARNING_PLACEHOLDERS = ",".join("?" for _ in DELIVERY_WARNING_STATUSES)
+
+# Warning counts are a WORKING QUEUE, not a lifetime archive. Without this bound
+# every delivery ever attempted against an unconfigured provider stayed in the
+# count forever, so the number only ever grew and could not be driven to zero by
+# fixing anything.
+DEPARTMENT_WARNING_WINDOW_HOURS = 24
+
+
+def department_health_score(warnings, pending_tasks):
+    """Map an unbounded backlog onto a 0-100 health score that stays readable.
+
+    The previous formula was `max(42, 100 - warnings*8 - pending*2)`. Any
+    department with 8 or more warnings hit the floor, so a department with 8
+    warnings and one with 93,222 both displayed exactly 42 - the score carried no
+    information precisely when it mattered most. The floor also meant a totally
+    broken department never rendered as critical.
+
+    Backlog is compressed logarithmically so the first few warnings move the
+    score sharply (the actionable range) while large backlogs still separate from
+    each other, and the scale bottoms out at 0 rather than 42.
+    """
+    warnings = max(0, int(warnings or 0))
+    pending_tasks = max(0, int(pending_tasks or 0))
+    if not warnings and not pending_tasks:
+        return 100
+    load = warnings + (pending_tasks * 0.25)
+    # log10(1+load)*26 => 1 warning ~92, 5 ~79, 20 ~66, 100 ~48, 1k ~22, 10k ~0.
+    return int(max(0, min(100, round(100 - (math.log10(1 + load) * 26)))))
+
+
 def department_counts(slug):
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     counts = {"pending_tasks": 0, "warnings": 0, "today": 0}
+    # Delivery/notification/analytics writers all timestamp with
+    # datetime.utcnow(), so these bounds must be UTC to line up with the rows.
     today = datetime.utcnow().date().isoformat()
+    warning_since = (datetime.utcnow() - timedelta(hours=DEPARTMENT_WARNING_WINDOW_HOURS)).isoformat(timespec="seconds")
     try:
         cur.execute("SELECT COUNT(*) AS total FROM admin_tasks WHERE department=? AND status!='done'", (slug,))
         counts["pending_tasks"] = int(dict(cur.fetchone() or {}).get("total") or 0)
@@ -88352,13 +88703,24 @@ def department_counts(slug):
             cur.execute("SELECT COUNT(*) AS total FROM arena_matches WHERE created_at>=?", (today,))
             counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
         elif slug == "delivery":
-            cur.execute("SELECT COUNT(*) AS total FROM alert_delivery_jobs WHERE status IN ('failed','not_configured')")
+            cur.execute(
+                f"SELECT COUNT(*) AS total FROM alert_delivery_jobs WHERE status IN ({_DELIVERY_WARNING_PLACEHOLDERS}) AND created_at>=?",
+                (*DELIVERY_WARNING_STATUSES, warning_since),
+            )
             counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
             cur.execute("SELECT COUNT(*) AS total FROM alert_delivery_jobs WHERE created_at>=?", (today,))
             counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
         elif slug == "messaging":
-            cur.execute("SELECT COUNT(*) AS total FROM notification_delivery_logs WHERE channel IN ('telegram','sms','push') AND status!='sent'")
+            cur.execute(
+                f"SELECT COUNT(*) AS total FROM notification_delivery_logs WHERE channel IN ('telegram','sms','push') AND status IN ({_DELIVERY_WARNING_PLACEHOLDERS}) AND created_at>=?",
+                (*DELIVERY_WARNING_STATUSES, warning_since),
+            )
             counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+            cur.execute(
+                "SELECT COUNT(*) AS total FROM notification_delivery_logs WHERE channel IN ('telegram','sms','push') AND created_at>=?",
+                (today,),
+            )
+            counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
         elif slug == "security":
             cur.execute("SELECT COUNT(*) AS total FROM security_events WHERE created_at>=?", (today,))
             counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
@@ -88371,7 +88733,9 @@ def department_counts(slug):
             cur.execute("SELECT COUNT(*) AS total FROM ad_reports WHERE status='open'")
             counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
         elif slug == "roast-battle":
-            cur.execute("SELECT COUNT(*) AS total FROM arena_roast_lines WHERE safe=0")
+            # Bounded like every other warning queue: an unsafe line generated
+            # months ago and already moderated is not an open operator task.
+            cur.execute("SELECT COUNT(*) AS total FROM arena_roast_lines WHERE safe=0 AND created_at>=?", (warning_since,))
             counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
         elif slug == "growth":
             cur.execute("SELECT COUNT(*) AS total FROM conversion_events WHERE created_at>=?", (today,))
@@ -88386,9 +88750,11 @@ def department_counts(slug):
             cur.execute("SELECT COUNT(*) AS total FROM worker_heartbeats WHERE last_seen_at IS NULL OR last_seen_at<?", ((datetime.utcnow() - timedelta(minutes=5)).isoformat(timespec="seconds"),))
             counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
     except Exception:
-        pass
+        logging.exception("department_counts failed for slug=%s", slug)
+        counts["degraded"] = True
     conn.close()
-    counts["health"] = max(42, 100 - (counts["warnings"] * 8) - (counts["pending_tasks"] * 2))
+    counts["health"] = department_health_score(counts["warnings"], counts["pending_tasks"])
+    counts["warning_window_hours"] = DEPARTMENT_WARNING_WINDOW_HOURS
     return counts
 
 
@@ -89351,8 +89717,56 @@ def admin_global_events_page():
     return admin_page_html("Global Events", body, admin)
 
 
-def backend_command_safe_scalar(query, params=(), default=0):
-    """Return a single admin metric without exposing query/database details."""
+def live_registered_rules():
+    """Every URL rule the app actually registered at boot.
+
+    Optional route packs in this codebase are registered inside `except`
+    blocks, so a subsystem can vanish in production without any error surfacing
+    to an operator. Reading url_map is the only honest way to know which admin
+    surfaces exist in THIS process.
+    """
+    try:
+        return [str(rule.rule) for rule in webhook_app.url_map.iter_rules()]
+    except Exception as exc:
+        logging.warning("LIVE_URL_MAP_UNAVAILABLE error=%s", str(exc)[:160])
+        return None
+
+
+def live_table_names():
+    """Table names present in the live schema, or None if they cannot be read.
+
+    None means "unknown", not "empty" - callers must not treat an unreadable
+    schema as proof that every table is missing.
+    """
+    conn = None
+    try:
+        conn = db()
+        cur = conn.cursor()
+        if db_service.IS_POSTGRES:
+            cur.execute("SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname='public'")
+        else:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        return [str(row[0]).lower() for row in cur.fetchall() or []]
+    except Exception as exc:
+        logging.warning("LIVE_TABLE_LIST_UNAVAILABLE error=%s", str(exc)[:160])
+        return None
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+
+def backend_command_safe_scalar(query, params=()):
+    """Return (value, available) for one admin metric.
+
+    `available` is False when the query could not be answered - a missing table,
+    a renamed column, a dead connection. Callers MUST NOT collapse that into 0:
+    an unanswerable query rendered as a confident zero is the most dangerous
+    kind of dashboard, because it looks calmest exactly when it is most broken.
+    Every Command Center module metric flows through here.
+    """
     conn = None
     try:
         conn = db()
@@ -89360,17 +89774,19 @@ def backend_command_safe_scalar(query, params=(), default=0):
         cur.execute(query, params)
         row = cur.fetchone()
         if row is None:
-            return default
+            return 0, True
         if isinstance(row, sqlite3.Row):
             value = row[0]
         elif isinstance(row, (tuple, list)):
             value = row[0]
         else:
             value = row
-        return int(value or 0)
+        return int(value or 0), True
     except Exception as exc:
-        logging.info("BACKEND_COMMAND_METRIC_SKIPPED error=%s", str(exc)[:160])
-        return default
+        # Warning, not info: a metric that cannot be computed is an operational
+        # defect, not routine noise.
+        logging.warning("BACKEND_COMMAND_METRIC_UNAVAILABLE query=%s error=%s", query[:120], str(exc)[:160])
+        return None, False
     finally:
         try:
             if conn:
@@ -89404,7 +89820,7 @@ def backend_command_live_metrics():
         ],
         "moderation": [
             ("Open reports", "reports", "SELECT COUNT(*) FROM moderation_cases WHERE status IN ('open','reviewing')"),
-            ("Security events", "security", "SELECT COUNT(*) FROM command_center_security_events WHERE created_at>=?", (day,)),
+            ("Security events", "security", "SELECT COUNT(*) FROM security_events WHERE created_at>=?", (day,)),
             ("Scam reports", "scam", "SELECT COUNT(*) FROM pulse_reports WHERE COALESCE(status,'open')='open'"),
             ("Chat reports", "chat", "SELECT COUNT(*) FROM chat_reports WHERE COALESCE(status,'open')='open'"),
         ],
@@ -89421,16 +89837,16 @@ def backend_command_live_metrics():
             ("Refund events", "refunds", "SELECT COUNT(*) FROM pulse_ad_refunds WHERE created_at>=?", (day,)),
         ],
         "media": [
-            ("Music approved", "music", "SELECT COUNT(*) FROM audio_tracks WHERE lower(COALESCE(review_status,status,''))='approved'"),
-            ("Music review", "review", "SELECT COUNT(*) FROM audio_tracks WHERE lower(COALESCE(review_status,status,'')) IN ('pending','submitted','in_review')"),
+            ("Music approved", "music", "SELECT COUNT(*) FROM pulse_audio_tracks WHERE lower(COALESCE(safety_status,''))='approved'"),
+            ("Music review", "review", "SELECT COUNT(*) FROM pulse_audio_tracks WHERE lower(COALESCE(safety_status,'')) IN ('pending','submitted','in_review')"),
             ("Music reports", "reports", "SELECT COUNT(*) FROM pulse_music_reports WHERE COALESCE(status,'open')='open'"),
             ("Storage uploads", "uploads", "SELECT COUNT(*) FROM chat_media_uploads WHERE created_at>=?", (day,)),
         ],
         "ai": [
-            ("AI events", "events", "SELECT COUNT(*) FROM command_center_ai_events WHERE created_at>=?", (day,)),
-            ("AI failures", "failed", "SELECT COUNT(*) FROM command_center_ai_events WHERE status='failed' AND created_at>=?", (day,)),
-            ("Usage logs", "usage", "SELECT COUNT(*) FROM ai_usage_logs WHERE created_at>=?", (day,)),
-            ("Safety blocks", "blocks", "SELECT COUNT(*) FROM command_center_security_events WHERE event_type IN ('phishing_link','scam_keyword') AND created_at>=?", (day,)),
+            ("AI events", "events", "SELECT COUNT(*) FROM pulse_ai_provider_events WHERE created_at>=?", (day,)),
+            ("AI failures", "failed", "SELECT COUNT(*) FROM pulse_ai_provider_events WHERE status='failed' AND created_at>=?", (day,)),
+            ("Usage logs", "usage", "SELECT COUNT(*) FROM ai_observability_events WHERE created_at>=?", (day,)),
+            ("Safety blocks", "blocks", "SELECT COUNT(*) FROM security_events WHERE event_type IN ('phishing_link','scam_keyword') AND created_at>=?", (day,)),
         ],
         "system": [
             ("Workers jobs", "jobs", "SELECT COUNT(*) FROM push_delivery_jobs WHERE created_at>=?", (day,)),
@@ -89462,16 +89878,25 @@ def backend_command_live_metrics():
         items = []
         for label, key, query, *maybe_params in rows:
             params = maybe_params[0] if maybe_params else ()
-            items.append({"label": label, "key": key, "value": backend_command_safe_scalar(query, params)})
+            value, available = backend_command_safe_scalar(query, params)
+            items.append({"label": label, "key": key, "value": value, "available": available})
         output[module] = items
     return output
 
 
 def backend_command_metric_html(metrics):
-    return "".join(
-        f"<div class='ops-metric'><strong>{int(item.get('value') or 0)}</strong><span>{clean_html(item.get('label') or '')}</span></div>"
-        for item in metrics[:4]
-    )
+    """Render module metrics, showing an explicit unknown for unanswerable ones."""
+    cells = []
+    for item in metrics[:4]:
+        label = clean_html(item.get("label") or "")
+        if item.get("available"):
+            cells.append(f"<div class='ops-metric'><strong>{int(item.get('value') or 0)}</strong><span>{label}</span></div>")
+        else:
+            cells.append(
+                "<div class='ops-metric ops-metric-unavailable' title='This metric could not be computed. It is not a measured zero.'>"
+                f"<strong>&mdash;</strong><span>{label} (unavailable)</span></div>"
+            )
+    return "".join(cells)
 
 
 @webhook_app.route("/admin/command-center", methods=["GET"])
@@ -89487,8 +89912,18 @@ def admin_command_center_page():
     except Exception as exc:
         logging.warning("BACKEND_MANAGEMENT_REGISTRY_SYNC_FAILED error=%s", exc)
     registry_features = backend_management_registry.visible_features(admin, admin_has_permission)
+    # Readiness is verified against runtime facts, not against the registry's own
+    # literals. Without this the Launch Readiness card can only ever say
+    # "Blocked: 0", because nothing in the registry could produce a blocked
+    # feature - a surface can 404 in production and still read green.
+    readiness = backend_management_registry.launch_readiness(
+        registered_rules=live_registered_rules(),
+        existing_tables=live_table_names(),
+    )
+    registry_features = backend_management_registry.verify_features(
+        live_registered_rules(), live_table_names(), registry_features
+    )
     registry_summary = backend_management_registry.category_summary(registry_features)
-    readiness = backend_management_registry.launch_readiness()
     operating_snapshot = backend_management_registry.operating_system_snapshot(registry_features)
     live_metrics = backend_command_live_metrics()
     module_cards = []
@@ -89514,7 +89949,28 @@ def admin_command_center_page():
         "<h2><span class='status-dot " + launch_class + "'></span> Launch Readiness</h2>"
         f"<p class='metric'>{int(readiness.get('score') or 0)}%</p>"
         f"<p class='muted'>Critical backend management: {int(readiness.get('critical_active') or 0)} active of {int(readiness.get('critical_total') or 0)}. Partial: {int(readiness.get('critical_partial') or 0)}. Blocked: {int(readiness.get('critical_blocked') or 0)}.</p>"
-        "<p><a class='button command-center-link' href='/admin/launch-readiness'>Open Launch Readiness Dashboard</a></p>"
+        f"<p class='muted'>{clean_html(readiness.get('verification_note') or '')}</p>"
+        + (
+            "<p class='muted'><strong>Unreachable surfaces:</strong> "
+            + clean_html(", ".join(
+                f"{row.get('feature_key')} ({row.get('route')})"
+                for row in (readiness.get("unreachable_routes") or [])[:8]
+            ))
+            + "</p>"
+            if readiness.get("unreachable_route_count") else
+            ""
+        )
+        + (
+            f"<p class='muted'><strong>Features whose audit table does not exist:</strong> "
+            + clean_html(", ".join(
+                f"{row.get('feature_key')} ({row.get('audit_log_table')})"
+                for row in (readiness.get("audit_table_missing") or [])[:8]
+            ))
+            + "</p>"
+            if readiness.get("audit_table_missing_count") else
+            ""
+        )
+        + "<p><a class='button command-center-link' href='/admin/launch-readiness'>Open Launch Readiness Dashboard</a></p>"
         "</section>"
     )
     standard = backend_management_registry.audit_standard()
@@ -89651,7 +90107,17 @@ def admin_backend_management_module_page(module_key):
     query = clean_html(request.args.get("q") or "").lower()[:80]
     status_filter = clean_html(request.args.get("status") or "all").lower()[:40]
     risk_filter = clean_html(request.args.get("risk") or "all").lower()[:40]
-    all_module_features = [item for item in backend_management_registry.visible_features(admin, admin_has_permission) if item.get("category") == module_key]
+    # Verify before filtering: a feature whose admin route is not registered in
+    # this process must not be presented as READY with a working Manage button.
+    all_module_features = [
+        item
+        for item in backend_management_registry.verify_features(
+            live_registered_rules(),
+            live_table_names(),
+            backend_management_registry.visible_features(admin, admin_has_permission),
+        )
+        if item.get("category") == module_key
+    ]
     features = []
     for item in all_module_features:
         haystack = " ".join(str(item.get(key) or "") for key in ("feature_key", "display_name", "owner", "backend_service", "notes")).lower()
@@ -89667,14 +90133,24 @@ def admin_backend_management_module_page(module_key):
     rows = []
     for item in features:
         risk = str(item.get("risk_level") or "low")
-        state = "READY" if item.get("status") == "active" and item.get("manageable_from_backend") else "PARTIAL" if item.get("status") == "partial" else "WARNING"
+        effective = str(item.get("effective_status") or item.get("status") or "")
+        state = "READY" if effective == "active" and item.get("manageable_from_backend") else "PARTIAL" if effective == "partial" else "WARNING"
+        # An unregistered route means the Manage button leads nowhere. Say so
+        # instead of rendering a button that 404s.
+        if item.get("route_registered") is False:
+            manage = "<span class='pill' title='This admin route is not registered in this process.'>Not registered</span>"
+        else:
+            manage = f"<a class='button' href='{clean_html(item.get('route') or '/admin/command-center')}'>Manage</a>"
+        audit_cell = clean_html(item.get("audit_log_table") or "")
+        if item.get("audit_table_exists") is False:
+            audit_cell += " <span class='pill' title='This audit table does not exist in the live schema, so nothing is being recorded.'>missing</span>"
         rows.append(
             "<tr>"
             f"<td><strong>{clean_html(item.get('display_name') or '')}</strong><br><small>{clean_html(item.get('feature_key') or '')}</small></td>"
             f"<td><span class='pill'>{clean_html(state)}</span> <span class='pill'>{clean_html(risk)}</span></td>"
             f"<td>{clean_html(item.get('owner') or '')}<br><small>{clean_html(item.get('backend_service') or '')}</small></td>"
-            f"<td>{clean_html(item.get('audit_log_table') or '')}</td>"
-            f"<td><a class='button' href='{clean_html(item.get('route') or '/admin/command-center')}'>Manage</a></td>"
+            f"<td>{audit_cell}</td>"
+            f"<td>{manage}</td>"
             "</tr>"
         )
     module_summary = next((item for item in backend_management_registry.category_summary(all_module_features) if item.get("category") == module_key), {})
@@ -89709,8 +90185,8 @@ def admin_backend_management_module_page(module_key):
       <h2>Feature Inventory</h2>
       <form class='module-search' method='get'>
         <label>Search<input name='q' value='{clean_html(query)}' placeholder='feature, owner, service'></label>
-        <label>Status<select name='status'><option value='all'>All</option><option value='active'>Active</option><option value='partial'>Partial</option><option value='planned'>Planned</option><option value='blocked'>Blocked</option></select></label>
-        <label>Risk<select name='risk'><option value='all'>All</option><option value='critical'>Critical</option><option value='high'>High</option><option value='medium'>Medium</option><option value='low'>Low</option></select></label>
+        <label>Status<select name='status'>{''.join(f"<option value='{opt}'{' selected' if status_filter == opt else ''}>{opt.title()}</option>" for opt in ('all', 'active', 'partial', 'planned', 'blocked'))}</select></label>
+        <label>Risk<select name='risk'>{''.join(f"<option value='{opt}'{' selected' if risk_filter == opt else ''}>{opt.title()}</option>" for opt in ('all', 'critical', 'high', 'medium', 'low'))}</select></label>
         <button class='button'>Filter</button>
       </form>
       <table><tr><th>Feature</th><th>State</th><th>Owner</th><th>Audit</th><th>Manage</th></tr>{''.join(rows) or '<tr><td colspan="5">No features visible for this role.</td></tr>'}</table>
@@ -89747,14 +90223,33 @@ def _admin_crypto_metric_cards(metrics):
 
 
 def _admin_crypto_section_rows(sections):
-    return "".join(
-        "<tr>"
-        f"<td><strong>{clean_html(section.get('label') or '')}</strong><br><small>{clean_html(section.get('description') or '')}</small></td>"
-        f"<td><span class='pill'>PRODUCTION SAFE</span></td>"
-        f"<td><a class='button' href='{clean_html(section.get('route') or '/admin/command-center/crypto')}'>Manage</a></td>"
-        "</tr>"
-        for section in sections
-    )
+    """Render crypto management surfaces with a measured, not asserted, state.
+
+    Every row here used to carry a hardcoded `PRODUCTION SAFE` badge. That badge
+    was a string literal in the template: it stayed green whether or not the
+    surface behind the Manage button existed. Reading the live URL map is the
+    only way to tell an operator that a button will 404 before they click it.
+    """
+    rules = live_registered_rules()
+    known = set(rules) if rules is not None else None
+    rows = []
+    for section in sections:
+        route = str(section.get("route") or "/admin/command-center/crypto")
+        if known is None:
+            state, manage = "UNVERIFIED", f"<a class='button' href='{clean_html(route)}'>Manage</a>"
+        elif route in known:
+            state, manage = "REACHABLE", f"<a class='button' href='{clean_html(route)}'>Manage</a>"
+        else:
+            state = "UNREACHABLE"
+            manage = "<span class='pill' title='This surface is not registered in this process. The optional route pack that provides it failed to load.'>Not registered</span>"
+        rows.append(
+            "<tr>"
+            f"<td><strong>{clean_html(section.get('label') or '')}</strong><br><small>{clean_html(section.get('description') or '')}</small></td>"
+            f"<td><span class='pill'>{state}</span></td>"
+            f"<td>{manage}</td>"
+            "</tr>"
+        )
+    return "".join(rows)
 
 
 @webhook_app.route("/admin/command-center/crypto", methods=["GET"])
@@ -90881,7 +91376,10 @@ def admin_backend_launch_readiness_page():
     admin, denied = require_admin_page("command_center.view")
     if denied:
         return denied
-    readiness = backend_management_registry.launch_readiness()
+    readiness = backend_management_registry.launch_readiness(
+        registered_rules=live_registered_rules(),
+        existing_tables=live_table_names(),
+    )
     operating_snapshot = backend_management_registry.operating_system_snapshot()
     gap_rows = "".join(
         f"<tr><td>{clean_html(item.get('feature_key') or '')}</td><td>{clean_html(item.get('severity') or '')}</td><td>{clean_html(item.get('reason') or '')}</td><td>{clean_html(item.get('route') or '')}</td></tr>"
@@ -90906,6 +91404,11 @@ def admin_backend_launch_readiness_page():
       <div class='card'><h2>Audit Missing</h2><p class='metric'>{int(readiness.get('audit_missing') or 0)}</p></div>
       <div class='card'><h2>Strict Gaps</h2><p class='metric'>{int(readiness.get('strict_gap_count') or 0)}</p></div>
     </section>
+    <section class='card'><h2>Verification</h2><p class='muted'>{clean_html(readiness.get('verification_note') or '')}</p>
+      <table><tr><th>Feature</th><th>Declared route</th><th>Launch critical</th></tr>{''.join(f"<tr><td>{clean_html(row.get('feature_key') or '')}</td><td>{clean_html(row.get('route') or '')}</td><td>{'yes' if row.get('launch_critical') else 'no'}</td></tr>" for row in (readiness.get('unreachable_routes') or [])) or '<tr><td colspan="3">Every declared admin route resolves in this process.</td></tr>'}</table>
+      <p class='muted'>Routes above are declared by the registry but were not found in the live URL map. Optional route packs register inside except blocks, so a subsystem can disappear without raising.</p>
+      <table><tr><th>Feature</th><th>Declared audit table</th></tr>{''.join(f"<tr><td>{clean_html(row.get('feature_key') or '')}</td><td>{clean_html(row.get('audit_log_table') or '')}</td></tr>" for row in (readiness.get('audit_table_missing') or [])) or '<tr><td colspan="2">Every declared audit table exists in the live schema.</td></tr>'}</table>
+    </section>
     <section class='card'><h2>Strict Launch Rules</h2><p class='muted'>Launch readiness requires a registered backend owner, management route, permission gate, audit target, QA report, and safe failure behavior. External services show only env-name readiness and never secrets.</p></section>
     <section class='card'><h2>Module Readiness</h2><table><tr><th>Module</th><th>Readiness</th><th>Active</th><th>Gaps</th><th>Risk</th></tr>{module_rows}</table></section>
     <section class='card'><h2>Gaps</h2><table><tr><th>Feature</th><th>Severity</th><th>Reason</th><th>Route</th></tr>{gap_rows or '<tr><td colspan="4">No backend management gaps detected.</td></tr>'}</table></section>
@@ -90925,7 +91428,10 @@ def api_admin_backend_management_registry():
         "ok": True,
         "features": features,
         "modules": backend_management_registry.category_summary(features),
-        "launch_readiness": backend_management_registry.launch_readiness(),
+        "launch_readiness": backend_management_registry.launch_readiness(
+            registered_rules=live_registered_rules(),
+            existing_tables=live_table_names(),
+        ),
         "operating_system": backend_management_registry.operating_system_snapshot(features),
         "audit_standard": backend_management_registry.audit_standard(),
     })
@@ -108509,15 +109015,78 @@ def api_pulse_translation_languages():
 
 @webhook_app.route("/health", methods=["GET"])
 def health_check():
+    """Liveness: this process is answering. `ok` now reports whether it can work.
+
+    This endpoint used to return a literal `"ok": True`. That value was not
+    computed from anything, so no outage could change it - a web process whose
+    database had gone away answered `200 {"ok": true}` for as long as gunicorn
+    stayed up. It is the same defect the rest of this mission kept finding: a
+    green signal wired to nothing, which is worse than no signal because it is
+    trusted.
+
+    `ok` is now derived from a cached one-statement database ping (see
+    `services/db.ping`) and from route-pack registration, because those are the
+    two things that decide whether this process can serve a request at all.
+
+    The status code deliberately stays 200 while the process answers. Liveness
+    and readiness are different questions and a platform that restarts a
+    container on a transient database blip makes an outage longer, not shorter.
+    `/health/ready` below is the one that returns 503, and it is the one to
+    point a load balancer at.
+    """
     from services.content_translation import health_status as translation_health
 
+    database = db_service.ping()
+    route_packs_ok = all(bool(state.get("registered")) for state in ROUTE_PACK_STATUS.values())
     response = jsonify({
-        "ok": True,
+        "ok": bool(database.get("connected")) and route_packs_ok,
         "service": "coinpilotx-web",
+        "checks": {
+            "database": {
+                "connected": bool(database.get("connected")),
+                "latency_ms": database.get("latency_ms"),
+                "cached": bool(database.get("cached")),
+            },
+            "route_packs": route_packs_ok,
+        },
         "translation": translation_health(probe=False),
     })
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response, 200
+
+
+@webhook_app.route("/health/ready", methods=["GET"])
+def readiness_check():
+    """Readiness: should this process receive traffic right now?
+
+    Separate from `/health` on purpose. Liveness answers "is the process alive",
+    readiness answers "can it complete a request", and conflating them is how a
+    deployment ends up either never rolling back a broken release or restarting
+    a healthy container during a database hiccup.
+
+    Returns 503 when the database is unreachable or a route pack failed to
+    register. Both are conditions under which requests will fail, so removing
+    this instance from rotation is the correct response.
+    """
+    database = db_service.ping()
+    failed_packs = sorted(
+        name for name, state in ROUTE_PACK_STATUS.items() if not state.get("registered")
+    )
+    ready = bool(database.get("connected")) and not failed_packs
+    payload = {
+        "ready": ready,
+        "database_connected": bool(database.get("connected")),
+        "database_latency_ms": database.get("latency_ms"),
+        "failed_route_packs": failed_packs,
+    }
+    if not database.get("connected"):
+        # The exception text can carry the connection string. Never echo it.
+        payload["reason"] = "database_unreachable"
+    elif failed_packs:
+        payload["reason"] = "route_packs_failed"
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response, 200 if ready else 503
 
 
 @webhook_app.route("/health/routes", methods=["GET"])
@@ -108601,10 +109170,14 @@ def undx_policy_health_check():
     sign in to run is worthless when the thing that is broken might be sign-in.
     Booleans and capability ids only — no secrets, no user data.
     """
+    if not _env_bool("UNDX_HEALTH_ENDPOINT_ENABLED", True):
+        return jsonify({"ok": False, "status": "disabled"}), 404
     try:
         from services import undx_agent_policy as _policy
         from services import undx_agent_tools as _tools
         from services import undx_architecture as _architecture
+        from services import undx_mission_runtime as _mission_runtime
+        from services import undx_tool_gateway as _gateway
         from services import undx_verification as _verification
         from services.undx_brain import config as _brain_config
         from services.undx_brain import corpus as _corpus
@@ -108621,6 +109194,17 @@ def undx_policy_health_check():
         policy_gaps = unregistered_tool_names()
         database_state = db_service.health_check()
         worker_state = get_worker_heartbeat("coinpilotx-undx-worker")
+        worker_last_seen = worker_state.get("last_seen_at") if worker_state else None
+        worker_online = False
+        if worker_last_seen:
+            try:
+                seen = datetime.fromisoformat(str(worker_last_seen).replace("Z", "+00:00"))
+                if seen.tzinfo is None:
+                    seen = seen.replace(tzinfo=timezone.utc)
+                worker_online = (datetime.now(timezone.utc) - seen).total_seconds() <= 180
+            except ValueError:
+                worker_online = False
+        mission_surface = _mission_runtime.surface()
         degraded = []
         if not database_state.get("connected"):
             degraded.append("database")
@@ -108630,8 +109214,12 @@ def undx_policy_health_check():
             degraded.append("policy_parity")
         if corpus_state.fatal:
             degraded.append("source_corpus")
-        if not worker_state:
+        if not worker_online:
             degraded.append("undx_worker_heartbeat")
+        if mission_surface.dynamic_escalation:
+            degraded.append("dynamic_limit_escalation")
+        if mission_surface.worker and not mission_surface.enabled:
+            degraded.append("mission_runtime")
         status = "healthy" if not degraded else "degraded"
         payload = {
             "ok": status == "healthy",
@@ -108647,6 +109235,10 @@ def undx_policy_health_check():
                 "writes": policy_flags["writes_enabled"],
                 "disable_writes": policy_flags["writes_kill_switch"],
                 "writes_available": _policy.writes_available(),
+                "emergency_kill_switch": policy_flags["emergency_kill_switch"],
+                "global_write_kill_switch": policy_flags["global_write_kill_switch"],
+                "read_kill_switch": policy_flags["read_kill_switch"],
+                "required_write_guards": policy_flags["required_write_guards"],
                 "fail_closed": bool(brain_flags["UNDX_AGENT_FAIL_CLOSED"]),
                 "qa_cohort_configured": policy_flags["qa_cohort_configured"],
             },
@@ -108663,7 +109255,26 @@ def undx_policy_health_check():
             },
             "audit": {
                 "required": bool(brain_flags["UNDX_AGENT_REQUIRE_AUDIT"]),
+                "available": callable(getattr(_gateway, "execute", None)),
+            },
+            "idempotency": {
+                "required": bool(brain_flags["UNDX_AGENT_REQUIRE_IDEMPOTENCY"]),
                 "available": hasattr(_architecture, "prepare_tool_operation"),
+            },
+            "planner": {
+                "enabled": bool(brain_flags["UNDX_PLANNER_ENABLED"]),
+                "available": callable(getattr(_architecture, "build_plan", None)),
+                "dynamic_limit_escalation": mission_surface.dynamic_escalation,
+            },
+            "task_graph": {
+                "enabled": bool(brain_flags["UNDX_TASK_GRAPH_ENABLED"]),
+                "available": callable(getattr(_architecture, "persist_plan", None)),
+            },
+            "mission_runtime": {
+                "enabled": mission_surface.enabled,
+                "available": callable(getattr(_mission_runtime, "poll_once", None)),
+                "reason": mission_surface.reason,
+                "fixed_bounds": not mission_surface.dynamic_escalation,
             },
             "parity": {
                 "registry_executor": not missing_executors,
@@ -108683,11 +109294,12 @@ def undx_policy_health_check():
             },
             "worker": {
                 "heartbeat_present": bool(worker_state),
+                "online": worker_online,
                 "status": str(worker_state.get("status") or "missing"),
-                "last_seen_at": worker_state.get("last_seen_at"),
+                "last_seen_at": worker_last_seen,
             },
             "coordination": {
-                "mode": "postgresql-and-process-local",
+                "mode": "postgresql-durable-leases",
                 "database_ok": bool(database_state.get("connected")),
             },
             "provider": {

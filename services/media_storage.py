@@ -23,10 +23,18 @@ def storage_status():
     current = provider()
     if current in {"r2", "s3"}:
         endpoint = _s3_endpoint()
+        # These presence checks must accept exactly the aliases _client() and
+        # _bucket() accept a few lines below. Checking only the R2_* names made a
+        # working S3_BUCKET / AWS_* deployment report configured=False on the
+        # Media Storage admin panel while uploads were succeeding.
         required = {
-            "R2_ACCESS_KEY_ID": bool(os.getenv("R2_ACCESS_KEY_ID")),
-            "R2_SECRET_ACCESS_KEY": bool(os.getenv("R2_SECRET_ACCESS_KEY")),
-            "R2_BUCKET": bool(os.getenv("R2_BUCKET")),
+            "R2_ACCESS_KEY_ID or AWS_ACCESS_KEY_ID": bool(
+                os.getenv("R2_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID")
+            ),
+            "R2_SECRET_ACCESS_KEY or AWS_SECRET_ACCESS_KEY": bool(
+                os.getenv("R2_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
+            ),
+            "R2_BUCKET or S3_BUCKET": bool(os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET")),
             "R2_PUBLIC_BASE_URL": bool(os.getenv("R2_PUBLIC_BASE_URL")),
         }
         if current == "r2":
@@ -36,7 +44,7 @@ def storage_status():
             "configured": all(required.values()),
             "required": required,
             "public_base_url": os.getenv("R2_PUBLIC_BASE_URL", "").strip(),
-            "bucket": os.getenv("R2_BUCKET", "").strip(),
+            "bucket": (os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET") or "").strip(),
             "endpoint_configured": bool(endpoint),
             "endpoint_host": endpoint.split("//", 1)[-1].split("/", 1)[0] if endpoint else "",
         }

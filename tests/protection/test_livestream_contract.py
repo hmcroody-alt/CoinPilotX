@@ -14,6 +14,10 @@ MUX_SERVICE = (ROOT / "services/mux_live_service.py").read_text(encoding="utf-8"
 
 
 def expect(condition: bool, label: str) -> None:
+    # Counted so scripts/protection/run_protection_suite.py can prove this file
+    # actually executed. A suite that exits 0 having checked nothing is the
+    # failure mode the runner exists to catch.
+    expect.calls = getattr(expect, "calls", 0) + 1
     if not condition:
         raise AssertionError(label)
     print(f"ok - {label}")
@@ -37,6 +41,7 @@ def main() -> None:
     expect("maskDeviceId" in combined_live_js, "camera diagnostics mask device identifiers")
     expect("rtmp_url" in BOT and "stream_key" in BOT, "RTMP fields remain backend-owned")
     expect("Stream keys are visible only to the host Studio" in BOT, "stream key exposure warning remains host-only")
+    print(f"PROTECTION_TESTS_RUN={getattr(expect, 'calls', 0)}")
     print("livestream protection contract ok")
 
 

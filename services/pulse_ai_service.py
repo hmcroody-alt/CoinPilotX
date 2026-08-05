@@ -1188,21 +1188,51 @@ def get_mission(user_id: int, mission_id: str) -> dict:
 
 
 def cancel_mission(user_id: int, mission_id: str) -> dict:
+    from services import undx_mission_runtime
+
     conn, cur = _open_db()
     try:
+        undx_mission_runtime.ensure_schema(cur)
+        clean_id = _clean(mission_id, 120)
+        if not undx_mission_runtime.cancel(cur, int(user_id), clean_id):
+            return {"ok": False, "error": "mission_not_cancellable", "message": "That UNDX mission is unavailable or already complete.", "http_status": 404}
         timestamp = _now()
         cur.execute(
-            "UPDATE pulse_ai_missions SET status='cancelled', updated_at=? WHERE mission_id=? AND user_id=? AND status NOT IN ('succeeded','failed','cancelled')",
-            (timestamp, _clean(mission_id, 120), int(user_id)),
-        )
-        if int(cur.rowcount or 0) < 1:
-            return {"ok": False, "error": "mission_not_cancellable", "message": "That UNDX mission is unavailable or already complete.", "http_status": 404}
-        cur.execute(
             "UPDATE pulse_ai_task_nodes SET status='cancelled', updated_at=? WHERE mission_id=? AND user_id=? AND status NOT IN ('succeeded','failed','cancelled')",
-            (timestamp, _clean(mission_id, 120), int(user_id)),
+            (timestamp, clean_id, int(user_id)),
         )
         conn.commit()
-        return {"ok": True, "mission_id": _clean(mission_id, 120), "status": "cancelled"}
+        return {"ok": True, "mission_id": clean_id, "status": "cancelled"}
+    finally:
+        conn.close()
+
+
+def pause_mission(user_id: int, mission_id: str) -> dict:
+    from services import undx_mission_runtime
+
+    conn, cur = _open_db()
+    try:
+        undx_mission_runtime.ensure_schema(cur)
+        clean_id = _clean(mission_id, 120)
+        if not undx_mission_runtime.request_pause(cur, int(user_id), clean_id):
+            return {"ok": False, "error": "mission_not_pauseable", "message": "That UNDX mission cannot be paused.", "http_status": 409}
+        conn.commit()
+        return {"ok": True, "mission_id": clean_id, "status": "paused"}
+    finally:
+        conn.close()
+
+
+def resume_mission(user_id: int, mission_id: str) -> dict:
+    from services import undx_mission_runtime
+
+    conn, cur = _open_db()
+    try:
+        undx_mission_runtime.ensure_schema(cur)
+        clean_id = _clean(mission_id, 120)
+        if not undx_mission_runtime.resume(cur, int(user_id), clean_id):
+            return {"ok": False, "error": "mission_not_resumable", "message": "That UNDX mission cannot be resumed.", "http_status": 409}
+        conn.commit()
+        return {"ok": True, "mission_id": clean_id, "status": "ready"}
     finally:
         conn.close()
 

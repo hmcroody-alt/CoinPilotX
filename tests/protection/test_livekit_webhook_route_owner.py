@@ -16,5 +16,9 @@ def test_provider_webhook_has_one_canonical_owner() -> None:
 
 
 if __name__ == "__main__":
-    test_provider_webhook_has_one_canonical_owner()
-    print("LiveKit webhook route ownership contract ok")
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _runner import run_module_tests
+
+    raise SystemExit(run_module_tests(globals()))

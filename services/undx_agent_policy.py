@@ -52,12 +52,37 @@ AGENT_KILL_SWITCH_ENV = "UNDX_AGENT_DISABLE_WRITES"
 AGENT_ALLOWLIST_ENV = "UNDX_AGENT_ENABLED_CAPABILITIES"
 AGENT_DENYLIST_ENV = "UNDX_AGENT_DISABLED_CAPABILITIES"
 AGENT_QA_USERS_ENV = "UNDX_AGENT_QA_USER_IDS"
+EMERGENCY_KILL_SWITCH_ENV = "UNDX_EMERGENCY_KILL_SWITCH"
+GLOBAL_WRITE_KILL_SWITCH_ENV = "UNDX_WRITE_KILL_SWITCH"
+READ_KILL_SWITCH_ENV = "UNDX_READ_KILL_SWITCH"
+LEGACY_WRITE_KILL_SWITCH_ENV = "UNDX_V4_DISABLE_WRITES"
+
+# These controls describe protections that the governed gateway already enforces.
+# Treating an explicit false value as a deployment defect keeps an operator from
+# advertising a weaker contract than the code and, more importantly, prevents a
+# future conditional implementation from silently weakening the write path.
+REQUIRED_WRITE_GUARDS: tuple[str, ...] = (
+    "UNDX_AGENT_REQUIRE_AUTHORIZATION",
+    "UNDX_AGENT_REQUIRE_IDEMPOTENCY",
+    "UNDX_AGENT_REQUIRE_VERIFICATION",
+    "UNDX_AGENT_REQUIRE_AUDIT",
+    "UNDX_AGENT_FAIL_CLOSED",
+    "UNDX_VERIFICATION_FAILURE_FAIL_CLOSED",
+    "UNDX_COMPLETION_REQUIRE_VERIFIED_SUCCESS",
+)
+EXECUTOR_ONLY_SUCCESS_ENV = "UNDX_COMPLETION_ALLOW_EXECUTOR_ONLY_SUCCESS"
 
 logger = logging.getLogger(__name__)
 
 
 def _truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _guard_enabled(name: str) -> bool:
+    """Required safety guards default on but fail closed when explicitly disabled."""
+    raw = os.getenv(name)
+    return True if raw is None or str(raw).strip() == "" else _truthy(raw)
 
 
 def _id_set(raw: str) -> set[str]:
@@ -111,6 +136,12 @@ def flags() -> dict[str, Any]:
         "reads_enabled": _truthy(os.getenv(AGENT_READS_ENV)),
         "writes_enabled": _truthy(os.getenv(AGENT_WRITES_ENV)),
         "writes_kill_switch": _truthy(os.getenv(AGENT_KILL_SWITCH_ENV)),
+        "emergency_kill_switch": _truthy(os.getenv(EMERGENCY_KILL_SWITCH_ENV)),
+        "global_write_kill_switch": _truthy(os.getenv(GLOBAL_WRITE_KILL_SWITCH_ENV)),
+        "read_kill_switch": _truthy(os.getenv(READ_KILL_SWITCH_ENV)),
+        "legacy_write_kill_switch": _truthy(os.getenv(LEGACY_WRITE_KILL_SWITCH_ENV)),
+        "required_write_guards": all(_guard_enabled(name) for name in REQUIRED_WRITE_GUARDS),
+        "executor_only_success": _truthy(os.getenv(EXECUTOR_ONLY_SUCCESS_ENV)),
         "capability_allowlist": sorted(_id_set(os.getenv(AGENT_ALLOWLIST_ENV, ""))),
         "capability_denylist": sorted(_id_set(os.getenv(AGENT_DENYLIST_ENV, ""))),
         "qa_cohort_configured": bool(_id_set(os.getenv(AGENT_QA_USERS_ENV, ""))),
@@ -139,7 +170,9 @@ def user_enabled(user_id: int | None) -> bool:
     means everyone" behaviour, because that turns a missing environment variable
     into a full production rollout.
     """
-    if not _truthy(os.getenv(AGENT_ENABLED_ENV)) or not int(user_id or 0):
+    if (_truthy(os.getenv(EMERGENCY_KILL_SWITCH_ENV))
+            or not _truthy(os.getenv(AGENT_ENABLED_ENV))
+            or not int(user_id or 0)):
         return False
     return str(int(user_id)) in {part for part in _id_set(os.getenv(AGENT_QA_USERS_ENV, "")) if part.isdigit()}
 
@@ -155,9 +188,27 @@ def capability_enabled(capability_id: str) -> bool:
 
 def writes_available() -> bool:
     """Whether any agent write may run right now."""
-    if _truthy(os.getenv(AGENT_KILL_SWITCH_ENV)):
+    if any(_truthy(os.getenv(name)) for name in (
+        EMERGENCY_KILL_SWITCH_ENV,
+        GLOBAL_WRITE_KILL_SWITCH_ENV,
+        AGENT_KILL_SWITCH_ENV,
+        LEGACY_WRITE_KILL_SWITCH_ENV,
+    )):
+        return False
+    if not all(_guard_enabled(name) for name in REQUIRED_WRITE_GUARDS):
+        return False
+    if _truthy(os.getenv(EXECUTOR_ONLY_SUCCESS_ENV)):
         return False
     return _truthy(os.getenv(AGENT_WRITES_ENV))
+
+
+def reads_available() -> bool:
+    """Whether supporting and user-requested reads may run right now."""
+    if _truthy(os.getenv(EMERGENCY_KILL_SWITCH_ENV)):
+        return False
+    if _truthy(os.getenv(READ_KILL_SWITCH_ENV)):
+        return False
+    return _truthy(os.getenv(AGENT_READS_ENV))
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +278,7 @@ def evaluate(
             )
             return _deny(spec, "writes_disabled",
                          "UNDX is currently read-only. It can look things up but not change them.")
-    elif not _truthy(os.getenv(AGENT_READS_ENV)):
+    elif not reads_available():
         return _deny(spec, "reads_disabled", "UNDX cannot look that up right now.")
 
     # 5. Ambiguity is refused rather than guessed. Acting on "pause my alert" when
@@ -269,8 +320,11 @@ log_rollout_surface("import")
 __all__ = [
     "Decision", "ALLOW", "REQUIRE_CONFIRMATION", "DENY",
     "evaluate", "classify_risk", "flags", "log_rollout_surface", "user_enabled",
-    "capability_enabled", "writes_available",
+    "capability_enabled", "writes_available", "reads_available",
     "AGENT_ENABLED_ENV", "AGENT_READS_ENV", "AGENT_WRITES_ENV",
     "AGENT_KILL_SWITCH_ENV", "AGENT_ALLOWLIST_ENV", "AGENT_DENYLIST_ENV",
     "AGENT_QA_USERS_ENV",
+    "EMERGENCY_KILL_SWITCH_ENV", "GLOBAL_WRITE_KILL_SWITCH_ENV",
+    "READ_KILL_SWITCH_ENV", "LEGACY_WRITE_KILL_SWITCH_ENV",
+    "REQUIRED_WRITE_GUARDS", "EXECUTOR_ONLY_SUCCESS_ENV",
 ]

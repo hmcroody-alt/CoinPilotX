@@ -19,7 +19,7 @@ from services import undx_policy
 logger = logging.getLogger(__name__)
 
 
-MISSION_STATUSES = {"pending", "ready", "running", "blocked", "waiting_confirmation", "succeeded", "failed", "cancelled"}
+MISSION_STATUSES = {"pending", "ready", "running", "blocked", "paused", "waiting_confirmation", "succeeded", "failed", "cancelled"}
 NODE_STATUSES = {"pending", "ready", "running", "blocked", "waiting_confirmation", "succeeded", "failed", "cancelled", "skipped", "rolled_back"}
 HIGH_IMPACT_TOOLS = {name for name, item in undx_policy.PRODUCTION_TOOL_REGISTRY.items() if item.get("confirmation")}
 
@@ -236,6 +236,7 @@ def build_plan(user_id: int, message: str, context: dict[str, Any], client_reque
         "status": "waiting_confirmation" if context.get("requires_confirmation") else "ready",
         "reasoning_mode": context.get("reasoning_mode"),
         "skills": skills,
+        "authorized_tools": list(context.get("tool_names") or []),
         "nodes": nodes,
         "dry_run": True,
         "client_request_id": clean(client_request_id, 160),
@@ -381,17 +382,22 @@ def apply_bounds(plan: dict[str, Any], env: Any = None) -> dict[str, Any]:
 
 
 def persist_plan(cur, user_id: int, conversation_id: int, plan: dict[str, Any], config_version: str) -> dict[str, Any]:
+    from services import undx_mission_runtime
+
+    plan = undx_mission_runtime.prepare_plan({**plan, "config_version": config_version})
     timestamp = now()
+    checkpoint = undx_mission_runtime.checkpoint_for(plan)
     cur.execute(
         """INSERT OR IGNORE INTO pulse_ai_missions
         (mission_id, user_id, conversation_id, objective, scope_json, constraints_json,
          success_criteria_json, risk_level, status, checkpoint_json, rollback_plan_json,
          client_request_id, config_version, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?)""",
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?)""",
         (plan["mission_id"], int(user_id), int(conversation_id), plan["objective"],
-         json.dumps({"skills": plan["skills"]}), json.dumps({"bounded": True}),
+         json.dumps({"skills": plan["skills"], "authorized_tools": plan.get("authorized_tools") or []}),
+         json.dumps({"bounded": True, "fixed_at_creation": True}),
          json.dumps(["verified response", "no unauthorized action"]), plan["risk_level"],
-         plan["status"], json.dumps({"disable_config": config_version, "preserve_records": True}),
+         plan["status"], json.dumps(checkpoint, sort_keys=True),
          plan.get("client_request_id") or "", config_version, timestamp, timestamp),
     )
     for index, node in enumerate(plan["nodes"], start=1):
@@ -401,10 +407,11 @@ def persist_plan(cur, user_id: int, conversation_id: int, plan: dict[str, Any], 
             (node_id, mission_id, user_id, parent_node_id, level, node_type, objective,
              dependencies_json, status, success_condition, tool_name, idempotency_key,
              result_json, verification_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, '{}', '{}', ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', '{}', ?, ?)""",
             (node_id, plan["mission_id"], int(user_id), None if index == 1 else f"{plan['mission_id']}:n{index-1}",
              node["level"], node["node_type"], node["objective"], json.dumps([] if index == 1 else [f"{plan['mission_id']}:n{index-1}"]),
-             node["status"], node["success_condition"], f"{plan['mission_id']}:{index}", timestamp, timestamp),
+             node["status"], node["success_condition"], clean(node.get("tool_name") or "", 160),
+             f"{plan['mission_id']}:{index}", timestamp, timestamp),
         )
     return plan
 
