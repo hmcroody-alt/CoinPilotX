@@ -1,5 +1,6 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { colors } from "../../theme/colors";
 import { logiNexus } from "../../theme/logiNexus";
 import { SecureTextField } from "./SecureTextField";
@@ -75,10 +76,12 @@ export const ManualLoginForm = forwardRef<
         accessibilityState={{ disabled: !canSubmit, busy: submitting }}
         disabled={!canSubmit}
         testID="login-submit"
-        style={({ pressed }) => [styles.submit, { opacity: !canSubmit ? 0.5 : pressed ? 0.85 : 1 }]}
+        style={({ pressed }) => [styles.submit, { opacity: !canSubmit ? 0.42 : pressed ? 0.82 : 1 }]}
         onPress={onSubmit}
       >
-        {submitting ? <ActivityIndicator color={colors.background} /> : <Text style={styles.submitText}>Sign in</Text>}
+        <LinearGradient colors={["#2E91F4", "#43D7C5", "#6DE65B"]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.submitGradient}>
+          {submitting ? <ActivityIndicator color={colors.background} /> : <Text style={styles.submitText}>Sign in</Text>}
+        </LinearGradient>
       </Pressable>
     </View>
   );
@@ -95,9 +98,13 @@ const styles = StyleSheet.create({
     textAlign: "center"
   },
   submit: {
-    alignItems: "center",
-    backgroundColor: colors.accentStrong,
     borderRadius: logiNexus.radius.medium,
+    minHeight: 54,
+    overflow: "hidden"
+  },
+  submitGradient: {
+    alignItems: "center",
+    flex: 1,
     justifyContent: "center",
     minHeight: 54
   },

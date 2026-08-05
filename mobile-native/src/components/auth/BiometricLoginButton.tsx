@@ -50,7 +50,7 @@ export function BiometricLoginButton({
   }, [glow, reducedMotion, state]);
 
   const disabled = state === "loading";
-  const backgroundColor = state === "success" ? colors.accent : state === "failed" ? colors.danger : colors.accent;
+  const accentColor = state === "success" ? colors.accent : state === "failed" ? colors.danger : colors.accent;
 
   return (
     <Pressable
@@ -60,13 +60,13 @@ export function BiometricLoginButton({
       disabled={disabled}
       testID="biometric-login-button"
       onPress={onPress}
-      style={({ pressed }) => [styles.button, { backgroundColor, opacity: pressed ? 0.85 : 1 }]}
+      style={({ pressed }) => [styles.button, { borderColor: accentColor, opacity: pressed ? 0.75 : 1 }]}
     >
       <Animated.View style={[styles.iconWrap, { opacity: reducedMotion ? 1 : glow }]}>
         {state === "loading" ? (
-          <ActivityIndicator color={colors.background} />
+          <ActivityIndicator color={accentColor} />
         ) : (
-          <MaterialCommunityIcons name={ICONS[kind]} size={22} color={colors.background} />
+          <MaterialCommunityIcons name={ICONS[kind]} size={20} color={accentColor} />
         )}
       </Animated.View>
       <Text style={styles.label} maxFontSizeMultiplier={1.6}>
@@ -87,12 +87,15 @@ export function BiometricUnavailableHint({ message }: { message: string }) {
 const styles = StyleSheet.create({
   button: {
     alignItems: "center",
-    borderRadius: logiNexus.radius.medium,
+    alignSelf: "center",
+    backgroundColor: colors.glass,
+    borderRadius: logiNexus.radius.circular,
+    borderWidth: 1,
     flexDirection: "row",
-    gap: 10,
+    gap: 8,
     justifyContent: "center",
-    minHeight: 56,
-    paddingHorizontal: logiNexus.spacing.lg
+    minHeight: 42,
+    paddingHorizontal: logiNexus.spacing.md
   },
   iconWrap: {
     alignItems: "center",
@@ -100,8 +103,8 @@ const styles = StyleSheet.create({
   },
   label: {
     ...logiNexus.typography.button,
-    fontSize: 15,
-    color: colors.background
+    fontSize: 13,
+    color: colors.text
   },
   hint: {
     paddingHorizontal: 4

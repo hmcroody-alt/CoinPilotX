@@ -29,7 +29,7 @@ const GLOW_SIZE = 96;
  * the logo's own colors, so the mark feels lit by the interface rather than
  * pasted on top of it. The logo itself is never scaled, cropped, or blurred.
  */
-export function PulseSocBrandHeader() {
+export function PulseSocBrandHeader({ compact = false }: { compact?: boolean }) {
   const reducedMotion = useLogiNexusReducedMotion();
   const rings = useRef(Array.from({ length: RING_COUNT }, () => new Animated.Value(0))).current;
   const breathe = useRef(new Animated.Value(0)).current;
@@ -80,9 +80,10 @@ export function PulseSocBrandHeader() {
       style={styles.root}
       accessible
       accessibilityRole="header"
-      accessibilityLabel="PulseSoc logo. Native access. Your network is ready."
+      accessibilityLabel="PulseSoc. Connected."
+      testID="pulse-gate-brand"
     >
-      <View style={styles.markWrap}>
+      <View style={[styles.markWrap, compact && styles.markWrapCompact]}>
         <View style={styles.decorLayer} pointerEvents="none">
           {rings.map((value, index) => {
             const scale = value.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1.7] });
@@ -102,23 +103,24 @@ export function PulseSocBrandHeader() {
             );
           })}
           <Animated.View style={[styles.glow, { opacity: reducedMotion ? 0.28 : glowOpacity }]} />
+          <Animated.View style={[styles.particle, styles.particleA, { opacity: reducedMotion ? 0.18 : glowOpacity }]} />
+          <Animated.View style={[styles.particle, styles.particleB, { opacity: reducedMotion ? 0.12 : glowOpacity }]} />
+          <Animated.View style={[styles.particle, styles.particleC, { opacity: reducedMotion ? 0.16 : glowOpacity }]} />
         </View>
 
         <Image
           source={PULSESOC_LOGO}
-          style={styles.logo}
+          style={[styles.logo, compact && styles.logoCompact]}
           resizeMode="contain"
           fadeDuration={0}
           accessible={false}
         />
       </View>
 
-      <Text style={styles.eyebrow} maxFontSizeMultiplier={1.8}>
-        Native Access
-      </Text>
-      <Text style={styles.tagline} maxFontSizeMultiplier={1.8}>
-        Your network is ready.
-      </Text>
+      <View style={styles.connection}>
+        <View style={styles.connectionDot} />
+        <Text style={styles.connectionLabel} maxFontSizeMultiplier={1.5}>Connected</Text>
+      </View>
     </View>
   );
 }
@@ -134,6 +136,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: logiNexus.spacing.sm,
     width: LOGO_WIDTH
+  },
+  markWrapCompact: {
+    height: LOGO_HEIGHT * 0.82,
+    width: LOGO_WIDTH * 0.82
   },
   decorLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -163,17 +169,42 @@ const styles = StyleSheet.create({
     height: LOGO_HEIGHT,
     width: LOGO_WIDTH
   },
-  eyebrow: {
-    color: colors.accentStrong,
-    fontSize: 12,
-    fontWeight: "900",
-    letterSpacing: 3,
-    marginTop: logiNexus.spacing.xs,
-    textTransform: "uppercase"
+  logoCompact: {
+    height: LOGO_HEIGHT * 0.82,
+    width: LOGO_WIDTH * 0.82
   },
-  tagline: {
-    color: colors.muted,
+  particle: {
+    backgroundColor: colors.accentStrong,
+    borderRadius: 3,
+    height: 3,
+    position: "absolute",
+    shadowColor: colors.accentStrong,
+    shadowOpacity: 0.7,
+    shadowRadius: 5,
+    width: 3
+  },
+  particleA: { left: 34, top: 22 },
+  particleB: { right: 28, top: 70 },
+  particleC: { bottom: 22, left: 70 },
+  connection: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginTop: -2
+  },
+  connectionDot: {
+    backgroundColor: colors.accent,
+    borderRadius: 5,
+    height: 9,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.9,
+    shadowRadius: 7,
+    width: 9
+  },
+  connectionLabel: {
+    color: colors.accent,
     fontSize: 14,
-    fontWeight: "600"
+    fontWeight: "700",
+    letterSpacing: 0.2
   }
 });

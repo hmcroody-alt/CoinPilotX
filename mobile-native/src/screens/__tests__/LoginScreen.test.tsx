@@ -29,7 +29,9 @@ jest.mock("../../session/sessionStore", () => ({
 
 jest.mock("expo-haptics", () => ({
   notificationAsync: jest.fn().mockResolvedValue(undefined),
-  NotificationFeedbackType: { Success: "success", Warning: "warning", Error: "error" }
+  impactAsync: jest.fn().mockResolvedValue(undefined),
+  NotificationFeedbackType: { Success: "success", Warning: "warning", Error: "error" },
+  ImpactFeedbackStyle: { Light: "light" }
 }));
 
 jest.mock("../../session/biometricAuth", () => ({
@@ -74,6 +76,10 @@ function setDefaultBiometricState() {
   mockedGetCachedSessionUser.mockResolvedValue(null);
 }
 
+function openPulseGate(screen: ReturnType<typeof render>) {
+  fireEvent.press(screen.getByTestId("pulse-gate-primary"));
+}
+
 describe("LoginScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -81,25 +87,35 @@ describe("LoginScreen", () => {
     jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
   });
 
-  it("renders the manual sign-in form", async () => {
-    const { getByTestId } = render(<LoginScreen />);
-    await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
-    expect(getByTestId("login-password")).toBeTruthy();
-    expect(getByTestId("login-submit")).toBeTruthy();
+  it("keeps the arrival screen minimal until the user opens the Pulse Gate", async () => {
+    const screen = render(<LoginScreen />);
+    expect(screen.getByTestId("pulse-gate-brand")).toBeTruthy();
+    expect(screen.getByTestId("pulse-gate-message")).toBeTruthy();
+    expect(screen.getByTestId("pulse-gate-primary")).toBeTruthy();
+    expect(screen.queryByTestId("login-identifier")).toBeNull();
+    expect(screen.queryByTestId("biometric-login-button")).toBeNull();
+
+    openPulseGate(screen);
+    await waitFor(() => expect(screen.getByTestId("login-identifier")).toBeTruthy());
+    expect(screen.getByTestId("login-password")).toBeTruthy();
+    expect(screen.getByTestId("login-submit")).toBeTruthy();
   });
 
   it("disables the submit button until both fields are filled", async () => {
-    const { getByTestId } = render(<LoginScreen />);
-    await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
-    expect(getByTestId("login-submit").props.accessibilityState?.disabled).toBe(true);
-    fireEvent.changeText(getByTestId("login-identifier"), "user@example.com");
-    fireEvent.changeText(getByTestId("login-password"), "password123");
-    await waitFor(() => expect(getByTestId("login-submit").props.accessibilityState?.disabled).toBe(false));
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
+    await waitFor(() => expect(screen.getByTestId("login-identifier")).toBeTruthy());
+    expect(screen.getByTestId("login-submit").props.accessibilityState?.disabled).toBe(true);
+    fireEvent.changeText(screen.getByTestId("login-identifier"), "user@example.com");
+    fireEvent.changeText(screen.getByTestId("login-password"), "password123");
+    await waitFor(() => expect(screen.getByTestId("login-submit").props.accessibilityState?.disabled).toBe(false));
   });
 
   it("shows an error message on invalid credentials", async () => {
     mockedSignIn.mockResolvedValue({ status: "signedOut", user: null });
-    const { getByTestId, findByTestId } = render(<LoginScreen />);
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
+    const { getByTestId, findByTestId } = screen;
     await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
     fireEvent.changeText(getByTestId("login-identifier"), "user@example.com");
     fireEvent.changeText(getByTestId("login-password"), "wrongpass");
@@ -111,7 +127,9 @@ describe("LoginScreen", () => {
 
   it("maps a network-unreachable error to an offline message", async () => {
     mockedSignIn.mockRejectedValue(new PulseApiError("unreachable", 503, "request_unreachable"));
-    const { getByTestId, findByTestId } = render(<LoginScreen />);
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
+    const { getByTestId, findByTestId } = screen;
     await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
     fireEvent.changeText(getByTestId("login-identifier"), "user@example.com");
     fireEvent.changeText(getByTestId("login-password"), "password123");
@@ -122,7 +140,9 @@ describe("LoginScreen", () => {
 
   it("signs the user in and updates auth state on success", async () => {
     mockedSignIn.mockResolvedValue({ status: "signedIn", user: { user_id: 5, username: "alex" } });
-    const { getByTestId } = render(<LoginScreen />);
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
+    const { getByTestId } = screen;
     await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
     fireEvent.changeText(getByTestId("login-identifier"), "alex@example.com");
     fireEvent.changeText(getByTestId("login-password"), "password123");
@@ -139,7 +159,9 @@ describe("LoginScreen", () => {
         resolveSignIn = resolve;
       })
     );
-    const { getByTestId } = render(<LoginScreen />);
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
+    const { getByTestId } = screen;
     await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
     fireEvent.changeText(getByTestId("login-identifier"), "alex@example.com");
     fireEvent.changeText(getByTestId("login-password"), "password123");
@@ -154,13 +176,17 @@ describe("LoginScreen", () => {
   it("shows the Face ID button when biometric login is available and enabled", async () => {
     mockedGetBiometricCapability.mockResolvedValue({ available: true, hasHardware: true, kind: "faceId" });
     mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(true);
-    const { findByTestId } = render(<LoginScreen />);
-    expect(await findByTestId("biometric-login-button")).toBeTruthy();
+    const screen = render(<LoginScreen />);
+    expect(screen.queryByTestId("biometric-login-button")).toBeNull();
+    openPulseGate(screen);
+    expect(await screen.findByTestId("biometric-login-button")).toBeTruthy();
   });
 
   it("hides the Face ID button when biometrics are unavailable", async () => {
     setDefaultBiometricState();
-    const { getByTestId, queryByTestId } = render(<LoginScreen />);
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
+    const { getByTestId, queryByTestId } = screen;
     await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
     expect(queryByTestId("biometric-login-button")).toBeNull();
   });
@@ -172,7 +198,9 @@ describe("LoginScreen", () => {
       outcome: "success",
       authState: { status: "signedIn", user: { user_id: 5 } }
     });
-    const { findByTestId } = render(<LoginScreen />);
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
+    const { findByTestId } = screen;
     const biometricButton = await findByTestId("biometric-login-button");
     fireEvent.press(biometricButton);
     await waitFor(() => expect(mockSetAuthState).toHaveBeenCalledWith({ status: "signedIn", user: { user_id: 5 } }));
@@ -183,7 +211,9 @@ describe("LoginScreen", () => {
     mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(true);
     mockedAuthenticateWithBiometrics.mockResolvedValue({ outcome: "session_invalid" });
     const alertSpy = jest.spyOn(Alert, "alert");
-    const { findByTestId } = render(<LoginScreen />);
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
+    const { findByTestId } = screen;
     const biometricButton = await findByTestId("biometric-login-button");
     fireEvent.press(biometricButton);
     await waitFor(() => expect(alertSpy).toHaveBeenCalledWith("Sign in required", expect.any(String)));
@@ -198,7 +228,8 @@ describe("LoginScreen", () => {
       outcome: "success",
       authState: { status: "signedIn", user: { user_id: 5 } }
     });
-    render(<LoginScreen />);
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
     await waitFor(() => expect(mockedAuthenticateWithBiometrics).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockSetAuthState).toHaveBeenCalledWith({ status: "signedIn", user: { user_id: 5 } }));
   });
@@ -207,7 +238,9 @@ describe("LoginScreen", () => {
     mockedGetBiometricCapability.mockResolvedValue({ available: true, hasHardware: true, kind: "faceId" });
     mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(true);
     mockedGetCachedSessionUser.mockResolvedValue(null);
-    const { findByTestId } = render(<LoginScreen />);
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
+    const { findByTestId } = screen;
     await findByTestId("biometric-login-button");
     // Give the auto-prompt effect's 350ms timer room to fire if it were going to.
     await act(async () => {
@@ -221,7 +254,8 @@ describe("LoginScreen", () => {
     mockedIsBiometricEnabledForCurrentSession.mockResolvedValue(true);
     mockedGetCachedSessionUser.mockResolvedValue({ user_id: 5, username: "alex", display_name: "Alex" });
     mockedAuthenticateWithBiometrics.mockResolvedValue({ outcome: "cancelled" });
-    render(<LoginScreen />);
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
     await waitFor(() => expect(mockedAuthenticateWithBiometrics).toHaveBeenCalledTimes(1));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 600));
@@ -231,14 +265,18 @@ describe("LoginScreen", () => {
   });
 
   it("navigates to the signup screen when create account is pressed", async () => {
-    const { getByTestId } = render(<LoginScreen />);
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
+    const { getByTestId } = screen;
     await waitFor(() => expect(getByTestId("create-account-button")).toBeTruthy());
     fireEvent.press(getByTestId("create-account-button"));
     expect(mockNavigate).toHaveBeenCalledWith("Signup");
   });
 
   it("navigates to account recovery when forgot password is pressed", async () => {
-    const { getByTestId } = render(<LoginScreen />);
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
+    const { getByTestId } = screen;
     await waitFor(() => expect(getByTestId("forgot-password-link")).toBeTruthy());
     fireEvent.press(getByTestId("forgot-password-link"));
     expect(mockNavigate).toHaveBeenCalledWith("AccountRecovery");
