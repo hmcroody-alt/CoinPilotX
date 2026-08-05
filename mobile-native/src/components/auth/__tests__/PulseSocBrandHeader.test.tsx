@@ -1,5 +1,6 @@
 import React from "react";
 import { render } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 
 jest.mock("../../../theme/logiNexusMotion", () => ({
   useLogiNexusReducedMotion: () => true
@@ -18,6 +19,15 @@ describe("PulseSocBrandHeader", () => {
     const { queryByText } = render(<PulseSocBrandHeader />);
     expect(queryByText("Pulse")).toBeNull();
     expect(queryByText("Soc")).toBeNull();
+  });
+
+  it("does not render a filled color disc behind the logo", () => {
+    const screen = render(<PulseSocBrandHeader />);
+    const filledDiscs = screen.UNSAFE_root.findAll((node: { props: { style?: unknown } }) => {
+      const style = StyleSheet.flatten(node.props.style as never) as { backgroundColor?: string; width?: number; height?: number } | undefined;
+      return Boolean(style?.backgroundColor && Number(style.width) > 24 && Number(style.height) > 24);
+    });
+    expect(filledDiscs).toHaveLength(0);
   });
 
   it("exposes an accessible PulseSoc brand label for screen readers", () => {

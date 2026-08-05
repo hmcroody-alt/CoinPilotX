@@ -21,13 +21,12 @@ const LOGO_HEIGHT = LOGO_WIDTH / LOGO_ASPECT;
 // emanating from the mark rather than the text.
 const SYMBOL_OFFSET_Y = LOGO_HEIGHT * 0.4 - LOGO_HEIGHT / 2;
 const RING_SIZE = 148;
-const GLOW_SIZE = 96;
 
 /**
  * PulseSoc brand mark for the login screen. Renders the real transparent logo
- * asset centered over a restrained breathing glow and slow pulse rings drawn in
- * the logo's own colors, so the mark feels lit by the interface rather than
- * pasted on top of it. The logo itself is never scaled, cropped, or blurred.
+ * asset centered over slow pulse rings and tiny particles drawn in the logo's
+ * own colors. The logo itself is never scaled, cropped, blurred, or backed by
+ * a filled disc.
  */
 export function PulseSocBrandHeader({ compact = false }: { compact?: boolean }) {
   const reducedMotion = useLogiNexusReducedMotion();
@@ -102,7 +101,6 @@ export function PulseSocBrandHeader({ compact = false }: { compact?: boolean }) 
               />
             );
           })}
-          <Animated.View style={[styles.glow, { opacity: reducedMotion ? 0.28 : glowOpacity }]} />
           <Animated.View style={[styles.particle, styles.particleA, { opacity: reducedMotion ? 0.18 : glowOpacity }]} />
           <Animated.View style={[styles.particle, styles.particleB, { opacity: reducedMotion ? 0.12 : glowOpacity }]} />
           <Animated.View style={[styles.particle, styles.particleC, { opacity: reducedMotion ? 0.16 : glowOpacity }]} />
@@ -152,18 +150,6 @@ const styles = StyleSheet.create({
     height: RING_SIZE,
     position: "absolute",
     width: RING_SIZE
-  },
-  glow: {
-    backgroundColor: colors.accent,
-    borderRadius: logiNexus.radius.circular,
-    height: GLOW_SIZE,
-    position: "absolute",
-    shadowColor: colors.accent,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 40,
-    transform: [{ translateY: SYMBOL_OFFSET_Y }],
-    width: GLOW_SIZE
   },
   logo: {
     height: LOGO_HEIGHT,
