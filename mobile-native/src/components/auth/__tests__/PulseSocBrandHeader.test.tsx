@@ -22,13 +22,12 @@ describe("PulseSocBrandHeader", () => {
 
   it("exposes an accessible PulseSoc brand label for screen readers", () => {
     const { getByLabelText } = render(<PulseSocBrandHeader />);
-    expect(getByLabelText(/PulseSoc logo/i)).toBeTruthy();
+    expect(getByLabelText(/PulseSoc.*Connected/i)).toBeTruthy();
   });
 
-  it("shows the supporting eyebrow and tagline copy", () => {
+  it("shows the live connection state without legacy arrival copy", () => {
     const { getByText } = render(<PulseSocBrandHeader />);
-    expect(getByText("Native Access")).toBeTruthy();
-    expect(getByText("Your network is ready.")).toBeTruthy();
+    expect(getByText("Connected")).toBeTruthy();
   });
 
   it("does not display any website URL or .com slogan raster", () => {

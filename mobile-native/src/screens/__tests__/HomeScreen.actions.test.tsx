@@ -37,7 +37,11 @@ jest.mock("expo-secure-store", () => ({
   setItemAsync: jest.fn(),
   deleteItemAsync: jest.fn()
 }));
-jest.mock("expo-battery", () => ({ useLowPowerMode: () => false }));
+jest.mock("expo-battery", () => ({
+  useLowPowerMode: () => false,
+  isLowPowerModeEnabledAsync: jest.fn(async () => false),
+  addLowPowerModeListener: jest.fn(() => ({ remove: jest.fn() }))
+}));
 jest.mock("@react-navigation/native", () => ({
   useIsFocused: () => true,
   useNavigation: () => ({ navigate: jest.fn(), goBack: jest.fn(), addListener: jest.fn(() => () => undefined) }),

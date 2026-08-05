@@ -1,7 +1,11 @@
 import React from "react";
 import { render } from "@testing-library/react-native";
 
-jest.mock("expo-battery", () => ({ useLowPowerMode: jest.fn(() => false) }));
+jest.mock("expo-battery", () => ({
+  useLowPowerMode: jest.fn(() => false),
+  isLowPowerModeEnabledAsync: jest.fn(async () => false),
+  addLowPowerModeListener: jest.fn(() => ({ remove: jest.fn() }))
+}));
 jest.mock("expo-linear-gradient", () => ({
   LinearGradient: ({ children }: { children?: React.ReactNode }) => children ?? null
 }));
