@@ -5,7 +5,7 @@ import { PulsePost } from "../../api/feed";
 
 const navigate = jest.fn();
 const mockListFeed = jest.fn();
-const mockGetPublicProfile = jest.fn(async () => ({ user_id: 8, display_name: "Maria Cherie", username: "mariacherie", public_player_id: "Pilot-8008", post_count: 5 }));
+const mockGetPublicProfile = jest.fn(async (..._args: unknown[]) => ({ user_id: 8, display_name: "Maria Cherie", username: "mariacherie", public_player_id: "Pilot-8008", post_count: 5 }));
 
 jest.mock("../../api/profile", () => ({
   getMyProfile: jest.fn(async () => ({ user_id: 7, display_name: "Roody Cherie", username: "roodycherie", public_player_id: "roodycherie", post_count: 4 })),
