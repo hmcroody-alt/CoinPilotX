@@ -124,6 +124,12 @@ export type RootStackParamList = {
    */
   MarketplaceManager: { title?: string } | undefined;
   /**
+   * The buyer's cart: server-backed lines grouped per seller, with per-seller
+   * checkout — one Stripe session per seller group, matching how the backend
+   * charges. Reached from the Marketplace buying header's cart badge.
+   */
+  MarketplaceCart: { title?: string } | undefined;
+  /**
    * One route, two screens. Default is the rebuilt two-sided ads manager;
    * `mode: "classic"` renders the previous screen, which still owns the
    * ad-account and campaign creation forms the manager routes into.

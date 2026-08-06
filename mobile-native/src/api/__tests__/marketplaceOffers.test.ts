@@ -52,12 +52,15 @@ const ids = () => {
 };
 
 describe("feature flags", () => {
-  it("keeps the unbacked domains dark by default", () => {
+  it("matches each flag to whether a backend exists", () => {
     // The brief: build the UI behind a flag, do not fake a working checkout.
-    // If someone flips one of these on without landing an endpoint, this test
-    // is the thing that says so.
-    expect(MARKETPLACE_OFFERS_ENABLED).toBe(false);
-    expect(MARKETPLACE_CART_ENABLED).toBe(false);
+    // Offers and cart are ON because their route packs exist
+    // (`services/marketplace_offers_routes.py`, `services/marketplace_cart_routes.py`,
+    // registered in bot.py; clients in `../marketplaceCommerce`). Boost still
+    // has no purchase backend — if someone flips it on without landing an
+    // endpoint, this test is the thing that says so.
+    expect(MARKETPLACE_OFFERS_ENABLED).toBe(true);
+    expect(MARKETPLACE_CART_ENABLED).toBe(true);
     expect(MARKETPLACE_BOOST_ENABLED).toBe(false);
   });
 });

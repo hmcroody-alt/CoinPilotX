@@ -1229,6 +1229,12 @@ def _load_route_pack(name, module_path):
 _load_route_pack("pulse_communications_v2", "pulse_communications_v2.routes")
 _load_route_pack("pulse_presence", "services.presence_routes")
 _load_route_pack("pulse_mobile_settings", "services.pulse_settings_routes")
+# Marketplace commerce packs (buying-experience mission phases 2, 3, 6).
+# Each pack owns its tables (created idempotently on first request) and reuses
+# bot helpers lazily at request time, so registration order is not load-bearing.
+_load_route_pack("pulse_marketplace_cart", "services.marketplace_cart_routes")
+_load_route_pack("pulse_marketplace_offers", "services.marketplace_offers_routes")
+_load_route_pack("pulse_marketplace_returns", "services.marketplace_returns_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):

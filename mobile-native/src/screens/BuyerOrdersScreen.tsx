@@ -1,7 +1,13 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useState } from "react";
 import { formatAbsoluteDate } from "../core/localTime";
-import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  fetchReturns,
+  openReturn,
+  type MarketplaceReturn,
+  type ReturnState
+} from "../api/marketplaceCommerce";
 import {
   BuyerOrder,
   buyerOrderWebUrl,
@@ -34,6 +40,50 @@ const STATUS_COPY: Record<string, string> = {
   failed: "Needs review"
 };
 
+/**
+ * List tabs, derived from `status_group` — a filter over data the server
+ * already sends, never a new claim about an order. "Returns" is the one tab
+ * with its own source: `/api/pulse/marketplace/returns` (fail-soft, so a
+ * not-yet-deployed pack reads as no returns rather than an error tab).
+ */
+type OrdersTabKey = "all" | "open" | "shipped" | "delivered" | "cancelled" | "returns";
+
+const ORDER_TABS: readonly { key: OrdersTabKey; label: string; groups?: readonly string[] }[] = [
+  { key: "all", label: "All" },
+  { key: "open", label: "Processing", groups: ["pending", "paid", "processing"] },
+  { key: "shipped", label: "Shipped", groups: ["shipped"] },
+  { key: "delivered", label: "Delivered", groups: ["delivered"] },
+  { key: "cancelled", label: "Cancelled", groups: ["cancelled", "refunded", "failed"] },
+  { key: "returns", label: "Returns" }
+];
+
+const RETURN_STATE_COPY: Record<ReturnState, string> = {
+  opened: "Opened",
+  awaiting_seller: "Waiting on seller",
+  awaiting_buyer: "Waiting on you",
+  under_review: "Under review",
+  resolved_refund: "Refund issued",
+  resolved_replacement: "Replacement arranged",
+  resolved_rejected: "Rejected",
+  closed: "Closed"
+};
+
+// Values mirror the accepted reason set on the returns route; anything else
+// is coerced to "other" over there, so the chip list IS the contract.
+const RETURN_REASONS: readonly { value: string; label: string }[] = [
+  { value: "not_received", label: "Never arrived" },
+  { value: "not_as_described", label: "Not as described" },
+  { value: "damaged", label: "Damaged" },
+  { value: "wrong_item", label: "Wrong item" },
+  { value: "quality", label: "Quality issue" },
+  { value: "changed_mind", label: "Changed my mind" },
+  { value: "other", label: "Other" }
+];
+
+type OrdersListRow =
+  | { kind: "order"; order: BuyerOrder }
+  | { kind: "return"; ret: MarketplaceReturn };
+
 export function BuyerOrdersScreen({ route, navigation }: Props) {
   const orderId = Number(
     (route.params as { orderId?: number; order_id?: number; id?: number } | undefined)?.orderId ||
@@ -47,10 +97,19 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [tab, setTab] = useState<OrdersTabKey>("all");
+  const [returns, setReturns] = useState<readonly MarketplaceReturn[]>([]);
 
   useScreenPerf("BuyerOrders");
 
   const selected = useMemo(() => detail || orders.find((order) => order.id === orderId) || null, [detail, orderId, orders]);
+
+  const listRows = useMemo<OrdersListRow[]>(() => {
+    if (tab === "returns") return returns.map((ret) => ({ kind: "return" as const, ret }));
+    const groups = ORDER_TABS.find((entry) => entry.key === tab)?.groups;
+    const filtered = groups ? orders.filter((order) => groups.includes(String(order.status_group))) : orders;
+    return filtered.map((order) => ({ kind: "order" as const, order }));
+  }, [tab, orders, returns]);
 
   async function load(nextOrderId = orderId, nextSource = source, refresh = false) {
     if (refresh) setRefreshing(true);
@@ -59,6 +118,8 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
     try {
       const result = await listBuyerOrders({ limit: 80 });
       setOrders(result.orders || []);
+      // Fail-soft by contract: an unreachable returns pack reads as [].
+      setReturns(await fetchReturns("buyer"));
       if (nextOrderId) {
         const detailResult = await getBuyerOrder(nextOrderId, nextSource);
         setDetail(detailResult.order || null);
@@ -99,6 +160,11 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
     else navigation.navigate("SellerStore", { title: "Seller / Store" });
   }
 
+  function openReturnOrder(ret: MarketplaceReturn) {
+    const match = orders.find((order) => Number(order.transaction_id || order.id) === ret.transaction_id);
+    if (match) openOrder(match);
+  }
+
   const hero = (
     <View style={styles.hero}>
       <Text style={styles.kicker}>Commerce Ledger</Text>
@@ -137,6 +203,8 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
         {loadingPanel}
         <OrderDetail
           order={selected}
+          existingReturn={returns.find((ret) => ret.transaction_id === Number(selected.transaction_id || selected.id))}
+          onReturnOpened={(ret) => setReturns((prev) => [ret, ...prev])}
           onBack={() => navigation.navigate("BuyerOrders", { title: "Purchase History" })}
           onListing={() => openListing(selected)}
           onSeller={() => openSeller(selected)}
@@ -149,9 +217,15 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
     <FlatList
       style={styles.root}
       contentContainerStyle={styles.content}
-      data={orders}
-      keyExtractor={(order) => `${order.source_table || "order"}-${order.id}`}
-      renderItem={({ item }) => <OrderRow order={item} onPress={() => openOrder(item)} />}
+      data={listRows}
+      keyExtractor={(row) => (row.kind === "order" ? `${row.order.source_table || "order"}-${row.order.id}` : `return-${row.ret.id}`)}
+      renderItem={({ item }) =>
+        item.kind === "order" ? (
+          <OrderRow order={item.order} onPress={() => openOrder(item.order)} />
+        ) : (
+          <ReturnRow ret={item.ret} onPress={() => openReturnOrder(item.ret)} />
+        )
+      }
       initialNumToRender={8}
       windowSize={7}
       refreshControl={refreshControl}
@@ -169,23 +243,66 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
               <Metric label="Open" value={String(orders.filter((order) => ["pending", "processing", "shipped"].includes(String(order.status_group))).length)} />
             </View>
           </Panel>
+          <View style={styles.tabRow}>
+            {ORDER_TABS.map((entry) => (
+              <Pressable
+                key={entry.key}
+                accessibilityRole="button"
+                accessibilityState={{ selected: tab === entry.key }}
+                style={[styles.tabPill, tab === entry.key && styles.tabPillActive]}
+                onPress={() => setTab(entry.key)}
+              >
+                <Text style={[styles.tabText, tab === entry.key && styles.tabTextActive]}>{entry.label}</Text>
+              </Pressable>
+            ))}
+          </View>
         </>
       }
       ListEmptyComponent={
-        <Panel>
-          <Text style={styles.sectionTitle}>No purchases yet</Text>
-          <Text style={styles.copy}>Marketplace and learning purchases will appear here after checkout creates a server-side transaction.</Text>
-          <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
-            <Text style={styles.primaryText}>Browse Marketplace</Text>
-          </Pressable>
-        </Panel>
+        tab === "returns" ? (
+          <Panel>
+            <Text style={styles.sectionTitle}>No returns</Text>
+            <Text style={styles.copy}>Returns you open from a marketplace order will appear here with their current state.</Text>
+          </Panel>
+        ) : tab !== "all" ? (
+          <Panel>
+            <Text style={styles.sectionTitle}>Nothing here</Text>
+            <Text style={styles.copy}>No purchases match this filter right now.</Text>
+          </Panel>
+        ) : (
+          <Panel>
+            <Text style={styles.sectionTitle}>No purchases yet</Text>
+            <Text style={styles.copy}>Marketplace and learning purchases will appear here after checkout creates a server-side transaction.</Text>
+            <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
+              <Text style={styles.primaryText}>Browse Marketplace</Text>
+            </Pressable>
+          </Panel>
+        )
       }
     />
   );
 }
 
-function OrderDetail({ order, onBack, onListing, onSeller }: { order: BuyerOrder; onBack: () => void; onListing: () => void; onSeller: () => void }) {
+function OrderDetail({
+  order,
+  existingReturn,
+  onReturnOpened,
+  onBack,
+  onListing,
+  onSeller
+}: {
+  order: BuyerOrder;
+  existingReturn?: MarketplaceReturn;
+  onReturnOpened: (ret: MarketplaceReturn) => void;
+  onBack: () => void;
+  onListing: () => void;
+  onSeller: () => void;
+}) {
   const canOpenListing = Number(order.marketplace_listing_id || order.item_id || order.listing?.id || 0) > 0;
+  // Same gate the returns route enforces: marketplace physical/product
+  // purchases with a real transaction row. Everything else keeps the
+  // existing web support path only.
+  const returnEligible = order.source_table === "seller_transactions" && order.item_type === "marketplace_product" && Number(order.transaction_id || order.id || 0) > 0;
   return (
     <>
       <Panel>
@@ -226,6 +343,10 @@ function OrderDetail({ order, onBack, onListing, onSeller }: { order: BuyerOrder
         </View>
       </Panel>
 
+      {returnEligible ? (
+        <ReturnPanel order={order} existing={existingReturn} onOpened={onReturnOpened} />
+      ) : null}
+
       <Panel>
         <Text style={styles.sectionTitle}>Buyer controls</Text>
         <Text style={styles.copy}>Receipt, support, dispute, shipping, and provider pages open through existing PulseSoc web/provider flows.</Text>
@@ -242,6 +363,102 @@ function OrderDetail({ order, onBack, onListing, onSeller }: { order: BuyerOrder
         </Pressable>
       </Panel>
     </>
+  );
+}
+
+function ReturnPanel({ order, existing, onOpened }: { order: BuyerOrder; existing?: MarketplaceReturn; onOpened: (ret: MarketplaceReturn) => void }) {
+  const [reason, setReason] = useState("not_as_described");
+  const [explanation, setExplanation] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  if (existing) {
+    return (
+      <Panel>
+        <Text style={styles.sectionTitle}>Return</Text>
+        <Line label="State" value={RETURN_STATE_COPY[existing.state] || String(existing.state)} />
+        <Line label="Reason" value={RETURN_REASONS.find((entry) => entry.value === existing.reason)?.label || existing.reason} />
+        <Line label="Opened" value={formatDate(existing.created_at)} />
+        <Line label="Updated" value={formatDate(existing.updated_at)} />
+      </Panel>
+    );
+  }
+
+  const canSubmit = !busy && explanation.trim().length > 0;
+
+  async function submit() {
+    if (busy) return;
+    setBusy(true);
+    setFormError("");
+    try {
+      const ret = await openReturn({
+        transactionId: Number(order.transaction_id || order.id || 0),
+        reason,
+        explanation: explanation.trim()
+      });
+      onOpened(ret);
+    } catch (submitError) {
+      setFormError(submitError instanceof Error ? submitError.message : "The return could not be opened. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel>
+      <Text style={styles.sectionTitle}>Request a return</Text>
+      <Text style={styles.copy}>Pick a reason and describe what happened. The seller responds first; unresolved cases can be escalated for review.</Text>
+      <View style={styles.chipRow}>
+        {RETURN_REASONS.map((entry) => (
+          <Pressable
+            key={entry.value}
+            accessibilityRole="button"
+            accessibilityState={{ selected: reason === entry.value }}
+            style={[styles.chip, reason === entry.value && styles.chipActive]}
+            onPress={() => setReason(entry.value)}
+          >
+            <Text style={[styles.chipText, reason === entry.value && styles.chipTextActive]}>{entry.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <TextInput
+        style={styles.input}
+        value={explanation}
+        onChangeText={setExplanation}
+        placeholder="What happened?"
+        placeholderTextColor={colors.muted}
+        multiline
+        maxLength={2000}
+      />
+      {formError ? <Text style={styles.formError}>{formError}</Text> : null}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !canSubmit }}
+        disabled={!canSubmit}
+        style={[styles.primaryButton, !canSubmit && styles.disabledButton]}
+        onPress={() => submit().catch(() => undefined)}
+      >
+        <Text style={styles.primaryText}>{busy ? "Opening..." : "Open return"}</Text>
+      </Pressable>
+    </Panel>
+  );
+}
+
+function ReturnRow({ ret, onPress }: { ret: MarketplaceReturn; onPress: () => void }) {
+  const reasonLabel = RETURN_REASONS.find((entry) => entry.value === ret.reason)?.label || ret.reason;
+  return (
+    <Pressable accessibilityRole="button" style={styles.row} onPress={onPress}>
+      <View style={styles.rowGlow} />
+      <View style={styles.flex}>
+        <Text style={styles.rowTitle} numberOfLines={1}>{reasonLabel}</Text>
+        <Text style={styles.meta} numberOfLines={1}>Opened {formatDate(ret.created_at)} · Updated {formatDate(ret.updated_at)}</Text>
+      </View>
+      <View style={styles.rowAmount}>
+        <View style={[styles.statusPill, { borderColor: colors.warning }]}>
+          <Text style={[styles.statusText, { color: colors.warning }]}>{RETURN_STATE_COPY[ret.state] || String(ret.state)}</Text>
+        </View>
+      </View>
+    </Pressable>
   );
 }
 
@@ -389,5 +606,43 @@ const styles = StyleSheet.create({
   secondaryText: { color: colors.text, fontWeight: "900", textAlign: "center" },
   ghostButton: { alignItems: "center", minHeight: 42, justifyContent: "center" },
   ghostText: { color: colors.accentStrong, fontWeight: "900" },
-  disabledButton: { opacity: 0.45 }
+  disabledButton: { opacity: 0.45 },
+  tabRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  tabPill: {
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 34,
+    justifyContent: "center",
+    paddingHorizontal: 13,
+    paddingVertical: 6
+  },
+  tabPillActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  tabText: { color: colors.muted, fontSize: 13, fontWeight: "800" },
+  tabTextActive: { color: "#08110f" },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 32,
+    justifyContent: "center",
+    paddingHorizontal: 11,
+    paddingVertical: 5
+  },
+  chipActive: { backgroundColor: colors.surfaceRaised, borderColor: colors.accent },
+  chipText: { color: colors.muted, fontSize: 12, fontWeight: "800" },
+  chipTextActive: { color: colors.text },
+  input: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    color: colors.text,
+    fontSize: 14,
+    minHeight: 84,
+    padding: 10,
+    textAlignVertical: "top"
+  },
+  formError: { color: colors.danger, fontSize: 13, fontWeight: "700" }
 });

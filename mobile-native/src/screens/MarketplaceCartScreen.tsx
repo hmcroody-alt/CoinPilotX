@@ -1,0 +1,506 @@
+/**
+ * The buyer's cart.
+ *
+ * ## Server truth, grouped the way checkout charges
+ *
+ * Lines come from `/api/pulse/marketplace/cart` and are grouped per seller by
+ * `groupCartLines` — the same shape checkout uses, because one Stripe Connect
+ * session can pay exactly one seller. Rendering any other grouping would show
+ * a total no button can charge.
+ *
+ * ## Line state is derived, never trusted from the client
+ *
+ * Every line carries a server-derived `state` (price_changed, low_stock, sold,
+ * removed, restricted) computed at read time. This screen only *renders* those
+ * states; the server re-derives them again at validate and at checkout, so a
+ * stale screen cannot buy a sold item — it gets a 409 and re-reads.
+ *
+ * ## Price changes block until confirmed
+ *
+ * A changed price never silently reprices the basket. The line shows both
+ * figures and an explicit "Accept new price" action; until tapped, checkout for
+ * that seller's group is blocked server-side. This mirrors the snapshot rule in
+ * `marketplace_cart_routes.py`.
+ *
+ * ## The idempotency key belongs to the intent
+ *
+ * Generated when the user opens a group's confirm step, reused for every retry
+ * of that confirmation, discarded when it closes. A duplicate tap replays the
+ * same checkout session instead of creating a second charge.
+ *
+ * ## Payment boundary
+ *
+ * Checkout success yields a Stripe URL. Native payment handling is behind the
+ * same `native_provider_boundary` every other paid surface honours (see
+ * `openPremiumUrl`, `openBuyerOrderFallback`), so this screen reports the
+ * session honestly and points at the web — it does not fake an in-app purchase.
+ */
+
+import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FlatList,
+  Image,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
+import {
+  checkoutCartGroup,
+  confirmCartLinePrice,
+  fetchCart,
+  groupCartLines,
+  removeCartLine,
+  updateCartLine,
+  validateCart,
+  type CartLine,
+  type CartSnapshot
+} from "../api/marketplaceCommerce";
+import { registerSyncInvalidation } from "../core/eventSync";
+import { useScreenPerf } from "../core/useScreenPerf";
+import { RootStackParamList } from "../navigation/types";
+import { storeLight, MARKETPLACE_CART_CTA } from "../theme/marketplaceLight";
+
+type Props = NativeStackScreenProps<RootStackParamList, "MarketplaceCart">;
+
+/** Max per line, mirroring the server's clamp. */
+const MAX_QTY = 20;
+
+function formatMinor(minor: number, currency = "USD") {
+  const amount = minor / 100;
+  const whole = Number.isInteger(amount);
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      minimumFractionDigits: whole ? 0 : 2,
+      maximumFractionDigits: 2
+    }).format(amount);
+  } catch {
+    return `$${whole ? amount : amount.toFixed(2)}`;
+  }
+}
+
+/** Copy for the states that need explaining. `available` renders nothing. */
+const LINE_STATE_COPY: Partial<Record<CartLine["state"], string>> = {
+  low_stock: "Almost gone",
+  sold: "Sold — remove to check out",
+  removed: "No longer listed — remove to check out",
+  restricted: "Unavailable in your region — remove to check out"
+};
+
+export function MarketplaceCartScreen({ navigation }: Props) {
+  const [cart, setCart] = useState<CartSnapshot>({ lines: [], badgeCount: 0 });
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+  /** Line ids with a write in flight — their controls go quiet together. */
+  const [busyLines, setBusyLines] = useState<readonly number[]>([]);
+  /** Seller whose confirm step is open, and the per-intent idempotency key. */
+  const [confirmSeller, setConfirmSeller] = useState<number | null>(null);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [checkoutNote, setCheckoutNote] = useState("");
+  const intentKey = useRef<string>("");
+
+  useScreenPerf("MarketplaceCart");
+
+  const load = useCallback(async (refresh = false) => {
+    if (refresh) setRefreshing(true);
+    else setLoading(true);
+    setError("");
+    try {
+      setCart(await fetchCart());
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Cart could not load.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load().catch(() => undefined);
+    return registerSyncInvalidation("marketplace", () => {
+      load(true).catch(() => undefined);
+    });
+  }, [load]);
+
+  const groups = useMemo(() => groupCartLines(cart.lines), [cart.lines]);
+  const busySet = useMemo(() => new Set(busyLines), [busyLines]);
+
+  /** Run one line write with the whole row quiet, then re-read server truth. */
+  const runLine = useCallback(
+    async (lineId: number, work: () => Promise<void>) => {
+      setBusyLines((current) => [...current, lineId]);
+      try {
+        await work();
+      } catch (writeError) {
+        setError(writeError instanceof Error ? writeError.message : "That change did not save.");
+      } finally {
+        try {
+          setCart(await fetchCart());
+        } catch {
+          // Keep the last known cart; the error above already tells the story.
+        }
+        setBusyLines((current) => current.filter((id) => id !== lineId));
+      }
+    },
+    []
+  );
+
+  const changeQty = useCallback(
+    (line: CartLine, delta: number) => {
+      const next = line.qty + delta;
+      if (next < 1 || next > MAX_QTY) return;
+      void runLine(line.line_id, () => updateCartLine(line.line_id, next));
+    },
+    [runLine]
+  );
+
+  const removeLine = useCallback(
+    (line: CartLine) => {
+      void runLine(line.line_id, () => removeCartLine(line.line_id));
+    },
+    [runLine]
+  );
+
+  const acceptPrice = useCallback(
+    (line: CartLine) => {
+      void runLine(line.line_id, () => confirmCartLinePrice(line.line_id));
+    },
+    [runLine]
+  );
+
+  /** Opening the confirm step mints the intent key; closing it discards it. */
+  const openConfirm = useCallback((sellerUserId: number) => {
+    intentKey.current = `cart-${sellerUserId}-${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
+    setConfirmSeller(sellerUserId);
+    setCheckoutNote("");
+  }, []);
+
+  const closeConfirm = useCallback(() => {
+    intentKey.current = "";
+    setConfirmSeller(null);
+    setCheckoutNote("");
+  }, []);
+
+  const confirmCheckout = useCallback(
+    async (sellerUserId: number) => {
+      if (checkoutBusy) return;
+      setCheckoutBusy(true);
+      setCheckoutNote("");
+      try {
+        // Validate first so a stale screen learns about a sold line here, with
+        // copy, rather than as a bare 409 from checkout.
+        const validation = await validateCart();
+        setCart({ lines: validation.lines, badgeCount: validation.lines.length });
+        const groupLineIds = validation.lines
+          .filter((line) => line.seller_user_id === sellerUserId)
+          .map((line) => line.line_id);
+        const blocked = validation.blockingLineIds.some((id) => groupLineIds.includes(id));
+        const needsConfirm = validation.priceChangedLineIds.some((id) =>
+          groupLineIds.includes(id)
+        );
+        if (blocked) {
+          setCheckoutNote("Some items are no longer available. Remove them to continue.");
+          return;
+        }
+        if (needsConfirm) {
+          setCheckoutNote("A price changed. Review and accept it to continue.");
+          return;
+        }
+        const result = await checkoutCartGroup(sellerUserId, intentKey.current);
+        if (result.checkoutUrl) {
+          // Payment stays behind the provider boundary — report, don't fake.
+          setCheckoutNote("Checkout session created. Complete payment on pulsesoc.com — your order will appear in Purchases.");
+        } else {
+          setCheckoutNote("Checkout is not available for this seller yet.");
+        }
+      } catch (checkoutError) {
+        setCheckoutNote(
+          checkoutError instanceof Error ? checkoutError.message : "Checkout could not start."
+        );
+      } finally {
+        setCheckoutBusy(false);
+      }
+    },
+    [checkoutBusy]
+  );
+
+  /* ---------------------------------------------------------------- *
+   * Render
+   * ---------------------------------------------------------------- */
+
+  if (loading && !cart.lines.length) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.centerText}>Loading your cart</Text>
+      </View>
+    );
+  }
+
+  if (!cart.lines.length) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.emptyTitle}>Your cart is empty</Text>
+        <Text style={styles.centerText}>Items you add from Marketplace show up here.</Text>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.emptyCta}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={styles.emptyCtaText}>Browse Marketplace</Text>
+        </Pressable>
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      </View>
+    );
+  }
+
+  return (
+    <FlatList
+      style={styles.root}
+      contentContainerStyle={styles.content}
+      data={groups}
+      keyExtractor={(group) => String(group.sellerUserId)}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={() => load(true).catch(() => undefined)} />
+      }
+      ListHeaderComponent={error ? <Text style={styles.errorText}>{error}</Text> : null}
+      renderItem={({ item: group }) => {
+        const confirmOpen = confirmSeller === group.sellerUserId;
+        const hasBlocker = group.fulfillments.some((f) =>
+          f.lines.some((l) => l.state === "sold" || l.state === "removed" || l.state === "restricted")
+        );
+        return (
+          <View style={styles.group}>
+            <Text style={styles.groupSeller}>{group.sellerName || "Seller"}</Text>
+            {group.fulfillments.map((bucket) => (
+              <View key={bucket.fulfillment}>
+                {group.fulfillments.length > 1 ? (
+                  <Text style={styles.fulfillment}>
+                    {bucket.fulfillment === "digital"
+                      ? "Digital delivery"
+                      : bucket.fulfillment === "pickup"
+                        ? "Local pickup"
+                        : "Shipping"}
+                  </Text>
+                ) : null}
+                {bucket.lines.map((line) => {
+                  const busy = busySet.has(line.line_id);
+                  const stateCopy = LINE_STATE_COPY[line.state];
+                  const dead =
+                    line.state === "sold" || line.state === "removed" || line.state === "restricted";
+                  return (
+                    <View key={line.line_id} style={[styles.line, dead && styles.lineDead]}>
+                      {line.cover_image_url ? (
+                        <Image source={{ uri: line.cover_image_url }} style={styles.thumb} />
+                      ) : (
+                        <View style={[styles.thumb, styles.thumbEmpty]} />
+                      )}
+                      <View style={styles.lineBody}>
+                        <Text style={styles.lineTitle} numberOfLines={2}>
+                          {line.title}
+                        </Text>
+                        {line.state === "price_changed" ? (
+                          <View>
+                            <Text style={styles.priceChanged}>
+                              {`Now ${formatMinor(line.price_now_minor, line.currency)} — was ${formatMinor(line.price_snapshot_minor, line.currency)}`}
+                            </Text>
+                            <Pressable
+                              accessibilityRole="button"
+                              disabled={busy}
+                              onPress={() => acceptPrice(line)}
+                            >
+                              <Text style={styles.link}>Accept new price</Text>
+                            </Pressable>
+                          </View>
+                        ) : (
+                          <Text style={styles.linePrice}>
+                            {formatMinor(line.price_snapshot_minor, line.currency)}
+                          </Text>
+                        )}
+                        {stateCopy ? <Text style={styles.lineState}>{stateCopy}</Text> : null}
+                        <View style={styles.lineControls}>
+                          {!dead ? (
+                            <View style={styles.stepper}>
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel={`Decrease quantity of ${line.title}`}
+                                disabled={busy || line.qty <= 1}
+                                style={styles.stepBtn}
+                                onPress={() => changeQty(line, -1)}
+                              >
+                                <Text style={styles.stepText}>−</Text>
+                              </Pressable>
+                              <Text style={styles.qty}>{line.qty}</Text>
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel={`Increase quantity of ${line.title}`}
+                                disabled={busy || line.qty >= MAX_QTY}
+                                style={styles.stepBtn}
+                                onPress={() => changeQty(line, 1)}
+                              >
+                                <Text style={styles.stepText}>+</Text>
+                              </Pressable>
+                            </View>
+                          ) : null}
+                          <Pressable
+                            accessibilityRole="button"
+                            disabled={busy}
+                            onPress={() => removeLine(line)}
+                          >
+                            <Text style={styles.link}>{busy ? "Saving…" : "Remove"}</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            ))}
+            <View style={styles.groupFooter}>
+              <Text style={styles.groupTotal}>
+                {`Total ${formatMinor(group.totalMinor, group.currency)}`}
+              </Text>
+              {confirmOpen ? (
+                <View style={styles.confirmBox}>
+                  <Text style={styles.confirmText}>
+                    {`Pay ${group.sellerName || "this seller"} ${formatMinor(group.totalMinor, group.currency)}?`}
+                  </Text>
+                  {checkoutNote ? <Text style={styles.note}>{checkoutNote}</Text> : null}
+                  <View style={styles.confirmRow}>
+                    <Pressable accessibilityRole="button" onPress={closeConfirm} style={styles.secondaryBtn}>
+                      <Text style={styles.secondaryText}>Not now</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={checkoutBusy}
+                      onPress={() => void confirmCheckout(group.sellerUserId)}
+                      style={[styles.cta, checkoutBusy && styles.ctaBusy]}
+                    >
+                      <Text style={styles.ctaText}>
+                        {checkoutBusy ? "Starting checkout…" : "Confirm"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={hasBlocker}
+                  onPress={() => openConfirm(group.sellerUserId)}
+                  style={[styles.cta, hasBlocker && styles.ctaBusy]}
+                >
+                  <Text style={styles.ctaText}>
+                    {hasBlocker ? "Remove unavailable items" : "Proceed to checkout"}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        );
+      }}
+    />
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: storeLight.bg.page },
+  content: { padding: 12, paddingBottom: 32, gap: 12 },
+  center: {
+    flex: 1,
+    backgroundColor: storeLight.bg.page,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    gap: 8
+  },
+  centerText: { color: storeLight.text.muted, fontSize: 14, textAlign: "center" },
+  emptyTitle: { color: storeLight.text.primary, fontSize: 18, fontWeight: "700" },
+  emptyCta: {
+    marginTop: 8,
+    backgroundColor: MARKETPLACE_CART_CTA.to,
+    borderRadius: storeLight.radius.pill,
+    paddingHorizontal: 20,
+    minHeight: storeLight.size.tapTarget,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  emptyCtaText: { color: MARKETPLACE_CART_CTA.text, fontWeight: "700" },
+  errorText: { color: storeLight.status.error, fontSize: 13, marginBottom: 8 },
+  group: {
+    backgroundColor: storeLight.bg.card,
+    borderRadius: storeLight.radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: storeLight.border.hairline,
+    padding: 12,
+    gap: 8
+  },
+  groupSeller: { color: storeLight.text.primary, fontSize: 15, fontWeight: "700" },
+  fulfillment: { color: storeLight.text.muted, fontSize: 12, marginTop: 4 },
+  line: { flexDirection: "row", gap: 10, paddingVertical: 8 },
+  lineDead: { opacity: 0.6 },
+  thumb: {
+    width: storeLight.size.thumb,
+    height: storeLight.size.thumb,
+    borderRadius: storeLight.radius.thumb,
+    backgroundColor: storeLight.bg.skeleton
+  },
+  thumbEmpty: { borderWidth: StyleSheet.hairlineWidth, borderColor: storeLight.border.hairline },
+  lineBody: { flex: 1, gap: 4 },
+  lineTitle: { color: storeLight.text.primary, fontSize: 14 },
+  linePrice: { color: storeLight.text.primary, fontSize: 15, fontWeight: "700" },
+  priceChanged: { color: storeLight.status.warning, fontSize: 13, fontWeight: "600" },
+  lineState: { color: storeLight.status.warning, fontSize: 12 },
+  lineControls: { flexDirection: "row", alignItems: "center", gap: 16, marginTop: 4 },
+  stepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: storeLight.border.secondaryButton,
+    borderRadius: storeLight.radius.pill
+  },
+  stepBtn: {
+    minWidth: 36,
+    minHeight: 32,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  stepText: { color: storeLight.text.primary, fontSize: 16, fontWeight: "700" },
+  qty: { color: storeLight.text.primary, fontSize: 14, minWidth: 24, textAlign: "center" },
+  link: { color: storeLight.text.link, fontSize: 13 },
+  groupFooter: { borderTopWidth: StyleSheet.hairlineWidth, borderColor: storeLight.border.hairline, paddingTop: 10, gap: 8 },
+  groupTotal: { color: storeLight.text.primary, fontSize: 15, fontWeight: "700" },
+  cta: {
+    backgroundColor: MARKETPLACE_CART_CTA.to,
+    borderRadius: storeLight.radius.pill,
+    minHeight: storeLight.size.tapTarget,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16
+  },
+  ctaBusy: { opacity: 0.55 },
+  ctaText: { color: MARKETPLACE_CART_CTA.text, fontWeight: "700", fontSize: 14 },
+  confirmBox: {
+    backgroundColor: storeLight.bg.warning,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: storeLight.border.warning,
+    borderRadius: storeLight.radius.control,
+    padding: 10,
+    gap: 8
+  },
+  confirmText: { color: storeLight.text.primary, fontSize: 14, fontWeight: "600" },
+  note: { color: storeLight.text.muted, fontSize: 13 },
+  confirmRow: { flexDirection: "row", gap: 10, justifyContent: "flex-end", alignItems: "center" },
+  secondaryBtn: {
+    minHeight: storeLight.size.tapTarget,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12
+  },
+  secondaryText: { color: storeLight.text.link, fontSize: 14 }
+});

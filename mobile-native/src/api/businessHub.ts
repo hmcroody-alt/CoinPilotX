@@ -57,9 +57,11 @@ import { VerificationState, VerificationStatus } from "./verification";
  */
 export const HUB_ORDER_DEADLINES = false;
 
-/** Marketplace offers. OFF because `MARKETPLACE_OFFERS_ENABLED` is false — the
- * offer state machine is local-only with no endpoint behind it. Kills the offer
- * count, the soonest-expiry text, the violet badge and the Offers strip cell. */
+/** Marketplace offers. `MARKETPLACE_OFFERS_ENABLED` is now true (backend:
+ * services/marketplace_offers_routes.py), but this hub card stays OFF until it
+ * is wired to `fetchOffers` from `./marketplaceCommerce` — an ON flag with no
+ * fetch behind this cell would render a permanent zero and call it a count.
+ * Flipping this is a wiring task now, not a data-honesty question. */
 export const HUB_MARKETPLACE_OFFERS = false;
 
 /** Today's ad spend on the Advertising line. OFF: `getAdAnalytics` takes no date

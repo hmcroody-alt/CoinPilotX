@@ -1,101 +1,71 @@
 /**
  * "Just listed near you", over listings with no geography on them.
  *
- * The feed was sorted by recency and nothing else. Three words of that heading
- * were false — and the strip directly beneath it read "Location not set", so
- * the screen contradicted itself within one scroll position.
+ * The feed was sorted by recency and nothing else, and the strip directly
+ * above the heading read "Location not set — showing all listings" — the
+ * screen contradicted itself within one scroll position. The contradictory
+ * fallback (and the flag that kept it alive) is deleted; `marketplaceLocation`
+ * is now the only source for the heading, the strip, the footer and the empty
+ * state, so they derive from one `city` input and cannot disagree.
  *
- * WHY THERE IS NO "SET YOUR LOCATION" BUTTON
- * ------------------------------------------
- * The brief asks for one. Nothing in this app can honour it: there is no
- * location library in the dependency list, no city or country on the account or
- * the profile, no coordinates on a listing, and `distanceMeters` is hard-coded
- * `null` — which `MARKETPLACE_MOCK_DATA_GAPS` already records. A button that
- * opens nothing is exactly the dead control this tier exists to delete, so the
- * false claim is dropped and the empty state gets an action that really works.
- *
- * The tests below pin both halves of that decision: that the claim is gone, and
- * that the day geo arrives the claim comes back on its own — because `city` is
- * an input, not a constant, and the whole heading/strip/footer set is derived
- * from it in one place rather than written out three times.
+ * The city is a stored, self-reported preference (`loadMarketplaceCity`), not
+ * a geo lookup: listings still carry no coordinates and `distanceMeters` is
+ * still null — which `MARKETPLACE_MOCK_DATA_GAPS` continues to record. Setting
+ * a city changes what the screen claims, not what the feed contains.
  */
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
-  MARKETPLACE_LOCATION_FLAG,
   MARKETPLACE_MOCK_DATA_GAPS,
+  clearMarketplaceCity,
+  loadMarketplaceCity,
   marketplaceLocation,
-  marketplaceLocationHonestyEnabled
+  saveMarketplaceCity
 } from "../marketplaceScreen";
-
-describe("the flag", () => {
-  it('is off unless the build opts in, and accepts every spelling of "on"', () => {
-    // The accepted spellings are the shared set in core/envFlag.ts, not this
-    // module's own idea of one. This flag shipped taking the literal "1" alone
-    // while flags on adjacent screens also took "true" — so a build that set it
-    // to "true" got a silent no-op. Both work now; unset is still off.
-    const original = process.env[MARKETPLACE_LOCATION_FLAG];
-    try {
-      for (const value of ["", " ", "0", "false", "off", "no", "2"]) {
-        process.env[MARKETPLACE_LOCATION_FLAG] = value;
-        expect(marketplaceLocationHonestyEnabled()).toBe(false);
-      }
-      for (const value of ["1", "true", "on", "yes", " TRUE ", "Yes"]) {
-        process.env[MARKETPLACE_LOCATION_FLAG] = value;
-        expect(marketplaceLocationHonestyEnabled()).toBe(true);
-      }
-      delete process.env[MARKETPLACE_LOCATION_FLAG];
-      expect(marketplaceLocationHonestyEnabled()).toBe(false);
-    } finally {
-      if (original === undefined) delete process.env[MARKETPLACE_LOCATION_FLAG];
-      else process.env[MARKETPLACE_LOCATION_FLAG] = original;
-    }
-  });
-});
 
 describe("with no location known", () => {
   const place = marketplaceLocation();
 
-  /**
-   * The regression, stated as a property rather than as one string.
-   *
-   * `unavailableReason` is excluded deliberately: it is the only line allowed
-   * to say "distance", because saying it is how it denies it. Every line that
-   * makes a claim is checked; the line that withdraws one is not.
-   */
+  /** The regression, stated as a property rather than as one string. */
   it("makes no claim about proximity anywhere on the screen", () => {
     const claims = [
       place.feedTitle,
       place.stripText,
       place.moreLabel,
-      place.empty.title,
-      place.empty.body
+      place.empty.title
     ].join(" ");
-    expect(claims).not.toMatch(/near/i);
-    expect(claims).not.toMatch(/nearby/i);
+    expect(claims).not.toMatch(/near you/i);
+    expect(claims).not.toMatch(/nearby item/i);
     expect(claims).not.toMatch(/around you/i);
     expect(claims).not.toMatch(/\bdistance\b/i);
     expect(claims).not.toMatch(/\bmiles?\b|\bkm\b/i);
+    // The one permitted mention: the empty state may invite the reader to SET
+    // a location to find nearby items — an offer, not a claim. So the body is
+    // held to a narrower bar: it may not assert proximity as fact.
+    expect(place.empty.body).not.toMatch(/near you/i);
+    expect(place.empty.body).not.toMatch(/around you/i);
+    expect(place.empty.body).not.toMatch(/\bdistance\b/i);
+    expect(place.empty.body).not.toMatch(/\bmiles?\b|\bkm\b/i);
+    expect(place.feedTitle).not.toMatch(/near/i);
+    expect(place.stripText).not.toMatch(/near/i);
+    expect(place.moreLabel).not.toMatch(/near/i);
   });
 
   it("heads the feed with what it can actually promise", () => {
-    expect(place.feedTitle).toBe("Just listed");
+    expect(place.feedTitle).toBe("Recently listed");
     expect(place.known).toBe(false);
   });
 
-  it("says what the list is showing instead of what is missing from it", () => {
-    // The old strip led with the absence — "Location not set" — which reads as
-    // a fault the seller should fix, over a control that cannot fix it.
-    expect(place.stripText).toBe("Showing every listing");
-    expect(place.stripText).not.toMatch(/not set/i);
+  it("labels the strip with the plain state, over a control that can fix it", () => {
+    // "Location not set" was dishonest only while nothing could set one. The
+    // strip now opens the location sheet, so leading with the absence is
+    // exactly right: it names the thing the tap will change.
+    expect(place.stripText).toBe("Location not set");
+    expect(place.stripAction).toEqual({ key: "set_location", label: "Set location" });
   });
 
-  /**
-   * The strip is an unavailable row with a stated reason rather than a line
-   * that looks tappable. Silence there would leave the reader assuming the
-   * feature is broken rather than absent.
-   */
-  it("explains why distance is not on offer", () => {
-    expect(place.unavailableReason).toBeTruthy();
-    expect(String(place.unavailableReason)).toMatch(/isn't part of the app yet/i);
+  it("never claims to be 'showing all listings' as if that were a choice", () => {
+    expect(place.stripText).not.toMatch(/all listings/i);
+    expect(place.stripText).not.toMatch(/every listing/i);
   });
 
   it("drops the claim from the footer too, not only the heading", () => {
@@ -106,95 +76,104 @@ describe("with no location known", () => {
 describe("when a location becomes known", () => {
   const place = marketplaceLocation({ city: "Bristol" });
 
-  /**
-   * The reason this is a derivation and not three edited strings. Nothing
-   * supplies a city today; when something does, the heading, the strip and the
-   * footer move together, and no screen has to be found and changed.
-   */
   it("brings the proximity claim back across the whole feed at once", () => {
     expect(place.known).toBe(true);
-    expect(place.feedTitle).toBe("Just listed near Bristol");
+    expect(place.feedTitle).toBe("Just listed near you");
     expect(place.stripText).toBe("Showing listings near Bristol");
     expect(place.moreLabel).toBe("Show more nearby");
   });
 
-  it("drops the unavailable reason, since the thing is now available", () => {
-    expect(place.unavailableReason).toBeNull();
+  it("names the actual place in the strip, so the claim is checkable", () => {
+    // "near you" in the heading is anchored by the strip directly above it,
+    // which names the city the reader typed and offers to change it.
+    expect(place.stripText).toContain("Bristol");
+    expect(place.stripAction).toEqual({ key: "edit_location", label: "Change location" });
   });
 
   it("treats a blank or whitespace city as no city at all", () => {
     for (const city of ["", "   ", null, undefined]) {
       const blank = marketplaceLocation({ city });
       expect(blank.known).toBe(false);
-      expect(blank.feedTitle).toBe("Just listed");
+      expect(blank.feedTitle).toBe("Recently listed");
     }
-  });
-
-  it("names the actual place rather than saying 'near you'", () => {
-    // "near you" is unfalsifiable; "near Bristol" is something the reader can
-    // check against and correct.
-    expect(place.feedTitle).not.toMatch(/near you/i);
-    expect(place.feedTitle).toContain("Bristol");
   });
 });
 
 describe("the empty state", () => {
-  /**
-   * The brief calls the old empty state inert, and it was: "Nothing nearby
-   * right now. Try another category" with no way to try another category. The
-   * replacement offers the one filter that really exists.
-   */
-  it("offers a working action when a filter is what emptied the list", () => {
-    const filtered = marketplaceLocation({ categoryFiltered: true });
-    expect(filtered.empty.action).toEqual({ key: "clear_category", label: "Show all categories" });
-    expect(filtered.empty.title).toMatch(/category/i);
+  it("offers Set location when nothing is set and nothing is filtered", () => {
+    const place = marketplaceLocation({ categoryFiltered: false });
+    expect(place.empty.title).toBe("No listings available right now.");
+    expect(place.empty.actions.map((a) => a.key)).toEqual(["set_location"]);
+    expect(place.empty.action).toEqual({ key: "set_location", label: "Set location" });
   });
 
-  /**
-   * And offers none when there is nothing to clear. Rendering a button in both
-   * cases would put us back where we started, with a control that does nothing
-   * — just a different nothing.
-   */
-  it("offers no action when no filter is narrowing anything", () => {
-    const unfiltered = marketplaceLocation({ categoryFiltered: false });
-    expect(unfiltered.empty.action).toBeNull();
-    expect(unfiltered.empty.title).toMatch(/nothing has been listed yet/i);
+  it("leads with the filter when a filter is what narrowed the list", () => {
+    const place = marketplaceLocation({ categoryFiltered: true });
+    expect(place.empty.title).toMatch(/category/i);
+    expect(place.empty.actions.map((a) => a.key)).toEqual(["clear_category", "set_location"]);
+    expect(place.empty.action?.key).toBe("clear_category");
   });
 
-  it("distinguishes an empty category from an empty marketplace", () => {
-    const filtered = marketplaceLocation({ categoryFiltered: true });
-    const unfiltered = marketplaceLocation({ categoryFiltered: false });
-    expect(filtered.empty.title).not.toBe(unfiltered.empty.title);
-    expect(filtered.empty.body).not.toBe(unfiltered.empty.body);
+  it("offers Change location when a city is set and the feed is empty", () => {
+    const place = marketplaceLocation({ city: "Bristol", categoryFiltered: false });
+    expect(place.empty.title).toBe("Nothing nearby right now.");
+    expect(place.empty.actions.map((a) => a.key)).toEqual(["edit_location"]);
   });
 
   it("never suggests widening a radius that does not exist", () => {
-    for (const filtered of [true, false]) {
-      const place = marketplaceLocation({ categoryFiltered: filtered });
-      const copy = `${place.empty.title} ${place.empty.body}`;
-      expect(copy).not.toMatch(/radius/i);
-      expect(copy).not.toMatch(/further away/i);
-      expect(copy).not.toMatch(/wider/i);
+    for (const city of [null, "Bristol"]) {
+      for (const filtered of [true, false]) {
+        const place = marketplaceLocation({ city, categoryFiltered: filtered });
+        const copy = `${place.empty.title} ${place.empty.body}`;
+        expect(copy).not.toMatch(/radius/i);
+        expect(copy).not.toMatch(/further away/i);
+        expect(copy).not.toMatch(/wider/i);
+      }
     }
   });
 
   it("writes both lines as sentences and neither as a dash", () => {
-    for (const filtered of [true, false]) {
-      const place = marketplaceLocation({ categoryFiltered: filtered });
-      expect(place.empty.title.length).toBeGreaterThan(0);
-      expect(place.empty.body.length).toBeGreaterThan(0);
-      expect(`${place.empty.title}${place.empty.body}`).not.toContain("—");
+    for (const city of [null, "Bristol"]) {
+      for (const filtered of [true, false]) {
+        const place = marketplaceLocation({ city, categoryFiltered: filtered });
+        expect(place.empty.title.length).toBeGreaterThan(0);
+        expect(place.empty.body.length).toBeGreaterThan(0);
+        expect(`${place.empty.title}${place.empty.body}`).not.toContain("—");
+      }
     }
+  });
+});
+
+describe("the stored city preference", () => {
+  beforeEach(() => AsyncStorage.clear());
+
+  it("round-trips a city, trimmed", async () => {
+    await saveMarketplaceCity("  New York  ");
+    expect(await loadMarketplaceCity()).toBe("New York");
+  });
+
+  it("reads null when nothing was ever set", async () => {
+    expect(await loadMarketplaceCity()).toBeNull();
+  });
+
+  it("clears on blank input and on the explicit clear", async () => {
+    await saveMarketplaceCity("Bristol");
+    await saveMarketplaceCity("   ");
+    expect(await loadMarketplaceCity()).toBeNull();
+
+    await saveMarketplaceCity("Bristol");
+    await clearMarketplaceCity();
+    expect(await loadMarketplaceCity()).toBeNull();
   });
 });
 
 describe("the recorded gap", () => {
   /**
-   * The claim was dropped rather than implemented, so the ledger has to carry
-   * the reason. Without this, a later reader sees an unexplained absence and
-   * has no way to know it was a decision.
+   * The city is a claim, not data: listings still carry no coordinates, so the
+   * ledger must keep saying so — otherwise a later reader assumes the "near"
+   * wording is backed by geo that does not exist.
    */
-  it("records that location has no source, with what would close it", () => {
+  it("records that distance has no source, with what would close it", () => {
     const entry = MARKETPLACE_MOCK_DATA_GAPS.find((gap) =>
       `${gap.field} ${gap.needs}`.toLowerCase().includes("distance")
     );

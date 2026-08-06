@@ -29,13 +29,14 @@
  *
  * ## What is real and what is not
  *
- * The offers domain, the cart, and boost purchase have **no backend at all** —
- * no table, no route, no column. They are built, tested (see
- * `api/__tests__/marketplaceOffers.test.ts`) and held behind
- * `MARKETPLACE_OFFERS_ENABLED`, `MARKETPLACE_CART_ENABLED` and
- * `MARKETPLACE_BOOST_ENABLED`, all currently `false`. Nothing here fakes a
- * working checkout or a successful accept. `MARKETPLACE_MOCK_DATA_GAPS` in
- * `api/marketplaceScreen` lists every gap and the backend work it needs.
+ * Offers and the cart are backed by real route packs
+ * (`services/marketplace_offers_routes.py`, `services/marketplace_cart_routes.py`)
+ * and their clients in `api/marketplaceCommerce`; the flags
+ * `MARKETPLACE_OFFERS_ENABLED` and `MARKETPLACE_CART_ENABLED` are on, with the
+ * deploy-ordering rule documented on each flag. Boost purchase still has no
+ * backend — `MARKETPLACE_BOOST_ENABLED` stays `false`, and nothing here fakes
+ * a boost sale. `MARKETPLACE_MOCK_DATA_GAPS` in `api/marketplaceScreen` lists
+ * every remaining gap and the backend work it needs.
  *
  * The NEW and FEATURED badges, listing staleness, and the whole Add-to-cart vs
  * Make-offer split *are* real: `created_at`, `featured` and `delivery_type`
@@ -73,20 +74,30 @@ import {
   type OfferAction
 } from "../api/marketplaceOffers";
 import {
+  addToCart as addToCartServer,
+  fetchCart,
+  fetchOffers,
+  actOnOffer,
+  counterOffer as counterOfferServer,
+  type CartSnapshot
+} from "../api/marketplaceCommerce";
+import {
   boostCandidate,
   deriveBuyingItems,
   deriveCategories,
   deriveSellingItems,
   deriveSellingSummary,
   loadLastMarketplaceMode,
+  loadMarketplaceCity,
   loadMarketplaceScreen,
   marketplaceLocation,
-  marketplaceLocationHonestyEnabled,
   saveLastMarketplaceMode,
+  saveMarketplaceCity,
   sellerSnapshotFrom,
   sellingTabCounts,
   type BuyingItem,
   type MarketplaceLoadResult,
+  type MarketplaceLocationActionKey,
   type SellingItem,
   type SellingTabKey
 } from "../api/marketplaceScreen";
@@ -179,20 +190,22 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
   const [offers, setOffers] = useState<readonly MarketplaceOffer[]>([]);
   const [savedIds, setSavedIds] = useState<readonly number[]>([]);
   const [cartIds, setCartIds] = useState<readonly number[]>([]);
+  const [cartBadge, setCartBadge] = useState(0);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [visibleIds, setVisibleIds] = useState<readonly number[]>([]);
   const [now, setNow] = useState(() => Date.now());
+  const [city, setCity] = useState<string | null>(null);
+  const [locationSheetOpen, setLocationSheetOpen] = useState(false);
 
   /**
    * What this feed may claim about location.
    *
-   * No city is passed because nothing in this app knows one. The moment
-   * something does, it is passed here and the heading, the strip and the footer
-   * all change together — which is the reason this is one derivation rather
-   * than three strings scattered through the render.
+   * The city is a stored, self-reported preference — not a geo lookup — and the
+   * heading, the strip, the footer and the empty state all derive from this one
+   * call, which is the reason this is one derivation rather than three strings
+   * scattered through the render.
    */
-  const locationOn = marketplaceLocationHonestyEnabled();
-  const place = marketplaceLocation({ categoryFiltered: category !== CATEGORY_ALL });
+  const place = marketplaceLocation({ city, categoryFiltered: category !== CATEGORY_ALL });
 
   const sellingEntrance = useStoreEntrance(SELLING_SECTIONS, reducedMotion);
   const buyingEntrance = useStoreEntrance(BUYING_SECTIONS, reducedMotion);
@@ -228,6 +241,17 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
     loadLastMarketplaceMode()
       .then(setMode)
       .catch(() => undefined);
+    loadMarketplaceCity()
+      .then(setCity)
+      .catch(() => undefined);
+  }, []);
+
+  /** Persist, then reflect. A save failure still updates this session. */
+  const changeCity = useCallback((next: string | null) => {
+    const trimmed = String(next || "").trim();
+    setCity(trimmed.length > 0 ? trimmed : null);
+    setLocationSheetOpen(false);
+    saveMarketplaceCity(trimmed).catch(() => undefined);
   }, []);
 
   // Header bell reads the ONE shared unread store (same as every seller header
@@ -273,6 +297,31 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
     setMode(next);
     saveLastMarketplaceMode(next).catch(() => undefined);
   }, []);
+
+  /**
+   * Server cart and offers are the source of truth; local state is a mirror.
+   *
+   * `applyCart` is the single funnel every cart response goes through, so the
+   * badge and the per-card membership can never disagree with each other.
+   * `syncOffers` replaces the whole list with server truth — after a counter,
+   * reconciling row-by-row would have to dedupe the optimistic counter against
+   * the real one, and a replace is both simpler and always correct.
+   */
+  const applyCart = useCallback((snap: CartSnapshot) => {
+    setCartIds(snap.lines.map((line) => line.listing_id));
+    setCartBadge(snap.badgeCount);
+  }, []);
+
+  const syncOffers = useCallback(() => {
+    fetchOffers("seller")
+      .then((rows) => setOffers(resolveExpiries(rows, Date.now())))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (MARKETPLACE_CART_ENABLED) fetchCart().then(applyCart).catch(() => undefined);
+    if (MARKETPLACE_OFFERS_ENABLED) syncOffers();
+  }, [applyCart, syncOffers]);
 
   /**
    * Counter sheet.
@@ -400,12 +449,14 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
    */
   const runOfferAction = useCallback(
     (offerId: string, action: OfferAction, amountMinor?: number) => {
+      let started = false;
       setOffers((current) => {
         const target = current.find((offer) => offer.id === offerId);
         if (!target) return current;
-        const started = beginOfferAction(target, action);
-        if (!started.ok) return current;
-        const stamped = current.map((offer) => (offer.id === offerId ? started.offer : offer));
+        const begun = beginOfferAction(target, action);
+        if (!begun.ok) return current;
+        started = true;
+        const stamped = current.map((offer) => (offer.id === offerId ? begun.offer : offer));
         const { offers: next } = applyOfferActionToList(stamped, offerId, {
           action,
           actor: "seller",
@@ -414,8 +465,19 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
         });
         return next;
       });
+      // The optimistic transition above is the reducer this module always
+      // promised to become; the server call settles it. Success and failure
+      // both end in `syncOffers` because the counter case creates a row whose
+      // real id only the server knows, and a failed accept must roll back to
+      // whatever the server actually holds — replace-with-truth covers both.
+      if (!started) return;
+      const settle =
+        action === "counter"
+          ? counterOfferServer(offerId, amountMinor ?? 0)
+          : actOnOffer(offerId, action);
+      settle.then(syncOffers).catch(syncOffers);
     },
-    []
+    [syncOffers]
   );
 
   const toggleSave = useCallback(async (item: BuyingItem) => {
@@ -440,12 +502,26 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
    * The guard is here so that turning the flag on without wiring the cart
    * cannot silently no-op into a "success" confirmation.
    */
-  const addToCart = useCallback((item: BuyingItem) => {
-    if (!MARKETPLACE_CART_ENABLED) return;
-    setCartIds((current) => (current.includes(item.id) ? current : [...current, item.id]));
-    setConfirmingId(item.id);
-    setTimeout(() => setConfirmingId((current) => (current === item.id ? null : current)), 1400);
-  }, []);
+  const addToCart = useCallback(
+    (item: BuyingItem) => {
+      if (!MARKETPLACE_CART_ENABLED) return;
+      // Optimistic membership + badge, reconciled against the snapshot the
+      // server returns. On failure the confirmation is withdrawn and the cart
+      // re-read — a silently dropped "Add to cart" is a lie told to the buyer.
+      const wasIn = cartIds.includes(item.id);
+      setCartIds((current) => (wasIn ? current : [...current, item.id]));
+      if (!wasIn) setCartBadge((count) => count + 1);
+      setConfirmingId(item.id);
+      setTimeout(() => setConfirmingId((current) => (current === item.id ? null : current)), 1400);
+      addToCartServer(item.id)
+        .then(applyCart)
+        .catch(() => {
+          setConfirmingId((current) => (current === item.id ? null : current));
+          fetchCart().then(applyCart).catch(() => undefined);
+        });
+    },
+    [cartIds, applyCart]
+  );
 
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     setVisibleIds(viewableItems.map((token) => Number((token.item as BuyingItem)?.id)));
@@ -455,7 +531,10 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
    * Header
    * ---------------------------------------------------------------- */
 
-  const cartCount = cartIds.length;
+  // Badge count comes from the server snapshot (optimistically bumped on add),
+  // so it agrees with what the cart screen will show — `cartIds` is membership
+  // for per-card state, not a counter.
+  const cartCount = cartBadge;
   const savedCount = savedIds.length;
 
   const header = (
@@ -481,7 +560,13 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
             savedCount={savedCount}
             cartCount={cartCount}
             onSaved={() => navigation.navigate("Saved")}
-            onCart={() => navigation.navigate("BuyerPurchases", { title: "Cart" })}
+            // With the cart live this routes to the real cart screen; before
+            // the flag flip it honestly went to Purchases instead.
+            onCart={() =>
+              MARKETPLACE_CART_ENABLED
+                ? navigation.navigate("MarketplaceCart", { title: "Cart" })
+                : navigation.navigate("BuyerPurchases", { title: "Purchases" })
+            }
             reducedMotion={reducedMotion}
           />
         ) : null
@@ -491,8 +576,9 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
           <ModeToggle mode={mode} onChange={changeMode} reducedMotion={reducedMotion} />
           {mode === "buying" ? (
             <LocationStrip
-              text={locationOn ? place.stripText : "Location not set — showing all listings"}
-              reason={locationOn ? place.unavailableReason : null}
+              text={place.stripText}
+              actionLabel={place.stripAction.label}
+              onPress={() => setLocationSheetOpen(true)}
             />
           ) : null}
         </View>
@@ -564,6 +650,8 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
             onRefresh={() => load("refresh").catch(() => undefined)}
             entrance={buyingEntrance}
             reducedMotion={reducedMotion}
+            city={city}
+            onOpenLocation={() => setLocationSheetOpen(true)}
             categories={categories}
             category={category}
             onCategoryChange={(next) => {
@@ -605,7 +693,110 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
         onCancel={closeCounter}
         onSubmit={submitCounter}
       />
+
+      {/* Same root-level placement as CounterSheet, for the same reason. */}
+      <LocationSheet
+        visible={locationSheetOpen}
+        city={city}
+        onCancel={() => setLocationSheetOpen(false)}
+        onSave={changeCity}
+      />
     </View>
+  );
+}
+
+/**
+ * Location sheet.
+ *
+ * Collects one thing: a self-reported city or postal area, stored as a
+ * preference. It is not a geo lookup — nothing here reads device location —
+ * and the sheet says what setting it changes. Clearing returns the screen to
+ * the no-claim wording.
+ */
+function LocationSheet({
+  visible,
+  city,
+  onCancel,
+  onSave
+}: {
+  visible: boolean;
+  city: string | null;
+  onCancel: () => void;
+  onSave: (next: string | null) => void;
+}) {
+  const [draft, setDraft] = useState("");
+
+  // Re-seed the field each time the sheet opens, so reopening after a cancel
+  // shows the saved value rather than the abandoned edit.
+  useEffect(() => {
+    if (visible) setDraft(city || "");
+  }, [visible, city]);
+
+  const trimmed = draft.trim();
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onCancel}
+      accessibilityViewIsModal
+    >
+      <Pressable style={styles.sheetScrim} onPress={onCancel} accessibilityLabel="Close" />
+      <View style={styles.sheet}>
+        <Text style={styles.sheetTitle}>{city ? "Change location" : "Set location"}</Text>
+        <Text style={styles.sheetSub}>
+          Enter a city or area. This sets what the Marketplace shows you — it is not shared
+          with sellers and does not read your device location.
+        </Text>
+
+        <Text style={styles.sheetLabel}>City or area</Text>
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          style={styles.sheetInput}
+          accessibilityLabel="City or area"
+          placeholder="e.g. New York"
+          placeholderTextColor={storeLight.text.muted}
+          autoFocus
+          autoCapitalize="words"
+          autoCorrect={false}
+          returnKeyType="done"
+          onSubmitEditing={() => (trimmed ? onSave(trimmed) : undefined)}
+        />
+
+        <View style={styles.sheetActions}>
+          <Pressable
+            onPress={onCancel}
+            style={[styles.sheetButton, styles.sheetCancel]}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel"
+          >
+            <Text style={styles.sheetCancelText}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => onSave(trimmed || null)}
+            disabled={!trimmed && !city}
+            style={[
+              styles.sheetButton,
+              styles.sheetSend,
+              !trimmed && !city && styles.sheetSendOff
+            ]}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !trimmed && !city }}
+            accessibilityLabel={
+              trimmed
+                ? `Save location ${trimmed}`
+                : city
+                  ? "Clear location"
+                  : "Save location, enter a city first"
+            }
+          >
+            <Text style={styles.sheetSendText}>{trimmed ? "Save" : city ? "Clear location" : "Save"}</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1215,6 +1406,8 @@ function BuyingPane({
   onRefresh,
   entrance,
   reducedMotion,
+  city,
+  onOpenLocation,
   categories,
   category,
   onCategoryChange,
@@ -1237,6 +1430,8 @@ function BuyingPane({
   onRefresh: () => void;
   entrance: ReturnType<typeof useStoreEntrance>;
   reducedMotion: boolean;
+  city: string | null;
+  onOpenLocation: () => void;
   categories: readonly { key: string; label: string }[];
   category: string;
   onCategoryChange: (next: string) => void;
@@ -1260,15 +1455,20 @@ function BuyingPane({
   );
 
   /**
-   * Recomputed here rather than passed down. It is a pure function of the
-   * category this pane already owns, so threading it through props would add a
-   * way for the heading and the strip to disagree without adding anything.
+   * Recomputed here rather than passed down as strings. It is a pure function
+   * of the city and the category, so the heading here and the strip in the
+   * header derive from the same inputs and cannot disagree.
    */
-  const locationOn = marketplaceLocationHonestyEnabled();
   const place = useMemo(
-    () => marketplaceLocation({ categoryFiltered: category !== CATEGORY_ALL }),
-    [category]
+    () => marketplaceLocation({ city, categoryFiltered: category !== CATEGORY_ALL }),
+    [city, category]
   );
+
+  /** Every empty-state action maps to a control this screen really has. */
+  const runLocationAction = (key: MarketplaceLocationActionKey) => {
+    if (key === "clear_category") onCategoryChange(CATEGORY_ALL);
+    else onOpenLocation();
+  };
 
   return (
     <View style={styles.buyingRoot}>
@@ -1327,9 +1527,9 @@ function BuyingPane({
                   reducedMotion={reducedMotion}
                 />
               </Animated.View>
-              {/* "near you" was a claim about geography over listings that
-                  carry none, contradicted by the strip directly above it. */}
-              <SectionHeader title={locationOn ? place.feedTitle : "Just listed near you"} />
+              {/* Only claims "near you" when a location is set — the same
+                  derivation the strip uses, so they cannot contradict. */}
+              <SectionHeader title={place.feedTitle} />
             </View>
           }
           ListEmptyComponent={
@@ -1339,33 +1539,23 @@ function BuyingPane({
                 onRetry={onRetryFeed}
                 reducedMotion={reducedMotion}
               />
-            ) : locationOn ? (
+            ) : (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyTitle}>{place.empty.title}</Text>
                 <Text style={styles.emptyBody}>{place.empty.body}</Text>
-                {/* The brief asked for "Set your location" here. There is no
-                    location feature to set, so the action is the one filter
-                    that really exists and really is narrowing this list. A
-                    button that opens nothing would be worse than none. */}
-                {place.empty.action ? (
+                {/* Every button here opens a control that really exists: the
+                    location sheet, or the category rail's "all" chip. */}
+                {place.empty.actions.map((action) => (
                   <Pressable
-                    onPress={() => onCategoryChange(CATEGORY_ALL)}
+                    key={action.key}
+                    onPress={() => runLocationAction(action.key)}
                     style={styles.emptyAction}
                     accessibilityRole="button"
-                    accessibilityLabel={`${place.empty.action.label}. ${place.empty.title}`}
+                    accessibilityLabel={`${action.label}. ${place.empty.title}`}
                   >
-                    <Text style={styles.emptyActionText}>{place.empty.action.label}</Text>
+                    <Text style={styles.emptyActionText}>{action.label}</Text>
                   </Pressable>
-                ) : null}
-              </View>
-            ) : (
-              <View style={styles.emptyCard}>
-                <Text style={styles.emptyTitle}>Nothing nearby right now.</Text>
-                <Text style={styles.emptyBody}>
-                  {/* MOCK-DATA: no radius setting exists to widen, so this
-                      cannot offer the one-tap expansion the brief describes. */}
-                  Try another category, or pull down to check again.
-                </Text>
+                ))}
               </View>
             )
           }
@@ -1376,13 +1566,9 @@ function BuyingPane({
                   onPress={onShowMore}
                   style={styles.showMore}
                   accessibilityRole="button"
-                  accessibilityLabel={
-                    locationOn ? `${place.moreLabel} listings` : "Show more nearby items"
-                  }
+                  accessibilityLabel={`${place.moreLabel} listings`}
                 >
-                  <Text style={styles.showMoreText}>
-                    {locationOn ? place.moreLabel : "Show more nearby"}
-                  </Text>
+                  <Text style={styles.showMoreText}>{place.moreLabel}</Text>
                 </Pressable>
               </Animated.View>
             ) : null
@@ -1597,22 +1783,29 @@ function BuyingHeaderCounts({
  * which would be a fabricated claim about where the user is and what they are
  * being shown.
  *
- * `reason` turns the row into an unavailable control that explains itself. The
- * previous version was a bare line of text next to a location pin, which reads
- * as something to press; it was not, and there is nothing to press it to, so
- * saying why is the only honest option. The strip carries no button precisely
- * because the app has no location feature to send anyone to.
+ * The strip is a working control now that the city is a stored preference: it
+ * states what the feed is showing and opens the location sheet. The action
+ * label is rendered so the row reads as pressable — a bare line next to a pin
+ * looked tappable when it was not; the reverse would be as bad.
  */
-function LocationStrip({ text, reason }: { text: string; reason: string | null }) {
+function LocationStrip({
+  text,
+  actionLabel,
+  onPress
+}: {
+  text: string;
+  actionLabel: string;
+  onPress: () => void;
+}) {
   return (
-    <View
+    <Pressable
       style={styles.locationStrip}
-      accessible
-      accessibilityRole="text"
-      accessibilityLabel={reason ? `${text}. ${reason}` : text}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${text}. ${actionLabel}`}
     >
       <Ionicons
-        name={reason ? "location-outline" : "location"}
+        name="location-outline"
         size={14}
         color={storeLight.text.onDarkMuted}
         accessibilityElementsHidden
@@ -1620,9 +1813,9 @@ function LocationStrip({ text, reason }: { text: string; reason: string | null }
       />
       <View style={styles.locationTextGroup}>
         <Text style={styles.locationText}>{text}</Text>
-        {reason ? <Text style={styles.locationReason}>{reason}</Text> : null}
       </View>
-    </View>
+      <Text style={styles.locationAction}>{actionLabel}</Text>
+    </Pressable>
   );
 }
 
@@ -1653,13 +1846,15 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   headerBadgeText: { fontSize: 10, fontWeight: "800", color: storeLight.text.primary },
-  // `flex-start` rather than `center`: with a reason underneath, a centred pin
-  // floats between the two lines instead of marking the first.
-  locationStrip: { flexDirection: "row", alignItems: "flex-start", gap: 5 },
+  locationStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    minHeight: storeLight.size.tapTarget - 16
+  },
   locationTextGroup: { flex: 1, gap: 1 },
   locationText: { fontSize: 12, color: storeLight.text.onDarkMuted },
-  // No `numberOfLines`: a truncated explanation explains nothing.
-  locationReason: { fontSize: 11, lineHeight: 15, color: storeLight.text.onDarkMuted },
+  locationAction: { fontSize: 12, fontWeight: "700", color: storeLight.text.onDarkMuted },
 
   scroll: { padding: storeLight.space.card, gap: 12 },
   buyingRoot: { flex: 1 },

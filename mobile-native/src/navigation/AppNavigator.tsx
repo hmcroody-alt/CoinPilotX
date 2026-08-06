@@ -59,6 +59,7 @@ import { EventsScreen } from "../screens/EventsScreen";
 import { LiveScreen } from "../screens/LiveScreen";
 import { LiveStudioScreen } from "../screens/LiveStudioScreen";
 import { LiveHostSessionScreen } from "../screens/LiveHostSessionScreen";
+import { MarketplaceCartScreen } from "../screens/MarketplaceCartScreen";
 import { MarketplaceScreen } from "../screens/MarketplaceScreen";
 import { MessengerScreen } from "../screens/MessengerScreen";
 import { MusicScreen } from "../screens/MusicScreen";
@@ -416,6 +417,7 @@ export function AppNavigator() {
       <Stack.Screen name="BuyerOrders" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.purchaseHistory") })} />
       <Stack.Screen name="BuyerOrderDetail" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.orderDetail") })} />
       <Stack.Screen name="BuyerPurchases" component={BuyerOrdersScreen} options={{ title: t("common:screens.purchaseHistory") }} />
+      <Stack.Screen name="MarketplaceCart" component={MarketplaceCartScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.cart") })} />
       <Stack.Screen name="BuyerOrdersDashboard" component={BuyerOrdersScreen} options={{ title: t("common:screens.purchaseHistory") }} />
       <Stack.Screen name="MerchantApply" component={ProtectedSellerApplicationScreen} options={{ title: t("common:screens.merchantApplication") }} />
       <Stack.Screen name="MerchantDashboard" component={ProtectedSellerStoreScreen} options={{ title: t("common:screens.merchantDashboard") }} />

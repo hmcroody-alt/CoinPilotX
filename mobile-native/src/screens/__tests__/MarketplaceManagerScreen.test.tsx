@@ -103,16 +103,20 @@ async function renderScreen() {
 
 describe("MarketplaceManagerScreen", () => {
   it("keeps every unbacked surface behind a flag that is off", () => {
-    // These three are asserted as constants rather than as absent UI because a
-    // flipped flag with no backend behind it is the failure this guards.
-    expect(MARKETPLACE_OFFERS_ENABLED).toBe(false);
-    expect(MARKETPLACE_CART_ENABLED).toBe(false);
+    // Asserted as constants rather than as absent UI because a flipped flag
+    // with no backend behind it is the failure this guards. Offers and cart
+    // are now ON — their backends are `services/marketplace_offers_routes.py`
+    // and `services/marketplace_cart_routes.py`, registered in bot.py. Boost
+    // still has no backend and must stay off.
+    expect(MARKETPLACE_OFFERS_ENABLED).toBe(true);
+    expect(MARKETPLACE_CART_ENABLED).toBe(true);
     expect(MARKETPLACE_BOOST_ENABLED).toBe(false);
   });
 
   it("lists every mock-data gap rather than filling one in", () => {
     // If someone fakes one of these, the count changes and this says so.
-    expect(MARKETPLACE_MOCK_DATA_GAPS.length).toBe(12);
+    // 12 → 10 when offers and cart gained real backends (Aug 2026 mission).
+    expect(MARKETPLACE_MOCK_DATA_GAPS.length).toBe(10);
     MARKETPLACE_MOCK_DATA_GAPS.forEach((gap) => {
       expect(gap.field.length).toBeGreaterThan(0);
       expect(gap.needs.length).toBeGreaterThan(0);

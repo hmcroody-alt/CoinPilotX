@@ -12,8 +12,9 @@
  * 3. FILTER COUNTS + MATCHING. Spam/blocked/archived are excluded from the base
  *    filters; Offers/Orders read the resolved chip kind; counts and matching
  *    agree.
- * 4. EXPIRY BANNER IS FLAG-GATED OFF. With `MARKETPLACE_OFFERS_ENABLED` false the
- *    banner is dark regardless of how urgent the offers are — the honest default.
+ * 4. EXPIRY BANNER IS LIVE. With `MARKETPLACE_OFFERS_ENABLED` true (backend:
+ *    services/marketplace_offers_routes.py) an offer inside the urgency window
+ *    lights the banner; nothing near expiry keeps it dark.
  * 5. MOCK-DATA gap count is asserted, so closing/adding a gap is a reviewed change.
  */
 
@@ -230,12 +231,22 @@ describe("Tier 0.4 filter rail", () => {
   });
 });
 
-describe("expiry banner is flag-gated off", () => {
-  it("returns null with no offers backend even when an offer is minutes from expiry", () => {
+describe("expiry banner (offers backend live, flag on)", () => {
+  it("surfaces the most urgent expiring offer now that the flag is on", () => {
     const soon = offer({ createdAt: NOW - 71.5 * HOUR }); // ~30m left
     const banner = deriveExpiryBanner([soon], () => 1, NOW);
-    // MARKETPLACE_OFFERS_ENABLED is false → banner dark regardless of urgency.
-    expect(banner).toBeNull();
+    // MARKETPLACE_OFFERS_ENABLED is true (backend:
+    // services/marketplace_offers_routes.py) → an offer inside the urgency
+    // window lights the banner.
+    expect(banner).not.toBeNull();
+    expect(banner?.offerId).toBe(soon.id);
+    expect(banner?.conversationId).toBe(1);
+    expect(banner?.moreCount).toBe(0);
+  });
+
+  it("still returns null when nothing is near expiry", () => {
+    const fresh = offer({ createdAt: NOW - 1 * HOUR });
+    expect(deriveExpiryBanner([fresh], () => 1, NOW)).toBeNull();
   });
 });
 

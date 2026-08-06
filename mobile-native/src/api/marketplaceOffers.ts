@@ -65,32 +65,32 @@
  * ------------------------------------------------------------------ */
 
 /**
- * Offers are UI-only until an endpoint exists.
+ * Offers are live. `services/marketplace_offers_routes.py` registers
+ * `/api/pulse/marketplace/offers*` in `bot.py`: create, list, accept, decline,
+ * withdraw, counter (close-and-reverse, exactly the machine below), and
+ * checkout inside the acceptance window. The mobile clients live in
+ * `./marketplaceCommerce`; this module remains the pure state machine and the
+ * optimistic-update reducer, as the header comment promised it would.
  *
- * The brief is explicit for exactly this case: "If offers, cart, or boost have
- * no backend at all, build the UI behind a feature flag and say so — do not fake
- * a working checkout." So the surface is built, and this constant keeps it dark.
- *
- * When it is false the Marketplace screen renders no offers section, no offer
- * button on grid cards, and no offers-waiting summary chip. Flipping it to true
- * without an endpoint gives a fully interactive negotiation flow whose accepts
- * reach nothing — which is useful for design review and catastrophic in
- * production, hence the wording here rather than a bare boolean.
+ * Deploy ordering: the backend pack must be live before an app build with this
+ * flag on reaches users. `fetchOffers` fails soft on 404 (a not-yet-deployed
+ * pack reads as "no offers"), but soft failure is a safety net, not a release
+ * strategy.
  */
-export const MARKETPLACE_OFFERS_ENABLED = false;
+export const MARKETPLACE_OFFERS_ENABLED = true;
 
 /**
- * Cart and checkout for Marketplace items.
+ * Cart is live. `services/marketplace_cart_routes.py` registers
+ * `/api/pulse/marketplace/cart*` in `bot.py`: persisted lines with price
+ * snapshots, server-derived line state (price_changed / low_stock / sold /
+ * removed / restricted), validate, and per-seller-group checkout through the
+ * same Stripe Connect surface as single-item purchase — no new payment path.
+ * Mobile clients live in `./marketplaceCommerce`.
  *
- * `openMarketplaceCheckout` in `./marketplace` posts to the real
- * `/api/pulse/payments/checkout` and returns a URL, so single-item purchase
- * works today. What does not exist is a *cart*: no basket endpoint, no line
- * items, no persisted quantity. The header badge and "Add to cart" therefore sit
- * behind this flag, and the brief's rule that purchase must "go through existing
- * payment/cart infrastructure — never a new payment path" is honoured by leaving
- * the single-item checkout as the only live route to payment.
+ * Same deploy ordering as offers: backend pack first, then an app build with
+ * this flag on. `fetchCart` fails soft to an empty cart; writes surface errors.
  */
-export const MARKETPLACE_CART_ENABLED = false;
+export const MARKETPLACE_CART_ENABLED = true;
 
 /**
  * Boost — the seller-side purchase that buys a FEATURED badge.

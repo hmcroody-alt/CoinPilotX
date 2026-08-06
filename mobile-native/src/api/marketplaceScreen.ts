@@ -39,7 +39,6 @@ import {
   type SellerStoreSnapshot
 } from "./marketplace";
 import { listingHealth, type StoreListingHealth } from "./storeDashboard";
-import { envFlagOn } from "../core/envFlag";
 
 /* ------------------------------------------------------------------ *
  * Unsourced fields
@@ -61,21 +60,12 @@ export type MarketplaceDataGap = {
  * the count changes and the test says so.
  */
 export const MARKETPLACE_MOCK_DATA_GAPS: readonly MarketplaceDataGap[] = [
-  // MOCK-DATA: the entire offers domain. No `marketplace_offers` table, no
-  // route, no column. The state machine in `./marketplaceOffers` is real and
-  // tested; what it has nothing to talk to is a server.
-  {
-    field: "Offers (make, accept, counter, decline, expire)",
-    needs: "marketplace_offers table + CRUD endpoints + a push notification on accept",
-    flag: "MARKETPLACE_OFFERS_ENABLED"
-  },
-  // MOCK-DATA: cart. Single-item checkout is real (`/api/pulse/payments/checkout`);
-  // a basket with line items and quantities is not.
-  {
-    field: "Cart and cart badge count",
-    needs: "cart endpoints (add, list, remove) over the existing payments surface",
-    flag: "MARKETPLACE_CART_ENABLED"
-  },
+  // CLOSED (kept as a comment, not an entry): offers and cart. Both now have
+  // real backends — `services/marketplace_offers_routes.py` and
+  // `services/marketplace_cart_routes.py`, clients in `./marketplaceCommerce`,
+  // flags on. What remains missing from the offers design is only the push
+  // notification on accept, which is tracked by the notifications gap policy,
+  // not here.
   // MOCK-DATA: boost purchase. `listings.featured` is real and already orders
   // search results; nothing prices a boost or takes payment for one.
   {
@@ -143,32 +133,25 @@ export const MARKETPLACE_MOCK_DATA_GAPS: readonly MarketplaceDataGap[] = [
 ] as const;
 
 /* ------------------------------------------------------------------ *
- * Location honesty
+ * Location
  * ------------------------------------------------------------------ */
-
-export const MARKETPLACE_LOCATION_FLAG = "EXPO_PUBLIC_MARKETPLACE_LOCATION_HONESTY";
-
-/** True when a build has opted into the honest location wording. Off by default.
- *  Reads the shared truthy set — see `core/envFlag.ts`. */
-export function marketplaceLocationHonestyEnabled(): boolean {
-  return envFlagOn(MARKETPLACE_LOCATION_FLAG);
-}
 
 /**
  * What the buying feed may claim about where its listings are.
  *
  * The screen headed a list "Just listed near you" over listings with no geo on
- * them, sorted by recency and nothing else. Three words of that heading were
- * false, and the strip underneath already said so — "Location not set" — which
- * means the screen contradicted itself on one page.
+ * them, sorted by recency and nothing else — while the strip directly above it
+ * said "Location not set — showing all listings". The screen contradicted
+ * itself on one page. That fallback copy is gone; this derivation is the only
+ * path.
  *
- * The correction: with no location set, no line of the screen claims proximity
- * — the feed is "Recently listed", the strip says "Location not set", and the
- * strip is a working control that opens a location sheet. The city it collects
- * is a stored, self-reported preference (`loadMarketplaceCity` below), not a
- * geo lookup: listings still carry no coordinates and `distanceMeters` is still
- * `null` (see the location entry in `MARKETPLACE_MOCK_DATA_GAPS`), so setting a
- * city changes what the screen *claims*, not what the feed *contains*. The
+ * With no location set, no line of the screen claims proximity: the feed is
+ * "Recently listed", the strip says "Location not set", and the strip is a
+ * working control that opens the location sheet. The city it collects is a
+ * stored, self-reported preference (`loadMarketplaceCity` below), not a geo
+ * lookup: listings still carry no coordinates and `distanceMeters` is still
+ * `null` (see the location entry in `MARKETPLACE_MOCK_DATA_GAPS`), so setting
+ * a city changes what the screen *claims*, not what the feed *contains*. The
  * heading, strip, footer and empty state all derive from the one `city` input
  * here so they can never disagree again.
  */
@@ -188,8 +171,6 @@ export type MarketplaceLocationState = {
   feedTitle: string;
   /** The strip's sentence. */
   stripText: string;
-  /** Why distance cannot be promised; null only when location-backed data exists. */
-  unavailableReason: string | null;
   /**
    * What tapping the strip does. Always a real control now that the city is a
    * stored preference — set it when absent, change it when present.
@@ -228,9 +209,8 @@ export function marketplaceLocation(input: {
     return {
       known,
       city,
-      feedTitle: `Just listed near ${city}`,
+      feedTitle: "Just listed near you",
       stripText: `Showing listings near ${city}`,
-      unavailableReason: null,
       stripAction: EDIT_LOCATION,
       moreLabel: "Show more nearby",
       empty: filtered
@@ -242,7 +222,7 @@ export function marketplaceLocation(input: {
           }
         : {
             title: "Nothing nearby right now.",
-            body: `No listings near ${city} at the moment. Pull down to check again.`,
+            body: `No listings near ${city} at the moment. Try again later, or change your location.`,
             actions: [EDIT_LOCATION],
             action: EDIT_LOCATION
           }
@@ -252,25 +232,57 @@ export function marketplaceLocation(input: {
   return {
     known,
     city: null,
-    feedTitle: "Just listed",
-    stripText: "Showing every listing",
-    unavailableReason: "Distance sorting isn't part of the app yet.",
+    feedTitle: "Recently listed",
+    stripText: "Location not set",
     stripAction: SET_LOCATION,
     moreLabel: "Show more",
     empty: filtered
       ? {
           title: "Nothing in this category right now.",
-          body: "Other categories may have something. Pull down to check again.",
-          actions: [CLEAR_CATEGORY],
+          body: "Other categories may have something, or set a location to look for items in your area.",
+          actions: [CLEAR_CATEGORY, SET_LOCATION],
           action: CLEAR_CATEGORY
         }
       : {
-          title: "Nothing has been listed yet.",
-          body: "New listings appear here as sellers add them. Pull down to check again.",
-          actions: [],
-          action: null
+          title: "No listings available right now.",
+          body: "Set your Marketplace location to find nearby items, or pull down to check again.",
+          actions: [SET_LOCATION],
+          action: SET_LOCATION
         }
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * Stored city preference
+ * ------------------------------------------------------------------ */
+
+const CITY_KEY = "pulsesoc.native.marketplace.city";
+
+/** The reader's self-reported Marketplace city, or null when none is set. */
+export async function loadMarketplaceCity(): Promise<string | null> {
+  try {
+    const stored = await AsyncStorage.getItem(CITY_KEY);
+    const city = String(stored || "").trim();
+    return city.length > 0 ? city : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist the city. A blank or whitespace value clears the preference. */
+export async function saveMarketplaceCity(city: string | null): Promise<void> {
+  const trimmed = String(city || "").trim();
+  try {
+    if (trimmed) await AsyncStorage.setItem(CITY_KEY, trimmed);
+    else await AsyncStorage.removeItem(CITY_KEY);
+  } catch {
+    // A failed preference write costs one session of un-localized copy, and
+    // there is nothing the user could do about it. Same posture as the mode key.
+  }
+}
+
+export async function clearMarketplaceCity(): Promise<void> {
+  return saveMarketplaceCity(null);
 }
 
 /* ------------------------------------------------------------------ *
