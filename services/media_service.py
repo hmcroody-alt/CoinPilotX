@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 from werkzeug.utils import secure_filename
 
+from . import media_covers
 from . import media_storage
 from . import user_context
 
@@ -1118,6 +1119,23 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
         )
     except Exception:
         pass
+    # Smart covers: generate S/M/L previews once, while the source file is
+    # still local. Videos get best-frame extraction (skips black/fade frames).
+    # Strictly best-effort — a cover failure must never fail the upload; the
+    # media worker's cover backlog sweep will heal any row this misses.
+    try:
+        covers = media_covers.generate_covers(path, media_type, storage.get("storage_key") or stored)
+        if covers:
+            media_covers.apply_cover_updates(cur, media_id, covers)
+            logging.info(
+                "PULSE_MEDIA_COVERS_READY trace_id=%s media_id=%s media_type=%s poster=%s",
+                upload_trace,
+                media_id,
+                media_type,
+                covers.get("poster_url") or "",
+            )
+    except Exception as exc:
+        logging.warning("PULSE_MEDIA_COVERS_FAILED trace_id=%s media_id=%s error=%s", upload_trace, media_id, str(exc)[:300])
     mux_result = {}
     mux_configured = bool(mux_diagnostics().get("configured"))
     if media_type == "video" and mux_configured:

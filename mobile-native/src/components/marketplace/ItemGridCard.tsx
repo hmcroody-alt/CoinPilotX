@@ -31,12 +31,13 @@
  */
 
 import { memo } from "react";
-import { Animated, Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Animated, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { storeLight } from "../../theme/storeLight";
 import { marketplaceLight } from "../../theme/marketplaceLight";
 import { useStorePress } from "../../theme/storeMotion";
 import { useMarketplaceHeartPop, useMarketplaceSoldWipe } from "../../theme/marketplaceMotion";
+import { ContentCover } from "../covers/ContentCover";
 import { GlowButton, type GlowButtonVariant } from "./GlowButton";
 
 export type ItemGridBadge = "new" | "featured" | null;
@@ -58,6 +59,8 @@ export type ItemGridCardProps = {
   /** Formatted original price when this is a drop. Rendered struck through. */
   originalPriceText?: string | null;
   imageUrl?: string | null;
+  /** Listing category (e.g. "electronics"); drives the designed placeholder when there is no image. */
+  category?: string;
   badge: ItemGridBadge;
   /** e.g. "2.4 mi · Dana R. 4.9★" or "Ships free". Already localized. */
   metaText: string;
@@ -79,6 +82,7 @@ function ItemGridCardBase({
   priceText,
   originalPriceText,
   imageUrl,
+  category,
   badge,
   metaText,
   metaIsFulfillment = false,
@@ -133,13 +137,7 @@ function ItemGridCardBase({
       >
         <View style={styles.imageWrap}>
           <Animated.View style={[styles.imageInner, imagePress.style]}>
-            {imageUrl ? (
-              <Image source={{ uri: imageUrl }} style={styles.image} />
-            ) : (
-              <View style={[styles.image, styles.imageEmpty]}>
-                <Ionicons name="image-outline" size={22} color={storeLight.text.muted} />
-              </View>
-            )}
+            <ContentCover kind="listing" imageUrl={imageUrl} title={title} category={category} style={styles.image} />
           </Animated.View>
 
           {badgeText ? (
@@ -252,7 +250,6 @@ const styles = StyleSheet.create({
   imageWrap: { width: "100%", aspectRatio: marketplaceLight.grid.imageAspect, overflow: "hidden" },
   imageInner: { flex: 1 },
   image: { width: "100%", height: "100%", backgroundColor: storeLight.bg.skeleton },
-  imageEmpty: { alignItems: "center", justifyContent: "center" },
   badge: {
     position: "absolute",
     top: 8,

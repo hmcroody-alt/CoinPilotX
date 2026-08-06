@@ -1712,6 +1712,7 @@ function BuyingPane({
                 priceText={item.priceLabel}
                 originalPriceText={item.originalPriceLabel}
                 imageUrl={item.imageUrl}
+                category={item.category}
                 badge={item.badge}
                 metaText={metaLineFor(item)}
                 metaIsFulfillment={item.distanceMeters == null}

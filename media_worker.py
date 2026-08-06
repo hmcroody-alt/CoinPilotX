@@ -50,7 +50,7 @@ if running_on_railway() and not os.getenv("DATABASE_URL"):
 
 try:
     import bot
-    from services import media_service, media_storage
+    from services import media_covers, media_service, media_storage
 except Exception as exc:
     print("CoinPilotX media engine import failed", repr(exc), flush=True)
     traceback.print_exc()
@@ -155,6 +155,8 @@ def ensure_media_worker_schema() -> None:
         ("playback_mime_type", "TEXT"),
         ("transcoded_at", "TEXT"),
         ("mux_status", "TEXT"),
+        ("cover_generated_at", "TEXT"),
+        ("cover_attempts", "INTEGER"),
     ], conn=conn)
     conn.commit()
     conn.close()
@@ -478,6 +480,65 @@ def process_playback_backlog(limit: int = 2) -> dict:
     return {"checked": len(rows), "processed": processed, "failed": failed}
 
 
+def process_cover_backlog(limit: int = 4) -> dict:
+    """Lazy backfill: give legacy media real covers so grids never go black.
+
+    Picks rows whose small/medium/large still point at the raw source (the old
+    fallback) or whose video poster is missing, generates covers once, and
+    stores them permanently. Bounded attempts so a corrupt file cannot pin the
+    worker in a retry loop.
+    """
+    if not media_covers.ffmpeg_available():
+        return {"checked": 0, "processed": 0, "failed": 0, "status": "ffmpeg_missing"}
+    conn = bot.db()
+    conn.row_factory = bot.sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT *
+        FROM chat_media_uploads
+        WHERE deleted_at IS NULL
+          AND media_type IN ('image', 'gif', 'video')
+          AND COALESCE(is_available, 1)=1
+          AND COALESCE(cover_attempts, 0) < ?
+          AND COALESCE(cover_generated_at, '')=''
+          AND (
+            COALESCE(small_url, '')='' OR small_url=media_url
+            OR (media_type='video' AND (COALESCE(poster_url, '')='' OR poster_url=media_url))
+          )
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (MAX_ATTEMPTS, max(1, min(int(limit or 4), 10))),
+    )
+    rows = [dict(row) for row in cur.fetchall()]
+    processed = 0
+    failed = 0
+    for row in rows:
+        media_id = int(row.get("id") or 0)
+        cur.execute(
+            "UPDATE chat_media_uploads SET cover_attempts=COALESCE(cover_attempts, 0)+1 WHERE id=?",
+            (media_id,),
+        )
+        covers = media_covers.ensure_covers_for_row(row)
+        if covers:
+            media_covers.apply_cover_updates(cur, media_id, covers)
+            cur.execute("UPDATE chat_media_uploads SET cover_generated_at=? WHERE id=?", (_now(), media_id))
+            processed += 1
+            logging.info("MEDIA_WORKER_COVER_READY media_id=%s media_type=%s", media_id, row.get("media_type"))
+        else:
+            failed += 1
+            logging.info(
+                "MEDIA_WORKER_COVER_SKIPPED media_id=%s media_type=%s attempts=%s",
+                media_id,
+                row.get("media_type"),
+                int(row.get("cover_attempts") or 0) + 1,
+            )
+    conn.commit()
+    conn.close()
+    return {"checked": len(rows), "processed": processed, "failed": failed}
+
+
 def _fail_or_retry_job(cur, job, error: Exception) -> None:
     attempts = int(job.get("attempts") or 0) + 1
     max_attempts = int(job.get("max_attempts") or MAX_ATTEMPTS)
@@ -601,7 +662,8 @@ def run_cycle() -> dict:
     uploads = process_pending_uploads(BATCH_SIZE)
     jobs = process_media_jobs(BATCH_SIZE)
     playback = process_playback_backlog(int(os.getenv("MEDIA_WORKER_PLAYBACK_BACKLOG_BATCH", "2")))
-    return {"uploads": uploads, "jobs": jobs, "playback": playback}
+    covers = process_cover_backlog(int(os.getenv("MEDIA_WORKER_COVER_BACKLOG_BATCH", "4")))
+    return {"uploads": uploads, "jobs": jobs, "playback": playback, "covers": covers}
 
 
 def main() -> None:

@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, FlatList, Image, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, Animated, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { deletePost, listFeed, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
 import { describeDeleteError } from "../api/deleteErrors";
@@ -10,6 +10,7 @@ import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, 
 import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/ProfileHeader";
+import { ContentCover, ContentCoverKind } from "../components/covers/ContentCover";
 import { buildProfileContext, subjectName } from "../profile/profileContext";
 import { profileOsDestination, tileNoun, visibleProfileOsTiles } from "../profile/profileOsTiles";
 import { useAuth } from "../session/auth";
@@ -441,16 +442,26 @@ export function ProfilePostGridTile({ post, onPress }: { post: PulsePost; onPres
   const multi = Number(post.media?.length || post.media_assets?.length || post.attachments?.length || 0) > 1;
   const pinned = Boolean((post as PulsePost & { pinned?: boolean; is_pinned?: boolean }).pinned || (post as PulsePost & { is_pinned?: boolean }).is_pinned);
   const label = `${kind === "text" ? "Text" : kind === "video" ? "Video" : kind === "music" ? "Music" : "Image"} post. ${excerpt.slice(0, 80)}${durationLabel ? `. Duration ${durationLabel}` : ""}${pinned ? ". Pinned" : ""}`;
+  const coverKind: ContentCoverKind =
+    kind === "video" || kind === "reel" ? (kind as ContentCoverKind)
+      : kind === "music" || kind === "audio" ? "audio"
+      : kind === "text" ? (post.repost || post.original_post ? "shared" : "text")
+      : "photo";
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} testID={`profile-grid-tile-${post.id}`} style={styles.gridTile} onPress={onPress}>
-      {thumbnail ? <Image source={{ uri: thumbnail }} resizeMode="cover" style={styles.gridImage} /> : <View style={styles.textTile}><Text numberOfLines={6} adjustsFontSizeToFit style={styles.textTileCopy}>{excerpt || "Post"}</Text></View>}
+      <ContentCover
+        kind={coverKind}
+        imageUrl={thumbnail || null}
+        text={excerpt}
+        title={excerpt.slice(0, 60)}
+        durationSeconds={duration}
+        hasMusic={kind === "music" || Boolean(post.music)}
+        style={styles.gridImage}
+      />
       <View style={styles.tileSignals}>
-        {kind === "video" ? <Ionicons name="play" size={14} color="#fff" /> : null}
-        {kind === "music" || post.music ? <Ionicons name="musical-note" size={14} color="#fff" /> : null}
         {post.repost || post.original_post ? <Ionicons name="repeat" size={14} color="#fff" /> : null}
         {multi ? <Ionicons name="copy-outline" size={14} color="#fff" /> : null}
         {pinned ? <Ionicons name="pin" size={14} color="#fff" /> : null}
-        {durationLabel ? <Text style={styles.duration}>{durationLabel}</Text> : null}
       </View>
     </Pressable>
   );
@@ -492,7 +503,7 @@ function AboutPanel({ profile, owner, onVerification, onSafety, onSellerStore }:
 }
 
 const styles = createThemedStyles(() => ({
-  root: { backgroundColor: colors.background, flex: 1 },
+  root: { backgroundColor: "transparent", flex: 1 },
   actionMessage: {
     backgroundColor: colors.signalSoft,
     borderColor: colors.border,
@@ -529,7 +540,7 @@ const styles = createThemedStyles(() => ({
   },
   center: {
     alignItems: "center",
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1,
     justifyContent: "center",
     padding: 24
