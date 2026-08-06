@@ -48,6 +48,18 @@ const MODULES: ModuleDef[] = [
   { key: "memories", label: "Memories", icon: "time-outline" }
 ];
 
+const MODULE_BY_KEY = MODULES.reduce<Record<ProfileModuleKey, ModuleDef>>((map, module) => {
+  map[module.key] = module;
+  return map;
+}, {} as Record<ProfileModuleKey, ModuleDef>);
+
+/** "Maria" -> "Maria's"; "Chris" -> "Chris'". */
+function possessiveName(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return "";
+  return /s$/i.test(trimmed) ? `${trimmed}'` : `${trimmed}'s`;
+}
+
 type ProfileHeaderProps = {
   profile: PulseProfile;
   publicKey?: string;
@@ -65,6 +77,18 @@ type ProfileHeaderProps = {
   onVideoCall?: () => void;
   onStatPress?: (key: ProfileStatKey) => void;
   onModulePress?: (key: ProfileModuleKey) => void;
+  /**
+   * Tiles to render, in order. A visitor is given only the tiles that lead to a
+   * destination about *this* profile owner; the rest are omitted rather than
+   * shown as dead entries. Defaults to the full set so any caller that has not
+   * been updated keeps its current grid.
+   */
+  moduleKeys?: ProfileModuleKey[];
+  /**
+   * First name of the profile owner when someone else is viewing, used to label
+   * the grid ("Maria's Profile OS"). Empty on your own profile.
+   */
+  moduleOwnerName?: string;
 };
 
 function haptic() {
@@ -96,8 +120,12 @@ export function ProfileHeader({
   onCall,
   onVideoCall,
   onStatPress,
-  onModulePress
+  onModulePress,
+  moduleKeys,
+  moduleOwnerName
 }: ProfileHeaderProps) {
+  const modules = moduleKeys ? moduleKeys.map((key) => MODULE_BY_KEY[key]).filter(Boolean) : MODULES;
+  const modulesTitle = moduleOwnerName ? `${possessiveName(moduleOwnerName)} Profile OS` : "Profile OS";
   const handle = profile.username || profile.public_player_id || publicKey || "";
   const premium = ["active", "premium", "founder", "lifetime"].includes(String(profile.premium_status || "").toLowerCase());
   const verified = Boolean(profile.verified_badge || profile.verification_status === "verified");
@@ -257,7 +285,7 @@ export function ProfileHeader({
 
         {/* Module operating system */}
         <View style={styles.modulesHeader}>
-          <Text style={styles.modulesTitle}>Profile OS</Text>
+          <Text style={styles.modulesTitle}>{modulesTitle}</Text>
           <View style={styles.utilityRow}>
             {owner ? <Utility label="Growth" icon="trending-up-outline" onPress={() => { haptic(); onGrowth?.(); }} /> : null}
             <Utility label="Safety" icon="shield-outline" onPress={() => { haptic(); onSafety?.(); }} />
@@ -265,7 +293,7 @@ export function ProfileHeader({
           </View>
         </View>
         <View style={styles.moduleGrid} accessibilityLabel="Profile modules">
-          {MODULES.map((module) => (
+          {modules.map((module) => (
             <Module key={module.key} def={module} accent={accent} onPress={() => { haptic(); onModulePress?.(module.key); }} />
           ))}
         </View>

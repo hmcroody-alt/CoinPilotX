@@ -58,6 +58,13 @@ export type PulseProfile = {
   theme?: PulseProfileTheme;
   viewer_follows?: boolean;
   is_self?: boolean;
+  /**
+   * Server-authored answer to what this viewer may see about this profile
+   * owner, keyed snake_case as the API returns it. Profile OS destinations gate
+   * on these rather than on a client-side ownership guess — see
+   * `src/profile/profileContext.ts` and `services/profile_viewer_permissions.py`.
+   */
+  viewer_permissions?: Record<string, boolean>;
 };
 
 export type ProfileUpdatePayload = {

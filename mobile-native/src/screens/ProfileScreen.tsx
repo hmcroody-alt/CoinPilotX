@@ -10,6 +10,9 @@ import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, 
 import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/ProfileHeader";
+import { buildProfileContext, subjectName } from "../profile/profileContext";
+import { profileOsDestination, tileNoun, visibleProfileOsTiles } from "../profile/profileOsTiles";
+import { useAuth } from "../session/auth";
 import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { invalidateNativeSync } from "../core/eventSync";
@@ -39,6 +42,8 @@ export function ProfileScreen({ route, navigation }: Props) {
   ]);
   const profileKey = profileTarget?.profileKey || "";
   const owner = !profileTarget;
+  const { authState } = useAuth();
+  const viewerUserId = authState.user?.user_id;
   const [profile, setProfile] = useState<PulseProfile | null>(null);
   const [posts, setPosts] = useState<PulsePost[]>([]);
   const [nextOffset, setNextOffset] = useState(0);
@@ -59,6 +64,18 @@ export function ProfileScreen({ route, navigation }: Props) {
   const guard = useSocialActionGuard();
 
   const visiblePosts = useMemo(() => (tab === "media" ? posts.filter((post) => post.media?.length) : posts), [posts, tab]);
+
+  // The single source of truth for "whose profile is this". Every Profile OS
+  // tile reads its subject from here, so no destination has to work it out from
+  // the auth store — which is how tiles ended up loading the viewer's own data.
+  // `profile.is_self` from the server settles ownership when it is present;
+  // until the payload lands we fall back to the route target, which is already
+  // the right subject.
+  const profileContext = useMemo(
+    () => buildProfileContext({ viewerUserId, profile, target: profileTarget }),
+    [viewerUserId, profile, profileTarget]
+  );
+  const profileOsTiles = useMemo(() => visibleProfileOsTiles(profileContext), [profileContext]);
 
   async function load(mode: "initial" | "refresh" = "initial") {
     setErrorState(null);
@@ -204,42 +221,33 @@ export function ProfileScreen({ route, navigation }: Props) {
     setActionMessage(key === "followers" ? `${profile?.follower_count || 0} followers.` : `${profile?.following_count || 0} following.`);
   }
 
+  /**
+   * Open a Profile OS tile against the profile that is currently on screen.
+   *
+   * The destination and its params come from `profileOsTiles`, which knows the
+   * owner route and the visitor route for each tile separately. This function
+   * deliberately holds no per-tile knowledge any more: the previous version was
+   * a switch that sent every tile to a personal surface (`Music`, `SafetyHub`,
+   * `BusinessOs`, the Saved/Groups tabs), so visiting Maria and tapping a tile
+   * opened the signed-in user's own data.
+   *
+   * `unsupported` means the tile has no destination scoped to this profile
+   * owner. Those tiles are filtered out of the grid for visitors, so this is a
+   * backstop rather than the normal path — and it explains itself instead of
+   * falling back to the viewer's data.
+   */
   function handleModule(key: ProfileModuleKey) {
-    switch (key) {
-      case "identity":
-        return owner ? navigation?.navigate("PulseIdentity") : setTab("about");
-      case "media":
-        return setTab("media");
-      case "music":
-        return navigation?.navigate("Music", { title: "Music" });
-      case "trust":
-        return navigation?.navigate("TrustCenter", { title: "Trust Center" });
-      case "safety":
-        return navigation?.navigate("SafetyHub", { title: "Safety Hub", section: profileKey ? "reports" : "overview" });
-      case "pulse_dna":
-        return navigation?.navigate("IntelligenceCenter", { title: "Pulse DNA" });
-      case "achievements":
-        return navigation?.navigate("GrowthCenter", { contentType: "profile", title: "Achievements" });
-      case "activity":
-        return navigation?.navigate("ActivityInbox", { title: "Activity" });
-      case "collections":
-        return navigation?.navigate("Saved");
-      case "communities":
-        return navigation?.navigate("Tabs", { screen: "Groups" });
-      case "marketplace":
-        return navigation?.navigate("Tabs", { screen: "Marketplace" });
-      case "events":
-        return navigation?.navigate("Events", { mode: "events", title: "Events" });
-      case "business":
-        // Business is the single entry point for running a business: the store,
-        // seller marketplace tools and advertising all live inside Business OS.
-        // Consumer marketplace browsing stays on the Marketplace tab above.
-        return navigation?.navigate("BusinessOs", { title: "Business OS" });
-      case "memories":
-        return navigation?.navigate("Tabs", { screen: "Status" });
-      default:
-        return undefined;
+    const destination = profileOsDestination(key, profileContext);
+    if (destination.kind === "tab") return setTab(destination.tab);
+    if (destination.kind === "route") {
+      // The route name is validated against RootStackParamList in the tile
+      // registry; navigate() cannot be called with a union of names because its
+      // params type is keyed per-route, so it is widened only here.
+      const navigateTo = navigation?.navigate as ((name: string, params?: Record<string, unknown>) => void) | undefined;
+      return navigateTo?.(destination.name, destination.params);
     }
+    setActionMessage(`${tileNoun(key)} is not available on ${subjectName(profileContext)}'s profile yet.`);
+    return undefined;
   }
 
   function updateProfilePost(id: number, patch: Partial<PulsePost>) {
@@ -383,6 +391,8 @@ export function ProfileScreen({ route, navigation }: Props) {
             onRefresh={() => load("refresh").catch(() => undefined)}
             onStatPress={handleStat}
             onModulePress={handleModule}
+            moduleKeys={profileOsTiles}
+            moduleOwnerName={profileContext.isOwnProfile ? "" : subjectName(profileContext)}
           />
           <View style={styles.section}>
             {offline ? <Text style={styles.offline}>Showing saved profile</Text> : null}
