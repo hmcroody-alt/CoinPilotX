@@ -599,7 +599,7 @@ function humanize(value?: string) {
 
 const styles = createThemedStyles(() => ({
   root: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   content: {
@@ -608,7 +608,7 @@ const styles = createThemedStyles(() => ({
   },
   center: {
     alignItems: "center",
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1,
     gap: 12,
     justifyContent: "center"

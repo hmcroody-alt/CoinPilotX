@@ -150,7 +150,7 @@ export function PulseQueueScreen() {
 
 const styles = createThemedStyles(() => ({
   container: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   toolbar: {

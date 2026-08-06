@@ -481,7 +481,7 @@ const styles = createThemedStyles(() => ({
     fontWeight: "900"
   },
   root: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   saveButton: {

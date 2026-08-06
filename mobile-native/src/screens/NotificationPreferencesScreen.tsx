@@ -187,7 +187,7 @@ function isRequiredSecurityChannel(category: string, channel: (typeof CHANNELS)[
 
 const styles = createThemedStyles(() => ({
   root: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   content: {

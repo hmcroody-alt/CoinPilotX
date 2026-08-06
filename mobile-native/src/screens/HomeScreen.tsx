@@ -573,7 +573,13 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
 
   return (
     <View style={styles.root}>
-      <GalacticAtmosphere variant="feed" />
+      {/*
+        The feed used to draw its own `GalacticAtmosphere` here. It now defers to
+        the single `PulseBackground` at the app root: this was a plain full-screen
+        backdrop, and its opaque gradient hid the shared layer on the app's
+        most-visited surface. The clipped hero panel further down keeps its own
+        atmosphere — that one is a design element, not a backdrop.
+      */}
       {/*
         `error` used to be reachable only through ListEmptyComponent, so a failed
         like, comment, follow or delete set a message that nothing rendered as
@@ -1359,7 +1365,7 @@ const styles = createThemedStyles(() => ({
   },
   center: {
     alignItems: "center",
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1,
     justifyContent: "center",
     padding: 24

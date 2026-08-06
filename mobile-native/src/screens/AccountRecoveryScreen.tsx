@@ -70,7 +70,7 @@ export function AccountRecoveryScreen({ navigation }: Props) {
 }
 
 const styles = createThemedStyles(() => ({
-  root: { flex: 1, justifyContent: "center", gap: 14, padding: 22, backgroundColor: colors.background },
+  root: { flex: 1, justifyContent: "center", gap: 14, padding: 22, backgroundColor: "transparent" },
   eyebrow: { color: colors.accentStrong, fontSize: 12, fontWeight: "900", letterSpacing: 1.2 },
   title: { color: colors.text, fontSize: 34, fontWeight: "900" },
   copy: { color: colors.muted, fontSize: 16, lineHeight: 23, marginBottom: 8 },

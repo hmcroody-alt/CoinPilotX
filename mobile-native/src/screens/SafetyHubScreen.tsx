@@ -484,7 +484,7 @@ const styles = createThemedStyles(() => ({
   },
   center: {
     alignItems: "center",
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1,
     gap: 12,
     justifyContent: "center"
@@ -614,7 +614,7 @@ const styles = createThemedStyles(() => ({
     lineHeight: 21
   },
   root: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   row: {

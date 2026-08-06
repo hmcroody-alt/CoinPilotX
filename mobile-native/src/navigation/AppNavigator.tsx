@@ -103,7 +103,6 @@ import { UndxActionCenterScreen } from "../screens/UndxActionCenterScreen";
 import { VerificationCenterScreen } from "../screens/VerificationCenterScreen";
 import { UserDashboardScreen } from "../screens/UserDashboardScreen";
 import { ChatScreen } from "../screens/ChatScreen";
-import { colors } from "../theme/colors";
 import { BottomNavVisibilityProvider } from "./BottomNavVisibility";
 import { useAuth } from "../session/auth";
 import { useTranslation } from "../i18n";
@@ -115,6 +114,36 @@ import { PULSESOC_QA_REELS_FIXTURES } from "../api/config";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<AppTabParamList>();
+
+/**
+ * The two navigator-level opt-outs from painting an opaque page, so the app's
+ * single `PulseBackground` (mounted at the root in `App.tsx`) is actually
+ * visible under the screens rather than covered on their first frame.
+ *
+ * Both props are needed, and they defeat two different opaque views:
+ *
+ *  - `sceneContainerStyle` on `Tabs.Navigator`. `@react-navigation/bottom-tabs`
+ *    wraps every tab scene in `@react-navigation/elements`' `Screen`, which
+ *    renders a `Background` view painting the navigation theme's
+ *    `colors.background` unconditionally (`elements/lib/module/Screen.js:27`,
+ *    `elements/lib/module/Background.js`). That view exists only in
+ *    `node_modules` — it cannot be found by grepping this app, and it renders
+ *    identically in every unit test. It is the single opaque surface behind all
+ *    fifteen tabs, i.e. the app's entire primary surface, and
+ *    `sceneContainerStyle` is its only override: `BottomTabView` passes it
+ *    through as `style`, last in the array, so it wins.
+ *
+ *  - `contentStyle` in the stack's `screenOptions`. This one is the app's own:
+ *    `native-stack`'s `contentContainer` style carries no colour, so this
+ *    property was the sole source of the stack's opacity across ~100 routes,
+ *    including the two with a `presentation` option, since `screenOptions`
+ *    merges into every screen regardless of presentation.
+ *
+ * The `NavigationContainer` theme's `background` is deliberately NOT changed —
+ * see the comment in `App.tsx`. Pinned by
+ * `src/navigation/__tests__/backgroundSurfaces.test.ts`.
+ */
+const TRANSPARENT_SCENE = { backgroundColor: "transparent" };
 
 function CreateTabScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<AppTabParamList>>();
@@ -144,6 +173,7 @@ function TabNavigator({
     <BottomNavVisibilityProvider>
       <Tabs.Navigator
         initialRouteName="Home"
+        sceneContainerStyle={TRANSPARENT_SCENE}
         tabBar={(props) => <LogiNexusBottomNavigation {...props} badges={badges} />}
         screenOptions={({ navigation, route }) => ({
           header: ({ options }) => (
@@ -269,7 +299,7 @@ export function AppNavigator() {
       <Stack.Navigator
         initialRouteName={PULSESOC_QA_REELS_FIXTURES ? "Reels" : "Tabs"}
         screenOptions={({ route, navigation }) => ({
-          contentStyle: { backgroundColor: colors.background },
+          contentStyle: TRANSPARENT_SCENE,
           header: ({ back, options }) => (
             <LogiNexusGlobalHeader
               title={String(options.title || stackTitle(t, route.name))}

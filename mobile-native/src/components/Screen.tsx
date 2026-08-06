@@ -147,9 +147,22 @@ function glyphForState(state: StatePanelKind) {
 }
 
 const styles = createThemedStyles(() => ({
+  /**
+   * Transparent, not `colors.background`. These two shells are the last opaque
+   * layer between the app's root `PulseBackground` and the thirteen screens that
+   * use them; a fill here would cover the shared background on its first frame
+   * and the symptom would look like the background component being broken rather
+   * than something above it being opaque.
+   *
+   * The shells deliberately do not *render* `PulseBackground` themselves. They
+   * cover thirteen of ninety-eight screens, so it would be a partial fix, and it
+   * would double up wherever a shell is nested inside a screen that already
+   * draws its own atmosphere — which is what `ChatScreen` and `ProfileScreen`
+   * do. The layer belongs at the root, once.
+   */
   root: {
     flex: 1,
-    backgroundColor: colors.background
+    backgroundColor: "transparent"
   },
   content: {
     padding: 18,
@@ -181,8 +194,9 @@ const styles = createThemedStyles(() => ({
     ...logiNexus.typography.sectionTitle,
     color: colors.text
   },
+  /** Transparent for the same reason as `root` above. */
   shell: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   shellContent: {

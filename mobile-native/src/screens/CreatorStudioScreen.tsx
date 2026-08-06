@@ -318,7 +318,7 @@ const styles = createThemedStyles(() => ({
   },
   center: {
     alignItems: "center",
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1,
     justifyContent: "center",
     padding: 24
@@ -424,7 +424,7 @@ const styles = createThemedStyles(() => ({
     fontWeight: "900"
   },
   root: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   score: {

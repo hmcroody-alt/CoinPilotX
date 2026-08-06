@@ -2256,7 +2256,7 @@ function nativePathFromDeepLink(value?: string) {
 
 const styles = StyleSheet.create({
   root: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   shellContent: {

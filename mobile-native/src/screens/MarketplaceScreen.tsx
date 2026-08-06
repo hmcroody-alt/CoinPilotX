@@ -402,7 +402,7 @@ const styles = createThemedStyles(() => ({
   },
   center: {
     alignItems: "center",
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1,
     justifyContent: "center",
     padding: 24
@@ -478,7 +478,7 @@ const styles = createThemedStyles(() => ({
     marginTop: 8
   },
   detailRoot: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   detailTitle: {
@@ -515,7 +515,7 @@ const styles = createThemedStyles(() => ({
     marginBottom: 14
   },
   list: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   pill: {
@@ -546,7 +546,7 @@ const styles = createThemedStyles(() => ({
     fontWeight: "900"
   },
   root: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   safetyNotice: {

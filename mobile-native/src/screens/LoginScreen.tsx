@@ -421,7 +421,7 @@ function describeLoginError(error: unknown): string {
 const styles = createThemedStyles(() => ({
   root: {
     flex: 1,
-    backgroundColor: colors.background
+    backgroundColor: "transparent"
   },
   flex: {
     flex: 1

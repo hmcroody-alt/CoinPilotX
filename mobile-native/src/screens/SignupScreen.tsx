@@ -480,7 +480,7 @@ function CheckRow({
 }
 
 const styles = createThemedStyles(() => ({
-  root: { flex: 1, backgroundColor: colors.background },
+  root: { flex: 1, backgroundColor: "transparent" },
   flex: { flex: 1 },
   scroll: {
     flexGrow: 1,

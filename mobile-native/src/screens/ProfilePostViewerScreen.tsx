@@ -192,9 +192,9 @@ function rotateFrom(ids: number[], selectedId: number) {
 }
 
 const styles = createThemedStyles(() => ({
-  root: { backgroundColor: colors.background, flex: 1 },
+  root: { backgroundColor: "transparent", flex: 1 },
   listContent: { paddingBottom: 32, paddingTop: 12 },
-  post: { backgroundColor: colors.background, minHeight: 240 },
+  post: { backgroundColor: "transparent", minHeight: 240 },
   separator: { backgroundColor: colors.border, height: StyleSheet.hairlineWidth, marginVertical: 8 },
   loading: { alignItems: "center", minHeight: 240, justifyContent: "center" },
   loadingText: { color: colors.muted, marginTop: 10 },

@@ -33,7 +33,7 @@ export function PulseAiScreen({ route }: BottomTabScreenProps<AppTabParamList, "
 const styles = createThemedStyles(() => ({
   redirect: {
     alignItems: "center",
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1,
     justifyContent: "center"
   }

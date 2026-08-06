@@ -72,7 +72,13 @@ export function SettingsShell({
   );
 
   return (
-    <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
+    // No background fill. This one inline `theme.colors.background` was the
+    // opaque layer for all seventeen settings screens — and, because it was
+    // written inline rather than through `colors`, it is invisible to a grep for
+    // `colors.background`. It defers to the app's root `PulseBackground` now;
+    // on themes where that draws nothing (White) the navigation theme's own
+    // opaque background shows through, which is why that one was left alone.
+    <View style={styles.root}>
       <SyncStatusBar />
       <ScrollView
         style={styles.root}
@@ -390,7 +396,8 @@ export function SettingsEmptyState({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  /** Explicitly transparent so the shared background reaches every settings screen. */
+  root: { flex: 1, backgroundColor: "transparent" },
   content: { paddingHorizontal: 16, paddingTop: 8 },
   pageHeader: { paddingTop: 10, paddingBottom: 2 },
   section: { width: "100%" },

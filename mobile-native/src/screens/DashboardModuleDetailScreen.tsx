@@ -44,11 +44,13 @@ export function DashboardModuleDetailScreen() {
   if (!group || !module) {
     return (
       <View style={styles.center}>
-        <Text style={styles.centerTitle}>Dashboard module unavailable</Text>
-        <Text style={styles.centerText}>This dashboard card could not be matched to the production module map.</Text>
-        <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("UserDashboard", { title: "Dashboard" })}>
-          <Text style={styles.primaryButtonText}>Return to Dashboard</Text>
-        </Pressable>
+        <View style={styles.centerPanel}>
+          <Text style={styles.centerTitle}>Dashboard module unavailable</Text>
+          <Text style={styles.centerText}>This dashboard card could not be matched to the production module map.</Text>
+          <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("UserDashboard", { title: "Dashboard" })}>
+            <Text style={styles.primaryButtonText}>Return to Dashboard</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -328,10 +330,18 @@ const styles = createThemedStyles(() => ({
   },
   center: {
     alignItems: "center",
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1,
     justifyContent: "center",
     padding: 24
+  },
+  centerPanel: {
+    alignItems: "center",
+    backgroundColor: colors.glass,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 20
   },
   centerText: {
     color: colors.muted,
@@ -558,7 +568,7 @@ const styles = createThemedStyles(() => ({
     fontWeight: "900"
   },
   root: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   secondaryButton: {

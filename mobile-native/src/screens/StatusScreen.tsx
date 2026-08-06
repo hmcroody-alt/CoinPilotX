@@ -563,7 +563,7 @@ const styles = createThemedStyles(() => ({
   },
   center: {
     alignItems: "center",
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1,
     justifyContent: "center"
   },
@@ -691,7 +691,7 @@ const styles = createThemedStyles(() => ({
     justifyContent: "flex-end"
   },
   root: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   storyCount: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 10, height: 20, justifyContent: "center", position: "absolute", right: 4, top: 42, width: 20 },

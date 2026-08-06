@@ -312,7 +312,7 @@ function normalizeRouteCategory(category?: ActivityCategory): ActivityCategory {
 
 const styles = createThemedStyles(() => ({
   root: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   header: {

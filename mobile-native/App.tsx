@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { IncomingCallLayer } from "./src/calls/IncomingCallLayer";
 import { InAppNotificationBanner } from "./src/components/InAppNotificationBanner";
+import { PulseBackground } from "./src/components/PulseBackground";
 import { TimeZoneProvider } from "./src/core/TimeZoneContext";
 import { I18nProvider, useI18n, useTranslation } from "./src/i18n";
 import { AppNavigator } from "./src/navigation/AppNavigator";
@@ -291,6 +292,29 @@ function AppRoot() {
               requests that would 401.
             */}
             <SettingsProviders syncEnabled={authState.status === "signedIn"}>
+              {/*
+                The app's one background. Mounted here — inside `SafeAreaProvider`
+                so it fills the window, inside `SettingsProviders` so it can read
+                the active theme, and *above* `NavigationContainer` in the file so
+                it is never remounted by a navigation event.
+
+                It is childless, so it renders as an absolutely-positioned,
+                `pointerEvents="none"` layer that takes no space in the column and
+                intercepts nothing. Being the first child is what puts it behind
+                everything else: without `zIndex` React Native paints siblings in
+                document order.
+
+                Rendering it *inside* `NavigationContainer` was rejected: the
+                container is deliberately not keyed on the theme epoch (see the
+                comment on `ThemedNavigationShell`) and giving it children
+                complicates that reasoning for no benefit.
+
+                What it deliberately does not cover: the two pre-navigation states
+                above (they return before this tree exists and have no theme to
+                read), and anything inside an RN `Modal`, which is a separate
+                native window with no inheritance path.
+              */}
+              <PulseBackground />
               {authState.status === "signedIn" ? (
                 <TranslationPreferencesBootstrap key={authState.user?.user_id || "signed-in"} />
               ) : null}
@@ -334,6 +358,14 @@ function ThemedNavigationShell({ signedIn }: { signedIn: boolean }) {
       ...DefaultTheme,
       dark: theme.scheme === "dark",
       colors: {
+        // Stays a real, opaque colour. This is not a rendering surface — it is
+        // the colour visible in the gap between two cards mid-transition, and
+        // behind the tab scenes on themes where `PulseBackground` draws nothing
+        // (White). Making it transparent is exactly what produces a white or
+        // black flash on push/pop, because what shows through then is whatever
+        // the platform put behind the navigator. Set the atmosphere above it,
+        // never instead of it. Pinned by
+        // `src/navigation/__tests__/backgroundSurfaces.test.ts`.
         ...DefaultTheme.colors,
         background: theme.colors.background,
         card: theme.colors.surface,

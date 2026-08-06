@@ -525,7 +525,7 @@ function formatDate(value?: string) {
 }
 
 const styles = createThemedStyles(() => ({
-  root: { flex: 1, backgroundColor: colors.background },
+  root: { flex: 1, backgroundColor: "transparent" },
   content: { gap: 14, padding: 18 },
   hero: {
     backgroundColor: colors.surface,

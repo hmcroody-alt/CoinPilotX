@@ -36,14 +36,16 @@ export function DashboardLegacyModuleScreen({ navigation, route }: Props) {
 
   return (
     <View style={styles.center}>
-      <Text style={styles.kicker}>Dashboard route unavailable</Text>
-      <Text style={styles.title}>Module not found</Text>
-      <Text style={styles.body}>
-        {legacyPath} is not represented in the native dashboard module registry yet. The dashboard foundation can still route from the main module map.
-      </Text>
-      <Pressable style={styles.button} onPress={() => navigation.replace("UserDashboard", { title: "Dashboard" })}>
-        <Text style={styles.buttonText}>Open Dashboard</Text>
-      </Pressable>
+      <View style={styles.centerPanel}>
+        <Text style={styles.kicker}>Dashboard route unavailable</Text>
+        <Text style={styles.title}>Module not found</Text>
+        <Text style={styles.body}>
+          {legacyPath} is not represented in the native dashboard module registry yet. The dashboard foundation can still route from the main module map.
+        </Text>
+        <Pressable style={styles.button} onPress={() => navigation.replace("UserDashboard", { title: "Dashboard" })}>
+          <Text style={styles.buttonText}>Open Dashboard</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -73,10 +75,18 @@ const styles = createThemedStyles(() => ({
   },
   center: {
     alignItems: "center",
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1,
     justifyContent: "center",
     padding: 24
+  },
+  centerPanel: {
+    alignItems: "center",
+    backgroundColor: colors.glass,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 20
   },
   kicker: {
     color: colors.accent,

@@ -339,7 +339,7 @@ function formatExpiry(value: unknown) {
 
 const styles = createThemedStyles(() => ({
   root: {
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1
   },
   content: {
@@ -349,7 +349,7 @@ const styles = createThemedStyles(() => ({
   },
   center: {
     alignItems: "center",
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flex: 1,
     justifyContent: "center",
     padding: logiNexus.spacing.xxl
