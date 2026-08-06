@@ -392,3 +392,89 @@ was narrowed rather than disabled.
 Revert this commit. `requirePlayout` defaults to `options.playout`, so removing
 the option restores the previous condition exactly. No server flag, schema, or
 native dependency is involved.
+
+---
+
+# Addendum — telemetry carries the native diagnostic, and two build files moved (2026-08-06)
+
+## Why the change is required
+
+The previous addendum closed the guard defect but left the instrument that
+found it half-blind. Two concrete gaps:
+
+1. **The native reading never survived the log line that reported it.** The
+   diagnostic explaining *why* `engine=false` was concatenated onto `outcome`,
+   which `sanitize()` clipped at 96 characters. The field that mattered was
+   truncated away by the very function meant to make it safe to log.
+2. **A bounded recovery pass was indistinguishable from a second guard entry.**
+   Recovery re-emitted `audio_engine_guard_started` with an identical context,
+   so a single guard doing its job looked, in a device capture, exactly like the
+   guard being entered twice.
+
+Both are diagnosis defects, not runtime defects. Neither changes when audio
+starts, stops, or who owns the session.
+
+## Which feature required it
+
+Device-log diagnosis of Live host broadcast startup. No user-facing feature.
+
+## Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/core/realtimeAudioTelemetry.ts` | audio telemetry | Adds `audio_engine_recovery_attempt` as a distinct event name; adds the `engineState`, `nativeError`, `recoveryAttempt`, `failureStage` and `interruption` fields; gives `sanitize()` a per-call `maxLength` (default unchanged at 96) so native diagnostics can be carried at 480. Adds an opt-in `setRealtimeAudioTelemetryVerbose()` and demotes non-failure events from `console.error` to `console.log` by default. |
+| `mobile-native/src/core/__tests__/realtimeAudioTelemetry.test.ts` | critical tests | Covers the new fields, the widened cap, the severity split, and that redaction still precedes truncation. |
+| `mobile-native/eas.json` | build configuration | Adds `EXPO_PUBLIC_STORE_READINESS: "1"` to the `development`, `development-simulator` and `preview` profiles. Nothing else in the file changed. |
+| `mobile-native/package-lock.json` | dependency lock | Adds the `@types/react-test-renderer` devDependency and its single transitive entry. Nothing else in the file changed. |
+
+**Explicitly not changed by this addendum:** no microphone permission string, no
+`UIBackgroundModes` entry, no LiveKit room or track setting, no
+`AVAudioSession` category/mode/option, no audio-session ownership arbitration,
+no `expo-av` call site. `eas.json` gained one public env var on three non-store
+profiles; the `production` profile is untouched. `package-lock.json` gained a
+types package that does not exist at runtime.
+
+## Expected behavior change
+
+None audible. Audio start-up, recovery bounds, ownership and the fail-closed
+conditions are byte-for-byte the semantics of the previous addendum. What
+changes is the shape of a log line: failures still log at error level, healthy
+transitions now log at `console.log` unless verbose is switched on for a
+capture session.
+
+## Regression risk
+
+The widened `sanitize` cap is the only place a security question arises, and it
+is ordered against it: redaction runs over the full string *before* the slice,
+so a longer cap cannot expose anything a shorter one hid — it can only let an
+already-redacted diagnostic survive intact. The default cap is unchanged at 96,
+so every pre-existing field keeps identical output.
+
+The severity demotion could in principle hide a transition from a Release-build
+device capture, since iOS `os_log` drops non-error levels in Release. That is
+why `setRealtimeAudioTelemetryVerbose(true)` exists and why it defaults to off:
+capture sessions opt in, and failure events never depend on it.
+
+## Tests run
+
+- `realtimeAudioTelemetry.test.ts`, `realtimeAudioEngine.test.ts`,
+  `liveAudioConfiguration.test.ts`: **76 tests passed**.
+- Full native suite via `npm run verify` (typecheck + i18n + jest): **170
+  suites, 3004 tests passed**, 11 locales OK, `tsc --noEmit` clean.
+- Backend protection suite: 15 suites, 239 checks passed.
+
+## Physical validation required
+
+Unchanged from the previous addendum — `docs/realtime_audio_live_test_matrix.md`
+Groups A and B still require two physical iPhones and are not satisfied by any
+of this. This addendum adds no new physical requirement of its own, because it
+adds no new runtime behaviour; the value it delivers is only visible *during*
+that physical validation, in the log capture.
+
+## Rollback procedure
+
+Revert this commit. The new telemetry fields are optional and additive, the
+`sanitize` cap defaults to its historic value, `verbose` defaults to off, the
+`eas.json` env var is read only by store-readiness gating on non-production
+profiles, and the lock entry is a types-only devDependency. No server flag,
+schema, or native dependency is involved.
