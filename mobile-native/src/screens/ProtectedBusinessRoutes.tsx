@@ -1,34 +1,55 @@
-import { ComponentType, createElement, useEffect, useState } from "react";
+import { ComponentType, createElement, useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import { authenticatedOwnerAccess, getBusinessConstructionAccess, BusinessConstructionAccess } from "../api/businessConstruction";
+import { getBusinessConstructionAccess, BusinessConstructionAccess, CONSTRUCTION_LOCKED } from "../api/businessConstruction";
 import { useAuth } from "../session/auth";
+import { subscribeToEngineerAccess } from "../security/engineerAccessSession";
 import { GalacticConstructionScreen } from "./GalacticConstructionScreen";
 
 type RouteProps = { navigation: { goBack: () => void }; [key: string]: unknown };
 type LoadedModule = Record<string, ComponentType<any>>;
 
+/**
+ * Gate wrapper for every native Business OS / Marketplace / Advertising route.
+ *
+ * The construction screen renders *in place of* the requested route rather than
+ * navigating anywhere. That is what preserves the mission's "continue to the
+ * originally requested destination" rule for free: once a grant is obtained,
+ * this same component re-resolves and mounts the real screen, so the engineer
+ * lands exactly where they were headed — Business, Marketplace, Advertising —
+ * instead of a generic dashboard, and the back stack is untouched.
+ *
+ * The protected module is only `require`d after the server has said yes, so a
+ * locked sector never mounts or preloads.
+ */
 function protectedRoute(load: () => LoadedModule, exportName: string) {
   let Loaded: ComponentType<any> | null = null;
   return function ProtectedBusinessRoute(props: RouteProps) {
     const { authState } = useAuth();
-    const ownerEmail = authState.user?.email;
-    const [access, setAccess] = useState<BusinessConstructionAccess | null>(() => authenticatedOwnerAccess(ownerEmail));
-    useEffect(() => {
-      const ownerAccess = authenticatedOwnerAccess(ownerEmail);
-      if (ownerAccess) {
-        setAccess(ownerAccess);
-        return;
-      }
+    const userId = Number(authState.user?.user_id || 0);
+    const [access, setAccess] = useState<BusinessConstructionAccess | null>(null);
+
+    const resolveAccess = useCallback(() => {
       let active = true;
+      // Re-ask the server rather than trusting any local flag. The request
+      // carries the engineer grant automatically (see pulseApi), so this single
+      // call covers both the owner path and the engineer path.
       getBusinessConstructionAccess()
-        .then((result) => active && setAccess(result))
-        .catch(() => active && setAccess({ ok: false, mode: "construction", can_access_private_business_os: false, construction_mode: true, developer_mode: false, developer_badge: false }));
+        .then((result) => { if (active) setAccess(result); })
+        .catch(() => { if (active) setAccess(CONSTRUCTION_LOCKED); });
       return () => { active = false; };
-    }, [ownerEmail]);
+    }, [userId]);
+
+    useEffect(resolveAccess, [resolveAccess]);
+    // A grant obtained (or revoked) while this screen is mounted re-resolves it.
+    useEffect(() => subscribeToEngineerAccess(() => { setAccess(null); resolveAccess(); }), [resolveAccess]);
+
     if (!access) return <View style={styles.loading}><ActivityIndicator color="#57D9FF" /><Text style={styles.loadingText}>Verifying sector access…</Text></View>;
-    if (!access.can_access_private_business_os) return <GalacticConstructionScreen onReturn={props.navigation.goBack} />;
+    if (!access.can_access_private_business_os) {
+      return <GalacticConstructionScreen onReturn={props.navigation.goBack} onEngineerAccessGranted={resolveAccess} />;
+    }
     Loaded = Loaded || load()[exportName];
-    return <View style={styles.host}>{createElement(Loaded, props)}{access.developer_badge && access.construction_mode ? <View style={styles.badge}><Text style={styles.badgeText}>DEVELOPER • CONSTRUCTION</Text></View> : null}</View>;
+    const badge = access.engineer_access ? "ENGINEER • CONSTRUCTION" : "DEVELOPER • CONSTRUCTION";
+    return <View style={styles.host}>{createElement(Loaded, props)}{access.developer_badge && access.construction_mode ? <View style={styles.badge}><Text style={styles.badgeText}>{badge}</Text></View> : null}</View>;
   };
 }
 
