@@ -30,6 +30,7 @@ import {
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props =
   | NativeStackScreenProps<RootStackParamList, "AlertManagement">
@@ -493,7 +494,7 @@ function ActionButton({ label, onPress, disabled, variant = "primary" }: { label
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
@@ -769,4 +770,4 @@ const styles = StyleSheet.create({
     borderColor: colors.warning,
     color: colors.warning
   }
-});
+}));

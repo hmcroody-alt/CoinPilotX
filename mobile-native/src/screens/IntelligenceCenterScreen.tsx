@@ -17,11 +17,19 @@ import { getNotificationBadgeCounts, NotificationBadgeCounts, unreadCount } from
 import { getPremiumStatus, premiumStateLabel, PremiumStatus } from "../api/premium";
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
+import { PRIVATE_CONTENT_MESSAGE, resolveRouteProfileContext } from "../profile/profileContext";
+import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "IntelligenceCenter">;
 
 export function IntelligenceCenterScreen({ route, navigation }: Props) {
+  const { authState } = useAuth();
+  // Wrong-subject guard: alerts, premium status and unread badges are all the
+  // signed-in viewer's data. On another profile's route params this screen
+  // refuses instead of showing the viewer's data under that person's name.
+  const routeContext = resolveRouteProfileContext(route?.params, authState.user?.user_id);
   const [state, setState] = useState<IntelligenceState | null>(null);
   const [alerts, setAlerts] = useState<PulseAlertRule[]>([]);
   const [premium, setPremium] = useState<PremiumStatus | null>(null);
@@ -73,15 +81,28 @@ export function IntelligenceCenterScreen({ route, navigation }: Props) {
   }, []);
 
   useEffect(() => {
+    // Owner-only fetch: skip entirely on a visitor route (no fetch-then-hide).
+    if (!routeContext.isOwnProfile) return;
     load("initial").catch(() => undefined);
-  }, [load]);
+  }, [load, routeContext.isOwnProfile]);
 
   useEffect(() => {
+    if (!routeContext.isOwnProfile) return;
     const sub = AppState.addEventListener("change", (next) => {
       if (next === "active") load("refresh").catch(() => undefined);
     });
     return () => sub.remove();
-  }, [load]);
+  }, [load, routeContext.isOwnProfile]);
+
+  // Visitor destination with no visitor variant: refuse rather than render the
+  // viewer's intelligence state. All hooks above have already run.
+  if (!routeContext.isOwnProfile) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.centerText}>{PRIVATE_CONTENT_MESSAGE}</Text>
+      </View>
+    );
+  }
 
   if (loading && !state && !alerts.length) {
     return (
@@ -236,7 +257,7 @@ function Action({ label, onPress }: { label: string; onPress: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -423,4 +444,4 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "900"
   }
-});
+}));

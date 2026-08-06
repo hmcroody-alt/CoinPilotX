@@ -547,6 +547,16 @@ export function availableAdCampaignActions(campaign?: AdCampaign): AdCampaignAct
  * Advertising — analytics
  * ------------------------------------------------------------------ */
 
+/**
+ * There is deliberately no revenue field on either of these types.
+ *
+ * `advertiser_analytics` counts `conversion` rows in `pulse_ad_events` and
+ * stops there: no order is linked to an ad, no value is carried, and nothing
+ * is adjusted when an order is refunded. §37 forbids attributed revenue left
+ * unadjusted after a refund, and with no order link the only way to honour
+ * that is to never claim revenue. If a `revenue_cents` ever appears on this
+ * payload, the attribution model has to arrive with it.
+ */
 export type AdAnalyticsRow = {
   account_id?: number;
   business_name?: string;
@@ -558,6 +568,13 @@ export type AdAnalyticsRow = {
   clicks?: number;
   hides?: number;
   reports?: number;
+  /**
+   * Count of `conversion` rows in `pulse_ad_events`. Present so the payload is
+   * typed honestly, *not* so it can be labelled "Conversions" on a card: until
+   * something in the product actually records a post-tap outcome, this is a
+   * count of an event nothing emits. See `attributionNote` in api/adsDelivery.
+   */
+  conversions?: number;
   spent_cents?: number;
   /** Server-formatted currency string, e.g. "$1,234.00". */
   spend?: string;
@@ -572,6 +589,7 @@ export type AdAnalyticsTotals = {
   clicks?: number;
   hides?: number;
   reports?: number;
+  conversions?: number;
   spend_cents?: number;
   spend?: string;
   ctr?: number;
@@ -614,6 +632,7 @@ export function normalizeAdAnalytics(analytics?: AdAnalytics | null): AdAnalytic
       clicks: Number(row.clicks || 0),
       hides: Number(row.hides || 0),
       reports: Number(row.reports || 0),
+      conversions: Number(row.conversions || 0),
       spent_cents: Number(row.spent_cents || 0),
       ctr: Number(row.ctr || 0),
       estimated_cpc: Number(row.estimated_cpc || 0),
@@ -632,6 +651,7 @@ export function normalizeAdAnalytics(analytics?: AdAnalytics | null): AdAnalytic
       clicks: Number(totals.clicks || 0),
       hides: Number(totals.hides || 0),
       reports: Number(totals.reports || 0),
+      conversions: Number(totals.conversions || 0),
       spend_cents: Number(totals.spend_cents || 0),
       ctr: Number(totals.ctr || 0),
       estimated_cpc: Number(totals.estimated_cpc || 0),

@@ -5,6 +5,7 @@ import { ContentPreviewRenderer } from "../components/preview/ContentPreviewRend
 import { draftToContentModel, PreviewContent } from "../create/draftToContentModel";
 import { clearPreviewHandoff, peekPreviewHandoff } from "../create/previewHandoff";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   route: { params?: { token?: string; title?: string } };
@@ -174,7 +175,7 @@ function capitalize(value: string) {
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   container: { flex: 1, backgroundColor: colors.background },
   stage: { flex: 1 },
   center: { alignItems: "center", justifyContent: "center", padding: 24 },
@@ -197,4 +198,4 @@ const styles = StyleSheet.create({
   busyRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   emptyTitle: { color: "#fff", fontSize: 18, fontWeight: "800" },
   emptyBody: { color: "rgba(255,255,255,0.7)", fontSize: 14, textAlign: "center", marginTop: 8 }
-});
+}));

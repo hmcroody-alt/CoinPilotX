@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from "react-native";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone, toneColor } from "../theme/logiNexus";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type SurfaceProps = {
   children: ReactNode;
@@ -108,7 +109,7 @@ export function LogiNexusSignalIndicator({ active = true, tone = "default" }: { 
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   badge: {
     alignSelf: "flex-start",
     borderRadius: logiNexus.radius.capsule,
@@ -200,4 +201,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 22
   }
-});
+}));

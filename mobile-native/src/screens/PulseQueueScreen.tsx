@@ -15,6 +15,7 @@ import {
 } from "../core/pulseRadio";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
+import { createThemedStyles } from "../theme/themedStyles";
 
 // "View and manage the queue" surface: reorder (move up/down), remove, and
 // tap-to-play any track without leaving the queue. Mirrors the persistent
@@ -147,7 +148,7 @@ export function PulseQueueScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   container: {
     backgroundColor: colors.background,
     flex: 1
@@ -286,4 +287,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 44
   }
-});
+}));

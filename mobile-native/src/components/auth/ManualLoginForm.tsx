@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { colors } from "../../theme/colors";
 import { logiNexus } from "../../theme/logiNexus";
 import { SecureTextField } from "./SecureTextField";
+import { createThemedStyles } from "../../theme/themedStyles";
 
 export type ManualLoginFormHandle = {
   focusIdentifier: () => void;
@@ -87,7 +88,7 @@ export const ManualLoginForm = forwardRef<
   );
 });
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     gap: logiNexus.spacing.md
   },
@@ -113,4 +114,4 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.background
   }
-});
+}));

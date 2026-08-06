@@ -43,6 +43,8 @@ import {
 } from "../core/pulseRadio";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { RootStackParamList } from "../navigation/types";
+import { PRIVATE_CONTENT_MESSAGE, resolveRouteProfileContext } from "../profile/profileContext";
+import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 
@@ -83,6 +85,11 @@ const emptyDraft: UploadDraft = {
 const PREVIEW_OWNER = "native-music-preview";
 
 export function MusicScreen({ route, navigation }: Props) {
+  const { authState } = useAuth();
+  // Wrong-subject guard: this screen is viewer-scoped (uploads, "your" radio,
+  // getMyProfile). Reached with another profile's route params it must refuse
+  // rather than render the signed-in viewer's data under that person's name.
+  const routeContext = resolveRouteProfileContext(route?.params, authState.user?.user_id);
   const initialTrackId = String(route.params?.trackId || route.params?.track || "");
   const [tracks, setTracks] = useState<PulseMusicTrack[]>([]);
   const [profile, setProfile] = useState<PulseProfile | null>(null);
@@ -145,13 +152,16 @@ export function MusicScreen({ route, navigation }: Props) {
   );
 
   useEffect(() => {
+    // Owner-only: never call the viewer's /api/me profile while the route says
+    // the subject is someone else (skip entirely — no fetch-then-hide).
+    if (!routeContext.isOwnProfile) return;
     getMyProfile()
       .then((next) => {
         setProfile(next);
         setDraft((current) => (current.artist ? current : { ...current, artist: next.display_name || next.username || "" }));
       })
       .catch(() => undefined);
-  }, []);
+  }, [routeContext.isOwnProfile]);
 
   useEffect(() => {
     load("initial").catch(() => undefined);
@@ -330,6 +340,16 @@ export function MusicScreen({ route, navigation }: Props) {
     } finally {
       setUploading(false);
     }
+  }
+
+  // Visitor destination with no visitor variant: the only correct rendering is
+  // a refusal. Hooks above have all run, so hook order stays stable.
+  if (!routeContext.isOwnProfile) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.centerText}>{PRIVATE_CONTENT_MESSAGE}</Text>
+      </View>
+    );
   }
 
   if (loading && !tracks.length) {

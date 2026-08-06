@@ -49,6 +49,7 @@ import { PasswordStrengthMeter } from "../components/auth/signup/PasswordStrengt
 import { PulsePrimaryButton } from "../components/auth/signup/PulsePrimaryButton";
 import { VerifyEmailStep } from "../components/auth/signup/VerifyEmailStep";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Step = "identity" | "credentials" | "verify" | "completion";
 const PROGRESS_STEPS = ["Identity", "Secure", "Verify"];
@@ -478,7 +479,7 @@ function CheckRow({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
   scroll: {
@@ -516,4 +517,4 @@ const styles = StyleSheet.create({
   skip: { color: colors.muted, fontSize: 13, fontWeight: "800", textAlign: "center", textDecorationLine: "underline" },
   signinRow: { color: colors.muted, fontSize: 14, fontWeight: "600", textAlign: "center" },
   signinLink: { color: colors.accentStrong, fontWeight: "900", textDecorationLine: "underline" }
-});
+}));

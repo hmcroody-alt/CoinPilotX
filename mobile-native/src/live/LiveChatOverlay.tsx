@@ -10,6 +10,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import type { PulseLiveChatMessage } from "../api/live";
+import { createThemedStyles } from "../theme/themedStyles";
 
 /**
  * Live chat overlay + composer.
@@ -285,7 +286,7 @@ export function LiveChatComposer({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   streamRoot: {
     gap: 6,
     maxWidth: "82%"
@@ -467,4 +468,4 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "900"
   }
-});
+}));

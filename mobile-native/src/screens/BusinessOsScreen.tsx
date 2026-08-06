@@ -18,10 +18,15 @@ import { loadCachedSellerStore, loadSellerStoreSnapshot, SellerStoreSnapshot } f
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
 import { registerSyncInvalidation } from "../core/eventSync";
+import type { RootStackParamList } from "../navigation/types";
+import { PRIVATE_CONTENT_MESSAGE, resolveRouteProfileContext } from "../profile/profileContext";
+import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   navigation: { navigate: (...args: any[]) => void };
+  route?: { params?: RootStackParamList["BusinessOs"] };
 };
 
 /**
@@ -31,7 +36,12 @@ type Props = {
  * a registered screen backed by a live `/api/pulse/*` contract; sections without
  * one are absent from the registry rather than rendered as dead controls.
  */
-export function BusinessOsScreen({ navigation }: Props) {
+export function BusinessOsScreen({ navigation, route }: Props) {
+  const { authState } = useAuth();
+  // Wrong-subject guard: ad accounts, spend and the seller store are the
+  // signed-in viewer's business. On another profile's route params this screen
+  // refuses instead of rendering the viewer's business under that person's name.
+  const routeContext = resolveRouteProfileContext(route?.params, authState.user?.user_id);
   const [accounts, setAccounts] = useState<AdAccount[]>([]);
   const [analytics, setAnalytics] = useState<AdAnalytics | null>(null);
   const [store, setStore] = useState<SellerStoreSnapshot | null>(null);
@@ -80,10 +90,13 @@ export function BusinessOsScreen({ navigation }: Props) {
   }, []);
 
   useEffect(() => {
+    // Owner-only fetch: skip entirely on a visitor route (no fetch-then-hide).
+    if (!routeContext.isOwnProfile) return;
     load().catch(() => undefined);
-  }, [load]);
+  }, [load, routeContext.isOwnProfile]);
 
   useEffect(() => {
+    if (!routeContext.isOwnProfile) return;
     const refresh = () => {
       load().catch(() => undefined);
     };
@@ -95,7 +108,7 @@ export function BusinessOsScreen({ navigation }: Props) {
       unregisterMarketplace();
       unregisterOrders();
     };
-  }, [load]);
+  }, [load, routeContext.isOwnProfile]);
 
   function openSection(section: BusinessOsSection) {
     const [route, params] = businessOsNavigationArgs(section);
@@ -107,6 +120,18 @@ export function BusinessOsScreen({ navigation }: Props) {
   const activeCampaigns = analytics?.campaigns.filter((row) => String(row.status) === "active").length || 0;
   const spendCents = analytics?.totals.spend_cents || 0;
   const verifiedAccount = accounts.some(adAccountCanTransact);
+
+  // Visitor destination with no visitor variant: refuse rather than render the
+  // viewer's business under another person's name. All hooks have already run.
+  if (!routeContext.isOwnProfile) {
+    return (
+      <Screen title="Business OS">
+        <Panel>
+          <Text style={styles.muted}>{PRIVATE_CONTENT_MESSAGE}</Text>
+        </Panel>
+      </Screen>
+    );
+  }
 
   return (
     <Screen title="Business OS" subtitle="Run your store, marketplace listings and advertising in one place.">
@@ -186,7 +211,7 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   footnote: {
     color: colors.muted,
     fontSize: 13,
@@ -267,4 +292,4 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700"
   }
-});
+}));

@@ -42,6 +42,7 @@ import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { CommentThread, commentAuthorLabel } from "../social/CommentThread";
 import { buildCommentTree, countCommentTree, flattenCommentTree, mergeFlatComments, toggleSetValue } from "../social/commentTree";
 import { authorHandle, seedReplyDraft } from "../social/mentions";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PostDetail">;
 
@@ -426,7 +427,7 @@ export function PostDetailScreen({ route, navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   center: {
     alignItems: "center",
     backgroundColor: colors.background,
@@ -546,4 +547,4 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     marginBottom: 10
   }
-});
+}));

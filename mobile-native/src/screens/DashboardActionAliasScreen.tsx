@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { DashboardNavigation, openDashboardRoute } from "../navigation/dashboardRouting";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props =
   | NativeStackScreenProps<RootStackParamList, "DashboardComposeAlias">
@@ -29,7 +30,7 @@ export function DashboardActionAliasScreen({ navigation, route }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   body: {
     color: colors.muted,
     fontSize: 14,
@@ -52,4 +53,4 @@ const styles = StyleSheet.create({
     marginTop: 14,
     textTransform: "uppercase"
   }
-});
+}));

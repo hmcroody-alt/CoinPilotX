@@ -4,6 +4,7 @@ import { Screen } from "../components/Screen";
 import { DateFormatPreference, getDeviceCurrency, getDeviceTimeZone } from "../core/localTime";
 import { useLocalTime, useTimeZonePreference } from "../core/TimeZoneContext";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 import {
   getAccountLanguage,
   getAccountRegionPreferences,
@@ -349,7 +350,7 @@ export function RegionTimeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   panel: {
     backgroundColor: colors.surface,
     borderRadius: 18,
@@ -386,4 +387,4 @@ const styles = StyleSheet.create({
   choiceSelected: { backgroundColor: colors.signalDim, borderColor: colors.accent },
   choiceText: { color: colors.text, fontSize: 12, fontWeight: "800", textAlign: "center" },
   directionNotice: { color: colors.warning, fontSize: 12, lineHeight: 18, paddingTop: 4 }
-});
+}));

@@ -19,6 +19,7 @@ import { uploadResultMediaId } from "../media/nativeMediaUpload";
 import { MediaUploadPreview } from "../media/MediaUploadPreview";
 import { useNativeMediaUpload } from "../media/useNativeMediaUpload";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   visible: boolean;
@@ -442,7 +443,7 @@ function selectedMusicTrackId(track?: PulseStatusMusic | null) {
   return track?.track_id || track?.id || track?.music_id || track?.audio_id || "";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   aiInput: {
     backgroundColor: colors.surfaceRaised,
     borderColor: colors.border,
@@ -642,4 +643,4 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8
   }
-});
+}));

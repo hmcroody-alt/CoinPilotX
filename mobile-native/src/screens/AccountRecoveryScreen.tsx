@@ -4,6 +4,7 @@ import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-nativ
 import { requestPasswordRecovery, resendEmailConfirmation } from "../api/auth";
 import { AuthStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "AccountRecovery">;
 
@@ -68,7 +69,7 @@ export function AccountRecoveryScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: { flex: 1, justifyContent: "center", gap: 14, padding: 22, backgroundColor: colors.background },
   eyebrow: { color: colors.accentStrong, fontSize: 12, fontWeight: "900", letterSpacing: 1.2 },
   title: { color: colors.text, fontSize: 34, fontWeight: "900" },
@@ -79,4 +80,4 @@ const styles = StyleSheet.create({
   secondary: { alignItems: "center", borderColor: colors.border, borderRadius: 8, borderWidth: 1, minHeight: 52, justifyContent: "center" },
   secondaryText: { color: colors.text, fontWeight: "800" },
   link: { color: colors.accentStrong, fontWeight: "700", textAlign: "center", padding: 8 }
-});
+}));

@@ -14,7 +14,17 @@
  *    and always returns a fully-populated, in-range object.
  */
 
-export type ThemeMode = "system" | "light" | "dark";
+/**
+ * The four PulseSoc themes plus "follow the device".
+ *
+ * `light_futuristic` is the original light theme (glassy, tinted surfaces).
+ * `white` is a plain neutral light theme; `black` is the AMOLED variant of
+ * dark. Builds prior to the four-theme system stored `"light"` — that value
+ * is still accepted by the normalizer and mapped to `light_futuristic`, so an
+ * existing user's choice survives the upgrade without a migration step.
+ */
+export const THEME_MODES = ["system", "dark", "light_futuristic", "black", "white"] as const;
+export type ThemeMode = (typeof THEME_MODES)[number];
 export type Audience = "everyone" | "followers" | "nobody";
 export type ProfileVisibility = "public" | "followers" | "private";
 export type AutoDownloadPolicy = "always" | "wifi" | "never";
@@ -248,6 +258,19 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
   return match ?? fallback;
 }
 
+/**
+ * Theme with legacy-value migration. `"light"` was a valid stored value before
+ * the four-theme system; it is the same palette that is now called
+ * `light_futuristic`, so a user who chose it keeps exactly what they had.
+ * Unknown values (from a future app version syncing down) fall back rather
+ * than guessing.
+ */
+function themeMode(value: unknown, fallback: ThemeMode): ThemeMode {
+  const text = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (text === "light") return "light_futuristic";
+  return oneOf<ThemeMode>(text, THEME_MODES, fallback);
+}
+
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
   const parsed = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
   if (!Number.isFinite(parsed)) return fallback;
@@ -324,7 +347,7 @@ export function normalizePreferences(input: unknown, base: Preferences = DEFAULT
 
   return {
     appearance: {
-      theme: oneOf<ThemeMode>(appearance.theme, ["system", "light", "dark"], base.appearance.theme),
+      theme: themeMode(appearance.theme, base.appearance.theme),
       fontScale: quantizeFontScale(clampNumber(appearance.fontScale, FONT_SCALE_MIN, FONT_SCALE_MAX, base.appearance.fontScale)),
       reduceTransparency: bool(appearance.reduceTransparency, base.appearance.reduceTransparency),
       compactDensity: bool(appearance.compactDensity, base.appearance.compactDensity)

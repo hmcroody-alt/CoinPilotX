@@ -43,8 +43,8 @@ import {
   AdsMarketplaceModel,
   AdsMode,
   CampaignTabKey,
-  accountNameFirstEnabled,
   adAccountDisplay,
+  adAccountStanding,
   adCampaignDisplay,
   adsKpis,
   adsPostModeEnabled,
@@ -88,9 +88,23 @@ import {
   PromoteRail,
   type PromoteRailItem,
   PromotedPostCard,
+  ACCOUNT_SPEND_TITLE,
+  SEVEN_DAY_SPEND_TITLE,
   SpendBarChart,
   SuggestionCard
 } from "../components/ads";
+import { policyCenterModel } from "../api/adsPolicy";
+import { creativeLibraryModel } from "../api/adsCreatives";
+import {
+  attributionNote,
+  deliveryState,
+  deliveryStateDetail,
+  deliveryStateLabel,
+  deliveryStateTone,
+  resumeCheck,
+  walletAuthority
+} from "../api/adsDelivery";
+import type { AdsPortal } from "../api/adsPortal";
 import { StoreKpiCard, StoreQuickLinkGrid } from "../components/store";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { registerSyncInvalidation } from "../core/eventSync";
@@ -100,7 +114,7 @@ import { RootStackParamList } from "../navigation/types";
 import { adsLight } from "../theme/adsLight";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { useStoreEntrance, STORE_STAGGER_MS } from "../theme/storeMotion";
-import { absentValueTextOr, type SurfaceState } from "../api/stateLanguage";
+import { absentValueText, type SurfaceState } from "../api/stateLanguage";
 
 const MODE_CACHE_KEY = "ads.lastMode.v1";
 
@@ -233,6 +247,38 @@ export function AdsManagerScreen({ route, navigation }: Props) {
     [navigation]
   );
 
+  /**
+   * The sub-pages. Same route name, different `mode` — see `AdvertisingRoute`.
+   * Audiences and Creative library were locked tiles that could not be opened;
+   * Account details is where the ad account number lives now that it is out of
+   * the header.
+   */
+  const openAudiences = useCallback(() => {
+    navigation?.navigate("BusinessOsAdvertising", { title: "Audiences", mode: "audiences" });
+  }, [navigation]);
+
+  const openCreatives = useCallback(() => {
+    navigation?.navigate("BusinessOsAdvertising", {
+      title: "Creative library",
+      mode: "creatives"
+    });
+  }, [navigation]);
+
+  const openPolicy = useCallback(() => {
+    navigation?.navigate("BusinessOsAdvertising", { title: "Policy Center", mode: "policy" });
+  }, [navigation]);
+
+  const openAccountDetails = useCallback(
+    (accountId?: number) => {
+      navigation?.navigate("BusinessOsAdvertising", {
+        title: "Account details",
+        mode: "account",
+        accountId
+      });
+    },
+    [navigation]
+  );
+
   /* -------------------------------------------------------------- *
    * Actions
    * -------------------------------------------------------------- */
@@ -297,61 +343,137 @@ export function AdsManagerScreen({ route, navigation }: Props) {
 
   const offline = Boolean(model?.offline);
   const walletFailed = !loading && Boolean(account) && !model?.wallet;
+
+  /**
+   * Whether the balance on this screen is a figure the server stood behind.
+   *
+   * `portal_summary` wraps every `wallet_summary` call in a bare `except` and,
+   * on failure, appends a hand-written row of zeroes carrying pre-formatted
+   * `"$0.00"` strings, which it then sums into `metrics`
+   * (services/pulse_advertiser_portal.py:440–470). `wallet_summary` begins with
+   * `_owner_account`, so it raises for every non-owner — a campaign manager
+   * with full write access takes the substituted path on every single request.
+   *
+   * The substituted row is indistinguishable from a real empty wallet inside
+   * the payload; the role is the only thing that separates them. So the balance
+   * is repeated for owners and replaced with "Restricted" for everyone else,
+   * rather than being recomputed on the client, which §37 forbids outright.
+   *
+   * The doubt is scoped to the portal, and only to the portal, because
+   * `model.wallet` has two origins and only one of them can lie. The portal path
+   * lifts a row out of `portal.wallets` (adsDashboard.ts:747–753) — the rollup
+   * described above. The fan-out path calls
+   * `GET /api/pulse/ads/accounts/<id>/wallet` directly and shows no chip at all
+   * when that call fails (adsDashboard.ts:825–831), so a balance surviving that
+   * path is the server's own answer to a question about one account. Printing
+   * "Restricted" over it would be manufacturing a doubt the payload doesn't
+   * carry — the same offence as the fabricated zero, committed in the other
+   * direction.
+   *
+   * It is scoped to the chip's own account rather than to the rollup for the
+   * same reason: the chip shows one wallet, and a non-owned *sibling* account
+   * says nothing about whether this one's figure is real.
+   */
+  const walletAccountId = Number(model?.wallet?.accountId || account?.id || 0);
+  const walletTruth = model?.portal ? walletAuthority(model.portal, walletAccountId) : null;
+  const balanceConfirmed = !walletTruth || walletTruth.state === "confirmed";
+
+  /**
+   * A "you're out of money" banner fired by a fabricated zero would tell a team
+   * member their campaigns are about to stop when the account is fully funded.
+   * It only fires on a balance the server actually computed.
+   */
   const zeroBalance =
+    balanceConfirmed &&
     Boolean(model?.wallet) &&
     (model?.wallet?.balanceCents || 0) <= 0 &&
-    campaigns.some((campaign) => campaignPhase(campaign) === "delivering");
+    campaigns.some((campaign) => deliveryState(model?.portal ?? null, campaign) === "delivering");
 
   const walletProp = loading
     ? { balanceLabel: "—", fundingLive: false, loading: true }
     : model?.wallet
     ? {
-        balanceLabel: model.wallet.balanceLabel,
+        balanceLabel:
+          balanceConfirmed || !walletTruth ? model.wallet.balanceLabel : walletTruth.display,
         fundingLive: model.wallet.fundingLive,
         loading: false
       }
     : null;
 
+  /**
+   * The spend card names the window it can actually report.
+   *
+   * `spend.windowed` is false whenever there is no per-day source — which, on
+   * this backend, is always: `/api/pulse/ads/analytics` takes an account id and
+   * no date range, so its total is lifetime. The card therefore titles itself
+   * "Account spend" and its summary says "to date". The heading and the figure
+   * agree, which is the whole requirement; "Spend · last 7 days" over a
+   * lifetime total was a false report in the direction that hurts, because an
+   * advertiser reading $0.00 under a weekly heading concludes their delivery
+   * stopped this week rather than never started.
+   */
   const spend = model?.spend;
   const spendEmpty = !spend || spend.daysCents.length === 0;
+  const spendWindowed = Boolean(spend?.windowed) && !spendEmpty;
   const spendTotalLabel = money(spend?.totalCents || 0);
-  const spendSummary = spendEmpty
-    ? `Daily spend. ${spendTotalLabel} spent to date. A day-by-day view isn't available yet.`
-    : `Daily spend, last seven days. ${spendTotalLabel} spent to date, shown as a preview distribution of the real total.`;
+  const spendTitle = spendWindowed ? SEVEN_DAY_SPEND_TITLE : ACCOUNT_SPEND_TITLE;
+  const spendSummary = spendWindowed
+    ? `Daily spend, last seven days. ${spendTotalLabel} spent in that period.`
+    : `Account spend. ${spendTotalLabel} spent to date. A day-by-day view isn't available yet.`;
 
   /* -------------------------------------------------------------- *
    * Marketplace mode
    * -------------------------------------------------------------- */
 
   /**
-   * The account name, with its number demoted.
+   * The account name, with its number gone from the strip entirely.
    *
-   * The old line read `{business_name || "Ad account"} · Ad account {id}`, which
-   * put a database key in the most prominent text on the screen and, for an
-   * account with no name, said "Ad account · Ad account 8" — the same phrase
-   * twice, one of them a number. Name first, number second and only when it
-   * separates one account from another.
+   * Three versions of this row have now existed. The first read
+   * `{business_name || "Ad account"} · Ad account {id}`, which put a database
+   * key in the most prominent text on the screen and, for an account with no
+   * name, said "Ad account · Ad account 8" — the same phrase twice, one of them
+   * a number. The second put the name on its own line and demoted the key to a
+   * quieter second line, behind `EXPO_PUBLIC_ACCOUNT_NAME_FIRST`; because that
+   * flag defaults off, production kept rendering the first version.
+   *
+   * This is the third and the flag is gone. Two things were wrong with the
+   * second: it shipped the fix switched off, and the fix was only half of one —
+   * a quieter database key is still a database key, and the line under an
+   * account name is the most valuable line on the strip. It now says whether
+   * the account can run ads, which is the question the reader actually has.
+   *
+   * The number still exists and is still reachable. It belongs in account
+   * details, support information and the audit log; `adAccountDisplay` remains
+   * the way to render it there, and is used here only to name the account.
    */
   const accountLabel = adAccountDisplay(account, { accountCount: model?.accounts.length ?? 0 });
+  const accountStanding = adAccountStanding(account);
   const accountStrip = account ? (
     <View style={styles.accountStrip}>
-      <View style={styles.accountDot} accessibilityElementsHidden importantForAccessibility="no" />
-      {accountNameFirstEnabled() ? (
-        <View style={styles.accountTextGroup}>
-          <Text style={styles.accountName} numberOfLines={1}>
-            {accountLabel.name}
-          </Text>
-          {accountLabel.reference ? (
-            <Text style={styles.accountReference} numberOfLines={1}>
-              {accountLabel.reference}
-            </Text>
-          ) : null}
-        </View>
-      ) : (
-        <Text style={styles.accountText} numberOfLines={1}>
-          {account.business_name || "Ad account"} · Ad account {account.id}
+      {/* The dot is decorative — it repeats the line beside it, and it takes
+          its colour from the same decision, so it cannot say "healthy" over a
+          "Restricted" account. */}
+      <View
+        style={[styles.accountDot, { backgroundColor: adsLight.status[accountStanding.tone] }]}
+        accessibilityElementsHidden
+        importantForAccessibility="no"
+      />
+      {/* Tapping the name opens account details. That is where the account
+          number went when it left this strip, so the identity row is still the
+          way to reach it — one tap further away, rather than removed. */}
+      <Pressable
+        style={styles.accountTextGroup}
+        onPress={() => openAccountDetails(account.id)}
+        accessibilityRole="button"
+        accessibilityLabel={`${accountLabel.name}. ${accountStanding.line}. Open account details.`}
+      >
+        <Text style={styles.accountName} numberOfLines={1}>
+          {accountLabel.name}
         </Text>
-      )}
+        <Text style={styles.accountReference} numberOfLines={1}>
+          {accountStanding.line}
+        </Text>
+      </Pressable>
       {model && model.accounts.length > 1 ? (
         <Pressable
           onPress={() => openClassic("Ad accounts")}
@@ -386,8 +508,15 @@ export function AdsManagerScreen({ route, navigation }: Props) {
     }
     return (
       <View style={styles.kpiRow}>
+        {/* "Spend · to date" and "Clicks · to date" — the tile label is one
+            line by design (`StoreKpiCard` sets `numberOfLines={1}`) and three
+            tiles share the row, so the middle dot cost the characters that made
+            the label a sentence: the first rendered as "Spend · to da…". The
+            window still has to be stated, because these totals are lifetime and
+            an unqualified "Spend" would read as this week's. Dropping the
+            separator keeps both facts and fits. */}
         <StoreKpiCard
-          label="Spend · to date"
+          label="Spend to date"
           value={money(kpis.spendCents)}
           // MOCK-DATA guard: the analytics endpoint takes no date range, so
           // these totals are lifetime. Labelling them "· 7d" would misreport a
@@ -399,7 +528,7 @@ export function AdsManagerScreen({ route, navigation }: Props) {
           delay={SLOT.kpis * STORE_STAGGER_MS}
         />
         <StoreKpiCard
-          label="Clicks · to date"
+          label="Clicks to date"
           value={formatters.count(kpis.clicks)}
           caption={
             kpis.impressions > 0 ? `${formatters.count(kpis.impressions)} impressions` : null
@@ -411,13 +540,23 @@ export function AdsManagerScreen({ route, navigation }: Props) {
         />
         <StoreKpiCard
           label="Cost per click"
-          // No clicks means the figure is undefined, not zero — a cost per click
-          // of nothing would be a claim that the clicks were free.
-          value={absentValueTextOr(
-            kpis.cpcCents == null ? "—" : money(kpis.cpcCents),
-            kpis.cpcCents == null ? "no_activity" : "ready",
-            { notConfiguredText: "No clicks yet" }
-          )}
+          /**
+           * No clicks means the figure is undefined, not zero — a cost per
+           * click of nothing would be a claim that the clicks were free.
+           *
+           * What it must not be is a dash. This read `absentValueTextOr("—",
+           * …)`, and because `EXPO_PUBLIC_STATE_LANGUAGE` defaults off, the
+           * production build showed the em dash — the one character that means
+           * "zero", "loading", "failed" and "not set up" all at once, which is
+           * the ambiguity `api/stateLanguage.ts` exists to end. The state is
+           * known here with certainty, so the wording is stated outright rather
+           * than deferred to a rollout flag.
+           */
+          value={
+            kpis.cpcCents == null
+              ? absentValueText("no_activity", { notConfiguredText: "No clicks yet" })
+              : money(kpis.cpcCents)
+          }
           // MOCK-DATA guard: no prior period exists to compare against, so no
           // tile shows a trend arrow — including the "▼ cheaper" treatment the
           // design specifies here.
@@ -464,18 +603,28 @@ export function AdsManagerScreen({ route, navigation }: Props) {
       // The unverified account is folded into this one invitation rather than
       // stacking a verification banner above an empty state: with nothing to
       // deliver, verification is a step of setting up, not a warning.
+      //
+      // Both paths are offered at once, always. This block used to *choose*:
+      // an unverified advertiser was shown "Verify your business" and no way
+      // to start a campaign, which enforced a rule the platform does not have.
+      // Verification gates delivery; it does not gate authoring. A draft
+      // charges nothing and delivers nothing, so there is no state in which
+      // making one is unsafe — and an advertiser waiting on document review is
+      // precisely who should be drafting. The primary action is therefore the
+      // work they can do now, and verification is the quieter second path that
+      // unblocks delivery later.
       return (
         <AdsEmpty
           title="No campaigns yet"
           body={
             model.needsVerification
-              ? "Create a campaign and get your business verified — campaigns can't deliver until PulseSoc approves the account. Nothing is charged while a campaign is a draft."
+              ? "Start a campaign now — drafts cost nothing and aren't charged. Delivery begins once PulseSoc approves your business, so you can get verification going in parallel."
               : "Campaigns you create appear here with their delivery status, spend and pacing. Nothing is charged while a campaign is a draft."
           }
-          ctaLabel={model.needsVerification ? "Verify your business" : "Create campaign"}
-          onPress={
-            model.needsVerification ? openVerification : () => openClassic("Create campaign")
-          }
+          ctaLabel="Create campaign"
+          onPress={() => openClassic("Create campaign")}
+          secondaryLabel={model.needsVerification ? "Verify your business" : null}
+          onSecondaryPress={model.needsVerification ? openVerification : undefined}
           reducedMotion={reducedMotion}
         />
       );
@@ -490,9 +639,30 @@ export function AdsManagerScreen({ route, navigation }: Props) {
     return (
       <View style={styles.stack}>
         {visible.map((campaign) => {
+          /**
+           * The pill used to read `campaignPhase`, which maps `status='active'`
+           * straight to "Delivering". The selector wants seven more conditions
+           * than that (`api/adsDelivery.ts` lists them against the SQL), so an
+           * advertiser whose ad account was never approved — which is every
+           * self-serve advertiser, because no route sets that column — saw a
+           * green pill on a campaign that has never reached one person.
+           *
+           * `deliveryState` reads the gates the payload can actually see and
+           * splits the green in two: "Delivering" only once `spent_cents` proves
+           * money moved, "Ready to deliver" while it is still a forecast.
+           */
+          const delivery = deliveryState(model?.portal ?? null, campaign);
           const phase = campaignPhase(campaign);
           const budget = campaignBudget(campaign);
           const switchState = deliverySwitchState(campaign, account);
+          /**
+           * Resume reserves budget, and `reserve_campaign_budget` is owner-only:
+           * a campaign manager who taps it is told "Campaign not found." about a
+           * campaign they are looking at. Checked before the switch is offered
+           * rather than discovered after.
+           */
+          const resume = resumeCheck(model?.portal ?? null, campaign);
+          const resumeBlocked = !switchState.on && !resume.allowed;
           const spentCents = campaignSpendCents(campaign, model?.analytics || null);
           const row = model?.analytics?.campaigns.find(
             (entry) => Number(entry.campaign_id) === Number(campaign.id)
@@ -509,37 +679,46 @@ export function AdsManagerScreen({ route, navigation }: Props) {
             if (!model?.analytics) return "unavailable";
             return row ? "ready" : "no_activity";
           };
+          /**
+           * The absent branches say the words rather than draw the dash.
+           *
+           * These were `absentValueTextOr(…, "—", …)`, which meant the correct
+           * wording only appeared in a build that had opted into
+           * `EXPO_PUBLIC_STATE_LANGUAGE`. Off by default, so the shipping app
+           * rendered the ambiguous character on all three rows — exactly the
+           * state this screen's own comment above says it is closing.
+           */
+          const cpcCents =
+            row && clicks > 0 && Number(row.estimated_cpc || 0) > 0
+              ? Math.round(Number(row.estimated_cpc) * 100)
+              : null;
           const metrics: CampaignCardMetric[] = [
             { key: "spent", label: "Spent", value: money(spentCents) },
             {
               key: "impressions",
               label: "Impressions",
-              value: absentValueTextOr(
-                row ? formatters.count(Number(row.impressions || 0)) : "—",
-                metricState(),
-                { zeroText: formatters.count(0) }
-              )
+              value: row
+                ? formatters.count(Number(row.impressions || 0))
+                : absentValueText(metricState(), { zeroText: formatters.count(0) })
             },
             {
               key: "clicks",
               label: "Clicks",
-              value: absentValueTextOr(
-                row ? formatters.count(clicks) : "—",
-                metricState(),
-                { zeroText: formatters.count(0) }
-              )
+              value: row
+                ? formatters.count(clicks)
+                : absentValueText(metricState(), { zeroText: formatters.count(0) })
             },
             {
               key: "cpc",
               label: "CPC",
-              value: absentValueTextOr(
-                row && clicks > 0 && Number(row.estimated_cpc || 0) > 0
-                  ? money(Math.round(Number(row.estimated_cpc) * 100))
-                  : "—",
-                // A campaign with no clicks has no cost per click — that is an
-                // undefined figure, not a zero one.
-                !model?.analytics ? "unavailable" : clicks > 0 ? "ready" : "no_activity"
-              )
+              // A campaign with no clicks has no cost per click — that is an
+              // undefined figure, not a zero one. So a missing CPC is never
+              // "ready": either the analytics call failed, or there is nothing
+              // to divide by yet.
+              value:
+                cpcCents == null
+                  ? absentValueText(!model?.analytics ? "unavailable" : "no_activity")
+                  : money(cpcCents)
             }
           ];
           // Pause and resume belong to the switch; everything else the server
@@ -559,9 +738,10 @@ export function AdsManagerScreen({ route, navigation }: Props) {
               name={adCampaignDisplay(campaign).name}
               reference={adCampaignDisplay(campaign).reference}
               objectiveLabel={formatObjective(campaign.objective)}
-              phase={phase}
-              phaseLabel={campaignPhaseLabel(phase)}
-              phaseTone={campaignPhaseTone(phase)}
+              phase={delivery}
+              phaseLabel={deliveryStateLabel(delivery)}
+              phaseTone={deliveryStateTone(delivery)}
+              phaseDetail={deliveryStateDetail(model?.portal ?? null, campaign)}
               budget={
                 budget
                   ? {
@@ -576,17 +756,20 @@ export function AdsManagerScreen({ route, navigation }: Props) {
                   : null
               }
               metrics={metrics}
-              metricsLive={campaignMetricsAreLive(campaign)}
+              // Spend is only presented as moving when it demonstrably is.
+              metricsLive={campaignMetricsAreLive(campaign) && delivery === "delivering"}
+              metricsNote={attributionNote(campaign)}
               showSwitch={switchState.show}
               delivering={switchState.on}
-              switchDisabled={switchState.disabled || offline}
+              switchDisabled={switchState.disabled || offline || resumeBlocked}
               switchReason={
                 offline && !switchState.disabled
                   ? "You're offline — delivery can't be changed."
-                  : switchState.reason
+                  : switchState.reason || (resumeBlocked ? resume.reason : null)
               }
               onToggleDelivery={(next) => {
                 if (!switchState.action) return;
+                if (next && !resume.allowed) return;
                 applyAction(campaign, next ? "resume" : "pause").catch(() => undefined);
               }}
               toggleBusy={busyKey === `campaign-${campaign.id}`}
@@ -648,6 +831,7 @@ export function AdsManagerScreen({ route, navigation }: Props) {
               accessibilityLabel="Open ad reports"
             >
               <SpendBarChart
+                title={spendTitle}
                 values={spend?.daysCents || []}
                 dayLabels={dayLabels}
                 summary={spendSummary}
@@ -720,21 +904,34 @@ export function AdsManagerScreen({ route, navigation }: Props) {
               onPress: openReports,
               reducedMotion
             },
-            // Audiences and the creative library have no endpoint in this app.
-            // A tile that opens the wrong screen is worse than one that says
-            // "not yet", so both are disabled and say why.
+            // Both of these used to be `disabled: true` with the subtitle "Not
+            // available in the app yet". Accurate, and still a dead end: the
+            // reader was told "no" in the one place that should have told them
+            // what the feature is and what to do meanwhile.
+            //
+            // Audiences remains a report, because targeting genuinely has no
+            // editable endpoint here, and its subtitle says so before the tap
+            // rather than after. The creative library is no longer a report —
+            // it lists the real creatives — so its subtitle carries a count.
             {
               icon: "people-outline",
               label: "Audiences",
-              subtitle: "Not available in the app yet",
-              disabled: true,
+              subtitle: "See what targeting applies",
+              onPress: openAudiences,
               reducedMotion
             },
             {
               icon: "images-outline",
               label: "Creative library",
-              subtitle: "Not available in the app yet",
-              disabled: true,
+              subtitle: creativeTileSubtitle(model?.portal ?? null),
+              onPress: openCreatives,
+              reducedMotion
+            },
+            {
+              icon: "shield-checkmark-outline",
+              label: "Policy Center",
+              subtitle: policyTileSubtitle(model?.portal ?? null),
+              onPress: openPolicy,
               reducedMotion
             }
           ]}
@@ -797,13 +994,15 @@ export function AdsManagerScreen({ route, navigation }: Props) {
       contentContainerStyle={[styles.content, { paddingBottom: bottomPad(insets.bottom) }]}
       showsVerticalScrollIndicator={false}
     >
-      <AdsPreviewNote
-        text={
-          postEnabled
-            ? "Post ads is a preview. Every figure below is sample data — no promotion is running, nothing is submitted and nothing is charged. Your ad wallet above is real and funds Marketplace ads."
-            : "Promoting posts, Reels and live replays isn't available yet. Your ad wallet still funds Marketplace ads."
-        }
-      />
+      {/* The disclosure only appears when there is sample data to disclaim.
+          With the flag off there are no figures on this page, and this note
+          used to run anyway — directly above an empty state that said the same
+          thing in different words. Two notices saying "not available" is not
+          twice the honesty; it is the whole page spent on a refusal. The
+          flag-off pane is now one card that explains the product instead. */}
+      {postEnabled ? (
+        <AdsPreviewNote text="Post ads is a preview. Every figure below is sample data — no promotion is running, nothing is submitted and nothing is charged. Your ad wallet above is real and funds Marketplace ads." />
+      ) : null}
 
       {postEnabled && postKpis ? (
         <Animated.View style={[styles.kpiRow, entrance.styleFor(SLOT.kpis)]}>
@@ -848,12 +1047,57 @@ export function AdsManagerScreen({ route, navigation }: Props) {
 
       <Animated.View style={[styles.section, entrance.styleFor(SLOT.list)]}>
         {!postEnabled ? (
-          <AdsEmpty
-            title="Post ads is coming"
-            body="Promoting a post, Reel or live replay will run from the same ad wallet as your Marketplace campaigns. It isn't switched on in this build."
-            reducedMotion={reducedMotion}
-            tone="post"
-          />
+          <View style={styles.stack}>
+            <View style={styles.infoCard}>
+              <Text style={styles.infoTitle}>Post ads isn’t switched on yet</Text>
+              <Text style={styles.infoBody}>
+                It will let you put money behind something you already posted, instead of
+                building an ad from scratch. Nothing about it is live in this build — there is
+                no promotion running, and nothing here can be charged.
+              </Text>
+              <View style={styles.infoPoints}>
+                {[
+                  "Promote a post, a Reel or a live replay",
+                  "Paid from the same ad wallet as your Marketplace campaigns — there is no second balance to top up",
+                  "Reviewed before it delivers, the same way a Marketplace ad is"
+                ].map((point) => (
+                  <View key={point} style={styles.infoPointRow}>
+                    <View
+                      style={styles.infoPointDot}
+                      accessibilityElementsHidden
+                      importantForAccessibility="no"
+                    />
+                    <Text style={styles.infoPointText}>{point}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.infoCard}>
+              <Text style={styles.infoTitle}>What you can run today</Text>
+              <Text style={styles.infoBody}>
+                Marketplace ads are live and deliver in the feed and in Reels. They use the
+                same wallet, so anything you add now is spendable the moment post promotion
+                arrives.
+              </Text>
+              <Pressable
+                onPress={() => changeMode("marketplace")}
+                accessibilityRole="button"
+                accessibilityLabel="Switch to Marketplace ads"
+                hitSlop={6}
+              >
+                <Text style={styles.infoLink}>Go to Marketplace ads ›</Text>
+              </Pressable>
+              <Pressable
+                onPress={openWallet}
+                accessibilityRole="button"
+                accessibilityLabel="Open the ad wallet"
+                hitSlop={6}
+              >
+                <Text style={styles.infoLink}>Ad wallet and billing ›</Text>
+              </Pressable>
+            </View>
+          </View>
         ) : loading ? (
           <View style={styles.stack}>
             <AdsPromotionSkeleton reducedMotion={reducedMotion} />
@@ -999,6 +1243,63 @@ function bottomPad(inset: number) {
   return Math.max(inset, 16) + BOTTOM_NAV_CONTENT_CLEARANCE;
 }
 
+/**
+ * The Policy Center tile's subtitle.
+ *
+ * Four distinct answers, because §31 treats them as four distinct claims:
+ *
+ *   • `null` portal — the board was never fetched, either because the page is
+ *     still loading or because the manager fell back to the five-call fan-out.
+ *     The subtitle names the destination and asserts nothing about its
+ *     contents. It must not read as reassurance: "All clear" here would tell an
+ *     advertiser with a rejected ad that nothing is wrong, on the strength of a
+ *     request that never happened.
+ *   • `empty` — the board loaded and holds nothing. A real zero, said plainly.
+ *   • rejections outstanding — the only state worth a number on a tile, because
+ *     it is the only one the reader has to act on.
+ *   • everything else — pending decisions, or a board that is entirely
+ *     approved.
+ *
+ * Counts are pluralised rather than rendered as "1 creatives", which is the
+ * kind of seam that makes a surface read as unfinished.
+ */
+function policyTileSubtitle(portal: AdsPortal | null): string {
+  const model = policyCenterModel(portal);
+
+  if (model.state === "unavailable") return "See review decisions";
+  if (model.state === "empty") return "No decisions yet";
+  if (model.actionCount > 0) {
+    return model.actionCount === 1 ? "1 needs attention" : `${model.actionCount} need attention`;
+  }
+  if (model.reviewCount > 0) {
+    return model.reviewCount === 1 ? "1 in review" : `${model.reviewCount} in review`;
+  }
+  return "All clear";
+}
+
+/**
+ * The Creative library tile's subtitle.
+ *
+ * Same four-way split as the policy tile and for the same §31 reason: a library
+ * that was never fetched must not render as an empty one. "Browse your
+ * creatives" names the destination and claims nothing about what's in it, which
+ * is the only honest thing to say about a request that hasn't happened.
+ *
+ * The number it shows when there is one counts rejections and unsubmitted
+ * drafts together — both mean a creative the advertiser meant to run isn't
+ * running, which is the fact a tile has room for.
+ */
+function creativeTileSubtitle(portal: AdsPortal | null): string {
+  const model = creativeLibraryModel(portal);
+
+  if (model.state === "unavailable") return "Browse your creatives";
+  if (model.state === "empty") return "No creatives yet";
+  if (model.actionCount > 0) {
+    return model.actionCount === 1 ? "1 needs attention" : `${model.actionCount} need attention`;
+  }
+  return "All delivering";
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: adsLight.bg.page },
   hidden: { display: "none" },
@@ -1007,19 +1308,40 @@ const styles = StyleSheet.create({
   section: { gap: 10 },
   kpiRow: { flexDirection: "row", gap: 10, paddingHorizontal: adsLight.space.card },
   accountStrip: { flexDirection: "row", alignItems: "center", gap: 8 },
-  accountDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: adsLight.status.success
-  },
-  accountText: { flex: 1, fontSize: 12, color: adsLight.text.onDarkMuted, fontWeight: "600" },
+  // No colour here: the fill comes from `adAccountStanding().tone` at the call
+  // site. A default would be a claim about an account this stylesheet has
+  // never seen.
+  accountDot: { width: 8, height: 8, borderRadius: 4 },
   // Two lines rather than one joined string: the weight difference is what makes
-  // the number secondary, and a single `Text` could not express it.
+  // the status line secondary, and a single `Text` could not express it.
   accountTextGroup: { flex: 1 },
   accountName: { fontSize: 13, color: adsLight.text.onDark, fontWeight: "700" },
   accountReference: { fontSize: 11, color: adsLight.text.onDarkMuted, fontWeight: "600" },
   accountAction: { fontSize: 12, fontWeight: "800", color: adsLight.text.onDark },
+  // The flag-off Post-ads pane. Violet-washed like the rest of the product, but
+  // a plain card rather than an empty state: it is explaining a thing, not
+  // apologising for one.
+  infoCard: {
+    backgroundColor: adsLight.bg.card,
+    borderRadius: adsLight.radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: adsLight.border.hairline,
+    padding: adsLight.space.card,
+    gap: 8
+  },
+  infoTitle: { fontSize: 15, fontWeight: "800", color: adsLight.text.primary, lineHeight: 20 },
+  infoBody: { fontSize: 13, color: adsLight.text.muted, lineHeight: 19 },
+  infoPoints: { gap: 6, marginTop: 2 },
+  infoPointRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  infoPointDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    marginTop: 8,
+    backgroundColor: adsLight.post.base
+  },
+  infoPointText: { flex: 1, fontSize: 13, color: adsLight.text.primary, lineHeight: 19 },
+  infoLink: { fontSize: 13, fontWeight: "700", color: adsLight.post.base, paddingVertical: 4 },
   sectionHead: {
     flexDirection: "row",
     alignItems: "center",

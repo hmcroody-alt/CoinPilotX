@@ -47,6 +47,7 @@ import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { sharePulseObject } from "../sharing/nativeShare";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -1297,7 +1298,7 @@ function mergePosts(current: PulsePost[], incoming: PulsePost[]) {
   return [...current, ...incoming.filter((post) => !seen.has(post.id))];
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionErrorBanner: {
     alignItems: "center",
     backgroundColor: "rgba(74, 24, 24, 0.92)",
@@ -2944,4 +2945,4 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: "900"
   }
-});
+}));

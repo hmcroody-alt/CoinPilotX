@@ -9,6 +9,7 @@ import {
 } from "../api/notifications";
 import { getPushPermissionState, registerPushDevice } from "../api/push";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 const FALLBACK_CATEGORIES = [
   "chat_message", "group_message", "room_message", "comment", "reply", "reaction", "follow", "status", "mentions",
@@ -184,7 +185,7 @@ function isRequiredSecurityChannel(category: string, channel: (typeof CHANNELS)[
   return category === "security" && (channel === "in_app" || channel === "email");
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     backgroundColor: colors.background,
     flex: 1
@@ -275,4 +276,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "center"
   }
-});
+}));

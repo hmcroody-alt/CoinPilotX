@@ -11,6 +11,7 @@ import {
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type ContentPlannerRouteName =
   | "ContentPlanner"
@@ -260,7 +261,7 @@ function Toggle({ label, value, onPress }: { label: string; value: boolean; onPr
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -489,4 +490,4 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: "800"
   }
-});
+}));

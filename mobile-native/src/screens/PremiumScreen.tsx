@@ -16,6 +16,7 @@ import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "Premium">>;
 
@@ -199,7 +200,7 @@ function EntitlementRow({ label, status, detail }: { label: string; status: "act
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   active: {
     color: colors.accent
   },
@@ -376,4 +377,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19
   }
-});
+}));

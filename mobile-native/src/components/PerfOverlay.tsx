@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { clearPerfSamples, getPerfSamples, isPerfTracingEnabled, type PerfSample } from "../core/perfTrace";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 interface MetricRow {
   name: string;
@@ -117,7 +118,7 @@ export function PerfOverlay() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   pill: {
     backgroundColor: "rgba(0,0,0,0.72)",
     borderColor: colors.accent,
@@ -151,4 +152,4 @@ const styles = StyleSheet.create({
   muted: { color: colors.muted, fontWeight: "800" },
   scroll: { flexGrow: 0 },
   empty: { color: colors.muted, fontSize: 12, paddingVertical: 8, textAlign: "center" }
-});
+}));

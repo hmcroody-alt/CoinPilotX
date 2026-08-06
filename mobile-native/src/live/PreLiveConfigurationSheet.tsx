@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 import {
   AUDIENCE_OPTIONS,
   emptyLiveStudioDraft,
@@ -175,7 +176,7 @@ export function PreLiveConfigurationSheet({ visible, busy, error, onClose, onGoL
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   advanced: {
     gap: 10
   },
@@ -319,4 +320,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12
   }
-});
+}));

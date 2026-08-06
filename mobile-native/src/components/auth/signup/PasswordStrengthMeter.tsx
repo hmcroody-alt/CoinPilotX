@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../../../theme/colors";
 import { logiNexus } from "../../../theme/logiNexus";
 import { PasswordStrength } from "../../../auth/signupValidation";
+import { createThemedStyles } from "../../../theme/themedStyles";
 
 const SEGMENTS = 4;
 
@@ -56,7 +57,7 @@ export function PasswordStrengthMeter({ strength }: { strength: PasswordStrength
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     gap: logiNexus.spacing.sm,
     minHeight: 58
@@ -108,4 +109,4 @@ const styles = StyleSheet.create({
   chipTextMet: {
     color: colors.text
   }
-});
+}));

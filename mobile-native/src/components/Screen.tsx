@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BOTTOM_NAV_CONTENT_CLEARANCE, useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone, toneColor } from "../theme/logiNexus";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   title: string;
@@ -145,7 +146,7 @@ function glyphForState(state: StatePanelKind) {
   return "·";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     flex: 1,
     backgroundColor: colors.background
@@ -232,4 +233,4 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 21
   }
-});
+}));

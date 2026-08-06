@@ -10,6 +10,7 @@ import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackC
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { AttachedMusicPolicy, resolveViewerAudioPlan } from "../core/attachedMusicAudioPolicy";
 import { LikeBurst, LikeBurstHandle } from "../media/MediaGestureFeedback";
+import { createThemedStyles } from "../theme/themedStyles";
 
 export type NativeMediaViewerItem = {
   id?: number;
@@ -402,7 +403,7 @@ function UnsupportedState({ item, failed, onShare }: { item: NativeMediaViewerIt
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionButton: {
     borderColor: "rgba(255,255,255,0.16)",
     borderRadius: 8,
@@ -557,4 +558,4 @@ const styles = StyleSheet.create({
   video: {
     flex: 1
   }
-});
+}));

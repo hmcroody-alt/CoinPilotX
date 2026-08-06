@@ -13,10 +13,20 @@ import { Platform } from "react-native";
  * the modal's submit handler and is dropped before the response is handled.
  */
 
+/**
+ * Where a grant came from. The distinction matters because a `local` grant
+ * carries no server signature, so no protected route will honour it — only the
+ * client-side gate can, and only in a build where the development fallback is
+ * compiled in. Keeping it on the grant means the gate reads the origin instead
+ * of inferring it from the token's shape.
+ */
+export type EngineerGrantSource = "server" | "local";
+
 export type EngineerGrant = {
   token: string;
   expiresAt: number;
   scope: string[];
+  source?: EngineerGrantSource;
 };
 
 let grant: EngineerGrant | null = null;
@@ -70,8 +80,26 @@ export function engineerAccessScope(): string[] {
   return hasEngineerAccess() ? [...grant!.scope] : [];
 }
 
+/** Origin of the currently held grant, or "" when none is held. */
+export function engineerAccessSource(): EngineerGrantSource | "" {
+  return hasEngineerAccess() ? grant!.source || "server" : "";
+}
+
+/**
+ * True only while a locally-issued development grant is held for this account.
+ * The client gate consults this; nothing on the server ever will.
+ */
+export function hasLocalEngineerAccess(userId?: number | null): boolean {
+  return hasEngineerAccess(userId) && grant!.source === "local";
+}
+
 export function setEngineerAccess(userId: number, next: EngineerGrant) {
-  grant = { token: next.token, expiresAt: Number(next.expiresAt || 0), scope: [...(next.scope || [])] };
+  grant = {
+    token: next.token,
+    expiresAt: Number(next.expiresAt || 0),
+    scope: [...(next.scope || [])],
+    source: next.source || "server"
+  };
   grantUserId = Number(userId || 0);
   notify();
 }

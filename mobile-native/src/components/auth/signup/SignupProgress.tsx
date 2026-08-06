@@ -3,6 +3,7 @@ import { Animated, StyleSheet, Text, View } from "react-native";
 import { colors } from "../../../theme/colors";
 import { logiNexus } from "../../../theme/logiNexus";
 import { useLogiNexusReducedMotion } from "../../../theme/logiNexusMotion";
+import { createThemedStyles } from "../../../theme/themedStyles";
 
 /**
  * Compact segmented progress line for the multi-step signup. Each segment fills
@@ -63,7 +64,7 @@ function Segment({ active }: { active: boolean }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     gap: logiNexus.spacing.xs,
     width: "100%"
@@ -100,4 +101,4 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 0.4
   }
-});
+}));

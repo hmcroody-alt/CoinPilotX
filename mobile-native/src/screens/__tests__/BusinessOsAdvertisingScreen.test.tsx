@@ -89,7 +89,10 @@ beforeEach(() => {
 
 async function renderScreen() {
   const view = render(<BusinessOsAdvertisingScreen />);
-  await waitFor(() => expect(view.queryByText("Loading advertising…")).toBeNull());
+  // The first paint waits on a fan-out (accounts, campaigns, analytics, wallet,
+  // billing). Under a full parallel run that overruns waitFor's 1s default, so
+  // the suite failed on load rather than on behaviour.
+  await waitFor(() => expect(view.queryByText("Loading advertising…")).toBeNull(), { timeout: 10000 });
   return view;
 }
 

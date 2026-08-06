@@ -156,11 +156,35 @@ export type RootStackParamList = {
    */
   MarketplaceCart: { title?: string } | undefined;
   /**
-   * One route, two screens. Default is the rebuilt two-sided ads manager;
+   * One route, several screens. Default is the rebuilt two-sided ads manager;
    * `mode: "classic"` renders the previous screen, which still owns the
    * ad-account and campaign creation forms the manager routes into.
+   *
+   * The remaining modes are the manager's sub-pages. They live behind this one
+   * route name rather than getting route names of their own so that every
+   * existing deep link, notification and dashboard tile keeps resolving through
+   * a single entry point — and so that a tile can never be pointed at a name
+   * the navigator does not know, which is how a "destination" becomes a crash
+   * instead of a page.
+   *
+   *   • `"audiences"`  — what targeting the platform enforces, and what it
+   *     refuses, while audience editing is not yet in the app.
+   *   • `"creatives"`  — the creative rules (ownership, destinations, review
+   *     versioning) while there is no browsable library.
+   *   • `"account"`    — account standing plus the ad account number, which was
+   *     removed from the dashboard header and had to land somewhere real.
+   *   • `"policy"`     — the Policy Center. The only one of these that reads
+   *     server data about the advertiser's own creatives rather than reporting
+   *     platform rules: it renders `portal.review_board`, so a rejection's
+   *     reason is reachable instead of implied.
    */
-  BusinessOsAdvertising: { title?: string; accountId?: number; mode?: "manager" | "classic" } | undefined;
+  BusinessOsAdvertising:
+    | {
+        title?: string;
+        accountId?: number;
+        mode?: "manager" | "classic" | "audiences" | "creatives" | "account" | "policy";
+      }
+    | undefined;
   BusinessOsInsights: { title?: string } | undefined;
   BusinessOsPayments: { title?: string; accountId?: number } | undefined;
   /**
@@ -262,21 +286,21 @@ export type RootStackParamList = {
       } & ProfileOsParams)
     | undefined;
   SafetyWebHub:
-    | {
+    | ({
         title?: string;
         section?: "overview" | "blocks" | "mutes" | "reports";
         reportTarget?: string;
         reportType?: string;
         blockTarget?: string;
         muteTarget?: string;
-      }
+      } & ProfileOsParams)
     | undefined;
-  TrustSafety: { title?: string; mode?: "support" | "security" | "scam" | "trust" } | undefined;
-  TrustSafetySupport: { title?: string } | undefined;
-  TrustSafetyHelp: { title?: string } | undefined;
+  TrustSafety: ({ title?: string; mode?: "support" | "security" | "scam" | "trust" } & ProfileOsParams) | undefined;
+  TrustSafetySupport: ({ title?: string } & ProfileOsParams) | undefined;
+  TrustSafetyHelp: ({ title?: string } & ProfileOsParams) | undefined;
   TrustCenter: ({ title?: string } & ProfileOsParams) | undefined;
-  SecurityReport: { title?: string } | undefined;
-  ScamShield: { title?: string } | undefined;
+  SecurityReport: ({ title?: string } & ProfileOsParams) | undefined;
+  ScamShield: ({ title?: string } & ProfileOsParams) | undefined;
   VerificationCenter: { title?: string; track?: "identity" | "blue_check" | "business" | "government_id" } | undefined;
   VerificationWebCenter: { title?: string; track?: "identity" | "blue_check" | "business" | "government_id" } | undefined;
   ActivityInbox: ({

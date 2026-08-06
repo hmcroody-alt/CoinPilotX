@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { dismissWelcome, fetchWelcomeState, WelcomeState } from "../api/welcome";
 import { logiNexus } from "../theme/logiNexus";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type ActiveWelcome = Extract<WelcomeState, { shouldShow: true }>;
 
@@ -206,7 +207,7 @@ export function WelcomeUfoOverlay({ active }: WelcomeUfoOverlayProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(3, 7, 18, 0.82)",
@@ -276,4 +277,4 @@ const styles = StyleSheet.create({
     ...logiNexus.typography.button,
     color: colors.background
   }
-});
+}));

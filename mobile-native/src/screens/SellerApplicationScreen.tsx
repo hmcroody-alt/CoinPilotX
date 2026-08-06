@@ -39,6 +39,7 @@ import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   navigation: { navigate: (...args: any[]) => void };
@@ -826,7 +827,7 @@ function StatusCentre({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1149,4 +1150,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warningSoft,
     borderColor: colors.warning
   }
-});
+}));

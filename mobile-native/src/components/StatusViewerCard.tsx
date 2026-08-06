@@ -13,6 +13,7 @@ import { sharePulseObject } from "../sharing/nativeShare";
 import { ContentTranslation } from "./ContentTranslation";
 import { useSavedState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   status: PulseStatus;
@@ -308,7 +309,7 @@ export function StatusViewerCard({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   author: {
     alignItems: "center",
     flex: 1,
@@ -473,4 +474,4 @@ const styles = StyleSheet.create({
     color: colors.background,
     fontWeight: "900"
   }
-});
+}));

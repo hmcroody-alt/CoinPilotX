@@ -12,6 +12,7 @@ import {
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props =
   | NativeStackScreenProps<RootStackParamList, "AccountHealth">
@@ -247,7 +248,7 @@ function statusLabel(status?: string) {
   return String(status || "secure").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
@@ -478,4 +479,4 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "900"
   }
-});
+}));

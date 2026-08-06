@@ -19,6 +19,7 @@ import { navigationRef } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { qaIncomingCallFromUrl } from "./incomingCallQa";
+import { createThemedStyles } from "../theme/themedStyles";
 
 const ACTIVE_CALL_REFRESH_MS = 4200;
 const SILENCED_CALL_TTL_MS = 15 * 60 * 1000;
@@ -304,7 +305,7 @@ function initialsFor(name: string) {
   return parts.map((part) => part[0]?.toUpperCase() || "").join("") || "?";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   fullscreen: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "#06090f",
@@ -444,4 +445,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800"
   }
-});
+}));

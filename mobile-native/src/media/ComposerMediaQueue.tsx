@@ -3,6 +3,7 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme/colors";
 import { formatFileSize } from "../utils/format";
 import { ComposerMediaItem } from "./useComposerMediaQueue";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   items: ComposerMediaItem[];
@@ -56,7 +57,7 @@ function QueueAction({ label, onPress, disabled = false, accessibilityLabel }: {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   action: { borderColor: colors.border, borderRadius: 8, borderWidth: 1, minHeight: 44, justifyContent: "center", paddingHorizontal: 10 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
   actionText: { color: colors.text, fontSize: 11, fontWeight: "900" },
@@ -73,4 +74,4 @@ const styles = StyleSheet.create({
   state: { color: colors.muted, fontSize: 11, lineHeight: 15, marginTop: 3 },
   title: { color: colors.text, fontSize: 13, fontWeight: "900" },
   track: { backgroundColor: colors.border, borderRadius: 999, height: 5, marginTop: 8, overflow: "hidden" }
-});
+}));

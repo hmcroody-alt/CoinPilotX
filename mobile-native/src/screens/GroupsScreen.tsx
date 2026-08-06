@@ -60,6 +60,7 @@ import {
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { formatShortTime } from "../utils/format";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "GroupDetail">>;
 
@@ -765,7 +766,7 @@ function mergeGroups(current: PulseGroup[], incoming: PulseGroup[]) {
   return [...current, ...incoming.filter((group) => !seen.has(group.id))];
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1197,4 +1198,4 @@ const styles = StyleSheet.create({
   statePanel: {
     margin: 16
   }
-});
+}));

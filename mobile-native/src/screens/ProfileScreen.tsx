@@ -22,6 +22,7 @@ import { RootStackParamList } from "../navigation/types";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { colors } from "../theme/colors";
 import { sharePulseObject } from "../sharing/nativeShare";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "ProfileDetail">>;
 type TabKey = "posts" | "media" | "about";
@@ -490,7 +491,7 @@ function AboutPanel({ profile, owner, onVerification, onSafety, onSellerStore }:
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: { backgroundColor: colors.background, flex: 1 },
   actionMessage: {
     backgroundColor: colors.signalSoft,
@@ -637,4 +638,4 @@ const styles = StyleSheet.create({
     color: colors.accentStrong,
     fontWeight: "900"
   }
-});
+}));

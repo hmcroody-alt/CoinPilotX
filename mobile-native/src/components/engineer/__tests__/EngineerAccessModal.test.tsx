@@ -14,6 +14,18 @@ jest.mock("../../../api/engineerAccess", () => ({
   getEngineerAccessStatus: jest.fn()
 }));
 
+/**
+ * The development fallback is compiled in whenever __DEV__ is true, which it is
+ * under Jest. Left alone it would silently change the lockout expectations
+ * below, so it is mocked off by default: these tests describe the public
+ * production build, and the one test that cares flips `mockDevFallbackCompiledIn`.
+ */
+let mockDevFallbackCompiledIn = false;
+jest.mock("../../../security/engineerAccessDevFallback", () => {
+  const actual = jest.requireActual("../../../security/engineerAccessDevFallback");
+  return { ...actual, engineerDevFallbackEnabled: () => mockDevFallbackCompiledIn };
+});
+
 jest.mock("expo-haptics", () => ({
   notificationAsync: jest.fn(() => Promise.resolve()),
   impactAsync: jest.fn(() => Promise.resolve()),
@@ -73,6 +85,7 @@ async function type(tree: RenderResult, digits: string) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockDevFallbackCompiledIn = false;
   mockedStatus.mockResolvedValue(CLEAN_STATUS);
   jest.spyOn(AccessibilityInfo, "isReduceMotionEnabled").mockResolvedValue(false);
   jest.spyOn(AccessibilityInfo, "announceForAccessibility").mockImplementation(() => undefined);
@@ -269,6 +282,19 @@ describe("EngineerAccessModal — lockout", () => {
     expect(allText(tree)).toContain("Engineer Access Temporarily Locked");
     expect(allText(tree)).toContain("4 minutes");
     expect(tree.UNSAFE_root.findAllByType(TextInput)).toHaveLength(0);
+  });
+
+  it("keeps the field enterable while the development fallback is compiled in", async () => {
+    // A lockout is a verdict about server attempts. The passcode the local
+    // fallback accepts is not one of them, so a leftover countdown must not hide
+    // the input and make a valid passcode unenterable.
+    mockDevFallbackCompiledIn = true;
+    mockedStatus.mockResolvedValue({ ...CLEAN_STATUS, lockedSecondsRemaining: 900 });
+
+    const tree = await render();
+
+    expect(tree.UNSAFE_root.findAllByType(TextInput)).toHaveLength(1);
+    expect(findByLabel(tree, "Verify Access")).toBeTruthy();
   });
 
   it("tells a repeatedly-failing account to re-authenticate", async () => {

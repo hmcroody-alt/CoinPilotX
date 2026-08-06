@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors } from "../../theme/colors";
 import { logiNexus } from "../../theme/logiNexus";
+import { createThemedStyles } from "../../theme/themedStyles";
 
 export function AccountActions({
   onCreateAccount,
@@ -48,7 +49,7 @@ export function AccountActions({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     gap: logiNexus.spacing.md
   },
@@ -88,4 +89,4 @@ const styles = StyleSheet.create({
     color: colors.border,
     fontSize: 13
   }
-});
+}));

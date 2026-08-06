@@ -9,6 +9,7 @@ import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme
 import { sharePulseObject } from "../sharing/nativeShare";
 import { ContentTranslation } from "./ContentTranslation";
 import { PulseIdBadge } from "./PulseIdBadge";
+import { createThemedStyles } from "../theme/themedStyles";
 
 export const PROFILE_HERO_HEIGHT = 320;
 
@@ -362,7 +363,7 @@ function formatCount(value: number) {
   return String(value);
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: { backgroundColor: colors.background },
   hero: { overflow: "hidden", width: "100%" },
   coverImage: { ...StyleSheet.absoluteFillObject, height: undefined, width: undefined },
@@ -413,4 +414,4 @@ const styles = StyleSheet.create({
 
   disabled: { opacity: 0.55 },
   pressed: { opacity: 0.7 }
-});
+}));

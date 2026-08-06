@@ -5,11 +5,19 @@ import { getGrowthState, growthMoney, GrowthState, loadCachedGrowthState } from 
 import { getPremiumStatus, premiumStateLabel, PremiumStatus } from "../api/premium";
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
+import { PRIVATE_CONTENT_MESSAGE, resolveRouteProfileContext } from "../profile/profileContext";
+import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "GrowthCenter">;
 
 export function GrowthCenterScreen({ route, navigation }: Props) {
+  const { authState } = useAuth();
+  // Wrong-subject guard: growth state, wallet and premium status belong to the
+  // signed-in viewer. On another profile's route params this screen refuses
+  // instead of rendering the viewer's data under that person's name.
+  const routeContext = resolveRouteProfileContext(route?.params, authState.user?.user_id);
   const [state, setState] = useState<GrowthState | null>(null);
   const [premium, setPremium] = useState<PremiumStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,15 +59,28 @@ export function GrowthCenterScreen({ route, navigation }: Props) {
   }, []);
 
   useEffect(() => {
+    // Owner-only fetch: skip entirely on a visitor route (no fetch-then-hide).
+    if (!routeContext.isOwnProfile) return;
     load("initial").catch(() => undefined);
-  }, [load]);
+  }, [load, routeContext.isOwnProfile]);
 
   useEffect(() => {
+    if (!routeContext.isOwnProfile) return;
     const sub = AppState.addEventListener("change", (next) => {
       if (next === "active") load("refresh").catch(() => undefined);
     });
     return () => sub.remove();
-  }, [load]);
+  }, [load, routeContext.isOwnProfile]);
+
+  // Visitor destination with no visitor variant: refuse rather than render the
+  // viewer's growth state. All hooks above have already run.
+  if (!routeContext.isOwnProfile) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.centerText}>{PRIVATE_CONTENT_MESSAGE}</Text>
+      </View>
+    );
+  }
 
   if (loading && !state) {
     return (
@@ -192,7 +213,7 @@ function ContentRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -366,4 +387,4 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "900"
   }
-});
+}));

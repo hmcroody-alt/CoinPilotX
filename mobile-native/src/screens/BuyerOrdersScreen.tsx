@@ -23,6 +23,7 @@ import { registerSyncInvalidation } from "../core/eventSync";
 import { useScreenPerf } from "../core/useScreenPerf";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<
   RootStackParamList,
@@ -523,7 +524,7 @@ function formatDate(value?: string) {
   return formatAbsoluteDate(value, { withYear: true }) || value;
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.background },
   content: { gap: 14, padding: 18 },
   hero: {
@@ -645,4 +646,4 @@ const styles = StyleSheet.create({
     textAlignVertical: "top"
   },
   formError: { color: colors.danger, fontSize: 13, fontWeight: "700" }
-});
+}));

@@ -17,6 +17,16 @@
  *     badge; when there is no per-day data at all (`empty`) it does not draw
  *     invented bars — it shows the real total and says the daily view isn't
  *     available yet.
+ *
+ * ## Why the title is a prop
+ *
+ * It used to be the literal "Spend · last 7 days" in both branches, including
+ * the branch that draws no bars and reports a lifetime total. A heading naming
+ * a window the figure underneath does not cover is a false report, and it is
+ * false in the direction that matters: an advertiser reading "$0.00" under
+ * "last 7 days" concludes delivery stopped this week, when in fact nothing has
+ * ever been spent. The caller knows which window its data covers, so the caller
+ * names it. `ACCOUNT_SPEND_TITLE` is the honest heading for a to-date total.
  */
 
 import { useMemo } from "react";
@@ -24,7 +34,21 @@ import { Animated, StyleSheet, Text, View } from "react-native";
 import { adsLight } from "../../theme/adsLight";
 import { useAdsBarCascade, useAdsTodayShine } from "../../theme/adsMotion";
 
+/** The heading when the series really is the last seven days. */
+export const SEVEN_DAY_SPEND_TITLE = "Spend · last 7 days";
+
+/**
+ * The heading when there is no per-day series and the card reports a running
+ * total instead. Exported so the screen and its test name the same string.
+ */
+export const ACCOUNT_SPEND_TITLE = "Account spend";
+
 export type SpendBarChartProps = {
+  /**
+   * What this card is a report of. Must describe the window `values` and
+   * `totalLabel` actually cover — see the note at the top of the file.
+   */
+  title?: string;
   /** Per-day magnitudes (cents), oldest first. Last entry is "today". */
   values: number[];
   /** Short axis labels, e.g. ["M","T","W",…]. Same length as values. */
@@ -46,6 +70,7 @@ const CHART_HEIGHT = 96;
 const MIN_BAR = 4;
 
 export function SpendBarChart({
+  title = SEVEN_DAY_SPEND_TITLE,
   values,
   dayLabels,
   summary,
@@ -67,7 +92,7 @@ export function SpendBarChart({
     return (
       <View style={styles.card} accessible accessibilityLabel={summary}>
         <View style={styles.headRow}>
-          <Text style={styles.title}>Spend · last 7 days</Text>
+          <Text style={styles.title}>{title}</Text>
         </View>
         <View style={styles.emptyBox}>
           <Text style={styles.emptyTotal}>{totalLabel}</Text>
@@ -84,7 +109,7 @@ export function SpendBarChart({
   return (
     <View style={styles.card}>
       <View style={styles.headRow}>
-        <Text style={styles.title}>Spend · last 7 days</Text>
+        <Text style={styles.title}>{title}</Text>
         {mock ? (
           <View style={styles.previewBadge}>
             <Text style={styles.previewText}>Preview</Text>

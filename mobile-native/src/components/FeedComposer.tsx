@@ -5,6 +5,7 @@ import { uploadResultMediaId } from "../media/nativeMediaUpload";
 import { MediaUploadPreview } from "../media/MediaUploadPreview";
 import { useNativeMediaUpload } from "../media/useNativeMediaUpload";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   visible: boolean;
@@ -147,7 +148,7 @@ export function FeedComposer({ visible, onClose, onCreated }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   bodyInput: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
@@ -265,4 +266,4 @@ const styles = StyleSheet.create({
   visibilityTextActive: {
     color: colors.background
   }
-});
+}));

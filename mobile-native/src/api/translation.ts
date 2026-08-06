@@ -1,4 +1,4 @@
-import { pulseApi } from "./pulseApi";
+import { pulseApi, PulseApiError } from "./pulseApi";
 
 export type TranslatableContentType =
   | "post"
@@ -46,6 +46,57 @@ type TranslationResponse = {
   ok: boolean;
   result: TranslationResult;
 };
+
+export type TranslationFailure = {
+  message: string;
+  retryable: boolean;
+  code?: string;
+};
+
+/**
+ * Codes the server may attach to a failed translation. Transient ones deserve a
+ * Retry affordance; permanent ones get a final message with no retry loop.
+ */
+const RETRYABLE_CODES = new Set([
+  "provider_unavailable",
+  "translation_unavailable",
+  "provider_timeout",
+  "provider_quota_exceeded",
+  "request_unreachable",
+  "session_refresh_temporary",
+  "TRANSLATION_UNAVAILABLE",
+  "PROVIDER_TIMEOUT",
+  "PROVIDER_QUOTA_EXCEEDED"
+]);
+
+const PERMANENT_MESSAGES: Record<string, string> = {
+  rollout_restricted: "Translation isn't available for your account yet.",
+  moderation_blocked: "This content can't be translated.",
+  invalid_language: "This language isn't supported for translation.",
+  unsupported_content_type: "This content can't be translated.",
+  text_too_long: "This content is too long to translate.",
+  content_unavailable: "That content is no longer available.",
+  provider_not_configured: "Translation isn't set up yet. Please try later.",
+  invalid_credentials: "Translation isn't set up yet. Please try later."
+};
+
+export function classifyTranslationFailure(error: unknown): TranslationFailure {
+  if (error instanceof PulseApiError) {
+    const code = error.code || "";
+    if (code in PERMANENT_MESSAGES) {
+      return { message: PERMANENT_MESSAGES[code], retryable: false, code };
+    }
+    const retryable = RETRYABLE_CODES.has(code) || error.status >= 500 || error.status === 0;
+    return {
+      message: retryable
+        ? "Translation is temporarily unavailable."
+        : error.message || "Translation failed.",
+      retryable,
+      code: code || undefined
+    };
+  }
+  return { message: "Translation failed.", retryable: true };
+}
 
 type TranslationPreferenceResponse = {
   ok: boolean;

@@ -29,7 +29,7 @@ export type { PauseSwitchProps } from "./PauseSwitch";
 export { BudgetPacingBar } from "./BudgetPacingBar";
 export type { BudgetPacingBarProps } from "./BudgetPacingBar";
 
-export { SpendBarChart } from "./SpendBarChart";
+export { ACCOUNT_SPEND_TITLE, SEVEN_DAY_SPEND_TITLE, SpendBarChart } from "./SpendBarChart";
 export type { SpendBarChartProps } from "./SpendBarChart";
 
 export { CampaignCard } from "./CampaignCard";

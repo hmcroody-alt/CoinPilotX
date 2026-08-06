@@ -21,6 +21,7 @@ import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props =
   | NativeStackScreenProps<RootStackParamList, "AccountCenter">
@@ -596,7 +597,7 @@ function humanize(value?: string) {
   return String(value || "Security event").replace(/_/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     backgroundColor: colors.background,
     flex: 1
@@ -851,4 +852,4 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: "900"
   }
-});
+}));

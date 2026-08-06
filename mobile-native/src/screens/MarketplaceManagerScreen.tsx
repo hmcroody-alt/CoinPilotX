@@ -82,6 +82,8 @@ import {
   type CartSnapshot
 } from "../api/marketplaceCommerce";
 import {
+  ALL_SELLING_TABS,
+  CORE_SELLING_TABS,
   boostCandidate,
   deriveBuyingItems,
   deriveCategories,
@@ -139,7 +141,7 @@ import {
   useMarketplaceModeSwap,
   useMarketplaceSoldWipe
 } from "../theme/marketplaceMotion";
-import { absentValueTextOr, valueState } from "../api/stateLanguage";
+import { absentValueText, valueState } from "../api/stateLanguage";
 
 /** Entrance slots per mode. Named so a section cannot animate out of order. */
 const SELLING_SLOT = {
@@ -161,12 +163,32 @@ const GRID_PAGE = 12;
 /** How many rows the Selling list previews before "See all N items". */
 const SELLING_PREVIEW = 6;
 
-const SELLING_TABS: readonly { key: SellingTabKey; label: string }[] = [
-  { key: "active", label: "Active" },
-  { key: "sold", label: "Sold" },
-  { key: "drafts", label: "Drafts" },
-  { key: "expired", label: "Expired" }
-];
+const SELLING_TAB_LABELS: Record<SellingTabKey, string> = {
+  active: "Active",
+  reserved: "Reserved",
+  sold: "Sold",
+  drafts: "Drafts",
+  pending_review: "Pending review",
+  expired: "Expired",
+  removed: "Removed",
+  archived: "Archived"
+};
+
+/**
+ * Core tabs always render; the others only when they hold something. A
+ * permanent "Removed 0" would advertise moderation trouble the seller has
+ * never had, and eight always-on tabs would not fit the row anyway. The one
+ * wrinkle: the selected tab stays rendered even if its count drops to zero
+ * mid-session, so the selection never points at a tab that is not on screen.
+ */
+function visibleSellingTabs(
+  counts: Record<SellingTabKey, number>,
+  selected: SellingTabKey
+): { key: SellingTabKey; label: string }[] {
+  return ALL_SELLING_TABS.filter(
+    (key) => CORE_SELLING_TABS.includes(key) || counts[key] > 0 || key === selected
+  ).map((key) => ({ key, label: SELLING_TAB_LABELS[key] }));
+}
 
 type Props = {
   route?: { params?: RootStackParamList["BusinessOs"] };
@@ -196,6 +218,7 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
   const [now, setNow] = useState(() => Date.now());
   const [city, setCity] = useState<string | null>(null);
   const [locationSheetOpen, setLocationSheetOpen] = useState(false);
+  const [meetupSheetOpen, setMeetupSheetOpen] = useState(false);
 
   /**
    * What this feed may claim about location.
@@ -622,6 +645,8 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
               result?.listings.status === "error" ? result.listings.message : null
             }
             onRetryListings={() => load("refresh").catch(() => undefined)}
+            city={city}
+            onOpenLocation={() => setLocationSheetOpen(true)}
             tab={tab}
             tabCounts={tabCounts}
             onTabChange={(next) => {
@@ -638,6 +663,7 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
             onCounterRequest={openCounter}
             onOpenItem={openItem}
             onCompose={openComposer}
+            onOpenMeetupSafety={() => setMeetupSheetOpen(true)}
             navigation={navigation}
             bottomPad={bottomPad}
           />
@@ -701,7 +727,76 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
         onCancel={() => setLocationSheetOpen(false)}
         onSave={changeCity}
       />
+
+      <MeetupSafetySheet visible={meetupSheetOpen} onClose={() => setMeetupSheetOpen(false)} />
     </View>
+  );
+}
+
+/**
+ * Meetup safety sheet.
+ *
+ * MOCK-DATA: there is no meetup-spot storage, so the tile cannot list saved
+ * spots — but the safety guidance is real content in its own right, which is
+ * why the tile routes here instead of sitting locked. When spot storage
+ * exists, this sheet grows a list above the tips.
+ */
+const MEETUP_SAFETY_TIPS: readonly { title: string; body: string }[] = [
+  {
+    title: "Meet in a busy public place",
+    body: "Cafés, shopping centres, and transit stations with foot traffic. Many police stations offer designated exchange zones."
+  },
+  {
+    title: "Daylight, and bring someone",
+    body: "Prefer daytime meetups and tell a friend where you are going — or bring them along."
+  },
+  {
+    title: "Keep the conversation in the app",
+    body: "Chat history is your record if something goes wrong. Be wary of buyers who push to move off-platform."
+  },
+  {
+    title: "Inspect before money moves",
+    body: "Let the buyer check the item, then settle. Avoid carrying more cash than the sale needs."
+  },
+  {
+    title: "Trust the bad feeling",
+    body: "If anything feels off, leave. No sale is worth ignoring your instincts."
+  }
+];
+
+function MeetupSafetySheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable
+        style={styles.sheetScrim}
+        onPress={onClose}
+        accessibilityRole="button"
+        accessibilityLabel="Close meetup safety tips"
+      />
+      <View style={styles.sheet}>
+        <Text style={styles.sheetTitle}>Meet up safely</Text>
+        <Text style={styles.sheetSub}>
+          Saved meetup spots are not available yet. Until they are, these are the basics for a
+          safe in-person exchange.
+        </Text>
+        {MEETUP_SAFETY_TIPS.map((tip) => (
+          <View key={tip.title} style={styles.safetyTip}>
+            <Text style={styles.sheetLabel}>{tip.title}</Text>
+            <Text style={styles.sheetSub}>{tip.body}</Text>
+          </View>
+        ))}
+        <View style={styles.sheetActions}>
+          <Pressable
+            onPress={onClose}
+            style={[styles.sheetButton, styles.sheetCancel]}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          >
+            <Text style={styles.sheetCancelText}>Close</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -908,6 +1003,8 @@ function SellingPane({
   offers,
   listingsError,
   onRetryListings,
+  city,
+  onOpenLocation,
   tab,
   tabCounts,
   onTabChange,
@@ -921,6 +1018,7 @@ function SellingPane({
   onCounterRequest,
   onOpenItem,
   onCompose,
+  onOpenMeetupSafety,
   navigation,
   bottomPad
 }: {
@@ -935,6 +1033,8 @@ function SellingPane({
   offersError: string | null;
   listingsError: string | null;
   onRetryListings: () => void;
+  city: string | null;
+  onOpenLocation: () => void;
   tab: SellingTabKey;
   tabCounts: Record<SellingTabKey, number>;
   onTabChange: (next: SellingTabKey) => void;
@@ -948,6 +1048,7 @@ function SellingPane({
   onCounterRequest: (offer: MarketplaceOffer) => void;
   onOpenItem: (listingId: number, title: string) => void;
   onCompose: () => void;
+  onOpenMeetupSafety: () => void;
   navigation: { navigate: (...args: any[]) => void };
   bottomPad: number;
 }) {
@@ -978,7 +1079,7 @@ function SellingPane({
     );
   }
 
-  const empty = tabCounts.active + tabCounts.sold + tabCounts.drafts + tabCounts.expired === 0;
+  const empty = ALL_SELLING_TABS.every((key) => tabCounts[key] === 0);
 
   return (
     <ScrollView
@@ -1002,13 +1103,18 @@ function SellingPane({
         <SummaryChip
           label="Offers waiting"
           // Two different situations shared this dash: no offers backend at all,
-          // and a seller who genuinely has none waiting. The first is a missing
-          // feature, the second is good news, and a zero is a figure either way.
-          value={absentValueTextOr(
-            summary.offersWaiting > 0 ? formatters.count(summary.offersWaiting) : "—",
-            valueState({ value: summary.offersWaiting, configured: MARKETPLACE_OFFERS_ENABLED }),
-            { zeroText: formatters.count(0) }
-          )}
+          // and a seller who genuinely has none waiting. The backend is real now
+          // (`services/marketplace_offers_routes.py`), so the count is a measured
+          // figure at every value — zero included, which is good news, not an
+          // unknown. No dash, no flag: a counted number never needed either.
+          value={
+            MARKETPLACE_OFFERS_ENABLED
+              ? formatters.count(summary.offersWaiting)
+              : absentValueText(
+                  valueState({ value: summary.offersWaiting, configured: false }),
+                  { zeroText: formatters.count(0) }
+                )
+          }
           amber={summary.offersWaiting > 0}
           reducedMotion={reducedMotion}
           arrivalDelay={70}
@@ -1022,11 +1128,20 @@ function SellingPane({
           // MOCK-DATA: no per-listing saves aggregate. The number is unknown,
           // not known to be none — and "Not measured yet" says which, where the
           // dash left the seller to guess between an absence and a zero.
-          value={absentValueTextOr(
-            summary.savesThisWeek == null ? "—" : formatters.count(summary.savesThisWeek),
-            valueState({ value: summary.savesThisWeek, configured: summary.savesThisWeek != null }),
-            { notConfiguredText: "Not measured yet", zeroText: formatters.count(0) }
-          )}
+          //
+          // The real number goes first, explicitly. `absentValueText` answers
+          // "what do I render when there is no number", and a count that exists
+          // is not that question — it falls through to the function's zero
+          // fallback, which would print 0 over a real figure the day this field
+          // starts arriving. So the count is rendered here and the helper is
+          // asked only about the absence.
+          value={
+            summary.savesThisWeek != null
+              ? formatters.count(summary.savesThisWeek)
+              : absentValueText(valueState({ value: null, configured: false }), {
+                  notConfiguredText: "Not measured yet"
+                })
+          }
           reducedMotion={reducedMotion}
           arrivalDelay={140}
           disabled
@@ -1071,7 +1186,7 @@ function SellingPane({
       <Animated.View style={entrance.styleFor(SELLING_SLOT.tabs)}>
         <SectionHeader title="Your items" />
         <View style={styles.tabRow} accessibilityRole="tablist">
-          {SELLING_TABS.map((entry) => {
+          {visibleSellingTabs(tabCounts, tab).map((entry) => {
             const selected = entry.key === tab;
             return (
               <Pressable
@@ -1101,10 +1216,24 @@ function SellingPane({
         ) : empty ? (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyTitle}>Nothing listed yet.</Text>
+            {/* "Buyers nearby will see it" is only claimable once a location
+                exists; without one the honest pitch is the location control
+                itself. Same rule the buying feed follows. */}
             <Text style={styles.emptyBody}>
-              List something you no longer need. Buyers nearby will see it straight away, and
-              offers land right at the top of this screen.
+              {city
+                ? `List something you no longer need. Buyers near ${city} can discover it, and offers land right at the top of this screen.`
+                : "List something you no longer need. Set your Marketplace location so nearby buyers can discover it."}
             </Text>
+            {!city ? (
+              <Pressable
+                onPress={onOpenLocation}
+                style={styles.emptyAction}
+                accessibilityRole="button"
+                accessibilityLabel="Set Marketplace location"
+              >
+                <Text style={styles.emptyActionText}>Set Marketplace location</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : items.length === 0 ? (
           <View style={styles.emptyCard}>
@@ -1165,18 +1294,20 @@ function SellingPane({
             {
               icon: "star-outline",
               label: "Seller rating",
-              // MOCK-DATA: no seller review aggregate on any endpoint.
-              subtitle: "No rating data yet",
-              disabled: true,
+              // MOCK-DATA: no seller review aggregate on any endpoint. But an
+              // absent rating is a normal state for a new seller, not a locked
+              // feature — informational, no lock, no dimming.
+              subtitle: "Not enough completed sales yet",
+              informational: true,
               reducedMotion
             },
             {
               icon: "location-outline",
               label: "Meetup spots",
-              // MOCK-DATA: no meetup-spot storage. Kept and disabled rather than
-              // removed, because the safety affordance should not quietly vanish.
-              subtitle: "Not available yet",
-              disabled: true,
+              // MOCK-DATA: no meetup-spot storage, so no saved spots — but the
+              // safety guidance itself is real content, not a dead end.
+              subtitle: "Safe exchange tips",
+              onPress: onOpenMeetupSafety,
               reducedMotion
             },
             {
@@ -1904,7 +2035,10 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontWeight: "800", color: storeLight.text.primary },
   sectionAction: { fontSize: 13, fontWeight: "700", color: storeLight.text.link },
 
-  tabRow: { flexDirection: "row", gap: 6, marginTop: 4 },
+  /* Wraps: up to eight tabs can be visible when moderation states exist, and a
+     clipped "Removed" tab would hide exactly the listings the seller most
+     needs to know about. */
+  tabRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
   tab: {
     minHeight: 34,
     paddingHorizontal: 12,
@@ -2091,6 +2225,7 @@ const styles = StyleSheet.create({
     color: storeLight.text.primary
   },
   sheetActions: { flexDirection: "row", gap: 10, marginTop: 6 },
+  safetyTip: { gap: 2 },
   sheetButton: {
     flex: 1,
     minHeight: storeLight.size.tapTarget,

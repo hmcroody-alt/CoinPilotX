@@ -31,6 +31,7 @@ import {
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type CoursesRouteName =
   | "Courses"
@@ -365,7 +366,7 @@ function gatewayTitle(mode: string) {
   return "Course Detail";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     backgroundColor: colors.background,
     flex: 1
@@ -640,4 +641,4 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginTop: 8
   }
-});
+}));

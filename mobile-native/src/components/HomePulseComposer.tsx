@@ -19,6 +19,7 @@ import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { GlobalNavigationIdentity } from "../navigation/GlobalNavigation";
 import { consumeShareComposerHandoff, mergeShareIntoComposerBody } from "../sharing/shareComposerHandoff";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type ComposerMode = CreateComposerMode | "poll" | "scam_report";
 type Visibility = "public" | "followers" | "private";
@@ -916,7 +917,7 @@ function visibilityLabel(visibility: Visibility) {
   return "Public";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionButton: {
     alignItems: "center",
     backgroundColor: "rgba(9, 20, 33, 0.54)",
@@ -1485,4 +1486,4 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 10
   }
-});
+}));

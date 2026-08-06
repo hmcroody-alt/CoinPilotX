@@ -15,6 +15,7 @@ import { ReelLiveViewerSurface } from "./reels/ReelLiveViewerSurface";
 import { colors } from "../theme/colors";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { ContentTranslation } from "./ContentTranslation";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type ReelPlayerCardProps = {
   reel: PulseReel;
@@ -362,7 +363,7 @@ function reactionIcon(reaction?: string) {
   return ({ like: "♥", love: "♥", fire: "🔥", funny: "☺", wow: "✦", rocket: "🚀", clap: "👏", hundred: "💯", target: "◎", smart: "◇" } as Record<string, string>)[reaction || ""] || "♡";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   action: {
     alignItems: "center",
     backgroundColor: "rgba(2, 9, 18, 0.62)",
@@ -583,4 +584,4 @@ const styles = StyleSheet.create({
   video: {
     ...StyleSheet.absoluteFillObject
   }
-});
+}));

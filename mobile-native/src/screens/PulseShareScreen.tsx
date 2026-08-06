@@ -23,6 +23,7 @@ import { PulseIdBadge } from "../components/PulseIdBadge";
 import { buildNativeSharePayload, openSystemShare } from "../sharing/nativeShare";
 import { saveShareComposerHandoff, ShareComposerMode } from "../sharing/shareComposerHandoff";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PulseShare">;
 
@@ -226,7 +227,7 @@ function initials(value: string) {
   return value.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "P";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: { backgroundColor: colors.background, flex: 1 },
   content: { gap: 16, padding: 16, paddingBottom: 44 },
   preview: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 20, borderWidth: 1, gap: 7, overflow: "hidden", padding: 16 },
@@ -261,4 +262,4 @@ const styles = StyleSheet.create({
   sendLabel: { color: colors.accent, fontSize: 12, fontWeight: "900" },
   done: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 14, minHeight: 50, justifyContent: "center" },
   doneText: { color: colors.background, fontSize: 14, fontWeight: "900" }
-});
+}));

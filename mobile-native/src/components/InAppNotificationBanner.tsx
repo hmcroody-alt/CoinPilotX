@@ -22,6 +22,7 @@ import {
 } from "../navigation/notificationBannerLifecycle";
 import { notificationTargetFromData, routeNotificationTarget } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 /**
  * Foreground in-app notification banner.
@@ -170,7 +171,7 @@ export function InAppNotificationBanner() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   host: {
     position: "absolute",
     left: 10,
@@ -206,4 +207,4 @@ const styles = StyleSheet.create({
   textCol: { flex: 1 },
   title: { color: colors.text, fontSize: 15, fontWeight: "700" },
   body: { color: colors.muted, fontSize: 13, marginTop: 2 }
-});
+}));

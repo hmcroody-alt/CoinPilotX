@@ -4,6 +4,7 @@ import { ContentTranslation } from "../components/ContentTranslation";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { segmentMentions } from "./mentions";
+import { createThemedStyles } from "../theme/themedStyles";
 
 // The recursive comment renderer, promoted out of ReelsScreen.tsx:736 so every
 // content type gets the same thread UI instead of Reels getting nesting and feed
@@ -289,7 +290,7 @@ function CommentBody({ comment, depth, onMentionPress }: { comment: PulseComment
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   action: {
     color: colors.accent,
     fontSize: 12,
@@ -367,4 +368,4 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 11
   }
-});
+}));

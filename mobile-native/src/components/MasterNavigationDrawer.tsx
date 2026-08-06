@@ -6,6 +6,7 @@ import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone } from "../theme/logiNexus";
 import { LogiNexusBadge, LogiNexusCard, LogiNexusPanel, LogiNexusSignalIndicator } from "./LogiNexus";
 import { masterNavigationSections, MasterNavigationAction, MasterNavigationSection } from "../navigation/masterNavigation";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   visible: boolean;
@@ -171,7 +172,7 @@ function toneForSection(section: string): LogiNexusTone {
   return "default";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   drawerClose: {
     alignItems: "center",
     borderColor: colors.border,
@@ -411,4 +412,4 @@ const styles = StyleSheet.create({
     gap: logiNexus.spacing.sm,
     marginVertical: logiNexus.spacing.md
   }
-});
+}));

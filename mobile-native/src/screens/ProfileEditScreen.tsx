@@ -13,6 +13,7 @@ import {
   uploadProfileCover
 } from "../api/profile";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 const THEMES: Array<PulseProfileTheme & { label: string }> = [
   { theme_key: "deep_space", label: "Deep Space", accent_color: "#32e6b3" },
@@ -263,7 +264,7 @@ function Segment({ label, active, onPress }: { label: string; active: boolean; o
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   avatar: {
     backgroundColor: colors.surfaceRaised,
     borderColor: colors.background,
@@ -493,4 +494,4 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textTransform: "capitalize"
   }
-});
+}));

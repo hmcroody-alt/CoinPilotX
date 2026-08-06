@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 export type LikeBurstHandle = {
   trigger: (x: number, y: number) => void;
@@ -108,7 +109,7 @@ export const MuteGlyphPulse = forwardRef<MuteGlyphPulseHandle>(function MuteGlyp
   );
 });
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   burst: {
     alignItems: "center",
     height: 68,
@@ -144,4 +145,4 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 9
   }
-});
+}));

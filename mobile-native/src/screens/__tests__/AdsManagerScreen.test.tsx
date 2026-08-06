@@ -49,6 +49,7 @@ jest.mock("../../api/adsDashboard", () => ({
 
 import { AdsManagerScreen } from "../AdsManagerScreen";
 import { walletSummary } from "../../api/adsDashboard";
+import { normalizeAdsPortal } from "../../api/adsPortal";
 
 const ACTIVE_ACCOUNT = { id: 7, business_name: "Roody Goods", status: "active" };
 const PENDING_ACCOUNT = { id: 7, business_name: "Roody Goods", status: "pending" };
@@ -83,14 +84,28 @@ function model(overrides: Record<string, unknown> = {}) {
     campaigns: [campaign()],
     analytics: null,
     wallet: wallet(14200),
-    spend: { daysCents: [], totalCents: 0, mock: false },
+    // `windowed: false` is not a formality. It is the flag the spend card reads
+    // to decide whether it may title itself "last 7 days", and there is no
+    // windowed analytics endpoint — so the fixture has to carry the same answer
+    // the real builder gives, or the screen under test is one nobody ships.
+    spend: { daysCents: [], totalCents: 0, mock: false, windowed: false },
     needsVerification: false,
     accountsStatus: "ok",
     campaignsStatus: "ok",
     analyticsStatus: "ok",
     offline: false,
+    // `null` is the fan-out's answer: the review board, roles, creatives and
+    // notifications were never requested on that path. It is the default here
+    // because it is the state the Policy Center tile most has to get right — an
+    // unmade request must not render as an all-clear.
+    portal: null,
     ...overrides
   };
+}
+
+/** A portal carrying only the review board, which is all the policy tile reads. */
+function boardPortal(review_board: unknown[]) {
+  return normalizeAdsPortal({ review_board } as never);
 }
 
 beforeEach(() => {
@@ -221,6 +236,141 @@ describe("ads manager — money", () => {
     const texts = order.map((node: any) => node.props.children);
     expect(texts.indexOf("Ad wallet is empty")).toBeLessThan(texts.indexOf("Verification needed"));
   });
+
+  /**
+   * The fabricated `"$0.00"`.
+   *
+   * `portal_summary` wraps every `wallet_summary` call in a bare `except` and
+   * appends a hand-written row of zeroes on failure, and `wallet_summary` opens
+   * with `_owner_account` — so for a non-owner the zero is guaranteed invented.
+   * The doubt applies to the portal path only: the fan-out path calls the
+   * per-account wallet route directly and shows no chip when it fails, so a
+   * balance that survives it is the server's own answer.
+   */
+  it("refuses to print a balance the portal fabricated for a non-owner", async () => {
+    mockLoad.mockResolvedValue(
+      model({
+        wallet: wallet(0),
+        portal: normalizeAdsPortal({
+          accounts: [{ id: 7, role: "campaign_manager", status: "active" }],
+          wallets: [{ account_id: 7, available_balance_cents: 0, spendable_balance_cents: 0 }]
+        } as never)
+      })
+    );
+    const view = await renderScreen();
+    expect(view.getByLabelText("Ad wallet balance Restricted. Tap to open wallet.")).toBeTruthy();
+    expect(view.queryByLabelText(/^Ad wallet balance \$/)).toBeNull();
+    // And the "you're out of money" banner must not fire on an invented zero:
+    // it would tell a team member their campaigns are stopping on a fully
+    // funded account.
+    expect(view.queryByText("Ad wallet is empty")).toBeNull();
+  });
+
+  it("repeats an owner's real balance from the portal unchanged", async () => {
+    mockLoad.mockResolvedValue(
+      model({
+        portal: normalizeAdsPortal({
+          accounts: [{ id: 7, role: "owner", status: "active" }],
+          wallets: [
+            {
+              account_id: 7,
+              available_balance: "$142.00",
+              available_balance_cents: 14_200,
+              spendable_balance_cents: 14_200
+            }
+          ]
+        } as never)
+      })
+    );
+    const view = await renderScreen();
+    expect(view.getByLabelText("Ad wallet balance $142.00. Tap to open wallet.")).toBeTruthy();
+  });
+
+  it("trusts the per-account wallet route when there is no portal to doubt", async () => {
+    // `portal: null` is the fan-out path: the balance came from
+    // GET /api/pulse/ads/accounts/<id>/wallet, which shows no chip at all when
+    // it fails. Printing "Restricted" over it would be manufacturing a doubt
+    // the payload doesn't carry.
+    const view = await renderScreen();
+    expect(view.getByLabelText("Ad wallet balance $142.00. Tap to open wallet.")).toBeTruthy();
+  });
+});
+
+/**
+ * §31 applied to the status pill. "Active" was one of eight conditions the
+ * selector requires and the only one the card was reading, so a campaign that
+ * reaches nobody read as green. These pin that the pill now states delivery and
+ * that it never states one it cannot support.
+ */
+describe("ads manager — delivery truth on the card", () => {
+  it("says a campaign is not delivering, and why, instead of calling it active", async () => {
+    mockLoad.mockResolvedValue(
+      model({
+        campaigns: [campaign({ spent_cents: 0 })],
+        portal: normalizeAdsPortal({
+          accounts: [{ id: 7, role: "owner", status: "active" }],
+          // No creative on the campaign — a gate the selector applies and the
+          // card never used to mention.
+          creatives: []
+        } as never)
+      })
+    );
+    const view = await renderScreen();
+    expect(view.getByText("Not delivering")).toBeTruthy();
+    expect(view.getByText("This campaign has no ad in it")).toBeTruthy();
+  });
+
+  it("will not claim delivery it cannot see the gates for", async () => {
+    // No portal, nothing spent. "Active" is all the campaign row supports;
+    // "Delivering" and "Ready to deliver" are both claims about gates that were
+    // never loaded.
+    mockLoad.mockResolvedValue(model({ campaigns: [campaign({ spent_cents: 0 })] }));
+    const view = await renderScreen();
+    expect(view.getByText("Active")).toBeTruthy();
+    expect(view.getByText("Marked active with nothing spent yet. Open the campaign to check its ads and budget."))
+      .toBeTruthy();
+    // "Delivering" is also the pause switch's own label, so the absence being
+    // asserted is the pill's — there is exactly one of it on screen, the
+    // switch's, and none from the status.
+    expect(view.queryAllByText("Delivering")).toHaveLength(1);
+    expect(view.queryByText("Ready to deliver")).toBeNull();
+  });
+
+  it("calls it delivering once the ledger proves it", async () => {
+    // The default fixture campaign has spent 500 cents. Spend is a receipt from
+    // the server's own ledger, so it survives the missing portal — and now both
+    // the pill and the switch read "Delivering".
+    const view = await renderScreen();
+    expect(view.queryAllByText("Delivering")).toHaveLength(2);
+    expect(view.getByText("This campaign has spent, so it is reaching people.")).toBeTruthy();
+  });
+});
+
+/**
+ * The reporting hole, stated on the card that has the numbers.
+ *
+ * A marketplace campaign's owner wants to know whether anyone bought. Nothing
+ * in the product records that — the one thing writing `conversion` events was
+ * `SponsoredAdCard`, firing on one second of viewability, and it is gone. §37
+ * forbids showing an advertiser clicks and spend with no evidence the objective
+ * was met, so the card says which question its numbers cannot answer.
+ */
+describe("ads manager — what the metrics don't measure", () => {
+  const NOTE = "Conversions aren’t tracked. Impressions and clicks above are measured; what happens after the tap isn’t.";
+
+  it("names the gap on a campaign whose objective happens after the tap", async () => {
+    mockLoad.mockResolvedValue(model({ campaigns: [campaign({ objective: "marketplace_sales" })] }));
+    const view = await renderScreen();
+    expect(view.getByText(NOTE)).toBeTruthy();
+    // And never alongside an invented figure for it.
+    expect(view.queryByText("Conversions")).toBeNull();
+  });
+
+  it("stays quiet on an awareness campaign, which impressions already answer", async () => {
+    // The default fixture objective is `awareness`.
+    const view = await renderScreen();
+    expect(view.queryByText(NOTE)).toBeNull();
+  });
 });
 
 describe("ads manager — section failures", () => {
@@ -230,5 +380,312 @@ describe("ads manager — section failures", () => {
     expect(view.getByText("Spend and clicks didn't load.")).toBeTruthy();
     // The chart failing must not take the list with it.
     expect(view.getByText("Launch")).toBeTruthy();
+  });
+});
+
+/**
+ * §36 screen corrections. Each of these was a defect visible in a screenshot,
+ * which is why they are asserted against rendered output rather than against the
+ * derivations — the derivations were mostly already right, and the screen was
+ * still wrong.
+ */
+describe("ads manager — §36 corrections", () => {
+  /** A navigation double that records where a tile actually points. */
+  function nav() {
+    return { navigate: jest.fn(), goBack: jest.fn() };
+  }
+
+  async function renderEmpty(overrides: Record<string, unknown> = {}) {
+    const navigation = nav();
+    mockLoad.mockResolvedValue(model({ campaigns: [], ...overrides }));
+    const view = render(<AdsManagerScreen navigation={navigation as never} />);
+    await waitFor(() => expect(view.queryByText("No campaigns yet")).toBeTruthy());
+    return { view, navigation };
+  }
+
+  /**
+   * The empty state used to fork: an unverified advertiser saw "Verify your
+   * business" and nothing else, which enforced a rule the platform does not
+   * have. Verification gates delivery, not authoring — a draft costs nothing and
+   * delivers nothing, so there is no state in which drafting is unsafe.
+   */
+  it("offers a draft path and verification together while verification is pending", async () => {
+    const { view, navigation } = await renderEmpty({
+      accounts: [PENDING_ACCOUNT],
+      needsVerification: true
+    });
+    // Two on screen: this one and the standing CTA at the foot of the page.
+    // `[0]` is the empty state's, which is the one under test — the point is
+    // that the *empty state* offers it, not merely that the screen does.
+    expect(view.getAllByText("Create campaign")).toHaveLength(2);
+    expect(view.getByText("Verify your business")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(view.getAllByText("Create campaign")[0]);
+    });
+    // The draft path is not a decoration — it routes to the screen that owns
+    // campaign creation, the same one a verified advertiser reaches.
+    expect(navigation.navigate).toHaveBeenCalledWith(
+      "BusinessOsAdvertising",
+      expect.objectContaining({ mode: "classic" })
+    );
+  });
+
+  it("offers only the draft path once there is nothing left to verify", async () => {
+    const { view } = await renderEmpty({ needsVerification: false });
+    expect(view.getAllByText("Create campaign")).toHaveLength(2);
+    expect(view.queryByText("Verify your business")).toBeNull();
+  });
+
+  /**
+   * Both tiles rendered `disabled` with an "isn't available" subtitle: accurate,
+   * and still a dead end. §37 forbids an empty locked card with no useful
+   * destination, so each now opens a page describing what the server already
+   * enforces for every campaign.
+   */
+  it("opens a real destination from the tiles that used to be locked", async () => {
+    const navigation = nav();
+    const view = render(<AdsManagerScreen navigation={navigation as never} />);
+    await waitFor(() => expect(view.queryByText("Launch")).toBeTruthy());
+
+    for (const [label, mode] of [
+      ["Audiences", "audiences"],
+      ["Creative library", "creatives"]
+    ] as const) {
+      await act(async () => {
+        fireEvent.press(view.getByText(label));
+      });
+      expect(navigation.navigate).toHaveBeenCalledWith(
+        "BusinessOsAdvertising",
+        expect.objectContaining({ mode })
+      );
+    }
+  });
+
+  /**
+   * "Ad account 8" put an internal identifier where the business name belongs.
+   * The row is two lines now, and the number moved to Account details — so the
+   * identity row must still be able to reach it.
+   */
+  it("shows the account name over its standing, with no identifier in sight", async () => {
+    const navigation = nav();
+    const view = render(<AdsManagerScreen navigation={navigation as never} />);
+    await waitFor(() => expect(view.queryByText("Launch")).toBeTruthy());
+
+    const row = view.getByLabelText(
+      "Roody Goods. Advertising account · Active. Open account details."
+    );
+    expect(view.queryByText(/Ad account \d/)).toBeNull();
+
+    await act(async () => {
+      fireEvent.press(row);
+    });
+    expect(navigation.navigate).toHaveBeenCalledWith(
+      "BusinessOsAdvertising",
+      expect.objectContaining({ mode: "account", accountId: 7 })
+    );
+  });
+
+  /**
+   * §37: no fake seven-day report. With an empty series the card must fall back
+   * to the to-date heading — "$0.00" under "last 7 days" reads as "delivery
+   * stopped this week" when the truth is that nothing was ever spent.
+   */
+  it("titles the spend card by the window it can actually source", async () => {
+    const view = await renderScreen();
+    expect(view.getByText("Account spend")).toBeTruthy();
+    expect(view.queryByText(/last 7 days/i)).toBeNull();
+  });
+});
+
+/**
+ * The Policy Center tile is the manager's only surface for a rejected ad, so its
+ * subtitle is load-bearing in a way a tile caption usually isn't: it is the line
+ * that decides whether someone taps through.
+ *
+ * §31 makes four of the states distinct claims, and the one that matters most is
+ * the boundary between "the board is empty" and "the board was never fetched".
+ */
+describe("ads manager — Policy Center tile", () => {
+  /** A navigation double that records where the tile actually points. */
+  function nav() {
+    return { navigate: jest.fn(), goBack: jest.fn() };
+  }
+
+  it("opens the Policy Center", async () => {
+    const navigation = nav();
+    const view = render(<AdsManagerScreen navigation={navigation as never} />);
+    await waitFor(() => expect(view.queryByText("Launch")).toBeTruthy());
+
+    await act(async () => {
+      fireEvent.press(view.getByText("Policy Center"));
+    });
+    expect(navigation.navigate).toHaveBeenCalledWith(
+      "BusinessOsAdvertising",
+      expect.objectContaining({ mode: "policy" })
+    );
+  });
+
+  /**
+   * The fan-out path never asked about policy. A tile that said "All clear" on
+   * the strength of a request nobody made would tell an advertiser with a
+   * rejected ad that nothing is wrong — so it names the destination instead and
+   * asserts nothing about what is in it.
+   */
+  it("asserts nothing when the board was never fetched", async () => {
+    const view = await renderScreen();
+    expect(view.getByText("See review decisions")).toBeTruthy();
+    expect(view.queryByText("All clear")).toBeNull();
+    expect(view.queryByText("No decisions yet")).toBeNull();
+  });
+
+  it("counts outstanding rejections, because they are the only ones needing action", async () => {
+    mockLoad.mockResolvedValue(
+      model({
+        portal: boardPortal([
+          { review_id: 1, creative_id: 1, moderation_status: "rejected" },
+          { review_id: 2, creative_id: 2, moderation_status: "rejected" },
+          { review_id: 3, creative_id: 3, moderation_status: "pending" }
+        ])
+      })
+    );
+    const view = await renderScreen();
+    expect(view.getByText("2 need attention")).toBeTruthy();
+  });
+
+  /** "1 creatives" is the kind of seam that makes a surface read as unfinished. */
+  it("pluralises a single rejection correctly", async () => {
+    mockLoad.mockResolvedValue(
+      model({ portal: boardPortal([{ review_id: 1, creative_id: 1, moderation_status: "rejected" }]) })
+    );
+    const view = await renderScreen();
+    expect(view.getByText("1 needs attention")).toBeTruthy();
+  });
+
+  it("falls back to pending decisions when nothing is rejected", async () => {
+    mockLoad.mockResolvedValue(
+      model({
+        portal: boardPortal([
+          { review_id: 1, creative_id: 1, moderation_status: "pending" },
+          { review_id: 2, creative_id: 2, moderation_status: "approved" }
+        ])
+      })
+    );
+    const view = await renderScreen();
+    expect(view.getByText("1 in review")).toBeTruthy();
+  });
+
+  it("says all clear only when a board that actually loaded is entirely approved", async () => {
+    mockLoad.mockResolvedValue(
+      model({ portal: boardPortal([{ review_id: 1, creative_id: 1, moderation_status: "approved" }]) })
+    );
+    const view = await renderScreen();
+    expect(view.getByText("All clear")).toBeTruthy();
+  });
+
+  it("distinguishes a board that loaded and holds nothing", async () => {
+    mockLoad.mockResolvedValue(model({ portal: boardPortal([]) }));
+    const view = await renderScreen();
+    expect(view.getByText("No decisions yet")).toBeTruthy();
+  });
+
+  /** A degraded portal's empty board is an unmade request wearing an answer's clothes. */
+  it("treats a degraded portal as unfetched rather than clear", async () => {
+    mockLoad.mockResolvedValue(model({ portal: { ...boardPortal([]), degraded: true } }));
+    const view = await renderScreen();
+    expect(view.getByText("See review decisions")).toBeTruthy();
+    expect(view.queryByText("No decisions yet")).toBeNull();
+  });
+});
+
+/**
+ * The Creative library tile used to read "See the creative rules", which was
+ * accurate about the page it opened and useless about the advertiser: it said
+ * the same thing whether they had a rejected creative or none at all. Now that
+ * the page lists real creatives, the tile carries the one number worth the
+ * space — how many aren't running.
+ *
+ * The §31 boundary is the same as the policy tile's, and matters for the same
+ * reason: a library that was never fetched must not render as an empty one.
+ */
+describe("ads manager — Creative library tile", () => {
+  function nav() {
+    return { navigate: jest.fn(), goBack: jest.fn() };
+  }
+
+  /** A portal carrying only creatives and their accounts, which is all this tile reads. */
+  function creativePortal(creatives: unknown[]) {
+    return normalizeAdsPortal({ creatives, accounts: [{ id: 8, role: "owner" }] } as never);
+  }
+
+  const DRAFT = { id: 21, ad_account_id: 8, status: "draft", moderation_status: "draft" };
+  const APPROVED = { id: 23, ad_account_id: 8, status: "approved", moderation_status: "approved" };
+
+  it("opens the library", async () => {
+    const navigation = nav();
+    const view = render(<AdsManagerScreen navigation={navigation as never} />);
+    await waitFor(() => expect(view.queryByText("Launch")).toBeTruthy());
+
+    await act(async () => {
+      fireEvent.press(view.getByText("Creative library"));
+    });
+    expect(navigation.navigate).toHaveBeenCalledWith(
+      "BusinessOsAdvertising",
+      expect.objectContaining({ mode: "creatives" })
+    );
+  });
+
+  /** The fan-out path never asked about creatives, so the tile claims nothing. */
+  it("asserts nothing when the library was never fetched", async () => {
+    const view = await renderScreen();
+    expect(view.getByText("Browse your creatives")).toBeTruthy();
+    expect(view.queryByText("No creatives yet")).toBeNull();
+    expect(view.queryByText("All delivering")).toBeNull();
+  });
+
+  it("counts rejections and unsubmitted drafts together, because both mean nothing is running", async () => {
+    mockLoad.mockResolvedValue(
+      model({
+        portal: creativePortal([
+          DRAFT,
+          { id: 22, ad_account_id: 8, status: "pending_review", moderation_status: "rejected" },
+          APPROVED
+        ])
+      })
+    );
+    const view = await renderScreen();
+    expect(view.getByText("2 need attention")).toBeTruthy();
+  });
+
+  it("pluralises a single one correctly", async () => {
+    mockLoad.mockResolvedValue(model({ portal: creativePortal([DRAFT, APPROVED]) }));
+    const view = await renderScreen();
+    expect(view.getByText("1 needs attention")).toBeTruthy();
+  });
+
+  it("says all delivering only when a library that loaded has nothing outstanding", async () => {
+    mockLoad.mockResolvedValue(model({ portal: creativePortal([APPROVED]) }));
+    const view = await renderScreen();
+    expect(view.getByText("All delivering")).toBeTruthy();
+  });
+
+  it("distinguishes a library that loaded and holds nothing", async () => {
+    mockLoad.mockResolvedValue(model({ portal: creativePortal([]) }));
+    const view = await renderScreen();
+    expect(view.getByText("No creatives yet")).toBeTruthy();
+  });
+
+  it("treats a degraded portal as unfetched rather than empty", async () => {
+    mockLoad.mockResolvedValue(model({ portal: { ...creativePortal([]), degraded: true } }));
+    const view = await renderScreen();
+    expect(view.getByText("Browse your creatives")).toBeTruthy();
+    expect(view.queryByText("No creatives yet")).toBeNull();
+  });
+
+  /** The old caption described a rulebook. It no longer describes the page. */
+  it("no longer sends the reader to a rulebook", async () => {
+    mockLoad.mockResolvedValue(model({ portal: creativePortal([APPROVED]) }));
+    const view = await renderScreen();
+    expect(view.queryByText("See the creative rules")).toBeNull();
   });
 });

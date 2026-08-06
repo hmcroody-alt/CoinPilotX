@@ -34,6 +34,7 @@ import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
 import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "MarketplaceDetail">>;
 
@@ -371,7 +372,7 @@ function focusInitialListing(items: MarketplaceListing[], listingId: number) {
   return [items[index], ...items.slice(0, index), ...items.slice(index + 1)];
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   card: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
@@ -654,4 +655,4 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: "900"
   }
-});
+}));

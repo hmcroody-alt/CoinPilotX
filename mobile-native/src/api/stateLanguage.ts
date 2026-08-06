@@ -26,31 +26,34 @@
  * `useFormatters`. {@link ZERO_TEXT} is the fallback for callers with no
  * formatter to hand.
  *
- * THE FLAG
- * --------
- * `EXPO_PUBLIC_STATE_LANGUAGE` gates the change and defaults off. With it off,
- * {@link absentValueText} returns the same em dash every one of these sites
- * renders today, so a build that has not opted in behaves exactly as it did.
- * The flag is read per call rather than at import so a test can turn it on
- * without re-importing the module graph, matching `api/eventsManager.ts`.
+ * THE FLAG THAT USED TO BE HERE
+ * -----------------------------
+ * `EXPO_PUBLIC_STATE_LANGUAGE` staged this change and defaulted off, which meant
+ * every screen converted to this vocabulary still rendered the em dash in every
+ * build anyone actually installed. The conversion was real and the rollout never
+ * happened, so the defect the module was written to fix was still shipping —
+ * with the code to fix it sitting one unset variable away.
+ *
+ * The wording is unconditional now and the flag is gone. That is a decision
+ * about *when*, not about *what*: nothing below changed, three screens started
+ * showing what they were already computing, and there is no longer a build in
+ * which a "couldn't load" and a "not set up yet" look identical.
  */
 
 import { PulseApiError } from "./pulseApi";
-import { envFlagOn } from "../core/envFlag";
 
-/** The character the app currently uses for all four meanings. Retired below. */
+/**
+ * The character this module exists to retire.
+ *
+ * Kept as an export, but no function returns it any more. It survives so tests
+ * can assert its absence by name rather than by pasting a dash that is easy to
+ * confuse with a hyphen, and so a future call site reaching for "the dash" finds
+ * this comment first.
+ */
 export const LEGACY_ABSENT_TEXT = "—";
 
 /** What a true zero looks like when the caller has no locale formatter. */
 export const ZERO_TEXT = "0";
-
-export const STATE_LANGUAGE_FLAG = "EXPO_PUBLIC_STATE_LANGUAGE";
-
-/** True when a build has opted into the ADR-0003 wording. Off by default.
- *  Reads the shared truthy set — see `core/envFlag.ts`. */
-export function stateLanguageEnabled(): boolean {
-  return envFlagOn(STATE_LANGUAGE_FLAG);
-}
 
 /**
  * The closed set of states a screen or a section can be in.
@@ -191,16 +194,13 @@ export type AbsentValueOptions = {
  * * `unavailable` is a failure, and says so instead of looking like a zero.
  * * `restricted` names the wall without implying the data is missing.
  *
- * With the flag off this returns the legacy dash for every one of them, so the
- * call sites can be converted ahead of the rollout.
+ * Every branch returns wording. There is no path back to the dash.
  */
 export function absentValueText(state: SurfaceState, options: AbsentValueOptions = {}): string {
   const zeroText = options.zeroText ?? ZERO_TEXT;
-  // A real zero is a real figure and was never the dash's job. It renders as a
-  // number whether or not the new wording is switched on, because rendering a
-  // measured zero as a dash is the one case that is wrong under both standards.
+  // A real zero is a real figure and was never the dash's job: it renders as a
+  // number, because that is what was measured.
   if (state === "zero") return zeroText;
-  if (!stateLanguageEnabled()) return LEGACY_ABSENT_TEXT;
   switch (state) {
     case "not_configured":
       return options.notConfiguredText ?? "Not set up yet";
@@ -217,37 +217,28 @@ export function absentValueText(state: SurfaceState, options: AbsentValueOptions
   }
 }
 
-/**
- * The same thing, but returning exactly what the call site renders today until
- * the flag is thrown.
+/*
+ * `absentValueTextOr(legacy, state, options)` used to live here.
  *
- * {@link absentValueText} answers "what is the right wording for this state",
- * and its answer for a measured zero is `0` under either standard — rendering a
- * counted zero as a dash is wrong on both. That is correct for the function and
- * wrong for a rollout, because it would change a screen in a build that has not
- * opted in.
+ * It existed for the rollout: a call site could record its state in the same
+ * commit as the reasoning while a build with the flag off kept the exact string
+ * it had always rendered. With the flag gone it reduces to
+ * `absentValueText(state, options)` with a dead first argument — and a dead
+ * argument that used to hold a dash is an invitation to put a dash back.
  *
- * So the conversion of a call site is this function, not that one: the state is
- * chosen and recorded now, in the same commit as the rest of the reasoning,
- * while a build with the flag off keeps the string it has always shown down to
- * the character. `legacy` is the expression being replaced.
+ * Its three call sites now call `absentValueText` directly.
  */
-export function absentValueTextOr(
-  legacy: string,
-  state: SurfaceState,
-  options: AbsentValueOptions = {}
-): string {
-  return stateLanguageEnabled() ? absentValueText(state, options) : legacy;
-}
 
 /**
  * The spoken form of the same thing.
  *
  * "—" is announced as "em dash" or skipped entirely depending on the screen
  * reader, so every one of these states was previously either mispronounced or
- * silent. This is always the full wording regardless of the flag: assistive
- * technology has no visual context to fall back on, so the degraded case is
- * worse there than anywhere else.
+ * silent. This stayed at full wording throughout the rollout, when the visual
+ * form could still degrade to the dash: assistive technology has no visual
+ * context to fall back on, so the degraded case was worse there than anywhere
+ * else. Now both forms say the same thing, which is what should have been true
+ * all along.
  */
 export function absentValueSpokenText(state: SurfaceState, options: AbsentValueOptions = {}): string {
   switch (state) {

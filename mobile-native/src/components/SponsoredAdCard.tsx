@@ -11,6 +11,7 @@ import {
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
+import { createThemedStyles } from "../theme/themedStyles";
 
 const VIEWABILITY_THRESHOLD_MS = 1000;
 
@@ -68,7 +69,18 @@ export function SponsoredAdCard({ ad, isViewable, edgeInset = 12, navigation, on
     ) {
       viewabilityReportedRef.current = true;
       recordAdViewability(impressionIdRef.current, visibleMsRef.current);
-      recordAdEvent(ad, "conversion").catch(() => undefined);
+      // Deliberately nothing else. This block used to also fire
+      // `recordAdEvent(ad, "conversion")`, which meant every ad that stayed on
+      // screen for one second wrote a row the reporting layer counts as a
+      // conversion — the same fact the line above already records as
+      // `impressions.viewable = 1`, filed under a word that means something
+      // else entirely. It was the only producer of `conversion` events in the
+      // product, on either client, so "conversions" on the advertiser portal
+      // and on the internal command centre
+      // (services/dashboard_ads_command_center.py:386) was a viewability count
+      // wearing an attribution label. There is no order link, no value and no
+      // post-tap instrumentation anywhere, so the honest count of conversions
+      // here is zero, and a zero is what this now writes.
     }
   }, [ad]);
 
@@ -185,7 +197,7 @@ export function SponsoredAdCard({ ad, isViewable, edgeInset = 12, navigation, on
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   card: {
     backgroundColor: colors.surface,
     borderRadius: logiNexus.radius.large,
@@ -300,4 +312,4 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontWeight: "900"
   }
-});
+}));

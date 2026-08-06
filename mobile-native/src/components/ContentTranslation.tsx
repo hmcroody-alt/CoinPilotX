@@ -1,15 +1,18 @@
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, StyleProp, StyleSheet, Text, TextStyle, View } from "react-native";
 import {
+  classifyTranslationFailure,
   peekTranslationPreference,
   subscribeTranslationPreference,
   TranslatableContentType,
+  TranslationFailure,
   TranslationPolicy,
   translatePulseContent,
   updateTranslationPreference
 } from "../api/translation";
 import { useTimeZonePreference } from "../core/TimeZoneContext";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type ContentTranslationProps = {
   contentType: TranslatableContentType;
@@ -62,7 +65,7 @@ export function ContentTranslation({
   const [showTranslated, setShowTranslated] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [failure, setFailure] = useState<TranslationFailure | null>(null);
   const busyRef = useRef(false);
   const requestKey = `${contentType}:${contentRef}:${targetLanguage}:${text}`;
   const activeRequest = useRef(requestKey);
@@ -74,29 +77,42 @@ export function ContentTranslation({
       const expectedKey = requestKey;
       busyRef.current = true;
       setBusy(true);
-      setError("");
+      setFailure(null);
+      // Bounded backoff: one automatic re-attempt, and only for transient
+      // failures. Permanent failures (unsupported language, moderation, …)
+      // surface immediately with no retry loop.
+      const maxAttempts = 2;
       try {
-        const result = await translatePulseContent({
-          contentType,
-          contentRef,
-          text,
-          sourceLanguage,
-          targetLanguage,
-          force
-        });
-        if (activeRequest.current !== expectedKey) return;
-        if (result.translated_text) {
-          setTranslatedText(result.translated_text);
-          setShowTranslated(true);
-        } else if (result.reason === "same_language") {
-          setShowTranslated(false);
-        } else if (result.reason === "never_translate") {
-          setShowTranslated(false);
-          setPolicy("never");
-        }
-      } catch (requestError) {
-        if (activeRequest.current === expectedKey) {
-          setError(requestError instanceof Error ? requestError.message : "Translation failed. Try again.");
+        for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+          try {
+            const result = await translatePulseContent({
+              contentType,
+              contentRef,
+              text,
+              sourceLanguage,
+              targetLanguage,
+              force
+            });
+            if (activeRequest.current !== expectedKey) return;
+            if (result.translated_text) {
+              setTranslatedText(result.translated_text);
+              setShowTranslated(true);
+            } else if (result.reason === "same_language") {
+              setShowTranslated(false);
+            } else if (result.reason === "never_translate") {
+              setShowTranslated(false);
+              setPolicy("never");
+            }
+            return;
+          } catch (requestError) {
+            const classified = classifyTranslationFailure(requestError);
+            if (!classified.retryable || attempt === maxAttempts - 1) {
+              if (activeRequest.current === expectedKey) setFailure(classified);
+              return;
+            }
+            await new Promise(resolve => setTimeout(resolve, 600 * (attempt + 1)));
+            if (activeRequest.current !== expectedKey) return;
+          }
         }
       } finally {
         busyRef.current = false;
@@ -109,7 +125,7 @@ export function ContentTranslation({
   useEffect(() => {
     setTranslatedText("");
     setShowTranslated(false);
-    setError("");
+    setFailure(null);
     const applyPreference = (preference: { policy: TranslationPolicy }) => {
       if (activeRequest.current !== requestKey) return;
       setPolicy(preference.policy);
@@ -125,7 +141,7 @@ export function ContentTranslation({
     async (nextPolicy: TranslationPolicy) => {
       const previous = policy;
       setPolicy(nextPolicy);
-      setError("");
+      setFailure(null);
       if (nextPolicy === "never") setShowTranslated(false);
       try {
         const saved = await updateTranslationPreference(sourceLanguage, targetLanguage, nextPolicy);
@@ -133,7 +149,11 @@ export function ContentTranslation({
         if (saved.policy === "always") await requestTranslation(true);
       } catch (preferenceError) {
         setPolicy(previous);
-        setError(preferenceError instanceof Error ? preferenceError.message : "Could not save translation preference.");
+        setFailure({
+          message:
+            preferenceError instanceof Error ? preferenceError.message : "Could not save translation preference.",
+          retryable: false
+        });
       }
     },
     [policy, requestTranslation, sourceLanguage, targetLanguage]
@@ -265,12 +285,30 @@ export function ContentTranslation({
           </Pressable>
         </Pressable>
       </Modal>
-      {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
+      {failure ? (
+        <View style={styles.errorRow} accessibilityLiveRegion="polite">
+          <Text style={styles.error}>{failure.message}</Text>
+          {failure.retryable ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Retry translation"
+              disabled={busy}
+              onPress={(event) => {
+                event?.stopPropagation?.();
+                requestTranslation(true);
+              }}
+              style={({ pressed }) => [styles.retryControl, pressed && styles.pressed, busy && styles.disabled]}
+            >
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   container: {
     minWidth: 0
   },
@@ -334,10 +372,31 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700"
   },
-  error: {
+  errorRow: {
     marginTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  error: {
     color: colors.danger,
-    fontSize: 11
+    fontSize: 11,
+    flexShrink: 1
+  },
+  retryControl: {
+    minHeight: 24,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(110,223,246,0.24)",
+    backgroundColor: "rgba(110,223,246,0.06)",
+    paddingHorizontal: 10,
+    justifyContent: "center"
+  },
+  retryText: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "800"
   },
   sheetScrim: {
     flex: 1,
@@ -395,4 +454,4 @@ const styles = StyleSheet.create({
   disabled: {
     opacity: 0.58
   }
-});
+}));

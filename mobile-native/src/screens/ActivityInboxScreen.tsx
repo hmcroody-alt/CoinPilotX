@@ -18,11 +18,14 @@ import { registerSyncInvalidation } from "../core/eventSync";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
 import { RootStackParamList } from "../navigation/types";
+import { PRIVATE_CONTENT_MESSAGE, resolveRouteProfileContext } from "../profile/profileContext";
+import { useAuth } from "../session/auth";
 import { SavableContentType, saveTargetFromUrl } from "../social/saveContract";
 import { useSavedState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
 import { compactPreview, formatShortTime } from "../utils/format";
+import { createThemedStyles } from "../theme/themedStyles";
 
 function unreadCountsByCategory(items: ActivityInboxItem[]) {
   return items.reduce<Record<string, number>>((counts, item) => {
@@ -38,6 +41,11 @@ export function ActivityInboxScreen() {
   const dock = useBottomNavSurface();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "ActivityInbox">>();
+  const { authState } = useAuth();
+  // Wrong-subject guard: the inbox is the signed-in viewer's notifications. On
+  // another profile's route params (deep link, stray call site) this screen
+  // refuses instead of rendering the viewer's activity under that person's name.
+  const routeContext = resolveRouteProfileContext(route?.params, authState.user?.user_id);
   const [items, setItems] = useState<ActivityInboxItem[]>([]);
   const [unreadTotal, setUnreadTotal] = useState(0);
   const [category, setCategory] = useState<ActivityCategory>(normalizeRouteCategory(route.params?.category));
@@ -119,17 +127,21 @@ export function ActivityInboxScreen() {
   }, [items, unreadTotal]);
 
   useEffect(() => {
+    // Owner-only fetch: skip entirely on a visitor route (no fetch-then-hide).
+    if (!routeContext.isOwnProfile) return;
     load().catch(() => undefined);
-  }, [load]);
+  }, [load, routeContext.isOwnProfile]);
 
   useEffect(() => {
+    if (!routeContext.isOwnProfile) return;
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") load({ refresh: true }).catch(() => undefined);
     });
     return () => subscription.remove();
-  }, [load]);
+  }, [load, routeContext.isOwnProfile]);
 
   useEffect(() => {
+    if (!routeContext.isOwnProfile) return;
     const refreshActivity = () => load({ refresh: true });
     const unregisterActivity = registerSyncInvalidation("activity", refreshActivity);
     const unregisterNotifications = registerSyncInvalidation("notifications", refreshActivity);
@@ -137,7 +149,17 @@ export function ActivityInboxScreen() {
       unregisterActivity();
       unregisterNotifications();
     };
-  }, [load]);
+  }, [load, routeContext.isOwnProfile]);
+
+  // Visitor destination with no visitor variant: refuse rather than render the
+  // viewer's inbox. All hooks above have already run, so order is stable.
+  if (!routeContext.isOwnProfile) {
+    return (
+      <View style={[styles.root, styles.center]}>
+        <Text style={styles.loadingText}>{PRIVATE_CONTENT_MESSAGE}</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
@@ -288,7 +310,7 @@ function normalizeRouteCategory(category?: ActivityCategory): ActivityCategory {
   return activityCategories.some((item) => item.key === category) ? category || "all" : "all";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     backgroundColor: colors.background,
     flex: 1
@@ -525,4 +547,4 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     textAlign: "center"
   }
-});
+}));

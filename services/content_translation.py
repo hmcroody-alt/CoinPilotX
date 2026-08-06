@@ -48,10 +48,11 @@ _SUPPORTED_CACHE: dict[str, Any] = {"languages": [], "checked_at": 0.0}
 
 
 class TranslationError(ValueError):
-    def __init__(self, code: str, message: str, status: int = 400):
+    def __init__(self, code: str, message: str, status: int = 400, *, retryable: bool = False):
         super().__init__(message)
         self.code = code
         self.status = status
+        self.retryable = retryable
 
 
 def supported_languages(*, force: bool = False) -> list[dict[str, Any]]:
@@ -529,7 +530,7 @@ def _default_provider(messages: list[dict[str, str]], correlation_id: str) -> di
             str(payload.get("target_language") or ""),
         )
     except ProviderError as exc:
-        return {"ok": False, "message": str(exc), "error": exc.code}
+        return {"ok": False, "message": str(exc), "error": exc.code, "retryable": exc.retryable}
     return {
         "ok": True,
         "reply": json.dumps({
@@ -709,10 +710,14 @@ def translate_content(
             correlation_id,
         )
         if not result.get("ok"):
+            # Preserve the provider's error code (provider_timeout, provider_quota_exceeded,
+            # invalid_credentials, …) so API layers can map failures precisely instead of
+            # collapsing everything to a generic 503.
             raise TranslationError(
-                "translation_unavailable",
+                str(result.get("error") or "translation_unavailable"),
                 str(result.get("message") or "Translation is temporarily unavailable. Please try again."),
                 503,
+                retryable=bool(result.get("retryable", True)),
             )
         translated_text, detected = _parsed_translation(result.get("reply"))
         translated_text = _restore_text(translated_text, placeholders)

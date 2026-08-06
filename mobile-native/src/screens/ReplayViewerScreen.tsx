@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getLiveState, livePlaybackUrl, livePosterUrl } from "../api/live";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type ResolveState = "resolving" | "ready" | "unavailable";
 
@@ -118,7 +119,7 @@ export function ReplayViewerScreen({ route, navigation }: NativeStackScreenProps
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   backButton: {
     alignItems: "center",
     backgroundColor: "rgba(2,4,10,0.6)",
@@ -198,4 +199,4 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0
   }
-});
+}));

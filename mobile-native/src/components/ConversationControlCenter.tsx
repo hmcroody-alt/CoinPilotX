@@ -26,6 +26,7 @@ import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { formatFileSize } from "../utils/format";
 import { PulseCommandPanel } from "./PulseCommand";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   visible: boolean;
@@ -948,7 +949,7 @@ function SettingRow({ row, settings, saving, onSaveSetting, onPress }: { row: Ro
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   backdrop: { backgroundColor: "rgba(0,0,0,0.64)", flex: 1, justifyContent: "flex-end" },
   sheet: { backgroundColor: "#030b19", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, height: "92%", padding: 0 },
   handle: { alignSelf: "center", backgroundColor: "#60759a", borderRadius: 3, height: 5, marginTop: 10, width: 54 },
@@ -1014,4 +1015,4 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.46 },
   empty: { color: colors.muted, padding: 20, textAlign: "center" },
   notice: { backgroundColor: "#0e2b31", borderRadius: logiNexus.radius.panel, color: colors.accent, fontSize: 11, marginHorizontal: 12, padding: 12, textAlign: "center" }
-});
+}));

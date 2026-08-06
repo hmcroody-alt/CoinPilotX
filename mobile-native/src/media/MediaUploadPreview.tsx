@@ -4,6 +4,7 @@ import { PulseMedia } from "../api/feed";
 import { colors } from "../theme/colors";
 import { formatFileSize } from "../utils/format";
 import { NativeMediaAsset, nativeMediaKind, nativeMediaPreviewUrl, UploadProgress } from "./nativeMediaUpload";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   asset?: NativeMediaAsset | null;
@@ -51,7 +52,7 @@ export function MediaUploadPreview({ asset, media, progress, error, uploading, o
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actions: {
     flexDirection: "row",
     gap: 10,
@@ -135,4 +136,4 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     overflow: "hidden"
   }
-});
+}));

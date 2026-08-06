@@ -29,6 +29,7 @@ import {
   triggerRefreshDestination
 } from "./refreshCoordinator";
 import { AppTabParamList } from "./types";
+import { createThemedStyles } from "../theme/themedStyles";
 
 export type GlobalNavigationBadges = {
   activity?: number;
@@ -482,7 +483,7 @@ function initialsFor(value: string) {
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   avatarButton: {
     alignItems: "center",
     backgroundColor: "rgba(159, 124, 255, 0.2)",
@@ -830,4 +831,4 @@ const styles = StyleSheet.create({
     gap: 4,
     justifyContent: "center"
   }
-});
+}));

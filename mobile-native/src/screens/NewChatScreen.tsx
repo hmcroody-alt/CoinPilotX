@@ -19,6 +19,7 @@ import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen"
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "NewChat">;
 
@@ -191,7 +192,7 @@ function messageForError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   keyboard: { flex: 1 },
   page: { flex: 1, gap: 14, padding: 14 },
   intro: { gap: 5 },
@@ -221,4 +222,4 @@ const styles = StyleSheet.create({
   errorText: { color: colors.text, flex: 1, fontSize: 12, lineHeight: 17 },
   retryButton: { alignSelf: "center", backgroundColor: colors.signalDim, borderColor: colors.accent, borderRadius: 10, borderWidth: 1, marginTop: 8, paddingHorizontal: 12, paddingVertical: 8 },
   retryText: { color: colors.accent, fontSize: 12, fontWeight: "900" }
-});
+}));

@@ -12,6 +12,8 @@ import {
   View
 } from "react-native";
 import { getEngineerAccessStatus, verifyEngineerAccess } from "../../api/engineerAccess";
+import { engineerDevFallbackEnabled } from "../../security/engineerAccessDevFallback";
+import { emitEngineerAccessDiagnostic } from "../../security/engineerAccessDiagnostics";
 
 const PASSCODE_LENGTH = 8;
 
@@ -74,11 +76,17 @@ export function EngineerAccessModal({ visible, userId, onCancel, onGranted }: Pr
     if (!visible) return;
     setPasscode("");
     setPhase("entry");
+    setLockSeconds(0);
+    emitEngineerAccessDiagnostic({ stage: "modal_opened" });
     let active = true;
     getEngineerAccessStatus().then((status) => {
       if (!active) return;
       setNeedsReauth(status.requiresReauthentication);
-      if (status.lockedSecondsRemaining > 0) {
+      // A lockout is a server verdict about server attempts. When the local
+      // development fallback is compiled in, the passcode it accepts is not one
+      // of those attempts, so a countdown left over from earlier failures must
+      // not hide the input and make a valid passcode unenterable.
+      if (status.lockedSecondsRemaining > 0 && !engineerDevFallbackEnabled()) {
         setLockSeconds(status.lockedSecondsRemaining);
         setPhase("locked");
       }
@@ -123,12 +131,17 @@ export function EngineerAccessModal({ visible, userId, onCancel, onGranted }: Pr
     if (!canVerify) return;
     setPhase("verifying");
     const attempt = passcode;
+    emitEngineerAccessDiagnostic({ stage: "input_length", inputLength: attempt.length });
     // Clear the field before awaiting so the digits are not sitting in state
     // across the network round trip.
     setPasscode("");
     const outcome = await verifyEngineerAccess(userId, attempt);
 
     if (outcome.authorized) {
+      // Reset before handing control back: the host closes the modal, and a
+      // later reopen must not find "verifying" or a leftover countdown.
+      setPhase("entry");
+      setLockSeconds(0);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       onGranted();
       return;

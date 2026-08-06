@@ -17,6 +17,7 @@ import { AuthContext, AuthState, expiredState, fatalErrorState, restoreSession, 
 import { isQaSimulatorAuthEnabled, tryHandleQaSimulatorAuthUrl } from "./src/session/qaSimulatorAuth";
 import { SettingsProviders } from "./src/settings/SettingsProviders";
 import { colors } from "./src/theme/colors";
+import { useTheme } from "./src/theme/ThemeContext";
 import { registerPushDevice, syncPushDeviceRegistration } from "./src/api/push";
 import { startPresenceSession, stopPresenceSession } from "./src/api/presenceSession";
 import { registerSessionInvalidationHandler } from "./src/api/pulseApi";
@@ -235,20 +236,6 @@ function AppRoot() {
   }, [authState.status, pendingQaCameraRoute, pendingQaRedirectTarget]);
 
   const auth = useMemo(() => ({ authState, setAuthState, requestReauthentication }), [authState, requestReauthentication]);
-  const theme = useMemo(
-    () => ({
-      ...DefaultTheme,
-      colors: {
-        ...DefaultTheme.colors,
-        background: colors.background,
-        card: colors.surface,
-        text: colors.text,
-        primary: colors.accent,
-        border: colors.border
-      }
-    }),
-    []
-  );
 
   // Holding the splash until the core catalogs are resident is what guarantees
   // the first rendered frame is already in the user's language — no screen ever
@@ -307,10 +294,9 @@ function AppRoot() {
               {authState.status === "signedIn" ? (
                 <TranslationPreferencesBootstrap key={authState.user?.user_id || "signed-in"} />
               ) : null}
-              <NavigationContainer ref={navigationRef} theme={theme} linking={authState.status === "signedIn" ? linking : undefined}>
-                <StatusBar style="light" />
-                {authState.status === "signedIn" ? <AppNavigator /> : <AuthNavigator />}
-              </NavigationContainer>
+              <ThemedNavigationShell
+                signedIn={authState.status === "signedIn"}
+              />
               {authState.status === "signedIn" ? <InAppNotificationBanner /> : null}
               <IncomingCallLayer signedIn={authState.status === "signedIn"} currentUserId={authState.user?.user_id} />
               {PERF_OVERLAY_ENABLED ? <PerfOverlay /> : null}
@@ -319,6 +305,54 @@ function AppRoot() {
         </TimeZoneProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+  );
+}
+
+/**
+ * The point where the active theme becomes system chrome.
+ *
+ * Sits inside `SettingsProviders` so `useTheme()` reflects the stored
+ * preference from the very first frame — the store hydrates from AsyncStorage
+ * synchronously enough that a user on Black never sees a blue-dark flash.
+ *
+ * Three jobs:
+ *  1. Status bar style comes from the theme (light content on Dark/Black,
+ *     dark content on Light Futuristic/White) instead of the previous
+ *     hard-coded `"light"` which was wrong on every light theme.
+ *  2. React Navigation gets a theme built from the *live* palette, so screen
+ *     transition backgrounds and headers can never flash the wrong scheme.
+ * Deliberately NOT keyed on the theme epoch: remounting the container resets
+ * navigation state, which would throw the user out of Settings → Appearance
+ * the moment they tapped a theme. Legacy screens whose module-scope
+ * StyleSheets captured launch-time colors are converted to `useThemedStyles`
+ * screen by screen instead.
+ */
+function ThemedNavigationShell({ signedIn }: { signedIn: boolean }) {
+  const theme = useTheme();
+  const navigationTheme = useMemo(
+    () => ({
+      ...DefaultTheme,
+      dark: theme.scheme === "dark",
+      colors: {
+        ...DefaultTheme.colors,
+        background: theme.colors.background,
+        card: theme.colors.surface,
+        text: theme.colors.text,
+        primary: theme.colors.accent,
+        border: theme.colors.border
+      }
+    }),
+    [theme]
+  );
+  return (
+    <NavigationContainer
+      ref={navigationRef}
+      theme={navigationTheme}
+      linking={signedIn ? linking : undefined}
+    >
+      <StatusBar style={theme.statusBarStyle} />
+      {signedIn ? <AppNavigator /> : <AuthNavigator />}
+    </NavigationContainer>
   );
 }
 

@@ -25,10 +25,14 @@ import {
 } from "../api/saved";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
+import type { RootStackParamList } from "../navigation/types";
+import { PRIVATE_CONTENT_MESSAGE, resolveRouteProfileContext } from "../profile/profileContext";
+import { useAuth } from "../session/auth";
 import { SavableContentType, saveKey } from "../social/saveContract";
 import { observeSavedState, subscribeToSaveChanges } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 /**
  * The content types this screen can hand back to the save contract.
@@ -58,10 +62,19 @@ const TYPE_FILTERS: Array<{ key: SavedContentType; label: string }> = [
   { key: "teacher", label: "Learning" }
 ];
 
-export function SavedScreen() {
+type Props = {
+  route?: { params?: RootStackParamList["Saved"] };
+};
+
+export function SavedScreen({ route }: Props = {}) {
   // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
   // reserves the matching clearance so the last row never sits under the dock.
   const dock = useBottomNavSurface();
+  const { authState } = useAuth();
+  // Wrong-subject guard: the saved library is the signed-in viewer's private
+  // collection. On another profile's route params (deep link, stray call site)
+  // this screen refuses instead of showing the viewer's library as theirs.
+  const routeContext = resolveRouteProfileContext(route?.params, authState.user?.user_id);
   const [items, setItems] = useState<SavedItem[]>([]);
   const [collections, setCollections] = useState<SavedCollection[]>([]);
   const [type, setType] = useState<SavedContentType>("all");
@@ -132,8 +145,10 @@ export function SavedScreen() {
   }, []);
 
   useEffect(() => {
+    // Owner-only fetch: skip entirely on a visitor route (no fetch-then-hide).
+    if (!routeContext.isOwnProfile) return;
     load("initial").catch(() => undefined);
-  }, []);
+  }, [routeContext.isOwnProfile]);
 
   /**
    * An unsave performed anywhere else has to remove the row here — that is the
@@ -146,7 +161,9 @@ export function SavedScreen() {
    * does cost a refetch — but only when the content is not already listed,
    * which keeps a save on a feed card from reloading this screen needlessly.
    */
-  useEffect(() => subscribeToSaveChanges((key, state) => {
+  useEffect(() => {
+    if (!routeContext.isOwnProfile) return;
+    return subscribeToSaveChanges((key, state) => {
     if (state.saved) {
       // Optimistic saves are not refetched — the row would arrive before the
       // server had agreed to create it. A rollback lands here too, with
@@ -162,13 +179,16 @@ export function SavedScreen() {
       const contentType = storeBackedType(item.content_type);
       return !contentType || saveKey(contentType, item.content_id) !== key;
     }));
-  }), []);
+    });
+  }, [routeContext.isOwnProfile]);
 
   useEffect(() => {
+    if (!routeContext.isOwnProfile) return;
     load("filter").catch(() => undefined);
   }, [type, collectionId]);
 
   useEffect(() => {
+    if (!routeContext.isOwnProfile) return;
     const timer = setTimeout(() => load("filter", query).catch(() => undefined), 280);
     return () => clearTimeout(timer);
   }, [query]);
@@ -269,6 +289,16 @@ export function SavedScreen() {
 
   async function handleOpen(item: SavedItem) {
     await routeNotificationTarget(item.source_url || "/pulse/saved").catch(() => undefined);
+  }
+
+  // Visitor destination with no visitor variant: refuse rather than render the
+  // viewer's private library. All hooks above have already run.
+  if (!routeContext.isOwnProfile) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.centerText}>{PRIVATE_CONTENT_MESSAGE}</Text>
+      </View>
+    );
   }
 
   if (loading && !items.length) {
@@ -404,7 +434,7 @@ function nextMoveCollection(collections: SavedCollection[], currentId: number) {
   return candidates[0] || null;
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -612,4 +642,4 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "900"
   }
-});
+}));

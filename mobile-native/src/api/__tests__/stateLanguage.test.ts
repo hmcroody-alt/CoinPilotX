@@ -12,19 +12,22 @@
  * one". The last test in each block is the one that would catch a regression,
  * because a well-meaning refactor that routes two states to one string reads
  * fine in review and reintroduces exactly the bug.
+ *
+ * These tests used to run each assertion twice, once per setting of
+ * `EXPO_PUBLIC_STATE_LANGUAGE`. That flag defaulted off, which meant the block
+ * asserting the dash was the block describing production. It is gone, and so is
+ * the flag-off half of every test here: there is one behaviour now, and it is
+ * the one that was always supposed to ship.
  */
 import {
   LEGACY_ABSENT_TEXT,
-  STATE_LANGUAGE_FLAG,
   SurfaceState,
   ZERO_TEXT,
   absentValueSpokenText,
   absentValueText,
-  absentValueTextOr,
   failureCause,
   failureCopy,
   failureFrom,
-  stateLanguageEnabled,
   valueState
 } from "../stateLanguage";
 import { PulseApiError } from "../pulseApi";
@@ -49,60 +52,32 @@ const ABSENT_STATES: SurfaceState[] = [
   "unavailable"
 ];
 
-const original = process.env[STATE_LANGUAGE_FLAG];
-
-afterEach(() => {
-  if (original === undefined) delete process.env[STATE_LANGUAGE_FLAG];
-  else process.env[STATE_LANGUAGE_FLAG] = original;
-});
-
-function withFlag<T>(value: string, run: () => T): T {
-  process.env[STATE_LANGUAGE_FLAG] = value;
-  return run();
-}
-
-describe("the flag", () => {
-  it('is off unless the build opts in, and accepts every spelling of "on"', () => {
-    // The accepted spellings are the shared set in core/envFlag.ts. This flag
-    // shipped taking the literal "1" alone while flags on adjacent screens also
-    // took "true", so setting it to "true" was a silent no-op.
-    for (const value of ["", "0", "false", "off", "no", "2", " "]) {
-      expect(withFlag(value, stateLanguageEnabled)).toBe(false);
-    }
-    for (const value of ["1", "true", "on", "yes", "YES", "On"]) {
-      expect(withFlag(value, stateLanguageEnabled)).toBe(true);
-    }
-    // Trailing whitespace from a .env file must not silently disable it.
-    expect(withFlag(" 1 ", stateLanguageEnabled)).toBe(true);
-    expect(withFlag("\ttrue\n", stateLanguageEnabled)).toBe(true);
-  });
-
-  it("leaves every absent state rendering exactly as it does today when off", () => {
-    withFlag("0", () => {
-      for (const state of ABSENT_STATES) {
-        expect(absentValueText(state)).toBe(LEGACY_ABSENT_TEXT);
-      }
-    });
-  });
-});
-
 describe("absentValueText", () => {
   /**
-   * The correction the brief names outright: "a real zero renders as 0, not a
-   * dash". It is the one case that is wrong under both the old standard and
-   * the new one, so it does not wait for the flag.
+   * The whole point, and it used to be conditional.
+   *
+   * `EXPO_PUBLIC_STATE_LANGUAGE` gated this wording and defaulted off, so every
+   * screen converted to the vocabulary still rendered the dash in every build
+   * anyone installed — the fix was written, reviewed, merged and never seen. The
+   * flag is gone, and this is the test that would catch it coming back: no
+   * environment, no option and no state may produce the dash.
    */
-  it("renders a measured zero as a figure whether or not the flag is on", () => {
-    for (const value of ["0", "1"]) {
-      expect(withFlag(value, () => absentValueText("zero"))).toBe(ZERO_TEXT);
-      expect(withFlag(value, () => absentValueText("zero"))).not.toBe(LEGACY_ABSENT_TEXT);
+  it("cannot produce the dash for any state, under any options", () => {
+    for (const state of ALL_STATES) {
+      expect(absentValueText(state)).not.toBe(LEGACY_ABSENT_TEXT);
+      expect(absentValueText(state, { zeroText: "0", notConfiguredText: "No store yet" })).not.toBe(
+        LEGACY_ABSENT_TEXT
+      );
     }
+  });
+
+  /** The correction the brief names outright: a real zero renders as `0`. */
+  it("renders a measured zero as a figure", () => {
+    expect(absentValueText("zero")).toBe(ZERO_TEXT);
   });
 
   it("uses the locale-formatted zero when the caller has one", () => {
-    withFlag("1", () => {
-      expect(absentValueText("zero", { zeroText: "٠" })).toBe("٠");
-    });
+    expect(absentValueText("zero", { zeroText: "٠" })).toBe("٠");
   });
 
   /**
@@ -110,102 +85,77 @@ describe("absentValueText", () => {
    * none — and the assertion is on the *set*, so a future edit that makes two
    * of them agree fails here rather than shipping.
    */
-  it("gives every absent state a distinct sentence once switched on", () => {
-    withFlag("1", () => {
-      const rendered = ABSENT_STATES.map((state) => absentValueText(state));
-      expect(new Set(rendered).size).toBe(ABSENT_STATES.length);
-      expect(rendered).not.toContain(LEGACY_ABSENT_TEXT);
-    });
+  it("gives every absent state a distinct sentence", () => {
+    const rendered = ABSENT_STATES.map((state) => absentValueText(state));
+    expect(new Set(rendered).size).toBe(ABSENT_STATES.length);
   });
 
   it("distinguishes a section that failed from one that is empty", () => {
-    withFlag("1", () => {
-      expect(absentValueText("unavailable")).not.toBe(absentValueText("no_activity"));
-      expect(absentValueText("unavailable")).not.toBe(absentValueText("zero"));
-      expect(absentValueText("not_configured")).not.toBe(absentValueText("no_activity"));
-    });
+    expect(absentValueText("unavailable")).not.toBe(absentValueText("no_activity"));
+    expect(absentValueText("unavailable")).not.toBe(absentValueText("zero"));
+    expect(absentValueText("not_configured")).not.toBe(absentValueText("no_activity"));
   });
 
   it("lets a surface override the setup wording without touching the rest", () => {
-    withFlag("1", () => {
-      expect(absentValueText("not_configured", { notConfiguredText: "No store yet" })).toBe(
-        "No store yet"
-      );
-      expect(absentValueText("no_activity", { notConfiguredText: "No store yet" })).not.toBe(
-        "No store yet"
-      );
-    });
+    expect(absentValueText("not_configured", { notConfiguredText: "No store yet" })).toBe(
+      "No store yet"
+    );
+    expect(absentValueText("no_activity", { notConfiguredText: "No store yet" })).not.toBe(
+      "No store yet"
+    );
   });
 
   it("never returns an empty string for any state in the type", () => {
-    for (const flag of ["0", "1"]) {
-      withFlag(flag, () => {
-        for (const state of ALL_STATES) {
-          expect(absentValueText(state).length).toBeGreaterThan(0);
-        }
-      });
+    for (const state of ALL_STATES) {
+      expect(absentValueText(state).length).toBeGreaterThan(0);
     }
   });
-});
 
-describe("absentValueTextOr", () => {
   /**
-   * The rollout guarantee. Every call site converted in this pass renders the
-   * exact string it rendered before until the flag is thrown — including the
-   * measured zeroes, which `absentValueText` alone would have promoted to `0`
-   * in a build that had not opted in.
+   * `ready` and `ready_from_cache` mean there IS a number, so asking this
+   * function about them is a caller error — it has nothing to render and falls
+   * back to the zero. Pinned so the fallback is a known quantity: a caller that
+   * routes a real figure through here prints a zero over it, which is why the
+   * three live call sites each check for the value first.
    */
-  it("returns the caller's existing string, byte for byte, while the flag is off", () => {
-    withFlag("0", () => {
-      for (const state of ALL_STATES) {
-        expect(absentValueTextOr(LEGACY_ABSENT_TEXT, state)).toBe(LEGACY_ABSENT_TEXT);
-      }
-      // Including a legacy expression that was never the dash.
-      expect(absentValueTextOr("No clicks yet", "no_activity")).toBe("No clicks yet");
-    });
-  });
-
-  it("switches to the new vocabulary, and passes the options through, when on", () => {
-    withFlag("1", () => {
-      expect(absentValueTextOr("—", "no_activity")).toBe("None yet");
-      expect(absentValueTextOr("—", "not_configured", { notConfiguredText: "Not measured yet" })).toBe(
-        "Not measured yet"
-      );
-      expect(absentValueTextOr("—", "zero", { zeroText: "0" })).toBe("0");
-    });
-  });
-
-  it("agrees with absentValueText on every state once switched on", () => {
-    withFlag("1", () => {
-      for (const state of ALL_STATES) {
-        expect(absentValueTextOr("—", state)).toBe(absentValueText(state));
-      }
-    });
+  it("falls back to the zero for the states that are not absences", () => {
+    for (const state of ["ready", "ready_from_cache"] as const) {
+      expect(absentValueText(state)).toBe(ZERO_TEXT);
+      expect(absentValueText(state, { zeroText: "0 saves" })).toBe("0 saves");
+    }
   });
 });
 
 describe("absentValueSpokenText", () => {
   /**
    * A screen reader either says "em dash" or says nothing at all, so the
-   * degraded rendering is worse for assistive technology than it is on screen.
-   * That is why the spoken form does not consult the flag.
+   * degraded rendering was worse for assistive technology than it was on screen.
+   * That is why the spoken form never consulted the flag, and why it is the one
+   * place that was already correct in a default build.
    */
-  it("speaks the full wording even with the flag off", () => {
-    withFlag("0", () => {
-      for (const state of ABSENT_STATES) {
-        expect(absentValueSpokenText(state)).not.toBe(LEGACY_ABSENT_TEXT);
-        expect(absentValueSpokenText(state).length).toBeGreaterThan(0);
-      }
-    });
+  it("speaks a full sentence for every absence", () => {
+    for (const state of ABSENT_STATES) {
+      expect(absentValueSpokenText(state)).not.toBe(LEGACY_ABSENT_TEXT);
+      expect(absentValueSpokenText(state).length).toBeGreaterThan(0);
+    }
   });
 
   it("never speaks a dash for any state", () => {
-    for (const flag of ["0", "1"]) {
-      withFlag(flag, () => {
-        for (const state of ALL_STATES) {
-          expect(absentValueSpokenText(state)).not.toContain(LEGACY_ABSENT_TEXT);
-        }
-      });
+    for (const state of ALL_STATES) {
+      expect(absentValueSpokenText(state)).not.toContain(LEGACY_ABSENT_TEXT);
+    }
+  });
+
+  /**
+   * The visual and spoken forms drifted for the length of the rollout, because
+   * only one of them was behind the flag. Now they must agree — a caption a
+   * sighted reader sees and a screen reader announces differently is two
+   * different products.
+   */
+  it("agrees with the visual wording on every absence", () => {
+    for (const state of ABSENT_STATES) {
+      if (state === "loading") continue; // "Checking…" loses its ellipsis when spoken.
+      expect(absentValueSpokenText(state)).toBe(absentValueText(state));
     }
   });
 
@@ -316,10 +266,8 @@ describe("valueState", () => {
    * period view reads as a total and tells a seller their business has stopped.
    */
   it("renders those two zeroes differently", () => {
-    withFlag("1", () => {
-      expect(absentValueText(valueState({ value: 0 }))).toBe(ZERO_TEXT);
-      expect(absentValueText(valueState({ value: 0, windowed: true }))).not.toBe(ZERO_TEXT);
-    });
+    expect(absentValueText(valueState({ value: 0 }))).toBe(ZERO_TEXT);
+    expect(absentValueText(valueState({ value: 0, windowed: true }))).not.toBe(ZERO_TEXT);
   });
 
   it("treats an absent figure as a failure, never as a zero", () => {

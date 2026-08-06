@@ -9,6 +9,7 @@ import { colors } from "../../../theme/colors";
 import { logiNexus } from "../../../theme/logiNexus";
 import { SecureTextField } from "../SecureTextField";
 import { PulsePrimaryButton } from "./PulsePrimaryButton";
+import { createThemedStyles } from "../../../theme/themedStyles";
 
 const POLL_INTERVAL_MS = 4000;
 const RESEND_COOLDOWN_S = 30;
@@ -227,7 +228,7 @@ export function VerifyEmailStep({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     alignItems: "center",
     gap: logiNexus.spacing.sm
@@ -310,4 +311,4 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700"
   }
-});
+}));

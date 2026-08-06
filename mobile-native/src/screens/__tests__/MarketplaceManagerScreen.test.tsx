@@ -137,11 +137,15 @@ describe("MarketplaceManagerScreen", () => {
     expect(getByText("Buying")).toBeTruthy();
   });
 
-  it("shows a dash, not a zero, for figures it has no source for", async () => {
-    const { findAllByText } = await renderScreen();
-    // "Saves this week" and "Offers waiting" are both unbacked. A zero would be
-    // a claim that the answer is none; a dash says it is unknown.
-    expect((await findAllByText("—")).length).toBeGreaterThanOrEqual(2);
+  it("shows honest words for every metric, and never a dash", async () => {
+    const { findByLabelText, findByText, queryAllByText } = await renderScreen();
+    // Offers has a real backend now: none waiting is a zero — a figure, good
+    // news, not an unknown.
+    expect(await findByLabelText("Offers waiting: 0")).toBeTruthy();
+    // Saves still has no source: the unknown is named, not dashed and not
+    // passed off as a zero.
+    expect(await findByText("Not measured yet")).toBeTruthy();
+    expect(queryAllByText("—").length).toBe(0);
   });
 
   it("keeps the seller's items when the buying feed fails", async () => {
@@ -169,8 +173,48 @@ describe("MarketplaceManagerScreen", () => {
 
   it("invites a first listing rather than reporting an error when empty", async () => {
     mockSellerListings.mockResolvedValue({ items: [] });
-    const { findByText } = await renderScreen();
+    const { findByText, queryByText } = await renderScreen();
     expect(await findByText("Nothing listed yet.")).toBeTruthy();
+    // No stored city, so the copy may not promise "buyers nearby" — it offers
+    // the control that would make the promise true instead.
+    expect(queryByText(/Buyers nearby/)).toBeNull();
+    expect(await findByText("Set Marketplace location")).toBeTruthy();
+  });
+
+  it("files a reserved listing under a Reserved tab that exists because of it", async () => {
+    mockSellerListings.mockResolvedValue({
+      items: [
+        listing({ id: 2, title: "Road bike" }),
+        listing({ id: 4, title: "Held chair", status: "reserved" })
+      ]
+    });
+    const { findByLabelText, findByText, queryByText } = await renderScreen();
+    const reservedTab = await findByLabelText("Reserved, 1 items");
+    await act(async () => {
+      fireEvent.press(reservedTab);
+    });
+    expect(await findByText("Held chair")).toBeTruthy();
+    // Tabs whose state never occurs do not render at all — no permanent
+    // "Removed 0" advertising moderation trouble the seller has never had.
+    expect(queryByText(/Removed/)).toBeNull();
+    expect(queryByText(/Archived/)).toBeNull();
+  });
+
+  it("states the rating gap as information, not as a locked feature", async () => {
+    const { findByText, queryByLabelText } = await renderScreen();
+    expect(await findByText("Not enough completed sales yet")).toBeTruthy();
+    // Not announced "Unavailable": an absent rating is a normal state for a
+    // new seller, not a door the app has locked.
+    expect(queryByLabelText(/Seller rating\. Unavailable/)).toBeNull();
+  });
+
+  it("routes Meetup spots to safety guidance instead of a dead tile", async () => {
+    const { findByLabelText, findByText } = await renderScreen();
+    const tile = await findByLabelText("Meetup spots. Safe exchange tips");
+    await act(async () => {
+      fireEvent.press(tile);
+    });
+    expect(await findByText("Meet up safely")).toBeTruthy();
   });
 
   it("marks a sold row SOLD in words, not by styling alone", async () => {

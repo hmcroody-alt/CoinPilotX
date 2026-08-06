@@ -205,10 +205,10 @@ describe("hydration", () => {
       pendingGroups: ["language"]
     });
     mockFetchRemotePreferences.mockResolvedValue(
-      envelope({ appearance: normalizePreferences({ appearance: { theme: "light" } }).appearance }, 9)
+      envelope({ appearance: normalizePreferences({ appearance: { theme: "light_futuristic" } }).appearance }, 9)
     );
     await mount();
-    await waitFor(() => expect(handle.preferences.appearance.theme).toBe("light"));
+    await waitFor(() => expect(handle.preferences.appearance.theme).toBe("light_futuristic"));
     expect(handle.preferences.language.appLanguage).toBe("fr");
   });
 

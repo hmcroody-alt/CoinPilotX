@@ -4,6 +4,7 @@ import { FlatList, Image, StyleSheet, Text, View, type ViewToken } from "react-n
 import { PulseReel } from "../../api/reels";
 import { reelMediaSlides, type ReelMediaSlide } from "../../reels/reelMediaKind";
 import { colors } from "../../theme/colors";
+import { createThemedStyles } from "../../theme/themedStyles";
 
 /**
  * Multiple slides swiped horizontally inside a single Reel. Images hold; video
@@ -87,7 +88,7 @@ function CarouselSlide({ slide, width, active, muted }: { slide: ReelMediaSlide;
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   counter: {
     position: "absolute",
     right: 12,
@@ -126,4 +127,4 @@ const styles = StyleSheet.create({
     position: "absolute",
     zIndex: 3
   }
-});
+}));

@@ -165,9 +165,9 @@ describe("fetchRemotePreferences", () => {
   it("also reads a flattened body, so the client survives that change", async () => {
     // `toEnvelope` accepts a bare preferences object deliberately; this pins that
     // the fallback actually parses rather than yielding defaults.
-    mockPulseApi.mockResolvedValue({ appearance: { theme: "light" } });
+    mockPulseApi.mockResolvedValue({ appearance: { theme: "light_futuristic" } });
     const result = await fetchRemotePreferences();
-    expect(result?.preferences.appearance.theme).toBe("light");
+    expect(result?.preferences.appearance.theme).toBe("light_futuristic");
   });
 
   it("accepts `version` as an alias for `revision`", async () => {

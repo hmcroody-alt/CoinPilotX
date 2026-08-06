@@ -10,6 +10,7 @@ import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ProfilePostViewer">;
 
@@ -190,7 +191,7 @@ function rotateFrom(ids: number[], selectedId: number) {
   return unique.slice(index).concat(unique.slice(0, index));
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: { backgroundColor: colors.background, flex: 1 },
   listContent: { paddingBottom: 32, paddingTop: 12 },
   post: { backgroundColor: colors.background, minHeight: 240 },
@@ -198,4 +199,4 @@ const styles = StyleSheet.create({
   loading: { alignItems: "center", minHeight: 240, justifyContent: "center" },
   loadingText: { color: colors.muted, marginTop: 10 },
   message: { backgroundColor: colors.signalSoft, color: colors.text, left: 0, paddingHorizontal: 14, paddingVertical: 8, position: "absolute", right: 0, top: 0, zIndex: 4 }
-});
+}));

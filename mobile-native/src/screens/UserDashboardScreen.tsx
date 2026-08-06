@@ -10,6 +10,7 @@ import { classifyDashboardActionRoute, dashboardModuleParamsForRoute, openDashbo
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type DashboardNavigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -400,7 +401,7 @@ function stateStyle(state: DashboardCard["state"]) {
   return null;
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -797,4 +798,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "900"
   }
-});
+}));

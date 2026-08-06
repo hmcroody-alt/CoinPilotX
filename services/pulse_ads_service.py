@@ -1431,14 +1431,22 @@ def advertiser_analytics(conn, owner_user_id, account_id=None) -> dict:
     if account_id:
         account_clause = " AND a.id=?"
         params.append(safe_int(account_id, minimum=1))
+    # Three LEFT JOINs off one campaign produce a cartesian product: a campaign
+    # with 10 impressions, 5 clicks and 3 events yields 150 rows. Every other
+    # aggregate here is COUNT(DISTINCT ...) and survives that; `viewable` was a
+    # bare SUM over the fanned-out rows and did not. It reported 90 viewable
+    # impressions out of 10 — a 15x inflation (clicks x events) and a figure
+    # larger than the impression count it is a subset of, which is how the
+    # viewability rate came out at 900%.
     cur.execute(
         f"""
         SELECT a.id AS account_id, a.business_name, c.id AS campaign_id, c.campaign_name, c.status,
                COUNT(DISTINCT i.id) AS impressions,
-               SUM(CASE WHEN i.viewable=1 THEN 1 ELSE 0 END) AS viewable_impressions,
+               COUNT(DISTINCT CASE WHEN i.viewable=1 THEN i.id END) AS viewable_impressions,
                COUNT(DISTINCT cl.id) AS clicks,
                COUNT(DISTINCT CASE WHEN e.event_type='hide' THEN e.id END) AS hides,
                COUNT(DISTINCT CASE WHEN e.event_type='report' THEN e.id END) AS reports,
+               COUNT(DISTINCT CASE WHEN e.event_type='conversion' THEN e.id END) AS conversions,
                COALESCE(c.spent_cents, 0) AS spent_cents
         FROM pulse_ad_accounts a
         LEFT JOIN pulse_ad_campaigns c ON c.ad_account_id=a.id
@@ -1468,6 +1476,13 @@ def advertiser_analytics(conn, owner_user_id, account_id=None) -> dict:
         "clicks": sum(safe_int(item.get("clicks"), 0) for item in campaigns),
         "hides": sum(safe_int(item.get("hides"), 0) for item in campaigns),
         "reports": sum(safe_int(item.get("reports"), 0) for item in campaigns),
+        # `conversion` has been an accepted event type in VALID_EVENTS since the
+        # start and `record_event` writes it, but nothing has ever read it back.
+        # A count is the whole of the attribution model that exists: there is no
+        # order link, no value, and therefore no attributed revenue to report or
+        # to adjust after a refund. Clients must present it as a count of
+        # reported events, never as revenue.
+        "conversions": sum(safe_int(item.get("conversions"), 0) for item in campaigns),
         "spend_cents": sum(safe_int(item.get("spent_cents"), 0) for item in campaigns),
     }
     totals["ctr"] = round((totals["clicks"] / totals["impressions"]) * 100, 2) if totals["impressions"] else 0

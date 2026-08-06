@@ -5,6 +5,7 @@ import * as Haptics from "expo-haptics";
 import { DEFAULT_STATUS_REACTION, STATUS_REACTIONS, StatusReactionType } from "../api/status";
 import { colors } from "../theme/colors";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   reactionCount: number;
@@ -171,7 +172,7 @@ export function StatusActionRail({ reactionCount, selectedReaction, reactionPend
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   rail: {
     alignItems: "center",
     gap: 9,
@@ -230,4 +231,4 @@ const styles = StyleSheet.create({
   trayItemActive: {
     backgroundColor: "rgba(255, 95, 168, 0.18)"
   }
-});
+}));

@@ -22,6 +22,7 @@ import { registerSyncInvalidation } from "../core/eventSync";
 import { SellerStorePanel, sellerStoreHeading, sellerStoreShowsPanel } from "../navigation/sellerStoreMode";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   route?: { params?: RootStackParamList["SellerStore"] };
@@ -486,7 +487,7 @@ function formatMoney(cents: number, currency: string) {
   return `${amount.toFixed(2)} ${String(currency || "USD").toUpperCase()}`;
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -837,4 +838,4 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     padding: 12
   }
-});
+}));

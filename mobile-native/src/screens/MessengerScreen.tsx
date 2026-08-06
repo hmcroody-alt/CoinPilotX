@@ -32,6 +32,7 @@ import {
 } from "../pulseCommand/domain";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type ConversationFilter = "all" | "direct" | "groups" | "rooms" | "ai" | "unread";
 const FILTER_KEY = "pulsesoc.native.messenger.filter";
@@ -356,7 +357,7 @@ function emptyBody(filter: ConversationFilter) {
   return "Your conversations and composer open instantly here.";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   permissionPage: { flex: 1, justifyContent: "center", padding: 16 },
   list: { gap: 4, padding: 8 },
   headerStack: { gap: 6 },
@@ -398,4 +399,4 @@ const styles = StyleSheet.create({
   error: { color: colors.warning, fontSize: 12 },
   retryButton: { alignSelf: "center", backgroundColor: colors.signalDim, borderColor: colors.accent, borderRadius: 10, borderWidth: 1, marginTop: 8, paddingHorizontal: 14, paddingVertical: 9 },
   retryText: { color: colors.accent, fontSize: 12, fontWeight: "900" }
-});
+}));

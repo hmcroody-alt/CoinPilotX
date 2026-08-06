@@ -3,6 +3,7 @@ import { forwardRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, TextInputProps, View } from "react-native";
 import { colors } from "../../theme/colors";
 import { logiNexus } from "../../theme/logiNexus";
+import { createThemedStyles } from "../../theme/themedStyles";
 
 type SecureTextFieldProps = TextInputProps & {
   label: string;
@@ -63,7 +64,7 @@ export const SecureTextField = forwardRef<TextInput, SecureTextFieldProps>(funct
   );
 });
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     gap: 6
   },
@@ -92,4 +93,4 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     paddingHorizontal: 4
   }
-});
+}));

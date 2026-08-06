@@ -276,14 +276,32 @@ export function AdsZeroBalanceBanner({
  * ------------------------------------------------------------------ */
 
 /**
- * The generic invitation shape. Every empty on this screen is a headline, a
- * sentence and one action — never a shrug.
+ * The generic invitation shape: a headline, a sentence and an action — never a
+ * shrug.
+ *
+ * ## Why there are two actions
+ *
+ * It used to take exactly one, and the no-campaigns state chose between them:
+ * an unverified advertiser got "Verify your business", a verified one got
+ * "Create campaign". That is a fork in the wrong place. Verification gates
+ * *delivery*, not authoring — a draft costs nothing, spends nothing and is
+ * exactly the work someone should be doing while their documents are in
+ * review. Offering only the verification button told them the opposite: that
+ * there was nothing to do here until someone else finished reading a form.
+ *
+ * So both live at once. `ctaLabel` is the thing to do now; `secondaryLabel` is
+ * the thing that unblocks delivery later, styled quieter because it is not the
+ * step that moves. Either may be omitted; when both are absent the card is a
+ * statement, which is still allowed — it is a shrug only if it also has nothing
+ * to say.
  */
 export function AdsEmpty({
   title,
   body,
   ctaLabel,
   onPress,
+  secondaryLabel,
+  onSecondaryPress,
   reducedMotion,
   tone = "money"
 }: {
@@ -291,30 +309,51 @@ export function AdsEmpty({
   body: string;
   ctaLabel?: string | null;
   onPress?: () => void;
+  /** The quieter second path, e.g. "Verify your business" beside a draft CTA. */
+  secondaryLabel?: string | null;
+  onSecondaryPress?: () => void;
   reducedMotion: boolean;
   tone?: "money" | "post";
 }) {
   const press = useStorePress(reducedMotion, 0.97);
+  const secondaryPress = useStorePress(reducedMotion, 0.97);
   const fill = tone === "post" ? adsLight.post.base : adsLight.cta.from;
   const text = tone === "post" ? adsLight.post.onViolet : adsLight.cta.text;
+  const accent = tone === "post" ? adsLight.post.base : adsLight.cta.from;
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>{title}</Text>
       <Text style={styles.emptyBody}>{body}</Text>
-      {ctaLabel && onPress ? (
-        <Animated.View style={press.style}>
-          <Pressable
-            style={[styles.emptyCta, { backgroundColor: fill }]}
-            onPress={onPress}
-            onPressIn={press.onPressIn}
-            onPressOut={press.onPressOut}
-            accessibilityRole="button"
-            accessibilityLabel={ctaLabel}
-          >
-            <Text style={[styles.emptyCtaText, { color: text }]}>{ctaLabel}</Text>
-          </Pressable>
-        </Animated.View>
-      ) : null}
+      <View style={styles.emptyActions}>
+        {ctaLabel && onPress ? (
+          <Animated.View style={press.style}>
+            <Pressable
+              style={[styles.emptyCta, { backgroundColor: fill }]}
+              onPress={onPress}
+              onPressIn={press.onPressIn}
+              onPressOut={press.onPressOut}
+              accessibilityRole="button"
+              accessibilityLabel={ctaLabel}
+            >
+              <Text style={[styles.emptyCtaText, { color: text }]}>{ctaLabel}</Text>
+            </Pressable>
+          </Animated.View>
+        ) : null}
+        {secondaryLabel && onSecondaryPress ? (
+          <Animated.View style={secondaryPress.style}>
+            <Pressable
+              style={[styles.emptySecondary, { borderColor: accent }]}
+              onPress={onSecondaryPress}
+              onPressIn={secondaryPress.onPressIn}
+              onPressOut={secondaryPress.onPressOut}
+              accessibilityRole="button"
+              accessibilityLabel={secondaryLabel}
+            >
+              <Text style={[styles.emptySecondaryText, { color: accent }]}>{secondaryLabel}</Text>
+            </Pressable>
+          </Animated.View>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -441,14 +480,28 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 16, fontWeight: "800", color: adsLight.text.primary, lineHeight: 21 },
   emptyBody: { fontSize: 13, color: adsLight.text.muted, lineHeight: 18 },
+  // Wraps rather than shrinks: two pill buttons at a large text scale will not
+  // fit one line, and a truncated button label is a worse outcome than a second
+  // row.
+  emptyActions: { marginTop: 6, flexDirection: "row", flexWrap: "wrap", gap: 8 },
   emptyCta: {
-    marginTop: 6,
     minHeight: adsLight.size.tapTarget,
     justifyContent: "center",
     paddingHorizontal: 20,
     borderRadius: adsLight.radius.pill
   },
   emptyCtaText: { fontSize: 14, fontWeight: "800" },
+  // Outline, not fill: same tap target and same weight of text, lower weight of
+  // colour. The difference says "also available", not "less important".
+  emptySecondary: {
+    minHeight: adsLight.size.tapTarget,
+    justifyContent: "center",
+    paddingHorizontal: 20,
+    borderRadius: adsLight.radius.pill,
+    borderWidth: 1,
+    backgroundColor: adsLight.bg.card
+  },
+  emptySecondaryText: { fontSize: 14, fontWeight: "800" },
   note: { paddingHorizontal: adsLight.space.card, paddingVertical: 8 },
   noteText: { fontSize: 11, color: adsLight.text.muted },
   preview: {

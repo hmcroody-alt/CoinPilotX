@@ -29,6 +29,7 @@ import { createQaCameraImageAsset, shouldEnableQaCameraMediaAutomation } from ".
 import { useNativeMediaUpload } from "../media/useNativeMediaUpload";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   route: { params?: RootStackParamList["CameraStudio"] };
@@ -654,7 +655,7 @@ function initialModeFromParams(params: RootStackParamList["CameraStudio"] | unde
   return raw === "video" || raw === "reel" ? "video" : "photo";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionRow: {
     flexDirection: "row",
     gap: 10
@@ -977,4 +978,4 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textAlign: "center"
   }
-});
+}));

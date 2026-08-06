@@ -6,6 +6,11 @@
  * gold, the phase is stated in words next to its dot, and the only control that
  * changes delivery is a real switch.
  *
+ * The pill is followed by `phaseDetail`, one line saying why the pill reads what
+ * it does. A campaign can be `status='active'` and still reach nobody — the
+ * selector requires seven more conditions — so "Not delivering" without the
+ * reason is a status the reader can do nothing with. See `api/adsDelivery.ts`.
+ *
  * `blocked_verification` is an overlay, not a phase: when the account can't
  * transact, the card keeps showing the campaign but overlays a strip that names
  * the reason and deep-links to verification, and the pause switch is disabled
@@ -19,6 +24,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { adsLight } from "../../theme/adsLight";
 import { useStorePress } from "../../theme/storeMotion";
 import type { CampaignPhase, CampaignTone } from "../../api/adsDashboard";
+import type { DeliveryState } from "../../api/adsDelivery";
 import { AdsStatusPill } from "./AdsStatusPill";
 import { BudgetPacingBar } from "./BudgetPacingBar";
 import { PauseSwitch } from "./PauseSwitch";
@@ -55,9 +61,20 @@ export type CampaignCardProps = {
    */
   reference?: string | null;
   objectiveLabel: string;
-  phase: CampaignPhase;
+  /**
+   * Advisory only — the card renders `phaseLabel` and `phaseTone`, never this.
+   * Widened to `DeliveryState` because the lifecycle phase and the delivery
+   * state are different questions and callers now answer the second one.
+   */
+  phase: CampaignPhase | DeliveryState;
   phaseLabel: string;
   phaseTone: CampaignTone;
+  /**
+   * Why the pill reads what it reads. Required in spirit, optional in type only
+   * so existing call sites compile: a pill with no explanation is the generic
+   * status with no recovery action that §31 forbids.
+   */
+  phaseDetail?: string | null;
   /** Null when no budget is set, which the card states rather than drawing a bar. */
   budget: CampaignCardBudget | null;
   /** Spent / Impressions / Clicks / CPC. Empty array draws no strip. */
@@ -67,6 +84,13 @@ export type CampaignCardProps = {
    * historical. Spend is never presented as moving for a paused campaign.
    */
   metricsLive?: boolean;
+  /**
+   * One line about what the strip cannot measure — see `attributionNote` in
+   * api/adsDelivery. Deliberately a sentence and not a fifth metric cell: the
+   * thing being reported is the absence of a number, and a cell would have to
+   * put a figure under the word "Conversions" to say so.
+   */
+  metricsNote?: string | null;
   /** Whether the delivery switch is shown. Drafts have nothing to pause. */
   showSwitch: boolean;
   /** Switch on = delivering. */
@@ -95,9 +119,11 @@ export function CampaignCard({
   phase,
   phaseLabel,
   phaseTone,
+  phaseDetail = null,
   budget,
   metrics = [],
   metricsLive = true,
+  metricsNote = null,
   showSwitch,
   delivering,
   onToggleDelivery,
@@ -120,7 +146,11 @@ export function CampaignCard({
         onPressIn={press.onPressIn}
         onPressOut={press.onPressOut}
         accessibilityRole="button"
-        accessibilityLabel={`${name}, ${objectiveLabel}, ${phaseLabel}`}
+        accessibilityLabel={
+          phaseDetail
+            ? `${name}, ${objectiveLabel}, ${phaseLabel}. ${phaseDetail}`
+            : `${name}, ${objectiveLabel}, ${phaseLabel}`
+        }
         accessibilityHint="Opens campaign details"
       >
         <View style={styles.headRow}>
@@ -134,6 +164,8 @@ export function CampaignCard({
           </View>
           <AdsStatusPill label={phaseLabel} tone={phaseTone} reducedMotion={reducedMotion} />
         </View>
+
+        {phaseDetail ? <Text style={styles.phaseDetail}>{phaseDetail}</Text> : null}
 
         {metrics.length ? (
           <View style={styles.metrics}>
@@ -152,6 +184,12 @@ export function CampaignCard({
 
         {metrics.length && !metricsLive ? (
           <Text style={styles.historical}>Totals to date — this campaign isn’t delivering.</Text>
+        ) : null}
+
+        {/* Paired with the strip on purpose — the note names what the strip
+            leaves out, so without a strip it is a disclaimer about nothing. */}
+        {metrics.length && metricsNote ? (
+          <Text style={styles.metricsNote}>{metricsNote}</Text>
         ) : null}
 
         {budget ? (
@@ -234,6 +272,9 @@ const styles = StyleSheet.create({
   headText: { flex: 1, gap: 2 },
   name: { fontSize: 15, fontWeight: "800", color: adsLight.text.primary },
   objective: { fontSize: 12, color: adsLight.text.muted },
+  // No numberOfLines: the reason a campaign isn't delivering is the one line on
+  // this card that must never be clipped (§37).
+  phaseDetail: { fontSize: 12, color: adsLight.text.muted, lineHeight: 17, marginTop: -6 },
   noBudget: { fontSize: 12, color: adsLight.text.muted, fontStyle: "italic" },
   // `flexWrap` is what lets the strip fall to 2x2 at large font sizes instead of
   // squeezing four columns until the numbers truncate.
@@ -242,6 +283,9 @@ const styles = StyleSheet.create({
   metricValue: { fontSize: 14, fontWeight: "800", color: adsLight.text.primary },
   metricLabel: { fontSize: 11, color: adsLight.text.muted },
   historical: { fontSize: 11, color: adsLight.text.muted, marginTop: -4 },
+  // No `numberOfLines`. This says the reporting has a hole in it, which is the
+  // other line on the card §37 forbids clipping.
+  metricsNote: { fontSize: 11, color: adsLight.text.muted, lineHeight: 15, marginTop: -4 },
   switchWrap: { flexShrink: 1, gap: 4 },
   switchReason: { fontSize: 11, color: adsLight.text.muted, lineHeight: 15, maxWidth: 210 },
   block: {

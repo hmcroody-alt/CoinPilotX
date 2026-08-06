@@ -42,6 +42,7 @@ import {
   loadCachedAdAnalytics,
   loadCachedAdCampaigns
 } from "./businessOs";
+import { AdsPortal, getAdsPortal } from "./adsPortal";
 import { envFlagOn } from "../core/envFlag";
 
 /* ------------------------------------------------------------------ *
@@ -93,8 +94,11 @@ export type AdsDataGap = {
  */
 export const ADS_MOCK_DATA_GAPS: readonly AdsDataGap[] = [
   // MOCK-DATA: per-day spend. `/api/pulse/ads/analytics` returns totals and
-  // per-campaign rows only; there is no per-day breakdown, so the seven-day
-  // spend chart's daily series is not sourced. The real total spend IS shown.
+  // per-campaign rows only; there is no per-day breakdown, so the daily series
+  // is not sourced. It is therefore not drawn: `buildSpendSeries` returns an
+  // empty series and the card reports the real to-date total under a to-date
+  // heading. It previously drew seven bars from a constant weighting, which
+  // asserted *when* the money went out and was wrong for every account.
   {
     field: "Spend — last 7 days (per day)",
     needs: "analytics endpoint returning daily spend buckets (spend_cents per day)",
@@ -202,18 +206,19 @@ export type CampaignTone = "neutral" | "info" | "success" | "warning" | "error";
  * Naming things the seller can recognise
  * ------------------------------------------------------------------ */
 
-export const ACCOUNT_NAME_FIRST_FLAG = "EXPO_PUBLIC_ACCOUNT_NAME_FIRST";
-
-/**
- * True when a build has opted into name-first labelling. Off by default.
+/*
+ * `EXPO_PUBLIC_ACCOUNT_NAME_FIRST` used to live here.
  *
- * This shipped accepting the literal `1` and nothing else, while the flag two
- * screens over accepted `true` as well. Both now read the same set — see
- * `core/envFlag.ts`.
+ * It gated whether the account strip put the business name on its own line
+ * instead of `{name} · Ad account {id}`, and it defaulted off — so the fix it
+ * guarded was never what anyone actually saw. The corrected row is now
+ * unconditional, which leaves nothing for the flag to switch.
+ *
+ * It is deleted rather than left pointing at a no-op. A flag that reads an
+ * environment variable and changes nothing is worse than no flag: someone sets
+ * it, observes no change, and concludes the code is broken. `entityDisplay`
+ * below is the whole of the naming behaviour now.
  */
-export function accountNameFirstEnabled(): boolean {
-  return envFlagOn(ACCOUNT_NAME_FIRST_FLAG);
-}
 
 /**
  * How one record is named on screen.
@@ -292,6 +297,65 @@ export function adAccountDisplay(
     noun: "account",
     showReference: !named || (options.accountCount ?? 1) > 1
   });
+}
+
+/**
+ * The second line of the account identity row.
+ *
+ * The row used to read `ROODY CHERIE Growth · Ad account 8`. Demoting the
+ * number to a `reference` line fixed the prominence but not the usefulness: the
+ * secondary line still spent itself on a database key, and a key answers a
+ * question nobody has. What an advertiser wants from the line under their
+ * account name is whether the account can run ads.
+ *
+ * So the second line states the account's standing instead, in the closed
+ * vocabulary of ADR-0003. The number does not disappear — it moves to account
+ * details, support information and the audit log, which are the three places it
+ * is genuinely needed and none of which is the top of the dashboard.
+ *
+ * Unknown statuses resolve downward: an account whose status this build does
+ * not recognise gets the bare noun and no claim. Guessing "Active" from an
+ * unrecognised string is how a suspended account gets told it is fine.
+ *
+ * ## Why the tone travels with the line
+ *
+ * The strip draws a small coloured dot beside this text, and that dot used to
+ * be hardcoded green. A green dot next to "Verification pending" is a second,
+ * louder report contradicting the first — and colour is read before text, so
+ * the wrong one wins. Returning the tone from the same switch that writes the
+ * line makes disagreement unrepresentable: there is one decision about the
+ * account's standing and both marks are rendered from it.
+ */
+export type AdAccountStanding = {
+  /** The human line, in the ADR-0003 vocabulary. */
+  line: string;
+  /** Which status colour the accompanying indicator must use. */
+  tone: "success" | "warning" | "error" | "neutral";
+};
+
+export function adAccountStanding(
+  account: Pick<AdAccount, "status"> | null | undefined
+): AdAccountStanding {
+  const noun = "Advertising account";
+  switch (String(account?.status || "").toLowerCase()) {
+    case "active":
+      return { line: `${noun} · Active`, tone: "success" };
+    case "pending":
+    case "pending_review":
+    case "in_review":
+    case "under_review":
+      return { line: `${noun} · Verification pending`, tone: "warning" };
+    case "suspended":
+    case "disabled":
+    case "rejected":
+    case "closed":
+      return { line: `${noun} · Restricted`, tone: "error" };
+    case "draft":
+    case "":
+      return { line: `${noun} · Not configured`, tone: "neutral" };
+    default:
+      return { line: noun, tone: "neutral" };
+  }
 }
 
 /** The same treatment for a campaign, whose name is the seller's own text. */
@@ -498,37 +562,56 @@ export function loadMockSuggestion(): PostSuggestion | null {
 }
 
 /* ------------------------------------------------------------------ *
- * Seven-day spend series — partial. Total is real; per-day is MOCK-DATA.
+ * Spend series — the total is real. There is no per-day source.
  * ------------------------------------------------------------------ */
 
 export type SpendSeries = {
-  /** Seven daily spend figures in cents, oldest first. Last item is "today". */
+  /**
+   * Daily spend figures in cents, oldest first, last item "today". Empty
+   * whenever no per-day source exists — which, today, is always.
+   */
   daysCents: number[];
   /** True when `daysCents` is a preview shape, not real per-day data. */
   mock: boolean;
   /** The real, backend-sourced total spend in cents (always trustworthy). */
   totalCents: number;
+  /**
+   * Whether the caller may title its card with a seven-day window. False means
+   * the only defensible heading is a to-date one — see `ACCOUNT_SPEND_TITLE`.
+   */
+  windowed: boolean;
 };
 
 /**
- * Build the spend chart series. The total is always the real analytics total.
- * The per-day breakdown is MOCK-DATA: with the flag off it is empty and the
- * chart shows an unsourced state; with the flag on it is a preview distribution
- * of the real total across seven days, explicitly marked `mock: true` so the
- * chart can badge it. The distribution never invents spend beyond the real
- * total — it only spreads a true number for shape.
+ * Build the spend chart series.
+ *
+ * The total is the real analytics total. The per-day breakdown is empty,
+ * because the analytics endpoint returns a lifetime total and takes no date
+ * range — there is no seven-day source to read.
+ *
+ * ## Why the preview distribution was removed
+ *
+ * This used to spread the real total across seven days with fixed weights
+ * `[0.08, 0.11, 0.13, 0.12, 0.16, 0.18, 0.22]`, badged `mock: true`, on the
+ * reasoning that no cent was invented — only the shape. That reasoning does not
+ * survive contact with what a bar chart claims. Seven bars of differing heights
+ * under a heading reading "last 7 days" assert *when* money was spent, and that
+ * assertion was false in every instance: the weights were a constant, so every
+ * advertiser on the platform saw the same rising curve, and an account whose
+ * whole spend happened three months ago was shown seven bars implying it spent
+ * every day of this week, with the tallest one today.
+ *
+ * A "Preview" badge does not repair that. The badge marks the series as a
+ * preview of something real; there was nothing real to preview. So the series
+ * is empty and the chart reports the total it can actually source, under a
+ * heading that names the window it actually covers.
+ *
+ * The gap this leaves is registered in {@link ADS_MOCK_DATA_GAPS} — the fix is
+ * a windowed analytics endpoint, not a nicer fabrication.
  */
 export function buildSpendSeries(analytics: AdAnalytics | null): SpendSeries {
   const totalCents = Number(analytics?.totals?.spend_cents || 0);
-  if (!adsPostModeEnabled()) {
-    return { daysCents: [], mock: true, totalCents };
-  }
-  // A fixed, deterministic weighting. This is shape only — it sums to the real
-  // total, so no cent is invented, but which day carried which share is not
-  // known and this is flagged mock.
-  const weights = [0.08, 0.11, 0.13, 0.12, 0.16, 0.18, 0.22];
-  const daysCents = weights.map((w) => Math.round(totalCents * w));
-  return { daysCents, mock: true, totalCents };
+  return { daysCents: [], mock: false, totalCents, windowed: false };
 }
 
 /* ------------------------------------------------------------------ *
@@ -592,6 +675,16 @@ export type AdsMarketplaceModel = {
   analyticsStatus: AdsSectionStatus;
   /** True when nothing reached the network and this is cached/empty data. */
   offline: boolean;
+  /**
+   * The full portal payload when the single-request path succeeded, `null` when
+   * this model was assembled from the per-endpoint fan-out.
+   *
+   * Read it for the five things only the portal carries — review board, roles,
+   * creatives, notifications, placement metadata. `null` means those were never
+   * fetched, which §31 calls `Unavailable`; it does not mean there are none.
+   * Screens must branch on `null` rather than rendering an empty list.
+   */
+  portal: AdsPortal | null;
 };
 
 /** Pick the account the dashboard centres on: prefer one that can transact. */
@@ -601,11 +694,88 @@ export function primaryAdAccount(accounts: AdAccount[]): AdAccount | null {
 }
 
 /**
- * Load everything the Marketplace-ads mode shows. Accounts and campaigns reject
- * on network failure (so they signal offline); analytics/wallet/billing are
- * best-effort and degrade to a section error rather than taking down the page.
+ * Load everything the Marketplace-ads mode shows.
+ *
+ * One request when the portal answers, five when it does not.
+ * `GET /api/pulse/ads/portal` returns accounts, campaigns, analytics, wallets
+ * and billing in a single authenticated call, plus the review board, roles,
+ * creatives, notifications and placement metadata that no other endpoint
+ * exposes. When it fails this falls back to {@link loadAdsMarketplaceFanOut},
+ * which is the behaviour that shipped before and is unchanged — so a portal
+ * outage costs the five new sections and nothing the screen could already do.
  */
 export async function loadAdsMarketplace(): Promise<AdsMarketplaceModel> {
+  try {
+    const { portal } = await getAdsPortal();
+    return await adsMarketplaceFromPortal(portal);
+  } catch {
+    return loadAdsMarketplaceFanOut();
+  }
+}
+
+/**
+ * Reshape the portal into the model the screen already understands.
+ *
+ * Two things do not map cleanly and are handled rather than ignored:
+ *
+ * **Wallets.** The portal returns one per account, ordered to match `accounts`.
+ * Match on `account_id` and fall back to position, because presenting another
+ * account's balance is worse than presenting none.
+ *
+ * **Analytics scope.** `portal.analytics` is `advertiser_analytics(user_id)` —
+ * every account this person can see, summed. The KPI row is about the *primary*
+ * account. With one account those are the same figure; with more than one they
+ * are not, so this spends one extra request to keep the numbers account-scoped
+ * rather than quietly widening what "spend" means. Two requests, not five.
+ */
+async function adsMarketplaceFromPortal(portal: AdsPortal): Promise<AdsMarketplaceModel> {
+  const accounts = portal.accounts as AdAccount[];
+  const primaryAccount = primaryAdAccount(accounts);
+
+  let analytics: AdAnalytics | null = portal.analytics || null;
+  let analyticsStatus: AdsSectionStatus = "ok";
+  if (primaryAccount && accounts.length > 1) {
+    try {
+      analytics = (await getAdAnalytics({ accountId: primaryAccount.id })).analytics;
+    } catch {
+      // Keep the portal's wider figure rather than blanking the row, but say so:
+      // an account-scoped number was asked for and a user-wide one is standing in.
+      analyticsStatus = "error";
+    }
+  }
+
+  let wallet: WalletSummary | null = null;
+  if (primaryAccount) {
+    const index = accounts.findIndex((account) => account.id === primaryAccount.id);
+    const walletRow =
+      portal.wallets.find((row) => Number(row.account_id) === Number(primaryAccount.id)) ||
+      (index >= 0 ? portal.wallets[index] : undefined);
+    if (walletRow) wallet = walletSummary(primaryAccount.id, walletRow, portal.billing);
+  }
+
+  return {
+    accounts,
+    primaryAccount,
+    campaigns: portal.campaigns,
+    analytics,
+    wallet,
+    spend: buildSpendSeries(analytics),
+    needsVerification: Boolean(primaryAccount) && !adAccountCanTransact(primaryAccount || undefined),
+    accountsStatus: "ok",
+    campaignsStatus: "ok",
+    analyticsStatus,
+    offline: false,
+    portal
+  };
+}
+
+/**
+ * The pre-portal load path, kept intact as the fallback. Accounts and campaigns
+ * reject on network failure (so they signal offline); analytics/wallet/billing
+ * are best-effort and degrade to a section error rather than taking down the
+ * page.
+ */
+export async function loadAdsMarketplaceFanOut(): Promise<AdsMarketplaceModel> {
   const [accountsRes, campaignsRes] = await Promise.allSettled([
     listAdAccounts(),
     listAdCampaigns()
@@ -675,7 +845,10 @@ export async function loadAdsMarketplace(): Promise<AdsMarketplaceModel> {
     accountsStatus,
     campaignsStatus,
     analyticsStatus,
-    offline
+    offline,
+    // Null, not empty. The review board, roles, creatives and notifications were
+    // never requested on this path; saying "none" would be a claim nobody made.
+    portal: null
   };
 }
 

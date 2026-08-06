@@ -164,6 +164,82 @@ describe("protected business routes — destination preservation", () => {
   });
 });
 
+describe("protected business routes — local development grant", () => {
+  const localGrant = () =>
+    setEngineerAccess(4242, {
+      token: "local-development-grant",
+      expiresAt: Math.floor(Date.now() / 1000) + 1800,
+      scope: ["business_os", "local_dev"],
+      source: "local"
+    });
+
+  it("bypasses the construction gate for the session", async () => {
+    // The server half of the gate is not deployed, so construction-access has no
+    // engineer path and would lock the sector however the challenge went.
+    mockedAccess.mockResolvedValue(LOCKED);
+    localGrant();
+
+    const tree = await renderRoute();
+
+    expect(rendered(tree)).toContain("BUSINESS HUB");
+    expect(mockedAccess).not.toHaveBeenCalled();
+  });
+
+  it("lands on the originally requested screen, not a dashboard", async () => {
+    mockedAccess.mockResolvedValue(LOCKED);
+
+    const tree = await renderRoute();
+    expect(rendered(tree)).toContain("LOCKED");
+
+    await act(async () => {
+      localGrant();
+      mockGrantHook?.();
+    });
+
+    expect(rendered(tree)).toContain("BUSINESS HUB");
+  });
+
+  it("re-locks when the session ends", async () => {
+    mockedAccess.mockResolvedValue(LOCKED);
+    localGrant();
+
+    const tree = await renderRoute();
+    expect(rendered(tree)).toContain("BUSINESS HUB");
+
+    await act(async () => { clearEngineerAccess(); });
+
+    expect(rendered(tree)).toContain("LOCKED");
+  });
+
+  it("does not open the sector for a different account", async () => {
+    mockedAccess.mockResolvedValue(LOCKED);
+    setEngineerAccess(9999, {
+      token: "local-development-grant",
+      expiresAt: Math.floor(Date.now() / 1000) + 1800,
+      scope: ["local_dev"],
+      source: "local"
+    });
+
+    const tree = await renderRoute();
+
+    expect(rendered(tree)).toContain("LOCKED");
+  });
+
+  it("does not honour an expired local grant", async () => {
+    mockedAccess.mockResolvedValue(LOCKED);
+    setEngineerAccess(4242, {
+      token: "local-development-grant",
+      expiresAt: Math.floor(Date.now() / 1000) - 1,
+      scope: ["local_dev"],
+      source: "local"
+    });
+
+    const tree = await renderRoute();
+
+    expect(rendered(tree)).toContain("LOCKED");
+  });
+});
+
 describe("protected business routes — revocation", () => {
   it("re-locks when the grant is cleared while the screen is mounted", async () => {
     mockedAccess.mockResolvedValueOnce(ENGINEER_OPEN).mockResolvedValue(LOCKED);

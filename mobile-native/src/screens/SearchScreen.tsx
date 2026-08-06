@@ -32,6 +32,7 @@ import { useSavedState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
 import { PulseIdBadge } from "../components/PulseIdBadge";
+import { createThemedStyles } from "../theme/themedStyles";
 
 /**
  * Which search result types can be saved, keyed on the `type` the search API
@@ -335,7 +336,7 @@ function isProfileResult(item: PulseSearchResult) {
   return type === "creator" || type === "person" || type === "people" || type === "user" || /^\/pulse\/(@|profile\/|u\/|id\/)/.test(url);
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   avatar: {
     backgroundColor: colors.surfaceRaised,
     borderRadius: 22,
@@ -564,4 +565,4 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "900"
   }
-});
+}));

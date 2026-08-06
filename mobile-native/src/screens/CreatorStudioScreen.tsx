@@ -18,6 +18,7 @@ import { getPremiumStatus, premiumStateLabel, PremiumStatus } from "../api/premi
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "CreatorStudio" | "CreatorStudioAlias">;
 
@@ -286,7 +287,7 @@ function ContentRow({ label, total, review, processing, views, active }: { label
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -495,4 +496,4 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "900"
   }
-});
+}));

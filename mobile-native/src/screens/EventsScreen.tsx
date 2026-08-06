@@ -21,6 +21,7 @@ import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { sharePulseObject } from "../sharing/nativeShare";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "Events">>;
 
@@ -272,7 +273,7 @@ function emptyEvent(eventId: number): PulseScheduledEvent {
   };
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -572,4 +573,4 @@ const styles = StyleSheet.create({
     fontSize: 30,
     fontWeight: "900"
   }
-});
+}));

@@ -16,6 +16,7 @@ import {
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props =
   | NativeStackScreenProps<RootStackParamList, "VerificationCenter">
@@ -368,7 +369,7 @@ function appealUnavailableReason(status?: string) {
   return "Your request has not been decided yet, so there is nothing to appeal.";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
@@ -630,4 +631,4 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "900"
   }
-});
+}));

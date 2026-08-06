@@ -16,6 +16,10 @@ jest.mock("../BusinessOsAdvertisingScreen", () => {
   const { Text } = require("react-native");
   return { BusinessOsAdvertisingScreen: () => <Text>CLASSIC</Text> };
 });
+jest.mock("../AdsSubPageScreen", () => {
+  const { Text } = require("react-native");
+  return { AdsSubPageScreen: ({ surface }: { surface: string }) => <Text>{`SUB:${surface}`}</Text> };
+});
 
 import { AdvertisingRoute } from "../AdvertisingRoute";
 
@@ -30,5 +34,29 @@ describe("BusinessOsAdvertising route", () => {
   it("routes to the classic screen for the creation flows", () => {
     const view = render(<AdvertisingRoute route={{ params: { mode: "classic" } }} />);
     expect(view.getByText("CLASSIC")).toBeTruthy();
+  });
+
+  /**
+   * The sub-pages share this route name on purpose. A tile pointed at a name the
+   * navigator doesn't know does not degrade to a blank screen — it throws — so
+   * the destinations behind the two formerly locked tiles, and the new home of
+   * the ad account number, are reached by `mode` rather than by new names.
+   */
+  it("dispatches each sub-page mode to its own surface", () => {
+    for (const mode of ["audiences", "creatives", "account"] as const) {
+      const view = render(<AdvertisingRoute route={{ params: { mode } }} />);
+      expect(view.getByText(`SUB:${mode}`)).toBeTruthy();
+    }
+  });
+
+  /**
+   * An unrecognised mode is a typo, a stale deep link or an older build's
+   * notification. None of those should land nowhere: the manager is the safe
+   * destination because it is where every one of these surfaces is reachable
+   * from anyway.
+   */
+  it("falls back to the manager for a mode it doesn't recognise", () => {
+    const view = render(<AdvertisingRoute route={{ params: { mode: "audience" as never } }} />);
+    expect(view.getByText("MANAGER")).toBeTruthy();
   });
 });

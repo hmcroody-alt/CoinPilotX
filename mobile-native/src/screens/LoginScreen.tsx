@@ -28,6 +28,7 @@ import { BiometricLoginButton, BiometricButtonState } from "../components/auth/B
 import { ManualLoginForm, ManualLoginFormHandle } from "../components/auth/ManualLoginForm";
 import { AuthStatusFooter } from "../components/auth/AuthStatusFooter";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
+import { createThemedStyles } from "../theme/themedStyles";
 
 const LIVING_MESSAGES = [
   "Your network is alive.",
@@ -417,7 +418,7 @@ function describeLoginError(error: unknown): string {
   return error instanceof Error ? error.message : "Unable to sign in.";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     flex: 1,
     backgroundColor: colors.background
@@ -520,4 +521,4 @@ const styles = StyleSheet.create({
     color: colors.border,
     fontSize: 12
   }
-});
+}));

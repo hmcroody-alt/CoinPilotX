@@ -4,6 +4,7 @@ import { AccessibilityState, ActivityIndicator, Animated, Pressable, StyleSheet,
 import { LinearGradient } from "expo-linear-gradient";
 import { colors } from "../../../theme/colors";
 import { logiNexus } from "../../../theme/logiNexus";
+import { createThemedStyles } from "../../../theme/themedStyles";
 
 /**
  * Primary call-to-action for the auth flow: the PulseSoc cyan→green gradient,
@@ -79,7 +80,7 @@ export function PulsePrimaryButton({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   button: {
     alignItems: "center",
     borderRadius: logiNexus.radius.medium,
@@ -107,4 +108,4 @@ const styles = StyleSheet.create({
   trailingIcon: {
     marginLeft: 8
   }
-});
+}));

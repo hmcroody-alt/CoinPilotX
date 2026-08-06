@@ -97,7 +97,7 @@ import { insightsLight } from "../theme/insightsLight";
 import { useInsightsPeriodFade } from "../theme/insightsMotion";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { STORE_STAGGER_MS, useStoreEntrance } from "../theme/storeMotion";
-import { absentValueTextOr } from "../api/stateLanguage";
+import { absentValueText } from "../api/stateLanguage";
 
 /** Dismissed tips, per rule and subject. Device-local: it is a view preference. */
 const DISMISSALS_KEY = "pulse.insights.tipDismissals.v1";
@@ -592,7 +592,7 @@ export function BusinessOsInsightsScreen({ route, navigation }: Props = {}) {
             // The caption already said "Not measured yet" while the value said
             // the same character the loading, failed and zero tiles said. One of
             // those two lines was carrying the meaning; now it is the value.
-            value={absentValueTextOr("—", "not_configured", {
+            value={absentValueText("not_configured", {
               notConfiguredText: "Not measured yet"
             })}
             caption="Not measured yet"

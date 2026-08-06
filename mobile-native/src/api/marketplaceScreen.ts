@@ -474,7 +474,30 @@ export function deriveBuyingItems(
  * Selling list
  * ------------------------------------------------------------------ */
 
-export type SellingTabKey = "active" | "sold" | "drafts" | "expired";
+export type SellingTabKey =
+  | "active"
+  | "reserved"
+  | "sold"
+  | "drafts"
+  | "pending_review"
+  | "expired"
+  | "removed"
+  | "archived";
+
+/** Tabs every seller sees, even at zero. The rest appear only when occupied. */
+export const CORE_SELLING_TABS: readonly SellingTabKey[] = ["active", "sold", "drafts", "expired"];
+
+/** The full tab order, for callers that render conditional tabs. */
+export const ALL_SELLING_TABS: readonly SellingTabKey[] = [
+  "active",
+  "reserved",
+  "sold",
+  "drafts",
+  "pending_review",
+  "expired",
+  "removed",
+  "archived"
+];
 
 /**
  * Past this age with no sale, a listing is stale.
@@ -518,8 +541,31 @@ export type SellingItem = {
   originalPriceLabel: string | null;
 };
 
-function sellingTab(health: StoreListingHealth, sold: boolean, stale: boolean): SellingTabKey {
+/**
+ * Which tab a listing belongs on.
+ *
+ * The raw status string is consulted before `health` because `listingHealth`
+ * deliberately collapses pause/reject/blocked/removed/delete into one "hidden"
+ * bucket — right for a stock LED, wrong for tabs, where "removed by moderation"
+ * needs a recovery path and "archived by me" needs none. Statuses this backend
+ * never emits simply produce tabs that never appear (the screen renders the
+ * non-core tabs only when their count is above zero), so no state here is a
+ * dead tab.
+ */
+function sellingTab(
+  status: string,
+  health: StoreListingHealth,
+  sold: boolean,
+  stale: boolean
+): SellingTabKey {
+  const raw = status.toLowerCase();
   if (sold) return "sold";
+  if (raw.includes("reserv")) return "reserved";
+  if (raw.includes("pending") || raw.includes("review") || raw.includes("moderat")) {
+    return "pending_review";
+  }
+  if (raw.includes("reject") || raw.includes("block") || raw.includes("remov")) return "removed";
+  if (raw.includes("archiv")) return "archived";
   if (health === "draft") return "drafts";
   // "Expired" is not a status this backend has. A hidden listing that is also
   // stale is the closest honest reading, and it is the only way the tab is
@@ -558,7 +604,9 @@ export function deriveSellingItems(
     // backend expresses for a one-off Marketplace item.
     const sold = health === "out_of_stock" && unitsSold7d > 0;
     const stale = ageMs != null && ageMs > STALE_LISTING_MS && unitsSold7d === 0;
-    const tab = sellingTab(health, sold, stale);
+    // The same status fields `listingHealth` reads, so the two cannot diverge.
+    const status = String(listing.status || listing.approval_status || "");
+    const tab = sellingTab(status, health, sold, stale);
 
     return {
       id,
@@ -602,7 +650,16 @@ function unitsSoldByListing(
 
 /** Tab counts, so the tab bar and the list cannot disagree about what is where. */
 export function sellingTabCounts(items: readonly SellingItem[]): Record<SellingTabKey, number> {
-  const counts: Record<SellingTabKey, number> = { active: 0, sold: 0, drafts: 0, expired: 0 };
+  const counts: Record<SellingTabKey, number> = {
+    active: 0,
+    reserved: 0,
+    sold: 0,
+    drafts: 0,
+    pending_review: 0,
+    expired: 0,
+    removed: 0,
+    archived: 0
+  };
   items.forEach((item) => {
     counts[item.tab] += 1;
   });
@@ -781,3 +838,6 @@ export async function saveLastMarketplaceMode(mode: "selling" | "buying"): Promi
     // the wrong tab once, and there is nothing the user could do about it.
   }
 }
+
+/* City preference lives beside `marketplaceLocation` above — see
+   `loadMarketplaceCity` / `saveMarketplaceCity` / `clearMarketplaceCity`. */

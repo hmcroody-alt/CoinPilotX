@@ -12,6 +12,7 @@ import { LogiNexusBadge, LogiNexusButton, LogiNexusPanel, LogiNexusSignalIndicat
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone } from "../theme/logiNexus";
+import { createThemedStyles } from "../theme/themedStyles";
 import {
   AUDIENCE_OPTIONS,
   computeOverallReadiness,
@@ -383,7 +384,7 @@ function actionLabel(action: ReadinessAction): string {
   return "Retry";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   chip: {
     borderColor: colors.border,
     borderRadius: logiNexus.radius.capsule,
@@ -608,4 +609,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: logiNexus.spacing.md,
     paddingVertical: logiNexus.spacing.md
   }
-});
+}));

@@ -6,6 +6,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { PULSE_AI_CONVERSATION_ID, PULSE_AI_DISPLAY_NAME } from "../api/messenger";
 import { AppTabParamList, RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 export function PulseAiScreen({ route }: BottomTabScreenProps<AppTabParamList, "PulseAI">) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -29,11 +30,11 @@ export function PulseAiScreen({ route }: BottomTabScreenProps<AppTabParamList, "
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   redirect: {
     alignItems: "center",
     backgroundColor: colors.background,
     flex: 1,
     justifyContent: "center"
   }
-});
+}));

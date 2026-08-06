@@ -54,7 +54,9 @@ export function BusinessHubRoute({ route, navigation }: Props) {
     const { BusinessHubScreen } = require("./BusinessHubScreen") as typeof import("./BusinessHubScreen");
     return <BusinessHubScreen route={route} navigation={navigation} />;
   }
-  return <BusinessOsScreen navigation={navigation} />;
+  // `route` is forwarded so the wrong-subject guard inside BusinessOsScreen can
+  // see Profile OS params — dropping it here would silently re-open the bug.
+  return <BusinessOsScreen navigation={navigation} route={route} />;
 }
 
 export default BusinessHubRoute;

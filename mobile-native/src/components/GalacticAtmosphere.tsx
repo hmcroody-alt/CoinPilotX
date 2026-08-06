@@ -2,6 +2,7 @@ import * as Battery from "expo-battery";
 import { LinearGradient } from "expo-linear-gradient";
 import { memo, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, AppState, Easing, StyleSheet, View, ViewStyle } from "react-native";
+import { useTheme } from "../theme/ThemeContext";
 
 export type GalacticAtmosphereVariant = "feed" | "profile" | "messages" | "marketplace" | "business" | "advertising" | "music" | "live" | "undx";
 
@@ -37,6 +38,10 @@ const ACCENTS: Record<GalacticAtmosphereVariant, { a: string; b: string; planet:
  * Content-supporting space only: no foreground objects, sharp streaks, rapid
  * sparkles, or looping geometry. All motion is native-driven and pauses for
  * Reduce Motion, Low Power Mode, and inactive app state.
+ *
+ * The active theme's `galacticBackground` profile governs everything global:
+ * White renders nothing, Black dims the whole layer, light themes swap the
+ * space gradient for a bright haze so the atmosphere never fights legibility.
  */
 export const GalacticAtmosphere = memo(function GalacticAtmosphere({
   variant = "feed",
@@ -44,6 +49,7 @@ export const GalacticAtmosphere = memo(function GalacticAtmosphere({
   scrollY,
   testID = "galactic-atmosphere"
 }: Props) {
+  const profile = useTheme().galacticBackground;
   const [lowPower, setLowPower] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [foreground, setForeground] = useState(AppState.currentState === "active");
@@ -81,12 +87,24 @@ export const GalacticAtmosphere = memo(function GalacticAtmosphere({
   }, [breathe, drift, foreground, lowPower, reduceMotion]);
 
   const parallax = scrollY?.interpolate({ inputRange: [0, 1200], outputRange: [0, 24], extrapolate: "clamp" }) || 0;
+  if (!profile.enabled) return null;
+  const light = profile.variant === "light";
   return (
-    <View testID={testID} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.root, style]}>
-      <LinearGradient colors={["#02050A", "#040A14", "#06101C"]} locations={[0, 0.48, 1]} style={StyleSheet.absoluteFill} />
+    <View
+      testID={testID}
+      pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[styles.root, { opacity: profile.intensity }, style]}
+    >
+      <LinearGradient
+        colors={light ? ["#eef4fb", "#e9f1fa", "#e3edf9"] : ["#02050A", "#040A14", "#06101C"]}
+        locations={[0, 0.48, 1]}
+        style={StyleSheet.absoluteFill}
+      />
       <Animated.View style={[styles.depth, { transform: [{ translateY: parallax }] }]}>
         {STARS.map(([left, top, size, opacity], index) => (
-          <Animated.View key={`${left}-${top}`} style={[styles.star, { left: `${left}%`, top: `${top}%`, width: size, height: size, borderRadius: size, opacity: index % 11 === 0 ? breathe.interpolate({ inputRange: [0, 1], outputRange: [opacity * 0.65, opacity] }) : opacity }]} />
+          <Animated.View key={`${left}-${top}`} style={[styles.star, light && styles.starLight, { left: `${left}%`, top: `${top}%`, width: size, height: size, borderRadius: size, opacity: index % 11 === 0 ? breathe.interpolate({ inputRange: [0, 1], outputRange: [opacity * 0.65, opacity] }) : opacity }]} />
         ))}
         <Animated.View style={[styles.nebula, styles.nebulaA, { backgroundColor: accents.a, opacity: breathe.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.8] }), transform: [{ translateX: drift.interpolate({ inputRange: [0, 1], outputRange: [-8, 12] }) }, { scale: breathe.interpolate({ inputRange: [0, 1], outputRange: [0.98, 1.025] }) }] }]} />
         <Animated.View style={[styles.nebula, styles.nebulaB, { backgroundColor: accents.b, transform: [{ translateY: drift.interpolate({ inputRange: [0, 1], outputRange: [6, -10] }) }, { scale: breathe.interpolate({ inputRange: [0, 1], outputRange: [1.02, 0.985] }) }] }]} />
@@ -94,7 +112,10 @@ export const GalacticAtmosphere = memo(function GalacticAtmosphere({
         <View style={styles.galaxy} />
         <View style={styles.dustA} /><View style={styles.dustB} /><View style={styles.dustC} />
       </Animated.View>
-      <LinearGradient colors={["rgba(4,10,18,0.02)", "rgba(4,10,18,0.13)"]} style={StyleSheet.absoluteFill} />
+      <LinearGradient
+        colors={light ? ["rgba(255,255,255,0)", "rgba(226,236,248,0.35)"] : ["rgba(4,10,18,0.02)", "rgba(4,10,18,0.13)"]}
+        style={StyleSheet.absoluteFill}
+      />
     </View>
   );
 });
@@ -103,6 +124,7 @@ const styles = StyleSheet.create({
   root: { ...StyleSheet.absoluteFillObject, overflow: "hidden" },
   depth: { ...StyleSheet.absoluteFillObject },
   star: { position: "absolute", backgroundColor: "#CDEBFA" },
+  starLight: { backgroundColor: "#5a7d9c" },
   nebula: { position: "absolute", borderRadius: 999 },
   nebulaA: { height: 430, left: -230, top: "8%", width: 520 },
   nebulaB: { bottom: "4%", height: 520, right: -310, width: 600 },

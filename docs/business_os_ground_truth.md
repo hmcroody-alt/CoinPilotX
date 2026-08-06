@@ -33,14 +33,16 @@ The commerce split is not an isolated case. At least seven completed pieces of e
 | `EXPO_PUBLIC_MESSAGES_COMMERCE_SPLIT` | Commerce/social inbox rail split | `commerceInbox.ts:575` |
 | `EXPO_PUBLIC_STORE_READINESS` | Real store-readiness ladder + checklist | `storeDashboard.ts:469` |
 | `EXPO_PUBLIC_ADS_POST_MODE` | Honest ad post mode instead of mock promotions | `adsDashboard.ts:63` |
-| `EXPO_PUBLIC_ACCOUNT_NAME_FIRST` | Business name before internal account id | `adsDashboard.ts:205` |
+| ~~`EXPO_PUBLIC_ACCOUNT_NAME_FIRST`~~ | Business name before internal account id | **deleted — now unconditional** |
 | `EXPO_PUBLIC_INSIGHTS_ERROR_CAUSES` | Insights failure taxonomy | `insightsDashboard.ts:545` |
-| `EXPO_PUBLIC_STATE_LANGUAGE` | Unified state/absence vocabulary | `stateLanguage.ts:47` |
+| ~~`EXPO_PUBLIC_STATE_LANGUAGE`~~ | Unified state/absence vocabulary | **deleted — now unconditional** |
 | `EXPO_PUBLIC_MARKETPLACE_LOCATION_HONESTY` | Truthful location labelling | `marketplaceScreen.ts:149` |
 
 `mobile-native/src/core/envFlag.ts:29-33` states the posture explicitly: an unset variable resolves to false, "which is what keeps every gate off in a default build." `docs/business_os/FLAG_REGISTRY.md` is the inventory and confirms it.
 
-The practical consequence is that an audit conducted by looking at the running app will report these seven features as missing, will be correct about what is on screen, and will be wrong about what needs to be written. Anyone planning the next phase should first decide which of these seven to enable, then re-screenshot, then plan — in that order. Doing it the other way round produces a plan to rebuild things that already exist.
+The practical consequence is that an audit conducted by looking at the running app will report these features as missing, will be correct about what is on screen, and will be wrong about what needs to be written. Anyone planning the next phase should first decide which to enable, then re-screenshot, then plan — in that order. Doing it the other way round produces a plan to rebuild things that already exist.
+
+**Two of the seven have since been resolved, by deleting the flag rather than setting it.** Phase 1 of the Advertising OS mission removed `EXPO_PUBLIC_ACCOUNT_NAME_FIRST` and `EXPO_PUBLIC_STATE_LANGUAGE`; both corrections are now what every build renders. The reasoning generalises to the five that remain: the value of a flag is the ability to turn a thing off, and nobody wanted the em dash or the exposed account id turned on. Keeping the switch only preserved the possibility of shipping the defect, which is exactly what happened for the life of both flags.
 
 ## The four money bugs
 
@@ -118,13 +120,15 @@ The duplicate Payments navigation shell, the duplicate Payments error state, the
 
 The advertising hierarchy is described as missing. It is built and unreachable, which is a different problem with a different fix. `services/business_os/advertising/schema.py:102`, `:233` and `:282` define `business_os_ad_campaigns`, `business_os_ad_sets` and `business_os_ad_creatives` — a real three-level hierarchy. Searching `mobile-native/src` for any reference to ad sets or creatives returns nothing outside unrelated code. The mobile app ships `api/ads.ts` and `api/adsDashboard.ts` and neither reaches the ad-set or creative layer. The work is a client surface over an existing backend, not a schema design.
 
-The "Ad account 8" defect is real and is at `mobile-native/src/screens/AdsManagerScreen.tsx:352`, which renders `{account.business_name || "Ad account"} · Ad account {account.id}`. `EXPO_PUBLIC_ACCOUNT_NAME_FIRST` addresses it and is off.
+The "Ad account 8" defect was real and is now **fixed**. `AdsManagerScreen` used to render `{account.business_name || "Ad account"} · Ad account {account.id}`, making a database primary key the most prominent text in the row. `EXPO_PUBLIC_ACCOUNT_NAME_FIRST` addressed it and was off, so the defect shipped anyway. Phase 1 of the Advertising OS mission deleted the flag and made the correction unconditional: the row is now two lines — the business name, then `adAccountStanding()`'s standing line, which is one of `"Advertising account · Active"`, `"· Verification pending"`, `"· Restricted"` or `"· Not configured"`. The account number moved to the account details sub-page, where it belongs and where a seller can read it out to support. `adAccountStanding()` returns line and tone from a single switch so the status dot cannot contradict the words next to it, and a test asserts that no status can put a digit in that line.
 
 ## What should happen first
 
 Not the commerce inbox. That is done and needs a flag flipped.
 
-The ordering that follows from the evidence is: fix the four money bugs, because they are silent, they are in production, and three of the four lose real money rather than merely displaying it wrong. Then wire Store to the entitlements and seller-lifecycle services that already exist, because the authorization hole is one call site wide. Then decide the flag posture for the seven gated features and re-baseline the UI audit against a build with them on, because every screenshot-derived finding is unreliable until that happens. Then build the unified entity graph, which is the largest genuinely-absent item and the prerequisite for the end-to-end chain the mission document wants. Then the ad-set and creative client surface.
+The ordering that follows from the evidence is: fix the four money bugs, because they are silent, they are in production, and three of the four lose real money rather than merely displaying it wrong. Then wire Store to the entitlements and seller-lifecycle services that already exist, because the authorization hole is one call site wide. Then decide the flag posture for the gated features and re-baseline the UI audit against a build with them on, because every screenshot-derived finding is unreliable until that happens. Then build the unified entity graph, which is the largest genuinely-absent item and the prerequisite for the end-to-end chain the mission document wants. Then the ad-set and creative client surface.
+
+On the third of those: for two of the seven the decision has been taken and the answer was neither "on" nor "off" but "delete the switch". Where a flag guards a surface the backend cannot serve — the Payments six, the Orders pair, `ADS_POST_MODE` — off is correct and stays correct until an endpoint exists. Where it guards a correction to something already on screen, the flag is not protecting anyone; it is preserving the ability to ship the defect, and that ability was exercised for the whole life of both flags that have now gone. The five that remain should be sorted into those two piles before anything else is planned around them.
 
 ## Confidence
 

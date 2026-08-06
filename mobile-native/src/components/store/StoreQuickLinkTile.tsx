@@ -67,6 +67,14 @@ export type StoreQuickLinkTileProps = {
   subtitle: string;
   onPress?: () => void;
   disabled?: boolean;
+  /**
+   * A tile that reports a state rather than gating a feature. "Not enough
+   * completed sales yet" is information about the seller's own record, not a
+   * locked door — so it renders at full opacity, with no lock icon, and is
+   * announced as text rather than as an unavailable button. Only meaningful
+   * on tiles without an `onPress`.
+   */
+  informational?: boolean;
   reducedMotion: boolean;
 };
 
@@ -76,6 +84,7 @@ export function StoreQuickLinkTile({
   subtitle,
   onPress,
   disabled = false,
+  informational = false,
   reducedMotion
 }: StoreQuickLinkTileProps) {
   const press = useStorePress(reducedMotion, 0.97);
@@ -92,7 +101,8 @@ export function StoreQuickLinkTile({
    * the touch behaviour disagreeing — which is the same class of defect as the
    * layout one this component exists to close.
    */
-  const unavailable = disabled || !onPress;
+  const info = informational && !onPress && !disabled;
+  const unavailable = !info && (disabled || !onPress);
 
   return (
     <Animated.View style={[styles.wrap, press.style]}>
@@ -101,9 +111,9 @@ export function StoreQuickLinkTile({
         onPress={onPress}
         onPressIn={press.onPressIn}
         onPressOut={press.onPressOut}
-        disabled={unavailable}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: unavailable }}
+        disabled={unavailable || info}
+        accessibilityRole={info ? "text" : "button"}
+        accessibilityState={info ? undefined : { disabled: unavailable }}
         accessibilityLabel={
           unavailable ? `${label}. Unavailable. ${subtitle}` : `${label}. ${subtitle}`
         }
@@ -136,14 +146,17 @@ export function StoreQuickLinkTile({
         {/* An unavailable tile says so with a shape, not only with grey. Reduced
             opacity on truncated text is indistinguishable from a rendering
             fault, and it is invisible to anyone who cannot perceive the
-            contrast difference. */}
-        <Ionicons
-          name={unavailable ? "lock-closed-outline" : "chevron-forward"}
-          size={16}
-          color={storeLight.text.muted}
-          accessibilityElementsHidden
-          importantForAccessibility="no"
-        />
+            contrast difference. An informational tile gets neither symbol —
+            there is no destination to promise and nothing locked to signal. */}
+        {info ? null : (
+          <Ionicons
+            name={unavailable ? "lock-closed-outline" : "chevron-forward"}
+            size={16}
+            color={storeLight.text.muted}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          />
+        )}
       </Pressable>
     </Animated.View>
   );

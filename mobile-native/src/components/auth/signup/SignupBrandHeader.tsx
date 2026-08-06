@@ -4,6 +4,7 @@ import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from "reac
 import { colors } from "../../../theme/colors";
 import { logiNexus } from "../../../theme/logiNexus";
 import { useLogiNexusReducedMotion } from "../../../theme/logiNexusMotion";
+import { createThemedStyles } from "../../../theme/themedStyles";
 
 // Same official brand asset the login screen uses (transparent, no image
 // boundary). Documented path: src/assets/brand/pulsesoc-mark.png.
@@ -98,7 +99,7 @@ export function SignupBrandHeader({ onBack }: { onBack?: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     alignItems: "center"
   },
@@ -156,4 +157,4 @@ const styles = StyleSheet.create({
     marginTop: logiNexus.spacing.xs,
     textTransform: "uppercase"
   }
-});
+}));

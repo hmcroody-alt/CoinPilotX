@@ -68,6 +68,7 @@ import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { useAuth } from "../session/auth";
 import { sharePulseObject } from "../sharing/nativeShare";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Reels"> | NativeStackScreenProps<RootStackParamList, "ReelDetail">;
 
@@ -1034,7 +1035,7 @@ function ReelsRecovery({ state, loading, onRetry, onAuthenticate, onExplore }: {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   center: {
     alignItems: "center",
     backgroundColor: colors.background,
@@ -1234,4 +1235,4 @@ const styles = StyleSheet.create({
     zIndex: 30
   },
   actionPillText: { color: colors.text, fontSize: 13, fontWeight: "700", textAlign: "center" }
-});
+}));

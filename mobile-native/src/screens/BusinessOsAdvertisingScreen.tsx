@@ -48,20 +48,30 @@ import {
   availableAdCampaignActions,
   campaignBlockedByVerification,
   campaignPhase,
-  campaignPhaseLabel,
-  campaignPhaseTone,
   loadAdsMarketplace,
   loadMockPostPromotions,
   loadMockSuggestion,
   promotionPhaseLabel,
   promotionPhaseTone
 } from "../api/adsDashboard";
+// No `attributionNote` here. This screen renders the card without a metric
+// strip, and the note is a statement about what the strip does not measure —
+// on its own it would be an unprompted disclaimer about numbers that aren't on
+// the page. `CampaignCard` enforces the same pairing.
+import {
+  deliveryState,
+  deliveryStateDetail,
+  deliveryStateLabel,
+  deliveryStateTone
+} from "../api/adsDelivery";
 import {
   AdsHeader,
   CampaignCard,
   CampaignCardAction,
   CampaignCardBudget,
   PromotedPostCard,
+  ACCOUNT_SPEND_TITLE,
+  SEVEN_DAY_SPEND_TITLE,
   SpendBarChart,
   SuggestionCard
 } from "../components/ads";
@@ -293,12 +303,16 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
   /* ----------------------------- Marketplace ---------------------------- */
 
   const dayLabels = useMemo(() => lastSevenDayLabels(), []);
+  // Same rule as the manager screen: the card may only name a window its data
+  // actually covers. `windowed` is false while the analytics endpoint takes no
+  // date range, so this reports a to-date total under a to-date heading.
   const spend = model?.spend;
   const spendEmpty = !spend || spend.daysCents.length === 0;
+  const spendWindowed = Boolean(spend?.windowed) && !spendEmpty;
   const spendTotalLabel = formatCents(spend?.totalCents || 0);
-  const spendSummary = spendEmpty
-    ? `Spend, last 7 days. ${spendTotalLabel} total to date. A day-by-day view is not available yet.`
-    : `Spend, last 7 days: ${spendTotalLabel} total. Preview distribution of the real total.`;
+  const spendSummary = spendWindowed
+    ? `Spend, last 7 days: ${spendTotalLabel} total in that period.`
+    : `Account spend. ${spendTotalLabel} total to date. A day-by-day view is not available yet.`;
 
   const marketplaceBody = (
     <View style={styles.stack}>
@@ -334,6 +348,7 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
 
       {model?.primaryAccount ? (
         <SpendBarChart
+          title={spendWindowed ? SEVEN_DAY_SPEND_TITLE : ACCOUNT_SPEND_TITLE}
           values={spend?.daysCents || []}
           dayLabels={dayLabels}
           summary={spendSummary}
@@ -392,7 +407,15 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
 
       {!loading && model && model.campaigns.length
         ? model.campaigns.map((campaign) => {
+            // Two derivations, deliberately. `phase` is the lifecycle, and it is
+            // what the switch keys on — whether a campaign is pausable is a
+            // question about its status. The pill asks a different question,
+            // "is this reaching anyone", and `campaignPhaseLabel` answered it by
+            // mapping `status === 'active'` straight to "Delivering". That is
+            // one of the eight conditions `select_ads` requires (§31), so the
+            // pill now reads `deliveryState` and carries the reason underneath.
             const phase = campaignPhase(campaign);
+            const delivery = deliveryState(model.portal ?? null, campaign);
             const blocked = campaignBlockedByVerification(campaign, model.primaryAccount || undefined);
             const actions: CampaignCardAction[] = availableAdCampaignActions(campaign)
               .filter((a) => a !== "pause" && a !== "resume")
@@ -407,9 +430,10 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
                 name={adCampaignDisplay(campaign).name}
                 reference={adCampaignDisplay(campaign).reference}
                 objectiveLabel={formatObjective(campaign.objective)}
-                phase={phase}
-                phaseLabel={campaignPhaseLabel(phase)}
-                phaseTone={campaignPhaseTone(phase)}
+                phase={delivery}
+                phaseLabel={deliveryStateLabel(delivery)}
+                phaseTone={deliveryStateTone(delivery)}
+                phaseDetail={deliveryStateDetail(model.portal ?? null, campaign)}
                 budget={deriveCampaignBudget(campaign)}
                 showSwitch={phase === "delivering" || phase === "paused"}
                 delivering={phase === "delivering"}

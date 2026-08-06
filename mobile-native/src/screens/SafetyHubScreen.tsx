@@ -14,7 +14,10 @@ import {
 } from "../api/safety";
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
+import { PRIVATE_CONTENT_MESSAGE, resolveRouteProfileContext } from "../profile/profileContext";
+import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SafetyHub"> | NativeStackScreenProps<RootStackParamList, "SafetyWebHub">;
 type SafetyTab = "overview" | "blocks" | "mutes" | "reports";
@@ -23,6 +26,11 @@ const reportTypes = ["user", "post", "reel", "message", "marketplace", "status"]
 const muteDurations = ["1 hour", "8 hours", "24 hours", "7 days", "until changed"];
 
 export function SafetyHubScreen({ navigation, route }: Props) {
+  const { authState } = useAuth();
+  // Wrong-subject guard: blocks, mutes and reports are the signed-in viewer's
+  // safety state. On another profile's route params this screen refuses rather
+  // than showing the viewer's private safety data under that person's name.
+  const routeContext = resolveRouteProfileContext(route?.params, authState.user?.user_id);
   const initialSection = route.params?.section;
   const [state, setState] = useState<SafetyState | null>(null);
   const [tab, setTab] = useState<SafetyTab>(initialSection === "blocks" || initialSection === "mutes" || initialSection === "reports" ? initialSection : "overview");
@@ -66,8 +74,10 @@ export function SafetyHubScreen({ navigation, route }: Props) {
   }, [navigation]);
 
   useEffect(() => {
+    // Owner-only fetch: skip entirely on a visitor route (no fetch-then-hide).
+    if (!routeContext.isOwnProfile) return;
     load("initial").catch(() => undefined);
-  }, [load]);
+  }, [load, routeContext.isOwnProfile]);
 
   async function submitBlock() {
     if (!blockHandle.trim()) {
@@ -147,6 +157,16 @@ export function SafetyHubScreen({ navigation, route }: Props) {
     } finally {
       setBusy("");
     }
+  }
+
+  // Visitor destination with no visitor variant: refuse rather than render the
+  // viewer's safety state. All hooks have already run, so order is stable.
+  if (!routeContext.isOwnProfile) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.centerText}>{PRIVATE_CONTENT_MESSAGE}</Text>
+      </View>
+    );
   }
 
   if (loading && !state) {
@@ -443,7 +463,7 @@ function Metric({ label, value, tone }: { label: string; value: number; tone: "o
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
@@ -682,4 +702,4 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "900"
   }
-});
+}));

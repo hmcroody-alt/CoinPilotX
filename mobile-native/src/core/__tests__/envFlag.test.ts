@@ -38,7 +38,7 @@ import {
   eventsLiveStatsEnabled,
   eventsMockEnabled
 } from "../../api/eventsManager";
-import { accountNameFirstEnabled, adsPostModeEnabled } from "../../api/adsDashboard";
+import { adsPostModeEnabled } from "../../api/adsDashboard";
 import { ordersEscrowIsLive, ordersFulfillmentIsLive } from "../../api/ordersDashboard";
 import {
   adTopUpIsLive,
@@ -49,7 +49,6 @@ import {
   taxDocumentsAreLive
 } from "../../api/paymentsHub";
 import { storeReadinessEnabled } from "../../api/storeDashboard";
-import { stateLanguageEnabled } from "../../api/stateLanguage";
 import { insightsErrorCausesEnabled } from "../../api/insightsDashboard";
 import { scopedBadgesEnabled } from "../unreadCounts";
 import type { AdBilling } from "../../api/businessOs";
@@ -78,7 +77,6 @@ const ACCESSORS: Array<[string, () => boolean]> = [
   ["EXPO_PUBLIC_EVENTS_ATTRIBUTION", eventAttributionEnabled],
   ["EXPO_PUBLIC_EVENTS_MOCK", eventsMockEnabled],
   ["EXPO_PUBLIC_ADS_POST_MODE", adsPostModeEnabled],
-  ["EXPO_PUBLIC_ACCOUNT_NAME_FIRST", accountNameFirstEnabled],
   ["EXPO_PUBLIC_ORDERS_ESCROW", ordersEscrowIsLive],
   ["EXPO_PUBLIC_ORDERS_FULFILLMENT", ordersFulfillmentIsLive],
   ["EXPO_PUBLIC_PAYMENTS_PAYOUT_INITIATION", payoutInitiationIsLive],
@@ -88,7 +86,6 @@ const ACCESSORS: Array<[string, () => boolean]> = [
   ["EXPO_PUBLIC_PAYMENTS_ESCROW", escrowCardIsLive],
   ["EXPO_PUBLIC_PAYMENTS_AD_TOPUP", () => adTopUpIsLive(FUNDING_LIVE)],
   ["EXPO_PUBLIC_STORE_READINESS", storeReadinessEnabled],
-  ["EXPO_PUBLIC_STATE_LANGUAGE", stateLanguageEnabled],
   ["EXPO_PUBLIC_INSIGHTS_ERROR_CAUSES", insightsErrorCausesEnabled],
   ["EXPO_PUBLIC_SCOPED_BADGES", scopedBadgesEnabled]
 ];
@@ -153,7 +150,11 @@ describe("every flag accessor agrees on what 'on' means", () => {
     // If this number is wrong, either a flag was added without a row above or a
     // flag was deleted and its row left behind. Both are the drift this file
     // exists to catch.
-    expect(ACCESSORS).toHaveLength(23);
+    // 23 before `EXPO_PUBLIC_ACCOUNT_NAME_FIRST` and `EXPO_PUBLIC_STATE_LANGUAGE`
+    // were deleted. Both defaulted off, and both guarded a correction that was
+    // therefore never what anyone saw — the account identity row, and the state
+    // vocabulary that replaces the em dash. Neither has anything left to switch.
+    expect(ACCESSORS).toHaveLength(21);
     expect(new Set(ACCESSORS.map(([name]) => name)).size).toBe(ACCESSORS.length);
   });
 });
@@ -285,6 +286,13 @@ describe("nothing reads a boolean flag on its own terms any more", () => {
           if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) return;
           for (const match of line.matchAll(/process\.env\.(EXPO_PUBLIC_[A-Z0-9_]+)/g)) {
             if (NON_BOOLEAN_VARS.includes(match[1])) continue;
+            // Handing the raw value straight to the shared reader keeps the one
+            // rule. What this rejects is a *reinvented* rule, not the static
+            // spelling: Expo's babel plugin only inlines process.env.X when the
+            // key is a literal, so a flag that must survive a release bundle has
+            // no other way to be read. envFlagOn's computed lookup is fine in
+            // development and dead on device.
+            if (/isFlagValueOn\(\s*process\.env\./.test(line)) continue;
             offenders.push(`${rel}:${index + 1} reads ${match[1]} directly`);
           }
           // `process.env[SOME_FLAG]` — the indexed form the old parsers used.

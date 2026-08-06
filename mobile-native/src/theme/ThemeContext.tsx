@@ -10,31 +10,49 @@
  *     when the user changes theme, contrast, or density.
  *
  *  2. Publishes the active palette back into the shared `colors` object via
- *     `applyPaletteToLegacyColors`, then bumps `themeEpoch`. `AppRoot` keys the
- *     navigation tree on that epoch, so legacy screens that captured colors in
- *     a module-scope `StyleSheet.create` are remounted with the new values.
+ *     `applyPaletteToLegacyColors`, so legacy code that reads `colors.x` at
+ *     render time observes the new values on its next render. Screens that
+ *     captured colors in a module-scope `StyleSheet.create` do NOT follow a
+ *     change (module scope runs once); they must migrate to
+ *     `useThemedStyles`, which is the ongoing per-screen migration.
  *
- * (2) is a deliberate migration bridge, not the end state — as screens migrate
- * to `useTheme()` they stop depending on the remount and the epoch key becomes
- * a no-op for them.
+ * (2) is a deliberate migration bridge, not the end state.
  */
 
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Appearance, ColorSchemeName, Platform, Text, TextInput } from "react-native";
 import { colors as legacyColors } from "./colors";
+import { bumpThemedStylesEpoch } from "./themedStyles";
 import type { AppearancePreferences, AccessibilityPreferences, ThemeMode } from "../settings/schema";
 
 export type Palette = typeof legacyColors;
 
-/** Resolved dark palette — the app's canonical look. */
+/** Resolved dark palette — the app's canonical look and the default theme. */
 const DARK: Palette = { ...legacyColors };
 
 /**
- * Light palette. Derived to preserve PulseSoc's semantic roles (accent stays
- * the signal green, danger stays rose) while inverting the surface ramp and
- * darkening accents enough to pass 4.5:1 against light surfaces.
+ * Black: the AMOLED variant of dark. True-black background, near-black
+ * surfaces so cards still read as cards, and the dark accents unchanged —
+ * they were tuned against near-black already. Glass goes fully opaque because
+ * translucency over pure black just looks like banding.
  */
-const LIGHT: Palette = {
+const BLACK: Palette = {
+  ...legacyColors,
+  background: "#000000",
+  surface: "#070a0d",
+  surfaceRaised: "#10161c",
+  border: "#1b2b36",
+  glass: "rgba(5, 8, 10, 0.92)",
+  glassStrong: "rgba(3, 5, 7, 0.97)"
+};
+
+/**
+ * Light Futuristic — the original light theme (glassy, tinted surfaces).
+ * Derived to preserve PulseSoc's semantic roles (accent stays the signal
+ * green, danger stays rose) while inverting the surface ramp and darkening
+ * accents enough to pass 4.5:1 against light surfaces.
+ */
+const LIGHT_FUTURISTIC: Palette = {
   background: "#f6f8fb",
   surface: "#ffffff",
   surfaceRaised: "#eef2f7",
@@ -58,6 +76,23 @@ const LIGHT: Palette = {
   signalSoft: "rgba(0, 113, 166, 0.10)",
   dangerSoft: "rgba(192, 35, 65, 0.10)",
   warningSoft: "rgba(160, 106, 0, 0.10)"
+};
+
+/**
+ * White: plain neutral light. Same accessible light accents as Light
+ * Futuristic, but the tinted blue-gray surface ramp flattens to plain white
+ * and neutral grays, and glass is simply opaque white — no atmosphere.
+ */
+const WHITE: Palette = {
+  ...LIGHT_FUTURISTIC,
+  background: "#ffffff",
+  surface: "#ffffff",
+  surfaceRaised: "#f4f5f6",
+  text: "#111417",
+  muted: "#5d6670",
+  border: "#dde1e5",
+  glass: "#ffffff",
+  glassStrong: "#fafafa"
 };
 
 /** High-contrast overrides: maximize text/border separation, drop translucency. */
@@ -98,12 +133,35 @@ export type Metrics = {
   titleWeight: "700" | "800" | "900";
 };
 
+/**
+ * How the galactic background layers should render under this theme. The
+ * profile lives on the theme (not on each screen) so all atmosphere surfaces
+ * agree: `intensity` scales opacity, and `enabled: false` means render nothing
+ * at all — White is deliberately atmosphere-free. Content always sits above;
+ * this only describes the layer underneath, and components must still honour
+ * Reduce Motion for any animation of it.
+ */
+export type GalacticBackgroundProfile = {
+  enabled: boolean;
+  /** 0..1 opacity multiplier for star/nebula layers. */
+  intensity: number;
+  variant: "dark" | "light";
+};
+
 export type Theme = {
   mode: ThemeMode;
   /** The scheme actually in effect after resolving `system`. */
   scheme: "light" | "dark";
   colors: Palette;
   metrics: Metrics;
+  /**
+   * System chrome derived from the scheme: dark/black themes get light
+   * status-bar content and a dark keyboard; light themes the reverse.
+   * Values match `expo-status-bar`'s `style` and RN's `keyboardAppearance`.
+   */
+  statusBarStyle: "light" | "dark";
+  keyboardAppearance: "light" | "dark";
+  galacticBackground: GalacticBackgroundProfile;
   /** True when animations should be skipped or shortened. */
   reduceMotion: boolean;
   /** True when blur/translucency should be replaced with opaque fills. */
@@ -116,9 +174,34 @@ export type Theme = {
 };
 
 function resolveScheme(mode: ThemeMode, system: ColorSchemeName): "light" | "dark" {
-  if (mode === "light") return "light";
-  if (mode === "dark") return "dark";
+  if (mode === "light_futuristic" || mode === "white") return "light";
+  if (mode === "dark" || mode === "black") return "dark";
   return system === "light" ? "light" : "dark";
+}
+
+/** The concrete palette for a mode, after `system` has been resolved. */
+function paletteFor(mode: ThemeMode, scheme: "light" | "dark"): Palette {
+  if (mode === "black") return BLACK;
+  if (mode === "white") return WHITE;
+  if (mode === "light_futuristic") return LIGHT_FUTURISTIC;
+  if (mode === "dark") return DARK;
+  // `system`: follow the OS scheme with the two canonical palettes.
+  return scheme === "light" ? LIGHT_FUTURISTIC : DARK;
+}
+
+/**
+ * Atmosphere per theme. Dark keeps the full galactic treatment; Black dims it
+ * (stars over true black bloom on OLED); Light Futuristic gets a faint light
+ * variant; White gets none — that theme's promise is a plain page.
+ */
+function galacticProfileFor(mode: ThemeMode, scheme: "light" | "dark"): GalacticBackgroundProfile {
+  if (mode === "white") return { enabled: false, intensity: 0, variant: "light" };
+  if (mode === "black") return { enabled: true, intensity: 0.55, variant: "dark" };
+  if (mode === "light_futuristic") return { enabled: true, intensity: 0.35, variant: "light" };
+  if (mode === "dark") return { enabled: true, intensity: 1, variant: "dark" };
+  return scheme === "light"
+    ? { enabled: true, intensity: 0.35, variant: "light" }
+    : { enabled: true, intensity: 1, variant: "dark" };
 }
 
 export function buildTheme(
@@ -127,7 +210,7 @@ export function buildTheme(
   systemScheme: ColorSchemeName
 ): Theme {
   const scheme = resolveScheme(appearance.theme, systemScheme);
-  const base = scheme === "light" ? LIGHT : DARK;
+  const base = paletteFor(appearance.theme, scheme);
   const contrast = accessibility.highContrast ? (scheme === "light" ? HIGH_CONTRAST_LIGHT : HIGH_CONTRAST_DARK) : null;
   const palette: Palette = contrast ? { ...base, ...contrast } : { ...base };
 
@@ -143,6 +226,9 @@ export function buildTheme(
     mode: appearance.theme,
     scheme,
     colors: palette,
+    statusBarStyle: scheme === "dark" ? "light" : "dark",
+    keyboardAppearance: scheme === "dark" ? "dark" : "light",
+    galacticBackground: galacticProfileFor(appearance.theme, scheme),
     metrics: {
       rowMinHeight: Math.round((compact ? 46 : 56) * Math.max(1, fontScale)),
       rowPaddingVertical: compact ? 8 : 12,
@@ -170,6 +256,9 @@ export function applyPaletteToLegacyColors(palette: Palette) {
   (Object.keys(palette) as (keyof Palette)[]).forEach((key) => {
     legacyColors[key] = palette[key];
   });
+  // Invalidate every `createThemedStyles` sheet so legacy module-scope styles
+  // rebuild from the new palette on their next property access.
+  bumpThemedStylesEpoch();
 }
 
 /**
@@ -222,9 +311,21 @@ export function ThemeProvider({
     [appearance, accessibility, systemScheme]
   );
 
+  // Publish synchronously (render phase) so the very first frame of legacy
+  // screens builds from the active palette instead of flashing default dark.
+  // The mutation is idempotent and confined to the shared bridge object.
+  useMemo(() => applyPaletteToLegacyColors(theme.colors), [theme.colors]);
+
   useEffect(() => {
     applyPaletteToLegacyColors(theme.colors);
-  }, [theme.colors]);
+    // Global keyboard chrome. RN resolves `keyboardAppearance` per TextInput
+    // and most inputs in the app never set it, so the default is the one lever
+    // that reaches all of them: dark keyboards on Dark/Black, light keyboards
+    // on Light Futuristic/White. An input that sets its own value still wins.
+    const input = TextInput as unknown as { defaultProps?: Record<string, unknown> };
+    if (!input.defaultProps) input.defaultProps = {};
+    input.defaultProps.keyboardAppearance = theme.keyboardAppearance;
+  }, [theme.colors, theme.keyboardAppearance]);
 
   return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
 }
@@ -256,13 +357,17 @@ export function useTheme(): Theme {
 }
 
 /**
- * Bump-able identity for the active visual configuration. `AppRoot` uses this
- * as a React `key` so legacy module-scope StyleSheets are rebuilt on change.
+ * Bump-able identity for the active visual configuration. Screens that want a
+ * local remount on theme change can use this as a React `key` — but never on
+ * NavigationContainer, which would reset navigation state.
  */
 export function useThemeEpoch(theme: Theme): string {
-  return `${theme.scheme}:${theme.metrics.fontScale}:${theme.reduceTransparency ? 1 : 0}:${theme.metrics.bodyWeight}:${
-    theme.metrics.rowMinHeight
-  }`;
+  // `mode` (not just scheme) must be part of the identity: dark → black keeps
+  // scheme "dark" but changes every surface color, and legacy screens only
+  // observe that through the remount this key forces.
+  return `${theme.mode}:${theme.scheme}:${theme.metrics.fontScale}:${theme.reduceTransparency ? 1 : 0}:${
+    theme.metrics.bodyWeight
+  }:${theme.metrics.rowMinHeight}`;
 }
 
 /** Convenience for memoizing StyleSheet factories against the active theme. */
@@ -271,4 +376,14 @@ export function useThemedStyles<T>(factory: (theme: Theme) => T): T {
   return useMemo(() => factory(theme), [factory, theme]);
 }
 
-export const __testing = { LIGHT, DARK, HIGH_CONTRAST_DARK, HIGH_CONTRAST_LIGHT, resolveScheme };
+export const __testing = {
+  LIGHT_FUTURISTIC,
+  DARK,
+  BLACK,
+  WHITE,
+  HIGH_CONTRAST_DARK,
+  HIGH_CONTRAST_LIGHT,
+  resolveScheme,
+  paletteFor,
+  galacticProfileFor
+};

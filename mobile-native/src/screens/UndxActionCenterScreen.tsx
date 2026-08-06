@@ -13,6 +13,7 @@ import {
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "UndxActionCenter">;
 type AnyRecord = Record<string, unknown>;
@@ -336,7 +337,7 @@ function formatExpiry(value: unknown) {
   });
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     backgroundColor: colors.background,
     flex: 1
@@ -607,4 +608,4 @@ const styles = StyleSheet.create({
     color: colors.text,
     textAlign: "center"
   }
-});
+}));

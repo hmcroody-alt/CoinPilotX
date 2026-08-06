@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../../theme/colors";
+import { createThemedStyles } from "../../theme/themedStyles";
 
 export function AuthStatusFooter({ biometricProtected: _biometricProtected }: { biometricProtected: boolean }) {
   const items = ["Secure", "Private", "Protected"];
@@ -13,7 +14,7 @@ export function AuthStatusFooter({ biometricProtected: _biometricProtected }: { 
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     alignItems: "center",
     flexDirection: "row",
@@ -28,4 +29,4 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.4
   }
-});
+}));

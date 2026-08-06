@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -68,15 +69,10 @@ class GoogleAdvancedProvider:
     def _authorization(self) -> tuple[dict[str, str], dict[str, str]]:
         if self.config.credentials_json:
             try:
-                from google.auth.transport.requests import Request
-                from google.oauth2 import service_account
-
-                info = json.loads(self.config.credentials_json)
-                credentials = service_account.Credentials.from_service_account_info(
-                    info, scopes=[self._scope]
-                )
-                credentials.refresh(Request())
+                credentials = _cached_service_account_credentials(self.config.credentials_json, self._scope)
                 return {"Authorization": f"Bearer {credentials.token}"}, {}
+            except ProviderError:
+                raise
             except Exception as exc:
                 raise ProviderError("invalid_credentials", "Google translation credentials could not be loaded.") from exc
         if self.config.api_key:
@@ -101,6 +97,10 @@ class GoogleAdvancedProvider:
                     return response.json()
                 retryable = response.status_code in {408, 429, 500, 502, 503, 504}
                 if not retryable or attempt >= self.config.max_retries:
+                    if response.status_code == 429:
+                        raise ProviderError("provider_quota_exceeded", "Google Cloud Translation quota exceeded.", retryable=True)
+                    if response.status_code in {401, 403}:
+                        raise ProviderError("invalid_credentials", "Google Cloud Translation rejected the credentials.")
                     raise ProviderError(
                         "provider_unavailable" if retryable else "provider_rejected",
                         "Google Cloud Translation did not accept the request.",
@@ -108,7 +108,11 @@ class GoogleAdvancedProvider:
                     )
             except ProviderError:
                 raise
-            except (requests.Timeout, requests.ConnectionError) as exc:
+            except requests.Timeout as exc:
+                last_error = exc
+                if attempt >= self.config.max_retries:
+                    raise ProviderError("provider_timeout", "Google Cloud Translation timed out.", retryable=True) from exc
+            except requests.ConnectionError as exc:
                 last_error = exc
                 if attempt >= self.config.max_retries:
                     raise ProviderError("provider_unavailable", "Google Cloud Translation is unavailable.", retryable=True) from exc
@@ -161,11 +165,47 @@ class GoogleAdvancedProvider:
         return {"provider": self.name, "configured": self.config.configured}
 
 
+# Cached credential objects, keyed by a hash of the service-account blob. Google
+# access tokens live ~1h; refreshing only when invalid replaces the previous
+# behaviour of re-parsing the JSON and minting a token on every request.
+_CREDENTIALS_CACHE: dict[str, Any] = {}
+
+
+def _cached_service_account_credentials(credentials_json: str, scope: str):
+    from google.auth.transport.requests import Request
+    from google.oauth2 import service_account
+
+    key = hashlib.sha256(credentials_json.encode("utf-8")).hexdigest()
+    credentials = _CREDENTIALS_CACHE.get(key)
+    if credentials is None:
+        info = json.loads(credentials_json)
+        private_key = info.get("private_key")
+        # Railway/dotenv often stores the blob with escaped newlines; tolerate it.
+        if isinstance(private_key, str) and "\\n" in private_key and "\n" not in private_key:
+            info["private_key"] = private_key.replace("\\n", "\n")
+        credentials = service_account.Credentials.from_service_account_info(info, scopes=[scope])
+        _CREDENTIALS_CACHE.clear()
+        _CREDENTIALS_CACHE[key] = credentials
+    if not credentials.valid:
+        credentials.refresh(Request())
+    return credentials
+
+
+# Cached provider instance, invalidated whenever the env-derived config changes
+# (GoogleConfig is a frozen dataclass, so equality compares every field).
+_PROVIDER_CACHE: dict[str, GoogleAdvancedProvider] = {}
+
+
 def configured_provider(name: str | None = None) -> TranslationProvider:
     selected = (name or os.getenv("TRANSLATION_PRIMARY_PROVIDER", "google")).strip().lower()
     if selected != "google":
         raise ProviderError("unsupported_provider", "The configured translation provider is not implemented.")
-    return GoogleAdvancedProvider()
+    config = GoogleConfig.from_env()
+    cached = _PROVIDER_CACHE.get(selected)
+    if cached is None or cached.config != config:
+        cached = GoogleAdvancedProvider(config)
+        _PROVIDER_CACHE[selected] = cached
+    return cached
 
 
 __all__ = [

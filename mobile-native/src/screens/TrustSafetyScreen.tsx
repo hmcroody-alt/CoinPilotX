@@ -13,8 +13,11 @@ import {
 } from "../api/support";
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
+import { PRIVATE_CONTENT_MESSAGE, resolveRouteProfileContext } from "../profile/profileContext";
+import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props =
   | NativeStackScreenProps<RootStackParamList, "TrustSafety">
@@ -27,7 +30,12 @@ type Props =
 const issueTypes = ["account", "safety", "payments", "notifications", "creator", "marketplace"];
 const reportTypes = ["account_compromise", "phishing", "abuse", "scam", "privacy", "other"];
 
-export function TrustSafetyScreen({ navigation }: Props) {
+export function TrustSafetyScreen({ navigation, route }: Props) {
+  const { authState } = useAuth();
+  // Wrong-subject guard: support tickets and security reports belong to the
+  // signed-in viewer. If the route params name another profile as the subject,
+  // this screen must refuse instead of showing the viewer's private history.
+  const routeContext = resolveRouteProfileContext(route?.params, authState.user?.user_id);
   const [state, setState] = useState<SupportState | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -72,8 +80,10 @@ export function TrustSafetyScreen({ navigation }: Props) {
   }, [navigation]);
 
   useEffect(() => {
+    // Owner-only fetch: skip entirely on a visitor route (no fetch-then-hide).
+    if (!routeContext.isOwnProfile) return;
     load("initial").catch(() => undefined);
-  }, [load]);
+  }, [load, routeContext.isOwnProfile]);
 
   async function submitSupport() {
     if (!supportEmail.trim() || !supportMessage.trim()) {
@@ -144,6 +154,16 @@ export function TrustSafetyScreen({ navigation }: Props) {
     } finally {
       setBusy("");
     }
+  }
+
+  // Visitor destination with no visitor variant: refuse rather than render the
+  // viewer's tickets under someone else's name. All hooks have already run.
+  if (!routeContext.isOwnProfile) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.centerText}>{PRIVATE_CONTENT_MESSAGE}</Text>
+      </View>
+    );
   }
 
   if (loading && !state) {
@@ -329,7 +349,7 @@ function ActionButton({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     backgroundColor: colors.background,
     flex: 1
@@ -510,4 +530,4 @@ const styles = StyleSheet.create({
     color: colors.accent,
     padding: 10
   }
-});
+}));

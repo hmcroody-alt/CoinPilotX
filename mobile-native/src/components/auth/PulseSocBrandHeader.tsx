@@ -3,6 +3,7 @@ import { Animated, Easing, Image, StyleSheet, Text, View } from "react-native";
 import { colors } from "../../theme/colors";
 import { logiNexus } from "../../theme/logiNexus";
 import { useLogiNexusReducedMotion } from "../../theme/logiNexusMotion";
+import { createThemedStyles } from "../../theme/themedStyles";
 
 // Official PulseSoc brand lockup (real asset, symbol + wordmark), pre-processed to
 // a transparent background so it blends into the login environment with no image
@@ -123,7 +124,7 @@ export function PulseSocBrandHeader({ compact = false }: { compact?: boolean }) 
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     alignItems: "center",
     gap: logiNexus.spacing.xs
@@ -193,4 +194,4 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.2
   }
-});
+}));

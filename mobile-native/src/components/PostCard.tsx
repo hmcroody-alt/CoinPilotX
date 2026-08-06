@@ -16,6 +16,7 @@ import { logiNexus } from "../theme/logiNexus";
 import { formatShortTime } from "../utils/format";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { ContentTranslation } from "./ContentTranslation";
+import { createThemedStyles } from "../theme/themedStyles";
 
 const MEDIA_ASPECT_MIN = 0.55;
 const MEDIA_ASPECT_MAX = 1.91;
@@ -963,7 +964,7 @@ function reactionSummary(counts: Record<string, number>) {
   return active.length ? active.join("") : "♡";
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionButton: {
     alignItems: "center",
     borderRadius: logiNexus.radius.medium,
@@ -1466,4 +1467,4 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "900"
   }
-});
+}));

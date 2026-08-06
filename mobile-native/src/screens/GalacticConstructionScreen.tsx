@@ -4,6 +4,7 @@ import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, Text, View 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import { EngineerAccessModal } from "../components/engineer/EngineerAccessModal";
+import { emitEngineerAccessDiagnostic } from "../security/engineerAccessDiagnostics";
 import { useAuth } from "../session/auth";
 
 type Props = {
@@ -52,6 +53,7 @@ export function GalacticConstructionScreen({ onReturn, onEngineerAccessGranted }
   }, [reduceMotion, pulse]);
 
   function openChallenge() {
+    emitEngineerAccessDiagnostic({ stage: "button_tapped" });
     // Subtle warning haptic: this control leads somewhere restricted.
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
     setChallengeOpen(true);

@@ -13,9 +13,24 @@ import { useTheme } from "../../theme/ThemeContext";
 
 const THEME_OPTIONS: SelectOption<ThemeMode>[] = [
   { value: "system", label: "Match device", description: "Follow your phone's light or dark setting.", icon: "phone-portrait-outline" },
-  { value: "dark", label: "Dark", description: "PulseSoc's signature dark surface.", icon: "moon-outline" },
-  { value: "light", label: "Light", description: "Bright surfaces with high-contrast text.", icon: "sunny-outline" }
+  { value: "dark", label: "Dark", description: "PulseSoc's signature dark surface with the full galactic background.", icon: "moon-outline" },
+  {
+    value: "light_futuristic",
+    label: "Light Futuristic",
+    description: "Bright glassy surfaces with a faint atmosphere.",
+    icon: "sunny-outline"
+  },
+  { value: "black", label: "Black", description: "True black for OLED screens. Dimmed atmosphere, deeper contrast.", icon: "contrast-outline" },
+  { value: "white", label: "White", description: "Plain white surfaces, no background effects. Maximum clarity.", icon: "square-outline" }
 ];
+
+const THEME_LABELS: Record<ThemeMode, string> = {
+  system: "Match device",
+  dark: "Dark",
+  light_futuristic: "Light Futuristic",
+  black: "Black",
+  white: "White"
+};
 
 /**
  * Appearance.
@@ -35,7 +50,7 @@ export function AppearanceSettingsScreen() {
     <SettingsShell bottomDock={false}>
       <SettingsHeader title="Appearance" subtitle="Changes apply instantly across PulseSoc." />
 
-      <SettingsSection title="Theme" busy={pending}>
+      <SettingsSection title="Background & Theme" busy={pending}>
         <SettingsSelect options={THEME_OPTIONS} value={value.theme} onChange={setTheme} testID="appearance-theme" />
       </SettingsSection>
 
@@ -74,7 +89,7 @@ export function AppearanceSettingsScreen() {
           </Text>
           <View style={[styles.previewChip, { backgroundColor: theme.colors.signalDim, borderColor: theme.colors.accent }]}>
             <Text style={{ color: theme.colors.accent, fontSize: theme.scaleFont(12), fontWeight: "800" }}>
-              {theme.scheme === "light" ? "Light" : "Dark"} · {Math.round(value.fontScale * 100)}%
+              {THEME_LABELS[theme.mode]} · {Math.round(value.fontScale * 100)}%
             </Text>
           </View>
         </View>

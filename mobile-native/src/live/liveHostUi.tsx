@@ -16,6 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 /**
  * Shared glass primitives for the immersive Live Host studio.
@@ -249,7 +250,7 @@ export function ToolTile({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   circleWrap: {
     alignItems: "center",
     gap: 5
@@ -384,4 +385,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center"
   }
-});
+}));

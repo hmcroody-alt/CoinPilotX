@@ -5,6 +5,7 @@ import { colors } from "../../theme/colors";
 import { logiNexus } from "../../theme/logiNexus";
 import { useLogiNexusReducedMotion } from "../../theme/logiNexusMotion";
 import { BiometricKind } from "../../session/biometricAuth";
+import { createThemedStyles } from "../../theme/themedStyles";
 
 export type BiometricButtonState = "idle" | "loading" | "success" | "failed";
 
@@ -84,7 +85,7 @@ export function BiometricUnavailableHint({ message }: { message: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   button: {
     alignItems: "center",
     alignSelf: "center",
@@ -115,4 +116,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center"
   }
-});
+}));

@@ -19,14 +19,14 @@
  */
 
 import {
-  ACCOUNT_NAME_FIRST_FLAG,
   ADS_MOCK_DATA_GAPS,
   ADS_POST_MODE_FLAG,
-  accountNameFirstEnabled,
   adAccountDisplay,
+  adAccountStanding,
   adCampaignDisplay,
   adsKpis,
   adsPostModeEnabled,
+  buildSpendSeries,
   campaignBudget,
   campaignMetricsAreLive,
   campaignSpendCents,
@@ -430,27 +430,105 @@ describe("adAccountDisplay", () => {
     }
   });
 
-  it('is off unless the build opts in, and accepts every spelling of "on"', () => {
-    // The accepted spellings are the shared set in core/envFlag.ts, not this
-    // module's own idea of one. This flag shipped taking the literal "1" alone
-    // while flags on adjacent screens also took "true" — so a build that set it
-    // to "true" got a silent no-op. Both work now; unset is still off.
-    const original = process.env[ACCOUNT_NAME_FIRST_FLAG];
-    try {
-      for (const value of ["", " ", "0", "false", "off", "no", "2"]) {
-        process.env[ACCOUNT_NAME_FIRST_FLAG] = value;
-        expect(accountNameFirstEnabled()).toBe(false);
-      }
-      for (const value of ["1", "true", "on", "yes", " TRUE ", "Yes"]) {
-        process.env[ACCOUNT_NAME_FIRST_FLAG] = value;
-        expect(accountNameFirstEnabled()).toBe(true);
-      }
-      delete process.env[ACCOUNT_NAME_FIRST_FLAG];
-      expect(accountNameFirstEnabled()).toBe(false);
-    } finally {
-      if (original === undefined) delete process.env[ACCOUNT_NAME_FIRST_FLAG];
-      else process.env[ACCOUNT_NAME_FIRST_FLAG] = original;
+  /*
+   * A flag test used to sit here, covering `EXPO_PUBLIC_ACCOUNT_NAME_FIRST`.
+   * The flag defaulted off, so the corrected row it guarded was never the one
+   * anyone saw; the row is unconditional now and the flag is gone. Nothing
+   * replaces the test because there is no longer a decision to pin — the
+   * behaviour it described is the only behaviour the module has.
+   */
+});
+
+/**
+ * The account strip prints this line and colours a dot beside it. Those are two
+ * marks reporting one fact, and colour is read first — so a green dot over
+ * "Verification pending" is not a cosmetic slip, it is the louder of two
+ * contradictory reports winning. The tone therefore comes back from the same
+ * switch as the line, and these tests exist to keep it that way: they assert the
+ * pairing, not the line alone.
+ */
+describe("adAccountStanding", () => {
+  it("pairs every known status with a tone that agrees with its line", () => {
+    const cases: Array<[string, string, string]> = [
+      ["active", "Advertising account · Active", "success"],
+      ["pending", "Advertising account · Verification pending", "warning"],
+      ["pending_review", "Advertising account · Verification pending", "warning"],
+      ["in_review", "Advertising account · Verification pending", "warning"],
+      ["under_review", "Advertising account · Verification pending", "warning"],
+      ["suspended", "Advertising account · Restricted", "error"],
+      ["disabled", "Advertising account · Restricted", "error"],
+      ["rejected", "Advertising account · Restricted", "error"],
+      ["closed", "Advertising account · Restricted", "error"],
+      ["draft", "Advertising account · Not configured", "neutral"]
+    ];
+    for (const [status, line, tone] of cases) {
+      expect(adAccountStanding({ status } as AdAccount)).toEqual({ line, tone });
     }
+  });
+
+  /** Casing comes from whatever the server happens to send; it must not decide. */
+  it("reads the status case-insensitively", () => {
+    expect(adAccountStanding({ status: "ACTIVE" } as AdAccount).tone).toBe("success");
+    expect(adAccountStanding({ status: "Suspended" } as AdAccount).tone).toBe("error");
+  });
+
+  /**
+   * A status this app has never seen is not evidence of health. The unknown
+   * branch says nothing at all after the noun rather than guessing, and it never
+   * guesses toward the reassuring end of the scale.
+   */
+  it("says nothing beyond the noun for a status it doesn't recognise", () => {
+    const standing = adAccountStanding({ status: "hibernating" } as AdAccount);
+    expect(standing).toEqual({ line: "Advertising account", tone: "neutral" });
+  });
+
+  /**
+   * A missing account is a different claim from an unrecognised one: there is
+   * nothing there, which is precisely "Not configured". Still neutral — an
+   * absent account is not an unhealthy one.
+   */
+  it("reads a missing account as unconfigured, not as unhealthy", () => {
+    for (const account of [null, undefined]) {
+      expect(adAccountStanding(account)).toEqual({
+        line: "Advertising account · Not configured",
+        tone: "neutral"
+      });
+    }
+  });
+
+  /** §37: the internal identifier must not surface in the identity row. */
+  it("never puts an account number in the line", () => {
+    for (const status of ["active", "pending", "suspended", "draft", ""]) {
+      expect(adAccountStanding({ id: 8, status } as AdAccount).line).not.toMatch(/\d/);
+    }
+  });
+});
+
+/**
+ * The chart used to receive seven fabricated daily bars derived from the
+ * lifetime total. It looked like a week of data and was not one. The series is
+ * empty now, and `windowed: false` is what tells the card it may not title
+ * itself "last 7 days" — so both properties are pinned here.
+ */
+describe("buildSpendSeries", () => {
+  it("reports the real total and no invented days", () => {
+    const series = buildSpendSeries({ totals: { spend_cents: 12_345 } } as never);
+    expect(series.totalCents).toBe(12_345);
+    expect(series.daysCents).toEqual([]);
+    expect(series.mock).toBe(false);
+  });
+
+  it("never claims a seven-day window, at any spend level", () => {
+    for (const spend_cents of [0, 1, 999_999]) {
+      expect(buildSpendSeries({ totals: { spend_cents } } as never).windowed).toBe(false);
+    }
+    expect(buildSpendSeries(null).windowed).toBe(false);
+  });
+
+  it("treats missing analytics as a real zero rather than throwing", () => {
+    expect(buildSpendSeries(null)).toEqual({
+      daysCents: [], mock: false, totalCents: 0, windowed: false
+    });
   });
 });
 

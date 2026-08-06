@@ -4,6 +4,7 @@ import { createMarketplaceListing } from "../api/marketplace";
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   navigation: {
@@ -135,7 +136,7 @@ export function SellerListingComposerScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   actionRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -273,4 +274,4 @@ const styles = StyleSheet.create({
   typeTextActive: {
     color: colors.accent
   }
-});
+}));

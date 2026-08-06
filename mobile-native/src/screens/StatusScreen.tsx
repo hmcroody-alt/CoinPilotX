@@ -45,6 +45,7 @@ import { formatShortTime } from "../utils/format";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   route: { params?: { statusId?: number; title?: string; openCreator?: boolean } };
@@ -479,7 +480,7 @@ function focusInitialStatus(statuses: PulseStatus[], statusId: number) {
   return [statuses[index], ...statuses.slice(0, index), ...statuses.slice(index + 1)];
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   bubble: {
     alignItems: "center",
     marginRight: 12,
@@ -726,4 +727,4 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "900"
   }
-});
+}));

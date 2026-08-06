@@ -17,6 +17,7 @@ import { RootStackParamList } from "../navigation/types";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
 import { compactPreview, formatShortTime } from "../utils/format";
+import { createThemedStyles } from "../theme/themedStyles";
 
 export function NotificationCenterScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -189,7 +190,7 @@ function NotificationRow({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     backgroundColor: colors.background,
     flex: 1
@@ -330,4 +331,4 @@ const styles = StyleSheet.create({
     padding: 20,
     textAlign: "center"
   }
-});
+}));

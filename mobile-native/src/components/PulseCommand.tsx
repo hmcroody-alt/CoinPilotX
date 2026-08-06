@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useRef } from "react";
 import { AccessibilityInfo, Animated, Easing, Image, Platform, Pressable, ScrollView, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle, useWindowDimensions } from "react-native";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone, toneColor } from "../theme/logiNexus";
+import { createThemedStyles } from "../theme/themedStyles";
 
 export function PulseCommandPanel({ children, style, tone = "default" }: { children: ReactNode; style?: StyleProp<ViewStyle>; tone?: LogiNexusTone }) {
   const color = toneColor(tone);
@@ -188,7 +189,7 @@ export function PulseCommandMetric({ value, label, tone = "default" }: { value: 
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   action: {
     alignItems: "center",
     borderRadius: logiNexus.radius.medium,
@@ -399,4 +400,4 @@ const styles = StyleSheet.create({
   statusText: {
     ...logiNexus.typography.metadata
   }
-});
+}));

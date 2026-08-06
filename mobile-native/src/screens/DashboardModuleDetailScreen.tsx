@@ -6,6 +6,7 @@ import { classifyDashboardActionRoute, openDashboardAccessRoute, openDashboardRo
 import { RootStackParamList } from "../navigation/types";
 import { DashboardLiveStatePanel, loadDashboardModuleLiveState } from "../api/dashboardLiveState";
 import { colors } from "../theme/colors";
+import { createThemedStyles } from "../theme/themedStyles";
 
 type DetailRoute = RouteProp<RootStackParamList, "DashboardModuleDetail">;
 
@@ -281,7 +282,7 @@ function metricStateStyle(state: "ready" | "attention" | "fallback" | "offline")
   return styles.readyMetric;
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   accessPill: {
     backgroundColor: "rgba(79,140,255,0.13)",
     borderColor: "rgba(79,140,255,0.42)",
@@ -616,4 +617,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900"
   }
-});
+}));

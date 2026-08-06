@@ -6792,6 +6792,111 @@ def api_pulse_translation_preference():
         )
 
 
+# --- Canonical translation contract -----------------------------------------
+# POST /api/translation/translate is the spec-shaped adapter over the same
+# service used by /api/pulse/translations (which stays untouched for existing
+# clients). Content is always resolved server-side from contentType/contentRef;
+# caller-supplied text is never trusted.
+
+TRANSLATION_SPEC_ERROR_CODES = {
+    "invalid_language": "INVALID_LANGUAGE",
+    "missing_text": "EMPTY_TEXT",
+    "provider_not_configured": "PROVIDER_AUTH_FAILED",
+    "invalid_credentials": "PROVIDER_AUTH_FAILED",
+    "provider_quota_exceeded": "PROVIDER_QUOTA_EXCEEDED",
+    "provider_timeout": "PROVIDER_TIMEOUT",
+    "invalid_provider_response": "PROVIDER_RESPONSE_INVALID",
+    "provider_unavailable": "TRANSLATION_UNAVAILABLE",
+    "provider_rejected": "TRANSLATION_UNAVAILABLE",
+    "translation_unavailable": "TRANSLATION_UNAVAILABLE",
+}
+
+
+@webhook_app.route("/api/translation/translate", methods=["POST"])
+def api_translation_translate():
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    from services import content_translation
+
+    request_id = secrets.token_hex(8)
+    try:
+        result = content_translation.translate_content(
+            int(user["user_id"]),
+            content_type=payload.get("contentType") or payload.get("content_type"),
+            content_ref=payload.get("contentRef") or payload.get("content_ref"),
+            text=None,  # never trusted; content is resolved server-side
+            source_language=payload.get("sourceLanguage") or payload.get("source_language") or "auto",
+            target_language=payload.get("targetLanguage") or payload.get("target_language") or account_language(user),
+            force=payload.get("force") is True,
+        )
+        if not result.get("translated"):
+            # Policy skip / same language — not a failure, but nothing translated.
+            return jsonify({
+                "ok": True,
+                "translatedText": result.get("original_text") or "",
+                "detectedSourceLanguage": result.get("source_language") or "auto",
+                "targetLanguage": result.get("target_language"),
+                "provider": "none",
+                "cached": False,
+                "skipped": True,
+                "reason": result.get("reason"),
+                "requestId": result.get("correlation_id") or request_id,
+            })
+        return jsonify({
+            "ok": True,
+            "translatedText": result.get("translated_text"),
+            "detectedSourceLanguage": result.get("source_language"),
+            "targetLanguage": result.get("target_language"),
+            "provider": result.get("provider") or "google",
+            "cached": bool(result.get("cached")),
+            "requestId": result.get("correlation_id") or request_id,
+        })
+    except content_translation.TranslationError as exc:
+        spec_code = TRANSLATION_SPEC_ERROR_CODES.get(exc.code, exc.code.upper())
+        retryable = bool(getattr(exc, "retryable", False)) or spec_code in {
+            "TRANSLATION_UNAVAILABLE", "PROVIDER_QUOTA_EXCEEDED", "PROVIDER_TIMEOUT",
+        }
+        response = jsonify({
+            "ok": False,
+            "error": spec_code,
+            "message": str(exc),
+            "retryable": retryable,
+            "requestId": request_id,
+        })
+        response.status_code = exc.status
+        return response
+    except Exception as exc:
+        logging.exception(
+            "TRANSLATION_CANONICAL_FAILED user_id=%s request_id=%s reason=%s",
+            int(user["user_id"]),
+            request_id,
+            exc.__class__.__name__,
+        )
+        response = jsonify({
+            "ok": False,
+            "error": "TRANSLATION_UNAVAILABLE",
+            "message": "Translation is temporarily unavailable. Please try again.",
+            "retryable": True,
+            "requestId": request_id,
+        })
+        response.status_code = 503
+        return response
+
+
+@webhook_app.route("/internal/health/translation", methods=["GET"])
+def internal_health_translation():
+    from services import content_translation
+
+    try:
+        status = content_translation.health_status(probe=request.args.get("probe") in {"1", "true"})
+        return jsonify({"ok": True, **status})
+    except Exception as exc:
+        logging.exception("TRANSLATION_HEALTH_FAILED reason=%s", exc.__class__.__name__)
+        return api_error("Translation health check failed.", 503, error="translation_health_unavailable")
+
+
 @webhook_app.route("/api/i18n/missing", methods=["POST"])
 def api_i18n_missing_translation():
     init_db()
