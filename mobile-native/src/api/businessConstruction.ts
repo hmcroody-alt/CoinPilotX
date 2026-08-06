@@ -7,30 +7,29 @@ export type BusinessConstructionAccess = {
   construction_mode: boolean;
   developer_mode: boolean;
   developer_badge: boolean;
+  /** True when the server opened this sector via an engineer-access grant. */
+  engineer_access?: boolean;
 };
 
 export function getBusinessConstructionAccess() {
   return pulseApi<BusinessConstructionAccess>("/api/pulse/business/construction-access");
 }
 
-const CANONICAL_OWNER_EMAILS = new Set([
-  "cherieroody@gmail.com",
-  "coinpilotxai@gmail.com"
-]);
+/** Closed by default. Only a server answer may widen this. */
+export const CONSTRUCTION_LOCKED: BusinessConstructionAccess = {
+  ok: false,
+  mode: "construction",
+  can_access_private_business_os: false,
+  construction_mode: true,
+  developer_mode: false,
+  developer_badge: false
+};
 
-/**
- * Compatibility authority for production clients while the dedicated access
- * endpoint rolls out. The email comes from the authenticated server session;
- * editable username/display-name fields are deliberately ignored.
+/*
+ * A client-side owner allowlist used to live here, keyed on two hardcoded email
+ * addresses. It was removed deliberately: strings in the JS bundle are readable
+ * by anyone who unzips the IPA, so the check both disclosed the owner accounts
+ * and could be satisfied by patching one comparison. Owner status is now
+ * resolved server-side only, from the immutable numeric user ID and the admin
+ * table — see services/business_os/construction_access.py.
  */
-export function authenticatedOwnerAccess(email?: string | null): BusinessConstructionAccess | null {
-  if (!CANONICAL_OWNER_EMAILS.has(String(email || "").trim().toLowerCase())) return null;
-  return {
-    ok: true,
-    mode: "development",
-    can_access_private_business_os: true,
-    construction_mode: true,
-    developer_mode: true,
-    developer_badge: true
-  };
-}

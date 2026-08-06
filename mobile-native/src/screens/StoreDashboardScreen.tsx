@@ -365,9 +365,13 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
             label: "Inventory",
             subtitle: loading
               ? "Checking stock…"
-              : lowCount > 0
-                ? `${allRows.length} items · ${lowCount} low`
-                : `${allRows.length} items · all stocked`,
+              : allRows.length === 0
+                ? // "0 items · all stocked" claimed a stocked shelf that does not
+                  // exist. An empty catalogue has no stock state at all.
+                  "No inventory yet"
+                : lowCount > 0
+                  ? `${allRows.length} items · ${lowCount} low`
+                  : `${allRows.length} items · all stocked`,
             onPress: () => {
               setTab(lowCount > 0 ? "low" : "all");
               setExpanded(true);
@@ -376,8 +380,17 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
           },
           {
             icon: "pricetags-outline",
-            label: "Collections",
-            subtitle: `${new Set(snapshot.listings.map((item) => item.category).filter(Boolean)).size} categories`,
+            // The tile counts distinct listing categories, so it is named for
+            // what it counts. It becomes "Collections" only when a real
+            // collections feature exists to back the word (mission Phase 5) —
+            // relabelling the same category count would be the dishonest fix.
+            label: "Categories",
+            subtitle: (() => {
+              const count = new Set(
+                snapshot.listings.map((item) => item.category).filter(Boolean)
+              ).size;
+              return count === 0 ? "No categories yet" : `${count} categories`;
+            })(),
             onPress: () => {
               setTab("all");
               setExpanded(true);
