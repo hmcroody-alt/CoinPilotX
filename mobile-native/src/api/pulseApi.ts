@@ -11,6 +11,9 @@ import {
 import { shouldRejectTemporaryQaUser } from "../session/qaTemporaryAccount";
 import { Platform } from "react-native";
 import { startSpan } from "../core/perfTrace";
+import { engineerAccessToken } from "../security/engineerAccessSession";
+
+export const ENGINEER_ACCESS_GRANT_HEADER = "X-PulseSoc-Engineer-Grant";
 
 /**
  * Normalize a request path into a low-cardinality route label for perf aggregation:
@@ -29,12 +32,19 @@ function perfRouteLabel(path: string): string {
 export class PulseApiError extends Error {
   status: number;
   code?: string;
+  /**
+   * Parsed error body. Some endpoints answer a rejection with structured data
+   * the caller still needs — a lockout countdown, a retry hint — which would
+   * otherwise be lost when the response is turned into a thrown error.
+   */
+  details?: Record<string, unknown>;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, details?: Record<string, unknown>) {
     super(message);
     this.name = "PulseApiError";
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -105,6 +115,13 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
     headers.set("Authorization", `Bearer ${envelope.accessToken}`);
   }
   if (cookie && Platform.OS !== "web") headers.set("Cookie", cookie);
+  // Engineer-access grant, when one is held. Sent as a header rather than in the
+  // body or the URL so it never lands in a query string, a route param, or a
+  // request log that records paths.
+  const engineerGrant = engineerAccessToken();
+  if (engineerGrant && !headers.has(ENGINEER_ACCESS_GRANT_HEADER)) {
+    headers.set(ENGINEER_ACCESS_GRANT_HEADER, engineerGrant);
+  }
 
   let response: Response;
   try {
@@ -140,7 +157,8 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
     throw new PulseApiError(
       String(data.message || data.error || "PulseSoc request failed."),
       response.status,
-      typeof data.error_code === "string" ? data.error_code : typeof data.error === "string" ? data.error : undefined
+      typeof data.error_code === "string" ? data.error_code : typeof data.error === "string" ? data.error : undefined,
+      data && typeof data === "object" ? (data as Record<string, unknown>) : undefined
     );
   }
 

@@ -1,5 +1,31 @@
 import { NavigatorScreenParams } from "@react-navigation/native";
 
+/**
+ * Context carried by every destination opened from a Profile OS tile.
+ *
+ * `profileOwnerId` is the account the destination is about. It is optional in
+ * the type because these routes are also reachable from tabs and deep links,
+ * where the signed-in user is legitimately the subject — but when the params
+ * are absent a screen must treat itself as the viewer's own surface, never
+ * silently adopt whichever profile it saw last.
+ *
+ * `isOwnProfile` is a rendering hint only. Screens re-derive ownership from the
+ * ids and gate on server-authored permissions; a client boolean is not a
+ * security boundary.
+ *
+ * See `src/profile/profileContext.ts`.
+ */
+export type ProfileOsParams = {
+  profileOwnerId?: string;
+  sourceProfileId?: string;
+  isOwnProfile?: boolean;
+  entryPoint?: "PROFILE_OS";
+  profileLookupKey?: string;
+  displayName?: string;
+  username?: string;
+  avatarUrl?: string;
+};
+
 export type AuthStackParamList = {
   Login: undefined;
   Signup: undefined;
@@ -35,7 +61,7 @@ export type RootStackParamList = {
   UserDashboardWeb: { title?: string } | undefined;
   DashboardComposeAlias: undefined;
   DashboardMusicAlias: undefined;
-  Music: { trackId?: string; track?: string; artistId?: number; artist?: number; openUpload?: boolean; title?: string; surface?: "post" | "status" | "reel" } | undefined;
+  Music: ({ trackId?: string; track?: string; artistId?: number; artist?: number; openUpload?: boolean; title?: string; surface?: "post" | "status" | "reel" } & ProfileOsParams) | undefined;
   PulseQueue: { title?: string } | undefined;
   DashboardLegacyModule: { legacyGroup?: string; legacyModule?: string; legacySubmodule?: string; title?: string } | undefined;
   DashboardModuleDetail: { groupKey: string; moduleKey: string; title?: string };
@@ -101,9 +127,9 @@ export type RootStackParamList = {
    * target, and because it is the opt-in half of the switch if the redesign is
    * ever revisited. `"classic"` is now a synonym for the default.
    */
-  BusinessOs: { title?: string; mode?: "hub" | "classic" } | undefined;
+  BusinessOs: ({ title?: string; mode?: "hub" | "classic" } & ProfileOsParams) | undefined;
   BusinessProfile: { title?: string } | undefined;
-  PulseIdentity: undefined;
+  PulseIdentity: ({ title?: string } & ProfileOsParams) | undefined;
   /**
    * "View as buyer" — the public business profile, read-only, on its own route.
    *
@@ -116,7 +142,7 @@ export type RootStackParamList = {
    * a real shop — the same screen serves both, because the owner's preview showing
    * anything the buyer's view does not would defeat its purpose.
    */
-  BusinessBuyerPreview: { sellerUserId?: number; returnScrollY?: number } | undefined;
+  BusinessBuyerPreview: ({ sellerUserId?: number; returnScrollY?: number } & ProfileOsParams) | undefined;
   /**
    * The seller-side Marketplace manager (Business "Sections" card #3). Distinct
    * from `Marketplace`/`MarketplaceDetail`, which are the consumer browse
@@ -176,13 +202,13 @@ export type RootStackParamList = {
   MerchantProfile: { title?: string; sellerId?: string } | undefined;
   MarketplaceCreateGateway: { title?: string } | undefined;
   Search: { query?: string; title?: string } | undefined;
-  Saved: undefined;
+  Saved: ProfileOsParams | undefined;
   GroupDetail: { groupSlug: string; title?: string };
   LiveDetail: { liveId: number; title?: string };
   LiveStudio: { title?: string } | undefined;
   NativeLiveHost: { liveId: number; room?: string; tokenUrl?: string; title?: string };
   ReplayViewer: { liveId?: number; replayUrl?: string; poster?: string; title?: string; creator?: string };
-  Events: { eventId?: number; mode?: "events" | "schedule" | "create"; title?: string } | undefined;
+  Events: ({ eventId?: number; mode?: "events" | "schedule" | "create"; title?: string } & ProfileOsParams) | undefined;
   EventDetail: { eventId: number; title?: string };
   LiveScheduleGateway: { title?: string } | undefined;
   LiveEventCreateGateway: { title?: string } | undefined;
@@ -211,8 +237,8 @@ export type RootStackParamList = {
   LearningLessonDetail: { lessonSlug: string; title?: string };
   TeacherProfileGateway: { teacherId?: string; title?: string } | undefined;
   TeacherDashboardGateway: { title?: string } | undefined;
-  GrowthCenter: { contentType?: string; contentId?: number | string; title?: string } | undefined;
-  IntelligenceCenter: { alertId?: number; subsystem?: string; title?: string } | undefined;
+  GrowthCenter: ({ contentType?: string; contentId?: number | string; title?: string } & ProfileOsParams) | undefined;
+  IntelligenceCenter: ({ alertId?: number; subsystem?: string; title?: string } & ProfileOsParams) | undefined;
   UndxActionCenter: { orgId?: string; actor?: string; productArea?: string; title?: string } | undefined;
   AlertManagement: { alertId?: number; title?: string } | undefined;
   CryptoAlertManagement: { alertId?: number; alert_id?: number; id?: number; title?: string } | undefined;
@@ -226,14 +252,14 @@ export type RootStackParamList = {
   AccountHealth: { title?: string } | undefined;
   AccountHealthWeb: { title?: string } | undefined;
   SafetyHub:
-    | {
+    | ({
         title?: string;
         section?: "overview" | "blocks" | "mutes" | "reports";
         reportTarget?: string;
         reportType?: string;
         blockTarget?: string;
         muteTarget?: string;
-      }
+      } & ProfileOsParams)
     | undefined;
   SafetyWebHub:
     | {
@@ -248,15 +274,15 @@ export type RootStackParamList = {
   TrustSafety: { title?: string; mode?: "support" | "security" | "scam" | "trust" } | undefined;
   TrustSafetySupport: { title?: string } | undefined;
   TrustSafetyHelp: { title?: string } | undefined;
-  TrustCenter: { title?: string } | undefined;
+  TrustCenter: ({ title?: string } & ProfileOsParams) | undefined;
   SecurityReport: { title?: string } | undefined;
   ScamShield: { title?: string } | undefined;
   VerificationCenter: { title?: string; track?: "identity" | "blue_check" | "business" | "government_id" } | undefined;
   VerificationWebCenter: { title?: string; track?: "identity" | "blue_check" | "business" | "government_id" } | undefined;
-  ActivityInbox: {
+  ActivityInbox: ({
     category?: "all" | "messages" | "calls" | "social" | "safety" | "verification" | "marketplace" | "creator_growth" | "intelligence_alerts";
     title?: string;
-  } | undefined;
+  } & ProfileOsParams) | undefined;
   ActivityInboxLegacyInbox: { title?: string } | undefined;
   ActivityInboxWebActivity: { title?: string } | undefined;
   ActivityInboxWebInbox: { title?: string } | undefined;

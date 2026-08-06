@@ -49,7 +49,6 @@ import {
   taxDocumentsAreLive
 } from "../../api/paymentsHub";
 import { storeReadinessEnabled } from "../../api/storeDashboard";
-import { marketplaceLocationHonestyEnabled } from "../../api/marketplaceScreen";
 import { stateLanguageEnabled } from "../../api/stateLanguage";
 import { insightsErrorCausesEnabled } from "../../api/insightsDashboard";
 import { scopedBadgesEnabled } from "../unreadCounts";
@@ -89,7 +88,6 @@ const ACCESSORS: Array<[string, () => boolean]> = [
   ["EXPO_PUBLIC_PAYMENTS_ESCROW", escrowCardIsLive],
   ["EXPO_PUBLIC_PAYMENTS_AD_TOPUP", () => adTopUpIsLive(FUNDING_LIVE)],
   ["EXPO_PUBLIC_STORE_READINESS", storeReadinessEnabled],
-  ["EXPO_PUBLIC_MARKETPLACE_LOCATION_HONESTY", marketplaceLocationHonestyEnabled],
   ["EXPO_PUBLIC_STATE_LANGUAGE", stateLanguageEnabled],
   ["EXPO_PUBLIC_INSIGHTS_ERROR_CAUSES", insightsErrorCausesEnabled],
   ["EXPO_PUBLIC_SCOPED_BADGES", scopedBadgesEnabled]
@@ -155,7 +153,7 @@ describe("every flag accessor agrees on what 'on' means", () => {
     // If this number is wrong, either a flag was added without a row above or a
     // flag was deleted and its row left behind. Both are the drift this file
     // exists to catch.
-    expect(ACCESSORS).toHaveLength(24);
+    expect(ACCESSORS).toHaveLength(23);
     expect(new Set(ACCESSORS.map(([name]) => name)).size).toBe(ACCESSORS.length);
   });
 });
