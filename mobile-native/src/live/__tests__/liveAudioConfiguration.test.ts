@@ -1,4 +1,5 @@
 import {
+  describeLiveAudioFailure,
   initializeLivePublisherMedia,
   resolveLiveAudioConfiguration,
   shouldForceLiveSpeakerRoute,
@@ -219,4 +220,48 @@ describe("post-camera Live audio stabilization", () => {
     ]);
   });
 
+});
+
+/**
+ * The copy shown when the audio guard fails.
+ *
+ * It was one hardcoded sentence blaming camera startup, shown for every stage.
+ * A host whose audio never came up at connect was told the camera was at fault,
+ * which sends the user to the wrong workaround and the engineer to the wrong
+ * part of the log.
+ */
+describe("live audio failure copy", () => {
+  it("names the stage that actually failed", () => {
+    expect(describeLiveAudioFailure("camera_start")).toContain("camera started");
+    expect(describeLiveAudioFailure("session_start")).toContain("could not start on this device");
+    expect(describeLiveAudioFailure("room_connected")).toContain("after connecting");
+    expect(describeLiveAudioFailure("app_foreground")).toContain("returned to the foreground");
+    expect(describeLiveAudioFailure("route_change")).toContain("audio output changed");
+    expect(describeLiveAudioFailure("track_subscribed")).toContain("joining the stream");
+  });
+
+  // The specific bug: a non-camera failure must not claim the camera.
+  it("does not blame the camera for a failure that happened elsewhere", () => {
+    for (const stage of ["session_start", "room_connected", "app_foreground", "route_change", "unspecified"]) {
+      expect(describeLiveAudioFailure(stage)).not.toContain("camera");
+    }
+  });
+
+  // A stage added later but not yet given copy must degrade to a vague-but-true
+  // sentence, never to a specific-but-wrong one and never to an empty string.
+  it("falls back to a true general sentence for an unknown or missing stage", () => {
+    for (const stage of ["unspecified", "something_new", undefined, null]) {
+      const message = describeLiveAudioFailure(stage as any);
+      expect(message).toBe("Broadcast audio could not stay active. Please try going live again.");
+    }
+  });
+
+  // Engine internals belong in telemetry. A user cannot act on an error code.
+  it("never surfaces engine internals, and always offers the one available action", () => {
+    for (const stage of ["camera_start", "session_start", "room_connected", "unspecified"]) {
+      const message = describeLiveAudioFailure(stage);
+      expect(message).not.toMatch(/REALTIME_AUDIO|AVAudioEngine|ADM|engine=|native/i);
+      expect(message).toContain("Please try going live again.");
+    }
+  });
 });

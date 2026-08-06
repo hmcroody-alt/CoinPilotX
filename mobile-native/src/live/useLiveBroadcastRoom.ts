@@ -13,17 +13,23 @@ import {
   inspectRealtimeAudioEngine,
   reapplyRealtimeAudioConfiguration,
   reassertRealtimeMicrophone,
-  recoverRealtimeRecordingEngine,
   releaseRealtimeAudioSession,
   resolveRealtimeAudioConfiguration,
   selectRealtimeAudioOutput,
   showRealtimeAudioRoutePicker,
   stabilizeRealtimeAudioEngine,
   type RealtimeAudioEngineStatus,
+  type RealtimeAudioGuardContext,
+  type RealtimeAudioGuardStage,
+  type RealtimeAudioRole,
   type RealtimeAudioLease,
   type RealtimeAudioMode,
   videoPublications
 } from "../core/realtimeAudioEngine";
+import {
+  startNativeAudioEngineLogCapture,
+  stopNativeAudioEngineLogCapture
+} from "../core/realtimeAudioNative";
 import { setRealtimeMicrophoneEnabled } from "../core/realtimeMicrophonePublisher";
 import { RealtimeAudioStateMachine } from "../core/realtimeAudioStateMachine";
 import { createRealtimeAudioCorrelationId } from "../core/realtimeAudioTelemetry";
@@ -140,6 +146,19 @@ export const ensureLiveMicrophonePublished = ensureMicrophonePublished;
 export const resolveLiveAudioConfiguration = resolveRealtimeAudioConfiguration;
 
 /**
+ * Which host profile applies, read from the room rather than from a flag.
+ *
+ * A caller-supplied "video is on" boolean would be one more thing that can drift
+ * out of step with reality - and camera startup is precisely the transition this
+ * incident is about, so a stale flag would mislabel the failure it caused. The
+ * local participant's own video publications are the canonical answer.
+ */
+function hostAudioRole(room: any): RealtimeAudioRole {
+  const hasVideo = videoPublications(room?.localParticipant).filter(publicationHasTrack).length > 0;
+  return hasVideo ? "HOST_AUDIO_VIDEO" : "HOST_AUDIO_ONLY";
+}
+
+/**
  * Camera startup can stop iOS RemoteIO after LiveKit has already reported a
  * successful microphone publication. Reassert the existing publication, then
  * restore capture/playout without creating a second microphone track.
@@ -150,13 +169,24 @@ export async function stabilizeLivePublisherAudio(
   audioSession: any,
   options: {
     settleMs?: number;
-    context?: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string };
+    /** Named so two guard runs in one session are distinguishable in a log. */
+    stage?: RealtimeAudioGuardStage;
+    context?: RealtimeAudioGuardContext;
   } = {}
 ): Promise<RealtimeAudioEngineStatus & { audioTrackCount: number }> {
   const audioTrackCount = await reassertRealtimeMicrophone(room, options.context);
   const status = await stabilizeRealtimeAudioEngine(audioDeviceModule, {
+    stage: options.stage,
+    // The role decides what healthy means; this call site no longer holds its own
+    // opinion. Both host profiles start playout but do not fail on it (a host
+    // publishing to an empty room has nothing to render) while keeping recording
+    // and the engine itself required - `recording=true;engine=false` is an ADM
+    // flag outliving a dead AVAudioEngine, i.e. a broadcast publishing silence.
+    // The rationale for each lives in REALTIME_AUDIO_HEALTH_PROFILES.
+    role: hostAudioRole(room),
     playout: true,
     recording: true,
+    requirePlayout: false,
     settleMs: options.settleMs,
     // Publishers share one record-capable config (live_host === live_guest), so
     // restoring the host configuration is correct for any on-stage participant.
@@ -173,11 +203,16 @@ export async function stabilizeLiveViewerAudio(
   audioSession: any,
   options: {
     settleMs?: number;
-    context?: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string };
+    stage?: RealtimeAudioGuardStage;
+    context?: RealtimeAudioGuardContext;
   } = {}
 ): Promise<RealtimeAudioEngineStatus> {
   await reapplyRealtimeAudioConfiguration(audioSession, "live_viewer");
   const status = await stabilizeRealtimeAudioEngine(audioDeviceModule, {
+    stage: options.stage,
+    // AUDIENCE fails closed on playout - a viewer who hears nothing has nothing -
+    // and must never record, which would open a second capture path.
+    role: "AUDIENCE",
     playout: true,
     recording: false,
     settleMs: options.settleMs,
@@ -194,7 +229,8 @@ export async function stabilizeLiveRemotePlayback(
   enabled: boolean,
   options: {
     settleMs?: number;
-    context?: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string };
+    stage?: RealtimeAudioGuardStage;
+    context?: RealtimeAudioGuardContext;
   } = {}
 ): Promise<RealtimeAudioEngineStatus & { remoteAudioTrackCount: number }> {
   const remoteAudioTrackCount = await applyRemoteAudioEnabled(room, enabled);
@@ -204,6 +240,41 @@ export async function stabilizeLiveRemotePlayback(
 
 function readableError(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+/**
+ * Plain-language copy for an audio-engine failure, keyed on WHERE it happened.
+ *
+ * This used to be one hardcoded sentence blaming camera startup, shown for every
+ * stage. A host whose audio never came up at connect was told the camera was the
+ * problem, which sent them to the wrong workaround and sent us to the wrong part
+ * of the log. The stage now travels on the thrown error, so the sentence can be
+ * true.
+ *
+ * The engine internals (`REALTIME_AUDIO_ENGINE_INACTIVE`, the native error code)
+ * stay in telemetry - a user cannot act on them. Every message ends with the one
+ * action that is actually available.
+ */
+export function describeLiveAudioFailure(stage: string | null | undefined): string {
+  const retry = " Please try going live again.";
+  switch (stage) {
+    case "camera_start":
+      return "Broadcast audio could not stay active while the camera started." + retry;
+    case "session_start":
+      return "Broadcast audio could not start on this device." + retry;
+    case "room_connected":
+      return "Broadcast audio could not stay active after connecting." + retry;
+    case "app_foreground":
+      return "Broadcast audio could not restart after the app returned to the foreground." + retry;
+    case "route_change":
+      return "Broadcast audio could not stay active after the audio output changed." + retry;
+    case "track_subscribed":
+      return "Broadcast audio could not stay active while joining the stream." + retry;
+    default:
+      // Includes "unspecified" and any stage added later but not yet given copy.
+      // A vague-but-true sentence beats a specific-but-wrong one.
+      return "Broadcast audio could not stay active." + retry;
+  }
 }
 
 function firstVideoTrack(participant: any): any | null {
@@ -550,6 +621,11 @@ export function useLiveBroadcastRoom() {
         reason
       });
     }
+    // Paired with the start in `connect`. Leaving the WebRTC log callback
+    // installed after the session ends would keep filtering every log line for
+    // the rest of the process lifetime for no diagnostic benefit; it also drops
+    // the buffered lines so a later session cannot inherit this one's errors.
+    stopNativeAudioEngineLogCapture();
     lifecycleRef.current.tryTransition("local", "released");
     lifecycleRef.current.tryTransition("remote", "ended");
     lifecycleRef.current.tryTransition("room", "disconnected");
@@ -882,6 +958,12 @@ export function useLiveBroadcastRoom() {
         trace.emit("live_audio_owner_requested", { room_state: "connecting", requestedOwner: ownerId, caller: "realtimeAudioEngine.claim" });
         trace.emit("av_audio_session_activation_started", { room_state: "connecting", requestedOwner: ownerId, caller: "realtimeAudioEngine.activate" });
         trace.emit("audio_session_config_started", { room_state: "connecting", audioOwner: ownerId, audio_profile: audioProfile });
+        // Start capturing WebRTC's own audio-engine log lines BEFORE the session
+        // is configured, so an engine that fails to start during activation or
+        // camera bring-up carries its native error into telemetry instead of
+        // surfacing as a bare `engine=false`. Filtered and bounded natively; the
+        // matching stop lives in the teardown path.
+        startNativeAudioEngineLogCapture();
         try {
           audioLeaseRef.current = await activateRealtimeAudioSession(livekitNative.AudioSession, mediaMode, ownerId, {
             // Live viewers still need an audible route. The mode decides whether
@@ -1059,11 +1141,13 @@ export function useLiveBroadcastRoom() {
             if (publish && useV2) {
               audioTasks.push(stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
                 settleMs: 250,
+                stage: "room_connected",
                 context: engineContext
               }));
             } else if (!publish) {
               audioTasks.push(stabilizeLiveRemotePlayback(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, remoteAudioEnabledRef.current, {
                 settleMs: 250,
+                stage: "room_connected",
                 context: engineContext
               }));
             }
@@ -1178,6 +1262,7 @@ export function useLiveBroadcastRoom() {
             });
             stabilizeLiveRemotePlayback(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, remoteAudioEnabledRef.current, {
               settleMs: 0,
+              stage: "track_subscribed",
               context: {
                 sessionId: roomNameRef.current,
                 correlationId: correlationIdRef.current,
@@ -1189,6 +1274,7 @@ export function useLiveBroadcastRoom() {
                 if (publish && useV2) {
                   return stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
                     settleMs: 0,
+                    stage: "track_subscribed",
                     context: {
                       sessionId: roomNameRef.current,
                       correlationId: correlationIdRef.current,
@@ -1247,6 +1333,7 @@ export function useLiveBroadcastRoom() {
                 livekitNative.AudioSession,
                 {
                   settleMs: 250,
+                  stage: "app_foreground",
                   context: {
                     sessionId: roomNameRef.current,
                     correlationId: correlationIdRef.current,
@@ -1258,6 +1345,7 @@ export function useLiveBroadcastRoom() {
             } else if (!publish) {
               void stabilizeLiveViewerAudio(livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
                 settleMs: 250,
+                stage: "app_foreground",
                 context: {
                   sessionId: roomNameRef.current,
                   correlationId: correlationIdRef.current,
@@ -1364,16 +1452,21 @@ export function useLiveBroadcastRoom() {
               const reactivateSession = async () => {
                 await livekitNative.AudioSession.startAudioSession?.();
               };
-              await recoverRealtimeRecordingEngine(livekitNative.AudioDeviceModule, {
-                reactivateSession,
-                settleMs: 400,
-                passes: 4,
-                context: engineContext
-              });
+              // ONE guard call. A non-throwing `recoverRealtimeRecordingEngine`
+              // used to run here first with this same context, which is what put
+              // two indistinguishable copies of every guard line in the device
+              // log. Its recovery passes are now the bounded loop inside the
+              // guard itself, so the repair and the verdict can no longer
+              // disagree about when a recorder should be restarted.
               await stabilizeRealtimeAudioEngine(livekitNative.AudioDeviceModule, {
+                // This runs during camera startup with video already publishing,
+                // so the role is read from the room like every other host guard.
+                role: hostAudioRole(room),
                 playout: true,
                 recording: true,
-                settleMs: 650,
+                requirePlayout: false,
+                settleMs: 400,
+                stage: "camera_start",
                 reactivateSession,
                 context: engineContext
               });
@@ -1419,6 +1512,7 @@ export function useLiveBroadcastRoom() {
         if (!publish) {
           await stabilizeLiveRemotePlayback(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, remoteAudioEnabledRef.current, {
             settleMs: 0,
+            stage: "room_connected",
             context: {
               sessionId: roomNameRef.current,
               correlationId: correlationIdRef.current,
@@ -1542,7 +1636,7 @@ export function useLiveBroadcastRoom() {
           (error as { code?: string } | null)?.code === "REALTIME_AUDIO_ENGINE_INACTIVE" ||
           /engine did not remain active/i.test(readableError(error, ""));
         const message = engineInactive
-          ? "Broadcast audio could not stay active while the camera started. Please try going live again."
+          ? describeLiveAudioFailure((error as { stage?: string } | null)?.stage)
           : readableError(error, "Native LiveKit broadcast connection failed.");
         lastConnectErrorRef.current = message;
         await disconnect("connect_failed").catch(() => undefined);
@@ -1596,6 +1690,7 @@ export function useLiveBroadcastRoom() {
     if (useV2Ref.current) {
       await stabilizeLivePublisherAudio(room, audioDeviceModuleRef.current, audioSessionRef.current, {
         settleMs: 450,
+        stage: "camera_start",
         context: {
           sessionId: roomNameRef.current,
           correlationId: correlationIdRef.current,
@@ -1621,6 +1716,7 @@ export function useLiveBroadcastRoom() {
     remoteAudioEnabledRef.current = enabled;
     await stabilizeLiveRemotePlayback(room, audioDeviceModuleRef.current, audioSessionRef.current, enabled, {
       settleMs: 0,
+      stage: "route_change",
       context: {
         sessionId: roomNameRef.current,
         correlationId: correlationIdRef.current,
@@ -1653,6 +1749,7 @@ export function useLiveBroadcastRoom() {
     if (useV2Ref.current) {
       await stabilizeLivePublisherAudio(room, audioDeviceModuleRef.current, audioSessionRef.current, {
         settleMs: 450,
+        stage: "camera_start",
         context: {
           sessionId: roomNameRef.current,
           correlationId: correlationIdRef.current,

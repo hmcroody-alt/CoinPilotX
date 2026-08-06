@@ -14,6 +14,13 @@ export type RealtimeAudioTelemetryEventName =
   | "audio_engine_guard_started"
   | "audio_engine_guard_completed"
   | "audio_engine_guard_failed"
+  // One per bounded recovery pass INSIDE a single guard invocation. A distinct
+  // name so a repeated repair can never be misread as the guard having been
+  // entered twice - which is exactly how the previous two-function recovery
+  // (`recoverRealtimeRecordingEngine` then `stabilizeRealtimeAudioEngine`, both
+  // emitting `audio_engine_guard_started` with an identical context) made every
+  // guard line appear twice in the device log.
+  | "audio_engine_recovery_attempt"
   | "cleanup_started"
   | "cleanup_completed"
   // Emitted by realtimeAudioInvariants.ts when a state that should be
@@ -32,6 +39,23 @@ export type RealtimeAudioTelemetryEvent = {
   durationMs?: number;
   audioTrackCount?: number;
   duplicatesRemoved?: number;
+  /**
+   * Native ADM state, rendered as enabled/running pairs.
+   *
+   * A separate field rather than more text appended to `outcome`: `outcome` is
+   * capped at 96 characters, and the native reading was silently truncated away
+   * when it was concatenated there - the diagnostic added to explain
+   * `engine=false` never reached the log line that reported it.
+   */
+  engineState?: string;
+  /** WebRTC's own reason the engine failed to start, e.g. "Failed to start engine: -10875". */
+  nativeError?: string;
+  /** Which pass of the bounded recovery produced this event. Absent outside recovery. */
+  recoveryAttempt?: number;
+  /** Where in the startup sequence the failure happened, for the user-facing message. */
+  failureStage?: string;
+  /** AVAudioSession interruption state at the time of the event. */
+  interruption?: string;
 };
 
 const SECRET_PATTERNS = [
@@ -41,11 +65,23 @@ const SECRET_PATTERNS = [
   /\b(wss?|https?):\/\/\S+/gi
 ];
 
-function sanitize(value: unknown): string {
+/**
+ * Redaction runs before truncation on every field, so a longer cap never widens
+ * what can leak - it only lets an already-redacted diagnostic survive intact.
+ *
+ * The default 96 is the historic cap for the short identity fields. Native
+ * diagnostics pass a wider cap because they are the payload this incident is
+ * about; clipping them is what silently destroyed the first attempt at
+ * explaining `engine=false`.
+ */
+function sanitize(value: unknown, maxLength = 96): string {
   let text = String(value ?? "");
   for (const pattern of SECRET_PATTERNS) text = text.replace(pattern, "[redacted]");
-  return text.replace(/\s+/g, " ").trim().slice(0, 96);
+  return text.replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
+
+/** Native diagnostic fields carry the enabled/running split plus WebRTC's own error text. */
+const NATIVE_FIELD_MAX_LENGTH = 480;
 
 export function hashRealtimeAudioIdentifier(value: unknown): string {
   const input = String(value ?? "");
@@ -66,10 +102,48 @@ type EventInput = Omit<RealtimeAudioTelemetryEvent, "sessionHash" | "correlation
 };
 
 type Sink = (event: RealtimeAudioTelemetryEvent) => void;
-// console.error (not info): iOS os_log/idevicesyslog drops info/debug in Release,
-// so these engine-state events must log at error level to reach a device's syslog
-// and reveal exactly when the native record engine stops after camera startup.
-const defaultSink: Sink = (event) => console.error("PulseSocRealtimeAudio", event);
+
+/**
+ * Events that describe a failure rather than a normal transition.
+ *
+ * Only these log at error level by default. Logging a successful
+ * `microphone_published` at error severity trains every reader - human and
+ * crash reporter alike - to ignore the channel, which is exactly what happened
+ * during this incident: the real `audio_engine_guard_failed` line was
+ * indistinguishable from the twenty healthy lines around it.
+ */
+const FAILURE_EVENTS: ReadonlySet<RealtimeAudioTelemetryEventName> = new Set([
+  "audio_engine_guard_failed",
+  "audio_owner_rejected",
+  "microphone_publish_failed",
+  "invariant_violation"
+]);
+
+/**
+ * Raise every event to error level.
+ *
+ * iOS os_log (and therefore `idevicesyslog`) drops info/debug in Release, so a
+ * device capture would otherwise see only the failure lines and none of the
+ * transitions that led to them. This is opt-in per capture session rather than
+ * the default, so ordinary Release builds keep an honest severity mapping.
+ */
+let verbose = false;
+
+export function setRealtimeAudioTelemetryVerbose(next: boolean): void {
+  verbose = next === true;
+}
+
+export function isRealtimeAudioTelemetryVerbose(): boolean {
+  return verbose;
+}
+
+const defaultSink: Sink = (event) => {
+  if (verbose || FAILURE_EVENTS.has(event.name)) {
+    console.error("PulseSocRealtimeAudio", event);
+    return;
+  }
+  console.log("PulseSocRealtimeAudio", event);
+};
 let sink: Sink = defaultSink;
 let correlationSequence = 0;
 
@@ -95,6 +169,14 @@ export function emitRealtimeAudioEvent(input: EventInput): RealtimeAudioTelemetr
   if (Number.isFinite(input.durationMs)) event.durationMs = Math.round(input.durationMs as number);
   if (Number.isFinite(input.audioTrackCount)) event.audioTrackCount = Math.round(input.audioTrackCount as number);
   if (Number.isFinite(input.duplicatesRemoved)) event.duplicatesRemoved = Math.round(input.duplicatesRemoved as number);
+  // Native readings get their own fields at a wider cap. Appending them to
+  // `outcome` truncated them away entirely, which is how the diagnostic added to
+  // explain `engine=false` never reached the log line reporting it.
+  if (input.engineState !== undefined) event.engineState = sanitize(input.engineState, NATIVE_FIELD_MAX_LENGTH);
+  if (input.nativeError !== undefined) event.nativeError = sanitize(input.nativeError, NATIVE_FIELD_MAX_LENGTH);
+  if (input.failureStage !== undefined) event.failureStage = sanitize(input.failureStage);
+  if (input.interruption !== undefined) event.interruption = sanitize(input.interruption);
+  if (Number.isFinite(input.recoveryAttempt)) event.recoveryAttempt = Math.round(input.recoveryAttempt as number);
   try {
     sink(event);
   } catch {

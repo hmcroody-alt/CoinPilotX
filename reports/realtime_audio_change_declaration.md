@@ -269,3 +269,126 @@ Revert this single commit. It touches one file and adds one call; the previous
 behavior (single guard, no reactivation) is restored exactly. No server flag,
 no schema, and no native dependency is involved, so no coordinated rollback is
 required.
+
+---
+
+# Addendum — the guard was requiring a signal a healthy host cannot produce (2026-08-05)
+
+Change: separate "try to start playout" from "fail the broadcast if playout is
+down", and stop requiring playout at the two Live publisher call sites.
+Required label: `audio-critical-change`
+
+## Why the change is required
+
+This is a correction to the commit above, and it is worth stating plainly: the
+previous addendum shipped a guard that killed healthy broadcasts. The recovery
+work was right; the pass/fail condition attached to it was not.
+
+Commit `5f76e30` was installed on physical iPhone `P3r7or` as a Release build.
+Every Live broadcast attempt failed on screen with *"Broadcast audio could not
+stay active while the camera started."* Console.app on the device, filtered to
+`PulseSocRealtimeAudio`, captured three complete and identical attempts:
+
+| correlationId | recover started | recover done | guard started | guard failed |
+|---|---|---|---|---|
+| `rt-msgrl1bm-3` | 17:15:11.588 | 17:15:12.848 | 17:15:12.849 | 17:15:13.513 |
+| `rt-msgrlqod-4` | 17:15:40.564 | 17:15:41.823 | 17:15:41.824 | 17:15:42.485 |
+| `rt-msgropfb-5` | 17:18:02.591 | 17:18:03.844 | 17:18:03.844 | 17:18:04.510 |
+
+All three reported, verbatim:
+
+```
+outcome: 'engine=true;playout=false;recording=true'
+failureCategory: 'native_engine_not_running'
+```
+
+Read that against the original incident. The defect this whole effort exists to
+fix had `recording=false` after camera startup — the microphone was genuinely
+gone. Here `recording=true` and `engine=true`. **The camera-teardown defect is
+fixed.** What killed these three broadcasts was the guard's own requirement that
+`playout` also be running.
+
+A Live host at startup publishes into a room with no remote participants. There
+is no remote audio to render, so AURemoteIO's output side is not running and
+`startPlayout()` is a no-op with no sink. The timings corroborate it: the
+recover stage burned its full four-pass sweep (~1.26s) without an early break
+and the guard ran a further 0.66s — roughly six restart attempts across ~1.9s,
+every one of which brought recording up and none of which could bring playout
+up. Requiring playout there is a red light no healthy host can ever turn green,
+which is the inverse of the failure mode this mission was chartered against.
+
+## Which feature required it
+
+Live host/co-host broadcast startup on physical iPhone. Calls are deliberately
+left alone.
+
+## Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/core/realtimeAudioEngine.ts` | canonical audio engine | Adds an optional `requirePlayout` to `stabilizeRealtimeAudioEngine`, defaulting to `options.playout` so every pre-existing call site keeps identical semantics. Playout is still started; only the failure condition is separable. The telemetry `outcome` now carries `required=playout:…,recording:…`. |
+| `mobile-native/src/live/useLiveBroadcastRoom.ts` | livestream audio adapter | Passes `requirePlayout: false` at the two publisher sites — `stabilizeLivePublisherAudio` and the `stabilizeAudio` hook inside `connectTransaction`. `recording` stays required at both. |
+| `mobile-native/src/core/__tests__/realtimeAudioEngine.test.ts` | critical tests | Three regression tests, each mutation-verified (see below). |
+
+### Protected files changed earlier in this range, declared here
+
+The gate diffs the whole range against `origin/main`, so these files from the
+protection-suite repair earlier in the mission are named here too. None of them
+alters audio runtime behaviour; all four are the measuring apparatus.
+
+| File | Category | Change |
+|---|---|---|
+| `.github/workflows/realtime-audio.yml` | audio governance | Invokes the discovering protection runner instead of `python3 -m unittest` against modules that define no `TestCase`. The old invocation collected nothing, printed "Ran 0 tests ... OK", and exited zero — a green job measuring nothing. |
+| `tests/protection/test_livekit_webhook_route_owner.py` | critical tests | Converted to checks the runner actually executes; asserts the webhook route owner is unchanged. |
+| `tests/protection/test_livestream_audio_token_grants.py` | critical tests | Same conversion; asserts LiveKit publish grants — the authorization deciding who may turn on a microphone. |
+| `tests/protection/test_livestream_contract.py` | critical tests | Same conversion; asserts the livestream API contract. |
+
+`stabilizeLiveViewerAudio` is **not** changed. A viewer with playout down
+genuinely hears nothing, so it keeps `playout: true, recording: false` and stays
+fail-closed on playout. All five call sites in `useNativeCallRoom.ts` are
+untouched and remain fail-closed on playout, because a caller who cannot hear
+the other party has a broken call.
+
+## The fail-closed invariant is preserved
+
+`recording` remains required for publishers. A genuinely silent broadcast — the
+microphone denied at B1, or revoked mid-broadcast at B2 — still throws
+`REALTIME_AUDIO_ENGINE_INACTIVE`. The change narrows what the guard is willing
+to fail on; it does not make the guard optional. The `required=` field added to
+the telemetry outcome exists so that a single log line distinguishes "playout
+was down and that was fine" from "we shipped a silent broadcast anyway" — the
+absence of that distinction is what made this defect take a device to find.
+
+## Tests run
+
+- `realtimeAudioEngine.test.ts`: 23 tests passed.
+- Audio-critical set (17 suites): **228 tests passed**.
+- TypeScript (`tsc --noEmit`): passed, no diagnostics.
+- i18n catalogue validation: OK, 11 locales.
+
+Each new test was verified to be capable of failing, by mutating the source and
+confirming the specific test goes red:
+
+| Mutation to `realtimeAudioEngine.ts:395` | Test that went red |
+|---|---|
+| `const requirePlayout = options.playout` (ignore the option — the shipped bug) | *does not fail a Live host whose playout is down* |
+| `const requirePlayout = options.requirePlayout ?? false` (never require playout) | *keeps calls fail-closed on playout by default* |
+
+The source was restored and all 23 tests re-run green after each mutation. A
+test that cannot go red is not a test, and these were not trusted until they
+had.
+
+## Physical validation required
+
+The three Console captures above are physical-device evidence of the *failure*
+and of the camera-teardown fix. They are not yet evidence that a viewer hears
+the host — that still requires a second physical iPhone and
+`docs/realtime_audio_live_test_matrix.md` Group A and Group B. Rows B1 and B2
+matter more than usual for this change, because they are what prove the guard
+was narrowed rather than disabled.
+
+## Rollback procedure
+
+Revert this commit. `requirePlayout` defaults to `options.playout`, so removing
+the option restores the previous condition exactly. No server flag, schema, or
+native dependency is involved.

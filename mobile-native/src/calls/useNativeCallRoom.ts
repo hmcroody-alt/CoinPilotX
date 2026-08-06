@@ -327,9 +327,11 @@ export function useNativeCallRoom() {
           })
           .then(() => options.video
             ? stabilizeRealtimeAudioEngine(livekitNative.AudioDeviceModule, {
+                role: "CALL_PARTICIPANT",
                 playout: true,
                 recording: true,
                 settleMs: 250,
+                stage: "session_start",
                 context: publicationContextRef.current
               })
             : undefined
@@ -357,9 +359,11 @@ export function useNativeCallRoom() {
           applyCallRemoteAudioEnabled(room, true).catch(() => undefined);
           if (options.video) {
             stabilizeRealtimeAudioEngine(livekitNative.AudioDeviceModule, {
+              role: "CALL_PARTICIPANT",
               playout: true,
               recording: true,
               settleMs: 0,
+              stage: "track_subscribed",
               context: publicationContextRef.current
             }).catch(() => undefined);
             selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
@@ -425,9 +429,11 @@ export function useNativeCallRoom() {
       lifecycleRef.current.tryTransition("local", "published");
       if (options.video) {
         await stabilizeRealtimeAudioEngine(livekitNative.AudioDeviceModule, {
+          role: "CALL_PARTICIPANT",
           playout: true,
           recording: true,
           settleMs: 650,
+          stage: "session_start",
           context: publicationContextRef.current
         });
       }
@@ -486,9 +492,11 @@ export function useNativeCallRoom() {
     }
     if (localAudioTrackCount <= 0) throw new Error("Camera changed, but microphone audio is no longer published.");
     await stabilizeRealtimeAudioEngine(audioDeviceModuleRef.current, {
+      role: "CALL_PARTICIPANT",
       playout: true,
       recording: true,
       settleMs: 450,
+      stage: "camera_start",
       context: publicationContextRef.current
     });
     await selectRealtimeAudioOutput(audioSessionRef.current, true).catch(() => undefined);
@@ -526,9 +534,11 @@ export function useNativeCallRoom() {
     }
     if (localAudioTrackCount <= 0) throw new Error("Camera switched, but microphone audio is no longer published.");
     await stabilizeRealtimeAudioEngine(audioDeviceModuleRef.current, {
+      role: "CALL_PARTICIPANT",
       playout: true,
       recording: true,
       settleMs: 450,
+      stage: "camera_start",
       context: publicationContextRef.current
     });
     await selectRealtimeAudioOutput(audioSessionRef.current, true).catch(() => undefined);

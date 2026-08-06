@@ -6,6 +6,14 @@ import {
 } from "./audioOwnershipPolicy";
 import { emitRealtimeAudioEvent } from "./realtimeAudioTelemetry";
 import { reportRealtimeAudioInvariant } from "./realtimeAudioInvariants";
+import {
+  describeNativeAudioEngineState,
+  drainNativeAudioEngineLogs,
+  isStaleRecordingWithoutEngine,
+  readNativeAudioEngineState,
+  summarizeNativeAudioEngineLogs,
+  type NativeAudioEngineState
+} from "./realtimeAudioNative";
 
 export type RealtimeAudioMode =
   | "none"
@@ -49,11 +57,26 @@ type RealtimeAudioDeviceModule = {
   startPlayout?: () => Promise<void>;
   startRecording?: () => Promise<void>;
   startLocalRecording?: () => Promise<void>;
+  // Required to clear a capture path left ENABLED over a dead engine. Without an
+  // explicit stop the ADM answers "already recording" and every subsequent start
+  // short-circuits, which is why the observed six restart attempts changed
+  // nothing. Optional because it is absent from older SDK builds.
+  stopRecording?: () => Promise<void>;
   // Native ADM lever: keeps the WebRTC record engine "prepared" so it can be
   // resumed after an AVAudioSession interruption instead of being fully torn
   // down. Enabling this for publishers hardens the recorder against the
   // camera-start interruption that otherwise silences the Live host.
   setRecordingAlwaysPreparedMode?: (enabled: boolean) => void | Promise<void>;
+  // Reads the lever above. Needed because the repair has to restore whatever the
+  // connect path chose rather than assume it, and because a build without the
+  // lever must be told apart from one where it is simply off.
+  isRecordingAlwaysPreparedMode?: () => boolean;
+  // Diagnostics only. Never used to decide pass/fail - they exist so a device
+  // log can distinguish "the ADM declined to start output because iOS says
+  // there is no output" from "the engine died", which the three booleans above
+  // cannot tell apart.
+  isMicrophoneMuted?: () => boolean;
+  getEngineAvailability?: () => { isInputAvailable?: boolean; isOutputAvailable?: boolean } | null;
 };
 
 export type RealtimeAudioEngineStatus = {
@@ -349,6 +372,181 @@ export function inspectRealtimeAudioEngine(audioDeviceModule: RealtimeAudioDevic
 }
 
 /**
+ * Extra ADM readings for the telemetry line only.
+ *
+ * Deliberately NOT part of `RealtimeAudioEngineStatus`: nothing branches on
+ * these. They exist because `engine=false;recording=true` was observed on
+ * device and the three status booleans give no way to explain it. Availability
+ * is the ADM's own view of whether iOS is offering an input and an output; a
+ * publisher with no remote audio subscribed is expected to report output
+ * unavailable, and that is the reading that tells us a stopped engine is
+ * normal rather than broken.
+ */
+export function describeRealtimeAudioDiagnostics(
+  audioDeviceModule: RealtimeAudioDeviceModule | null | undefined
+): string {
+  const muted = readAudioEngineBoolean(audioDeviceModule?.isMicrophoneMuted?.bind(audioDeviceModule));
+  let inputAvailable: boolean | null = null;
+  let outputAvailable: boolean | null = null;
+  try {
+    const availability = audioDeviceModule?.getEngineAvailability?.();
+    if (availability) {
+      inputAvailable = availability.isInputAvailable ?? null;
+      outputAvailable = availability.isOutputAvailable ?? null;
+    }
+  } catch {
+    // A diagnostic read must never affect the outcome it is describing.
+  }
+  return `micMuted=${muted};inputAvail=${inputAvailable};outputAvail=${outputAvailable}`;
+}
+
+/**
+ * The native readings, as their own telemetry fields.
+ *
+ * Deliberately not appended to `outcome`: that field is truncated at 96
+ * characters, and the first attempt at this concatenated the native block onto
+ * it, so the diagnostic added to explain `engine=false` was clipped away before
+ * it ever reached the log line reporting the failure.
+ *
+ * The patched native bridge is the only place the ADM's enabled-vs-running
+ * split and WebRTC's own engine-start error are visible. It is absent on
+ * Android and on any binary older than the patch, where this degrades to
+ * `native=unavailable` rather than failing.
+ *
+ * Draining is destructive, so this must be called exactly once per emitted
+ * event or a later event will report an earlier event's native errors.
+ */
+export function readRealtimeAudioNativeFields(): { engineState: string; nativeError: string } {
+  return {
+    engineState: describeNativeAudioEngineState(readNativeAudioEngineState()),
+    nativeError: summarizeNativeAudioEngineLogs(drainNativeAudioEngineLogs())
+  };
+}
+
+/**
+ * Repair passes inside one guard invocation. A CONSTANT, not an option.
+ *
+ * Callers must not be able to buy a green light with more attempts. Camera
+ * startup stops RemoteIO asynchronously and the exact moment varies run to run,
+ * so more than one pass is needed to cover the window - but an engine that is
+ * still dead after three bounded passes is broken, and sweeping it for longer
+ * only converts a fast honest failure into a slow one.
+ */
+const REALTIME_AUDIO_RECOVERY_PASSES = 3;
+
+/** Milliseconds between recovery passes when the caller gives no settle time. */
+const REALTIME_AUDIO_DEFAULT_SETTLE_MS = 400;
+
+/** Where in the Live/call startup sequence a guard invocation was made. */
+export type RealtimeAudioGuardStage =
+  | "session_start"
+  | "room_connected"
+  | "camera_start"
+  | "track_subscribed"
+  | "app_foreground"
+  | "route_change"
+  | "manual_retry"
+  | "unspecified";
+
+export type RealtimeAudioGuardContext = {
+  sessionId?: string;
+  correlationId?: string;
+  roomType?: string;
+  participantRole?: string;
+};
+
+/**
+ * Who this participant is, in terms of what a healthy engine means for them.
+ *
+ * Before this existed, each of the sixteen guard call sites hand-assembled its
+ * own `{ playout, recording, requirePlayout }` triple. That is how the incident's
+ * predecessor happened: one site was relaxed to unblock a host, and because the
+ * relaxation lived at a call site rather than in a named role, nothing said
+ * whether it also applied to viewers or to callers. A role has exactly one
+ * profile, and it is written down once, here.
+ */
+export type RealtimeAudioRole =
+  /** Live host publishing microphone only - no camera, no remote audio yet. */
+  | "HOST_AUDIO_ONLY"
+  /** Live host publishing microphone and camera. */
+  | "HOST_AUDIO_VIDEO"
+  /** Live viewer: renders remote audio, publishes nothing. */
+  | "AUDIENCE"
+  /** One- or two-way call participant: publishes and renders. */
+  | "CALL_PARTICIPANT";
+
+export type RealtimeAudioHealthProfile = {
+  role: RealtimeAudioRole;
+  /** Try to start the render path. */
+  playout: boolean;
+  /** Try to start the capture path. */
+  recording: boolean;
+  /** Whether a down render path is a FAILURE rather than merely not-started. */
+  requirePlayout: boolean;
+  /** Why `requirePlayout` is what it is. Read this before changing one. */
+  rationale: string;
+};
+
+/**
+ * The only place a role's audio health requirements are defined.
+ *
+ * `engineRunning` is required for every profile and is deliberately not a field:
+ * it is the one signal that reflects whether AVAudioEngine is actually running,
+ * and making it configurable would let a silent broadcast be declared healthy.
+ */
+export const REALTIME_AUDIO_HEALTH_PROFILES: Readonly<Record<RealtimeAudioRole, RealtimeAudioHealthProfile>> =
+  Object.freeze({
+    HOST_AUDIO_ONLY: {
+      role: "HOST_AUDIO_ONLY",
+      playout: true,
+      recording: true,
+      requirePlayout: false,
+      rationale:
+        "A host publishes before anyone subscribes, so iOS has no sink to render and the output side is " +
+        "legitimately down. Requiring playout here is a red light no healthy host can turn green. Recording " +
+        "stays required, so a mic that is denied or revoked still fails closed."
+    },
+    HOST_AUDIO_VIDEO: {
+      role: "HOST_AUDIO_VIDEO",
+      playout: true,
+      recording: true,
+      requirePlayout: false,
+      rationale:
+        "Same as HOST_AUDIO_ONLY. Adding the camera does not create a remote audio sink, and camera startup is " +
+        "the transition that stops the record engine - which the required engine and recording checks catch."
+    },
+    AUDIENCE: {
+      role: "AUDIENCE",
+      playout: true,
+      recording: false,
+      requirePlayout: true,
+      rationale:
+        "A viewer exists to hear the broadcast. Playout down means silence, which is the whole failure. A viewer " +
+        "must never be asked to record - that would open a second capture path and steal the session."
+    },
+    CALL_PARTICIPANT: {
+      role: "CALL_PARTICIPANT",
+      playout: true,
+      recording: true,
+      requirePlayout: true,
+      rationale:
+        "In a call there is a remote party from the first moment, so playout down means the user hears nothing. " +
+        "Fail closed on both directions."
+    }
+  });
+
+/**
+ * The guard options for a role.
+ *
+ * Callers pass a role and a stage; they do not get to assemble their own health
+ * requirements. `settleMs`, `reactivateSession` and `context` remain per-call
+ * because they describe the situation, not the definition of health.
+ */
+export function realtimeAudioProfileFor(role: RealtimeAudioRole): RealtimeAudioHealthProfile {
+  return REALTIME_AUDIO_HEALTH_PROFILES[role];
+}
+
+/**
  * Reassert the native WebRTC engine after camera startup.
  *
  * Production CoreAudio evidence showed the failing video path stopping its
@@ -356,12 +554,54 @@ export function inspectRealtimeAudioEngine(audioDeviceModule: RealtimeAudioDevic
  * still reported both microphone publications. A published SID is therefore
  * necessary but not sufficient: the adapter must also prove that the native
  * playout/recording engine is running after the camera transition settles.
+ *
+ * This is the ONLY recovery path. A second, non-throwing "legacy recover"
+ * function used to run immediately before it with the same telemetry context,
+ * which both duplicated every guard line in the device log and split the repair
+ * logic across two places that then disagreed about when to restart a recorder.
  */
 export async function stabilizeRealtimeAudioEngine(
   audioDeviceModule: RealtimeAudioDeviceModule | null | undefined,
   options: {
+    /**
+     * The participant's role. When given it is AUTHORITATIVE: the profile's
+     * `playout`, `recording` and `requirePlayout` replace whatever the caller
+     * passed, and the role name is carried on every event.
+     *
+     * This exists so a relaxation can never again be made at one call site and
+     * silently not apply, or wrongly apply, to another. If a role's requirements
+     * need to change, they change in `REALTIME_AUDIO_HEALTH_PROFILES` where the
+     * rationale sits next to them - not in whichever screen happens to be failing.
+     */
+    role?: RealtimeAudioRole;
     playout: boolean;
     recording: boolean;
+    /**
+     * Whether a down playout path is a FAILURE, as opposed to something we merely
+     * try to start. Defaults to `playout` so calls keep their fail-closed
+     * behaviour: in a call, playout down means the user cannot hear the other
+     * party, which is a broken call.
+     *
+     * A Live HOST at startup is the case that must set this false. It publishes
+     * before any remote participant is subscribed, so iOS has nothing to render
+     * and AURemoteIO's output side is legitimately not running - `startPlayout()`
+     * is a no-op with no sink. Measured on iPhone (P3r7or, 2026-08-05), three
+     * consecutive broadcasts reported `engine=true;recording=true;playout=false`
+     * and were killed by this guard even though the microphone was live and the
+     * broadcast would have been audible. Requiring playout there is a red light
+     * that no healthy host can ever turn green.
+     *
+     * Recording stays required for publishers, so a genuinely silent broadcast
+     * (mic denied or revoked) still fails closed.
+     */
+    requirePlayout?: boolean;
+    // A `requireEngineRunning` escape hatch was drafted here and deliberately
+    // REMOVED. `engineRunning` is the only signal that reflects whether
+    // AVAudioEngine is actually rendering; `recordingRunning` is an ADM-level
+    // flag that survives the engine dying underneath it. Allowing a publisher
+    // to pass on `recording=true` while `engine=false` would let a silent
+    // broadcast report healthy, which is the exact failure this guard exists
+    // to catch. The engine is never optional. Fix the engine, not the check.
     settleMs?: number;
     /**
      * Re-establish the owner's AVAudioSession configuration when the engine is
@@ -370,20 +610,42 @@ export async function stabilizeRealtimeAudioEngine(
      * silently no-ops. Supplied by the publisher path only.
      */
     reactivateSession?: () => Promise<void>;
-    context?: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string };
+    /**
+     * Where this invocation sits in the startup sequence. Carried on every event
+     * this call emits so two guard runs in one session are distinguishable in a
+     * log; without it the camera-start guard and the room-connected guard were
+     * byte-identical lines and read as one event logged twice.
+     */
+    stage?: RealtimeAudioGuardStage;
+    context?: RealtimeAudioGuardContext;
   }
 ): Promise<RealtimeAudioEngineStatus> {
+  // A role, when supplied, replaces the caller's hand-assembled triple outright.
+  // Merging the two would reintroduce exactly what the profiles exist to prevent:
+  // a call site quietly holding a different definition of "healthy" than the role
+  // it claims to be.
+  const profile = options.role ? realtimeAudioProfileFor(options.role) : null;
+  const wantPlayout = profile ? profile.playout : options.playout;
+  const wantRecording = profile ? profile.recording : options.recording;
+  const requirePlayout = profile ? profile.requirePlayout : options.requirePlayout ?? options.playout;
   const context = options.context || {};
-  emitRealtimeAudioEvent({ name: "audio_engine_guard_started", ...context });
+  const failureStage = options.stage || "unspecified";
+  emitRealtimeAudioEvent({ name: "audio_engine_guard_started", ...context, failureStage });
   if (!audioDeviceModule || Platform.OS !== "ios") {
     const status = inspectRealtimeAudioEngine(audioDeviceModule);
-    emitRealtimeAudioEvent({ name: "audio_engine_guard_completed", ...context, outcome: "not_required" });
+    emitRealtimeAudioEvent({
+      name: "audio_engine_guard_completed",
+      ...context,
+      failureStage,
+      outcome: "not_required"
+    });
     return status;
   }
 
   const enforce = async () => {
     const before = inspectRealtimeAudioEngine(audioDeviceModule);
     const engineStopped = before.engineRunning === false;
+    const native = readNativeAudioEngineState();
 
     // The camera can reconfigure the shared AVAudioSession out from under the
     // WebRTC recorder. Restore the record-capable session first, otherwise the
@@ -392,12 +654,55 @@ export async function stabilizeRealtimeAudioEngine(
       await options.reactivateSession().catch(() => undefined);
     }
 
-    // `startRecording` only resumes an already-initialized WebRTC recorder.
-    // Camera startup can tear the underlying ADM down completely, which is the
-    // physical Live failure captured on iPhone. In that state the SDK's
-    // init-and-start operation must run first; attempting playout or ordinary
-    // recording against the uninitialized engine leaves every status false.
-    if (options.recording && (engineStopped || before.recordingRunning === false)) {
+    // THE FAILING STATE. `recording=true` over `engine=false` is the ADM's
+    // capture path left ENABLED across a dead AVAudioEngine - the flag outlives
+    // the engine, so `isRecording` answers true while nothing is captured and
+    // the broadcast publishes silence.
+    //
+    // Nothing repaired this before: both recovery paths gated on
+    // `recordingRunning === false`, which this state never satisfies, so the
+    // observed six passes performed no work at all. `startRecording()` would
+    // not have helped either - it short-circuits on an ADM that already reports
+    // itself recording. Only an explicit stop, clearing the stale enable, lets
+    // the following init-and-start rebuild the engine.
+    //
+    // The tear-down that must NOT happen is restarting a recorder that is
+    // genuinely capturing. `isStaleRecordingWithoutEngine` is what separates
+    // the two, and it can only be answered by the native bridge: `inputRunning`
+    // true means real capture and is left alone; `inputEnabled` true with
+    // `inputRunning` false is the corpse this branch exists to clear.
+    const staleRecorder = wantRecording && isStaleRecordingWithoutEngine(native);
+    if (staleRecorder) {
+      // Always-prepared mode (native `SetInitRecordingPersistentMode`) is what
+      // makes the stop below a no-op: its entire purpose is to keep the record
+      // path INITIALIZED across a stop so it can be resumed. Leave it on and
+      // `stopRecording()` returns without clearing `inputEnabled`, the next
+      // start short-circuits on an ADM that still answers "already recording",
+      // and the engine is never rebuilt - which is this incident.
+      //
+      // So the lever is lowered for the duration of the repair and put back
+      // exactly as it was found. It is not disabled outright: it is a real
+      // mitigation for the camera-start interruption, and turning it off here
+      // would trade one wedge for the silence it was added to prevent.
+      const alwaysPrepared = readRecordingAlwaysPrepared(audioDeviceModule, native);
+      if (alwaysPrepared === true) {
+        await setRecordingAlwaysPrepared(audioDeviceModule, false);
+      }
+      await audioDeviceModule.stopRecording?.().catch(() => undefined);
+      if (typeof audioDeviceModule.startLocalRecording === "function") {
+        await audioDeviceModule.startLocalRecording().catch(() => undefined);
+      } else {
+        await audioDeviceModule.startRecording?.().catch(() => undefined);
+      }
+      if (alwaysPrepared === true) {
+        await setRecordingAlwaysPrepared(audioDeviceModule, true);
+      }
+    } else if (wantRecording && before.recordingRunning === false) {
+      // `startRecording` only resumes an already-initialized WebRTC recorder.
+      // Camera startup can tear the underlying ADM down completely; in that
+      // state the SDK's init-and-start operation must run first, or playout and
+      // ordinary recording both run against an uninitialized engine and leave
+      // every status false.
       if (engineStopped && typeof audioDeviceModule.startLocalRecording === "function") {
         await audioDeviceModule.startLocalRecording().catch(() => undefined);
       } else {
@@ -406,33 +711,71 @@ export async function stabilizeRealtimeAudioEngine(
     }
 
     const afterRecording = inspectRealtimeAudioEngine(audioDeviceModule);
-    if (options.playout && (afterRecording.engineRunning === false || afterRecording.playoutRunning === false)) {
+    if (wantPlayout && (afterRecording.engineRunning === false || afterRecording.playoutRunning === false)) {
       await audioDeviceModule.startPlayout?.().catch(() => undefined);
     }
   };
 
-  await enforce();
-  const settleMs = Math.max(0, Math.min(Number(options.settleMs ?? 650), 1500));
-  if (settleMs > 0) {
-    await new Promise((resolve) => setTimeout(resolve, settleMs));
-    // Camera initialization can stop RemoteIO asynchronously after its promise
-    // resolves, so the second pass is the one that catches the observed race.
+  // Bounded, fixed, and not caller-tunable. `settleMs` only spaces the passes;
+  // it cannot add one. A guard that could be given more attempts would let a
+  // failing broadcast be retried into a green light, which is the failure mode
+  // this whole guard exists to prevent.
+  const settleMs = Math.max(0, Math.min(Number(options.settleMs ?? REALTIME_AUDIO_DEFAULT_SETTLE_MS), 1500));
+  let status = inspectRealtimeAudioEngine(audioDeviceModule);
+  for (let pass = 1; pass <= REALTIME_AUDIO_RECOVERY_PASSES; pass += 1) {
     await enforce();
+    status = inspectRealtimeAudioEngine(audioDeviceModule);
+    const satisfied =
+      status.engineRunning !== false &&
+      (!wantRecording || status.recordingRunning !== false) &&
+      (!requirePlayout || status.playoutRunning !== false);
+    emitRealtimeAudioEvent({
+      name: "audio_engine_recovery_attempt",
+      ...context,
+      failureStage,
+      recoveryAttempt: pass,
+      outcome:
+        `engine=${status.engineRunning};playout=${status.playoutRunning};` +
+        `recording=${status.recordingRunning};satisfied=${satisfied}`,
+      ...readRealtimeAudioNativeFields()
+    });
+    if (satisfied) break;
+    if (pass < REALTIME_AUDIO_RECOVERY_PASSES && settleMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, settleMs));
+    }
   }
-  const status = inspectRealtimeAudioEngine(audioDeviceModule);
   const failed =
-    (options.playout && status.playoutRunning === false) ||
-    (options.recording && status.recordingRunning === false) ||
-    ((options.playout || options.recording) && status.engineRunning === false);
+    (requirePlayout && status.playoutRunning === false) ||
+    (wantRecording && status.recordingRunning === false) ||
+    ((requirePlayout || wantRecording) && status.engineRunning === false);
   emitRealtimeAudioEvent({
     name: failed ? "audio_engine_guard_failed" : "audio_engine_guard_completed",
     ...context,
-    outcome: `engine=${status.engineRunning};playout=${status.playoutRunning};recording=${status.recordingRunning}`,
+    failureStage,
+    // `required=` records what this call was actually willing to fail on, so a
+    // log line is enough to tell "playout was down and that was fine" apart from
+    // "playout was down and we shipped a silent broadcast anyway". The trailing
+    // availability fields come from the SDK's own view of what iOS is offering,
+    // so a capture can distinguish "no output exists to run" from "the engine
+    // died" - which the three booleans alone cannot.
+    outcome:
+      `engine=${status.engineRunning};playout=${status.playoutRunning};recording=${status.recordingRunning};` +
+      `role=${options.role || "adhoc"};required=playout:${requirePlayout},recording:${wantRecording},engine:true;` +
+      describeRealtimeAudioDiagnostics(audioDeviceModule),
+    ...readRealtimeAudioNativeFields(),
     failureCategory: failed ? "native_engine_not_running" : undefined
   });
   if (failed) {
     const error = new Error("The native real-time audio engine did not remain active.");
-    Object.assign(error, { code: "REALTIME_AUDIO_ENGINE_INACTIVE", status });
+    // `stage` and `role` travel with the error so the screen can say what actually
+    // failed. The Live copy previously said "while the camera started" for every
+    // stage, including failures that happened before the camera was ever touched.
+    Object.assign(error, {
+      code: "REALTIME_AUDIO_ENGINE_INACTIVE",
+      status,
+      stage: failureStage,
+      role: options.role || null
+    });
     throw error;
   }
   return status;
@@ -463,84 +806,64 @@ export async function enableRealtimeRecordingAlwaysPrepared(
 }
 
 /**
- * Proactively restart a torn-down WebRTC record engine WITHOUT touching the
- * shared AVAudioSession.
+ * Whether always-prepared mode is currently on.
  *
- * This is the recovery for the camera-start interruption described above: after
- * the camera settles, re-init and start the recorder ourselves because iOS will
- * never signal that the interruption ended. Unlike stabilizeRealtimeAudioEngine
- * this never reconfigures the audio session (reconfiguring mid-broadcast was
- * observed to disrupt the running WebRTC video pipeline on the legacy publisher
- * path) and never throws - a recovery attempt must not fail a healthy broadcast
- * closed. Returns the observed engine status for logging.
+ * Returns `null`, not `false`, when the answer is unknown - a build without the
+ * lever and a build with it switched off must not be conflated, because only the
+ * first means "there is nothing here to restore". The native state snapshot is
+ * preferred over the ADM getter: it is the same read the stale-recorder verdict
+ * was made from, so the repair cannot act on a newer or older reading than the
+ * decision that triggered it.
  */
-export async function recoverRealtimeRecordingEngine(
+export function readRecordingAlwaysPrepared(
   audioDeviceModule: RealtimeAudioDeviceModule | null | undefined,
-  options?: {
-    /**
-     * Re-activate the shared AVAudioSession when the engine is found stopped.
-     * Device syslog proves the camera transition leaves the session INACTIVE
-     * (`cmsSetIsActive ... going inactive` right after camera startup), so the
-     * recorder cannot be started until the session is activated again. This must
-     * be a plain setActive(true) (LiveKit `startAudioSession`) - NOT a category
-     * reassert, which is what disrupts the running video pipeline.
-     */
-    reactivateSession?: () => Promise<void>;
-    settleMs?: number;
-    passes?: number;
-    context?: { sessionId?: string; correlationId?: string; roomType?: string; participantRole?: string };
+  native: NativeAudioEngineState | null
+): boolean | null {
+  if (native && typeof native.recordingAlwaysPrepared === "boolean") return native.recordingAlwaysPrepared;
+  if (!audioDeviceModule || typeof audioDeviceModule.isRecordingAlwaysPreparedMode !== "function") return null;
+  try {
+    const value = audioDeviceModule.isRecordingAlwaysPreparedMode();
+    return typeof value === "boolean" ? value : null;
+  } catch {
+    return null;
   }
-): Promise<RealtimeAudioEngineStatus> {
-  const context = options?.context || {};
-  emitRealtimeAudioEvent({ name: "audio_engine_guard_started", ...context, outcome: "legacy_recover" });
-  if (!audioDeviceModule || Platform.OS !== "ios") {
-    return inspectRealtimeAudioEngine(audioDeviceModule);
-  }
-
-  const enforce = async () => {
-    const before = inspectRealtimeAudioEngine(audioDeviceModule);
-    if (before.engineRunning === false || before.recordingRunning === false) {
-      // Restore the (now inactive) session before touching the ADM, otherwise
-      // the restart below runs against a session it cannot start into.
-      if (before.engineRunning === false && options?.reactivateSession) {
-        await options.reactivateSession().catch(() => undefined);
-      }
-      // A completely torn-down engine must be re-initialized (init-and-start);
-      // startRecording alone only resumes an already-initialized recorder.
-      if (before.engineRunning === false && typeof audioDeviceModule.startLocalRecording === "function") {
-        await audioDeviceModule.startLocalRecording().catch(() => undefined);
-      } else {
-        await audioDeviceModule.startRecording?.().catch(() => undefined);
-      }
-    }
-    const after = inspectRealtimeAudioEngine(audioDeviceModule);
-    if (after.engineRunning === false || after.playoutRunning === false) {
-      await audioDeviceModule.startPlayout?.().catch(() => undefined);
-    }
-  };
-
-  // Camera startup stops RemoteIO asynchronously (~1s after the camera promise
-  // resolves on iPhone) and the exact moment varies run-to-run, so a single pass
-  // can fire before the teardown. Sweep several passes across the window and stop
-  // as soon as the recorder is confirmed back up.
-  const settleMs = Math.max(0, Math.min(Number(options?.settleMs ?? 400), 1500));
-  const maxPasses = Math.max(1, Math.floor(options?.passes ?? 4));
-  let status = inspectRealtimeAudioEngine(audioDeviceModule);
-  for (let pass = 0; pass < maxPasses; pass += 1) {
-    await enforce();
-    status = inspectRealtimeAudioEngine(audioDeviceModule);
-    if (status.engineRunning !== false && status.recordingRunning !== false && status.playoutRunning !== false) break;
-    if (pass < maxPasses - 1 && settleMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, settleMs));
-    }
-  }
-  emitRealtimeAudioEvent({
-    name: "audio_engine_guard_completed",
-    ...context,
-    outcome: `legacy_recover;engine=${status.engineRunning};playout=${status.playoutRunning};recording=${status.recordingRunning}`
-  });
-  return status;
 }
+
+/**
+ * Move the lever, swallowing every failure.
+ *
+ * Deliberately not `Promise<boolean>`: no caller may branch on whether the lever
+ * moved. Making the repair conditional on it would let a build that lacks the
+ * native method skip the stop-and-restart entirely, and that build is exactly
+ * the one where the stop already works.
+ */
+async function setRecordingAlwaysPrepared(
+  audioDeviceModule: RealtimeAudioDeviceModule,
+  enabled: boolean
+): Promise<void> {
+  if (typeof audioDeviceModule.setRecordingAlwaysPreparedMode !== "function") return;
+  try {
+    await audioDeviceModule.setRecordingAlwaysPreparedMode(enabled);
+  } catch {
+    // The repair proceeds regardless. A lever that will not move is not a
+    // reason to leave a dead engine in place.
+  }
+}
+
+// `recoverRealtimeRecordingEngine` lived here and was DELETED.
+//
+// It ran immediately before `stabilizeRealtimeAudioEngine` on the Live
+// publisher path with an identical telemetry context, so every guard line in
+// the device log appeared twice with no field to tell the two apart - the
+// reported duplicate-event symptom. Worse, the two copies of the repair had
+// drifted: both gated the recorder restart on `recordingRunning === false`, a
+// condition the observed `recording=true;engine=false` failure never meets, so
+// neither of them attempted any repair at all.
+//
+// Both jobs now live in the single bounded loop inside
+// `stabilizeRealtimeAudioEngine`: it emits exactly one guard start and one
+// terminal event per invocation, one `audio_engine_recovery_attempt` per pass,
+// and repairs the stale-recorder state with an explicit stop before restart.
 
 // Internal. Consumed only by PULSE_LIVE_VIDEO_CAPTURE_OPTIONS below; exporting
 // it invited a feature to build its own capture options from the same numbers
