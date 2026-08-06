@@ -1,0 +1,232 @@
+{
+  "head_emissions": [
+    {
+      "line": 1403,
+      "function": "render_ads_landing_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 1636,
+      "function": "scam_shield_scan_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 1653,
+      "function": "legal_money_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 1691,
+      "function": "about_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 1739,
+      "function": "education_shell",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 2190,
+      "function": "reset_pwa_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 6917,
+      "function": "render_dashboard_recovery_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 10729,
+      "function": "private_chat_thread_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 12004,
+      "function": "friendly_method_not_allowed",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 12073,
+      "function": "friendly_internal_error",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 13745,
+      "function": "_verification_admin_shell",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 14292,
+      "function": "admin_page_html",
+      "stylesheets": [
+        "admin_ops_center.css",
+        "pulse_design_system.css",
+        "pulse_mobile_system.css"
+      ],
+      "has_token_layer": false
+    },
+    {
+      "line": 24301,
+      "function": "admin_analytics_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 24741,
+      "function": "public_learn_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 25679,
+      "function": "sports_edge_landing_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 25828,
+      "function": "quote_center_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 25834,
+      "function": "quote_symbol_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 25866,
+      "function": "predictions_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 25875,
+      "function": "predictions_crypto_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 25895,
+      "function": "predictions_crypto_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 26310,
+      "function": "day_signal_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 27177,
+      "function": "watch_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 28856,
+      "function": "arena_page_shell",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 29120,
+      "function": "pulse_roast_battle_preview_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 32699,
+      "function": "simulator_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 33299,
+      "function": "alerts_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 35571,
+      "function": "pulse_page_html",
+      "stylesheets": [
+        "pulse_cinematic_media.css",
+        "pulse_composer_premium.css",
+        "pulse_desktop_feed.css",
+        "pulse_home_os.css",
+        "pulse_reaction_system.css",
+        "pulse_sci_fi_system.css",
+        "pulse_status_system.css",
+        "pulsesoc_promotions.css"
+      ],
+      "has_token_layer": false
+    },
+    {
+      "line": 38984,
+      "function": "pulse_section_shell",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 41661,
+      "function": "pulse_social_shell",
+      "stylesheets": [
+        "pulse_cinematic_media.css",
+        "pulse_design_system.css",
+        "pulse_home_os.css",
+        "pulse_mobile_system.css",
+        "pulse_reaction_system.css",
+        "pulse_reels_experience.css"
+      ],
+      "has_token_layer": false
+    },
+    {
+      "line": 76742,
+      "function": "pulse_post_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 86408,
+      "function": "trust_public_page",
+      "stylesheets": [],
+      "has_token_layer": false
+    },
+    {
+      "line": 109657,
+      "function": "admin_dashboard_route",
+      "stylesheets": [],
+      "has_token_layer": false
+    }
+  ],
+  "shell_builders": [
+    "_verification_admin_shell",
+    "arena_page_shell",
+    "dashboard_account_shell",
+    "dashboard_ads_shell",
+    "dashboard_ai_shell",
+    "dashboard_creator_shell",
+    "dashboard_crypto_shell",
+    "dashboard_economy_shell",
+    "dashboard_intelligence_shell",
+    "dashboard_network_shell",
+    "dashboard_system_shell",
+    "education_shell",
+    "pulse_section_shell",
+    "pulse_social_shell"
+  ]
+}

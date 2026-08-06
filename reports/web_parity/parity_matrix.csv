@@ -1,0 +1,17 @@
+product_area,backend_api_routes,native_endpoints_used,web_page_routes,classification
+pulse,324,117,120,PARTIAL
+business-os,199,10,0,BACKEND+NATIVE_ONLY
+arena,120,0,38,WEB_ONLY
+marketplace,0,0,2,WEB_ONLY
+messages,17,4,10,PARTIAL
+reels,12,0,0,BACKEND_ONLY
+live,6,0,11,WEB_ONLY
+undx,8,0,2,WEB_ONLY
+account,15,14,4,PARTIAL
+payments,8,0,2,WEB_ONLY
+alerts,9,0,1,WEB_ONLY
+dashboard,29,10,40,PARTIAL
+admin,37,0,0,BACKEND_ONLY
+mobile,14,10,0,BACKEND+NATIVE_ONLY
+push,8,2,0,BACKEND+NATIVE_ONLY
+crypto,19,1,2,PARTIAL

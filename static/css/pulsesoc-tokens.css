@@ -1,0 +1,366 @@
+/* =========================================================================
+   PulseSoc — Canonical Web Design Tokens
+   =========================================================================
+   Single source of truth for web visual identity.
+
+   Derived from the native palette at mobile-native/src/theme/colors.ts.
+   Native is the reference for product experience (mission Primary Principle),
+   so every colour below is the NATIVE value, not the previous web value.
+
+   Why this file exists
+   --------------------
+   Audit at bot.py md5 522b9419 found:
+     - 23 native semantic tokens
+     - 159 CSS custom-property names across 19 web stylesheets
+     - 45 of those names defined with CONFLICTING values in different files
+       (e.g. --bg is #020711, #030811 and #050b14 depending on which
+        stylesheet wins the cascade)
+     - 0 native tokens matched their nearest web equivalent exactly
+
+   See reports/web_parity/token_drift.json for the full per-token delta.
+
+   How to use
+   ----------
+   1. Load this file FIRST, before any other stylesheet.
+   2. New markup: use the semantic tokens in section 2.
+   3. Legacy markup: section 5 re-points the old variable names at these
+      tokens, so existing pages converge without being edited. That matters
+      because 151 page routes build HTML inline inside bot.py and cannot be
+      restyled by touching a template.
+
+   Do not add a raw hex value to any other stylesheet. Add a token here.
+   ========================================================================= */
+
+:root {
+  color-scheme: dark;
+
+  /* ---------------------------------------------------------------------
+     1. PRIMITIVES — the native palette, verbatim.
+     Never reference these directly in a component. Use section 2.
+     Source: mobile-native/src/theme/colors.ts
+     --------------------------------------------------------------------- */
+  --pulse-palette-background:     #050910;
+  --pulse-palette-surface:        #0b141c;
+  --pulse-palette-surface-raised: #111f2a;
+  --pulse-palette-text:           #f4f7fb;
+  --pulse-palette-muted:          #9aa8b7;
+  --pulse-palette-accent:         #32e6b3;
+  --pulse-palette-accent-strong:  #61d8ff;
+  --pulse-palette-warning:        #f3c461;
+  --pulse-palette-danger:         #ff5f7e;
+  --pulse-palette-border:         #203746;
+  --pulse-palette-intelligence:   #9f7cff;
+  --pulse-palette-creator:        #42e7d4;
+  --pulse-palette-economy:        #f6c85d;
+  --pulse-palette-safety:         #3ff0a0;
+  --pulse-palette-crypto:         #62e0ff;
+  --pulse-palette-disabled:       #51606c;
+  --pulse-palette-focus:          #8df7ff;
+
+  --pulse-palette-glass:          rgba(11, 24, 34, 0.82);
+  --pulse-palette-glass-strong:   rgba(15, 36, 50, 0.94);
+  --pulse-palette-signal-dim:     rgba(50, 230, 179, 0.12);
+  --pulse-palette-signal-soft:    rgba(97, 216, 255, 0.12);
+  --pulse-palette-danger-soft:    rgba(255, 95, 126, 0.14);
+  --pulse-palette-warning-soft:   rgba(243, 196, 97, 0.14);
+
+  /* ---------------------------------------------------------------------
+     2. SEMANTIC TOKENS — what components consume.
+     Names follow the shared vocabulary in the mission brief so web and
+     native can converge on one dictionary.
+     --------------------------------------------------------------------- */
+
+  /* surface */
+  --surface-primary:     var(--pulse-palette-background);
+  --surface-raised:      var(--pulse-palette-surface);
+  --surface-elevated:    var(--pulse-palette-surface-raised);
+  --surface-overlay:     var(--pulse-palette-glass);
+  --surface-overlay-strong: var(--pulse-palette-glass-strong);
+  --surface-inset:       rgba(5, 9, 16, 0.6);
+
+  /* text */
+  --text-primary:        var(--pulse-palette-text);
+  --text-secondary:      var(--pulse-palette-muted);
+  --text-disabled:       var(--pulse-palette-disabled);
+  --text-on-action:      #04121a;          /* reads on accent fills */
+  --text-inverse:        var(--pulse-palette-background);
+
+  /* action */
+  --action-primary:      var(--pulse-palette-accent);
+  --action-primary-hover:#4af0c2;
+  --action-secondary:    var(--pulse-palette-accent-strong);
+  --action-destructive:  var(--pulse-palette-danger);
+  --action-disabled:     var(--pulse-palette-disabled);
+  --action-ghost-bg:     var(--pulse-palette-signal-dim);
+
+  /* status */
+  --status-success:      var(--pulse-palette-safety);
+  --status-warning:      var(--pulse-palette-warning);
+  --status-error:        var(--pulse-palette-danger);
+  --status-info:         var(--pulse-palette-accent-strong);
+  --status-neutral:      var(--pulse-palette-muted);
+  --status-success-bg:   var(--pulse-palette-signal-dim);
+  --status-warning-bg:   var(--pulse-palette-warning-soft);
+  --status-error-bg:     var(--pulse-palette-danger-soft);
+  --status-info-bg:      var(--pulse-palette-signal-soft);
+
+  /* domain accents — these carry product meaning, keep them distinct */
+  --domain-intelligence: var(--pulse-palette-intelligence);
+  --domain-creator:      var(--pulse-palette-creator);
+  --domain-economy:      var(--pulse-palette-economy);
+  --domain-safety:       var(--pulse-palette-safety);
+  --domain-crypto:       var(--pulse-palette-crypto);
+
+  /* border */
+  --border-subtle:       var(--pulse-palette-border);
+  --border-strong:       #2e4d60;
+  --border-focus:        var(--pulse-palette-focus);
+  --border-transparent:  rgba(244, 247, 251, 0.08);
+
+  /* ---------------------------------------------------------------------
+     3. SCALE — spacing, radius, type, elevation, motion, z-index.
+     Web keeps a wider spacing scale than native on purpose: desktop
+     ergonomics, per the mission's "do not force mobile-width layouts".
+     --------------------------------------------------------------------- */
+
+  --spacing-2xs: 4px;
+  --spacing-xs:  8px;
+  --spacing-sm:  12px;
+  --spacing-md:  16px;
+  --spacing-lg:  24px;
+  --spacing-xl:  32px;
+  --spacing-2xl: 48px;
+  --spacing-section: 64px;          /* desktop-only rhythm */
+
+  --radius-xs:   6px;
+  --radius-sm:   10px;
+  --radius-card: 16px;              /* matches legacy --pulse-radius */
+  --radius-lg:   24px;
+  --radius-pill: 999px;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter,
+               Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  --font-size-xs:   12px;
+  --font-size-sm:   14px;
+  --font-size-base: 16px;
+  --font-size-lg:   18px;
+  --font-size-xl:   22px;
+  --font-size-2xl:  28px;
+  --font-size-3xl:  36px;
+
+  --font-weight-regular: 400;
+  --font-weight-medium:  500;
+  --font-weight-bold:    700;
+
+  --line-height-tight: 1.25;
+  --line-height-base:  1.5;
+  --line-height-loose: 1.7;
+
+  --elevation-card:    0 12px 32px rgba(0, 0, 0, 0.24);
+  --elevation-overlay: 0 24px 80px rgba(0, 0, 0, 0.28);
+  --elevation-glow:    0 0 42px rgba(50, 230, 179, 0.12);
+
+  --motion-fast:   120ms;
+  --motion-base:   200ms;
+  --motion-slow:   320ms;
+  --motion-ease:   cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --touch-target-min: 44px;         /* WCAG 2.5.5 / native parity */
+
+  --z-nav:     50;
+  --z-fab:     70;
+  --z-overlay: 900;
+  --z-modal:   1000;
+  --z-toast:   1100;
+}
+
+/* -------------------------------------------------------------------------
+   4. ACCESSIBILITY BASELINES
+   Mission Phase 21: do not hide critical state behind colour alone, and
+   honour reduced motion.
+   ------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 0ms;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --text-secondary: #c4d1dd;      /* lifts 4.1:1 -> ~7:1 on surface */
+    --border-subtle:  #3d5f74;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   5. LEGACY COMPATIBILITY ALIASES
+   Re-points the old variable names at canonical tokens.
+
+   This is the load-bearing section. 151 page routes generate HTML inline
+   inside bot.py with hardcoded class names; they cannot be restyled by
+   editing a template. Aliasing lets those pages converge on the native
+   palette without touching a single route handler.
+
+   Each alias below replaced a value that drifted from native. Where a name
+   had conflicting definitions across stylesheets, the conflict is resolved
+   here in favour of the native value.
+
+   Retire an alias only once no stylesheet or inline handler references it.
+   ------------------------------------------------------------------------- */
+
+:root {
+  /* pulse_design_system.css */
+  --pulse-bg:            var(--surface-primary);
+  --pulse-panel:         var(--surface-overlay);
+  --pulse-panel-strong:  var(--surface-overlay-strong);
+  --pulse-line:          var(--border-subtle);
+  --pulse-line-strong:   var(--border-strong);
+  --pulse-text:          var(--text-primary);
+  --pulse-muted:         var(--text-secondary);
+  --pulse-cyan:          var(--action-secondary);
+  --pulse-green:         var(--action-primary);
+  --pulse-gold:          var(--status-warning);
+  --pulse-violet:        var(--domain-intelligence);
+  --pulse-danger:        var(--status-error);
+  --pulse-radius:        var(--radius-card);
+  --pulse-radius-lg:     var(--radius-lg);
+  --pulse-shadow:        var(--elevation-overlay);
+  --pulse-glow:          var(--elevation-glow);
+
+  /* short names used across templates/*.html — 51 uses of --muted,
+     44 of --text, 39 of --cyan, 35 of --line, 26 of --green */
+  --bg:      var(--surface-primary);
+  --bg-2:    var(--surface-raised);
+  --panel:   var(--surface-raised);
+  --panel-2: var(--surface-elevated);
+  --panel-glass: var(--surface-overlay);
+  --text:    var(--text-primary);
+  --muted:   var(--text-secondary);
+  --quiet:   var(--text-disabled);
+  --line:    var(--border-subtle);
+  --cyan:    var(--action-secondary);
+  --green:   var(--action-primary);
+  --emerald: var(--status-success);
+  --gold:    var(--status-warning);
+  --purple:  var(--domain-intelligence);
+  --danger:  var(--status-error);
+  --red:     var(--status-error);
+  --accent:  var(--action-primary);
+  --hot:     var(--status-success-bg);
+  --shadow:  var(--elevation-card);
+  --glow-a:  var(--elevation-glow);
+  --glow-b:  var(--status-info-bg);
+
+  /* messenger / control surface family — had the worst conflicts:
+     --control-accent was #49ffc8, #4f8cff and #5ff4ff simultaneously */
+  --control-accent:   var(--action-primary);
+  --control-accent-2: var(--action-secondary);
+  --control-accent-3: var(--domain-intelligence);
+  --control-warm:     var(--status-warning);
+  --control-theme-border: var(--border-subtle);
+  --control-sent-border:  var(--status-success);
+  --control-density-gap:  var(--spacing-sm);
+
+  /* semantic strays found by scripts/web_parity/verify_tokens.py */
+  --line-strong: var(--border-strong);
+  --warn:        var(--status-warning);
+  --soft:        var(--surface-inset);
+  --media-backdrop: var(--surface-overlay-strong);
+
+  /* safe-area insets — mobile web parity with native notch handling.
+     Previously declared per-stylesheet; centralised so every surface
+     inherits the same value. */
+  --safe-top:    env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left:   env(safe-area-inset-left, 0px);
+  --safe-right:  env(safe-area-inset-right, 0px);
+
+  /* shell geometry — consumed by the global web shell */
+  --topbar-h:  60px;
+  --sidebar-w: 264px;
+  --bottom-nav-h: 76px;              /* was --pulse-bottom-nav-height */
+  --pulse-bottom-nav-height: var(--bottom-nav-h);
+
+  /* z-index family */
+  --z-pulse-nav:     var(--z-nav);
+  --z-pulse-fab:     var(--z-fab);
+  --z-pulse-overlay: var(--z-overlay);
+  --z-pulse-modal:   var(--z-modal);
+  --z-pulse-toast:   var(--z-toast);
+}
+
+/* -------------------------------------------------------------------------
+   6. PRIMITIVE UTILITIES
+   Minimal, non-invasive. Deliberately not a framework — the goal is to give
+   inline-HTML handlers in bot.py something semantic to emit instead of
+   hardcoded style attributes.
+   ------------------------------------------------------------------------- */
+
+.pulse-surface {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-card);
+}
+
+.pulse-text-primary   { color: var(--text-primary); }
+.pulse-text-secondary { color: var(--text-secondary); }
+
+.pulse-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  padding: var(--spacing-2xs) var(--spacing-xs);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Status carries a text label as well as colour — never colour alone. */
+.pulse-status--success { background: var(--status-success-bg); color: var(--status-success); }
+.pulse-status--warning { background: var(--status-warning-bg); color: var(--status-warning); }
+.pulse-status--error   { background: var(--status-error-bg);   color: var(--status-error); }
+.pulse-status--info    { background: var(--status-info-bg);    color: var(--status-info); }
+
+.pulse-action {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--spacing-md);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-ease);
+}
+
+.pulse-action--primary     { background: var(--action-primary); color: var(--text-on-action); }
+.pulse-action--primary:hover { background: var(--action-primary-hover); }
+.pulse-action--secondary   { background: transparent; border-color: var(--border-subtle); color: var(--text-primary); }
+.pulse-action--destructive { background: var(--action-destructive); color: var(--text-on-action); }
+
+.pulse-action:disabled,
+.pulse-action[aria-disabled="true"] {
+  background: var(--action-disabled);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.pulse-skip-link {
+  position: absolute;
+  left: -9999px;
+  z-index: var(--z-toast);
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+}
+.pulse-skip-link:focus { left: var(--spacing-md); top: var(--spacing-md); }

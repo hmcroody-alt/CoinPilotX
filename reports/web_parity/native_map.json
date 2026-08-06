@@ -1,0 +1,2006 @@
+{
+  "screens": {
+    "SavedScreen": {
+      "file": "mobile-native/src/screens/SavedScreen.tsx",
+      "api_modules": [
+        "saved"
+      ],
+      "endpoints": [
+        "/api/pulse/saved",
+        "/api/pulse/saved/${itemId}",
+        "/api/pulse/saved/${itemId}/move",
+        "/api/pulse/saved/collections",
+        "/api/pulse/saved/collections/${collectionId}"
+      ],
+      "nav_names": [
+        "Saved"
+      ]
+    },
+    "NewChatScreen": {
+      "file": "mobile-native/src/screens/NewChatScreen.tsx",
+      "api_modules": [
+        "messenger",
+        "pulseApi"
+      ],
+      "endpoints": [
+        "/api/messages/media/${attachmentId}/download",
+        "/api/messages/media/complete",
+        "/api/messages/media/init",
+        "/api/messages/media/upload",
+        "/api/mobile/auth/",
+        "/api/pulse-ai/actions/cancel",
+        "/api/pulse-ai/actions/confirm",
+        "/api/pulse-ai/message",
+        "/api/pulse/communications/v2",
+        "/api/pulse/mobile/auth/"
+      ],
+      "nav_names": [
+        "NewChat"
+      ]
+    },
+    "ReelsScreen": {
+      "file": "mobile-native/src/screens/ReelsScreen.tsx",
+      "api_modules": [
+        "config",
+        "deleteErrors",
+        "feed",
+        "live",
+        "profileTarget",
+        "pulseApi",
+        "reels"
+      ],
+      "endpoints": [
+        "/api/mobile/auth/",
+        "/api/pulse/follows/toggle",
+        "/api/pulse/live/${liveId}/chat",
+        "/api/pulse/live/${liveId}/chat/${messageId}/${action}",
+        "/api/pulse/live/${liveId}/end",
+        "/api/pulse/live/${liveId}/guests/${guestId}/${action}",
+        "/api/pulse/live/${liveId}/guests/${guestId}/publish-complete",
+        "/api/pulse/live/${liveId}/join",
+        "/api/pulse/live/${liveId}/join-request",
+        "/api/pulse/live/${liveId}/join-requests",
+        "/api/pulse/live/${liveId}/join-requests/${requestId}/${action}",
+        "/api/pulse/live/${liveId}/join-requests/${requestId}/cancel",
+        "/api/pulse/live/${liveId}/join-status",
+        "/api/pulse/live/${liveId}/livekit/token",
+        "/api/pulse/live/${liveId}/native-publish",
+        "/api/pulse/live/${liveId}/react",
+        "/api/pulse/live/${liveId}/state",
+        "/api/pulse/live/start",
+        "/api/pulse/mobile/auth/",
+        "/api/pulse/posts",
+        "/api/pulse/posts/${postId}",
+        "/api/pulse/posts/${postId}/comments",
+        "/api/pulse/posts/${postId}/comments${query}",
+        "/api/pulse/posts/${postId}/hide",
+        "/api/pulse/posts/${postId}/react",
+        "/api/pulse/posts/${postId}/repost",
+        "/api/pulse/reels/${reelId}",
+        "/api/pulse/reels/${reelId}/comments",
+        "/api/pulse/reels/${reelId}/follow-creator",
+        "/api/pulse/reels/${reelId}/not-interested",
+        "/api/pulse/reels/${reelId}/react",
+        "/api/pulse/reels/${reelId}/repost",
+        "/api/pulse/reels/${reelId}/share",
+        "/api/pulse/reels/${reelId}/view",
+        "/api/pulse/reels/comments/${commentId}",
+        "/api/pulse/reels/comments/${commentId}/react",
+        "/api/pulse/reels/create",
+        "/api/pulse/reels/feed",
+        "/api/pulse/report",
+        "/api/pulse/users/mute"
+      ],
+      "nav_names": [
+        "ReelDetail",
+        "Reels"
+      ]
+    },
+    "LanguageSettingsScreen": {
+      "file": "mobile-native/src/screens/settings/LanguageSettingsScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "LanguageSettings"
+      ]
+    },
+    "AppearanceSettingsScreen": {
+      "file": "mobile-native/src/screens/settings/AppearanceSettingsScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "AppearanceSettings"
+      ]
+    },
+    "RelationshipListScreen": {
+      "file": "mobile-native/src/screens/settings/RelationshipListScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": []
+    },
+    "MutedUsersScreen": {
+      "file": "mobile-native/src/screens/settings/MutedUsersScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "MutedUsers"
+      ]
+    },
+    "SecuritySettingsScreen": {
+      "file": "mobile-native/src/screens/settings/SecuritySettingsScreen.tsx",
+      "api_modules": [
+        "account",
+        "auth"
+      ],
+      "endpoints": [
+        "/api/account/2fa/disable",
+        "/api/account/2fa/enable",
+        "/api/account/language",
+        "/api/account/reauthenticate",
+        "/api/account/recovery-codes/generate",
+        "/api/account/region-preferences",
+        "/api/account/security",
+        "/api/account/security-events",
+        "/api/account/sessions/revoke-all",
+        "/api/account/status",
+        "/api/account/trusted-devices",
+        "/api/account/trusted-devices/${deviceId}",
+        "/api/account/verify-email",
+        "/api/account/verify-phone",
+        "/api/dashboard/account/settings",
+        "/api/mobile/auth/change-confirmation-email",
+        "/api/mobile/auth/confirmation-status",
+        "/api/mobile/auth/login",
+        "/api/mobile/auth/logout",
+        "/api/mobile/auth/logout-all",
+        "/api/mobile/auth/recover",
+        "/api/mobile/auth/register",
+        "/api/mobile/auth/resend-confirmation",
+        "/api/mobile/auth/session"
+      ],
+      "nav_names": [
+        "SecuritySettings"
+      ]
+    },
+    "NotificationSettingsScreen": {
+      "file": "mobile-native/src/screens/settings/NotificationSettingsScreen.tsx",
+      "api_modules": [
+        "push"
+      ],
+      "endpoints": [
+        "/api/push/subscribe",
+        "/api/push/unsubscribe"
+      ],
+      "nav_names": [
+        "NotificationSettings"
+      ]
+    },
+    "AboutSettingsScreen": {
+      "file": "mobile-native/src/screens/settings/AboutSettingsScreen.tsx",
+      "api_modules": [
+        "config"
+      ],
+      "endpoints": [],
+      "nav_names": [
+        "AboutSettings"
+      ]
+    },
+    "BlockedUsersScreen": {
+      "file": "mobile-native/src/screens/settings/BlockedUsersScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "BlockedUsers"
+      ]
+    },
+    "DeveloperSettingsScreen": {
+      "file": "mobile-native/src/screens/settings/DeveloperSettingsScreen.tsx",
+      "api_modules": [
+        "config"
+      ],
+      "endpoints": [],
+      "nav_names": []
+    },
+    "LegalSettingsScreen": {
+      "file": "mobile-native/src/screens/settings/LegalSettingsScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "LegalSettings"
+      ]
+    },
+    "PrivacySettingsScreen": {
+      "file": "mobile-native/src/screens/settings/PrivacySettingsScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "PrivacySettings"
+      ]
+    },
+    "DataPrivacySettingsScreen": {
+      "file": "mobile-native/src/screens/settings/DataPrivacySettingsScreen.tsx",
+      "api_modules": [
+        "pulseApi"
+      ],
+      "endpoints": [
+        "/api/mobile/auth/",
+        "/api/pulse/mobile/auth/",
+        "/api/pulse/mobile/settings/data-export",
+        "/api/pulse/mobile/settings/delete-account"
+      ],
+      "nav_names": [
+        "DataPrivacySettings"
+      ]
+    },
+    "AccessibilitySettingsScreen": {
+      "file": "mobile-native/src/screens/settings/AccessibilitySettingsScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "AccessibilitySettings"
+      ]
+    },
+    "SessionsDevicesScreen": {
+      "file": "mobile-native/src/screens/settings/SessionsDevicesScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "SessionsDevices"
+      ]
+    },
+    "HelpSettingsScreen": {
+      "file": "mobile-native/src/screens/settings/HelpSettingsScreen.tsx",
+      "api_modules": [
+        "config",
+        "support"
+      ],
+      "endpoints": [
+        "/api/pulse/block",
+        "/api/pulse/report",
+        "/api/scam-shield/scan",
+        "/api/security/report",
+        "/api/support/ticket"
+      ],
+      "nav_names": [
+        "HelpSettings"
+      ]
+    },
+    "StorageSettingsScreen": {
+      "file": "mobile-native/src/screens/settings/StorageSettingsScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "StorageSettings"
+      ]
+    },
+    "PermissionsSettingsScreen": {
+      "file": "mobile-native/src/screens/settings/PermissionsSettingsScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "PermissionsSettings"
+      ]
+    },
+    "EventsManagerScreen": {
+      "file": "mobile-native/src/screens/EventsManagerScreen.tsx",
+      "api_modules": [
+        "eventsData",
+        "eventsManager"
+      ],
+      "endpoints": [],
+      "nav_names": []
+    },
+    "BusinessOsInsightsScreen": {
+      "file": "mobile-native/src/screens/BusinessOsInsightsScreen.tsx",
+      "api_modules": [
+        "insightsDashboard",
+        "insightsRules",
+        "stateLanguage"
+      ],
+      "endpoints": [],
+      "nav_names": []
+    },
+    "ActivityInboxScreen": {
+      "file": "mobile-native/src/screens/ActivityInboxScreen.tsx",
+      "api_modules": [
+        "activity"
+      ],
+      "endpoints": [],
+      "nav_names": [
+        "ActivityInbox",
+        "ActivityInboxLegacyInbox",
+        "ActivityInboxWebActivity",
+        "ActivityInboxWebInbox",
+        "Notifications"
+      ]
+    },
+    "MusicScreen": {
+      "file": "mobile-native/src/screens/MusicScreen.tsx",
+      "api_modules": [
+        "music",
+        "profile"
+      ],
+      "endpoints": [
+        "/api/pulse/follows/toggle",
+        "/api/pulse/music/upload",
+        "/api/pulse/premium/profile-theme",
+        "/api/pulse/profile/avatar",
+        "/api/pulse/profile/avatar/remove",
+        "/api/pulse/profile/cover",
+        "/api/pulse/profile/cover/remove",
+        "/api/pulse/profile/me",
+        "/api/pulse/profile/update"
+      ],
+      "nav_names": [
+        "Music"
+      ]
+    },
+    "AccountRecoveryScreen": {
+      "file": "mobile-native/src/screens/AccountRecoveryScreen.tsx",
+      "api_modules": [
+        "auth"
+      ],
+      "endpoints": [
+        "/api/mobile/auth/change-confirmation-email",
+        "/api/mobile/auth/confirmation-status",
+        "/api/mobile/auth/login",
+        "/api/mobile/auth/logout",
+        "/api/mobile/auth/logout-all",
+        "/api/mobile/auth/recover",
+        "/api/mobile/auth/register",
+        "/api/mobile/auth/resend-confirmation",
+        "/api/mobile/auth/session"
+      ],
+      "nav_names": [
+        "AccountRecovery"
+      ]
+    },
+    "PremiumScreen": {
+      "file": "mobile-native/src/screens/PremiumScreen.tsx",
+      "api_modules": [
+        "config",
+        "premium"
+      ],
+      "endpoints": [
+        "/api/dashboard/economy/state",
+        "/api/premium/billing-portal",
+        "/api/premium/checkout",
+        "/api/premium/status"
+      ],
+      "nav_names": [
+        "Premium"
+      ]
+    },
+    "ContentPreviewScreen": {
+      "file": "mobile-native/src/screens/ContentPreviewScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "ContentPreview"
+      ]
+    },
+    "GroupsScreen": {
+      "file": "mobile-native/src/screens/GroupsScreen.tsx",
+      "api_modules": [
+        "groups"
+      ],
+      "endpoints": [
+        "/api/pulse/communications/rooms"
+      ],
+      "nav_names": [
+        "GroupDetail",
+        "Groups"
+      ]
+    },
+    "ProfileEditScreen": {
+      "file": "mobile-native/src/screens/ProfileEditScreen.tsx",
+      "api_modules": [
+        "profile"
+      ],
+      "endpoints": [
+        "/api/pulse/follows/toggle",
+        "/api/pulse/premium/profile-theme",
+        "/api/pulse/profile/avatar",
+        "/api/pulse/profile/avatar/remove",
+        "/api/pulse/profile/cover",
+        "/api/pulse/profile/cover/remove",
+        "/api/pulse/profile/me",
+        "/api/pulse/profile/update"
+      ],
+      "nav_names": [
+        "ProfileEdit"
+      ]
+    },
+    "StatusScreen": {
+      "file": "mobile-native/src/screens/StatusScreen.tsx",
+      "api_modules": [
+        "feed",
+        "profileTarget",
+        "status",
+        "support"
+      ],
+      "endpoints": [
+        "/api/pulse/block",
+        "/api/pulse/follows/toggle",
+        "/api/pulse/posts",
+        "/api/pulse/posts/${postId}",
+        "/api/pulse/posts/${postId}/comments",
+        "/api/pulse/posts/${postId}/comments${query}",
+        "/api/pulse/posts/${postId}/hide",
+        "/api/pulse/posts/${postId}/react",
+        "/api/pulse/posts/${postId}/repost",
+        "/api/pulse/report",
+        "/api/pulse/status",
+        "/api/pulse/status/${statusId}",
+        "/api/pulse/status/${statusId}/react",
+        "/api/pulse/status/${statusId}/reply",
+        "/api/pulse/status/${statusId}/share",
+        "/api/pulse/status/${statusId}/view",
+        "/api/pulse/status/<id>/react",
+        "/api/pulse/status/ai-story",
+        "/api/pulse/users/mute",
+        "/api/scam-shield/scan",
+        "/api/security/report",
+        "/api/support/ticket"
+      ],
+      "nav_names": [
+        "Status",
+        "StatusDetail"
+      ]
+    },
+    "GalacticConstructionScreen": {
+      "file": "mobile-native/src/screens/GalacticConstructionScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": []
+    },
+    "EventsScreen": {
+      "file": "mobile-native/src/screens/EventsScreen.tsx",
+      "api_modules": [
+        "events",
+        "profileTarget"
+      ],
+      "endpoints": [
+        "/api/pulse/live-now"
+      ],
+      "nav_names": [
+        "EventDetail",
+        "Events",
+        "LiveEventCreateGateway",
+        "LiveScheduleGateway"
+      ]
+    },
+    "GrowthCenterScreen": {
+      "file": "mobile-native/src/screens/GrowthCenterScreen.tsx",
+      "api_modules": [
+        "growth",
+        "premium"
+      ],
+      "endpoints": [
+        "/api/dashboard/economy/state",
+        "/api/premium/billing-portal",
+        "/api/premium/checkout",
+        "/api/premium/status",
+        "/api/pulse/growth"
+      ],
+      "nav_names": [
+        "GrowthCenter"
+      ]
+    },
+    "StoreDashboardScreen": {
+      "file": "mobile-native/src/screens/StoreDashboardScreen.tsx",
+      "api_modules": [
+        "storeDashboard"
+      ],
+      "endpoints": [],
+      "nav_names": []
+    },
+    "UserDashboardScreen": {
+      "file": "mobile-native/src/screens/UserDashboardScreen.tsx",
+      "api_modules": [
+        "dashboard"
+      ],
+      "endpoints": [],
+      "nav_names": [
+        "Dashboard",
+        "UserDashboard",
+        "UserDashboardWeb"
+      ]
+    },
+    "AccountHealthAppealsScreen": {
+      "file": "mobile-native/src/screens/AccountHealthAppealsScreen.tsx",
+      "api_modules": [
+        "accountHealth"
+      ],
+      "endpoints": [
+        "/api/dashboard/account/state"
+      ],
+      "nav_names": [
+        "AccountHealth",
+        "AccountHealthWeb"
+      ]
+    },
+    "SignupScreen": {
+      "file": "mobile-native/src/screens/SignupScreen.tsx",
+      "api_modules": [
+        "pulseApi"
+      ],
+      "endpoints": [
+        "/api/mobile/auth/",
+        "/api/pulse/mobile/auth/"
+      ],
+      "nav_names": [
+        "Signup"
+      ]
+    },
+    "OrdersManagerScreen": {
+      "file": "mobile-native/src/screens/OrdersManagerScreen.tsx",
+      "api_modules": [
+        "ordersDashboard"
+      ],
+      "endpoints": [
+        "/api/pulse/orders",
+        "/api/pulse/payments/seller/orders"
+      ],
+      "nav_names": []
+    },
+    "BusinessProfileScreen": {
+      "file": "mobile-native/src/screens/BusinessProfileScreen.tsx",
+      "api_modules": [
+        "businessProfile",
+        "marketplace",
+        "profile"
+      ],
+      "endpoints": [
+        "/api/pulse/business/profile",
+        "/api/pulse/business/profile/${sellerUserId}",
+        "/api/pulse/business/profile/address",
+        "/api/pulse/business/profile/hours",
+        "/api/pulse/business/profile/link",
+        "/api/pulse/business/profile/preview",
+        "/api/pulse/business/profile/publish",
+        "/api/pulse/business/profile/sync",
+        "/api/pulse/business/profile/vocabularies",
+        "/api/pulse/follows/toggle",
+        "/api/pulse/marketplace/listings/create",
+        "/api/pulse/marketplace/listings/report",
+        "/api/pulse/marketplace/listings/save",
+        "/api/pulse/marketplace/seller/apply",
+        "/api/pulse/marketplace/seller/listings/${listingId}",
+        "/api/pulse/marketplace/seller/listings/${listingId}/${action}",
+        "/api/pulse/messages/start",
+        "/api/pulse/payments/checkout",
+        "/api/pulse/payments/seller/orders",
+        "/api/pulse/payouts/connect",
+        "/api/pulse/premium/profile-theme",
+        "/api/pulse/profile/avatar",
+        "/api/pulse/profile/avatar/remove",
+        "/api/pulse/profile/cover",
+        "/api/pulse/profile/cover/remove",
+        "/api/pulse/profile/me",
+        "/api/pulse/profile/update"
+      ],
+      "nav_names": []
+    },
+    "LiveScreen": {
+      "file": "mobile-native/src/screens/LiveScreen.tsx",
+      "api_modules": [
+        "live",
+        "profileTarget"
+      ],
+      "endpoints": [
+        "/api/pulse/live/${liveId}/chat",
+        "/api/pulse/live/${liveId}/chat/${messageId}/${action}",
+        "/api/pulse/live/${liveId}/end",
+        "/api/pulse/live/${liveId}/guests/${guestId}/${action}",
+        "/api/pulse/live/${liveId}/guests/${guestId}/publish-complete",
+        "/api/pulse/live/${liveId}/join",
+        "/api/pulse/live/${liveId}/join-request",
+        "/api/pulse/live/${liveId}/join-requests",
+        "/api/pulse/live/${liveId}/join-requests/${requestId}/${action}",
+        "/api/pulse/live/${liveId}/join-requests/${requestId}/cancel",
+        "/api/pulse/live/${liveId}/join-status",
+        "/api/pulse/live/${liveId}/livekit/token",
+        "/api/pulse/live/${liveId}/native-publish",
+        "/api/pulse/live/${liveId}/react",
+        "/api/pulse/live/${liveId}/state",
+        "/api/pulse/live/start"
+      ],
+      "nav_names": [
+        "Live",
+        "LiveDetail"
+      ]
+    },
+    "LiveStudioScreen": {
+      "file": "mobile-native/src/screens/LiveStudioScreen.tsx",
+      "api_modules": [
+        "config",
+        "live"
+      ],
+      "endpoints": [
+        "/api/pulse/live/${liveId}/chat",
+        "/api/pulse/live/${liveId}/chat/${messageId}/${action}",
+        "/api/pulse/live/${liveId}/end",
+        "/api/pulse/live/${liveId}/guests/${guestId}/${action}",
+        "/api/pulse/live/${liveId}/guests/${guestId}/publish-complete",
+        "/api/pulse/live/${liveId}/join",
+        "/api/pulse/live/${liveId}/join-request",
+        "/api/pulse/live/${liveId}/join-requests",
+        "/api/pulse/live/${liveId}/join-requests/${requestId}/${action}",
+        "/api/pulse/live/${liveId}/join-requests/${requestId}/cancel",
+        "/api/pulse/live/${liveId}/join-status",
+        "/api/pulse/live/${liveId}/livekit/token",
+        "/api/pulse/live/${liveId}/native-publish",
+        "/api/pulse/live/${liveId}/react",
+        "/api/pulse/live/${liveId}/state",
+        "/api/pulse/live/start"
+      ],
+      "nav_names": [
+        "LiveStudio"
+      ]
+    },
+    "CoursesLearningScreen": {
+      "file": "mobile-native/src/screens/CoursesLearningScreen.tsx",
+      "api_modules": [
+        "config",
+        "learning"
+      ],
+      "endpoints": [
+        "/api/education/categories",
+        "/api/education/lesson/${cleanSlug}",
+        "/api/education/lessons",
+        "/api/education/quiz/submit",
+        "/api/education/tutor"
+      ],
+      "nav_names": [
+        "CourseDetail",
+        "Courses",
+        "LearningLessonDetail",
+        "TeacherDashboardGateway",
+        "TeacherProfileGateway"
+      ]
+    },
+    "ActivityScreen": {
+      "file": "mobile-native/src/screens/ActivityScreen.tsx",
+      "api_modules": [
+        "activityFeed",
+        "notifications"
+      ],
+      "endpoints": [
+        "/api/notification-preferences",
+        "/api/pulse/notifications/${notificationId}",
+        "/api/pulse/notifications/${notificationId}/read",
+        "/api/pulse/notifications/${notificationId}/resolve",
+        "/api/pulse/notifications/preferences",
+        "/api/pulse/notifications/read-all${query}",
+        "/api/pulse/notifications/unread-count"
+      ],
+      "nav_names": []
+    },
+    "SellerListingComposerScreen": {
+      "file": "mobile-native/src/screens/SellerListingComposerScreen.tsx",
+      "api_modules": [
+        "marketplace"
+      ],
+      "endpoints": [
+        "/api/pulse/marketplace/listings/create",
+        "/api/pulse/marketplace/listings/report",
+        "/api/pulse/marketplace/listings/save",
+        "/api/pulse/marketplace/seller/apply",
+        "/api/pulse/marketplace/seller/listings/${listingId}",
+        "/api/pulse/marketplace/seller/listings/${listingId}/${action}",
+        "/api/pulse/messages/start",
+        "/api/pulse/payments/checkout",
+        "/api/pulse/payments/seller/orders",
+        "/api/pulse/payouts/connect"
+      ],
+      "nav_names": []
+    },
+    "ChatScreen": {
+      "file": "mobile-native/src/screens/ChatScreen.tsx",
+      "api_modules": [
+        "config",
+        "messenger",
+        "messengerOrdering",
+        "presence",
+        "presenceSession"
+      ],
+      "endpoints": [
+        "/api/messages/media/${attachmentId}/download",
+        "/api/messages/media/complete",
+        "/api/messages/media/init",
+        "/api/messages/media/upload",
+        "/api/pulse-ai/actions/cancel",
+        "/api/pulse-ai/actions/confirm",
+        "/api/pulse-ai/message",
+        "/api/pulse/communications/v2",
+        "/api/pulse/presence"
+      ],
+      "nav_names": [
+        "Chat"
+      ]
+    },
+    "CallScreen": {
+      "file": "mobile-native/src/screens/CallScreen.tsx",
+      "api_modules": [
+        "calls"
+      ],
+      "endpoints": [
+        "/api/calls/active",
+        "/api/calls/start",
+        "/api/calls/voip-token",
+        "/api/calls/voip-token/revoke"
+      ],
+      "nav_names": [
+        "Call"
+      ]
+    },
+    "PulseQueueScreen": {
+      "file": "mobile-native/src/screens/PulseQueueScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "PulseQueue"
+      ]
+    },
+    "PulseIdentityScreen": {
+      "file": "mobile-native/src/screens/PulseIdentityScreen.tsx",
+      "api_modules": [
+        "profile"
+      ],
+      "endpoints": [
+        "/api/pulse/follows/toggle",
+        "/api/pulse/premium/profile-theme",
+        "/api/pulse/profile/avatar",
+        "/api/pulse/profile/avatar/remove",
+        "/api/pulse/profile/cover",
+        "/api/pulse/profile/cover/remove",
+        "/api/pulse/profile/me",
+        "/api/pulse/profile/update"
+      ],
+      "nav_names": [
+        "PulseIdentity"
+      ]
+    },
+    "ProfilePostViewerScreen": {
+      "file": "mobile-native/src/screens/ProfilePostViewerScreen.tsx",
+      "api_modules": [
+        "feed"
+      ],
+      "endpoints": [
+        "/api/pulse/follows/toggle",
+        "/api/pulse/posts",
+        "/api/pulse/posts/${postId}",
+        "/api/pulse/posts/${postId}/comments",
+        "/api/pulse/posts/${postId}/comments${query}",
+        "/api/pulse/posts/${postId}/hide",
+        "/api/pulse/posts/${postId}/react",
+        "/api/pulse/posts/${postId}/repost",
+        "/api/pulse/users/mute"
+      ],
+      "nav_names": [
+        "ProfilePostViewer"
+      ]
+    },
+    "MarketplaceScreen": {
+      "file": "mobile-native/src/screens/MarketplaceScreen.tsx",
+      "api_modules": [
+        "config",
+        "conversationDomain",
+        "feed",
+        "marketplace",
+        "profileTarget"
+      ],
+      "endpoints": [
+        "/api/pulse/follows/toggle",
+        "/api/pulse/marketplace/listings/create",
+        "/api/pulse/marketplace/listings/report",
+        "/api/pulse/marketplace/listings/save",
+        "/api/pulse/marketplace/seller/apply",
+        "/api/pulse/marketplace/seller/listings/${listingId}",
+        "/api/pulse/marketplace/seller/listings/${listingId}/${action}",
+        "/api/pulse/messages/start",
+        "/api/pulse/payments/checkout",
+        "/api/pulse/payments/seller/orders",
+        "/api/pulse/payouts/connect",
+        "/api/pulse/posts",
+        "/api/pulse/posts/${postId}",
+        "/api/pulse/posts/${postId}/comments",
+        "/api/pulse/posts/${postId}/comments${query}",
+        "/api/pulse/posts/${postId}/hide",
+        "/api/pulse/posts/${postId}/react",
+        "/api/pulse/posts/${postId}/repost",
+        "/api/pulse/users/mute"
+      ],
+      "nav_names": [
+        "Marketplace",
+        "MarketplaceDetail"
+      ]
+    },
+    "BusinessOsPaymentsScreen": {
+      "file": "mobile-native/src/screens/BusinessOsPaymentsScreen.tsx",
+      "api_modules": [
+        "businessOs",
+        "paymentsHub"
+      ],
+      "endpoints": [
+        "/api/pulse/ads/accounts",
+        "/api/pulse/ads/analytics${suffix}",
+        "/api/pulse/ads/campaigns"
+      ],
+      "nav_names": []
+    },
+    "TrustSafetyScreen": {
+      "file": "mobile-native/src/screens/TrustSafetyScreen.tsx",
+      "api_modules": [
+        "support"
+      ],
+      "endpoints": [
+        "/api/pulse/block",
+        "/api/pulse/report",
+        "/api/scam-shield/scan",
+        "/api/security/report",
+        "/api/support/ticket"
+      ],
+      "nav_names": [
+        "ScamShield",
+        "SecurityReport",
+        "TrustCenter",
+        "TrustSafety",
+        "TrustSafetyHelp",
+        "TrustSafetySupport"
+      ]
+    },
+    "MarketplaceManagerScreen": {
+      "file": "mobile-native/src/screens/MarketplaceManagerScreen.tsx",
+      "api_modules": [
+        "marketplaceOffers",
+        "marketplaceScreen",
+        "stateLanguage"
+      ],
+      "endpoints": [
+        "/api/pulse/payments/checkout"
+      ],
+      "nav_names": []
+    },
+    "MessengerScreen": {
+      "file": "mobile-native/src/screens/MessengerScreen.tsx",
+      "api_modules": [
+        "conversationDomain",
+        "messenger",
+        "pulseApi"
+      ],
+      "endpoints": [
+        "/api/messages/media/${attachmentId}/download",
+        "/api/messages/media/complete",
+        "/api/messages/media/init",
+        "/api/messages/media/upload",
+        "/api/mobile/auth/",
+        "/api/pulse-ai/actions/cancel",
+        "/api/pulse-ai/actions/confirm",
+        "/api/pulse-ai/message",
+        "/api/pulse/communications/v2",
+        "/api/pulse/mobile/auth/"
+      ],
+      "nav_names": [
+        "Messenger"
+      ]
+    },
+    "ProfileScreen": {
+      "file": "mobile-native/src/screens/ProfileScreen.tsx",
+      "api_modules": [
+        "deleteErrors",
+        "feed",
+        "messenger",
+        "profile",
+        "profileTarget"
+      ],
+      "endpoints": [
+        "/api/messages/media/${attachmentId}/download",
+        "/api/messages/media/complete",
+        "/api/messages/media/init",
+        "/api/messages/media/upload",
+        "/api/pulse-ai/actions/cancel",
+        "/api/pulse-ai/actions/confirm",
+        "/api/pulse-ai/message",
+        "/api/pulse/communications/v2",
+        "/api/pulse/follows/toggle",
+        "/api/pulse/posts",
+        "/api/pulse/posts/${postId}",
+        "/api/pulse/posts/${postId}/comments",
+        "/api/pulse/posts/${postId}/comments${query}",
+        "/api/pulse/posts/${postId}/hide",
+        "/api/pulse/posts/${postId}/react",
+        "/api/pulse/posts/${postId}/repost",
+        "/api/pulse/premium/profile-theme",
+        "/api/pulse/profile/avatar",
+        "/api/pulse/profile/avatar/remove",
+        "/api/pulse/profile/cover",
+        "/api/pulse/profile/cover/remove",
+        "/api/pulse/profile/me",
+        "/api/pulse/profile/update",
+        "/api/pulse/users/mute"
+      ],
+      "nav_names": [
+        "Profile",
+        "ProfileDetail"
+      ]
+    },
+    "BuyerOrdersScreen": {
+      "file": "mobile-native/src/screens/BuyerOrdersScreen.tsx",
+      "api_modules": [
+        "orders"
+      ],
+      "endpoints": [],
+      "nav_names": [
+        "BuyerOrderDetail",
+        "BuyerOrders",
+        "BuyerOrdersDashboard",
+        "BuyerPurchases"
+      ]
+    },
+    "NotificationCenterScreen": {
+      "file": "mobile-native/src/screens/NotificationCenterScreen.tsx",
+      "api_modules": [
+        "notifications"
+      ],
+      "endpoints": [
+        "/api/notification-preferences",
+        "/api/pulse/notifications/${notificationId}",
+        "/api/pulse/notifications/${notificationId}/read",
+        "/api/pulse/notifications/${notificationId}/resolve",
+        "/api/pulse/notifications/preferences",
+        "/api/pulse/notifications/read-all${query}",
+        "/api/pulse/notifications/unread-count"
+      ],
+      "nav_names": [
+        "NotificationCenter"
+      ]
+    },
+    "IntelligenceCenterScreen": {
+      "file": "mobile-native/src/screens/IntelligenceCenterScreen.tsx",
+      "api_modules": [
+        "intelligence",
+        "notifications",
+        "premium"
+      ],
+      "endpoints": [
+        "/api/crypto/alerts",
+        "/api/dashboard/economy/state",
+        "/api/dashboard/intelligence/state",
+        "/api/notification-preferences",
+        "/api/premium/billing-portal",
+        "/api/premium/checkout",
+        "/api/premium/status",
+        "/api/pulse/notifications/${notificationId}",
+        "/api/pulse/notifications/${notificationId}/read",
+        "/api/pulse/notifications/${notificationId}/resolve",
+        "/api/pulse/notifications/preferences",
+        "/api/pulse/notifications/read-all${query}",
+        "/api/pulse/notifications/unread-count"
+      ],
+      "nav_names": [
+        "IntelligenceCenter"
+      ]
+    },
+    "SearchScreen": {
+      "file": "mobile-native/src/screens/SearchScreen.tsx",
+      "api_modules": [
+        "profileTarget",
+        "search"
+      ],
+      "endpoints": [],
+      "nav_names": [
+        "Search"
+      ]
+    },
+    "UndxActionCenterScreen": {
+      "file": "mobile-native/src/screens/UndxActionCenterScreen.tsx",
+      "api_modules": [
+        "undxActions"
+      ],
+      "endpoints": [
+        "/api/business-os/undx/confirmations",
+        "/api/business-os/undx/emergency-stop",
+        "/api/business-os/undx/marketplace/listings/draft",
+        "/api/business-os/undx/marketplace/listings/publish/execute",
+        "/api/business-os/undx/marketplace/listings/publish/plan",
+        "/api/business-os/undx/permissions",
+        "/api/business-os/undx/policies",
+        "/api/business-os/undx/receipts",
+        "/api/business-os/undx/requests",
+        "/api/business-os/undx/tools"
+      ],
+      "nav_names": [
+        "UndxActionCenter"
+      ]
+    },
+    "DashboardLegacyModuleScreen": {
+      "file": "mobile-native/src/screens/DashboardLegacyModuleScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "DashboardLegacyModule"
+      ]
+    },
+    "CameraStudioScreen": {
+      "file": "mobile-native/src/screens/CameraStudioScreen.tsx",
+      "api_modules": [
+        "camera",
+        "feed",
+        "live",
+        "messenger",
+        "profile",
+        "reels",
+        "status"
+      ],
+      "endpoints": [
+        "/api/messages/media/${attachmentId}/download",
+        "/api/messages/media/complete",
+        "/api/messages/media/init",
+        "/api/messages/media/upload",
+        "/api/pulse-ai/actions/cancel",
+        "/api/pulse-ai/actions/confirm",
+        "/api/pulse-ai/message",
+        "/api/pulse/camera/config",
+        "/api/pulse/camera/config${suffix}",
+        "/api/pulse/camera/preview",
+        "/api/pulse/camera/preview/mark-published",
+        "/api/pulse/communications/v2",
+        "/api/pulse/follows/toggle",
+        "/api/pulse/live/${liveId}/chat",
+        "/api/pulse/live/${liveId}/chat/${messageId}/${action}",
+        "/api/pulse/live/${liveId}/end",
+        "/api/pulse/live/${liveId}/guests/${guestId}/${action}",
+        "/api/pulse/live/${liveId}/guests/${guestId}/publish-complete",
+        "/api/pulse/live/${liveId}/join",
+        "/api/pulse/live/${liveId}/join-request",
+        "/api/pulse/live/${liveId}/join-requests",
+        "/api/pulse/live/${liveId}/join-requests/${requestId}/${action}",
+        "/api/pulse/live/${liveId}/join-requests/${requestId}/cancel",
+        "/api/pulse/live/${liveId}/join-status",
+        "/api/pulse/live/${liveId}/livekit/token",
+        "/api/pulse/live/${liveId}/native-publish",
+        "/api/pulse/live/${liveId}/react",
+        "/api/pulse/live/${liveId}/state",
+        "/api/pulse/live/start",
+        "/api/pulse/media/upload",
+        "/api/pulse/posts",
+        "/api/pulse/posts/${postId}",
+        "/api/pulse/posts/${postId}/comments",
+        "/api/pulse/posts/${postId}/comments${query}",
+        "/api/pulse/posts/${postId}/hide",
+        "/api/pulse/posts/${postId}/react",
+        "/api/pulse/posts/${postId}/repost",
+        "/api/pulse/posts/create-from-camera",
+        "/api/pulse/premium/profile-theme",
+        "/api/pulse/profile/avatar",
+        "/api/pulse/profile/avatar/remove",
+        "/api/pulse/profile/cover",
+        "/api/pulse/profile/cover/remove",
+        "/api/pulse/profile/me",
+        "/api/pulse/profile/update",
+        "/api/pulse/reels/${reelId}",
+        "/api/pulse/reels/${reelId}/comments",
+        "/api/pulse/reels/${reelId}/follow-creator",
+        "/api/pulse/reels/${reelId}/not-interested",
+        "/api/pulse/reels/${reelId}/react",
+        "/api/pulse/reels/${reelId}/repost",
+        "/api/pulse/reels/${reelId}/share",
+        "/api/pulse/reels/${reelId}/view",
+        "/api/pulse/reels/comments/${commentId}",
+        "/api/pulse/reels/comments/${commentId}/react",
+        "/api/pulse/reels/create",
+        "/api/pulse/reels/create-from-camera",
+        "/api/pulse/report",
+        "/api/pulse/status",
+        "/api/pulse/status/${statusId}",
+        "/api/pulse/status/${statusId}/react",
+        "/api/pulse/status/${statusId}/reply",
+        "/api/pulse/status/${statusId}/share",
+        "/api/pulse/status/${statusId}/view",
+        "/api/pulse/status/<id>/react",
+        "/api/pulse/status/ai-story",
+        "/api/pulse/users/mute"
+      ],
+      "nav_names": [
+        "CameraStudio"
+      ]
+    },
+    "SettingsScreen": {
+      "file": "mobile-native/src/screens/SettingsScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "Settings"
+      ]
+    },
+    "ContentPlannerScreen": {
+      "file": "mobile-native/src/screens/ContentPlannerScreen.tsx",
+      "api_modules": [
+        "creator"
+      ],
+      "endpoints": [
+        "/api/dashboard/content-planner/item",
+        "/api/dashboard/creator/state",
+        "/api/pulse/creator-ai/${tool}"
+      ],
+      "nav_names": [
+        "ContentPlanner",
+        "ContentPlannerPulseAlias",
+        "ContentPlannerWeb",
+        "DraftStudio",
+        "DraftStudioPulseAlias",
+        "PostScheduler",
+        "PostSchedulerPulseAlias"
+      ]
+    },
+    "PulseAiScreen": {
+      "file": "mobile-native/src/screens/PulseAiScreen.tsx",
+      "api_modules": [
+        "messenger"
+      ],
+      "endpoints": [
+        "/api/messages/media/${attachmentId}/download",
+        "/api/messages/media/complete",
+        "/api/messages/media/init",
+        "/api/messages/media/upload",
+        "/api/pulse-ai/actions/cancel",
+        "/api/pulse-ai/actions/confirm",
+        "/api/pulse-ai/message",
+        "/api/pulse/communications/v2"
+      ],
+      "nav_names": [
+        "PulseAI"
+      ]
+    },
+    "PulseShareScreen": {
+      "file": "mobile-native/src/screens/PulseShareScreen.tsx",
+      "api_modules": [
+        "messenger"
+      ],
+      "endpoints": [
+        "/api/messages/media/${attachmentId}/download",
+        "/api/messages/media/complete",
+        "/api/messages/media/init",
+        "/api/messages/media/upload",
+        "/api/pulse-ai/actions/cancel",
+        "/api/pulse-ai/actions/confirm",
+        "/api/pulse-ai/message",
+        "/api/pulse/communications/v2"
+      ],
+      "nav_names": [
+        "PulseShare"
+      ]
+    },
+    "AccountCenterScreen": {
+      "file": "mobile-native/src/screens/AccountCenterScreen.tsx",
+      "api_modules": [
+        "account"
+      ],
+      "endpoints": [
+        "/api/account/2fa/disable",
+        "/api/account/2fa/enable",
+        "/api/account/language",
+        "/api/account/reauthenticate",
+        "/api/account/recovery-codes/generate",
+        "/api/account/region-preferences",
+        "/api/account/security",
+        "/api/account/security-events",
+        "/api/account/sessions/revoke-all",
+        "/api/account/status",
+        "/api/account/trusted-devices",
+        "/api/account/trusted-devices/${deviceId}",
+        "/api/account/verify-email",
+        "/api/account/verify-phone",
+        "/api/dashboard/account/settings"
+      ],
+      "nav_names": [
+        "AccountCenter",
+        "AccountDevices",
+        "AccountPrivacy",
+        "AccountSecurity",
+        "AccountSettings",
+        "AccountWebSecurity",
+        "AccountWebSettings"
+      ]
+    },
+    "LiveHostSessionScreen": {
+      "file": "mobile-native/src/screens/LiveHostSessionScreen.tsx",
+      "api_modules": [
+        "live"
+      ],
+      "endpoints": [
+        "/api/pulse/live/${liveId}/chat",
+        "/api/pulse/live/${liveId}/chat/${messageId}/${action}",
+        "/api/pulse/live/${liveId}/end",
+        "/api/pulse/live/${liveId}/guests/${guestId}/${action}",
+        "/api/pulse/live/${liveId}/guests/${guestId}/publish-complete",
+        "/api/pulse/live/${liveId}/join",
+        "/api/pulse/live/${liveId}/join-request",
+        "/api/pulse/live/${liveId}/join-requests",
+        "/api/pulse/live/${liveId}/join-requests/${requestId}/${action}",
+        "/api/pulse/live/${liveId}/join-requests/${requestId}/cancel",
+        "/api/pulse/live/${liveId}/join-status",
+        "/api/pulse/live/${liveId}/livekit/token",
+        "/api/pulse/live/${liveId}/native-publish",
+        "/api/pulse/live/${liveId}/react",
+        "/api/pulse/live/${liveId}/state",
+        "/api/pulse/live/start"
+      ],
+      "nav_names": [
+        "NativeLiveHost"
+      ]
+    },
+    "AlertManagementScreen": {
+      "file": "mobile-native/src/screens/AlertManagementScreen.tsx",
+      "api_modules": [
+        "alerts"
+      ],
+      "endpoints": [
+        "/api/crypto/alerts"
+      ],
+      "nav_names": [
+        "AlertManagement",
+        "CryptoAlertManagement"
+      ]
+    },
+    "VerificationCenterScreen": {
+      "file": "mobile-native/src/screens/VerificationCenterScreen.tsx",
+      "api_modules": [
+        "verification"
+      ],
+      "endpoints": [
+        "/api/dashboard/account/state",
+        "/api/dashboard/account/verification/appeal",
+        "/api/dashboard/account/verification/document",
+        "/api/dashboard/account/verification/request",
+        "/api/premium/status",
+        "/api/pulse/profile/me"
+      ],
+      "nav_names": [
+        "VerificationCenter",
+        "VerificationWebCenter"
+      ]
+    },
+    "ReplayViewerScreen": {
+      "file": "mobile-native/src/screens/ReplayViewerScreen.tsx",
+      "api_modules": [
+        "live"
+      ],
+      "endpoints": [
+        "/api/pulse/live/${liveId}/chat",
+        "/api/pulse/live/${liveId}/chat/${messageId}/${action}",
+        "/api/pulse/live/${liveId}/end",
+        "/api/pulse/live/${liveId}/guests/${guestId}/${action}",
+        "/api/pulse/live/${liveId}/guests/${guestId}/publish-complete",
+        "/api/pulse/live/${liveId}/join",
+        "/api/pulse/live/${liveId}/join-request",
+        "/api/pulse/live/${liveId}/join-requests",
+        "/api/pulse/live/${liveId}/join-requests/${requestId}/${action}",
+        "/api/pulse/live/${liveId}/join-requests/${requestId}/cancel",
+        "/api/pulse/live/${liveId}/join-status",
+        "/api/pulse/live/${liveId}/livekit/token",
+        "/api/pulse/live/${liveId}/native-publish",
+        "/api/pulse/live/${liveId}/react",
+        "/api/pulse/live/${liveId}/state",
+        "/api/pulse/live/start"
+      ],
+      "nav_names": [
+        "ReplayViewer"
+      ]
+    },
+    "SellerApplicationScreen": {
+      "file": "mobile-native/src/screens/SellerApplicationScreen.tsx",
+      "api_modules": [
+        "sellerApplication"
+      ],
+      "endpoints": [
+        "/api/pulse/seller/application",
+        "/api/pulse/seller/application/documents",
+        "/api/pulse/seller/application/documents/${documentId}/remove",
+        "/api/pulse/seller/application/draft",
+        "/api/pulse/seller/application/submit",
+        "/api/pulse/seller/application/withdraw"
+      ],
+      "nav_names": []
+    },
+    "DashboardActionAliasScreen": {
+      "file": "mobile-native/src/screens/DashboardActionAliasScreen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": [
+        "DashboardComposeAlias",
+        "DashboardMusicAlias"
+      ]
+    },
+    "RegionTimeScreen": {
+      "file": "mobile-native/src/screens/RegionTimeScreen.tsx",
+      "api_modules": [
+        "account"
+      ],
+      "endpoints": [
+        "/api/account/2fa/disable",
+        "/api/account/2fa/enable",
+        "/api/account/language",
+        "/api/account/reauthenticate",
+        "/api/account/recovery-codes/generate",
+        "/api/account/region-preferences",
+        "/api/account/security",
+        "/api/account/security-events",
+        "/api/account/sessions/revoke-all",
+        "/api/account/status",
+        "/api/account/trusted-devices",
+        "/api/account/trusted-devices/${deviceId}",
+        "/api/account/verify-email",
+        "/api/account/verify-phone",
+        "/api/dashboard/account/settings"
+      ],
+      "nav_names": [
+        "RegionTime"
+      ]
+    },
+    "HomeScreen": {
+      "file": "mobile-native/src/screens/HomeScreen.tsx",
+      "api_modules": [
+        "ads",
+        "contentOwnership",
+        "deleteErrors",
+        "feed",
+        "profile",
+        "profileTarget",
+        "status"
+      ],
+      "endpoints": [
+        "/api/pulse/ads/click",
+        "/api/pulse/ads/event",
+        "/api/pulse/ads/impression",
+        "/api/pulse/ads/viewability",
+        "/api/pulse/follows/toggle",
+        "/api/pulse/posts",
+        "/api/pulse/posts/${postId}",
+        "/api/pulse/posts/${postId}/comments",
+        "/api/pulse/posts/${postId}/comments${query}",
+        "/api/pulse/posts/${postId}/hide",
+        "/api/pulse/posts/${postId}/react",
+        "/api/pulse/posts/${postId}/repost",
+        "/api/pulse/premium/profile-theme",
+        "/api/pulse/profile/avatar",
+        "/api/pulse/profile/avatar/remove",
+        "/api/pulse/profile/cover",
+        "/api/pulse/profile/cover/remove",
+        "/api/pulse/profile/me",
+        "/api/pulse/profile/update",
+        "/api/pulse/status",
+        "/api/pulse/status/${statusId}",
+        "/api/pulse/status/${statusId}/react",
+        "/api/pulse/status/${statusId}/reply",
+        "/api/pulse/status/${statusId}/share",
+        "/api/pulse/status/${statusId}/view",
+        "/api/pulse/status/<id>/react",
+        "/api/pulse/status/ai-story",
+        "/api/pulse/users/mute"
+      ],
+      "nav_names": []
+    },
+    "AdsManagerScreen": {
+      "file": "mobile-native/src/screens/AdsManagerScreen.tsx",
+      "api_modules": [
+        "adsDashboard",
+        "businessOs",
+        "stateLanguage"
+      ],
+      "endpoints": [
+        "/api/pulse/ads/accounts",
+        "/api/pulse/ads/analytics",
+        "/api/pulse/ads/analytics${suffix}",
+        "/api/pulse/ads/campaigns"
+      ],
+      "nav_names": []
+    },
+    "BusinessBuyerPreviewScreen": {
+      "file": "mobile-native/src/screens/BusinessBuyerPreviewScreen.tsx",
+      "api_modules": [
+        "businessProfile",
+        "stateLanguage"
+      ],
+      "endpoints": [
+        "/api/pulse/business/profile",
+        "/api/pulse/business/profile/${sellerUserId}",
+        "/api/pulse/business/profile/address",
+        "/api/pulse/business/profile/hours",
+        "/api/pulse/business/profile/link",
+        "/api/pulse/business/profile/preview",
+        "/api/pulse/business/profile/publish",
+        "/api/pulse/business/profile/sync",
+        "/api/pulse/business/profile/vocabularies"
+      ],
+      "nav_names": []
+    },
+    "SellerStoreScreen": {
+      "file": "mobile-native/src/screens/SellerStoreScreen.tsx",
+      "api_modules": [
+        "config",
+        "feed",
+        "marketplace"
+      ],
+      "endpoints": [
+        "/api/pulse/follows/toggle",
+        "/api/pulse/marketplace/listings/create",
+        "/api/pulse/marketplace/listings/report",
+        "/api/pulse/marketplace/listings/save",
+        "/api/pulse/marketplace/seller/apply",
+        "/api/pulse/marketplace/seller/listings/${listingId}",
+        "/api/pulse/marketplace/seller/listings/${listingId}/${action}",
+        "/api/pulse/messages/start",
+        "/api/pulse/payments/checkout",
+        "/api/pulse/payments/seller/orders",
+        "/api/pulse/payouts/connect",
+        "/api/pulse/posts",
+        "/api/pulse/posts/${postId}",
+        "/api/pulse/posts/${postId}/comments",
+        "/api/pulse/posts/${postId}/comments${query}",
+        "/api/pulse/posts/${postId}/hide",
+        "/api/pulse/posts/${postId}/react",
+        "/api/pulse/posts/${postId}/repost",
+        "/api/pulse/users/mute"
+      ],
+      "nav_names": []
+    },
+    "BusinessOsScreen": {
+      "file": "mobile-native/src/screens/BusinessOsScreen.tsx",
+      "api_modules": [
+        "businessOs",
+        "marketplace"
+      ],
+      "endpoints": [
+        "/api/pulse/ads/accounts",
+        "/api/pulse/ads/analytics${suffix}",
+        "/api/pulse/ads/campaigns",
+        "/api/pulse/marketplace/listings/create",
+        "/api/pulse/marketplace/listings/report",
+        "/api/pulse/marketplace/listings/save",
+        "/api/pulse/marketplace/seller/apply",
+        "/api/pulse/marketplace/seller/listings/${listingId}",
+        "/api/pulse/marketplace/seller/listings/${listingId}/${action}",
+        "/api/pulse/messages/start",
+        "/api/pulse/payments/checkout",
+        "/api/pulse/payments/seller/orders",
+        "/api/pulse/payouts/connect"
+      ],
+      "nav_names": []
+    },
+    "DashboardModuleDetailScreen": {
+      "file": "mobile-native/src/screens/DashboardModuleDetailScreen.tsx",
+      "api_modules": [
+        "dashboardLiveState"
+      ],
+      "endpoints": [],
+      "nav_names": [
+        "DashboardModuleDetail"
+      ]
+    },
+    "SafetyHubScreen": {
+      "file": "mobile-native/src/screens/SafetyHubScreen.tsx",
+      "api_modules": [
+        "safety"
+      ],
+      "endpoints": [
+        "/api/dashboard/network/state",
+        "/api/pulse/block"
+      ],
+      "nav_names": [
+        "SafetyHub",
+        "SafetyWebHub"
+      ]
+    },
+    "CommerceInboxScreen": {
+      "file": "mobile-native/src/screens/CommerceInboxScreen.tsx",
+      "api_modules": [
+        "commerceInbox",
+        "marketplaceOffers",
+        "messenger"
+      ],
+      "endpoints": [
+        "/api/messages/media/${attachmentId}/download",
+        "/api/messages/media/complete",
+        "/api/messages/media/init",
+        "/api/messages/media/upload",
+        "/api/pulse-ai/actions/cancel",
+        "/api/pulse-ai/actions/confirm",
+        "/api/pulse-ai/message",
+        "/api/pulse/communications/v2",
+        "/api/pulse/communications/v2/conversations",
+        "/api/pulse/payments/checkout"
+      ],
+      "nav_names": []
+    },
+    "NotificationPreferencesScreen": {
+      "file": "mobile-native/src/screens/NotificationPreferencesScreen.tsx",
+      "api_modules": [
+        "notifications",
+        "push"
+      ],
+      "endpoints": [
+        "/api/notification-preferences",
+        "/api/pulse/notifications/${notificationId}",
+        "/api/pulse/notifications/${notificationId}/read",
+        "/api/pulse/notifications/${notificationId}/resolve",
+        "/api/pulse/notifications/preferences",
+        "/api/pulse/notifications/read-all${query}",
+        "/api/pulse/notifications/unread-count",
+        "/api/push/subscribe",
+        "/api/push/unsubscribe"
+      ],
+      "nav_names": [
+        "NotificationPreferences"
+      ]
+    },
+    "CreatorStudioScreen": {
+      "file": "mobile-native/src/screens/CreatorStudioScreen.tsx",
+      "api_modules": [
+        "creator",
+        "premium"
+      ],
+      "endpoints": [
+        "/api/dashboard/content-planner/item",
+        "/api/dashboard/creator/state",
+        "/api/dashboard/economy/state",
+        "/api/premium/billing-portal",
+        "/api/premium/checkout",
+        "/api/premium/status",
+        "/api/pulse/creator-ai/${tool}"
+      ],
+      "nav_names": [
+        "CreatorStudio",
+        "CreatorStudioAlias"
+      ]
+    },
+    "LoginScreen": {
+      "file": "mobile-native/src/screens/LoginScreen.tsx",
+      "api_modules": [
+        "auth",
+        "pulseApi"
+      ],
+      "endpoints": [
+        "/api/mobile/auth/",
+        "/api/mobile/auth/change-confirmation-email",
+        "/api/mobile/auth/confirmation-status",
+        "/api/mobile/auth/login",
+        "/api/mobile/auth/logout",
+        "/api/mobile/auth/logout-all",
+        "/api/mobile/auth/recover",
+        "/api/mobile/auth/register",
+        "/api/mobile/auth/resend-confirmation",
+        "/api/mobile/auth/session",
+        "/api/pulse/mobile/auth/"
+      ],
+      "nav_names": [
+        "Login"
+      ]
+    },
+    "BusinessHubScreen": {
+      "file": "mobile-native/src/screens/BusinessHubScreen.tsx",
+      "api_modules": [
+        "businessHub",
+        "businessOs",
+        "insightsDashboard",
+        "ordersDashboard",
+        "storeDashboard"
+      ],
+      "endpoints": [
+        "/api/pulse/ads/accounts",
+        "/api/pulse/ads/analytics${suffix}",
+        "/api/pulse/ads/campaigns",
+        "/api/pulse/orders",
+        "/api/pulse/payments/seller/orders"
+      ],
+      "nav_names": []
+    },
+    "BusinessOsAdvertisingScreen": {
+      "file": "mobile-native/src/screens/BusinessOsAdvertisingScreen.tsx",
+      "api_modules": [
+        "adsDashboard",
+        "businessOs"
+      ],
+      "endpoints": [
+        "/api/pulse/ads/accounts",
+        "/api/pulse/ads/analytics",
+        "/api/pulse/ads/analytics${suffix}",
+        "/api/pulse/ads/campaigns"
+      ],
+      "nav_names": []
+    },
+    "PostDetailScreen": {
+      "file": "mobile-native/src/screens/PostDetailScreen.tsx",
+      "api_modules": [
+        "contentOwnership",
+        "deleteErrors",
+        "feed",
+        "profile",
+        "profileTarget"
+      ],
+      "endpoints": [
+        "/api/pulse/follows/toggle",
+        "/api/pulse/posts",
+        "/api/pulse/posts/${postId}",
+        "/api/pulse/posts/${postId}/comments",
+        "/api/pulse/posts/${postId}/comments${query}",
+        "/api/pulse/posts/${postId}/hide",
+        "/api/pulse/posts/${postId}/react",
+        "/api/pulse/posts/${postId}/repost",
+        "/api/pulse/premium/profile-theme",
+        "/api/pulse/profile/avatar",
+        "/api/pulse/profile/avatar/remove",
+        "/api/pulse/profile/cover",
+        "/api/pulse/profile/cover/remove",
+        "/api/pulse/profile/me",
+        "/api/pulse/profile/update",
+        "/api/pulse/users/mute"
+      ],
+      "nav_names": [
+        "PostDetail"
+      ]
+    },
+    "Screen": {
+      "file": "mobile-native/src/components/Screen.tsx",
+      "api_modules": [],
+      "endpoints": [],
+      "nav_names": []
+    }
+  },
+  "api_modules": {
+    "account": [
+      "/api/account/2fa/disable",
+      "/api/account/2fa/enable",
+      "/api/account/language",
+      "/api/account/reauthenticate",
+      "/api/account/recovery-codes/generate",
+      "/api/account/region-preferences",
+      "/api/account/security",
+      "/api/account/security-events",
+      "/api/account/sessions/revoke-all",
+      "/api/account/status",
+      "/api/account/trusted-devices",
+      "/api/account/trusted-devices/${deviceId}",
+      "/api/account/verify-email",
+      "/api/account/verify-phone",
+      "/api/dashboard/account/settings"
+    ],
+    "premium": [
+      "/api/dashboard/economy/state",
+      "/api/premium/billing-portal",
+      "/api/premium/checkout",
+      "/api/premium/status"
+    ],
+    "push": [
+      "/api/push/subscribe",
+      "/api/push/unsubscribe"
+    ],
+    "status": [
+      "/api/pulse/status",
+      "/api/pulse/status/${statusId}",
+      "/api/pulse/status/${statusId}/react",
+      "/api/pulse/status/${statusId}/reply",
+      "/api/pulse/status/${statusId}/share",
+      "/api/pulse/status/${statusId}/view",
+      "/api/pulse/status/<id>/react",
+      "/api/pulse/status/ai-story"
+    ],
+    "accountHealth": [
+      "/api/dashboard/account/state"
+    ],
+    "calls": [
+      "/api/calls/active",
+      "/api/calls/start",
+      "/api/calls/voip-token",
+      "/api/calls/voip-token/revoke"
+    ],
+    "businessProfile": [
+      "/api/pulse/business/profile",
+      "/api/pulse/business/profile/${sellerUserId}",
+      "/api/pulse/business/profile/address",
+      "/api/pulse/business/profile/hours",
+      "/api/pulse/business/profile/link",
+      "/api/pulse/business/profile/preview",
+      "/api/pulse/business/profile/publish",
+      "/api/pulse/business/profile/sync",
+      "/api/pulse/business/profile/vocabularies"
+    ],
+    "learning": [
+      "/api/education/categories",
+      "/api/education/lesson/${cleanSlug}",
+      "/api/education/lessons",
+      "/api/education/quiz/submit",
+      "/api/education/tutor"
+    ],
+    "welcome": [
+      "/api/pulse/welcome-dismiss",
+      "/api/pulse/welcome-state"
+    ],
+    "creator": [
+      "/api/dashboard/content-planner/item",
+      "/api/dashboard/creator/state",
+      "/api/pulse/creator-ai/${tool}"
+    ],
+    "safety": [
+      "/api/dashboard/network/state"
+    ],
+    "saved": [
+      "/api/pulse/saved",
+      "/api/pulse/saved/${itemId}",
+      "/api/pulse/saved/${itemId}/move",
+      "/api/pulse/saved/collections",
+      "/api/pulse/saved/collections/${collectionId}"
+    ],
+    "notifications": [
+      "/api/notification-preferences",
+      "/api/pulse/notifications/${notificationId}",
+      "/api/pulse/notifications/${notificationId}/read",
+      "/api/pulse/notifications/${notificationId}/resolve",
+      "/api/pulse/notifications/preferences",
+      "/api/pulse/notifications/read-all${query}",
+      "/api/pulse/notifications/unread-count"
+    ],
+    "messenger": [
+      "/api/messages/media/${attachmentId}/download",
+      "/api/messages/media/complete",
+      "/api/messages/media/init",
+      "/api/messages/media/upload",
+      "/api/pulse-ai/actions/cancel",
+      "/api/pulse-ai/actions/confirm",
+      "/api/pulse-ai/message",
+      "/api/pulse/communications/v2"
+    ],
+    "marketplace": [
+      "/api/pulse/marketplace/listings/create",
+      "/api/pulse/marketplace/listings/report",
+      "/api/pulse/marketplace/listings/save",
+      "/api/pulse/marketplace/seller/apply",
+      "/api/pulse/marketplace/seller/listings/${listingId}",
+      "/api/pulse/marketplace/seller/listings/${listingId}/${action}",
+      "/api/pulse/messages/start",
+      "/api/pulse/payments/checkout",
+      "/api/pulse/payments/seller/orders",
+      "/api/pulse/payouts/connect"
+    ],
+    "live": [
+      "/api/pulse/live/${liveId}/chat",
+      "/api/pulse/live/${liveId}/chat/${messageId}/${action}",
+      "/api/pulse/live/${liveId}/end",
+      "/api/pulse/live/${liveId}/guests/${guestId}/${action}",
+      "/api/pulse/live/${liveId}/guests/${guestId}/publish-complete",
+      "/api/pulse/live/${liveId}/join",
+      "/api/pulse/live/${liveId}/join-request",
+      "/api/pulse/live/${liveId}/join-requests",
+      "/api/pulse/live/${liveId}/join-requests/${requestId}/${action}",
+      "/api/pulse/live/${liveId}/join-requests/${requestId}/cancel",
+      "/api/pulse/live/${liveId}/join-status",
+      "/api/pulse/live/${liveId}/livekit/token",
+      "/api/pulse/live/${liveId}/native-publish",
+      "/api/pulse/live/${liveId}/react",
+      "/api/pulse/live/${liveId}/state",
+      "/api/pulse/live/start"
+    ],
+    "businessOs": [
+      "/api/pulse/ads/accounts",
+      "/api/pulse/ads/analytics${suffix}",
+      "/api/pulse/ads/campaigns"
+    ],
+    "translation": [
+      "/api/pulse/translations",
+      "/api/pulse/translations/languages",
+      "/api/pulse/translations/preference"
+    ],
+    "composerMusic": [
+      "/api/pulse/music/ai-suggest"
+    ],
+    "businessConstruction": [
+      "/api/pulse/business/construction-access"
+    ],
+    "camera": [
+      "/api/pulse/camera/config",
+      "/api/pulse/camera/config${suffix}",
+      "/api/pulse/camera/preview",
+      "/api/pulse/camera/preview/mark-published",
+      "/api/pulse/media/upload",
+      "/api/pulse/posts/create-from-camera",
+      "/api/pulse/reels/create-from-camera"
+    ],
+    "reels": [
+      "/api/pulse/reels/${reelId}",
+      "/api/pulse/reels/${reelId}/comments",
+      "/api/pulse/reels/${reelId}/follow-creator",
+      "/api/pulse/reels/${reelId}/not-interested",
+      "/api/pulse/reels/${reelId}/react",
+      "/api/pulse/reels/${reelId}/repost",
+      "/api/pulse/reels/${reelId}/share",
+      "/api/pulse/reels/${reelId}/view",
+      "/api/pulse/reels/comments/${commentId}",
+      "/api/pulse/reels/comments/${commentId}/react",
+      "/api/pulse/reels/create",
+      "/api/pulse/report"
+    ],
+    "music": [
+      "/api/pulse/music/upload"
+    ],
+    "presence": [
+      "/api/pulse/presence"
+    ],
+    "feed": [
+      "/api/pulse/follows/toggle",
+      "/api/pulse/posts",
+      "/api/pulse/posts/${postId}",
+      "/api/pulse/posts/${postId}/comments",
+      "/api/pulse/posts/${postId}/comments${query}",
+      "/api/pulse/posts/${postId}/hide",
+      "/api/pulse/posts/${postId}/react",
+      "/api/pulse/posts/${postId}/repost",
+      "/api/pulse/users/mute"
+    ],
+    "groups": [
+      "/api/pulse/communications/rooms"
+    ],
+    "growth": [
+      "/api/pulse/growth"
+    ],
+    "intelligence": [
+      "/api/crypto/alerts",
+      "/api/dashboard/intelligence/state"
+    ],
+    "businessOs.test": [
+      "/api/business-os/",
+      "/api/pulse/ads/accounts",
+      "/api/pulse/ads/accounts/7/billing-summary",
+      "/api/pulse/ads/accounts/7/wallet",
+      "/api/pulse/ads/analytics",
+      "/api/pulse/ads/campaigns",
+      "/api/pulse/ads/campaigns/12",
+      "/api/pulse/ads/campaigns/12/action"
+    ],
+    "calls.test": [
+      "/api/calls/start"
+    ],
+    "engineerAccess.test": [
+      "/api/internal/engineer-access/verify"
+    ],
+    "undxActions.test": [
+      "/api/business-os/undx/emergency-stop",
+      "/api/business-os/undx/marketplace/listings/draft",
+      "/api/business-os/undx/marketplace/listings/publish/execute",
+      "/api/business-os/undx/marketplace/listings/publish/plan",
+      "/api/business-os/undx/permissions",
+      "/api/business-os/undx/policies",
+      "/api/business-os/undx/receipts",
+      "/api/business-os/undx/requests",
+      "/api/business-os/undx/tools"
+    ],
+    "sellerApplication.test": [
+      "/api/pulse/seller/application",
+      "/api/pulse/seller/application/documents",
+      "/api/pulse/seller/application/documents/9/remove",
+      "/api/pulse/seller/application/draft",
+      "/api/pulse/seller/application/submit",
+      "/api/pulse/seller/application/withdraw"
+    ],
+    "pulseApiCoalescing.test": [
+      "/api/pulse/profile/7",
+      "/api/pulse/save"
+    ],
+    "postComments.test": [
+      "/api/pulse/posts/5/comments"
+    ],
+    "ads.test": [
+      "/api/pulse/ads/event",
+      "/api/pulse/ads/impression"
+    ],
+    "welcome.test": [
+      "/api/pulse/welcome-dismiss"
+    ],
+    "deleteApi.test": [
+      "/api/pulse/posts/123",
+      "/api/pulse/reels/456"
+    ],
+    "live.test": [
+      "/api/pulse/live/44/guests/91/publish-complete",
+      "/api/pulse/live/44/join-request",
+      "/api/pulse/live/44/join-status",
+      "/api/pulse/live/44/livekit/token",
+      "/api/pulse/live/45/native-publish"
+    ],
+    "pulseApi": [
+      "/api/mobile/auth/",
+      "/api/pulse/mobile/auth/"
+    ],
+    "profile": [
+      "/api/pulse/follows/toggle",
+      "/api/pulse/premium/profile-theme",
+      "/api/pulse/profile/avatar",
+      "/api/pulse/profile/avatar/remove",
+      "/api/pulse/profile/cover",
+      "/api/pulse/profile/cover/remove",
+      "/api/pulse/profile/me",
+      "/api/pulse/profile/update"
+    ],
+    "commerceInbox": [
+      "/api/pulse/communications/v2/conversations"
+    ],
+    "marketplaceScreen": [
+      "/api/pulse/payments/checkout"
+    ],
+    "ads": [
+      "/api/pulse/ads/click",
+      "/api/pulse/ads/event",
+      "/api/pulse/ads/impression",
+      "/api/pulse/ads/viewability"
+    ],
+    "undxActions": [
+      "/api/business-os/undx/confirmations",
+      "/api/business-os/undx/emergency-stop",
+      "/api/business-os/undx/marketplace/listings/draft",
+      "/api/business-os/undx/marketplace/listings/publish/execute",
+      "/api/business-os/undx/marketplace/listings/publish/plan",
+      "/api/business-os/undx/permissions",
+      "/api/business-os/undx/policies",
+      "/api/business-os/undx/receipts",
+      "/api/business-os/undx/requests",
+      "/api/business-os/undx/tools"
+    ],
+    "marketplaceOffers": [
+      "/api/pulse/payments/checkout"
+    ],
+    "sellerApplication": [
+      "/api/pulse/seller/application",
+      "/api/pulse/seller/application/documents",
+      "/api/pulse/seller/application/documents/${documentId}/remove",
+      "/api/pulse/seller/application/draft",
+      "/api/pulse/seller/application/submit",
+      "/api/pulse/seller/application/withdraw"
+    ],
+    "engineerAccess": [
+      "/api/internal/engineer-access/session",
+      "/api/internal/engineer-access/verify"
+    ],
+    "adsDashboard": [
+      "/api/pulse/ads/analytics"
+    ],
+    "verification": [
+      "/api/dashboard/account/state",
+      "/api/dashboard/account/verification/appeal",
+      "/api/dashboard/account/verification/document",
+      "/api/dashboard/account/verification/request",
+      "/api/premium/status",
+      "/api/pulse/profile/me"
+    ],
+    "support": [
+      "/api/pulse/block",
+      "/api/pulse/report",
+      "/api/scam-shield/scan",
+      "/api/security/report",
+      "/api/support/ticket"
+    ],
+    "ordersDashboard": [
+      "/api/pulse/orders",
+      "/api/pulse/payments/seller/orders"
+    ],
+    "auth": [
+      "/api/mobile/auth/change-confirmation-email",
+      "/api/mobile/auth/confirmation-status",
+      "/api/mobile/auth/login",
+      "/api/mobile/auth/logout",
+      "/api/mobile/auth/logout-all",
+      "/api/mobile/auth/recover",
+      "/api/mobile/auth/register",
+      "/api/mobile/auth/resend-confirmation",
+      "/api/mobile/auth/session"
+    ],
+    "pulse": [
+      "/api/dashboard/mission-control",
+      "/api/pulse/assistant/chat",
+      "/api/pulse/profile/me"
+    ],
+    "alerts": [
+      "/api/crypto/alerts"
+    ]
+  }
+}

@@ -1,0 +1,272 @@
+{
+  "page_handlers": 253,
+  "auth_enforced": 171,
+  "no_auth_detected": 82,
+  "unguarded": {
+    "about_page": [
+      "/about"
+    ],
+    "ads_landing_page": [
+      "/alpha-arena",
+      "/crypto-scam-scanner",
+      "/crypto-training-simulator",
+      "/live-roast-battle"
+    ],
+    "advertising_policy_page": [
+      "/advertising-policy"
+    ],
+    "ai_index_json": [
+      "/ai-index.json"
+    ],
+    "arena_preview_page": [
+      "/arena-preview"
+    ],
+    "brevo_delivery_webhook": [
+      "/webhooks/brevo"
+    ],
+    "change_confirmation_email_page": [
+      "/change-confirmation-email"
+    ],
+    "community_rules_page": [
+      "/community-rules"
+    ],
+    "creator_monetization_policy_page": [
+      "/creator-monetization-policy"
+    ],
+    "database_health_check": [
+      "/health/database"
+    ],
+    "debug_email_test": [
+      "/debug/email-test"
+    ],
+    "debug_password_reset_email_test": [
+      "/debug/password-reset-email-test"
+    ],
+    "debug_stripe_user": [
+      "/debug/stripe-user",
+      "/debug/user-email-status"
+    ],
+    "debug_upgrade_email_test": [
+      "/debug/upgrade-email-test"
+    ],
+    "education_category_page": [
+      "/education/<category_slug>"
+    ],
+    "education_lesson_page": [
+      "/education/lesson/<lesson_slug>"
+    ],
+    "education_scam_alerts_page": [
+      "/education/scam-alerts"
+    ],
+    "enterprise_page": [
+      "/enterprise"
+    ],
+    "favicon_ico": [
+      "/favicon.ico"
+    ],
+    "forgot_password_page": [
+      "/forgot-password"
+    ],
+    "forgot_username_page": [
+      "/forgot-username"
+    ],
+    "health_check": [
+      "/health"
+    ],
+    "home": [
+      "/"
+    ],
+    "indexnow_key_txt": [
+      "/4d4dc0c2c0f94b7bb8184fd91b7f0b1e.txt",
+      "/indexnow-key.txt"
+    ],
+    "legacy_arena_roast_battle_redirect": [
+      "/arena/roast-battle",
+      "/arena/roast-battle/match/<int:match_id>",
+      "/arena/roast-battle/room/<int:room_id>"
+    ],
+    "legal_payments_page": [
+      "/legal/payments"
+    ],
+    "legal_refunds_page": [
+      "/legal/refunds"
+    ],
+    "legal_seller_terms_page": [
+      "/legal/seller-terms"
+    ],
+    "llms_txt": [
+      "/llms.txt"
+    ],
+    "logout_page": [
+      "/logout"
+    ],
+    "manifest_json": [
+      "/manifest.json"
+    ],
+    "offline_page": [
+      "/offline"
+    ],
+    "predictions_crypto_page": [
+      "/predictions/crypto"
+    ],
+    "privacy_page": [
+      "/privacy"
+    ],
+    "pro_page": [
+      "/pro"
+    ],
+    "public_learn_page": [
+      "/learn/<slug>"
+    ],
+    "public_uploads": [
+      "/uploads/<path:filename>"
+    ],
+    "pulse_android_asset_links": [
+      "/.well-known/assetlinks.json"
+    ],
+    "pulse_apple_app_site_association": [
+      "/.well-known/apple-app-site-association"
+    ],
+    "pulse_bookmarks_alias_page": [
+      "/pulse/bookmarks"
+    ],
+    "pulse_live_room_page": [
+      "/pulse/live/<int:live_id>"
+    ],
+    "pulse_roast_battle_preview_page": [
+      "/roast-battle-preview"
+    ],
+    "pwa_icons": [
+      "/icons/<path:filename>"
+    ],
+    "quote_center_page": [
+      "/quote"
+    ],
+    "quote_symbol_page": [
+      "/quote/crypto/<symbol>"
+    ],
+    "readiness_check": [
+      "/health/ready"
+    ],
+    "referral_redirect": [
+      "/r/<referral_code>"
+    ],
+    "resend_confirmation_page": [
+      "/resend-confirmation"
+    ],
+    "reset_password_page": [
+      "/reset-password",
+      "/reset-password/<token>"
+    ],
+    "reset_pwa_page": [
+      "/reset-pwa"
+    ],
+    "robots_txt": [
+      "/robots.txt"
+    ],
+    "route_health_check": [
+      "/health/routes"
+    ],
+    "scam_shield_page": [
+      "/scam-shield"
+    ],
+    "scam_shield_scan_page": [
+      "/scam-shield/scan"
+    ],
+    "security_page": [
+      "/security"
+    ],
+    "seo_content_hub": [
+      "/insights",
+      "/intel",
+      "/news"
+    ],
+    "seo_country_page": [
+      "/country-intelligence/<country_slug>"
+    ],
+    "seo_intel_article_page": [
+      "/intel/<article_slug>"
+    ],
+    "seo_market_live": [
+      "/markets/<symbol>/live"
+    ],
+    "seo_market_page": [
+      "/markets/<symbol>"
+    ],
+    "seo_market_prediction": [
+      "/markets/<symbol>/prediction"
+    ],
+    "seo_sports_edge_page": [
+      "/sports-edge/<sport_slug>"
+    ],
+    "seo_topic_page": [
+      "/<slug>"
+    ],
+    "service_worker_root": [
+      "/sw.js"
+    ],
+    "site_search": [
+      "/search"
+    ],
+    "site_webmanifest": [
+      "/site.webmanifest"
+    ],
+    "sitemap_live_xml": [
+      "/sitemap-live.xml"
+    ],
+    "sitemap_pages_xml": [
+      "/sitemap-pages.xml"
+    ],
+    "sitemap_replays_xml": [
+      "/sitemap-replays.xml"
+    ],
+    "sitemap_xml": [
+      "/sitemap.xml"
+    ],
+    "sports_edge_landing_page": [
+      "/sports-edge"
+    ],
+    "sports_edge_trade_redirect": [
+      "/sports-edge/trade"
+    ],
+    "stripe_webhook": [
+      "/stripe-webhook",
+      "/stripe/webhook",
+      "/webhook/stripe",
+      "/webhooks/stripe"
+    ],
+    "stripe_webhook_health": [
+      "/stripe-webhook",
+      "/stripe/webhook",
+      "/webhook/stripe",
+      "/webhooks/stripe"
+    ],
+    "support_page": [
+      "/help",
+      "/pulse/help",
+      "/support"
+    ],
+    "terms_page": [
+      "/terms"
+    ],
+    "toncoin_scenarios_page": [
+      "/education/toncoin-scenarios"
+    ],
+    "trust_center_page": [
+      "/trust-center"
+    ],
+    "undx_policy_health_check": [
+      "/health/undx"
+    ],
+    "verify_email_page": [
+      "/verify-email",
+      "/verify-email/<token>"
+    ],
+    "webhook_business_os_iap_apple": [
+      "/webhook/business-os/iap/apple"
+    ],
+    "webhook_business_os_iap_google": [
+      "/webhook/business-os/iap/google"
+    ]
+  }
+}

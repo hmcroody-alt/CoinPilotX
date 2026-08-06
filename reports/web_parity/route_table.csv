@@ -1,0 +1,1540 @@
+path,methods,handler,line,product_area,surface,auth_decorators,has_auth_decorator,render,render_detail,alias_of,alias_count
+/,GET,home,1279,Root,page,,False,jinja_template,index.html,,1
+/.well-known/apple-app-site-association,GET,pulse_apple_app_site_association,112044,.Well-Known,page,,False,json_api,,,1
+/.well-known/assetlinks.json,GET,pulse_android_asset_links,112060,.Well-Known,page,,False,json_api,,,1
+/4d4dc0c2c0f94b7bb8184fd91b7f0b1e.txt,GET,indexnow_key_txt,24793,4D4Dc0C2C0F94B7Bb8184Fd91B7F0B1E.Txt,page,,False,other,,/indexnow-key.txt,2
+/<slug>,GET,seo_topic_page,2172,<Slug>,page,,False,other,,,1
+/about,GET,about_page,1671,About,page,,False,inline_html,clean_html,,1
+/account,GET,account_page,6826,Account,page,,False,redirect,,,1
+/account/delete,"GET,POST",account_delete_page,6837,Account,page,,False,redirect,,,1
+/account/security,GET,account_security_notification_redirect,34021,Account,page,,False,redirect,,,1
+/account/settings,"GET,POST",account_settings_page,12146,Account,page,,False,inline_html,clean_html,/settings,2
+/admin,GET,admin_root_page,13896,Operations / Admin,admin,,False,redirect,,,1
+/admin-dashboard,GET,admin_dashboard_route,109648,Admin-Dashboard,admin,,False,other,,,1
+/admin/account-command,GET,admin_account_command_page,10398,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/account-command/<section_key>,GET,admin_account_command_section_page,10559,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/account-command/verifications/<int:request_id>/decision,POST,admin_account_command_verification_decision,10604,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/admins,GET,admin_admins_page,22865,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/admins/<int:admin_id>/edit,"GET,POST",admin_admin_edit_page,22996,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/admins/new,"GET,POST",admin_admin_new_page,22935,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/ads-command-center,GET,admin_ads_command_center_page,91393,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/growth-engine,2
+/admin/ads-command-center/<section_key>,GET,admin_ads_command_center_section_page,91456,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/ai-actions,"GET,POST",admin_ai_actions_page,92169,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/ai-actions/<int:rec_id>,"GET,POST",admin_ai_action_detail_page,92220,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/ai-command,GET,admin_ai_command_page,92386,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/ai-command-center,GET,admin_ai_command_center_page,91572,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/ai-command-center/<section_key>,GET,admin_ai_command_center_section_page,91610,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/ai-usage,GET,admin_ai_usage_page,23539,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/alert-delivery,GET,admin_alert_delivery_page,34431,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/alerts,GET,admin_alerts_page,23654,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/analytics,GET,admin_analytics_page,24288,Operations / Admin,admin,,False,other,,,1
+/admin/analytics/export/<kind>,GET,admin_analytics_export,24357,Operations / Admin,admin,,False,other,,,1
+/admin/approvals,"GET,POST",admin_approvals_page,92261,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/arena,GET,admin_arena_page,30108,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/arena-games,GET,admin_arena_games_page,30148,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/arena-world,GET,admin_arena_world_page,30342,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/arena/events,POST,admin_arena_create_event,30320,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/audit,GET,admin_audit_alias_page,24183,Operations / Admin,admin,,False,other,,,1
+/admin/audit-logs,GET,admin_audit_logs_page,16612,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/audit-logs/export.csv,GET,admin_audit_logs_export_csv,16681,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/billing/recalculate,POST,admin_billing_recalculate_page,18554,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/bootstrap-owner,GET,admin_bootstrap_owner_page,14583,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/brevo/resync,POST,admin_brevo_resync,24379,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/ad-sets,GET,admin_business_os_advertising_list_ad_sets,19585,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/ad-sets/<ad_set_id>,GET,admin_business_os_advertising_get_ad_set,19597,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/ad-sets/<ad_set_id>/review,POST,admin_business_os_advertising_review_ad_set,19608,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/advertisers,GET,admin_business_os_advertising_list_advertisers,19334,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/advertisers/<user_id>,GET,admin_business_os_advertising_get_advertiser,19346,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/advertisers/<user_id>/lift-restriction,POST,admin_business_os_advertising_lift_restriction,20063,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/advertisers/<user_id>/restrict,POST,admin_business_os_advertising_restrict_advertiser,20039,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/advertisers/<user_id>/status,POST,admin_business_os_advertising_set_advertiser_status,19357,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/appeals,GET,admin_business_os_advertising_list_appeals,20088,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/appeals/<appeal_id>/resolve,POST,admin_business_os_advertising_resolve_appeal,20103,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/billing-events,GET,admin_business_os_advertising_billing_events,19951,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/campaigns,GET,admin_business_os_advertising_list_campaigns,19421,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/campaigns/<campaign_id>,GET,admin_business_os_advertising_get_campaign,19435,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/campaigns/<campaign_id>/billing,GET,admin_business_os_advertising_billing_summary,19939,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/campaigns/<campaign_id>/flagged,GET,admin_business_os_advertising_flagged_events,19978,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/campaigns/<campaign_id>/fraud,GET,admin_business_os_advertising_fraud_summary,19967,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/campaigns/<campaign_id>/funding,GET,admin_business_os_advertising_get_funding,19461,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/campaigns/<campaign_id>/operational,GET,admin_business_os_advertising_get_operational,19496,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/campaigns/<campaign_id>/operational/cancel,POST,admin_business_os_advertising_op_cancel,19532,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/campaigns/<campaign_id>/operational/complete,POST,admin_business_os_advertising_op_complete,19555,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/campaigns/<campaign_id>/operational/pause,POST,admin_business_os_advertising_op_pause,19509,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/campaigns/<campaign_id>/review,POST,admin_business_os_advertising_review_campaign,19390,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/campaigns/<campaign_id>/spend/halt,POST,admin_business_os_advertising_spend_halt,19992,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/campaigns/<campaign_id>/spend/lift,POST,admin_business_os_advertising_spend_lift,20015,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/clicks,GET,admin_business_os_advertising_list_clicks,19823,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/creatives,GET,admin_business_os_advertising_list_creatives,19636,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/creatives/<creative_id>,GET,admin_business_os_advertising_get_creative,19650,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/creatives/<creative_id>/readiness,GET,admin_business_os_advertising_creative_readiness,19661,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/creatives/<creative_id>/review,POST,admin_business_os_advertising_review_creative,19674,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/deliveries,GET,admin_business_os_advertising_list_deliveries,19774,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/deliveries/<delivery_id>,GET,admin_business_os_advertising_get_delivery,19793,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/funding,GET,admin_business_os_advertising_list_funding,19446,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/impressions,GET,admin_business_os_advertising_list_impressions,19804,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/advertising/operations,GET,admin_business_os_advertising_list_operations,19482,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/entitlements/explain,GET,admin_business_os_entitlement_explain,18695,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/entitlements/grant,POST,admin_business_os_entitlement_grant,18607,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/entitlements/revoke,POST,admin_business_os_entitlement_revoke,18653,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/marketplace/appeals,GET,admin_business_os_marketplace_list_appeals,21795,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/marketplace/appeals/<appeal_id>/resolve,POST,admin_business_os_marketplace_resolve_appeal,21808,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/marketplace/disputes,GET,admin_business_os_marketplace_list_disputes,21721,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/marketplace/disputes/<dispute_id>/resolve,POST,admin_business_os_marketplace_resolve_dispute,21734,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/marketplace/orders,GET,admin_business_os_marketplace_list_orders,21662,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/marketplace/orders/<order_id>,GET,admin_business_os_marketplace_get_order,21677,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/marketplace/orders/<order_id>/refund,POST,admin_business_os_marketplace_refund_order,21688,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/marketplace/sellers/<user_id>/lift-restriction,POST,admin_business_os_marketplace_lift_seller,21775,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/marketplace/sellers/<user_id>/payout,GET,admin_business_os_marketplace_seller_payout,21830,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/marketplace/sellers/<user_id>/payout-note,POST,admin_business_os_marketplace_payout_note,21841,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/marketplace/sellers/<user_id>/restrict,POST,admin_business_os_marketplace_restrict_seller,21755,Operations / Admin,admin,,False,json_api,,,1
+/admin/business-os/reconcile,POST,admin_business_os_reconcile,18567,Operations / Admin,admin,,False,json_api,,,1
+/admin/capability-matrix,"GET,POST",admin_capability_matrix_page,87488,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/change-password,"GET,POST",admin_change_password_page,14624,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/chat-health,GET,admin_chat_health_page,30237,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/command-center,GET,admin_command_center_page,90213,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/command-center/<module_key>,GET,admin_backend_management_module_page,90409,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/command-center/account/verification,GET,admin_verification_command_center_page,13749,Operations / Admin,admin,,False,inline_html,clean_html,,2
+/admin/command-center/crypto,GET,admin_crypto_command_center_page,90566,Operations / Admin,admin,,False,inline_html,admin_page_html,,2
+/admin/command-center/crypto/<section_key>,GET,admin_crypto_command_center_section_page,90602,Operations / Admin,admin,,False,inline_html,admin_page_html,,2
+/admin/command-logs,GET,admin_command_logs_page,23556,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/content-health,GET,admin_content_health_page,87897,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/creator-command-center,GET,admin_creator_command_center_page,91036,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/creator-command-center/<section_key>,GET,admin_creator_command_center_section_page,91074,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/creator-payouts,GET,admin_treasury_page,87280,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/treasury,12
+/admin/crypto-command-center,GET,admin_crypto_command_center_page,90567,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/command-center/crypto,2
+/admin/crypto-command-center/<section_key>,GET,admin_crypto_command_center_section_page,90603,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/command-center/crypto/<section_key>,2
+/admin/dashboard,GET,admin_dashboard_page,14703,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/data-recovery,"GET,POST",admin_data_recovery_page,16353,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/debug/auth-test,GET,admin_debug_auth_test,24423,Operations / Admin,admin,,False,json_api,,,1
+/admin/departments,GET,admin_departments_page,23176,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/departments/<int:department_id>/edit,"GET,POST",admin_department_edit_page,23214,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/departments/<slug>,"GET,POST",admin_department_page,91751,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/departments/new,"GET,POST",admin_department_new_page,23191,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/disputes,GET,admin_treasury_page,87289,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/treasury,12
+/admin/economy-command-center,GET,admin_economy_command_center_page,91211,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/economy-command-center/<section_key>,GET,admin_economy_command_center_section_page,91249,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/education,GET,admin_education_page,34529,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/email-health,GET,admin_email_health_page,25965,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/emails,GET,admin_emails_page,15810,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/emails/payment,"GET,POST",admin_payment_emails_page,16449,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/emails/payment/resend/<payment_id>,POST,admin_payment_email_resend_by_payment_id,16554,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/emails/resend-confirmation,POST,admin_emails_resend_confirmation,16238,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/emails/resend-welcome,POST,admin_emails_resend_welcome,16252,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/emails/retry-failed,POST,admin_emails_retry_failed_queue,16073,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/emails/test,POST,admin_emails_test_send,16046,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/employees,GET,admin_employees_page,23053,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/employees/<int:employee_id>/edit,"GET,POST",admin_employee_edit_page,23123,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/employees/new,"GET,POST",admin_employee_new_page,23068,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/escrow,GET,admin_treasury_page,87282,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/treasury,12
+/admin/fee-ledger,GET,admin_treasury_page,87281,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/treasury,12
+/admin/financial-audit,GET,admin_treasury_page,87287,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/treasury,12
+/admin/global-command,GET,admin_global_command_page,89742,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/global-events,GET,admin_global_events_page,90003,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/group-chat-health,GET,admin_group_chat_health_page,87688,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/groups-health,GET,admin_groups_health_page,87609,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/growth-engine,GET,admin_ads_command_center_page,91392,Operations / Admin,admin,,False,inline_html,admin_page_html,,2
+/admin/intelligence-command-center,GET,admin_intelligence_command_center_page,90870,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/intelligence-command-center/<section_key>,GET,admin_intelligence_command_center_section_page,90909,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/intelligence-graph,GET,admin_intelligence_graph_page,89947,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/launch-readiness,GET,admin_backend_launch_readiness_page,91685,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/live,"GET,POST",admin_livestreams_page,88853,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/livestreams,2
+/admin/live-data,GET,admin_provider_health_page,26027,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/provider-health,2
+/admin/live-ops,GET,admin_live_ops_page,14825,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/livestreams,"GET,POST",admin_livestreams_page,88852,Operations / Admin,admin,,False,inline_html,admin_page_html,,2
+/admin/login,"GET,POST",admin_login_page,14530,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/logout,GET,admin_logout_page,14683,Operations / Admin,admin,,False,redirect,,,1
+/admin/manual-upgrade,POST,admin_manual_upgrade_route,15302,Operations / Admin,admin,,False,json_api,,,1
+/admin/marketplace-command,"GET,POST",admin_marketplace_command_page,88442,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/media,GET,admin_media_diagnostics_page,88611,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/media-health,GET,admin_media_health_page,88663,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/media-moderation,GET,admin_media_moderation_page,23748,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/media-studio,GET,admin_media_studio_page,88589,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/merchant-applications,"GET,POST",admin_merchant_applications_page,88027,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/merchant-document/<int:doc_id>,GET,admin_merchant_document_file,88381,Operations / Admin,admin,,False,other,,,1
+/admin/merchant-document/<int:doc_id>/review,POST,admin_merchant_document_review,88414,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/messages-health,GET,admin_messages_health_page,87723,Operations / Admin,admin,,False,inline_html,admin_page_html,,2
+/admin/mobile-audit,GET,admin_mobile_audit_page,74456,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/moderation,GET,admin_moderation_page,23763,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/monetization,GET,admin_monetization_page,86960,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/monetization-health,GET,admin_monetization_health_page,87019,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/network-command-center,GET,admin_network_command_center_page,90697,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/network-command-center/<section_key>,GET,admin_network_command_center_section_page,90736,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/notification-delivery,GET,admin_notification_delivery_page,34365,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/notification-health,GET,admin_notification_health_page,26040,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/notifications,GET,admin_notifications_page,23595,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/notifications/email,GET,admin_notifications_email_page,23632,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/notifications/queue-action,POST,admin_notifications_queue_action,34401,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/notifications/test-email,POST,admin_notifications_test_email_page,23642,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/ops/search.json,GET,admin_ops_search_json,14419,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/ops/status.json,GET,admin_ops_status_json,14341,Operations / Admin,admin,,False,json_api,,,1
+/admin/payments,"GET,POST",admin_payments_page,87088,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/payments-command-center,GET,admin_payments_command_center_page,87144,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/payments-health,GET,admin_payments_health_page,87055,Operations / Admin,admin,,False,inline_html,admin_page_html,,2
+/admin/performance,GET,admin_performance_page,74490,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/permissions,GET,admin_permissions_page,23323,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/platform-revenue,GET,admin_treasury_page,87279,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/treasury,12
+/admin/predictions,GET,admin_predictions_page,25947,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/premium-command,"GET,POST",admin_premium_command_page,74385,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/private-chat-reports,GET,admin_private_chat_reports_page,23713,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/privileges,GET,admin_privileges_page,88821,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/product-health,"GET,POST",admin_product_health_page,14868,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/profile,"GET,POST",admin_profile_page,16709,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/provider-health,GET,admin_provider_health_page,26026,Operations / Admin,admin,,False,inline_html,admin_page_html,,2
+/admin/pulse-ads-review-board,GET,admin_pulse_ads_review_board_page,17664,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/pulse-ads-review-board/action,POST,admin_pulse_ads_review_board_action,17734,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/pulse-analytics,GET,admin_pulse_analytics_page,86155,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/pulse-core,GET,admin_pulse_core_page,86251,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/pulse-feed-health,"GET,POST",admin_pulse_feed_health_page,85983,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/pulse-infrastructure,GET,admin_pulse_infrastructure_page,15093,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/pulse-live,GET,admin_pulse_live_page,86219,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/pulse-moderation,"GET,POST",admin_pulse_moderation_page,85942,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/pulse-music-review,"GET,POST",admin_pulse_music_review_page,38123,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/pulse-post-debug,GET,admin_pulse_post_debug_page,86293,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/pulse-users,GET,admin_pulse_users_page,86649,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/pulse-users-health,GET,admin_pulse_users_health_page,86744,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/pulse-users/<int:user_id>,"GET,POST",admin_pulse_user_detail_page,86804,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/pulse-visibility-health,"GET,POST",admin_pulse_visibility_health_page,86086,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/pulse-worker-health,"GET,POST",admin_pulse_worker_health_page,86187,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/realtime-grid,GET,admin_realtime_grid_page,89910,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/reels-health,GET,admin_reels_health_page,87850,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/referrals,GET,admin_referrals_page,88835,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/refunds,GET,admin_treasury_page,87288,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/treasury,12
+/admin/reliability,GET,admin_reliability_page,87577,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/reports,GET,admin_reports_page,23727,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/retention,GET,admin_retention_page,14847,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/revenue-analytics,GET,admin_treasury_page,87286,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/treasury,12
+/admin/roast-battle,GET,admin_roast_battle_page,30179,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/roles,GET,admin_roles_page,23251,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/scam-shield,GET,admin_scam_shield_page,23572,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/security,"GET,POST",admin_security_page,23854,Operations / Admin,admin,,False,inline_html,security_label_html,,1
+/admin/security-events,GET,admin_security_events_page,24091,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/seo,GET,admin_seo_page,34548,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/settings,GET,admin_settings_page,24106,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/settlements,GET,admin_treasury_page,87283,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/treasury,12
+/admin/spaces-command,"GET,POST",admin_spaces_command_page,88509,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/sponsorships,"GET,POST",admin_sponsorships_page,87344,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/stripe-connect,GET,admin_treasury_page,87284,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/treasury,12
+/admin/stripe-health,GET,admin_payments_health_page,87056,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/payments-health,2
+/admin/stripe/repair-user-pro,POST,admin_repair_user_pro,24566,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/subscriptions,GET,admin_transactions_page,15618,Operations / Admin,admin,,False,inline_html,clean_html,/admin/transactions,2
+/admin/super-users,"GET,POST",admin_super_users_page,17899,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/support,"GET,POST",admin_support_page,24124,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/support-notes,GET,admin_placeholder_page,24188,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/system,GET,admin_system_page,14884,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/system-audit,GET,admin_system_audit_page,88774,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/system-health,GET,admin_system_health_page,26001,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/system/health,2
+/admin/system/<module_key>,GET,admin_system_module_page,15012,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/system/chat-delivery,GET,admin_messages_health_page,87724,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/messages-health,2
+/admin/system/claims,GET,admin_claims_page,15197,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/system/errors,GET,admin_system_errors_page,26065,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/system/health,GET,admin_system_health_page,26000,Operations / Admin,admin,,False,inline_html,admin_page_html,,2
+/admin/tasks,"GET,POST",admin_tasks_page,92309,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/tasks/<int:task_id>,"GET,POST",admin_task_detail_page,92346,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/tax-center,GET,admin_treasury_page,87285,Operations / Admin,admin,,False,inline_html,admin_page_html,/admin/treasury,12
+/admin/teacher-applications,"GET,POST",admin_teacher_applications_page,88256,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/teacher-document/<int:doc_id>,GET,admin_teacher_document_file,88327,Operations / Admin,admin,,False,other,,,1
+/admin/telegram,GET,admin_telegram_page,23379,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/telegram-health,GET,admin_telegram_health_page,23408,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/test-email,POST,admin_test_email,12985,Operations / Admin,admin,,False,inline_html,branded_email_html,,1
+/admin/test-notification,"GET,POST",admin_test_notification_page,34478,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/test-smtp,GET,admin_test_smtp_route,15234,Operations / Admin,admin,,False,json_api,,,1
+/admin/transactions,GET,admin_transactions_page,15617,Operations / Admin,admin,,False,inline_html,clean_html,,2
+/admin/transactions/export.csv,GET,admin_transactions_export_csv,15725,Operations / Admin,admin,,False,redirect,,,1
+/admin/treasury,GET,admin_treasury_page,87278,Operations / Admin,admin,,False,inline_html,admin_page_html,,12
+/admin/trust-map,GET,admin_trust_map_page,89984,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/unmatched-payments,GET,admin_unmatched_payments_page,16595,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/users,GET,admin_users_page,12300,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/users/<int:user_id>,GET,admin_user_detail_page,18177,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/users/<int:user_id>/convert-paid-pro,POST,admin_user_convert_paid_pro,18352,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/users/<int:user_id>/edit,"GET,POST",admin_user_edit_page,18288,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/users/<int:user_id>/force-sync-pro,POST,admin_user_force_sync_pro,18383,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/users/<int:user_id>/manual-confirm-email,POST,admin_user_manual_confirm_email_page,12855,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/users/<int:user_id>/reprocess-latest-webhook,POST,admin_user_reprocess_latest_webhook,18498,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/users/<int:user_id>/resend-confirmation,POST,admin_user_resend_confirmation_page,12824,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/users/<int:user_id>/retry-stripe-session,POST,admin_user_retry_stripe_session,18467,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/users/<int:user_id>/send-pro-email,POST,admin_user_send_pro_email,18532,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/users/<int:user_id>/send-reset-email,POST,admin_user_send_reset_email_page,12838,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/users/<int:user_id>/set-password,POST,admin_user_set_password_page,12873,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/users/export.csv,GET,admin_users_export_csv,12390,Operations / Admin,admin,,False,other,,,1
+/admin/users/new,"GET,POST",admin_user_new_page,18137,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/users/set-password-by-email,POST,admin_user_set_password_by_email_page,12917,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/verification,GET,admin_verification_command_center_page,13750,Operations / Admin,admin,,False,inline_html,clean_html,/admin/command-center/account/verification,2
+/admin/verification,"GET,POST",admin_verification_page,88880,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/verification/appeals,GET,admin_verification_appeals_page,13842,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/verification/badges,GET,admin_verification_badges_page,13822,Operations / Admin,admin,,False,inline_html,clean_html,,1
+/admin/verification/document/<int:doc_id>,GET,admin_verification_document_file,13862,Operations / Admin,admin,,False,other,,,1
+/admin/visitors,GET,admin_visitors_dashboard_page,15566,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/admin/watch-rules,GET,admin_watch_rules_page,34513,Operations / Admin,admin,,False,inline_html,admin_page_html,,1
+/advertising-policy,GET,advertising_policy_page,86481,Advertising-Policy,page,,False,other,,,1
+/ai-index.json,GET,ai_index_json,24631,Ai-Index.Json,page,,False,json_api,,,1
+/alerts,GET,alerts_page,33294,Alerts,page,,False,redirect,,,1
+/alpha-arena,GET,ads_landing_page,1411,Alpha-Arena,page,,False,other,,/live-roast-battle,4
+/api/account/2fa/disable,POST,api_account_2fa_disable,75980,Account,api,,False,json_api,,,1
+/api/account/2fa/enable,POST,api_account_2fa_enable,75967,Account,api,,False,json_api,,,1
+/api/account/delete,POST,api_account_delete,6861,Account,api,,False,json_api,,,1
+/api/account/language,"GET,POST",api_account_language,6648,Account,api,,False,json_api,,,3
+/api/account/reauthenticate,POST,api_account_reauthenticate,76044,Account,api,,False,json_api,,,1
+/api/account/recovery-codes/generate,POST,api_account_recovery_codes_generate,75993,Account,api,,False,json_api,,,1
+/api/account/region-preferences,"GET,PATCH,POST",api_account_region_preferences,6668,Account,api,,False,json_api,,,3
+/api/account/security,GET,api_account_security,75932,Account,api,,False,json_api,,,1
+/api/account/security-events,GET,api_account_security_events,76009,Account,api,,False,json_api,,,1
+/api/account/sessions/revoke-all,POST,api_account_sessions_revoke_all,6634,Account,api,,False,json_api,,,3
+/api/account/status,GET,account_status_api,32791,Account,api,,False,json_api,,,1
+/api/account/trusted-devices,GET,api_account_trusted_devices,76021,Account,api,,False,json_api,,,1
+/api/account/trusted-devices/<int:device_id>,DELETE,api_account_trusted_device_delete,76033,Account,api,,False,json_api,,,1
+/api/account/verify-email,POST,api_account_verify_email,75941,Account,api,,False,json_api,,,1
+/api/account/verify-phone,POST,api_account_verify_phone,75954,Account,api,,False,json_api,,,1
+/api/admin/alerts/run-check,POST,admin_alerts_run_check_api,33196,Operations / Admin,api,,False,json_api,,,1
+/api/admin/auth/password-reset-diagnostic,GET,api_admin_auth_password_reset_diagnostic,24527,Operations / Admin,api,,False,inline_html,clean_html,,1
+/api/admin/backend-management/registry,GET,api_admin_backend_management_registry,91732,Operations / Admin,api,,False,json_api,,,1
+/api/admin/email/diagnostics,GET,api_admin_email_diagnostics,16087,Operations / Admin,api,,False,json_api,,,1
+/api/admin/email/direct-test,POST,api_admin_email_direct_test,16131,Operations / Admin,api,,False,inline_html,branded_email_html,,1
+/api/admin/email/outbound-ip,GET,api_admin_email_outbound_ip,16201,Operations / Admin,api,,False,inline_html,clean_html,,1
+/api/admin/global-command/live,GET,api_admin_global_command_live,89871,Operations / Admin,api,,False,json_api,,,1
+/api/admin/growth-engine/backfill,POST,api_admin_growth_engine_backfill,91435,Operations / Admin,api,,False,json_api,,,1
+/api/admin/notifications/process-delivery,POST,api_admin_notifications_process_delivery,33401,Operations / Admin,api,,False,json_api,,,1
+/api/admin/notifications/test-event,POST,api_admin_notifications_test_event,33366,Operations / Admin,api,,False,json_api,,,1
+/api/admin/pulse/ads/accounts/disable,POST,api_admin_pulse_ads_account_disable,17838,Operations / Admin,api,,False,json_api,,,1
+/api/admin/pulse/ads/campaigns/suspend,POST,api_admin_pulse_ads_campaign_suspend,17819,Operations / Admin,api,,False,json_api,,,1
+/api/admin/pulse/ads/creatives/approve,POST,api_admin_pulse_ads_creative_approve,17761,Operations / Admin,api,,False,json_api,,,1
+/api/admin/pulse/ads/creatives/needs-changes,POST,api_admin_pulse_ads_creative_needs_changes,17799,Operations / Admin,api,,False,json_api,,,1
+/api/admin/pulse/ads/creatives/reject,POST,api_admin_pulse_ads_creative_reject,17780,Operations / Admin,api,,False,json_api,,,1
+/api/admin/pulse/ads/finance,GET,api_admin_pulse_ads_finance,17865,Operations / Admin,api,,False,json_api,,,1
+/api/admin/pulse/ads/kill-switch,POST,api_admin_pulse_ads_kill_switch,17880,Operations / Admin,api,,False,json_api,,,1
+/api/admin/pulse/ads/review-board,GET,api_admin_pulse_ads_review_board,17649,Operations / Admin,api,,False,json_api,,,1
+/api/admin/pulse/music/<int:track_id>/approval,POST,api_admin_pulse_music_approval,38340,Operations / Admin,api,,False,inline_html,clean_html,,1
+/api/admin/pulse/music/<int:track_id>/remove,POST,api_admin_pulse_music_remove,38396,Operations / Admin,api,,False,inline_html,clean_html,,1
+/api/admin/pulse/music/import-metadata,POST,api_admin_pulse_music_import_metadata,38245,Operations / Admin,api,,False,inline_html,clean_html,,1
+/api/admin/telegram-health/getme,POST,api_admin_telegram_getme,23491,Operations / Admin,api,,False,json_api,,,1
+/api/admin/telegram-health/send-test,POST,api_admin_telegram_send_test,23501,Operations / Admin,api,,False,json_api,,,1
+/api/admin/users,GET,api_admin_users,12482,Operations / Admin,api,,False,json_api,,,1
+/api/admin/users/<int:user_id>,GET,api_admin_user_detail,12492,Operations / Admin,api,,False,json_api,,,1
+/api/admin/users/<int:user_id>/confirm-email,POST,api_admin_user_confirm_email,12805,Operations / Admin,api,,False,json_api,,,1
+/api/admin/users/<int:user_id>/delete,POST,api_admin_user_status,12591,Operations / Admin,api,,False,inline_html,clean_html,/api/admin/users/<int:user_id>/status,4
+/api/admin/users/<int:user_id>/notes,POST,api_admin_user_notes,12963,Operations / Admin,api,,False,inline_html,clean_html,,1
+/api/admin/users/<int:user_id>/prelaunch-restrict,POST,api_admin_user_prelaunch_restrict,12668,Operations / Admin,api,,False,inline_html,clean_html,,1
+/api/admin/users/<int:user_id>/pro,POST,api_admin_user_pro,12527,Operations / Admin,api,,False,inline_html,clean_html,,1
+/api/admin/users/<int:user_id>/resend-email,POST,api_admin_user_resend_email,12776,Operations / Admin,api,,False,inline_html,clean_html,,1
+/api/admin/users/<int:user_id>/restore,POST,api_admin_user_status,12592,Operations / Admin,api,,False,inline_html,clean_html,/api/admin/users/<int:user_id>/status,4
+/api/admin/users/<int:user_id>/restrict,POST,api_admin_user_status,12590,Operations / Admin,api,,False,inline_html,clean_html,/api/admin/users/<int:user_id>/status,4
+/api/admin/users/<int:user_id>/status,POST,api_admin_user_status,12589,Operations / Admin,api,,False,inline_html,clean_html,,4
+/api/admin/verification/action,POST,api_admin_verification_action,13786,Operations / Admin,api,,False,inline_html,clean_html,,1
+/api/admin/visitors,GET,admin_visitors_route,15388,Operations / Admin,api,,False,inline_html,clean_html,,1
+/api/admin/visitors/live,GET,api_admin_visitors_live,15487,Operations / Admin,api,,False,json_api,,,1
+/api/ai-assistant,POST,website_ai_assistant_api,26085,Ai-Assistant,api,,False,inline_html,clean_html,,1
+/api/ai/chat,POST,api_ai_chat,25098,Ai,api,,False,inline_html,clean_html,,1
+/api/ai/conversation/new,POST,api_ai_conversation_new,25584,Ai,api,,False,json_api,,,1
+/api/ai/feedback,POST,api_ai_feedback,25555,Ai,api,,False,inline_html,clean_html,,1
+/api/ai/history,GET,api_ai_history,25516,Ai,api,,False,json_api,,,1
+/api/ai/history/clear,POST,api_ai_history_clear,25597,Ai,api,,False,json_api,,,1
+/api/alerts,"GET,POST",alerts_api,32959,Alerts,api,,False,inline_html,clean_html,,1
+/api/alerts/<int:alert_id>,DELETE,alert_item_api,33030,Alerts,api,,False,json_api,,,1
+/api/alerts/<int:alert_id>/delete,POST,alert_delete_api,33060,Alerts,api,,False,json_api,,,1
+/api/alerts/<int:alert_id>/pause,POST,alert_pause_api,33040,Alerts,api,,False,json_api,,,1
+/api/alerts/<int:alert_id>/resume,POST,alert_resume_api,33050,Alerts,api,,False,json_api,,,1
+/api/alerts/<int:alert_id>/test,POST,alert_test_api,33070,Alerts,api,,False,json_api,,,1
+/api/alerts/channel-readiness,GET,alert_channel_readiness_api,33154,Alerts,api,,False,json_api,,,1
+/api/alerts/events,GET,alert_events_api,33080,Alerts,api,,False,json_api,,,1
+/api/alerts/test/<channel>,POST,api_alerts_test_channel,33171,Alerts,api,,False,json_api,,,1
+/api/arena/academy,GET,api_arena_academy,31614,Arena,api,,False,json_api,,,1
+/api/arena/ai-commentary,POST,api_arena_ai_commentary,31356,Arena,api,,False,json_api,,,1
+/api/arena/badges,GET,api_arena_badges,30594,Arena,api,,False,json_api,,,1
+/api/arena/battle/accept,POST,api_arena_battle_accept,30679,Arena,api,,False,inline_html,clean_html,,3
+/api/arena/battle/invite,POST,api_arena_challenge,30609,Arena,api,,False,inline_html,clean_html,/api/arena/challenge,2
+/api/arena/battle/join,POST,api_arena_battle_join,30993,Arena,api,,False,json_api,,,1
+/api/arena/battle/watch,POST,api_arena_battle_watch,31034,Arena,api,,False,json_api,,,1
+/api/arena/block-player,POST,api_arena_block_player,32436,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/boss/action,POST,api_arena_boss_action,31722,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/boss/start,POST,api_arena_boss_start,31713,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/challenge,POST,api_arena_challenge,30608,Arena,api,,False,inline_html,clean_html,,2
+/api/arena/challenge-winner,POST,api_arena_challenge_winner,31309,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/challenge/accept,POST,api_arena_battle_accept,30680,Arena,api,,False,inline_html,clean_html,/api/arena/battle/accept,3
+/api/arena/challenge/reject,POST,api_arena_challenge_reject,30740,Arena,api,,False,json_api,,,2
+/api/arena/chat/<int:path_thread_id>/read,POST,api_arena_chat_read,32388,Arena,api,,False,json_api,,/api/arena/chat/read,2
+/api/arena/chat/<int:path_thread_id>/send,POST,api_arena_chat_send,32352,Arena,api,,False,inline_html,clean_html,/api/arena/chat/send,2
+/api/arena/chat/<int:thread_id>,GET,api_arena_chat_thread,32314,Arena,api,,False,json_api,,,1
+/api/arena/chat/<int:thread_id>/new,GET,api_arena_chat_new,32325,Arena,api,,False,json_api,,,1
+/api/arena/chat/read,POST,api_arena_chat_read,32387,Arena,api,,False,json_api,,,2
+/api/arena/chat/send,POST,api_arena_chat_send,32351,Arena,api,,False,inline_html,clean_html,,2
+/api/arena/chat/typing,POST,api_arena_chat_typing,32403,Arena,api,,False,json_api,,,1
+/api/arena/coach,POST,api_arena_coach,31504,Arena,api,,False,json_api,,,2
+/api/arena/coach/recommendations,GET,api_arena_coach,31505,Arena,api,,False,json_api,,/api/arena/coach,2
+/api/arena/continuous-xp,POST,api_arena_continuous_xp,31895,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/daily,GET,api_arena_daily,30521,Arena,api,,False,json_api,,,1
+/api/arena/daily/submit,POST,api_arena_daily_submit,30530,Arena,api,,False,json_api,,,1
+/api/arena/emote,POST,api_arena_emote,31199,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/events,GET,api_arena_events,31342,Arena,api,,False,json_api,,/api/arena/live-events,2
+/api/arena/events/global,GET,api_arena_world_events,31513,Arena,api,,False,json_api,,,2
+/api/arena/faction/join,POST,api_arena_faction_join,31538,Arena,api,,False,json_api,,,1
+/api/arena/factions,GET,api_arena_factions,31530,Arena,api,,False,json_api,,,1
+/api/arena/follow,POST,api_arena_follow,30761,Arena,api,,False,json_api,,,1
+/api/arena/friend-request,POST,api_arena_friend_request,30782,Arena,api,,False,json_api,,,1
+/api/arena/friend-request/accept,POST,api_arena_friend_request_accept,30800,Arena,api,,False,json_api,,,1
+/api/arena/friend-request/reject,POST,api_arena_friend_request_reject,30815,Arena,api,,False,json_api,,,1
+/api/arena/game/launch,POST,api_arena_game_launch,32005,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/highlights,GET,api_arena_highlights,31588,Arena,api,,False,json_api,,,1
+/api/arena/inbox,GET,api_arena_inbox,30512,Arena,api,,False,json_api,,,1
+/api/arena/infinite-briefing,GET,api_arena_infinite_briefing,32473,Arena,api,,False,json_api,,,1
+/api/arena/leaderboard,GET,api_arena_leaderboard,30561,Arena,api,,False,json_api,,,1
+/api/arena/live-events,GET,api_arena_events,31341,Arena,api,,False,json_api,,,2
+/api/arena/live-feed,GET,api_arena_live_feed,31460,Arena,api,,False,json_api,,,1
+/api/arena/match/<int:match_id>,GET,api_arena_match,31099,Arena,api,,False,json_api,,,2
+/api/arena/match/<int:match_id>/chat,POST,api_arena_match_chat,31045,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/match/<int:match_id>/cheer,POST,api_arena_match_cheer,31215,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/match/<int:match_id>/event,POST,api_arena_match_event,31264,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/match/<int:match_id>/join,POST,api_arena_match_join,31111,Arena,api,,False,json_api,,,1
+/api/arena/match/<int:match_id>/leave,POST,api_arena_match_leave,31283,Arena,api,,False,json_api,,,1
+/api/arena/match/<int:match_id>/live,GET,api_arena_match,31100,Arena,api,,False,json_api,,/api/arena/match/<int:match_id>,2
+/api/arena/match/<int:match_id>/victory,POST,api_arena_match_victory,31226,Arena,api,,False,json_api,,,1
+/api/arena/match/<int:match_id>/watch,POST,api_arena_match_watch,31181,Arena,api,,False,json_api,,,1
+/api/arena/match/<int:match_id>/winner,GET,api_arena_match_winner,31296,Arena,api,,False,json_api,,,1
+/api/arena/matchmaking,POST,api_arena_matchmaking,31078,Arena,api,,False,json_api,,,1
+/api/arena/message-player,POST,api_arena_message_player,32117,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/message-request/accept,POST,api_arena_message_request_accept,32238,Arena,api,,False,inline_html,clean_html,,2
+/api/arena/message-request/decline,POST,api_arena_message_request_decline,32298,Arena,api,,False,json_api,,,2
+/api/arena/message/accept,POST,api_arena_message_request_accept,32239,Arena,api,,False,inline_html,clean_html,/api/arena/message-request/accept,2
+/api/arena/message/reject,POST,api_arena_message_request_decline,32299,Arena,api,,False,json_api,,/api/arena/message-request/decline,2
+/api/arena/play/modes,GET,api_arena_play_modes,31741,Arena,api,,False,json_api,,,1
+/api/arena/playbooks,"GET,POST",api_arena_playbooks,31668,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/playbooks/save,POST,api_arena_playbooks_save,31692,Arena,api,,False,other,,,1
+/api/arena/playbooks/vote,POST,api_arena_playbooks_vote,31697,Arena,api,,False,json_api,,,1
+/api/arena/player-story,GET,api_arena_player_story,31554,Arena,api,,False,json_api,,,1
+/api/arena/player/<public_player_id>,GET,api_arena_player,30577,Arena,api,,False,json_api,,,1
+/api/arena/players,GET,api_arena_players,32108,Arena,api,,False,json_api,,,1
+/api/arena/preferences,"GET,POST",api_arena_preferences,30486,Arena,api,,False,json_api,,,1
+/api/arena/presence,GET,api_arena_presence,30386,Arena,api,,False,json_api,,,1
+/api/arena/presence/update,POST,api_arena_presence_update,30445,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/profile,GET,api_arena_profile,30377,Arena,api,,False,json_api,,,1
+/api/arena/quests,GET,api_arena_quests,31622,Arena,api,,False,json_api,,,1
+/api/arena/quests/claim,POST,api_arena_quests_claim,31630,Arena,api,,False,json_api,,,1
+/api/arena/quick-battle/start,POST,api_arena_quick_battle_start,31827,Arena,api,,False,json_api,,,1
+/api/arena/quick-battle/submit,POST,api_arena_quick_battle_submit,31835,Arena,api,,False,json_api,,,1
+/api/arena/realtime/<channel_kind>/<channel_id>,GET,api_arena_realtime_poll,32067,Arena,api,,False,json_api,,,1
+/api/arena/realtime/<channel_kind>/<channel_id>/stream,GET,api_arena_realtime_stream,32083,Arena,api,,False,json_api,,,1
+/api/arena/replay/<int:match_id>,GET,api_arena_replay,31602,Arena,api,,False,json_api,,,1
+/api/arena/report-player,POST,api_arena_report_player,32453,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/reputation,POST,api_arena_reputation,31562,Arena,api,,False,json_api,,,1
+/api/arena/request/accept,POST,api_arena_battle_accept,30681,Arena,api,,False,inline_html,clean_html,/api/arena/battle/accept,3
+/api/arena/request/reject,POST,api_arena_challenge_reject,30741,Arena,api,,False,json_api,,/api/arena/challenge/reject,2
+/api/arena/rivalry,POST,api_arena_rivalry,31468,Arena,api,,False,json_api,,,1
+/api/arena/roast/call-sign,POST,api_arena_roast_call_sign,31924,Arena,api,,False,json_api,,,1
+/api/arena/roast/enroll,POST,api_arena_roast_enroll,31913,Arena,api,,False,json_api,,,1
+/api/arena/roast/leaderboard,GET,api_arena_roast_leaderboard,31971,Arena,api,,False,json_api,,,1
+/api/arena/roast/match/<int:match_id>/message,POST,api_arena_roast_message,31933,Arena,api,,False,json_api,,,1
+/api/arena/roast/match/<int:match_id>/new,GET,api_arena_roast_new,31979,Arena,api,,False,json_api,,,1
+/api/arena/roast/match/<int:match_id>/reaction,POST,api_arena_roast_reaction,31987,Arena,api,,False,json_api,,,1
+/api/arena/roast/match/<int:match_id>/say,POST,api_arena_roast_say,31950,Arena,api,,False,other,,,1
+/api/arena/roast/match/<int:match_id>/state,GET,api_arena_roast_state,31955,Arena,api,,False,json_api,,,1
+/api/arena/roast/match/<int:match_id>/vote,POST,api_arena_roast_vote,31996,Arena,api,,False,json_api,,,1
+/api/arena/roast/queue,GET,api_arena_roast_queue,31963,Arena,api,,False,json_api,,,1
+/api/arena/roast/rooms,GET,api_arena_roast_rooms,31905,Arena,api,,False,json_api,,,1
+/api/arena/rooms,GET,api_arena_rooms,30830,Arena,api,,False,json_api,,,1
+/api/arena/rooms/<int:room_id>/live,GET,api_arena_room_live,30886,Arena,api,,False,json_api,,,1
+/api/arena/rooms/<int:room_id>/message,POST,api_arena_room_message,30868,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/rooms/join,POST,api_arena_rooms_join,30860,Arena,api,,False,json_api,,,1
+/api/arena/rooms/live,GET,api_arena_rooms_live,30844,Arena,api,,False,json_api,,,1
+/api/arena/round/answer,POST,api_arena_round_answer,31881,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/scam-rush/start,POST,api_arena_scam_rush_start,31863,Arena,api,,False,json_api,,,1
+/api/arena/scam-rush/submit,POST,api_arena_scam_rush_submit,31871,Arena,api,,False,json_api,,,1
+/api/arena/seasons,GET,api_arena_seasons,31416,Arena,api,,False,json_api,,,1
+/api/arena/share/achievement/,GET,api_arena_share_achievement,32497,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/share/generate,POST,api_arena_share_generate,32517,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/share/profile/<public_player_id>,GET,api_arena_share_profile,32480,Arena,api,,False,json_api,,,1
+/api/arena/share/replay/<int:match_id>,GET,api_arena_share_replay,32508,Arena,api,,False,json_api,,,1
+/api/arena/solo/start,POST,api_arena_solo_start,31065,Arena,api,,False,json_api,,,1
+/api/arena/spectate,POST,api_arena_spectate,31160,Arena,api,,False,json_api,,,1
+/api/arena/survival/next,POST,api_arena_survival_next,31853,Arena,api,,False,json_api,,,1
+/api/arena/survival/start,POST,api_arena_survival_start,31845,Arena,api,,False,json_api,,,1
+/api/arena/team/<int:team_id>,GET,api_arena_team,31488,Arena,api,,False,json_api,,,1
+/api/arena/team/create,POST,api_arena_team_create,31368,Arena,api,,False,inline_html,clean_html,,1
+/api/arena/team/join,POST,api_arena_team_join,31399,Arena,api,,False,json_api,,,1
+/api/arena/top-players,GET,api_arena_top_players,30569,Arena,api,,False,json_api,,,1
+/api/arena/tournament/join,POST,api_arena_tournament_join,31444,Arena,api,,False,json_api,,,1
+/api/arena/tournaments,GET,api_arena_tournaments,31430,Arena,api,,False,json_api,,,1
+/api/arena/trade,POST,api_arena_trade,31147,Arena,api,,False,json_api,,,1
+/api/arena/trending-battles,GET,api_arena_trending_battles,30985,Arena,api,,False,json_api,,,1
+/api/arena/world,GET,api_arena_world,31522,Arena,api,,False,json_api,,,1
+/api/arena/world-events,GET,api_arena_world_events,31514,Arena,api,,False,json_api,,/api/arena/events/global,2
+/api/arena/world-map,GET,api_arena_world_map,31578,Arena,api,,False,json_api,,,1
+/api/auto-signals/activate,POST,api_auto_signals_activate,33092,Auto-Signals,api,,False,inline_html,clean_html,,1
+/api/auto-signals/pause,POST,api_auto_signals_pause,33141,Auto-Signals,api,,False,json_api,,,1
+/api/auto-signals/status,GET,api_auto_signals_status,33117,Auto-Signals,api,,False,json_api,,,1
+/api/auto-signals/stop,POST,api_auto_signals_stop,33128,Auto-Signals,api,,False,json_api,,,1
+/api/billing/confirm-session,POST,api_billing_confirm_session,11956,Payments,api,,False,inline_html,clean_html,,1
+/api/brevo/webhook,POST,brevo_delivery_webhook,16269,Brevo,api,,False,inline_html,clean_html,,2
+/api/business-os/advertising/ad-sets,GET,api_business_os_advertising_list_ad_sets,19157,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/ad-sets/<ad_set_id>,GET,api_business_os_advertising_get_ad_set,19170,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/ad-sets/<ad_set_id>/<action>,POST,api_business_os_advertising_ad_set_lifecycle,19195,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/ad-sets/<ad_set_id>/creatives,POST,api_business_os_advertising_create_creative,19216,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/ad-sets/<ad_set_id>/creatives,GET,api_business_os_advertising_list_creatives_for_ad_set,19231,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/ad-sets/<ad_set_id>/update,POST,api_business_os_advertising_update_ad_set,19181,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/advertiser,POST,api_business_os_advertising_register,18801,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/appeals,POST,api_business_os_advertising_submit_appeal,19922,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/assistant/execute,POST,api_business_os_advertising_assistant_execute,19908,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/assistant/plan,POST,api_business_os_advertising_assistant_plan,19894,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/assistant/tools,GET,api_business_os_advertising_assistant_tools,19883,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns,POST,api_business_os_advertising_create_campaign,18815,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns,GET,api_business_os_advertising_list_campaigns,18830,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>,GET,api_business_os_advertising_get_campaign,18843,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/activate,POST,api_business_os_advertising_activate_campaign,19069,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/ad-sets,POST,api_business_os_advertising_create_ad_set,19130,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/ad-sets,GET,api_business_os_advertising_list_ad_sets_for_campaign,19145,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/archive,POST,api_business_os_advertising_archive_campaign,18868,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/budget,POST,api_business_os_advertising_set_budget,18990,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/cancel,POST,api_business_os_advertising_cancel_campaign,19112,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/funding,GET,api_business_os_advertising_get_funding,18954,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/operational,GET,api_business_os_advertising_get_operational,19043,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/pause,POST,api_business_os_advertising_pause_campaign,19084,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/release,POST,api_business_os_advertising_release_funds,19020,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/reopen,POST,api_business_os_advertising_reopen_campaign,18921,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/report,GET,api_business_os_advertising_campaign_report,19851,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/reserve,POST,api_business_os_advertising_reserve_funds,19005,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/restore,POST,api_business_os_advertising_restore_campaign,18881,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/resume,POST,api_business_os_advertising_resume_campaign,19098,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/schedule,POST,api_business_os_advertising_schedule_campaign,19054,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/spend,GET,api_business_os_advertising_campaign_spend,19869,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/submit,POST,api_business_os_advertising_submit_campaign,18894,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/update,POST,api_business_os_advertising_update_campaign,18854,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/campaigns/<campaign_id>/withdraw,POST,api_business_os_advertising_withdraw_campaign,18908,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/creatives,GET,api_business_os_advertising_list_creatives,19243,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/creatives/<creative_id>,GET,api_business_os_advertising_get_creative,19256,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/creatives/<creative_id>/<action>,POST,api_business_os_advertising_creative_lifecycle,19311,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/creatives/<creative_id>/readiness,GET,api_business_os_advertising_creative_readiness,19267,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/creatives/<creative_id>/revise,POST,api_business_os_advertising_revise_creative,19295,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/creatives/<creative_id>/update,POST,api_business_os_advertising_update_creative,19281,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/deliveries/<delivery_id>/click,POST,api_business_os_advertising_record_click,19757,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/deliveries/<delivery_id>/impression,POST,api_business_os_advertising_record_impression,19740,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/delivery/<placement>,POST,api_business_os_advertising_request_delivery,19723,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/eligibility,GET,api_business_os_advertising_eligibility,18789,Business OS,api,,False,json_api,,,1
+/api/business-os/advertising/wallet,GET,api_business_os_advertising_get_wallet,18978,Business OS,api,,False,json_api,,,1
+/api/business-os/attribution/conversions,POST,api_business_os_attr_record_conversion,22008,Business OS,api,,False,json_api,,,1
+/api/business-os/attribution/conversions/<conversion_id>,GET,api_business_os_attr_conversion_report,22022,Business OS,api,,False,json_api,,,1
+/api/business-os/attribution/conversions/<conversion_id>/recompute,POST,api_business_os_attr_recompute,22058,Business OS,api,,False,json_api,,,1
+/api/business-os/attribution/path,GET,api_business_os_attr_path_report,22035,Business OS,api,,False,json_api,,,1
+/api/business-os/attribution/report/campaigns,GET,api_business_os_attr_campaign_report,22046,Business OS,api,,False,json_api,,,1
+/api/business-os/attribution/touchpoints,POST,api_business_os_attr_record_touchpoint,21994,Business OS,api,,False,json_api,,,1
+/api/business-os/business,GET,api_business_os_business_list,20156,Business OS,api,,False,json_api,,,1
+/api/business-os/business,POST,api_business_os_business_create,20167,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>,GET,api_business_os_business_get,20182,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>/locations,GET,api_business_os_business_list_locations,20224,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>/locations,POST,api_business_os_business_add_location,20235,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>/locations/<location_id>/close,POST,api_business_os_business_close_location,20265,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>/locations/<location_id>/update,POST,api_business_os_business_update_location,20250,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>/members,GET,api_business_os_business_list_members,20281,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>/members,POST,api_business_os_business_add_member,20292,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>/members/<member_user_id>/remove,POST,api_business_os_business_remove_member,20322,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>/members/<member_user_id>/role,POST,api_business_os_business_update_member_role,20307,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>/policies,GET,api_business_os_business_list_policies,20338,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>/policies,POST,api_business_os_business_set_policy,20349,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>/policies/<policy_type>,GET,api_business_os_business_get_policy,20364,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>/status,POST,api_business_os_business_status,20208,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>/timeline,GET,api_business_os_business_timeline,20376,Business OS,api,,False,json_api,,,1
+/api/business-os/business/<business_id>/update,POST,api_business_os_business_update,20193,Business OS,api,,False,json_api,,,1
+/api/business-os/businesses/<business_id>/events,"GET,POST",api_business_os_events_collection,20999,Business OS,api,,False,json_api,,,1
+/api/business-os/businesses/<business_id>/inbox,GET,api_business_os_messages_inbox,20802,Business OS,api,,False,json_api,,,1
+/api/business-os/businesses/<business_id>/insights,GET,api_business_os_insights_overview,20924,Business OS,api,,False,json_api,,,1
+/api/business-os/businesses/<business_id>/insights/attribution,GET,api_business_os_insights_attribution,20951,Business OS,api,,False,json_api,,,1
+/api/business-os/businesses/<business_id>/insights/performance,GET,api_business_os_insights_performance,20939,Business OS,api,,False,json_api,,,1
+/api/business-os/businesses/<business_id>/insights/recommendations,GET,api_business_os_insights_recommendations,20965,Business OS,api,,False,json_api,,,1
+/api/business-os/businesses/<business_id>/threads,POST,api_business_os_messages_start_thread,20787,Business OS,api,,False,json_api,,,1
+/api/business-os/businesses/<business_id>/verification/run,POST,api_business_os_verification_run,21179,Business OS,api,,False,json_api,,,1
+/api/business-os/businesses/<business_id>/verification/runs,GET,api_business_os_verification_list,21194,Business OS,api,,False,json_api,,,1
+/api/business-os/creator/contributions,POST,api_business_os_creator_record_contribution,22304,Business OS,api,,False,json_api,,,1
+/api/business-os/creator/earnings,GET,api_business_os_creator_earnings_report,22349,Business OS,api,,False,json_api,,,1
+/api/business-os/creator/offerings,POST,api_business_os_creator_record_offering,22291,Business OS,api,,False,json_api,,,1
+/api/business-os/creator/offerings,GET,api_business_os_creator_offerings_report,22317,Business OS,api,,False,json_api,,,1
+/api/business-os/creator/recompute,POST,api_business_os_creator_recompute,22361,Business OS,api,,False,json_api,,,1
+/api/business-os/creator/supporters,GET,api_business_os_creator_supporters_report,22333,Business OS,api,,False,json_api,,,1
+/api/business-os/crypto/alerts,POST,api_business_os_crypto_create_alert,21940,Business OS,api,,False,json_api,,,1
+/api/business-os/crypto/alerts,GET,api_business_os_crypto_list_alerts,21954,Business OS,api,,False,json_api,,,1
+/api/business-os/crypto/alerts/<alert_id>/delete,POST,api_business_os_crypto_delete_alert,21968,Business OS,api,,False,json_api,,,1
+/api/business-os/crypto/portfolio,GET,api_business_os_crypto_portfolio,21929,Business OS,api,,False,json_api,,,1
+/api/business-os/crypto/transactions,POST,api_business_os_crypto_record_transaction,21915,Business OS,api,,False,json_api,,,1
+/api/business-os/event-tickets/<ticket_id>/check-in,POST,api_business_os_events_check_in,21119,Business OS,api,,False,json_api,,,1
+/api/business-os/event-tickets/<ticket_id>/refund,POST,api_business_os_events_refund,21134,Business OS,api,,False,json_api,,,1
+/api/business-os/events/<event_id>,GET,api_business_os_events_get,21022,Business OS,api,,False,json_api,,,1
+/api/business-os/events/<event_id>/cancel,POST,api_business_os_events_cancel,21063,Business OS,api,,False,json_api,,,1
+/api/business-os/events/<event_id>/publish,POST,api_business_os_events_publish,21049,Business OS,api,,False,json_api,,,1
+/api/business-os/events/<event_id>/purchase,POST,api_business_os_events_purchase,21077,Business OS,api,,False,json_api,,,1
+/api/business-os/events/<event_id>/settle,POST,api_business_os_events_settle,21094,Business OS,api,,False,json_api,,,1
+/api/business-os/events/<event_id>/summary,GET,api_business_os_events_summary,21108,Business OS,api,,False,json_api,,,1
+/api/business-os/events/<event_id>/ticket-types,POST,api_business_os_events_add_ticket_type,21033,Business OS,api,,False,json_api,,,1
+/api/business-os/l10n/locales,POST,api_business_os_l10n_record_locale,22671,Business OS,api,,False,json_api,,,1
+/api/business-os/l10n/locales,GET,api_business_os_l10n_locales_report,22697,Business OS,api,,False,json_api,,,1
+/api/business-os/l10n/resolutions,GET,api_business_os_l10n_resolutions_report,22729,Business OS,api,,False,json_api,,,1
+/api/business-os/l10n/resolve,POST,api_business_os_l10n_resolve,22745,Business OS,api,,False,json_api,,,1
+/api/business-os/l10n/strings,POST,api_business_os_l10n_record_string,22684,Business OS,api,,False,json_api,,,1
+/api/business-os/l10n/strings,GET,api_business_os_l10n_strings_report,22713,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/appeals,POST,api_business_os_marketplace_submit_appeal,21608,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/assistant/execute,POST,api_business_os_marketplace_assistant_execute,21647,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/assistant/plan,POST,api_business_os_marketplace_assistant_plan,21633,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/assistant/tools,GET,api_business_os_marketplace_assistant_tools,21622,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/money,GET,api_business_os_marketplace_money,21560,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/money/activity,GET,api_business_os_marketplace_money_activity,21573,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/money/disputes,GET,api_business_os_marketplace_money_disputes,21593,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/orders,POST,api_business_os_marketplace_create_order,21417,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/orders,GET,api_business_os_marketplace_list_orders,21432,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/orders/<order_id>,GET,api_business_os_marketplace_get_order,21446,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/orders/<order_id>/cancel,POST,api_business_os_marketplace_cancel_order,21500,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/orders/<order_id>/complete,POST,api_business_os_marketplace_complete_order,21486,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/orders/<order_id>/dispute,POST,api_business_os_marketplace_open_dispute,21515,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/orders/<order_id>/fulfill,POST,api_business_os_marketplace_fulfill_order,21471,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/orders/<order_id>/pay,POST,api_business_os_marketplace_pay_order,21457,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/payouts,GET,api_business_os_marketplace_payouts,21545,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/products,POST,api_business_os_marketplace_create_product,21299,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/products,GET,api_business_os_marketplace_list_products,21314,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/products/<product_id>,GET,api_business_os_marketplace_get_product,21327,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/products/<product_id>/<action>,POST,api_business_os_marketplace_product_lifecycle,21368,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/products/<product_id>/inventory,POST,api_business_os_marketplace_set_inventory,21353,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/products/<product_id>/reviews,GET,api_business_os_marketplace_product_reviews,21406,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/products/<product_id>/update,POST,api_business_os_marketplace_update_product,21338,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/reviews,POST,api_business_os_marketplace_create_review,21530,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/seller,GET,api_business_os_marketplace_get_seller,21274,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/seller,POST,api_business_os_marketplace_register_seller,21285,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/storefront,GET,api_business_os_marketplace_storefront,21383,Business OS,api,,False,json_api,,,1
+/api/business-os/marketplace/storefront/<product_id>,GET,api_business_os_marketplace_storefront_product,21395,Business OS,api,,False,json_api,,,1
+/api/business-os/merchant/evaluate,POST,api_business_os_merchant_evaluate,22260,Business OS,api,,False,json_api,,,1
+/api/business-os/merchant/proposals,GET,api_business_os_merchant_proposals_report,22244,Business OS,api,,False,json_api,,,1
+/api/business-os/merchant/rules,POST,api_business_os_merchant_record_rule,22186,Business OS,api,,False,json_api,,,1
+/api/business-os/merchant/rules,GET,api_business_os_merchant_rules_report,22212,Business OS,api,,False,json_api,,,1
+/api/business-os/merchant/signals,POST,api_business_os_merchant_record_signal,22199,Business OS,api,,False,json_api,,,1
+/api/business-os/merchant/signals,GET,api_business_os_merchant_signals_report,22228,Business OS,api,,False,json_api,,,1
+/api/business-os/messages/threads,GET,api_business_os_messages_my_threads,20818,Business OS,api,,False,json_api,,,1
+/api/business-os/messages/threads/<conversation_id>,GET,api_business_os_messages_get_thread,20833,Business OS,api,,False,json_api,,,1
+/api/business-os/messages/threads/<conversation_id>/messages,GET,api_business_os_messages_list,20845,Business OS,api,,False,json_api,,,1
+/api/business-os/messages/threads/<conversation_id>/messages,POST,api_business_os_messages_send,20863,Business OS,api,,False,json_api,,,1
+/api/business-os/messages/threads/<conversation_id>/read,POST,api_business_os_messages_mark_read,20879,Business OS,api,,False,json_api,,,1
+/api/business-os/messages/threads/<conversation_id>/report,POST,api_business_os_messages_report,20893,Business OS,api,,False,json_api,,,1
+/api/business-os/my/event-tickets,GET,api_business_os_events_my_tickets,21149,Business OS,api,,False,json_api,,,1
+/api/business-os/orders,POST,api_business_os_orders_create,20630,Business OS,api,,False,json_api,,,1
+/api/business-os/orders,GET,api_business_os_orders_list,20645,Business OS,api,,False,json_api,,,1
+/api/business-os/orders/<order_id>,GET,api_business_os_orders_get,20662,Business OS,api,,False,json_api,,,1
+/api/business-os/orders/<order_id>/cancel,POST,api_business_os_orders_cancel,20716,Business OS,api,,False,json_api,,,1
+/api/business-os/orders/<order_id>/complete,POST,api_business_os_orders_complete,20702,Business OS,api,,False,json_api,,,1
+/api/business-os/orders/<order_id>/dispute,POST,api_business_os_orders_dispute,20743,Business OS,api,,False,json_api,,,1
+/api/business-os/orders/<order_id>/fulfill,POST,api_business_os_orders_fulfill,20687,Business OS,api,,False,json_api,,,1
+/api/business-os/orders/<order_id>/pay,POST,api_business_os_orders_pay,20673,Business OS,api,,False,json_api,,,1
+/api/business-os/orders/<order_id>/refunds,GET,api_business_os_orders_refunds,20757,Business OS,api,,False,json_api,,,1
+/api/business-os/orders/<order_id>/summary,GET,api_business_os_orders_summary,20731,Business OS,api,,False,json_api,,,1
+/api/business-os/perf/samples,POST,api_business_os_perf_record_sample,22776,Business OS,api,,False,json_api,,,1
+/api/business-os/perf/samples,GET,api_business_os_perf_samples_report,22818,Business OS,api,,False,json_api,,,1
+/api/business-os/perf/summaries,GET,api_business_os_perf_summaries_report,22834,Business OS,api,,False,json_api,,,1
+/api/business-os/perf/summarize,POST,api_business_os_perf_summarize,22850,Business OS,api,,False,json_api,,,1
+/api/business-os/perf/targets,POST,api_business_os_perf_record_target,22789,Business OS,api,,False,json_api,,,1
+/api/business-os/perf/targets,GET,api_business_os_perf_targets_report,22802,Business OS,api,,False,json_api,,,1
+/api/business-os/recommendations,GET,api_business_os_rec_recommendations_report,22114,Business OS,api,,False,json_api,,,1
+/api/business-os/recommendations/interactions,POST,api_business_os_rec_record_interaction,22100,Business OS,api,,False,json_api,,,1
+/api/business-os/recommendations/interactions,GET,api_business_os_rec_interactions_report,22131,Business OS,api,,False,json_api,,,1
+/api/business-os/recommendations/items,POST,api_business_os_rec_record_item,22087,Business OS,api,,False,json_api,,,1
+/api/business-os/recommendations/recompute,POST,api_business_os_rec_recompute,22157,Business OS,api,,False,json_api,,,1
+/api/business-os/recommendations/report/popularity,GET,api_business_os_rec_popularity_report,22142,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/collections,GET,api_business_os_store_list_collections,20520,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/collections,POST,api_business_os_store_create_collection,20531,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/collections/<collection_id>/products,GET,api_business_os_store_list_collection_products,20546,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/collections/<collection_id>/products,POST,api_business_os_store_add_collection_product,20558,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/collections/<collection_id>/products/<product_id>/remove,POST,api_business_os_store_remove_collection_product,20573,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/products,GET,api_business_os_store_list_products,20451,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/products,POST,api_business_os_store_create_product,20463,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/products/<product_id>,GET,api_business_os_store_get_product,20478,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/products/<product_id>/status,POST,api_business_os_store_product_status,20504,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/products/<product_id>/update,POST,api_business_os_store_update_product,20489,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/public,GET,api_business_os_store_public,20605,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/storefront,GET,api_business_os_store_get_storefront,20409,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/storefront,POST,api_business_os_store_upsert_storefront,20420,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/storefront/status,POST,api_business_os_store_storefront_status,20435,Business OS,api,,False,json_api,,,1
+/api/business-os/store/<business_id>/timeline,GET,api_business_os_store_timeline,20589,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/action-center,GET,api_business_os_undx_action_center_report,22575,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/confirmations,POST,api_business_os_undx_record_confirmation,22454,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/decisions,GET,api_business_os_undx_decisions_report,22525,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/emergency-stop,POST,api_business_os_undx_emergency_stop,22480,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/evaluate,POST,api_business_os_undx_evaluate,22641,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/marketplace/listings/draft,POST,api_business_os_undx_marketplace_create_listing_draft,22593,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/marketplace/listings/publish/execute,POST,api_business_os_undx_marketplace_execute_publish,22625,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/marketplace/listings/publish/plan,POST,api_business_os_undx_marketplace_plan_publish,22609,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/permissions,POST,api_business_os_undx_grant_permission,22441,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/permissions,GET,api_business_os_undx_permissions_report,22557,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/policies,POST,api_business_os_undx_record_policy,22402,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/policies,GET,api_business_os_undx_policies_report,22493,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/receipts,POST,api_business_os_undx_record_receipt,22467,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/requests,POST,api_business_os_undx_record_request,22415,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/requests,GET,api_business_os_undx_requests_report,22509,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/tools,POST,api_business_os_undx_register_tool,22428,Business OS,api,,False,json_api,,,1
+/api/business-os/undx/tools,GET,api_business_os_undx_tools_report,22541,Business OS,api,,False,json_api,,,1
+/api/business-os/verification/runs/<run_id>,GET,api_business_os_verification_get,21210,Business OS,api,,False,json_api,,,1
+/api/chat-room,POST,api_pulse_message_room_open,81534,Chat-Room,api,,False,inline_html,clean_html,/api/pulse/messages/room/open,2
+/api/chat-room,GET,api_pulse_chatrooms,81562,Chat-Room,api,,False,json_api,,/api/pulse/chatrooms,3
+/api/chat-room/<room_id>/join,POST,api_pulse_chatroom_join,81600,Chat-Room,api,,False,json_api,,/api/pulse/messages/rooms/<room_id>/join,3
+/api/chat-room/<room_id>/messages,"GET,POST",api_pulse_chatroom_messages,81628,Chat-Room,api,,False,json_api,,/api/pulse/messages/rooms/<room_id>/messages,3
+/api/chat/request/<int:request_id>/accept,POST,api_chat_request_accept,93589,Messenger,api,,False,inline_html,clean_html,,1
+/api/chat/request/<int:request_id>/reject,POST,api_chat_request_reject,93629,Messenger,api,,False,json_api,,,1
+/api/chat/start,POST,api_chat_start,34600,Messenger,api,,False,inline_html,clean_html,,1
+/api/chat/thread/<int:thread_id>,GET,api_chat_thread,34648,Messenger,api,,False,json_api,,,1
+/api/chat/thread/<int:thread_id>/new,GET,api_chat_thread_new,34660,Messenger,api,,False,json_api,,,1
+/api/chat/thread/<int:thread_id>/send,POST,api_chat_thread_send,34673,Messenger,api,,False,json_api,,,1
+/api/chat/threads,GET,api_chat_threads,34591,Messenger,api,,False,json_api,,,1
+/api/command,POST,api_command,25008,Command,api,,False,inline_html,clean_html,,1
+/api/command/history,GET,api_command_history,25064,Command,api,,False,json_api,,,1
+/api/command/save,POST,api_command_save,25076,Command,api,,False,json_api,,,1
+/api/commands,GET,api_commands,24939,Commands,api,,False,json_api,,,1
+/api/conversations,GET,api_pulse_message_conversations,82001,Conversations,api,,False,json_api,,/api/pulse/messages/conversations,3
+/api/create-checkout-session,POST,create_checkout_session_route,11444,Create-Checkout-Session,api,,False,json_api,,/create-checkout-session,2
+/api/crypto/alerts,"GET,POST",api_crypto_alerts,7311,Crypto,api,,False,other,,,1
+/api/crypto/alerts/<int:alert_id>,"DELETE,PATCH",api_crypto_alert_detail,7319,Crypto,api,,False,other,,,1
+/api/crypto/alerts/<int:alert_id>/duplicate,POST,api_crypto_alert_duplicate,7327,Crypto,api,,False,other,,,1
+/api/crypto/alerts/<int:alert_id>/history,GET,api_crypto_alert_history,7332,Crypto,api,,False,other,,,1
+/api/crypto/ask,POST,api_crypto_ask_ai,7357,Crypto,api,,False,json_api,,/api/crypto/ask-ai,2
+/api/crypto/ask-ai,POST,api_crypto_ask_ai,7356,Crypto,api,,False,json_api,,,2
+/api/crypto/calendar,GET,api_crypto_calendar,7399,Crypto,api,,False,json_api,,,1
+/api/crypto/favorites,GET,api_crypto_favorite_assets,7409,Crypto,api,,False,other,,,1
+/api/crypto/gainers,GET,api_crypto_gainers,7384,Crypto,api,,False,json_api,,,1
+/api/crypto/losers,GET,api_crypto_losers,7389,Crypto,api,,False,json_api,,,1
+/api/crypto/market-pulse,GET,api_crypto_market_pulse,7306,Crypto,api,,False,json_api,,,1
+/api/crypto/news,GET,api_crypto_news,7394,Crypto,api,,False,json_api,,,1
+/api/crypto/recent,GET,api_crypto_recent_assets,7404,Crypto,api,,False,other,,,1
+/api/crypto/summary,GET,api_crypto_summary,7301,Crypto,api,,False,other,,,1
+/api/crypto/token-scan,POST,api_crypto_token_scan,7373,Crypto,api,,False,other,,,1
+/api/crypto/trending,GET,api_crypto_trending,7379,Crypto,api,,False,json_api,,,1
+/api/crypto/watchlists,"GET,POST",api_crypto_watchlists,7337,Crypto,api,,False,other,,,1
+/api/crypto/watchlists/<int:watchlist_id>/assets,POST,api_crypto_watchlist_assets,7345,Crypto,api,,False,other,,,1
+/api/crypto/watchlists/<int:watchlist_id>/assets/<int:asset_id>,DELETE,api_crypto_watchlist_asset_delete,7351,Crypto,api,,False,other,,,1
+/api/dashboard,GET,dashboard_api,26912,Dashboard,api,,False,json_api,,,1
+/api/dashboard/account/settings,"GET,POST",api_dashboard_account_settings,10249,Dashboard,api,,False,json_api,,,1
+/api/dashboard/account/state,GET,api_dashboard_account_state,6947,Dashboard,api,,False,json_api,,,1
+/api/dashboard/account/verification/appeal,POST,api_dashboard_verification_appeal,7001,Dashboard,api,,False,json_api,,,1
+/api/dashboard/account/verification/appeal,POST,api_dashboard_account_verification_appeal,10289,Dashboard,api,,False,json_api,,,1
+/api/dashboard/account/verification/document,POST,api_dashboard_verification_document,7040,Dashboard,api,,False,inline_html,clean_html,,1
+/api/dashboard/account/verification/document,POST,api_dashboard_account_verification_document,10356,Dashboard,api,,False,inline_html,clean_html,,1
+/api/dashboard/account/verification/request,POST,api_dashboard_verification_request,6985,Dashboard,api,,False,json_api,,,1
+/api/dashboard/account/verification/request,POST,api_dashboard_account_verification_request,10271,Dashboard,api,,False,json_api,,,1
+/api/dashboard/ads/state,GET,api_dashboard_ads_state,7414,Dashboard,api,,False,json_api,,,1
+/api/dashboard/ai-advisor/goals,POST,api_dashboard_ai_advisor_goals,7090,Dashboard,api,,False,json_api,,,1
+/api/dashboard/ai/state,GET,api_dashboard_ai_state,7430,Dashboard,api,,False,json_api,,,1
+/api/dashboard/brief,GET,api_dashboard_brief,27000,Dashboard,api,,False,json_api,,,1
+/api/dashboard/content-planner/item,POST,api_dashboard_content_planner_item,7150,Dashboard,api,,False,json_api,,,1
+/api/dashboard/creator/state,GET,api_dashboard_creator_state,7181,Dashboard,api,,False,json_api,,,1
+/api/dashboard/crypto/state,GET,api_dashboard_crypto_state,7229,Dashboard,api,,False,json_api,,,1
+/api/dashboard/economy/state,GET,api_dashboard_economy_state,7213,Dashboard,api,,False,json_api,,,1
+/api/dashboard/intelligence/state,GET,api_dashboard_intelligence_state,7197,Dashboard,api,,False,json_api,,,1
+/api/dashboard/mission-control,GET,api_dashboard_mission_control,26926,Dashboard,api,,False,json_api,,,1
+/api/dashboard/network/state,GET,api_dashboard_network_state,7165,Dashboard,api,,False,json_api,,,1
+/api/dashboard/preference,POST,api_dashboard_preference,6970,Dashboard,api,,False,json_api,,,1
+/api/dashboard/preferences,"GET,POST",api_dashboard_preferences,27289,Dashboard,api,,False,json_api,,,1
+/api/dashboard/premium/explore,POST,api_dashboard_premium_explore,7135,Dashboard,api,,False,json_api,,,1
+/api/dashboard/risk-score,GET,api_dashboard_risk_score,27012,Dashboard,api,,False,json_api,,,1
+/api/dashboard/seller-tools/product,POST,api_dashboard_seller_product,7120,Dashboard,api,,False,json_api,,,1
+/api/dashboard/seller-tools/store,POST,api_dashboard_seller_store,7105,Dashboard,api,,False,json_api,,,1
+/api/dashboard/streak,GET,api_dashboard_streak,27036,Dashboard,api,,False,json_api,,,1
+/api/dashboard/system/state,GET,api_dashboard_system_state,7464,Dashboard,api,,False,json_api,,,1
+/api/dashboard/widgets,"GET,POST",api_dashboard_widgets,27231,Dashboard,api,,False,inline_html,clean_html,,1
+/api/day-signal,POST,website_day_signal_api,26216,Day-Signal,api,,False,json_api,,,1
+/api/education/categories,GET,api_education_categories,2013,Education,api,,False,json_api,,,1
+/api/education/lesson/<lesson_slug>,GET,api_education_lesson,2036,Education,api,,False,inline_html,clean_html,,1
+/api/education/lessons,GET,api_education_lessons,2020,Education,api,,False,inline_html,clean_html,,1
+/api/education/preferences,"GET,POST",api_education_preferences,32577,Education,api,,False,json_api,,,1
+/api/education/progress,"GET,POST",api_education_progress,32760,Education,api,,False,inline_html,clean_html,,1
+/api/education/quiz/submit,POST,api_education_quiz_submit,2070,Education,api,,False,inline_html,clean_html,,1
+/api/education/tutor,POST,api_education_tutor,2042,Education,api,,False,inline_html,clean_html,,1
+/api/group-chat,POST,api_pulse_message_group_create,81094,Group-Chat,api,,False,inline_html,clean_html,/api/pulse/messages/groups/create,3
+/api/group-chat,GET,api_pulse_message_group_conversations,81759,Group-Chat,api,,False,json_api,,/api/pulse/messages/group-conversations,2
+/api/groups/<int:group_id>/remove-member,POST,api_groups_remove_member,85765,Groups,api,,False,other,,,2
+/api/groups/posts/<int:post_id>,DELETE,api_groups_post_delete_alias,85623,Groups,api,,False,other,,,2
+/api/groups/posts/<int:post_id>/pin,POST,api_groups_post_pin,85699,Groups,api,,False,json_api,,,2
+/api/groups/posts/<int:post_id>/report,POST,api_groups_post_report_alias,85686,Groups,api,,False,other,,,2
+/api/i18n/missing,POST,api_i18n_missing_translation,6789,I18N,api,,False,inline_html,clean_html,,1
+/api/indexnow,GET,indexnow_metadata_api,24798,Indexnow,api,,False,json_api,,,1
+/api/insights,GET,api_insights,27095,Insights,api,,False,json_api,,,1
+/api/insights/save,POST,api_insights_save,27068,Insights,api,,False,inline_html,clean_html,,1
+/api/intelligence-feed,GET,intelligence_feed_api,24811,Intelligence-Feed,api,,False,json_api,,,1
+/api/internal/engineer-access/session,GET,api_internal_engineer_access_session,6240,Internal,api,,False,json_api,,,1
+/api/internal/engineer-access/verify,POST,api_internal_engineer_access_verify,6168,Internal,api,,False,json_api,,,1
+/api/leads,POST,leads_api,13537,Leads,api,,False,inline_html,clean_html,,1
+/api/live-ops/today,GET,api_live_ops_today,26958,Live-Ops,api,,False,json_api,,,1
+/api/live/btc,GET,api_live_btc,25624,Live,api,,False,json_api,,,1
+/api/live/fear-greed,GET,api_live_fear_greed,25640,Live,api,,False,json_api,,,1
+/api/live/market,GET,api_live_market,25617,Live,api,,False,json_api,,,1
+/api/live/news,GET,api_live_news,25633,Live,api,,False,json_api,,,1
+/api/livekit/webhook,POST,api_pulse_livekit_webhook,46083,Livekit,api,,False,inline_html,clean_html,,2
+/api/markets,GET,markets_api,25647,Markets,api,,False,json_api,,,1
+/api/media/<int:media_id>/report,POST,api_media_report,93577,Media,api,,False,json_api,,,1
+/api/media/upload,POST,api_media_upload,92414,Media,api,,False,json_api,,,1
+/api/menu,GET,api_menu,24996,Menu,api,,False,json_api,,,1
+/api/menu-action,POST,api_menu_action,25036,Menu-Action,api,,False,inline_html,clean_html,,1
+/api/messages,GET,api_pulse_message_conversations,82000,Messenger,api,,False,json_api,,/api/pulse/messages/conversations,3
+/api/messages/<int:conversation_id>,GET,api_messages_thread,93693,Messenger,api,,False,json_api,,,1
+/api/messages/<int:conversation_id>/read,POST,api_messages_read,93808,Messenger,api,,False,json_api,,,1
+/api/messages/<int:conversation_id>/send,POST,api_messages_send,93741,Messenger,api,,False,inline_html,clean_html,,1
+/api/messages/block,POST,api_messages_block,93832,Messenger,api,,False,inline_html,clean_html,,1
+/api/messages/conversations,GET,api_messages_conversations,93644,Messenger,api,,False,json_api,,,1
+/api/messages/media/<int:attachment_id>,GET,api_messages_media_get,82174,Messenger,api,,False,json_api,,,1
+/api/messages/media/<int:attachment_id>,DELETE,api_messages_media_delete,82234,Messenger,api,,False,json_api,,,1
+/api/messages/media/<int:attachment_id>/download,GET,api_messages_media_download,82189,Messenger,api,,False,redirect,,,1
+/api/messages/media/<int:attachment_id>/retry,POST,api_messages_media_retry,82219,Messenger,api,,False,json_api,,,1
+/api/messages/media/attach,POST,api_messages_media_attach,82158,Messenger,api,,False,json_api,,,1
+/api/messages/media/complete,POST,api_messages_media_complete,82142,Messenger,api,,False,json_api,,,1
+/api/messages/media/init,POST,api_messages_media_init,82101,Messenger,api,,False,json_api,,,1
+/api/messages/media/upload,POST,api_messages_media_upload,82117,Messenger,api,,False,json_api,,,1
+/api/messages/report,POST,api_messages_report,93866,Messenger,api,,False,inline_html,clean_html,,1
+/api/messages/start,POST,api_messages_start,34561,Messenger,api,,False,inline_html,clean_html,,1
+/api/messages/users/search,GET,api_pulse_users_search,81067,Messenger,api,,False,json_api,,/api/pulse/users/search,2
+/api/mobile/account/language,"GET,POST",api_account_language,6649,Mobile bridge,api,,False,json_api,,/api/account/language,3
+/api/mobile/account/region-preferences,"GET,PATCH,POST",api_account_region_preferences,6669,Mobile bridge,api,,False,json_api,,/api/account/region-preferences,3
+/api/mobile/auth/change-confirmation-email,POST,api_mobile_auth_change_confirmation_email,6486,Mobile bridge,api,,False,inline_html,clean_html,,2
+/api/mobile/auth/confirm-email,"GET,POST",api_mobile_auth_confirm_email,6521,Mobile bridge,api,,False,inline_html,clean_html,,2
+/api/mobile/auth/confirmation-status,"GET,POST",api_mobile_auth_confirmation_status,6503,Mobile bridge,api,,False,inline_html,clean_html,,2
+/api/mobile/auth/login,POST,api_mobile_auth_login,6336,Mobile bridge,api,,False,inline_html,clean_html,,2
+/api/mobile/auth/logout,POST,api_mobile_auth_logout,6624,Mobile bridge,api,,False,json_api,,,2
+/api/mobile/auth/logout-all,POST,api_account_sessions_revoke_all,6635,Mobile bridge,api,,False,json_api,,/api/account/sessions/revoke-all,3
+/api/mobile/auth/recover,POST,api_mobile_auth_recover,6553,Mobile bridge,api,,False,inline_html,clean_html,,2
+/api/mobile/auth/refresh,POST,api_mobile_auth_refresh,6307,Mobile bridge,api,,False,json_api,,,2
+/api/mobile/auth/register,POST,api_mobile_auth_register,6423,Mobile bridge,api,,False,inline_html,clean_html,,2
+/api/mobile/auth/resend-confirmation,POST,api_mobile_auth_resend_confirmation,6476,Mobile bridge,api,,False,inline_html,clean_html,,2
+/api/mobile/auth/reset-password,POST,api_mobile_auth_reset_password,6563,Mobile bridge,api,,False,inline_html,clean_html,,2
+/api/mobile/auth/session,GET,api_mobile_auth_session,6297,Mobile bridge,api,,False,json_api,,,2
+/api/notification-preferences,"GET,POST",api_notification_preferences,33439,Notification-Preferences,api,,False,json_api,,,1
+/api/notifications,GET,api_notifications,33301,Notifications,api,,False,json_api,,,1
+/api/notifications/read,POST,api_notifications_read,33314,Notifications,api,,False,json_api,,,1
+/api/notifications/read-all,POST,api_notifications_read_all,33329,Notifications,api,,False,json_api,,,1
+/api/notifications/test,POST,api_notifications_test,33342,Notifications,api,,False,json_api,,,1
+/api/notifications/test-push,POST,api_notifications_test_push,33423,Notifications,api,,False,json_api,,,1
+/api/onboarding/step,POST,api_onboarding_step,26970,Onboarding,api,,False,inline_html,clean_html,,1
+/api/payments/checkout/course/<int:course_id>,POST,api_payments_checkout_course,83525,Payments,api,,False,other,,,1
+/api/payments/checkout/live-class/<int:class_id>,POST,api_payments_checkout_live_class,83533,Payments,api,,False,other,,,1
+/api/payments/checkout/premium/<plan_key>,POST,api_payments_checkout_premium,83541,Payments,api,,False,inline_html,clean_html,,1
+/api/payments/checkout/product/<int:product_id>,POST,api_payments_checkout_product,83517,Payments,api,,False,other,,,1
+/api/payments/entitlements,GET,api_payments_entitlements,84207,Payments,api,,False,json_api,,,2
+/api/payments/orders/<int:transaction_id>,GET,api_payments_order_verify,83550,Payments,api,,False,json_api,,,2
+/api/payments/purchases,GET,api_payments_list_purchases,83688,Payments,api,,False,json_api,,,2
+/api/payments/seller/orders,GET,api_payments_list_seller_orders,83786,Payments,api,,False,json_api,,,2
+/api/platform-status,GET,platform_status_api,26080,Platform-Status,api,,False,json_api,,,1
+/api/players/<public_player_id>/message,POST,api_public_player_message,32218,Players,api,,False,json_api,,,1
+/api/portfolio,"GET,POST",portfolio_api,32850,Portfolio,api,,False,inline_html,clean_html,,1
+/api/portfolio/<int:item_id>,"DELETE,PUT",portfolio_item_api,32909,Portfolio,api,,False,inline_html,clean_html,,1
+/api/predictions,GET,api_predictions,25841,Predictions,api,,False,json_api,,,1
+/api/predictions/<market_id>,GET,api_prediction_detail,25855,Predictions,api,,False,json_api,,,1
+/api/predictions/alert,POST,api_prediction_alert,25934,Predictions,api,,False,other,,,1
+/api/predictions/simulate,POST,api_prediction_simulate,25939,Predictions,api,,False,json_api,,,1
+/api/predictions/watch,POST,api_prediction_watch,25918,Predictions,api,,False,inline_html,clean_html,,1
+/api/premium/billing-portal,POST,api_premium_billing_portal,11528,Premium,api,,False,other,,,1
+/api/premium/checkout,POST,api_premium_checkout,11497,Premium,api,,False,inline_html,clean_html,,1
+/api/premium/status,GET,api_premium_status,11580,Premium,api,,False,other,,,1
+/api/promotions,"GET,POST",api_pulsesoc_promotions,17161,Promotions,api,,False,json_api,,,1
+/api/promotions/<int:promotion_id>,"GET,PATCH",api_pulsesoc_promotion_detail,17181,Promotions,api,,False,json_api,,,1
+/api/promotions/<int:promotion_id>/<action>,POST,api_pulsesoc_promotion_transition,17201,Promotions,api,,False,json_api,,,1
+/api/promotions/<int:promotion_id>/analytics,GET,api_pulsesoc_promotion_analytics,17220,Promotions,api,,False,json_api,,,1
+/api/promotions/eligibility,GET,api_pulsesoc_promotion_eligibility,17145,Promotions,api,,False,json_api,,,1
+/api/pulse/ads/accounts,"GET,POST",api_pulse_ads_accounts,17096,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/accounts/<int:account_id>/billing-summary,GET,api_pulse_ads_billing_summary,17404,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/accounts/<int:account_id>/media/<int:asset_id>/delete,POST,api_pulse_ads_media_delete,17472,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/accounts/<int:account_id>/media/upload,POST,api_pulse_ads_media_upload,17419,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/ads/accounts/<int:account_id>/profile,"GET,POST",api_pulse_ads_account_profile,17384,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/accounts/<int:account_id>/wallet,GET,api_pulse_ads_wallet,17489,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/accounts/<int:account_id>/wallet/funding-session,POST,api_pulse_ads_wallet_funding_session,17504,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/analytics,GET,api_pulse_ads_analytics,17335,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/campaigns,"GET,POST",api_pulse_ads_campaigns,17115,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/campaigns/<int:campaign_id>,"GET,PATCH",api_pulse_ads_campaign_detail,17575,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/campaigns/<int:campaign_id>/action,POST,api_pulse_ads_campaign_action,17596,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/campaigns/<int:campaign_id>/reserve-budget,POST,api_pulse_ads_campaign_reserve_budget,17558,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/click,POST,api_pulse_ads_click,17057,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/creatives,"GET,POST",api_pulse_ads_creatives,17298,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/creatives/<int:creative_id>/action,POST,api_pulse_ads_creative_action,17614,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/creatives/<int:creative_id>/replace,POST,api_pulse_ads_creative_replace,17632,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/creatives/submit,POST,api_pulse_ads_creative_submit,17317,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/event,POST,api_pulse_ads_event,17075,Pulse (social),api,,False,json_api,,,2
+/api/pulse/ads/hide,POST,api_pulse_ads_event,17076,Pulse (social),api,,False,json_api,,/api/pulse/ads/event,2
+/api/pulse/ads/impression,POST,api_pulse_ads_impression,17014,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/placement-metadata,GET,api_pulse_ads_placement_metadata,17006,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/placements,GET,api_pulse_ads_placements,16971,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/portal,GET,api_pulse_ads_portal,17353,Pulse (social),api,,False,json_api,,,1
+/api/pulse/ads/viewability,POST,api_pulse_ads_viewability,17040,Pulse (social),api,,False,json_api,,,1
+/api/pulse/assistant/chat,POST,api_pulse_assistant_chat,25153,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/badge-counts,GET,api_pulse_badge_counts,33676,Pulse (social),api,,False,json_api,,,1
+/api/pulse/block,POST,api_pulse_block_user,85827,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/business/construction-access,GET,api_pulse_business_construction_access,5963,Pulse (social),api,,False,json_api,,,1
+/api/pulse/business/profile,GET,api_pulse_business_profile_get,84010,Pulse (social),api,,False,other,,,1
+/api/pulse/business/profile,POST,api_pulse_business_profile_update,84030,Pulse (social),api,,False,other,,,1
+/api/pulse/business/profile/<int:seller_user_id>,GET,api_pulse_business_profile_public,84184,Pulse (social),api,,False,other,,,1
+/api/pulse/business/profile/address,POST,api_pulse_business_profile_address,84081,Pulse (social),api,,False,other,,,1
+/api/pulse/business/profile/handle-check,GET,api_pulse_business_profile_handle_check,84097,Pulse (social),api,,False,other,,,1
+/api/pulse/business/profile/hours,POST,api_pulse_business_profile_hours,84050,Pulse (social),api,,False,other,,,1
+/api/pulse/business/profile/link,POST,api_pulse_business_profile_link,84067,Pulse (social),api,,False,other,,,1
+/api/pulse/business/profile/preview,GET,api_pulse_business_profile_preview,84165,Pulse (social),api,,False,other,,,1
+/api/pulse/business/profile/publish,POST,api_pulse_business_profile_publish,84116,Pulse (social),api,,False,other,,,1
+/api/pulse/business/profile/sync,GET,api_pulse_business_profile_sync,84129,Pulse (social),api,,False,other,,,1
+/api/pulse/business/profile/vocabularies,GET,api_pulse_business_profile_vocabularies,84145,Pulse (social),api,,False,other,,,1
+/api/pulse/camera/config,GET,api_pulse_camera_config,48273,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/camera/preview,POST,api_pulse_camera_preview_create,93035,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/camera/preview/mark-published,POST,api_pulse_camera_preview_mark_published,93060,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/chatrooms,GET,api_pulse_chatrooms,81560,Pulse (social),api,,False,json_api,,,3
+/api/pulse/chatrooms/<room_id>/join,POST,api_pulse_chatroom_join,81599,Pulse (social),api,,False,json_api,,/api/pulse/messages/rooms/<room_id>/join,3
+/api/pulse/chatrooms/<room_id>/messages,"GET,POST",api_pulse_chatroom_messages,81627,Pulse (social),api,,False,json_api,,/api/pulse/messages/rooms/<room_id>/messages,3
+/api/pulse/communications/conversations,GET,api_pulse_communications_conversations,81361,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/communications/conversations/<path:conversation_ref>/messages,GET,api_pulse_communications_conversation_messages,81428,Pulse (social),api,,False,json_api,,,1
+/api/pulse/communications/conversations/<path:conversation_ref>/messages,POST,api_pulse_communications_send_message,81467,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/communications/groups,GET,api_pulse_communications_groups,81410,Pulse (social),api,,False,json_api,,,1
+/api/pulse/communications/rooms,GET,api_pulse_communications_rooms,81392,Pulse (social),api,,False,json_api,,,1
+/api/pulse/courses/create,POST,api_pulse_course_create,84438,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/creator-ai/<tool>,POST,pulse_creator_ai_tool_api,74128,Pulse (social),api,,False,json_api,,,1
+/api/pulse/daily-mentor/respond,POST,api_pulse_daily_mentor_respond,76893,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/feed,GET,api_pulse_feed,76815,Pulse (social),api,,False,json_api,,,1
+/api/pulse/follow,POST,api_pulse_follow,80365,Pulse (social),api,,False,json_api,,,1
+/api/pulse/follows/toggle,POST,api_pulse_follows_toggle,80723,Pulse (social),api,,False,json_api,,,1
+/api/pulse/friends,GET,api_pulse_friends,80634,Pulse (social),api,,False,json_api,,,1
+/api/pulse/friends/accept,POST,api_pulse_friend_accept,80670,Pulse (social),api,,False,json_api,,,1
+/api/pulse/friends/decline,POST,api_pulse_friend_decline,80707,Pulse (social),api,,False,json_api,,,1
+/api/pulse/friends/request,POST,api_pulse_friend_request,80592,Pulse (social),api,,False,json_api,,,1
+/api/pulse/groups,GET,api_pulse_groups_browse,76141,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/<group_slug>,GET,api_pulse_group_detail,76178,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/<group_slug>/ban,POST,api_pulse_group_ban_member,85041,Pulse (social),api,,False,inline_html,clean_html,,2
+/api/pulse/groups/<group_slug>/chat/open,POST,api_pulse_group_chat_open_slug,84836,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/<group_slug>/delete,POST,api_pulse_group_delete_slug,85164,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/<group_slug>/invite,POST,api_pulse_group_invite_slug,84914,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/<group_slug>/invite-link,"GET,POST",api_pulse_group_invite_link_slug,84869,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/<group_slug>/join,POST,api_pulse_group_join_slug,84755,Pulse (social),api,,False,other,,,1
+/api/pulse/groups/<group_slug>/leave,POST,api_pulse_group_leave_slug,84762,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/<group_slug>/members/role,POST,api_pulse_group_member_role,84999,Pulse (social),api,,False,inline_html,clean_html,,2
+/api/pulse/groups/<group_slug>/posts,POST,api_pulse_group_post_slug,85268,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/<group_slug>/report,POST,api_pulse_group_report_slug,84941,Pulse (social),api,,False,other,,,1
+/api/pulse/groups/<group_slug>/unban,POST,api_pulse_group_unban_member,85081,Pulse (social),api,,False,inline_html,clean_html,,2
+/api/pulse/groups/<group_slug>/update,"PATCH,POST",api_pulse_group_update,84953,Pulse (social),api,,False,inline_html,clean_html,,2
+/api/pulse/groups/<int:group_id>/ban,POST,api_pulse_group_ban_member,85042,Pulse (social),api,,False,inline_html,clean_html,/api/pulse/groups/<group_slug>/ban,2
+/api/pulse/groups/<int:group_id>/chat/open,POST,api_pulse_group_chat_open,84800,Pulse (social),api,,False,json_api,,,1
+/api/pulse/groups/<int:group_id>/delete,POST,api_pulse_group_delete_id,85116,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/<int:group_id>/invite,POST,api_pulse_group_invite,84884,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/<int:group_id>/invite-link,"GET,POST",api_pulse_group_invite_link,84851,Pulse (social),api,,False,json_api,,,1
+/api/pulse/groups/<int:group_id>/join,POST,api_pulse_group_join_id,84788,Pulse (social),api,,False,other,,,1
+/api/pulse/groups/<int:group_id>/leave,POST,api_pulse_group_leave_id,84795,Pulse (social),api,,False,other,,,1
+/api/pulse/groups/<int:group_id>/members/role,POST,api_pulse_group_member_role,85000,Pulse (social),api,,False,inline_html,clean_html,/api/pulse/groups/<group_slug>/members/role,2
+/api/pulse/groups/<int:group_id>/remove-member,POST,api_groups_remove_member,85766,Pulse (social),api,,False,other,,/api/groups/<int:group_id>/remove-member,2
+/api/pulse/groups/<int:group_id>/report,POST,api_pulse_group_report_id,84929,Pulse (social),api,,False,other,,,1
+/api/pulse/groups/<int:group_id>/unban,POST,api_pulse_group_unban_member,85082,Pulse (social),api,,False,inline_html,clean_html,/api/pulse/groups/<group_slug>/unban,2
+/api/pulse/groups/<int:group_id>/update,"PATCH,POST",api_pulse_group_update,84954,Pulse (social),api,,False,inline_html,clean_html,/api/pulse/groups/<group_slug>/update,2
+/api/pulse/groups/comments/<int:comment_id>/delete,POST,api_pulse_group_comment_delete,85522,Pulse (social),api,,False,json_api,,,1
+/api/pulse/groups/comments/<int:comment_id>/report,POST,api_pulse_group_comment_report,85550,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/create,POST,api_pulse_group_create,84649,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/join,POST,api_pulse_group_join,84707,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/media-failure,POST,api_pulse_group_media_failure,85179,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/post,POST,api_pulse_group_post,85243,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/posts/<int:post_id>,"PATCH,POST",api_pulse_group_post_update,85428,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/posts/<int:post_id>,DELETE,api_groups_post_delete_alias,85624,Pulse (social),api,,False,other,,/api/groups/posts/<int:post_id>,2
+/api/pulse/groups/posts/<int:post_id>/comments,GET,api_pulse_group_post_comments,85400,Pulse (social),api,,False,json_api,,,1
+/api/pulse/groups/posts/<int:post_id>/comments,POST,api_pulse_group_post_comment_create,85476,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/posts/<int:post_id>/delete,POST,api_pulse_group_post_delete,85593,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/groups/posts/<int:post_id>/pin,POST,api_groups_post_pin,85700,Pulse (social),api,,False,json_api,,/api/groups/posts/<int:post_id>/pin,2
+/api/pulse/groups/posts/<int:post_id>/react,POST,api_pulse_group_post_react_id,85351,Pulse (social),api,,False,other,,,1
+/api/pulse/groups/posts/<int:post_id>/remove-user,POST,api_pulse_group_post_remove_user,85777,Pulse (social),api,,False,other,,,1
+/api/pulse/groups/posts/<int:post_id>/report,POST,api_groups_post_report_alias,85687,Pulse (social),api,,False,other,,/api/groups/posts/<int:post_id>/report,2
+/api/pulse/groups/posts/react,POST,api_pulse_group_post_react,85338,Pulse (social),api,,False,other,,,1
+/api/pulse/groups/posts/report,POST,api_pulse_group_post_report,85670,Pulse (social),api,,False,other,,,1
+/api/pulse/groups/report,POST,api_pulse_group_report,85200,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/growth,GET,api_pulse_growth_state,17369,Pulse (social),api,,False,json_api,,,1
+/api/pulse/heartbeat,POST,api_pulse_heartbeat,80534,Pulse (social),api,,False,json_api,,,1
+/api/pulse/identity/<path:pulse_id>,GET,api_pulse_identity,93241,Pulse (social),api,,False,json_api,,,1
+/api/pulse/insights/seller/summary,GET,api_pulse_insights_seller_summary,83888,Pulse (social),api,,False,json_api,,,1
+/api/pulse/live,GET,api_pulse_live,80503,Pulse (social),api,,False,json_api,,,1
+/api/pulse/live-now,GET,api_pulse_live_now,80519,Pulse (social),api,,False,json_api,,,1
+/api/pulse/live/<int:live_id>/browser-publish,POST,api_pulse_live_browser_publish,46559,Pulse (social),api,,False,inline_html,clean_html,/api/pulse/live/<int:live_id>/native-publish,2
+/api/pulse/live/<int:live_id>/chat,"GET,POST",api_pulse_live_chat,46963,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<int:live_id>/chat/<int:message_id>/<action>,POST,api_pulse_live_chat_moderate,47010,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<int:live_id>/cohost-trace,POST,api_pulse_live_cohost_trace,47683,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<int:live_id>/cohost/debug,GET,api_pulse_live_cohost_debug,47559,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<int:live_id>/cohost/request,POST,api_pulse_live_join_request,47244,Pulse (social),api,,False,inline_html,clean_html,/api/pulse/live/<int:live_id>/join-request,2
+/api/pulse/live/<int:live_id>/cohost/trace/<trace_id>,GET,api_pulse_live_cohost_trace_detail,47731,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<int:live_id>/debug-event,POST,api_pulse_live_debug_event,46482,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<int:live_id>/end,POST,api_pulse_live_end,48064,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<int:live_id>/guests/<int:guest_id>/<action>,POST,api_pulse_live_guest_action,48008,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<int:live_id>/guests/<int:guest_id>/publish-complete,POST,api_pulse_live_guest_publish_complete,46416,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<int:live_id>/join,POST,api_pulse_live_join,47216,Pulse (social),api,,False,json_api,,,1
+/api/pulse/live/<int:live_id>/join-request,POST,api_pulse_live_join_request,47243,Pulse (social),api,,False,inline_html,clean_html,,2
+/api/pulse/live/<int:live_id>/join-requests,GET,api_pulse_live_join_requests,47774,Pulse (social),api,,False,json_api,,,1
+/api/pulse/live/<int:live_id>/join-requests/<int:request_id>/<action>,POST,api_pulse_live_join_request_action,47795,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<int:live_id>/join-requests/<int:request_id>/cancel,POST,api_pulse_live_join_request_cancel,47978,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<int:live_id>/join-status,GET,api_pulse_live_join_status,47651,Pulse (social),api,,False,json_api,,,1
+/api/pulse/live/<int:live_id>/livekit/token,POST,api_pulse_live_livekit_token,46259,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<int:live_id>/native-publish,POST,api_pulse_live_browser_publish,46558,Pulse (social),api,,False,inline_html,clean_html,,2
+/api/pulse/live/<int:live_id>/react,POST,api_pulse_live_react,47187,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<int:live_id>/state,GET,api_pulse_live_state,47084,Pulse (social),api,,False,json_api,,,1
+/api/pulse/live/<int:live_id>/webrtc/signal,POST,api_pulse_live_webrtc_signal,46847,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<int:live_id>/webrtc/signals,GET,api_pulse_live_webrtc_signals,46902,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<live_id>/cohost/debug,GET,api_pulse_live_cohost_debug_invalid_id,47645,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/<live_id>/cohost/request,POST,api_pulse_live_join_request_invalid_id,47550,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/livekit/webhook,POST,api_pulse_livekit_webhook,46084,Pulse (social),api,,False,inline_html,clean_html,/api/livekit/webhook,2
+/api/pulse/live/mux/<mux_live_stream_id>,GET,api_pulse_live_mux_get,44439,Pulse (social),api,,False,json_api,,,1
+/api/pulse/live/mux/create,POST,api_pulse_live_mux_create,44332,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/mux/disable,POST,api_pulse_live_mux_disable,44486,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/mux/webhook,POST,api_pulse_live_mux_webhook,44519,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/start,POST,api_pulse_live_start,43944,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/live/stream,GET,api_pulse_live_stream,80545,Pulse (social),api,,False,other,,,1
+/api/pulse/marketplace/listings/create,POST,api_pulse_marketplace_listing_create,84268,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/marketplace/listings/report,POST,api_pulse_marketplace_listing_report,84354,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/marketplace/listings/save,POST,api_pulse_marketplace_listing_save,84383,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/marketplace/media/upload,POST,api_pulse_marketplace_media_upload,84221,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/marketplace/search,GET,api_pulse_marketplace_search,48668,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/marketplace/seller/apply,POST,api_pulse_marketplace_seller_apply,82763,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/marketplace/seller/listings,GET,api_pulse_marketplace_seller_listings,48707,Pulse (social),api,,False,json_api,,,1
+/api/pulse/marketplace/seller/listings/<int:listing_id>,"PATCH,POST",api_pulse_marketplace_seller_listing_update,49059,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/marketplace/seller/listings/<int:listing_id>/delete,"DELETE,POST",api_pulse_marketplace_seller_listing_delete,49205,Pulse (social),api,,False,json_api,,,1
+/api/pulse/marketplace/seller/listings/<int:listing_id>/pause,POST,api_pulse_marketplace_seller_listing_pause,49132,Pulse (social),api,,False,json_api,,,1
+/api/pulse/marketplace/seller/listings/<int:listing_id>/resume,POST,api_pulse_marketplace_seller_listing_resume,49163,Pulse (social),api,,False,json_api,,,1
+/api/pulse/media/<int:media_id>/repair,POST,api_pulse_media_repair,92707,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/media/<int:media_id>/status,GET,api_pulse_media_status,92664,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/media/<int:media_id>/stream,"GET,HEAD",api_pulse_media_stream,92914,Pulse (social),api,,False,redirect,,,1
+/api/pulse/media/filter-preview,POST,api_pulse_media_filter_preview,92899,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/media/mux/direct-upload,POST,api_pulse_media_mux_direct_upload,92455,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/media/mux/direct-upload/complete,POST,api_pulse_media_mux_direct_upload_complete,92550,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/media/process,POST,api_pulse_media_process,93027,Pulse (social),api,,False,json_api,,,1
+/api/pulse/media/upload,POST,api_pulse_media_upload,92750,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/messages/<int:conversation_id>,GET,api_pulse_conversation_detail,81792,Pulse (social),api,,False,json_api,,,1
+/api/pulse/messages/<int:conversation_id>/messages,GET,api_pulse_conversation_messages,82249,Pulse (social),api,,False,json_api,,,1
+/api/pulse/messages/<int:conversation_id>/pin,POST,api_pulse_messages_pin,82656,Pulse (social),api,,False,json_api,,,1
+/api/pulse/messages/<int:conversation_id>/presence,GET,api_pulse_message_presence,81725,Pulse (social),api,,False,json_api,,,1
+/api/pulse/messages/<int:conversation_id>/seen,POST,api_pulse_messages_seen,82504,Pulse (social),api,,False,json_api,,,1
+/api/pulse/messages/<int:conversation_id>/send,POST,api_pulse_conversation_send,81850,Pulse (social),api,,False,json_api,,,1
+/api/pulse/messages/<int:conversation_id>/sync,"GET,POST",api_pulse_messages_sync,82546,Pulse (social),api,,False,json_api,,,1
+/api/pulse/messages/<int:conversation_id>/typing,POST,api_pulse_messages_typing,82613,Pulse (social),api,,False,json_api,,,1
+/api/pulse/messages/<int:message_id>/delete,"DELETE,POST",api_pulse_message_delete,82394,Pulse (social),api,,False,json_api,,,1
+/api/pulse/messages/<int:message_id>/react,POST,api_pulse_message_react,82353,Pulse (social),api,,False,json_api,,,1
+/api/pulse/messages/<int:message_id>/report,POST,api_pulse_message_report,82438,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/messages/conversations,GET,api_pulse_message_conversations,81999,Pulse (social),api,,False,json_api,,,3
+/api/pulse/messages/direct/open,POST,api_pulse_message_start,81005,Pulse (social),api,,False,inline_html,clean_html,,2
+/api/pulse/messages/group-conversations,GET,api_pulse_message_group_conversations,81758,Pulse (social),api,,False,json_api,,,2
+/api/pulse/messages/group/<int:conversation_id>/leave,POST,api_pulse_message_group_leave,81974,Pulse (social),api,,False,json_api,,,1
+/api/pulse/messages/group/<int:conversation_id>/members,"DELETE,POST",api_pulse_message_group_members,81930,Pulse (social),api,,False,json_api,,,1
+/api/pulse/messages/group/<int:conversation_id>/update,"PATCH,POST",api_pulse_message_group_update,81898,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/messages/group/create,POST,api_pulse_message_group_create,81093,Pulse (social),api,,False,inline_html,clean_html,/api/pulse/messages/groups/create,3
+/api/pulse/messages/groups/create,POST,api_pulse_message_group_create,81092,Pulse (social),api,,False,inline_html,clean_html,,3
+/api/pulse/messages/media/upload,POST,api_pulse_messages_upload,82035,Pulse (social),api,,False,json_api,,/api/pulse/messages/upload,2
+/api/pulse/messages/room/open,POST,api_pulse_message_room_open,81533,Pulse (social),api,,False,inline_html,clean_html,,2
+/api/pulse/messages/rooms,GET,api_pulse_chatrooms,81561,Pulse (social),api,,False,json_api,,/api/pulse/chatrooms,3
+/api/pulse/messages/rooms/<room_id>/join,POST,api_pulse_chatroom_join,81598,Pulse (social),api,,False,json_api,,,3
+/api/pulse/messages/rooms/<room_id>/messages,"GET,POST",api_pulse_chatroom_messages,81626,Pulse (social),api,,False,json_api,,,3
+/api/pulse/messages/search,GET,api_pulse_messages_search,82679,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/messages/send,POST,api_pulse_message_send,80764,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/messages/start,POST,api_pulse_message_start,81006,Pulse (social),api,,False,inline_html,clean_html,/api/pulse/messages/direct/open,2
+/api/pulse/messages/thread/<int:thread_id>,GET,api_pulse_message_thread,82715,Pulse (social),api,,False,json_api,,,1
+/api/pulse/messages/upload,POST,api_pulse_messages_upload,82034,Pulse (social),api,,False,json_api,,,2
+/api/pulse/mobile/account/language,"GET,POST",api_account_language,6650,Pulse (social),api,,False,json_api,,/api/account/language,3
+/api/pulse/mobile/account/region-preferences,"GET,PATCH,POST",api_account_region_preferences,6670,Pulse (social),api,,False,json_api,,/api/account/region-preferences,3
+/api/pulse/mobile/auth/change-confirmation-email,POST,api_mobile_auth_change_confirmation_email,6487,Pulse (social),api,,False,inline_html,clean_html,/api/mobile/auth/change-confirmation-email,2
+/api/pulse/mobile/auth/confirm-email,"GET,POST",api_mobile_auth_confirm_email,6522,Pulse (social),api,,False,inline_html,clean_html,/api/mobile/auth/confirm-email,2
+/api/pulse/mobile/auth/confirmation-status,"GET,POST",api_mobile_auth_confirmation_status,6504,Pulse (social),api,,False,inline_html,clean_html,/api/mobile/auth/confirmation-status,2
+/api/pulse/mobile/auth/login,POST,api_mobile_auth_login,6337,Pulse (social),api,,False,inline_html,clean_html,/api/mobile/auth/login,2
+/api/pulse/mobile/auth/logout,POST,api_mobile_auth_logout,6625,Pulse (social),api,,False,json_api,,/api/mobile/auth/logout,2
+/api/pulse/mobile/auth/logout-all,POST,api_account_sessions_revoke_all,6636,Pulse (social),api,,False,json_api,,/api/account/sessions/revoke-all,3
+/api/pulse/mobile/auth/recover,POST,api_mobile_auth_recover,6554,Pulse (social),api,,False,inline_html,clean_html,/api/mobile/auth/recover,2
+/api/pulse/mobile/auth/refresh,POST,api_mobile_auth_refresh,6308,Pulse (social),api,,False,json_api,,/api/mobile/auth/refresh,2
+/api/pulse/mobile/auth/register,POST,api_mobile_auth_register,6424,Pulse (social),api,,False,inline_html,clean_html,/api/mobile/auth/register,2
+/api/pulse/mobile/auth/resend-confirmation,POST,api_mobile_auth_resend_confirmation,6477,Pulse (social),api,,False,inline_html,clean_html,/api/mobile/auth/resend-confirmation,2
+/api/pulse/mobile/auth/reset-password,POST,api_mobile_auth_reset_password,6564,Pulse (social),api,,False,inline_html,clean_html,/api/mobile/auth/reset-password,2
+/api/pulse/mobile/auth/session,GET,api_mobile_auth_session,6298,Pulse (social),api,,False,json_api,,/api/mobile/auth/session,2
+/api/pulse/music/<int:track_id>/event,POST,api_pulse_music_event,37944,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/music/<int:track_id>/report,POST,api_pulse_music_report,37971,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/music/ai-suggest,POST,api_pulse_music_ai_suggest,37608,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/music/artist/<int:artist_user_id>,GET,api_pulse_music_artist,38010,Pulse (social),api,,False,json_api,,,1
+/api/pulse/music/attach,POST,api_pulse_music_attach,37794,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/music/license-inventory,GET,api_pulse_music_license_inventory,37625,Pulse (social),api,,False,json_api,,,1
+/api/pulse/music/radio,GET,api_pulse_music_radio,37590,Pulse (social),api,,False,json_api,,,1
+/api/pulse/music/search,GET,api_pulse_music_search,37563,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/music/upload,POST,api_pulse_music_upload,37868,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/my-posts,GET,api_pulse_my_posts,76958,Pulse (social),api,,False,json_api,,,1
+/api/pulse/notifications,GET,api_pulse_notifications,33457,Pulse (social),api,,False,json_api,,,1
+/api/pulse/notifications//read,POST,api_pulse_notifications_read,34042,Pulse (social),api,,False,json_api,,/api/pulse/notifications/<int:notification_id>/read,3
+/api/pulse/notifications/<int:notification_id>,DELETE,api_pulse_notifications_delete,34075,Pulse (social),api,,False,json_api,,,2
+/api/pulse/notifications/<int:notification_id>/read,POST,api_pulse_notifications_read,34040,Pulse (social),api,,False,json_api,,,3
+/api/pulse/notifications/<int:notification_id>/resolve,"GET,POST",api_pulse_notification_resolve,33968,Pulse (social),api,,False,json_api,,,1
+/api/pulse/notifications/delete,POST,api_pulse_notifications_delete,34076,Pulse (social),api,,False,json_api,,/api/pulse/notifications/<int:notification_id>,2
+/api/pulse/notifications/preferences,"GET,PATCH",api_pulse_notifications_preferences,34097,Pulse (social),api,,False,json_api,,,1
+/api/pulse/notifications/read,POST,api_pulse_notifications_read,34041,Pulse (social),api,,False,json_api,,/api/pulse/notifications/<int:notification_id>/read,3
+/api/pulse/notifications/read-all,POST,api_pulse_notifications_read_all,34057,Pulse (social),api,,False,json_api,,,1
+/api/pulse/notifications/unread-count,GET,api_pulse_notifications_unread_count,33650,Pulse (social),api,,False,json_api,,,1
+/api/pulse/orders,GET,api_pulse_buyer_orders,83722,Pulse (social),api,,False,json_api,,,2
+/api/pulse/orders/<int:transaction_id>,GET,api_pulse_buyer_order_detail,83756,Pulse (social),api,,False,json_api,,,1
+/api/pulse/payments/checkout,POST,api_pulse_payments_checkout,83268,Pulse (social),api,,False,json_api,,,1
+/api/pulse/payments/entitlements,GET,api_payments_entitlements,84208,Pulse (social),api,,False,json_api,,/api/payments/entitlements,2
+/api/pulse/payments/orders/<int:transaction_id>,GET,api_payments_order_verify,83551,Pulse (social),api,,False,json_api,,/api/payments/orders/<int:transaction_id>,2
+/api/pulse/payments/purchases,GET,api_payments_list_purchases,83689,Pulse (social),api,,False,json_api,,/api/payments/purchases,2
+/api/pulse/payments/seller/money,GET,api_payments_seller_money,83834,Pulse (social),api,,False,json_api,,,1
+/api/pulse/payments/seller/money/activity,GET,api_payments_seller_money_activity,83858,Pulse (social),api,,False,json_api,,,1
+/api/pulse/payments/seller/orders,GET,api_payments_list_seller_orders,83787,Pulse (social),api,,False,json_api,,/api/payments/seller/orders,2
+/api/pulse/payouts/connect,POST,api_pulse_payouts_connect,83207,Pulse (social),api,,False,json_api,,,1
+/api/pulse/post/<int:post_id>,GET,api_pulse_post_alias,79685,Pulse (social),api,,False,other,,,1
+/api/pulse/posts,POST,api_pulse_posts,78351,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/posts/<int:post_id>,"DELETE,GET,PATCH",api_pulse_post,79590,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/posts/<int:post_id>/comments,"GET,POST",api_pulse_comments,80274,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/posts/<int:post_id>/delete,POST,api_pulse_post_delete_fallback,79676,Pulse (social),api,,False,other,,,1
+/api/pulse/posts/<int:post_id>/hide,POST,api_pulse_post_hide,79953,Pulse (social),api,,False,json_api,,,1
+/api/pulse/posts/<int:post_id>/pin,POST,api_pulse_post_pin,80178,Pulse (social),api,,False,json_api,,,1
+/api/pulse/posts/<int:post_id>/react,POST,api_pulse_react,79690,Pulse (social),api,,False,json_api,,,1
+/api/pulse/posts/<int:post_id>/repost,"DELETE,POST",api_pulse_post_repost,80206,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/posts/<int:post_id>/save,POST,api_pulse_post_save,79925,Pulse (social),api,,False,json_api,,,1
+/api/pulse/posts/<int:post_id>/view,POST,api_pulse_view,85933,Pulse (social),api,,False,json_api,,,1
+/api/pulse/posts/create-from-camera,POST,api_pulse_post_from_camera,93076,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/premium/activate,POST,pulse_premium_activate_api,73916,Pulse (social),api,,False,json_api,,,1
+/api/pulse/premium/identity-effects,"GET,POST",pulse_premium_identity_effects_api,73989,Pulse (social),api,,False,json_api,,,1
+/api/pulse/premium/profile-theme,"GET,POST",pulse_premium_profile_theme_api,74068,Pulse (social),api,,False,json_api,,,1
+/api/pulse/profile/<path:profile_key>,GET,api_pulse_public_profile,93265,Pulse (social),api,,False,json_api,,,1
+/api/pulse/profile/avatar,POST,api_pulse_profile_avatar,93376,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/profile/avatar/remove,POST,api_pulse_profile_avatar_remove,93535,Pulse (social),api,,False,json_api,,,1
+/api/pulse/profile/cover,POST,api_pulse_profile_cover,93455,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/profile/cover/remove,POST,api_pulse_profile_cover_remove,93556,Pulse (social),api,,False,json_api,,,1
+/api/pulse/profile/me,GET,api_pulse_profile_me,93295,Pulse (social),api,,False,json_api,,,1
+/api/pulse/profile/update,POST,api_pulse_profile_update,93113,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/purchases,GET,api_pulse_buyer_orders,83723,Pulse (social),api,,False,json_api,,/api/pulse/orders,2
+/api/pulse/reels/<int:reel_id>,"DELETE,PATCH",api_pulse_reel_manage,79120,Pulse (social),api,,False,inline_html,clean_html,/api/reels/<int:reel_id>,2
+/api/pulse/reels/<int:reel_id>/audio,POST,api_pulse_reel_audio_manage,79506,Pulse (social),api,,False,json_api,,/api/reels/<int:reel_id>/audio,2
+/api/pulse/reels/<int:reel_id>/comments,"GET,POST",api_pulse_reel_comments_by_id,79075,Pulse (social),api,,False,json_api,,/api/reels/<int:reel_id>/comments,2
+/api/pulse/reels/<int:reel_id>/follow-creator,POST,api_pulse_reel_follow_creator,79487,Pulse (social),api,,False,json_api,,/api/reels/<int:reel_id>/follow-creator,2
+/api/pulse/reels/<int:reel_id>/not-interested,POST,api_pulse_reel_not_interested,79456,Pulse (social),api,,False,json_api,,/api/reels/<int:reel_id>/not-interested,2
+/api/pulse/reels/<int:reel_id>/pin,POST,api_pulse_reel_pin,79188,Pulse (social),api,,False,json_api,,,1
+/api/pulse/reels/<int:reel_id>/react,POST,api_pulse_reel_react_by_id,78972,Pulse (social),api,,False,json_api,,/api/reels/<int:reel_id>/like,2
+/api/pulse/reels/<int:reel_id>/repost,"DELETE,POST",api_pulse_reel_repost_by_id,79362,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/reels/<int:reel_id>/save,POST,api_pulse_reel_save_by_id,79302,Pulse (social),api,,False,inline_html,clean_html,/api/reels/<int:reel_id>/save,2
+/api/pulse/reels/<int:reel_id>/share,POST,api_pulse_reel_share_by_id,79434,Pulse (social),api,,False,json_api,,,1
+/api/pulse/reels/<int:reel_id>/view,POST,api_pulse_reel_view,79005,Pulse (social),api,,False,json_api,,,1
+/api/pulse/reels/comment,POST,api_pulse_reels_comment,79032,Pulse (social),api,,False,json_api,,,1
+/api/pulse/reels/comments/<int:comment_id>,"DELETE,PATCH",api_pulse_reel_comment_manage,79255,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/reels/comments/<int:comment_id>/react,POST,api_pulse_reel_comment_react,79210,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/reels/create,POST,api_pulse_reels_create,78748,Pulse (social),api,,False,inline_html,clean_html,/api/reels,2
+/api/pulse/reels/create-from-camera,POST,api_pulse_reel_from_camera,93092,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/reels/feed,GET,api_pulse_reels_feed,78567,Pulse (social),api,,False,json_api,,,1
+/api/pulse/reels/react,POST,api_pulse_reels_react,78938,Pulse (social),api,,False,json_api,,,1
+/api/pulse/reels/sounds,GET,api_pulse_reels_sounds,78594,Pulse (social),api,,False,inline_html,clean_html,/api/reels/audio,2
+/api/pulse/reels/sounds/save,POST,api_pulse_reels_sound_save,78667,Pulse (social),api,,False,json_api,,,1
+/api/pulse/reels/sounds/upload,POST,api_pulse_reels_sound_upload,78701,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/report,POST,api_pulse_report,85796,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/saved,"GET,POST",api_pulse_saved_items,80069,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/saved/<int:item_id>,DELETE,api_pulse_saved_item_delete,80146,Pulse (social),api,,False,json_api,,,1
+/api/pulse/saved/<int:item_id>/move,POST,api_pulse_saved_item_move,80159,Pulse (social),api,,False,json_api,,,1
+/api/pulse/saved/collections,"GET,POST",api_pulse_saved_collections,80003,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/saved/collections/<int:collection_id>,"DELETE,PATCH",api_pulse_saved_collection_detail,80036,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/search,GET,api_pulse_search,36391,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/seller/application,GET,api_pulse_seller_application_get,82831,Pulse (social),api,,False,json_api,,,1
+/api/pulse/seller/application/documents,POST,api_pulse_seller_application_document_upload,82900,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/seller/application/documents/<int:document_id>/remove,"DELETE,POST",api_pulse_seller_application_document_remove,82972,Pulse (social),api,,False,json_api,,,1
+/api/pulse/seller/application/draft,POST,api_pulse_seller_application_draft,82856,Pulse (social),api,,False,json_api,,,1
+/api/pulse/seller/application/submit,POST,api_pulse_seller_application_submit,83000,Pulse (social),api,,False,json_api,,,1
+/api/pulse/seller/application/withdraw,POST,api_pulse_seller_application_withdraw,83071,Pulse (social),api,,False,json_api,,,1
+/api/pulse/spaces/join,POST,api_pulse_space_join,82733,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/spaces/post,POST,api_pulse_space_post,82748,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/status,POST,api_pulse_status_create,38489,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/status/<int:status_id>,"DELETE,PATCH",api_pulse_status_manage,38667,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/status/<int:status_id>/react,POST,api_pulse_status_react,38835,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/status/<int:status_id>/reply,POST,api_pulse_status_reply,38872,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/status/<int:status_id>/share,POST,api_pulse_status_share,38944,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/status/<int:status_id>/view,POST,api_pulse_status_view,38781,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/status/ai-story,POST,api_pulse_status_ai_story,38466,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/status/music/search,GET,api_pulse_status_music_search,37539,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/status/music/trending,GET,api_pulse_status_music_trending,37554,Pulse (social),api,,False,json_api,,,1
+/api/pulse/status/rail,GET,api_pulse_status_rail,37514,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/sync/events,GET,api_pulse_native_sync_events,33549,Pulse (social),api,,False,json_api,,,1
+/api/pulse/teacher/lessons/create,POST,api_pulse_teacher_lesson_create,84482,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/teachers/apply,POST,api_pulse_teacher_apply,84531,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/teachers/documents/upload,POST,api_pulse_teacher_document_upload,84612,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/translations,POST,api_pulse_translate_content,6707,Pulse (social),api,,False,json_api,,,1
+/api/pulse/translations/languages,GET,api_pulse_translation_languages,109313,Pulse (social),api,,False,json_api,,,1
+/api/pulse/translations/preference,"GET,POST,PUT",api_pulse_translation_preference,6741,Pulse (social),api,,False,json_api,,,1
+/api/pulse/typing,POST,api_pulse_typing,80486,Pulse (social),api,,False,json_api,,,1
+/api/pulse/users/mute,POST,api_pulse_user_mute,80396,Pulse (social),api,,False,json_api,,,1
+/api/pulse/users/search,GET,api_pulse_users_search,81066,Pulse (social),api,,False,json_api,,,2
+/api/pulse/videos,GET,api_pulse_videos,78109,Pulse (social),api,,False,json_api,,,1
+/api/pulse/videos/<int:video_id>,"DELETE,PATCH",api_pulse_video_manage,78305,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/videos/<int:video_id>/comments,"GET,POST",api_pulse_video_comments,78014,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/videos/<int:video_id>/react,POST,api_pulse_video_react,77837,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/videos/<int:video_id>/repost,"DELETE,POST",api_pulse_video_repost,77913,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/videos/<int:video_id>/retry,POST,api_pulse_video_retry,78257,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/videos/<int:video_id>/view,POST,api_pulse_video_view,78236,Pulse (social),api,,False,json_api,,,1
+/api/pulse/welcome-dismiss,POST,api_pulse_welcome_dismiss,26393,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulse/welcome-state,GET,api_pulse_welcome_state,26320,Pulse (social),api,,False,json_api,,,1
+/api/pulse/welcome-trigger,POST,api_pulse_welcome_trigger,26454,Pulse (social),api,,False,inline_html,clean_html,,1
+/api/pulseshell/validate,POST,api_pulseshell_validate,26880,Pulseshell,api,,False,inline_html,clean_html,,1
+/api/push/devices,GET,api_push_devices,34212,Notifications,api,,False,inline_html,clean_html,,1
+/api/push/public-key,GET,api_push_public_key,34139,Notifications,api,,False,json_api,,,1
+/api/push/register-device,POST,api_push_subscribe,34117,Notifications,api,,False,json_api,,/api/push/subscribe,2
+/api/push/revoke-device,POST,api_push_unsubscribe,34147,Notifications,api,,False,json_api,,/api/push/unsubscribe,2
+/api/push/status,GET,api_push_status,34172,Notifications,api,,False,json_api,,,1
+/api/push/subscribe,POST,api_push_subscribe,34116,Notifications,api,,False,json_api,,,2
+/api/push/test,POST,api_push_test,34305,Notifications,api,,False,json_api,,,1
+/api/push/unsubscribe,POST,api_push_unsubscribe,34146,Notifications,api,,False,json_api,,,2
+/api/quote,GET,api_quote_board,25770,Quote,api,,False,json_api,,,2
+/api/quote/crypto,GET,api_quote_board,25771,Quote,api,,False,json_api,,/api/quote,2
+/api/quote/crypto/<symbol>,GET,api_quote_symbol,25778,Quote,api,,False,inline_html,clean_html,,1
+/api/quote/crypto/<symbol>/chart,GET,api_quote_chart,25789,Quote,api,,False,inline_html,clean_html,,1
+/api/quote/crypto/<symbol>/news,GET,api_quote_news,25797,Quote,api,,False,inline_html,clean_html,,1
+/api/quote/crypto/<symbol>/signals,GET,api_quote_signals,25818,Quote,api,,False,inline_html,clean_html,,1
+/api/quote/crypto/<symbol>/tactical-insight,GET,api_quote_tactical_insight,25784,Quote,api,,False,json_api,,,1
+/api/reels,POST,api_pulse_reels_create,78747,Reels,api,,False,inline_html,clean_html,,2
+/api/reels/<int:reel_id>,"DELETE,PATCH",api_pulse_reel_manage,79119,Reels,api,,False,inline_html,clean_html,,2
+/api/reels/<int:reel_id>/audio,POST,api_pulse_reel_audio_manage,79505,Reels,api,,False,json_api,,,2
+/api/reels/<int:reel_id>/comments,"GET,POST",api_pulse_reel_comments_by_id,79074,Reels,api,,False,json_api,,,2
+/api/reels/<int:reel_id>/follow-creator,POST,api_pulse_reel_follow_creator,79486,Reels,api,,False,json_api,,,2
+/api/reels/<int:reel_id>/like,POST,api_pulse_reel_react_by_id,78971,Reels,api,,False,json_api,,,2
+/api/reels/<int:reel_id>/not-interested,POST,api_pulse_reel_not_interested,79455,Reels,api,,False,json_api,,,2
+/api/reels/<int:reel_id>/promotions,"GET,POST",api_pulsesoc_reel_promotions,17236,Reels,api,,False,json_api,,,1
+/api/reels/<int:reel_id>/promotions/<int:promotion_id>,PATCH,api_pulsesoc_reel_promotion_update,17256,Reels,api,,False,json_api,,,1
+/api/reels/<int:reel_id>/promotions/<int:promotion_id>/<action>,POST,api_pulsesoc_reel_promotion_transition,17276,Reels,api,,False,json_api,,,1
+/api/reels/<int:reel_id>/save,POST,api_pulse_reel_save_by_id,79301,Reels,api,,False,inline_html,clean_html,,2
+/api/reels/audio,GET,api_pulse_reels_sounds,78593,Reels,api,,False,inline_html,clean_html,,2
+/api/referral-link,GET,referral_link_api,13493,Referral-Link,api,,False,json_api,,,1
+/api/referrals/invite,POST,api_referrals_invite,80466,Referrals,api,,False,inline_html,clean_html,,1
+/api/referrals/status,GET,api_referrals_status,80454,Referrals,api,,False,json_api,,,1
+/api/scam-shield,POST,website_scam_shield_api,26106,Scam-Shield,api,,False,inline_html,clean_html,,1
+/api/scam-shield/analyze,POST,scam_shield_analyze_api,26159,Scam-Shield,api,,False,inline_html,clean_html,,1
+/api/scam-shield/scan,POST,scam_shield_scan_api,26115,Scam-Shield,api,,False,inline_html,clean_html,,1
+/api/security/report,POST,api_security_report,1554,Security,api,,False,inline_html,clean_html,,1
+/api/service/health,GET,api_service_health,15073,Service,api,,False,json_api,,,1
+/api/simulator,"GET,POST",api_market_simulator,32652,Simulator,api,,False,inline_html,clean_html,,1
+/api/simulator/history,GET,api_simulator_history,32715,Simulator,api,,False,json_api,,,1
+/api/simulator/lesson,GET,api_simulator_lesson,32740,Simulator,api,,False,json_api,,,1
+/api/simulator/order,POST,api_simulator_order,32702,Simulator,api,,False,other,,,1
+/api/simulator/portfolio,GET,api_simulator_portfolio,32707,Simulator,api,,False,json_api,,,1
+/api/simulator/reset,POST,api_simulator_reset,32745,Simulator,api,,False,json_api,,,1
+/api/simulator/watchlist,"GET,POST",api_simulator_watchlist,32723,Simulator,api,,False,inline_html,clean_html,,1
+/api/sms/send-verification,POST,api_sms_send_verification,34328,Sms,api,,False,json_api,,,1
+/api/sms/test,POST,api_sms_test,34317,Sms,api,,False,json_api,,,1
+/api/sms/verify-code,POST,api_sms_verify_code,34340,Sms,api,,False,json_api,,,1
+/api/sports-edge,GET,sports_edge_api,25653,Sports-Edge,api,,False,json_api,,,1
+/api/stripe/webhook,GET,stripe_webhook_health,94365,Stripe,api,,False,json_api,,/stripe-webhook,5
+/api/stripe/webhook,POST,stripe_webhook,94378,Stripe,api,,False,other,,/stripe-webhook,5
+/api/subscriptions/cancel,POST,api_subscriptions_cancel,11777,Subscriptions,api,,False,other,,,1
+/api/subscriptions/checklist,POST,api_subscriptions_checklist,11708,Subscriptions,api,,False,other,,,1
+/api/subscriptions/downgrade,POST,api_subscriptions_downgrade,11756,Subscriptions,api,,False,other,,,1
+/api/subscriptions/resume,POST,api_subscriptions_resume,11808,Subscriptions,api,,False,other,,,1
+/api/subscriptions/status,GET,api_subscriptions_status,11686,Subscriptions,api,,False,other,,,1
+/api/subscriptions/upgrade,POST,api_subscriptions_upgrade,11733,Subscriptions,api,,False,other,,,1
+/api/support/ticket,"GET,POST",api_support_ticket,1487,Support,api,,False,inline_html,clean_html,,1
+/api/telegram/test,POST,api_telegram_test,34354,Telegram,api,,False,json_api,,,1
+/api/track,POST,track_event_api,13190,Track,api,,False,inline_html,clean_html,,1
+/api/undx/agent-council,"GET,POST",api_undx_agent_council,25311,UNDX,api,,False,inline_html,clean_html,,1
+/api/undx/chat,POST,api_undx_chat,25261,UNDX,api,,False,inline_html,clean_html,,1
+/api/undx/desktop-connector/<path:connector_path>,"GET,POST",api_undx_desktop_connector_proxy,25359,UNDX,api,,False,json_api,,,1
+/api/undx/kernel/apply,POST,api_undx_kernel_apply,25444,UNDX,api,,False,json_api,,,1
+/api/undx/kernel/git,POST,api_undx_kernel_git,25491,UNDX,api,,False,inline_html,clean_html,,1
+/api/undx/kernel/propose,POST,api_undx_kernel_propose,25416,UNDX,api,,False,inline_html,clean_html,,1
+/api/undx/kernel/scan,"GET,POST",api_undx_kernel_scan,25396,UNDX,api,,False,json_api,,,1
+/api/undx/kernel/validate,POST,api_undx_kernel_validate,25472,UNDX,api,,False,json_api,,,1
+/api/visitor/heartbeat,POST,visitor_heartbeat_api,13258,Visitor,api,,False,inline_html,clean_html,,1
+/api/wallet-intel,GET,website_wallet_intel_api,26204,Wallet-Intel,api,,False,json_api,,,1
+/api/watch,"GET,POST",api_watch_items,27109,Watch,api,,False,inline_html,clean_html,,1
+/api/watch/<int:rule_id>/delete,POST,api_watch_delete,27206,Watch,api,,False,json_api,,,1
+/api/watch/<int:rule_id>/pause,POST,api_watch_pause,27190,Watch,api,,False,json_api,,,1
+/api/watch/<int:rule_id>/resume,POST,api_watch_resume,27198,Watch,api,,False,json_api,,,1
+/api/watch/<int:rule_id>/test-alert,POST,api_watch_test_alert,27214,Watch,api,,False,json_api,,,1
+/api/watchlist,"GET,POST",watchlist_api,32929,Watchlist,api,,False,inline_html,clean_html,,1
+/api/watchlist/<int:item_id>,DELETE,watchlist_item_api,32946,Watchlist,api,,False,json_api,,,1
+/api/world-presence,GET,api_world_presence,26951,World-Presence,api,,False,json_api,,,1
+/app,GET,app_command_center_page,10664,App,page,,False,jinja_template,app.html,,4
+/arena,GET,arena_home_page,29144,Arena,page,,False,inline_html,clean_html,,1
+/arena-preview,GET,arena_preview_page,29123,Arena-Preview,page,,False,other,,,1
+/arena/academy,GET,arena_academy_page,29056,Arena,page,,False,redirect,,,2
+/arena/academy/<path_slug>,GET,arena_academy_page,29057,Arena,page,,False,redirect,,/arena/academy,2
+/arena/battle,GET,arena_phase_two_page,29980,Arena,page,,False,inline_html,clean_html,/arena/solo,5
+/arena/boss/<boss_key>,GET,arena_bosses_page,29107,Arena,page,,False,redirect,,/arena/bosses,2
+/arena/bosses,GET,arena_bosses_page,29106,Arena,page,,False,redirect,,,2
+/arena/chat/<int:thread_id>,GET,arena_chat_page,29405,Arena,page,,False,inline_html,clean_html,,1
+/arena/creator,GET,arena_creator_mode_page,29926,Arena,page,,False,inline_html,clean_html,,2
+/arena/creators,GET,arena_creators_page,28984,Arena,page,,False,redirect,,,1
+/arena/daily,GET,arena_daily_page,29241,Arena,page,,False,inline_html,clean_html,,1
+/arena/highlight/<int:highlight_id>,GET,arena_highlight_page,29029,Arena,page,,False,inline_html,clean_html,,1
+/arena/highlights,GET,arena_highlights_page,28997,Arena,page,,False,redirect,,,1
+/arena/inbox,GET,arena_inbox_page,29467,Arena,page,,False,inline_html,clean_html,,1
+/arena/intelligence-market,GET,arena_intelligence_market_page,29080,Arena,page,,False,inline_html,clean_html,,1
+/arena/leaderboard,GET,arena_leaderboard_page,29289,Arena,page,,False,inline_html,clean_html,,1
+/arena/league,GET,arena_phase_two_page,29981,Arena,page,,False,inline_html,clean_html,/arena/solo,5
+/arena/live,GET,arena_continuous_play_page,29623,Arena,page,,False,inline_html,clean_html,/arena/play,6
+/arena/match/<int:match_id>,GET,arena_phase_two_page,29983,Arena,page,,False,inline_html,clean_html,/arena/solo,5
+/arena/matchmaking,GET,arena_matchmaking_page,29965,Arena,page,,False,redirect,,,1
+/arena/os,GET,arena_os_page,28942,Arena,page,,False,inline_html,clean_html,,1
+/arena/play,GET,arena_continuous_play_page,29618,Arena,page,,False,inline_html,clean_html,,6
+/arena/playbook/<int:playbook_id>,GET,arena_playbook_page,29093,Arena,page,,False,inline_html,clean_html,,1
+/arena/player/<public_player_id>,GET,arena_player_page,29331,Arena,page,,False,inline_html,clean_html,,1
+/arena/players,GET,arena_players_page,29379,Arena,page,,False,inline_html,clean_html,,1
+/arena/quests,GET,arena_quests_page,29068,Arena,page,,False,redirect,,,1
+/arena/quick-battle,GET,arena_continuous_play_page,29619,Arena,page,,False,inline_html,clean_html,/arena/play,6
+/arena/replay/<int:match_id>,GET,arena_replay_page,29007,Arena,page,,False,inline_html,clean_html,,1
+/arena/roast-battle,GET,legacy_arena_roast_battle_redirect,29915,Arena,page,,False,redirect,,,3
+/arena/roast-battle/match/<int:match_id>,GET,legacy_arena_roast_battle_redirect,29917,Arena,page,,False,redirect,,/arena/roast-battle,3
+/arena/roast-battle/room/<int:room_id>,GET,legacy_arena_roast_battle_redirect,29916,Arena,page,,False,redirect,,/arena/roast-battle,3
+/arena/room/<int:room_id>,GET,arena_phase_two_page,29982,Arena,page,,False,inline_html,clean_html,/arena/solo,5
+/arena/scam-hunter,GET,arena_scam_hunter_page,29276,Arena,page,,False,redirect,,,1
+/arena/scam-rush,GET,arena_continuous_play_page,29621,Arena,page,,False,inline_html,clean_html,/arena/play,6
+/arena/simulator,GET,arena_continuous_play_page,29622,Arena,page,,False,inline_html,clean_html,/arena/play,6
+/arena/solo,GET,arena_phase_two_page,29979,Arena,page,,False,inline_html,clean_html,,5
+/arena/survival,GET,arena_continuous_play_page,29620,Arena,page,,False,inline_html,clean_html,/arena/play,6
+/arena/world,GET,arena_world_page,28972,Arena,page,,False,redirect,,,1
+/billing/portal,GET,billing_portal_page,11628,Payments,page,,False,inline_html,clean_html,,1
+/billing/portal-session,POST,billing_portal_session_api,11665,Payments,page,,False,other,,,1
+/change-confirmation-email,POST,change_confirmation_email_page,5893,Change-Confirmation-Email,page,,False,inline_html,clean_html,,1
+/chat,GET,native_chat_page,10691,Messenger,page,,False,jinja_template,app.html,,1
+/chat/fan-messages,GET,fan_messages_page,10732,Messenger,page,,False,inline_html,clean_html,,1
+/chat/thread/<int:thread_id>,GET,private_chat_thread_page,10715,Messenger,page,,False,inline_html,clean_html,,1
+/checkout,"GET,POST",checkout_page,11484,Payments,page,,False,redirect,,,1
+/checkout/success,GET,upgrade_success_page,11938,Payments,page,,False,inline_html,clean_html,/upgrade/success,2
+/command-center,GET,app_command_center_page,10665,Command-Center,page,,False,jinja_template,app.html,/app,4
+/community-rules,GET,community_rules_page,86469,Community-Rules,page,,False,other,,,1
+/country-intelligence/<country_slug>,GET,seo_country_page,2139,Country-Intelligence,page,,False,redirect,,,1
+/create-checkout-session,POST,create_checkout_session_route,11443,Create-Checkout-Session,page,,False,json_api,,,2
+/creator-monetization-policy,GET,creator_monetization_policy_page,86493,Creator-Monetization-Policy,page,,False,other,,,1
+/crypto-scam-scanner,GET,ads_landing_page,1410,Crypto-Scam-Scanner,page,,False,other,,/live-roast-battle,4
+/crypto-training-simulator,GET,ads_landing_page,1412,Crypto-Training-Simulator,page,,False,other,,/live-roast-battle,4
+/dashboard,GET,dashboard_page,6877,Dashboard,page,,False,jinja_template,dashboard.html,,1
+/dashboard/account,GET,dashboard_account_command_page,8125,Dashboard,page,,False,inline_html,clean_html,,1
+/dashboard/account/<subsystem_key>,GET,dashboard_account_subsystem_page,8163,Dashboard,page,,False,inline_html,clean_html,,1
+/dashboard/account/health,GET,dashboard_account_health_page,10181,Dashboard,page,,False,inline_html,clean_html,,1
+/dashboard/account/profile,GET,dashboard_account_profile_page,10148,Dashboard,page,,False,redirect,,,1
+/dashboard/account/security,GET,dashboard_account_security_page,10215,Dashboard,page,,False,other,,,1
+/dashboard/account/settings,GET,dashboard_account_settings_page,10220,Dashboard,page,,False,redirect,,,1
+/dashboard/account/verification,GET,dashboard_account_verification_page,10164,Dashboard,page,,False,inline_html,_verification_center_html,,1
+/dashboard/ads,GET,dashboard_ads_page,9496,Dashboard,page,,False,inline_html,clean_html,,2
+/dashboard/ads/<subsystem_key>,GET,dashboard_ads_subsystem_page,9531,Dashboard,page,,False,inline_html,clean_html,,1
+/dashboard/advertising,GET,dashboard_ads_page,9497,Dashboard,page,,False,inline_html,clean_html,/dashboard/ads,2
+/dashboard/ai,GET,dashboard_ai_page,9667,Dashboard,page,,False,inline_html,clean_html,,2
+/dashboard/ai/<subsystem_key>,GET,dashboard_ai_subsystem_page,9700,Dashboard,page,,False,inline_html,_ai_subsystem_detail_html,,1
+/dashboard/creator,GET,dashboard_creator_page,9910,Dashboard,page,,False,inline_html,clean_html,,1
+/dashboard/creator/<subsystem_key>,GET,dashboard_creator_subsystem_page,10065,Dashboard,page,,False,inline_html,_creator_subsystem_detail_html,,1
+/dashboard/creator/live-studio,GET,dashboard_creator_live_studio_page,10037,Dashboard,page,,False,redirect,,,1
+/dashboard/creator/posts,GET,dashboard_creator_posts_page,9939,Dashboard,page,,False,redirect,,,1
+/dashboard/creator/reels,GET,dashboard_creator_reels_page,9963,Dashboard,page,,False,redirect,,,1
+/dashboard/creator/statuses,GET,dashboard_creator_statuses_page,10012,Dashboard,page,,False,redirect,,,1
+/dashboard/creator/videos,GET,dashboard_creator_videos_page,9988,Dashboard,page,,False,redirect,,,1
+/dashboard/crypto,GET,dashboard_crypto_page,9138,Dashboard,page,,False,inline_html,clean_html,,1
+/dashboard/crypto/<path:module_path>,GET,dashboard_crypto_module_page,9178,Dashboard,page,,False,inline_html,clean_html,,1
+/dashboard/economy,GET,dashboard_economy_page,9272,Dashboard,page,,False,inline_html,clean_html,,1
+/dashboard/economy/<subsystem_key>,GET,dashboard_economy_subsystem_page,9319,Dashboard,page,,False,inline_html,_seller_tools_html,,1
+/dashboard/education,GET,education_hub_page,1822,Dashboard,page,,False,inline_html,clean_html,/education,2
+/dashboard/intelligence,GET,dashboard_intelligence_page,8562,Dashboard,page,,False,inline_html,_intelligence_card_html,,1
+/dashboard/intelligence,GET,app_command_center_page,10667,Dashboard,page,,False,jinja_template,app.html,/app,4
+/dashboard/intelligence/<subsystem_key>,GET,dashboard_intelligence_subsystem_page,8591,Dashboard,page,,False,inline_html,clean_html,,1
+/dashboard/network,GET,dashboard_network_page,9721,Dashboard,page,,False,inline_html,clean_html,,1
+/dashboard/network/<subsystem_key>,GET,dashboard_network_subsystem_page,9883,Dashboard,page,,False,inline_html,clean_html,,1
+/dashboard/network/followers,GET,dashboard_network_followers_page,9839,Dashboard,page,,False,redirect,,,1
+/dashboard/network/friends,GET,dashboard_network_friends_page,9817,Dashboard,page,,False,redirect,,,1
+/dashboard/network/groups,GET,dashboard_network_groups_page,9861,Dashboard,page,,False,redirect,,,1
+/dashboard/network/messages,GET,dashboard_network_messages_page,9792,Dashboard,page,,False,inline_html,clean_html,,1
+/dashboard/network/notifications,GET,dashboard_network_notifications_page,9748,Dashboard,page,,False,redirect,,,1
+/dashboard/optimism,GET,optimism_education_page,1863,Dashboard,page,,False,redirect,,/education/optimism,2
+/dashboard/pulsesoc-ai,GET,dashboard_ai_page,9668,Dashboard,page,,False,inline_html,clean_html,/dashboard/ai,2
+/dashboard/scam-alerts,GET,dashboard_scam_alerts_page,2089,Dashboard,page,,False,redirect,,,1
+/dashboard/system,GET,dashboard_system_page,7599,Dashboard,page,,False,redirect,,,1
+/dashboard/system/<module_key>,GET,dashboard_system_module_page,7616,Dashboard,page,,False,inline_html,clean_html,,1
+/day-signal,GET,day_signal_page,26230,Day-Signal,page,,False,inline_html,clean_html,,1
+/debug/email-test,GET,debug_email_test,13081,Debug,page,,False,json_api,,,1
+/debug/password-reset-email-test,GET,debug_password_reset_email_test,24515,Debug,page,,False,inline_html,clean_html,,1
+/debug/stripe-user,GET,debug_stripe_user,24460,Debug,page,,False,inline_html,clean_html,,2
+/debug/upgrade-email-test,GET,debug_upgrade_email_test,24549,Debug,page,,False,inline_html,clean_html,,1
+/debug/user-email-status,GET,debug_stripe_user,24461,Debug,page,,False,inline_html,clean_html,/debug/stripe-user,2
+/education,GET,education_hub_page,1821,Education,page,,False,inline_html,clean_html,,2
+/education/<category_slug>,GET,education_category_page,1946,Education,page,,False,inline_html,clean_html,,1
+/education/lesson/<lesson_slug>,GET,education_lesson_page,1969,Education,page,,False,inline_html,clean_html,,1
+/education/optimism,GET,optimism_education_page,1862,Education,page,,False,redirect,,,2
+/education/scam-alerts,GET,education_scam_alerts_page,1902,Education,page,,False,other,,,1
+/education/toncoin-scenarios,GET,toncoin_scenarios_page,1886,Education,page,,False,other,,,1
+/enterprise,"GET,POST",enterprise_page,86505,Enterprise,page,,False,inline_html,clean_html,,1
+/favicon.ico,GET,favicon_ico,24787,Favicon.Ico,page,,False,other,,,1
+/feed,GET,legacy_pulsesoc_home_redirect,36329,Feed,page,,False,redirect,,/home,7
+/forgot-password,"GET,POST",forgot_password_page,12177,Forgot-Password,page,,False,inline_html,clean_html,,1
+/forgot-username,"GET,POST",forgot_username_page,12191,Forgot-Username,page,,False,inline_html,clean_html,,1
+/health,GET,health_check,109327,Health,page,,False,json_api,,,1
+/health/database,GET,database_health_check,109630,Health,page,,False,json_api,,,1
+/health/ready,GET,readiness_check,109369,Health,page,,False,json_api,,,1
+/health/routes,GET,route_health_check,109403,Health,page,,False,json_api,,,1
+/health/undx,GET,undx_policy_health_check,109453,Health,page,,False,json_api,,,1
+/help,"GET,POST",support_page,1417,Help,page,,False,jinja_template,support.html,,3
+/home,GET,legacy_pulsesoc_home_redirect,36328,Home,page,,False,redirect,,,7
+/icons/<path:filename>,GET,pwa_icons,24782,Icons,page,,False,other,,,1
+/indexnow-key.txt,GET,indexnow_key_txt,24792,Indexnow-Key.Txt,page,,False,other,,,2
+/insights,GET,seo_content_hub,2164,Insights,page,,False,other,,/news,3
+/intel,GET,seo_content_hub,2165,Intel,page,,False,other,,/news,3
+/intel/<article_slug>,GET,seo_intel_article_page,2155,Intel,page,,False,redirect,,,1
+/intelligence,GET,app_command_center_page,10666,Intelligence,page,,False,jinja_template,app.html,/app,4
+/learn/<slug>,GET,public_learn_page,24722,Learn,page,,False,inline_html,clean_html,,1
+/legal/payments,GET,legal_payments_page,1656,Legal,page,,False,other,,,1
+/legal/refunds,GET,legal_refunds_page,1661,Legal,page,,False,other,,,1
+/legal/seller-terms,GET,legal_seller_terms_page,1666,Legal,page,,False,other,,,1
+/live-roast-battle,GET,ads_landing_page,1409,Live-Roast-Battle,page,,False,other,,,4
+/llms.txt,GET,llms_txt,24626,Llms.Txt,page,,False,other,,,1
+/login,"GET,POST",login_page,5780,Login,page,,False,inline_html,clean_html,,1
+/logout,GET,logout_page,5908,Logout,page,,False,redirect,,,1
+/manifest.json,GET,manifest_json,24745,Manifest.Json,page,,False,other,,,1
+/markets/<symbol>,GET,seo_market_page,2131,Markets,page,,False,redirect,,,1
+/markets/<symbol>/live,GET,seo_market_live,2123,Markets,page,,False,redirect,,,1
+/markets/<symbol>/prediction,GET,seo_market_prediction,2115,Markets,page,,False,redirect,,,1
+/messages,GET,messages_page,10785,Messenger,page,,False,redirect,,,1
+/messages/<int:conversation_id>,GET,message_thread_page,10833,Messenger,page,,False,redirect,,,1
+/news,GET,seo_content_hub,2163,News,page,,False,other,,,3
+/notifications,GET,notifications_page,10895,Notifications,page,,False,inline_html,clean_html,,1
+/offline,GET,offline_page,2180,Offline,page,,False,jinja_template,offline.html,,1
+/payments/cancel,GET,pulse_payment_cancel_page,49566,Payments,page,,False,other,,/pulse/payments/cancel,2
+/payments/success,GET,pulse_payment_success_page,49560,Payments,page,,False,other,,/pulse/payments/success,2
+/portfolio,GET,portfolio_page,32874,Portfolio,page,,False,redirect,,,1
+/predictions,GET,predictions_page,25861,Predictions,page,,False,redirect,,,1
+/predictions/<market_id>,GET,prediction_detail_page,25898,Predictions,page,,False,redirect,,,1
+/predictions/crypto,GET,predictions_crypto_page,25869,Predictions,page,,False,inline_html,clean_html,,1
+/privacy,GET,privacy_page,1642,Privacy,page,,False,jinja_template,privacy.html,,1
+/privacy-center,"GET,POST",privacy_center_page,86411,Privacy-Center,page,,False,inline_html,clean_html,,1
+/pro,GET,pro_page,86525,Pro,page,,False,inline_html,clean_html,,1
+/pulse,GET,pulse_page,36341,Pulse (social),page,,False,inline_html,pulse_page_html,,9
+/pulse/@<path:profile_key>,GET,pulse_profile_page,76542,Pulse (social),page,,False,redirect,,,4
+/pulse/ads,GET,pulse_advertiser_portal_page,10645,Pulse (social),page,,False,jinja_template,pulse_advertiser_portal.html,/pulse/growth,3
+/pulse/advertise,GET,pulse_advertiser_portal_page,10644,Pulse (social),page,,False,jinja_template,pulse_advertiser_portal.html,/pulse/growth,3
+/pulse/alerts,GET,pulse_alert_notification_redirect,33997,Pulse (social),page,,False,redirect,,,2
+/pulse/alerts/<path:alert_id>,GET,pulse_alert_notification_redirect,33998,Pulse (social),page,,False,redirect,,/pulse/alerts,2
+/pulse/arena,GET,pulse_page,36348,Pulse (social),page,,False,inline_html,pulse_page_html,/pulse,9
+/pulse/assistant,GET,pulse_assistant_page,49239,Pulse (social),page,,False,redirect,,,1
+/pulse/bookmarks,GET,pulse_bookmarks_alias_page,74330,Pulse (social),page,,False,redirect,,,1
+/pulse/camera,GET,pulse_camera_studio_page,48288,Pulse (social),page,,False,inline_html,clean_html,,6
+/pulse/camera/photo,GET,pulse_camera_studio_page,48289,Pulse (social),page,,False,inline_html,clean_html,/pulse/camera,6
+/pulse/camera/post,GET,pulse_camera_studio_page,48293,Pulse (social),page,,False,inline_html,clean_html,/pulse/camera,6
+/pulse/camera/reel,GET,pulse_camera_studio_page,48292,Pulse (social),page,,False,inline_html,clean_html,/pulse/camera,6
+/pulse/camera/status,GET,pulse_camera_studio_page,48291,Pulse (social),page,,False,inline_html,clean_html,/pulse/camera,6
+/pulse/camera/video,GET,pulse_camera_studio_page,48290,Pulse (social),page,,False,inline_html,clean_html,/pulse/camera,6
+/pulse/collections,GET,pulse_collections_page,74319,Pulse (social),page,,False,inline_html,pulse_gateway_card_html,,1
+/pulse/communities,GET,pulse_communities_page,74260,Pulse (social),page,,False,inline_html,pulse_gateway_card_html,,1
+/pulse/courses,GET,pulse_courses_page,74527,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/courses/<int:course_id>,GET,pulse_course_detail_page,74559,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/courses/create,GET,pulse_course_create_page,74544,Pulse (social),page,,False,redirect,,,1
+/pulse/create,GET,pulse_page,36346,Pulse (social),page,,False,inline_html,pulse_page_html,/pulse,9
+/pulse/create/camera,GET,pulse_creator_camera_page,48172,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/creator-monetization,GET,pulse_creator_monetization_page,49671,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/creator-status,GET,pulse_creator_status_page,48150,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/creator-studio,GET,pulse_creator_studio_alias_page,74233,Pulse (social),page,,False,other,,,1
+/pulse/creator/analytics,GET,pulse_creator_analytics_page,74362,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/creator/dashboard,GET,pulse_creator_dashboard_page,74143,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/creator/payouts,GET,pulse_creator_payouts_page,49571,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/dashboard/ai-creator-assistant,GET,pulse_dashboard_ai_creator_assistant_alias,10143,Pulse (social),page,,False,other,,,1
+/pulse/dashboard/content-planner,GET,pulse_dashboard_content_planner_alias,10128,Pulse (social),page,,False,other,,,1
+/pulse/dashboard/draft-studio,GET,pulse_dashboard_draft_studio_alias,10138,Pulse (social),page,,False,other,,,1
+/pulse/dashboard/post-scheduler,GET,pulse_dashboard_post_scheduler_alias,10133,Pulse (social),page,,False,other,,,1
+/pulse/discover,GET,pulse_discover_page,74238,Pulse (social),page,,False,inline_html,pulse_gateway_card_html,,1
+/pulse/events,GET,pulse_events_page,74275,Pulse (social),page,,False,inline_html,pulse_gateway_card_html,,1
+/pulse/following,GET,pulse_page,36343,Pulse (social),page,,False,inline_html,pulse_page_html,/pulse,9
+/pulse/friends,GET,pulse_friends_page,43366,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/groups,GET,pulse_groups_page,76053,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/groups/<group_slug>,GET,pulse_group_detail_page,76387,Pulse (social),page,,False,inline_html,pulse_premium_mark_html,,1
+/pulse/groups/create,GET,pulse_groups_create_page,76195,Pulse (social),page,,False,redirect,,,1
+/pulse/growth,GET,pulse_advertiser_portal_page,10643,Pulse (social),page,,False,jinja_template,pulse_advertiser_portal.html,,3
+/pulse/help,"GET,POST",support_page,1418,Pulse (social),page,,False,jinja_template,support.html,/help,3
+/pulse/home,GET,legacy_pulsesoc_home_redirect,36330,Pulse (social),page,,False,redirect,,/home,7
+/pulse/home-legacy,GET,legacy_pulsesoc_home_redirect,36332,Pulse (social),page,,False,redirect,,/home,7
+/pulse/id/<path:profile_key>,GET,pulse_profile_page,76544,Pulse (social),page,,False,redirect,,/pulse/@<path:profile_key>,4
+/pulse/invite,GET,pulse_invite_page,43427,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/labs,GET,pulse_labs_page,36372,Pulse (social),page,,False,jinja_template,pulse_labs.html,,1
+/pulse/legacy,GET,legacy_pulsesoc_home_redirect,36334,Pulse (social),page,,False,redirect,,/home,7
+/pulse/legacy-home,GET,legacy_pulsesoc_home_redirect,36331,Pulse (social),page,,False,redirect,,/home,7
+/pulse/live,GET,pulse_live_page,43450,Pulse (social),page,,False,inline_html,clean_html,,3
+/pulse/live/<int:live_id>,GET,pulse_live_room_page,43939,Pulse (social),page,,False,redirect,,,1
+/pulse/live/eligibility,GET,pulse_live_page,43451,Pulse (social),page,,False,inline_html,clean_html,/pulse/live,3
+/pulse/live/events/create,GET,pulse_live_event_create_gateway_page,74297,Pulse (social),page,,False,inline_html,pulse_gateway_card_html,,1
+/pulse/live/schedule,GET,pulse_live_schedule_gateway_page,74286,Pulse (social),page,,False,inline_html,pulse_gateway_card_html,,1
+/pulse/live/studio,GET,pulse_live_page,43452,Pulse (social),page,,False,inline_html,clean_html,/pulse/live,3
+/pulse/live/studio/<int:stream_id>,GET,pulse_live_studio_page,43649,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/marketplace,GET,pulse_marketplace_page,48483,Pulse (social),page,,False,inline_html,pulse_promotion_modal_html,,1
+/pulse/marketplace/create,GET,pulse_marketplace_create_page,49616,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/merchant/<username>,GET,pulse_merchant_profile_page,49594,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/merchant/apply,"GET,POST",pulse_merchant_apply_page,49354,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/merchant/dashboard,GET,pulse_merchant_dashboard_page,49494,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/merchant/payouts,GET,pulse_merchant_payouts_page,49549,Pulse (social),page,,False,other,,,1
+/pulse/messages,GET,pulse_messages_page,75659,Pulse (social),page,,False,jinja_template,pulse_messages_v2.html,,1
+/pulse/messages-legacy,GET,pulse_messages_legacy_page,75685,Pulse (social),page,,False,other,,,1
+/pulse/messages/<int:conversation_id>,GET,pulse_message_thread_page,76266,Pulse (social),page,,False,jinja_template,pulse_messages_v2.html,,1
+/pulse/music,GET,pulse_music_page,37634,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/my-posts,GET,pulse_page,36345,Pulse (social),page,,False,inline_html,pulse_page_html,/pulse,9
+/pulse/notifications,GET,pulse_notifications_page,74660,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/old-home,GET,legacy_pulsesoc_home_redirect,36333,Pulse (social),page,,False,redirect,,/home,7
+/pulse/payments/cancel,GET,pulse_payment_cancel_page,49565,Pulse (social),page,,False,other,,,2
+/pulse/payments/success,GET,pulse_payment_success_page,49559,Pulse (social),page,,False,other,,,2
+/pulse/portfolio,GET,pulse_premium_portfolio_page,32882,Pulse (social),page,,False,redirect,,,3
+/pulse/post/<int:post_id>,GET,pulse_post_page,76693,Pulse (social),page,,False,inline_html,pulse_premium_mark_html,,1
+/pulse/premium,GET,pulse_premium_page,49760,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/premium/activate,GET,pulse_premium_activate_page,73887,Pulse (social),page,,False,redirect,,,1
+/pulse/premium/cancel,GET,pulse_premium_cancel_page,11894,Pulse (social),page,,False,redirect,,,1
+/pulse/premium/intelligence,GET,pulse_premium_intelligence_page,49886,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/premium/intelligence/portfolio,GET,pulse_premium_portfolio_page,32884,Pulse (social),page,,False,redirect,,/pulse/portfolio,3
+/pulse/premium/portfolio,GET,pulse_premium_portfolio_page,32883,Pulse (social),page,,False,redirect,,/pulse/portfolio,3
+/pulse/premium/success,GET,pulse_premium_success_page,11839,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/premium/undx,GET,pulse_premium_undx_page,49945,Pulse (social),page,,False,other,,,1
+/pulse/profile,GET,pulse_my_profile_page,75711,Pulse (social),page,,False,redirect,,,2
+/pulse/profile/,GET,pulse_my_profile_page,75712,Pulse (social),page,,False,redirect,,/pulse/profile,2
+/pulse/profile/<path:profile_key>,GET,pulse_profile_page,76545,Pulse (social),page,,False,redirect,,/pulse/@<path:profile_key>,4
+/pulse/profile/edit,GET,pulse_profile_edit_page,75720,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/profile/security,GET,pulse_settings_security_page,75907,Pulse (social),page,,False,other,,/pulse/settings/security,2
+/pulse/promote,GET,pulse_promote_page,74308,Pulse (social),page,,False,inline_html,pulse_gateway_card_html,,1
+/pulse/purchases,GET,pulse_purchase_notification_redirect,34009,Pulse (social),page,,False,redirect,,,2
+/pulse/purchases/<path:purchase_id>,GET,pulse_purchase_notification_redirect,34010,Pulse (social),page,,False,redirect,,/pulse/purchases,2
+/pulse/questions,GET,pulse_page,36344,Pulse (social),page,,False,inline_html,pulse_page_html,/pulse,9
+/pulse/reels,GET,pulse_reels_page,41918,Pulse (social),page,,False,inline_html,pulse_promotion_modal_html,,1
+/pulse/reels/<int:reel_id>,GET,pulse_reel_detail_page,42552,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/roast-battle,GET,arena_roast_battle_page,29801,Pulse (social),page,,False,redirect,,,3
+/pulse/roast-battle/match/<int:match_id>,GET,arena_roast_battle_page,29803,Pulse (social),page,,False,redirect,,/pulse/roast-battle,3
+/pulse/roast-battle/room/<int:room_id>,GET,arena_roast_battle_page,29802,Pulse (social),page,,False,redirect,,/pulse/roast-battle,3
+/pulse/roast-clips,GET,pulse_page,36349,Pulse (social),page,,False,inline_html,pulse_page_html,/pulse,9
+/pulse/saved,GET,pulse_saved_page,49713,Pulse (social),page,,False,redirect,,,1
+/pulse/scam-alerts,GET,pulse_page,36347,Pulse (social),page,,False,inline_html,pulse_page_html,/pulse,9
+/pulse/search,GET,pulse_search_page,36725,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/seller-tools,GET,pulse_seller_tools_gateway_page,74351,Pulse (social),page,,False,inline_html,pulse_gateway_card_html,,1
+/pulse/settings,GET,pulse_settings_page,74335,Pulse (social),page,,False,inline_html,pulse_gateway_card_html,,1
+/pulse/settings/account,GET,pulse_settings_account_page,75912,Pulse (social),page,,False,other,,,1
+/pulse/settings/devices,GET,pulse_settings_devices_page,75922,Pulse (social),page,,False,other,,,1
+/pulse/settings/notifications,GET,pulse_notification_settings_page,74888,Pulse (social),page,,False,redirect,,,1
+/pulse/settings/privacy,GET,pulse_settings_privacy_page,75917,Pulse (social),page,,False,other,,,1
+/pulse/settings/recovery,GET,pulse_settings_recovery_page,75927,Pulse (social),page,,False,other,,,1
+/pulse/settings/security,GET,pulse_settings_security_page,75906,Pulse (social),page,,False,other,,,2
+/pulse/spaces,GET,pulse_spaces_page,48189,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/spaces/<slug>,GET,pulse_space_detail_page,48210,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/status,GET,pulse_status_page,36989,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/status/<path:status_id>,GET,pulse_status_notification_redirect,34029,Pulse (social),page,,False,redirect,,,1
+/pulse/teacher-dashboard,GET,pulse_teacher_dashboard_page,74614,Pulse (social),page,,False,inline_html,clean_html,,2
+/pulse/teacher/dashboard,GET,pulse_teacher_dashboard_page,74615,Pulse (social),page,,False,inline_html,clean_html,/pulse/teacher-dashboard,2
+/pulse/teacher/payouts,GET,pulse_teacher_payouts_page,49554,Pulse (social),page,,False,other,,,1
+/pulse/teachers,GET,pulse_teachers_page,76210,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/teachers/<teacher_id>,GET,pulse_teacher_public_profile_page,74581,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/topic/<topic>,GET,pulse_topic_page,76261,Pulse (social),page,,False,inline_html,pulse_page_html,,1
+/pulse/trending,GET,pulse_page,36342,Pulse (social),page,,False,inline_html,pulse_page_html,/pulse,9
+/pulse/u/<path:profile_key>,GET,pulse_profile_page,76543,Pulse (social),page,,False,redirect,,/pulse/@<path:profile_key>,4
+/pulse/videos,GET,pulse_videos_page,77336,Pulse (social),page,,False,inline_html,clean_html,,1
+/pulse/videos/<int:video_id>,GET,pulse_video_detail_page,77453,Pulse (social),page,,False,inline_html,smart_time_html,,1
+/quote,GET,quote_center_page,25826,Quote,page,,False,other,,,1
+/quote/crypto/<symbol>,GET,quote_symbol_page,25831,Quote,page,,False,inline_html,clean_html,,1
+/r/<referral_code>,GET,referral_redirect,13509,R,page,,False,inline_html,clean_html,,1
+/resend-confirmation,POST,resend_confirmation_page,5881,Resend-Confirmation,page,,False,inline_html,clean_html,,1
+/reset-password,"GET,POST",reset_password_page,12239,Reset-Password,page,,False,inline_html,clean_html,/reset-password/<token>,2
+/reset-password/<token>,"GET,POST",reset_password_page,12238,Reset-Password,page,,False,inline_html,clean_html,,2
+/reset-pwa,GET,reset_pwa_page,2185,Reset-Pwa,page,,False,other,,,1
+/roast-battle-preview,GET,pulse_roast_battle_preview_page,29118,Roast-Battle-Preview,page,,False,other,,,1
+/roast/creator,GET,arena_creator_mode_page,29927,Roast,page,,False,inline_html,clean_html,/arena/creator,2
+/robots.txt,GET,robots_txt,24621,Robots.Txt,page,,False,other,,,1
+/scam-shield,GET,scam_shield_page,1591,Scam-Shield,page,,False,redirect,,,1
+/scam-shield/scan,GET,scam_shield_scan_page,1609,Scam-Shield,page,,False,inline_html,clean_html,,1
+/search,GET,site_search,1694,Search,page,,False,jinja_template,search.html,,1
+/security,GET,security_page,1540,Security,page,,False,other,,,1
+/settings,"GET,POST",account_settings_page,12145,Settings,page,,False,inline_html,clean_html,,2
+/signup,"GET,POST",signup_page,5704,Signup,page,,False,inline_html,clean_html,,1
+/simulator,GET,simulator_page,32693,Simulator,page,,False,inline_html,clean_html,,1
+/site.webmanifest,GET,site_webmanifest,24750,Site.Webmanifest,page,,False,other,,,1
+/sitemap-live.xml,GET,sitemap_live_xml,24699,Sitemap-Live.Xml,page,,False,other,,,1
+/sitemap-pages.xml,GET,sitemap_pages_xml,24693,Sitemap-Pages.Xml,page,,False,other,,,1
+/sitemap-replays.xml,GET,sitemap_replays_xml,24705,Sitemap-Replays.Xml,page,,False,other,,,1
+/sitemap.xml,GET,sitemap_xml,24656,Sitemap.Xml,page,,False,other,,,1
+/sports-edge,GET,sports_edge_landing_page,25669,Sports-Edge,page,,False,inline_html,clean_html,,1
+/sports-edge/<sport_slug>,GET,seo_sports_edge_page,2147,Sports-Edge,page,,False,redirect,,,1
+/sports-edge/trade,GET,sports_edge_trade_redirect,25684,Sports-Edge,page,,False,redirect,,,1
+/stripe-webhook,GET,stripe_webhook_health,94363,Stripe-Webhook,page,,False,json_api,,,5
+/stripe-webhook,POST,stripe_webhook,94376,Stripe-Webhook,page,,False,other,,,5
+/stripe/webhook,GET,stripe_webhook_health,94364,Stripe,page,,False,json_api,,/stripe-webhook,5
+/stripe/webhook,POST,stripe_webhook,94377,Stripe,page,,False,other,,/stripe-webhook,5
+/support,"GET,POST",support_page,1419,Support,page,,False,jinja_template,support.html,/help,3
+/sw.js,GET,service_worker_root,24755,Sw.Js,page,,False,other,,,1
+/terms,GET,terms_page,1647,Terms,page,,False,jinja_template,terms.html,,1
+/trust-center,GET,trust_center_page,86454,Trust-Center,page,,False,other,,,1
+/upgrade,GET,upgrade_page,11393,Upgrade,page,,False,redirect,,,1
+/upgrade/success,GET,upgrade_success_page,11937,Upgrade,page,,False,inline_html,clean_html,,2
+/uploads/<path:filename>,GET,public_uploads,24760,Uploads,page,,False,other,,,1
+/verify-email,GET,verify_email_page,12208,Verify-Email,page,,False,inline_html,clean_html,/verify-email/<token>,2
+/verify-email/<token>,GET,verify_email_page,12207,Verify-Email,page,,False,inline_html,clean_html,,2
+/watch,GET,watch_page,27172,Watch,page,,False,redirect,,,1
+/webhook/business-os/iap/apple,POST,webhook_business_os_iap_apple,21875,Webhook,page,,False,json_api,,,1
+/webhook/business-os/iap/google,POST,webhook_business_os_iap_google,21889,Webhook,page,,False,json_api,,,1
+/webhook/stripe,GET,stripe_webhook_health,94366,Webhook,page,,False,json_api,,/stripe-webhook,5
+/webhook/stripe,POST,stripe_webhook,94379,Webhook,page,,False,other,,/stripe-webhook,5
+/webhooks/brevo,POST,brevo_delivery_webhook,16270,Webhooks,page,,False,inline_html,clean_html,/api/brevo/webhook,2
+/webhooks/stripe,GET,stripe_webhook_health,94367,Webhooks,page,,False,json_api,,/stripe-webhook,5
+/webhooks/stripe,POST,stripe_webhook,94380,Webhooks,page,,False,other,,/stripe-webhook,5

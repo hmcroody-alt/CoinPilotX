@@ -1,0 +1,138 @@
+{
+  "rows": [
+    {
+      "product_area": "pulse",
+      "backend_api_routes": 324,
+      "native_endpoints_used": 117,
+      "web_page_routes": 120,
+      "classification": "PARTIAL"
+    },
+    {
+      "product_area": "business-os",
+      "backend_api_routes": 199,
+      "native_endpoints_used": 10,
+      "web_page_routes": 0,
+      "classification": "BACKEND+NATIVE_ONLY"
+    },
+    {
+      "product_area": "arena",
+      "backend_api_routes": 120,
+      "native_endpoints_used": 0,
+      "web_page_routes": 38,
+      "classification": "WEB_ONLY"
+    },
+    {
+      "product_area": "marketplace",
+      "backend_api_routes": 0,
+      "native_endpoints_used": 0,
+      "web_page_routes": 2,
+      "classification": "WEB_ONLY"
+    },
+    {
+      "product_area": "messages",
+      "backend_api_routes": 17,
+      "native_endpoints_used": 4,
+      "web_page_routes": 10,
+      "classification": "PARTIAL"
+    },
+    {
+      "product_area": "reels",
+      "backend_api_routes": 12,
+      "native_endpoints_used": 0,
+      "web_page_routes": 0,
+      "classification": "BACKEND_ONLY"
+    },
+    {
+      "product_area": "live",
+      "backend_api_routes": 6,
+      "native_endpoints_used": 0,
+      "web_page_routes": 11,
+      "classification": "WEB_ONLY"
+    },
+    {
+      "product_area": "undx",
+      "backend_api_routes": 8,
+      "native_endpoints_used": 0,
+      "web_page_routes": 2,
+      "classification": "WEB_ONLY"
+    },
+    {
+      "product_area": "account",
+      "backend_api_routes": 15,
+      "native_endpoints_used": 14,
+      "web_page_routes": 4,
+      "classification": "PARTIAL"
+    },
+    {
+      "product_area": "payments",
+      "backend_api_routes": 8,
+      "native_endpoints_used": 0,
+      "web_page_routes": 2,
+      "classification": "WEB_ONLY"
+    },
+    {
+      "product_area": "alerts",
+      "backend_api_routes": 9,
+      "native_endpoints_used": 0,
+      "web_page_routes": 1,
+      "classification": "WEB_ONLY"
+    },
+    {
+      "product_area": "dashboard",
+      "backend_api_routes": 29,
+      "native_endpoints_used": 10,
+      "web_page_routes": 40,
+      "classification": "PARTIAL"
+    },
+    {
+      "product_area": "admin",
+      "backend_api_routes": 37,
+      "native_endpoints_used": 0,
+      "web_page_routes": 0,
+      "classification": "BACKEND_ONLY"
+    },
+    {
+      "product_area": "mobile",
+      "backend_api_routes": 14,
+      "native_endpoints_used": 10,
+      "web_page_routes": 0,
+      "classification": "BACKEND+NATIVE_ONLY"
+    },
+    {
+      "product_area": "push",
+      "backend_api_routes": 8,
+      "native_endpoints_used": 2,
+      "web_page_routes": 0,
+      "classification": "BACKEND+NATIVE_ONLY"
+    },
+    {
+      "product_area": "crypto",
+      "backend_api_routes": 19,
+      "native_endpoints_used": 1,
+      "web_page_routes": 2,
+      "classification": "PARTIAL"
+    }
+  ],
+  "native_endpoints_not_in_backend": [
+    "/api/calls/active",
+    "/api/calls/start",
+    "/api/calls/voip-token",
+    "/api/calls/voip-token/revoke",
+    "/api/mobile/auth/",
+    "/api/pulse-ai/actions/cancel",
+    "/api/pulse-ai/actions/confirm",
+    "/api/pulse-ai/message",
+    "/api/pulse/ads/analytics${suffix}",
+    "/api/pulse/camera/config${suffix}",
+    "/api/pulse/communications/v2",
+    "/api/pulse/communications/v2/conversations",
+    "/api/pulse/marketplace/seller/listings/${listingId}/${action}",
+    "/api/pulse/mobile/auth/",
+    "/api/pulse/mobile/settings/data-export",
+    "/api/pulse/mobile/settings/delete-account",
+    "/api/pulse/notifications/read-all${query}",
+    "/api/pulse/posts/${postId}/comments${query}",
+    "/api/pulse/presence"
+  ],
+  "native_endpoint_count": 187
+}

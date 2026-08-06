@@ -1,0 +1,238 @@
+{
+  "native": {
+    "background": "#050910",
+    "surface": "#0b141c",
+    "surfaceRaised": "#111f2a",
+    "text": "#f4f7fb",
+    "muted": "#9aa8b7",
+    "accent": "#32e6b3",
+    "accentStrong": "#61d8ff",
+    "warning": "#f3c461",
+    "danger": "#ff5f7e",
+    "border": "#203746",
+    "intelligence": "#9f7cff",
+    "creator": "#42e7d4",
+    "economy": "#f6c85d",
+    "safety": "#3ff0a0",
+    "crypto": "#62e0ff",
+    "disabled": "#51606c",
+    "focus": "#8df7ff",
+    "glass": "rgba(11, 24, 34, 0.82)",
+    "glassStrong": "rgba(15, 36, 50, 0.94)",
+    "signalDim": "rgba(50, 230, 179, 0.12)",
+    "signalSoft": "rgba(97, 216, 255, 0.12)",
+    "dangerSoft": "rgba(255, 95, 126, 0.14)",
+    "warningSoft": "rgba(243, 196, 97, 0.14)"
+  },
+  "web_var_count": 159,
+  "conflicting_web_vars": [
+    "--bg",
+    "--control-accent",
+    "--control-accent-2",
+    "--control-accent-3",
+    "--control-density-gap",
+    "--control-read-receipt",
+    "--control-received-bg",
+    "--control-received-border",
+    "--control-sent-bg",
+    "--control-sent-border",
+    "--control-theme-border",
+    "--control-theme-border-strong",
+    "--control-theme-glow",
+    "--control-theme-header",
+    "--control-theme-panel",
+    "--control-theme-thread",
+    "--control-wallpaper",
+    "--control-wallpaper-overlay",
+    "--control-wallpaper-size",
+    "--cyan",
+    "--danger",
+    "--dock-height",
+    "--gold",
+    "--green",
+    "--hud-opacity",
+    "--line",
+    "--line-strong",
+    "--lnx-status-stage-width",
+    "--mobile-gap",
+    "--mobile-touch",
+    "--muted",
+    "--panel",
+    "--panel-strong",
+    "--pulse-card-media-bleed",
+    "--pulse-cinematic-column",
+    "--pulse-feed-column",
+    "--pulse-left-rail",
+    "--pulse-right-rail",
+    "--pulse-text-column",
+    "--purple",
+    "--red",
+    "--safe-top",
+    "--text",
+    "--wave-index",
+    "--wave-step"
+  ],
+  "mapping": [
+    {
+      "native": "background",
+      "native_value": "#050910",
+      "nearest_web_var": "--bg-2",
+      "web_value": "#030810",
+      "rgb_distance": 2.2
+    },
+    {
+      "native": "surface",
+      "native_value": "#0b141c",
+      "nearest_web_var": "--panel-2",
+      "web_value": "#0a1220",
+      "rgb_distance": 4.6
+    },
+    {
+      "native": "surfaceRaised",
+      "native_value": "#111f2a",
+      "nearest_web_var": "--panel-glass",
+      "web_value": "rgba(11, 27, 45, .68)",
+      "rgb_distance": 7.8
+    },
+    {
+      "native": "text",
+      "native_value": "#f4f7fb",
+      "nearest_web_var": "--text",
+      "web_value": "#f4fbff",
+      "rgb_distance": 5.7
+    },
+    {
+      "native": "muted",
+      "native_value": "#9aa8b7",
+      "nearest_web_var": "--muted",
+      "web_value": "#94aaba",
+      "rgb_distance": 7.0
+    },
+    {
+      "native": "accent",
+      "native_value": "#32e6b3",
+      "nearest_web_var": "--hot",
+      "web_value": "rgba(50, 235, 174, .62)",
+      "rgb_distance": 7.1
+    },
+    {
+      "native": "accentStrong",
+      "native_value": "#61d8ff",
+      "nearest_web_var": "--line",
+      "web_value": "rgba(91, 220, 255, .22)",
+      "rgb_distance": 7.2
+    },
+    {
+      "native": "warning",
+      "native_value": "#f3c461",
+      "nearest_web_var": "--control-warm",
+      "web_value": "#f6cb63",
+      "rgb_distance": 7.9
+    },
+    {
+      "native": "danger",
+      "native_value": "#ff5f7e",
+      "nearest_web_var": "--red",
+      "web_value": "#ff5f7d",
+      "rgb_distance": 1.0
+    },
+    {
+      "native": "border",
+      "native_value": "#203746",
+      "nearest_web_var": "--pulse-panel-strong",
+      "web_value": "rgba(17, 29, 50, 0.94)",
+      "rgb_distance": 36.1
+    },
+    {
+      "native": "intelligence",
+      "native_value": "#9f7cff",
+      "nearest_web_var": "--control-accent-3",
+      "web_value": "#9f78ff",
+      "rgb_distance": 4.0
+    },
+    {
+      "native": "creator",
+      "native_value": "#42e7d4",
+      "nearest_web_var": "--control-theme-border",
+      "web_value": "rgba(65, 255, 200, .30)",
+      "rgb_distance": 26.9
+    },
+    {
+      "native": "economy",
+      "native_value": "#f6c85d",
+      "nearest_web_var": "--control-warm",
+      "web_value": "#f6cb63",
+      "rgb_distance": 6.7
+    },
+    {
+      "native": "safety",
+      "native_value": "#3ff0a0",
+      "nearest_web_var": "--control-sent-border",
+      "web_value": "rgba(72, 240, 156, .58)",
+      "rgb_distance": 9.8
+    },
+    {
+      "native": "crypto",
+      "native_value": "#62e0ff",
+      "nearest_web_var": "--line",
+      "web_value": "rgba(91, 220, 255, .22)",
+      "rgb_distance": 8.1
+    },
+    {
+      "native": "disabled",
+      "native_value": "#51606c",
+      "nearest_web_var": "--quiet",
+      "web_value": "#6f8495",
+      "rgb_distance": 62.3
+    },
+    {
+      "native": "focus",
+      "native_value": "#8df7ff",
+      "nearest_web_var": "--lnx-glass-border",
+      "web_value": "rgba(145, 234, 255, .30)",
+      "rgb_distance": 13.6
+    },
+    {
+      "native": "glass",
+      "native_value": "rgba(11, 24, 34, 0.82)",
+      "nearest_web_var": "--panel",
+      "web_value": "#0d1627",
+      "rgb_distance": 5.7
+    },
+    {
+      "native": "glassStrong",
+      "native_value": "rgba(15, 36, 50, 0.94)",
+      "nearest_web_var": "--pulse-panel-strong",
+      "web_value": "rgba(17, 29, 50, 0.94)",
+      "rgb_distance": 7.3
+    },
+    {
+      "native": "signalDim",
+      "native_value": "rgba(50, 230, 179, 0.12)",
+      "nearest_web_var": "--hot",
+      "web_value": "rgba(50, 235, 174, .62)",
+      "rgb_distance": 7.1
+    },
+    {
+      "native": "signalSoft",
+      "native_value": "rgba(97, 216, 255, 0.12)",
+      "nearest_web_var": "--line",
+      "web_value": "rgba(91, 220, 255, .22)",
+      "rgb_distance": 7.2
+    },
+    {
+      "native": "dangerSoft",
+      "native_value": "rgba(255, 95, 126, 0.14)",
+      "nearest_web_var": "--red",
+      "web_value": "#ff5f7d",
+      "rgb_distance": 1.0
+    },
+    {
+      "native": "warningSoft",
+      "native_value": "rgba(243, 196, 97, 0.14)",
+      "nearest_web_var": "--control-warm",
+      "web_value": "#f6cb63",
+      "rgb_distance": 7.9
+    }
+  ]
+}
