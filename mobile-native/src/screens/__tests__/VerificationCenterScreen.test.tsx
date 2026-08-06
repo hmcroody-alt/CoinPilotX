@@ -133,8 +133,8 @@ describe("VerificationCenterScreen copy", () => {
   const BANNED = /server[- ]?(authoritative|owned|side)|endpoints?\b|\/api\/|\bbackend\b|\bpayloads?\b|\bschemas?\b|native does not/i;
 
   function renderedText(view: ReturnType<typeof render>): string[] {
-    const nodes = view.root.findAll((node: { props?: { children?: unknown } }) => typeof node.props?.children === "string");
-    return nodes.map((node: { props: { children: unknown } }) => String(node.props.children));
+    const nodes = view.root.findAll((node) => typeof node.props?.children === "string");
+    return nodes.map((node) => String(node.props.children));
   }
 
   it.each(["not_started", "in_review", "needs_more_info", "approved", "rejected", "suspended"] as VerificationStatus[])(
