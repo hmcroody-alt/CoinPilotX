@@ -677,10 +677,11 @@ export async function stabilizeLiveAudioEngine(
     // the following init-and-start rebuild the engine.
     //
     // The tear-down that must NOT happen is restarting a recorder that is
-    // genuinely capturing. `isStaleRecordingWithoutEngine` is what separates
-    // the two, and it can only be answered by the native bridge: `inputRunning`
-    // true means real capture and is left alone; `inputEnabled` true with
-    // `inputRunning` false is the corpse this branch exists to clear.
+    // genuinely capturing. `engineRunning` is what separates the two, and it can
+    // only be answered by the native bridge. `inputRunning` does NOT separate
+    // them: with AVAudioEngine stopped it is as stale as `inputEnabled`, and
+    // requiring it to be false is what made this branch unreachable on the very
+    // device the incident was reported from.
     const staleRecorder = wantRecording && isStaleRecordingWithoutEngine(native);
 
     // THE SAME STATE, SEEN WITHOUT THE BRIDGE.
@@ -742,7 +743,17 @@ export async function stabilizeLiveAudioEngine(
 
     const afterRecording = inspectLiveAudioEngine(audioDeviceModule);
     if (wantPlayout && (afterRecording.engineRunning === false || afterRecording.playoutRunning === false)) {
-      await audioDeviceModule.startPlayout?.().catch(() => undefined);
+      // `startPlayout` asks the ADM for outputRunning WITHOUT outputEnabled, and
+      // ModifyEngineState rejects that pair outright: "Output must be enabled if
+      // running". It is not the harmless no-op a host profile assumes. A Live
+      // host subscribes to nobody, so output stays disabled for the whole
+      // broadcast and every pass of this guard spent its only native call on a
+      // transition the engine refuses - captured on P3r7or (2026-08-07) as the
+      // sole nativeLogs entry of a pass that repaired nothing.
+      const output = readNativeAudioEngineState();
+      if (!output || output.outputEnabled || output.playoutInitialized) {
+        await audioDeviceModule.startPlayout?.().catch(() => undefined);
+      }
     }
 
     // RECEIVE-ONLY REPAIR. This is the branch the call path never needed and so
