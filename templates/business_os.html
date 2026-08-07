@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Business OS · PulseSoc</title>
+  <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"/>
+  <style>
+    :root {
+      --bos-bg: var(--pulse-palette-background, #070b14);
+      --bos-surface: var(--pulse-palette-surface, #0e1524);
+      --bos-raised: var(--pulse-palette-surface-raised, #16203a);
+      --bos-text: var(--pulse-palette-text, #eef2ff);
+      --bos-muted: var(--pulse-palette-muted, #8b93a7);
+      --bos-accent: var(--pulse-palette-accent, #5b8cff);
+      --bos-accent-strong: var(--pulse-palette-accent-strong, #2f6bff);
+      --bos-warning: var(--pulse-palette-warning, #f5b83d);
+      --bos-danger: var(--pulse-palette-danger, #ff5d6c);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bos-bg);
+      color: var(--bos-text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+    }
+    .bos-shell { display: flex; min-height: 100vh; }
+    .bos-nav {
+      width: 220px; flex-shrink: 0; padding: 20px 12px;
+      background: var(--bos-surface); border-right: 1px solid rgba(255,255,255,0.06);
+    }
+    .bos-brand { font-weight: 700; font-size: 18px; padding: 4px 10px 18px; }
+    .bos-brand span { color: var(--bos-accent); }
+    .bos-nav button {
+      display: block; width: 100%; text-align: left; border: 0; cursor: pointer;
+      background: transparent; color: var(--bos-muted); font-size: 14px;
+      padding: 10px 10px; border-radius: 8px; margin-bottom: 2px;
+    }
+    .bos-nav button.active { background: var(--bos-raised); color: var(--bos-text); }
+    .bos-nav button:hover { color: var(--bos-text); }
+    .bos-main { flex: 1; padding: 24px; max-width: 1100px; }
+    .bos-section { display: none; }
+    .bos-section.active { display: block; }
+    .bos-section h1 { font-size: 22px; margin: 0 0 4px; }
+    .bos-sub { color: var(--bos-muted); font-size: 13px; margin: 0 0 20px; }
+    .bos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+    .bos-card {
+      background: var(--bos-surface); border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px; padding: 16px; min-height: 120px;
+    }
+    .bos-card h2 { font-size: 14px; margin: 0 0 10px; color: var(--bos-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    .bos-card pre {
+      margin: 0; font-size: 12px; color: var(--bos-text); white-space: pre-wrap;
+      word-break: break-word; max-height: 320px; overflow: auto; font-family: ui-monospace, Menlo, monospace;
+    }
+    .bos-state { font-size: 13px; color: var(--bos-muted); }
+    .bos-state.error { color: var(--bos-danger); }
+    .bos-kv { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .bos-kv:last-child { border-bottom: 0; }
+    .bos-kv .k { color: var(--bos-muted); }
+    .bos-count { font-size: 26px; font-weight: 700; color: var(--bos-accent); }
+    @media (max-width: 720px) {
+      .bos-shell { flex-direction: column; }
+      .bos-nav { width: 100%; display: flex; flex-wrap: wrap; gap: 4px; border-right: 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+      .bos-brand { width: 100%; }
+      .bos-nav button { width: auto; }
+    }
+  </style>
+</head>
+<body>
+<div class="bos-shell">
+  <nav class="bos-nav" id="bosNav">
+    <div class="bos-brand">Pulse<span>Soc</span> · Business OS</div>
+    <button data-section="overview" class="active">Overview</button>
+    <button data-section="advertising">Advertising</button>
+    <button data-section="commerce">Commerce</button>
+    <button data-section="creator">Creator</button>
+    <button data-section="crypto">Crypto</button>
+    <button data-section="messages">Messages</button>
+  </nav>
+  <main class="bos-main">
+    <section class="bos-section active" id="sec-overview">
+      <h1>Overview</h1>
+      <p class="bos-sub">Business profile, advertising wallet, and marketplace money at a glance.</p>
+      <div class="bos-grid">
+        <div class="bos-card" data-endpoint="/api/business-os/business"><h2>Business Profile</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/advertising/wallet"><h2>Ad Wallet</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/money"><h2>Marketplace Money</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/money/activity"><h2>Money Activity</h2><div class="bos-body"></div></div>
+      </div>
+    </section>
+    <section class="bos-section" id="sec-advertising">
+      <h1>Advertising</h1>
+      <p class="bos-sub">Campaigns, eligibility, and ad sets from the advertising subsystem.</p>
+      <div class="bos-grid">
+        <div class="bos-card" data-endpoint="/api/business-os/advertising/campaigns"><h2>Campaigns</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/advertising/eligibility"><h2>Eligibility</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/advertising/ad-sets"><h2>Ad Sets</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/advertising/creatives"><h2>Creatives</h2><div class="bos-body"></div></div>
+      </div>
+    </section>
+    <section class="bos-section" id="sec-commerce">
+      <h1>Commerce</h1>
+      <p class="bos-sub">Marketplace seller profile, products, orders, and payouts.</p>
+      <div class="bos-grid">
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/seller"><h2>Seller Profile</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/products"><h2>Products</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/orders"><h2>Orders</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/payouts"><h2>Payouts</h2><div class="bos-body"></div></div>
+      </div>
+    </section>
+    <section class="bos-section" id="sec-creator">
+      <h1>Creator</h1>
+      <p class="bos-sub">Creator earnings, offerings, and supporters.</p>
+      <div class="bos-grid">
+        <div class="bos-card" data-endpoint="/api/business-os/creator/earnings"><h2>Earnings</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/creator/offerings"><h2>Offerings</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/creator/supporters"><h2>Supporters</h2><div class="bos-body"></div></div>
+      </div>
+    </section>
+    <section class="bos-section" id="sec-crypto">
+      <h1>Crypto</h1>
+      <p class="bos-sub">Portfolio and alerts from the crypto subsystem.</p>
+      <div class="bos-grid">
+        <div class="bos-card" data-endpoint="/api/business-os/crypto/portfolio"><h2>Portfolio</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/crypto/alerts"><h2>Alerts</h2><div class="bos-body"></div></div>
+      </div>
+    </section>
+    <section class="bos-section" id="sec-messages">
+      <h1>Messages</h1>
+      <p class="bos-sub">Business message threads.</p>
+      <div class="bos-grid">
+        <div class="bos-card" data-endpoint="/api/business-os/messages/threads"><h2>Threads</h2><div class="bos-body"></div></div>
+      </div>
+    </section>
+  </main>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  var loaded = {};
+
+  function esc(value) {
+    return String(value).replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
+
+  function renderData(body, data) {
+    if (data === null || data === undefined) {
+      body.innerHTML = '<div class="bos-state">No data yet.</div>';
+      return;
+    }
+    if (Array.isArray(data)) {
+      if (!data.length) {
+        body.innerHTML = '<div class="bos-state">Nothing here yet.</div>';
+        return;
+      }
+      body.innerHTML = '<div class="bos-count">' + data.length + '</div>'
+        + '<pre>' + esc(JSON.stringify(data.slice(0, 10), null, 2)) + '</pre>';
+      return;
+    }
+    if (typeof data === "object") {
+      var keys = Object.keys(data);
+      // Common wrapper: {"items": [...]} / {"campaigns": [...]}
+      if (keys.length === 1 && Array.isArray(data[keys[0]])) {
+        renderData(body, data[keys[0]]);
+        return;
+      }
+      if (!keys.length) {
+        body.innerHTML = '<div class="bos-state">Nothing here yet.</div>';
+        return;
+      }
+      var rows = keys.slice(0, 12).map(function (key) {
+        var value = data[key];
+        var shown = (value !== null && typeof value === "object")
+          ? (Array.isArray(value) ? value.length + " item(s)" : "…")
+          : String(value);
+        return '<div class="bos-kv"><span class="k">' + esc(key) + '</span><span>' + esc(shown) + '</span></div>';
+      }).join("");
+      body.innerHTML = rows;
+      return;
+    }
+    body.innerHTML = '<pre>' + esc(String(data)) + '</pre>';
+  }
+
+  function loadCard(card) {
+    var endpoint = card.getAttribute("data-endpoint");
+    var body = card.querySelector(".bos-body");
+    if (!endpoint || !body || loaded[endpoint]) { return; }
+    loaded[endpoint] = true;
+    body.innerHTML = '<div class="bos-state">Loading…</div>';
+    fetch(endpoint, { credentials: "same-origin", headers: { "Accept": "application/json" } })
+      .then(function (response) {
+        if (!response.ok) { throw new Error("HTTP " + response.status); }
+        return response.json();
+      })
+      .then(function (data) { renderData(body, data); })
+      .catch(function (error) {
+        loaded[endpoint] = false;
+        body.innerHTML = '<div class="bos-state error">Could not load (' + esc(error.message) + ').</div>';
+      });
+  }
+
+  function loadSection(section) {
+    Array.prototype.forEach.call(section.querySelectorAll(".bos-card"), loadCard);
+  }
+
+  document.getElementById("bosNav").addEventListener("click", function (event) {
+    var button = event.target.closest("button[data-section]");
+    if (!button) { return; }
+    Array.prototype.forEach.call(document.querySelectorAll(".bos-nav button"), function (b) {
+      b.classList.toggle("active", b === button);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".bos-section"), function (section) {
+      section.classList.remove("active");
+    });
+    var target = document.getElementById("sec-" + button.getAttribute("data-section"));
+    if (target) {
+      target.classList.add("active");
+      loadSection(target);
+    }
+  });
+
+  loadSection(document.getElementById("sec-overview"));
+})();
+</script>
+</body>
+</html>

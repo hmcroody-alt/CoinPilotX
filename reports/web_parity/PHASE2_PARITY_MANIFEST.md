@@ -240,3 +240,44 @@ Evidence-based statement of what changed, nothing more:
   untouched — they are theme variants without canonical token equivalents.
 - No other Phase 3–29 work: no view layer for the 599 inline-HTML routes, no
   Business OS / Reels web surfaces, no browser QA. Section 6 above still stands.
+
+---
+
+## 9. 2026-08-06 triage — two Section 5 claims corrected (evidence-based)
+
+- **`/api/calls/*` and `/api/pulse-ai/*` are NOT missing.** They live in the
+  `pulse_communications_v2/routes.py` blueprint (22 `/api/calls` routes;
+  `/api/pulse-ai/message` at line 629 etc.), registered via
+  `_load_route_pack("pulse_communications_v2", ...)` at `bot.py:1229`. The
+  original recon grepped only `bot.py`. Caveat: a route-pack import failure
+  logs `ROUTE_PACK_REGISTRATION_FAILED` and 404s the whole pack — verify boot
+  logs on Railway, not static presence.
+- **Reels has a web page.** `/pulse/reels` is served from `bot.py:42185`
+  (inline HTML). The gap is view-layer quality, not absence.
+- **Business OS remains the confirmed largest gap:** 199 `/api/business-os`
+  routes, zero web page routes, no template. Addressed in Section 10.
+
+---
+
+## 10. 2026-08-06 milestone 3 — Business OS web surface shipped
+
+- **New page: `/business-os`** served by route pack `services/business_os_web.py`
+  (Blueprint + lazy bot import + `register(app)`, same conventions as
+  `services/presence_routes.py`), registered at `bot.py` alongside the other
+  packs via `_load_route_pack("business_os_web", "services.business_os_web")`.
+- **Auth:** `require_account()` → redirect to `login_page?next=/business-os`
+  when unauthenticated — the same idiom as the other server-rendered pages.
+- **Template:** `templates/business_os.html` — token-styled
+  (`pulsesoc-tokens.css` with hex fallbacks) dashboard shell with six sections
+  (Overview, Advertising, Commerce, Creator, Crypto, Messages) whose client JS
+  lazily `fetch()`es 18 existing param-free GET endpoints under
+  `/api/business-os/*` with loading/empty/error states. Zero new API routes;
+  the page is a pure consumer of the already-registered business-os API.
+- **Honest scope:** this is a first web surface over the 199-route subsystem,
+  not full Business OS parity. Not covered: write flows (campaign creation,
+  order management), param-bound detail views, events/attribution/l10n/
+  merchant families, and browser QA on a real session. Section 6's remaining
+  gaps (599 inline-HTML routes, responsive/a11y/SEO passes) still stand.
+- **Validation:** bot.py AST parse OK; new module AST OK; template Jinja-parses;
+  undx_agent suite 780/780 OK; protection suite 239 checks / 15 suites passed;
+  realtime-audio gate clean (no protected path touched).
