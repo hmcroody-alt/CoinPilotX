@@ -273,7 +273,6 @@
       inset: -18%;
       background:
         conic-gradient(from 130deg, transparent, rgba(110, 223, 246, 0.18), transparent 34%, rgba(54, 229, 143, 0.16), transparent 70%);
-      animation: stageSweep 16s linear infinite;
       z-index: -1;
     }
 
@@ -310,7 +309,6 @@
       inset: -20%;
       z-index: -1;
       background: conic-gradient(from 130deg, transparent, rgba(110, 223, 246, 0.18), transparent 34%, rgba(54, 229, 143, 0.16), transparent 70%);
-      animation: stageSweep 18s linear infinite;
     }
 
     .preview-header, .preview-card, .preview-row, .phone-card {
@@ -579,10 +577,7 @@
       pointer-events: auto;
     }
 
-    @keyframes stageSweep {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
+    /* STATIC BACKGROUND: stageSweep rotation removed — conic glow is fixed. */
 
     @media (max-width: 980px) {
       .site-nav { align-items: flex-start; flex-direction: column; padding: 14px 0; }

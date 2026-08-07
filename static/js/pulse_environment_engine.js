@@ -72,34 +72,11 @@
     };
     applyPerformanceMode();
     if (!document.body.classList.contains("pulse-home-os")) return;
-    let x = 50, y = 16, scroll = 0, raf = 0, activityTimer = 0;
-    const update = () => {
-      raf = 0;
-      document.documentElement.style.setProperty("--pulse-env-x", x + "%");
-      document.documentElement.style.setProperty("--pulse-env-y", y + "%");
-      document.documentElement.style.setProperty("--pulse-city-x", String(x));
-      document.documentElement.style.setProperty("--pulse-city-y", String(y));
-      document.documentElement.style.setProperty("--pulse-city-scroll", String(scroll));
-    };
-    const schedule = () => {
-      if (!raf) raf = requestAnimationFrame(update);
-    };
-    window.addEventListener("pointermove", event => {
-      if (effectsReduced()) return;
-      x = Math.round((event.clientX / Math.max(1, window.innerWidth)) * 100);
-      y = Math.round((event.clientY / Math.max(1, window.innerHeight)) * 100);
-      schedule();
-    }, { passive: true });
-    window.addEventListener("touchmove", event => {
-      if (effectsReduced() || !event.touches?.length) return;
-      x = Math.round((event.touches[0].clientX / Math.max(1, window.innerWidth)) * 100);
-      y = Math.round((event.touches[0].clientY / Math.max(1, window.innerHeight)) * 100);
-      schedule();
-    }, { passive: true });
-    window.addEventListener("scroll", () => {
-      scroll = Math.min(120, Math.round(window.scrollY / 10));
-      schedule();
-    }, { passive: true });
+    // STATIC BACKGROUND: the cityscape no longer tracks pointer/scroll.
+    // Fixed environment coordinates keep the same lighting as the old
+    // resting state without any rAF work or per-frame style writes.
+    document.documentElement.style.setProperty("--pulse-env-x", "50%");
+    document.documentElement.style.setProperty("--pulse-env-y", "16%");
     const refreshActivity = () => {
       const live = Number(document.querySelector('[data-network-count="live"]')?.textContent || 0);
       const ai = Number(document.querySelector('[data-network-count="ai"]')?.textContent || 0);
@@ -110,38 +87,25 @@
       layer.classList.toggle("has-live-energy", live > 0);
       layer.classList.toggle("has-alert-energy", alerts > 0);
     };
-    const activityInterval = () => effectsReduced() ? 30000 : 8000;
-    const restartActivityTimer = () => {
-      if (activityTimer) {
-        clearInterval(activityTimer);
-        activityTimer = 0;
-      }
-      if (!document.hidden) activityTimer = window.setInterval(refreshActivity, activityInterval());
-    };
+    // STATIC BACKGROUND: no polling interval. City "energy" badges refresh
+    // once at install and whenever the shell reports a real state change.
     refreshActivity();
-    restartActivityTimer();
     window.addEventListener("PulseShellPerformanceChanged", () => {
       applyPerformanceMode();
-      restartActivityTimer();
+      refreshActivity();
     });
     window.addEventListener("PulseShellPerformanceModeChanged", () => {
       applyPerformanceMode();
-      restartActivityTimer();
+      refreshActivity();
     });
     window.addEventListener("PulseSocNativeMessage", event => {
       if (event?.detail?.type !== "PULSESHELL_PERFORMANCE_MODE") return;
       applyPerformanceMode();
-      restartActivityTimer();
+      refreshActivity();
     });
     document.addEventListener("visibilitychange", () => {
       layer.classList.toggle("is-paused", document.hidden);
-      if (document.hidden && activityTimer) {
-        clearInterval(activityTimer);
-        activityTimer = 0;
-      } else if (!document.hidden && !activityTimer) {
-        refreshActivity();
-        activityTimer = window.setInterval(refreshActivity, activityInterval());
-      }
+      if (!document.hidden) refreshActivity();
     });
   }
 

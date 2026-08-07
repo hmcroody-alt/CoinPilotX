@@ -62,13 +62,10 @@ body.pulse-home-os::before {
 .pulse-home-os .pulse-city-holograms {
   position: absolute;
   inset: 0;
-  transform-style: preserve-3d;
-  will-change: transform, opacity;
 }
 
 .pulse-home-os .pulse-city-deep {
   opacity: .78;
-  transform: translate3d(calc((var(--pulse-city-x, 50) - 50) * -.035vw), calc(var(--pulse-city-scroll, 0) * -.08px), 0);
 }
 
 .pulse-home-os .pulse-city-starfield {
@@ -80,7 +77,6 @@ body.pulse-home-os::before {
     radial-gradient(circle, rgba(83, 224, 245, .66) 0 1px, transparent 1.6px),
     radial-gradient(circle, rgba(155, 102, 255, .5) 0 1px, transparent 1.4px);
   background-size: 96px 88px, 142px 130px, 210px 180px;
-  animation: pulseCityStars 120s linear infinite;
 }
 
 .pulse-home-os .pulse-city-planet,
@@ -115,7 +111,6 @@ body.pulse-home-os::before {
   top: 76px;
   bottom: 0;
   opacity: .86;
-  transform: translate3d(calc((var(--pulse-city-x, 50) - 50) * -.018vw), calc(var(--pulse-city-scroll, 0) * -.18px), 0);
 }
 
 .pulse-home-os .pulse-city-district-left {
@@ -126,7 +121,6 @@ body.pulse-home-os::before {
 .pulse-home-os .pulse-city-district-right {
   left: calc(50vw + min(34vw, 570px));
   right: 0;
-  transform: translate3d(calc((var(--pulse-city-x, 50) - 50) * .018vw), calc(var(--pulse-city-scroll, 0) * -.18px), 0);
 }
 
 .pulse-home-os .pulse-city-tower {
@@ -153,11 +147,13 @@ body.pulse-home-os::before {
   border-radius: 999px;
   background: linear-gradient(90deg, transparent, rgba(83, 224, 245, .6), transparent);
   box-shadow: 0 0 14px rgba(83, 224, 245, .42);
-  animation: pulseCityTowerScan 7s linear infinite;
+  top: 28%;
+  opacity: .6;
 }
 
 .pulse-home-os .pulse-city-tower::after {
-  animation-delay: -3.5s;
+  top: 66%;
+  opacity: .45;
   background: linear-gradient(90deg, transparent, rgba(49, 230, 161, .58), transparent);
 }
 
@@ -185,7 +181,6 @@ body.pulse-home-os::before {
   letter-spacing: .08em;
   text-transform: uppercase;
   opacity: .68;
-  animation: pulseCityBillboard 5s ease-in-out infinite;
 }
 
 .pulse-home-os .billboard-live { right: 11%; top: 20%; color: #ffd6dd; border-color: rgba(255, 78, 104, .28); }
@@ -195,7 +190,6 @@ body.pulse-home-os::before {
 
 .pulse-home-os .pulse-city-highway {
   opacity: .34;
-  transform: translate3d(0, calc(var(--pulse-city-scroll, 0) * -.55px), 0);
 }
 
 .pulse-home-os .pulse-city-highway::before,
@@ -239,7 +233,6 @@ body.pulse-home-os::before {
 
 .pulse-home-os .pulse-city-traffic {
   opacity: .78;
-  transform: translate3d(calc((var(--pulse-city-x, 50) - 50) * .012vw), 0, 0);
 }
 
 .pulse-home-os .pulse-city-vehicle {
@@ -250,17 +243,15 @@ body.pulse-home-os::before {
   background: linear-gradient(90deg, transparent, #6edff6 24%, #36e58f 72%, transparent);
   box-shadow: 0 0 16px rgba(83, 224, 245, .6), 0 0 34px rgba(49, 230, 161, .24);
   opacity: .72;
-  animation: pulseCityVehicle 18s linear infinite;
 }
 
-.pulse-home-os .vehicle-a { left: -5vw; top: 22vh; animation-duration: 22s; }
-.pulse-home-os .vehicle-b { left: -8vw; top: 58vh; animation-delay: -8s; animation-duration: 30s; opacity: .52; }
-.pulse-home-os .vehicle-c { right: -5vw; top: 34vh; animation-name: pulseCityVehicleReverse; animation-delay: -4s; animation-duration: 26s; background: linear-gradient(90deg, transparent, #ff4e68 30%, #9b66ff 72%, transparent); }
-.pulse-home-os .vehicle-d { right: -8vw; top: 72vh; animation-name: pulseCityVehicleReverse; animation-delay: -12s; animation-duration: 34s; opacity: .48; }
+.pulse-home-os .vehicle-a { left: -5vw; top: 22vh; transform: translate3d(28vw, -2vh, 0) scale(.92); }
+.pulse-home-os .vehicle-b { left: -8vw; top: 58vh; opacity: .52; transform: translate3d(64vw, -3vh, 0) scale(.98); }
+.pulse-home-os .vehicle-c { right: -5vw; top: 34vh; transform: translate3d(-36vw, 2vh, 0) scale(.92); background: linear-gradient(90deg, transparent, #ff4e68 30%, #9b66ff 72%, transparent); }
+.pulse-home-os .vehicle-d { right: -8vw; top: 72vh; opacity: .48; transform: translate3d(-60vw, -1vh, 0) scale(.86); }
 
 .pulse-home-os .pulse-city-holograms {
   opacity: .5;
-  transform: translate3d(calc((var(--pulse-city-x, 50) - 50) * -.008vw), calc(var(--pulse-city-scroll, 0) * -.34px), 0);
 }
 
 .pulse-home-os .pulse-city-holo {
@@ -269,12 +260,12 @@ body.pulse-home-os::before {
   border-radius: 50%;
   background: radial-gradient(circle, rgba(83, 224, 245, .13), transparent 60%);
   box-shadow: inset 0 0 24px rgba(83, 224, 245, .08), 0 0 24px rgba(83, 224, 245, .07);
-  animation: pulseCityHolo 11s ease-in-out infinite;
+  opacity: .55;
 }
 
 .pulse-home-os .holo-a { width: 160px; height: 58px; left: 6vw; top: 44vh; transform: rotate(-18deg); }
-.pulse-home-os .holo-b { width: 190px; height: 70px; right: 7vw; top: 31vh; transform: rotate(14deg); animation-delay: -4s; }
-.pulse-home-os .holo-c { width: 120px; height: 44px; right: 14vw; bottom: 14vh; transform: rotate(-8deg); animation-delay: -7s; }
+.pulse-home-os .holo-b { width: 190px; height: 70px; right: 7vw; top: 31vh; transform: rotate(14deg); opacity: .68; }
+.pulse-home-os .holo-c { width: 120px; height: 44px; right: 14vw; bottom: 14vh; transform: rotate(-8deg); opacity: .42; }
 
 .pulse-home-os .pulse-environment-engine.has-live-energy .billboard-live,
 .pulse-home-os .pulse-environment-engine.has-alert-energy .billboard-ai {
@@ -315,38 +306,9 @@ html[data-pulseshell-performance="reduced-motion"] .pulse-home-os .pulse-media-a
   display: none !important;
 }
 
-@keyframes pulseCityStars {
-  from { transform: translate3d(0, 0, 0); }
-  to { transform: translate3d(-96px, 88px, 0); }
-}
-
-@keyframes pulseCityTowerScan {
-  from { top: 6%; opacity: .15; }
-  15%, 55% { opacity: .75; }
-  to { top: 92%; opacity: .08; }
-}
-
-@keyframes pulseCityBillboard {
-  0%, 100% { transform: translate3d(0, 0, 0); opacity: .48; }
-  50% { transform: translate3d(0, -4px, 0); opacity: .82; }
-}
-
-@keyframes pulseCityVehicle {
-  from { transform: translate3d(-8vw, 0, 0) scale(.72); }
-  50% { transform: translate3d(55vw, -4vh, 0) scale(1); }
-  to { transform: translate3d(112vw, 2vh, 0) scale(.78); }
-}
-
-@keyframes pulseCityVehicleReverse {
-  from { transform: translate3d(8vw, 0, 0) scale(.72); }
-  50% { transform: translate3d(-55vw, 3vh, 0) scale(1); }
-  to { transform: translate3d(-112vw, -2vh, 0) scale(.78); }
-}
-
-@keyframes pulseCityHolo {
-  0%, 100% { opacity: .25; filter: blur(.2px); }
-  50% { opacity: .7; filter: blur(0); }
-}
+/* City background is intentionally STATIC: the starfield, tower scan lines,
+   billboards, light streaks, and holograms are frozen decorative layers so the
+   futuristic look costs zero continuous animation work. */
 
 .pulse-home-os .pulse-desktop-topbar {
   height: 68px;
@@ -1377,7 +1339,6 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
     repeating-linear-gradient(0deg, rgba(110, 223, 246, .05) 0 1px, transparent 1px 18px),
     repeating-linear-gradient(90deg, rgba(110, 223, 246, .035) 0 1px, transparent 1px 22px);
   mask-image: linear-gradient(180deg, rgba(0, 0, 0, .95), rgba(0, 0, 0, .45));
-  animation: pulseSignalAdSweep 8s linear infinite;
 }
 
 .pulse-home-os .pulse-signal-ad::after {
@@ -1389,8 +1350,7 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   border-radius: inherit;
   background: conic-gradient(from 160deg, transparent, rgba(54, 229, 143, .28), transparent 32%, rgba(110, 223, 246, .22), transparent 62%);
   filter: blur(16px);
-  opacity: .52;
-  animation: pulseSignalAdAura 9s ease-in-out infinite;
+  opacity: .46;
 }
 
 .pulse-home-os .pulse-signal-ad-head {
@@ -1456,10 +1416,10 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   box-shadow: 0 0 18px rgba(54, 229, 143, .72);
 }
 
-.pulse-home-os .pulse-signal-ad-visual span:nth-child(1) { left: 14%; top: 32%; animation: pulseSignalNode 3.6s ease-in-out infinite; }
-.pulse-home-os .pulse-signal-ad-visual span:nth-child(2) { left: 44%; top: 18%; background: #6edff6; animation: pulseSignalNode 4.2s ease-in-out infinite .4s; }
-.pulse-home-os .pulse-signal-ad-visual span:nth-child(3) { right: 18%; top: 42%; background: #9b5cff; animation: pulseSignalNode 4.8s ease-in-out infinite .8s; }
-.pulse-home-os .pulse-signal-ad-visual span:nth-child(4) { left: 62%; bottom: 14%; background: #ffd166; animation: pulseSignalNode 5.2s ease-in-out infinite 1.1s; }
+.pulse-home-os .pulse-signal-ad-visual span:nth-child(1) { left: 14%; top: 32%; }
+.pulse-home-os .pulse-signal-ad-visual span:nth-child(2) { left: 44%; top: 18%; background: #6edff6; }
+.pulse-home-os .pulse-signal-ad-visual span:nth-child(3) { right: 18%; top: 42%; background: #9b5cff; }
+.pulse-home-os .pulse-signal-ad-visual span:nth-child(4) { left: 62%; bottom: 14%; background: #ffd166; }
 
 .pulse-home-os .pulse-signal-ad-orbit {
   min-height: 74px;
@@ -1580,7 +1540,6 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   left: -28px;
   top: -30px;
   box-shadow: inset 0 0 26px rgba(110, 223, 246, .12), 0 0 34px rgba(54, 229, 143, .1);
-  animation: pulseSciFiAdOrbit 16s linear infinite;
 }
 
 .pulse-sponsored-signal__ship {
@@ -1592,8 +1551,7 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   border-radius: 999px 999px 16px 16px;
   background: linear-gradient(90deg, rgba(110, 223, 246, .95), rgba(155, 92, 255, .78));
   box-shadow: 0 0 22px rgba(110, 223, 246, .35);
-  transform: translate3d(8px, -4px, 0);
-  animation: pulseSciFiAdShip 7s ease-in-out infinite;
+  transform: translate3d(8px, -4px, 0) rotate(-2deg);
 }
 
 .pulse-sponsored-signal__ship::after {
@@ -1612,8 +1570,8 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   position: absolute;
   inset: 0;
   background: linear-gradient(110deg, transparent 20%, rgba(110, 223, 246, .13), transparent 62%);
-  transform: translate3d(-45%, 0, 0);
-  animation: pulseSciFiAdSweep 8s ease-in-out infinite;
+  transform: translate3d(-10%, 0, 0);
+  opacity: .5;
 }
 
 .pulse-sponsored-signal__projection {
@@ -1708,11 +1666,10 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   border-radius: 999px;
   background: linear-gradient(180deg, #6edff6, #36e58f);
   opacity: .72;
-  animation: pulseSciFiAdBars 1.5s ease-in-out infinite;
 }
 
-.pulse-sponsored-signal__waveform i:nth-child(2n) { height: 28px; animation-delay: -.2s; }
-.pulse-sponsored-signal__waveform i:nth-child(3n) { height: 36px; animation-delay: -.45s; }
+.pulse-sponsored-signal__waveform i:nth-child(2n) { height: 28px; opacity: .86; }
+.pulse-sponsored-signal__waveform i:nth-child(3n) { height: 36px; opacity: .6; }
 
 .pulse-sponsored-signal__actions {
   display: flex;
@@ -1860,40 +1817,8 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   background: rgba(0, 0, 0, .18);
 }
 
-@keyframes pulseSignalAdSweep {
-  from { transform: translate3d(-18%, 0, 0); }
-  to { transform: translate3d(18%, 0, 0); }
-}
-
-@keyframes pulseSignalAdAura {
-  0%, 100% { opacity: .28; transform: scale(.98); }
-  50% { opacity: .58; transform: scale(1.02); }
-}
-
-@keyframes pulseSignalNode {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(.9); opacity: .72; }
-  50% { transform: translate3d(3px, -4px, 0) scale(1.16); opacity: 1; }
-}
-
-@keyframes pulseSciFiAdOrbit {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-@keyframes pulseSciFiAdShip {
-  0%, 100% { transform: translate3d(8px, -4px, 0) rotate(-2deg); opacity: .78; }
-  50% { transform: translate3d(-7px, 5px, 0) rotate(2deg); opacity: 1; }
-}
-
-@keyframes pulseSciFiAdSweep {
-  0%, 100% { transform: translate3d(-52%, 0, 0); opacity: .16; }
-  50% { transform: translate3d(52%, 0, 0); opacity: .72; }
-}
-
-@keyframes pulseSciFiAdBars {
-  0%, 100% { transform: scaleY(.46); opacity: .52; }
-  50% { transform: scaleY(1); opacity: 1; }
-}
+/* Ad-slot ambience (sweeps, auras, nodes, orbits, waveform bars) is now
+   rendered as static glow layers — same look, no continuous animation. */
 
 @media (prefers-reduced-motion: reduce) {
   .pulse-home-os .pulse-signal-ad::before,
@@ -3056,7 +2981,6 @@ body.pulse-home-os .ufo-welcome-stars {
     radial-gradient(circle, rgba(110, 223, 246, .72) 0 1px, transparent 1.5px),
     radial-gradient(circle, rgba(155, 102, 255, .58) 0 1px, transparent 1.4px);
   background-size: 82px 76px, 136px 122px, 194px 172px;
-  animation: ufoWelcomeStars 28s linear infinite;
 }
 
 body.pulse-home-os .ufo-welcome-panel {
@@ -3103,7 +3027,7 @@ body.pulse-home-os .ufo-welcome-ship {
   height: clamp(64px, 9vw, 92px);
   transform: translate3d(-50%, -42px, 0);
   filter: drop-shadow(0 0 26px rgba(110, 223, 246, .44));
-  animation: ufoWelcomeArrive .9s cubic-bezier(.22, .61, .36, 1) .1s both, ufoWelcomeHover 3.8s ease-in-out 1s infinite;
+  animation: ufoWelcomeArrive .9s cubic-bezier(.22, .61, .36, 1) .1s both;
 }
 
 body.pulse-home-os .ufo-welcome-ship::before,
@@ -3225,19 +3149,12 @@ body.pulse-home-os .ufo-welcome-close:focus-visible {
   outline-offset: 3px;
 }
 
-@keyframes ufoWelcomeStars {
-  from { background-position: 0 0, 0 0, 0 0; }
-  to { background-position: 82px 76px, -136px 122px, 194px -172px; }
-}
 
 @keyframes ufoWelcomeArrive {
   from { opacity: 0; transform: translate3d(-50%, -120px, 0) scale(.86); }
   to { opacity: 1; transform: translate3d(-50%, -42px, 0) scale(1); }
 }
 
-@keyframes ufoWelcomeHover {
-  50% { transform: translate3d(-50%, -34px, 0); }
-}
 
 @keyframes ufoWelcomeBeam {
   from { opacity: 0; transform: translateX(-50%) scaleY(.2); }

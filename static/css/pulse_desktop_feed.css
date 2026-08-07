@@ -967,7 +967,6 @@ box-shadow:
 0 18px 70px rgba(0, 0, 0, .36),
 0 0 46px rgba(54, 229, 143, .08),
 inset 0 0 0 1px rgba(255, 255, 255, .035);
-animation: pulseMediaSheen 7s ease-in-out infinite;
 }
 .pulse-cinematic-media-shell::before,
 .pulse-cinematic-media-shell::after,
@@ -987,7 +986,6 @@ background-position: center;
 filter: blur(42px) saturate(1.48) brightness(.58) contrast(1.08);
 opacity: .9;
 transform: scale(1.12);
-animation: pulseMediaDrift 18s ease-in-out infinite alternate;
 }
 .pulse-media-depth-layer {
 z-index: 1;
@@ -999,7 +997,6 @@ radial-gradient(ellipse at 50% 105%, rgba(54, 229, 143, .18), transparent 48%),
 linear-gradient(180deg, rgba(2, 8, 17, .12), rgba(2, 8, 17, .66));
 mix-blend-mode: screen;
 opacity: .84;
-animation: pulseGalaxyDepth 9s ease-in-out infinite alternate;
 }
 .pulse-media-aura {
 z-index: 2;
@@ -1013,7 +1010,6 @@ background:
 radial-gradient(circle at var(--pulse-media-x, 50%) var(--pulse-media-y, 42%), rgba(255,255,255,.12), transparent 21%),
 linear-gradient(115deg, transparent 8%, rgba(255, 255, 255, .075) 48%, transparent 64%);
 opacity: .86;
-animation: pulseMediaBreath 6.4s ease-in-out infinite;
 }
 .pulse-cinematic-media-shell::before {
 content: "";
@@ -1026,7 +1022,6 @@ radial-gradient(1px 1px at 66% 72%, rgba(166, 88, 255, .42), transparent),
 linear-gradient(104deg, transparent 12%, rgba(110, 223, 246, .06) 44%, transparent 58%);
 background-size: 110px 110px, 150px 150px, 190px 190px, 230px 230px, 100% 100%;
 opacity: .36;
-animation: pulseMediaParticles 20s linear infinite, pulseGalaxyStreak 8s ease-in-out infinite alternate;
 }
 .pulse-cinematic-media-shell::after {
 content: "";
@@ -1672,39 +1667,8 @@ width: 46px;
 height: 46px;
 border-radius: 999px;
 }
-@keyframes pulseMediaSheen {
-0%, 100% { background-position: 0% 50%; }
-50% { background-position: 100% 50%; }
-}
-@keyframes pulseMediaDrift {
-0% { transform: scale(1.12) translate3d(-1.4%, -1%, 0) rotate(.001deg); }
-100% { transform: scale(1.18) translate3d(1.6%, 1.2%, 0) rotate(.001deg); }
-}
-@keyframes pulseMediaBreath {
-0%, 100% { opacity: .7; filter: saturate(1) brightness(1); }
-50% { opacity: .96; filter: saturate(1.26) brightness(1.08); }
-}
-@keyframes pulseMediaParticles {
-0% { transform: translate3d(0, 0, 0); }
-100% { transform: translate3d(22px, -28px, 0); }
-}
-@keyframes pulseGalaxyDepth {
-0% { transform: translate3d(-.8%, -.4%, 0) scale(1); opacity: .72; }
-100% { transform: translate3d(.8%, .6%, 0) scale(1.025); opacity: .92; }
-}
-@keyframes pulseGalaxyStreak {
-0% { filter: brightness(.92); background-position: 0 0, 0 0, 0 0, 0 0, -28% 0; }
-100% { filter: brightness(1.18); background-position: 20px -18px, 16px -12px, 26px -20px, 22px -28px, 42% 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-.pulse-media-wrap,
-.pulse-media-backdrop,
-.pulse-media-depth-layer,
-.pulse-media-aura,
-.pulse-cinematic-media-shell::before {
-animation: none !important;
-}
-}
+/* Media ambience (sheen, drift, breath, particles, galaxy depth/streak) is
+   intentionally STATIC — the glow layers render once with no animation. */
 }
 @media (min-width: 1500px) {
 :root {
@@ -3071,7 +3035,6 @@ radial-gradient(1px 1px at 58% 18%, rgba(54, 229, 143, .42), transparent),
 radial-gradient(1px 1px at 84% 64%, rgba(255, 209, 102, .38), transparent);
 background-size: 100% 100%, 120px 120px, 170px 170px, 210px 210px;
 opacity: .58;
-animation: pulseHomeFieldDrift 18s linear infinite;
 }
 .pulse-home-hero-copy {
 display: grid;
@@ -3145,13 +3108,10 @@ aspect-ratio: 1;
 border: 1px solid rgba(110, 223, 246, .28);
 border-radius: 50%;
 box-shadow: 0 0 34px rgba(110, 223, 246, .08);
-animation: pulseHomeRotate 16s linear infinite;
 }
 .pulse-orbit-ring.ring-two {
 width: min(82%, 210px);
 border-color: rgba(54, 229, 143, .28);
-animation-duration: 22s;
-animation-direction: reverse;
 }
 .pulse-orbit-core {
 width: 104px;
@@ -3173,11 +3133,10 @@ background: #6edff6;
 box-shadow: 0 0 18px rgba(110, 223, 246, .72);
 top: 50%;
 left: 50%;
-will-change: transform;
 }
-.dot-one { animation: pulseHomeDotOne 13s linear infinite; }
-.dot-two { background: #36e58f; box-shadow: 0 0 18px rgba(54, 229, 143, .72); animation: pulseHomeDotTwo 16s linear infinite; }
-.dot-three { background: #ffd166; box-shadow: 0 0 18px rgba(255, 209, 102, .62); animation: pulseHomeDotThree 19s linear infinite; }
+.dot-one { transform: translate(calc(-50% + 112px), calc(-50% - 42px)); }
+.dot-two { background: #36e58f; box-shadow: 0 0 18px rgba(54, 229, 143, .72); transform: translate(calc(-50% - 78px), calc(-50% + 58px)); }
+.dot-three { background: #ffd166; box-shadow: 0 0 18px rgba(255, 209, 102, .62); transform: translate(calc(-50% + 24px), calc(-50% + 116px)); }
 .pulse-hero-signal-card {
 position: absolute;
 z-index: 2;
@@ -3459,26 +3418,8 @@ scroll-snap-align: start;
 #tabs button.active {
 box-shadow: 0 0 24px rgba(54, 229, 143, .16);
 }
-@keyframes pulseHomeFieldDrift {
-0% { background-position: 0 0, 0 0, 0 0, 0 0; }
-100% { background-position: 55px 0, 22px -28px, 34px -18px, 48px -36px; }
-}
-@keyframes pulseHomeRotate {
-from { transform: rotate(0deg); }
-to { transform: rotate(360deg); }
-}
-@keyframes pulseHomeDotOne {
-from { transform: rotate(22deg) translateX(118px) rotate(-22deg); }
-to { transform: rotate(382deg) translateX(118px) rotate(-382deg); }
-}
-@keyframes pulseHomeDotTwo {
-from { transform: rotate(144deg) translateX(104px) rotate(-144deg); }
-to { transform: rotate(504deg) translateX(104px) rotate(-504deg); }
-}
-@keyframes pulseHomeDotThree {
-from { transform: rotate(278deg) translateX(92px) rotate(-278deg); }
-to { transform: rotate(638deg) translateX(92px) rotate(-638deg); }
-}
+/* STATIC BACKGROUND: hero field + orbit keyframes removed — the hero visual
+   uses fixed dot/ring placements now, no continuous rotation or drift. */
 @media (max-width: 1023px) {
 .pulse-desktop-center .pulse-home-hero.hero.card {
 grid-template-columns: 1fr;

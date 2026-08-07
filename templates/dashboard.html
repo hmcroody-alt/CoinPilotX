@@ -61,7 +61,7 @@
       background:
         linear-gradient(110deg, transparent 0 36%, rgba(91, 220, 255, .07) 48%, transparent 60% 100%),
         radial-gradient(ellipse at 50% 100%, rgba(50,235,174,.12), transparent 56%);
-      animation: slowSweep 16s ease-in-out infinite alternate;
+      opacity: .84;
     }
     a { color: inherit; text-decoration: none; }
     button, input { font: inherit; }
@@ -564,10 +564,7 @@
       background: linear-gradient(135deg, var(--emerald), var(--cyan));
       box-shadow: 0 0 24px rgba(50,235,174,.22);
     }
-    @keyframes slowSweep {
-      from { transform: translateX(-2%); opacity: .72; }
-      to { transform: translateX(2%); opacity: .95; }
-    }
+    /* STATIC BACKGROUND: slowSweep removed — sweep layer is fixed. */
     @media (max-width: 1280px) {
       .mission-layout { grid-template-columns: 1fr; }
       .rail {

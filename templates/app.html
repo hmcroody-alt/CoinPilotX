@@ -23,7 +23,7 @@
     .brand img { width:42px; height:42px; object-fit:contain; filter:drop-shadow(0 0 16px rgba(110,223,246,.3)); }
     .button { min-height:44px; display:inline-flex; align-items:center; justify-content:center; padding:11px 14px; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,.05); color:var(--text); text-decoration:none; font-weight:850; cursor:pointer; }
     .button.primary { color:#041018; border-color:transparent; background:linear-gradient(135deg,var(--green),var(--cyan)); }
-    .command-glow { position:relative; overflow:hidden; border:1px solid rgba(110,223,246,.36); background:linear-gradient(135deg,rgba(255,255,255,.08),rgba(255,255,255,.035)); box-shadow:0 0 0 1px rgba(255,255,255,.03),0 0 24px rgba(110,223,246,.10); transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease; animation:commandPulse 7s ease-in-out infinite; }
+    .command-glow { position:relative; overflow:hidden; border:1px solid rgba(110,223,246,.36); background:linear-gradient(135deg,rgba(255,255,255,.08),rgba(255,255,255,.035)); box-shadow:0 0 0 1px rgba(255,255,255,.03),0 0 24px rgba(110,223,246,.10); transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease; }
     .command-glow::before { content:""; position:absolute; inset:-1px; z-index:-1; opacity:.5; background:linear-gradient(135deg,var(--glow-a,#6edff6),var(--glow-b,#36e58f)); filter:blur(18px); }
     .command-glow:hover { transform:translateY(-2px); box-shadow:0 14px 42px rgba(0,0,0,.28),0 0 36px color-mix(in srgb,var(--glow-a,#6edff6) 42%,transparent); border-color:color-mix(in srgb,var(--glow-a,#6edff6) 70%,white); }
     .command-glow:active { transform:translateY(1px) scale(.985); }
@@ -36,7 +36,7 @@
     .command-glow-account { --glow-a:#6edff6; --glow-b:#77a7ff; }
     .alerts-dance { transition:transform .2s ease,box-shadow .2s ease; }
     .alerts-dance.is-dancing { animation:alertDance 1.8s ease-in-out 1; box-shadow:0 0 28px rgba(255,209,102,.55); }
-    @keyframes commandPulse { 0%,78%,100%{box-shadow:0 0 0 1px rgba(255,255,255,.03),0 0 20px rgba(110,223,246,.08)} 84%{box-shadow:0 0 0 1px rgba(255,255,255,.06),0 0 34px color-mix(in srgb,var(--glow-a,#6edff6) 28%,transparent)} }
+    /* STATIC BACKGROUND: commandPulse removed — glow is fixed; hover/active transitions remain. */
     @keyframes alertDance { 0%,100%{transform:translateY(0) rotate(0)} 18%{transform:translateY(-5px) rotate(-2deg)} 36%{transform:translateY(0) rotate(2deg)} 54%{transform:translateY(-3px) rotate(-1deg)} 72%{transform:translateY(0) rotate(1deg)} }
     main { padding:22px 0 32px; }
     .hero { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr); gap:16px; align-items:stretch; }

@@ -45,7 +45,7 @@
     const link = document.createElement("link");
     link.id = PORTAL_CSS_ID;
     link.rel = "stylesheet";
-    link.href = "/static/css/pulse_cinematic_media.css?v=global-media-ui-20260613d";
+    link.href = "/static/css/pulse_cinematic_media.css?v=static-bg-20260806a";
     document.head.appendChild(link);
   }
 

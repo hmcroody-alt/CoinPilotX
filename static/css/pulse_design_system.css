@@ -74,7 +74,6 @@ textarea {
   background: linear-gradient(120deg, transparent 18%, rgba(255, 255, 255, 0.12), transparent 42%);
   opacity: 0.42;
   transform: translateX(-70%);
-  animation: pulsePremiumSweep 8s ease-in-out infinite;
 }
 
 .premium-chip,
@@ -266,16 +265,7 @@ a[href="/pulse/premium"] {
   z-index: var(--z-pulse-fab) !important;
 }
 
-@keyframes pulsePremiumSweep {
-  0%,
-  70%,
-  100% {
-    transform: translateX(-76%);
-  }
-  82% {
-    transform: translateX(78%);
-  }
-}
+/* STATIC BACKGROUND: pulsePremiumSweep removed — elite-card sheen is a fixed layer. */
 
 @media (prefers-reduced-motion: reduce) {
   *,
