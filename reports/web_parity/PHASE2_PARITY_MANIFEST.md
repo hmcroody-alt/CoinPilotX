@@ -325,3 +325,34 @@ Evidence-based statement of what changed, nothing more:
   onboarding — the forms surface those errors verbatim.
 - **Validation:** module AST OK, template Jinja OK, 780/780 undx_agent,
   protection suite 239/15.
+
+## 13. Milestone 7 — Business OS advanced write flows (2026-08-07)
+
+`/business-os` now covers the full owner-side write surface of both Business OS
+subsystems, all CSRF-gated via `X-CSRF-Token` and auto-refreshing their list cards:
+
+**Advertising:** campaign action verbs extended to the operational set
+(activate/pause/resume/cancel added to submit/withdraw/archive/restore/reopen);
+Campaign Budget (`/campaigns/{id}/budget`, USD→cents client-side); Campaign
+Schedule (`/campaigns/{id}/schedule`, datetime-local→ISO); Campaign Funding
+reserve/release (`data-idempotency` forms auto-generate an idempotency key per
+submit, matching the server requirement); Create Ad Set
+(`/campaigns/{id}/ad-sets`); Ad Set Action (`/ad-sets/{id}/{verb}`, all six
+AD_SET_ACTIONS); Create Creative (`/ad-sets/{id}/creatives`, full
+CREATIVE_FIELDS incl. type + destination enums from
+services/business_os/advertising/creatives.py); Creative Action
+(`/creatives/{id}/{verb}`, all four CREATIVE_ACTIONS).
+
+**Marketplace:** Update Inventory (`/products/{id}/inventory`); buyer Order
+Action pay/complete/cancel/dispute with optional reason; seller Fulfill Order
+with optional tracking_ref.
+
+JS generalized: `*_usd` inputs → `*_cents`, datetime-local → ISO 8601, template
+forms now send their payload (previously `{}`), `{verb}` substitution optional.
+Verbs verified against server allowlists; generic `<id>/<action>` routes cover
+ad-set/creative/product lifecycle. Jinja render + node --check pass.
+
+Remaining known gaps (honest): admin/business-os console surfaces (49 routes,
+admin-only), advertising assistant plan/execute, marketplace reviews/appeals
+forms, per-row inline action buttons (IDs are copy-paste from list cards),
+responsive/a11y audit, live browser QA on Railway.

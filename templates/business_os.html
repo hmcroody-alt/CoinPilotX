@@ -131,9 +131,102 @@
             <label>Action<select name="verb">
               <option value="submit">Submit for review</option>
               <option value="withdraw">Withdraw</option>
+              <option value="activate">Activate</option>
+              <option value="pause">Pause</option>
+              <option value="resume">Resume</option>
+              <option value="cancel">Cancel</option>
               <option value="archive">Archive</option>
               <option value="restore">Restore</option>
               <option value="reopen">Reopen</option>
+            </select></label>
+            <button type="submit">Apply</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Campaign Budget</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/campaigns/{id}/budget" data-refresh="/api/business-os/advertising/campaigns">
+            <label>Campaign ID<input name="id" required placeholder="Campaign ID from the list"></label>
+            <label>Total budget (USD)<input name="budget_usd" type="number" min="0" step="0.01" required placeholder="100.00"></label>
+            <button type="submit">Set Budget</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Campaign Schedule</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/campaigns/{id}/schedule" data-refresh="/api/business-os/advertising/campaigns">
+            <label>Campaign ID<input name="id" required placeholder="Campaign ID from the list"></label>
+            <label>Start<input name="start_at" type="datetime-local"></label>
+            <label>End<input name="end_at" type="datetime-local"></label>
+            <button type="submit">Set Schedule</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Campaign Funding</h2>
+          <form class="bos-form" data-bos-form data-idempotency data-action-template="/api/business-os/advertising/campaigns/{id}/{verb}" data-refresh="/api/business-os/advertising/wallet">
+            <label>Campaign ID<input name="id" required placeholder="Campaign ID from the list"></label>
+            <label>Action<select name="verb">
+              <option value="reserve">Reserve budget from wallet</option>
+              <option value="release">Release reserved budget</option>
+            </select></label>
+            <label>Amount (USD, reserve only)<input name="amount_usd" type="number" min="0" step="0.01" placeholder="100.00"></label>
+            <button type="submit">Apply</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Create Ad Set</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/campaigns/{id}/ad-sets" data-refresh="/api/business-os/advertising/ad-sets">
+            <label>Campaign ID<input name="id" required placeholder="Campaign ID from the list"></label>
+            <label>Name<input name="name" required maxlength="120" placeholder="Ad set name"></label>
+            <button type="submit">Create Ad Set</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Ad Set Action</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/ad-sets/{id}/{verb}" data-refresh="/api/business-os/advertising/ad-sets">
+            <label>Ad Set ID<input name="id" required placeholder="Ad set ID from the list"></label>
+            <label>Action<select name="verb">
+              <option value="submit">Submit for review</option>
+              <option value="withdraw">Withdraw</option>
+              <option value="pause">Pause</option>
+              <option value="resume">Resume</option>
+              <option value="archive">Archive</option>
+              <option value="restore">Restore</option>
+            </select></label>
+            <button type="submit">Apply</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Create Creative</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/ad-sets/{id}/creatives" data-refresh="/api/business-os/advertising/creatives">
+            <label>Ad Set ID<input name="id" required placeholder="Ad set ID from the list"></label>
+            <label>Type<select name="creative_type">
+              <option value="image">Image</option>
+              <option value="video">Video</option>
+              <option value="reels_video">Reels video</option>
+            </select></label>
+            <label>Media Asset ID<input name="media_asset_id" required placeholder="Owned media asset ID"></label>
+            <label>Headline<input name="headline" maxlength="120" placeholder="Headline"></label>
+            <label>Body<textarea name="body" maxlength="2000" placeholder="Ad copy"></textarea></label>
+            <label>Call to action<input name="call_to_action" maxlength="60" placeholder="Learn more"></label>
+            <label>Destination type<select name="destination_type">
+              <option value="external">External URL</option>
+              <option value="profile">Profile</option>
+              <option value="post">Post</option>
+              <option value="reel">Reel</option>
+              <option value="marketplace_product">Marketplace product</option>
+            </select></label>
+            <label>Destination ref<input name="destination_ref" required placeholder="URL or in-app ID"></label>
+            <button type="submit">Create Creative</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Creative Action</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/creatives/{id}/{verb}" data-refresh="/api/business-os/advertising/creatives">
+            <label>Creative ID<input name="id" required placeholder="Creative ID from the list"></label>
+            <label>Action<select name="verb">
+              <option value="submit">Submit for review</option>
+              <option value="withdraw">Withdraw</option>
+              <option value="archive">Archive</option>
+              <option value="restore">Restore</option>
             </select></label>
             <button type="submit">Apply</button>
             <div class="bos-form-msg" aria-live="polite"></div>
@@ -175,6 +268,36 @@
               <option value="restore">Restore</option>
             </select></label>
             <button type="submit">Apply</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Update Inventory</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/products/{id}/inventory" data-refresh="/api/business-os/marketplace/products">
+            <label>Product ID<input name="id" required placeholder="Product ID from the list"></label>
+            <label>Inventory quantity<input name="inventory_qty" type="number" min="0" step="1" required placeholder="10"></label>
+            <button type="submit">Update</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Order Action (buyer)</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/orders/{id}/{verb}" data-refresh="/api/business-os/marketplace/orders">
+            <label>Order ID<input name="id" required placeholder="Order ID from the list"></label>
+            <label>Action<select name="verb">
+              <option value="pay">Pay</option>
+              <option value="complete">Mark received / complete</option>
+              <option value="cancel">Cancel</option>
+              <option value="dispute">Open dispute</option>
+            </select></label>
+            <label>Reason (cancel/dispute)<input name="reason" maxlength="500" placeholder="Optional reason"></label>
+            <button type="submit">Apply</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Fulfill Order (seller)</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/orders/{id}/fulfill" data-refresh="/api/business-os/marketplace/orders">
+            <label>Order ID<input name="id" required placeholder="Order ID from the list"></label>
+            <label>Tracking ref<input name="tracking_ref" maxlength="120" placeholder="Optional tracking reference"></label>
+            <button type="submit">Fulfill</button>
             <div class="bos-form-msg" aria-live="polite"></div>
           </form>
         </div>
@@ -333,10 +456,12 @@
       if (!el.name || el.name === "id" || el.name === "verb") { return; }
       var value = el.value.trim ? el.value.trim() : el.value;
       if (value === "") { return; }
-      if (el.name === "price_usd") {
-        payload.price_cents = Math.round(parseFloat(value) * 100);
+      if (/_usd$/.test(el.name)) {
+        payload[el.name.replace(/_usd$/, "_cents")] = Math.round(parseFloat(value) * 100);
       } else if (el.type === "number") {
         payload[el.name] = parseInt(value, 10);
+      } else if (el.type === "datetime-local") {
+        payload[el.name] = new Date(value).toISOString();
       } else {
         payload[el.name] = value;
       }
@@ -353,14 +478,20 @@
       var template = form.getAttribute("data-action-template");
       if (template) {
         var id = (form.elements.id.value || "").trim();
-        var verb = form.elements.verb.value;
         if (!id) { return; }
-        url = template.replace("{id}", encodeURIComponent(id)).replace("{verb}", encodeURIComponent(verb));
+        url = template.replace("{id}", encodeURIComponent(id));
+        if (url.indexOf("{verb}") !== -1) {
+          url = url.replace("{verb}", encodeURIComponent(form.elements.verb.value));
+        }
+      }
+      var payload = formPayload(form);
+      if (form.hasAttribute("data-idempotency")) {
+        payload.idempotency_key = "web-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
       }
       msg.className = "bos-form-msg";
       msg.textContent = "Working…";
       button.disabled = true;
-      postJson(url, template ? {} : formPayload(form))
+      postJson(url, payload)
         .then(function () {
           msg.className = "bos-form-msg ok";
           msg.textContent = "Done.";
