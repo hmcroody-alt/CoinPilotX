@@ -55,20 +55,25 @@ import {
   resolveExpiry
 } from "./marketplaceOffers";
 import { MESSAGES_AVATAR_GRADIENTS, MessagesChipKind } from "../theme/messagesLight";
-import { envFlagOn } from "../core/envFlag";
+import { isFlagValueOn } from "../core/envFlag";
 
 /* ------------------------------------------------------------------ *
  * Feature flags — all read at call time so tests can toggle them.
  *
- * `envFlagOn` is the shared reader in `core/envFlag.ts`. It replaced a local
+ * `isFlagValueOn` is the shared reader in `core/envFlag.ts`. It replaced a local
  * copy of the same four-value rule; the accepted set is unchanged here and is
  * now the set every other flag in the app answers to as well.
+ *
+ * Each variable is spelled literally rather than handed to `envFlagOn` by name.
+ * `babel-preset-expo` substitutes `process.env.X` only when the key is a
+ * StringLiteral, so a computed lookup is never inlined and reads undefined in a
+ * release bundle — every gate below would be permanently off on device.
  * ------------------------------------------------------------------ */
 
 /** Typing indicators. No live push exists, so off = static "typing…" for AT only. */
-export const messagesTypingEnabled = () => envFlagOn("EXPO_PUBLIC_MESSAGES_TYPING");
+export const messagesTypingEnabled = () => isFlagValueOn(process.env.EXPO_PUBLIC_MESSAGES_TYPING);
 /** Presence dots. Only shown when the product exposes mutual presence. */
-export const messagesPresenceEnabled = () => envFlagOn("EXPO_PUBLIC_MESSAGES_PRESENCE");
+export const messagesPresenceEnabled = () => isFlagValueOn(process.env.EXPO_PUBLIC_MESSAGES_PRESENCE);
 /*
  * `messagesRealtimeReorderEnabled` / `EXPO_PUBLIC_MESSAGES_REALTIME` was removed.
  *
@@ -80,15 +85,15 @@ export const messagesPresenceEnabled = () => envFlagOn("EXPO_PUBLIC_MESSAGES_PRE
  * is the one thing a flag must never do.
  */
 /** Deterministic MOCK commerce associations for design review only. */
-export const messagesMockChipsEnabled = () => envFlagOn("EXPO_PUBLIC_MESSAGES_MOCK_CHIPS");
+export const messagesMockChipsEnabled = () => isFlagValueOn(process.env.EXPO_PUBLIC_MESSAGES_MOCK_CHIPS);
 /** Away mode / auto-reply. No live field, so the toggle is optimistic-local only. */
-export const messagesAwayModeEnabled = () => envFlagOn("EXPO_PUBLIC_MESSAGES_AWAY");
+export const messagesAwayModeEnabled = () => isFlagValueOn(process.env.EXPO_PUBLIC_MESSAGES_AWAY);
 /**
  * The "under {X} keeps your fast-responder badge" incentive framing. No badge /
  * ranking system was found in the app, so this is OFF: the stat is shown without
  * the unsourced ranking claim. Flip only when a real badge rule exists.
  */
-export const replyBadgeIncentiveEnabled = () => envFlagOn("EXPO_PUBLIC_MESSAGES_REPLY_BADGE");
+export const replyBadgeIncentiveEnabled = () => isFlagValueOn(process.env.EXPO_PUBLIC_MESSAGES_REPLY_BADGE);
 
 /* ------------------------------------------------------------------ *
  * MOCK-DATA ledger — every field with no live backend source.

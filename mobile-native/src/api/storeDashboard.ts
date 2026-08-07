@@ -29,7 +29,7 @@ import {
   type MarketplaceSellerOrder,
   type SellerStoreSnapshot
 } from "./marketplace";
-import { envFlagOn } from "../core/envFlag";
+import { isFlagValueOn } from "../core/envFlag";
 
 /* ------------------------------------------------------------------ *
  * Unsourced fields
@@ -476,9 +476,17 @@ export const STORE_READINESS_FLAG = "EXPO_PUBLIC_STORE_READINESS";
  * `true`, `on` and `yes` — so a build that set this one to `true` got a silent
  * no-op with no way to tell a stricter parser from a ladder that did not work.
  * It reads the shared set now. Still off unless somebody sets it.
+ *
+ * The read spells the variable out rather than passing `STORE_READINESS_FLAG`,
+ * which holds the same string. `babel-preset-expo` inlines `process.env.X` only
+ * when the key is a StringLiteral, so reading through the constant left a lookup
+ * in the bundle that found nothing. This is the one flag `eas.json` actually
+ * sets — `"1"` on development, development-simulator and preview — and preview
+ * is a release build, so the ladder was dark in the exact artifact that asked
+ * for it. The constant stays because the tests and the report name it.
  */
 export function storeReadinessEnabled(): boolean {
-  return envFlagOn(STORE_READINESS_FLAG);
+  return isFlagValueOn(process.env.EXPO_PUBLIC_STORE_READINESS);
 }
 
 /**

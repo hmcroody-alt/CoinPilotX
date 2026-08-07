@@ -23,7 +23,7 @@ import { registerPushDevice, syncPushDeviceRegistration } from "./src/api/push";
 import { startPresenceSession, stopPresenceSession } from "./src/api/presenceSession";
 import { registerSessionInvalidationHandler } from "./src/api/pulseApi";
 import { configurePerfTracing, perfNow, recordDuration, setPerfContext, startSpan } from "./src/core/perfTrace";
-import { envFlagOn } from "./src/core/envFlag";
+import { isFlagValueOn } from "./src/core/envFlag";
 import { PerfOverlay } from "./src/components/PerfOverlay";
 import { TranslationPreferencesBootstrap } from "./src/components/TranslationPreferencesBootstrap";
 import { configurePulseShareCenter } from "./src/sharing/nativeShare";
@@ -40,9 +40,15 @@ setPerfContext({ osVersion: String(Platform.Version) });
 // only ever has to answer for Release and QA builds. The flag read itself moved
 // onto the shared reader — it had been the app's sixth parsing rule, accepting
 // "1", "true" and "on" but not "yes", which no other flag rejected.
+//
+// The variable is spelled literally because Release is the only build this term
+// answers for. `babel-preset-expo` substitutes `process.env.X` only when the key
+// is a StringLiteral, so a name routed through a computed lookup is never
+// inlined and reads undefined in a release bundle — the overlay could not be
+// turned on in exactly the builds it exists to measure.
 const PERF_OVERLAY_ENABLED =
   (typeof __DEV__ !== "undefined" && __DEV__) ||
-  envFlagOn("EXPO_PUBLIC_PULSESOC_PERF_OVERLAY");
+  isFlagValueOn(process.env.EXPO_PUBLIC_PULSESOC_PERF_OVERLAY);
 if (PERF_OVERLAY_ENABLED) configurePerfTracing({ enabled: true });
 
 /**

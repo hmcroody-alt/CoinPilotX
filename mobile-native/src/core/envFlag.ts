@@ -67,11 +67,25 @@ export function isFlagValueOn(value: string | undefined | null): boolean {
 /**
  * Whether the named environment variable is on.
  *
+ * **Development only. This is dead in a release bundle.** `babel-preset-expo`
+ * substitutes `process.env.EXPO_PUBLIC_X` at build time only when the key is a
+ * StringLiteral — `inline-env-vars` skips any member expression whose
+ * `toComputedKey()` is not one. The lookup below is computed by construction, so
+ * it survives into the bundle as a runtime read, and nothing populates
+ * `process.env` on device. Every name routed through here answers `false` in
+ * TestFlight and production no matter what the build profile set.
+ *
+ * A flag that must work on device calls {@link isFlagValueOn} with the variable
+ * written out — `isFlagValueOn(process.env.EXPO_PUBLIC_X)` — which is the shape
+ * the plugin can see and the shape the guard test in `__tests__/envFlag.test.ts`
+ * permits. Same rule, same accepted set; only the spelling differs.
+ *
+ * What is left for this function is a flag that is fenced to development by
+ * something other than itself, where the dead read cannot change an outcome —
+ * today, the six QA gates behind a loopback API base URL.
+ *
  * Read at call time, never cached at module load, so a test can set the
- * variable and call the accessor without re-importing the module graph. Every
- * Business OS accessor is written this way on purpose; the two app-level
- * constants in `api/config.ts` predate the convention and are still evaluated
- * once at import, which is why a test cannot toggle those two.
+ * variable and call the accessor without re-importing the module graph.
  */
 export function envFlagOn(name: string): boolean {
   return isFlagValueOn(process.env[name]);
