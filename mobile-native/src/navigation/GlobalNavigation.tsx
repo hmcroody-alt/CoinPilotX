@@ -658,8 +658,25 @@ const styles = createThemedStyles(() => ({
     paddingBottom: 8,
     paddingHorizontal: logiNexus.spacing.md
   },
+  /**
+   * Transparent, unlike the shell it overrides.
+   *
+   * Every other screen gets `headerShell`'s near-opaque plate, which is right
+   * where a header floats over arbitrary scrolling content. Home is the
+   * exception: this shell and the feed below it are one continuous surface, and
+   * this style used to paint the same flat `#030712` the feed root did. Both
+   * fills were invisible while they matched each other. The moment the feed
+   * opened up to `PulseBackground`, an opaque plate here would have become the
+   * most conspicuous thing on the screen — a hard black band across the top,
+   * ending in a horizontal seam exactly where the brand row does.
+   *
+   * Nothing is lost by removing it: the header's content is the wordmark and
+   * icon buttons, all of which are near-white or teal against a field whose
+   * ceiling is a 0.20-alpha node, and this is the top of the gradient where the
+   * field is at its darkest anyway.
+   */
   headerShellHome: {
-    backgroundColor: logiNexus.colors.home.backgroundDeepSpace,
+    backgroundColor: "transparent",
     borderBottomColor: "transparent",
     paddingBottom: 18
   },

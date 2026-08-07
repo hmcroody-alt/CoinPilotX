@@ -1738,7 +1738,11 @@ const styles = createThemedStyles(() => ({
   },
   feedTabsWrap: {
     backgroundColor: "transparent",
-    borderBottomColor: "rgba(121, 210, 255, 0.13)",
+    // The rule under the feed tabs, in the same muted indigo as the post
+    // separators below it. Kept at its own lighter alpha rather than switched to
+    // `borderSubtle` wholesale: this line runs directly beneath the teal active
+    // underline and reads heavier than a post separator at the same value.
+    borderBottomColor: "rgba(138, 152, 232, 0.13)",
     borderBottomWidth: 1,
     marginBottom: 18,
     marginTop: 13,
@@ -2467,70 +2471,28 @@ const styles = createThemedStyles(() => ({
     color: colors.text,
     fontWeight: "900"
   },
+  /**
+   * Transparent, so the app-root `PulseBackground` is what the feed sits on.
+   *
+   * This used to paint `home.backgroundDeepSpace` (`#030712`) — a flat, fully
+   * opaque near-black. When the screen's own `GalacticAtmosphere` backdrop was
+   * removed in favour of the single shared layer, the fill it had been drawn
+   * over was left behind, and an opaque fill is indistinguishable from a
+   * missing background: `PulseBackground` was mounting, animating and
+   * rendering perfectly, one view underneath this one.
+   *
+   * That made Home the one screen in the app with no ambient environment,
+   * which is the opposite of what it should be — it is the most-visited
+   * surface in the product. Nothing else here paints: `list` and `content` are
+   * already transparent, the navigator's `sceneContainerStyle` and
+   * `contentStyle` are transparent, and `PostCard` has no fill at all, so this
+   * single declaration is what the whole feed's appearance turns on. It is
+   * pinned in `navigation/__tests__/backgroundSurfaces.test.ts` for that
+   * reason.
+   */
   root: {
-    backgroundColor: logiNexus.colors.home.backgroundDeepSpace,
+    backgroundColor: "transparent",
     flex: 1
-  },
-  homeAtmosphereRoot: {
-    ...StyleSheet.absoluteFillObject,
-    overflow: "hidden"
-  },
-  homeGridPlane: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(121, 210, 255, 0.018)",
-    opacity: 0.42
-  },
-  homeNebula: {
-    borderRadius: 260,
-    height: 420,
-    opacity: 0.18,
-    position: "absolute",
-    width: 420
-  },
-  homeNebulaLeft: {
-    backgroundColor: "rgba(50, 230, 179, 0.18)",
-    left: -180,
-    top: 120
-  },
-  homeNebulaRight: {
-    backgroundColor: "rgba(159, 124, 255, 0.2)",
-    right: -160,
-    top: 40
-  },
-  homeSignalWave: {
-    backgroundColor: "rgba(50, 230, 179, 0.16)",
-    borderRadius: 999,
-    height: 2,
-    position: "absolute",
-    width: 42
-  },
-  homeSignalWaveOne: {
-    right: "38%",
-    top: "58%"
-  },
-  homeSignalWaveTwo: {
-    left: "12%",
-    top: "76%",
-    width: 72
-  },
-  homeStar: {
-    backgroundColor: "rgba(121, 210, 255, 0.45)",
-    borderRadius: 2,
-    height: 3,
-    position: "absolute",
-    width: 3
-  },
-  homeStarOne: {
-    left: "18%",
-    top: "14%"
-  },
-  homeStarTwo: {
-    right: "21%",
-    top: "33%"
-  },
-  homeStarThree: {
-    left: "49%",
-    top: "52%"
   },
   sideCard: {
     backgroundColor: "rgba(5, 13, 26, 0.92)",

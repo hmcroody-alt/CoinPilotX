@@ -168,6 +168,111 @@ describe("the shared shells defer to it", () => {
 });
 
 /**
+ * The Home Feed.
+ *
+ * It gets its own block because it is the app's most-visited surface and
+ * because it is the one that was wrong: `HomeScreen` dropped its own
+ * `GalacticAtmosphere` backdrop in favour of the shared layer but kept the
+ * opaque fill that backdrop had been drawn over, so the feed spent that whole
+ * period looking like the background feature had never shipped. An opaque fill
+ * and a missing background are the same screenshot.
+ *
+ * Nothing here can be caught by rendering the screen. Each assertion pins one
+ * surface in the stack between `PulseBackground` and a post; any one of them
+ * turning opaque again puts the flat page back.
+ */
+describe("the Home Feed defers to the shared background", () => {
+  const homeScreen = read(SRC, "screens", "HomeScreen.tsx");
+  const globalNavigation = read(SRC, "navigation", "GlobalNavigation.tsx");
+  const sponsoredAdCard = read(SRC, "components", "SponsoredAdCard.tsx");
+  const postCard = read(SRC, "components", "PostCard.tsx");
+
+  /** The declaration the whole feed's appearance turns on. */
+  it("keeps the feed root transparent", () => {
+    expect(flat(homeScreen)).toMatch(/root: \{ backgroundColor: "transparent", flex: 1 \}/);
+    expect(flat(homeScreen)).not.toContain("root: { backgroundColor: logiNexus.colors.home.backgroundDeepSpace");
+  });
+
+  /**
+   * The list and its content container sit between the root and every row, so a
+   * fill on either would undo the line above without touching it.
+   */
+  it("keeps the list and its content container unpainted", () => {
+    expect(flat(homeScreen)).toMatch(/list: \{ backgroundColor: "transparent", flex: 1 \}/);
+    const content = flat(homeScreen).match(/content: \{[^}]*\}/);
+    expect(content).not.toBeNull();
+    expect(content![0]).not.toContain("backgroundColor");
+  });
+
+  /**
+   * Home is the only `mode="home"` caller of the global header, and that header
+   * is inside the feed's own scroll surface rather than above it. `headerShell`
+   * keeps its near-opaque plate for every other screen; this override is what
+   * stops Home growing a black band across the top with a seam under the
+   * wordmark.
+   */
+  it("keeps the Home header shell transparent while the standard one stays opaque", () => {
+    expect(flat(globalNavigation)).toMatch(/headerShellHome: \{ backgroundColor: "transparent"/);
+    expect(flat(globalNavigation)).toContain('headerShell: { backgroundColor: "rgba(3, 9, 18, 0.96)"');
+    expect(homeScreen).toContain('mode="home"');
+  });
+
+  /**
+   * Rows. `PostCard` carries no fill at all — the post sits directly on the
+   * field — and the sponsored card, the only other row type, is translucent so
+   * it does not punch a rectangle through the field every few posts.
+   */
+  it("keeps both feed row types off an opaque fill", () => {
+    const card = flat(postCard).match(/card: \{[^}]*\}/);
+    expect(card).not.toBeNull();
+    expect(card![0]).not.toContain("backgroundColor");
+
+    expect(flat(sponsoredAdCard)).toContain("card: { backgroundColor: logiNexus.colors.home.surfaceGlass");
+    expect(flat(sponsoredAdCard)).not.toContain("card: { backgroundColor: colors.surface");
+  });
+
+  /**
+   * The hairline. It is the feed's separator, and it belongs to the field's
+   * family rather than the pale cyan it used when the feed had a flat fill of
+   * its own — a few hundred separators in a hue the background does not contain
+   * is what reads as two designs stitched together.
+   */
+  it("keeps the feed hairline in the background's own family", () => {
+    const tokens = flat(read(SRC, "theme", "logiNexus.ts"));
+    expect(tokens).toContain('borderSubtle: "rgba(138, 152, 232, 0.2)"');
+    expect(tokens).not.toContain('borderSubtle: "rgba(121, 210, 255, 0.18)"');
+  });
+
+  /**
+   * Architecture. The mission that produced this block called for exactly one
+   * background environment behind the feed rather than one per row, and the
+   * feed is virtualized — a backdrop inside `renderItem` would be instantiated,
+   * animated and torn down per post. `PulseBackground` is mounted once at the
+   * app root, so the guard here is that the feed never imports it at all.
+   */
+  it("does not mount a second background inside the feed", () => {
+    // Rendered and imported, not merely named: these files are allowed to
+    // mention the component in a comment explaining why they defer to it.
+    for (const source of [homeScreen, postCard, sponsoredAdCard]) {
+      expect(source).not.toContain("<PulseBackground");
+      expect(source).not.toMatch(/import .*PulseBackground.* from/);
+    }
+  });
+
+  /**
+   * The hero panel's `GalacticAtmosphere` is deliberate and stays: it is
+   * clipped inside one panel as a design element. What must not come back is a
+   * second full-screen backdrop — the thing that hid the shared layer here in
+   * the first place.
+   */
+  it("keeps the hero atmosphere clipped and does not restore a full-screen one", () => {
+    expect(flat(homeScreen)).toContain('heroAtmosphere: { ...StyleSheet.absoluteFillObject');
+    expect(homeScreen).not.toContain("homeAtmosphereRoot");
+    expect(homeScreen).not.toContain("homeNebula");
+  });
+});
+
+/**
  * The exclusion list.
  *
  * Making the containers transparent means every one of these now depends on its

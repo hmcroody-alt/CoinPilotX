@@ -198,8 +198,19 @@ export function SponsoredAdCard({ ad, isViewable, edgeInset = 12, navigation, on
 }
 
 const styles = createThemedStyles(() => ({
+  /**
+   * A translucent panel rather than `colors.surface`, which is opaque.
+   *
+   * This card is only ever rendered as a row of the Home Feed, and the feed now
+   * sits on the shared `PulseBackground` rather than on a flat fill of its own.
+   * An opaque card there punches a rectangular hole in the ambient layer every
+   * few posts — the one discontinuity a scrolling eye reliably catches.
+   * `home.surfaceGlass` is the feed's existing panel token, so the disclosure
+   * still reads as a distinct bordered surface against the organic posts around
+   * it while the environment stays continuous behind it.
+   */
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: logiNexus.colors.home.surfaceGlass,
     borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     borderColor: colors.border,

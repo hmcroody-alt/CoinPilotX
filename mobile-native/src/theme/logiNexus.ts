@@ -15,7 +15,22 @@ export const logiNexus = {
       surfaceGlass: "rgba(9, 20, 33, 0.78)",
       surfaceGlassStrong: "rgba(11, 27, 44, 0.94)",
       surfaceSignal: "rgba(50, 230, 179, 0.105)",
-      borderSubtle: "rgba(121, 210, 255, 0.18)",
+      /**
+       * The feed's hairline: post separators, count rows, panel edges. Used only
+       * by the three Home Feed modules (`HomeScreen`, `PostCard`,
+       * `HomePulseComposer`), so it is a feed token in practice as well as name.
+       *
+       * It was `rgba(121, 210, 255, 0.18)` — a pale cyan, chosen when the feed
+       * sat on its own flat near-black fill, where any cool hairline reads the
+       * same. The feed now sits on `PulseBackground`'s indigo-to-violet field,
+       * and cyan is the one cool hue that is *not* in that field: several
+       * hundred separators in a foreign hue is what makes a surface look
+       * assembled from two designs. This is the same lightness and alpha in the
+       * background's own family — muted indigo rather than violet, because a
+       * violet separator on a violet field stops being a division and starts
+       * being decoration.
+       */
+      borderSubtle: "rgba(138, 152, 232, 0.2)",
       borderActive: "rgba(50, 230, 179, 0.72)",
       borderIntelligence: "rgba(159, 124, 255, 0.62)",
       borderCreator: "rgba(66, 231, 212, 0.58)",
