@@ -294,6 +294,14 @@ AUTO_PK_TABLES = {
     "pulse_videos": "id",
     "pulse_video_comments": "id",
     "pulse_audio_tracks": "id",
+    # Same defect, quieter symptom. `bot.notify_user` reads the new notification's
+    # id back to link its delivery rows and the push payload to it, but writes
+    # `int(cur.lastrowid or 0)` — so instead of a TypeError, on Postgres every
+    # delivery row and every push notification silently pointed at id 0. Tapping
+    # such a notification cannot open the thing it is about. This path runs from
+    # the Save button, among many others.
+    "pulse_notifications": "id",
+    "pulse_notification_deliveries": "id",
     "pulse_jobs": "id",
     "pulse_post_attempts": "id",
     "telegram_debug_events": "id",

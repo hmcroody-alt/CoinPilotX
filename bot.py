@@ -79912,6 +79912,87 @@ def ensure_pulse_saved_collection(cur, user_id, name="Favorites"):
     raise RuntimeError(f"could not create saved collection {slug!r} for user {int(user_id)}")
 
 
+def pulse_heal_saved_constraints(cur, conn=None):
+    """Make the saved tables' uniqueness true of the *live* database, not just of
+    a database created today.
+
+    Both saved tables declare their uniqueness inline, in `CREATE TABLE IF NOT
+    EXISTS`. On any deployment where those tables already existed before the
+    constraint was added to the file, the CREATE is a silent no-op and the
+    constraint is simply absent forever: `add_columns_if_missing` back-fills
+    columns, and there is no migration framework here to back-fill anything else.
+    Two things then break, neither of them locally reproducible:
+
+    * `INSERT ... ON CONFLICT(user_id, content_type, content_id) DO UPDATE` in the
+      save route needs a matching unique index to exist. Postgres does not fall
+      back when one is missing — it raises, and every Save returns 500.
+    * `ensure_pulse_saved_collection` relies on `UNIQUE(user_id, slug)` to make a
+      concurrent duplicate a no-op. Without it two requests can each create a
+      "Watch Later", which is the duplicate the brief forbids.
+
+    So create the indexes explicitly. `CREATE UNIQUE INDEX IF NOT EXISTS` is
+    understood by both dialects and is a no-op when the inline constraint already
+    supplied one. Existing duplicates would make that fail, so they are merged
+    first — collection rows by repointing their items at the survivor, item rows
+    by keeping the oldest. Legacy rows with no slug get one derived from their
+    name, because a NULL slug does not collide with anything and would let the
+    lookup miss a collection that plainly exists.
+
+    Wrapped so a failure here cannot stop boot: a missing index degrades Save,
+    while an exception in `init_db` takes down the whole app.
+    """
+    try:
+        cur.execute("SELECT id, name FROM pulse_saved_collections WHERE slug IS NULL OR slug=''")
+        for row in list(cur.fetchall() or []):
+            try:
+                row_id, row_name = int(row["id"]), row["name"]
+            except (KeyError, IndexError, TypeError):
+                row_id, row_name = int(row[0]), row[1]
+            cur.execute(
+                "UPDATE pulse_saved_collections SET slug=? WHERE id=?",
+                (pulse_saved_slug(row_name or "Favorites"), row_id),
+            )
+
+        # Items of a losing duplicate move to the survivor before it is deleted,
+        # so healing the schema never silently drops something a user saved.
+        cur.execute(
+            """
+            UPDATE pulse_saved_items SET collection_id = (
+                SELECT MIN(keep.id) FROM pulse_saved_collections keep
+                 WHERE keep.user_id = (SELECT dup.user_id FROM pulse_saved_collections dup WHERE dup.id = pulse_saved_items.collection_id)
+                   AND keep.slug    = (SELECT dup.slug    FROM pulse_saved_collections dup WHERE dup.id = pulse_saved_items.collection_id)
+            )
+            WHERE collection_id IN (
+                SELECT id FROM pulse_saved_collections
+                 WHERE id NOT IN (SELECT MIN(id) FROM pulse_saved_collections GROUP BY user_id, slug)
+            )
+            """
+        )
+        cur.execute(
+            "DELETE FROM pulse_saved_collections WHERE id NOT IN (SELECT MIN(id) FROM pulse_saved_collections GROUP BY user_id, slug)"
+        )
+        cur.execute(
+            "DELETE FROM pulse_saved_items WHERE id NOT IN (SELECT MIN(id) FROM pulse_saved_items GROUP BY user_id, content_type, content_id)"
+        )
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_pulse_saved_collections_user_slug ON pulse_saved_collections (user_id, slug)"
+        )
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_pulse_saved_items_user_content ON pulse_saved_items (user_id, content_type, content_id)"
+        )
+        if conn is not None:
+            conn.commit()
+        return True
+    except Exception as exc:
+        try:
+            if conn is not None:
+                conn.rollback()
+        except Exception:
+            pass
+        print(f"[pulse-saved] could not heal saved-table constraints: {exc}")
+        return False
+
+
 PULSE_WATCH_LATER_NAME = "Watch Later"
 # Content whose point is that you come back and watch it. Everything else keeps
 # landing in Favorites, which is the default collection every account already has.
@@ -84937,13 +85018,25 @@ def api_pulse_marketplace_listing_save():
     cur.execute("INSERT OR IGNORE INTO marketplace_saved_products (user_id, listing_id, created_at) VALUES (?, ?, ?)", (user["user_id"], listing_id, now))
     collection_id = ensure_pulse_saved_collection(cur, user["user_id"], "Marketplace")
     title = f"Marketplace item #{listing_id}"
+    # `cover_image_url`/`media_url`, not `image_url` — that column has never
+    # existed on this table, so this SELECT raised on every single marketplace
+    # save. Locally sqlite3 raised, the bare `except` swallowed it, and the
+    # connection carried on, so the only visible effect was a thumbnail-less
+    # saved row. On Postgres a failed statement poisons the transaction, and
+    # `services.db.CompatCursor.execute` responds by rolling the whole thing back
+    # before re-raising — discarding the `INSERT OR IGNORE` into
+    # `marketplace_saved_products` and the collection this row is about to point
+    # at. The route then reported `ok: true` over a save that had been undone,
+    # which is why a saved product never stayed saved and could never be
+    # un-saved. Reading a column that exists is the fix; the `except` below is
+    # kept only as a genuine belt-and-braces, not as the load-bearing part.
     try:
-        cur.execute("SELECT title, description, image_url FROM marketplace_listings WHERE id=? LIMIT 1", (listing_id,))
+        cur.execute("SELECT title, description, cover_image_url, media_url FROM marketplace_listings WHERE id=? LIMIT 1", (listing_id,))
         listing = cur.fetchone()
         if listing:
             title = clean_html(listing["title"] or title)[:220]
             preview = clean_html(listing["description"] or "")[:700]
-            thumbnail = clean_html(listing["image_url"] or "")[:800]
+            thumbnail = clean_html(listing["cover_image_url"] or listing["media_url"] or "")[:800]
         else:
             preview = ""
             thumbnail = ""
@@ -101126,6 +101219,7 @@ def _init_db_impl():
         ("created_at", "TEXT"),
         ("updated_at", "TEXT"),
     ], conn=conn)
+    pulse_heal_saved_constraints(cur, conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_reels (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

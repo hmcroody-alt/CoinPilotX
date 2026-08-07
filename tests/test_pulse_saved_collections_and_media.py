@@ -39,6 +39,8 @@ and it is stated plainly rather than hidden.
 """
 
 import ast
+import contextlib
+import io
 import json
 import logging
 import os
@@ -325,6 +327,7 @@ class SavedCollectionsCase(unittest.TestCase):
                 [
                     "pulse_saved_slug",
                     "ensure_pulse_saved_collection",
+                    "pulse_heal_saved_constraints",
                     "pulse_saved_collection_for",
                     "pulse_ensure_saved_system_collections",
                     "pulse_saved_post_target",
@@ -1098,6 +1101,460 @@ class SavedLibraryReadPathTest(SavedCollectionsCase):
         conn.close()
         [item] = saved_content_service.list_saved_items(VIEWER)
         self.assertEqual(item["collection_name"], self.ns["PULSE_WATCH_LATER_NAME"])
+
+
+# ---------------------------------------------------------------------------
+# 6. The second production-only defect: the constraint that was never applied
+# ---------------------------------------------------------------------------
+
+# The saved tables as an older deployment actually has them: same columns, no
+# uniqueness. Both constraints are declared inline inside `CREATE TABLE IF NOT
+# EXISTS`, so on any database where the tables predate the constraint the CREATE
+# is a no-op and the constraint never arrives. `add_columns_if_missing` back-fills
+# columns and only columns, and there is no migration framework in this repo, so
+# nothing else ever notices. A fresh SQLite file gets the constraints on the first
+# boot, which is why this never reproduced locally — hence these tables, built
+# deliberately without them.
+LEGACY_SAVED_SCHEMA = (
+    """CREATE TABLE pulse_saved_collections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        name TEXT,
+        slug TEXT,
+        description TEXT,
+        is_default INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+    )""",
+    """CREATE TABLE pulse_saved_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        collection_id INTEGER,
+        content_type TEXT,
+        content_id TEXT,
+        title TEXT,
+        preview_text TEXT,
+        thumbnail_url TEXT,
+        media_url TEXT,
+        source_url TEXT,
+        metadata_json TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )""",
+)
+
+# The save route's own statement, reduced to the part that matters. A *targeted*
+# ON CONFLICT names the columns of a unique index; if no such index exists,
+# Postgres raises rather than degrading to a plain insert, and so does SQLite.
+# That is why the missing constraint shows up as a 500 on every Save rather than
+# as a stray duplicate row.
+ROUTE_UPSERT = (
+    "INSERT INTO pulse_saved_items (user_id, collection_id, content_type, content_id, title, created_at, updated_at)"
+    " VALUES (?, ?, ?, ?, ?, ?, ?)"
+    " ON CONFLICT(user_id, content_type, content_id) DO UPDATE SET"
+    " collection_id=excluded.collection_id, title=excluded.title, updated_at=excluded.updated_at"
+)
+
+
+class LegacySavedSchemaCase(SavedCollectionsCase):
+    """`SavedCollectionsCase`, but with the two saved tables as prod has them.
+
+    Dropping and recreating is not cosmetic: an inline `UNIQUE(...)` is backed by
+    a `sqlite_autoindex_*`, and only dropping the table gets rid of it. What
+    remains is a database in which nothing stops a duplicate — the state
+    `pulse_heal_saved_constraints` exists to find and repair.
+    """
+
+    def setUp(self):
+        super().setUp()
+        conn = self.connect()
+        conn.execute("DROP TABLE pulse_saved_collections")
+        conn.execute("DROP TABLE pulse_saved_items")
+        for statement in LEGACY_SAVED_SCHEMA:
+            conn.execute(statement)
+        conn.commit()
+        conn.close()
+
+    # -- helpers -------------------------------------------------------------
+
+    def heal(self):
+        """Run the healer the way `init_db` does: cursor plus connection.
+
+        stdout is captured because the failure branch prints, and a test suite
+        that prints on the failure path teaches people to ignore its output.
+        """
+        conn = self.connect()
+        cur = PostgresLikeCursor(conn.cursor())
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as captured:
+                result = self.ns["pulse_heal_saved_constraints"](cur, conn)
+            self.heal_stdout = captured.getvalue()
+            return result
+        finally:
+            conn.close()
+
+    def add_collection(self, collection_id, name, slug, user_id=VIEWER, is_default=0):
+        conn = self.connect()
+        conn.execute(
+            "INSERT INTO pulse_saved_collections (id,user_id,name,slug,description,is_default,created_at,updated_at)"
+            " VALUES (?,?,?,?,'',?,?,?)",
+            (collection_id, user_id, name, slug, is_default, "legacy", "legacy"),
+        )
+        conn.commit()
+        conn.close()
+        return collection_id
+
+    def add_item(self, item_id, collection_id, content_type="post", content_id="1", user_id=VIEWER, title="Saved"):
+        conn = self.connect()
+        conn.execute(
+            "INSERT INTO pulse_saved_items (id,user_id,collection_id,content_type,content_id,title,created_at,updated_at)"
+            " VALUES (?,?,?,?,?,?,?,?)",
+            (item_id, user_id, collection_id, content_type, str(content_id), title, "legacy", "legacy"),
+        )
+        conn.commit()
+        conn.close()
+        return item_id
+
+    def items(self, user_id=VIEWER):
+        conn = self.connect()
+        rows = conn.execute(
+            "SELECT * FROM pulse_saved_items WHERE user_id=? ORDER BY id", (user_id,)
+        ).fetchall()
+        conn.close()
+        return rows
+
+    def snapshot(self):
+        """Everything both saved tables contain, plus the indexes on them."""
+        conn = self.connect()
+        state = (
+            [tuple(row) for row in conn.execute("SELECT * FROM pulse_saved_collections ORDER BY id")],
+            [tuple(row) for row in conn.execute("SELECT * FROM pulse_saved_items ORDER BY id")],
+            sorted(
+                row["name"]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name LIKE 'pulse_saved_%'"
+                )
+                if row["name"]
+            ),
+        )
+        conn.close()
+        return state
+
+
+class LegacySavedSchemaHealingTest(LegacySavedSchemaCase):
+    """What `pulse_heal_saved_constraints` has to be true of a live database."""
+
+    # -- 1. the index really exists afterwards -------------------------------
+
+    def test_a_duplicate_slug_is_accepted_before_the_heal_and_rejected_after(self):
+        """The load-bearing assertion: the constraint is present, not just intended.
+
+        The first half is not decoration — it proves the fixture reproduces the
+        legacy schema. If the duplicate were rejected up here, the second half
+        would pass for a reason that has nothing to do with the fix.
+        """
+        self.add_collection(10, "Watch Later", "watch-later")
+        self.add_collection(20, "Watch Later", "watch-later")
+        self.assertEqual(len(self.collections()), 2, "legacy prod accepts this; the fixture must too")
+
+        self.assertTrue(self.heal())
+
+        conn = self.connect()
+        self.addCleanup(conn.close)
+        with self.assertRaises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO pulse_saved_collections (user_id,name,slug,created_at,updated_at)"
+                " VALUES (?,?,?,?,?)",
+                (VIEWER, "Watch Later", "watch-later", "after", "after"),
+            )
+
+    def test_the_index_is_per_user_not_global(self):
+        """Two accounts must still each get their own Watch Later."""
+        self.add_collection(10, "Watch Later", "watch-later", user_id=VIEWER)
+        self.assertTrue(self.heal())
+        conn = self.connect()
+        self.addCleanup(conn.close)
+        conn.execute(
+            "INSERT INTO pulse_saved_collections (user_id,name,slug,created_at,updated_at) VALUES (?,?,?,?,?)",
+            (AUTHOR, "Watch Later", "watch-later", "after", "after"),
+        )
+        conn.commit()
+        self.assertEqual(self.slugs(VIEWER), ["watch-later"])
+        self.assertEqual(self.slugs(AUTHOR), ["watch-later"])
+
+    # -- 2. duplicates are merged, and nothing saved is lost ------------------
+
+    def test_two_watch_later_rows_become_one_and_every_item_survives(self):
+        """The brief forbids a duplicate Watch Later. Deleting one is not enough.
+
+        A user's saved items hang off the row that gets deleted. Healing the
+        schema by dropping the loser would silently empty part of somebody's
+        library — so the items are repointed at the survivor first, and the count
+        before and after has to match exactly.
+        """
+        self.add_collection(10, "Watch Later", "watch-later")
+        self.add_collection(20, "Watch Later", "watch-later")
+        self.add_item(1, 10, content_type="reel", content_id="101")
+        self.add_item(2, 20, content_type="reel", content_id="202")
+        self.add_item(3, 20, content_type="video", content_id="303")
+        before = self.table_count("pulse_saved_items")
+
+        self.assertTrue(self.heal())
+
+        rows = self.collections()
+        self.assertEqual(len(rows), 1, "a second Watch Later is the duplicate the brief forbids")
+        self.assertEqual(int(rows[0]["id"]), 10, "the survivor is the lower id, so existing links stay valid")
+        self.assertEqual(self.table_count("pulse_saved_items"), before, "healing must not drop saved content")
+        self.assertEqual([int(row["collection_id"]) for row in self.items()], [10, 10, 10])
+        self.assertEqual(
+            sorted(row["content_id"] for row in self.items()),
+            ["101", "202", "303"],
+            "every item the user saved is still there, under the survivor",
+        )
+
+    def test_the_merge_does_not_reach_across_users_or_across_slugs(self):
+        self.add_collection(10, "Watch Later", "watch-later", user_id=VIEWER)
+        self.add_collection(11, "Watch Later", "watch-later", user_id=VIEWER)
+        self.add_collection(12, "Favorites", "favorites", user_id=VIEWER, is_default=1)
+        self.add_collection(13, "Watch Later", "watch-later", user_id=AUTHOR)
+        self.assertTrue(self.heal())
+        self.assertEqual([int(row["id"]) for row in self.collections(VIEWER)], [10, 12])
+        self.assertEqual([int(row["id"]) for row in self.collections(AUTHOR)], [13])
+
+    def test_after_the_merge_the_helper_returns_the_survivor_rather_than_making_a_third(self):
+        """The merge is only worth anything if the running code then agrees with it."""
+        self.add_collection(10, "Watch Later", "watch-later")
+        self.add_collection(20, "Watch Later", "watch-later")
+        self.assertTrue(self.heal())
+        returned = self.with_cursor(
+            lambda cur: self.ns["ensure_pulse_saved_collection"](cur, VIEWER, self.ns["PULSE_WATCH_LATER_NAME"])
+        )
+        self.assertEqual(returned, 10)
+        self.assertEqual(len(self.collections()), 1)
+
+    # -- 3. legacy rows with no slug -----------------------------------------
+
+    def test_a_null_or_empty_slug_is_backfilled_from_the_name(self):
+        """A NULL slug collides with nothing, so it would survive the index and
+        stay invisible to a lookup keyed on (user_id, slug) forever."""
+        self.add_collection(10, "Watch Later", None)
+        self.add_collection(20, "Favorites", "", is_default=1)
+        self.assertTrue(self.heal())
+        self.assertEqual(
+            {int(row["id"]): row["slug"] for row in self.collections()},
+            {10: "watch-later", 20: "favorites"},
+        )
+
+    def test_the_backfilled_slug_is_what_lets_the_helper_find_the_existing_row(self):
+        self.add_collection(10, "Watch Later", None)
+        self.assertTrue(self.heal())
+        returned = self.with_cursor(
+            lambda cur: self.ns["ensure_pulse_saved_collection"](cur, VIEWER, self.ns["PULSE_WATCH_LATER_NAME"])
+        )
+        self.assertEqual(returned, 10, "the legacy row was adopted, not shadowed")
+        self.assertEqual(len(self.collections()), 1)
+
+    def test_without_the_heal_a_null_slug_row_becomes_a_duplicate_watch_later(self):
+        """States the defect rather than implying it.
+
+        This is the same account, the same name, and two rows — which is exactly
+        what the brief says must never happen.
+        """
+        self.add_collection(10, "Watch Later", None)
+        self.with_cursor(
+            lambda cur: self.ns["ensure_pulse_saved_collection"](cur, VIEWER, self.ns["PULSE_WATCH_LATER_NAME"])
+        )
+        names = [row["name"] for row in self.collections()]
+        self.assertEqual(names, ["Watch Later", "Watch Later"], "no constraint, no slug, two collections")
+
+    # -- 4. duplicate items, and the route's targeted ON CONFLICT -------------
+
+    def test_duplicate_saved_items_collapse_to_the_oldest(self):
+        self.add_item(1, 10, content_type="post", content_id="5", title="first save")
+        self.add_item(2, 10, content_type="post", content_id="5", title="second save")
+        self.add_item(3, 10, content_type="post", content_id="5", title="third save")
+        self.add_item(4, 10, content_type="post", content_id="6", title="a different post")
+        self.assertTrue(self.heal())
+        rows = self.items()
+        self.assertEqual([int(row["id"]) for row in rows], [1, 4])
+        self.assertEqual(rows[0]["title"], "first save", "the oldest row is the one the user first saved")
+
+    def test_the_routes_targeted_on_conflict_is_illegal_before_the_heal_and_legal_after(self):
+        """This is the 500 itself.
+
+        `ON CONFLICT(user_id, content_type, content_id)` names an index. Without
+        one the statement is rejected outright — Postgres raises, SQLite raises,
+        and neither falls back to a plain INSERT. So every Save fails, on every
+        account, until the index exists.
+        """
+        self.add_item(1, 10, content_type="post", content_id="5", title="already saved")
+        conn = self.connect()
+        self.addCleanup(conn.close)
+        with self.assertRaises(sqlite3.OperationalError) as caught:
+            conn.execute(ROUTE_UPSERT, (VIEWER, 10, "post", "5", "re-saved", "now", "now"))
+        self.assertIn("ON CONFLICT", str(caught.exception))
+
+        self.assertTrue(self.heal())
+
+        conn2 = self.connect()
+        self.addCleanup(conn2.close)
+        conn2.execute(ROUTE_UPSERT, (VIEWER, 10, "post", "5", "re-saved", "now", "now"))
+        conn2.commit()
+        [row] = self.items()
+        self.assertEqual(int(row["id"]), 1, "re-saving updated the row it already had")
+        self.assertEqual(row["title"], "re-saved")
+
+    def test_after_the_heal_a_duplicate_item_is_rejected_outright(self):
+        self.add_item(1, 10, content_type="post", content_id="5")
+        self.assertTrue(self.heal())
+        conn = self.connect()
+        self.addCleanup(conn.close)
+        with self.assertRaises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO pulse_saved_items (user_id,collection_id,content_type,content_id,title,created_at,updated_at)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (VIEWER, 10, "post", "5", "again", "after", "after"),
+            )
+
+    def test_the_same_content_id_under_a_different_type_is_not_a_duplicate(self):
+        """`content_type` is part of the key for a reason: post 5 and reel 5 are
+        different things and a user may save both."""
+        self.add_item(1, 10, content_type="post", content_id="5")
+        self.assertTrue(self.heal())
+        conn = self.connect()
+        self.addCleanup(conn.close)
+        conn.execute(
+            "INSERT INTO pulse_saved_items (user_id,collection_id,content_type,content_id,title,created_at,updated_at)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (VIEWER, 10, "reel", "5", "a reel", "after", "after"),
+        )
+        conn.commit()
+        self.assertEqual(len(self.items()), 2)
+
+    # -- 5. idempotency ------------------------------------------------------
+
+    def test_running_it_twice_changes_nothing_the_second_time(self):
+        """It runs on every boot, and boots are frequent.
+
+        A healer that were destructive on the second pass would eat a row per
+        deploy, which is a far worse failure than the one it fixes.
+        """
+        self.add_collection(10, "Watch Later", None)
+        self.add_collection(20, "Watch Later", "watch-later")
+        self.add_item(1, 10, content_type="reel", content_id="101")
+        self.add_item(2, 20, content_type="reel", content_id="101")
+        self.add_item(3, 20, content_type="video", content_id="303")
+
+        self.assertTrue(self.heal())
+        after_first = self.snapshot()
+        self.assertTrue(self.heal(), "a second boot must not report failure")
+        self.assertEqual(self.snapshot(), after_first)
+        self.assertTrue(self.heal())
+        self.assertEqual(self.snapshot(), after_first)
+
+    def test_it_is_a_no_op_on_a_database_that_already_has_the_constraints(self):
+        """The healthy case: a fresh deployment, where the inline UNIQUE applied.
+
+        `CREATE UNIQUE INDEX IF NOT EXISTS` has to be harmless there, or the fix
+        would break the environments that were never broken.
+        """
+        conn = self.connect()
+        conn.execute("DROP TABLE pulse_saved_collections")
+        conn.execute("DROP TABLE pulse_saved_items")
+        for statement in SCHEMA:
+            if "pulse_saved_collections" in statement or "pulse_saved_items" in statement:
+                conn.execute(statement)
+        conn.commit()
+        conn.close()
+        self.with_cursor(lambda cur: self.ns["pulse_ensure_saved_system_collections"](cur, VIEWER))
+        before = self.snapshot()
+        self.assertTrue(self.heal())
+        self.assertEqual(
+            (self.snapshot()[0], self.snapshot()[1]),
+            (before[0], before[1]),
+            "no row was touched on a database that was already correct",
+        )
+
+    # -- 6. it must not be able to stop the app booting ----------------------
+
+    def test_missing_tables_return_false_instead_of_raising(self):
+        """It is called from `init_db`. An exception there is not a degraded
+        feature, it is an app that does not start."""
+        conn = self.connect()
+        conn.execute("DROP TABLE pulse_saved_collections")
+        conn.execute("DROP TABLE pulse_saved_items")
+        conn.commit()
+        conn.close()
+        self.assertIs(self.heal(), False)
+        self.assertIn("could not heal", self.heal_stdout, "and it says so, rather than failing silently")
+
+    def test_a_broken_saved_items_table_still_returns_false(self):
+        """Half-migrated is the realistic shape of a legacy database."""
+        conn = self.connect()
+        conn.execute("DROP TABLE pulse_saved_items")
+        conn.commit()
+        conn.close()
+        self.assertIs(self.heal(), False)
+
+    def test_the_healer_is_wired_into_init_db(self):
+        """A healer nobody calls is a comment.
+
+        Read out of `bot.py`'s source because `init_db` cannot be executed here;
+        the assertion is that the call exists and sits with the saved tables.
+        """
+        with open(os.path.join(REPO_ROOT, "bot.py"), encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertIn("pulse_heal_saved_constraints(cur, conn)", source)
+        call_at = source.index("pulse_heal_saved_constraints(cur, conn)")
+        preceding = source[max(0, call_at - 4000):call_at]
+        self.assertIn("pulse_saved_items", preceding, "it must run after the saved tables are created")
+
+
+class RemovingTheHealWouldBeNoticedTest(unittest.TestCase):
+    """The teeth check, in the style of `ReintroducingTheBugTest`.
+
+    Every test above is only worth having if it fails when the fix is gone. So
+    run the same tests with `pulse_heal_saved_constraints` neutered — replaced,
+    in this process only, by a stub that does nothing and claims success, which
+    is exactly what reverting the fix would look like from the caller's side.
+    `bot.py` is not touched.
+    """
+
+    NEUTERED_MUST_FAIL = (
+        "test_a_duplicate_slug_is_accepted_before_the_heal_and_rejected_after",
+        "test_two_watch_later_rows_become_one_and_every_item_survives",
+        "test_a_null_or_empty_slug_is_backfilled_from_the_name",
+        "test_duplicate_saved_items_collapse_to_the_oldest",
+        "test_the_routes_targeted_on_conflict_is_illegal_before_the_heal_and_legal_after",
+        "test_after_the_heal_a_duplicate_item_is_rejected_outright",
+    )
+
+    def neutered(self, name):
+        # Defined here rather than at module level so the loader never collects
+        # it as a test class in its own right.
+        class Neutered(LegacySavedSchemaHealingTest):
+            def setUp(inner):
+                LegacySavedSchemaHealingTest.setUp(inner)
+                inner.ns["pulse_heal_saved_constraints"] = lambda cur, conn=None: True
+
+        return Neutered(name)
+
+    def test_each_of_these_fails_without_the_fix(self):
+        for name in self.NEUTERED_MUST_FAIL:
+            with self.subTest(test=name):
+                result = unittest.TestResult()
+                self.neutered(name).run(result)
+                self.assertTrue(
+                    result.failures or result.errors,
+                    f"{name} passes with the heal removed, so it is not testing the heal",
+                )
+
+    def test_the_teeth_check_would_notice_a_test_that_does_not_belong_on_the_list(self):
+        """The inverse: a test that passes with the fix present must pass here too,
+        or the neutering harness is failing everything for some unrelated reason."""
+        result = unittest.TestResult()
+        LegacySavedSchemaHealingTest("test_two_watch_later_rows_become_one_and_every_item_survives").run(result)
+        self.assertEqual((result.failures, result.errors), ([], []))
 
 
 if __name__ == "__main__":
