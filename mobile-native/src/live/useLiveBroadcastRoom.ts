@@ -340,21 +340,26 @@ export function shouldForceLiveSpeakerRoute() {
 }
 
 /**
- * The single place the V2 and legacy publish paths diverge.
+ * UNIFIED PUBLISH PATH. Every live session now publishes through the same
+ * event-verified pipeline the working call path uses (`publishLiveMicrophone`
+ * wraps `publishRealtimeMicrophone`): it waits on LiveKit's own
+ * `localTrackPublished` event and reconciles duplicates. The old legacy helper
+ * polled for 150ms and, if it had not seen a publication yet, toggled the
+ * microphone off and on - which against any publish slower than 150ms produced
+ * TWO audio publications for one speaker (the duplicate-audio defect, heard as
+ * echo or silence). The legacy helper is retained ONLY as a one-shot rescue
+ * when the unified publish settles with zero tracks, mirroring the call path's
+ * fallback, so a publish regression degrades instead of failing closed.
  *
- * V2 (`publishLiveMicrophone`) waits on LiveKit's own `localTrackPublished`
- * event and reconciles duplicates. The legacy helper polled for 150ms and, if it
- * had not seen a publication yet, toggled the microphone off and on - which
- * against any publish slower than 150ms produced TWO audio publications for one
- * speaker. That is the duplicate-audio defect. The legacy branch is preserved
- * byte-for-byte so a flag flip is a true A/B, not a rewrite.
+ * `useV2` is retained as a telemetry cohort label; it no longer branches the
+ * publish mechanism.
  */
 async function publishMicrophoneForPath(
   room: any,
   useV2: boolean,
   context: { role: string; room: string; correlationId?: string; canPublishMicrophone?: boolean }
 ): Promise<number> {
-  if (!useV2) return ensureMicrophonePublished(room);
+  void useV2;
   emitLiveAudioEvent({ name: "live_audio_publish_started", path: "v2_isolated", role: context.role, room: context.room });
   const result = await publishLiveMicrophone(room, {
     context: {
@@ -383,7 +388,21 @@ async function publishMicrophoneForPath(
       duplicatesRemoved: result.duplicatesRemoved
     });
   }
-  return result.audioTrackCount;
+  if (result.audioTrackCount > 0) return result.audioTrackCount;
+  // One-shot rescue: the event-verified publish settled with no track. The
+  // legacy helper is a different mechanism (immediate setMicrophoneEnabled with
+  // a bounded poll), so it can succeed where an event never arrived. The
+  // fail-closed LIVE_LOCAL_AUDIO_NOT_PUBLISHED check downstream still runs.
+  const rescued = await ensureMicrophonePublished(room);
+  emitLiveAudioEvent({
+    name: "live_audio_publish_settled",
+    path: "v1_legacy",
+    role: context.role,
+    room: context.room,
+    outcome: rescued > 0 ? "rescued" : "failed",
+    audioTrackCount: rescued
+  });
+  return rescued;
 }
 
 /**
@@ -479,9 +498,11 @@ export function useLiveBroadcastRoom() {
   // the user toggled sound off (co-host join, host republish, reconnect).
   const remoteAudioEnabledRef = useRef(true);
 
-  // --- V2 route state -------------------------------------------------------
-  // All of this is inert while the server flag is off: `useV2Ref` gates every
-  // read, so the legacy path behaves exactly as it did before.
+  // --- Unified route state --------------------------------------------------
+  // Every live session now runs the one call-grade audio path (event-verified
+  // publish, route reapply, token refresh, bounded reconnect, foreground
+  // recovery). `useV2Ref` survives only as a telemetry cohort label for the
+  // server's A/B flag; it no longer gates behaviour.
   const useV2Ref = useRef(false);
   const roleRef = useRef("");
   const roomNameRef = useRef("");
@@ -662,7 +683,6 @@ export function useLiveBroadcastRoom() {
    * native AVAudioSession observer, so they drive this.
    */
   const reapplyAudioRoute = useCallback(async (reason: string) => {
-    if (!useV2Ref.current) return;
     const audioSession = audioSessionRef.current;
     if (!audioSession) return;
     const applied = await selectRealtimeAudioOutput(audioSession, true).then(
@@ -688,7 +708,6 @@ export function useLiveBroadcastRoom() {
   const scheduleTokenRefresh = useCallback(() => {
     if (tokenRefreshTimerRef.current) clearTimeout(tokenRefreshTimerRef.current);
     tokenRefreshTimerRef.current = null;
-    if (!useV2Ref.current) return;
     const refresh = refreshCredentialsRef.current;
     const credentials = credentialsRef.current;
     if (!refresh || !credentials) return;
@@ -753,7 +772,7 @@ export function useLiveBroadcastRoom() {
    * equally wrong, hence the classification plus a hard attempt budget.
    */
   const scheduleReconnect = useCallback((reason: string) => {
-    if (!useV2Ref.current || intentionalTeardownRef.current || !lifecycleRef.current.mayReconnect()) return false;
+    if (intentionalTeardownRef.current || !lifecycleRef.current.mayReconnect()) return false;
     const credentials = credentialsRef.current;
     if (!credentials) return false;
 
@@ -822,10 +841,11 @@ export function useLiveBroadcastRoom() {
       const canPublishMicrophone = publishSources.includes("microphone");
       const publish = Boolean(options.publish && credentials.canPublish && canPublishMicrophone);
 
-      // SERVER-AUTHORITATIVE GATE. The decision arrives on the token response the
-      // client already fetches for every broadcast, so flipping the backend flag
-      // takes effect on the next token fetch with no app release. There is no
-      // local override on purpose - a client-side flag is not a kill switch.
+      // TELEMETRY COHORT ONLY. The server flag used to select between the
+      // legacy and V2 audio paths; the client is now unified on the single
+      // call-grade path for every session, so this value only labels telemetry
+      // (audioPath / audioV2) for rollout observability. It no longer branches
+      // any audio behaviour.
       const useV2 = isLiveAudioV2EnabledForSession(credentials, publish);
       const audioPath = resolveLiveAudioPathForSession(credentials, publish);
       const telemetryRole = credentials.role || (publish ? "host" : "viewer");
@@ -1128,7 +1148,7 @@ export function useLiveBroadcastRoom() {
             canPublishMicrophone
           }));
           }
-          if (useV2 || !publish) {
+          {
             const engineContext = {
               sessionId: roomNameRef.current,
               correlationId: correlationIdRef.current,
@@ -1137,22 +1157,23 @@ export function useLiveBroadcastRoom() {
             };
             // Reconnect can replace both the native engine and the output
             // route. Publishers restore capture/playout; viewers restore only
-            // playout and never request microphone input.
-            if (publish && useV2) {
+            // playout and never request microphone input. This recovery runs
+            // for EVERY session - it is the same call-grade machinery calls
+            // use, and leaving it out is how a legacy broadcast went silent
+            // after a network blip.
+            if (publish) {
               audioTasks.push(stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
                 settleMs: 250,
                 stage: "room_connected",
                 context: engineContext
               }));
-            } else if (!publish) {
+            } else {
               audioTasks.push(stabilizeLiveRemotePlayback(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, remoteAudioEnabledRef.current, {
                 settleMs: 250,
                 stage: "room_connected",
                 context: engineContext
               }));
             }
-          } else {
-            audioTasks.push(applyRemoteAudioEnabled(room, remoteAudioEnabledRef.current));
           }
           Promise.all(audioTasks)
             .then(() => {
@@ -1271,7 +1292,7 @@ export function useLiveBroadcastRoom() {
               }
             })
               .then(() => {
-                if (publish && useV2) {
+                if (publish) {
                   return stabilizeLivePublisherAudio(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, {
                     settleMs: 0,
                     stage: "track_subscribed",
@@ -1294,11 +1315,13 @@ export function useLiveBroadcastRoom() {
         room.on(livekitClient.RoomEvent.TrackUnmuted, refresh);
         room.on(livekitClient.RoomEvent.LocalTrackPublished, refresh);
         room.on(livekitClient.RoomEvent.LocalTrackUnpublished, refresh);
-        if (useV2) {
-          // Route-change surface. `@livekit/react-native`'s AudioSession exposes
-          // no AVAudioSession route-change or interruption listener, so these
-          // LiveKit device events plus the AppState foreground transition are the
-          // portable signals available without shipping a new native module.
+        {
+          // Route-change surface, for EVERY session. `@livekit/react-native`'s
+          // AudioSession exposes no AVAudioSession route-change or interruption
+          // listener, so these LiveKit device events plus the AppState
+          // foreground transition are the portable signals available without
+          // shipping a new native module. iOS silently moving output to the
+          // receiver with no error is how legacy Live audio went quiet.
           const onDeviceChange = () => {
             void reapplyAudioRoute("media_devices_changed");
           };
@@ -1363,16 +1386,14 @@ export function useLiveBroadcastRoom() {
           if (classification === "terminal") lifecycleRef.current.markTerminal();
           lifecycleRef.current.tryTransition("room", classification === "terminal" ? "disconnected" : "reconnecting");
           if (classification === "terminal") lifecycleRef.current.tryTransition("remote", "ended");
-          if (useV2) {
-            emitLiveAudioEvent({
-              name: "live_audio_disconnect_classified",
-              path: "v2_isolated",
-              role: telemetryRole,
-              room: roomNameRef.current,
-              reason: reasonText,
-              outcome: classification
-            });
-          }
+          emitLiveAudioEvent({
+            name: "live_audio_disconnect_classified",
+            path: "v2_isolated",
+            role: telemetryRole,
+            room: roomNameRef.current,
+            reason: reasonText,
+            outcome: classification
+          });
           setState((current) => ({
             ...current,
             connected: false,
@@ -1593,7 +1614,7 @@ export function useLiveBroadcastRoom() {
         }
         if (publish) lifecycleRef.current.tryTransition("local", "published");
         reconnectAttemptRef.current = 0;
-        if (useV2) scheduleTokenRefresh();
+        scheduleTokenRefresh();
         setState((current) => ({
           ...current,
           connecting: false,
@@ -1687,7 +1708,7 @@ export function useLiveBroadcastRoom() {
       correlationId: correlationIdRef.current
     });
     if (localAudioTrackCount <= 0) throw new Error("Camera changed, but microphone audio is no longer published.");
-    if (useV2Ref.current) {
+    {
       await stabilizeLivePublisherAudio(room, audioDeviceModuleRef.current, audioSessionRef.current, {
         settleMs: 450,
         stage: "camera_start",
@@ -1746,7 +1767,7 @@ export function useLiveBroadcastRoom() {
       correlationId: correlationIdRef.current
     });
     if (localAudioTrackCount <= 0) throw new Error("Camera switched, but microphone audio is no longer published.");
-    if (useV2Ref.current) {
+    {
       await stabilizeLivePublisherAudio(room, audioDeviceModuleRef.current, audioSessionRef.current, {
         settleMs: 450,
         stage: "camera_start",

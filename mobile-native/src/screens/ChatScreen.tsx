@@ -979,7 +979,36 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setRecordingElapsed(0);
       setRecordingLevels(Array.from({ length: 24 }, () => 0.14));
       const started = await Audio.Recording.createAsync(
-        { ...Audio.RecordingOptionsPresets.HIGH_QUALITY, isMeteringEnabled: true },
+        {
+          // Voice-tuned recording: mono AAC at 24 kHz / 32 kbps instead of the
+          // stereo HIGH_QUALITY preset. Speech stays fully intelligible while
+          // the file is roughly 4-8x smaller, and upload time is the dominant
+          // share of voice-send latency on cellular.
+          isMeteringEnabled: true,
+          android: {
+            extension: ".m4a",
+            outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+            audioEncoder: Audio.AndroidAudioEncoder.AAC,
+            sampleRate: 24000,
+            numberOfChannels: 1,
+            bitRate: 32000
+          },
+          ios: {
+            extension: ".m4a",
+            outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+            audioQuality: Audio.IOSAudioQuality.MEDIUM,
+            sampleRate: 24000,
+            numberOfChannels: 1,
+            bitRate: 32000,
+            linearPCMBitDepth: 16,
+            linearPCMIsBigEndian: false,
+            linearPCMIsFloat: false
+          },
+          web: {
+            mimeType: "audio/webm",
+            bitsPerSecond: 32000
+          }
+        },
         (status) => {
           if (!status.isRecording) return;
           setRecordingElapsed(Math.max(0, Math.floor(status.durationMillis / 1000)));

@@ -998,20 +998,29 @@ export async function uploadMessengerMedia(input: {
     name: input.name,
     type: mimeType
   } as unknown as Blob);
-  await pulseApi<MediaUploadResult>("/api/messages/media/upload", {
+  const uploaded = await pulseApi<MediaUploadResult>("/api/messages/media/upload", {
     method: "POST",
     body: form
   });
-  const completed = await pulseApi<MediaUploadResult>("/api/messages/media/complete", {
-    method: "POST",
-    body: JSON.stringify({
-      attachment_id: attachmentId,
-      duration_ms: input.durationSeconds ? Math.max(1, Math.round(input.durationSeconds * 1000)) : "",
-      width: "",
-      height: "",
-      waveform_json: ""
-    })
-  });
+  // VOICE FAST PATH. /upload already persisted duration/waveform metadata, set
+  // processing_status, and enqueued the async processing jobs; /complete only
+  // COALESCEs the exact same values (the client has no width/height/waveform to
+  // add for voice) and is a functional no-op round trip. Skipping the awaited
+  // /complete lets the message send fire one full RTT sooner — the perceptible
+  // part of voice-send latency. Non-voice media keeps the /complete step, which
+  // carries real dimensions/waveform for images and video.
+  const completed = input.voice
+    ? uploaded
+    : await pulseApi<MediaUploadResult>("/api/messages/media/complete", {
+        method: "POST",
+        body: JSON.stringify({
+          attachment_id: attachmentId,
+          duration_ms: input.durationSeconds ? Math.max(1, Math.round(input.durationSeconds * 1000)) : "",
+          width: "",
+          height: "",
+          waveform_json: ""
+        })
+      });
   const downloadUrl = String(completed.download_url || `/api/messages/media/${attachmentId}/download`);
   return {
     ...completed,

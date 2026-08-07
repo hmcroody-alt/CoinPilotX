@@ -1,14 +1,11 @@
 /**
- * Livestream audio V2 rollout gate.
+ * Livestream audio V2 rollout flag — now a TELEMETRY COHORT LABEL.
  *
- * The decision is made ENTIRELY on the server and delivered on the LiveKit
- * token response the client already fetches for every broadcast. The client
- * never computes eligibility, so the kill switch takes effect on the next token
- * fetch with no app release. There is deliberately no local override: a
- * client-side flag would not be a kill switch.
- *
- * Default is OFF. Anything other than an explicit server `true` runs the legacy
- * path, so a malformed, truncated, or absent field is fail-safe.
+ * The client runs the single unified call-grade audio path for every live
+ * session; this server-delivered flag no longer selects an audio code path in
+ * `useLiveBroadcastRoom`. It is still parsed strictly (only an explicit `true`
+ * counts) and still labels telemetry events (`audioPath`, `audioV2`) so the
+ * server rollout state stays observable per session.
  */
 
 export type LiveAudioFlagSource = {
@@ -24,9 +21,10 @@ export function isLiveAudioV2Enabled(source: LiveAudioFlagSource | null | undefi
 }
 
 /**
- * Host/co-host capture is held on the physically verified legacy publisher
- * path until the server explicitly opts that session into publisher V2. A
- * viewer may continue using V2 because it never owns or records the microphone.
+ * Cohort resolution for a session: publishers count as V2 only when the server
+ * additionally sets the publisher flag. Behaviourally the client is unified;
+ * this distinction exists so telemetry can attribute sessions to the server's
+ * rollout buckets.
  */
 export function isLiveAudioV2EnabledForSession(
   source: LiveAudioFlagSource | null | undefined,

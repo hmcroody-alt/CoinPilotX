@@ -478,3 +478,77 @@ Revert this commit. The new telemetry fields are optional and additive, the
 `eas.json` env var is read only by store-readiness gating on non-production
 profiles, and the lock entry is a types-only devDependency. No server flag,
 schema, or native dependency is involved.
+
+## Unified live audio path addendum (2026-08-06)
+
+This addendum records a deliberate real-time audio mission: unify every live
+session onto the single physically verified call-grade audio path and remove
+the legacy livestream audio branch's behavioural divergence.
+
+### Why the change is required
+
+Production Railway holds `LIVESTREAM_AUDIO_V2_QA_ONLY=true` with a two-user QA
+allowlist and `LIVESTREAM_AUDIO_V2_PERCENT=0`, so every real host and viewer
+ran the legacy path. The legacy path retained the duplicate-publication publish
+defect (150ms poll + mic toggle) and had NO automatic reconnect, NO token
+refresh (30-minute guest tokens silently expired), NO output-route reapply
+(iOS moving output to the receiver was how Live went quiet with no error), NO
+foreground/interruption recovery, and NO publisher reconnect stabilization.
+The audience-silence complaint is this divergence.
+
+### Which feature required it
+
+Livestream host/viewer audio (audience must hear the host) and voice-message
+send latency.
+
+### Which protected files changed
+
+| File | Change |
+|---|---|
+| `mobile-native/src/live/useLiveBroadcastRoom.ts` | Every live session now runs the unified event-verified publisher (`publishLiveMicrophone`); the legacy `ensureMicrophonePublished` survives only as a one-shot rescue when the verified publish settles with zero tracks. Removed the `useV2` gates from `reapplyAudioRoute`, `scheduleTokenRefresh`, `scheduleReconnect`, the route-change/AppState foreground listeners, the Reconnected/TrackSubscribed publisher stabilization, mid-session camera stabilization, and disconnect-classification telemetry. `useV2` is retained strictly as a telemetry cohort label. |
+| `mobile-native/src/live/liveAudioFlags.ts` | Comments only: the server flag is documented as a telemetry cohort label. Parsing behaviour unchanged (strict `=== true`). |
+| `mobile-native/src/screens/ChatScreen.tsx` | Voice recording switched from the stereo `HIGH_QUALITY` preset to voice-tuned mono AAC 24 kHz / 32 kbps (4-8x smaller upload). expo-av allowlist file count unchanged. |
+| `mobile-native/src/api/messenger.ts` | Voice uploads skip the awaited `/api/messages/media/complete` round trip, which is a functional no-op for voice (`/upload` already persists duration/waveform, sets processing_status, and enqueues processing jobs). Non-voice media is unchanged. |
+
+### Expected behavior change
+
+Livestream hosts and viewers get the same publish verification, duplicate
+reconciliation, route reapply, token refresh, bounded reconnect, and
+foreground recovery that calls use. Audio-call and video-call code paths are
+untouched. Voice messages send roughly one RTT sooner with a much smaller
+payload.
+
+### Regression risk
+
+Low-to-moderate. The unified publisher and recovery machinery are the code the
+2026-08-02 baseline (`realtime-audio-stable-v1`) physically verified as
+audible for QA sessions; this change extends them to all sessions rather than
+introducing new mechanisms. The legacy publish mechanism remains available as
+an explicit rescue, and the fail-closed `LIVE_LOCAL_AUDIO_NOT_PUBLISHED` check
+still guards every publisher connect. No AVAudioSession ownership, LiveKit
+publication path, or engine arbitration changed.
+
+### Tests run
+
+- `npm run test:realtime-audio-critical`: 16 suites, 349 tests passed.
+- `npm run test:realtime-audio`: 22 suites, 444 tests passed.
+- `npm run test:realtime-audio-architecture`: 1 suite, 22 tests passed.
+- Backend architecture (`tests.protection.test_realtime_audio_architecture`): 18 tests OK.
+- Backend token grants + webhook route owner: 4 tests OK.
+- `tsc --noEmit`: clean. `npm run i18n:validate`: 11 locales OK.
+- live/core/calls/api/screens jest: 135 + 494 + 866 + 454 tests passed.
+
+### Physical validation required
+
+`docs/realtime_audio_live_test_matrix.md` Groups A and B on two physical
+iPhones: host goes live, audience hears audio; join/leave does not break
+audio; audio call and video call baseline re-checks; voice message send
+latency observation. Railway note for shipped builds: existing binaries still
+branch on the server flag, so set `LIVESTREAM_AUDIO_V2_QA_ONLY=0` and
+`LIVESTREAM_AUDIO_V2_PERCENT=100` (keep `LIVESTREAM_AUDIO_V2_ENABLED` as kill
+switch) until this build is fully rolled out.
+
+### Rollback procedure
+
+Revert this commit. No server flag semantics, schema, or native dependency
+changed; the client returns to branching on the server flag exactly as before.
