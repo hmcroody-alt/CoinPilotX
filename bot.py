@@ -44895,11 +44895,25 @@ def api_pulse_live_mux_webhook():
                     "UPDATE pulse_live_streams SET mux_recording_asset_id=COALESCE(NULLIF(?, ''), mux_recording_asset_id), mux_recording_playback_id=COALESCE(NULLIF(?, ''), mux_recording_playback_id), updated_at=? WHERE mux_recording_asset_id=? OR mux_live_stream_id=?",
                     (mux_asset_id, playback_id, now, mux_asset_id, mux_live_stream_id),
                 )
+        replay_reel_live_ids = []
+        if event_type == "video.asset.ready" and mux_asset_id:
+            cur.execute(
+                "SELECT id FROM pulse_live_sessions WHERE (mux_recording_asset_id=? OR mux_live_stream_id=?) AND status IN ('ended','archived') AND COALESCE(replay_reel_id,0)=0",
+                (mux_asset_id, mux_live_stream_id),
+            )
+            replay_reel_live_ids = [safe_int(row[0], 0) for row in cur.fetchall()]
         cur.execute(
             "INSERT INTO pulse_live_events (event_type, actor_user_id, post_id, payload_json, created_at) VALUES (?, 0, 0, ?, ?)",
             (f"mux:{event_type}", json.dumps({"event_id": event.get("id") or "", "mux_live_stream_id": mux_live_stream_id, "mux_upload_id": mux_upload_id, "mux_asset_id": mux_asset_id}, default=str)[:5000], now),
         )
         conn.commit(); conn.close()
+        for replay_live_id in replay_reel_live_ids:
+            if not replay_live_id:
+                continue
+            try:
+                pulse_live_publish_replay_reel(replay_live_id, trace_id=f"mux-ready-{replay_live_id}")
+            except Exception:
+                logging.exception("PULSE_LIVE_REPLAY_REEL_WEBHOOK_FAILED live_id=%s", replay_live_id)
         return jsonify({"ok": True, "event_type": event_type})
     except Exception as exc:
         logging.exception("PULSE_LIVE_MUX_WEBHOOK_FAILED event_type=%s error=%s", event_type, exc)
@@ -48347,6 +48361,117 @@ def api_pulse_live_guest_action(live_id, guest_id, action):
         return api_error("Guest action could not be completed.", 500)
 
 
+def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
+    """Publish exactly one replay reel for an ended live session.
+
+    Reuses the existing reels pipeline (pulse_posts + pulse_reels) instead of a
+    separate replay system. Idempotent: the reel id is claimed on
+    pulse_live_sessions.replay_reel_id, so end/finalize retries and the Mux
+    webhook cannot create duplicate replay posts. The Mux recording is used
+    as-is (no music track attached), preserving the original live audio.
+    """
+    trace_id = trace_id or secrets.token_hex(6)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (int(live_id),))
+        live = dict(cur.fetchone() or {})
+        host_user_id = int(live.get("user_id") or 0)
+        if not live or not host_user_id:
+            conn.close()
+            return {"ok": False, "reason": "live_not_found"}
+        if (live.get("status") or "") not in ("ended", "archived"):
+            conn.close()
+            return {"ok": False, "reason": "live_not_ended"}
+        existing_reel_id = safe_int(live.get("replay_reel_id"), 0)
+        if existing_reel_id:
+            cur.execute(
+                "SELECT r.id AS id, r.post_id AS post_id FROM pulse_reels r JOIN pulse_posts p ON p.id=r.post_id WHERE r.id=? AND p.deleted_at IS NULL LIMIT 1",
+                (existing_reel_id,),
+            )
+            existing = dict(cur.fetchone() or {})
+            conn.close()
+            if existing:
+                return {"ok": True, "created": False, "reel_id": int(existing["id"]), "post_id": int(existing["post_id"])}
+            # The creator deleted the auto-published replay; do not resurrect it.
+            return {"ok": False, "reason": "replay_reel_deleted", "reel_id": existing_reel_id}
+        playback_id = (live.get("mux_recording_playback_id") or "").strip()
+        video_url = f"https://stream.mux.com/{playback_id}.m3u8" if playback_id else (live.get("replay_url") or "").strip()
+        if not video_url or not reel_media_source_is_playable(video_url):
+            conn.close()
+            return {"ok": False, "reason": "replay_not_playable"}
+        title = clean_html(live.get("title") or "PulseSoc Live")[:140]
+        caption = f"Replay of the live broadcast “{title}”. Watch the full stream again."[:2200]
+        category = clean_html(live.get("category") or live.get("custom_category") or "Live Replay")[:80]
+        tags = ["live-replay", "livestream"]
+        poster_url = (live.get("thumbnail_url") or live.get("preview_url") or "").strip()
+        if not poster_url and playback_id:
+            poster_url = f"https://image.mux.com/{playback_id}/thumbnail.jpg"
+        conn.close()
+        result = pulse_feed_engine.create_post(host_user_id, caption, "video", f"Live Replay: {title}"[:160], tags=tags, visibility="public", media_ids=[])
+        if not result.get("ok"):
+            logging.warning("PULSE_LIVE_REPLAY_REEL_POST_FAILED trace_id=%s live_id=%s message=%s", trace_id, live_id, result.get("message"))
+            return {"ok": False, "reason": "post_create_failed"}
+        post_id = int(result.get("post_id") or 0)
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO pulse_reels
+            (post_id, user_id, category, caption, video_url, poster_url, ai_tags_json, safety_score, educational_value, reel_score, processing_status, transcoding_status, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 90, 60, 70, 'ready', 'ready', 'active', ?, ?)
+            ON CONFLICT(post_id) DO UPDATE SET video_url=excluded.video_url, poster_url=excluded.poster_url, updated_at=excluded.updated_at
+            """,
+            (post_id, host_user_id, category, caption, video_url, poster_url, json.dumps(tags), now, now),
+        )
+        reel_id = safe_int(cur.lastrowid, 0)
+        if not reel_id:
+            cur.execute("SELECT id FROM pulse_reels WHERE post_id=? LIMIT 1", (post_id,))
+            reel_id = safe_int((cur.fetchone() or [0])[0], 0)
+        # Claim the one replay slot for this live session. Only the first
+        # finalize attempt wins; concurrent retries clean up after themselves.
+        cur.execute(
+            "UPDATE pulse_live_sessions SET replay_reel_id=?, updated_at=? WHERE id=? AND COALESCE(replay_reel_id,0)=0",
+            (reel_id, now, int(live_id)),
+        )
+        if int(cur.rowcount or 0) <= 0:
+            cur.execute("UPDATE pulse_posts SET deleted_at=?, updated_at=? WHERE id=?", (now, now, post_id))
+            cur.execute("UPDATE pulse_reels SET status='removed', updated_at=? WHERE id=?", (now, reel_id))
+            cur.execute("SELECT replay_reel_id FROM pulse_live_sessions WHERE id=? LIMIT 1", (int(live_id),))
+            winner = safe_int((cur.fetchone() or [0])[0], 0)
+            conn.commit(); conn.close()
+            return {"ok": True, "created": False, "reel_id": winner, "post_id": 0}
+        conn.commit(); conn.close()
+        try:
+            pulse_video_index_upsert(
+                host_user_id, "reel", reel_id, 0, f"Live Replay: {title}", caption, "public",
+                media={
+                    "media_type": "video",
+                    "media_url": video_url,
+                    "playback_url": video_url,
+                    "mux_playback_id": playback_id,
+                    "mux_asset_id": live.get("mux_recording_asset_id") or "",
+                    "mux_status": "ready",
+                    "processing_status": "ready",
+                    "thumbnail_url": poster_url,
+                },
+            )
+        except Exception:
+            logging.exception("PULSE_LIVE_REPLAY_REEL_INDEX_FAILED trace_id=%s live_id=%s reel_id=%s", trace_id, live_id, reel_id)
+        try:
+            pulse_emit_event("pulse_reel_created", {"reel_id": reel_id, "post_id": post_id, "source": "live_replay", "live_id": int(live_id)}, host_user_id, post_id)
+        except Exception:
+            logging.exception("PULSE_LIVE_REPLAY_REEL_EMIT_FAILED trace_id=%s live_id=%s reel_id=%s", trace_id, live_id, reel_id)
+        logging.info("PULSE_LIVE_REPLAY_REEL_PUBLISHED trace_id=%s live_id=%s reel_id=%s post_id=%s", trace_id, live_id, reel_id, post_id)
+        return {"ok": True, "created": True, "reel_id": reel_id, "post_id": post_id}
+    except Exception as exc:
+        logging.exception("PULSE_LIVE_REPLAY_REEL_FAILED trace_id=%s live_id=%s error=%s", trace_id, live_id, exc)
+        try:
+            conn.rollback(); conn.close()
+        except Exception:
+            pass
+        return {"ok": False, "reason": "exception"}
+
+
 @webhook_app.route("/api/pulse/live/<int:live_id>/end", methods=["POST"])
 def api_pulse_live_end(live_id):
     init_db()
@@ -48381,7 +48506,13 @@ def api_pulse_live_end(live_id):
     conn.commit(); conn.close()
     replay_playback_id = live.get("mux_recording_playback_id") or ""
     replay_playback_url = f"https://stream.mux.com/{replay_playback_id}.m3u8" if replay_playback_id else (replay_url if replay_is_cdn else "")
+    replay_reel = {}
     if replay_playback_url:
+        try:
+            replay_reel = pulse_live_publish_replay_reel(live_id, trace_id=f"live-end-{live_id}")
+        except Exception:
+            logging.exception("PULSE_LIVE_REPLAY_REEL_PUBLISH_FAILED live_id=%s", live_id)
+            replay_reel = {"ok": False, "reason": "exception"}
         try:
             pulse_video_index_upsert(
                 user["user_id"], "replay", live_id, 0, live.get("title") or "PulseSoc Live Replay",
@@ -48429,6 +48560,8 @@ def api_pulse_live_end(live_id):
         "recording_error": recording_error,
         "replay_url": replay_url if replay_is_cdn else "",
         "replay_available": replay_is_cdn,
+        "replay_reel_id": safe_int(replay_reel.get("reel_id"), 0),
+        "replay_reel_post_id": safe_int(replay_reel.get("post_id"), 0),
         "post_live_options": share_options,
     })
 
