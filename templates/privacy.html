@@ -26,6 +26,7 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" />
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}" />
   <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a" />
   <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
   <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
   {% if ga_measurement_id %}
@@ -68,13 +69,13 @@
   </script>
   <style>
     :root {
-      --bg: #070b14;
-      --panel: rgba(13, 22, 39, 0.9);
-      --line: rgba(110, 223, 246, 0.18);
-      --text: #f2fbff;
-      --muted: #9fb5c0;
-      --cyan: #6edff6;
-      --green: #36e58f;
+      --bg: var(--surface-primary, #070b14);
+      --panel: var(--surface-overlay, rgba(13, 22, 39, 0.9));
+      --line: var(--border-subtle, rgba(110, 223, 246, 0.18));
+      --text: var(--text-primary, #f2fbff);
+      --muted: var(--text-secondary, #9fb5c0);
+      --cyan: var(--action-secondary, #6edff6);
+      --green: var(--action-primary, #36e58f);
     }
 
     * { box-sizing: border-box; }

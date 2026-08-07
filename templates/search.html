@@ -22,6 +22,7 @@
   <meta name="theme-color" content="#00e5ff" />
   <link rel="icon" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" />
   <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a" />
   <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
   <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
   {% if ga_measurement_id %}
@@ -36,13 +37,13 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #050b14;
-      --panel: rgba(9, 18, 32, 0.82);
-      --border: rgba(0, 229, 255, 0.22);
-      --text: #eef9ff;
-      --muted: #9fb2c4;
-      --cyan: #00e5ff;
-      --green: #00ff99;
+      --bg: var(--surface-primary, #050b14);
+      --panel: var(--surface-overlay, rgba(9, 18, 32, 0.82));
+      --border: var(--border-subtle, rgba(0, 229, 255, 0.22));
+      --text: var(--text-primary, #eef9ff);
+      --muted: var(--text-secondary, #9fb2c4);
+      --cyan: var(--action-secondary, #00e5ff);
+      --green: var(--action-primary, #00ff99);
     }
     * { box-sizing: border-box; }
     body {

@@ -7,21 +7,22 @@
   <meta name="theme-color" content="#050b15">
   <title>PulseSoc Mission Control</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}">
+  <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a">
   <style>
     :root {
-      --bg: #030811;
-      --panel: rgba(7, 17, 31, .82);
-      --panel-2: rgba(11, 25, 44, .9);
-      --line: rgba(91, 219, 255, .2);
-      --line-hot: rgba(50, 235, 174, .52);
-      --text: #f4fbff;
-      --muted: #91a8b8;
-      --cyan: #5bdcff;
+      --bg: var(--surface-primary, #030811);
+      --panel: var(--surface-overlay, rgba(7, 17, 31, .82));
+      --panel-2: var(--surface-overlay-strong, rgba(11, 25, 44, .9));
+      --line: var(--border-subtle, rgba(91, 219, 255, .2));
+      --line-hot: var(--border-strong, rgba(50, 235, 174, .52));
+      --text: var(--text-primary, #f4fbff);
+      --muted: var(--text-secondary, #91a8b8);
+      --cyan: var(--action-secondary, #5bdcff);
       --blue: #2d8cff;
-      --emerald: #32ebae;
-      --purple: #a95cff;
-      --gold: #ffd45a;
-      --red: #ff4f72;
+      --emerald: var(--action-primary, #32ebae);
+      --purple: var(--domain-intelligence, #a95cff);
+      --gold: var(--status-warning, #ffd45a);
+      --red: var(--status-error, #ff4f72);
       --radius: 18px;
       color-scheme: dark;
     }
