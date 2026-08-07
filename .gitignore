@@ -51,3 +51,6 @@ outputs/.mutate*-original
 
 # Claude Code runtime lock, owned by a live session (not shared state)
 .claude/scheduled_tasks.lock
+
+# Claude Code agent worktrees live here; they are live checkouts, not shared source
+.claude/worktrees/

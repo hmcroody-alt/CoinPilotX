@@ -100,6 +100,7 @@ import { StorageSettingsScreen } from "../screens/settings/StorageSettingsScreen
 import { StatusScreen } from "../screens/StatusScreen";
 import { TrustSafetyScreen } from "../screens/TrustSafetyScreen";
 import { UndxActionCenterScreen } from "../screens/UndxActionCenterScreen";
+import { UndxCapabilitiesScreen } from "../screens/UndxCapabilitiesScreen";
 import { VerificationCenterScreen } from "../screens/VerificationCenterScreen";
 import { UserDashboardScreen } from "../screens/UserDashboardScreen";
 import { ChatScreen } from "../screens/ChatScreen";
@@ -485,6 +486,7 @@ export function AppNavigator() {
       <Stack.Screen name="GrowthCenter" component={GrowthCenterScreen} options={{ title: t("common:screens.growthCenter") }} />
       <Stack.Screen name="IntelligenceCenter" component={IntelligenceCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.intelligence") })} />
       <Stack.Screen name="UndxActionCenter" component={UndxActionCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.undxActionCenter") })} />
+      <Stack.Screen name="UndxCapabilities" component={UndxCapabilitiesScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.undxCapabilities") })} />
       <Stack.Screen name="AlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.alerts") })} />
       <Stack.Screen name="CryptoAlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.alerts") })} />
       <Stack.Screen name="AccountCenter" component={AccountCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.accountCenter") })} />

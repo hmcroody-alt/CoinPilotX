@@ -264,6 +264,7 @@ export type RootStackParamList = {
   GrowthCenter: ({ contentType?: string; contentId?: number | string; title?: string } & ProfileOsParams) | undefined;
   IntelligenceCenter: ({ alertId?: number; subsystem?: string; title?: string } & ProfileOsParams) | undefined;
   UndxActionCenter: { orgId?: string; actor?: string; productArea?: string; title?: string } | undefined;
+  UndxCapabilities: { title?: string } | undefined;
   AlertManagement: { alertId?: number; title?: string } | undefined;
   CryptoAlertManagement: { alertId?: number; alert_id?: number; id?: number; title?: string } | undefined;
   AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;

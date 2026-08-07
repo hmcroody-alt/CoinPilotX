@@ -30936,15 +30936,8 @@ def api_arena_challenge():
         realtime_service.publish_arena_event("inbox", opponent_id, "arena_challenge", {"challenge_id": challenge_id, "challenge_type": challenge_type, "label": details["label"], "preview": note or f"{account_display_name(user)} challenged you to {details['label']}.", "next_url": "/arena/inbox"})
     except Exception:
         pass
-    try:
-        notification_service.send_push_alert(
-            opponent_id,
-            "Arena challenge received",
-            f"{account_display_name(user)} challenged you to a {details['label']}.",
-            {"challenge_id": challenge_id, "url": "/arena/inbox", "push_type": "arena_invite"},
-        )
-    except Exception as exc:
-        logging.info("Arena challenge notification failed safely: %s", exc)
+    # No send_push_alert here: notify_user above already enqueues the push for
+    # this challenge. A second direct send delivered the same banner twice.
     log_product_event(user["user_id"], "arena_challenge_sent", {"opponent_id": opponent_id})
     return jsonify({"ok": True, "challenge_id": challenge_id, "challenge": challenge_payload, "message": f"{details['label']} challenge sent."})
 
