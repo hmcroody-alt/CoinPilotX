@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Seller Console · Business OS · PulseSoc</title>
+  <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"/>
+  <style>
+    :root {
+      --bos-bg: var(--pulse-palette-background, #070b14);
+      --bos-surface: var(--pulse-palette-surface, #0e1524);
+      --bos-raised: var(--pulse-palette-surface-raised, #16203a);
+      --bos-text: var(--pulse-palette-text, #eef2ff);
+      --bos-muted: var(--pulse-palette-muted, #8b93a7);
+      --bos-accent: var(--pulse-palette-accent, #5b8cff);
+      --bos-accent-strong: var(--pulse-palette-accent-strong, #2f6bff);
+      --bos-warning: var(--pulse-palette-warning, #f5b83d);
+      --bos-danger: var(--pulse-palette-danger, #ff5d6c);
+      --bos-ok: var(--pulse-palette-success, #3ecf8e);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bos-bg); color: var(--bos-text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh; }
+    .bos-shell { display: flex; min-height: 100vh; }
+    .bos-nav { width: 220px; flex-shrink: 0; padding: 20px 12px;
+      background: var(--bos-surface); border-right: 1px solid rgba(255,255,255,0.06); }
+    .bos-brand { font-weight: 700; font-size: 18px; padding: 4px 10px 18px; }
+    .bos-brand span { color: var(--bos-accent); }
+    .bos-nav a.back { display: block; color: var(--bos-muted); font-size: 12px;
+      text-decoration: none; padding: 0 10px 14px; }
+    .bos-nav a.back:hover { color: var(--bos-text); }
+    .bos-nav button { display: block; width: 100%; text-align: left; border: 0;
+      cursor: pointer; background: transparent; color: var(--bos-muted);
+      font-size: 14px; padding: 10px 10px; border-radius: 8px; margin-bottom: 2px; }
+    .bos-nav button.active { background: var(--bos-raised); color: var(--bos-text); }
+    .bos-nav button:hover { color: var(--bos-text); }
+    .bos-main { flex: 1; padding: 24px; max-width: 1100px; }
+    .bos-section { display: none; }
+    .bos-section.active { display: block; }
+    .bos-section h1 { font-size: 22px; margin: 0 0 4px; }
+    .bos-sub { color: var(--bos-muted); font-size: 13px; margin: 0 0 20px; }
+    .bos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+    .bos-card { background: var(--bos-surface); border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px; padding: 16px; min-height: 120px; }
+    .bos-card h2 { font-size: 14px; margin: 0 0 10px; color: var(--bos-muted);
+      font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    .bos-card pre { margin: 0; font-size: 12px; color: var(--bos-text);
+      white-space: pre-wrap; word-break: break-word; max-height: 320px;
+      overflow: auto; font-family: ui-monospace, Menlo, monospace; }
+    .bos-state { font-size: 13px; color: var(--bos-muted); }
+    .bos-state.error { color: var(--bos-danger); }
+    .bos-kv { display: flex; justify-content: space-between; font-size: 13px;
+      padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .bos-kv:last-child { border-bottom: 0; }
+    .bos-kv .k { color: var(--bos-muted); }
+    .bos-count { font-size: 26px; font-weight: 700; color: var(--bos-accent); }
+    .bos-form { display: grid; gap: 8px; }
+    .bos-form label { font-size: 12px; color: var(--bos-muted); display: grid; gap: 4px; }
+    .bos-form input, .bos-form select, .bos-form textarea {
+      background: var(--bos-raised); color: var(--bos-text);
+      border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+      padding: 8px 10px; font-size: 13px; font-family: inherit; }
+    .bos-form textarea { min-height: 60px; resize: vertical; }
+    .bos-form button { background: var(--bos-accent-strong); border: 0;
+      color: #fff; border-radius: 8px; padding: 9px 12px; font-size: 13px;
+      cursor: pointer; font-weight: 600; }
+    .bos-form button:disabled { opacity: 0.6; cursor: default; }
+    .bos-form-msg { font-size: 12px; min-height: 15px; color: var(--bos-muted); }
+    .bos-form-msg.ok { color: var(--bos-ok); }
+    .bos-form-msg.error { color: var(--bos-danger); }
+    .bos-bizbar { display: flex; gap: 8px; align-items: center; margin: 0 0 18px;
+      background: var(--bos-surface); border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px; padding: 10px 12px; flex-wrap: wrap; }
+    .bos-bizbar label { font-size: 12px; color: var(--bos-muted); }
+    .bos-bizbar input { background: var(--bos-raised); color: var(--bos-text);
+      border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+      padding: 7px 10px; font-size: 13px; min-width: 260px; }
+    .bos-bizbar button { background: var(--bos-accent-strong); border: 0; color: #fff;
+      border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
+    .bos-note { font-size: 12px; color: var(--bos-muted); margin-top: 8px; }
+  </style>
+</head>
+<body>
+<div class="bos-shell">
+  <nav class="bos-nav" id="bosNav">
+    <div class="bos-brand">Seller <span>Console</span></div>
+    <a class="back" href="/business-os">&larr; Business OS</a>
+    <button data-section="dashboard" class="active">Dashboard</button>
+    <button data-section="offers">Offers</button>
+    <button data-section="returns">Returns</button>
+    <button data-section="inventory">Inventory</button>
+    <button data-section="drafts">Listing Drafts</button>
+    <button data-section="reports">Reports</button>
+    <button data-section="storefront">Storefront</button>
+    <button data-section="policies">Policies</button>
+  </nav>
+  <main class="bos-main">
+
+    <section class="bos-section active" id="sec-dashboard">
+      <h1>Dashboard</h1>
+      <p class="bos-sub">Action center and sales at a glance. Everything here reads the canonical /api/business-os commerce surface.</p>
+      <div class="bos-grid">
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/seller/action-center"><h2>Action Center</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/seller/sales-summary"><h2>Sales Summary</h2><div class="bos-body"></div></div>
+      </div>
+    </section>
+
+    <section class="bos-section" id="sec-offers">
+      <h1>Offers</h1>
+      <p class="bos-sub">Offers you have received as a seller and made as a buyer.</p>
+      <div class="bos-grid">
+        <div class="bos-card"><h2>Make an Offer</h2>
+          <form class="bos-form" data-bos-form data-action="/api/business-os/marketplace/offers" data-refresh="/api/business-os/marketplace/offers?role=buyer">
+            <label>Product ID<input name="product_id" required placeholder="prod_…"></label>
+            <label>Amount (cents)<input name="amount_cents" type="number" min="1" step="1" required placeholder="1500"></label>
+            <label>Quantity<input name="quantity" type="number" min="1" step="1" placeholder="1"></label>
+            <label>Expires in (hours)<input name="expires_in_hours" type="number" min="1" step="1" placeholder="48"></label>
+            <button type="submit">Send Offer</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Offer Action</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/offers/{id}/{verb}" data-refresh="/api/business-os/marketplace/offers?role=seller" data-include-fields="reason,amount_cents,expires_in_hours">
+            <label>Offer ID<input name="id" required placeholder="off_…"></label>
+            <label>Action<select name="verb">
+              <option value="accept">Accept</option>
+              <option value="decline">Decline</option>
+              <option value="counter">Counter</option>
+              <option value="withdraw">Withdraw</option>
+              <option value="convert">Convert to order</option>
+            </select></label>
+            <label>Reason (decline)<input name="reason" placeholder="Optional"></label>
+            <label>Counter amount (cents)<input name="amount_cents" type="number" min="1" step="1" placeholder="Counter only"></label>
+            <label>Counter expires in (hours)<input name="expires_in_hours" type="number" min="1" step="1" placeholder="Counter only"></label>
+            <button type="submit">Apply</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/offers?role=seller"><h2>Received (Seller)</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/offers?role=buyer"><h2>Sent (Buyer)</h2><div class="bos-body"></div></div>
+      </div>
+    </section>
+
+    <section class="bos-section" id="sec-returns">
+      <h1>Returns</h1>
+      <p class="bos-sub">Return requests on your orders — as seller and as buyer.</p>
+      <div class="bos-grid">
+        <div class="bos-card"><h2>Request a Return</h2>
+          <form class="bos-form" data-bos-form data-action="/api/business-os/marketplace/returns" data-refresh="/api/business-os/marketplace/returns?role=buyer">
+            <label>Order ID<input name="order_id" required placeholder="ord_…"></label>
+            <label>Product ID<input name="product_id" placeholder="Optional"></label>
+            <label>Quantity<input name="quantity" type="number" min="1" step="1" placeholder="Optional"></label>
+            <label>Reason<textarea name="reason" maxlength="500" placeholder="Why is this coming back?"></textarea></label>
+            <button type="submit">Request Return</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Return Action</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/returns/{id}/{verb}" data-refresh="/api/business-os/marketplace/returns?role=seller" data-include-fields="reason,amount_cents">
+            <label>Return ID<input name="id" required placeholder="ret_…"></label>
+            <label>Action<select name="verb">
+              <option value="approve">Approve</option>
+              <option value="decline">Decline</option>
+              <option value="cancel">Cancel</option>
+              <option value="receive">Mark received</option>
+              <option value="refund">Refund</option>
+              <option value="close">Close</option>
+            </select></label>
+            <label>Reason (decline/close)<input name="reason" placeholder="Optional"></label>
+            <label>Refund amount (cents)<input name="amount_cents" type="number" min="1" step="1" placeholder="Refund only"></label>
+            <button type="submit">Apply</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/returns?role=seller"><h2>Incoming (Seller)</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/returns?role=buyer"><h2>Mine (Buyer)</h2><div class="bos-body"></div></div>
+      </div>
+    </section>
+
+    <section class="bos-section" id="sec-inventory">
+      <h1>Inventory</h1>
+      <p class="bos-sub">Stock levels and the append-only adjustment ledger.</p>
+      <div class="bos-grid">
+        <div class="bos-card"><h2>Adjust Stock</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/products/{id}/inventory/adjust" data-refresh="/api/business-os/marketplace/inventory" data-include-fields="delta,set_qty,reason,note">
+            <label>Product ID<input name="id" required placeholder="prod_…"></label>
+            <label>Delta (+/-)<input name="delta" type="number" step="1" placeholder="e.g. -2 or 10"></label>
+            <label>Or set exact quantity<input name="set_qty" type="number" min="0" step="1" placeholder="Overrides delta"></label>
+            <label>Reason<select name="reason">
+              <option value="recount">Recount</option>
+              <option value="received">Received stock</option>
+              <option value="damaged">Damaged</option>
+              <option value="lost">Lost</option>
+              <option value="correction">Correction</option>
+            </select></label>
+            <label>Note<input name="note" maxlength="300" placeholder="Optional"></label>
+            <button type="submit">Adjust</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/inventory"><h2>Overview</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/inventory/adjustments"><h2>Adjustment Ledger</h2><div class="bos-body"></div></div>
+      </div>
+    </section>
+
+    <section class="bos-section" id="sec-drafts">
+      <h1>Listing Drafts</h1>
+      <p class="bos-sub">Guided listing flow: build a draft section by section, then publish it as a live product.</p>
+      <div class="bos-grid">
+        <div class="bos-card"><h2>Start a Draft</h2>
+          <form class="bos-form" data-bos-form data-action="/api/business-os/marketplace/listing-drafts" data-refresh="/api/business-os/marketplace/listing-drafts">
+            <button type="submit">New Draft</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Edit a Section</h2>
+          <form class="bos-form" data-bos-form data-method="PATCH" data-action-template="/api/business-os/marketplace/listing-drafts/{id}/{verb}" data-refresh="/api/business-os/marketplace/listing-drafts" data-json-field="payload">
+            <label>Draft ID<input name="id" required placeholder="ldr_…"></label>
+            <label>Section<select name="verb">
+              <option value="identity">identity — title, description, category</option>
+              <option value="media">media — items</option>
+              <option value="offer">offer — price_cents, currency</option>
+              <option value="fulfillment">fulfillment — fulfillment_type</option>
+              <option value="inventory">inventory — inventory_qty</option>
+              <option value="attributes">attributes — attributes</option>
+              <option value="compliance">compliance — acknowledged</option>
+            </select></label>
+            <label>Section JSON<textarea name="payload" required placeholder='{"title": "Desk Lamp", "description": "…"}'></textarea></label>
+            <button type="submit">Save Section</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Publish / Discard</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/listing-drafts/{id}/{verb}" data-refresh="/api/business-os/marketplace/listing-drafts">
+            <label>Draft ID<input name="id" required placeholder="ldr_…"></label>
+            <label>Action<select name="verb">
+              <option value="publish">Publish</option>
+              <option value="discard">Discard</option>
+            </select></label>
+            <button type="submit">Apply</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/listing-drafts"><h2>In Progress</h2><div class="bos-body"></div></div>
+      </div>
+    </section>
+
+    <section class="bos-section" id="sec-reports">
+      <h1>Reports</h1>
+      <p class="bos-sub">Finance and daily sales, straight from the orders ledger — no fabricated numbers.</p>
+      <div class="bos-grid">
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/seller/reports/finance"><h2>Finance</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint="/api/business-os/marketplace/seller/reports/sales-by-day"><h2>Sales by Day</h2><div class="bos-body"></div></div>
+      </div>
+    </section>
+
+    <section class="bos-section" id="sec-storefront" data-biz-scoped>
+      <h1>Storefront Versions</h1>
+      <p class="bos-sub">Draft vs published. Publishing freezes a snapshot; shoppers only ever see the live version.</p>
+      <div class="bos-bizbar">
+        <label>Business ID</label>
+        <input data-biz-input placeholder="biz_…">
+        <button data-biz-load>Load</button>
+        <span class="bos-note">Find your business ID on the <a href="/business-os" style="color: var(--bos-accent)">Business OS</a> page.</span>
+      </div>
+      <div class="bos-grid">
+        <div class="bos-card"><h2>Publish Draft</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/store/{biz}/storefront/versions/publish" data-refresh-biz="/api/business-os/store/{biz}/storefront/versions">
+            <label>Note<input name="note" maxlength="500" placeholder="What changed?"></label>
+            <button type="submit">Publish</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Restore a Version</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/store/{biz}/storefront/versions/{id}/restore" data-refresh-biz="/api/business-os/store/{biz}/storefront/versions">
+            <label>Version ID<input name="id" required placeholder="sfv_…"></label>
+            <label>Note<input name="note" maxlength="500" placeholder="Optional"></label>
+            <button type="submit">Restore</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card" data-endpoint-biz="/api/business-os/store/{biz}/storefront/draft-status"><h2>Draft Status</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint-biz="/api/business-os/store/{biz}/storefront/versions"><h2>Version History</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint-biz="/api/business-os/store/{biz}/storefront/published"><h2>Live (What Shoppers See)</h2><div class="bos-body"></div></div>
+      </div>
+    </section>
+
+    <section class="bos-section" id="sec-policies" data-biz-scoped>
+      <h1>Shipping &amp; Returns Policies</h1>
+      <p class="bos-sub">Shipping profiles and the store return policy. "Not set up" is honest — nothing is fabricated.</p>
+      <div class="bos-bizbar">
+        <label>Business ID</label>
+        <input data-biz-input placeholder="biz_…">
+        <button data-biz-load>Load</button>
+      </div>
+      <div class="bos-grid">
+        <div class="bos-card"><h2>New Shipping Profile</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/store/{biz}/shipping-profiles" data-refresh-biz="/api/business-os/store/{biz}/shipping-profiles">
+            <label>Name<input name="name" required maxlength="80" placeholder="Standard"></label>
+            <label>Rate type<select name="rate_type">
+              <option value="flat">Flat</option>
+              <option value="per_item">Per item</option>
+              <option value="free">Free</option>
+            </select></label>
+            <label>Base rate (cents)<input name="base_rate_cents" type="number" min="0" step="1" placeholder="500"></label>
+            <label>Per-item rate (cents)<input name="per_item_rate_cents" type="number" min="0" step="1" placeholder="Optional"></label>
+            <button type="submit">Create Profile</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Return Policy</h2>
+          <form class="bos-form" data-bos-form data-method="PUT" data-action-template="/api/business-os/store/{biz}/return-policy" data-refresh-biz="/api/business-os/store/{biz}/return-policy">
+            <label>Returns accepted<select name="returns_accepted">
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select></label>
+            <label>Window (days)<input name="window_days" type="number" min="1" step="1" placeholder="30"></label>
+            <label>Restocking fee (basis points)<input name="restocking_fee_bps" type="number" min="0" step="1" placeholder="0"></label>
+            <button type="submit">Save Policy</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card" data-endpoint-biz="/api/business-os/store/{biz}/policies"><h2>Summary</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint-biz="/api/business-os/store/{biz}/shipping-profiles"><h2>Shipping Profiles</h2><div class="bos-body"></div></div>
+        <div class="bos-card" data-endpoint-biz="/api/business-os/store/{biz}/return-policy"><h2>Current Return Policy</h2><div class="bos-body"></div></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  var CSRF_TOKEN = {{ csrf_token | tojson }};
+  var loaded = {};
+  var bizId = "";
+
+  function esc(value) {
+    return String(value).replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
+
+  function renderData(body, data) {
+    if (data === null || data === undefined) {
+      body.innerHTML = '<div class="bos-state">Not set up yet.</div>';
+      return;
+    }
+    if (Array.isArray(data)) {
+      if (!data.length) {
+        body.innerHTML = '<div class="bos-state">Nothing here yet.</div>';
+        return;
+      }
+      body.innerHTML = '<div class="bos-count">' + data.length + '</div>'
+        + '<pre>' + esc(JSON.stringify(data.slice(0, 10), null, 2)) + '</pre>';
+      return;
+    }
+    if (typeof data === "object") {
+      var keys = Object.keys(data).filter(function (k) { return k !== "ok"; });
+      if (keys.length === 1 && Array.isArray(data[keys[0]])) {
+        renderData(body, data[keys[0]]);
+        return;
+      }
+      if (keys.length === 1 && data[keys[0]] !== null && typeof data[keys[0]] === "object") {
+        renderData(body, data[keys[0]]);
+        return;
+      }
+      if (!keys.length) {
+        body.innerHTML = '<div class="bos-state">Nothing here yet.</div>';
+        return;
+      }
+      var rows = keys.slice(0, 14).map(function (key) {
+        var value = data[key];
+        var shown = (value !== null && typeof value === "object")
+          ? (Array.isArray(value) ? value.length + " item(s)" : JSON.stringify(value).slice(0, 60))
+          : String(value);
+        return '<div class="bos-kv"><span class="k">' + esc(key) + '</span><span>' + esc(shown) + '</span></div>';
+      }).join("");
+      body.innerHTML = rows;
+      return;
+    }
+    body.innerHTML = '<pre>' + esc(String(data)) + '</pre>';
+  }
+
+  function endpointFor(card) {
+    var fixed = card.getAttribute("data-endpoint");
+    if (fixed) { return fixed; }
+    var templ = card.getAttribute("data-endpoint-biz");
+    if (templ && bizId) { return templ.replace("{biz}", encodeURIComponent(bizId)); }
+    return null;
+  }
+
+  function loadCard(card, force) {
+    var endpoint = endpointFor(card);
+    var body = card.querySelector(".bos-body");
+    if (!body) { return; }
+    if (!endpoint) {
+      if (card.hasAttribute("data-endpoint-biz")) {
+        body.innerHTML = '<div class="bos-state">Enter a business ID above and press Load.</div>';
+      }
+      return;
+    }
+    if (loaded[endpoint] && !force) { return; }
+    loaded[endpoint] = true;
+    body.innerHTML = '<div class="bos-state">Loading…</div>';
+    fetch(endpoint, { credentials: "same-origin", headers: { "Accept": "application/json" } })
+      .then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (data) {
+          if (!response.ok) {
+            throw new Error(data.error || ("HTTP " + response.status));
+          }
+          return data;
+        });
+      })
+      .then(function (data) { renderData(body, data); })
+      .catch(function (error) {
+        loaded[endpoint] = false;
+        body.innerHTML = '<div class="bos-state error">' + esc(error.message) + '</div>';
+      });
+  }
+
+  function loadSection(section) {
+    Array.prototype.forEach.call(section.querySelectorAll(".bos-card"), function (card) {
+      loadCard(card, false);
+    });
+  }
+
+  document.getElementById("bosNav").addEventListener("click", function (event) {
+    var button = event.target.closest("button[data-section]");
+    if (!button) { return; }
+    Array.prototype.forEach.call(document.querySelectorAll(".bos-nav button"), function (b) {
+      b.classList.toggle("active", b === button);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".bos-section"), function (section) {
+      section.classList.remove("active");
+    });
+    var target = document.getElementById("sec-" + button.getAttribute("data-section"));
+    if (target) {
+      target.classList.add("active");
+      loadSection(target);
+    }
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-biz-load]"), function (btn) {
+    btn.addEventListener("click", function () {
+      var input = btn.parentElement.querySelector("[data-biz-input]");
+      bizId = (input.value || "").trim();
+      Array.prototype.forEach.call(document.querySelectorAll("[data-biz-input]"), function (other) {
+        other.value = bizId;
+      });
+      var section = btn.closest(".bos-section");
+      Array.prototype.forEach.call(section.querySelectorAll(".bos-card[data-endpoint-biz]"), function (card) {
+        loadCard(card, true);
+      });
+    });
+  });
+
+  function refreshEndpoint(endpoint) {
+    if (!endpoint) { return; }
+    var selector = '.bos-card[data-endpoint="' + endpoint + '"], .bos-card[data-endpoint-biz="' + endpoint + '"]';
+    Array.prototype.forEach.call(document.querySelectorAll(selector), function (card) {
+      loadCard(card, true);
+    });
+  }
+
+  function sendJson(method, url, payload) {
+    return fetch(url, {
+      method: method,
+      credentials: "same-origin",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "X-CSRF-Token": CSRF_TOKEN
+      },
+      body: JSON.stringify(payload || {})
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (data) {
+        if (!response.ok || data.ok === false) {
+          throw new Error(data.error || data.message || ("HTTP " + response.status));
+        }
+        return data;
+      });
+    });
+  }
+
+  function formPayload(form) {
+    var include = (form.getAttribute("data-include-fields") || "").split(",")
+      .map(function (s) { return s.trim(); }).filter(Boolean);
+    var payload = {};
+    Array.prototype.forEach.call(form.elements, function (el) {
+      if (!el.name || el.name === "id" || el.name === "verb") { return; }
+      if (include.length && include.indexOf(el.name) === -1) { return; }
+      var value = el.value.trim ? el.value.trim() : el.value;
+      if (value === "") { return; }
+      if (el.type === "number") {
+        payload[el.name] = parseInt(value, 10);
+      } else if (value === "true" || value === "false") {
+        payload[el.name] = (value === "true");
+      } else {
+        payload[el.name] = value;
+      }
+    });
+    return payload;
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll("form[data-bos-form]"), function (form) {
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var msg = form.querySelector(".bos-form-msg");
+      var button = form.querySelector("button[type=submit]");
+      var method = form.getAttribute("data-method") || "POST";
+      var url = form.getAttribute("data-action");
+      var template = form.getAttribute("data-action-template");
+      if (template) {
+        url = template;
+        if (url.indexOf("{biz}") !== -1) {
+          if (!bizId) {
+            msg.className = "bos-form-msg error";
+            msg.textContent = "Enter a business ID above and press Load first.";
+            return;
+          }
+          url = url.replace("{biz}", encodeURIComponent(bizId));
+        }
+        if (url.indexOf("{id}") !== -1) {
+          var id = (form.elements.id && form.elements.id.value || "").trim();
+          if (!id) { return; }
+          url = url.replace("{id}", encodeURIComponent(id));
+        }
+        if (url.indexOf("{verb}") !== -1) {
+          url = url.replace("{verb}", encodeURIComponent(form.elements.verb.value));
+        }
+      }
+      var payload;
+      var jsonField = form.getAttribute("data-json-field");
+      if (jsonField) {
+        try {
+          payload = JSON.parse(form.elements[jsonField].value);
+        } catch (parseError) {
+          msg.className = "bos-form-msg error";
+          msg.textContent = "Section JSON is not valid JSON.";
+          return;
+        }
+      } else {
+        payload = formPayload(form);
+      }
+      msg.className = "bos-form-msg";
+      msg.textContent = "Working…";
+      button.disabled = true;
+      sendJson(method, url, payload)
+        .then(function () {
+          msg.className = "bos-form-msg ok";
+          msg.textContent = "Done.";
+          form.reset();
+          var fixed = form.getAttribute("data-refresh");
+          if (fixed) { refreshEndpoint(fixed); }
+          var bizRefresh = form.getAttribute("data-refresh-biz");
+          if (bizRefresh) { refreshEndpoint(bizRefresh); }
+        })
+        .catch(function (error) {
+          msg.className = "bos-form-msg error";
+          msg.textContent = error.message;
+        })
+        .then(function () { button.disabled = false; });
+    });
+  });
+
+  loadSection(document.getElementById("sec-dashboard"));
+})();
+</script>
+</body>
+</html>

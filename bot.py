@@ -1238,6 +1238,12 @@ _load_route_pack("pulse_marketplace_returns", "services.marketplace_returns_rout
 # Business OS web surface (website parity milestone 3): serves the /business-os
 # dashboard page over the existing /api/business-os API — no new API routes.
 _load_route_pack("business_os_web", "services.business_os_web")
+# Business OS commerce gateway (Store OS mission + web parity bridge): mounts
+# the eight canonical controller packs (offers, returns, inventory, listing
+# drafts, seller dashboard, reports, store policies, storefront versions) as
+# 37 /api/business-os endpoints plus the /business-os/commerce seller console
+# page. Every endpoint is DARK (404) until its BUSINESS_OS_* flag is on.
+_load_route_pack("business_os_commerce", "services.business_os_commerce_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):

@@ -500,6 +500,52 @@ catalog ADR:**
   Controller packs awaiting the bot.py window now number EIGHT
   (+ store versions).
 
+**2026-08-06 — Commerce web gateway shipped (web-parity mission bridge):**
+
+- NEW `services/business_os/commerce_gateway.py`: framework-agnostic route
+  table (**37 routes**) exposing all eight mount-ready controller packs —
+  offers, returns, inventory, listing drafts, seller dashboard, reports,
+  store policies, storefront versions — under `/api/business-os/*`. One
+  `ROUTES` tuple declares method/rule/auth tier (`public` | `user` |
+  `admin`) per endpoint; `dispatch()` maps HTTP inputs onto each
+  controller's signature; `ensure_schemas()` is idempotent init;
+  `context_from_user()` maps bot.py session rows onto engine context.
+  Exactly ONE public route (shopper storefront read); the offers expiry
+  sweep is admin-tier (`require_admin_api("marketplace.manage")`).
+- NEW `services/business_os_commerce_routes.py`: thin Flask adapter
+  mirroring `presence_routes.py` conventions (Blueprint, lazy `_bot()`,
+  `register(app)`). Zero business logic. **Mount line for the bot.py
+  owner** (next to the other packs, ~line 1240):
+  `_load_route_pack("business_os_commerce", "services.business_os_commerce_routes")`
+  Safe to mount anytime — every controller is DARK (404) while its
+  `BUSINESS_OS_*` flag is off (proven by the dark sweep test).
+- Tests: `test_commerce_gateway.py` **5/5** (table sanity, dark sweep over
+  all 37 routes, end-to-end versions+policies+inventory flow through
+  `dispatch`, RBAC/allowlist still bite, context mapping, AST audit of the
+  Flask adapter — sandbox has no Flask). Regression: 12 neighbouring
+  business_os suites re-run green; git state strictly additive.
+
+**2026-08-06 — Seller Commerce Console page shipped (web face of the gateway):**
+
+- NEW `templates/business_os_commerce.html` + page route
+  `GET /business-os/commerce` (in the same route pack; login-required, same
+  idiom as `/business-os`). Eight sections — Dashboard, Offers, Returns,
+  Inventory, Listing Drafts, Reports, Storefront Versions, Policies —
+  every read card and every form (per-verb) wired to a real gateway route.
+  Business-scoped sections take a business ID (bar at the top); PATCH/PUT
+  supported via `data-method`; section JSON editor for the guided listing
+  flow. Styling consumes `pulsesoc-tokens.css` (parity milestone 1) and
+  mirrors the concurrent agent's `/business-os` shell.
+- Route pack hardened: default-deny CSRF gate on all cookie-authenticated
+  POST/PATCH/PUT (`X-CSRF-Token` header ≡ session token via
+  `hmac.compare_digest`; native bearer requests exempt via
+  `g.mobile_access_user_id`, mirroring `pulse_ads_verify_write`).
+- Tests: `test_commerce_console_page.py` **4/4** — NO DEAD BUTTONS proven
+  statically: every `data-endpoint`/form target (verbs expanded from each
+  form's `<select>`) must match a gateway route with the right method; no
+  admin-tier route on the user page; CSRF header + gate asserted.
+  `test_commerce_gateway.py` re-run **5/5** after the adapter change.
+
 ## 5. Definition of done (delta from spec Section 21)
 
 The spec's seller journey stands. Additional repo-specific gates:
