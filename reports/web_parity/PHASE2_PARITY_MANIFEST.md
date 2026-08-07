@@ -301,3 +301,27 @@ Evidence-based statement of what changed, nothing more:
   fragility: any bot.py insertion above these lines shifts them; the test
   window absorbs ±3 lines only.
 - **Validation:** AST OK, 780/780 undx_agent, protection suite 239/15.
+
+---
+
+## 12. 2026-08-07 milestone 6 — Business OS write flows
+
+- **`/business-os` is now read-write.** Added to `templates/business_os.html`:
+  Create Campaign Draft (name/objective/destination_url →
+  `POST /api/business-os/advertising/campaigns`), Campaign Action
+  (submit/withdraw/archive/restore/reopen →
+  `POST .../campaigns/<id>/<verb>`), Create Product (title/price/description/
+  fulfillment/inventory → `POST /api/business-os/marketplace/products`, USD
+  input converted to `price_cents` client-side), and Product Action
+  (publish/pause/resume/archive/restore → `POST .../products/<id>/<action>`).
+  Field sets match the server allowlists (`CREATE_FIELDS`,
+  `PRODUCT_CREATE_FIELDS`) and lifecycle verb sets exactly.
+- **CSRF:** route now passes `get_csrf_token()` into the template; all writes
+  send `X-CSRF-Token`, satisfying `pulse_ads_verify_write()`'s
+  session/header compare. Lists auto-refresh after successful writes.
+- **Honest scope:** actions take an ID typed from the adjacent list (no
+  per-row buttons yet); no ad-set/creative/funding flows, order fulfilment,
+  or payout requests; server may still gate flows behind advertiser/seller
+  onboarding — the forms surface those errors verbatim.
+- **Validation:** module AST OK, template Jinja OK, 780/780 undx_agent,
+  protection suite 239/15.
