@@ -11,3 +11,7 @@
 /.jest-out.txt
 /.tsc-out.txt
 /.jestcache/
+
+# Staging area for i18n catalog merges. The merged output belongs in
+# src/i18n/catalogs/; the per-locale inputs and the merge script are scratch.
+/.i18n_tmp/
