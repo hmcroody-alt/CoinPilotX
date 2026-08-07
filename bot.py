@@ -5993,55 +5993,19 @@ def pulse_mobile_user_payload(user):
     }
 
 
-def pulse_business_construction_access(user):
-    from services.business_os.construction_access import resolve_business_construction_access
-
-    user = user or {}
-    # The canonical owner account is server-configured by immutable email and
-    # super-user state. The admin-table check below supports the same owner
-    # across production account records without ever trusting display_name.
-    is_owner_admin = user_is_owner_account(user) or user_is_super_user(user)
-    email = normalize_email(user.get("email") or "")
-    if email:
-        conn = db()
-        cur = conn.cursor()
-        if table_exists(cur, "admin_users"):
-            cur.execute(
-                "SELECT role, status FROM admin_users WHERE lower(COALESCE(email,''))=lower(?) LIMIT 1",
-                (email,),
-            )
-            admin = dict(cur.fetchone() or {})
-            role = str(admin.get("role") or "").strip().lower()
-            status = str(admin.get("status") or "active").strip().lower()
-            is_owner_admin = status == "active" and role in {"owner", "super_admin", "superadmin"}
-        conn.close()
-    return resolve_business_construction_access(user, is_owner_admin=is_owner_admin)
-
-
-@webhook_app.route("/api/pulse/business/construction-access", methods=["GET"])
-def api_pulse_business_construction_access():
-    init_db()
-    user = api_account_user()
-    if not user:
-        return api_error("Authentication required.", 401, error="authentication_required")
-    account = load_account_by_id(user["user_id"]) or user
-    access = pulse_business_construction_access(account)
-    return jsonify(access)
-
-
 @webhook_app.before_request
-def enforce_private_business_os_construction_boundary():
+def require_authentication_for_business_os():
+    """Business OS is open to every signed-in account; it still needs a session.
+
+    Individual routes below scope their own data by user id and run their own
+    CSRF checks, so this only rejects anonymous callers.
+    """
     if not request.path.startswith("/api/business-os/"):
         return None
     init_db()
-    user = api_account_user()
-    if not user:
+    if not api_account_user():
         return api_error("Authentication required.", 401, error="authentication_required")
-    account = load_account_by_id(user["user_id"]) or user
-    access = pulse_business_construction_access(account)
-    if access["can_access_private_business_os"]:
-        return None
-    return api_error("This PulseSoc sector is under construction.", 403, error="business_os_under_construction")
+    return None
 
 
 @webhook_app.route("/api/mobile/auth/session", methods=["GET"])
