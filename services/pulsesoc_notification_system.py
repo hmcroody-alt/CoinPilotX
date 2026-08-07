@@ -173,6 +173,12 @@ def now_iso() -> str:
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
 
+def _worker_identity() -> str:
+    """Which OS process/service is acting — proves which drain path handled a job."""
+    service = os.getenv("RAILWAY_SERVICE_NAME") or os.getenv("PUSH_WORKER_NAME") or "web"
+    return f"{service}:pid{os.getpid()}"
+
+
 def _safe_identifier(identifier: str) -> str:
     if not IDENTIFIER_RE.match(identifier or ""):
         raise ValueError(f"Unsafe SQL identifier: {identifier}")
@@ -2530,31 +2536,58 @@ def _dispatch_push(cur: Any, notification: dict[str, Any], prefs: dict[str, Any]
     results = []
     if legacy_count:
         results.append(push_service.send_push(user_id, notification.get("title") or "PulseSoc", preview_body, payload, push_type=str(notification.get("type") or "notification")))
-    expo_tokens = [
-        d for d in devices
+    # ONE DELIVERY PER PHYSICAL DEVICE. The same installation can hold several
+    # registry rows — an Expo row from the current app plus a native apns/fcm
+    # row left behind by an older build or a provider-less registration that
+    # defaulted to apns. Fanning out to every row banners the same phone twice
+    # at the same timestamp. Each device_id is routed through exactly one
+    # provider (Expo wins — it is what the current app registers), repeated
+    # tokens are sent once, and native loops never send Expo-format tokens.
+    expo_device_ids = {
+        str(d.get("device_id") or "")
+        for d in devices
         if str(d.get("push_provider") or "").lower() == "expo"
         and str(d.get("push_token") or "").startswith(("ExponentPushToken[", "ExpoPushToken["))
-    ]
-    fcm_tokens = [
-        d for d in devices
-        if (
-            str(d.get("push_provider") or "").lower() == "fcm"
-            or (
-                str(d.get("platform") or "").lower() == "android"
-                and str(d.get("push_provider") or "").lower() not in {"expo", "web_push", "webpush"}
+    }
+    routed_device_ids: set[str] = set()
+    routed_tokens: set[str] = set()
+    expo_tokens: list[dict[str, Any]] = []
+    fcm_tokens: list[dict[str, Any]] = []
+    apns_tokens: list[dict[str, Any]] = []
+    for device in devices:  # ordered most-recently-seen first
+        provider_name = str(device.get("push_provider") or "").lower()
+        platform_name = str(device.get("platform") or "").lower()
+        token_value = str(device.get("push_token") or "")
+        device_key = str(device.get("device_id") or "") or f"token:{token_value}"
+        if not token_value or token_value in routed_tokens or device_key in routed_device_ids:
+            continue
+        is_expo_token = token_value.startswith(("ExponentPushToken[", "ExpoPushToken["))
+        if provider_name == "expo" and is_expo_token:
+            expo_tokens.append(device)
+        elif provider_name == "fcm" or (platform_name == "android" and provider_name not in {"expo", "web_push", "webpush"}):
+            if is_expo_token or device_key in expo_device_ids:
+                continue  # this installation is already reachable through Expo
+            fcm_tokens.append(device)
+        elif provider_name == "apns" or (platform_name == "ios" and provider_name not in {"expo", "web_push", "webpush"}):
+            if is_expo_token or device_key in expo_device_ids:
+                continue  # this installation is already reachable through Expo
+            apns_tokens.append(device)
+        else:
+            continue
+        routed_device_ids.add(device_key)
+        routed_tokens.add(token_value)
+    for group_name, group in (("expo", expo_tokens), ("fcm", fcm_tokens), ("apns", apns_tokens)):
+        for device in group:
+            token_value = str(device.get("push_token") or "")
+            logging.info(
+                "PUSH_TRACE stage=os_push_fanout worker=%s notification_id=%s user_id=%s provider=%s token_suffix=%s legacy_subscriptions=%s",
+                _worker_identity(),
+                int(notification.get("id") or 0),
+                user_id,
+                group_name,
+                token_value[-10:],
+                legacy_count,
             )
-        ) and d.get("push_token")
-    ]
-    apns_tokens = [
-        d for d in devices
-        if (
-            str(d.get("push_provider") or "").lower() == "apns"
-            or (
-                str(d.get("platform") or "").lower() == "ios"
-                and str(d.get("push_provider") or "").lower() not in {"expo", "web_push", "webpush"}
-            )
-        ) and d.get("push_token")
-    ]
     # Registration mirrors Expo tokens into the legacy subscription table. If
     # that mirror exists it already sends through Expo, so skip the OS copy to
     # prevent duplicate banners. If the mirror is missing, the OS registry is
@@ -2753,6 +2786,20 @@ def process_delivery_jobs(limit: int = 50, channels: list[str] | tuple[str, ...]
     ensure_schema(conn)
     cur = conn.cursor()
     now = now_iso()
+    # Recover jobs stranded in 'processing' by a crashed/restarted worker so the
+    # atomic claim below cannot permanently lose deliveries.
+    stale_cutoff = (datetime.utcnow() - timedelta(minutes=10)).replace(microsecond=0).isoformat() + "Z"
+    cur.execute(
+        "UPDATE notification_delivery_jobs SET status='retry', updated_at=? WHERE status='processing' AND updated_at<?",
+        (now, stale_cutoff),
+    )
+    if int(getattr(cur, "rowcount", 0) or 0) > 0:
+        logging.info(
+            "PUSH_TRACE stage=os_job_stale_requeued worker=%s count=%s",
+            _worker_identity(),
+            int(cur.rowcount),
+        )
+    conn.commit()
     normalized_channels = [ADAPTER_CHANNEL_ALIASES.get(str(channel).lower(), str(channel).lower()) for channel in (channels or [])]
     clauses = ["status IN ('queued','scheduled','retry')", "(scheduled_at IS NULL OR scheduled_at='' OR scheduled_at<=?)", "(next_retry_at IS NULL OR next_retry_at='' OR next_retry_at<=?)"]
     params: list[Any] = [now, now]
@@ -2784,6 +2831,37 @@ def process_delivery_jobs(limit: int = 50, channels: list[str] | tuple[str, ...]
     } for row in cur.fetchall()]
     processed = []
     for job in jobs:
+        # ATOMIC CLAIM. This drain runs concurrently in every gunicorn worker
+        # (schedule_delivery_processing's lock is per-process only) and via the
+        # admin route. Previously jobs were dispatched straight from the SELECT
+        # with no claim, so two overlapping drains sent the same push twice —
+        # the "identical banners at the same timestamp" bug. Exactly one drain
+        # wins this UPDATE; the rest skip.
+        cur.execute(
+            "UPDATE notification_delivery_jobs SET status='processing', updated_at=? WHERE id=? AND status IN ('queued','scheduled','retry')",
+            (now_iso(), int(job.get("id") or 0)),
+        )
+        claimed = int(getattr(cur, "rowcount", 0) or 0)
+        conn.commit()
+        if claimed <= 0:
+            logging.info(
+                "PUSH_TRACE stage=os_job_claim_lost worker=%s job_id=%s notification_id=%s user_id=%s channel=%s",
+                _worker_identity(),
+                int(job.get("id") or 0),
+                int(job.get("notification_id") or 0),
+                int(job.get("recipient_user_id") or job.get("user_id") or 0),
+                job.get("channel"),
+            )
+            continue
+        logging.info(
+            "PUSH_TRACE stage=os_job_claimed worker=%s job_id=%s notification_id=%s user_id=%s channel=%s sent_at=%s",
+            _worker_identity(),
+            int(job.get("id") or 0),
+            int(job.get("notification_id") or 0),
+            int(job.get("recipient_user_id") or job.get("user_id") or 0),
+            job.get("channel"),
+            now_iso(),
+        )
         cur.execute("SELECT * FROM notifications WHERE id=? AND recipient_user_id=? AND deleted_at IS NULL LIMIT 1", (int(job.get("notification_id") or 0), int(job.get("recipient_user_id") or job.get("user_id") or 0)))
         row = cur.fetchone()
         if not row:

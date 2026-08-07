@@ -59,10 +59,16 @@ def _endpoint_hash(endpoint):
     return hashlib.sha256(str(endpoint or "").encode("utf-8")).hexdigest()[:16] if endpoint else ""
 
 
+def _worker_identity():
+    """Which OS process/service is acting — proves which drain path sent a push."""
+    service = os.getenv("RAILWAY_SERVICE_NAME") or os.getenv("PUSH_WORKER_NAME") or "web"
+    return f"{service}:pid{os.getpid()}"
+
+
 def _trace(stage, **fields):
     if not _push_trace_enabled():
         return
-    safe = {}
+    safe = {"worker": _worker_identity(), "sent_at": _now()}
     for key, value in fields.items():
         if value is None:
             continue
@@ -932,6 +938,16 @@ def process_push_delivery_jobs(limit=50):
     conn = user_context.connect()
     cur = conn.cursor()
     _ensure_push_delivery_jobs(cur)
+    # Recover jobs abandoned mid-flight (worker crash/restart while 'processing').
+    # Without this, the atomic claim below could strand jobs forever.
+    stale_cutoff = (datetime.utcnow() - timedelta(minutes=10)).isoformat(timespec="seconds")
+    cur.execute(
+        "UPDATE push_delivery_jobs SET status='retry', updated_at=? WHERE status='processing' AND updated_at<?",
+        (now, stale_cutoff),
+    )
+    if int(getattr(cur, "rowcount", 0) or 0) > 0:
+        _trace("push_job_stale_requeued", count=int(cur.rowcount))
+    conn.commit()
     cur.execute(
         """
         SELECT id, job_id, notification_id, user_id, push_type, title, body, payload_json,
@@ -955,8 +971,25 @@ def process_push_delivery_jobs(limit=50):
         )
         attempts = int(attempts or 0) + 1
         max_attempts = int(max_attempts or 5)
-        cur.execute("UPDATE push_delivery_jobs SET status='processing', attempts=?, updated_at=? WHERE id=?", (attempts, _now(), int(local_id)))
+        # ATOMIC CLAIM. Multiple drains run concurrently (one opportunistic
+        # thread per gunicorn worker, plus the command-center heartbeat). The
+        # status guard makes exactly one of them win this row; the losers see
+        # rowcount 0 and must not send — this was the duplicate-banner bug.
+        cur.execute(
+            "UPDATE push_delivery_jobs SET status='processing', attempts=?, updated_at=? WHERE id=? AND status IN ('pending', 'retry')",
+            (attempts, _now(), int(local_id)),
+        )
+        claimed = int(getattr(cur, "rowcount", 0) or 0)
         conn.commit()
+        if claimed <= 0:
+            _trace(
+                "push_job_claim_lost",
+                job_id=job_id,
+                user_id=int(user_id or 0),
+                notification_id=int(notification_id or 0),
+                trace_id=trace_id,
+            )
+            continue
         try:
             payload = json.loads(payload_json or "{}")
             payload.setdefault("notification_id", int(notification_id or 0))
