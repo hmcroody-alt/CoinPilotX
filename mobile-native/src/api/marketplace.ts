@@ -52,6 +52,13 @@ export type MarketplaceListing = {
   featured?: number | boolean;
   /** 'digital' | 'physical' | 'pickup' | 'shipping' — drives the buying-card action. */
   delivery_type?: string;
+  /**
+   * The wizard's typed listing kind and its structured details. Optional on
+   * every read path: listings created before the creation flow shipped — and
+   * cached payloads from older builds — carry neither field.
+   */
+  listing_type?: MarketplaceListingType | string;
+  listing_metadata?: ListingMetadata | Record<string, unknown>;
 };
 
 export type MarketplaceSearchResponse = {
@@ -81,6 +88,81 @@ export type MarketplaceSellerApplicationPayload = {
   bio: string;
 };
 
+/**
+ * The five creation-flow listing types. `product_type` (below) is the older,
+ * looser field the backend has always stored; `listing_type` is the typed
+ * contract the native wizard and the backend agreed on together with
+ * `listing_metadata`. Both are sent so older readers keep working.
+ */
+export type MarketplaceListingType = "physical" | "digital" | "service" | "event" | "booking";
+
+export type MarketplaceListingVariant = { name: string; value: string };
+
+export type PhysicalListingMetadata = {
+  condition: string;
+  variants: MarketplaceListingVariant[];
+  delivery_options: "pickup" | "shipping" | "both";
+  location: string;
+  return_policy: string;
+};
+
+export type MarketplaceDigitalFile = {
+  file_id: number;
+  name: string;
+  size_bytes: number;
+};
+
+export type DigitalListingMetadata = {
+  files: MarketplaceDigitalFile[];
+  delivery: "automatic";
+  license: string;
+  download_limit: number | null;
+};
+
+export type ServiceListingAddon = { title: string; price_label: string };
+
+export type ServiceListingMetadata = {
+  pricing_mode: "fixed" | "starting_at" | "hourly";
+  delivery_time_days: number;
+  service_location: "remote" | "in_person" | "both";
+  location: string;
+  included: string[];
+  addons: ServiceListingAddon[];
+};
+
+export type EventListingTicket = { name: string; price_label: string; capacity: number };
+
+export type EventListingMetadata = {
+  event_date: string;
+  start_time: string;
+  end_time: string;
+  venue_mode: "in_person" | "online" | "pulsesoc_live";
+  location: string;
+  online_url: string;
+  tickets: EventListingTicket[];
+};
+
+export type BookingWeekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+export type BookingTimeRange = { start: string; end: string };
+
+export type BookingAvailability = Record<BookingWeekday, BookingTimeRange[]>;
+
+export type BookingListingMetadata = {
+  duration_minutes: number;
+  meeting_mode: "video" | "audio" | "in_person";
+  availability: BookingAvailability;
+  buffer_minutes: number;
+  cancellation_policy: string;
+};
+
+export type ListingMetadata =
+  | PhysicalListingMetadata
+  | DigitalListingMetadata
+  | ServiceListingMetadata
+  | EventListingMetadata
+  | BookingListingMetadata;
+
 export type MarketplaceListingCreatePayload = {
   title: string;
   short_description?: string;
@@ -90,7 +172,9 @@ export type MarketplaceListingCreatePayload = {
   price_label?: string;
   currency?: string;
   quantity?: number;
-  product_type?: "digital" | "physical" | "course" | "service";
+  product_type?: "digital" | "physical" | "course" | "service" | "event" | "booking";
+  listing_type?: MarketplaceListingType;
+  listing_metadata?: ListingMetadata;
   media_ids?: number[];
   tags?: string;
   refund_policy?: string;
@@ -199,6 +283,30 @@ export async function createMarketplaceListing(payload: MarketplaceListingCreate
   return pulseApi<MarketplaceListingCreateResponse>("/api/pulse/marketplace/listings/create", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export type MarketplaceDigitalFileUploadResponse = {
+  ok?: boolean;
+  file?: MarketplaceDigitalFile;
+  message?: string;
+};
+
+/**
+ * Uploads one deliverable for a digital listing. Multipart under the field name
+ * "file" — `pulseApi` skips the JSON Content-Type when the body is FormData, so
+ * the boundary header is set by fetch itself.
+ */
+export async function uploadMarketplaceDigitalFile(file: { uri: string; name: string; mimeType?: string }) {
+  const form = new FormData();
+  form.append("file", {
+    uri: file.uri,
+    name: file.name,
+    type: file.mimeType || "application/octet-stream"
+  } as unknown as Blob);
+  return pulseApi<MarketplaceDigitalFileUploadResponse>("/api/pulse/marketplace/digital-files/upload", {
+    method: "POST",
+    body: form
   });
 }
 

@@ -111,7 +111,7 @@ function normalizedStatus(listing: MarketplaceListing): string {
  * Product types that are not shipped and therefore have no stock count. A
  * course does not run out.
  */
-const STOCKLESS_PRODUCT_TYPES = ["digital", "course", "service"];
+const STOCKLESS_PRODUCT_TYPES = ["digital", "course", "service", "event", "booking"];
 
 /**
  * A listing's stock count, or `null` when the listing does not have one.
