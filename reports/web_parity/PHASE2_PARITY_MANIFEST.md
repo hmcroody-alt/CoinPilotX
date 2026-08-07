@@ -369,3 +369,19 @@ the `id` input of every form in the matching `data-id-group`
 copy-paste step between lists and actions. Row ID resolution tries
 id/campaign_id/ad_set_id/creative_id/product_id/order_id. Added `--bos-border`
 token, row CSS. Jinja render + node --check green.
+
+## 15. Milestone 9 — Appeals + reviews; user-facing write surface complete (2026-08-07)
+
+Added the last user-facing Business OS write forms: advertising appeal
+(POST /api/business-os/advertising/appeals, {campaign_id, reason}), buyer
+review (POST /api/business-os/marketplace/reviews, {product_id, order_id,
+rating 1–5, body}), marketplace appeal (POST /api/business-os/marketplace/
+appeals, {order_id, reason}). Use-button handler generalized to fill
+`<group>_id` fields (campaign_id/order_id/product_id/ad_set_id) when a form
+has no plain `id` input, so appeals/reviews participate in per-row Use.
+
+With this, every owner/buyer/seller-facing Business OS write endpoint has a
+web form. Still intentionally NOT on the page: /admin/business-os (49 routes,
+admin console — separate audience), advertising assistant plan/execute
+(AI-driven, needs its own UX), delivery impression/click (ad-serving
+internals, not user actions).

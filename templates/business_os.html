@@ -240,6 +240,14 @@
             <div class="bos-form-msg" aria-live="polite"></div>
           </form>
         </div>
+        <div class="bos-card"><h2>Submit Appeal</h2>
+          <form class="bos-form" data-bos-form data-action="/api/business-os/advertising/appeals" data-id-group="campaign">
+            <label>Campaign ID<input name="campaign_id" required placeholder="Rejected campaign ID"></label>
+            <label>Reason<textarea name="reason" required maxlength="2000" placeholder="Why the decision should be reconsidered"></textarea></label>
+            <button type="submit">Submit Appeal</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
         <div class="bos-card" data-endpoint="/api/business-os/advertising/campaigns"><h2>Campaigns</h2><div class="bos-body"></div></div>
         <div class="bos-card" data-endpoint="/api/business-os/advertising/eligibility"><h2>Eligibility</h2><div class="bos-body"></div></div>
         <div class="bos-card" data-endpoint="/api/business-os/advertising/ad-sets"><h2>Ad Sets</h2><div class="bos-body"></div></div>
@@ -306,6 +314,24 @@
             <label>Order ID<input name="id" required placeholder="Order ID from the list"></label>
             <label>Tracking ref<input name="tracking_ref" maxlength="120" placeholder="Optional tracking reference"></label>
             <button type="submit">Fulfill</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Write Review (buyer)</h2>
+          <form class="bos-form" data-bos-form data-action="/api/business-os/marketplace/reviews" data-id-group="product">
+            <label>Product ID<input name="product_id" required placeholder="Product ID from the list"></label>
+            <label>Order ID<input name="order_id" required placeholder="Completed order ID"></label>
+            <label>Rating (1–5)<input name="rating" type="number" min="1" max="5" step="1" required></label>
+            <label>Review<textarea name="body" maxlength="2000" placeholder="Your experience"></textarea></label>
+            <button type="submit">Submit Review</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Submit Appeal</h2>
+          <form class="bos-form" data-bos-form data-action="/api/business-os/marketplace/appeals" data-id-group="order">
+            <label>Order ID<input name="order_id" required placeholder="Order ID from the list"></label>
+            <label>Reason<textarea name="reason" required maxlength="2000" placeholder="Why the decision should be reconsidered"></textarea></label>
+            <button type="submit">Submit Appeal</button>
             <div class="bos-form-msg" aria-live="polite"></div>
           </form>
         </div>
@@ -468,7 +494,9 @@
     Array.prototype.forEach.call(
       document.querySelectorAll('form[data-id-group="' + group + '"]'),
       function (form) {
-        if (form.elements.id) { form.elements.id.value = id; filled += 1; }
+        var target = form.elements.id
+          || form.elements[(group === "adset" ? "ad_set" : group) + "_id"];
+        if (target) { target.value = id; filled += 1; }
       }
     );
     btn.textContent = filled ? "✓" : "Use";
