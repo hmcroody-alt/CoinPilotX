@@ -4,21 +4,21 @@
 
 :root {
   color-scheme: dark;
-  --bg: #020711;
+  --bg: var(--pulse-palette-background, #020711);
   --bg-deep: #01040b;
   --panel: rgba(6, 14, 26, .94);
   --panel-soft: rgba(11, 24, 41, .82);
   --panel-glass: rgba(11, 27, 45, .68);
-  --text: #f2fbff;
-  --muted: #95aabc;
+  --text: var(--pulse-palette-text, #f2fbff);
+  --muted: var(--pulse-palette-muted, #95aabc);
   --quiet: #6f8495;
   --line: rgba(119, 219, 239, .16);
   --line-strong: rgba(119, 219, 239, .32);
-  --cyan: #69daf0;
-  --green: #38dda0;
-  --purple: #9b6cf4;
-  --gold: #f4ca67;
-  --danger: #ff7382;
+  --cyan: var(--pulse-palette-accent-strong, #69daf0);
+  --green: var(--pulse-palette-accent, #38dda0);
+  --purple: var(--pulse-palette-intelligence, #9b6cf4);
+  --gold: var(--pulse-palette-warning, #f4ca67);
+  --danger: var(--pulse-palette-danger, #ff7382);
   --shadow: 0 22px 64px rgba(0, 0, 0, .34);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);

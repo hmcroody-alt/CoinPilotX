@@ -5,19 +5,19 @@
 
 :root {
   color-scheme: dark;
-  --bg: #050b14;
+  --bg: var(--pulse-palette-background, #050b14);
   --bg-2: #030810;
-  --panel: #0d1627;
-  --panel-2: #0a1220;
+  --panel: var(--pulse-palette-surface, #0d1627);
+  --panel-2: var(--pulse-palette-surface-raised, #0a1220);
   --line: rgba(110, 223, 246, .22);
   --line-soft: rgba(255, 255, 255, .08);
-  --text: #f2fbff;
-  --muted: #9fb5c0;
+  --text: var(--pulse-palette-text, #f2fbff);
+  --muted: var(--pulse-palette-muted, #9fb5c0);
   --muted-2: #6f8794;
-  --accent: #36e58f;
-  --cyan: #6edff6;
-  --danger: #ff6b8a;
-  --warn: #ffd166;
+  --accent: var(--pulse-palette-accent, #36e58f);
+  --cyan: var(--pulse-palette-accent-strong, #6edff6);
+  --danger: var(--pulse-palette-danger, #ff6b8a);
+  --warn: var(--pulse-palette-warning, #ffd166);
   --sidebar-w: 264px;
   --topbar-h: 60px;
   --radius: 14px;

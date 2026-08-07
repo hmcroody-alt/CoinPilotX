@@ -1,17 +1,17 @@
 :root {
   color-scheme: dark;
-  --bg: #020711;
+  --bg: var(--pulse-palette-background, #020711);
   --panel: rgba(8, 17, 32, .82);
   --panel-strong: rgba(12, 25, 45, .94);
   --line: rgba(103, 233, 255, .22);
   --line-strong: rgba(54, 229, 143, .42);
-  --text: #effbff;
-  --muted: #9fb6c2;
-  --cyan: #6eefff;
-  --green: #36e58f;
-  --violet: #a877ff;
-  --gold: #ffd166;
-  --red: #ff5f7d;
+  --text: var(--pulse-palette-text, #effbff);
+  --muted: var(--pulse-palette-muted, #9fb6c2);
+  --cyan: var(--pulse-palette-accent-strong, #6eefff);
+  --green: var(--pulse-palette-accent, #36e58f);
+  --violet: var(--pulse-palette-intelligence, #a877ff);
+  --gold: var(--pulse-palette-warning, #ffd166);
+  --red: var(--pulse-palette-danger, #ff5f7d);
 }
 
 * { box-sizing: border-box; }

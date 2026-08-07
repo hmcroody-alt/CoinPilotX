@@ -1,10 +1,10 @@
 :root {
-  --pmmv-cyan: #65f4ff;
-  --pmmv-green: #37f6a4;
-  --pmmv-pink: #ff5f9c;
+  --pmmv-cyan: var(--pulse-palette-accent-strong, #65f4ff);
+  --pmmv-green: var(--pulse-palette-safety, #37f6a4);
+  --pmmv-pink: var(--pulse-palette-danger, #ff5f9c);
   --pmmv-line: rgba(101, 244, 255, .26);
   --pmmv-glass: rgba(5, 13, 25, .72);
-  --pmmv-text: #f4fbff;
+  --pmmv-text: var(--pulse-palette-text, #f4fbff);
   --pmmv-muted: rgba(226, 242, 255, .72);
 }
 

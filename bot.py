@@ -14474,6 +14474,7 @@ def admin_page_html(title, body, admin=None):
         "<meta name='viewport' content='width=device-width,initial-scale=1'/>"
         "<meta name='robots' content='noindex,nofollow'/>"
         f"<title>{clean_html(title)} | CoinPlotXAI Admin</title>"
+        "<link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=parity-20260806a'/>"
         "<link rel='stylesheet' href='/static/css/pulse_design_system.css'/>"
         "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
         "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722i'/>"

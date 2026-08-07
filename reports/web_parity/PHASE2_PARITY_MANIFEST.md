@@ -212,3 +212,31 @@ Stated plainly, because the mission forbids unevidenced parity claims:
 4. **Business OS web surface** (Phase 12) — 199 backend routes with zero web expression; largest single parity gap.
 5. **Marketplace** (Phase 10), then **Reels** (Phase 7).
 6. Route hygiene (Phase 18) can run in parallel; it is low-risk and independent.
+
+---
+
+## 8. 2026-08-06 milestone — design-token layer wired (Phases 3–4, first slice)
+
+Evidence-based statement of what changed, nothing more:
+
+**Done**
+- `static/css/pulsesoc-tokens.css` (the canonical native-mirroring token file) was
+  previously referenced by **zero** templates or routes — an orphaned file. It is now
+  loaded (before page CSS, so page palettes can consume it) by:
+  `templates/pulse_messages_v2.html`, `templates/pulse_advertiser_portal.html`,
+  `templates/pulsesoc_intelligence_center.html`,
+  `templates/admin_galaxy_intelligence_center.html`, and the admin ops-center inline
+  shell in `bot.py` (line ~14477).
+- 37 `:root` palette entries across 5 legacy CSS files now derive from canonical
+  tokens with their original hex as fallback (`var(--pulse-palette-*, <old-hex>)`):
+  `admin_ops_center.css` (9), `pulsesoc_intelligence_center.css` (8),
+  `pulse_advertiser_portal.css` (8), `pulse_messages_v2.css` (8),
+  `pulse_messenger_media_viewer.css` (4). Zero visual regression risk where the
+  token file is absent (fallback = old value); token-driven where it is present.
+
+**Not done (explicitly)**
+- Hundreds of scattered hex literals deep in `pulse_messages_v2.css` (gradients,
+  per-theme `--control-accent` variants, on-accent text colors) are intentionally
+  untouched — they are theme variants without canonical token equivalents.
+- No other Phase 3–29 work: no view layer for the 599 inline-HTML routes, no
+  Business OS / Reels web surfaces, no browser QA. Section 6 above still stands.

@@ -1,16 +1,16 @@
 :root {
-  --bg: #030811;
+  --bg: var(--pulse-palette-background, #030811);
   --panel: rgba(8, 19, 34, .86);
   --panel-strong: rgba(11, 27, 47, .94);
   --line: rgba(91, 220, 255, .22);
   --hot: rgba(50, 235, 174, .62);
-  --text: #f4fbff;
-  --muted: #94aaba;
-  --cyan: #5bdcff;
-  --emerald: #32ebae;
-  --purple: #a95cff;
-  --gold: #ffd45a;
-  --red: #ff4f72;
+  --text: var(--pulse-palette-text, #f4fbff);
+  --muted: var(--pulse-palette-muted, #94aaba);
+  --cyan: var(--pulse-palette-accent-strong, #5bdcff);
+  --emerald: var(--pulse-palette-accent, #32ebae);
+  --purple: var(--pulse-palette-intelligence, #a95cff);
+  --gold: var(--pulse-palette-warning, #ffd45a);
+  --red: var(--pulse-palette-danger, #ff4f72);
   color-scheme: dark;
 }
 
