@@ -217,7 +217,8 @@
       "sent": "تم الإرسال",
       "updated": "تم التحديث",
       "deleted": "تم الحذف",
-      "copiedToClipboard": "تم النسخ إلى الحافظة"
+      "copiedToClipboard": "تم النسخ إلى الحافظة",
+      "unavailable": "غير متاح"
     },
     "time": {
       "now": "الآن",

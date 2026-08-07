@@ -23,6 +23,8 @@ import {
   SavedItem,
   updateSavedCollection
 } from "../api/saved";
+import { NativeMediaViewer, NativeMediaViewerItem, mediaViewerItemFromPulseMedia } from "../components/NativeMediaViewer";
+import { useTranslation } from "../i18n";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
 import type { RootStackParamList } from "../navigation/types";
@@ -51,6 +53,44 @@ function storeBackedType(contentType: string): SavableContentType | null {
   return STORE_BACKED_TYPES.includes(candidate) ? candidate : null;
 }
 
+/**
+ * Every store key that refers to this row.
+ *
+ * A saved Reel is one row here and two identities in the store: the reel it was
+ * saved as, and the post that backs it. The library now reports that `post_id`,
+ * so unsaving from the *post* card of the same video removes this row too —
+ * before, the row survived, and a refresh brought back a Save state the user had
+ * already revoked. Types with no backing post yield a single key.
+ */
+function itemStoreKeys(item: SavedItem): string[] {
+  const contentType = storeBackedType(item.content_type);
+  if (!contentType) return [];
+  const keys = [saveKey(contentType, item.content_id)];
+  const postId = Number(item.post_id || 0);
+  if (postId > 0) {
+    const postKey = saveKey("post", postId);
+    if (!keys.includes(postKey)) keys.push(postKey);
+  }
+  return keys;
+}
+
+/**
+ * The viewer payload for a saved row, or an empty list when there is nothing to
+ * play. `unavailable` rows return empty by construction: the snapshot title is
+ * all that is left of deleted content, and offering to play it would be a lie
+ * the player would have to break.
+ */
+function playableMediaFor(item: SavedItem): NativeMediaViewerItem[] {
+  if (item.unavailable) return [];
+  return (item.media || [])
+    .map((media) => mediaViewerItemFromPulseMedia(media, {
+      title: item.title,
+      subtitle: item.preview_text || undefined,
+      sourceUrl: item.source_url
+    }))
+    .filter((viewerItem) => Boolean(viewerItem.url));
+}
+
 const TYPE_FILTERS: Array<{ key: SavedContentType; label: string }> = [
   { key: "all", label: "All" },
   { key: "post", label: "Posts" },
@@ -71,6 +111,7 @@ export function SavedScreen({ route }: Props = {}) {
   // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
   // reserves the matching clearance so the last row never sits under the dock.
   const dock = useBottomNavSurface();
+  const { t } = useTranslation();
   const { authState } = useAuth();
   // Wrong-subject guard: the saved library is the signed-in viewer's private
   // collection. On another profile's route params (deep link, stray call site)
@@ -89,12 +130,29 @@ export function SavedScreen({ route }: Props = {}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   /**
+   * Playback happens here rather than by navigating away.
+   *
+   * A saved library video has no destination in the native stack — there is
+   * ReelDetail and PostDetail and nothing that plays a single library video —
+   * so tapping Play on one used to resolve to the Activity Inbox. The library
+   * now returns resolved `media`, which is everything the shared viewer needs,
+   * so the row plays where it sits. The viewer owns the playback claim and the
+   * audio session; nothing about audio is configured from this screen.
+   */
+  const [viewer, setViewer] = useState<{ items: NativeMediaViewerItem[]; title: string } | null>(null);
+  /**
    * The store keys currently on screen. Held in a ref rather than derived from
    * `items` inside the subscription so the subscription can stay mounted for
    * the life of the screen — resubscribing on every list change would drop
    * events that land between the unsubscribe and the resubscribe.
    */
   const presentKeys = useRef(new Set<string>());
+  /**
+   * Key -> every key belonging to the same row. Lets the store subscription
+   * retire a reel and its backing post together without reading `items`, which
+   * it deliberately does not close over.
+   */
+  const keyGroups = useRef(new Map<string, string[]>());
   const reload = useRef<() => void>(() => undefined);
   reload.current = () => { load("refresh").catch(() => undefined); };
 
@@ -140,13 +198,24 @@ export function SavedScreen({ route }: Props = {}) {
    */
   const adoptItems = useCallback((next: SavedItem[]) => {
     const keys = new Set<string>();
+    const groups = new Map<string, string[]>();
     next.forEach((item) => {
       const contentType = storeBackedType(item.content_type);
       if (!contentType) return;
-      keys.add(saveKey(contentType, item.content_id));
+      // Both identities of the row. The second one — the post backing a saved
+      // Reel — is what makes the post card for the same video agree with this
+      // list instead of offering to save content that is already here.
+      const rowKeys = itemStoreKeys(item);
+      rowKeys.forEach((key) => {
+        keys.add(key);
+        groups.set(key, rowKeys);
+      });
       observeSavedState(contentType, item.content_id, true);
+      const postId = Number(item.post_id || 0);
+      if (postId > 0 && contentType !== "post") observeSavedState("post", postId, true);
     });
     presentKeys.current = keys;
+    keyGroups.current = groups;
     setItems(next);
   }, []);
 
@@ -180,10 +249,18 @@ export function SavedScreen({ route }: Props = {}) {
       return;
     }
     if (!presentKeys.current.has(key)) return;
-    presentKeys.current.delete(key);
+    // Drop every identity of the row, not just the key that announced it.
+    // A reel row answers to both `reel:<id>` and `post:<post_id>`; leaving the
+    // sibling behind would make the next event for the same content look like a
+    // row this screen still has, and trigger a refetch that finds nothing.
+    const siblings = keyGroups.current.get(key) || [key];
+    siblings.forEach((sibling) => {
+      presentKeys.current.delete(sibling);
+      keyGroups.current.delete(sibling);
+    });
     setItems((current) => current.filter((item) => {
-      const contentType = storeBackedType(item.content_type);
-      return !contentType || saveKey(contentType, item.content_id) !== key;
+      const keys = itemStoreKeys(item);
+      return !keys.length || !keys.includes(key);
     }));
     });
   }, [routeContext.isOwnProfile]);
@@ -310,7 +387,16 @@ export function SavedScreen({ route }: Props = {}) {
   }
 
   async function handleOpen(item: SavedItem) {
+    // Deleted content has nowhere to go: the destination would 404 into a
+    // fallback screen that has nothing to do with what the user tapped.
+    if (item.unavailable) return;
     await routeNotificationTarget(item.source_url || "/pulse/saved").catch(() => undefined);
+  }
+
+  function handlePlay(item: SavedItem) {
+    const media = playableMediaFor(item);
+    if (!media.length) return;
+    setViewer({ items: media, title: item.title });
   }
 
   // Visitor destination with no visitor variant: refuse rather than render the
@@ -412,31 +498,67 @@ export function SavedScreen({ route }: Props = {}) {
             <Text style={styles.emptyText}>{error || "Save posts, Reels, Statuses, marketplace listings, videos, rooms, and learning content to build your library."}</Text>
           </View>
         }
-        renderItem={({ item }) => <SavedCard item={item} busy={busy} collections={collections} onOpen={handleOpen} onMove={handleMove} onRemove={handleRemove} />}
+        renderItem={({ item }) => (
+          <SavedCard
+            item={item}
+            busy={busy}
+            collections={collections}
+            unavailableLabel={t("common:status.unavailable")}
+            playLabel={t("common:actions.play")}
+            onOpen={handleOpen}
+            onPlay={handlePlay}
+            onMove={handleMove}
+            onRemove={handleRemove}
+          />
+        )}
+      />
+      <NativeMediaViewer
+        visible={Boolean(viewer)}
+        items={viewer?.items || []}
+        title={viewer?.title}
+        onClose={() => setViewer(null)}
       />
     </View>
   );
 }
 
-function SavedCard({ item, busy, collections, onOpen, onMove, onRemove }: {
+function SavedCard({ item, busy, collections, unavailableLabel, playLabel, onOpen, onPlay, onMove, onRemove }: {
   item: SavedItem;
   busy: boolean;
   collections: SavedCollection[];
+  unavailableLabel: string;
+  playLabel: string;
   onOpen: (item: SavedItem) => void;
+  onPlay: (item: SavedItem) => void;
   onMove: (item: SavedItem) => void;
   onRemove: (item: SavedItem) => void;
 }) {
   const moveTarget = nextMoveCollection(collections, item.collection_id || 0);
+  /**
+   * Deleted or newly private content still lists — a row disappearing on its own
+   * reads as data loss, and Remove is the user's decision to make. What it loses
+   * is every affordance that would fail: Open would route into a 404 recovery
+   * screen, Play has nothing to play. Move and Remove still act on the row
+   * itself, which is exactly what someone does with a dead bookmark.
+   */
+  const unavailable = Boolean(item.unavailable);
+  const canPlay = !unavailable && playableMediaFor(item).length > 0;
   return (
     <View style={styles.card}>
       {item.thumbnail_url ? <Image source={{ uri: item.thumbnail_url }} style={styles.thumbnail} /> : <View style={styles.thumbnailFallback}><Text style={styles.thumbnailText}>{item.content_type}</Text></View>}
       <View style={styles.cardBody}>
         <Text style={styles.cardType}>{item.content_type}</Text>
-        <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
+        <Text style={[styles.cardTitle, unavailable ? styles.cardTitleUnavailable : undefined]} numberOfLines={1}>{item.title}</Text>
         <Text style={styles.cardPreview} numberOfLines={2}>{item.preview_text || "Open to view this saved PulseSoc item."}</Text>
         <Text style={styles.cardMeta} numberOfLines={1}>{item.collection_name || "Favorites"}</Text>
+        {unavailable ? <Text style={styles.cardUnavailable}>{unavailableLabel}</Text> : null}
         <View style={styles.actionRow}>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.smallButton} disabled={busy} onPress={() => onOpen(item)}>
+          {canPlay ? (
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.smallButton} disabled={busy} onPress={() => onPlay(item)}>
+              <Text style={styles.smallButtonText}>{playLabel}</Text>
+            </Pressable>
+          ) : null}
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || unavailable }} style={styles.smallButton} disabled={busy || unavailable} onPress={() => onOpen(item)}>
             <Text style={styles.smallButtonText}>Open</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || !moveTarget }} style={styles.smallButton} disabled={busy || !moveTarget} onPress={() => onMove(item)}>
@@ -493,11 +615,21 @@ const styles = createThemedStyles(() => ({
     fontSize: 16,
     fontWeight: "900"
   },
+  cardTitleUnavailable: {
+    opacity: 0.55
+  },
   cardType: {
     color: colors.accent,
     fontSize: 11,
     fontWeight: "900",
     marginBottom: 3,
+    textTransform: "uppercase"
+  },
+  cardUnavailable: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "900",
+    marginTop: 5,
     textTransform: "uppercase"
   },
   center: {

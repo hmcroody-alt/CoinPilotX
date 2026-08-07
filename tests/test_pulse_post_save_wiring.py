@@ -80,6 +80,28 @@ def load_bot_functions(names, namespace):
     return namespace
 
 
+def load_bot_constants(names, namespace):
+    """Copy the named top-level literal constants out of bot.py into `namespace`.
+
+    Reading the real values beats re-typing them here: a test that hardcodes
+    `{"reel", "video", "live_replay"}` keeps passing after someone narrows the
+    production set, which is precisely the change it exists to notice.
+    """
+    wanted = set(names)
+    found = {}
+    for node in _bot_tree().body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id in wanted:
+                found[target.id] = ast.literal_eval(node.value)
+    missing = wanted - set(found)
+    if missing:
+        raise AssertionError(f"bot.py no longer defines the constants: {sorted(missing)}")
+    namespace.update(found)
+    return namespace
+
+
 SCHEMA = (
     """CREATE TABLE pulse_posts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -386,16 +408,29 @@ class BotPostSaveTest(SavedWiringCase):
             except (TypeError, ValueError):
                 return default
 
+        # `pulse_saved_collection_for` is loaded from bot.py rather than stubbed:
+        # it decides Watch Later vs Favorites, and a stub here would restate that
+        # rule and then keep agreeing with itself after the real one changed. It
+        # needs only `ensure_pulse_saved_collection` and the two constants, both
+        # of which are already in this namespace.
         self.ns = load_bot_functions(
-            ["pulse_savable_post_id", "pulse_apply_post_save", "pulse_clear_post_save_mirror"],
-            {
-                "json": json,
-                "clean_html": lambda value: str(value or ""),
-                "ensure_pulse_saved_collection": ensure_pulse_saved_collection,
-                "pulse_notify_post_owner": pulse_notify_post_owner,
-                "pulse_actor_display_name": lambda user: "Viewer",
-                "safe_int": safe_int,
-            },
+            [
+                "pulse_savable_post_id",
+                "pulse_apply_post_save",
+                "pulse_clear_post_save_mirror",
+                "pulse_saved_collection_for",
+            ],
+            load_bot_constants(
+                ["PULSE_WATCH_LATER_NAME", "PULSE_WATCH_LATER_TYPES"],
+                {
+                    "json": json,
+                    "clean_html": lambda value: str(value or ""),
+                    "ensure_pulse_saved_collection": ensure_pulse_saved_collection,
+                    "pulse_notify_post_owner": pulse_notify_post_owner,
+                    "pulse_actor_display_name": lambda user: "Viewer",
+                    "safe_int": safe_int,
+                },
+            ),
         )
         self.user = {"user_id": VIEWER}
         self.now = "2026-08-06T00:00:00"

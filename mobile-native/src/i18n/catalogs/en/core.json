@@ -217,7 +217,8 @@
       "sent": "Sent",
       "updated": "Updated",
       "deleted": "Deleted",
-      "copiedToClipboard": "Copied to clipboard"
+      "copiedToClipboard": "Copied to clipboard",
+      "unavailable": "Unavailable"
     },
     "time": {
       "now": "now",

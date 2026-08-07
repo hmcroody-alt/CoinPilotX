@@ -32,6 +32,7 @@ import { ContentTranslation } from "../components/ContentTranslation";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
+import { observeSavedStates, peekSaveState, useSavedState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
@@ -60,6 +61,11 @@ export function MarketplaceScreen({ route, navigation }: Props) {
     try {
       const result = await searchMarketplace({ query: nextQuery, limit: 32 });
       const nextItems = focusInitialListing(result.items || [], initialListingId);
+      // A live search result is newer than anything the store holds, so it
+      // corrects it — that is how a listing unsaved from the Saved screen stops
+      // showing "Saved" here without this screen knowing that screen exists.
+      // Cached results below deliberately do not: they are, by definition, old.
+      observeSavedStates("marketplace", nextItems.map((item) => ({ id: item.id, saved: item.saved })));
       setItems(nextItems);
       if (initialListingId && nextItems.length) setDetail(nextItems.find((item) => item.id === initialListingId) || nextItems[0]);
     } catch (loadError) {
@@ -100,10 +106,16 @@ export function MarketplaceScreen({ route, navigation }: Props) {
    * savable surface has.
    */
   async function handleSave(listing: MarketplaceListing) {
-    const wasSaved = Boolean(listing.saved);
+    // The state to invert is the one on screen, which is the store's, not the
+    // one baked into the search payload. Taking it from `listing.saved` meant a
+    // listing saved from the Saved screen was toggled from "not saved" here and
+    // the tap re-saved something already saved.
+    const wasSaved = peekSaveState("marketplace", listing.id)?.saved ?? Boolean(listing.saved);
     setBusyId(listing.id);
     try {
       const outcome = await setSaved({ type: "marketplace", id: listing.id }, !wasSaved);
+      // Keep the payload in step so a later re-seed of an unmounted card agrees
+      // with the store. The buttons read the store; this is bookkeeping.
       updateListing(listing.id, { saved: outcome.saved });
       if (!outcome.ok && outcome.message) setError(outcome.message);
     } finally {
@@ -257,6 +269,12 @@ function MarketplaceCard({ listing, busy, onOpen, onSave, onReport }: {
   onReport: (listing: MarketplaceListing) => void;
 }) {
   const cover = listing.media?.[0] ? mediaDisplayUrl(listing.media[0]) : "";
+  // Read from the shared store, not from the listing payload. The payload is a
+  // snapshot of whatever the last search returned; the store is what every other
+  // surface writes to, so a listing saved from the Saved screen — or from the
+  // detail modal rendered on top of this very card — shows as saved here without
+  // a refetch. `listing.saved` still seeds it on first sight.
+  const savedState = useSavedState("marketplace", listing.id, listing.saved);
   return (
     <Pressable accessibilityRole="button" style={styles.card} onPress={() => onOpen(listing)}>
       {cover ? <Image source={{ uri: cover }} style={styles.cover} resizeMode="cover" /> : <View style={styles.coverFallback}><Text style={styles.coverText}>Marketplace</Text></View>}
@@ -276,8 +294,8 @@ function MarketplaceCard({ listing, busy, onOpen, onSave, onReport }: {
         </View>
         <Text style={styles.sellerText}>Seller: {listing.seller_name || "PulseSoc Seller"}</Text>
         <View style={styles.cardActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel={`${listing.saved ? "Remove" : "Save"} ${listing.title || "listing"}`} accessibilityState={{ disabled: busy, selected: Boolean(listing.saved) }} style={styles.smallButton} disabled={busy} onPress={() => onSave(listing)}>
-            <Text style={styles.smallButtonText}>{listing.saved ? "Saved" : "Save"}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={`${savedState.saved ? "Remove" : "Save"} ${listing.title || "listing"}`} accessibilityState={{ disabled: busy, selected: savedState.saved }} style={styles.smallButton} disabled={busy} onPress={() => onSave(listing)}>
+            <Text style={styles.smallButtonText}>{savedState.saved ? "Saved" : "Save"}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.smallButton} disabled={busy} onPress={() => onReport(listing)}>
             <Text style={styles.smallButtonText}>Report</Text>
@@ -311,6 +329,11 @@ function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onCo
       })
     );
   }, [listing]);
+  // Same store, same key as the card underneath this modal — which is the point:
+  // saving here used to leave that card still offering to save the same listing.
+  // Called with id 0 when there is no listing so the hook order stays stable
+  // across the early return below; nothing subscribes to `marketplace:0`.
+  const savedState = useSavedState("marketplace", listing?.id || 0, listing?.saved);
   if (!listing) return null;
   const cover = listing.media?.[0] ? mediaDisplayUrl(listing.media[0]) : "";
   const canNavigateProfile = Boolean(listing.seller_public_player_id || listing.seller_username);
@@ -352,8 +375,8 @@ function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onCo
               <Text style={styles.secondaryText}>Checkout</Text>
             </Pressable>
           ) : null}
-          <Pressable accessibilityRole="button" accessibilityLabel={`${listing.saved ? "Remove" : "Save"} ${listing.title || "listing"}`} accessibilityState={{ disabled: busy, selected: Boolean(listing.saved) }} style={styles.secondaryButton} disabled={busy} onPress={() => onSave(listing)}>
-            <Text style={styles.secondaryText}>{listing.saved ? "Saved" : "Save"}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={`${savedState.saved ? "Remove" : "Save"} ${listing.title || "listing"}`} accessibilityState={{ disabled: busy, selected: savedState.saved }} style={styles.secondaryButton} disabled={busy} onPress={() => onSave(listing)}>
+            <Text style={styles.secondaryText}>{savedState.saved ? "Saved" : "Save"}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.secondaryButton} disabled={busy} onPress={() => onReport(listing)}>
             <Text style={styles.secondaryText}>Report</Text>

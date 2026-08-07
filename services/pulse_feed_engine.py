@@ -150,6 +150,19 @@ def _canonical_media_payload(item, resolved, *, index=0, embed=None):
     }
 
 
+def media_for_posts(post_ids):
+    """Canonical media for many posts at once, keyed by post id.
+
+    A public name for `_media_for_posts`. The Saved library needs exactly this —
+    resolved playback for a batch of posts, in one round trip — and reaching into
+    a private helper from `bot.py` would make a rename here a silent breakage
+    there. Everything about the payload (Mux playback id, HLS URL, poster,
+    storage key) is produced by `_canonical_media_payload`, so a saved item and a
+    feed card describe the same media in the same shape.
+    """
+    return _media_for_posts(post_ids)
+
+
 def pulse_visibility_decision(post, viewer_user_id=None, include_private=False):
     """Canonical public PulseSoc visibility rule used by feeds, audits, and refresh paths."""
     item = dict(post or {})

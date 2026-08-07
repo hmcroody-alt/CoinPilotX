@@ -217,7 +217,8 @@
       "sent": "보냄",
       "updated": "업데이트됨",
       "deleted": "삭제됨",
-      "copiedToClipboard": "클립보드에 복사했어요"
+      "copiedToClipboard": "클립보드에 복사했어요",
+      "unavailable": "사용할 수 없음"
     },
     "time": {
       "now": "지금",

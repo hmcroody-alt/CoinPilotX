@@ -281,6 +281,19 @@ AUTO_PK_TABLES = {
     "pulse_ai_provider_events": "id",
     "pulse_ai_safety_events": "id",
     "pulse_post_views": "id",
+    # The saved-content trio. Absent from this list, `CompatCursor.execute` never
+    # appends `RETURNING id`, so `cur.lastrowid` stayed None on Postgres and
+    # `ensure_pulse_saved_collection` died on `int(None)` — a 500 on both the Save
+    # button and the Saved library, for every account, permanently. Those callers
+    # now re-SELECT rather than trust `lastrowid`, but a table whose surrogate key
+    # is read back at all belongs here, and the next caller should not have to
+    # rediscover this.
+    "pulse_saved_collections": "id",
+    "pulse_saved_items": "id",
+    "pulse_post_saves": "id",
+    "pulse_videos": "id",
+    "pulse_video_comments": "id",
+    "pulse_audio_tracks": "id",
     "pulse_jobs": "id",
     "pulse_post_attempts": "id",
     "telegram_debug_events": "id",

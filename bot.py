@@ -79470,8 +79470,12 @@ def api_pulse_reel_save_by_id(reel_id):
         if existing:
             cur.execute("DELETE FROM pulse_saved_items WHERE id=? AND user_id=?", (existing["id"], user["user_id"]))
         conn.commit(); conn.close()
-        return jsonify({"ok": True, "saved": False, "is_saved": False, "changed": bool(existing), "content_type": "reel", "content_id": str(reel_id), "message": "Reel removed from Saved."})
-    collection_id = ensure_pulse_saved_collection(cur, user["user_id"], "Reels")
+        # `post_id` travels with every response so the client can key this reel's
+        # Saved state under *both* `reel:<id>` and `post:<post_id>`. The feed card
+        # and the Reels player show the same content under two ids; without this
+        # the two screens hold contradictory state until the next fetch.
+        return jsonify({"ok": True, "saved": False, "is_saved": False, "changed": bool(existing), "content_type": "reel", "content_id": str(reel_id), "post_id": reel_post_id, "message": "Reel removed from Saved."})
+    collection_id = pulse_saved_collection_for(cur, user["user_id"], "reel")
     media = (reel.get("media") or [{}])[0] if isinstance(reel.get("media"), list) else {}
     cur.execute(
         """
@@ -79495,7 +79499,7 @@ def api_pulse_reel_save_by_id(reel_id):
         ),
     )
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "saved": True, "is_saved": True, "changed": not existing, "content_type": "reel", "content_id": str(reel_id), "message": "Reel saved."})
+    return jsonify({"ok": True, "saved": True, "is_saved": True, "changed": not existing, "content_type": "reel", "content_id": str(reel_id), "post_id": reel_post_id, "message": "Reel saved."})
 
 
 @webhook_app.route("/api/pulse/reels/<int:reel_id>/repost", methods=["POST", "DELETE"])
@@ -79860,17 +79864,288 @@ def pulse_saved_slug(name):
 
 
 def ensure_pulse_saved_collection(cur, user_id, name="Favorites"):
+    """The id of this user's collection called `name`, creating it if needed.
+
+    Reads the id back with a SELECT instead of trusting `cur.lastrowid`.
+    `lastrowid` is a SQLite concept; on Postgres it only ever holds a value
+    because `services.db.CompatCursor.execute` appends `RETURNING <pk>`, and it
+    does that only for tables listed in `AUTO_PK_TABLES`. `pulse_saved_collections`
+    was not on that list, so in production this function ended on `int(None)` and
+    raised TypeError — a 500 on *both* the Save button (which creates the default
+    collection before writing the item) and the Saved screen (which ensures the
+    same collection before listing). Nothing was committed either, so the missing
+    collection never appeared and the failure repeated forever. The table has been
+    added to `AUTO_PK_TABLES`, but this function no longer depends on that: a
+    SELECT is correct on every dialect and cannot regress if the list drifts again.
+
+    The re-SELECT also closes a race. `UNIQUE(user_id, slug)` means a concurrent
+    request that inserted the same slug first turns this INSERT into a no-op
+    (`INSERT OR IGNORE`), and the second read then returns the winner's id rather
+    than raising. That is the behaviour every caller here already assumes.
+    """
     now = datetime.utcnow().isoformat(timespec="seconds")
     slug = pulse_saved_slug(name)
-    cur.execute("SELECT id FROM pulse_saved_collections WHERE user_id=? AND slug=? LIMIT 1", (int(user_id), slug))
-    row = cur.fetchone()
-    if row:
-        return int(row["id"] if isinstance(row, sqlite3.Row) else row[0])
+
+    def _lookup():
+        cur.execute("SELECT id FROM pulse_saved_collections WHERE user_id=? AND slug=? LIMIT 1", (int(user_id), slug))
+        found = cur.fetchone()
+        if not found:
+            return 0
+        try:
+            return int(found["id"])
+        except (KeyError, IndexError, TypeError):
+            return int(found[0])
+
+    existing = _lookup()
+    if existing:
+        return existing
     cur.execute(
-        "INSERT INTO pulse_saved_collections (user_id, name, slug, description, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO pulse_saved_collections (user_id, name, slug, description, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (int(user_id), clean_html(name)[:120], slug, "Default saved space" if slug == "favorites" else "", 1 if slug == "favorites" else 0, now, now),
     )
-    return int(cur.lastrowid)
+    created = _lookup()
+    if created:
+        return created
+    # Only reachable if the row is invisible to this cursor, which on either
+    # dialect means the INSERT did not happen. Raising here beats returning 0 and
+    # writing saved items into a collection that does not exist.
+    raise RuntimeError(f"could not create saved collection {slug!r} for user {int(user_id)}")
+
+
+PULSE_WATCH_LATER_NAME = "Watch Later"
+# Content whose point is that you come back and watch it. Everything else keeps
+# landing in Favorites, which is the default collection every account already has.
+PULSE_WATCH_LATER_TYPES = {"reel", "video", "live_replay"}
+
+
+def pulse_saved_collection_for(cur, user_id, content_type, post_type=""):
+    """The collection a save lands in when the caller did not name one.
+
+    Watch Later is a *named* collection, not a second default: it is created
+    through `ensure_pulse_saved_collection` like any other, so `UNIQUE(user_id,
+    slug)` on 'watch-later' makes a duplicate impossible no matter how many
+    requests race. `is_default` stays on Favorites alone — two default
+    collections would make `_ensure_default_collection`'s `is_default=1` lookup
+    ambiguous and the two writers could then disagree about where a save went.
+
+    The reel route used to invent a third collection called "Reels" for the same
+    job. One place for saved video beats two.
+    """
+    kind = str(content_type or "").strip().lower()
+    if kind in PULSE_WATCH_LATER_TYPES or str(post_type or "").strip().lower() == "video":
+        return ensure_pulse_saved_collection(cur, user_id, PULSE_WATCH_LATER_NAME)
+    return ensure_pulse_saved_collection(cur, user_id)
+
+
+def pulse_ensure_saved_system_collections(cur, user_id):
+    """Guarantee this account's two system collections exist, exactly once each.
+
+    Favorites is the default every save falls back to; Watch Later is where
+    video-ish content goes. Both are created through
+    `ensure_pulse_saved_collection`, which is keyed on the slug and inserts with
+    `OR IGNORE`, so calling this on every library read is idempotent — there is
+    no path here that can produce a second "Watch Later".
+
+    It runs on the read path rather than only on first video save so that the
+    Collections list shows Watch Later as a place you can put things *before*
+    you have put anything there. An empty named collection is a destination; a
+    missing one is a feature the user cannot find.
+    """
+    return {
+        "favorites": ensure_pulse_saved_collection(cur, user_id),
+        "watch_later": ensure_pulse_saved_collection(cur, user_id, PULSE_WATCH_LATER_NAME),
+    }
+
+
+def pulse_saved_post_target(cur, content_type, content_id):
+    """The `pulse_posts` id a saved row's media lives on, or 0.
+
+    Reels are a `pulse_reels` row over a post, so their media hangs off the post.
+    Videos carry their own Mux columns and are resolved separately. Rooms,
+    groups, teachers and marketplace listings have no post at all.
+    """
+    kind = str(content_type or "").strip().lower()
+    raw = str(content_id or "").strip()
+    if not raw.isdigit():
+        return 0
+    numeric = int(raw)
+    if numeric <= 0:
+        return 0
+    if kind in ("post", "status", "image", "live_replay"):
+        return numeric
+    if kind == "reel":
+        try:
+            cur.execute("SELECT post_id FROM pulse_reels WHERE id=? LIMIT 1", (numeric,))
+            row = cur.fetchone()
+        except Exception:
+            return 0
+        if not row:
+            return 0
+        try:
+            return int(row["post_id"] or 0)
+        except (KeyError, IndexError, TypeError):
+            return safe_int(row[0], 0)
+    return 0
+
+
+def pulse_attach_saved_media(cur, items, viewer_user_id):
+    """Resolve each saved row's playback media from the canonical content, now.
+
+    Saving stores a *reference* — content type and id — never a copy of the
+    media. So the library resolves playback at read time from the same tables and
+    the same resolver the feed uses (`pulse_feed_engine.media_for_posts`, which
+    runs `media_service.resolve_media` and emits the canonical media schema).
+    Mux and R2 stay the source of truth for the bytes; these tables stay the
+    source of truth for what was saved. Nothing is re-uploaded and nothing is
+    copied into a collection.
+
+    Resolving beats the denormalized `media_url` column for three reasons. A post
+    saved through the generic route never populated it, so saved posts and reels
+    had no playable media at all. A Mux URL is a pure function of the playback
+    id and is re-derived on every other read path, so a stored copy is only ever
+    a staler version of the same string. And a cached URL outlives the post: if
+    the author deletes it or makes it private, `pulse_visibility_decision` stops
+    serving it everywhere else while the saved row kept working. The stored
+    column is still read as a fallback for content with no post behind it.
+
+    Rows the viewer may no longer see keep their title and stay in the library —
+    silently vanishing entries are worse than a disabled one — but surrender
+    their media and are marked `unavailable`.
+    """
+    rows = list(items or [])
+    if not rows:
+        return rows
+    viewer_id = int(viewer_user_id or 0)
+    post_targets = {}
+    video_ids = set()
+    for item in rows:
+        kind = str(item.get("content_type") or "").strip().lower()
+        if kind == "video":
+            raw = str(item.get("content_id") or "").strip()
+            if raw.isdigit():
+                video_ids.add(int(raw))
+            continue
+        post_id = pulse_saved_post_target(cur, kind, item.get("content_id"))
+        if post_id:
+            post_targets[id(item)] = post_id
+
+    visible = {}
+    if post_targets:
+        wanted = sorted(set(post_targets.values()))
+        placeholders = ",".join(["?"] * len(wanted))
+        cur.execute(
+            f"SELECT id, user_id, visibility, moderation_status, status, deleted_at FROM pulse_posts WHERE id IN ({placeholders})",
+            wanted,
+        )
+        for row in cur.fetchall():
+            post = dict(row)
+            allowed, _reason = pulse_feed_engine.pulse_visibility_decision(post, viewer_user_id=viewer_id, include_private=True)
+            visible[int(post.get("id") or 0)] = bool(allowed)
+
+    media_by_post = {}
+    playable = [pid for pid in sorted(set(post_targets.values())) if visible.get(pid)]
+    if playable:
+        try:
+            media_by_post = pulse_feed_engine.media_for_posts(playable) or {}
+        except Exception as exc:
+            # A media outage must not take the whole library down with it. The
+            # rows still list; they just render without playback this time.
+            logging.warning("PulseSoc saved media hydration skipped: %s", exc)
+            media_by_post = {}
+
+    videos = {}
+    if video_ids:
+        placeholders = ",".join(["?"] * len(video_ids))
+        cur.execute(
+            f"SELECT id, mux_playback_id, mux_asset_id, mux_status, playback_url, media_url, thumbnail_url FROM pulse_videos WHERE id IN ({placeholders})",
+            sorted(video_ids),
+        )
+        for row in cur.fetchall():
+            video = dict(row)
+            videos[int(video.get("id") or 0)] = video
+
+    for item in rows:
+        kind = str(item.get("content_type") or "").strip().lower()
+        item["media"] = []
+        item["unavailable"] = False
+        if kind == "video":
+            raw = str(item.get("content_id") or "").strip()
+            video = videos.get(int(raw)) if raw.isdigit() else None
+            if not video:
+                item["unavailable"] = True
+                continue
+            playback_id = str(video.get("mux_playback_id") or "")
+            item["media"] = [{
+                "type": "video",
+                "media_type": "video",
+                "mux_playback_id": playback_id,
+                "mux_asset_id": str(video.get("mux_asset_id") or ""),
+                "mux_status": str(video.get("mux_status") or ""),
+                # Re-derived from the playback id rather than trusting the stored
+                # column, which is what every other read path already does. And
+                # empty rather than falling back to `media_url`: that column
+                # holds the R2 object the upload landed on, and Mux is the only
+                # playback source the saved library points at.
+                "playback_url": (f"https://stream.mux.com/{playback_id}.m3u8" if playback_id else ""),
+                "playback_mime_type": "application/vnd.apple.mpegurl" if playback_id else "",
+                "processing_status": "ready" if playback_id else "mux_processing",
+                "media_url": str(video.get("media_url") or ""),
+                "thumbnail_url": str(video.get("thumbnail_url") or ""),
+                "poster_url": str(video.get("thumbnail_url") or ""),
+            }]
+            item["post_id"] = 0
+            continue
+        post_id = post_targets.get(id(item), 0)
+        item["post_id"] = post_id
+        if not post_id:
+            # Marketplace, rooms, groups, teachers: no post, so the snapshot the
+            # save wrote is the only description there is.
+            continue
+        if not visible.get(post_id):
+            item["unavailable"] = True
+            continue
+        item["media"] = pulse_saved_media_mux_only(media_by_post.get(post_id) or [])
+        continue
+    return rows
+
+
+def pulse_saved_media_mux_only(media):
+    """Video in the Saved library plays from Mux or it does not play.
+
+    `media_service.resolve_media` falls back, for a video with no Mux playback
+    id, to whatever object URL the upload landed on — an R2 CDN link. That is
+    the right answer for the feed, which shows a clip the moment it is uploaded.
+    It is the wrong answer here: Mux is the only playback source the saved
+    library points at, so a raw R2 object must never be handed back as a saved
+    video's `playback_url`.
+
+    R2 is still the source of truth for the *bytes*, and for images it is also
+    the delivery path — images are untouched. What this refuses is treating a
+    storage object as a video player source. A video whose Mux asset has not
+    finished ingesting keeps its poster and its row, reports
+    `processing_status='mux_processing'`, and surrenders only the playback URL,
+    so the client shows "still processing" instead of failing to open a file
+    that was never meant to be streamed directly.
+    """
+    cleaned = []
+    for entry in list(media or []):
+        record = dict(entry or {})
+        if str(record.get("media_type") or record.get("type") or "").lower() != "video":
+            cleaned.append(record)
+            continue
+        playback_id = str(record.get("mux_playback_id") or "").strip()
+        if playback_id:
+            # Re-derived, not trusted: the HLS URL is a pure function of the
+            # playback id, so deriving it can never be staler than a stored copy.
+            record["playback_url"] = f"https://stream.mux.com/{playback_id}.m3u8"
+            record["playback_mime_type"] = "application/vnd.apple.mpegurl"
+        else:
+            record["playback_url"] = ""
+            record["processing_status"] = "mux_processing"
+        cleaned.append(record)
+    return cleaned
+
+
 
 
 def pulse_saved_snapshot(cur, content_type, content_id, payload=None):
@@ -80068,7 +80343,11 @@ def pulse_apply_post_save(cur, user, post_row, want_saved, now):
         "INSERT OR IGNORE INTO pulse_post_saves (post_id, user_id, collection_name, created_at) VALUES (?, ?, 'Saved', ?)",
         (target_id, user_id, now),
     )
-    collection_id = ensure_pulse_saved_collection(cur, user_id)
+    # Routed by the post's own type, so a saved video lands in Watch Later and
+    # everything else in Favorites. The post type is the only thing that decides
+    # this — never the screen the tap came from — or the same post would end up
+    # in different collections depending on where you saved it.
+    collection_id = pulse_saved_collection_for(cur, user_id, "post", post_type)
     title = clean_html((row["title"] if row is not None else "") or f"PulseSoc {post_type}")[:220]
     preview = clean_html((row["body"] if row is not None else "") or "")[:700]
     cur.execute(
@@ -80233,7 +80512,7 @@ def api_pulse_saved_collections():
         collection_id = ensure_pulse_saved_collection(cur, user["user_id"], name)
         conn.commit()
     else:
-        ensure_pulse_saved_collection(cur, user["user_id"])
+        pulse_ensure_saved_system_collections(cur, user["user_id"])
         conn.commit()
         collection_id = 0
     cur.execute(
@@ -80328,10 +80607,14 @@ def api_pulse_saved_items():
                 "collections": [],
                 "message": "Removed from Saved.",
             })
-        collection_id = safe_int(payload.get("collection_id"), 0) or ensure_pulse_saved_collection(cur, user["user_id"])
+        # An explicit `collection_id` is the caller choosing where this goes and
+        # always wins; the fallback routes by content type so video-ish content
+        # lands in Watch Later. The ownership re-check below is what stops a
+        # caller naming someone else's collection id.
+        collection_id = safe_int(payload.get("collection_id"), 0) or pulse_saved_collection_for(cur, user["user_id"], content_type)
         cur.execute("SELECT id FROM pulse_saved_collections WHERE id=? AND user_id=? LIMIT 1", (collection_id, user["user_id"]))
         if not cur.fetchone():
-            collection_id = ensure_pulse_saved_collection(cur, user["user_id"])
+            collection_id = pulse_saved_collection_for(cur, user["user_id"], content_type)
         snapshot = pulse_saved_snapshot(cur, content_type, content_id, payload)
         now = datetime.utcnow().isoformat(timespec="seconds")
         cur.execute(
@@ -80349,13 +80632,27 @@ def api_pulse_saved_items():
         saved_content_type, saved_content_id = content_type, content_id
     else:
         saved_content_type, saved_content_id = "", ""
-        ensure_pulse_saved_collection(cur, user["user_id"])
+        pulse_ensure_saved_system_collections(cur, user["user_id"])
         conn.commit()
     collection_id = safe_int(request.args.get("collection_id"), 0)
     content_type = clean_html(request.args.get("type") or "all")[:40]
     q = clean_html(request.args.get("q") or "")[:120]
     items = pulse_saved_items_query(cur, user["user_id"], collection_id=collection_id, content_type=content_type, q=q)
-    cur.execute("SELECT * FROM pulse_saved_collections WHERE user_id=? ORDER BY is_default DESC, name", (user["user_id"],))
+    # Playback is resolved here, at read time, from the canonical content — never
+    # copied into the saved row at write time. That is what makes a saved reel or
+    # video openable and playable later without duplicating a single byte of
+    # media, and what makes a deleted or newly-private post stop playing from the
+    # library at the same moment it stops playing everywhere else.
+    items = pulse_attach_saved_media(cur, items, user["user_id"])
+    cur.execute(
+        """
+        SELECT c.*, (SELECT COUNT(*) FROM pulse_saved_items i WHERE i.collection_id=c.id AND i.user_id=c.user_id) AS item_count
+        FROM pulse_saved_collections c
+        WHERE c.user_id=?
+        ORDER BY c.is_default DESC, c.name
+        """,
+        (user["user_id"],),
+    )
     collections = [dict(row) for row in cur.fetchall()]
     conn.close()
     response = {"ok": True, "items": items, "collections": collections, "message": "Saved." if request.method == "POST" else ""}
@@ -84660,7 +84957,11 @@ def api_pulse_marketplace_listing_save():
         VALUES (?, ?, 'marketplace', ?, ?, ?, ?, '', ?, ?, ?, ?)
         ON CONFLICT(user_id, content_type, content_id) DO UPDATE SET collection_id=excluded.collection_id, title=excluded.title, preview_text=excluded.preview_text, thumbnail_url=excluded.thumbnail_url, updated_at=excluded.updated_at
         """,
-        (user["user_id"], collection_id, str(listing_id), title, preview, thumbnail, f"/pulse/marketplace", json.dumps({"listing_id": listing_id}), now, now),
+        # `?listing=<id>`, not a bare `/pulse/marketplace`. The saved row is a
+        # reference to one listing, and the client's target resolver already
+        # parses this exact shape; writing the tab root meant every saved product
+        # in the library opened the Marketplace tab instead of the product.
+        (user["user_id"], collection_id, str(listing_id), title, preview, thumbnail, f"/pulse/marketplace?listing={listing_id}", json.dumps({"listing_id": listing_id}), now, now),
     )
     conn.commit(); conn.close()
     return jsonify({"ok": True, "saved": True, "is_saved": True, "changed": not currently_saved, "content_type": "marketplace", "content_id": str(listing_id), "message": "Product saved."})

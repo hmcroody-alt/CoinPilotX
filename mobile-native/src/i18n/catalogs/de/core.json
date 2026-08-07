@@ -217,7 +217,8 @@
       "sent": "Gesendet",
       "updated": "Aktualisiert",
       "deleted": "Gelöscht",
-      "copiedToClipboard": "In die Zwischenablage kopiert"
+      "copiedToClipboard": "In die Zwischenablage kopiert",
+      "unavailable": "Nicht verfügbar"
     },
     "time": {
       "now": "jetzt",

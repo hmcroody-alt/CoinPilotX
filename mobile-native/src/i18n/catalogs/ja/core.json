@@ -217,7 +217,8 @@
       "sent": "送信しました",
       "updated": "更新しました",
       "deleted": "削除しました",
-      "copiedToClipboard": "クリップボードにコピーしました"
+      "copiedToClipboard": "クリップボードにコピーしました",
+      "unavailable": "利用できません"
     },
     "time": {
       "now": "今",

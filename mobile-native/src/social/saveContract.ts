@@ -41,6 +41,17 @@ export type SaveResult = {
   /** False when the server was already in the requested state. */
   changed: boolean;
   message?: string;
+  /**
+   * The `pulse_posts` row behind this content, when the route reports one.
+   *
+   * A reel and the feed post of the same video are one thing to the server and
+   * two ids to the client, so saving from the reel player used to leave the
+   * post card showing an unsaved button for content the user had just saved.
+   * The reel save route now returns this, which is what lets the store mirror
+   * the result onto both identities. Absent (or 0) means the route did not say,
+   * and the caller must not guess.
+   */
+  postId?: number;
 };
 
 type SaveResponse = {
@@ -49,6 +60,7 @@ type SaveResponse = {
   is_saved?: boolean;
   changed?: boolean;
   message?: string;
+  post_id?: number | string;
 };
 
 /**
@@ -99,10 +111,15 @@ function readResult(response: SaveResponse, requested: boolean): SaveResult {
     : typeof response.is_saved === "boolean"
       ? response.is_saved
       : requested;
+  // 0 is the server's "no post backs this" answer, and a non-numeric value is a
+  // route that predates the field; both collapse to undefined so the mirror
+  // step downstream has exactly one thing to check.
+  const postId = Number(response.post_id || 0);
   return {
     saved,
     changed: typeof response.changed === "boolean" ? response.changed : saved === requested,
-    message: response.message
+    message: response.message,
+    postId: postId > 0 ? postId : undefined
   };
 }
 

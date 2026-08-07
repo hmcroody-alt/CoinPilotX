@@ -283,6 +283,27 @@ async function resolveNotificationTarget(target: string): Promise<NotificationRo
     return { handled: true, target: normalized };
   }
 
+  // Saved videos point here (`/pulse/videos/<id>`, written by the saved-library
+  // snapshot). The bare `/pulse/videos` already resolved above as a dashboard
+  // module; the id form did not, because that lookup demands an exact path
+  // match, so every saved video tap landed in the Activity Inbox — a screen with
+  // no relationship to what the user asked for.
+  //
+  // There is no native route that plays a single library video: the stack has
+  // ReelDetail and PostDetail and nothing between them. So this resolves to the
+  // Video Library module, which is where that video is reachable from, and says
+  // so in `reason` rather than claiming a clean native resolution. The Saved
+  // screen does not rely on this path — it plays its own rows inline from the
+  // `media` the library now returns — but deep links and notifications do, and
+  // the library beats the inbox.
+  if (/^\/pulse\/videos?(\/|$|\?)/.test(normalized) && navigationRef.isReady()) {
+    const videoLibrary = dashboardModuleParamsForRoute("/pulse/videos");
+    if (videoLibrary) {
+      navigationRef.navigate("DashboardModuleDetail", videoLibrary);
+      return { handled: true, target: normalized, reason: "native_provider_boundary" };
+    }
+  }
+
   const statusMatch = normalized.match(/^\/pulse\/status\/(\d+)/);
   if (statusMatch?.[1] && navigationRef.isReady()) {
     navigationRef.navigate("StatusDetail", { statusId: Number(statusMatch[1]), title: "Status" });

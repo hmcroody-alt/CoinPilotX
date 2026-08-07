@@ -217,7 +217,8 @@
       "sent": "भेज दिया",
       "updated": "अपडेट हो गया",
       "deleted": "डिलीट हो गया",
-      "copiedToClipboard": "क्लिपबोर्ड पर कॉपी हो गया"
+      "copiedToClipboard": "क्लिपबोर्ड पर कॉपी हो गया",
+      "unavailable": "उपलब्ध नहीं"
     },
     "time": {
       "now": "अभी",

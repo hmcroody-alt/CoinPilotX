@@ -217,7 +217,8 @@
       "sent": "Envoyé",
       "updated": "Mis à jour",
       "deleted": "Supprimé",
-      "copiedToClipboard": "Copié dans le presse-papiers"
+      "copiedToClipboard": "Copié dans le presse-papiers",
+      "unavailable": "Indisponible"
     },
     "time": {
       "now": "à l'instant",

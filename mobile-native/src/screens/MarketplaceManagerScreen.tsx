@@ -123,6 +123,7 @@ import {
 import { registerSyncInvalidation } from "../core/eventSync";
 import { refreshUnreadCounts, useBellCount } from "../core/unreadCounts";
 import { useFormatters } from "../i18n/hooks";
+import { observeSavedStates, peekSaveState, useSavedStoreVersion } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
@@ -210,7 +211,6 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
   const [category, setCategory] = useState(CATEGORY_ALL);
   const [gridLimit, setGridLimit] = useState(GRID_PAGE);
   const [offers, setOffers] = useState<readonly MarketplaceOffer[]>([]);
-  const [savedIds, setSavedIds] = useState<readonly number[]>([]);
   const [cartIds, setCartIds] = useState<readonly number[]>([]);
   const [cartBadge, setCartBadge] = useState(0);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
@@ -436,15 +436,40 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
     [filteredBuying, gridLimit]
   );
 
-  const savedSet = useMemo(() => new Set(savedIds), [savedIds]);
   const visibleSet = useMemo(() => new Set(visibleIds), [visibleIds]);
 
-  // Seed the saved set from whatever the API already told us, so a heart the
-  // user filled on another screen is filled here on first paint.
+  /**
+   * Hearts read the shared saved store, not a list this screen keeps.
+   *
+   * The local `savedIds` array only ever knew about taps that happened here, so
+   * a listing unsaved on the Saved screen — or saved in the detail screen this
+   * one pushes — came back filled the moment the user returned. The store is
+   * where every savable surface writes, so reading it is what makes the heart
+   * agree with the rest of the app.
+   */
+  const savedVersion = useSavedStoreVersion();
+
+  // Keyed on `feedListings` rather than `buyingItems` on purpose: `buyingItems`
+  // is re-derived on every `now` tick, and re-observing the fetch payload on a
+  // clock tick would overwrite a save the user made since the fetch.
   useEffect(() => {
-    const initial = buyingItems.filter((item) => item.saved).map((item) => item.id);
-    if (initial.length) setSavedIds((current) => Array.from(new Set([...current, ...initial])));
-  }, [buyingItems]);
+    observeSavedStates(
+      "marketplace",
+      feedListings.map((listing) => ({ id: listing.id, saved: listing.saved }))
+    );
+  }, [feedListings]);
+
+  const savedSet = useMemo(
+    () =>
+      new Set(
+        feedListings
+          .filter((listing) => peekSaveState("marketplace", listing.id)?.saved ?? Boolean(listing.saved))
+          .map((listing) => listing.id)
+      ),
+    // `savedVersion` is the subscription: it changes on every store write, which
+    // is what re-derives this set for a save made on another screen.
+    [feedListings, savedVersion]
+  );
 
   /* ---------------------------------------------------------------- *
    * Actions
@@ -505,16 +530,11 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
 
   const toggleSave = useCallback(async (item: BuyingItem) => {
     const wasSaved = savedSet.has(item.id);
-    // Optimistic, then reconciled against what the server actually stored — the
-    // same contract every other savable surface in the app uses.
-    setSavedIds((current) =>
-      wasSaved ? current.filter((id) => id !== item.id) : [...current, item.id]
-    );
-    const outcome = await setSaved({ type: "marketplace", id: item.id }, !wasSaved);
-    setSavedIds((current) => {
-      const without = current.filter((id) => id !== item.id);
-      return outcome.saved ? [...without, item.id] : without;
-    });
+    // Optimism, rollback and the in-flight lock all live in the store now, so
+    // this asserts the state and lets the heart follow. The hand-rolled
+    // optimistic list that used to be here duplicated that logic without the
+    // lock, so a double tap could put two opposing mutations in flight.
+    await setSaved({ type: "marketplace", id: item.id }, !wasSaved);
   }, [savedSet]);
 
   /**
@@ -558,7 +578,7 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
   // so it agrees with what the cart screen will show — `cartIds` is membership
   // for per-card state, not a counter.
   const cartCount = cartBadge;
-  const savedCount = savedIds.length;
+  const savedCount = savedSet.size;
 
   const header = (
     <StoreHeader

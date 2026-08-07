@@ -19,10 +19,29 @@
 import { useCallback, useState } from "react";
 import { describeSocialActionError } from "./actionGuard";
 import { SavableContentType, SaveTarget, saveKey, setSavedOnServer } from "./saveContract";
-import { markSavePending, peekSaveState, settleSaveState } from "./savedStore";
+import { markSavePending, observeSavedState, peekSaveState, settleSaveState } from "./savedStore";
 
 const inFlight = new Set<string>();
 const sequences = new Map<string, number>();
+
+/**
+ * Apply a settled reel result to the post that backs it.
+ *
+ * A reel and its feed post are one row on the server and two keys here, so a
+ * save made in the reel player left the post card for the same video still
+ * offering to save it. The reel save route reports the backing `post_id`, and
+ * this copies the answer across.
+ *
+ * `observeSavedState` rather than `settleSaveState`: this is a fact learned
+ * about a key we did not lock, and if a mutation on that key is already in
+ * flight then it is newer than what we just heard. Skipping is correct there —
+ * that mutation will settle with its own answer.
+ */
+function mirrorLinkedPost(target: SaveTarget, postId: number | undefined, saved: boolean) {
+  if (!postId || postId <= 0) return;
+  if (saveKey("post", postId) === saveKey(target.type, target.id)) return;
+  observeSavedState("post", postId, saved);
+}
 
 export type SaveActionOutcome = {
   /** The state now shown. Equals the requested state on success. */
@@ -68,6 +87,7 @@ export async function setSaved(target: SaveTarget, next: boolean): Promise<SaveA
     const result = await setSavedOnServer(target, next);
     if (sequences.get(key) !== seq) return { ok: true, saved: result.saved };
     settleSaveState(target.type, target.id, result.saved);
+    mirrorLinkedPost(target, result.postId, result.saved);
     return { ok: true, saved: result.saved };
   } catch (error) {
     if (sequences.get(key) !== seq) return { ok: false, saved: previous };

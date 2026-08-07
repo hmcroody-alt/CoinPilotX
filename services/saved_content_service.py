@@ -112,6 +112,23 @@ def get_post_saved(user_id: int, post_id: int) -> dict[str, Any] | None:
 
 
 def _ensure_default_collection(cur, user_id: int, now: str) -> int:
+    """The caller's default collection, created on first use.
+
+    Reads the id back with a SELECT rather than `cur.lastrowid`. On Postgres
+    `lastrowid` holds a value only because `services.db.CompatCursor.execute`
+    appends `RETURNING <pk>`, and it does that exclusively for tables listed in
+    `AUTO_PK_TABLES`. `pulse_saved_collections` was missing from that list, so
+    this ended on `int(None)` and raised TypeError the first time any account
+    saved anything — and nothing was committed, so the collection never appeared
+    and the failure repeated forever. The table has since been added to the list,
+    but a SELECT is correct on every dialect and cannot regress if the list
+    drifts again.
+
+    The insert is `OR IGNORE` and the second lookup is keyed by slug, matching
+    `bot.ensure_pulse_saved_collection`. Both writers must agree on the key or
+    each would happily create the other's duplicate, and `UNIQUE(user_id, slug)`
+    is what makes a concurrent creation harmless rather than an integrity error.
+    """
     cur.execute(
         """SELECT id FROM pulse_saved_collections
            WHERE user_id=? AND COALESCE(is_default,0)=1
@@ -122,12 +139,19 @@ def _ensure_default_collection(cur, user_id: int, now: str) -> int:
     if row:
         return int(dict(row)["id"])
     cur.execute(
-        """INSERT INTO pulse_saved_collections
-           (user_id,name,slug,is_default,created_at,updated_at)
-           VALUES (?,'Favorites','favorites',1,?,?)""",
+        """INSERT OR IGNORE INTO pulse_saved_collections
+           (user_id,name,slug,description,is_default,created_at,updated_at)
+           VALUES (?,'Favorites','favorites','Default saved space',1,?,?)""",
         (int(user_id), now, now),
     )
-    return int(cur.lastrowid)
+    cur.execute(
+        "SELECT id FROM pulse_saved_collections WHERE user_id=? AND slug='favorites' LIMIT 1",
+        (int(user_id),),
+    )
+    created = cur.fetchone()
+    if not created:
+        raise RuntimeError(f"could not create default saved collection for user {int(user_id)}")
+    return int(dict(created)["id"])
 
 
 def set_post_saved(user_id: int, post_id: int, *, saved: bool) -> dict[str, Any]:

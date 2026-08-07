@@ -217,7 +217,8 @@
       "sent": "Enviado",
       "updated": "Atualizado",
       "deleted": "Excluído",
-      "copiedToClipboard": "Copiado para a área de transferência"
+      "copiedToClipboard": "Copiado para a área de transferência",
+      "unavailable": "Indisponível"
     },
     "time": {
       "now": "agora",

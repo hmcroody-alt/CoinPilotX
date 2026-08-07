@@ -217,7 +217,8 @@
       "sent": "已发送",
       "updated": "已更新",
       "deleted": "已删除",
-      "copiedToClipboard": "已复制到剪贴板"
+      "copiedToClipboard": "已复制到剪贴板",
+      "unavailable": "不可用"
     },
     "time": {
       "now": "刚刚",
