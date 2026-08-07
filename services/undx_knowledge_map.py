@@ -1036,8 +1036,8 @@ _mapped(
     result_card_type=CardType.CONTENT_RESULT,
     implementation_status=_PARTIAL,
     evidence=(
-        "bot.py:37785 /api/pulse/status/rail",
-        "bot.py:37260 /pulse/status renders a page",
+        "bot.py:37786 /api/pulse/status/rail",
+        "bot.py:37261 /pulse/status renders a page",
     ),
     known_limitations=(
         "The only JSON status endpoint is the rail, which returns the viewer's "
@@ -1240,7 +1240,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id", target_field="reel_id",
     undo_capability_id="saved.reel.set",
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:79573 reel save handler",),
+    evidence=("bot.py:79575 reel save handler",),
     known_limitations=(_SAVED_TOGGLE,),
     toggle_semantics=True,
 )
@@ -1255,7 +1255,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id", target_field="listing_id",
     undo_capability_id="saved.listing.set",
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:84747 marketplace save handler",),
+    evidence=("bot.py:84749 marketplace save handler",),
     known_limitations=(_SAVED_TOGGLE,),
     toggle_semantics=True,
 )
@@ -1370,7 +1370,7 @@ _mapped(
     authorization_scope=_OTHER, owner_field="user_id", target_field="request_id",
     result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:81034 friend accept handler",),
+    evidence=("bot.py:81036 friend accept handler",),
     known_limitations=("Guards on `AND status = 'pending'`, which is correct, but the "
                        "update is inline in the handler.",),
 )
@@ -1385,7 +1385,7 @@ _mapped(
     authorization_scope=_UNSCOPED, owner_field="user_id", target_field="request_id",
     result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
     implementation_status=_PARTIAL,
-    evidence=("bot.py:81071 friend decline handler", "bot.py:81034 accept, for contrast"),
+    evidence=("bot.py:81073 friend decline handler", "bot.py:81036 accept, for contrast"),
     known_limitations=(
         "Decline omits the `AND status = 'pending'` guard that accept has, so it "
         "will transition a request that is already accepted or already declined. "
@@ -1713,7 +1713,7 @@ _mapped(
     output_schema=(("live_id", "int"), ("host_id", "int"), ("title", "str")),
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:43721 /pulse/live renders a page",
+        "bot.py:43722 /pulse/live renders a page",
     ),
     known_limitations=(
         "No JSON listing of live sessions exists. The route behind the Live screen renders a "

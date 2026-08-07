@@ -281,3 +281,23 @@ Evidence-based statement of what changed, nothing more:
 - **Validation:** bot.py AST parse OK; new module AST OK; template Jinja-parses;
   undx_agent suite 780/780 OK; protection suite 239 checks / 15 suites passed;
   realtime-audio gate clean (no protected path touched).
+
+---
+
+## 11. 2026-08-06 milestone 5 — nav parity audit vs native tabs
+
+- **Native tab inventory** (mobile-native AppNavigator): Dashboard, Home,
+  Search, Saved, Groups, Live, Reels, Create, Status, Messenger,
+  Notifications, **PulseAI/UNDX**, Profile, Marketplace, Settings. All have a
+  web equivalent route; the gaps were discoverability, not existence.
+- **Fixed:** `/pulse/assistant` (UNDX AI chat page) had ZERO inbound links on
+  the web — native ships it as a first-class tab. Added "UNDX AI" to the
+  desktop rail nav, home Quick Apps grid, and Discover #apps (same three
+  points as the Business OS links from milestone 4).
+- **Mobile bottom nav** (web PWA): 5-slot layout is intact and correct;
+  Business OS / UNDX belong in rail + apps grid, not the bottom bar.
+- **Citations:** knowledge-map bot.py line anchors re-pinned exactly after nav
+  insertions (37261, 37786, 43722, 79575, 81036, 81073, 84749). Known
+  fragility: any bot.py insertion above these lines shifts them; the test
+  window absorbs ±3 lines only.
+- **Validation:** AST OK, 780/780 undx_agent, protection suite 239/15.

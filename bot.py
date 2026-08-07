@@ -35101,6 +35101,7 @@ def pulse_desktop_left_rail_html(is_admin=False, user=None):
         ("Pulse Radio", "/pulse/music#pulse-radio", "R"),
         ("Creator Studio", "/pulse/creator-studio", "✦"),
         ("Business OS", "/business-os", "◈"),
+        ("UNDX AI", "/pulse/assistant", "AI"),
         ("Seller Tools", "/pulse/seller-tools", "$"),
         ("Premium", "/pulse/premium", "◆"),
         ("Promote", "/pulse/promote", "↗"),
@@ -35674,7 +35675,7 @@ def pulse_desktop_right_rail_html():
         "<a class='desktop-intel-row' href='/pulse/communities'><span class='desktop-rail-ico'>◇</span><span><strong>Communities</strong><small class='muted'>Find rooms and groups without leaving PulseSoc.</small></span></a>"
         "</div></section>"
         "<section class='desktop-rail-card home-quick-apps' id='pulseHomeQuickApps'><h3>Quick Apps</h3><div class='pulse-quick-app-grid'>"
-        "<a href='/pulse/communities'>Communities</a><a href='/pulse/marketplace'>Marketplace</a><a href='/pulse/music'>Music</a><a href='/pulse/events'>Events</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/business-os'>Business OS</a><a href='/pulse/discover#apps'>More Apps</a>"
+        "<a href='/pulse/communities'>Communities</a><a href='/pulse/marketplace'>Marketplace</a><a href='/pulse/music'>Music</a><a href='/pulse/events'>Events</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/business-os'>Business OS</a><a href='/pulse/assistant'>UNDX AI</a><a href='/pulse/discover#apps'>More Apps</a>"
         "</div></section>"
         "<section class='desktop-rail-card home-promotion-gateway'><h3>Grow Your Reach</h3><p class='muted'>Promotion starts from real owner content and checks growth readiness before any launch.</p><a class='button primary' href='/pulse/promote'>Open Promote</a></section>"
         "<section class='desktop-rail-card'><h3>Educator Signal</h3><div class='desktop-intel-grid' data-desktop-educators>"
@@ -74524,6 +74525,7 @@ def pulse_discover_page():
         "<a class='button' href='/pulse/music'>Music</a><a class='button' href='/pulse/events'>Events</a>"
         "<a class='button' href='/pulse/creator-studio'>Creator Studio</a><a class='button' href='/pulse/promote'>Promote</a>"
         "<a class='button' href='/business-os'>Business OS</a>"
+        "<a class='button' href='/pulse/assistant'>UNDX AI</a>"
         "</div></section>"
     )
     return pulse_social_shell("Discover", "PulseSoc discovery without fake recommendations or legacy routes.", main)
