@@ -15,6 +15,8 @@ from typing import Any
 
 import requests
 
+from services import undx_company_identity
+
 
 LOGGER = logging.getLogger(__name__)
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -65,17 +67,32 @@ class PulseAIProviderError(RuntimeError):
 
 
 def prepare_undx_model_request(messages: list[dict[str, str]], correlation_id: str = "") -> list[dict[str, str]]:
-    """Build the final provider request and fail closed if identity is absent."""
-    final_messages = [{"role": "system", "content": UNDX_IDENTITY_BLOCK}]
+    """Build the final provider request and fail closed if identity is absent.
+
+    Two canonical system blocks are prepended and verified here so every provider,
+    fallback, retry, and stream is grounded identically without trusting the client,
+    retrieval, memory, or history: UNDX's own identity, and the authoritative
+    company/founder/product grounding (who builds PulseSoc, the product definition,
+    and the fact/capability honesty + injection-resistance rules).
+    """
+    final_messages = [
+        {"role": "system", "content": UNDX_IDENTITY_BLOCK},
+        {"role": "system", "content": undx_company_identity.company_identity_block()},
+    ]
     final_messages.extend(dict(item) for item in messages if isinstance(item, dict))
     final_system_context = "\n\n".join(
         str(item.get("content") or "") for item in final_messages if item.get("role") == "system"
     )
     identity_present = UNDX_IDENTITY_REQUIRED_PHRASE in final_system_context
-    if not identity_present:
-        LOGGER.error("identity_configuration_error correlation_id=%s", correlation_id)
+    company_present = undx_company_identity.COMPANY_IDENTITY_REQUIRED_PHRASE in final_system_context
+    if not identity_present or not company_present:
+        LOGGER.error(
+            "identity_configuration_error correlation_id=%s identity_present=%s company_present=%s",
+            correlation_id, identity_present, company_present,
+        )
         raise PulseAIProviderError("undx_identity", "identity_configuration_error")
     assert UNDX_IDENTITY_REQUIRED_PHRASE in final_system_context
+    assert undx_company_identity.COMPANY_IDENTITY_REQUIRED_PHRASE in final_system_context
     LOGGER.info(
         "UNDX_FINAL_MODEL_REQUEST correlation_id=%s identity_present=true system_context=%r roles=%s",
         correlation_id,

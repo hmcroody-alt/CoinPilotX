@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/api/businessOs.ts",
+    "src/api/adsDelivery.ts",
+    "src/components/ads/AdsStates.tsx",
+    "src/components/ads/CampaignCard.tsx",
+    "src/screens/AdsManagerScreen.tsx",
+    "src/screens/BusinessOsAdvertisingScreen.tsx",
+    "src/screens/AdsSubPageScreen.tsx",
+    "src/screens/__tests__/AdsManagerScreen.test.tsx",
+    "src/screens/__tests__/AdsSubPageScreen.test.tsx"
+  ]
+}

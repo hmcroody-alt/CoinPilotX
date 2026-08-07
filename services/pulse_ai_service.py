@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_operator, undx_platform_knowledge, undx_policy
+from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_operator, undx_platform_knowledge, undx_policy, undx_self_knowledge
 
 
 LOGGER = logging.getLogger(__name__)
@@ -657,6 +657,9 @@ def get_conversation(user_id: int, limit: int = 80) -> dict:
             "messages": [_message_payload(row, int(user_id)) for row in messages],
             "quick_prompts": pulse_ai_knowledge.quick_prompts(),
             "settings": _settings_payload(settings),
+            # Server-authoritative self-description so clients render UNDX identity
+            # and real capability status without hard-coding company facts locally.
+            "self_knowledge": undx_self_knowledge.self_knowledge(),
         }
     finally:
         conn.close()

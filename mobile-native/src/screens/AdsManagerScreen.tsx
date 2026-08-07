@@ -37,6 +37,7 @@ import {
   AdCampaignAction,
   availableAdCampaignActions,
   formatObjective,
+  requestAdAccountVerification,
   runAdCampaignAction
 } from "../api/businessOs";
 import {
@@ -96,6 +97,7 @@ import {
 import { policyCenterModel } from "../api/adsPolicy";
 import { creativeLibraryModel } from "../api/adsCreatives";
 import {
+  accountVerificationState,
   attributionNote,
   deliveryState,
   deliveryStateDetail,
@@ -161,6 +163,7 @@ export function AdsManagerScreen({ route, navigation }: Props) {
   const [tab, setTab] = useState<CampaignTabKey>("active");
   const [busyKey, setBusyKey] = useState("");
   const [message, setMessage] = useState("");
+  const [verifying, setVerifying] = useState(false);
   const [suggestionDismissed, setSuggestionDismissed] = useState(false);
 
   /**
@@ -227,9 +230,43 @@ export function AdsManagerScreen({ route, navigation }: Props) {
     navigation?.navigate("BusinessOsPayments", { title: "Ad wallet", accountId });
   }, [navigation, model]);
 
-  const openVerification = useCallback(() => {
-    navigation?.navigate("VerificationCenter", { title: "Verification Center", track: "business" });
-  }, [navigation]);
+  /**
+   * Ask for the *ad account* to be reviewed.
+   *
+   * This used to navigate to the Verification Center, which posts to
+   * `/api/dashboard/account/verification/request` and decides a profile badge.
+   * `select_ads` reads `pulse_ad_accounts.status`, which that flow never
+   * touches — so the advertiser could complete everything the Verification
+   * Center asked for, wait for it to be approved, and still not deliver a
+   * single impression. The button was live, it navigated somewhere real, and
+   * finishing what it asked changed nothing about the thing it was named after.
+   *
+   * `requestAdAccountVerification` writes the record the selector actually
+   * reads. Its refusals — not the owner, already verified, already in review —
+   * are the server's sentences, shown as they come back.
+   */
+  const requestVerification = useCallback(async () => {
+    const accountId = model?.primaryAccount?.id;
+    if (!accountId) return;
+    if (model?.offline) {
+      setMessage("You're offline. Reconnect to request verification.");
+      return;
+    }
+    if (verifying) return;
+    setVerifying(true);
+    setMessage("");
+    try {
+      await requestAdAccountVerification(accountId);
+      setMessage("Verification requested. We'll tell you as soon as it's decided.");
+      await load("refresh");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Verification couldn't be requested. Try again."
+      );
+    } finally {
+      setVerifying(false);
+    }
+  }, [load, model, verifying]);
 
   const openReports = useCallback(() => {
     navigation?.navigate("BusinessOsInsights", { title: "Ad reports" });
@@ -345,6 +382,64 @@ export function AdsManagerScreen({ route, navigation }: Props) {
   const walletFailed = !loading && Boolean(account) && !model?.wallet;
 
   /**
+   * The empty state's second action, which only exists when there is something
+   * for it to do. An account already in review has no move to offer, and a
+   * verified account has nothing left to ask for — in both cases the old
+   * unconditional "Verify your business" was a button whose only possible
+   * outcome was the server explaining why it wouldn't work.
+   */
+  const verificationIsRequestable = useMemo(() => {
+    if (!account) return false;
+    const state = accountVerificationState(account);
+    return state === "unverified" || state === "rejected";
+  }, [account]);
+
+  const emptyStateVerifyLabel = useMemo(() => {
+    if (!model?.needsVerification || !verificationIsRequestable || !account) return null;
+    return accountVerificationState(account) === "rejected"
+      ? "Request review again"
+      : "Request verification";
+  }, [model?.needsVerification, verificationIsRequestable, account]);
+
+  /**
+   * What the empty state says about delivery.
+   *
+   * The verification banner only renders alongside blocked campaigns, so on an
+   * account with no campaigns at all this body is the *only* thing standing
+   * between the advertiser and a silent gate. It used to be one sentence —
+   * "Delivery begins once PulseSoc approves your business" — printed for every
+   * blocked state. That is accurate while a review is pending and untrue in the
+   * other two: a declined account is waiting on the advertiser, not on us, and
+   * a verified account that isn't marked active has already been approved, so
+   * telling them to wait for approval sends them to wait for something that has
+   * already happened. Each state now says what is actually true of it, and the
+   * decline carries its recorded reason because §37 requires the policy reason
+   * to be reachable and this is the only surface that renders here.
+   */
+  const emptyStateBody = useMemo(() => {
+    const draftIsFree = "Nothing is charged while a campaign is a draft.";
+    if (!model?.needsVerification) {
+      return `Campaigns you create appear here with their delivery status, spend and pacing. ${draftIsFree}`;
+    }
+    const start = "Start a campaign now — drafts cost nothing and aren't charged.";
+    const reason = String(
+      (account as { verification_reason?: string } | null)?.verification_reason || ""
+    ).trim();
+    switch (accountVerificationState(account || {})) {
+      case "pending":
+        return `${start} Delivery begins once your account review is decided — nothing is charged while you wait.`;
+      case "rejected":
+        return reason
+          ? `${start} Your account review was declined: ${reason} Update your business details, then request review again.`
+          : `${start} Your account review was declined, and no reason was recorded with the decision. Check your business details, then request review again.`;
+      case "verified":
+        return `${start} This account is verified but isn't marked active, so nothing can deliver yet. Contact support so it can be corrected.`;
+      default:
+        return `${start} Delivery begins once this ad account is verified, so you can get that going in parallel.`;
+    }
+  }, [model?.needsVerification, account]);
+
+  /**
    * Whether the balance on this screen is a figure the server stood behind.
    *
    * `portal_summary` wraps every `wallet_summary` call in a bare `except` and,
@@ -389,8 +484,30 @@ export function AdsManagerScreen({ route, navigation }: Props) {
     (model?.wallet?.balanceCents || 0) <= 0 &&
     campaigns.some((campaign) => deliveryState(model?.portal ?? null, campaign) === "delivering");
 
+  /*
+   * The debt, and the reason the banner cannot wait for a delivering campaign.
+   *
+   * `zeroBalance` fires only while something is still trying to spend, which is
+   * right for an account that is merely empty — nothing has stopped yet, so
+   * nothing needs explaining. An overdrawn account is the opposite case: the
+   * reversal handler pauses every campaign it can no longer fund, so by the
+   * time the advertiser opens this screen there is nothing delivering and the
+   * one condition that would have surfaced the banner is already false. The
+   * debt would then be visible nowhere at all.
+   */
+  const owedLabel = balanceConfirmed ? walletTruth?.owedDisplay ?? null : null;
+  const showBalanceBanner = zeroBalance || Boolean(owedLabel);
+
+  /*
+   * `null`, not `"—"`, while the wallet is loading.
+   *
+   * The chip decides what an absent balance reads as; a caller that hands it a
+   * placeholder string is deciding for it, and the string it used to hand over
+   * was the one glyph §31 rules out. Passing null says "no figure yet" and
+   * leaves the wording in the one place that owns it.
+   */
   const walletProp = loading
-    ? { balanceLabel: "—", fundingLive: false, loading: true }
+    ? { balanceLabel: null, fundingLive: false, loading: true }
     : model?.wallet
     ? {
         balanceLabel:
@@ -616,15 +733,11 @@ export function AdsManagerScreen({ route, navigation }: Props) {
       return (
         <AdsEmpty
           title="No campaigns yet"
-          body={
-            model.needsVerification
-              ? "Start a campaign now — drafts cost nothing and aren't charged. Delivery begins once PulseSoc approves your business, so you can get verification going in parallel."
-              : "Campaigns you create appear here with their delivery status, spend and pacing. Nothing is charged while a campaign is a draft."
-          }
+          body={emptyStateBody}
           ctaLabel="Create campaign"
           onPress={() => openClassic("Create campaign")}
-          secondaryLabel={model.needsVerification ? "Verify your business" : null}
-          onSecondaryPress={model.needsVerification ? openVerification : undefined}
+          secondaryLabel={emptyStateVerifyLabel}
+          onSecondaryPress={emptyStateVerifyLabel ? requestVerification : undefined}
           reducedMotion={reducedMotion}
         />
       );
@@ -774,7 +887,7 @@ export function AdsManagerScreen({ route, navigation }: Props) {
               }}
               toggleBusy={busyKey === `campaign-${campaign.id}`}
               blockedVerification={blocked.some((entry) => entry.id === campaign.id)}
-              onVerify={openVerification}
+              onVerify={verificationIsRequestable ? requestVerification : undefined}
               actions={actions}
               onPress={() => openClassic(campaign.campaign_name || "Campaign")}
               reducedMotion={reducedMotion}
@@ -799,11 +912,12 @@ export function AdsManagerScreen({ route, navigation }: Props) {
         {/* Wallet outranks verification: a campaign that can't be paid for stops
             sooner than one waiting on approval, so it is stated first. Both are
             shown when both are true — neither is suppressed by the other. */}
-        {zeroBalance && model?.wallet ? (
+        {showBalanceBanner && model?.wallet ? (
           <AdsZeroBalanceBanner
             fundingLive={model.wallet.fundingLive}
             onAddFunds={openWallet}
             reducedMotion={reducedMotion}
+            owedLabel={owedLabel}
           />
         ) : null}
         {walletFailed ? (
@@ -812,7 +926,10 @@ export function AdsManagerScreen({ route, navigation }: Props) {
         {blocked.length ? (
           <AdsVerificationBanner
             campaignName={blocked.length === 1 ? blocked[0].campaign_name || null : null}
-            onVerify={openVerification}
+            state={accountVerificationState(account || {})}
+            reason={(account as { verification_reason?: string } | null)?.verification_reason || null}
+            submitting={verifying}
+            onVerify={requestVerification}
             reducedMotion={reducedMotion}
           />
         ) : null}
@@ -913,10 +1030,17 @@ export function AdsManagerScreen({ route, navigation }: Props) {
             // editable endpoint here, and its subtitle says so before the tap
             // rather than after. The creative library is no longer a report —
             // it lists the real creatives — so its subtitle carries a count.
+            //
+            // The subtitle was "See what targeting applies", which promises a
+            // list of applied rules. None applies: `pulse_ad_targeting` is
+            // never written, so `_matches_targeting` passes every campaign for
+            // every viewer. The tile now names what the page can actually
+            // answer — where the ad runs — so the tap is not spent finding out
+            // the question had no answer.
             {
               icon: "people-outline",
               label: "Audiences",
-              subtitle: "See what targeting applies",
+              subtitle: "Where your ads run",
               onPress: openAudiences,
               reducedMotion
             },
@@ -1075,10 +1199,16 @@ export function AdsManagerScreen({ route, navigation }: Props) {
 
             <View style={styles.infoCard}>
               <Text style={styles.infoTitle}>What you can run today</Text>
+              {/* Was "…deliver in the feed and in Reels". There is no Reels
+                  placement: `PLACEMENTS` seeds twelve rows and none of them is
+                  Reels, so this named one surface that does not exist while
+                  omitting eleven that do — Marketplace, Search and Pulse Radio
+                  among them. The Audiences page now lists the real set from the
+                  portal, so this points there instead of guessing again. */}
               <Text style={styles.infoBody}>
-                Marketplace ads are live and deliver in the feed and in Reels. They use the
-                same wallet, so anything you add now is spendable the moment post promotion
-                arrives.
+                Marketplace ads are live and deliver across a dozen placements — the feed,
+                Marketplace, search and more, listed under Audiences. They use the same wallet,
+                so anything you add now is spendable the moment post promotion arrives.
               </Text>
               <Pressable
                 onPress={() => changeMode("marketplace")}
@@ -1127,26 +1257,49 @@ export function AdsManagerScreen({ route, navigation }: Props) {
                   phase={promotion.phase}
                   phaseLabel={promotionPhaseLabel(promotion.phase)}
                   phaseTone={promotionPhaseTone(promotion.phase)}
+                  /*
+                   * Two cells, not four, and no dashes in either.
+                   *
+                   * This strip used to be Reach / Likes / Follows / Cost per 1k
+                   * with a literal "—" in three of them. §31 prohibits the
+                   * universal dash precisely because it flattens four unrelated
+                   * facts into one glyph: "this hasn't started", "we don't
+                   * collect this", "there's nothing to divide by" and "the
+                   * request failed" are different things and the reader can act
+                   * on only some of them.
+                   *
+                   * Likes and Follows are gone rather than reworded. They had no
+                   * source at all — not an empty one, not a failing one, none —
+                   * so a cell for them was a label promising a measurement that
+                   * does not exist anywhere in the product. That is the same
+                   * finding as conversions in Phase 4 and it gets the same
+                   * answer: say it in a sentence, because the thing being
+                   * reported is the absence of a number and a cell cannot say
+                   * that without printing something under the word.
+                   *
+                   * The two that remain are real. `reach` is measured once the
+                   * promotion delivers; before that "None yet" is the truth, not
+                   * a placeholder. Cost per 1k is derived from it and cannot
+                   * exist before reach does.
+                   */
                   metrics={[
                     {
                       key: "reach",
                       label: "Reach",
-                      value: known ? formatters.count(Number(promotion.reach || 0)) : "—"
+                      value: known
+                        ? formatters.count(Number(promotion.reach || 0))
+                        : absentValueText("no_activity")
                     },
-                    // MOCK-DATA: likes and follows attributable to a promotion
-                    // have no source at all, so they read "—" even in the
-                    // preview rather than showing an invented count.
-                    { key: "likes", label: "Likes", value: "—" },
-                    { key: "follows", label: "Follows", value: "—" },
                     {
                       key: "cpm",
                       label: "Cost per 1k views",
                       value:
                         known && Number(promotion.reach || 0) > 0
                           ? money(Math.round((spentCents / Number(promotion.reach)) * 1000))
-                          : "—"
+                          : absentValueText("no_activity")
                     }
                   ]}
+                  metricsNote="Likes and follows from a promotion aren’t tracked."
                   pacing={
                     budgetCents > 0
                       ? {

@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from services import undx_company_identity
 from services.undx_brain import envelope
 
 
@@ -278,6 +279,11 @@ def quick_prompts() -> list[str]:
 
 def build_system_prompt(knowledge_items: list[dict[str, Any]] | None = None, user_memory: list[dict[str, Any]] | None = None, compiled_policy: str = "", *, env: Any = None) -> str:
     sections = [compiled_policy.strip() or CORE_SYSTEM_PROMPT.strip()]
+    # Authoritative company/founder/product grounding + fact & capability honesty.
+    # Added as its own always-present section so it survives a compiled policy
+    # replacing CORE_SYSTEM_PROMPT. The provider boundary re-asserts it and fails
+    # closed, but keeping it here grounds non-provider prompt assembly too.
+    sections.append(undx_company_identity.company_identity_block())
     registry_lines = [f"- {item['name']}: {item['summary']}" for item in DEFAULT_FEATURE_REGISTRY]
     sections.append("Current PulseSoc feature map:\n" + "\n".join(registry_lines))
     if knowledge_items:

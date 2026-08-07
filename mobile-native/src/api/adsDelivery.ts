@@ -31,20 +31,26 @@
  * is the contradictory state `NO_DEAD_ENDS` exists to forbid, and it is what
  * ships today.
  *
- * THE FINDING THAT MATTERS MOST
- * -----------------------------
- * `a.status = 'active'` is required for every impression, and **no route in the
- * product ever sets it**. `create_ad_account` inserts `'pending_verification'`
- * with `verification_status='unverified'`
- * (services/pulse_ads_service.py:565–566). The only write to that column in
- * `bot.py` is the admin disable route, which sets `'suspended'`
- * (bot.py:17966). Every `status='active'` write in the repo lives in
- * `scripts/*_audit.py` — one-off tools, not a product path.
+ * THE FINDING THAT MATTERS MOST — AND WHAT WAS DONE ABOUT IT
+ * ----------------------------------------------------------
+ * `a.status = 'active'` is required for every impression, and when this module
+ * was written **no route in the product ever set it**. `create_ad_account`
+ * inserts `'pending_verification'` with `verification_status='unverified'`; the
+ * only write to that column in `bot.py` was the admin disable route, which sets
+ * `'suspended'`. Every `status='active'` write in the repo lived in
+ * `scripts/*_audit.py` — one-off tools, not a product path. A self-serve
+ * advertiser could not reach delivery at all, ever, and the client could only
+ * name the wall.
  *
- * The consequence: a self-serve advertiser cannot reach delivery at all. The
- * client cannot fix that. What the client can do — and what §31 requires — is
- * stop reporting "Active" as if it meant "running", and name the gate the
- * reader is actually stuck behind.
+ * The wall now has a door. `POST /api/pulse/ads/accounts/:id/verification` lets
+ * the advertiser ask for review; `POST /api/admin/pulse/ads/accounts/verify`
+ * writes `status='active'` and `verification_status='verified'` together,
+ * because they describe one decision and an account that is verified but not
+ * active still serves nothing. Rejection stores a reason and the account can
+ * resubmit.
+ *
+ * So the account-level blockers below are no longer one undifferentiated "not
+ * approved". Four states, and only two of them are things the reader waits on.
  *
  * WHY "DELIVERING" IS NOT A CLAIM THIS MODULE MAKES LIGHTLY
  * --------------------------------------------------------
@@ -84,7 +90,13 @@
 
 import type { CampaignTone } from "./adsDashboard";
 import { AdCampaign, AdWallet } from "./businessOs";
-import { AdCreative, AdsPortal, accountRole } from "./adsPortal";
+import {
+  AdCreative,
+  AdsPortal,
+  accountIsListed,
+  accountRole,
+  portalIsLoaded
+} from "./adsPortal";
 
 /* ------------------------------------------------------------------ *
  * Delivery state
@@ -116,6 +128,9 @@ export type DeliveryState = (typeof DELIVERY_STATES)[number];
  */
 export type DeliveryBlockerCode =
   | "account_suspended"
+  | "account_verification_pending"
+  | "account_verification_rejected"
+  | "account_not_verified"
   | "account_not_active"
   | "no_creative"
   | "creative_rejected"
@@ -132,10 +147,16 @@ export type DeliveryBlocker = {
   /** What the reader can do about it, or who can. Never blank. */
   detail: string;
   /**
-   * False when nothing the advertiser does will clear this. Account activation
-   * has no product path, so it is the one gate the reader cannot self-serve —
-   * and telling them to "wait for verification" when nothing is coming would be
-   * the dead end dressed as a next step.
+   * False when nothing the advertiser does will clear this — a suspension, or a
+   * review that is already sitting with someone else.
+   *
+   * This flag used to be false for every account-level gate, because account
+   * activation genuinely had no product path: nothing in the product ever wrote
+   * `pulse_ad_accounts.status`, so "wait for verification" was a dead end
+   * dressed as a next step and the honest thing was to say so. That is no longer
+   * true — `POST /api/pulse/ads/accounts/:id/verification` exists, so an
+   * unverified or rejected account is now something the advertiser can act on
+   * and the flag says so.
    */
   advertiserCanClear: boolean;
 };
@@ -146,10 +167,28 @@ const BLOCKERS: Record<DeliveryBlockerCode, Omit<DeliveryBlocker, "code">> = {
     detail: "Suspended accounts don't deliver. Contact support to find out why and what's needed to lift it.",
     advertiserCanClear: false
   },
+  account_verification_pending: {
+    title: "Your account verification is in review",
+    detail:
+      "Nothing in your campaign is wrong and there's nothing to do. Campaigns can run as soon as the review is decided.",
+    advertiserCanClear: false
+  },
+  account_verification_rejected: {
+    title: "Account verification was declined",
+    detail:
+      "The decision says what to fix. Update your business details, then request verification again — a declined account can be resubmitted.",
+    advertiserCanClear: true
+  },
+  account_not_verified: {
+    title: "This ad account isn't verified yet",
+    detail:
+      "Ads only deliver from a verified account. Request verification from the account's settings; it's a one-time review of the business behind the account.",
+    advertiserCanClear: true
+  },
   account_not_active: {
     title: "This ad account isn't approved to deliver yet",
     detail:
-      "Delivery requires an approved ad account, and approval is granted by our team rather than from this app. Nothing in your campaign is wrong — contact support to have the account reviewed.",
+      "The account is verified but isn't marked active, which shouldn't happen — approval writes both. Contact support so it can be corrected.",
     advertiserCanClear: false
   },
   no_creative: {
@@ -206,7 +245,7 @@ const BLOCKERS: Record<DeliveryBlockerCode, Omit<DeliveryBlocker, "code">> = {
  * campaign row itself are not, because that row did arrive.
  */
 export function portalIsAuthoritative(portal: AdsPortal | null | undefined): portal is AdsPortal {
-  return Boolean(portal) && !portal?.degraded;
+  return portalIsLoaded(portal);
 }
 
 /**
@@ -215,10 +254,11 @@ export function portalIsAuthoritative(portal: AdsPortal | null | undefined): por
  * `accountRole` answers `"viewer"` for an account it cannot find, which is the
  * right default for gating a write but the wrong basis for telling someone what
  * their role is. Callers that put a role in front of the reader check this
- * first.
+ * first, or use `accountAccess` in api/adsPortal, which folds both checks and
+ * the role into one answer.
  */
 export function accountIsKnown(portal: AdsPortal | null | undefined, accountId: number): boolean {
-  return (portal?.accounts || []).some((account) => Number(account.id) === Number(accountId));
+  return accountIsListed(portal, accountId);
 }
 
 /** The creatives belonging to one campaign. */
@@ -272,7 +312,22 @@ export function deliveryBlocker(
   if (accountStatus === "suspended") return blocker("account_suspended");
   // An account we cannot find is not asserted to be broken; the selector's
   // requirement is only claimed against a status we actually read.
-  if (account && accountStatus !== "active") return blocker("account_not_active");
+  if (account && accountStatus !== "active") {
+    // Verification, in the same order and with the same distinctions the server
+    // makes in `_account_activation_blocker`. Collapsing these into one
+    // "not approved yet" is how the reader ends up waiting on a review nobody
+    // asked for, or requesting one that is already in progress.
+    switch (accountVerificationState(account)) {
+      case "pending":
+        return blocker("account_verification_pending");
+      case "rejected":
+        return blocker("account_verification_rejected");
+      case "unverified":
+        return blocker("account_not_verified");
+      default:
+        return blocker("account_not_active");
+    }
+  }
 
   // Creatives only exist in the portal payload. Without it, "this campaign has
   // no ad in it" would be a statement about a request that was never made.
@@ -307,6 +362,29 @@ export function deliveryBlocker(
 
 function blocker(code: DeliveryBlockerCode): DeliveryBlocker {
   return { code, ...BLOCKERS[code] };
+}
+
+export type AccountVerificationState = "unverified" | "pending" | "verified" | "rejected";
+
+/**
+ * The account's verification state, read the way the server reads it.
+ *
+ * The wording is not one vocabulary. `verification_status` predates the
+ * lifecycle that now writes it, so rows exist carrying `"approved"` from the
+ * one-off audit scripts and `"submitted"`/`"in_review"` from nowhere in
+ * particular. This mirrors `pulse_ads_service.account_verification_state` so the
+ * two surfaces cannot disagree about which of four states an advertiser is in —
+ * and an unrecognised value reads as `"unverified"`, which is the safe answer
+ * because it points at an action rather than at a wait.
+ */
+export function accountVerificationState(account: {
+  verification_status?: unknown;
+}): AccountVerificationState {
+  const raw = String(account?.verification_status || "").toLowerCase();
+  if (raw === "approved" || raw === "verified") return "verified";
+  if (raw === "pending" || raw === "submitted" || raw === "in_review") return "pending";
+  if (raw === "rejected" || raw === "declined" || raw === "needs_more_info") return "rejected";
+  return "unverified";
 }
 
 /**
@@ -476,6 +554,18 @@ export type WalletAuthority = {
    * accidentally do arithmetic on a number the server never stood behind.
    */
   spendableCents: number | null;
+  /**
+   * What this wallet owes, in cents, and `null` when that is not knowable.
+   *
+   * A reversed top-up debits the wallet after the money is gone, so the
+   * balance goes negative and `spendableCents` floors at 0. Zero-and-solvent
+   * and zero-and-in-debt then render identically, and only one of them
+   * explains why the campaigns underneath just stopped. Always 0 or positive
+   * when confirmed — never a negative dressed up as a balance.
+   */
+  owedCents: number | null;
+  /** Formatted debt for display, `null` when there is nothing owed to show. */
+  owedDisplay: string | null;
 };
 
 /**
@@ -504,7 +594,9 @@ export function walletAuthority(
       display: "Unavailable",
       reservedDisplay: "Unavailable",
       note: "Wallet figures didn't load. This doesn't mean the balance is zero.",
-      spendableCents: null
+      spendableCents: null,
+      owedCents: null,
+      owedDisplay: null
     };
   }
 
@@ -515,7 +607,9 @@ export function walletAuthority(
       display: "Restricted",
       reservedDisplay: "Restricted",
       note: "Only an account owner can see this wallet. Your role can still run campaigns against it.",
-      spendableCents: null
+      spendableCents: null,
+      owedCents: null,
+      owedDisplay: null
     };
   }
 
@@ -526,10 +620,31 @@ export function walletAuthority(
       display: "Unavailable",
       reservedDisplay: "Unavailable",
       note: "This account's wallet wasn't in the response. Pull to refresh.",
-      spendableCents: null
+      spendableCents: null,
+      owedCents: null,
+      owedDisplay: null
     };
   }
 
+  // The server says outright when it could not read the wallet. Its figures
+  // are absent rather than zero on that row, and treating them as a balance
+  // would put a fabricated "$0.00" in front of an advertiser whose real
+  // balance is simply unknown.
+  if (wallet.unavailable) {
+    return {
+      state: "unavailable",
+      display: "Unavailable",
+      reservedDisplay: "Unavailable",
+      note:
+        String(wallet.unavailable_reason || "").trim() ||
+        "Wallet balance couldn't be loaded. This doesn't mean the balance is zero.",
+      spendableCents: null,
+      owedCents: null,
+      owedDisplay: null
+    };
+  }
+
+  const owedCents = Math.max(0, Number(wallet.amount_owed_cents || 0));
   return {
     state: "confirmed",
     display: walletFigure(wallet.available_balance, wallet.available_balance_cents),
@@ -539,13 +654,29 @@ export function walletAuthority(
     ),
     note: null,
     spendableCents: Number(wallet.spendable_balance_cents || 0),
+    owedCents,
+    owedDisplay: owedCents > 0 ? owedFigure(wallet.amount_owed, owedCents) : null
   };
 }
 
 function walletFigure(formatted: string | undefined, cents: number | undefined): string {
   const text = String(formatted || "").trim();
   if (text) return text;
-  return Number(cents || 0) === 0 ? "$0.00" : "Unavailable";
+  // `undefined` cents is a figure the server did not send, not a zero one.
+  // Only an explicit 0 earns "$0.00".
+  if (cents === undefined || cents === null) return "Unavailable";
+  return Number(cents) === 0 ? "$0.00" : "Unavailable";
+}
+
+/**
+ * The debt, formatted. Falls back to formatting the cents itself because a
+ * debt that renders as an empty string is a debt the reader never learns about
+ * — the one failure mode worse than an ugly number.
+ */
+function owedFigure(formatted: string | undefined, cents: number): string {
+  const text = String(formatted || "").trim();
+  if (text) return text;
+  return `$${(cents / 100).toFixed(2)}`;
 }
 
 /**
@@ -563,7 +694,9 @@ export function walletRollupAuthority(portal: AdsPortal | null | undefined): Wal
       display: "Unavailable",
       reservedDisplay: "Unavailable",
       note: "Wallet figures didn't load. This doesn't mean the balance is zero.",
-      spendableCents: null
+      spendableCents: null,
+      owedCents: null,
+      owedDisplay: null
     };
   }
   const accounts = portal.accounts || [];
@@ -573,7 +706,9 @@ export function walletRollupAuthority(portal: AdsPortal | null | undefined): Wal
       display: "Unavailable",
       reservedDisplay: "Unavailable",
       note: "No ad accounts to total.",
-      spendableCents: null
+      spendableCents: null,
+      owedCents: null,
+      owedDisplay: null
     };
   }
   const unowned = accounts.filter((account) => accountRole(portal, Number(account.id)) !== "owner");
@@ -586,16 +721,36 @@ export function walletRollupAuthority(portal: AdsPortal | null | undefined): Wal
         unowned.length === accounts.length
           ? "Only an account owner can see wallet balances."
           : `A combined total would leave out ${unowned.length === 1 ? "1 account" : `${unowned.length} accounts`} you don't own. Open an account to see its wallet.`,
-      spendableCents: null
+      spendableCents: null,
+      owedCents: null,
+      owedDisplay: null
     };
   }
   const metrics = portal.metrics;
+  // The server sums these over the wallets it could actually read. If any
+  // failed, the total is short by an unknown amount, and a short total shown
+  // as a whole one is the same lie as a fake zero — just harder to spot.
+  const missing = Number(metrics.wallets_unavailable || 0);
+  if (missing > 0) {
+    return {
+      state: "unavailable",
+      display: "Unavailable",
+      reservedDisplay: "Unavailable",
+      note: `${missing === 1 ? "1 wallet" : `${missing} wallets`} couldn't be loaded, so a combined total would be short by an unknown amount.`,
+      spendableCents: null,
+      owedCents: null,
+      owedDisplay: null
+    };
+  }
+  const owedCents = Math.max(0, Number(metrics.amount_owed_cents || 0));
   return {
     state: "confirmed",
     display: walletFigure(metrics.wallet_balance, metrics.wallet_balance_cents),
     reservedDisplay: walletFigure(metrics.reserved_budget, metrics.reserved_budget_cents),
     note: null,
-    spendableCents: Number(metrics.spendable_balance_cents || 0)
+    spendableCents: Number(metrics.spendable_balance_cents || 0),
+    owedCents,
+    owedDisplay: owedCents > 0 ? owedFigure(metrics.amount_owed, owedCents) : null
   };
 }
 
@@ -614,20 +769,21 @@ export type ResumeCheck = {
  * Whether Resume can succeed, checked before it is offered.
  *
  * §37 forbids campaign activation without verification, policy, eligibility and
- * funding. The legacy route checks exactly one of those four and gets the
- * authorisation wrong on the way:
- * `campaign_action("resume")` calls `reserve_campaign_budget`
- * (services/pulse_ad_payments.py:392), which begins
- * `if not campaign or owner_user_id != user_id: raise "Campaign not found." 404`.
- * A campaign manager — a write role the same route already authorised two lines
- * earlier — is told the campaign does not exist. It does, they are looking at
- * it, and they were allowed to pause it a moment ago.
+ * funding. `campaign_action("resume")` used to check exactly one of those four
+ * and get the authorisation wrong on the way: it called
+ * `reserve_campaign_budget`, which begins
+ * `if not campaign or owner_user_id != user_id: raise "Campaign not found." 404`
+ * — so a campaign manager, a write role the same route had authorised four lines
+ * earlier, was told the campaign did not exist. It does, they are looking at it,
+ * and they were allowed to pause it a moment ago.
  *
- * The client cannot add the missing three checks to the server. It can decline
- * to offer a button whose only outcome is a lie about the campaign's existence,
- * and it can refuse to move a campaign into a state that reads "Active" while
- * the account gate guarantees zero impressions. Both are `NO_DEAD_ENDS`
- * applied to a control rather than to a page.
+ * All four gates are now enforced server-side, in this order, before any budget
+ * is reserved, and the role refusal names the wallet instead of denying the
+ * campaign. This function's job is therefore no longer to compensate for a
+ * missing server check but to agree with one: it declines to offer a button
+ * whose only outcome would be a refusal the reader was given no warning about.
+ * Same rule, `NO_DEAD_ENDS`, applied to a control rather than to a page — but
+ * now both halves are telling the same story.
  */
 export function resumeCheck(
   portal: AdsPortal | null | undefined,
@@ -662,11 +818,46 @@ export function resumeCheck(
     }
   }
   const gate = deliveryBlocker(portal, campaign);
-  if (gate && !gate.advertiserCanClear) {
+  if (gate && SERVER_ENFORCED_BLOCKERS.has(gate.code)) {
     return { allowed: false, reason: gate.detail };
   }
   return { allowed: true, reason: null };
 }
+
+/**
+ * The blockers `activation_blocker` refuses a resume for, server-side.
+ *
+ * This used to be `!gate.advertiserCanClear`, on the reasoning that a gate the
+ * advertiser could clear themselves was one the server would let them resume
+ * through and simply not deliver on. That reasoning was correct about the
+ * server as it stood and is wrong about the server as it stands: resume now
+ * enforces all four of §37's gates before any money is reserved, so offering a
+ * button for `no_creative` would produce a refusal the reader did not expect
+ * from a control the app said was available.
+ *
+ * `advertiserCanClear` still means what it meant — whether there is anything for
+ * the reader to do — and that is a different question from whether the server
+ * will accept the request. Conflating the two is what put the button there.
+ *
+ * `budget_exhausted` is absent deliberately: the server's activation gate checks
+ * that a budget exists, not that it has room left. Spend against the lifetime
+ * cap is evaluated per impression by `_campaign_budget_available`, so a resume
+ * on an exhausted campaign is accepted and simply doesn't deliver — which the
+ * campaign row then says.
+ */
+const SERVER_ENFORCED_BLOCKERS: ReadonlySet<DeliveryBlockerCode> = new Set([
+  "account_suspended",
+  "account_verification_pending",
+  "account_verification_rejected",
+  "account_not_verified",
+  "account_not_active",
+  "no_creative",
+  "creative_in_review",
+  "creative_rejected",
+  "creative_media_missing",
+  "no_placement",
+  "no_budget"
+]);
 
 /* ------------------------------------------------------------------ *
  * Attribution

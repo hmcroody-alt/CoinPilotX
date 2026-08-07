@@ -201,7 +201,17 @@ describe("ads manager — money", () => {
     const view = await renderScreen();
     // Never a stale or zero number: the chip is absent and the failure is named.
     expect(view.queryByLabelText(/^Ad wallet balance \$/)).toBeNull();
-    expect(view.getByLabelText("Ad wallet balance not yet available. Tap to retry.")).toBeTruthy();
+    // "couldn't load", not "not yet available" — the old wording described a
+    // request still in flight, which is a different state with a different
+    // response. The visible amount now says the same thing, so the retry is not
+    // the only clue that something went wrong.
+    expect(view.getByLabelText("Ad wallet balance couldn’t load. Tap to retry.")).toBeTruthy();
+    // `getAllByText`, not `getByText`: this fixture fails the whole model, so
+    // the KPI tiles are unavailable too and legitimately say so. §37's ban on
+    // duplicate unavailable notices is about repeating one *notice* — a banner
+    // and a card both announcing the same outage — not about several
+    // independent figures each reporting their own state in the shared word.
+    expect(view.getAllByText("Couldn't load").length).toBeGreaterThan(0);
     expect(view.getByText("Tap to retry")).toBeTruthy();
   });
 
@@ -284,6 +294,72 @@ describe("ads manager — money", () => {
     );
     const view = await renderScreen();
     expect(view.getByLabelText("Ad wallet balance $142.00. Tap to open wallet.")).toBeTruthy();
+  });
+
+  /**
+   * Overdrawn is not empty, and it is the state most likely to go unreported.
+   *
+   * A refunded or disputed top-up debits the wallet after the money has already
+   * been delivered, so `available_balance_cents` goes negative and the spendable
+   * figure floors at $0.00 — identical on screen to an account that simply never
+   * funded. The same handler pauses every campaign it can no longer fund, which
+   * means the "something is still trying to spend" condition that surfaces the
+   * empty-wallet banner is already false by the time the advertiser looks. The
+   * debt would be visible nowhere.
+   */
+  it("names the debt when a reversed payment left the wallet overdrawn", async () => {
+    mockLoad.mockResolvedValue(
+      model({
+        wallet: wallet(0),
+        // Nothing is delivering — the reversal stopped it, which is exactly why
+        // the banner must not depend on a delivering campaign to appear.
+        // `spent_cents: 0` is what makes `deliveryState` refuse "delivering":
+        // no money has moved, so there is no receipt to prove it.
+        campaigns: [campaign({ spent_cents: 0 })],
+        portal: normalizeAdsPortal({
+          accounts: [{ id: 7, role: "owner", status: "active" }],
+          wallets: [
+            {
+              account_id: 7,
+              available_balance: "-$500.00",
+              available_balance_cents: -50_000,
+              spendable_balance_cents: 0,
+              amount_owed_cents: 50_000,
+              amount_owed: "$500.00"
+            }
+          ]
+        } as never)
+      })
+    );
+    const view = await renderScreen();
+    expect(view.getByText("Ad wallet is overdrawn")).toBeTruthy();
+    // "Empty" would be the wrong diagnosis and the wrong instruction.
+    expect(view.queryByText("Ad wallet is empty")).toBeNull();
+    expect(view.getByText(/owes \$500\.00/)).toBeTruthy();
+    expect(view.getByText(/refunded or disputed/)).toBeTruthy();
+  });
+
+  it("still says 'empty' for an account that merely never funded", async () => {
+    mockLoad.mockResolvedValue(
+      model({ wallet: wallet(0), campaigns: [campaign({ status: "active" })] })
+    );
+    const view = await renderScreen();
+    expect(view.getByText("Ad wallet is empty")).toBeTruthy();
+    expect(view.queryByText("Ad wallet is overdrawn")).toBeNull();
+  });
+
+  it("does not announce a debt on a wallet it is not allowed to believe", async () => {
+    mockLoad.mockResolvedValue(
+      model({
+        wallet: wallet(0),
+        portal: normalizeAdsPortal({
+          accounts: [{ id: 7, role: "analyst", status: "active" }],
+          wallets: [{ account_id: 7, amount_owed_cents: 50_000, amount_owed: "$500.00" }]
+        } as never)
+      })
+    );
+    const view = await renderScreen();
+    expect(view.queryByText("Ad wallet is overdrawn")).toBeNull();
   });
 
   it("trusts the per-account wallet route when there is no portal to doubt", async () => {
@@ -418,7 +494,11 @@ describe("ads manager — §36 corrections", () => {
     // `[0]` is the empty state's, which is the one under test — the point is
     // that the *empty state* offers it, not merely that the screen does.
     expect(view.getAllByText("Create campaign")).toHaveLength(2);
-    expect(view.getByText("Verify your business")).toBeTruthy();
+    // Not "Verify your business", which is what this said while the control
+    // opened the Verification Center — a profile-badge flow that never writes
+    // `pulse_ad_accounts.status`. The label now names the request the server
+    // actually accepts.
+    expect(view.getByText("Request verification")).toBeTruthy();
 
     await act(async () => {
       fireEvent.press(view.getAllByText("Create campaign")[0]);
@@ -434,7 +514,69 @@ describe("ads manager — §36 corrections", () => {
   it("offers only the draft path once there is nothing left to verify", async () => {
     const { view } = await renderEmpty({ needsVerification: false });
     expect(view.getAllByText("Create campaign")).toHaveLength(2);
-    expect(view.queryByText("Verify your business")).toBeNull();
+    expect(view.queryByText("Request verification")).toBeNull();
+    expect(view.queryByText("Request review again")).toBeNull();
+  });
+
+  /**
+   * A review already in flight has no action attached to it. Offering one anyway
+   * produces a control whose only possible outcome is the server's "Verification
+   * is already in review" — §31's active-looking unavailable control. The empty
+   * state therefore drops the secondary action entirely rather than disabling it.
+   */
+  it("offers no verification action while a review is already in flight", async () => {
+    const { view } = await renderEmpty({
+      accounts: [{ ...PENDING_ACCOUNT, verification_status: "pending" }],
+      needsVerification: true
+    });
+    expect(view.getAllByText("Create campaign")).toHaveLength(2);
+    expect(view.queryByText("Request verification")).toBeNull();
+    expect(view.queryByText("Request review again")).toBeNull();
+    // Dropping the button does not mean dropping the explanation. The
+    // verification banner renders only beside blocked campaigns, so with none
+    // on the account this body is the only thing that says why.
+    expect(view.getByText(/once your account review is decided/)).toBeTruthy();
+  });
+
+  /**
+   * A declined review is the one state with something for the advertiser to
+   * read: §37 requires the policy reason and the appeal path to be reachable,
+   * and here they are the same surface — the stored reason, then resubmission.
+   */
+  it("shows the recorded reason and a resubmit path after a decline", async () => {
+    const { view } = await renderEmpty({
+      accounts: [
+        {
+          ...PENDING_ACCOUNT,
+          verification_status: "rejected",
+          verification_reason: "Business address could not be confirmed."
+        }
+      ],
+      needsVerification: true
+    });
+    expect(view.getByText(/Business address could not be confirmed\./)).toBeTruthy();
+    expect(view.getByText("Request review again")).toBeTruthy();
+    // The old copy told every blocked advertiser to wait for approval. A
+    // declined account is waiting on the advertiser, not on us.
+    expect(view.queryByText(/Delivery begins once/)).toBeNull();
+  });
+
+  /**
+   * Verified but not active is a contradiction the advertiser cannot resolve:
+   * `approve_account_verification` writes both columns together, so a mismatch
+   * is a platform fault. Sending them round the verification loop again would
+   * be a request the server has no reason to grant.
+   */
+  it("routes a verified-but-inactive account to support rather than to verification", async () => {
+    const { view } = await renderEmpty({
+      accounts: [{ ...PENDING_ACCOUNT, verification_status: "verified" }],
+      needsVerification: true
+    });
+    expect(view.getByText(/verified but isn't marked active/)).toBeTruthy();
+    expect(view.queryByText("Request verification")).toBeNull();
+    expect(view.queryByText("Request review again")).toBeNull();
+    // Never "wait for approval": approval already happened.
+    expect(view.queryByText(/Delivery begins once/)).toBeNull();
   });
 
   /**

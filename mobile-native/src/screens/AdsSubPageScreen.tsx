@@ -24,22 +24,39 @@
  * somewhere — it is what support asks for and what an audit log cites. This is
  * where it went.
  *
- * ## The facts on these pages are read from the server implementation
+ * ## The Audiences page used to report the wrong server
  *
- * The allowlists quoted below are not aspirational copy. They are what
- * `services/business_os/advertising/targeting.py` and `…/creatives.py` accept
- * and reject today:
+ * This block used to say the page quoted `PLACEMENTS_ALLOWED = ("feed",
+ * "reels")`, `AUDIENCE_ALLOWED_FIELDS` and `AUDIENCE_PROHIBITED_FIELDS` from
+ * `services/business_os/advertising/targeting.py`, and that those lists were
+ * "what the server accepts and rejects today". Every one of those constants is
+ * real. None of them governs a single campaign this app can see.
  *
- *   • placements   — `PLACEMENTS_ALLOWED = ("feed", "reels")`
- *   • audience     — `AUDIENCE_ALLOWED_FIELDS`, `DEVICE_CLASSES_ALLOWED`,
- *                    `CONNECTIONS_ALLOWED`, `AGE_MIN_FLOOR = 18`
- *   • prohibited   — `AUDIENCE_PROHIBITED_FIELDS`
- *   • creatives    — `CREATIVE_TYPES`, `DESTINATION_TYPES`, and the media
- *                    ownership check against `pulse_media_assets`
+ * PulseSoc has two advertising stacks. `business_os/advertising` — where that
+ * targeting module lives — validates audiences properly, refuses prohibited
+ * fields by name, and writes `business_os_ad_sets`. That table is read by
+ * exactly three files, all inside its own package: `schema.py`, `readiness.py`
+ * and `ad_sets.py`. No delivery path touches it, so nothing validated by those
+ * allowlists has ever been shown to a viewer.
  *
- * If those lists change, these pages are wrong, and that is the intended
- * failure mode: the page is a report on server rules, so it must be updated
- * with them rather than drifting into marketing.
+ * The live stack is `pulse_ads_service` / `pulse_advertiser_portal`, which is
+ * what `/api/pulse/ads/portal` serves and what every campaign on these screens
+ * belongs to. It seeds twelve placements, not two, and none of them is Reels.
+ * Its audience table, `pulse_ad_targeting`, has no write path anywhere in the
+ * repository — so `_matches_targeting` receives an all-NULL row on every
+ * candidate and returns true unconditionally, for every viewer, always.
+ *
+ * The result was a page telling advertisers which audience dimensions were
+ * refused by name, when their campaigns had no audience and nothing was being
+ * refused. Accurate about one system, addressed to users of the other. The
+ * Audiences copy now describes the stack the reader is actually in, and the
+ * placement list is fetched from `portal.placements` rather than written here
+ * so it cannot drift from `seed_placements` again.
+ *
+ * The creative rules below are unaffected — those were checked against the live
+ * stack and hold: `create_ad_media_asset` verifies `chat_media_uploads`
+ * ownership and raises 403, and `select_ads` gates delivery on approved
+ * moderation for the creative, its media asset and its thumbnail.
  *
  * ## Two of the pages have since stopped being reports
  *
@@ -68,9 +85,21 @@ import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-n
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AdAccount, listAdAccounts, loadCachedAdAccounts } from "../api/businessOs";
+import {
+  AdAccount,
+  listAdAccounts,
+  loadCachedAdAccounts,
+  requestAdAccountVerification
+} from "../api/businessOs";
 import { adAccountDisplay, adAccountStanding, primaryAdAccount } from "../api/adsDashboard";
-import { AdCreative, AdsPortal, getAdsPortal } from "../api/adsPortal";
+import { accountVerificationState } from "../api/adsDelivery";
+import {
+  AdCreative,
+  AdsPortal,
+  PlacementCatalogueEntry,
+  getAdsPortal,
+  placementCatalogue
+} from "../api/adsPortal";
 import {
   PolicyCenterModel,
   PolicyDecisionView,
@@ -122,8 +151,14 @@ const PAGE_TITLE: Record<AdsSubPage, string> = {
  * you change anything, and nothing on it costs money.
  */
 const PAGE_NOTE: Record<AdsSubPage, string | null> = {
+  // Was: "Audience controls aren't editable in the app yet. Everything below is
+  // already enforced on PulseSoc's servers…" — which read as though an audience
+  // existed and this app merely couldn't edit it. No campaign has an audience.
+  // "Not editable yet" is a much smaller admission than the true one, and it is
+  // the difference between an advertiser who plans around no targeting and one
+  // who waits for a control that would change nothing about their live spend.
   audiences:
-    "Audience controls aren't editable in the app yet. Everything below is already enforced on PulseSoc's servers for every campaign you run — this page reports it, it doesn't change it.",
+    "There are no audience controls to edit — here or anywhere else in PulseSoc. This page reports what actually decides who sees your ads.",
   // No note. The library lists real creatives and runs real actions against
   // them, so a "preview" disclaimer over it would misdescribe the page — and
   // what the page still can't do is said where it matters, on the rows.
@@ -134,58 +169,109 @@ const PAGE_NOTE: Record<AdsSubPage, string | null> = {
   policy: null
 };
 
+/**
+ * What this page is allowed to say about audiences.
+ *
+ * The version this replaces described a targeting system that does not exist.
+ * It claimed the platform "accepts" a list of dimensions and "refuses by name"
+ * anything outside it, and that prohibited dimensions "are refused with a
+ * specific reason rather than ignored". There is no code that refuses anything,
+ * because there is nothing to refuse: `pulse_ad_targeting` has no write path
+ * anywhere in the repository — a search for INSERT/UPDATE/REPLACE against that
+ * table returns nothing, and the only references are the CREATE TABLE, an
+ * index, the auto-PK registry, `select_ads`'s LEFT JOIN and a staff COUNT.
+ *
+ * The consequence is that `_matches_targeting` (pulse_ads_service.py:1306)
+ * receives an all-NULL row on every candidate and returns true on every branch,
+ * for every viewer, always. Two of the columns it would honour — `min_age` and
+ * `max_age` — it never reads at all, so "Age, from 18 upward" was untrue even
+ * on the hypothetical where the table were populated.
+ *
+ * That leaves one honest thing to say about audiences and one about placements,
+ * and the placement list is real, so it is fetched rather than written here.
+ */
 const AUDIENCE_BLOCKS: Block[] = [
   {
-    title: "Where your ads can appear",
-    body: "Every campaign selects at least one placement. PulseSoc supports two, and a campaign that asks for anything else is rejected rather than quietly delivered somewhere you didn't choose.",
-    points: ["Feed", "Reels"]
+    title: "No audience narrowing is applied",
+    body: "PulseSoc does not currently target ads. Not in this app, and not on the web — there is no audience editor anywhere in the product, and the server stores no audience for any campaign. Every campaign reaches the general eligible audience for the placements it runs in, and choosing a placement is the only way to influence who sees it."
   },
   {
-    title: "What an audience will be able to narrow",
-    body: "These are the only dimensions the platform accepts. Anything outside this list is refused by name, so no client — including a future version of this app — can widen it without a server change.",
+    title: "What does decide who sees an ad",
+    body: "Four things narrow delivery, and all four come from the campaign or the placement rather than from an audience.",
     points: [
-      "Country and language",
-      "Age, from 18 upward",
-      "Device: mobile, tablet or desktop",
-      "Connection: people who already follow you, or who engaged with you before",
-      "Exclusions, expressed with the same fields"
+      "The placements you attached to the campaign",
+      "The devices that placement exists on",
+      "Your schedule, budget and remaining wallet balance",
+      "A per-placement frequency cap, so one viewer isn’t shown the same campaign repeatedly"
     ]
   },
   {
-    title: "What will never be targetable",
-    body: "These are refused with a specific reason rather than ignored. Some are prohibited outright; the rest would need a consent-backed dataset PulseSoc does not collect.",
+    title: "What isn’t collected, so can’t be targeted",
+    body: "PulseSoc holds no advertising dataset for any of the following, which is a stronger position than refusing to target on them: there is nothing to target on. This is a statement about today’s product, not a policy commitment about a future one.",
     points: [
       "Health, religion, politics, race or ethnicity, sexual orientation, gender identity",
       "Income or financial hardship",
-      "Anyone under 18",
       "Precise location or a location radius",
       "Uploaded customer lists, lookalikes and retargeting pixels"
     ]
   },
   {
-    title: "Until it's in the app",
-    body: "Your campaigns deliver to the placements you pick when you create them. No audience narrowing is applied, so a campaign reaches the general eligible audience for its placements."
+    title: "One thing viewers can turn off",
+    body: "A viewer who opts out of personalised ads is excluded from country, language and premium-audience matching. That setting is honoured on the server today. It changes nothing about your campaigns right now, because none of those three is ever set on one."
   }
 ];
 
+/**
+ * What this page is allowed to say about creatives.
+ *
+ * Three of these blocks were checked against `create_creative` and
+ * `validate_destination_url` in `services/pulse_ads_service.py` and three were
+ * wrong, in the same way the audience copy was wrong: they described stricter
+ * rules than the server has, which is the more dangerous direction to be wrong
+ * in. An advertiser who believes a destination is checked for existence does
+ * not check it themselves, and then pays for clicks into a 404.
+ *
+ *  - The type list said "Image, Video, Reels video". `VALID_CREATIVE_TYPES`
+ *    (:52) is `{image, video, text, hologram, audio}`. Reels is not a creative
+ *    type — as it is not a placement — and text, hologram and audio were all
+ *    missing, which is three whole formats an advertiser could not discover.
+ *  - "checked for existence" is not a thing `validate_destination_url` (:253)
+ *    does. It is a prefix test: the path must start `/pulse/`, and `/pulse/admin`
+ *    and `/pulse/api` are refused. Nothing is looked up.
+ *  - "an external link that must be HTTPS" — the check is
+ *    `parsed.scheme not in {"https", "http"}` (:272). Plain http is accepted.
+ *
+ * Block two survives mostly intact, because media rights genuinely are enforced:
+ * `_owned_ad_media_asset` (:332) requires the asset to belong to the same owner
+ * and ad account, `_asset_type_allowed` (:304) is called on creation (:907), and
+ * pasted media URLs are refused outright (:894). The one claim dropped is
+ * "finished processing" — the only readiness gate is a non-empty public URL
+ * (:383), and `processing_status` is copied into metadata unvalidated.
+ */
 const CREATIVE_BLOCKS: Block[] = [
   {
     title: "What counts as a creative",
-    body: "A creative is one image or video plus its headline, body, call to action and destination. It belongs to a campaign, and it carries its own review status separate from the campaign's.",
-    points: ["Image", "Video", "Reels video"]
+    body: "A creative is a headline, body, call to action and destination, plus media for the formats that need it. It belongs to a campaign and carries its own review status, separate from the campaign's. Every placement accepts every one of these five formats.",
+    points: [
+      "Image — needs an uploaded image",
+      "Video — needs an uploaded video",
+      "Audio — needs an uploaded audio file",
+      "Text — no media",
+      "Hologram — no media"
+    ]
   },
   {
     title: "Media has to be yours",
-    body: "The creative references media you already uploaded to PulseSoc, by its canonical id. The server checks that the asset exists, that you own it, that it finished processing and that its type matches the creative type. There is no way to point an ad at a file you don't own."
+    body: "A creative references media you already uploaded to PulseSoc, by id. The server checks it belongs to you and to this ad account, that it hasn't been deleted, and that its type matches the creative type — a video creative will not accept an image. Custom thumbnails have to be images. Pasting a media URL instead of uploading is refused outright, so there is no way to point an ad at a file you don't own."
   },
   {
     title: "Where a creative can send people",
-    body: "A destination is either somewhere on PulseSoc, checked for existence, or an external link that must be HTTPS.",
+    body: "A destination is required, and it is checked for shape rather than for whether it works. That distinction is worth knowing: a link to a post you later delete is still accepted, and you will still pay for the clicks. Test your destinations yourself.",
     points: [
-      "Your profile",
-      "A post or a Reel",
-      "A Marketplace listing",
-      "An external HTTPS address"
+      "A PulseSoc path starting /pulse/ — anything else on the site is refused",
+      "/pulse/admin and /pulse/api are refused",
+      "An external http or https address — http is accepted, so use https yourself",
+      "Local and loopback addresses are refused, as are javascript:, data: and file: links"
     ]
   },
   {
@@ -231,13 +317,6 @@ export function AdsSubPageScreen({ surface, route, navigation }: Props) {
     },
     [navigation]
   );
-
-  const openVerification = useCallback(() => {
-    navigation?.navigate("VerificationCenter", {
-      title: "Verification Center",
-      track: "business"
-    });
-  }, [navigation]);
 
   const openCreativeRules = useCallback(() => {
     navigation?.navigate("BusinessOsAdvertising", {
@@ -285,7 +364,6 @@ export function AdsSubPageScreen({ surface, route, navigation }: Props) {
             reducedMotion={reducedMotion}
             entranceStyle={entrance.styleFor(1)}
             onWallet={openWallet}
-            onVerify={openVerification}
           />
         ) : surface === "policy" ? (
           <PolicyCenter reducedMotion={reducedMotion} entranceStyle={entrance.styleFor(1)} />
@@ -304,11 +382,14 @@ export function AdsSubPageScreen({ surface, route, navigation }: Props) {
             </Animated.View>
           </>
         ) : (
-          <Animated.View style={[styles.stack, entrance.styleFor(1)]}>
-            {AUDIENCE_BLOCKS.map((block) => (
-              <BlockCard key={block.title} block={block} />
-            ))}
-          </Animated.View>
+          <>
+            <PlacementCatalogue reducedMotion={reducedMotion} entranceStyle={entrance.styleFor(1)} />
+            <Animated.View style={[styles.stack, entrance.styleFor(2)]}>
+              {AUDIENCE_BLOCKS.map((block) => (
+                <BlockCard key={block.title} block={block} />
+              ))}
+            </Animated.View>
+          </>
         )}
 
         <Animated.View style={[styles.stack, entrance.styleFor(2)]}>
@@ -321,9 +402,16 @@ export function AdsSubPageScreen({ surface, route, navigation }: Props) {
                 reducedMotion={reducedMotion}
                 primary
               />
+              {/* Was "Verification Center", which opens the profile-badge
+                  track at `/api/dashboard/account/verification/request`. That
+                  flow never writes `pulse_ad_accounts.status`, and `select_ads`
+                  reads nothing else — so an advertiser could finish it, be
+                  approved, and still deliver nothing. This goes to the account
+                  surface instead, which states the standing, renders the
+                  rejection reason, and carries the request the server accepts. */}
               <ActionButton
-                label="Verification Center"
-                onPress={openVerification}
+                label="Account standing and verification"
+                onPress={openAccount}
                 reducedMotion={reducedMotion}
               />
             </>
@@ -382,17 +470,17 @@ function AccountDetails({
   requestedAccountId,
   reducedMotion,
   entranceStyle,
-  onWallet,
-  onVerify
+  onWallet
 }: {
   requestedAccountId?: number;
   reducedMotion: boolean;
   entranceStyle: any;
   onWallet: (accountId?: number) => void;
-  onVerify: () => void;
 }) {
   const [account, setAccount] = useState<AdAccount | null>(null);
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
+  const [verifying, setVerifying] = useState(false);
+  const [verifyNote, setVerifyNote] = useState("");
 
   const load = useCallback(async () => {
     setStatus("loading");
@@ -424,6 +512,32 @@ function AccountDetails({
       active = false;
     };
   }, [load]);
+
+  /**
+   * The request that actually moves this record.
+   *
+   * The link here used to open the Verification Center, which decides a profile
+   * badge through `/api/dashboard/account/verification/request`. Nothing in that
+   * flow writes `pulse_ad_accounts.status`, and `select_ads` reads nothing else
+   * — so the page that exists to explain this account's standing pointed at a
+   * process that could not change it.
+   */
+  const requestVerification = useCallback(async () => {
+    if (!account || verifying) return;
+    setVerifying(true);
+    setVerifyNote("");
+    try {
+      await requestAdAccountVerification(account.id);
+      setVerifyNote("Verification requested. We'll tell you as soon as it's decided.");
+      await load();
+    } catch (error) {
+      setVerifyNote(
+        error instanceof Error ? error.message : "Verification couldn't be requested. Try again."
+      );
+    } finally {
+      setVerifying(false);
+    }
+  }, [account, load, verifying]);
 
   if (status === "loading") {
     return (
@@ -487,14 +601,12 @@ function AccountDetails({
         <Text style={styles.cardBody}>
           {standingExplanation(standing.line)}
         </Text>
-        <Pressable
-          onPress={onVerify}
-          accessibilityRole="button"
-          accessibilityLabel="Open the Verification Center"
-          hitSlop={6}
-        >
-          <Text style={styles.inlineLink}>Verification Center ›</Text>
-        </Pressable>
+        <AccountVerificationAction
+          account={account}
+          busy={verifying}
+          note={verifyNote}
+          onRequest={requestVerification}
+        />
         <Pressable
           onPress={() => onWallet(account.id)}
           accessibilityRole="button"
@@ -505,6 +617,70 @@ function AccountDetails({
         </Pressable>
       </View>
     </Animated.View>
+  );
+}
+
+/**
+ * The account's verification, stated and — where there is something to do —
+ * actionable, on the page that exists to explain this account's standing.
+ *
+ * Four states, four different things to say. The rejection reason is rendered
+ * here because a decision the advertiser cannot read is a decision they cannot
+ * answer: §37 requires the policy reason and the appeal path to be reachable,
+ * and for an ad account this page is where they live.
+ */
+function AccountVerificationAction({
+  account,
+  busy,
+  note,
+  onRequest
+}: {
+  account: AdAccount;
+  busy: boolean;
+  note: string;
+  onRequest: () => void;
+}) {
+  const state = accountVerificationState(account);
+  const reason = String((account as { verification_reason?: string }).verification_reason || "").trim();
+  const requestable = state === "unverified" || state === "rejected";
+  return (
+    <View>
+      {state === "rejected" ? (
+        <Text style={styles.cardBody}>
+          {reason
+            ? `Why it was declined: ${reason}`
+            : "No reason was recorded with the decision. Check your business details before requesting review again."}
+        </Text>
+      ) : null}
+      {state === "pending" ? (
+        <Text style={styles.cardBody}>
+          Your request is in review. Nothing is charged while you wait, and drafts can still be
+          created and edited.
+        </Text>
+      ) : null}
+      {requestable ? (
+        <Pressable
+          onPress={busy ? undefined : onRequest}
+          accessibilityRole="button"
+          accessibilityState={{ busy, disabled: busy }}
+          accessibilityLabel="Request verification for this ad account"
+          hitSlop={6}
+        >
+          <Text style={styles.inlineLink}>
+            {busy
+              ? "Sending…"
+              : state === "rejected"
+                ? "Request review again ›"
+                : "Request verification ›"}
+          </Text>
+        </Pressable>
+      ) : null}
+      {note ? (
+        <Text style={styles.cardBody} accessibilityLiveRegion="polite">
+          {note}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -520,12 +696,12 @@ function standingExplanation(line: string): string {
     return "You can create and edit campaign drafts. They won't deliver and nothing is charged until PulseSoc approves the account.";
   }
   if (line.endsWith("Restricted")) {
-    return "This account can't deliver ads. Existing campaigns are stopped and new ones can't be submitted. The Verification Center has the reason and the appeal path.";
+    return "This account can't deliver ads. Existing campaigns are stopped and new ones can't be submitted. Contact support for the reason and the appeal path — a suspension is lifted by review, not by requesting verification again.";
   }
   if (line.endsWith("Not configured")) {
     return "This account hasn't finished setup, so it can't deliver yet. Completing verification is the remaining step.";
   }
-  return "PulseSoc reports a status for this account that this version of the app doesn't recognise, so nothing is assumed about whether it can deliver. The Verification Center has the current state.";
+  return "PulseSoc reports a status for this account that this version of the app doesn't recognise, so nothing is assumed about whether it can deliver.";
 }
 
 /* ------------------------------------------------------------------ *
@@ -543,6 +719,107 @@ function standingExplanation(line: string): string {
  * The portal is loaded directly rather than through the manager's model because
  * this page is reachable by deep link, so it cannot assume the manager ran.
  */
+/**
+ * Where a campaign can actually run, read from the server.
+ *
+ * This replaces a two-item hardcoded list — "Feed" and "Reels" — that was wrong
+ * on both counts. `seed_placements` writes twelve rows and none of them is
+ * Reels; the ten the list omitted include Marketplace, Search and Pulse Radio,
+ * which is to say the advertiser choosing where to spend could not see most of
+ * the options. The portal already carried the real table as `portal.placements`
+ * and no screen had ever read it.
+ *
+ * A failed fetch renders `Unavailable` with a retry rather than the old static
+ * list, because a hardcoded fallback here is the §31 fake-value case: it would
+ * present a guess in the shape of a fact, and the guess was already wrong once.
+ */
+function PlacementCatalogue({
+  reducedMotion,
+  entranceStyle
+}: {
+  reducedMotion: boolean;
+  entranceStyle: any;
+}) {
+  const [state, setState] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [entries, setEntries] = useState<PlacementCatalogueEntry[]>([]);
+
+  const load = useCallback(async () => {
+    setState("loading");
+    try {
+      const { portal } = await getAdsPortal();
+      const list = placementCatalogue(portal as AdsPortal);
+      setEntries(list);
+      // An empty catalogue from a successful call is still not something to
+      // present as "there are no placements" — the portal ships a constant, so
+      // an empty one means the payload changed shape, not that ads have nowhere
+      // to run. Treating it as unavailable keeps the retry available.
+      setState(list.length ? "ready" : "unavailable");
+    } catch {
+      setState("unavailable");
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    load().catch(() => {
+      if (active) setState("unavailable");
+    });
+    return () => {
+      active = false;
+    };
+  }, [load]);
+
+  if (state === "loading") {
+    return (
+      <Animated.View style={[styles.stack, entranceStyle]}>
+        <View style={styles.card}>
+          <AdsSkeletonBlock width="60%" height={16} reducedMotion={reducedMotion} />
+          <AdsSkeletonBlock width="90%" height={12} reducedMotion={reducedMotion} />
+          <AdsSkeletonBlock width="75%" height={12} reducedMotion={reducedMotion} />
+        </View>
+      </Animated.View>
+    );
+  }
+
+  if (state === "unavailable") {
+    return (
+      <Animated.View style={[styles.stack, entranceStyle]}>
+        <AdsSectionError
+          message="The list of placements didn’t load. Your campaigns are unaffected — this is the catalogue, not their delivery."
+          onRetry={() => {
+            load().catch(() => undefined);
+          }}
+          reducedMotion={reducedMotion}
+        />
+      </Animated.View>
+    );
+  }
+
+  return (
+    <Animated.View style={[styles.stack, entranceStyle]}>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Where your ads can appear</Text>
+        <Text style={styles.cardBody}>
+          Every campaign runs in the placements attached to it, and nowhere else. These are the{" "}
+          {entries.length} that PulseSoc serves. Placements are attached in the campaign editor —
+          this page reports them, it doesn’t change them.
+        </Text>
+      </View>
+      {entries.map((entry) => (
+        <View key={entry.key} style={styles.card}>
+          <Text style={styles.cardTitle}>{entry.name}</Text>
+          <Text style={styles.cardBody}>
+            {entry.devices}
+            {entry.maxFrequency
+              ? ` · at most ${entry.maxFrequency} view${entry.maxFrequency === 1 ? "" : "s"} of one campaign per person`
+              : ""}
+          </Text>
+        </View>
+      ))}
+    </Animated.View>
+  );
+}
+
 function PolicyCenter({
   reducedMotion,
   entranceStyle

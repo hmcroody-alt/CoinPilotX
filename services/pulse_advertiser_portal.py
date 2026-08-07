@@ -8,6 +8,7 @@ provider identifiers or private tracking data to clients.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 
@@ -253,6 +254,214 @@ def _campaign_placements(conn, campaign_id) -> list[str]:
     return [row_to_dict(row).get("placement_key") for row in cur.fetchall()]
 
 
+# The four gates §37 names, in the order the client already presents them.
+#
+# `campaign_action("resume")` used to check exactly one of them — funding, and
+# only as a side effect of `reserve_campaign_budget` — then wrote
+# `status='active'` and took a real reserve out of the wallet. Meanwhile
+# `select_ads` requires an active account and an approved creative with its media
+# approved, neither of which resume looked at. So the advertiser's money could be
+# locked against a campaign that was structurally incapable of serving one
+# impression, and the product called that campaign "Active".
+#
+# The order below is not arbitrary. It matches `deliveryBlocker` in
+# mobile-native/src/api/adsDelivery.ts — account, then creative, then placement,
+# then budget — so an advertiser who is blocked reads the same first reason on
+# the campaign card that the server gives them when they press Resume. Two
+# surfaces naming different blockers for one campaign is its own kind of dead
+# end: you fix the one you were told about and nothing changes.
+ACTIVATION_BLOCKERS = {
+    "account_suspended": "This ad account is suspended, so its campaigns can't run. Contact support to find out what's needed to lift it.",
+    "account_verification_pending": "Your account verification is still in review. Campaigns can run once it's approved.",
+    "account_verification_rejected": "Account verification was declined. Update your business details and request verification again.",
+    "account_not_verified": "Request account verification before running campaigns. Ads only deliver from a verified account.",
+    "account_not_active": "This ad account isn't active yet, so its campaigns can't deliver.",
+    "no_creative": "Add an ad to this campaign and submit it for review before running it.",
+    "creative_in_review": "No ad in this campaign has been approved yet. It can run once review is decided.",
+    "creative_rejected": "Every ad in this campaign was rejected. Open the Policy Center to read the decision, then fix and resubmit.",
+    "creative_media_missing": "The approved ad has no uploaded media. Re-upload the file in the campaign editor.",
+    "no_placement": "Choose at least one placement so this campaign has somewhere to run.",
+    "no_budget": "Set a daily or lifetime budget before running this campaign.",
+}
+
+
+def _account_activation_blocker(conn, account_id) -> tuple[str, str] | None:
+    """Verification and eligibility — the first two of §37's four gates.
+
+    Suspension is checked before verification because it is the more specific
+    fact: telling a suspended advertiser to request verification would send them
+    to a queue that cannot help them.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT status, verification_status, verification_reason FROM pulse_ad_accounts WHERE id=?",
+        (safe_int(account_id),),
+    )
+    account = row_to_dict(cur.fetchone())
+    if not account:
+        raise pulse_ads_service.PulseAdsError("Ad account not found.", 404)
+    status = clean_text(account.get("status"), 40).lower()
+    if status == "suspended":
+        return ("account_suspended", ACTIVATION_BLOCKERS["account_suspended"])
+    verification = pulse_ads_service.account_verification_state(account)
+    if verification == "pending":
+        return ("account_verification_pending", ACTIVATION_BLOCKERS["account_verification_pending"])
+    if verification == "rejected":
+        reason = clean_text(account.get("verification_reason"), 500)
+        detail = ACTIVATION_BLOCKERS["account_verification_rejected"]
+        # The reviewer's own words, when there are any. A rejection the advertiser
+        # cannot answer is the dead end; the reason is what makes it answerable.
+        if reason:
+            detail = f"Account verification was declined: {reason} Update your details and request verification again."
+        return ("account_verification_rejected", detail)
+    if verification != "verified":
+        return ("account_not_verified", ACTIVATION_BLOCKERS["account_not_verified"])
+    if status != "active":
+        # Verified but not active is a state approval is supposed to make
+        # impossible — `approve_account_verification` writes both columns
+        # together. Reaching it means something wrote one without the other, and
+        # the selector reads `status`, so this fails closed rather than trusting
+        # the friendlier of two disagreeing columns.
+        return ("account_not_active", ACTIVATION_BLOCKERS["account_not_active"])
+    return None
+
+
+def _creative_activation_blocker(conn, campaign_id) -> tuple[str, str] | None:
+    """Policy approval — §37's third gate, read the way the selector reads it.
+
+    The selector needs a creative that is approved on *both* columns and whose
+    media (and thumbnail, if it has one) is approved too. Checking only
+    `moderation_status` here would let a campaign through that the selector then
+    silently drops, which is the same contradiction one layer down.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT cr.id, cr.creative_type, cr.status, cr.moderation_status,
+               cr.media_asset_id, cr.thumbnail_asset_id,
+               ma.moderation_status AS media_moderation,
+               ta.moderation_status AS thumb_moderation
+        FROM pulse_ad_creatives cr
+        LEFT JOIN pulse_ad_media_assets ma ON ma.id=cr.media_asset_id
+        LEFT JOIN pulse_ad_media_assets ta ON ta.id=cr.thumbnail_asset_id
+        WHERE cr.campaign_id=?
+        """,
+        (safe_int(campaign_id),),
+    )
+    creatives = [row_to_dict(row) for row in cur.fetchall()]
+    if not creatives:
+        return ("no_creative", ACTIVATION_BLOCKERS["no_creative"])
+
+    media_required = {"image", "video", "audio"}
+    approved_but_unusable = False
+    saw_pending = False
+    saw_rejected = False
+    for creative in creatives:
+        moderation = clean_text(creative.get("moderation_status"), 40).lower()
+        status = clean_text(creative.get("status"), 40).lower()
+        if moderation != "approved" or status != "approved":
+            if moderation in {"pending", "submitted", "in_review"}:
+                saw_pending = True
+            elif moderation in {"rejected", "declined"}:
+                saw_rejected = True
+            continue
+        creative_type = clean_text(creative.get("creative_type"), 40).lower()
+        if creative_type in media_required and not safe_int(creative.get("media_asset_id")):
+            approved_but_unusable = True
+            continue
+        if safe_int(creative.get("media_asset_id")) and clean_text(creative.get("media_moderation"), 40).lower() != "approved":
+            approved_but_unusable = True
+            continue
+        if safe_int(creative.get("thumbnail_asset_id")) and clean_text(creative.get("thumb_moderation"), 40).lower() != "approved":
+            approved_but_unusable = True
+            continue
+        return None
+
+    if approved_but_unusable:
+        return ("creative_media_missing", ACTIVATION_BLOCKERS["creative_media_missing"])
+    if saw_pending:
+        return ("creative_in_review", ACTIVATION_BLOCKERS["creative_in_review"])
+    if saw_rejected:
+        return ("creative_rejected", ACTIVATION_BLOCKERS["creative_rejected"])
+    return ("no_creative", ACTIVATION_BLOCKERS["no_creative"])
+
+
+def activation_blocker(conn, account_id, campaign: dict) -> tuple[str, str] | None:
+    """The first reason this campaign cannot run, or None if it can.
+
+    "First" rather than "all": a list of four problems is harder to act on than
+    one, and the reader clears them in this order anyway — an approved creative
+    on a suspended account still cannot run.
+    """
+    account_gate = _account_activation_blocker(conn, account_id)
+    if account_gate:
+        return account_gate
+    campaign_id = safe_int(campaign.get("id"))
+    creative_gate = _creative_activation_blocker(conn, campaign_id)
+    if creative_gate:
+        return creative_gate
+    if not _campaign_placements(conn, campaign_id):
+        return ("no_placement", ACTIVATION_BLOCKERS["no_placement"])
+    budget = safe_int(campaign.get("lifetime_budget_cents")) or safe_int(campaign.get("daily_budget_cents"))
+    if budget <= 0:
+        return ("no_budget", ACTIVATION_BLOCKERS["no_budget"])
+    return None
+
+
+# Which campaign statuses each action may be applied from.
+#
+# There was no precondition at all: `resume` on an archived or completed campaign
+# set it back to 'active' and reserved budget for it, so "archive" was a label
+# rather than an end state and a finished campaign could start spending again.
+#
+# `resume` from 'active' is allowed and idempotent — a second press of a button
+# whose first press succeeded should not be an error message.
+CAMPAIGN_TRANSITIONS = {
+    "pause": {"active", "running", "paused"},
+    "resume": {"paused", "active", "running"},
+    "archive": {"draft", "pending_review", "paused", "completed", "rejected"},
+    "submit": {"draft", "rejected"},
+    "complete": {"active", "running", "paused"},
+}
+
+# Why a given action is refused from a given status, in the advertiser's terms.
+# A bare "invalid transition" tells the reader what the machine thinks, not what
+# they can do about it.
+TRANSITION_REFUSALS = {
+    ("resume", "archived"): "This campaign is archived. Duplicate it to run it again.",
+    ("resume", "completed"): "This campaign has finished. Duplicate it to run it again.",
+    ("resume", "draft"): "Submit this campaign for review before running it.",
+    ("resume", "pending_review"): "This campaign is still in review. It can run once that's decided.",
+    ("resume", "rejected"): "This campaign was rejected. Open the Policy Center to read the decision.",
+    ("resume", "suspended"): "This campaign was suspended by our team. Contact support before running it again.",
+    ("pause", "draft"): "This campaign hasn't started, so there's nothing to pause.",
+    ("pause", "archived"): "This campaign is archived and isn't running.",
+    ("pause", "completed"): "This campaign has already finished.",
+    ("submit", "active"): "This campaign is already running.",
+    ("submit", "pending_review"): "This campaign is already in review.",
+    ("submit", "archived"): "This campaign is archived. Duplicate it to submit it again.",
+    ("complete", "draft"): "This campaign hasn't run yet, so there's nothing to complete.",
+    ("complete", "archived"): "This campaign is archived.",
+    ("complete", "completed"): "This campaign has already finished.",
+    ("archive", "archived"): "This campaign is already archived.",
+    ("archive", "active"): "Pause this campaign before archiving it.",
+    ("archive", "running"): "Pause this campaign before archiving it.",
+}
+
+
+def _assert_transition_allowed(action: str, current_status: str) -> None:
+    allowed = CAMPAIGN_TRANSITIONS.get(action)
+    if allowed is None:
+        return
+    status = clean_text(current_status, 40).lower() or "draft"
+    if status in allowed:
+        return
+    message = TRANSITION_REFUSALS.get((action, status))
+    if not message:
+        message = f"This campaign is {status} and can't be {action}d from there."
+    raise pulse_ads_service.PulseAdsError(message, 409)
+
+
 def _account_ids_for_user(conn, user_id) -> list[int]:
     cur = conn.cursor()
     cur.execute(
@@ -267,6 +476,27 @@ def _account_ids_for_user(conn, user_id) -> list[int]:
 
 
 def list_accounts(conn, user_id) -> list[dict]:
+    """Every account the user can reach, with per-account counts and spend.
+
+    The per-account figures are correlated subqueries rather than aggregates over
+    joined rows, and that is the whole point. This query used to LEFT JOIN both
+    `pulse_ad_campaigns` and `pulse_ad_creatives` onto one account row, which is a
+    cartesian product: an account with 4 campaigns and 9 creatives produced 36
+    rows, and every aggregate that was not wrapped in DISTINCT counted each fact
+    once per row of the *other* table.
+
+    `campaign_count` survived because it was `COUNT(DISTINCT c.id)`. The other
+    three did not. `active_campaigns` was multiplied by the creative count,
+    `pending_reviews` by the campaign count, and `total_spend_cents` by the
+    creative count — so an advertiser with nine creatives saw nine times their
+    real spend on the accounts list, and `portal_summary` sums this column into
+    `metrics.total_spend`, so the portal rollup was wrong by the same factor.
+    `_account_health` reads `pending_reviews`, so the health score was wrong too.
+
+    A subquery cannot be multiplied by a sibling join because there is no sibling
+    join. The profile LEFT JOIN stays: `pulse_ad_account_profiles.account_id` is a
+    PRIMARY KEY, so it is 1:1 and cannot fan out.
+    """
     account_ids = _account_ids_for_user(conn, user_id)
     if not account_ids:
         return []
@@ -275,16 +505,19 @@ def list_accounts(conn, user_id) -> list[dict]:
     cur.execute(
         f"""
         SELECT a.*, p.industry, p.website, p.contact_email,
-               COUNT(DISTINCT c.id) AS campaign_count,
-               SUM(CASE WHEN c.status IN ('running','active') THEN 1 ELSE 0 END) AS active_campaigns,
-               SUM(CASE WHEN cr.moderation_status='pending' THEN 1 ELSE 0 END) AS pending_reviews,
-               COALESCE(SUM(c.spent_cents), 0) AS total_spend_cents
+               (SELECT COUNT(*) FROM pulse_ad_campaigns c
+                 WHERE c.ad_account_id=a.id) AS campaign_count,
+               (SELECT COUNT(*) FROM pulse_ad_campaigns c
+                 WHERE c.ad_account_id=a.id
+                   AND c.status IN ('running','active')) AS active_campaigns,
+               (SELECT COUNT(*) FROM pulse_ad_creatives cr
+                 WHERE cr.ad_account_id=a.id
+                   AND cr.moderation_status='pending') AS pending_reviews,
+               (SELECT COALESCE(SUM(c.spent_cents), 0) FROM pulse_ad_campaigns c
+                 WHERE c.ad_account_id=a.id) AS total_spend_cents
         FROM pulse_ad_accounts a
         LEFT JOIN pulse_ad_account_profiles p ON p.account_id=a.id
-        LEFT JOIN pulse_ad_campaigns c ON c.ad_account_id=a.id
-        LEFT JOIN pulse_ad_creatives cr ON cr.ad_account_id=a.id
         WHERE a.id IN ({placeholders})
-        GROUP BY a.id, p.industry, p.website, p.contact_email
         ORDER BY a.id DESC
         LIMIT 100
         """,
@@ -448,16 +681,29 @@ def portal_summary(conn, user_id) -> dict:
         try:
             wallet_rows.append(pulse_ad_payments.wallet_summary(conn, user_id, account.get("id")))
         except Exception:
+            # A wallet we could not read is not a wallet holding nothing. This
+            # used to return a fully populated $0.00 summary, which the portal
+            # rendered exactly like a real empty wallet: the advertiser was told
+            # their balance was zero when the truth was that we did not know.
+            # The figures are omitted rather than invented, and the client is
+            # told why so it can say so.
+            logging.exception(
+                "PULSE_AD_WALLET_SUMMARY_FAILED user_id=%s account_id=%s", user_id, account.get("id")
+            )
             wallet_rows.append({
                 "account_id": safe_int(account.get("id")),
-                "available_balance_cents": 0,
-                "reserved_budget_cents": 0,
-                "lifetime_funded_cents": 0,
-                "lifetime_spent_cents": 0,
-                "spendable_balance_cents": 0,
-                "available_balance": "$0.00",
-                "reserved_budget": "$0.00",
-                "spendable_balance": "$0.00",
+                "unavailable": True,
+                "unavailable_reason": "Wallet balance could not be loaded. This is a temporary error, not a zero balance.",
+                "available_balance_cents": None,
+                "reserved_budget_cents": None,
+                "lifetime_funded_cents": None,
+                "lifetime_spent_cents": None,
+                "spendable_balance_cents": None,
+                "amount_owed_cents": None,
+                "available_balance": "",
+                "reserved_budget": "",
+                "spendable_balance": "",
+                "amount_owed": "",
                 "transactions": [],
                 "receipts": [],
                 "billing_enabled": pulse_ad_payments.billing_enabled(),
@@ -466,9 +712,15 @@ def portal_summary(conn, user_id) -> dict:
     unread_notes = sum(1 for item in note_rows if item.get("status") == "unread")
     status_counts = campaign_status_counts(conn, account_ids)
     spend_total = sum(safe_int(account.get("total_spend_cents")) for account in accounts)
-    wallet_total = sum(safe_int(wallet.get("available_balance_cents")) for wallet in wallet_rows)
-    reserved_total = sum(safe_int(wallet.get("reserved_budget_cents")) for wallet in wallet_rows)
-    spendable_total = sum(safe_int(wallet.get("spendable_balance_cents")) for wallet in wallet_rows)
+    # Totals are summed only over wallets that actually loaded, and the count of
+    # the ones that did not travels with them. A total that quietly treats an
+    # unreadable wallet as zero is a wrong number presented as a right one.
+    readable_wallets = [wallet for wallet in wallet_rows if not wallet.get("unavailable")]
+    unavailable_wallets = len(wallet_rows) - len(readable_wallets)
+    wallet_total = sum(safe_int(wallet.get("available_balance_cents")) for wallet in readable_wallets)
+    reserved_total = sum(safe_int(wallet.get("reserved_budget_cents")) for wallet in readable_wallets)
+    spendable_total = sum(safe_int(wallet.get("spendable_balance_cents")) for wallet in readable_wallets)
+    owed_total = sum(safe_int(wallet.get("amount_owed_cents")) for wallet in readable_wallets)
     billing_enabled = os.getenv("PULSE_ADS_BILLING_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
     return {
         "accounts": accounts,
@@ -501,6 +753,12 @@ def portal_summary(conn, user_id) -> dict:
             "reserved_budget": money(reserved_total),
             "spendable_balance_cents": spendable_total,
             "spendable_balance": money(spendable_total),
+            # A refunded or disputed top-up can leave the account owing money.
+            # Spendable correctly reads $0.00 in that case, which on its own
+            # looks identical to an account that simply never funded.
+            "amount_owed_cents": owed_total,
+            "amount_owed": money(owed_total),
+            "wallets_unavailable": unavailable_wallets,
         },
         "campaign_status_counts": status_counts,
         "placements": pulse_ads_service.PLACEMENT_METADATA,
@@ -547,8 +805,23 @@ def update_campaign(conn, user_id, campaign_id, payload: dict) -> dict:
         ),
     )
     if "placements" in payload:
+        # The `or ["feed_inline"]` that used to be here turned "run this campaign
+        # nowhere" into "run it in the feed". An advertiser clearing their
+        # placement selection — to pause a surface, or to rebuild the set — had a
+        # placement they did not choose attached in its place, and kept paying.
+        # Clearing the list now leaves the campaign with none, which
+        # `_campaign_activation_blocker` reports as `no_placement` rather than
+        # letting it spend.
+        #
+        # Resolved before the DELETE, not after. This function destroys the whole
+        # placement set and rebuilds it, so a bad key discovered halfway through
+        # the rebuild would leave the campaign attached to less than it had when
+        # the advertiser pressed Save — and whether that survives depends on the
+        # connection's transaction mode, which is not a thing to bet a live
+        # campaign's delivery on.
+        resolved = pulse_ads_service.resolve_placement_keys(conn, payload.get("placements"))
         cur.execute("DELETE FROM pulse_ad_campaign_placements WHERE campaign_id=?", (campaign_id,))
-        pulse_ads_service.attach_campaign_placements(conn, campaign_id, payload.get("placements") or ["feed_inline"])
+        pulse_ads_service.attach_campaign_placements(conn, campaign_id, [key for key, _id in resolved])
     cur.execute("SELECT * FROM pulse_ad_campaigns WHERE id=?", (campaign_id,))
     after = row_to_dict(cur.fetchone())
     _add_history(conn, campaign_id, user_id, "campaign_updated", before, after)
@@ -563,10 +836,12 @@ def campaign_action(conn, user_id, campaign_id, action: str) -> dict:
     if action not in CAMPAIGN_ACTIONS:
         raise pulse_ads_service.PulseAdsError("Unsupported campaign action.")
     account_id = _campaign_account_id(conn, campaign_id)
-    _require_account_role(conn, user_id, account_id, WRITE_ROLES)
+    role = _require_account_role(conn, user_id, account_id, WRITE_ROLES)
     cur = conn.cursor()
     cur.execute("SELECT * FROM pulse_ad_campaigns WHERE id=?", (campaign_id,))
     before = row_to_dict(cur.fetchone())
+    if not before:
+        raise pulse_ads_service.PulseAdsError("Campaign not found.", 404)
     now = now_iso()
     if action == "duplicate":
         cur.execute(
@@ -604,8 +879,27 @@ def campaign_action(conn, user_id, campaign_id, action: str) -> dict:
         "complete": "completed",
     }
     new_status = status_map[action]
+    _assert_transition_allowed(action, before.get("status"))
     reserve_result = None
     if action == "resume":
+        # Verification, policy, eligibility and placement — checked before any
+        # money moves, because `reserve_campaign_budget` reduces the account's
+        # spendable balance and there is no point locking funds behind a gate the
+        # campaign cannot pass.
+        gate = activation_blocker(conn, account_id, before)
+        if gate:
+            raise pulse_ads_service.PulseAdsError(gate[1], 409)
+        # The role rule, stated here rather than discovered inside the payment
+        # layer. `reserve_campaign_budget` begins with an owner check and raises
+        # "Campaign not found." 404 when it fails — so a campaign manager, a
+        # write role this same function authorised four lines above, was told the
+        # campaign did not exist. It does exist; they simply cannot spend from
+        # the wallet. That is a different sentence and a different status code.
+        if role != "owner":
+            raise pulse_ads_service.PulseAdsError(
+                "Only the account owner can resume a campaign, because resuming reserves budget from the wallet.",
+                403,
+            )
         reserve_result = pulse_ad_payments.reserve_campaign_budget(conn, user_id, campaign_id)
     set_parts = ["status=?", "updated_at=?"]
     params = [new_status, now]

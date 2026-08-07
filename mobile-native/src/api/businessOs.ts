@@ -331,6 +331,32 @@ export async function createAdAccount(payload: AdAccountCreatePayload) {
   return { ...data, account: data.account ? normalizeAdAccount(data.account) : undefined };
 }
 
+/**
+ * Ask for the ad account to be reviewed.
+ *
+ * This is not the same thing as the Verification Center, and the difference is
+ * the whole point of the call. The Verification Center posts to
+ * `/api/dashboard/account/verification/request` and decides a *profile* badge;
+ * `select_ads` reads `pulse_ad_accounts.status`, which that flow never touches.
+ * An advertiser who completed the badge track and waited was doing real work
+ * against the wrong record, and their campaigns stayed dark either way.
+ *
+ * Owner-only on the server, and it refuses a second submission while one is in
+ * review — both surface here as the server's own sentence rather than a guess.
+ */
+export async function requestAdAccountVerification(accountId: number, note = "") {
+  return pulseApi<{
+    ok?: boolean;
+    account_id?: number;
+    verification_status?: AdAccountVerification;
+    status?: AdAccountStatus | string;
+    submitted_at?: string;
+  }>(`/api/pulse/ads/accounts/${encodeURIComponent(String(accountId))}/verification`, {
+    method: "POST",
+    body: JSON.stringify(note ? { note } : {})
+  });
+}
+
 export async function loadCachedAdAccounts() {
   return (await readJsonCache<AdAccount[]>(AD_ACCOUNTS_CACHE_KEY, normalizeAdAccounts)) || [];
 }
@@ -697,6 +723,26 @@ export type AdWallet = {
   lifetime_spent_cents?: number;
   spendable_balance_cents?: number;
   available_balance?: string;
+  /**
+   * The shortfall this account owes, in cents.
+   *
+   * A refunded or disputed top-up debits the wallet even when the money has
+   * already been spent, so `available_balance_cents` can be negative and
+   * `spendable_balance_cents` correctly floors at 0. Those two together look
+   * exactly like an account that simply never funded, which is why the server
+   * names the debt rather than leaving it to be inferred from a minus sign.
+   */
+  amount_owed_cents?: number;
+  amount_owed?: string;
+  /**
+   * Set by the server when the wallet could not be read at all.
+   *
+   * The figures on such a row are `null`, not `0`. Anything consuming this
+   * must branch on the flag before touching a number — a wallet we failed to
+   * load is not a wallet holding nothing.
+   */
+  unavailable?: boolean;
+  unavailable_reason?: string;
   transactions?: AdWalletTransaction[];
   receipts?: AdWalletReceipt[];
 };
@@ -750,8 +796,30 @@ export async function getAdBillingSummary(accountId: number) {
 
 export function normalizeAdWallet(wallet?: AdWallet | null): AdWallet {
   const source = wallet || {};
+  // A wallet the server could not read arrives with `unavailable: true` and
+  // null figures. Running it through the coercions below would turn every one
+  // of those nulls into a `0` indistinguishable from a real empty wallet —
+  // manufacturing on the client exactly the fake zero the server refused to
+  // send. The flag and the reason are kept; the numbers stay absent.
+  if (source.unavailable) {
+    return {
+      ...source,
+      account_id: Number(source.account_id || 0),
+      currency: String(source.currency || "usd").toUpperCase(),
+      unavailable: true,
+      unavailable_reason: String(source.unavailable_reason || "").trim() ||
+        "Wallet balance couldn't be loaded. This is a temporary error, not a zero balance.",
+      available_balance_cents: undefined,
+      spendable_balance_cents: undefined,
+      reserved_budget_cents: undefined,
+      amount_owed_cents: undefined,
+      transactions: Array.isArray(source.transactions) ? source.transactions : [],
+      receipts: Array.isArray(source.receipts) ? source.receipts : []
+    };
+  }
   return {
     ...source,
+    unavailable: false,
     account_id: Number(source.account_id || 0),
     currency: String(source.currency || "usd").toUpperCase(),
     available_balance_cents: Number(source.available_balance_cents || 0),
@@ -763,6 +831,7 @@ export function normalizeAdWallet(wallet?: AdWallet | null): AdWallet {
     lifetime_funded_cents: Number(source.lifetime_funded_cents || 0),
     lifetime_spent_cents: Number(source.lifetime_spent_cents || 0),
     spendable_balance_cents: Number(source.spendable_balance_cents || 0),
+    amount_owed_cents: Number(source.amount_owed_cents || 0),
     transactions: Array.isArray(source.transactions) ? source.transactions : [],
     receipts: Array.isArray(source.receipts) ? source.receipts : []
   };

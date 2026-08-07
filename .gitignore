@@ -48,3 +48,6 @@ mobile/pulse-react-native/builds/
 venv/
 .venv/
 outputs/.mutate*-original
+
+# Claude Code runtime lock, owned by a live session (not shared state)
+.claude/scheduled_tasks.lock

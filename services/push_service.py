@@ -746,6 +746,45 @@ def send_expo_push_token(token, title, body, data=None, push_type="general"):
     return _send_expo_push(token, payload)
 
 
+def _subscription_device_key(row):
+    """Stable per-device identity for a push_subscriptions row: the expo token when the
+    row is an Expo device, otherwise the web-push endpoint. Used to collapse duplicate
+    registrations of the same device so a single notification is delivered once."""
+    endpoint = row[1] if len(row) > 1 else ""
+    subscription_json = row[2] if len(row) > 2 else ""
+    try:
+        subscription = json.loads(subscription_json or "{}")
+    except Exception:
+        subscription = {}
+    if _is_expo_token(endpoint, subscription):
+        return f"expo:{_expo_token(endpoint, subscription)}"
+    return f"endpoint:{str(endpoint or '')}"
+
+
+def _dedupe_subscription_rows(rows):
+    """Keep one subscription row per physical device token/endpoint, preferring the most
+    recently seen row. Preserves original ordering of the surviving rows."""
+    if not rows:
+        return rows
+    best_by_key = {}
+    order = []
+    for row in rows:
+        key = _subscription_device_key(row)
+        if not key or key in ("expo:", "endpoint:"):
+            # No usable identity -> never collapse, keep as-is under a unique key.
+            key = f"row:{row[0] if len(row) > 0 else id(row)}"
+        last_seen = (row[6] if len(row) > 6 else "") or (row[5] if len(row) > 5 else "") or ""
+        if key not in best_by_key:
+            best_by_key[key] = row
+            order.append(key)
+        else:
+            existing = best_by_key[key]
+            existing_seen = (existing[6] if len(existing) > 6 else "") or (existing[5] if len(existing) > 5 else "") or ""
+            if str(last_seen) > str(existing_seen):
+                best_by_key[key] = row
+    return [best_by_key[key] for key in order]
+
+
 def send_push(user_id, title, body, data=None, push_type="general"):
     data = data or {}
     trace_id = data.get("push_trace_id") or data.get("trace_id") or secrets.token_hex(6)
@@ -765,6 +804,12 @@ def send_push(user_id, title, body, data=None, push_type="general"):
         (user_id,),
     )
     rows = cur.fetchall()
+    # Collapse multiple active subscriptions that resolve to the SAME physical device
+    # token/endpoint so one notification is delivered exactly once per device. Stale or
+    # re-registered rows (same expo token or web-push endpoint stored twice) would
+    # otherwise each receive the same payload, producing duplicate banners for one
+    # message. Keyed on the device token identity, never on message content.
+    rows = _dedupe_subscription_rows(rows)
     conversation_id = data.get("conversationId") or data.get("conversation_id")
     message_id = data.get("messageId") or data.get("message_id")
     _trace(

@@ -8,10 +8,21 @@ bank data, Stripe object IDs, and secrets must never be returned from here.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
 from services import db as db_service
+
+
+logger = logging.getLogger(__name__)
+
+# Advertising money lives on `pulse_ad_accounts`, and only that table carries
+# `owner_user_id`. Wallets, transactions and refunds are keyed on `account_id`,
+# so every owner-scoped advertising figure has to reach the user through here.
+# Filtering those tables on `owner_user_id` directly raises, and the helpers
+# below used to turn that into a silent zero.
+_AD_ACCOUNTS_FOR_OWNER = "account_id IN (SELECT id FROM pulse_ad_accounts WHERE owner_user_id=?)"
 
 
 STRICT_STATES = {
@@ -314,13 +325,29 @@ def _param_sql(sql: str) -> str:
     return sql.replace("?", "%s") if db_service.IS_POSTGRES else sql
 
 
+def _query_failed(table: str, where: str, error: Exception) -> None:
+    """Report a diagnostic query that could not run.
+
+    These helpers return 0 on failure so one missing table cannot take the whole
+    Economy dashboard down, and that is worth keeping. What is not worth keeping
+    is the silence: a query filtering on a column that does not exist raised on
+    every call and returned the same 0 as a genuinely empty table, so several
+    advertising figures read as a confident zero for as long as they were wrong.
+    A broken query and an empty table must not look alike in the logs.
+    """
+    logger.warning(
+        "ECONOMY_METRIC_QUERY_FAILED table=%s where=%s error=%s", table, where, error
+    )
+
+
 def _count(cur: Any, table: str, where: str = "1=1", params: tuple[Any, ...] = ()) -> int:
     if not _table_exists(cur, table):
         return 0
     try:
         cur.execute(_param_sql(f"SELECT COUNT(*) AS total FROM {table} WHERE {where}"), params)
         return _safe_int(_row_value(cur.fetchone(), "total", 0), 0)
-    except Exception:
+    except Exception as exc:
+        _query_failed(table, where, exc)
         return 0
 
 
@@ -330,7 +357,8 @@ def _sum_cents(cur: Any, table: str, column: str, where: str = "1=1", params: tu
     try:
         cur.execute(_param_sql(f"SELECT COALESCE(SUM({column}), 0) AS total FROM {table} WHERE {where}"), params)
         return _safe_int(_row_value(cur.fetchone(), "total", 0), 0)
-    except Exception:
+    except Exception as exc:
+        _query_failed(table, f"{column} / {where}", exc)
         return 0
 
 
@@ -340,12 +368,13 @@ def _latest_created(cur: Any, table: str, where: str = "1=1", params: tuple[Any,
     try:
         cur.execute(_param_sql(f"SELECT created_at FROM {table} WHERE {where} ORDER BY created_at DESC LIMIT 1"), params)
         return str(_row_value(cur.fetchone(), "created_at", 0, "") or "")
-    except Exception:
+    except Exception as exc:
+        _query_failed(table, where, exc)
         return ""
 
 
 def _metric_map(cur: Any, user_id: int) -> dict[str, Any]:
-    ad_wallet_balance = _sum_cents(cur, "pulse_ad_wallets", "available_balance_cents", "owner_user_id=? OR user_id=?", (user_id, user_id))
+    ad_wallet_balance = _sum_cents(cur, "pulse_ad_wallets", "available_balance_cents", _AD_ACCOUNTS_FOR_OWNER, (user_id,))
     creator_wallet_balance = _sum_cents(cur, "creator_wallets", "available_balance_cents", "user_id=?", (user_id,))
     wallet_balance = ad_wallet_balance + creator_wallet_balance
     pending_earnings = (
@@ -363,9 +392,12 @@ def _metric_map(cur: Any, user_id: int) -> dict[str, Any]:
     affiliate_revenue = _sum_cents(cur, "affiliate_commissions", "amount_cents", "user_id=?", (user_id,))
     active_orders = _count(cur, "marketplace_orders", "seller_user_id=? AND lower(coalesce(status,'')) IN ('paid','processing','fulfilled')", (user_id,))
     pending_orders = _count(cur, "marketplace_orders", "seller_user_id=? AND lower(coalesce(status,'')) IN ('pending','processing')", (user_id,))
-    refund_queue = _count(cur, "pulse_ad_refunds", "owner_user_id=? AND lower(coalesce(status,'')) IN ('requested','pending','processing')", (user_id,)) + _count(cur, "marketplace_refunds", "seller_user_id=? AND lower(coalesce(status,'')) IN ('requested','pending','processing')", (user_id,))
-    payment_failures = _count(cur, "payment_audit_logs", "user_id=? AND lower(coalesce(status,'')) IN ('failed','error','declined')", (user_id,)) + _count(cur, "pulse_ad_wallet_transactions", "owner_user_id=? AND lower(coalesce(status,'')) IN ('failed','error','declined')", (user_id,))
-    disputes = _count(cur, "marketplace_disputes", "seller_user_id=? OR buyer_user_id=?", (user_id, user_id)) + _count(cur, "pulse_ad_chargebacks", "owner_user_id=?", (user_id,))
+    refund_queue = _count(cur, "pulse_ad_refunds", f"{_AD_ACCOUNTS_FOR_OWNER} AND lower(coalesce(status,'')) IN ('requested','pending','processing')", (user_id,)) + _count(cur, "marketplace_refunds", "seller_user_id=? AND lower(coalesce(status,'')) IN ('requested','pending','processing')", (user_id,))
+    payment_failures = _count(cur, "payment_audit_logs", "user_id=? AND lower(coalesce(status,'')) IN ('failed','error','declined')", (user_id,)) + _count(cur, "pulse_ad_wallet_transactions", f"{_AD_ACCOUNTS_FOR_OWNER} AND lower(coalesce(status,'')) IN ('failed','error','declined')", (user_id,))
+    # Advertiser chargebacks are recorded as disputed rows in `pulse_ad_refunds`
+    # by the Stripe reversal handler. The `pulse_ad_chargebacks` table this used
+    # to read has never existed in any schema, so it counted nothing, forever.
+    disputes = _count(cur, "marketplace_disputes", "seller_user_id=? OR buyer_user_id=?", (user_id, user_id)) + _count(cur, "pulse_ad_refunds", f"{_AD_ACCOUNTS_FOR_OWNER} AND lower(coalesce(status,''))='disputed'", (user_id,))
     seller_products = _count(cur, "marketplace_listings", "seller_user_id=? OR user_id=?", (user_id, user_id))
     seller_profile = _count(cur, "seller_profiles", "user_id=?", (user_id,))
     payout_accounts = _count(cur, "seller_payout_accounts", "user_id=?", (user_id,))
@@ -545,7 +577,9 @@ def _admin_metric_map(cur: Any) -> dict[str, Any]:
     subscriptions = _count(cur, "subscriptions") + _count(cur, "premium_subscriptions")
     payouts = _count(cur, "seller_payouts")
     refunds = _count(cur, "pulse_ad_refunds") + _count(cur, "marketplace_refunds")
-    chargebacks = _count(cur, "pulse_ad_chargebacks")
+    # See _metric_map: `pulse_ad_chargebacks` is not a table. Disputed advertiser
+    # top-ups are written to `pulse_ad_refunds` with status='disputed'.
+    chargebacks = _count(cur, "pulse_ad_refunds", "lower(coalesce(status,''))='disputed'")
     payment_failures = _count(cur, "payment_audit_logs", "lower(coalesce(status,'')) IN ('failed','error','declined')")
     disputes = _count(cur, "marketplace_disputes")
     fraud_events = _count(cur, "payment_audit_logs", "lower(coalesce(event_type,'')) LIKE '%fraud%'")

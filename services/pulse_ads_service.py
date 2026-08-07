@@ -598,6 +598,187 @@ def list_ad_accounts(conn, owner_user_id) -> list[dict]:
     return [row_to_dict(row) for row in cur.fetchall()]
 
 
+# Advertiser verification lifecycle.
+#
+# `verification_status` existed as a column from the beginning and was read in
+# three places — the account health score, the promotions billing check, and the
+# ad selector by way of `status` — but nothing ever wrote it. An account was
+# created 'unverified'/'pending_verification' and stayed there, which meant the
+# selector's `a.status='active'` condition could never be satisfied by an account
+# the product itself had created. Every advertiser was permanently ineligible and
+# the only message about it pointed at a door with nothing behind it.
+#
+# The states below are the whole vocabulary. They are deliberately few:
+#
+#   unverified      never submitted — the advertiser's move
+#   pending         submitted, waiting on review — nobody's move, it resolves
+#   verified        approved; paired with status='active', which is what the
+#                   selector actually reads
+#   rejected        declined with a reason, and re-submittable — a rejection the
+#                   advertiser cannot answer is the dead end §37 rules out
+#
+# Approval writes `status` as well as `verification_status`. They are two columns
+# describing one decision and letting them disagree is how you get an account
+# that is "verified" and still cannot serve.
+VERIFICATION_STATES = {"unverified", "pending", "verified", "rejected"}
+VERIFICATION_RESUBMIT_FROM = {"unverified", "rejected", ""}
+
+
+def account_verification_state(account: dict) -> str:
+    """The verification state of an account row, normalised.
+
+    Old rows predate this vocabulary and carry 'approved' from a hand-run script;
+    they mean 'verified' and are read as such rather than being left in a state
+    no branch below handles.
+    """
+    raw = clean_text(account.get("verification_status"), 40).lower()
+    if raw in {"approved", "verified"}:
+        return "verified"
+    if raw in {"pending", "submitted", "in_review"}:
+        return "pending"
+    if raw in {"rejected", "declined", "needs_more_info"}:
+        return "rejected"
+    return "unverified"
+
+
+def submit_account_verification(conn, owner_user_id, account_id, payload: dict | None = None) -> dict:
+    """Advertiser asks for their account to be reviewed.
+
+    Only the owner can submit, because verification is a statement about the
+    business behind the account rather than about a campaign, and it is the owner
+    whose details are being asserted.
+    """
+    account = _owned_account(conn, owner_user_id, account_id)
+    state = account_verification_state(account)
+    if state == "verified":
+        raise PulseAdsError("This ad account is already verified.")
+    if state == "pending":
+        raise PulseAdsError("Verification is already in review. We'll let you know when it's decided.")
+    if not clean_text(account.get("business_name"), TEXT_LIMITS["business_name"]):
+        raise PulseAdsError("Add your business name before requesting verification.")
+    now = now_iso()
+    note = clean_text((payload or {}).get("note"), 500)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE pulse_ad_accounts
+        SET verification_status='pending', verification_submitted_at=?,
+            verification_reviewed_at=NULL, verification_reviewer_id=NULL,
+            verification_reason=?, updated_at=?
+        WHERE id=?
+        """,
+        (now, note, now, safe_int(account_id)),
+    )
+    audit_log(
+        conn, owner_user_id, "ad_account_verification_submitted", "pulse_ad_accounts", account_id,
+        before={"verification_status": account.get("verification_status")},
+        after={"verification_status": "pending"},
+    )
+    conn.commit()
+    return {
+        "ok": True,
+        "account_id": safe_int(account_id),
+        "verification_status": "pending",
+        "status": clean_text(account.get("status"), 40) or "pending_verification",
+        "submitted_at": now,
+    }
+
+
+def approve_account_verification(conn, admin_user_id, account_id, notes: str = "") -> dict:
+    """Admin verifies an account, which is also what makes it able to serve.
+
+    `status='active'` is written here and only here in the product. It is the
+    condition `select_ads` tests, so approving verification without writing it
+    would produce a verified account whose ads never appear — the exact split
+    between what the record says and what the system does that this phase exists
+    to close.
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_ad_accounts WHERE id=?", (safe_int(account_id),))
+    account = row_to_dict(cur.fetchone())
+    if not account:
+        raise PulseAdsError("Ad account not found.", 404)
+    if clean_text(account.get("status"), 40) == "suspended":
+        raise PulseAdsError("This account is suspended. Lift the suspension before verifying it.", 409)
+    now = now_iso()
+    cur.execute(
+        """
+        UPDATE pulse_ad_accounts
+        SET verification_status='verified', status='active', verification_reviewed_at=?,
+            verification_reviewer_id=?, verification_reason=?, updated_at=?
+        WHERE id=?
+        """,
+        (now, safe_int(admin_user_id), clean_text(notes, 500), now, safe_int(account_id)),
+    )
+    audit_log(
+        conn, admin_user_id, "ad_account_verified", "pulse_ad_accounts", account_id,
+        before={"status": account.get("status"), "verification_status": account.get("verification_status")},
+        after={"status": "active", "verification_status": "verified"},
+    )
+    conn.commit()
+    return {"ok": True, "account_id": safe_int(account_id), "status": "active", "verification_status": "verified"}
+
+
+def reject_account_verification(conn, admin_user_id, account_id, reason: str = "") -> dict:
+    """Admin declines verification, with a reason the advertiser can act on.
+
+    The reason is required. A rejection with no reason is a locked door with no
+    sign on it, and the advertiser's only remaining move is to guess.
+    """
+    reason = clean_text(reason, 500)
+    if not reason:
+        raise PulseAdsError("A rejection reason is required so the advertiser knows what to fix.")
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_ad_accounts WHERE id=?", (safe_int(account_id),))
+    account = row_to_dict(cur.fetchone())
+    if not account:
+        raise PulseAdsError("Ad account not found.", 404)
+    now = now_iso()
+    cur.execute(
+        """
+        UPDATE pulse_ad_accounts
+        SET verification_status='rejected', status='pending_verification',
+            verification_reviewed_at=?, verification_reviewer_id=?, verification_reason=?, updated_at=?
+        WHERE id=?
+        """,
+        (now, safe_int(admin_user_id), reason, now, safe_int(account_id)),
+    )
+    audit_log(
+        conn, admin_user_id, "ad_account_verification_rejected", "pulse_ad_accounts", account_id,
+        before={"status": account.get("status"), "verification_status": account.get("verification_status")},
+        after={"status": "pending_verification", "verification_status": "rejected", "reason": reason},
+    )
+    conn.commit()
+    return {
+        "ok": True,
+        "account_id": safe_int(account_id),
+        "status": "pending_verification",
+        "verification_status": "rejected",
+        "reason": reason,
+    }
+
+
+def account_review_board(conn, limit=100) -> list[dict]:
+    """Accounts waiting on a verification decision, oldest request first.
+
+    Oldest first because this is a queue someone is sitting in, not a feed.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, owner_user_id, business_name, business_type, business_email, business_website,
+               status, verification_status, verification_submitted_at, verification_reason,
+               created_at, updated_at
+        FROM pulse_ad_accounts
+        WHERE lower(COALESCE(verification_status,'')) IN ('pending','submitted','in_review')
+        ORDER BY COALESCE(verification_submitted_at, created_at) ASC, id ASC
+        LIMIT ?
+        """,
+        (safe_int(limit, 100, minimum=1, maximum=500),),
+    )
+    return [row_to_dict(row) for row in cur.fetchall()]
+
+
 def create_campaign(conn, owner_user_id, payload: dict) -> dict:
     account_id = safe_int(payload.get("ad_account_id"), minimum=1)
     _owned_account(conn, owner_user_id, account_id)
@@ -632,8 +813,13 @@ def create_campaign(conn, owner_user_id, payload: dict) -> dict:
         ),
     )
     campaign_id = cur.lastrowid
-    placement_keys = payload.get("placements") or ["feed_inline"]
-    attach_campaign_placements(conn, campaign_id, placement_keys)
+    # Was `payload.get("placements") or ["feed_inline"]`. A campaign created
+    # without a placement choice was quietly put into the feed — a surface the
+    # advertiser had not picked, and would then pay for. A draft with no
+    # placement is a legitimate state: `_campaign_activation_blocker` refuses to
+    # activate it and says why, so the campaign cannot spend until a real choice
+    # is made.
+    attach_campaign_placements(conn, campaign_id, payload.get("placements"))
     audit_log(conn, owner_user_id, "ad_campaign_created", "pulse_ad_campaigns", campaign_id, after={"campaign_name": campaign_name})
     conn.commit()
     return get_campaign(conn, owner_user_id, campaign_id)
@@ -657,19 +843,73 @@ def list_campaigns(conn, owner_user_id) -> list[dict]:
     return [row_to_dict(row) for row in cur.fetchall()]
 
 
-def attach_campaign_placements(conn, campaign_id, placement_keys) -> None:
-    cur = conn.cursor()
+MAX_CAMPAIGN_PLACEMENTS = 8
+
+
+def resolve_placement_keys(conn, placement_keys) -> list[tuple[str, int]]:
+    """Turn requested placement keys into `(key, placement_id)` pairs, or raise.
+
+    Separated from `attach_campaign_placements` so a caller that has to destroy
+    state before writing — `update_campaign` deletes every existing placement row
+    first — can find out the request is bad *before* the delete rather than
+    halfway through the insert. Whether an exception mid-write rolls back depends
+    on the connection's transaction mode, and a campaign's placement set is not
+    something to leave to that.
+
+    Duplicates collapse, order is preserved, and an empty request resolves to an
+    empty list rather than to a default nobody asked for.
+    """
     if isinstance(placement_keys, str):
         placement_keys = [placement_keys]
-    cleaned = [clean_text(key, 80) for key in (placement_keys or []) if key]
-    if not cleaned:
-        cleaned = ["feed_inline"]
-    for key in cleaned[:8]:
+    cleaned: list[str] = []
+    for key in placement_keys or []:
+        text = clean_text(key, 80)
+        if text and text not in cleaned:
+            cleaned.append(text)
+    if len(cleaned) > MAX_CAMPAIGN_PLACEMENTS:
+        raise PulseAdsError(
+            f"A campaign can run in at most {MAX_CAMPAIGN_PLACEMENTS} placements. You chose {len(cleaned)}."
+        )
+    cur = conn.cursor()
+    resolved: list[tuple[str, int]] = []
+    for key in cleaned:
         cur.execute("SELECT id FROM pulse_ad_placements WHERE placement_key=? AND is_active=1", (key,))
         row = cur.fetchone()
         if not row:
-            continue
-        placement_id = row_to_dict(row).get("id")
+            raise PulseAdsError(f"'{key}' is not a placement your campaigns can run in.", 400)
+        resolved.append((key, row_to_dict(row).get("id")))
+    return resolved
+
+
+def attach_campaign_placements(conn, campaign_id, placement_keys) -> None:
+    """Attach a campaign to the placements the advertiser chose — those and no others.
+
+    This used to fail silently in three separate ways, all of which ended with a
+    campaign running somewhere other than where it was told to run.
+
+    An unknown or deactivated placement key hit `continue`. Ask for four
+    placements, misspell one, and the campaign was attached to three with no
+    error anywhere — the advertiser's spend went to a narrower set of surfaces
+    than they chose and nothing told them so.
+
+    More than eight keys were silently truncated by `cleaned[:8]`. There are
+    twelve placements. An advertiser selecting all of them got the first eight in
+    whatever order the client happened to send, and the four that fell off were
+    the four at the end of a list, not the four they cared least about.
+
+    Worst, an empty list was replaced with `["feed_inline"]` — literally
+    delivering in a placement the advertiser did not pick, and charging them for
+    it. The empty list now attaches nothing, which is the honest outcome: the
+    campaign is undeliverable and `_campaign_activation_blocker` reports
+    `no_placement` before it can go live, so nobody is stranded and nobody is
+    billed for a surface they never chose.
+
+    Every key is resolved before the first insert — see `resolve_placement_keys`
+    — so a request naming one bad placement writes nothing at all rather than
+    attaching the good ones and abandoning the rest.
+    """
+    cur = conn.cursor()
+    for _key, placement_id in resolve_placement_keys(conn, placement_keys):
         cur.execute(
             "SELECT campaign_id FROM pulse_ad_campaign_placements WHERE campaign_id=? AND placement_id=?",
             (campaign_id, placement_id),

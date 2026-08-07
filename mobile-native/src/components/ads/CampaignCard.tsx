@@ -208,16 +208,22 @@ export function CampaignCard({
           <View style={styles.block} accessibilityLiveRegion="polite">
             <Ionicons name="shield-half-outline" size={16} color={adsLight.status.warning} />
             <Text style={styles.blockText}>
-              This campaign can’t deliver until your business is verified.
+              This campaign can’t deliver until this ad account is verified.
             </Text>
-            <Pressable
-              onPress={onVerify}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Verify your business to deliver"
-            >
-              <Text style={styles.blockAction}>Verify ›</Text>
-            </Pressable>
+            {/* No link when there is nothing to ask for. A request already in
+                review can only be answered "already in review", and a control
+                whose sole outcome is its own refusal is the active-looking
+                unavailable control §37 forbids. */}
+            {onVerify ? (
+              <Pressable
+                onPress={onVerify}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Request verification for this ad account"
+              >
+                <Text style={styles.blockAction}>Request ›</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
 

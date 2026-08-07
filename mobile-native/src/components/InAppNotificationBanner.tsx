@@ -20,6 +20,7 @@ import {
   presentBanner,
   resolveAutoDismissMs
 } from "../navigation/notificationBannerLifecycle";
+import { markNotificationSeen, notificationStableId } from "../navigation/notificationDedupe";
 import { notificationTargetFromData, routeNotificationTarget } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
@@ -94,7 +95,16 @@ export function InAppNotificationBanner() {
   useEffect(() => {
     const received = Notifications.addNotificationReceivedListener((notification) => {
       const banner = bannerFromNotification(notification);
-      if (banner) dispatch({ type: "present", banner });
+      if (!banner) return;
+      // Surface each message once: drop a repeat of the same server-issued
+      // notification/message id (second token, replay, double listener). Keyed on
+      // stable ids only — never on the banner text.
+      const stableId = notificationStableId(
+        notification.request?.content?.data as Record<string, unknown>,
+        notification.request?.identifier
+      );
+      if (!markNotificationSeen(stableId)) return;
+      dispatch({ type: "present", banner });
     });
     return () => received.remove();
   }, []);

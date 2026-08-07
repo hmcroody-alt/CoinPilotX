@@ -6,3 +6,8 @@
 /ios/**/*.xcuserstate
 /ios/**/DerivedData/
 /.expo/
+
+# Local verification scratch output (npm run verify tee targets)
+/.jest-out.txt
+/.tsc-out.txt
+/.jestcache/

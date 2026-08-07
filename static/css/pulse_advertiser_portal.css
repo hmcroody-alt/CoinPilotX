@@ -190,6 +190,16 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   margin-top: 8px;
   font-size: 30px;
 }
+/* A tile that is saying "Loading…" or "Unavailable" is not reporting a figure,
+   and setting that word in the 30px number face makes it read like one. It is
+   dropped to body size and muted so the eye skips it the way it skips any other
+   piece of status text, rather than parsing it as a value. */
+.metric-grid strong.metric-absent {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0;
+}
 .panel { padding: 20px; }
 .split {
   display: grid;

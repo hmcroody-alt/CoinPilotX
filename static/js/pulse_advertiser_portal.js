@@ -45,9 +45,44 @@
     return el("span", `pill ${kind || ""}`.trim(), text);
   }
 
+  /**
+   * A metric the server did not send is not a metric worth zero.
+   *
+   * This used to read `value === undefined ? "0"`, which is the fake zero in its
+   * purest form: the one branch that knows for certain the figure is unknown is
+   * the branch that prints the most confident possible answer. An advertiser
+   * cannot tell that `0` apart from a real `0`, and the two mean opposite things
+   * — "nothing happened" versus "we could not find out".
+   *
+   * A genuine `0` from the server still prints `0`. Only absence says so.
+   */
   function setMetric(key, value) {
     const node = document.querySelector(`[data-metric="${key}"]`);
-    if (node) node.textContent = value === undefined || value === null ? "0" : String(value);
+    if (!node) return;
+    node.textContent = value === undefined || value === null || value === "" ? "Unavailable" : String(value);
+    node.classList.toggle("metric-absent", value === undefined || value === null || value === "");
+  }
+
+  /**
+   * Called when the portal itself could not be read.
+   *
+   * The tiles ship with placeholder text and, once a load has succeeded, hold
+   * real figures. Neither is true after a failure, and leaving either in place
+   * puts an error message directly above seven numbers the advertiser has no
+   * reason to distrust. Every tile is reset to the same honest word.
+   */
+  function setMetricsUnavailable() {
+    document.querySelectorAll("[data-metric]").forEach((node) => {
+      node.textContent = "Unavailable";
+      node.classList.add("metric-absent");
+    });
+    const owedTile = document.querySelector("[data-owed-tile]");
+    if (owedTile) owedTile.hidden = true;
+    const walletWarning = document.querySelector("[data-wallet-warning]");
+    if (walletWarning) {
+      walletWarning.hidden = true;
+      walletWarning.textContent = "";
+    }
   }
 
   function selectedAccount() {
@@ -222,13 +257,42 @@
 
   function renderMetrics() {
     const metrics = (state.portal && state.portal.metrics) || {};
-    setMetric("account_count", metrics.account_count || 0);
-    setMetric("campaign_count", metrics.campaign_count || 0);
-    setMetric("active_campaigns", metrics.active_campaigns || 0);
-    setMetric("pending_reviews", metrics.pending_reviews || 0);
-    setMetric("total_spend", metrics.total_spend || "$0.00");
-    setMetric("wallet_balance", metrics.wallet_balance || "$0.00");
-    setMetric("reserved_budget", metrics.reserved_budget || "$0.00");
+    // `|| 0` and `|| "$0.00"` were doing the same damage as the old setMetric
+    // default, one layer higher: a field the payload omits became a confident
+    // figure before setMetric ever got the chance to notice it was missing.
+    // The values are passed through untouched so absence stays absence, and a
+    // real zero — which is a legitimate, common answer here — still reads 0.
+    setMetric("account_count", metrics.account_count);
+    setMetric("campaign_count", metrics.campaign_count);
+    setMetric("active_campaigns", metrics.active_campaigns);
+    setMetric("pending_reviews", metrics.pending_reviews);
+    setMetric("total_spend", metrics.total_spend);
+    setMetric("wallet_balance", metrics.wallet_balance);
+    setMetric("reserved_budget", metrics.reserved_budget);
+
+    // The Owed tile exists only when there is a debt to report. A reversed
+    // top-up debits the wallet even when the money is already spent, so the
+    // wallet reads $0.00 and the advertiser is given no reason for the
+    // campaigns that stopped underneath it.
+    const owedTile = document.querySelector("[data-owed-tile]");
+    if (owedTile) {
+      const owed = Number(metrics.amount_owed_cents || 0);
+      owedTile.hidden = !(owed > 0);
+      if (owed > 0) setMetric("amount_owed", metrics.amount_owed || "$0.00");
+    }
+
+    // The wallet total is summed only over the wallets that actually loaded.
+    // If any failed, the figure shown is a partial one and has to say so
+    // rather than passing itself off as the whole balance.
+    const walletWarning = document.querySelector("[data-wallet-warning]");
+    if (walletWarning) {
+      const missing = Number(metrics.wallets_unavailable || 0);
+      walletWarning.hidden = !(missing > 0);
+      walletWarning.textContent = missing > 0
+        ? `Partial total — ${missing} wallet${missing === 1 ? "" : "s"} could not be loaded`
+        : "";
+    }
+
     const role = document.querySelector("[data-role-pill]");
     if (role) role.textContent = ((state.portal && state.portal.roles && state.portal.roles.current) || "growth owner").replace(/_/g, " ");
   }
@@ -372,7 +436,19 @@
       card.appendChild(el("p", "", `${campaign.budget_type || "daily"} budget ${campaign.budget_display || "$0.00"} · remaining ${campaign.remaining_budget || "$0.00"}`));
       const row = el("div", "row");
       row.appendChild(pill(campaign.status || "draft", campaign.status === "active" ? "ok" : "warn"));
-      row.appendChild(pill((campaign.placements || []).join(", ") || "feed_inline"));
+      // Was `.join(", ") || "feed_inline"`. This was the display half of the
+      // server-side default that has just been removed: a campaign attached to no
+      // placement at all was labelled as running in the feed. It is the one
+      // campaign on this board that most needs an explanation — it cannot be
+      // activated, `_campaign_activation_blocker` reports `no_placement` — and the
+      // fallback handed it a reassuring lie instead. Say the true thing, and say
+      // what to do about it.
+      const placementKeys = campaign.placements || [];
+      row.appendChild(
+        placementKeys.length
+          ? pill(placementKeys.join(", "))
+          : pill("No placement chosen — this campaign cannot run", "warn")
+      );
       card.appendChild(row);
       const actions = el("div", "row");
       [["pause", "Pause"], ["resume", "Resume"], ["duplicate", "Duplicate"], ["archive", "Archive"]].forEach(([action, label]) => {
@@ -404,6 +480,56 @@
       card.appendChild(el("h3", "", value));
       card.appendChild(el("p", "", label));
       node.appendChild(card);
+    });
+  }
+
+  /**
+   * Fill the campaign builder's placement checkboxes from the server's placement list.
+   *
+   * These used to be five checkboxes hardcoded in the template: feed_inline (pre-
+   * checked), the two UFO surfaces, the network hologram and radio. The server
+   * defines twelve. So seven placements — creator sidebar, marketplace sponsor,
+   * video pre-roll, status interstitial, sponsored search result, dashboard and
+   * profile sponsor — were displayed to the advertiser on the placement board a
+   * few sections further down the same page, and could not be chosen anywhere on
+   * it. A surface you can read about but never buy is a dead end.
+   *
+   * Building the list from `state.portal.placements` also means it cannot drift
+   * again. A placement added to `PLACEMENTS` appears here without anyone
+   * remembering to edit the template, which is exactly how the five got stale.
+   *
+   * Selections survive a re-render, because `loadPortal` re-renders after every
+   * save and losing a half-made choice on an unrelated refresh is its own bug.
+   */
+  function renderCampaignPlacementChoices() {
+    const node = document.querySelector("[data-campaign-placement-choices]");
+    if (!node) return;
+    const previously = new Set(
+      Array.from(node.querySelectorAll("input[name='placements']:checked")).map((input) => input.value)
+    );
+    clear(node);
+    const placements = state.portal && state.portal.placements ? Object.values(state.portal.placements) : [];
+    if (!placements.length) {
+      // Not "no placements exist" — we asked and the answer has not arrived or did
+      // not include them. §31: a failed or pending request is not an empty result.
+      node.appendChild(el("p", "empty", "Placement list unavailable — reload before saving, or the campaign will be saved with none."));
+      return;
+    }
+    placements.forEach((placement) => {
+      const key = placement.placement_key;
+      const label = el("label", "placement-choice");
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.name = "placements";
+      input.value = key;
+      if (previously.has(key)) input.checked = true;
+      label.appendChild(input);
+      // The device column matters and used to be invisible here: half these
+      // placements only run on one device, so an advertiser choosing a
+      // desktop-only surface for a mobile audience was buying nothing.
+      const device = placement.device_type === "all" ? "all devices" : `${placement.device_type} only`;
+      label.appendChild(el("span", "", ` ${placement.display_name || key} — ${device}, max ${placement.max_frequency || 0} per person`));
+      node.appendChild(label);
     });
   }
 
@@ -440,9 +566,27 @@
     }
     wallets.forEach((wallet) => {
       const card = el("article", "portal-card wallet-card");
+      // A wallet the server could not read is not a wallet holding nothing.
+      // Showing "$0.00" here would tell the advertiser their balance is zero
+      // when the truth is that we do not currently know it.
+      if (wallet.unavailable) {
+        card.appendChild(el("h3", "", "Balance unavailable"));
+        card.appendChild(el("p", "", wallet.unavailable_reason || "Wallet balance could not be loaded. This is a temporary error, not a zero balance."));
+        card.appendChild(pill("balance unknown", "warn"));
+        board.appendChild(card);
+        return;
+      }
       card.appendChild(el("h3", "", wallet.spendable_balance || "$0.00"));
       card.appendChild(el("p", "", `Spendable balance · reserved ${wallet.reserved_budget || "$0.00"}`));
       const row = el("div", "row");
+      // A refunded or disputed top-up debits the wallet even when the money is
+      // already spent, so spendable reads $0.00 while the account is actually
+      // in debt. Without this the advertiser sees an empty wallet and no reason
+      // for the campaigns that were paused underneath it.
+      if (wallet.amount_owed_cents > 0) {
+        card.appendChild(el("p", "wallet-owed", `Outstanding balance owed: ${wallet.amount_owed}. A refunded or disputed payment was reversed after the funds were spent. Campaigns stay paused until the wallet is funded again.`));
+        row.appendChild(pill(`owes ${wallet.amount_owed}`, "bad"));
+      }
       row.appendChild(pill(wallet.billing_enabled ? "billing enabled" : "funding prepared", wallet.billing_enabled ? "ok" : "warn"));
       row.appendChild(pill(wallet.stripe_ready ? "stripe ready" : "stripe not configured", wallet.stripe_ready ? "ok" : "warn"));
       card.appendChild(row);
@@ -508,6 +652,7 @@
     renderAccountLists();
     renderCampaignSelect();
     renderCreatives();
+    renderCampaignPlacementChoices();
     renderPlacements();
     renderBudget();
     renderAnalytics();
@@ -639,11 +784,37 @@
     }
   });
 
-  loadPortal().catch((error) => {
+  /**
+   * The failure path used to insert an error box above the metric grid and stop.
+   * The grid still held its placeholder zeros, so the screen read "Growth Center
+   * failed to load" directly above `0 campaigns · $0.00 spend · $0.00 wallet` —
+   * an error notice and a full set of confident figures contradicting it. The
+   * figures win that argument every time, because they look like data.
+   *
+   * The tiles are now cleared, and the box carries the retry the advertiser
+   * otherwise has to guess at by reloading the page.
+   */
+  function showPortalLoadFailure(error) {
+    setMetricsUnavailable();
     const main = document.querySelector(".ad-main");
-    if (main) {
-      const box = el("div", "empty", error.message || "Growth Center failed to load.");
-      main.insertBefore(box, main.firstChild);
-    }
-  });
+    if (!main) return;
+    document.querySelector("[data-portal-error]")?.remove();
+    const box = el("div", "empty");
+    box.setAttribute("data-portal-error", "");
+    box.setAttribute("role", "alert");
+    box.appendChild(el("p", "", error && error.message ? error.message : "Growth Center could not be loaded."));
+    const retry = el("button", "secondary", "Try again");
+    retry.type = "button";
+    retry.addEventListener("click", () => {
+      retry.disabled = true;
+      retry.textContent = "Retrying…";
+      loadPortal()
+        .then(() => box.remove())
+        .catch((retryError) => showPortalLoadFailure(retryError));
+    });
+    box.appendChild(retry);
+    main.insertBefore(box, main.firstChild);
+  }
+
+  loadPortal().catch(showPortalLoadFailure);
 })();

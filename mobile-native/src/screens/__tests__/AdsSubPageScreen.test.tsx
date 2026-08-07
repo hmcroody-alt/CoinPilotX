@@ -88,7 +88,10 @@ describe("ads sub-pages — no dead ends", () => {
   it.each([
     ["audiences", "Create campaign", "Account details"],
     ["creatives", "Create campaign", "Ad reports"],
-    ["account", "Open ad wallet", "Verification Center"],
+    // Not "Verification Center": that opens the profile-badge track, which
+    // never touches `pulse_ad_accounts.status` and so cannot make this account
+    // deliver. The second destination is the surface that can.
+    ["account", "Open ad wallet", "Account standing and verification"],
     ["policy", "Edit a campaign's creative", "Creative rules"]
   ] as const)("gives %s two places to go next", async (surface, primary, secondary) => {
     const navigation = nav();
@@ -108,22 +111,138 @@ describe("ads sub-pages — no dead ends", () => {
    * The tap that got here came from a tile labelled "See what targeting
    * applies". If the page then only says the feature is unavailable, the label
    * was bait.
+   *
+   * What it must not do instead is describe a targeting system the reader's
+   * campaigns are not in. The copy this replaces quoted the allowlists in
+   * `services/business_os/advertising/targeting.py`, which are real and which
+   * govern `business_os_ad_sets` — a table read by nothing outside its own
+   * package. The stack these screens are on has no audience at all.
    */
-  it("states the prohibitions, which are the substance of the audience page", async () => {
+  it("says plainly that no targeting is applied, rather than describing another stack's rules", async () => {
     const view = render(<AdsSubPageScreen surface="audiences" navigation={nav() as never} />);
-    await waitFor(() => expect(view.queryByText("What will never be targetable")).toBeTruthy());
-    expect(view.getByText("Where your ads can appear")).toBeTruthy();
+    await waitFor(() => expect(view.queryByText("No audience narrowing is applied")).toBeTruthy());
+    expect(view.getByText("What isn’t collected, so can’t be targeted")).toBeTruthy();
     expect(
       view.getByText(
         "Health, religion, politics, race or ethnicity, sexual orientation, gender identity"
       )
     ).toBeTruthy();
+    // The claims that described a validator which does not exist, because on
+    // this stack there is nothing for it to validate.
+    expect(view.queryByText("What an audience will be able to narrow")).toBeNull();
+    expect(view.queryByText(/refused by name/)).toBeNull();
+    expect(view.queryByText("Age, from 18 upward")).toBeNull();
+  });
+
+  /**
+   * The placement list used to be two hardcoded words, "Feed" and "Reels".
+   * `seed_placements` writes twelve rows and none of them is Reels, so the
+   * advertiser choosing where to spend could not see Marketplace, Search or
+   * Pulse Radio — and could see one option that does not exist.
+   */
+  it("lists the placements the server actually serves", async () => {
+    mockPortal.mockResolvedValue({
+      ok: true,
+      portal: normalizeAdsPortal({
+        placements: {
+          feed_inline: { display_name: "Feed inline signal", device_type: "all", max_frequency: 6 },
+          marketplace_sponsor: {
+            display_name: "Marketplace sponsor",
+            device_type: "all",
+            max_frequency: 5
+          },
+          status_interstitial: {
+            display_name: "Status interstitial",
+            device_type: "mobile",
+            max_frequency: 3
+          }
+        }
+      } as any)
+    });
+    const view = render(<AdsSubPageScreen surface="audiences" navigation={nav() as never} />);
+    await waitFor(() => expect(view.queryByText("Feed inline signal")).toBeTruthy());
+    expect(view.getByText("Marketplace sponsor")).toBeTruthy();
+    expect(view.getByText("Status interstitial")).toBeTruthy();
+    // The device constraint is real — `select_ads` enforces `p.device_type` in
+    // SQL — so it is worth stating next to the placement it constrains.
+    expect(view.getByText(/Mobile only/)).toBeTruthy();
+    // And Reels was never one of them.
+    expect(view.queryByText("Reels")).toBeNull();
+  });
+
+  /**
+   * §31: a failed request is `Unavailable`, not a shorter catalogue. The old
+   * hardcoded list would have been a tempting fallback here, and it was already
+   * wrong once, so there is no fallback.
+   */
+  it("calls a failed placement fetch unavailable rather than falling back to a guess", async () => {
+    mockPortal.mockRejectedValue(new Error("offline"));
+    const view = render(<AdsSubPageScreen surface="audiences" navigation={nav() as never} />);
+    await waitFor(() => expect(view.queryByText(/list of placements didn’t load/)).toBeTruthy());
+    expect(view.queryByText("Feed")).toBeNull();
+    expect(view.queryByText("Reels")).toBeNull();
+    // The page still answers the question it was opened to answer.
+    expect(view.getByText("No audience narrowing is applied")).toBeTruthy();
   });
 
   it("states the creative rules the server already enforces", async () => {
     const view = render(<AdsSubPageScreen surface="creatives" navigation={nav() as never} />);
     await waitFor(() => expect(view.queryByText("Media has to be yours")).toBeTruthy());
     expect(view.getByText("Review is per creative, and edits are versioned")).toBeTruthy();
+  });
+
+  /**
+   * `VALID_CREATIVE_TYPES` (pulse_ads_service.py:52) is
+   * `{image, video, text, hologram, audio}`. The page listed "Image, Video,
+   * Reels video" — one format that doesn't exist and three real ones missing,
+   * so an advertiser could not discover that text, hologram or audio creatives
+   * were available at all.
+   */
+  it("lists the five creative types the server accepts, and not Reels", async () => {
+    const view = render(<AdsSubPageScreen surface="creatives" navigation={nav() as never} />);
+    await waitFor(() => expect(view.queryByText("What counts as a creative")).toBeTruthy());
+    expect(view.getByText("Image — needs an uploaded image")).toBeTruthy();
+    expect(view.getByText("Audio — needs an uploaded audio file")).toBeTruthy();
+    expect(view.getByText("Text — no media")).toBeTruthy();
+    expect(view.getByText("Hologram — no media")).toBeTruthy();
+    expect(view.queryByText("Reels video")).toBeNull();
+  });
+
+  /**
+   * `validate_destination_url` (:253) does a prefix test, not a lookup, and
+   * accepts plain http (:272). The page claimed destinations were "checked for
+   * existence" and that external links "must be HTTPS" — both stricter than the
+   * server, which is the direction that costs the advertiser money: they stop
+   * checking their own links and pay for clicks into a 404.
+   */
+  it("does not claim destinations are checked for existence or forced to https", async () => {
+    const view = render(<AdsSubPageScreen surface="creatives" navigation={nav() as never} />);
+    await waitFor(() => expect(view.queryByText("Where a creative can send people")).toBeTruthy());
+    expect(view.getByText(/checked for shape rather than for whether it works/)).toBeTruthy();
+    expect(
+      view.getByText("An external http or https address — http is accepted, so use https yourself")
+    ).toBeTruthy();
+    expect(view.getByText("/pulse/admin and /pulse/api are refused")).toBeTruthy();
+    expect(view.queryByText(/checked for existence/)).toBeNull();
+    expect(view.queryByText("An external HTTPS address")).toBeNull();
+    expect(view.queryByText("A post or a Reel")).toBeNull();
+  });
+
+  /**
+   * Media rights are the one part of this page that was already true, so the
+   * rewrite has to not lose it: ownership and ad-account scoping
+   * (`_owned_ad_media_asset`), the creative/media type match
+   * (`_asset_type_allowed`, called at :907) and the refusal of pasted URLs
+   * (:894) are all real. Only "finished processing" was dropped, because the
+   * sole readiness gate is a non-empty public URL.
+   */
+  it("keeps the media rights claims that are real, and drops the processing one", async () => {
+    const view = render(<AdsSubPageScreen surface="creatives" navigation={nav() as never} />);
+    await waitFor(() => expect(view.queryByText("Media has to be yours")).toBeTruthy());
+    expect(view.getByText(/belongs to you and to this ad account/)).toBeTruthy();
+    expect(view.getByText(/a video creative will not accept an image/)).toBeTruthy();
+    expect(view.getByText(/Pasting a media URL instead of uploading is refused/)).toBeTruthy();
+    expect(view.queryByText(/finished processing/)).toBeNull();
   });
 });
 

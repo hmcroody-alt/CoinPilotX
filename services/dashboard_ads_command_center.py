@@ -176,20 +176,31 @@ ADS_SUBSYSTEM_BLUEPRINTS: tuple[dict[str, Any], ...] = (
         "recommendations": ("Fund wallet before launch.", "Monitor spend pace.", "Pause wasteful campaigns before increasing budget."),
     },
     {
+        # This card used to be "Audience Targeting", metered on `targeting_rules`
+        # — a count of `pulse_ad_targeting`, which has no write path anywhere in
+        # the repository and is therefore always zero. It promised "interest,
+        # community, creator, content, language, device, time, overlap,
+        # saturation, and expansion intelligence" and an action button reading
+        # "Tune Audience", and behind all of it was an empty table. Ten
+        # capabilities described in prose, none of them built, on a card whose
+        # own metric had been reading zero since the day it shipped.
+        #
+        # What the advertiser actually controls is placements, so that is what
+        # the card is now about, metered on a count that moves.
         "key": "audience-targeting",
         "card_key": "audience_targeting",
-        "label": "Audience Targeting",
+        "label": "Where Your Ads Run",
         "route": "/dashboard/ads/audience-targeting",
         "admin_route": "/admin/ads-command-center/audience-targeting",
-        "action": "Tune Audience",
-        "metric": "targeting_rules",
-        "description": "Privacy-first aggregate interest, community, creator, content, language, device, time, overlap, saturation, and expansion intelligence.",
-        "intelligence": "Uses aggregate, privacy-safe context instead of exposing personal user data.",
-        "automation": "Targeting changes update campaign eligibility, placement compatibility, delivery, and audit logs.",
-        "protection": "Personal identities, private user data, and hidden targeting internals are never exposed.",
-        "prediction": "Scores privacy and audience-fit from available aggregate targeting rules.",
-        "recovery": "Over-narrow or incompatible targeting states surface as safe recommendations.",
-        "recommendations": ("Use aggregate interests, not private traits.", "Keep targeting broad enough for delivery.", "Review saturation before scaling."),
+        "action": "Review Placements",
+        "metric": "placements",
+        "description": "The placements available to your campaigns, the devices each one runs on, and the per-placement limit on how often one person sees the same campaign.",
+        "intelligence": "PulseSoc stores no audience for any campaign. Placement, device, budget, schedule and frequency cap are what decide who sees an ad.",
+        "automation": "Attaching or removing a placement changes campaign eligibility and delivery, and is written to the audit log.",
+        "protection": "No personal traits are collected for advertising, so none can be targeted on — there is no audience dataset to expose.",
+        "prediction": "None. Reach cannot be forecast from placements alone, and an estimate here would be a guess with a number on it.",
+        "recovery": "A campaign attached to no placement is reported as undeliverable rather than quietly delivered somewhere unchosen.",
+        "recommendations": ("Attach every placement that suits the creative — nothing else widens reach.", "Check the device column: some placements are mobile or desktop only.", "Frequency caps are per placement, so more placements means more total exposure per person."),
     },
     {
         "key": "conversion-tracking",
@@ -411,12 +422,32 @@ def _build_metrics(cur: Any, owner_user_id: int) -> dict[str, Any]:
     creator_sponsorships = _count(cur, "pulse_creator_sponsorships", "creator_user_id=?", (owner_user_id,)) if _table_exists(cur, "pulse_creator_sponsorships") else 0
     ctr = _percent(clicks, impressions)
     viewability = _percent(viewable_impressions, impressions)
-    privacy_score = 100 if targeting_rules == 0 else max(82, 100 - min(18, targeting_rules))
+    # `privacy_score` used to be here, as
+    #   `100 if targeting_rules == 0 else max(82, 100 - min(18, targeting_rules))`
+    # rendered to the advertiser as "Privacy Score — Aggregate targeting and
+    # data-minimization posture". `targeting_rules` counts `pulse_ad_targeting`,
+    # a table with no write path anywhere in the repository, so the branch never
+    # taken is the only one that could ever move the number: every advertiser saw
+    # 100%. A constant presented as a measurement is the §31 fabricated-metric
+    # case, and it was the worst kind — it read as a score PulseSoc had earned
+    # rather than a column nobody fills in. The real fact is stated in words on
+    # the hub instead, where it can be checked.
     brand_safety_score = max(48, 96 - reports * 8 - hides * 2 - rejected_creatives * 5)
     account_health = max(40, 92 - pending_review * 3 - rejected_creatives * 7 + min(6, approved_creatives))
     remaining_budget_cents = max(0, (lifetime_budget_cents or daily_budget_cents) - spend_cents)
-    commercial_trust_score = max(40, min(98, (account_health + brand_safety_score + privacy_score) // 3))
-    revenue_prediction_cents = max(0, int((clicks * 65) + (conversions * 350) + (active_campaigns * 2500)))
+    # Rebased on the two components that do move with observed events. Averaging
+    # in a constant 100 inflated this by design and made a falling brand-safety
+    # signal look milder than it was.
+    commercial_trust_score = max(40, min(98, (account_health + brand_safety_score) // 2))
+    # `revenue_prediction_cents` used to be here, as
+    #   `(clicks * 65) + (conversions * 350) + (active_campaigns * 2500)`
+    # and it was rendered next to Wallet Balance as a dollar figure captioned
+    # "Projected Commercial Lift". Those three coefficients are not derived from
+    # anything: 65¢ a click, $3.50 a conversion, and $25 for the mere existence
+    # of an active campaign. The last term alone means an advertiser who launches
+    # a campaign and spends nothing is shown $25.00 of forecast revenue. Money
+    # invented by constant, sitting in the same grid as a real wallet balance,
+    # with no way for the reader to tell which is which.
     return {
         "accounts": accounts,
         "campaigns": campaigns,
@@ -445,11 +476,9 @@ def _build_metrics(cur: Any, owner_user_id: int) -> dict[str, Any]:
         "creator_sponsorships": creator_sponsorships,
         "ctr": ctr,
         "viewability": viewability,
-        "privacy_score": privacy_score,
         "brand_safety_score": brand_safety_score,
         "account_health": account_health,
         "commercial_trust_score": commercial_trust_score,
-        "revenue_prediction_cents": revenue_prediction_cents,
         "delivery_health": max(45, min(98, 88 + active_campaigns - reports * 3 - rejected_creatives * 4)),
     }
 
@@ -477,7 +506,7 @@ def _state_for_blueprint(blueprint: dict[str, Any], metrics: dict[str, Any]) -> 
 def _count_display(metric: str, value: Any) -> str:
     if metric.endswith("_cents"):
         return _money(value)
-    if metric in {"ctr", "viewability", "privacy_score", "brand_safety_score", "account_health", "commercial_trust_score", "delivery_health"}:
+    if metric in {"ctr", "viewability", "brand_safety_score", "account_health", "commercial_trust_score", "delivery_health"}:
         return f"{_safe_float(value, 0):.1f}%"
     return f"{_safe_int(value, 0):,}"
 
@@ -536,7 +565,11 @@ def build_ads_state(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
     hub_recommendations = [
         "Create an advertiser account before launching campaigns." if metrics["accounts"] <= 0 else "Review campaign delivery and wallet pacing before scaling.",
         "Submit only PulseSoc-hosted creative media for moderation.",
-        "Keep targeting aggregate and privacy-safe.",
+        # Was "Keep targeting aggregate and privacy-safe." — advice about a
+        # control the advertiser does not have. A recommended next action the
+        # reader cannot act on is a dead end under NO_DEAD_ENDS; the placement
+        # choice is the one that actually exists.
+        "Choose placements deliberately — they are the only thing that decides where your ads appear.",
     ]
     if metrics["pending_review"] > 0:
         hub_recommendations.insert(0, "Resolve creative review items before expecting delivery.")
@@ -560,11 +593,18 @@ def build_ads_state(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
             "account_health": metrics["account_health"],
             "commercial_trust_score": metrics["commercial_trust_score"],
             "brand_safety_score": metrics["brand_safety_score"],
-            "privacy_score": metrics["privacy_score"],
             "delivery_health": metrics["delivery_health"],
-            "revenue_prediction": _money(metrics["revenue_prediction_cents"]),
+            # Replaces the "Privacy Score" percentage with the fact the score was
+            # standing in for. This is checkable — the reader can ask where the
+            # audience editor is and find there isn't one — where "100%" was not.
+            "targeting_summary": "PulseSoc stores no audience for any campaign, so none of your campaigns is narrowed by one. Delivery is decided by the placements you attach, the devices those placements run on, your budget and schedule, and a per-placement frequency cap.",
             "verification_status": "Verified" if metrics["accounts"] and metrics["pending_review"] == 0 else "Review",
-            "commercial_summary": "PulseSoc is ready to manage approved sponsored signals with privacy-safe targeting, review-gated delivery, and audited tracking." if metrics["accounts"] else "Create an advertiser account to activate campaign, creative, wallet, and analytics controls.",
+            # Was "…with privacy-safe targeting, review-gated delivery, and
+            # audited tracking". Two of those three are real. "Privacy-safe
+            # targeting" describes a targeting system operating under a privacy
+            # constraint; there is no targeting system, which is a different
+            # claim and a stronger one, so it is made plainly above instead.
+            "commercial_summary": "PulseSoc is ready to manage approved sponsored signals with review-gated delivery and audited tracking." if metrics["accounts"] else "Create an advertiser account to activate campaign, creative, wallet, and analytics controls.",
             "recommended_next_actions": hub_recommendations,
         },
         "cards": cards,
@@ -604,7 +644,18 @@ def _admin_metrics(cur: Any) -> dict[str, Any]:
     wallet_balance_cents = _sum(cur, "pulse_ad_wallets", "available_balance_cents")
     brand_safety = max(40, 96 - reports * 4 - hides - rejected * 3)
     delivery_health = max(40, 92 + active_campaigns - pending * 2 - reports * 4)
-    privacy_score = 96 if _table_exists(cur, "pulse_ad_targeting") else 82
+    # `privacy_score = 96 if _table_exists(cur, "pulse_ad_targeting") else 82`
+    # used to be here, and was rendered to staff as "Privacy Score — 96%". The
+    # only input was whether a table exists. Not whether it holds anything,
+    # whether anything reads it, or whether any advertiser is targeting anyone:
+    # whether `CREATE TABLE` had run. Since `init_db` always creates it, the
+    # 82 branch was unreachable and the number was the literal constant 96
+    # wearing a percent sign. Staff triaging a privacy question would have read
+    # it as a measurement of something.
+    #
+    # It also fed `commercial_health`, so a third of that composite was this
+    # constant. `commercial_health` is now the mean of the two scores that do
+    # respond to observed events.
     return {
         "ad_accounts": _count(cur, "pulse_ad_accounts"),
         "campaigns": _count(cur, "pulse_ad_campaigns"),
@@ -629,9 +680,8 @@ def _admin_metrics(cur: Any) -> dict[str, Any]:
         "tracking_events": events + clicks + impressions,
         "ctr": _percent(clicks, impressions),
         "delivery_health": min(98, delivery_health),
-        "privacy_score": privacy_score,
         "brand_safety_score": min(98, brand_safety),
-        "commercial_health": max(40, min(98, (delivery_health + privacy_score + brand_safety) // 3)),
+        "commercial_health": max(40, min(98, (delivery_health + brand_safety) // 2)),
     }
 
 

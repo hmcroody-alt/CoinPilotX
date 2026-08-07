@@ -26,7 +26,7 @@ import { AdsStatusPill } from "./AdsStatusPill";
 import { BudgetPacingBar } from "./BudgetPacingBar";
 import { PauseSwitch } from "./PauseSwitch";
 
-/** One cell of the four-metric strip. Values arrive formatted. */
+/** One cell of the metric strip. Values arrive formatted, and are never a dash. */
 export type PromotedPostMetric = {
   key: string;
   label: string;
@@ -43,8 +43,19 @@ export type PromotedPostCardProps = {
   reachLabel?: string | null;
   /** Preview-only spend, already formatted. Optional. Always sample data. */
   spendLabel?: string | null;
-  /** Reach / Likes / Follows / Cost per 1k. Cells render "—" when not yet known. */
+  /**
+   * The strip. Only metrics that have a source belong in it — a cell is a claim
+   * that the thing above the label was measured, so a metric the product does
+   * not collect is described in `metricsNote` instead of given a cell with a
+   * placeholder in it. Values are never a dash; see `absentValueText`.
+   */
   metrics?: PromotedPostMetric[];
+  /**
+   * One line naming what the strip does not measure. Rendered only alongside a
+   * strip, because on its own it is a disclaimer about numbers that aren't on
+   * the card. Mirrors `metricsNote` on `CampaignCard`.
+   */
+  metricsNote?: string | null;
   /** Violet pacing bar. Null when the promotion has no budget to pace against. */
   pacing?: { spentLabel: string; budgetLabel: string; fraction: number; hot: boolean } | null;
   /** Shown only when the promotion can actually be paused or resumed. */
@@ -82,6 +93,7 @@ export function PromotedPostCard({
   reachLabel,
   spendLabel,
   metrics = [],
+  metricsNote = null,
   pacing = null,
   showSwitch = false,
   promoting = false,
@@ -152,16 +164,16 @@ export function PromotedPostCard({
             <View style={styles.metrics}>
               {metrics.map((metric) => (
                 <View key={metric.key} style={styles.metric}>
+                  {/* No dash-specific accessibility branch any more. It used to
+                      translate "—" into "not yet available" for a screen reader,
+                      which meant sighted and unsighted readers were being told
+                      different things — and the spoken version was the honest
+                      one. Values now carry their own wording, so both readers
+                      get the same sentence. */}
                   <Text
                     style={styles.metricValue}
                     numberOfLines={1}
-                    // "—" reads as an em dash to a screen reader, which says
-                    // nothing useful. Name the absence instead.
-                    accessibilityLabel={
-                      metric.value === "—"
-                        ? `${metric.label}, not yet available`
-                        : `${metric.label}, ${metric.value}`
-                    }
+                    accessibilityLabel={`${metric.label}, ${metric.value}`}
                   >
                     {metric.value}
                   </Text>
@@ -171,6 +183,12 @@ export function PromotedPostCard({
                 </View>
               ))}
             </View>
+          ) : null}
+
+          {/* Paired with the strip, like CampaignCard's. A note about what the
+              strip omits is meaningless without the strip. */}
+          {metrics.length && metricsNote ? (
+            <Text style={styles.metricsNote}>{metricsNote}</Text>
           ) : null}
 
           {pacing ? (
@@ -264,7 +282,12 @@ const styles = StyleSheet.create({
   meta: { fontSize: 12, color: adsLight.text.muted, fontWeight: "600" },
   money: { color: adsLight.money.budget, fontWeight: "800" },
   metrics: { flexDirection: "row", flexWrap: "wrap", rowGap: 8, marginTop: 2 },
-  metric: { minWidth: 70, flexGrow: 1, flexBasis: "25%", gap: 1 },
+  // `flexBasis: "50%"` now the strip is two cells rather than four. At 25% two
+  // cells would sit in the left half of the card with dead space beside them.
+  metric: { minWidth: 70, flexGrow: 1, flexBasis: "50%", gap: 1 },
+  // No `numberOfLines` — §37 forbids clipping the line that says the reporting
+  // has a hole in it.
+  metricsNote: { fontSize: 10, color: adsLight.text.muted, lineHeight: 14, marginTop: -2 },
   metricValue: { fontSize: 13, fontWeight: "800", color: adsLight.text.primary },
   metricLabel: { fontSize: 10, color: adsLight.text.muted },
   switchWrap: { gap: 4, marginTop: 2 },

@@ -213,6 +213,19 @@ export type AdPortalMetrics = {
   reserved_budget?: string;
   spendable_balance_cents: number;
   spendable_balance?: string;
+  /**
+   * Summed shortfall across the accounts that owe money after a reversed
+   * top-up. When this is non-zero, `spendable_balance_cents` reading 0 is not
+   * "never funded" — it is "funded, spent, then charged back".
+   */
+  amount_owed_cents: number;
+  amount_owed?: string;
+  /**
+   * Number of wallets `portal_summary` could not read. The money totals here
+   * are summed over the readable wallets only, so any value above zero means
+   * every figure in this block is a partial one.
+   */
+  wallets_unavailable: number;
 };
 
 export type AdPortalRoles = {
@@ -221,6 +234,12 @@ export type AdPortalRoles = {
    * "can this person do anything at all" check and for nothing finer.
    */
   current?: string;
+  /**
+   * The five role names the server recognises. Not a menu — four of them cannot
+   * be held by anyone, because nothing in the product writes the membership
+   * table they come from. Nothing renders this, and a role picker built from it
+   * would offer grants no route can make. See the Permissions section below.
+   */
   allowed?: string[];
 };
 
@@ -360,7 +379,23 @@ function normalizeAdPortalAccounts(accounts?: AdPortalAccount[]): AdPortalAccoun
     const raw = (accounts || [])[index] || {};
     return {
       ...account,
-      role: String(raw.role || "viewer"),
+      /*
+       * Empty, not `"viewer"`, when the row arrived without one.
+       *
+       * This used to read `String(raw.role || "viewer")`, which meant the client
+       * manufactured a permission the server never stated and then every reader
+       * downstream treated it as something the server had said. A normaliser
+       * inventing a fact is the §31 violation in its purest form — it is not a
+       * safe default, it is a fabricated one, and it is indistinguishable from
+       * a real answer by the time anything else sees it.
+       *
+       * Failing closed still happens, just where it belongs: `accountRole`
+       * answers `"viewer"` for a role it cannot read, so every gate behaves
+       * exactly as before. What changes is that `accountAccess` can now tell
+       * "the server said viewer" from "no role came back", and the copy the
+       * reader gets differs accordingly.
+       */
+      role: String(raw.role || ""),
       health_score: Number(raw.health_score || 0),
       campaign_count: Number(raw.campaign_count || 0),
       active_campaigns: Number(raw.active_campaigns || 0),
@@ -468,7 +503,11 @@ function normalizeAdPortalMetrics(metrics?: Partial<AdPortalMetrics>): AdPortalM
     total_spend_cents: Number(source.total_spend_cents || 0),
     wallet_balance_cents: Number(source.wallet_balance_cents || 0),
     reserved_budget_cents: Number(source.reserved_budget_cents || 0),
-    spendable_balance_cents: Number(source.spendable_balance_cents || 0)
+    spendable_balance_cents: Number(source.spendable_balance_cents || 0),
+    amount_owed_cents: Number(source.amount_owed_cents || 0),
+    // How many wallets failed to load. The money totals above are summed only
+    // over the ones that did, so any value here means they are partial.
+    wallets_unavailable: Number(source.wallets_unavailable || 0)
   };
 }
 
@@ -498,10 +537,31 @@ function normalizePlacements(placements?: Record<string, AdPlacementMeta>): Reco
 
 /* ------------------------------------------------------------------ *
  * Permissions
- * ------------------------------------------------------------------ */
+ * ------------------------------------------------------------------ *
+ *
+ * A note on the role vocabulary, because the code below deliberately does not
+ * use most of it.
+ *
+ * The server declares five roles (`ACCOUNT_ROLES` in
+ * services/pulse_advertiser_portal.py:17) and `portal.roles.allowed` ships all
+ * five to the client. Four of them cannot be held by anyone. A non-owner role
+ * comes from `pulse_ad_team_members`, and that table has no writer: `bot.py`
+ * creates it (:103400) and indexes it (:103637), `_role_for_account` (:72) and
+ * `_account_ids_for_user` (:262) read it, and there is no INSERT anywhere in
+ * the product — no invite route, no accept route, nothing that fills
+ * `invited_email`. So `_role_for_account` resolves to `"owner"` or raises
+ * `PulseAdsError("Ad account not found.", 404)`, and every advertiser reaching
+ * this code is the owner of every account they can see.
+ *
+ * That is why `adWriteBlockedReason` no longer says "an account owner can
+ * change your role": no route implements that, so it was an instruction to
+ * pursue a remedy that does not exist — a dead end under §37. The role branches
+ * are kept because the server enforces them and a membership writer may land
+ * later, but the copy is now true whether or not it does.
+ */
 
 /**
- * The role for one account.
+ * The role for one account, defaulting closed.
  *
  * Prefer this over `portal.roles.current` for any decision about a specific
  * account. The rollup is computed as "owner if you own *any* account, otherwise
@@ -510,11 +570,80 @@ function normalizePlacements(placements?: Record<string, AdPlacementMeta>): Reco
  * make that mistake — `_require_account_role` re-derives the role per account
  * and answers 403 — so trusting the rollup produces a button that looks live
  * and fails.
+ *
+ * An account this cannot find answers `"viewer"`. That is the right default for
+ * *gating* a write — the least privilege, so an unloaded portal never unlocks a
+ * button — and the wrong thing to put in front of a reader, because "unknown"
+ * and "viewer" are different facts. Use {@link accountAccess} for anything the
+ * reader sees.
  */
 export function accountRole(portal: AdsPortal | null | undefined, accountId?: number): string {
   const accounts = portal?.accounts || [];
   const match = accounts.find((account) => Number(account.id) === Number(accountId));
   return String(match?.role || "viewer");
+}
+
+/**
+ * Why the app believes what it believes about an account, in §31's vocabulary.
+ *
+ * `accountRole` collapses three different situations into the string
+ * `"viewer"`: the portal has not arrived, the portal arrived without this
+ * account, and the account really did come back carrying a viewer role. Only
+ * the last is a permission. The first is `Loading…`/`Unavailable`, and the
+ * second is the server declining to acknowledge the account at all — a 404 from
+ * `_role_for_account`, not the 403 that `_require_account_role` raises.
+ *
+ * - `"unknown"`   — no role was read. Either no payload, or a payload whose
+ *                   account row carried no role.
+ * - `"unlisted"`  — a trustworthy payload arrived and this account is not in it.
+ * - `"granted"`   — the account is present and carries a role the server names.
+ */
+export type AdAccountAccess =
+  | { state: "unknown"; role: null }
+  | { state: "unlisted"; role: null }
+  | { state: "granted"; role: string };
+
+/** True when the payload came from the portal rather than the degraded fan-out. */
+export function portalIsLoaded(portal: AdsPortal | null | undefined): portal is AdsPortal {
+  return Boolean(portal) && !portal?.degraded;
+}
+
+/** Whether this specific account was in the payload. */
+export function accountIsListed(portal: AdsPortal | null | undefined, accountId?: number): boolean {
+  return (portal?.accounts || []).some((account) => Number(account.id) === Number(accountId));
+}
+
+/**
+ * Note what this keys on, and what it deliberately does not.
+ *
+ * The obvious implementation is "degraded means unknown", and it is wrong in
+ * both directions. The degraded fan-out still returns accounts — it is the old
+ * `listAdAccounts` path — and `normalizeAdAccount` spreads the row through
+ * without defaulting `role`, so a degraded payload can carry a perfectly real
+ * `"owner"` (which should be honoured) or an account row with no role at all
+ * (which must not become `"viewer"`). Keying on whether a *recognised role
+ * string actually arrived* handles both, and only falls back to `degraded` for
+ * the one question the account row cannot answer: whether an account's absence
+ * from the list means anything.
+ */
+export function accountAccess(
+  portal: AdsPortal | null | undefined,
+  accountId?: number
+): AdAccountAccess {
+  const match = (portal?.accounts || []).find(
+    (account) => Number(account.id) === Number(accountId)
+  );
+  if (match) {
+    const role = String((match as { role?: string }).role || "");
+    // A row that arrived without a role is a fact that did not arrive, not a
+    // viewer. This is the whole point of the type.
+    return AD_ACCOUNT_ROLES.includes(role as (typeof AD_ACCOUNT_ROLES)[number])
+      ? { state: "granted", role }
+      : { state: "unknown", role: null };
+  }
+  // Absence only means something if the list is complete. On the fan-out path
+  // it may just be the call that failed.
+  return portalIsLoaded(portal) ? { state: "unlisted", role: null } : { state: "unknown", role: null };
 }
 
 /** Whether this account may run campaign and creative writes. */
@@ -532,17 +661,36 @@ export function canViewAdAnalytics(portal: AdsPortal | null | undefined, account
  * is available.
  *
  * §31 forbids an active-looking unavailable control and §37 forbids a dead end,
- * so a hidden button is not sufficient: a viewer who cannot find the action
- * needs to know it exists and who to ask.
+ * so a hidden button is not sufficient: someone who cannot find the action
+ * needs to know it exists and what, if anything, they can do about it.
+ *
+ * Every branch answers a different question, and the two that are not about
+ * permission come first. A blocked control on an unloaded portal is not a
+ * permission decision — it is a decision the app has not been able to make yet
+ * — and calling it a role restriction tells the reader they lack access they
+ * very likely have. That is the absence-as-evidence error in its most damaging
+ * form: it sends someone to ask for a grant instead of to retry.
+ *
+ * The role branches carry no remedy, because none exists. See the note at the
+ * top of this section: nothing in the product writes `pulse_ad_team_members`,
+ * so "ask an owner to change your role" named an action no route implements.
  */
 export function adWriteBlockedReason(
   portal: AdsPortal | null | undefined,
   accountId?: number
 ): string | null {
   if (canWriteAds(portal, accountId)) return null;
-  const role = accountRole(portal, accountId);
-  if (role === "analyst") return "Your analyst access can read reports but can't change campaigns.";
-  return "Your viewer access is read-only. An account owner can change your role.";
+  const access = accountAccess(portal, accountId);
+  if (access.state === "unknown") {
+    return "Your permissions for this account couldn’t be loaded, so changes are held back. Try again.";
+  }
+  if (access.state === "unlisted") {
+    return "This ad account isn’t on your portal, so changes would be rejected.";
+  }
+  if (access.role === "analyst") {
+    return "Your analyst access can read reports but can’t change campaigns.";
+  }
+  return "Your viewer access is read-only, so campaign changes are turned off.";
 }
 
 /* ------------------------------------------------------------------ *
@@ -582,4 +730,68 @@ export function reviewReasonText(entry: AdReviewEntry): string {
   if (reason) return reason;
   if (reviewOutcome(entry) === "rejected") return "No reason was recorded for this decision.";
   return "";
+}
+
+/* ------------------------------------------------------------------ *
+ * Placements
+ * ------------------------------------------------------------------ */
+
+/** One place an ad can run, as the Audiences page presents it. */
+export type PlacementCatalogueEntry = {
+  key: string;
+  /** The server's display name, e.g. "Marketplace sponsor". */
+  name: string;
+  /**
+   * Which devices this placement exists on, in words. The placement row stores
+   * `all` / `mobile` / `desktop` and `select_ads` enforces it in SQL
+   * (`p.device_type='all' OR p.device_type=?`) — so unlike the targeting table,
+   * this constraint is real and worth showing.
+   */
+  devices: string;
+  /**
+   * How many times one campaign may appear here to one viewer, per the row's
+   * `max_frequency`, which `_frequency_allowed` enforces per placement. `0`
+   * means the row carried no cap, not that the cap is zero.
+   */
+  maxFrequency: number;
+};
+
+const DEVICE_WORDS: Record<string, string> = {
+  all: "Every device",
+  mobile: "Mobile only",
+  desktop: "Desktop only",
+  tablet: "Tablet only"
+};
+
+/**
+ * The placements a campaign can actually be attached to.
+ *
+ * Read from the portal rather than hardcoded, because the hardcoded list this
+ * replaces was wrong in both directions. It named two placements, "Feed" and
+ * "Reels", where `PLACEMENTS` (services/pulse_ads_service.py:22) seeds twelve —
+ * and one of the two it named does not exist: there is no reels placement key
+ * anywhere in the ads service. Ten real surfaces, Marketplace and Search and
+ * Pulse Radio among them, were invisible to the advertiser deciding where to
+ * spend. Sourcing the list from `portal.placements` means it moves when
+ * `seed_placements` does.
+ *
+ * Sorted by name because the server sends a dict and dict order promises
+ * nothing; an unstable list looks like the catalogue is changing when it isn't.
+ */
+export function placementCatalogue(portal: AdsPortal | null | undefined): PlacementCatalogueEntry[] {
+  const source = portal?.placements;
+  if (!source || typeof source !== "object") return [];
+  return Object.keys(source)
+    .map((key) => {
+      const item = source[key] || {};
+      const device = String(item.device_type || "all").toLowerCase();
+      const frequency = Number(item.max_frequency);
+      return {
+        key: String(item.placement_key || key),
+        name: String(item.display_name || key),
+        devices: DEVICE_WORDS[device] || "Every device",
+        maxFrequency: Number.isFinite(frequency) && frequency > 0 ? frequency : 0
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }

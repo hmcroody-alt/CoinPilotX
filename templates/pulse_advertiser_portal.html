@@ -51,14 +51,24 @@
         </div>
       </header>
 
+      <!-- These tiles used to ship with `0` and `$0.00` baked into the markup.
+           That is a real figure printed before a single byte has been fetched,
+           and if the fetch then fails it is what the advertiser is left looking
+           at. "Loading…" is the honest placeholder: it says a number is coming
+           without pretending to be one. -->
       <section class="metric-grid" aria-label="Growth metrics">
-        <article><span>Growth Accounts</span><strong data-metric="account_count">0</strong></article>
-        <article><span>Campaigns</span><strong data-metric="campaign_count">0</strong></article>
-        <article><span>Active</span><strong data-metric="active_campaigns">0</strong></article>
-        <article><span>Reviews</span><strong data-metric="pending_reviews">0</strong></article>
-        <article><span>Spend</span><strong data-metric="total_spend">$0.00</strong></article>
-        <article><span>Wallet</span><strong data-metric="wallet_balance">$0.00</strong></article>
-        <article><span>Reserved</span><strong data-metric="reserved_budget">$0.00</strong></article>
+        <article><span>Growth Accounts</span><strong data-metric="account_count" class="metric-absent">Loading…</strong></article>
+        <article><span>Campaigns</span><strong data-metric="campaign_count" class="metric-absent">Loading…</strong></article>
+        <article><span>Active</span><strong data-metric="active_campaigns" class="metric-absent">Loading…</strong></article>
+        <article><span>Reviews</span><strong data-metric="pending_reviews" class="metric-absent">Loading…</strong></article>
+        <article><span>Spend</span><strong data-metric="total_spend" class="metric-absent">Loading…</strong></article>
+        <article><span>Wallet</span><strong data-metric="wallet_balance" class="metric-absent">Loading…</strong><small data-wallet-warning hidden></small></article>
+        <article><span>Reserved</span><strong data-metric="reserved_budget" class="metric-absent">Loading…</strong></article>
+        <!-- A reversed top-up can leave the account owing money after the funds
+             were already spent. The wallet then reads $0.00, which looks exactly
+             like an account that simply never funded. This tile only appears when
+             there is a real debt, so it never adds a decorative zero. -->
+        <article data-owed-tile hidden><span>Owed</span><strong data-metric="amount_owed" class="metric-absent">Loading…</strong></article>
       </section>
 
       <section class="panel split" id="account">
@@ -105,11 +115,10 @@
           <label>End<input name="end_at" type="datetime-local"></label>
           <fieldset>
             <legend>Placements</legend>
-            <label><input type="checkbox" name="placements" value="feed_inline" checked> Feed inline</label>
-            <label><input type="checkbox" name="placements" value="feed_side_ufo_desktop"> Desktop UFO</label>
-            <label><input type="checkbox" name="placements" value="feed_inline_ufo_mobile"> Mobile UFO</label>
-            <label><input type="checkbox" name="placements" value="pulse_network_hologram"> Pulse Network</label>
-            <label><input type="checkbox" name="placements" value="pulse_radio_sponsor"> Pulse Radio</label>
+            <p class="hint">Placements decide where your ads appear — PulseSoc stores no audience for any campaign, so nothing else narrows delivery. A campaign with no placement saves as a draft but cannot be activated.</p>
+            <div data-campaign-placement-choices>
+              <p class="empty">Loading placements&hellip;</p>
+            </div>
           </fieldset>
           <button type="submit">Save Draft Campaign</button>
         </form>

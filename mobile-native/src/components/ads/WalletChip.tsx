@@ -19,10 +19,15 @@ import { Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { adsLight } from "../../theme/adsLight";
 import { useStorePress } from "../../theme/storeMotion";
+import { absentValueText } from "../../api/stateLanguage";
 
 export type WalletChipProps = {
-  /** Already formatted, e.g. "$142.00". */
-  balanceLabel: string;
+  /**
+   * Already formatted, e.g. "$142.00". `null` when no balance has arrived yet —
+   * see the note on `loading`. It is never a placeholder string: a caller with
+   * no figure passes null and lets this component say so in words.
+   */
+  balanceLabel: string | null;
   /** Whether funding can actually charge. Drives the action affordance. */
   fundingLive: boolean;
   /** Opens the wallet / billing surface. */
@@ -41,12 +46,42 @@ export function WalletChip({
 }: WalletChipProps) {
   const press = useStorePress(reducedMotion, 0.96);
 
+  /*
+   * What the amount slot says when there is no amount.
+   *
+   * The chip used to render `loading ? "—" : balanceLabel` while its
+   * accessibility label already said "Ad wallet, loading balance". Two readers
+   * of the same chip were being told different things, and the spoken one was
+   * the honest one — the sighted reader got a glyph that means "not loaded",
+   * "failed", "zero" and "not set up" all at once, on the one figure on this
+   * screen where confusing those is most expensive. §31 prohibits the universal
+   * dash for exactly this, and prohibits it hardest on money.
+   *
+   * Both states now say what they are, and they say different things:
+   * "Checking…" is a request in flight and resolves on its own, "Couldn't load"
+   * is a request that failed. Neither can be mistaken for the balance being
+   * zero, which is `"$0.00"` and is a real answer with real consequences.
+   *
+   * `balanceLabel` being null while `loading` is false is the wallet call
+   * having failed; the screen normally swaps in `AdsWalletUnavailable` for that
+   * case, and this branch is what keeps the chip honest if it does not.
+   */
+  const amountText = loading
+    ? absentValueText("loading")
+    : balanceLabel ?? absentValueText("unavailable");
+  // Words are not money, so they do not wear the money treatment. Gold at 15/800
+  // is reserved for a figure; a status word at the same weight reads as a
+  // balance called "Checking…".
+  const amountIsFigure = Boolean(!loading && balanceLabel);
+
   const actionLabel = fundingLive ? "Add funds" : "Wallet";
-  const a11yLabel = loading
-    ? "Ad wallet, loading balance"
-    : `Ad wallet balance ${balanceLabel}. ${
+  const a11yLabel = amountIsFigure
+    ? `Ad wallet balance ${balanceLabel}. ${
         fundingLive ? "Tap to add funds." : "Tap to open wallet."
-      }`;
+      }`
+    : loading
+    ? "Ad wallet, checking balance. Tap to open wallet."
+    : "Ad wallet balance couldn’t load. Tap to open wallet.";
 
   return (
     <Animated.View style={press.style}>
@@ -64,8 +99,11 @@ export function WalletChip({
           <Text style={styles.label} numberOfLines={1}>
             Ad wallet
           </Text>
-          <Text style={styles.amount} numberOfLines={1}>
-            {loading ? "—" : balanceLabel}
+          <Text
+            style={[styles.amount, amountIsFigure ? null : styles.amountWord]}
+            numberOfLines={1}
+          >
+            {amountText}
           </Text>
         </View>
         <View style={styles.action}>
@@ -98,6 +136,11 @@ const styles = StyleSheet.create({
   body: { gap: 1 },
   label: { fontSize: 10, fontWeight: "600", color: adsLight.wallet.label },
   amount: { fontSize: 15, fontWeight: "800", color: adsLight.wallet.amount },
+  // The status wording, not a balance. Smaller and muted so it cannot be read as
+  // a figure, and small enough that "Couldn't load" fits the chip at a large
+  // text scale rather than clipping — §37 forbids the truncation more than it
+  // minds the size.
+  amountWord: { fontSize: 12, fontWeight: "700", color: adsLight.text.onDarkMuted },
   action: {
     flexDirection: "row",
     alignItems: "center",

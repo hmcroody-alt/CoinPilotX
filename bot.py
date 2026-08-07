@@ -3792,6 +3792,58 @@ def notify_user(
     metadata.setdefault("actor_id", int(actor_user_id or 0))
     metadata.setdefault("timestamp", now)
     metadata.setdefault("sync_cursor_key", f"{event_type_value}:{entity_type_value or 'event'}:{entity_id_value or target_url_value}:{now}")
+    # Idempotency guard: one message -> exactly one notification record -> one push.
+    # A duplicate is an identical (recipient, type, entity, target, body) tuple created
+    # inside a short window -- i.e. the SAME message re-delivered (double call site,
+    # retry, replayed websocket/event). For message-like notifications entity_id is the
+    # messageId, so this keys idempotency on messageId; distinct messages carry distinct
+    # entity_ids and are never suppressed. Never keyed on text alone.
+    try:
+        dedupe_window_seconds = int(os.getenv("PULSE_NOTIFICATION_DEDUPE_SECONDS", "45") or "45")
+    except (TypeError, ValueError):
+        dedupe_window_seconds = 45
+    if dedupe_window_seconds > 0:
+        try:
+            dedupe_cutoff = (datetime.utcnow() - timedelta(seconds=dedupe_window_seconds)).isoformat(timespec="seconds")
+            cur.execute(
+                """
+                SELECT id FROM pulse_notifications
+                WHERE user_id=? AND type=? AND COALESCE(entity_type,'')=? AND COALESCE(entity_id,'')=?
+                  AND COALESCE(target_url,'')=? AND COALESCE(body,'')=? AND created_at>=?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (
+                    int(user_id),
+                    event_type_value,
+                    entity_type_value,
+                    entity_id_value,
+                    target_url_value,
+                    str(body or "")[:2000],
+                    dedupe_cutoff,
+                ),
+            )
+            duplicate_row = cur.fetchone()
+        except Exception:
+            duplicate_row = None
+        if duplicate_row is not None:
+            existing_notification_id = int(duplicate_row["id"] if hasattr(duplicate_row, "keys") else duplicate_row[0])
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO pulse_notification_deliveries
+                    (notification_id, user_id, channel, provider, status, created_at, sent_at)
+                    VALUES (?, ?, 'in_app', 'pulse', 'duplicate_suppressed', ?, ?)
+                    """,
+                    (existing_notification_id, int(user_id), now, now),
+                )
+            except Exception:
+                pass
+            logging.info(
+                "PULSE_NOTIFICATION_DUPLICATE_SUPPRESSED user_id=%s notification_id=%s type=%s entity_type=%s entity_id=%s",
+                int(user_id), existing_notification_id, event_type_value, entity_type_value, entity_id_value,
+            )
+            return existing_notification_id
     try:
         cur.execute(
             """
@@ -9624,13 +9676,15 @@ def dashboard_ads_page():
         ("Clicks", f"{int(hub.get('clicks') or 0):,}", "Owner-scoped click signals."),
         ("CTR", hub.get("ctr") or "0.00%", "Click-through rate from available tracking events."),
         ("Brand Safety", f"{int(hub.get('brand_safety_score') or 0)}%", "Hide, report, rejection, and policy signal health."),
-        ("Privacy Score", f"{int(hub.get('privacy_score') or 0)}%", "Aggregate targeting and data-minimization posture."),
         ("Delivery Health", f"{int(hub.get('delivery_health') or 0)}%", "Placement, campaign, tracking, and moderation health."),
-        ("Projected Commercial Lift", hub.get("revenue_prediction") or "$0.00", "Forecast from available safe commercial signals, not a guarantee."),
       ])}
     </section>
     <section class="ads-command-card"><strong>Commercial Summary</strong><p class="ads-command-muted">{clean_html(hub.get('commercial_summary') or '')}</p><ul class="ads-command-muted">{recs}</ul></section>
     <section class="ads-command-grid">{cards}</section>
+    <section class="ads-command-card">
+      <strong>Who sees your ads</strong>
+      <p class="ads-command-muted">{clean_html(hub.get('targeting_summary') or '')}</p>
+    </section>
     <section class="ads-command-card">
       <strong>Privacy and delivery protections</strong>
       <p class="ads-command-muted">This center shows owner-scoped growth summaries only. Raw targeting data, storage paths, private user data, provider secrets, internal tokens, and cross-account details are not exposed.</p>
@@ -17512,6 +17566,35 @@ def api_pulse_ads_account_profile(account_id):
         conn.close()
 
 
+@webhook_app.route("/api/pulse/ads/accounts/<int:account_id>/verification", methods=["POST"])
+def api_pulse_ads_account_verification_submit(account_id):
+    """The door the advertiser had no way to open.
+
+    `select_ads` has always required `pulse_ad_accounts.status='active'`, and
+    until this route existed nothing in the product ever wrote it — so an
+    advertiser could create an account, fund a wallet, get a creative approved
+    and still never reach a single impression, with the only explanation coming
+    from a promotions check that told them verification was required and gave
+    them nowhere to request it.
+    """
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        result = pulse_ads_service.submit_account_verification(
+            conn, user.get("user_id"), account_id, pulse_ads_json_payload()
+        )
+        return jsonify(result)
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
 @webhook_app.route("/api/pulse/ads/accounts/<int:account_id>/billing-summary", methods=["GET"])
 def api_pulse_ads_billing_summary(account_id):
     user, denied = pulse_ads_api_user_required()
@@ -17939,6 +18022,70 @@ def api_admin_pulse_ads_campaign_suspend():
     try:
         payload = pulse_ads_json_payload()
         result = pulse_ads_service.suspend_campaign(conn, admin.get("id"), int(payload.get("campaign_id") or 0), payload.get("reason") or "")
+        return jsonify(result)
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/admin/pulse/ads/accounts/review-board", methods=["GET"])
+def api_admin_pulse_ads_account_review_board():
+    """Accounts waiting on a verification decision.
+
+    The creative review board has existed since the beginning; the account review
+    board did not, which is why there was an admin route to disable an ad account
+    and none to approve one. A queue with an exit and no entrance.
+    """
+    admin, denied = require_admin_api("pulse.moderate")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        limit = safe_int(request.args.get("limit"), 100)
+        return jsonify({"ok": True, "accounts": pulse_ads_service.account_review_board(conn, limit)})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/admin/pulse/ads/accounts/verify", methods=["POST"])
+def api_admin_pulse_ads_account_verify():
+    admin, denied = require_admin_api("pulse.moderate")
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        payload = pulse_ads_json_payload()
+        result = pulse_ads_service.approve_account_verification(
+            conn, admin.get("id"), safe_int(payload.get("account_id"), 0), payload.get("notes") or ""
+        )
+        return jsonify(result)
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/admin/pulse/ads/accounts/reject-verification", methods=["POST"])
+def api_admin_pulse_ads_account_reject_verification():
+    admin, denied = require_admin_api("pulse.moderate")
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        payload = pulse_ads_json_payload()
+        result = pulse_ads_service.reject_account_verification(
+            conn, admin.get("id"), safe_int(payload.get("account_id"), 0), payload.get("reason") or ""
+        )
         return jsonify(result)
     except Exception as exc:
         return pulse_ads_error_response(exc)
@@ -91476,7 +91623,10 @@ def _admin_ads_metric_cards(metrics):
         ("wallet_balance_cents", "Wallet Balances", "$"),
         ("delivery_health", "Delivery Health", "%"),
         ("brand_safety_score", "Brand Safety", "%"),
-        ("privacy_score", "Privacy Score", "%"),
+        # "Privacy Score" was here, reading `metrics["privacy_score"]`, which was
+        # `96 if the pulse_ad_targeting table exists else 82`. `init_db` always
+        # creates it, so this card showed staff a hardcoded 96% and called it a
+        # privacy measurement. See dashboard_ads_command_center._admin_metrics.
         ("commercial_health", "Commercial Health", "%"),
     ]
     cards = []
@@ -91596,20 +91746,20 @@ def admin_ads_command_center_section_page(section_key):
     primary_metrics = {
         "sponsored-signals": ["approved_creatives", "placements", "reports", "brand_safety_score"],
         "ads-manager": ["campaigns", "active_campaigns", "spend_cents", "delivery_health"],
-        "campaign-builder": ["campaigns", "pending_review", "placements", "privacy_score"],
+        "campaign-builder": ["campaigns", "pending_review", "placements", "delivery_health"],
         "sponsored-signal-studio": ["creatives", "approved_creatives", "pending_review", "policy_flags"],
         "ad-analytics": ["impressions", "clicks", "ctr", "conversion_events"],
         "brand-deals": ["ad_accounts", "campaigns", "brand_safety_score", "commercial_health"],
         "creator-sponsorships": ["ad_accounts", "approved_creatives", "spend_cents", "brand_safety_score"],
         "ad-revenue-center": ["spend_cents", "wallet_balance_cents", "campaigns", "commercial_health"],
-        "audience-targeting": ["placements", "privacy_score", "campaigns", "delivery_health"],
+        "audience-targeting": ["placements", "campaigns", "active_campaigns", "delivery_health"],
         "conversion-tracking": ["conversion_events", "clicks", "events", "ctr"],
         "review-board": ["moderation_queue", "pending_review", "policy_flags", "rejected_creatives"],
         "delivery-engine": ["tracking_events", "impressions", "clicks", "delivery_health"],
         "audit": ["audit_logs", "tracking_events", "policy_flags", "commercial_health"],
-    }.get(section_key, ["commercial_health", "delivery_health", "privacy_score"])
+    }.get(section_key, ["commercial_health", "delivery_health", "brand_safety_score"])
     metric_cards = "".join(
-        f"<article class='card'><h2>{clean_html(key.replace('_',' ').title())}</h2><p class='metric'>{clean_html(_admin_ads_money(metrics.get(key)) if key.endswith('_cents') else str(metrics.get(key) or 0) + ('%' if key in {'ctr','delivery_health','privacy_score','brand_safety_score','commercial_health'} else ''))}</p></article>"
+        f"<article class='card'><h2>{clean_html(key.replace('_',' ').title())}</h2><p class='metric'>{clean_html(_admin_ads_money(metrics.get(key)) if key.endswith('_cents') else str(metrics.get(key) or 0) + ('%' if key in {'ctr','delivery_health','brand_safety_score','commercial_health'} else ''))}</p></article>"
         for key in primary_metrics
     )
     body = f"""
@@ -94997,6 +95147,38 @@ def stripe_webhook():
                     (account.get("user_id"), account.get("seller_type"), int(obj.get("amount") or 0), (obj.get("currency") or "usd").upper(), "paid" if event_type == "payout.paid" else "failed", obj.get("id") or "", obj.get("failure_message") or "", now, now),
                 )
         else:
+            # A refunded or disputed advertiser wallet top-up has to debit the
+            # wallet, otherwise the advertiser keeps spending money Stripe has
+            # already taken back. reverse_wallet_funding matches the charge
+            # against a funding session this server actually credited; anything
+            # else (every marketplace charge, for one) returns
+            # not_ad_wallet_funding and writes nothing, so this is safe to run
+            # ahead of the marketplace handling that shares this branch.
+            try:
+                ad_reversal = pulse_ad_payments.reverse_wallet_funding(conn, event_id, obj, event_type)
+                if ad_reversal.get("ok") and ad_reversal.get("reversed_cents"):
+                    logging.info(
+                        "PULSE_AD_WALLET_REVERSED event_id=%s type=%s account_id=%s cents=%s balance_cents=%s campaigns_paused=%s",
+                        event_id,
+                        event_type,
+                        ad_reversal.get("account_id"),
+                        ad_reversal.get("reversed_cents"),
+                        ad_reversal.get("available_balance_cents"),
+                        ad_reversal.get("campaigns_paused"),
+                    )
+                elif not ad_reversal.get("ok") and ad_reversal.get("reason") not in {"not_ad_wallet_funding", "malformed_object"}:
+                    # Unmatched-but-unexpected. Never silent: an ad reversal that
+                    # does not land is money the advertiser keeps spending.
+                    logging.warning(
+                        "PULSE_AD_WALLET_REVERSAL_UNHANDLED event_id=%s type=%s reason=%s",
+                        event_id,
+                        event_type,
+                        ad_reversal.get("reason"),
+                    )
+            except Exception:
+                # Must not break the marketplace refund path below, which shares
+                # this branch and this connection.
+                logging.exception("PULSE_AD_WALLET_REVERSAL_FAILED event_id=%s type=%s", event_id, event_type)
             metadata = obj.get("metadata") or {}
             if metadata.get("transaction_id"):
                 tx_id = safe_int(metadata.get("transaction_id"), 0)
@@ -103558,6 +103740,25 @@ def _init_db_impl():
         ("approved_at", "TEXT"),
         ("completed_at", "TEXT"),
     ], conn=conn)
+    # Advertiser verification, which until now had a column and no lifecycle.
+    #
+    # `pulse_ad_accounts.status` defaults to 'pending_verification' and
+    # `verification_status` to 'unverified', and nothing in the product ever wrote
+    # either one except the admin disable route, which only writes 'suspended'.
+    # Meanwhile `select_ads` requires `a.status='active'`, so every ad account
+    # created through the product was permanently unable to serve a single
+    # impression, and the only surface that said so — the promotions billing
+    # check — was reporting a state the advertiser had no way to leave.
+    #
+    # These four columns are what a review needs to be a review rather than a
+    # flag: when it was asked for, when it was decided, who decided, and why. The
+    # reason is what makes a rejection appealable instead of a dead end.
+    add_columns_if_missing(cur, "pulse_ad_accounts", [
+        ("verification_submitted_at", "TEXT"),
+        ("verification_reviewed_at", "TEXT"),
+        ("verification_reviewer_id", "INTEGER"),
+        ("verification_reason", "TEXT"),
+    ], conn=conn)
     add_columns_if_missing(cur, "pulse_ad_creatives", [
         ("archived_at", "TEXT"),
         ("metadata_json", "TEXT DEFAULT '{}'"),
@@ -103643,6 +103844,25 @@ def _init_db_impl():
     safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_pulse_ad_funding_account ON pulse_ad_wallet_funding_sessions(account_id, status, created_at)")
     safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_pulse_ad_receipts_account ON pulse_ad_receipts(account_id, created_at)")
     safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_pulse_ad_billing_events_account ON pulse_ad_billing_events(account_id, created_at)")
+    # A refunded or disputed wallet top-up arrives as `charge.refunded` or
+    # `charge.dispute.created`, and those events carry a charge and a payment
+    # intent — not the Checkout Session id, and not the Session's metadata, which
+    # Stripe does not copy onto the PaymentIntent. Without these two columns there
+    # is no way to get from the reversal back to the funding session it undoes, so
+    # the money could be returned to the advertiser's card while their PulseSoc
+    # wallet kept the full balance. Recorded server-side only; never returned to a
+    # client, per this module's provider-identifier rule.
+    add_column_if_missing(cur, "pulse_ad_wallet_funding_sessions", "provider_payment_intent_id", "TEXT", conn)
+    add_column_if_missing(cur, "pulse_ad_wallet_funding_sessions", "provider_charge_id", "TEXT", conn)
+    # How much of this top-up has already been reversed, in cents. Stripe's
+    # `amount_refunded` on a charge is *cumulative*, so a second partial refund
+    # reports the running total, not the increment — the exact trap that caused
+    # the marketplace double-count. Storing what we have already applied lets the
+    # reversal handler debit the difference and nothing more.
+    add_column_if_missing(cur, "pulse_ad_wallet_funding_sessions", "reversed_cents", "INTEGER DEFAULT 0", conn)
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_pulse_ad_funding_payment_intent ON pulse_ad_wallet_funding_sessions(provider_payment_intent_id)")
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_pulse_ad_funding_charge ON pulse_ad_wallet_funding_sessions(provider_charge_id)")
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_pulse_ad_refunds_account ON pulse_ad_refunds(account_id, status, created_at)")
     try:
         pulse_ads_service.seed_placements(cur)
     except Exception as exc:

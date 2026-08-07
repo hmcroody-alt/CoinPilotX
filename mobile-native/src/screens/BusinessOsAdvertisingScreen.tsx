@@ -36,6 +36,7 @@ import {
   createAdCampaign,
   formatCents,
   formatObjective,
+  requestAdAccountVerification,
   runAdCampaignAction
 } from "../api/businessOs";
 import {
@@ -59,6 +60,7 @@ import {
 // on its own it would be an unprompted disclaimer about numbers that aren't on
 // the page. `CampaignCard` enforces the same pairing.
 import {
+  accountVerificationState,
   deliveryState,
   deliveryStateDetail,
   deliveryStateLabel,
@@ -192,9 +194,42 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
     navigation?.navigate("BusinessOsPayments", { title: "Ad wallet", accountId });
   }, [navigation, model]);
 
-  const openVerification = useCallback(() => {
-    navigation?.navigate("VerificationCenter", { title: "Verification Center", track: "business" });
-  }, [navigation]);
+  /**
+   * Ask for the ad account to be reviewed.
+   *
+   * Not the Verification Center, which this used to open. That flow posts to
+   * `/api/dashboard/account/verification/request` and decides a profile badge;
+   * it never writes `pulse_ad_accounts.status`, which is the only column
+   * `select_ads` consults. An advertiser could finish it and still deliver
+   * nothing, having been told the opposite by the button they pressed.
+   */
+  const requestVerification = useCallback(async () => {
+    const accountId = model?.primaryAccount?.id;
+    if (!accountId) return;
+    if (model?.offline) {
+      setMessage("You are offline. Reconnect to request verification.");
+      return;
+    }
+    setBusy("verification");
+    setMessage("");
+    try {
+      await requestAdAccountVerification(accountId);
+      setMessage("Verification requested. We'll tell you as soon as it's decided.");
+      await load();
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Verification couldn't be requested. Try again."
+      );
+    } finally {
+      setBusy("");
+    }
+  }, [load, model]);
+
+  const verificationIsRequestable = useMemo(() => {
+    if (!model?.primaryAccount) return false;
+    const state = accountVerificationState(model.primaryAccount);
+    return state === "unverified" || state === "rejected";
+  }, [model?.primaryAccount]);
 
   async function submitAccount() {
     if (model?.offline) {
@@ -292,8 +327,10 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
 
   const offline = Boolean(model?.offline);
 
+  // Null rather than a placeholder, same as the manager screen: the chip owns
+  // the wording for a balance that has not arrived.
   const walletProp = loading
-    ? { balanceLabel: "—", fundingLive: false, loading: true }
+    ? { balanceLabel: null, fundingLive: false, loading: true }
     : model?.wallet
     ? { balanceLabel: model.wallet.balanceLabel, fundingLive: model.wallet.fundingLive, loading: false }
     : null;
@@ -332,18 +369,38 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
       ) : null}
 
       {model?.needsVerification ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Verify your business to deliver campaigns"
-          onPress={openVerification}
-          style={styles.verifyBanner}
-        >
-          <Text style={styles.verifyTitle}>Verify your business</Text>
-          <Text style={styles.verifyText}>
-            Your ad account can’t deliver campaigns until PulseSoc verifies your business.
-          </Text>
-          <Text style={styles.verifyAction}>Open Verification Center ›</Text>
-        </Pressable>
+        verificationIsRequestable ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Request verification for this ad account"
+            accessibilityState={{ busy: busy === "verification" }}
+            onPress={busy === "verification" ? undefined : requestVerification}
+            style={styles.verifyBanner}
+          >
+            <Text style={styles.verifyTitle}>Verification needed</Text>
+            <Text style={styles.verifyText}>
+              Your ad account can’t deliver campaigns until PulseSoc verifies it.
+            </Text>
+            <Text style={styles.verifyAction}>
+              {busy === "verification" ? "Sending…" : "Request verification ›"}
+            </Text>
+          </Pressable>
+        ) : (
+          // In review, or verified but not active. Neither has a move for the
+          // advertiser to make, so neither is rendered as something to press.
+          <View style={styles.verifyBanner} accessibilityLiveRegion="polite">
+            <Text style={styles.verifyTitle}>
+              {accountVerificationState(model.primaryAccount || {}) === "pending"
+                ? "Verification in review"
+                : "Account not active"}
+            </Text>
+            <Text style={styles.verifyText}>
+              {accountVerificationState(model.primaryAccount || {}) === "pending"
+                ? "Campaigns can deliver once your account review is decided. Nothing is charged while you wait."
+                : "This account is verified but isn’t marked active, which shouldn’t happen — approval writes both. Contact support so it can be corrected."}
+            </Text>
+          </View>
+        )
       ) : null}
 
       {model?.primaryAccount ? (
@@ -440,7 +497,7 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
                 onToggleDelivery={(next) => toggleDelivery(campaign, next)}
                 toggleBusy={busy.startsWith(`campaign-${campaign.id}-`)}
                 blockedVerification={blocked}
-                onVerify={openVerification}
+                onVerify={verificationIsRequestable ? requestVerification : undefined}
                 actions={actions}
                 onPress={() => undefined}
                 reducedMotion={reducedMotion}

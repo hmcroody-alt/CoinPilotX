@@ -16,13 +16,17 @@
  * * **Empty is an invitation.** Three different empties exist here — no
  *   campaigns, no promoted posts, and nothing to promote at all — because the
  *   right next action differs in each.
- * * **A money figure is never guessed.** `AdsWalletUnavailable` shows "—" and a
- *   retry rather than a zero; a zero balance and an unknown balance are
- *   different facts and the screen says which one it has.
+ * * **A money figure is never guessed.** `AdsWalletUnavailable` says the balance
+ *   couldn't load and offers a retry rather than showing a zero; a zero balance
+ *   and an unknown balance are different facts and the screen says which one it
+ *   has. It used to say that with a dash, which is the one glyph that says all
+ *   four of "zero", "loading", "failed" and "not set up" at once — so the rule
+ *   was right and the rendering was undoing it.
  */
 
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { adsLight } from "../../theme/adsLight";
+import { absentValueText } from "../../api/stateLanguage";
 import { STORE_AMBIENT, useStoreAmbient, useStorePress } from "../../theme/storeMotion";
 
 /* ------------------------------------------------------------------ *
@@ -159,8 +163,14 @@ export function AdsSectionError({
 /**
  * The wallet's own failure. It is deliberately not a `WalletChip` with a zero
  * in it: an unknown balance and an empty balance are different facts, and only
- * one of them means "you cannot spend". The dash is announced as "not yet
- * available" rather than read as a hyphen.
+ * one of them means "you cannot spend".
+ *
+ * The amount slot reads "Couldn't load". It used to render a dash and rely on
+ * the accessibility label to explain it — which meant the explanation reached
+ * only the readers who could not see the thing being explained, while everyone
+ * else got a glyph that the loading state and the zero state were also using.
+ * The visible text and the spoken text now carry the same sentence, so this
+ * component can no longer be mistaken for the chip mid-load.
  */
 export function AdsWalletUnavailable({
   onRetry,
@@ -178,11 +188,11 @@ export function AdsWalletUnavailable({
         onPressIn={press.onPressIn}
         onPressOut={press.onPressOut}
         accessibilityRole="button"
-        accessibilityLabel="Ad wallet balance not yet available. Tap to retry."
+        accessibilityLabel="Ad wallet balance couldn’t load. Tap to retry."
         hitSlop={6}
       >
         <Text style={styles.walletErrorLabel}>Ad wallet</Text>
-        <Text style={styles.walletErrorAmount}>—</Text>
+        <Text style={styles.walletErrorAmount}>{absentValueText("unavailable")}</Text>
         <Text style={styles.walletErrorAction}>Retry</Text>
       </Pressable>
     </Animated.View>
@@ -197,39 +207,117 @@ export function AdsWalletUnavailable({
  * The account cannot transact and at least one campaign is waiting on it. Shown
  * only when both are true: an unverified account with nothing to deliver has no
  * problem yet, and telling it that it does would be noise.
+ *
+ * The four verification states are four different messages, and collapsing them
+ * was its own defect. This banner used to say "Verify your business ›" in every
+ * one of them and open the Verification Center — which decides a *profile*
+ * badge and never writes `pulse_ad_accounts.verification_status`. So an
+ * advertiser already waiting on review was invited to request it again, and an
+ * advertiser whose request had been *declined* was given no way to read why.
+ * Now the request goes to the ads route that actually moves this record, and a
+ * review in progress is stated rather than offered as a button.
  */
 export function AdsVerificationBanner({
   campaignName,
+  state,
+  reason,
+  submitting,
   onVerify,
   reducedMotion
 }: {
   /** The campaign this is actually costing, named. Null when more than one. */
   campaignName: string | null;
+  /** Mirrors `accountVerificationState` in `api/adsDelivery.ts`. */
+  state: "unverified" | "pending" | "rejected" | "verified";
+  /** The reviewer's stored reason, when the request was declined. */
+  reason?: string | null;
+  submitting?: boolean;
   onVerify: () => void;
   reducedMotion: boolean;
 }) {
   const press = useStorePress(reducedMotion, 0.99);
-  const detail = campaignName
-    ? `“${campaignName}” is ready but can’t deliver until your business is verified.`
-    : "Your campaigns are ready but can’t deliver until your business is verified.";
+  const subject = campaignName ? `“${campaignName}” is ready but` : "Your campaigns are ready but";
+  const copy = verificationBannerCopy(state, subject, reason);
+  // A review in progress has no action attached to it, so it is not a button.
+  // Rendering it as one invites a press that can only produce "already in
+  // review" — a control that exists to refuse itself.
+  if (!copy.actionable) {
+    return (
+      <View
+        style={styles.banner}
+        accessibilityLiveRegion="polite"
+        accessibilityLabel={`${copy.head}. ${copy.body}`}
+      >
+        <Text style={styles.bannerHead}>{copy.head}</Text>
+        <Text style={styles.bannerBody}>{copy.body}</Text>
+      </View>
+    );
+  }
   return (
     <Animated.View style={press.style}>
       <Pressable
         style={styles.banner}
-        onPress={onVerify}
+        onPress={submitting ? undefined : onVerify}
         onPressIn={press.onPressIn}
         onPressOut={press.onPressOut}
         accessibilityRole="button"
+        accessibilityState={{ disabled: Boolean(submitting), busy: Boolean(submitting) }}
         accessibilityLiveRegion="polite"
-        accessibilityLabel={`Verification needed. ${detail}`}
-        accessibilityHint="Opens business verification"
+        accessibilityLabel={`${copy.head}. ${copy.body}`}
+        accessibilityHint="Sends this ad account for review"
       >
-        <Text style={styles.bannerHead}>Verification needed</Text>
-        <Text style={styles.bannerBody}>{detail}</Text>
-        <Text style={styles.bannerAction}>Verify your business ›</Text>
+        <Text style={styles.bannerHead}>{copy.head}</Text>
+        <Text style={styles.bannerBody}>{copy.body}</Text>
+        <Text style={styles.bannerAction}>{submitting ? "Sending…" : copy.action}</Text>
       </Pressable>
     </Animated.View>
   );
+}
+
+function verificationBannerCopy(
+  state: "unverified" | "pending" | "rejected" | "verified",
+  subject: string,
+  reason?: string | null
+): { head: string; body: string; action: string; actionable: boolean } {
+  const trimmed = String(reason || "").trim();
+  switch (state) {
+    case "pending":
+      return {
+        head: "Verification in review",
+        body: `${subject} can’t deliver until your account review is decided. Nothing is charged while you wait.`,
+        action: "",
+        actionable: false
+      };
+    case "rejected":
+      return {
+        head: "Verification was declined",
+        // The stored reason is the difference between an appealable decision and
+        // a wall. When the reviewer left none, say so rather than implying the
+        // advertiser was told something they weren't.
+        body: trimmed
+          ? `${trimmed} Update your business details, then request review again.`
+          : "No reason was recorded with the decision. Check your business details, then request review again.",
+        action: "Request review again ›",
+        actionable: true
+      };
+    case "verified":
+      // Approval writes `verification_status` and `status` together, so a
+      // verified account that still can't transact is a contradiction rather
+      // than a step the advertiser missed. Don't send them to fix it.
+      return {
+        head: "Account not active",
+        body: `${subject} can’t deliver: the account is verified but isn’t marked active. Contact support so it can be corrected.`,
+        action: "",
+        actionable: false
+      };
+    default:
+      return {
+        head: "Verification needed",
+        body: `${subject} can’t deliver until this ad account is verified.`,
+        action: "Request verification ›",
+        actionable: true
+      };
+  }
 }
 
 /**
@@ -241,15 +329,32 @@ export function AdsVerificationBanner({
 export function AdsZeroBalanceBanner({
   fundingLive,
   onAddFunds,
-  reducedMotion
+  reducedMotion,
+  owedLabel = null
 }: {
   /** When funding cannot charge, the banner says so instead of offering a dead button. */
   fundingLive: boolean;
   onAddFunds: () => void;
   reducedMotion: boolean;
+  /**
+   * The formatted debt, when the account owes one, and `null` otherwise.
+   *
+   * "Empty" and "in debt" are different situations that render the same way
+   * without this. A refunded or disputed top-up debits the wallet after the
+   * money is already spent, so the balance goes negative and the spendable
+   * figure floors at $0.00 — identical on screen to an account that never
+   * funded. Only one of those is explained by "add funds to resume"; the other
+   * needs the advertiser to know a payment was reversed, or they will top up
+   * the debt and wonder why nothing restarted.
+   */
+  owedLabel?: string | null;
 }) {
   const press = useStorePress(reducedMotion, 0.99);
-  const detail = fundingLive
+  const owed = String(owedLabel || "").trim();
+  const head = owed ? "Ad wallet is overdrawn" : "Ad wallet is empty";
+  const detail = owed
+    ? `A payment of ${owed} was refunded or disputed after it had been spent, so this account owes ${owed}. Campaigns stay paused until the wallet is funded past that.`
+    : fundingLive
     ? "Your ad wallet is empty, so nothing can be delivered. Add funds to resume."
     : "Your ad wallet is empty. Adding funds isn’t available in this build yet, so campaigns won’t deliver.";
   return (
@@ -261,9 +366,9 @@ export function AdsZeroBalanceBanner({
         onPressOut={press.onPressOut}
         accessibilityRole="button"
         accessibilityLiveRegion="polite"
-        accessibilityLabel={`Ad wallet empty. ${detail}`}
+        accessibilityLabel={`${head}. ${detail}`}
       >
-        <Text style={styles.bannerHead}>Ad wallet is empty</Text>
+        <Text style={styles.bannerHead}>{head}</Text>
         <Text style={styles.bannerBody}>{detail}</Text>
         <Text style={styles.bannerAction}>{fundingLive ? "Add funds ›" : "Open wallet ›"}</Text>
       </Pressable>

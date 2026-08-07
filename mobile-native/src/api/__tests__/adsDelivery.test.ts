@@ -104,12 +104,61 @@ describe("deliveryBlocker — the gates select_ads actually applies", () => {
       creatives: []
     });
     // The campaign also has no creative. The account still wins.
-    expect(deliveryBlocker(portal, campaign())?.code).toBe("account_not_active");
+    expect(deliveryBlocker(portal, campaign())?.code).toBe("account_not_verified");
   });
 
-  it("tells the reader the account gate is not theirs to clear", () => {
-    const portal = portalWith({ accounts: [{ id: 7, role: "owner", status: "pending_verification" }] });
+  /*
+   * The four account states are four different instructions, and the whole
+   * reason they are separate codes is that collapsing them produces advice that
+   * is wrong for three readers out of four. Telling someone whose review is
+   * already in progress to request verification sends them to do a thing they
+   * have done; telling someone who has never asked to "wait" leaves them waiting
+   * on a queue they are not in.
+   */
+  it("distinguishes never-asked from waiting from declined", () => {
+    const state = (verification: string) =>
+      deliveryBlocker(
+        portalWith({
+          accounts: [
+            { id: 7, role: "owner", status: "pending_verification", verification_status: verification }
+          ]
+        }),
+        campaign()
+      )?.code;
+
+    expect(state("unverified")).toBe("account_not_verified");
+    expect(state("pending")).toBe("account_verification_pending");
+    expect(state("rejected")).toBe("account_verification_rejected");
+  });
+
+  it("says a review in progress is not the reader's move, and an unverified account is", () => {
+    const gate = (verification: string) =>
+      deliveryBlocker(
+        portalWith({
+          accounts: [
+            { id: 7, role: "owner", status: "pending_verification", verification_status: verification }
+          ]
+        }),
+        campaign()
+      );
+
+    // Nothing to do. Saying otherwise invents work.
+    expect(gate("pending")?.advertiserCanClear).toBe(false);
+    // Something to do — and it exists now, which it did not when this module was
+    // written. `POST /api/pulse/ads/accounts/:id/verification`.
+    expect(gate("unverified")?.advertiserCanClear).toBe(true);
+    expect(gate("rejected")?.advertiserCanClear).toBe(true);
+  });
+
+  it("reads a verified-but-inactive account as the contradiction it is", () => {
+    // Approval writes both columns together, so this pairing should be
+    // unreachable. If it happens anyway the selector reads `status`, so the
+    // honest answer is the pessimistic one and it is not the advertiser's to fix.
+    const portal = portalWith({
+      accounts: [{ id: 7, role: "owner", status: "pending_verification", verification_status: "verified" }]
+    });
     const gate = deliveryBlocker(portal, campaign());
+    expect(gate?.code).toBe("account_not_active");
     expect(gate?.advertiserCanClear).toBe(false);
     expect(gate?.detail).toMatch(/contact support/i);
   });
@@ -387,6 +436,92 @@ describe("walletAuthority — the fabricated $0.00", () => {
     });
     expect(walletAuthority(portal, 7).display).toBe("$0.00");
   });
+
+  /*
+   * The server now says outright when a wallet could not be read, instead of
+   * substituting a row of zeroes. The client has to honour that rather than
+   * re-manufacturing the zero on the way in.
+   */
+  it("honours the server's own 'I could not read this wallet'", () => {
+    const portal = portalWith({
+      wallets: [
+        {
+          account_id: 7,
+          unavailable: true,
+          unavailable_reason: "Wallet balance could not be loaded. This is a temporary error, not a zero balance.",
+          available_balance_cents: null,
+          available_balance: "",
+          spendable_balance_cents: null
+        }
+      ]
+    });
+    const auth = walletAuthority(portal, 7);
+    expect(auth.state).toBe("unavailable");
+    expect(auth.display).toBe("Unavailable");
+    expect(auth.display).not.toBe("$0.00");
+    expect(auth.spendableCents).toBeNull();
+    expect(auth.note).toMatch(/not a zero balance/i);
+  });
+
+  it("does not let normalization turn an unreadable wallet's nulls into zeroes", () => {
+    const portal = portalWith({
+      wallets: [{ account_id: 7, unavailable: true, available_balance_cents: null }]
+    });
+    const row = portal.wallets.find((each) => Number(each.account_id) === 7);
+    expect(row?.unavailable).toBe(true);
+    expect(row?.available_balance_cents).toBeUndefined();
+    expect(row?.spendable_balance_cents).toBeUndefined();
+  });
+
+  /*
+   * Overdrawn is not empty. A reversed top-up debits the wallet after the money
+   * is gone, so `spendable_balance_cents` floors at 0 and the account reads
+   * exactly like one that never funded — while actually owing money and having
+   * had its campaigns paused underneath it.
+   */
+  it("names the debt when a reversed top-up left the account owing money", () => {
+    const portal = portalWith({
+      wallets: [
+        {
+          account_id: 7,
+          available_balance_cents: -50_000,
+          available_balance: "-$500.00",
+          spendable_balance_cents: 0,
+          amount_owed_cents: 50_000,
+          amount_owed: "$500.00"
+        }
+      ]
+    });
+    const auth = walletAuthority(portal, 7);
+    expect(auth.state).toBe("confirmed");
+    expect(auth.owedCents).toBe(50_000);
+    expect(auth.owedDisplay).toBe("$500.00");
+    // The spendable figure is still an honest zero; the debt is what the zero
+    // fails to explain on its own.
+    expect(auth.spendableCents).toBe(0);
+  });
+
+  it("reports no debt rather than a decorative zero when nothing is owed", () => {
+    const auth = walletAuthority(portalWith({ wallets: [wallet] }), 7);
+    expect(auth.owedCents).toBe(0);
+    expect(auth.owedDisplay).toBeNull();
+  });
+
+  it("formats the debt itself if the server sent only the cents", () => {
+    const portal = portalWith({
+      wallets: [{ account_id: 7, available_balance_cents: -1_250, amount_owed_cents: 1_250 }]
+    });
+    expect(walletAuthority(portal, 7).owedDisplay).toBe("$12.50");
+  });
+
+  it("never reports a debt for a wallet it is not allowed to believe", () => {
+    const restricted = portalWith({
+      accounts: [{ id: 7, role: "analyst", status: "active" }],
+      wallets: [{ account_id: 7, amount_owed_cents: 50_000, amount_owed: "$500.00" }]
+    });
+    expect(walletAuthority(restricted, 7).owedCents).toBeNull();
+    expect(walletAuthority(null, 7).owedDisplay).toBeNull();
+  });
 });
 
 describe("walletRollupAuthority — a total that omits an account is wrong, not small", () => {
@@ -439,6 +574,43 @@ describe("walletRollupAuthority — a total that omits an account is wrong, not 
 
   it("reports a degraded portal as unavailable", () => {
     expect(walletRollupAuthority(portalWith({ degraded: true, metrics })).state).toBe("unavailable");
+  });
+
+  /*
+   * The server sums these totals over the wallets it could actually read and
+   * reports how many it could not. A total short by an unknown amount, shown as
+   * though it were whole, is the same lie as a fake zero and harder to catch.
+   */
+  it("refuses the total when a wallet behind it could not be loaded", () => {
+    const portal = portalWith({
+      metrics: { ...metrics, wallets_unavailable: 1 }
+    });
+    const auth = walletRollupAuthority(portal);
+    expect(auth.state).toBe("unavailable");
+    expect(auth.display).toBe("Unavailable");
+    expect(auth.note).toMatch(/1 wallet/);
+    expect(auth.spendableCents).toBeNull();
+  });
+
+  it("pluralises the missing-wallet count", () => {
+    const portal = portalWith({ metrics: { ...metrics, wallets_unavailable: 3 } });
+    expect(walletRollupAuthority(portal).note).toMatch(/3 wallets/);
+  });
+
+  it("carries the summed debt when every wallet was readable", () => {
+    const portal = portalWith({
+      metrics: {
+        ...metrics,
+        wallet_balance_cents: -50_000,
+        wallet_balance: "-$500.00",
+        spendable_balance_cents: 0,
+        amount_owed_cents: 50_000,
+        amount_owed: "$500.00"
+      }
+    });
+    const auth = walletRollupAuthority(portal);
+    expect(auth.state).toBe("confirmed");
+    expect(auth.owedDisplay).toBe("$500.00");
   });
 });
 
@@ -500,21 +672,46 @@ describe("resumeCheck — not offering a button that 404s", () => {
     expect(resumeCheck(portal, campaign()).allowed).toBe(true);
   });
 
-  it("blocks when the account itself can never deliver", () => {
+  it("blocks when the account has not been verified", () => {
     const portal = portalWith({
       accounts: [{ id: 7, role: "owner", status: "pending_verification" }],
       wallets: [wallet]
     });
     const check = resumeCheck(portal, campaign({ status: "paused" }));
     expect(check.allowed).toBe(false);
-    expect(check.reason).toMatch(/contact support/i);
+    expect(check.reason).toMatch(/verification/i);
   });
 
-  it("still allows resume on a gate the advertiser can clear themselves", () => {
-    // No approved creative yet. Resuming is legitimate — the campaign will sit
-    // in `blocked` until review lands, and the row says so.
+  /*
+   * This test used to assert the opposite, and the change is the point of the
+   * phase rather than a relaxation of it.
+   *
+   * The old rule was `!gate.advertiserCanClear`: offer Resume for anything the
+   * advertiser could fix themselves, because the server would accept it anyway
+   * and the campaign would simply sit in `blocked`. That was an accurate
+   * description of a server that checked only the wallet. `activation_blocker`
+   * now enforces policy approval before a single cent is reserved, so the same
+   * button would produce a refusal the reader had no warning was coming — and a
+   * control that fails on press is the dead end §37 forbids, just at a smaller
+   * scale than a page.
+   */
+  it("no longer offers resume on a campaign whose ad is still in review", () => {
     const portal = portalWith({ creatives: [], wallets: [wallet] });
-    expect(resumeCheck(portal, campaign({ status: "paused" })).allowed).toBe(true);
+    const check = resumeCheck(portal, campaign({ status: "paused" }));
+    expect(check.allowed).toBe(false);
+    expect(check.reason).toMatch(/creative|review/i);
+  });
+
+  it("still offers resume on an exhausted lifetime budget", () => {
+    // The server's activation gate checks that a budget exists, not that it has
+    // room left; the per-impression check does that. Refusing here would be the
+    // client inventing a rule the server does not have.
+    const portal = portalWith({ wallets: [wallet] });
+    const check = resumeCheck(
+      portal,
+      campaign({ status: "paused", lifetime_budget_cents: 10_000, spent_cents: 10_000 })
+    );
+    expect(check.allowed).toBe(true);
   });
 });
 

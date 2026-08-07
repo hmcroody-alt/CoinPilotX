@@ -16,6 +16,7 @@ import {
   AD_WRITE_ROLES,
   AdReviewEntry,
   AdsPortal,
+  accountAccess,
   accountRole,
   adWriteBlockedReason,
   canViewAdAnalytics,
@@ -26,6 +27,7 @@ import {
   normalizeAdPortalBilling,
   normalizeAdReviewBoard,
   normalizeAdsPortal,
+  placementCatalogue,
   reviewIsHumanDecided,
   reviewOutcome,
   reviewReasonText
@@ -204,7 +206,7 @@ describe("permissions", () => {
     expect(canWriteAds(null, 1)).toBe(false);
   });
 
-  it("gives a blocked reader a reason and a route out, not silence", () => {
+  it("gives a blocked reader a reason, not silence", () => {
     const portal = portalWithAccounts([
       { id: 1, role: "owner" },
       { id: 2, role: "analyst" },
@@ -212,8 +214,110 @@ describe("permissions", () => {
     ]);
     expect(adWriteBlockedReason(portal, 1)).toBeNull();
     expect(adWriteBlockedReason(portal, 2)).toContain("analyst");
-    // §37: no dead end. A viewer must learn who can change this.
-    expect(adWriteBlockedReason(portal, 3)).toContain("owner");
+    expect(adWriteBlockedReason(portal, 3)).toContain("read-only");
+  });
+
+  it("never promises a role change, because no route performs one", () => {
+    /*
+     * The old viewer copy read "An account owner can change your role." Nothing
+     * in the product writes `pulse_ad_team_members` — bot.py creates and indexes
+     * it, pulse_advertiser_portal reads it twice, and there is no INSERT and no
+     * invite route anywhere — so that sentence sent the reader to pursue a
+     * remedy that does not exist. §37 forbids exactly that.
+     */
+    const portal = portalWithAccounts([
+      { id: 2, role: "analyst" },
+      { id: 3, role: "viewer" }
+    ]);
+    for (const id of [2, 3]) {
+      const reason = String(adWriteBlockedReason(portal, id));
+      expect(reason).not.toMatch(/change your role/i);
+      expect(reason).not.toMatch(/ask an owner|account owner can/i);
+      expect(reason).not.toMatch(/invite/i);
+    }
+  });
+
+  describe("what a blocked control is actually reporting", () => {
+    /*
+     * `accountRole` collapses three situations into "viewer": the portal never
+     * loaded, the portal loaded without this account, and a real viewer role.
+     * Only the third is a permission. Telling the first two that they lack
+     * access is the absence-as-evidence error at its most costly — it sends
+     * someone to request a grant when the honest instruction is "try again".
+     */
+    const listed = portalWithAccounts([{ id: 1, role: "viewer" }]);
+
+    it("separates the three states", () => {
+      expect(accountAccess(null, 1)).toEqual({ state: "unknown", role: null });
+      expect(accountAccess(listed, 999)).toEqual({ state: "unlisted", role: null });
+      expect(accountAccess(listed, 1)).toEqual({ state: "granted", role: "viewer" });
+    });
+
+    it("honours a real role on the degraded path but not a missing one", () => {
+      /*
+       * The degraded fan-out is the old `listAdAccounts` call, and
+       * `normalizeAdAccount` passes the row through without defaulting `role`.
+       * So a degraded payload can carry a real role — which should be believed
+       * — or an account row with no role at all, which must not silently become
+       * "viewer". Keying on `degraded` alone gets one of these two wrong.
+       */
+      const withRole = { ...portalWithAccounts([{ id: 1, role: "owner" }]), degraded: true };
+      expect(accountAccess(withRole, 1)).toEqual({ state: "granted", role: "owner" });
+      expect(canWriteAds(withRole, 1)).toBe(true);
+
+      const withoutRole = { ...portalWithAccounts([{ id: 1 } as never]), degraded: true };
+      expect(accountAccess(withoutRole, 1).state).toBe("unknown");
+      // The gate still fails closed; only the explanation changes.
+      expect(canWriteAds(withoutRole, 1)).toBe(false);
+      expect(String(adWriteBlockedReason(withoutRole, 1))).toMatch(/couldn’t be loaded/);
+    });
+
+    it("won't call an account unlisted on a payload that may be incomplete", () => {
+      const degraded = { ...portalWithAccounts([{ id: 1, role: "owner" }]), degraded: true };
+      // Account 999 is missing, but on the fan-out path that may just be the
+      // call that failed — absence only means something if the list is whole.
+      expect(accountAccess(degraded, 999).state).toBe("unknown");
+      expect(accountAccess(portalWithAccounts([{ id: 1, role: "owner" }]), 999).state).toBe("unlisted");
+    });
+
+    it("does not let the normaliser invent the role in the first place", () => {
+      /*
+       * The root of all of the above. `normalizeAdPortalAccounts` used to write
+       * `role: String(raw.role || "viewer")`, so an account row that arrived
+       * with no role left the normaliser carrying one — and by the time any
+       * reader saw it, a value the client made up was indistinguishable from a
+       * value the server sent. Every gate still fails closed, but it does so in
+       * `accountRole`, where the default is a decision rather than a forgery.
+       */
+      const silent = normalizeAdsPortal({ accounts: [{ id: 1 }] as never });
+      expect(silent.accounts[0].role).toBe("");
+      expect(accountRole(silent, 1)).toBe("viewer");
+      expect(canWriteAds(silent, 1)).toBe(false);
+      expect(accountAccess(silent, 1).state).toBe("unknown");
+
+      const stated = normalizeAdsPortal({ accounts: [{ id: 1, role: "owner" }] as never });
+      expect(stated.accounts[0].role).toBe("owner");
+    });
+
+    it("does not accept a role the server never named", () => {
+      const bogus = portalWithAccounts([{ id: 1, role: "superadmin" } as never]);
+      expect(accountAccess(bogus, 1).state).toBe("unknown");
+      expect(canWriteAds(bogus, 1)).toBe(false);
+    });
+
+    it("blames the request, not the reader, when nothing loaded", () => {
+      const reason = String(adWriteBlockedReason(null, 1));
+      expect(reason).toMatch(/couldn’t be loaded/);
+      expect(reason).toMatch(/try again/i);
+      // The one thing it must never say is that this is about their permissions.
+      expect(reason).not.toMatch(/read-only|analyst|viewer/i);
+    });
+
+    it("says an unlisted account is absent rather than restricted", () => {
+      const reason = String(adWriteBlockedReason(listed, 999));
+      expect(reason).toMatch(/isn’t on your portal/);
+      expect(reason).not.toMatch(/read-only|analyst/i);
+    });
   });
 });
 
@@ -318,5 +422,99 @@ describe("normalisation", () => {
       campaign_status_counts: { active: "3", draft: null } as never
     });
     expect(portal.campaign_status_counts).toEqual({ active: 3, draft: 0 });
+  });
+});
+
+/**
+ * The catalogue exists because the app had been telling advertisers their ads
+ * ran in "Feed" and "Reels". `seed_placements` writes twelve rows and Reels is
+ * not among them, so the list was simultaneously too short and partly invented.
+ * Everything here is about not repeating that: read the server's list, present
+ * only what the row actually carries, and return nothing rather than a guess.
+ */
+describe("placementCatalogue", () => {
+  it("reads every placement the portal ships, ordered stably by name", () => {
+    const portal = normalizeAdsPortal({
+      placements: {
+        status_interstitial: {
+          display_name: "Status interstitial",
+          device_type: "mobile",
+          max_frequency: 3
+        },
+        feed_inline: { display_name: "Feed inline signal", device_type: "all", max_frequency: 6 },
+        marketplace_sponsor: {
+          display_name: "Marketplace sponsor",
+          device_type: "all",
+          max_frequency: 5
+        }
+      } as never
+    });
+    // Sorted by name, not by the dict order the server happened to send: a
+    // catalogue that reshuffles between fetches looks like it is changing.
+    expect(placementCatalogue(portal).map((entry) => entry.name)).toEqual([
+      "Feed inline signal",
+      "Marketplace sponsor",
+      "Status interstitial"
+    ]);
+  });
+
+  it("puts the device constraint into words, because select_ads enforces it in SQL", () => {
+    const portal = normalizeAdsPortal({
+      placements: {
+        a: { display_name: "A", device_type: "mobile" },
+        b: { display_name: "B", device_type: "desktop" },
+        c: { display_name: "C", device_type: "all" }
+      } as never
+    });
+    expect(placementCatalogue(portal).map((entry) => entry.devices)).toEqual([
+      "Mobile only",
+      "Desktop only",
+      "Every device"
+    ]);
+  });
+
+  /**
+   * A row with no `device_type` is not a row with no devices. The server's
+   * default is `all`, and inventing a narrower constraint would tell an
+   * advertiser their ad reaches fewer people than it does.
+   */
+  it("treats a missing device_type as every device rather than as unknown", () => {
+    const portal = normalizeAdsPortal({ placements: { a: { display_name: "A" } } as never });
+    expect(placementCatalogue(portal)[0].devices).toBe("Every device");
+  });
+
+  /**
+   * `0` means the row carried no cap. It must not be rendered as "at most 0
+   * views", which reads as a placement that shows nothing — the screen checks
+   * for falsy and omits the clause.
+   */
+  it("reports a missing or unusable frequency cap as zero rather than guessing one", () => {
+    const portal = normalizeAdsPortal({
+      placements: {
+        a: { display_name: "A" },
+        b: { display_name: "B", max_frequency: "not a number" },
+        c: { display_name: "C", max_frequency: 4 }
+      } as never
+    });
+    expect(placementCatalogue(portal).map((entry) => entry.maxFrequency)).toEqual([0, 0, 4]);
+  });
+
+  it("falls back to the dict key when the row carries no name", () => {
+    const portal = normalizeAdsPortal({ placements: { pulse_radio_sponsor: {} } as never });
+    expect(placementCatalogue(portal)[0]).toMatchObject({
+      key: "pulse_radio_sponsor",
+      name: "pulse_radio_sponsor"
+    });
+  });
+
+  /**
+   * The screen distinguishes an empty catalogue from a loaded one and calls the
+   * first `Unavailable`, so this returning `[]` is the whole contract for a
+   * portal that never arrived. It must never substitute a default list.
+   */
+  it("returns nothing for a portal that isn't there", () => {
+    expect(placementCatalogue(null)).toEqual([]);
+    expect(placementCatalogue(undefined)).toEqual([]);
+    expect(placementCatalogue({ placements: null } as never)).toEqual([]);
   });
 });

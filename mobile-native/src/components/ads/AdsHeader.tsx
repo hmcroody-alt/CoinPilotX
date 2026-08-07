@@ -30,8 +30,15 @@ export type AdsHeaderProps = {
   onChangeMode: (next: AdsMode) => void;
   onBack: () => void;
   postIsPreview: boolean;
-  /** Wallet chip data. Null hides the chip (wallet not loaded / no account). */
-  wallet: { balanceLabel: string; fundingLive: boolean; loading: boolean } | null;
+  /**
+   * Wallet chip data. Null hides the chip (wallet not loaded / no account).
+   *
+   * `balanceLabel` is nullable in its own right, and that is a different fact
+   * from the whole prop being null: null-prop means there is no chip to show,
+   * null-label means the chip is showing but has no figure yet. The chip says
+   * which in words rather than being handed a placeholder to render.
+   */
+  wallet: { balanceLabel: string | null; fundingLive: boolean; loading: boolean } | null;
   onWallet: () => void;
   reducedMotion: boolean;
   /** Optional extra row rendered under the toggle, still inside the navy band. */
