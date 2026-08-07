@@ -6033,363 +6033,48 @@ def pulse_mobile_user_payload(user):
     }
 
 
-def pulse_business_construction_access(user):
-    from services.business_os.construction_access import resolve_business_construction_access
-
-    user = user or {}
-    # The canonical owner account is server-configured by immutable email and
-    # super-user state. The admin-table check below supports the same owner
-    # across production account records without ever trusting display_name.
-    is_owner_admin = user_is_owner_account(user) or user_is_super_user(user)
-    email = normalize_email(user.get("email") or "")
-    if email:
-        conn = db()
-        cur = conn.cursor()
-        if table_exists(cur, "admin_users"):
-            cur.execute(
-                "SELECT role, status FROM admin_users WHERE lower(COALESCE(email,''))=lower(?) LIMIT 1",
-                (email,),
-            )
-            admin = dict(cur.fetchone() or {})
-            role = str(admin.get("role") or "").strip().lower()
-            status = str(admin.get("status") or "active").strip().lower()
-            is_owner_admin = status == "active" and role in {"owner", "super_admin", "superadmin"}
-        conn.close()
-    return resolve_business_construction_access(user, is_owner_admin=is_owner_admin)
-
-
 @webhook_app.route("/api/pulse/business/construction-access", methods=["GET"])
 def api_pulse_business_construction_access():
+    """Retained only so already-installed clients stop showing the gate.
+
+    Business OS shipped, so the construction screen was removed. Current builds
+    never call this. Older installed builds still do, and deleting the route
+    would answer them with a 404 that their error path renders as "locked" —
+    the exact stale redirect this removal was meant to eliminate. So the route
+    stays and answers, permanently, that the sector is public. It reads nothing
+    about the account beyond authentication and consults no flag, so there is no
+    input that can make it report construction again.
+    """
     init_db()
-    user = api_account_user()
-    if not user:
+    if not api_account_user():
         return api_error("Authentication required.", 401, error="authentication_required")
-    account = load_account_by_id(user["user_id"]) or user
-    access = pulse_business_construction_access(account)
-    # An active engineer grant opens the same door the owner flag opens, so the
-    # client asks one question and gets one answer regardless of which of the two
-    # authorities let it through.
-    if not access["can_access_private_business_os"] and engineer_access_grant_payload(account):
-        access = {**access, "mode": "development", "can_access_private_business_os": True,
-                  "developer_mode": True, "developer_badge": True, "engineer_access": True}
-    return jsonify(access)
-
-
-# ---------------------------------------------------------------------------
-# Engineer Access — the passcode gate behind the Galactic Construction screen.
-#
-# The mobile client can only *ask*; every part of the decision (identity, secret,
-# lockout, grant lifetime, revocation) is resolved here. A patched client that
-# flips a local boolean gets a construction screen and a 403, because the routes
-# it wants are gated by the grant this endpoint issues, not by client state.
-# ---------------------------------------------------------------------------
-
-ENGINEER_ACCESS_GRANT_HEADER = "X-PulseSoc-Engineer-Grant"
-
-
-def ensure_engineer_access_schema(cur, conn=None):
-    # `user_id INTEGER PRIMARY KEY` would be rewritten to SERIAL by the Postgres
-    # DDL translator in services/db.py, silently turning the account reference
-    # into an autoincrement column. Keep a surrogate id and a UNIQUE user_id.
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS engineer_access_state (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL UNIQUE,
-            consecutive_failures INTEGER DEFAULT 0,
-            locked_until BIGINT DEFAULT 0,
-            grants_valid_after BIGINT DEFAULT 0,
-            last_failure_at TEXT,
-            last_success_at TEXT,
-            updated_at TEXT
-        )
-        """
-    )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS engineer_access_audit (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            outcome TEXT NOT NULL,
-            ip_hash TEXT,
-            device_hash TEXT,
-            failure_count INTEGER DEFAULT 0,
-            locked_seconds INTEGER DEFAULT 0,
-            created_at TEXT
-        )
-        """
-    )
-    if conn is not None:
-        conn.commit()
-
-
-def engineer_access_privacy_hash(value):
-    """One-way, salted digest for device/session identifiers in the audit trail.
-
-    The audit log has to be useful for spotting a brute-force pattern without
-    becoming a second store of raw device identifiers.
-    """
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    salt = os.getenv("ANALYTICS_SALT", "coinpilotxai-inc")
-    return hashlib.sha256(f"engineer-access:{salt}:{text}".encode("utf-8")).hexdigest()[:32]
-
-
-def engineer_access_admin_role(cur, user):
-    """Resolve the account's admin role from the server-side table.
-
-    Returns ("", "") when there is no row, which the policy layer treats as
-    "no role" rather than as an error.
-    """
-    email = normalize_email((user or {}).get("email") or "")
-    if not email or not table_exists(cur, "admin_users"):
-        return "", ""
-    try:
-        cur.execute(
-            "SELECT role, status FROM admin_users WHERE lower(COALESCE(email,''))=lower(?) LIMIT 1",
-            (email,),
-        )
-        row = dict(cur.fetchone() or {})
-    except Exception:
-        return "", ""
-    return str(row.get("role") or ""), str(row.get("status") or "active")
-
-
-def engineer_access_state_row(cur, user_id):
-    try:
-        cur.execute(
-            "SELECT consecutive_failures, locked_until, grants_valid_after FROM engineer_access_state WHERE user_id=? LIMIT 1",
-            (int(user_id),),
-        )
-        row = dict(cur.fetchone() or {})
-    except Exception:
-        return {"consecutive_failures": 0, "locked_until": 0, "grants_valid_after": 0}
-    return {
-        "consecutive_failures": safe_int(row.get("consecutive_failures"), 0),
-        "locked_until": safe_int(row.get("locked_until"), 0),
-        "grants_valid_after": safe_int(row.get("grants_valid_after"), 0),
-    }
-
-
-def write_engineer_access_state(cur, user_id, **fields):
-    now_iso = datetime.now().isoformat()
-    cur.execute("SELECT id FROM engineer_access_state WHERE user_id=? LIMIT 1", (int(user_id),))
-    exists = bool(cur.fetchone())
-    payload = {
-        "consecutive_failures": safe_int(fields.get("consecutive_failures"), 0),
-        "locked_until": safe_int(fields.get("locked_until"), 0),
-        "grants_valid_after": safe_int(fields.get("grants_valid_after"), 0),
-        "last_failure_at": fields.get("last_failure_at") or None,
-        "last_success_at": fields.get("last_success_at") or None,
-    }
-    if exists:
-        cur.execute(
-            """
-            UPDATE engineer_access_state
-               SET consecutive_failures=?, locked_until=?, grants_valid_after=?,
-                   last_failure_at=COALESCE(?, last_failure_at),
-                   last_success_at=COALESCE(?, last_success_at),
-                   updated_at=?
-             WHERE user_id=?
-            """,
-            (
-                payload["consecutive_failures"], payload["locked_until"], payload["grants_valid_after"],
-                payload["last_failure_at"], payload["last_success_at"], now_iso, int(user_id),
-            ),
-        )
-        return
-    cur.execute(
-        """
-        INSERT INTO engineer_access_state
-            (user_id, consecutive_failures, locked_until, grants_valid_after, last_failure_at, last_success_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            int(user_id), payload["consecutive_failures"], payload["locked_until"], payload["grants_valid_after"],
-            payload["last_failure_at"], payload["last_success_at"], now_iso,
-        ),
-    )
-
-
-def record_engineer_access_audit(cur, user_id, outcome, *, device_id="", failure_count=0, locked_seconds=0):
-    """Privacy-safe security event. Carries no passcode and no raw device ID."""
-    try:
-        cur.execute(
-            """
-            INSERT INTO engineer_access_audit
-                (user_id, outcome, ip_hash, device_hash, failure_count, locked_seconds, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                int(user_id or 0), str(outcome)[:40], client_ip_hash(),
-                engineer_access_privacy_hash(device_id), safe_int(failure_count, 0),
-                safe_int(locked_seconds, 0), datetime.now().isoformat(),
-            ),
-        )
-    except Exception:
-        # An audit-write failure must never become an authorization bypass, and
-        # must never turn a correct denial into a 500 that leaks the branch.
-        logging.warning("engineer_access audit write failed", exc_info=True)
-
-
-def engineer_access_grant_payload(user):
-    """Validate the grant on the current request, if any.
-
-    Returns the decoded payload or None. Checks the signature and expiry via the
-    policy module, then applies the server-side revocation watermark so an
-    operator can invalidate every outstanding grant for an account at once.
-    """
-    from services.business_os.engineer_access import verify_grant
-
-    if not has_request_context():
-        return None
-    token = request.headers.get(ENGINEER_ACCESS_GRANT_HEADER, "") or ""
-    if not token:
-        return None
-    user_id = int((user or {}).get("user_id") or 0)
-    payload = verify_grant(token, user_id=user_id or None)
-    if not payload:
-        return None
-    conn = db()
-    cur = conn.cursor()
-    try:
-        ensure_engineer_access_schema(cur, conn)
-        state = engineer_access_state_row(cur, user_id)
-    finally:
-        conn.close()
-    if safe_int(payload.get("iat"), 0) < state["grants_valid_after"]:
-        return None
-    return payload
-
-
-@webhook_app.route("/api/internal/engineer-access/verify", methods=["POST"])
-def api_internal_engineer_access_verify():
-    from services.business_os.engineer_access import evaluate_engineer_access
-
-    init_db()
-    user = api_account_user()
-    if not user:
-        return api_error("Authentication required.", 401, error="authentication_required")
-    account = load_account_by_id(user["user_id"]) or user
-    user_id = int(account.get("user_id") or 0)
-
-    payload = request.get_json(silent=True) or {}
-    passcode = str(payload.get("passcode") or "")
-    device_id = str(payload.get("device_id") or "")[:120]
-    session_id = str(payload.get("session_id") or "")[:120]
-
-    conn = db()
-    cur = conn.cursor()
-    try:
-        ensure_engineer_access_schema(cur, conn)
-        state = engineer_access_state_row(cur, user_id)
-        admin_role, admin_status = engineer_access_admin_role(cur, account)
-
-        outcome = evaluate_engineer_access(
-            user=account,
-            passcode=passcode,
-            consecutive_failures=state["consecutive_failures"],
-            locked_until=state["locked_until"],
-            admin_role=admin_role,
-            admin_status=admin_status,
-            session_id=session_id,
-            device_id=device_id,
-        )
-
-        now_epoch = int(time.time())
-        if outcome.get("authorized"):
-            write_engineer_access_state(
-                cur, user_id,
-                consecutive_failures=0, locked_until=0,
-                grants_valid_after=state["grants_valid_after"],
-                last_success_at=datetime.now().isoformat(),
-            )
-            record_engineer_access_audit(cur, user_id, "granted", device_id=device_id)
-        elif outcome.get("record_failure"):
-            lock_for = safe_int(outcome.get("lock_for_seconds"), 0)
-            write_engineer_access_state(
-                cur, user_id,
-                consecutive_failures=safe_int(outcome.get("failure_count"), 0),
-                locked_until=(now_epoch + lock_for) if lock_for > 0 else 0,
-                grants_valid_after=state["grants_valid_after"],
-                last_failure_at=datetime.now().isoformat(),
-            )
-            record_engineer_access_audit(
-                cur, user_id, "locked" if lock_for > 0 else "denied",
-                device_id=device_id,
-                failure_count=safe_int(outcome.get("failure_count"), 0),
-                locked_seconds=lock_for,
-            )
-        else:
-            record_engineer_access_audit(cur, user_id, "denied_locked", device_id=device_id)
-        conn.commit()
-    finally:
-        conn.close()
-
-    # Strip the server-side bookkeeping keys; the client is told only whether it
-    # was authorized, and — when locked — how long to wait.
-    client_view = {key: value for key, value in outcome.items() if key not in {
-        "record_failure", "reset_failures", "lock_for_seconds", "failure_count",
-    }}
-    return jsonify(client_view), (200 if outcome.get("authorized") else 403)
-
-
-@webhook_app.route("/api/internal/engineer-access/session", methods=["GET"])
-def api_internal_engineer_access_session():
-    """Current engineer standing for the authenticated account.
-
-    The client calls this on foreground to learn whether its held grant is still
-    live, so a server-side revocation takes effect without an app restart. It
-    reports lockout state so the countdown survives a relaunch.
-    """
-    from services.business_os.engineer_access import lockout_remaining, requires_fresh_session
-
-    init_db()
-    user = api_account_user()
-    if not user:
-        return api_error("Authentication required.", 401, error="authentication_required")
-    account = load_account_by_id(user["user_id"]) or user
-    user_id = int(account.get("user_id") or 0)
-
-    conn = db()
-    cur = conn.cursor()
-    try:
-        ensure_engineer_access_schema(cur, conn)
-        state = engineer_access_state_row(cur, user_id)
-        conn.commit()
-    finally:
-        conn.close()
-
-    grant = engineer_access_grant_payload(account)
     return jsonify({
         "ok": True,
-        "active": bool(grant),
-        "expires_at": safe_int((grant or {}).get("exp"), 0) or None,
-        "scope": list((grant or {}).get("scope") or []),
-        "locked_seconds_remaining": lockout_remaining(state["locked_until"]),
-        "requires_reauthentication": requires_fresh_session(state["consecutive_failures"]),
+        "mode": "public",
+        "can_access_private_business_os": True,
+        "construction_mode": False,
+        "developer_mode": False,
+        "developer_badge": False,
     })
 
 
+
 @webhook_app.before_request
-def enforce_private_business_os_construction_boundary():
+def enforce_private_business_os_authentication_boundary():
+    """Business OS is a normal authenticated area.
+
+    The construction gate that used to 403 this entire namespace was removed
+    along with the Galactic Construction screen. Authentication is still
+    required — that is a permission check, not a construction check — but no
+    release flag, owner allowlist, or engineer grant now stands between an
+    authenticated account and the real Business OS.
+    """
     if not request.path.startswith("/api/business-os/"):
         return None
     init_db()
-    user = api_account_user()
-    if not user:
+    if not api_account_user():
         return api_error("Authentication required.", 401, error="authentication_required")
-    account = load_account_by_id(user["user_id"]) or user
-    access = pulse_business_construction_access(account)
-    if access["can_access_private_business_os"]:
-        return None
-    # A valid, unexpired, unrevoked engineer grant is the second way through this
-    # boundary. It is checked server-side on every request, so revoking it closes
-    # the door immediately rather than at the next app launch.
-    if engineer_access_grant_payload(account):
-        return None
-    return api_error("This PulseSoc sector is under construction.", 403, error="business_os_under_construction")
+    return None
 
 
 @webhook_app.route("/api/mobile/auth/session", methods=["GET"])

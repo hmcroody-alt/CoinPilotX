@@ -254,8 +254,9 @@ def _public_author(row):
     item = dict(row or {})
     public_player_id = item.get("public_player_id") or item.get("author_public_player_id") or ""
     user_id = int(item.get("user_id") or 0)
-    is_member_000 = user_id <= 0 and not (
-        item.get("user_display_name") or item.get("display_name") or item.get("username") or public_player_id
+    is_member_000 = public_player_id == MEMBER_000_PUBLIC_PLAYER_ID or (
+        user_id <= 0
+        and not (item.get("user_display_name") or item.get("display_name") or item.get("username") or public_player_id)
     )
     if is_member_000:
         _ensure_member_000_profile()
@@ -264,7 +265,12 @@ def _public_author(row):
         item.get("user_display_name")
         or item.get("display_name")
         or item.get("username")
-        or (MEMBER_000_DISPLAY_NAME if is_member_000 else f"PulseSoc Member #{str(public_player_id or item.get('user_id') or '000')[-4:]}")
+        # The anonymous fallback slices the LAST 4 chars of the identifier for
+        # the "#NNNN" suffix. When the identifier was the member-000 handle
+        # itself ("pulsesoc-member-000"), the slice produced "-000" and every
+        # feed card read "PulseSoc Member #-000". Member-000 rows now short-
+        # circuit to the canonical display name before the slice.
+        or (MEMBER_000_DISPLAY_NAME if is_member_000 else f"PulseSoc Member #{str(public_player_id or item.get('user_id') or '000').lstrip('-')[-4:].lstrip('-')}")
     )
     avatar_url = item.get("user_avatar_url") or item.get("avatar_url") or item.get("arena_avatar_url") or ""
     if is_member_000 and not avatar_url:

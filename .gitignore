@@ -54,3 +54,7 @@ outputs/.mutate*-original
 
 # Claude Code agent worktrees live here; they are live checkouts, not shared source
 .claude/worktrees/
+
+# Quarantined copies of the removed Business OS construction gate; the files
+# are recoverable from git history, this dir is just a local safety net
+.gate_removed/

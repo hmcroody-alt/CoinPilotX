@@ -11,9 +11,7 @@ import {
 import { shouldRejectTemporaryQaUser } from "../session/qaTemporaryAccount";
 import { Platform } from "react-native";
 import { startSpan } from "../core/perfTrace";
-import { engineerAccessToken } from "../security/engineerAccessSession";
 
-export const ENGINEER_ACCESS_GRANT_HEADER = "X-PulseSoc-Engineer-Grant";
 
 /**
  * Normalize a request path into a low-cardinality route label for perf aggregation:
@@ -115,13 +113,6 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
     headers.set("Authorization", `Bearer ${envelope.accessToken}`);
   }
   if (cookie && Platform.OS !== "web") headers.set("Cookie", cookie);
-  // Engineer-access grant, when one is held. Sent as a header rather than in the
-  // body or the URL so it never lands in a query string, a route param, or a
-  // request log that records paths.
-  const engineerGrant = engineerAccessToken();
-  if (engineerGrant && !headers.has(ENGINEER_ACCESS_GRANT_HEADER)) {
-    headers.set(ENGINEER_ACCESS_GRANT_HEADER, engineerGrant);
-  }
 
   let response: Response;
   try {

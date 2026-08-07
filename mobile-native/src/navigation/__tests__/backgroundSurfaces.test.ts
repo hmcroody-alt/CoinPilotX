@@ -303,10 +303,7 @@ describe("immersive and fixed-palette surfaces keep their own opaque fill", () =
     "live/PreLiveConfigurationSheet.tsx": "backgroundColor: colors.background",
     // Not darkness but the opposite: a QR code is unreadable without its white
     // quiet zone, so this panel must stay opaque white over anything.
-    "screens/PulseIdentityScreen.tsx": 'backgroundColor: "#FFFFFF"',
-    "screens/GalacticConstructionScreen.tsx": 'backgroundColor: "#030716"',
-    // The construction gate's loading fallback, which must match the gate.
-    "screens/ProtectedBusinessRoutes.tsx": 'backgroundColor: "#030716"'
+    "screens/PulseIdentityScreen.tsx": 'backgroundColor: "#FFFFFF"'
   };
 
   it.each(Object.entries(OPAQUE))("%s still paints its own background", (file, declaration) => {

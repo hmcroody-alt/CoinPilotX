@@ -23,24 +23,22 @@ import { AccountCenterScreen } from "../screens/AccountCenterScreen";
 import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScreen";
 import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
 import { AlertManagementScreen } from "../screens/AlertManagementScreen";
-import {
-  ProtectedActivityRoute,
-  ProtectedAdvertisingRoute,
-  ProtectedBusinessBuyerPreviewScreen,
-  ProtectedBusinessHubRoute,
-  ProtectedBusinessOsInsightsScreen,
-  ProtectedBusinessOsPaymentsScreen,
-  ProtectedBusinessProfileScreen,
-  ProtectedEventsRoute,
-  ProtectedMarketplaceManagerScreen,
-  ProtectedMessagesRoute,
-  ProtectedOrdersRoute,
-  ProtectedSellerApplicationScreen,
-  ProtectedSellerListingComposerScreen,
-  ProtectedSellerStoreRoute,
-  ProtectedSellerStoreScreen,
-  ProtectedDeveloperSettingsScreen
-} from "../screens/ProtectedBusinessRoutes";
+import { ActivityRoute } from "../screens/ActivityRoute";
+import { AdvertisingRoute } from "../screens/AdvertisingRoute";
+import { BusinessBuyerPreviewScreen } from "../screens/BusinessBuyerPreviewScreen";
+import { BusinessHubRoute } from "../screens/BusinessHubRoute";
+import { BusinessOsInsightsScreen } from "../screens/BusinessOsInsightsScreen";
+import { BusinessOsPaymentsScreen } from "../screens/BusinessOsPaymentsScreen";
+import { BusinessProfileScreen } from "../screens/BusinessProfileScreen";
+import { EventsRoute } from "../screens/EventsRoute";
+import { MarketplaceManagerScreen } from "../screens/MarketplaceManagerScreen";
+import { MessagesRoute } from "../screens/MessagesRoute";
+import { OrdersRoute } from "../screens/OrdersRoute";
+import { SellerApplicationScreen } from "../screens/SellerApplicationScreen";
+import { SellerListingComposerScreen } from "../screens/SellerListingComposerScreen";
+import { SellerStoreRoute } from "../screens/SellerStoreRoute";
+import { SellerStoreScreen } from "../screens/SellerStoreScreen";
+import { DeveloperSettingsScreen } from "../screens/settings/DeveloperSettingsScreen";
 import { BuyerOrdersScreen } from "../screens/BuyerOrdersScreen";
 import { CameraStudioScreen } from "../screens/CameraStudioScreen";
 import { CallScreen } from "../screens/CallScreen";
@@ -350,21 +348,21 @@ export function AppNavigator() {
           redesign is reverted and the dark sections screen relies on the stack
           header for its title, its "Native PulseSoc route" sub-line and the back
           chevron. `BusinessHubRoute` still owns which screen renders. */}
-      <Stack.Screen name="BusinessOs" component={ProtectedBusinessHubRoute} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOs") })} />
+      <Stack.Screen name="BusinessOs" component={BusinessHubRoute} options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOs") })} />
       {/* Draws its own header (back chevron, title, live badge), so the stack header is off. */}
-      <Stack.Screen name="BusinessProfile" component={ProtectedBusinessProfileScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="BusinessProfile" component={BusinessProfileScreen} options={{ headerShown: false }} />
       {/* "View as buyer". Draws its own preview banner and buyer-style header, so the
           stack header is off — a stack header reading "Business profile" over a screen
           claiming to be the buyer's view would undercut the whole point of it. */}
-      <Stack.Screen name="BusinessBuyerPreview" component={ProtectedBusinessBuyerPreviewScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="BusinessBuyerPreview" component={BusinessBuyerPreviewScreen} options={{ headerShown: false }} />
       {/* Also draws its own navy header, with the search field and mode toggle in it. */}
-      <Stack.Screen name="MarketplaceManager" component={ProtectedMarketplaceManagerScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="MarketplaceManager" component={MarketplaceManagerScreen} options={{ headerShown: false }} />
       {/* `AdvertisingRoute` picks the rebuilt ads manager by default and the
           previous screen for `mode: "classic"`. The manager draws its own navy
           header, so the stack header is hidden for it and kept for classic. */}
       <Stack.Screen
         name="BusinessOsAdvertising"
-        component={ProtectedAdvertisingRoute}
+        component={AdvertisingRoute}
         options={({ route }) => ({
           title: route.params?.title || t("common:screens.businessOsAdvertising"),
           headerShown: route.params?.mode === "classic"
@@ -375,7 +373,7 @@ export function AppNavigator() {
           so the stack header is hidden. The Business "Orders" card points here. */}
       <Stack.Screen
         name="BusinessOsOrders"
-        component={ProtectedOrdersRoute}
+        component={OrdersRoute}
         options={{ headerShown: false }}
       />
       {/* `MessagesRoute` renders the rebuilt commerce inbox, which draws its own
@@ -383,7 +381,7 @@ export function AppNavigator() {
           header is hidden. The Business "Messages" card points here. */}
       <Stack.Screen
         name="BusinessOsMessages"
-        component={ProtectedMessagesRoute}
+        component={MessagesRoute}
         options={{ headerShown: false }}
       />
       {/* `EventsRoute` renders the rebuilt hosted-events manager, which draws its
@@ -391,7 +389,7 @@ export function AppNavigator() {
           is hidden. The Business "Events" card points here (EVENTS_CARD_CONFIG). */}
       <Stack.Screen
         name="BusinessOsEvents"
-        component={ProtectedEventsRoute}
+        component={EventsRoute}
         options={{ headerShown: false }}
       />
       {/* `ActivityRoute` renders the unified Activity feed reached from every
@@ -399,7 +397,7 @@ export function AppNavigator() {
           Mark all read / filter chips), so the stack header is hidden. */}
       <Stack.Screen
         name="BusinessOsActivity"
-        component={ProtectedActivityRoute}
+        component={ActivityRoute}
         options={{ headerShown: false }}
       />
       {/* Insights draws its own navy header — back chevron, title, Export pill and
@@ -408,7 +406,7 @@ export function AppNavigator() {
           still declared so the route keeps its name for deep links and history. */}
       <Stack.Screen
         name="BusinessOsInsights"
-        component={ProtectedBusinessOsInsightsScreen}
+        component={BusinessOsInsightsScreen}
         options={({ route }) => ({
           title: route.params?.title || t("common:screens.businessOsInsights"),
           headerShown: false
@@ -425,7 +423,7 @@ export function AppNavigator() {
           survives the stack header going away. */}
       <Stack.Screen
         name="BusinessOsPayments"
-        component={ProtectedBusinessOsPaymentsScreen}
+        component={BusinessOsPaymentsScreen}
         options={({ route }) => ({
           title: route.params?.title || t("common:screens.businessOsPayments"),
           headerShown: false
@@ -438,7 +436,7 @@ export function AppNavigator() {
           including the Orders card's, exactly as it was. */}
       <Stack.Screen
         name="SellerStore"
-        component={ProtectedSellerStoreRoute}
+        component={SellerStoreRoute}
         options={({ route }) =>
           route.params?.mode === "dashboard"
             ? { headerShown: false }
@@ -450,10 +448,10 @@ export function AppNavigator() {
       <Stack.Screen name="BuyerPurchases" component={BuyerOrdersScreen} options={{ title: t("common:screens.purchaseHistory") }} />
       <Stack.Screen name="MarketplaceCart" component={MarketplaceCartScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.cart") })} />
       <Stack.Screen name="BuyerOrdersDashboard" component={BuyerOrdersScreen} options={{ title: t("common:screens.purchaseHistory") }} />
-      <Stack.Screen name="MerchantApply" component={ProtectedSellerApplicationScreen} options={{ title: t("common:screens.merchantApplication") }} />
-      <Stack.Screen name="MerchantDashboard" component={ProtectedSellerStoreScreen} options={{ title: t("common:screens.merchantDashboard") }} />
-      <Stack.Screen name="MerchantProfile" component={ProtectedSellerStoreScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.merchantProfile") })} />
-      <Stack.Screen name="MarketplaceCreateGateway" component={ProtectedSellerListingComposerScreen} options={{ title: t("common:screens.createListing") }} />
+      <Stack.Screen name="MerchantApply" component={SellerApplicationScreen} options={{ title: t("common:screens.merchantApplication") }} />
+      <Stack.Screen name="MerchantDashboard" component={SellerStoreScreen} options={{ title: t("common:screens.merchantDashboard") }} />
+      <Stack.Screen name="MerchantProfile" component={SellerStoreScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.merchantProfile") })} />
+      <Stack.Screen name="MarketplaceCreateGateway" component={SellerListingComposerScreen} options={{ title: t("common:screens.createListing") }} />
       <Stack.Screen name="Search" component={SearchScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.search") })} />
       <Stack.Screen name="Saved" component={SavedScreen} options={{ title: t("common:screens.saved") }} />
       <Stack.Screen name="GroupDetail" component={GroupsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.community") })} />
@@ -540,7 +538,7 @@ export function AppNavigator() {
       <Stack.Screen name="HelpSettings" component={HelpSettingsScreen} options={{ title: t("common:screens.help") }} />
       <Stack.Screen name="AboutSettings" component={AboutSettingsScreen} options={{ title: t("common:screens.about") }} />
       <Stack.Screen name="LegalSettings" component={LegalSettingsScreen} options={{ title: t("common:screens.legal") }} />
-      <Stack.Screen name="DeveloperSettings" component={ProtectedDeveloperSettingsScreen} options={{ title: t("common:screens.developerOptions") }} />
+      <Stack.Screen name="DeveloperSettings" component={DeveloperSettingsScreen} options={{ title: t("common:screens.developerOptions") }} />
     </Stack.Navigator>
       <MasterNavigationDrawer visible={drawerOpen} identity={identity} onClose={() => setDrawerOpen(false)} onOpenRoute={openDrawerRoute} />
     </>
