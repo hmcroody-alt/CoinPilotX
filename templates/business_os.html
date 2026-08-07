@@ -16,6 +16,7 @@
       --bos-accent-strong: var(--pulse-palette-accent-strong, #2f6bff);
       --bos-warning: var(--pulse-palette-warning, #f5b83d);
       --bos-danger: var(--pulse-palette-danger, #ff5d6c);
+      --bos-border: rgba(255,255,255,0.08);
     }
     * { box-sizing: border-box; }
     body {
@@ -76,6 +77,13 @@
     .bos-form-msg { font-size: 12px; min-height: 16px; }
     .bos-form-msg.ok { color: var(--bos-accent); }
     .bos-form-msg.error { color: var(--bos-danger); }
+    .bos-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--bos-border); font-size: 13px; flex-wrap: wrap; }
+    .bos-row:last-child { border-bottom: 0; }
+    .bos-row-label { flex: 1 1 auto; min-width: 80px; }
+    .bos-row-status { font-size: 11px; text-transform: uppercase; color: var(--bos-muted); }
+    .bos-row-id { font-size: 11px; color: var(--bos-muted); max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bos-use-id { font-size: 11px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--bos-border); background: transparent; color: var(--bos-accent); cursor: pointer; }
+    .bos-use-id:hover { border-color: var(--bos-accent); }
     @media (max-width: 720px) {
       .bos-shell { flex-direction: column; }
       .bos-nav { width: 100%; display: flex; flex-wrap: wrap; gap: 4px; border-right: 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
@@ -126,7 +134,7 @@
           </form>
         </div>
         <div class="bos-card"><h2>Campaign Action</h2>
-          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/campaigns/{id}/{verb}" data-refresh="/api/business-os/advertising/campaigns">
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/campaigns/{id}/{verb}" data-id-group="campaign" data-refresh="/api/business-os/advertising/campaigns">
             <label>Campaign ID<input name="id" required placeholder="Campaign ID from the list"></label>
             <label>Action<select name="verb">
               <option value="submit">Submit for review</option>
@@ -144,7 +152,7 @@
           </form>
         </div>
         <div class="bos-card"><h2>Campaign Budget</h2>
-          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/campaigns/{id}/budget" data-refresh="/api/business-os/advertising/campaigns">
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/campaigns/{id}/budget" data-id-group="campaign" data-refresh="/api/business-os/advertising/campaigns">
             <label>Campaign ID<input name="id" required placeholder="Campaign ID from the list"></label>
             <label>Total budget (USD)<input name="budget_usd" type="number" min="0" step="0.01" required placeholder="100.00"></label>
             <button type="submit">Set Budget</button>
@@ -152,7 +160,7 @@
           </form>
         </div>
         <div class="bos-card"><h2>Campaign Schedule</h2>
-          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/campaigns/{id}/schedule" data-refresh="/api/business-os/advertising/campaigns">
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/campaigns/{id}/schedule" data-id-group="campaign" data-refresh="/api/business-os/advertising/campaigns">
             <label>Campaign ID<input name="id" required placeholder="Campaign ID from the list"></label>
             <label>Start<input name="start_at" type="datetime-local"></label>
             <label>End<input name="end_at" type="datetime-local"></label>
@@ -161,7 +169,7 @@
           </form>
         </div>
         <div class="bos-card"><h2>Campaign Funding</h2>
-          <form class="bos-form" data-bos-form data-idempotency data-action-template="/api/business-os/advertising/campaigns/{id}/{verb}" data-refresh="/api/business-os/advertising/wallet">
+          <form class="bos-form" data-bos-form data-idempotency data-action-template="/api/business-os/advertising/campaigns/{id}/{verb}" data-id-group="campaign" data-refresh="/api/business-os/advertising/wallet">
             <label>Campaign ID<input name="id" required placeholder="Campaign ID from the list"></label>
             <label>Action<select name="verb">
               <option value="reserve">Reserve budget from wallet</option>
@@ -173,7 +181,7 @@
           </form>
         </div>
         <div class="bos-card"><h2>Create Ad Set</h2>
-          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/campaigns/{id}/ad-sets" data-refresh="/api/business-os/advertising/ad-sets">
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/campaigns/{id}/ad-sets" data-id-group="campaign" data-refresh="/api/business-os/advertising/ad-sets">
             <label>Campaign ID<input name="id" required placeholder="Campaign ID from the list"></label>
             <label>Name<input name="name" required maxlength="120" placeholder="Ad set name"></label>
             <button type="submit">Create Ad Set</button>
@@ -181,7 +189,7 @@
           </form>
         </div>
         <div class="bos-card"><h2>Ad Set Action</h2>
-          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/ad-sets/{id}/{verb}" data-refresh="/api/business-os/advertising/ad-sets">
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/ad-sets/{id}/{verb}" data-id-group="adset" data-refresh="/api/business-os/advertising/ad-sets">
             <label>Ad Set ID<input name="id" required placeholder="Ad set ID from the list"></label>
             <label>Action<select name="verb">
               <option value="submit">Submit for review</option>
@@ -196,7 +204,7 @@
           </form>
         </div>
         <div class="bos-card"><h2>Create Creative</h2>
-          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/ad-sets/{id}/creatives" data-refresh="/api/business-os/advertising/creatives">
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/ad-sets/{id}/creatives" data-id-group="adset" data-refresh="/api/business-os/advertising/creatives">
             <label>Ad Set ID<input name="id" required placeholder="Ad set ID from the list"></label>
             <label>Type<select name="creative_type">
               <option value="image">Image</option>
@@ -220,7 +228,7 @@
           </form>
         </div>
         <div class="bos-card"><h2>Creative Action</h2>
-          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/creatives/{id}/{verb}" data-refresh="/api/business-os/advertising/creatives">
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/creatives/{id}/{verb}" data-id-group="creative" data-refresh="/api/business-os/advertising/creatives">
             <label>Creative ID<input name="id" required placeholder="Creative ID from the list"></label>
             <label>Action<select name="verb">
               <option value="submit">Submit for review</option>
@@ -258,7 +266,7 @@
           </form>
         </div>
         <div class="bos-card"><h2>Product Action</h2>
-          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/products/{id}/{verb}" data-refresh="/api/business-os/marketplace/products">
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/products/{id}/{verb}" data-id-group="product" data-refresh="/api/business-os/marketplace/products">
             <label>Product ID<input name="id" required placeholder="Product ID from the list"></label>
             <label>Action<select name="verb">
               <option value="publish">Publish</option>
@@ -272,7 +280,7 @@
           </form>
         </div>
         <div class="bos-card"><h2>Update Inventory</h2>
-          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/products/{id}/inventory" data-refresh="/api/business-os/marketplace/products">
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/products/{id}/inventory" data-id-group="product" data-refresh="/api/business-os/marketplace/products">
             <label>Product ID<input name="id" required placeholder="Product ID from the list"></label>
             <label>Inventory quantity<input name="inventory_qty" type="number" min="0" step="1" required placeholder="10"></label>
             <button type="submit">Update</button>
@@ -280,7 +288,7 @@
           </form>
         </div>
         <div class="bos-card"><h2>Order Action (buyer)</h2>
-          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/orders/{id}/{verb}" data-refresh="/api/business-os/marketplace/orders">
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/orders/{id}/{verb}" data-id-group="order" data-refresh="/api/business-os/marketplace/orders">
             <label>Order ID<input name="id" required placeholder="Order ID from the list"></label>
             <label>Action<select name="verb">
               <option value="pay">Pay</option>
@@ -294,7 +302,7 @@
           </form>
         </div>
         <div class="bos-card"><h2>Fulfill Order (seller)</h2>
-          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/orders/{id}/fulfill" data-refresh="/api/business-os/marketplace/orders">
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/orders/{id}/fulfill" data-id-group="order" data-refresh="/api/business-os/marketplace/orders">
             <label>Order ID<input name="id" required placeholder="Order ID from the list"></label>
             <label>Tracking ref<input name="tracking_ref" maxlength="120" placeholder="Optional tracking reference"></label>
             <button type="submit">Fulfill</button>
@@ -346,7 +354,21 @@
     });
   }
 
-  function renderData(body, data) {
+  // List endpoint -> the data-id-group whose forms a row's "Use" button fills.
+  var ID_GROUPS = {
+    "/api/business-os/advertising/campaigns": "campaign",
+    "/api/business-os/advertising/ad-sets": "adset",
+    "/api/business-os/advertising/creatives": "creative",
+    "/api/business-os/marketplace/products": "product",
+    "/api/business-os/marketplace/orders": "order"
+  };
+
+  function rowId(item) {
+    return item.id || item.campaign_id || item.ad_set_id || item.creative_id
+      || item.product_id || item.order_id || "";
+  }
+
+  function renderData(body, data, endpoint) {
     if (data === null || data === undefined) {
       body.innerHTML = '<div class="bos-state">No data yet.</div>';
       return;
@@ -356,15 +378,30 @@
         body.innerHTML = '<div class="bos-state">Nothing here yet.</div>';
         return;
       }
-      body.innerHTML = '<div class="bos-count">' + data.length + '</div>'
-        + '<pre>' + esc(JSON.stringify(data.slice(0, 10), null, 2)) + '</pre>';
+      var group = ID_GROUPS[endpoint || ""] || null;
+      var items = data.slice(0, 20).map(function (item) {
+        if (item === null || typeof item !== "object") {
+          return '<div class="bos-row">' + esc(String(item)) + '</div>';
+        }
+        var id = String(rowId(item));
+        var label = item.name || item.title || item.headline || item.username || "";
+        var status = item.status || item.review_status || "";
+        return '<div class="bos-row">'
+          + (label ? '<span class="bos-row-label">' + esc(label) + '</span>' : '<span class="bos-row-label"></span>')
+          + (status ? '<span class="bos-row-status">' + esc(status) + '</span>' : "")
+          + (id ? '<code class="bos-row-id" title="' + esc(id) + '">' + esc(id) + '</code>' : "")
+          + (id && group ? '<button type="button" class="bos-use-id" data-id="' + esc(id) + '" data-group="' + group + '">Use</button>' : "")
+          + '</div>';
+      }).join("");
+      body.innerHTML = '<div class="bos-count">' + data.length + '</div>' + items;
       return;
     }
     if (typeof data === "object") {
       var keys = Object.keys(data);
-      // Common wrapper: {"items": [...]} / {"campaigns": [...]}
-      if (keys.length === 1 && Array.isArray(data[keys[0]])) {
-        renderData(body, data[keys[0]]);
+      // Common wrappers: {"items": [...]} / {"ok": true, "campaigns": [...]}
+      var payloadKeys = keys.filter(function (k) { return k !== "ok"; });
+      if (payloadKeys.length === 1 && Array.isArray(data[payloadKeys[0]])) {
+        renderData(body, data[payloadKeys[0]], endpoint);
         return;
       }
       if (!keys.length) {
@@ -395,7 +432,7 @@
         if (!response.ok) { throw new Error("HTTP " + response.status); }
         return response.json();
       })
-      .then(function (data) { renderData(body, data); })
+      .then(function (data) { renderData(body, data, endpoint); })
       .catch(function (error) {
         loaded[endpoint] = false;
         body.innerHTML = '<div class="bos-state error">Could not load (' + esc(error.message) + ').</div>';
@@ -420,6 +457,22 @@
       target.classList.add("active");
       loadSection(target);
     }
+  });
+
+  document.addEventListener("click", function (event) {
+    var btn = event.target.closest(".bos-use-id");
+    if (!btn) { return; }
+    var group = btn.getAttribute("data-group");
+    var id = btn.getAttribute("data-id");
+    var filled = 0;
+    Array.prototype.forEach.call(
+      document.querySelectorAll('form[data-id-group="' + group + '"]'),
+      function (form) {
+        if (form.elements.id) { form.elements.id.value = id; filled += 1; }
+      }
+    );
+    btn.textContent = filled ? "✓" : "Use";
+    setTimeout(function () { btn.textContent = "Use"; }, 1200);
   });
 
   function refreshEndpoint(endpoint) {

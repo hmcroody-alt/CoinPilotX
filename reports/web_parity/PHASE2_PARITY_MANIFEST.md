@@ -356,3 +356,16 @@ Remaining known gaps (honest): admin/business-os console surfaces (49 routes,
 admin-only), advertising assistant plan/execute, marketplace reviews/appeals
 forms, per-row inline action buttons (IDs are copy-paste from list cards),
 responsive/a11y audit, live browser QA on Railway.
+
+## 14. Milestone 8 — Business OS per-row actions + list rendering (2026-08-07)
+
+List cards previously collapsed `{ok, campaigns:[...]}` responses into a
+key/value summary ("campaigns: 3 item(s)") because the wrapper-unwrap only
+handled single-key objects. renderData now strips the `ok` key before
+unwrapping, and renders arrays as real rows: label (name/title/headline/
+username), status badge, truncated ID, and a "Use" button. Clicking Use fills
+the `id` input of every form in the matching `data-id-group`
+(campaign/adset/creative/product/order — 12 forms tagged), removing the
+copy-paste step between lists and actions. Row ID resolution tries
+id/campaign_id/ad_set_id/creative_id/product_id/order_id. Added `--bos-border`
+token, row CSS. Jinja render + node --check green.
