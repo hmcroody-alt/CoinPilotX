@@ -12224,10 +12224,25 @@ def friendly_internal_error(error):
                 "method": request.method,
                 "retriable": True,
             }), 500
+        # Copy follows the endpoint, not the handler. This branch is the fallback
+        # for *every* JSON API path, and it used to tell all of them that an
+        # upload had failed — so a 500 while reading the Saved library said
+        # "Upload failed", which sent people looking for a broken uploader that
+        # was never involved. The prefixes below are the same ones
+        # `friendly_unhandled_exception` already uses to decide the identical
+        # question, so the two handlers cannot drift into describing the same
+        # request differently. The trace ID is unchanged: it is the one thing
+        # support actually asks for.
+        if request.path.startswith(("/api/messages/media/", "/api/uploads/", "/api/media/")):
+            message = "Upload failed. Please retry or contact support with this trace ID."
+        elif request.path.startswith(("/api/calls/", "/api/pulse/communications/v2/")):
+            message = "PulseSoc could not prepare the call. Please retry with this trace ID."
+        else:
+            message = "PulseSoc hit a temporary service issue. Please retry with this trace ID."
         return jsonify({
             "ok": False,
             "success": False,
-            "message": "Upload failed. Please retry or contact support with this trace ID.",
+            "message": message,
             "error": "server_error",
             "trace_id": trace_id,
             "endpoint": request.path,
@@ -80127,6 +80142,23 @@ def pulse_apply_post_save(cur, user, post_row, want_saved, now):
     feed joins to decide a card's Save state, and `pulse_saved_items`, which the
     Saved library lists. They were only ever written together here; doing it in
     one function means a new caller cannot write one and forget the other.
+
+    ## Why "saved" is the conjunction of two rows, not one
+
+    Writing both together is not enough on its own, because other routes can
+    still delete one and leave the other: `DELETE /api/pulse/saved/<id>` and the
+    generic unsave branch both target `pulse_saved_items` by design, and older
+    builds shipped without the mirroring delete. Once the two tables disagree,
+    a single-table read here makes the drift permanent — the feed card renders
+    Saved off `pulse_post_saves`, so the next tap asks for the state the server
+    already believes it holds, this function returned `changed=False`, and the
+    post could never re-enter the library. That is the "post won't save" report.
+
+    So `currently_saved` requires *both* rows. A save with only one of them
+    present is treated as not-saved and falls through to the writes, which are
+    idempotent (`INSERT OR IGNORE` on the flag, `ON CONFLICT DO UPDATE` on the
+    library row) and therefore repair whichever side is missing. The reel route
+    above already works this way for the same reason.
     """
     user_id = user["user_id"]
     target_id = pulse_savable_post_id(post_row)
@@ -80139,21 +80171,35 @@ def pulse_apply_post_save(cur, user, post_row, want_saved, now):
         if original:
             row = original
     cur.execute("SELECT id FROM pulse_post_saves WHERE post_id=? AND user_id=? LIMIT 1", (target_id, user_id))
-    currently_saved = bool(cur.fetchone())
+    flag_present = bool(cur.fetchone())
+    cur.execute(
+        "SELECT id FROM pulse_saved_items WHERE user_id=? AND content_type='post' AND content_id=? LIMIT 1",
+        (user_id, str(target_id)),
+    )
+    library_present = bool(cur.fetchone())
+    currently_saved = flag_present and library_present
     if want_saved is None:
         want_saved = not currently_saved
-    if bool(want_saved) == currently_saved:
-        return currently_saved, False
+    want_saved = bool(want_saved)
     if not want_saved:
+        # Half-saved still counts as something to remove: return early only when
+        # there is genuinely nothing on either side.
+        if not flag_present and not library_present:
+            return False, False
         cur.execute("DELETE FROM pulse_post_saves WHERE post_id=? AND user_id=?", (target_id, user_id))
         cur.execute(
             "DELETE FROM pulse_saved_items WHERE user_id=? AND content_type='post' AND content_id=?",
             (user_id, str(target_id)),
         )
         return False, True
+    if currently_saved:
+        return True, False
     post_type = (row["post_type"] if row is not None else "") or "post"
+    # OR IGNORE, not a bare INSERT: reaching here with the flag row already
+    # present is now the normal repair case, and UNIQUE(post_id, user_id) would
+    # otherwise raise a 500 on the very path this fix exists to make work.
     cur.execute(
-        "INSERT INTO pulse_post_saves (post_id, user_id, collection_name, created_at) VALUES (?, ?, 'Saved', ?)",
+        "INSERT OR IGNORE INTO pulse_post_saves (post_id, user_id, collection_name, created_at) VALUES (?, ?, 'Saved', ?)",
         (target_id, user_id, now),
     )
     collection_id = ensure_pulse_saved_collection(cur, user_id)
@@ -80168,16 +80214,63 @@ def pulse_apply_post_save(cur, user, post_row, want_saved, now):
         """,
         (user_id, collection_id, str(target_id), title, preview, f"/pulse/post/{target_id}", json.dumps({"post_type": post_type}), now, now),
     )
-    pulse_notify_post_owner(
-        cur,
-        target_id,
-        user,
-        "video_save" if post_type == "video" else "save",
-        "PulseSoc saved",
-        f"{pulse_actor_display_name(user)} saved your PulseSoc post.",
-        metadata={"source": "api_pulse_post_save", "content_type": post_type},
-    )
+    # Only tell the author about a genuinely new save. A repair — where the flag
+    # row survived but the library row had been deleted — is bookkeeping, and
+    # notifying again would ping the author a second time for one save.
+    if not flag_present:
+        pulse_notify_post_owner(
+            cur,
+            target_id,
+            user,
+            "video_save" if post_type == "video" else "save",
+            "PulseSoc saved",
+            f"{pulse_actor_display_name(user)} saved your PulseSoc post.",
+            metadata={"source": "api_pulse_post_save", "content_type": post_type},
+        )
     return True, True
+
+
+def pulse_clear_post_save_mirror(cur, user_id, content_type, content_id):
+    """Drop the `pulse_post_saves` flag behind a library row being removed.
+
+    The Saved library can be emptied by routes that only know about a
+    `pulse_saved_items` row — the row-id DELETE the web client uses, and the
+    content-keyed unsave. Both used to leave the feed's flag row behind, which
+    is one of the two ways the tables drift apart: the library forgets the post
+    while the feed card still shows Saved. Clearing the mirror here keeps the
+    two sides of a post's Saved state deleted together no matter which route did
+    the deleting.
+
+    Returns the post id whose flag was cleared, or 0 when the content type is
+    not post-backed (rooms, groups, teachers and friends have no flag row).
+    """
+    kind = (content_type or "").strip().lower()
+    raw = str(content_id or "").strip()
+    if not raw.isdigit():
+        return 0
+    numeric_id = int(raw)
+    if numeric_id <= 0:
+        return 0
+    post_id = 0
+    if kind in ("post", "status", "video", "image", "live_replay"):
+        post_id = numeric_id
+    elif kind == "reel":
+        # A reel row's content_id is the reel id, and the flag lives on the
+        # post underneath it.
+        try:
+            cur.execute("SELECT post_id FROM pulse_reels WHERE id=? LIMIT 1", (numeric_id,))
+            reel_row = cur.fetchone()
+        except Exception:
+            reel_row = None
+        if reel_row:
+            try:
+                post_id = int(reel_row["post_id"] or 0)
+            except (KeyError, IndexError, TypeError):
+                post_id = safe_int(reel_row[0], 0)
+    if post_id <= 0:
+        return 0
+    cur.execute("DELETE FROM pulse_post_saves WHERE post_id=? AND user_id=?", (post_id, int(user_id)))
+    return post_id
 
 
 @webhook_app.route("/api/pulse/posts/<int:post_id>/save", methods=["POST"])
@@ -80353,6 +80446,10 @@ def api_pulse_saved_items():
                 (user["user_id"], content_type, content_id),
             )
             removed = cur.rowcount
+            # The feed reads its Save flag from `pulse_post_saves`, not from the
+            # library. Leaving that row behind is what made an unsave here look
+            # undone the moment you scrolled back to the post.
+            pulse_clear_post_save_mirror(cur, user["user_id"], content_type, content_id)
             conn.commit(); conn.close()
             return jsonify({
                 "ok": True,
@@ -80407,9 +80504,19 @@ def api_pulse_saved_item_delete(item_id):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    conn = db(); cur = conn.cursor()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    # Read the row before deleting it: the flag row it mirrors is keyed by
+    # content type and id, which the row id alone does not tell us. Without this
+    # the feed keeps showing Saved for a post the library has already dropped.
+    cur.execute(
+        "SELECT content_type, content_id FROM pulse_saved_items WHERE id=? AND user_id=? LIMIT 1",
+        (item_id, user["user_id"]),
+    )
+    doomed = cur.fetchone()
     cur.execute("DELETE FROM pulse_saved_items WHERE id=? AND user_id=?", (item_id, user["user_id"]))
     changed = cur.rowcount
+    if doomed:
+        pulse_clear_post_save_mirror(cur, user["user_id"], doomed["content_type"], doomed["content_id"])
     conn.commit(); conn.close()
     return jsonify({"ok": True, "removed": bool(changed), "message": "Removed from Saved."})
 

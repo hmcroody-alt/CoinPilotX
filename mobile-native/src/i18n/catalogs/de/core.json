@@ -425,6 +425,29 @@
       "body": "Wir arbeiten daran. Versuch es gleich noch mal.",
       "maintenance": "PulseSoc ist kurz wegen Wartungsarbeiten offline."
     },
+    "savedLibrary": {
+      "signedOut": "Deine Sitzung ist abgelaufen. Melde dich erneut an, um deine gespeicherte Bibliothek zu sehen.",
+      "noAccess": "Diese gespeicherte Bibliothek ist für dein Konto nicht verfügbar.",
+      "offline": "Deine gespeicherte Bibliothek konnte nicht geladen werden. Prüfe deine Verbindung und versuch es noch mal.",
+      "server": "Deine gespeicherte Bibliothek konnte gerade nicht geladen werden. Versuch es gleich noch mal.",
+      "request": "PulseSoc konnte deine gespeicherte Bibliothek mit dieser Anfrage nicht lesen. Aktualisiere und versuch es noch mal.",
+      "unknown": "Deine gespeicherte Bibliothek konnte nicht geladen werden. Aktualisiere und versuch es noch mal.",
+      "reference": "{{message}} Referenz: {{trace}}"
+    },
+    "savedAction": {
+      "create": "Diese Sammlung konnte nicht erstellt werden.",
+      "rename": "Diese Sammlung konnte nicht umbenannt werden.",
+      "delete": "Diese Sammlung konnte nicht gelöscht werden.",
+      "remove": "Dieses Element konnte nicht aus deiner gespeicherten Bibliothek entfernt werden.",
+      "move": "Dieses Element konnte nicht in eine andere Sammlung verschoben werden.",
+      "signedOut": "Deine Sitzung ist abgelaufen. Melde dich erneut an und versuch es noch mal.",
+      "noAccess": "Dein Konto darf diese gespeicherte Bibliothek nicht ändern.",
+      "offline": "Prüfe deine Verbindung und versuch es noch mal.",
+      "server": "Bei PulseSoc ist etwas schiefgelaufen. Versuch es gleich noch mal.",
+      "request": "PulseSoc konnte diese Anfrage nicht annehmen. Aktualisiere und versuch es noch mal.",
+      "unknown": "Versuch es noch mal und aktualisiere, falls es weiter passiert.",
+      "detail": "{{what}} {{why}}"
+    },
     "empty": {
       "generic": "Hier ist noch nichts",
       "genericBody": "Sobald es etwas zu zeigen gibt, erscheint es hier.",

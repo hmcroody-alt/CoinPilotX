@@ -28,6 +28,7 @@ import { routeNotificationTarget } from "../navigation/notificationRouting";
 import type { RootStackParamList } from "../navigation/types";
 import { PRIVATE_CONTENT_MESSAGE, resolveRouteProfileContext } from "../profile/profileContext";
 import { useAuth } from "../session/auth";
+import { describeSavedActionError, describeSavedLibraryError } from "../social/actionGuard";
 import { SavableContentType, saveKey } from "../social/saveContract";
 import { observeSavedState, subscribeToSaveChanges } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
@@ -115,7 +116,12 @@ export function SavedScreen({ route }: Props = {}) {
         setCollections(cached.collections || []);
         setOffline(true);
       } else {
-        setError(loadError instanceof Error ? loadError.message : "Saved content could not load.");
+        // Never `loadError.message`. The backend answers every failing JSON API
+        // path — reads included — with write-side copy ("Upload failed. Please
+        // retry…"), so echoing the server's own words describes an upload the
+        // user never started. Classify the failure and say what actually
+        // happened: a read of this library did not come back.
+        setError(describeSavedLibraryError(loadError));
       }
     } finally {
       setLoading(false);
@@ -203,7 +209,11 @@ export function SavedScreen({ route }: Props = {}) {
       setCollectionName("");
       await load("refresh");
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Collection could not be created.");
+      // Same rule as `load`: never the thrown message. `err.message` here is
+      // whatever the backend's generic JSON error handler said, which is upload
+      // copy on every path, and `instanceof Error` does not make it any more
+      // about collections. Classified and named for the action instead.
+      setError(describeSavedActionError(createError, "create"));
     } finally {
       setBusy(false);
     }
@@ -219,7 +229,7 @@ export function SavedScreen({ route }: Props = {}) {
       setEditName("");
       await load("refresh");
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Collection could not be updated.");
+      setError(describeSavedActionError(updateError, "rename"));
     } finally {
       setBusy(false);
     }
@@ -234,7 +244,7 @@ export function SavedScreen({ route }: Props = {}) {
       setCollectionId(0);
       await load("refresh");
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Collection could not be deleted.");
+      setError(describeSavedActionError(deleteError, "delete"));
     } finally {
       setBusy(false);
     }
@@ -256,7 +266,16 @@ export function SavedScreen({ route }: Props = {}) {
     try {
       if (contentType) {
         const outcome = await setSaved({ type: contentType, id: item.content_id }, false);
-        if (!outcome.ok) setError(outcome.message || "Saved item could not be removed.");
+        // Deliberately not `outcome.message`: that string is worded for a Save
+        // button ("Save could not be completed") and falls through to the raw
+        // server message on an unmapped 4xx. The raw error is described here,
+        // where the control is called Remove.
+        //
+        // Reported only when there *is* an error. A `!ok` with none means the
+        // call was dropped as a duplicate or superseded by a newer one — the
+        // previous code showed "Saved item could not be removed." for a second
+        // tap that failed at nothing.
+        if (!outcome.ok && outcome.error !== undefined) setError(describeSavedActionError(outcome.error, "remove"));
         return;
       }
       const previous = items;
@@ -266,7 +285,7 @@ export function SavedScreen({ route }: Props = {}) {
         await load("refresh");
       } catch (removeError) {
         setItems(previous);
-        setError(removeError instanceof Error ? removeError.message : "Saved item could not be removed.");
+        setError(describeSavedActionError(removeError, "remove"));
       }
     } finally {
       setBusy(false);
@@ -277,11 +296,14 @@ export function SavedScreen({ route }: Props = {}) {
     const nextCollection = nextMoveCollection(collections, item.collection_id || 0);
     if (!nextCollection) return;
     setBusy(true);
+    // Cleared like every other handler: without this a stale failure from an
+    // earlier action stays on screen while a fresh move succeeds.
+    setError("");
     try {
       await moveSavedItem(item.id, nextCollection.id);
       await load("refresh");
     } catch (moveError) {
-      setError(moveError instanceof Error ? moveError.message : "Saved item could not be moved.");
+      setError(describeSavedActionError(moveError, "move"));
     } finally {
       setBusy(false);
     }

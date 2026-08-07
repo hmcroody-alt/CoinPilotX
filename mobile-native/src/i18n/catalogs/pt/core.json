@@ -425,6 +425,29 @@
       "body": "Estamos resolvendo. Tente de novo em instantes.",
       "maintenance": "O PulseSoc está em manutenção por pouco tempo."
     },
+    "savedLibrary": {
+      "signedOut": "Sua sessão expirou. Entre novamente para ver sua biblioteca de salvos.",
+      "noAccess": "Esta biblioteca de salvos não está disponível para a sua conta.",
+      "offline": "Não foi possível carregar sua biblioteca de salvos. Verifique sua conexão e tente de novo.",
+      "server": "Não foi possível carregar sua biblioteca de salvos agora. Tente de novo em instantes.",
+      "request": "O PulseSoc não conseguiu ler sua biblioteca de salvos com esse pedido. Atualize para tentar de novo.",
+      "unknown": "Não foi possível carregar sua biblioteca de salvos. Atualize para tentar de novo.",
+      "reference": "{{message}} Referência: {{trace}}"
+    },
+    "savedAction": {
+      "create": "Não foi possível criar essa coleção.",
+      "rename": "Não foi possível renomear essa coleção.",
+      "delete": "Não foi possível excluir essa coleção.",
+      "remove": "Não foi possível remover esse item da sua biblioteca de salvos.",
+      "move": "Não foi possível mover esse item para outra coleção.",
+      "signedOut": "Sua sessão expirou. Entre novamente e tente de novo.",
+      "noAccess": "Sua conta não tem permissão para alterar esta biblioteca de salvos.",
+      "offline": "Verifique sua conexão e tente de novo.",
+      "server": "O PulseSoc teve um problema do lado dele. Tente de novo em instantes.",
+      "request": "O PulseSoc não conseguiu aceitar esse pedido. Atualize e tente de novo.",
+      "unknown": "Tente de novo e atualize se continuar acontecendo.",
+      "detail": "{{what}} {{why}}"
+    },
     "empty": {
       "generic": "Nada por aqui ainda",
       "genericBody": "Quando tiver algo para mostrar, vai aparecer aqui.",

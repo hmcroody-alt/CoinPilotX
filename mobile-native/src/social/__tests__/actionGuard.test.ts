@@ -23,8 +23,12 @@ jest.mock("expo-secure-store", () => ({
 }));
 
 import { PulseApiError } from "../../api/pulseApi";
+import { ensureNamespace } from "../../i18n/engine";
 import {
   actionKey,
+  classifyPulseFailure,
+  describeSavedActionError,
+  describeSavedLibraryError,
   describeSocialActionError,
   isRecoverableSocialError,
   useSocialActionGuard,
@@ -396,5 +400,116 @@ describe("failure copy", () => {
     expect(isRecoverableSocialError(new PulseApiError("x", 403))).toBe(false);
     expect(isRecoverableSocialError(new PulseApiError("x", 404))).toBe(false);
     expect(isRecoverableSocialError("nope")).toBe(false);
+  });
+});
+
+/**
+ * The classifier both Saved describers share.
+ *
+ * Tested on its own because the read and write copy are allowed to differ but
+ * the *category* is not: a screen that decided a dead socket was a server fault
+ * on one path and a connectivity fault on the other would tell the same user two
+ * different things about the same failure.
+ */
+describe("pulse failure classification", () => {
+  it("maps API statuses to categories", () => {
+    expect(classifyPulseFailure(new PulseApiError("x", 401))).toBe("auth");
+    expect(classifyPulseFailure(new PulseApiError("x", 403))).toBe("forbidden");
+    expect(classifyPulseFailure(new PulseApiError("x", 404))).toBe("request");
+    expect(classifyPulseFailure(new PulseApiError("x", 500))).toBe("server");
+    expect(classifyPulseFailure(new PulseApiError("x", 0))).toBe("offline");
+  });
+
+  it("treats an unreachable request as offline even though it arrives as a 503", () => {
+    // `pulseApi` reports a fetch that never produced a response as 503
+    // `request_unreachable`. Read as a plain 5xx it would tell someone with no
+    // signal to wait for the server to recover.
+    expect(classifyPulseFailure(new PulseApiError("x", 503, "request_unreachable"))).toBe("offline");
+    expect(classifyPulseFailure(new PulseApiError("x", 503, "session_refresh_temporary"))).toBe("offline");
+    expect(classifyPulseFailure(new PulseApiError("x", 503))).toBe("server");
+  });
+
+  it("treats a transport throw as offline", () => {
+    expect(classifyPulseFailure(new TypeError("Network request failed"))).toBe("offline");
+    expect(classifyPulseFailure("nope")).toBe("unknown");
+  });
+});
+
+/**
+ * Saved-library copy, read and write.
+ *
+ * The defect these guard against is one string: the backend's JSON error
+ * handler answers every failing API path with "Upload failed. Please retry or
+ * contact support with this trace ID." Any describer that echoes `err.message`
+ * puts that sentence under a rename box. Every assertion below that checks for
+ * the *absence* of "Upload" is checking that door is still shut.
+ */
+describe("saved library copy", () => {
+  const uploadCopy = "Upload failed. Please retry or contact support with this trace ID.";
+
+  beforeAll(async () => {
+    // The engine resolves keys from catalogs loaded on demand; without this the
+    // describers would fall back to humanized key names and every assertion
+    // below would pass or fail for the wrong reason.
+    await ensureNamespace("en", "errors");
+  });
+
+  it("describes a failed read without repeating what the server said", () => {
+    const message = describeSavedLibraryError(new PulseApiError(uploadCopy, 500));
+    expect(message).not.toMatch(/upload/i);
+    expect(message).toMatch(/saved library/i);
+  });
+
+  it("names the attempted write, not an upload and not a save", () => {
+    const created = describeSavedActionError(new PulseApiError(uploadCopy, 500), "create");
+    expect(created).not.toMatch(/upload/i);
+    expect(created).toMatch(/collection/i);
+
+    // The Saved screen's Remove button reuses the unsave mutation, whose own
+    // copy is worded "Save". The user pressed Remove.
+    const removed = describeSavedActionError(new PulseApiError(uploadCopy, 500), "remove");
+    expect(removed).toMatch(/removed/i);
+    expect(removed).not.toMatch(/^Save could not/);
+  });
+
+  it("gives each write action its own subject line", () => {
+    const subjects = (["create", "rename", "delete", "remove", "move"] as const).map((action) =>
+      describeSavedActionError(new PulseApiError("x", 500), action)
+    );
+    expect(new Set(subjects).size).toBe(subjects.length);
+  });
+
+  it("varies the remedy by category rather than by action", () => {
+    const offline = describeSavedActionError(new PulseApiError("x", 503, "request_unreachable"), "move");
+    const server = describeSavedActionError(new PulseApiError("x", 503), "move");
+    expect(offline).toMatch(/connection/i);
+    expect(offline).not.toBe(server);
+  });
+
+  it("never echoes the server message on an unmapped 4xx, unlike the social describer", () => {
+    // `describeSocialActionError` deliberately prefers the server's own words
+    // here, which is why the Saved write path does not route through it.
+    expect(describeSocialActionError(new PulseApiError(uploadCopy, 422))).toBe(uploadCopy);
+    expect(describeSavedActionError(new PulseApiError(uploadCopy, 422), "rename")).not.toMatch(/upload/i);
+  });
+
+  it("keeps a well-formed trace id on both the read and the write path", () => {
+    const details = { trace_id: "abc-123_XYZ" };
+    expect(describeSavedLibraryError(new PulseApiError(uploadCopy, 500, "server_error", details))).toContain("abc-123_XYZ");
+    expect(describeSavedActionError(new PulseApiError(uploadCopy, 500, "server_error", details), "delete")).toContain("abc-123_XYZ");
+  });
+
+  it("drops a trace id that is prose rather than an id", () => {
+    // The trace field is the one part of the server payload still shown, so it
+    // is also the remaining way server text could reach the screen.
+    const prose = { trace_id: "Upload failed. Please retry or contact support." };
+    const message = describeSavedActionError(new PulseApiError(uploadCopy, 500, "server_error", prose), "create");
+    expect(message).not.toMatch(/upload/i);
+    expect(message).not.toMatch(/reference/i);
+  });
+
+  it("shows no trace reference when the server supplied none", () => {
+    expect(describeSavedActionError(new PulseApiError("x", 500), "create")).not.toMatch(/reference/i);
+    expect(describeSavedActionError(new TypeError("Network request failed"), "create")).not.toMatch(/reference/i);
   });
 });

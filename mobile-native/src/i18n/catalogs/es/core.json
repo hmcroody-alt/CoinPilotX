@@ -425,6 +425,29 @@
       "body": "Estamos en ello. Inténtalo de nuevo en un momento.",
       "maintenance": "PulseSoc está en mantenimiento por poco tiempo."
     },
+    "savedLibrary": {
+      "signedOut": "Tu sesión ha caducado. Inicia sesión de nuevo para ver tu biblioteca de guardados.",
+      "noAccess": "Esta biblioteca de guardados no está disponible para tu cuenta.",
+      "offline": "No se pudo cargar tu biblioteca de guardados. Comprueba tu conexión e inténtalo de nuevo.",
+      "server": "Tu biblioteca de guardados no se pudo cargar ahora mismo. Inténtalo de nuevo en un momento.",
+      "request": "PulseSoc no pudo leer tu biblioteca de guardados con esa petición. Actualiza para intentarlo de nuevo.",
+      "unknown": "No se pudo cargar tu biblioteca de guardados. Actualiza para intentarlo de nuevo.",
+      "reference": "{{message}} Referencia: {{trace}}"
+    },
+    "savedAction": {
+      "create": "No se pudo crear esa colección.",
+      "rename": "No se pudo cambiar el nombre de esa colección.",
+      "delete": "No se pudo eliminar esa colección.",
+      "remove": "No se pudo quitar ese elemento de tu biblioteca de guardados.",
+      "move": "No se pudo mover ese elemento a otra colección.",
+      "signedOut": "Tu sesión ha caducado. Inicia sesión de nuevo e inténtalo otra vez.",
+      "noAccess": "Tu cuenta no puede modificar esta biblioteca de guardados.",
+      "offline": "Comprueba tu conexión e inténtalo de nuevo.",
+      "server": "PulseSoc tuvo un problema por su parte. Inténtalo de nuevo en un momento.",
+      "request": "PulseSoc no pudo aceptar esa petición. Actualiza e inténtalo de nuevo.",
+      "unknown": "Inténtalo de nuevo y actualiza si sigue ocurriendo.",
+      "detail": "{{what}} {{why}}"
+    },
     "empty": {
       "generic": "Aquí no hay nada todavía",
       "genericBody": "Cuando haya algo que mostrar, aparecerá aquí.",

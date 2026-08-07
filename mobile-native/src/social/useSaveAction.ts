@@ -30,6 +30,18 @@ export type SaveActionOutcome = {
   ok: boolean;
   /** Populated only when `ok` is false. */
   message?: string;
+  /**
+   * The rejection that caused the failure, when there was one.
+   *
+   * `message` is worded for a Save button, which is right for the card that
+   * usually calls this and wrong for the Saved screen, where the same mutation
+   * is the "Remove" control. Handing back the raw error lets a caller with
+   * better context describe the failure in its own words instead of showing
+   * "Save could not be completed" to someone who pressed Remove. Absent when
+   * the call was dropped as a duplicate or superseded — nothing failed there,
+   * so a caller that reports on `error` alone stays quiet, as it should.
+   */
+  error?: unknown;
 };
 
 /**
@@ -60,7 +72,7 @@ export async function setSaved(target: SaveTarget, next: boolean): Promise<SaveA
   } catch (error) {
     if (sequences.get(key) !== seq) return { ok: false, saved: previous };
     settleSaveState(target.type, target.id, previous);
-    return { ok: false, saved: previous, message: describeSocialActionError(error, "Save") };
+    return { ok: false, saved: previous, message: describeSocialActionError(error, "Save"), error };
   } finally {
     inFlight.delete(key);
   }

@@ -425,6 +425,29 @@
       "body": "N ap travay sou li. Eseye ankò talè.",
       "maintenance": "PulseSoc fèmen yon ti moman pou antretyen."
     },
+    "savedLibrary": {
+      "signedOut": "Sesyon ou an fini. Konekte ankò pou wè bibliyotèk sere ou a.",
+      "noAccess": "Bibliyotèk sere sa a pa disponib pou kont ou.",
+      "offline": "Bibliyotèk sere ou a pa t ka chaje. Tcheke koneksyon ou epi eseye ankò.",
+      "server": "Bibliyotèk sere ou a pa t ka chaje kounye a. Eseye ankò talè.",
+      "request": "PulseSoc pa t ka li bibliyotèk sere ou a ak demann sa a. Rafrechi pou eseye ankò.",
+      "unknown": "Bibliyotèk sere ou a pa t ka chaje. Rafrechi pou eseye ankò.",
+      "reference": "{{message}} Referans: {{trace}}"
+    },
+    "savedAction": {
+      "create": "Koleksyon sa a pa t ka kreye.",
+      "rename": "Koleksyon sa a pa t ka chanje non.",
+      "delete": "Koleksyon sa a pa t ka efase.",
+      "remove": "Atik sa a pa t ka retire nan bibliyotèk sere ou a.",
+      "move": "Atik sa a pa t ka deplase nan yon lòt koleksyon.",
+      "signedOut": "Sesyon ou an fini. Konekte ankò epi eseye ankò.",
+      "noAccess": "Kont ou pa gen dwa chanje bibliyotèk sere sa a.",
+      "offline": "Tcheke koneksyon ou epi eseye ankò.",
+      "server": "PulseSoc gen yon pwoblèm bò kote l. Eseye ankò talè.",
+      "request": "PulseSoc pa t ka aksepte demann sa a. Rafrechi epi eseye ankò.",
+      "unknown": "Eseye ankò, epi rafrechi si sa kontinye.",
+      "detail": "{{what}} {{why}}"
+    },
     "empty": {
       "generic": "Poko gen anyen isit la",
       "genericBody": "Lè gen yon bagay pou montre, l ap parèt isit la.",

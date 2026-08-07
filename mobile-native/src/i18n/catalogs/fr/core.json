@@ -425,6 +425,29 @@
       "body": "Nous y travaillons. Réessayez dans un instant.",
       "maintenance": "PulseSoc est brièvement en maintenance."
     },
+    "savedLibrary": {
+      "signedOut": "Votre session a expiré. Reconnectez-vous pour voir votre bibliothèque d'enregistrements.",
+      "noAccess": "Cette bibliothèque d'enregistrements n'est pas accessible à votre compte.",
+      "offline": "Votre bibliothèque d'enregistrements n'a pas pu se charger. Vérifiez votre connexion et réessayez.",
+      "server": "Votre bibliothèque d'enregistrements n'a pas pu se charger pour le moment. Réessayez dans un instant.",
+      "request": "PulseSoc n'a pas pu lire votre bibliothèque d'enregistrements avec cette requête. Actualisez pour réessayer.",
+      "unknown": "Votre bibliothèque d'enregistrements n'a pas pu se charger. Actualisez pour réessayer.",
+      "reference": "{{message}} Référence : {{trace}}"
+    },
+    "savedAction": {
+      "create": "Cette collection n'a pas pu être créée.",
+      "rename": "Cette collection n'a pas pu être renommée.",
+      "delete": "Cette collection n'a pas pu être supprimée.",
+      "remove": "Cet élément n'a pas pu être retiré de votre bibliothèque d'enregistrements.",
+      "move": "Cet élément n'a pas pu être déplacé vers une autre collection.",
+      "signedOut": "Votre session a expiré. Reconnectez-vous et réessayez.",
+      "noAccess": "Votre compte n'est pas autorisé à modifier cette bibliothèque d'enregistrements.",
+      "offline": "Vérifiez votre connexion et réessayez.",
+      "server": "PulseSoc a rencontré un problème de son côté. Réessayez dans un instant.",
+      "request": "PulseSoc n'a pas pu accepter cette requête. Actualisez et réessayez.",
+      "unknown": "Réessayez, et actualisez si le problème persiste.",
+      "detail": "{{what}} {{why}}"
+    },
     "empty": {
       "generic": "Rien pour le moment",
       "genericBody": "Dès qu'il y aura du contenu, il apparaîtra ici.",

@@ -425,6 +425,29 @@
       "body": "我们正在处理，请稍后再试。",
       "maintenance": "PulseSoc 正在短暂维护中。"
     },
+    "savedLibrary": {
+      "signedOut": "登录状态已过期。请重新登录以查看你的收藏库。",
+      "noAccess": "你的账号无法访问该收藏库。",
+      "offline": "无法加载你的收藏库。请检查网络连接后重试。",
+      "server": "暂时无法加载你的收藏库。请稍后再试。",
+      "request": "PulseSoc 无法按该请求读取你的收藏库。请刷新后重试。",
+      "unknown": "无法加载你的收藏库。请刷新后重试。",
+      "reference": "{{message}} 参考编号：{{trace}}"
+    },
+    "savedAction": {
+      "create": "无法创建该收藏夹。",
+      "rename": "无法重命名该收藏夹。",
+      "delete": "无法删除该收藏夹。",
+      "remove": "无法从你的收藏库中移除该内容。",
+      "move": "无法将该内容移动到其他收藏夹。",
+      "signedOut": "登录状态已过期。请重新登录后再试。",
+      "noAccess": "你的账号无权修改该收藏库。",
+      "offline": "请检查网络连接后重试。",
+      "server": "PulseSoc 出现了问题。请稍后再试。",
+      "request": "PulseSoc 无法处理该请求。请刷新后重试。",
+      "unknown": "请重试，若仍然如此请刷新。",
+      "detail": "{{what}}{{why}}"
+    },
     "empty": {
       "generic": "这里还什么都没有",
       "genericBody": "有内容时会显示在这里。",

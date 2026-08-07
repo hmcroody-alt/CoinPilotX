@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { PulseApiError } from "../api/pulseApi";
+import { translate } from "../i18n/engine";
 
 /**
  * Duplicate-request prevention and stale-response rejection for optimistic
@@ -175,6 +176,167 @@ export function describeSocialActionError(err: unknown, action = "That action"):
     return "You're offline. Reconnect and try again.";
   }
   return `${action} could not be completed.`;
+}
+
+/**
+ * What kind of failure a rejected PulseSoc request was, independent of copy.
+ *
+ * Split out so the read side and the write side of the save contract cannot
+ * drift about what a 401 or a dead socket means, while still wording their
+ * messages for what the user was actually doing.
+ */
+export type PulseFailureKind = "auth" | "forbidden" | "offline" | "server" | "request" | "unknown";
+
+export function classifyPulseFailure(err: unknown): PulseFailureKind {
+  if (err instanceof PulseApiError) {
+    // `pulseApi` reports a fetch that never produced a response as 503
+    // `request_unreachable`, and a session refresh it could not finish as 503
+    // `session_refresh_temporary`. Both are connectivity, not a failing server,
+    // and telling the user to "try again in a moment" when they are on a plane
+    // is the wrong instruction — so these are checked before the 5xx range.
+    if (err.status === 0) return "offline";
+    if (err.code === "request_unreachable" || err.code === "session_refresh_temporary") return "offline";
+    if (err.status === 401) return "auth";
+    if (err.status === 403) return "forbidden";
+    if (err.status >= 500) return "server";
+    if (err.status >= 400) return "request";
+    return "unknown";
+  }
+  if (err instanceof TypeError || (err instanceof Error && /network|offline|timeout/i.test(err.message))) {
+    return "offline";
+  }
+  return "unknown";
+}
+
+const SAVED_LIBRARY_ERROR_KEYS: Readonly<Record<PulseFailureKind, string>> = Object.freeze({
+  auth: "errors:savedLibrary.signedOut",
+  forbidden: "errors:savedLibrary.noAccess",
+  offline: "errors:savedLibrary.offline",
+  server: "errors:savedLibrary.server",
+  request: "errors:savedLibrary.request",
+  unknown: "errors:savedLibrary.unknown"
+});
+
+/**
+ * User-facing copy for a failed *read* of the Saved library.
+ *
+ * REUSE DECISION. This sits beside `describeSocialActionError` in the module
+ * that already owns social error copy, rather than in a new one, because there
+ * should not be a second error-describing system. It is a separate function
+ * rather than another `action` argument to that one for two reasons:
+ *
+ *   1. `describeSocialActionError` is write-shaped in its wording — "could not
+ *      be completed", "that was already done", "{action} could not be completed
+ *      right now" — all of which describe something the user just did. Opening
+ *      Saved is a read, and no phrasing of an `action` string fixes a sentence
+ *      built around a verb the user did not perform.
+ *   2. Its 4xx branch falls through to `err.message`, i.e. whatever the server
+ *      said. That is exactly the defect being fixed here: the Flask JSON error
+ *      handler answers *every* API path with upload copy, so echoing the server
+ *      puts "Upload failed. Please retry…" on a read of the saved library.
+ *      Nothing on this path may ever render a raw server string.
+ *
+ * The two share `classifyPulseFailure`, which is the part worth having in
+ * common — the mapping from a transport failure to a category, not the prose.
+ */
+export function describeSavedLibraryError(err: unknown): string {
+  return withTraceReference(translate(SAVED_LIBRARY_ERROR_KEYS[classifyPulseFailure(err)]), err);
+}
+
+/**
+ * The write actions the Saved screen can perform on the library itself.
+ *
+ * A closed union rather than a free-text label because each one names a
+ * translated sentence in the catalog. A caller that invents a name gets a
+ * compile error instead of an untranslated string in production.
+ */
+export type SavedActionName = "create" | "rename" | "delete" | "remove" | "move";
+
+const SAVED_ACTION_SUBJECT_KEYS: Readonly<Record<SavedActionName, string>> = Object.freeze({
+  create: "errors:savedAction.create",
+  rename: "errors:savedAction.rename",
+  delete: "errors:savedAction.delete",
+  remove: "errors:savedAction.remove",
+  move: "errors:savedAction.move"
+});
+
+const SAVED_ACTION_REASON_KEYS: Readonly<Record<PulseFailureKind, string>> = Object.freeze({
+  auth: "errors:savedAction.signedOut",
+  forbidden: "errors:savedAction.noAccess",
+  offline: "errors:savedAction.offline",
+  server: "errors:savedAction.server",
+  request: "errors:savedAction.request",
+  unknown: "errors:savedAction.unknown"
+});
+
+/**
+ * User-facing copy for a failed *write* against the Saved library — creating,
+ * renaming or deleting a collection, or removing/moving an item.
+ *
+ * REUSE DECISION. `describeSocialActionError` is the module's existing
+ * write-shaped describer and it already takes an action name, so routing these
+ * handlers through it was the obvious move. It is the wrong one, for three
+ * reasons that all show up on this screen specifically:
+ *
+ *   1. Its unmapped-4xx branch returns `err.message` — the server's own words.
+ *      That is the exact leak this work exists to close: the Flask JSON error
+ *      handler answers every failing API path with upload copy, so a 400 from
+ *      `/api/pulse/saved/collections` renders "Upload failed. Please retry…"
+ *      under a rename box. Adding another action name does not fix a function
+ *      whose fallback is "print whatever the server said".
+ *   2. Its copy is hardcoded English. The read path on this same screen is now
+ *      catalog-driven, so reusing it would show a Spanish user a translated
+ *      load failure and an English rename failure in the same view.
+ *   3. It discards `details.trace_id`, which the read path deliberately keeps
+ *      because support asks for it.
+ *
+ * So this is `describeSavedLibraryError`'s treatment applied to the write side,
+ * not a second system: the same `classifyPulseFailure`, the same
+ * `withTraceReference`, the same catalog. Only the prose differs, and it has to
+ * — a read says "your library couldn't load", a write has to name the thing the
+ * user just tried to change.
+ *
+ * The sentence is composed from two whole sentences (what failed, then why) via
+ * `savedAction.detail` rather than by interpolating a verb into a frame. A noun
+ * dropped into a sentence frame has to agree with it, and eleven languages do
+ * not agree the same way; two independent sentences concatenate safely in all
+ * of them, which is the same reason `savedLibrary.reference` is shaped that way.
+ */
+export function describeSavedActionError(err: unknown, action: SavedActionName): string {
+  const message = translate("errors:savedAction.detail", {
+    what: translate(SAVED_ACTION_SUBJECT_KEYS[action]),
+    why: translate(SAVED_ACTION_REASON_KEYS[classifyPulseFailure(err)])
+  });
+  return withTraceReference(message, err);
+}
+
+/**
+ * Appends the server's trace id to already-safe copy, when it supplied one.
+ *
+ * Shared by the read and write describers so there is exactly one place that
+ * decides what a trace id may look like. Duplicating it would be duplicating a
+ * filter, and a filter that exists twice is a filter that will be loosened once.
+ */
+function withTraceReference(message: string, err: unknown): string {
+  const trace = pulseTraceId(err);
+  if (!trace) return message;
+  return translate("errors:savedLibrary.reference", { message, trace });
+}
+
+/**
+ * The server's trace id, when it supplied one.
+ *
+ * Support asks for this id, so it is kept — but only the id is surfaced, never
+ * the message it travelled with, and it must look like an id: an unbounded or
+ * free-text `trace_id` would be another way for server prose to reach the
+ * screen through the door this fix is closing.
+ */
+function pulseTraceId(err: unknown): string {
+  if (!(err instanceof PulseApiError)) return "";
+  const raw = err.details?.trace_id;
+  if (typeof raw !== "string") return "";
+  const clean = raw.trim().slice(0, 64);
+  return /^[A-Za-z0-9_-]+$/.test(clean) ? clean : "";
 }
 
 /**

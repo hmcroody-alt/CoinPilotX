@@ -425,6 +425,29 @@
       "body": "We're working on it. Try again shortly.",
       "maintenance": "PulseSoc is briefly down for maintenance."
     },
+    "savedLibrary": {
+      "signedOut": "Your session expired. Sign in again to see your saved library.",
+      "noAccess": "This saved library isn't available to your account.",
+      "offline": "Your saved library couldn't load. Check your connection and try again.",
+      "server": "Your saved library couldn't load right now. Try again in a moment.",
+      "request": "PulseSoc couldn't read your saved library with that request. Refresh to try again.",
+      "unknown": "Your saved library couldn't load. Refresh to try again.",
+      "reference": "{{message}} Reference: {{trace}}"
+    },
+    "savedAction": {
+      "create": "That collection couldn't be created.",
+      "rename": "That collection couldn't be renamed.",
+      "delete": "That collection couldn't be deleted.",
+      "remove": "That item couldn't be removed from your saved library.",
+      "move": "That item couldn't be moved to another collection.",
+      "signedOut": "Your session expired. Sign in again and try that once more.",
+      "noAccess": "Your account isn't allowed to change this saved library.",
+      "offline": "Check your connection and try again.",
+      "server": "PulseSoc had trouble on its side. Try again in a moment.",
+      "request": "PulseSoc couldn't accept that request. Refresh and try again.",
+      "unknown": "Try again, and refresh if it keeps happening.",
+      "detail": "{{what}} {{why}}"
+    },
     "empty": {
       "generic": "Nothing here yet",
       "genericBody": "When there's something to show, it'll appear here.",

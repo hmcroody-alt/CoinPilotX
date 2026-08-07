@@ -158,15 +158,34 @@ def set_post_saved(user_id: int, post_id: int, *, saved: bool) -> dict[str, Any]
             if not original:
                 return {"ok": False, "error": "post_not_found"}
             post = dict(original)
+        # Saved means both rows exist. `pulse_post_saves` is what the feed card
+        # reads and `pulse_saved_items` is what the Saved library lists; routes
+        # elsewhere can delete the library row on its own, and treating the flag
+        # row alone as the answer makes that drift permanent — the card shows
+        # Saved, so every later save is a no-op and the post never comes back to
+        # the library. Requiring both means a half-saved post falls through to
+        # the writes below, which are idempotent and repair the missing side.
         cur.execute(
             "SELECT 1 FROM pulse_post_saves WHERE post_id=? AND user_id=? LIMIT 1",
             (target_id, owner_id),
         )
-        before = bool(cur.fetchone())
+        flag_present = bool(cur.fetchone())
+        cur.execute(
+            """SELECT 1 FROM pulse_saved_items
+               WHERE user_id=? AND content_type='post' AND content_id=? LIMIT 1""",
+            (owner_id, str(target_id)),
+        )
+        library_present = bool(cur.fetchone())
+        before = flag_present and library_present
         desired = bool(saved)
-        if before == desired:
+        if desired and before:
             return {
-                "ok": True, "post_id": target_id, "saved": desired,
+                "ok": True, "post_id": target_id, "saved": True,
+                "changed": False,
+            }
+        if not desired and not flag_present and not library_present:
+            return {
+                "ok": True, "post_id": target_id, "saved": False,
                 "changed": False,
             }
         if not desired:
