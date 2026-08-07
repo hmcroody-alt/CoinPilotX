@@ -124,6 +124,16 @@ type LiveBroadcastState = {
   audioBusy: boolean;
   /** True while a bounded automatic reconnect is pending. */
   recovering: boolean;
+  /**
+   * The broadcast is live but the audio engine could not be confirmed.
+   *
+   * This exists so "we could not prove your microphone is working" stops being
+   * expressed as "your broadcast is over". Empty string means confirmed; a
+   * sentence means the host is on air and should be told their audio may not be
+   * reaching anyone. It is cleared the moment a later guard pass succeeds, so a
+   * transient camera-start dip does not leave a permanent warning on screen.
+   */
+  audioWarning: string;
 };
 
 const initialState: LiveBroadcastState = {
@@ -149,7 +159,8 @@ const initialState: LiveBroadcastState = {
   diagnosticCode: "",
   audioPath: "v1_legacy",
   audioBusy: false,
-  recovering: false
+  recovering: false,
+  audioWarning: ""
 };
 
 let globalsRegistered = false;
@@ -1518,7 +1529,7 @@ export function useLiveBroadcastRoom() {
               // log. Its recovery passes are now the bounded loop inside the
               // guard itself, so the repair and the verdict can no longer
               // disagree about when a recorder should be restarted.
-              await stabilizeRealtimeAudioEngine(livekitNative.AudioDeviceModule, {
+              const runGuard = () => stabilizeRealtimeAudioEngine(livekitNative.AudioDeviceModule, {
                 // This runs during camera startup with video already publishing,
                 // so the role is read from the room like every other host guard.
                 role: hostAudioRole(room),
@@ -1530,6 +1541,56 @@ export function useLiveBroadcastRoom() {
                 reactivateSession,
                 context: engineContext
               });
+              try {
+                await runGuard();
+                setState((current) => (current.audioWarning ? { ...current, audioWarning: "" } : current));
+              } catch (error) {
+                // DEGRADE, DO NOT ABORT.
+                //
+                // Reaching here means the guard could not confirm the recording
+                // engine after the camera took the shared session. It used to
+                // throw straight out of connect(), which ended a broadcast whose
+                // microphone track was already published and left the host on a
+                // dead-end error screen - the strictly worse outcome, because a
+                // stream that might be silent is still recoverable and a stream
+                // that never started is not.
+                //
+                // This is the same shape the viewer path already uses at
+                // room_connected: the early check is advisory, and a later
+                // authoritative pass decides. The invariant it must not weaken is
+                // "a silent broadcast is never reported as healthy" - so the host
+                // is told, in `audioWarning`, that their audio could not be
+                // confirmed, and the warning stays up until a guard pass actually
+                // succeeds.
+                //
+                // Only the engine verdict is caught. An ownership error, a
+                // permission error, or anything else still ends the broadcast,
+                // because those are not states a retry can improve.
+                if ((error as { code?: string } | null)?.code !== "LIVE_AUDIO_ENGINE_INACTIVE") throw error;
+                const stage = (error as { stage?: string } | null)?.stage;
+                setState((current) => ({
+                  ...current,
+                  audioWarning: describeLiveAudioFailure(stage),
+                  diagnosticCode: "LIVE_AUDIO_ENGINE_UNCONFIRMED"
+                }));
+                // One later re-check, off the connect path so it cannot delay
+                // going live. The camera's grab of the session settles
+                // asynchronously and the exact moment varies run to run, so an
+                // engine that was down at the end of the guard's own passes can
+                // legitimately be up a second later. Success clears the warning;
+                // failure leaves it exactly as it is rather than escalating,
+                // because the host is already broadcasting and there is nothing
+                // further to decide.
+                setTimeout(() => {
+                  runGuard()
+                    .then(() => {
+                      setState((current) =>
+                        current.audioWarning ? { ...current, audioWarning: "", diagnosticCode: "" } : current
+                      );
+                    })
+                    .catch(() => undefined);
+                }, 1500);
+              }
               return audioPublications(room.localParticipant).filter(publicationHasTrack).length;
             },
             // Read-only engine probe. Surfaces the native record/playout state
@@ -1716,6 +1777,10 @@ export function useLiveBroadcastRoom() {
         // failure to a typed code and a plain, actionable message instead.
         const engineInactive =
           (error as { code?: string } | null)?.code === "REALTIME_AUDIO_ENGINE_INACTIVE" ||
+          // Live throws its own code from its own copy of the guard. Without this
+          // the mapping fell through to the regex below, which worked only for as
+          // long as nobody reworded the message.
+          (error as { code?: string } | null)?.code === "LIVE_AUDIO_ENGINE_INACTIVE" ||
           /engine did not remain active/i.test(readableError(error, ""));
         const message = engineInactive
           ? describeLiveAudioFailure((error as { stage?: string } | null)?.stage)
@@ -1740,6 +1805,33 @@ export function useLiveBroadcastRoom() {
     [connectTransaction]
   );
   connectRef.current = connect;
+
+  /**
+   * Run an audio guard on a broadcast that is already live, and downgrade only
+   * its engine verdict into a warning string.
+   *
+   * Returns "" when the engine was confirmed, and a host-readable sentence when
+   * it was not. The caller writes that into `audioWarning`, so an unconfirmed
+   * engine annotates the session instead of ending it.
+   *
+   * The narrowness is the point. `LIVE_AUDIO_ENGINE_INACTIVE` is the one failure
+   * that a later pass can legitimately reverse - the shared iOS session settles
+   * asynchronously around a camera transition, so "not running yet" and "never
+   * going to run" are the same reading a few hundred milliseconds apart. Every
+   * other error - a lost publication, a revoked permission, a torn-down room -
+   * propagates untouched, because none of those improve on a retry and swallowing
+   * them would turn this into the "report a silent broadcast as healthy" bug it
+   * exists to prevent.
+   */
+  const confirmLiveAudioOrWarn = useCallback(async (guard: () => Promise<unknown>): Promise<string> => {
+    try {
+      await guard();
+      return "";
+    } catch (error) {
+      if ((error as { code?: string } | null)?.code !== "LIVE_AUDIO_ENGINE_INACTIVE") throw error;
+      return describeLiveAudioFailure((error as { stage?: string } | null)?.stage);
+    }
+  }, []);
 
   const setMicrophoneEnabled = useCallback(async (enabled: boolean) => {
     const room = roomRef.current;
@@ -1769,8 +1861,16 @@ export function useLiveBroadcastRoom() {
       correlationId: correlationIdRef.current
     });
     if (localAudioTrackCount <= 0) throw new Error("Camera changed, but microphone audio is no longer published.");
-    {
-      await stabilizeLivePublisherAudio(room, audioDeviceModuleRef.current, audioSessionRef.current, {
+    // Same degrade rule as the connect path, for the same reason and with a
+    // stronger case: this host is already on air. Letting an unconfirmed engine
+    // throw here would reject a camera toggle the host explicitly asked for
+    // while leaving the broadcast running anyway - the toggle fails, the stream
+    // does not, and the host is given an error about a camera when the actual
+    // doubt is about the microphone. Recording the doubt in `audioWarning` says
+    // the true thing instead. Everything that is not the engine verdict still
+    // throws, because a lost mic publication or a dead room is not advisory.
+    const cameraAudioWarning = await confirmLiveAudioOrWarn(() =>
+      stabilizeLivePublisherAudio(room, audioDeviceModuleRef.current, audioSessionRef.current, {
         settleMs: 450,
         stage: "camera_start",
         context: {
@@ -1779,11 +1879,19 @@ export function useLiveBroadcastRoom() {
           roomType: "livestream",
           participantRole: roleRef.current
         }
-      });
-    }
+      })
+    );
     refreshParticipants(room);
-    setState((current) => ({ ...current, videoEnabled: enabled, audioEnabled: true, localAudioTrackCount, error: "", diagnosticCode: "" }));
-  }, [refreshParticipants]);
+    setState((current) => ({
+      ...current,
+      videoEnabled: enabled,
+      audioEnabled: true,
+      localAudioTrackCount,
+      error: "",
+      audioWarning: cameraAudioWarning,
+      diagnosticCode: cameraAudioWarning ? "LIVE_AUDIO_ENGINE_UNCONFIRMED" : ""
+    }));
+  }, [confirmLiveAudioOrWarn, refreshParticipants]);
 
   const setSpeakerEnabled = useCallback(async (enabled: boolean) => {
     const audioSession = audioSessionRef.current;
@@ -1815,6 +1923,47 @@ export function useLiveBroadcastRoom() {
     await showRealtimeAudioRoutePicker(audioSession);
   }, []);
 
+  /**
+   * Re-run the publisher guard on demand and update `audioWarning` from it.
+   *
+   * The warning tells a host their audio could not be confirmed; without this
+   * there is nothing they can do about it but end the broadcast, which is the
+   * outcome the degrade path exists to avoid. This re-runs the same guard - with
+   * its own internal repair passes - so a host whose session has since settled
+   * gets the warning cleared, and one whose engine is genuinely down keeps it.
+   *
+   * Never throws. It is a status re-read, and a re-read that can itself fail
+   * would just be the original abort with more steps.
+   */
+  const recheckAudio = useCallback(async () => {
+    const room = roomRef.current;
+    if (!room || !publishRef.current) return;
+    setState((current) => ({ ...current, audioBusy: true }));
+    let warning = "";
+    try {
+      warning = await confirmLiveAudioOrWarn(() =>
+        stabilizeLivePublisherAudio(room, audioDeviceModuleRef.current, audioSessionRef.current, {
+          settleMs: 400,
+          stage: "camera_start",
+          context: {
+            sessionId: roomNameRef.current,
+            correlationId: correlationIdRef.current,
+            roomType: "livestream",
+            participantRole: roleRef.current
+          }
+        })
+      );
+    } catch (error) {
+      warning = readableError(error, "PulseSoc could not confirm your microphone.");
+    }
+    setState((current) => ({
+      ...current,
+      audioBusy: false,
+      audioWarning: warning,
+      diagnosticCode: warning ? "LIVE_AUDIO_ENGINE_UNCONFIRMED" : ""
+    }));
+  }, [confirmLiveAudioOrWarn]);
+
   const switchCamera = useCallback(async () => {
     const localParticipant = roomRef.current?.localParticipant;
     const publications = Array.from(localParticipant?.videoTrackPublications?.values?.() || []) as any[];
@@ -1828,8 +1977,10 @@ export function useLiveBroadcastRoom() {
       correlationId: correlationIdRef.current
     });
     if (localAudioTrackCount <= 0) throw new Error("Camera switched, but microphone audio is no longer published.");
-    {
-      await stabilizeLivePublisherAudio(room, audioDeviceModuleRef.current, audioSessionRef.current, {
+    // Flipping front/back camera must not be able to end a broadcast. Same
+    // degrade contract as `setCameraEnabled` above.
+    const switchAudioWarning = await confirmLiveAudioOrWarn(() =>
+      stabilizeLivePublisherAudio(room, audioDeviceModuleRef.current, audioSessionRef.current, {
         settleMs: 450,
         stage: "camera_start",
         context: {
@@ -1838,11 +1989,18 @@ export function useLiveBroadcastRoom() {
           roomType: "livestream",
           participantRole: roleRef.current
         }
-      });
-    }
+      })
+    );
     refreshParticipants(room);
-    setState((current) => ({ ...current, audioEnabled: true, localAudioTrackCount, error: "", diagnosticCode: "" }));
-  }, [refreshParticipants]);
+    setState((current) => ({
+      ...current,
+      audioEnabled: true,
+      localAudioTrackCount,
+      error: "",
+      audioWarning: switchAudioWarning,
+      diagnosticCode: switchAudioWarning ? "LIVE_AUDIO_ENGINE_UNCONFIRMED" : ""
+    }));
+  }, [confirmLiveAudioOrWarn, refreshParticipants]);
 
   useEffect(
     () => () => {
@@ -1875,6 +2033,7 @@ export function useLiveBroadcastRoom() {
     setSpeakerEnabled,
     setRemoteAudioEnabled,
     showAudioRoutePicker,
+    recheckAudio,
     switchCamera,
     getLastConnectError: () => lastConnectErrorRef.current,
     getAudioTrace: () => traceRef.current?.snapshot() || []

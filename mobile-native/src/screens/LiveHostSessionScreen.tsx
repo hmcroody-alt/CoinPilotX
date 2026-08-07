@@ -652,6 +652,27 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
       >
         {room.error ? <Text style={styles.inlineError}>{room.error}</Text> : null}
 
+        {/* The broadcast is live and the microphone could not be confirmed. This
+            used to be a full-screen "Broadcast could not start" dead end that
+            ended a session which was, in fact, already on air. It is a banner
+            with a retry now, because the host needs to know their audio is in
+            doubt AND needs to be able to stay live while they act on it. */}
+        {room.audioWarning ? (
+          <View style={styles.audioWarningBanner} accessibilityRole="alert">
+            <Ionicons name="warning" size={16} color="#FFB020" />
+            <Text style={styles.audioWarningText}>{room.audioWarning}</Text>
+            <Pressable
+              onPress={() => room.recheckAudio().catch(() => undefined)}
+              disabled={room.audioBusy}
+              accessibilityRole="button"
+              accessibilityLabel="Recheck microphone"
+              hitSlop={8}
+            >
+              <Text style={styles.audioWarningAction}>{room.audioBusy ? "Checking…" : "Retry"}</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         {!keyboardVisible ? (
           <Pressable onPress={() => openSheet("comments")} style={styles.chatTap} accessibilityRole="button" accessibilityLabel="Open comments">
             <LiveChatStream messages={streamMessages} pinned={pinnedMessage} maxVisible={3} />
@@ -1278,6 +1299,32 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: 13,
     fontWeight: "700"
+  },
+  // Warning, not error. The broadcast is running; only the microphone is
+  // unconfirmed. Styling this like `inlineError` would tell the host their
+  // stream had failed, which is the exact wrong reading.
+  audioWarningBanner: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,176,32,0.16)",
+    borderColor: "rgba(255,176,32,0.42)",
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10
+  },
+  audioWarningText: {
+    color: "#FFD79A",
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 16
+  },
+  audioWarningAction: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "800"
   },
   controlTrayScroll: {
     flexGrow: 0

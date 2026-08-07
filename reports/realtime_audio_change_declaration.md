@@ -717,3 +717,76 @@ change, and this addendum must not be read as claiming it is. Live audio remains
 unproven on hardware until PHONE A / PHONE B is run against a build cut from this
 commit. The build number was moved to 14 so such a build can exist; build 13 predates
 `c9147482` and cannot demonstrate any of this.
+
+---
+
+# Addendum 2 — the host could not go live at all
+
+## What the device showed
+
+A host on a build newer than 13 got a full-screen "Broadcast could not start /
+Broadcast audio could not stay active while the camera started." That sentence is
+`describeLiveAudioFailure("camera_start")`. The guard threw
+`LIVE_AUDIO_ENGINE_INACTIVE` out of `connect()` and ended a broadcast whose
+microphone track was already published.
+
+Addendum 1 reasoned about a *silent viewer*. That was incomplete: the more severe
+fault was a host who never got on air.
+
+## Fault 1 — the repair was unreachable without the native bridge
+
+The wedge state is engine dead + ADM answering `isRecording === true` (always-prepared
+keeps the record path ENABLED across an engine stop). In that state:
+
+- `staleRecorder` needs `readNativeAudioEngineState()`, which returns `null` on any
+  binary built without `patches/@livekit+react-native-webrtc+144.1.1.patch`.
+  `isStaleRecordingWithoutEngine(null)` is `false` by design — with no native reading
+  there is no honest way to call a recorder stale.
+- the `else if` branch needs `recordingRunning === false`; this state reports `true`.
+- `startPlayout()` no-ops on an uninitialised ADM.
+
+So the guard declined every repair, then threw on the untouched state.
+
+`liveAudioEngine.ts` gains `blindStaleRecorder`: same repair, reachable when
+`native === null`, gated on `engineStopped`. If the engine is not running there is no
+capture in flight, so the stop cannot tear down a live recorder — the exact hazard the
+bridge was introduced to prevent. When the bridge is present its reading still wins.
+
+## Fault 2 — an unconfirmed engine ended the broadcast
+
+Three `stage: "camera_start"` call sites in `useLiveBroadcastRoom.ts` threw: the
+connect path, `setCameraEnabled`, and `switchCamera`. All three now degrade via
+`confirmLiveAudioOrWarn`, which converts **only** `LIVE_AUDIO_ENGINE_INACTIVE` into a
+new `audioWarning` string. Every other error still propagates and still ends the
+broadcast.
+
+This is the shape the viewer path already used at `room_connected`: the early check is
+advisory, a later pass is authoritative. The connect path schedules one 1500 ms
+re-check; `recheckAudio()` gives the host a manual one.
+
+**The invariant is not weakened.** A silent broadcast is still never reported as
+healthy — `LiveHostSessionScreen` renders a warning banner with a Retry, and
+`diagnosticCode` is set to `LIVE_AUDIO_ENGINE_UNCONFIRMED`. What changed is that the
+doubt is expressed as "your audio may not be reaching anyone" instead of "your
+broadcast is over", because a stream that might be silent is recoverable and one that
+never started is not.
+
+## Call path
+
+Untouched. No file under `src/calls/` or `src/core/` was modified in this addendum.
+`livePublisherMedia.ts` was deliberately left alone so the identity test against
+`realtimePublisherMedia.ts` still passes.
+
+## Validation
+
+`npm run typecheck` clean. `test:realtime-audio-critical` 16 suites / 350 tests.
+`test:realtime-audio-architecture` 23 tests. Backend
+`tests/protection/test_realtime_audio_architecture.py` 19 tests. New
+`src/live/__tests__/liveAudioDegrade.test.ts` drives the guard through the wedge state
+with no native bridge mocked in — the same condition as an unpatched device — and
+asserts the repair runs, that a failed repair still throws, that a healthy recorder is
+never torn down, and that the audience path never acquires a microphone.
+
+**Still NOT performed: physical audible validation on two devices.** No hardware was
+available. PHONE A speaks / PHONE B hears remains unproven, and nothing here should be
+read as claiming otherwise.

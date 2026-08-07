@@ -682,7 +682,27 @@ export async function stabilizeLiveAudioEngine(
     // true means real capture and is left alone; `inputEnabled` true with
     // `inputRunning` false is the corpse this branch exists to clear.
     const staleRecorder = wantRecording && isStaleRecordingWithoutEngine(native);
-    if (staleRecorder) {
+
+    // THE SAME STATE, SEEN WITHOUT THE BRIDGE.
+    //
+    // `isStaleRecordingWithoutEngine(null)` is false, by design - with no native
+    // reading there is no honest way to say the recorder is stale. But the
+    // consequence was that the one repair written for this incident became
+    // unreachable on any binary without the patched bridge, and the `else if`
+    // below could not pick it up either, because that branch requires
+    // `recordingRunning === false` and this state reports `true`. Both repairs
+    // declined, the guard threw anyway, and a host was told the broadcast could
+    // not start after the code had attempted nothing at all.
+    //
+    // `engineStopped` is what makes the fallback safe without the bridge. If the
+    // engine is not running, no capture is in flight, so there is no live
+    // recorder for the stop below to tear down - the tear-down the bridge was
+    // introduced to prevent cannot happen here. When the bridge IS present its
+    // reading wins, and this never fires.
+    const blindStaleRecorder =
+      wantRecording && native === null && engineStopped && before.recordingRunning !== false;
+
+    if (staleRecorder || blindStaleRecorder) {
       // Always-prepared mode (native `SetInitRecordingPersistentMode`) is what
       // makes the stop below a no-op: its entire purpose is to keep the record
       // path INITIALIZED across a stop so it can be resumed. Leave it on and
