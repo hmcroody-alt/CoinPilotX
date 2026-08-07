@@ -385,3 +385,27 @@ web form. Still intentionally NOT on the page: /admin/business-os (49 routes,
 admin console — separate audience), advertising assistant plan/execute
 (AI-driven, needs its own UX), delivery impression/click (ad-serving
 internals, not user actions).
+
+## 16. Mission close-out (2026-08-07)
+
+Milestones 1–9 delivered: shared design-token layer + shell alignment;
+route-family triage; the /business-os surface (previously 199 API routes with
+zero web page); nav discoverability (desktop rail, Quick Apps, Discover) for
+/business-os and /pulse/assistant; native-tab audit (all 15 native tabs have a
+web equivalent); complete Business OS write surface (campaigns incl.
+budget/schedule/funding, ad sets, creatives, products incl. inventory, orders
+buyer+seller, payouts view, appeals, reviews); real list rendering with
+per-row Use actions. Parallel-agent commits folded in along the way: global
+token injector across 599 inline-HTML pages, commerce gateway (37 endpoints +
+seller console), construction-gate removal, live guest-join + replay reel,
+perf and feed fixes.
+
+Validation at close: 780/780 undx_agent tests, 239/239 protection checks,
+audio gate clean over the full milestone range.
+
+Honest residual gaps requiring either product decisions or a live
+environment: admin/business-os web console; advertising assistant UX;
+responsive/a11y formal audit (page is responsive-styled but unaudited); live
+browser QA against Railway (login → /business-os → each form round-trip);
+Lighthouse/SEO pass. These are follow-ups, not parity holes: no native-app
+user surface remains without a web counterpart.
