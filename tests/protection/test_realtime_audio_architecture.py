@@ -149,18 +149,46 @@ class ImportBoundaryTests(unittest.TestCase):
 
 
 class LeaseDisciplineTests(unittest.TestCase):
-    def test_calls_and_live_share_the_call_grade_publisher_coordinator(self) -> None:
-        for rel in (
-            "mobile-native/src/calls/useNativeCallRoom.ts",
-            "mobile-native/src/live/useLiveBroadcastRoom.ts",
+    def test_calls_and_live_each_own_a_call_grade_publisher_coordinator(self) -> None:
+        # Calls and Live no longer share one module. Live owns a copy at
+        # src/live-audio/ so a change made for a broadcast cannot reach a call.
+        # What still has to hold is that both run the SAME sequence, so this
+        # asserts the two are on separate modules and that neither can reach
+        # the other's.
+        call = (ROOT / "mobile-native/src/calls/useNativeCallRoom.ts").read_text(encoding="utf-8")
+        self.assertIn('from "../core/realtimePublisherMedia"', call)
+        self.assertIn("initializeCallGradePublisherMedia({", call)
+        self.assertNotIn("live-audio/", call, "the call path must never import Live's copy")
+
+        live = (ROOT / "mobile-native/src/live/useLiveBroadcastRoom.ts").read_text(encoding="utf-8")
+        self.assertIn('from "../live-audio/livePublisherMedia"', live)
+        self.assertIn("initializeCallGradePublisherMedia({", live)
+        for module in (
+            "realtimeAudioEngine",
+            "realtimeMicrophonePublisher",
+            "realtimePublisherMedia",
+            "realtimeAudioNative",
         ):
-            text = (ROOT / rel).read_text(encoding="utf-8")
-            self.assertIn(
-                'from "../core/realtimePublisherMedia"',
-                text,
-                f"{rel} no longer uses the shared call-grade publisher sequence",
+            self.assertNotIn(
+                f'from "../core/{module}"',
+                live,
+                f"Live still imports the call-owned {module}; the copy is not authoritative",
             )
-            self.assertIn("initializeCallGradePublisherMedia({", text)
+
+    def test_the_live_publisher_copy_stays_identical_to_the_call_original(self) -> None:
+        # A copy that is allowed to drift is worse than no copy: it looks like
+        # the working implementation while behaving differently. Comments and
+        # the Realtime/Live renaming are stripped, so anything left is a real
+        # behavioural divergence and fails here.
+        def strip(text: str) -> str:
+            text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+            text = re.sub(r"//.*$", "", text, flags=re.M)
+            text = re.sub(r"[Rr]ealtime|[Ll]ive", "", text)
+            return re.sub(r"\s+", "", text)
+
+        original = strip((ROOT / "mobile-native/src/core/realtimePublisherMedia.ts").read_text(encoding="utf-8"))
+        copy = strip((ROOT / "mobile-native/src/live-audio/livePublisherMedia.ts").read_text(encoding="utf-8"))
+        self.assertEqual(copy, original, "Live's publisher copy has drifted from the call original")
 
     def test_both_room_adapters_release_audio_by_lease_not_by_owner_name(self) -> None:
         discipline = MANIFEST["required_lease_discipline"]

@@ -1,39 +1,52 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform } from "react-native";
 import { RealtimeAudioOwnershipError, ownershipDenialMessage } from "../core/audioOwnershipPolicy";
+// LIVE-ONLY AUDIO CONTROL FLOW. Every symbol below now resolves to
+// `src/live-audio/`, a copy of the call implementation that Live owns outright.
+// Calls continue to import `src/core/` and are not reachable from here, so a
+// change made for a broadcast cannot reach a call - which is the entire point of
+// the copy. The local names are kept identical to the originals so the rest of
+// this file is unchanged and the diff stays readable as a rewiring rather than a
+// rewrite.
+//
+// Not copied, on purpose: `audioOwnershipPolicy`. That module is the single
+// registry deciding who currently holds the microphone, and a second copy would
+// give Live its own registry that knows nothing about an in-progress call - Live
+// would happily take a session a call still owns. Copying it would break calls,
+// which outranks the symmetry of copying everything.
 import {
-  activateRealtimeAudioSession,
+  activateLiveAudioSession as activateRealtimeAudioSession,
   applyRemoteAudioEnabled as driveRemoteAudioEnabled,
   audioPublications,
-  enableRealtimeRecordingAlwaysPrepared,
+  enableLiveRecordingAlwaysPrepared as enableRealtimeRecordingAlwaysPrepared,
   ensureMicrophonePublished,
   PULSE_LIVE_VIDEO_CAPTURE_OPTIONS,
   PULSE_LIVE_VIDEO_PUBLISH_OPTIONS,
   publicationHasTrack,
-  inspectRealtimeAudioEngine,
-  reapplyRealtimeAudioConfiguration,
-  reassertRealtimeMicrophone,
-  releaseRealtimeAudioSession,
-  resolveRealtimeAudioConfiguration,
-  selectRealtimeAudioOutput,
-  showRealtimeAudioRoutePicker,
-  stabilizeRealtimeAudioEngine,
-  type RealtimeAudioEngineStatus,
-  type RealtimeAudioGuardContext,
-  type RealtimeAudioGuardStage,
-  type RealtimeAudioRole,
-  type RealtimeAudioLease,
-  type RealtimeAudioMode,
+  inspectLiveAudioEngine as inspectRealtimeAudioEngine,
+  reapplyLiveAudioConfiguration as reapplyRealtimeAudioConfiguration,
+  reassertLiveMicrophone as reassertRealtimeMicrophone,
+  releaseLiveAudioSession as releaseRealtimeAudioSession,
+  resolveLiveAudioConfiguration as resolveRealtimeAudioConfiguration,
+  selectLiveAudioOutput as selectRealtimeAudioOutput,
+  showLiveAudioRoutePicker as showRealtimeAudioRoutePicker,
+  stabilizeLiveAudioEngine as stabilizeRealtimeAudioEngine,
+  type LiveAudioEngineStatus as RealtimeAudioEngineStatus,
+  type LiveAudioGuardContext as RealtimeAudioGuardContext,
+  type LiveAudioGuardStage as RealtimeAudioGuardStage,
+  type LiveAudioRole as RealtimeAudioRole,
+  type LiveAudioLease as RealtimeAudioLease,
+  type LiveAudioMode as RealtimeAudioMode,
   videoPublications
-} from "../core/realtimeAudioEngine";
+} from "../live-audio/liveAudioEngine";
 import {
   startNativeAudioEngineLogCapture,
   stopNativeAudioEngineLogCapture
-} from "../core/realtimeAudioNative";
-import { setRealtimeMicrophoneEnabled } from "../core/realtimeMicrophonePublisher";
+} from "../live-audio/liveAudioNative";
+import { setLiveMicrophoneEnabled as setRealtimeMicrophoneEnabled } from "../live-audio/liveMicrophonePublisher";
 import { RealtimeAudioStateMachine } from "../core/realtimeAudioStateMachine";
 import { createRealtimeAudioCorrelationId } from "../core/realtimeAudioTelemetry";
-import { initializeCallGradePublisherMedia } from "../core/realtimePublisherMedia";
+import { initializeCallGradePublisherMedia } from "../live-audio/livePublisherMedia";
 import { describeMediaQualityFlags, parseMediaQualityFlags } from "../core/mediaQualityFlags";
 import {
   buildRoomQualityOptions,
@@ -423,6 +436,23 @@ export async function initializeLivePublisherMedia(options: {
    */
   useV2: boolean;
   publishMicrophone: () => Promise<number>;
+  /**
+   * Re-enable an ALREADY-published microphone after the camera transition.
+   *
+   * This must not be `publishMicrophone`. It was, and that is why the Live host
+   * never got the post-camera repair the call path gets. `publishMicrophone`
+   * resolves to the publisher, and the publisher returns `already_published` the
+   * moment any audio publication exists - so it never reaches the
+   * `setMicrophoneEnabled(true)` and per-publication `track.setEnabled(true)`
+   * that this step exists to perform. The camera start is precisely the
+   * transition that can leave the native media track disabled, so the one moment
+   * the repair is needed was the one moment it did nothing.
+   *
+   * The call path has always passed the real thing (`useNativeCallRoom.ts`), and
+   * calls have working audio. Optional so a caller that genuinely has nothing to
+   * reassert can omit it rather than be forced to pass a no-op.
+   */
+  reassertMicrophone?: () => Promise<number>;
   enableCamera: () => Promise<void>;
   stabilizeAudio: () => Promise<number>;
   /**
@@ -439,7 +469,7 @@ export async function initializeLivePublisherMedia(options: {
       video: true,
       publishMicrophone: options.publishMicrophone,
       enableCamera: options.enableCamera,
-      reassertMicrophone: options.publishMicrophone,
+      reassertMicrophone: options.reassertMicrophone || options.publishMicrophone,
       stabilizeAfterCamera: async () => { await options.stabilizeAudio(); },
       onPhase: async (phase) => {
         if (phase === "microphone_publishing") {
@@ -1430,6 +1460,15 @@ export function useLiveBroadcastRoom() {
               room: roomNameRef.current,
               correlationId: correlationIdRef.current,
               canPublishMicrophone
+            }),
+            // The real reassert, matching what the working call path passes.
+            // Runs after the camera has started and re-enables the existing
+            // publication rather than trying to publish a second one.
+            reassertMicrophone: () => reassertRealtimeMicrophone(room, {
+              sessionId: roomNameRef.current,
+              correlationId: correlationIdRef.current,
+              roomType: "livestream",
+              participantRole: telemetryRole
             }),
             enableCamera: async () => {
               // At `stable` these resolve to PULSE_LIVE_VIDEO_CAPTURE_OPTIONS

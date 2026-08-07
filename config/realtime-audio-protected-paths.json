@@ -56,7 +56,9 @@
       "id": "remote_subscription_and_playback_controller",
       "title": "Remote audio subscription and viewer playback",
       "why": "Viewer audibility depends on remote tracks being enabled and on exactly one playback owner across viewer, feed, and host scopes. applyRemoteAudioEnabled lives in the engine; playback ownership lives here.",
-      "paths": ["mobile-native/src/live/livePlaybackOwnership.ts"],
+      "paths": [
+        "mobile-native/src/live/livePlaybackOwnership.ts"
+      ],
       "also_enforced_in": [
         "mobile-native/src/core/realtimeAudioEngine.ts#applyRemoteAudioEnabled"
       ]
@@ -75,7 +77,9 @@
       "id": "interruption_recovery",
       "title": "Disconnect classification, reconnect, token refresh, interruption resume",
       "why": "Bounded reconnect with backoff, terminal-disconnect detection, token refresh margin, route reapplication, and resume-after-interruption. Unbounded retries or a missed terminal state produce a session that looks alive and carries no audio.",
-      "paths": ["mobile-native/src/live/liveAudioRecovery.ts"]
+      "paths": [
+        "mobile-native/src/live/liveAudioRecovery.ts"
+      ]
     },
     {
       "id": "audio_and_video_call_adapter",
@@ -113,7 +117,9 @@
       "id": "runtime_invariant_monitor",
       "title": "Production runtime invariant monitor",
       "why": "Counts the eight impossible states when they happen on a real device, in a real production build. It observes and never repairs, because a second decision-maker for audio state is the failure the whole boundary exists to prevent. Weakening it, or gating it on __DEV__, removes the only evidence that the enforcement is firing in the field.",
-      "paths": ["mobile-native/src/core/realtimeAudioInvariants.ts"]
+      "paths": [
+        "mobile-native/src/core/realtimeAudioInvariants.ts"
+      ]
     },
     {
       "id": "audio_telemetry",
@@ -129,7 +135,9 @@
       "id": "audio_feature_flags",
       "title": "Livestream audio path flags and kill switch",
       "why": "Selects between the legacy and isolated livestream audio routes. Server-driven with no client override, so it is a real kill switch. Weakening normalizeLiveAudioV2Flag or adding a local override removes the ability to roll back without an app release.",
-      "paths": ["mobile-native/src/live/liveAudioFlags.ts"],
+      "paths": [
+        "mobile-native/src/live/liveAudioFlags.ts"
+      ],
       "also_enforced_in": [
         "bot.py#pulse_live_audio_v2_enabled",
         "bot.py#pulse_live_audio_v2_fallback_enabled",
@@ -156,7 +164,7 @@
     {
       "id": "media_quality_policy",
       "title": "Governed media quality policy and adaptation",
-      "why": "Resolves the audio and video settings both room adapters hand to `new Room({...})`, so it now decides the capture and publish configuration that the verified baseline used to hard-code. Its stable profile IS the verified baseline: an edit here that changes what `stable` returns changes what the kill switch falls back to, silently and for every feature at once. The adaptation reducer is protected for the opposite reason — it is the thing that must never place audio on the degradation ladder.",
+      "why": "Resolves the audio and video settings both room adapters hand to `new Room({...})`, so it now decides the capture and publish configuration that the verified baseline used to hard-code. Its stable profile IS the verified baseline: an edit here that changes what `stable` returns changes what the kill switch falls back to, silently and for every feature at once. The adaptation reducer is protected for the opposite reason \u2014 it is the thing that must never place audio on the degradation ladder.",
       "paths": [
         "mobile-native/src/core/mediaQualityPolicy.ts",
         "mobile-native/src/core/mediaAdaptationController.ts",
@@ -237,9 +245,13 @@
         "audioSession.setActive(",
         "overrideOutputAudioPort"
       ],
-      "allowed_paths": ["mobile-native/src/core/realtimeAudioEngine.ts"],
+      "allowed_paths": [
+        "mobile-native/src/core/realtimeAudioEngine.ts",
+        "mobile-native/src/live-audio/liveAudioEngine.ts"
+      ],
       "reason": "One coordinator owns the session. A second caller can deactivate a live call's session or leave the category in a state where the microphone is captured but nothing is audible.",
-      "note": "Markers are audio-qualified on purpose. A bare setCategory/setMode/setActive scan matches React setState helpers across dozens of unrelated screens and would make this rule useless."
+      "note": "Markers are audio-qualified on purpose. A bare setCategory/setMode/setActive scan matches React setState helpers across dozens of unrelated screens and would make this rule useless.",
+      "live_copy_note": "Live owns a copy of this control flow at mobile-native/src/live-audio/. The rule is not relaxed: it now names two owners instead of one, and every other file is still refused. Calls resolve to src/core/, Live resolves to src/live-audio/, and neither can reach the other."
     },
     {
       "id": "unmanaged_microphone_publication",
@@ -254,9 +266,12 @@
       ],
       "allowed_paths": [
         "mobile-native/src/core/realtimeAudioEngine.ts",
-        "mobile-native/src/core/realtimeMicrophonePublisher.ts"
+        "mobile-native/src/core/realtimeMicrophonePublisher.ts",
+        "mobile-native/src/live-audio/liveAudioEngine.ts",
+        "mobile-native/src/live-audio/liveMicrophonePublisher.ts"
       ],
-      "reason": "Publication must be serialized per room and verified by event. A direct call races the publisher and produces two microphone tracks, which is heard as an echo or as silence depending on which one the server keeps."
+      "reason": "Publication must be serialized per room and verified by event. A direct call races the publisher and produces two microphone tracks, which is heard as an echo or as silence depending on which one the server keeps.",
+      "live_copy_note": "Live owns a copy of this control flow at mobile-native/src/live-audio/. The rule is not relaxed: it now names two owners instead of one, and every other file is still refused. Calls resolve to src/core/, Live resolves to src/live-audio/, and neither can reach the other."
     },
     {
       "id": "direct_remote_audio_subscription",
@@ -266,8 +281,12 @@
         "remoteParticipant.setVolume(",
         ".setAudioEnabled("
       ],
-      "allowed_paths": ["mobile-native/src/core/realtimeAudioEngine.ts"],
-      "reason": "Viewer audibility depends on a single reconciliation pass over remote tracks. A screen that subscribes on its own will fight the reapply-on-reconnect logic."
+      "allowed_paths": [
+        "mobile-native/src/core/realtimeAudioEngine.ts",
+        "mobile-native/src/live-audio/liveAudioEngine.ts"
+      ],
+      "reason": "Viewer audibility depends on a single reconciliation pass over remote tracks. A screen that subscribes on its own will fight the reapply-on-reconnect logic.",
+      "live_copy_note": "Live owns a copy of this control flow at mobile-native/src/live-audio/. The rule is not relaxed: it now names two owners instead of one, and every other file is still refused. Calls resolve to src/core/, Live resolves to src/live-audio/, and neither can reach the other."
     },
     {
       "id": "global_livekit_audio_manager_mutation",
@@ -281,14 +300,18 @@
       "allowed_paths": [
         "mobile-native/src/core/realtimeAudioEngine.ts",
         "mobile-native/src/calls/useNativeCallRoom.ts",
-        "mobile-native/src/live/useLiveBroadcastRoom.ts"
+        "mobile-native/src/live/useLiveBroadcastRoom.ts",
+        "mobile-native/src/live-audio/liveAudioEngine.ts"
       ],
-      "reason": "registerGlobals({ autoConfigureAudioSession: false }) is what stops the SDK from configuring the session behind the coordinator's back. It is allowed only in the two adapters that own a room, and only with autoConfigureAudioSession disabled — see the paired assertion in the architecture test."
+      "reason": "registerGlobals({ autoConfigureAudioSession: false }) is what stops the SDK from configuring the session behind the coordinator's back. It is allowed only in the two adapters that own a room, and only with autoConfigureAudioSession disabled \u2014 see the paired assertion in the architecture test.",
+      "live_copy_note": "Live owns a copy of this control flow at mobile-native/src/live-audio/. The rule is not relaxed: it now names two owners instead of one, and every other file is still refused. Calls resolve to src/core/, Live resolves to src/live-audio/, and neither can reach the other."
     },
     {
       "id": "expo_av_global_audio_mode",
       "title": "Global expo-av audio-mode mutation",
-      "markers": ["Audio.setAudioModeAsync("],
+      "markers": [
+        "Audio.setAudioModeAsync("
+      ],
       "allowed_paths": [
         "mobile-native/src/core/pulseRadio.ts",
         "mobile-native/src/core/reelsAudioSession.ts",
@@ -309,9 +332,11 @@
         "audioOwnerIdRef"
       ],
       "allowed_paths": [
-        "mobile-native/src/core/realtimeAudioEngine.ts"
+        "mobile-native/src/core/realtimeAudioEngine.ts",
+        "mobile-native/src/live-audio/liveAudioEngine.ts"
       ],
-      "reason": "resetRealtimeAudioOwnership bypasses generation checking, so a delayed caller can release a session that a newer feature has since acquired. Cleanup from a feature must go through releaseRealtimeAudioSession with the lease it was given. audioOwnerIdRef is the pre-baseline owner-name pattern that this replaced; its reappearance means a regression to name-scoped cleanup."
+      "reason": "resetRealtimeAudioOwnership bypasses generation checking, so a delayed caller can release a session that a newer feature has since acquired. Cleanup from a feature must go through releaseRealtimeAudioSession with the lease it was given. audioOwnerIdRef is the pre-baseline owner-name pattern that this replaced; its reappearance means a regression to name-scoped cleanup.",
+      "live_copy_note": "Live owns a copy of this control flow at mobile-native/src/live-audio/. The rule is not relaxed: it now names two owners instead of one, and every other file is still refused. Calls resolve to src/core/, Live resolves to src/live-audio/, and neither can reach the other."
     }
   ],
   "import_boundary": {
@@ -324,7 +349,11 @@
       "core/mediaQualityPolicy",
       "core/mediaAdaptationController",
       "core/mediaQualityFlags",
-      "core/mediaQualityTelemetry"
+      "core/mediaQualityTelemetry",
+      "live-audio/liveAudioEngine",
+      "live-audio/liveMicrophonePublisher",
+      "live-audio/liveAudioNative",
+      "live-audio/livePublisherMedia"
     ],
     "allowed_importers": [
       "mobile-native/src/core/realtimeAudioEngine.ts",
@@ -338,7 +367,11 @@
       "mobile-native/src/core/mediaQualityTelemetry.ts",
       "mobile-native/src/calls/useNativeCallRoom.ts",
       "mobile-native/src/live/useLiveBroadcastRoom.ts",
-      "mobile-native/src/live/liveAudioPublisher.ts"
+      "mobile-native/src/live/liveAudioPublisher.ts",
+      "mobile-native/src/live-audio/liveAudioEngine.ts",
+      "mobile-native/src/live-audio/liveMicrophonePublisher.ts",
+      "mobile-native/src/live-audio/liveAudioNative.ts",
+      "mobile-native/src/live-audio/livePublisherMedia.ts"
     ]
   },
   "required_lease_discipline": {
@@ -351,27 +384,59 @@
       "audioLeaseRef",
       "releaseRealtimeAudioSession"
     ],
-    "must_not_contain": ["audioOwnerIdRef"],
+    "must_not_contain": [
+      "audioOwnerIdRef"
+    ],
     "reason": "Both adapters must hold a generation-scoped lease and release it by lease, not by owner name."
   },
   "live_startup_trace_contract": {
     "path": "mobile-native/src/live/liveAudioTrace.ts",
     "critical_test": "src/live/__tests__/liveAudioConfiguration.test.ts",
     "required_events": [
-      "live_start_requested", "live_session_created", "live_audio_owner_requested",
-      "live_audio_owner_acquired", "live_audio_generation_created", "live_audio_policy_requested",
-      "live_audio_policy_applied", "av_audio_session_activation_started", "av_audio_session_activated",
-      "camera_initialization_started", "camera_initialized", "livekit_room_connect_started",
-      "livekit_room_connected", "microphone_track_create_started", "microphone_track_created",
-      "microphone_publish_started", "microphone_published", "live_audio_active_verification_started",
-      "live_audio_active_verification_passed", "live_audio_active_verification_failed",
-      "audio_owner_release_requested", "audio_session_deactivation_requested", "audio_session_deactivated",
-      "audio_generation_replaced", "stale_cleanup_rejected", "cleanup_started",
-      "feature_flag_changed", "quality_profile_changed", "component_unmounted", "room_disconnected"
+      "live_start_requested",
+      "live_session_created",
+      "live_audio_owner_requested",
+      "live_audio_owner_acquired",
+      "live_audio_generation_created",
+      "live_audio_policy_requested",
+      "live_audio_policy_applied",
+      "av_audio_session_activation_started",
+      "av_audio_session_activated",
+      "camera_initialization_started",
+      "camera_initialized",
+      "livekit_room_connect_started",
+      "livekit_room_connected",
+      "microphone_track_create_started",
+      "microphone_track_created",
+      "microphone_publish_started",
+      "microphone_published",
+      "live_audio_active_verification_started",
+      "live_audio_active_verification_passed",
+      "live_audio_active_verification_failed",
+      "audio_owner_release_requested",
+      "audio_session_deactivation_requested",
+      "audio_session_deactivated",
+      "audio_generation_replaced",
+      "stale_cleanup_rejected",
+      "cleanup_started",
+      "feature_flag_changed",
+      "quality_profile_changed",
+      "component_unmounted",
+      "room_disconnected"
     ],
     "required_fields": [
-      "correlation_id", "session_id", "audio_generation", "current_owner", "requested_owner",
-      "room_id", "screen_instance_id", "quality_profile", "feature_flags", "caller", "reason", "timestamp"
+      "correlation_id",
+      "session_id",
+      "audio_generation",
+      "current_owner",
+      "requested_owner",
+      "room_id",
+      "screen_instance_id",
+      "quality_profile",
+      "feature_flags",
+      "caller",
+      "reason",
+      "timestamp"
     ],
     "reason": "A physical engine-loss failure is actionable only when the ordered trace identifies the exact owner generation and caller before and after camera startup."
   },

@@ -206,14 +206,51 @@ describe("real-time audio protected boundary", () => {
     );
   });
 
-  it("keeps calls and Live on the shared call-grade publisher sequence", () => {
-    ["mobile-native/src/calls/useNativeCallRoom.ts", "mobile-native/src/live/useLiveBroadcastRoom.ts"].forEach(
-      (rel) => {
-        const text = fs.readFileSync(path.join(REPO_ROOT, rel), "utf8");
-        expect(text).toContain('from "../core/realtimePublisherMedia"');
-        expect(text).toContain("initializeCallGradePublisherMedia({");
-      }
+  // Live no longer imports the call publisher; it imports its own copy of it.
+  // That is a deliberate reversal of the previous rule, so this test is rewritten
+  // rather than deleted - the property being protected changed, it did not
+  // disappear. The old rule protected SAMENESS BY SHARING. This one protects
+  // SAMENESS BY COPY, which is weaker on its own and so needs two assertions
+  // where one used to do: each adapter uses its own module, AND the two modules
+  // still describe the same startup sequence. Without the second half the copy is
+  // free to drift, and the drift stays invisible until a broadcast goes silent on
+  // a real device.
+  it("gives calls and Live separate publisher modules that still run the same sequence", () => {
+    const call = fs.readFileSync(path.join(REPO_ROOT, "mobile-native/src/calls/useNativeCallRoom.ts"), "utf8");
+    expect(call).toContain('from "../core/realtimePublisherMedia"');
+    expect(call).toContain("initializeCallGradePublisherMedia({");
+    expect(call).not.toContain("live-audio/");
+
+    const live = fs.readFileSync(path.join(REPO_ROOT, "mobile-native/src/live/useLiveBroadcastRoom.ts"), "utf8");
+    expect(live).toContain('from "../live-audio/livePublisherMedia"');
+    expect(live).toContain("initializeCallGradePublisherMedia({");
+    // The isolation the copy exists to provide. A Live adapter still reaching
+    // into src/core/ for audio control flow would carry all of the duplication
+    // cost and none of the benefit.
+    ["realtimeAudioEngine", "realtimeMicrophonePublisher", "realtimePublisherMedia", "realtimeAudioNative"].forEach(
+      (mod) => expect(live).not.toContain(`from "../core/${mod}"`)
     );
+  });
+
+  // The other half of "sameness by copy". Comments and identifier names differ on
+  // purpose - the copy is renamed - so this compares executable shape rather than
+  // text: strip comments, fold the Realtime/Live naming, collapse whitespace. If
+  // anyone reorders publication and camera startup on one side only, this fails
+  // here instead of during a live broadcast.
+  it("keeps the Live publisher copy step-for-step identical to the call original", () => {
+    const strip = (text: string) =>
+      text
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, "")
+        .replace(/[Rr]ealtime|[Ll]ive/g, "")
+        .replace(/\s+/g, "");
+    const original = strip(
+      fs.readFileSync(path.join(REPO_ROOT, "mobile-native/src/core/realtimePublisherMedia.ts"), "utf8")
+    );
+    const copy = strip(
+      fs.readFileSync(path.join(REPO_ROOT, "mobile-native/src/live-audio/livePublisherMedia.ts"), "utf8")
+    );
+    expect(copy).toEqual(original);
   });
 
   it("pins every audio-critical dependency to a version the baseline verified", () => {

@@ -589,3 +589,131 @@ loudly. Only the viewer's pre-subscription probe stopped being fatal.
 
 Revert this commit; viewer connect returns to failing closed at
 `room_connected` (with HLS fallback behavior).
+
+---
+
+# Addendum: dedicated Live audio copy (`src/live-audio/`)
+
+Change: duplicate the working call audio control flow into a Live-only module set,
+move Livestream onto the copy, and repair the two Live-specific faults the copy
+made addressable.
+Base: `3757dbfb` (branch `codex/emergency-live-audio-recovery`)
+Required label: `audio-critical-change`
+
+## Why the change is required
+
+The owner directed that Livestream stop depending on the call implementation, so
+that Live-specific stabilization, flags, recording preparation and ownership logic
+cannot interfere with calls. Before this change both surfaces resolved to the same
+`src/core/` modules, so any Live fix was a call risk and any call fix was a Live
+risk. That coupling is what this addendum removes.
+
+The change is not only structural. Two faults found during the preceding audit are
+fixed here, and both are Live-only:
+
+**1. The audience health profile had a required check with no repair behind it.**
+`AUDIENCE` is `{playout: true, recording: false, requirePlayout: true}`. Inside the
+guard's `enforce()`, every ADM restart - the stale-recorder branch and the ordinary
+restart branch - is gated on `wantRecording`. That gating is correct for a call,
+where the local participant always records, so `startLocalRecording()` (the SDK's
+init-and-start operation) is always reachable. A Live audience must never record,
+because a second capture path would steal the session. The consequence is that a
+viewer was excluded from every repair the guard owns: the only operation it could
+reach was `startPlayout()`, which resumes an already-initialized engine and is a
+no-op against an uninitialized one. `engineRunning` and `playoutRunning` stayed
+false, and the guard then failed on `requirePlayout` - a condition it had no branch
+capable of fixing. The viewer was asked to prove playout was up and given no way to
+bring it up.
+
+The repair added to the copy is the same shape as the existing stale-recorder
+branch, applied to the output side, and is deliberately narrow: it runs only when
+recording is *not* wanted, so it can never fire on a host or on a call participant,
+and only after the ordinary `startPlayout()` has already been tried and left the
+engine down. It declares engine availability (input false, output true) so the ADM
+is not asked to start an output it believes does not exist, then does an explicit
+`stopPlayout()` followed by `startPlayout()` - the stop being what clears a playout
+path left ENABLED over a dead engine, the state in which the next start
+short-circuits on an ADM that already answers "playing".
+
+**2. The Live host's post-camera microphone reassert was wired to the publisher.**
+`initializeLivePublisherMedia` passed `reassertMicrophone: options.publishMicrophone`.
+The publisher returns `already_published` as soon as any audio publication exists,
+so it never reached the `setMicrophoneEnabled(true)` and per-publication
+`track.setEnabled(true)` that the reassert step exists to perform. Camera start is
+precisely the transition that can leave the native media track disabled, so the one
+moment the repair was needed was the one moment it did nothing. The call path has
+always passed the real `reassertRealtimeMicrophone` and calls have working audio.
+The Live call site now passes the real one too.
+
+## Which feature required it
+
+PulseSoc Livestream audio: audience audibility of host and co-host.
+
+## Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/live-audio/liveAudioEngine.ts` | NEW - livestream_audio_adapter | Copy of `core/realtimeAudioEngine.ts`, renamed. Adds the receive-only playout repair described above. |
+| `mobile-native/src/live-audio/liveMicrophonePublisher.ts` | NEW - microphone_track_and_publication_controller | Copy of `core/realtimeMicrophonePublisher.ts`, renamed. No behavioral change. |
+| `mobile-native/src/live-audio/liveAudioNative.ts` | NEW - runtime_invariant_monitor | Copy of `core/realtimeAudioNative.ts`, renamed. No behavioral change. |
+| `mobile-native/src/live-audio/livePublisherMedia.ts` | NEW - authoritative_live_runtime | Copy of `core/realtimePublisherMedia.ts`, renamed. No behavioral change; pinned identical by test. |
+| `mobile-native/src/live/useLiveBroadcastRoom.ts` | livestream_audio_adapter | Audio imports repointed from `../core/` to `../live-audio/`. Passes the real reassert. No other logic touched. |
+| `mobile-native/src/live/liveAudioPublisher.ts` | livestream_audio_adapter | Re-export target moved to the copy. Remains a re-export, not a second implementation. |
+| `config/realtime-audio-protected-paths.json` | audio_governance | Copy files added to `allowed_paths` and `import_boundary`. |
+| `mobile-native/src/core/__tests__/realtimeAudioArchitecture.test.ts` | critical_audio_tests | The "shared publisher" assertion is replaced, not removed. See below. |
+
+**No file under `mobile-native/src/core/` or `mobile-native/src/calls/` changed.**
+The call path is byte-identical to `3757dbfb`.
+
+## What was deliberately NOT copied
+
+`core/audioOwnershipPolicy.ts`. It is the single registry deciding who currently
+holds the microphone. A second copy would give Live a registry that knows nothing
+about an in-progress call, and Live would take a session a call still owned. Copying
+it would break calls, which outranks the symmetry of copying everything. Live imports
+the shared one. `realtimeAudioTelemetry` and `realtimeAudioInvariants` are also
+shared: both are reporting-only and neither can steal a session.
+
+## Governance change: what the manifest now permits
+
+The forbidden-API rules are not relaxed. Each affected rule now names two owners
+instead of one - the call module and its Live copy - and every other file in the
+repository is still refused. `expo_av_global_audio_mode` is untouched and remains
+frozen at six paths.
+
+The architecture test previously asserted "keeps calls and Live on the shared
+call-grade publisher sequence". That rule is now false by design, so it was
+rewritten rather than deleted. The old rule protected sameness *by sharing*. The
+replacement protects sameness *by copy*, which is weaker and therefore needs two
+assertions: each adapter uses its own module and cannot reach the other's, AND the
+two publisher modules are still step-for-step identical once comments and the
+Realtime/Live naming are folded out. Without that second assertion the copy would be
+free to drift, and the drift would stay invisible until a broadcast went silent.
+
+## Expected behavior change
+
+Livestream audience playout gains a repair path it did not have. Live host gains the
+post-camera microphone reassert that calls already had. Audio-call and video-call
+behavior is unchanged in every respect.
+
+## Regression risk
+
+The main risk is drift between the copy and the original, accepted knowingly as the
+cost of the isolation the owner asked for, and mitigated by the identity test above.
+The receive-only repair calls `stopPlayout`/`startPlayout`/`setEngineAvailability`,
+which are guarded by `typeof`/optional-call so an SDK build lacking them degrades to
+present behavior rather than throwing.
+
+## Validation status
+
+Passing: `npm run typecheck`; `npm run test:realtime-audio-critical` (16 suites,
+350 tests, including `callAudioOwnershipRegression` and `useNativeCallRoomAudio`);
+`npm run test:realtime-audio-architecture` (23 tests).
+
+**NOT performed: physical audible validation on two devices.** No device or
+simulator was available in this environment. Section 7 of
+`reports/realtime_audio_verified_baseline.md` is therefore NOT satisfied by this
+change, and this addendum must not be read as claiming it is. Live audio remains
+unproven on hardware until PHONE A / PHONE B is run against a build cut from this
+commit. The build number was moved to 14 so such a build can exist; build 13 predates
+`c9147482` and cannot demonstrate any of this.
