@@ -1531,16 +1531,38 @@ export function useLiveBroadcastRoom() {
         }
         if (publish) await selectRealtimeAudioOutput(livekitNative.AudioSession, true).catch(() => undefined);
         if (!publish) {
-          await stabilizeLiveRemotePlayback(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, remoteAudioEnabledRef.current, {
-            settleMs: 0,
-            stage: "room_connected",
-            context: {
-              sessionId: roomNameRef.current,
-              correlationId: correlationIdRef.current,
-              roomType: "livestream",
-              participantRole: telemetryRole
-            }
-          });
+          // NON-FATAL for a viewer. The AUDIENCE guard fails closed on playout,
+          // but at room_connected the viewer has not subscribed any remote audio
+          // yet, so the ADM can legitimately report no running playout and the
+          // guard can throw against a healthy connection. Letting that throw
+          // escape failed connect() and silently dropped the viewer to the HLS
+          // fallback - host video played from Mux with no audio and no visible
+          // error. The authoritative playout check re-runs on track_subscribed
+          // (already fire-and-forget above), i.e. at the moment host audio
+          // actually exists to render, so swallowing here loses no protection.
+          try {
+            await stabilizeLiveRemotePlayback(room, livekitNative.AudioDeviceModule, livekitNative.AudioSession, remoteAudioEnabledRef.current, {
+              settleMs: 0,
+              stage: "room_connected",
+              context: {
+                sessionId: roomNameRef.current,
+                correlationId: correlationIdRef.current,
+                roomType: "livestream",
+                participantRole: telemetryRole
+              }
+            });
+          } catch (viewerStabilizeError) {
+            trace.emit("viewer_room_connected_stabilize_deferred", {
+              room_state: String(room?.state || "connected"),
+              error_category: "audience_playout_not_ready",
+              reason: readableError(viewerStabilizeError, "viewer stabilize failed at room_connected")
+            });
+            console.error("PulseSocLiveAudio", {
+              event: "viewer_room_connected_stabilize_deferred",
+              role: telemetryRole,
+              message: readableError(viewerStabilizeError, "viewer stabilize failed at room_connected")
+            });
+          }
         }
         const outputs = await livekitNative.AudioSession.getAudioOutputs?.().catch(() => []) || [];
         trace.emit("current_output_route_recorded", {

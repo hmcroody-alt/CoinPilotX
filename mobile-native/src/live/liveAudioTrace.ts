@@ -53,6 +53,10 @@ export type LiveAudioTraceEventName =
   | "local_audio_unmuted"
   | "local_audio_energy_detected"
   | "viewer_room_connected"
+  // Viewer-side room_connected guard failure that is deliberately non-fatal:
+  // the AUDIENCE playout check re-runs at track_subscribed when host audio
+  // actually exists; failing connect here silently degraded viewers to HLS.
+  | "viewer_room_connected_stabilize_deferred"
   | "remote_participant_discovered"
   | "remote_audio_publication_discovered"
   | "remote_audio_subscribe_started"

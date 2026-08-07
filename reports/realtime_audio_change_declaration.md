@@ -552,3 +552,40 @@ switch) until this build is fully rolled out.
 
 Revert this commit. No server flag semantics, schema, or native dependency
 changed; the client returns to branching on the server flag exactly as before.
+
+## Viewer room_connected guard made non-fatal (physical-test fix)
+
+### Why the change is required
+
+Physical two-device QA of the unified path: host broadcasts with video fine,
+audience hears nothing, no visible error. Root cause: at `room_connected` the
+viewer has subscribed no remote audio yet, so the AUDIENCE health guard
+(fail-closed on playout) can throw against a healthy connection. That await in
+`connect()` had no try/catch, so the throw failed connect and
+`ReelLiveViewerSurface` silently fell back to HLS — Mux video with no audio.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/live/useLiveBroadcastRoom.ts` | audio runtime | Viewer-side `stabilizeLiveRemotePlayback` at stage `room_connected` wrapped in try/catch; failure now emits `viewer_room_connected_stabilize_deferred` (trace + `PulseSocLiveAudio` console.error) and the LiveKit connection proceeds. |
+| `mobile-native/src/live/liveAudioTrace.ts` | audio telemetry | Added trace event name `viewer_room_connected_stabilize_deferred`. |
+
+### Expected behavior change
+
+Viewers stay on the LiveKit path when the pre-track playout probe fails; host
+audio becomes audible when tracks arrive. The authoritative AUDIENCE playout
+check still runs at `track_subscribed` (already fire-and-forget), and every
+publisher-side fail-closed guard is unchanged — a silent BROADCAST still fails
+loudly. Only the viewer's pre-subscription probe stopped being fatal.
+
+### Tests run
+
+- live jest suites: 11 suites, 135 tests passed.
+- live + core jest: 31 suites, 584 tests passed.
+- `tsc --noEmit`: clean.
+
+### Rollback procedure
+
+Revert this commit; viewer connect returns to failing closed at
+`room_connected` (with HLS fallback behavior).
