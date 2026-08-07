@@ -39,7 +39,11 @@ def business_os_page():
     user = bot_module.require_account()
     if not user:
         return redirect(url_for("login_page", next=request.path))
-    return render_template("business_os.html", user=user)
+    return render_template(
+        "business_os.html",
+        user=user,
+        csrf_token=bot_module.get_csrf_token(),
+    )
 
 
 def register(app):

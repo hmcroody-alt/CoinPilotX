@@ -60,6 +60,22 @@
     .bos-kv:last-child { border-bottom: 0; }
     .bos-kv .k { color: var(--bos-muted); }
     .bos-count { font-size: 26px; font-weight: 700; color: var(--bos-accent); }
+    .bos-form { display: grid; gap: 8px; }
+    .bos-form label { font-size: 12px; color: var(--bos-muted); display: grid; gap: 4px; }
+    .bos-form input, .bos-form select, .bos-form textarea {
+      background: var(--bos-raised); color: var(--bos-text);
+      border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+      padding: 8px 10px; font-size: 13px; font-family: inherit;
+    }
+    .bos-form textarea { min-height: 60px; resize: vertical; }
+    .bos-form button {
+      border: 0; border-radius: 8px; padding: 10px; cursor: pointer;
+      background: var(--bos-accent-strong); color: #fff; font-weight: 600; font-size: 13px;
+    }
+    .bos-form button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .bos-form-msg { font-size: 12px; min-height: 16px; }
+    .bos-form-msg.ok { color: var(--bos-accent); }
+    .bos-form-msg.error { color: var(--bos-danger); }
     @media (max-width: 720px) {
       .bos-shell { flex-direction: column; }
       .bos-nav { width: 100%; display: flex; flex-wrap: wrap; gap: 4px; border-right: 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
@@ -94,6 +110,35 @@
       <h1>Advertising</h1>
       <p class="bos-sub">Campaigns, eligibility, and ad sets from the advertising subsystem.</p>
       <div class="bos-grid">
+        <div class="bos-card"><h2>Create Campaign Draft</h2>
+          <form class="bos-form" data-bos-form data-action="/api/business-os/advertising/campaigns" data-refresh="/api/business-os/advertising/campaigns">
+            <label>Name<input name="name" required maxlength="120" placeholder="Spring launch"></label>
+            <label>Objective<select name="objective">
+              <option value="awareness">Awareness</option>
+              <option value="traffic">Traffic</option>
+              <option value="engagement">Engagement</option>
+              <option value="leads">Leads</option>
+              <option value="conversions">Conversions</option>
+            </select></label>
+            <label>Destination URL<input name="destination_url" type="url" required placeholder="https://…"></label>
+            <button type="submit">Create Draft</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Campaign Action</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/advertising/campaigns/{id}/{verb}" data-refresh="/api/business-os/advertising/campaigns">
+            <label>Campaign ID<input name="id" required placeholder="Campaign ID from the list"></label>
+            <label>Action<select name="verb">
+              <option value="submit">Submit for review</option>
+              <option value="withdraw">Withdraw</option>
+              <option value="archive">Archive</option>
+              <option value="restore">Restore</option>
+              <option value="reopen">Reopen</option>
+            </select></label>
+            <button type="submit">Apply</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
         <div class="bos-card" data-endpoint="/api/business-os/advertising/campaigns"><h2>Campaigns</h2><div class="bos-body"></div></div>
         <div class="bos-card" data-endpoint="/api/business-os/advertising/eligibility"><h2>Eligibility</h2><div class="bos-body"></div></div>
         <div class="bos-card" data-endpoint="/api/business-os/advertising/ad-sets"><h2>Ad Sets</h2><div class="bos-body"></div></div>
@@ -104,6 +149,35 @@
       <h1>Commerce</h1>
       <p class="bos-sub">Marketplace seller profile, products, orders, and payouts.</p>
       <div class="bos-grid">
+        <div class="bos-card"><h2>Create Product</h2>
+          <form class="bos-form" data-bos-form data-action="/api/business-os/marketplace/products" data-refresh="/api/business-os/marketplace/products">
+            <label>Title<input name="title" required maxlength="140" placeholder="Product title"></label>
+            <label>Price (USD)<input name="price_usd" type="number" min="0" step="0.01" required placeholder="19.99"></label>
+            <label>Description<textarea name="description" maxlength="2000" placeholder="What are you selling?"></textarea></label>
+            <label>Fulfillment<select name="fulfillment_type">
+              <option value="physical">Physical</option>
+              <option value="digital">Digital</option>
+              <option value="service">Service</option>
+            </select></label>
+            <label>Inventory quantity<input name="inventory_qty" type="number" min="0" step="1" placeholder="10"></label>
+            <button type="submit">Create Product</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
+        <div class="bos-card"><h2>Product Action</h2>
+          <form class="bos-form" data-bos-form data-action-template="/api/business-os/marketplace/products/{id}/{verb}" data-refresh="/api/business-os/marketplace/products">
+            <label>Product ID<input name="id" required placeholder="Product ID from the list"></label>
+            <label>Action<select name="verb">
+              <option value="publish">Publish</option>
+              <option value="pause">Pause</option>
+              <option value="resume">Resume</option>
+              <option value="archive">Archive</option>
+              <option value="restore">Restore</option>
+            </select></label>
+            <button type="submit">Apply</button>
+            <div class="bos-form-msg" aria-live="polite"></div>
+          </form>
+        </div>
         <div class="bos-card" data-endpoint="/api/business-os/marketplace/seller"><h2>Seller Profile</h2><div class="bos-body"></div></div>
         <div class="bos-card" data-endpoint="/api/business-os/marketplace/products"><h2>Products</h2><div class="bos-body"></div></div>
         <div class="bos-card" data-endpoint="/api/business-os/marketplace/orders"><h2>Orders</h2><div class="bos-body"></div></div>
@@ -140,6 +214,7 @@
 (function () {
   "use strict";
 
+  var CSRF_TOKEN = {{ csrf_token | tojson }};
   var loaded = {};
 
   function esc(value) {
@@ -186,10 +261,10 @@
     body.innerHTML = '<pre>' + esc(String(data)) + '</pre>';
   }
 
-  function loadCard(card) {
+  function loadCard(card, force) {
     var endpoint = card.getAttribute("data-endpoint");
     var body = card.querySelector(".bos-body");
-    if (!endpoint || !body || loaded[endpoint]) { return; }
+    if (!endpoint || !body || (loaded[endpoint] && !force)) { return; }
     loaded[endpoint] = true;
     body.innerHTML = '<div class="bos-state">Loading…</div>';
     fetch(endpoint, { credentials: "same-origin", headers: { "Accept": "application/json" } })
@@ -222,6 +297,82 @@
       target.classList.add("active");
       loadSection(target);
     }
+  });
+
+  function refreshEndpoint(endpoint) {
+    if (!endpoint) { return; }
+    Array.prototype.forEach.call(
+      document.querySelectorAll('.bos-card[data-endpoint="' + endpoint + '"]'),
+      function (card) { loadCard(card, true); }
+    );
+  }
+
+  function postJson(url, payload) {
+    return fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "X-CSRF-Token": CSRF_TOKEN
+      },
+      body: JSON.stringify(payload || {})
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (data) {
+        if (!response.ok || data.ok === false) {
+          throw new Error(data.error || data.message || ("HTTP " + response.status));
+        }
+        return data;
+      });
+    });
+  }
+
+  function formPayload(form) {
+    var payload = {};
+    Array.prototype.forEach.call(form.elements, function (el) {
+      if (!el.name || el.name === "id" || el.name === "verb") { return; }
+      var value = el.value.trim ? el.value.trim() : el.value;
+      if (value === "") { return; }
+      if (el.name === "price_usd") {
+        payload.price_cents = Math.round(parseFloat(value) * 100);
+      } else if (el.type === "number") {
+        payload[el.name] = parseInt(value, 10);
+      } else {
+        payload[el.name] = value;
+      }
+    });
+    return payload;
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll("form[data-bos-form]"), function (form) {
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var msg = form.querySelector(".bos-form-msg");
+      var button = form.querySelector("button[type=submit]");
+      var url = form.getAttribute("data-action");
+      var template = form.getAttribute("data-action-template");
+      if (template) {
+        var id = (form.elements.id.value || "").trim();
+        var verb = form.elements.verb.value;
+        if (!id) { return; }
+        url = template.replace("{id}", encodeURIComponent(id)).replace("{verb}", encodeURIComponent(verb));
+      }
+      msg.className = "bos-form-msg";
+      msg.textContent = "Working…";
+      button.disabled = true;
+      postJson(url, template ? {} : formPayload(form))
+        .then(function () {
+          msg.className = "bos-form-msg ok";
+          msg.textContent = "Done.";
+          form.reset();
+          refreshEndpoint(form.getAttribute("data-refresh"));
+        })
+        .catch(function (error) {
+          msg.className = "bos-form-msg error";
+          msg.textContent = error.message;
+        })
+        .then(function () { button.disabled = false; });
+    });
   });
 
   loadSection(document.getElementById("sec-overview"));
