@@ -18,7 +18,6 @@ import {
 import { shouldRejectTemporaryQaUser } from "./qaTemporaryAccount";
 import { clearUserScopedMediaState } from "../media/mediaSessionCleanup";
 import { rememberAccount } from "./rememberedAccounts";
-import { clearEngineerAccess, reconcileEngineerAccessOwner } from "../security/engineerAccessSession";
 
 /**
  * Deterministic session-bootstrap phases. Every restore/sign-in/sign-out path
@@ -59,19 +58,8 @@ function statusForPhase(phase: SessionPhase): AuthStatus {
   return "signedOut";
 }
 
-/**
- * Single constructor for every AuthState so `status` is always in sync with `phase`.
- *
- * Engineer access is reconciled here rather than in each sign-out helper. Every
- * logout, account switch, expiry, and fatal-bootstrap path already funnels
- * through this function, so binding the grant's lifetime to it means no future
- * auth path can forget to drop it — the failure mode where a stale grant
- * survives an account switch is structurally unreachable instead of merely
- * handled in the branches we remembered.
- */
+/** Single constructor for every AuthState so `status` is always in sync with `phase`. */
 export function stateFor(phase: SessionPhase, user: PulseUser | null = null): AuthState {
-  if (phase === "AUTHENTICATED") reconcileEngineerAccessOwner(Number(user?.user_id || 0));
-  else clearEngineerAccess();
   return { phase, status: statusForPhase(phase), user };
 }
 

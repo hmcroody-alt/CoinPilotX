@@ -28,6 +28,5 @@ describe("business construction access is server-resolved", () => {
     expect(CONSTRUCTION_LOCKED.can_access_private_business_os).toBe(false);
     expect(CONSTRUCTION_LOCKED.developer_mode).toBe(false);
     expect(CONSTRUCTION_LOCKED.developer_badge).toBe(false);
-    expect(CONSTRUCTION_LOCKED.engineer_access).toBeUndefined();
   });
 });

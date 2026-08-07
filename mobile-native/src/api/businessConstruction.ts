@@ -7,8 +7,6 @@ export type BusinessConstructionAccess = {
   construction_mode: boolean;
   developer_mode: boolean;
   developer_badge: boolean;
-  /** True when the server opened this sector via an engineer-access grant. */
-  engineer_access?: boolean;
 };
 
 export function getBusinessConstructionAccess() {
