@@ -21,6 +21,12 @@ export type RealtimeAudioTelemetryEventName =
   // emitting `audio_engine_guard_started` with an identical context) made every
   // guard line appear twice in the device log.
   | "audio_engine_recovery_attempt"
+  // Emitted when enabling the ADM output path fails. `initPlayout` is the only
+  // call that sets outputEnabled, and AVAudioEngine will not run without it - so
+  // a non-zero status here is the difference between a host that broadcasts and
+  // one that publishes a silent track. Carries the raw ADM status in outcome and
+  // no identifiers.
+  | "audio_engine_playout_init_failed"
   | "cleanup_started"
   | "cleanup_completed"
   // Emitted by realtimeAudioInvariants.ts when a state that should be
@@ -114,6 +120,7 @@ type Sink = (event: RealtimeAudioTelemetryEvent) => void;
  */
 const FAILURE_EVENTS: ReadonlySet<RealtimeAudioTelemetryEventName> = new Set([
   "audio_engine_guard_failed",
+  "audio_engine_playout_init_failed",
   "audio_owner_rejected",
   "microphone_publish_failed",
   "invariant_violation"

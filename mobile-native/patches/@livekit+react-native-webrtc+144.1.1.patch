@@ -17,12 +17,11 @@ index 8ae5ce1..c1463c6 100644
      if (@available(iOS 16.0, *)) {
          BOOL enable = self.enableMultitaskingCameraAccess;
          BOOL shouldChange = session.multitaskingCameraAccessEnabled != enable;
-
 diff --git a/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m b/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m
-index 0eb3d0a..5c0958c 100644
+index 0eb3d0a..5b0eb6d 100644
 --- a/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m
 +++ b/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m
-@@ -3,9 +3,32 @@
+@@ -3,13 +3,52 @@
  #import <React/RCTBridge.h>
  #import <React/RCTBridgeModule.h>
  
@@ -55,7 +54,27 @@ index 0eb3d0a..5c0958c 100644
  @implementation WebRTCModule (RTCAudioDeviceModule)
  
  #pragma mark - Recording & Playback Control
-@@ -148,6 +171,122 @@ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(audioDeviceModuleIsEngineRunning) {
+ 
++// PulseSoc addition. `startPlayout` sets outputRunning but never outputEnabled,
++// and ModifyEngineState refuses that pair ("Output must be enabled if running").
++// `initPlayout` is the only call that enables the output path, and the stock
++// package does not bridge it, so a participant that subscribes to no remote
++// audio can never bring output up from JS. AVAudioEngine will not run without an
++// enabled output, and with the engine down the INPUT does not deliver buffers
++// either - which is why a Live host published a silent track while the ADM
++// happily reported inputEnabled/inputRunning true.
++//
++// Synchronous so the caller can order it before `startPlayout` without a race,
++// and it returns the raw ADM status instead of rejecting so a diagnostic can
++// never break the broadcast it is describing.
++RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(audioDeviceModuleInitPlayout) {
++    return @([self.audioDeviceModule initPlayout]);
++}
++
+ RCT_EXPORT_METHOD(audioDeviceModuleStartPlayout
+                   : (RCTPromiseResolveBlock)resolve rejecter
+                   : (RCTPromiseRejectBlock)reject) {
+@@ -148,6 +187,122 @@ @implementation WebRTCModule (RTCAudioDeviceModule)
      return @(self.audioDeviceModule.isEngineRunning);
  }
  
