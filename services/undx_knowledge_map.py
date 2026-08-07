@@ -1036,8 +1036,8 @@ _mapped(
     result_card_type=CardType.CONTENT_RESULT,
     implementation_status=_PARTIAL,
     evidence=(
-        "bot.py:36808 /api/pulse/status/rail",
-        "bot.py:36283 /pulse/status renders a page",
+        "bot.py:37781 /api/pulse/status/rail",
+        "bot.py:37256 /pulse/status renders a page",
     ),
     known_limitations=(
         "The only JSON status endpoint is the rail, which returns the viewer's "
@@ -1056,7 +1056,7 @@ _mapped(
     authorization_scope=_MEMBER, target_field="status_id",
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:33324 /pulse/status/<status_id> renders a page",
+        "bot.py:34296 /pulse/status/<status_id> renders a page",
     ),
     known_limitations=(
         "No JSON read of a single status exists; that route renders HTML. Status visibility is "
@@ -1240,7 +1240,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id", target_field="reel_id",
     undo_capability_id="saved.reel.set",
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:78411 reel save handler",),
+    evidence=("bot.py:79568 reel save handler",),
     known_limitations=(_SAVED_TOGGLE,),
     toggle_semantics=True,
 )
@@ -1255,7 +1255,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id", target_field="listing_id",
     undo_capability_id="saved.listing.set",
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:83106 marketplace save handler",),
+    evidence=("bot.py:84742 marketplace save handler",),
     known_limitations=(_SAVED_TOGGLE,),
     toggle_semantics=True,
 )
@@ -1370,7 +1370,7 @@ _mapped(
     authorization_scope=_OTHER, owner_field="user_id", target_field="request_id",
     result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:79780 friend accept handler",),
+    evidence=("bot.py:81029 friend accept handler",),
     known_limitations=("Guards on `AND status = 'pending'`, which is correct, but the "
                        "update is inline in the handler.",),
 )
@@ -1385,7 +1385,7 @@ _mapped(
     authorization_scope=_UNSCOPED, owner_field="user_id", target_field="request_id",
     result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
     implementation_status=_PARTIAL,
-    evidence=("bot.py:79817 friend decline handler", "bot.py:79780 accept, for contrast"),
+    evidence=("bot.py:81066 friend decline handler", "bot.py:81029 accept, for contrast"),
     known_limitations=(
         "Decline omits the `AND status = 'pending'` guard that accept has, so it "
         "will transition a request that is already accepted or already declined. "
@@ -1713,7 +1713,7 @@ _mapped(
     output_schema=(("live_id", "int"), ("host_id", "int"), ("title", "str")),
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:42698 /pulse/live renders a page",
+        "bot.py:43717 /pulse/live renders a page",
     ),
     known_limitations=(
         "No JSON listing of live sessions exists. The route behind the Live screen renders a "
@@ -1909,7 +1909,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id",
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:9667 /dashboard/account/health renders a web dashboard page",
+        "bot.py:10346 /dashboard/account/health renders a web dashboard page",
     ),
     known_limitations=(
         "Account health exists only as a rendered page on the web dashboard. Nothing returns it "
@@ -2149,8 +2149,8 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id",
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:9396 /dashboard/creator renders a page",
-        "bot.py:6667 /api/dashboard/creator/state is the nearest JSON",
+        "bot.py:10075 /dashboard/creator renders a page",
+        "bot.py:7344 /api/dashboard/creator/state is the nearest JSON",
     ),
     known_limitations=(
         "The creator surface is a web dashboard. /api/dashboard/creator/state "
