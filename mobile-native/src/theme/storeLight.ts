@@ -81,10 +81,34 @@ export const storeLight = {
     neutral: "#565959"
   },
   accent: {
-    /** Search button and active tab underline. */
-    orange: "#FF9900",
-    /** Review stars. */
-    star: "#FFA41C"
+    /**
+     * The Store's interactive accent: search button fill, the unread badge on the
+     * bell, and the status-strip action ("Manage" / "Reopen"). All three sit on
+     * the navy header or strip.
+     *
+     * This was the reference design's orange (#FF9900). It is now PulseSoc's own
+     * green — the same value `STORE_CTA_PULSESOC` already ships as the primary
+     * button fill — so the header carries one brand colour instead of a green
+     * button beside an orange one.
+     */
+    brand: STORE_CTA_PULSESOC.from,
+    /**
+     * The same green, one step deeper, for accents drawn on a white card rather
+     * than on navy. `brand` is a mint that all but disappears as a 2px rule on
+     * `bg.card`; this is the darker end of the same CTA pair, so the active tab
+     * underline stays as visible as the orange it replaces without introducing a
+     * third green.
+     */
+    brandOnLight: STORE_CTA_PULSESOC.to,
+    /** Review stars. Gold is the convention for a rating and is not a brand accent. */
+    star: "#FFA41C",
+    /**
+     * The reference orange. No Store surface uses it any more — it stays defined
+     * because Insights reads it through the `storeLight` spread for its card
+     * links, and Insights is outside the scope of the Store/Marketplace colour
+     * change. Deleting it here would silently repaint that screen.
+     */
+    orange: "#FF9900"
   },
   cta: STORE_CTA,
   radius: {

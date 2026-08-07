@@ -62,12 +62,17 @@ export const marketplaceLight = {
   },
   badge: {
     /**
-     * FEATURED. Navy plate, yellow text — the one place the reference yellow
-     * appears as *text* rather than as a CTA fill, so it is not part of the
-     * trade-dress swap and stays literal.
+     * FEATURED. Navy plate, brand-green text.
+     *
+     * This was the reference design's yellow (#FFD814) — the one place that
+     * yellow appeared as *text* rather than as a CTA fill, which is why it sat
+     * outside the `STORE_CTA` swap and stayed literal. It is now the same
+     * PulseSoc green the Store accent and the primary CTA use, so no yellow is
+     * left anywhere in the Marketplace or Store chrome. On the navy plate the
+     * green reads at least as strongly as the yellow did.
      */
     featuredBg: "#131A22",
-    featuredText: "#FFD814",
+    featuredText: storeLight.accent.brand,
     /** NEW. Solid success green, white text. */
     newBg: "#067D62",
     newText: "#FFFFFF",

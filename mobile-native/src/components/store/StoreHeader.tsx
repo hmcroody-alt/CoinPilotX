@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
     height: 16,
     paddingHorizontal: 4,
     borderRadius: 8,
-    backgroundColor: storeLight.accent.orange,
+    backgroundColor: storeLight.accent.brand,
     alignItems: "center",
     justifyContent: "center"
   },
@@ -332,7 +332,7 @@ const styles = StyleSheet.create({
     height: storeLight.size.tapTarget,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: storeLight.accent.orange,
+    backgroundColor: storeLight.accent.brand,
     borderTopRightRadius: storeLight.radius.control,
     borderBottomRightRadius: storeLight.radius.control
   },
@@ -345,5 +345,5 @@ const styles = StyleSheet.create({
     backgroundColor: storeLight.bg.strip
   },
   stripText: { flex: 1, fontSize: 12, color: storeLight.text.onDarkMuted, fontWeight: "600" },
-  stripAction: { fontSize: 12, fontWeight: "700", color: storeLight.accent.orange }
+  stripAction: { fontSize: 12, fontWeight: "700", color: storeLight.accent.brand }
 });

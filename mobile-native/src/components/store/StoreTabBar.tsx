@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 0,
     height: 2,
-    backgroundColor: storeLight.accent.orange,
+    backgroundColor: storeLight.accent.brandOnLight,
     borderRadius: 1
   }
 });

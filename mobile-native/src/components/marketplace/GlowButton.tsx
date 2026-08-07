@@ -1,10 +1,13 @@
 /**
  * The breathing action button on a buying-grid card.
  *
- * Two variants, and the split is not decorative. Amber "Add to cart" means the
- * platform handles the money; green "Make offer" means you are about to talk to
- * a person. Those are different promises, so they get different colours — but
- * the colour is never the message. The label always states the action in words,
+ * Two variants, and the split is not decorative. "Add to cart" means the
+ * platform handles the money; "Make offer" means you are about to talk to a
+ * person. Those are different promises, so they get different fills — the cart
+ * button takes the shared `STORE_CTA` brand gradient, the offer button the
+ * deeper `offerCta` green. (This comment used to describe the cart button as
+ * amber, which was the reference design's colour, never the shipped one.) The
+ * colour is never the message. The label always states the action in words,
  * which is what the brief means by "glow conveys nothing on its own".
  *
  * ## Why the glow is three layers
