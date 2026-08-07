@@ -312,10 +312,17 @@ describe("PostDetailScreen mentions and navigation", () => {
   });
 
   it("navigates to the comment author's profile when the name is tapped", async () => {
+    // The fixture author carries user_id 91, so the shared profile resolver
+    // must navigate by that canonical id (profileKey "91") — not the handle —
+    // matching how search and the feed resolve the same member. The username
+    // still rides along for display/fallback.
     const { findByTestId, getByLabelText, navigation } = renderScreen([row(1)]);
     await findByTestId("comment-1");
     fireEvent.press(getByLabelText("Open Author 1's profile"));
-    expect(navigation.navigate).toHaveBeenCalledWith("ProfileDetail", expect.objectContaining({ profileKey: "author_1" }));
+    expect(navigation.navigate).toHaveBeenCalledWith(
+      "ProfileDetail",
+      expect.objectContaining({ profileKey: "91", userId: 91, username: "author_1" })
+    );
   });
 });
 

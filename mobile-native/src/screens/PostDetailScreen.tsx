@@ -28,7 +28,7 @@ import {
 import { isContentOwner } from "../api/contentOwnership";
 import { describeDeleteError } from "../api/deleteErrors";
 import { profileTargetFromPost } from "../api/profile";
-import { profileNavigationParams, resolveProfileTarget } from "../api/profileTarget";
+import { profileNavigationParams, profileTargetFromAuthor, resolveProfileTarget } from "../api/profileTarget";
 import { PostCard } from "../components/PostCard";
 import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
@@ -268,6 +268,17 @@ export function PostDetailScreen({ route, navigation }: Props) {
   }
 
   function handleCommentAuthorPress(comment: PulseComment) {
+    // Same shared resolver every other surface uses: the comment's user_id is
+    // the commenter's canonical id, and the handle covers payloads without it.
+    const target = profileTargetFromAuthor(
+      (comment.author || comment.user) as Record<string, unknown> | undefined,
+      comment as unknown as Record<string, unknown>
+    );
+    const params = profileNavigationParams(target, commentAuthorLabel(comment));
+    if (params) {
+      navigation.navigate("ProfileDetail", params);
+      return;
+    }
     const handle = authorHandle(comment.author || comment.user);
     if (handle) handleMentionPress(handle);
   }

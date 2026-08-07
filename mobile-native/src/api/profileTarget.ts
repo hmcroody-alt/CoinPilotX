@@ -113,11 +113,18 @@ export function profileTargetFromUrl(url: string) {
 }
 
 export function profileTargetFromAuthor(author?: Record<string, unknown>, fallback?: Record<string, unknown>) {
+  // `fallback` is the content item (post/reel/status/live/event), so its `id`
+  // is a CONTENT id, never a user id. It must not enter the userId chain:
+  // treating it as one sent post ids to /api/pulse/profile/<key>, which
+  // resolves numeric keys as users.user_id — "Profile not found" from the feed
+  // while search (real user_id/@handle) opened the same member fine.
+  // `fallback.user_id` stays: on these payloads it is the author's user id.
   return resolveProfileTarget({
     ...(fallback || {}),
     ...(author || {}),
+    id: stringValue(nestedValue(author, "id")),
     author,
-    userId: stringValue(nestedValue(author, "user_id") || nestedValue(author, "id") || nestedValue(fallback, "user_id") || nestedValue(fallback, "id")),
+    userId: stringValue(nestedValue(author, "user_id") || nestedValue(author, "id") || nestedValue(fallback, "user_id")),
     public_player_id: stringValue(nestedValue(author, "public_player_id")) || stringValue(nestedValue(fallback, "author_public_player_id")) || stringValue(nestedValue(fallback, "public_player_id")),
     username: stringValue(nestedValue(author, "username")) || stringValue(nestedValue(author, "handle")) || stringValue(nestedValue(fallback, "author_username")) || stringValue(nestedValue(fallback, "username")),
     profile_url: stringValue(nestedValue(author, "profile_url")) || stringValue(nestedValue(fallback, "profile_url")),
