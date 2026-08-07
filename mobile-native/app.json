@@ -10,7 +10,7 @@
     "icon": "./assets/icon.png",
     "ios": {
       "bundleIdentifier": "com.pulsesoc.app",
-      "buildNumber": "13",
+      "buildNumber": "14",
       "supportsTablet": false,
       "associatedDomains": [
         "applinks:pulsesoc.com"
