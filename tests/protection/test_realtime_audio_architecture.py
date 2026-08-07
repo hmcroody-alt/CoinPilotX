@@ -202,6 +202,30 @@ class LeaseDisciplineTests(unittest.TestCase):
                 # session a newer feature has since acquired.
                 self.assertNotIn(needle, text, f"{rel} reintroduced {needle}")
 
+    def test_live_host_output_path_is_explicitly_enabled(self) -> None:
+        # AVAudioEngine will not run without an ENABLED output, and with the
+        # engine down the input delivers no buffers either - so a host whose
+        # output was never enabled publishes a track carrying no energy while
+        # the ADM still reports inputEnabled/inputRunning true. Output is
+        # normally enabled by subscribing to remote audio; a host subscribes to
+        # nobody, so only an explicit initPlayout enables it. Verified silent on
+        # P3r7or 2026-08-07, then verified audible after this fix.
+        discipline = MANIFEST["required_output_enable_discipline"]
+        for rel in discipline["files"]:
+            text = (ROOT / rel).read_text(encoding="utf-8")
+            for needle in discipline["must_contain"]:
+                self.assertIn(needle, text, f"{rel} is missing {needle}")
+
+        # The native half lives in a patch over @livekit/react-native-webrtc.
+        # node_modules is gitignored, so a bridge present only there builds
+        # green on one machine and is absent everywhere else - and the JS falls
+        # back to a no-op rather than raising, making the loss silent all the
+        # way to a dead broadcast. The patch file is the only durable record.
+        for rel in discipline["patch_files"]:
+            text = (ROOT / rel).read_text(encoding="utf-8")
+            for needle in discipline["patch_must_contain"]:
+                self.assertIn(needle, text, f"{rel} no longer bridges {needle}")
+
     def test_livekit_sdk_never_configures_the_session_behind_the_coordinator(self) -> None:
         for rel in (
             "mobile-native/src/calls/useNativeCallRoom.ts",

@@ -48,8 +48,19 @@ function silentHostNativeState() {
   };
 }
 
-function installBridge(state: (() => Record<string, unknown>) | null) {
-  modules.WebRTCModule = state ? { audioDeviceModuleGetEngineState: state } : {};
+function installBridge(
+  state: (() => Record<string, unknown>) | null,
+  initPlayout?: () => number
+) {
+  if (!state) {
+    modules.WebRTCModule = {};
+    return;
+  }
+  const bridge: Record<string, unknown> = { audioDeviceModuleGetEngineState: state };
+  // Only attached when a test opts in, so the suites above keep exercising the
+  // binary shape that shipped BEFORE the bridge existed.
+  if (initPlayout) bridge.audioDeviceModuleInitPlayout = initPlayout;
+  modules.WebRTCModule = bridge;
 }
 
 /**
@@ -213,5 +224,117 @@ describe("live host engine repair with the native bridge present", () => {
     await stabilizeLiveAudioEngine(module as never, HOST_OPTIONS);
 
     expect(calls).toContain("startPlayout");
+  });
+});
+
+/**
+ * The root cause, on a binary that can actually fix it.
+ *
+ * The suites above pin the two guard defects, but neither could make the host
+ * audible: with output disabled AVAudioEngine will not run at all, and a stopped
+ * engine captures nothing however the input flags read. `initPlayout` is the
+ * only call that enables output, and it reaches JS only through the patched
+ * bridge mocked in here.
+ */
+describe("live host output-path enable", () => {
+  /** As above, plus the initPlayout bridge and a mutable output reading. */
+  function hostWithInitPlayout(options: { initResult: number }) {
+    const native = silentHostNativeState();
+    const calls: string[] = [];
+    installBridge(
+      () => native,
+      () => {
+        calls.push("initPlayout");
+        if (options.initResult === 0) {
+          native.outputEnabled = true;
+          native.playoutInitialized = true;
+        }
+        return options.initResult;
+      }
+    );
+    return {
+      calls,
+      native,
+      module: {
+        isEngineRunning: () => native.engineRunning,
+        isRecording: () => native.recording,
+        isPlaying: () => native.playing,
+        isRecordingAlwaysPreparedMode: () => native.recordingAlwaysPrepared,
+        setRecordingAlwaysPreparedMode: (value: boolean) => {
+          native.recordingAlwaysPrepared = value;
+          return Promise.resolve();
+        },
+        stopRecording: () => {
+          calls.push("stopRecording");
+          native.recording = false;
+          native.inputEnabled = false;
+          native.inputRunning = false;
+          return Promise.resolve();
+        },
+        startLocalRecording: () => {
+          calls.push("startLocalRecording");
+          native.recording = true;
+          native.inputEnabled = true;
+          native.inputRunning = true;
+          native.engineRunning = true;
+          return Promise.resolve();
+        },
+        startRecording: () => Promise.resolve(),
+        startPlayout: () => {
+          calls.push("startPlayout");
+          return Promise.resolve();
+        },
+        stopPlayout: () => Promise.resolve()
+      }
+    };
+  }
+
+  it("enables output on a host whose output was never enabled", async () => {
+    const { module, calls, native } = hostWithInitPlayout({ initResult: 0 });
+
+    await stabilizeLiveAudioEngine(module as never, HOST_OPTIONS);
+
+    expect(calls).toContain("initPlayout");
+    expect(native.outputEnabled).toBe(true);
+  });
+
+  // Ordering is the fix, not just the call. Restarting capture into an engine
+  // that cannot run is precisely what every earlier pass did, and it is why they
+  // all reported the state they started from.
+  it("enables output BEFORE repairing the recorder", async () => {
+    const { module, calls } = hostWithInitPlayout({ initResult: 0 });
+
+    await stabilizeLiveAudioEngine(module as never, HOST_OPTIONS);
+
+    // Assert presence before order: `indexOf` answers -1 for a call that never
+    // happened, and -1 is less than every real index - so an ordering check
+    // alone passes vacuously on the exact regression it is meant to catch.
+    expect(calls).toContain("initPlayout");
+    expect(calls.indexOf("initPlayout")).toBeLessThan(calls.indexOf("stopRecording"));
+    expect(calls.indexOf("initPlayout")).toBeLessThan(calls.indexOf("startLocalRecording"));
+  });
+
+  // ModifyEngineState rejects outputRunning-without-outputEnabled, so the start
+  // is only legal after init. Asking in the other order is the no-op that spent
+  // every pass's single native call.
+  it("starts playout only after init has enabled output", async () => {
+    const { module, calls } = hostWithInitPlayout({ initResult: 0 });
+
+    await stabilizeLiveAudioEngine(module as never, HOST_OPTIONS);
+
+    expect(calls).toContain("startPlayout");
+    expect(calls.indexOf("initPlayout")).toBeLessThan(calls.indexOf("startPlayout"));
+  });
+
+  // A failed init leaves output disabled, so the pair stays illegal and the
+  // start must not be attempted anyway.
+  it("does not chase playout when init fails", async () => {
+    const { module, calls, native } = hostWithInitPlayout({ initResult: -1 });
+
+    await stabilizeLiveAudioEngine(module as never, HOST_OPTIONS);
+
+    expect(calls).toContain("initPlayout");
+    expect(native.outputEnabled).toBe(false);
+    expect(calls).not.toContain("startPlayout");
   });
 });

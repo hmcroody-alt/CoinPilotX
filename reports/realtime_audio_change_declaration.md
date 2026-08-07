@@ -790,3 +790,82 @@ never torn down, and that the audience path never acquires a microphone.
 **Still NOT performed: physical audible validation on two devices.** No hardware was
 available. PHONE A speaks / PHONE B hears remains unproven, and nothing here should be
 read as claiming otherwise.
+
+---
+
+# Addendum 3 — the host's output path was never enabled
+
+Supersedes the closing note of Addendum 2 ("physical audible validation still NOT
+performed"). It has now been performed for the livestream host, and it failed before
+this change and passes after it.
+
+## What the device showed
+
+P3r7or, 2026-08-07, mid-broadcast: `outputEnabled=false`, `playoutInitialized=false`,
+`engineRunning=false`, while `inputEnabled=true` and `inputRunning=true`. The mic track
+was created and published, the session was active and record-capable, video reached
+viewers. There was no sound.
+
+The input flags were describing a path that moved no audio. AVAudioEngine will not run
+without an ENABLED output, and with the engine stopped nothing is captured however the
+capture flags read. Both previous addenda repaired the recorder — into an engine that
+could not run, which is why each reported the state it started from.
+
+## Root cause
+
+Output is enabled as a side effect of subscribing to remote audio. **A host subscribes
+to nobody**, so nothing ever enabled it. `startPlayout` cannot substitute: it asks for
+`outputRunning` and leaves `outputEnabled` alone, a pair `ModifyEngineState` rejects
+outright ("Output must be enabled if running"). That rejected call was the single native
+call each earlier recovery pass spent.
+
+`initPlayout` is the only call that enables output, and the stock
+`@livekit/react-native-webrtc` does not bridge it to JS.
+
+## Which protected files changed
+
+- `config/realtime-audio-protected-paths.json` — adds
+  `required_output_enable_discipline`; adds the LiveKit patch to `dependency_watch.files`;
+  registers the live-audio test under `critical_audio_tests`.
+- `mobile-native/patches/@livekit+react-native-webrtc+144.1.1.patch` — bridges
+  `audioDeviceModuleInitPlayout` (synchronous, returns the raw ADM status rather than
+  rejecting, so a diagnostic cannot break the broadcast it describes).
+- `mobile-native/src/live-audio/liveAudioNative.ts`,
+  `mobile-native/src/live-audio/liveAudioEngine.ts` — call it before the recorder repair;
+  gate `startPlayout` on a re-read; surface `inputAvailable`/`outputAvailable`.
+- `mobile-native/src/core/realtimeAudioTelemetry.ts` — registers
+  `audio_engine_playout_init_failed` as a failure-level event so it survives the Release
+  os_log severity drop. Additive; emits a numeric ADM status and no identifiers.
+- `mobile-native/src/core/__tests__/realtimeAudioArchitecture.test.ts`,
+  `tests/protection/test_realtime_audio_architecture.py`,
+  `mobile-native/src/live-audio/__tests__/liveHostEngineRepair.test.ts`,
+  `mobile-native/package.json`, `reports/realtime_audio_verified_baseline.md`.
+
+## Why the patch file is asserted, not just the call site
+
+The native half initially existed **only in `node_modules`**, which is gitignored. It
+built green on the machine that made it and would have been absent everywhere else, and
+the JS degrades to a no-op rather than raising when the bridge is missing — so the loss
+would have been silent all the way to a dead broadcast. Both architecture tests therefore
+assert on the patch file contents.
+
+## Governance change
+
+`test:realtime-audio-critical` and `test:realtime-audio` previously ran **no**
+`src/live-audio/` test, so the copy carrying the host audio path had no coverage in the
+critical suite. Both scripts now include it.
+
+## Validation
+
+`npm run typecheck` clean. `test:realtime-audio-critical` 17 suites / 364 tests.
+Backend `tests/protection/test_realtime_audio_architecture.py` 20 tests.
+
+Every protection added here was confirmed to FAIL when the fix is reverted — the patch
+assertion by deleting the bridge line, the behavioural tests by stubbing out the
+`initNativePlayout` call — and to pass once restored. An ordering assertion that passed
+vacuously (`indexOf` returns -1 for a call that never happened, and -1 precedes every
+real index) was found by that exercise and corrected to assert presence first.
+
+**Physical audible validation: PASS for the livestream host on P3r7or**, reported by the
+repository owner after install. Guest audibility (baseline §7.4) and ordered
+mixed-session transitions (§7.5) remain unverified and are not claimed here.

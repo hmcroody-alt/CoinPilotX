@@ -49,6 +49,12 @@ type Manifest = {
     must_contain: string[];
     must_not_contain: string[];
   };
+  required_output_enable_discipline: {
+    files: string[];
+    must_contain: string[];
+    patch_files: string[];
+    patch_must_contain: string[];
+  };
   dependency_watch: {
     must_be_exactly_pinned: string[];
     baseline_versions: Record<string, string>;
@@ -186,6 +192,33 @@ describe("real-time audio protected boundary", () => {
         // means a delayed cleanup can once again release a session that a newer
         // feature has since acquired — the exact bug the lease generation fixed.
         expect([rel, needle, text.includes(needle)]).toEqual([rel, needle, false]);
+      });
+    });
+  });
+
+  it("keeps the ADM output path explicitly enabled for a host that subscribes to nobody", () => {
+    // Physically verified on P3r7or (2026-08-07): before this, a Live host sat
+    // at outputEnabled=false / playoutInitialized=false / engineRunning=false
+    // while publishing, and the broadcast was silent. `initPlayout` is the only
+    // call that enables output; `startPlayout` asks for outputRunning and leaves
+    // outputEnabled alone, which ModifyEngineState rejects outright.
+    const discipline = manifest.required_output_enable_discipline;
+    discipline.files.forEach((rel) => {
+      const text = fs.readFileSync(path.join(REPO_ROOT, rel), "utf8");
+      discipline.must_contain.forEach((needle) => {
+        expect([rel, needle, text.includes(needle)]).toEqual([rel, needle, true]);
+      });
+    });
+
+    // The native half. `node_modules` is gitignored, so a bridge that exists
+    // only there builds green on the machine that added it and is absent
+    // everywhere else — and because the JS falls back to a no-op rather than
+    // throwing, the regression is silent all the way to a dead broadcast. The
+    // patch file is the only durable record, so assert on it directly.
+    discipline.patch_files.forEach((rel) => {
+      const text = fs.readFileSync(path.join(REPO_ROOT, rel), "utf8");
+      discipline.patch_must_contain.forEach((needle) => {
+        expect([rel, needle, text.includes(needle)]).toEqual([rel, needle, true]);
       });
     });
   });

@@ -325,3 +325,66 @@ These are the fields this document could not honestly fill. Each blocks a specif
 Filling item 3 is the highest priority. The other six degrade reproducibility; item 3
 determines whether the protections in this hard-lock are guarding the path that actually
 works.
+
+---
+
+## 12. Addendum — 2026-08-07 silent-host regression and fix
+
+This section is **not** part of the original baseline. It records a livestream host
+regression found and fixed after it, and the protections added so it cannot return.
+
+### 12.1 The failure
+
+A Live host published a microphone track that carried no audio energy. Everything the app
+could observe looked healthy: the track was created and published, the `AVAudioSession` was
+active and record-capable, the camera was publishing, and viewers saw video. The ADM
+reported `inputEnabled=true` and `inputRunning=true`.
+
+The engine state read off P3r7or was `outputEnabled=false`, `playoutInitialized=false`,
+`engineRunning=false`. AVAudioEngine will not run without an **enabled output**, and with
+the engine stopped the input delivers no buffers regardless of what the capture flags say —
+so the input flags were describing a path that was not moving any audio.
+
+Output is normally enabled as a side effect of subscribing to remote audio. **A host
+subscribes to nobody**, so nothing ever enabled it. `startPlayout` cannot substitute: it
+asks for `outputRunning` and leaves `outputEnabled` alone, a pair `ModifyEngineState`
+rejects outright ("Output must be enabled if running"). `initPlayout` is the only call that
+enables output, and the stock `@livekit/react-native-webrtc` does not bridge it to JS.
+
+### 12.2 Physical verification
+
+**PASS — host audible.** After the fix was installed on P3r7or, the repository owner
+confirmed livestream audio works. As in section 7, this is a report of sound actually
+heard, not of a track attaching or a waveform being observed.
+
+**Scope limits, stated explicitly.** This attests the **host output-path fix on P3r7or**.
+It does **not** separately re-establish §7.4 (guest audibility) or §7.5 (ordered
+mixed-session transitions), which remain unverified and partially attested respectively.
+The device/OS gaps in open items 4 and 5 are unchanged, so a future regression still cannot
+be cleanly attributed to an OS update.
+
+### 12.3 What now guards it
+
+- `required_output_enable_discipline` in `config/realtime-audio-protected-paths.json` —
+  requires `initNativePlayout` in the two live-audio modules, **and** requires the native
+  selector `audioDeviceModuleInitPlayout` to be present in the LiveKit patch file.
+- `mobile-native/patches/@livekit+react-native-webrtc+144.1.1.patch` added to
+  `dependency_watch.files`. It was previously unwatched despite carrying the camera
+  `AVAudioSession` fix as well.
+- Four behavioural tests in `src/live-audio/__tests__/liveHostEngineRepair.test.ts` pinning
+  that output is enabled, that it happens **before** the recorder repair, that playout
+  starts only after init, and that a failed init does not chase playout.
+- That test file added to `critical_audio_tests` and to the
+  `test:realtime-audio-critical` / `test:realtime-audio` scripts, which previously ran no
+  `src/live-audio/` test at all.
+
+Each protection above was confirmed to fail when the fix is reverted, not merely to pass
+while it is present.
+
+### 12.4 The trap worth remembering
+
+The native half of this fix lived only in `node_modules`, which is gitignored. It therefore
+built green on the machine that made it and would have been absent everywhere else — and
+because the JS side degrades to a **no-op rather than an error** when the bridge is missing,
+the regression would have been silent all the way to a dead broadcast. That is why the
+protection asserts on the **patch file contents**, not merely on the JS call site.
