@@ -340,6 +340,7 @@ AUTO_PK_TABLES = {
     "marketplace_reports": "id",
     "marketplace_saved_products": "id",
     "marketplace_buyer_interest": "id",
+    "marketplace_digital_files": "id",
     "teacher_profiles": "id",
     "teacher_applications": "id",
     "teacher_lessons": "id",

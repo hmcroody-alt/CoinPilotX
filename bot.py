@@ -240,6 +240,7 @@ from services import (
     multistream_service,
     intelligence as intelligence_service,
     market_data as market_data_service,
+    marketplace_listing_types as marketplace_listing_types_service,
     media_service,
     media_storage,
     messenger_media_foundation,
@@ -48790,6 +48791,8 @@ def pulse_marketplace_listing_payload(listing, media_rows=None):
         "description": item.get("description") or "",
         "category": item.get("category") or "Education",
         "price_label": item.get("price_label") or "Request access",
+        "listing_type": marketplace_listing_types_service.effective_listing_type(item.get("listing_type"), item.get("product_type")),
+        "listing_metadata": marketplace_listing_types_service.parse_metadata(item.get("listing_metadata_json")),
         "safety_score": safe_int(item.get("safety_score"), 0),
         "cover_image_url": cover.get("media_url") or cover_url,
         "image_url": cover.get("media_url") or cover_url,
@@ -48822,7 +48825,7 @@ def api_pulse_marketplace_search():
         f"""
         SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
-               l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type,
+               l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
                COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
                COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
@@ -48861,7 +48864,7 @@ def api_pulse_marketplace_seller_listings():
         f"""
         SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
-               l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type,
+               l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
                COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
                COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
@@ -48885,7 +48888,7 @@ def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
         """
         SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
-               l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type,
+               l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
                COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
                COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
@@ -49223,6 +49226,23 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
     if str(existing.get("status") or "").lower() in {"seller_deleted", "deleted", "removed"}:
         conn.close()
         return api_error("Deleted listings cannot be edited.", 400)
+    effective_listing_type = marketplace_listing_types_service.effective_listing_type(existing.get("listing_type"), existing.get("product_type"))
+    requested_listing_type = str(payload.get("listing_type") or "").strip().lower()
+    if requested_listing_type and requested_listing_type != effective_listing_type:
+        conn.close()
+        return api_error("listing_type cannot be changed after creation.", 400)
+    listing_metadata_update = None
+    if "listing_metadata" in payload:
+        metadata_ok, cleaned_metadata = marketplace_listing_types_service.validate_listing_metadata(effective_listing_type, payload.get("listing_metadata"))
+        if not metadata_ok:
+            conn.close()
+            return api_error(cleaned_metadata, 400)
+        if effective_listing_type == "digital" and (cleaned_metadata or {}).get("files"):
+            files_ok, files_error = marketplace_listing_types_service.verify_digital_files_owned(cur, user["user_id"], cleaned_metadata)
+            if not files_ok:
+                conn.close()
+                return api_error(files_error, 400)
+        listing_metadata_update = marketplace_listing_types_service.dump_metadata(cleaned_metadata)
     review = revenue_safety_engine.marketplace_listing_review({"title": title, "description": description, "category": category})
     next_status = "pending_review" if review["status"] != "review_ready" else "review_ready"
     cur.execute(
@@ -49248,6 +49268,11 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
             int(user["user_id"]),
         ),
     )
+    if listing_metadata_update is not None:
+        cur.execute(
+            "UPDATE marketplace_listings SET listing_metadata_json=? WHERE id=? AND seller_user_id=?",
+            (listing_metadata_update, int(listing_id), int(user["user_id"])),
+        )
     item = pulse_marketplace_owned_listing_response(cur, listing_id, user["user_id"])
     pulse_emit_marketplace_inventory_event(
         cur,
@@ -84220,6 +84245,7 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
             """
             SELECT l.id, l.title, l.seller_user_id, l.category, l.price_label, l.currency,
                    l.cover_image_url, l.media_url AS image_url, l.cover_image_url AS thumbnail_url, l.video_url,
+                   l.product_type, l.listing_type, l.listing_metadata_json,
                    COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
                    u.username AS seller_username
             FROM marketplace_listings l
@@ -84230,6 +84256,9 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
             (numeric_item_id,),
         )
         listing = dict(cur.fetchone() or {})
+        if listing:
+            listing["listing_type"] = marketplace_listing_types_service.effective_listing_type(listing.get("listing_type"), listing.get("product_type"))
+            listing["listing_metadata"] = marketplace_listing_types_service.parse_metadata(listing.pop("listing_metadata_json", ""))
     title = metadata.get("title") or listing.get("title") or item_type.replace("_", " ").title()
     amount_cents = safe_int(raw.get("amount_cents"), 0) or safe_int(raw.get("gross_amount_cents"), 0)
     currency = str(raw.get("currency") or listing.get("currency") or "USD").upper()
@@ -84258,6 +84287,9 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
     order_id = str(tx_id)
     receipt_url = f"/dashboard/orders?order_id={tx_id}&source={source_table}"
     support_url = f"/support?topic=order&order_id={tx_id}&source={source_table}"
+    digital_files = []
+    if listing and payment_status == "paid" and (listing.get("listing_type") or "") == "digital":
+        digital_files = marketplace_listing_types_service.buyer_digital_files_payload(listing.get("listing_metadata") or {})
     return {
         **raw,
         "id": tx_id,
@@ -84282,6 +84314,7 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
             "avatar_url": seller.get("avatar_url") or "",
         },
         "listing": listing,
+        "digital_files": digital_files,
         "marketplace_listing_id": numeric_item_id if item_type in {"marketplace_product", "product"} else 0,
         "receipt_url": receipt_url,
         "support_url": support_url,
@@ -84874,6 +84907,86 @@ def api_pulse_marketplace_media_upload():
     return jsonify({"ok": True, "message": "Product media uploaded.", "media": media})
 
 
+@webhook_app.route("/api/pulse/marketplace/digital-files/upload", methods=["POST"])
+def api_pulse_marketplace_digital_file_upload():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
+    if not seller:
+        conn.close()
+        return api_error("Merchant approval is required before uploading digital files.", 403)
+    file_storage = request.files.get("file") or request.files.get("media")
+    result, status = marketplace_listing_types_service.store_digital_file(int(user["user_id"]), file_storage)
+    if not result.get("ok"):
+        conn.close()
+        return jsonify(result), status
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute(
+        "INSERT INTO marketplace_digital_files (seller_user_id, file_name, file_size, storage_url, created_at) VALUES (?, ?, ?, ?, ?)",
+        (int(user["user_id"]), result.get("file_name") or "", int(result.get("file_size") or 0), result.get("storage_url") or "", now),
+    )
+    file_id = int(cur.lastrowid)
+    conn.commit(); conn.close()
+    return jsonify({
+        "ok": True,
+        "message": "Digital file uploaded.",
+        "file": {
+            "file_id": file_id,
+            "name": result.get("file_name") or "",
+            "size_bytes": int(result.get("file_size") or 0),
+        },
+    })
+
+
+@webhook_app.route("/api/pulse/marketplace/digital-files/<int:file_id>/download", methods=["GET"])
+def api_pulse_marketplace_digital_file_download(file_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM marketplace_digital_files WHERE id=? LIMIT 1", (int(file_id),))
+    file_row = dict(cur.fetchone() or {})
+    if not file_row:
+        conn.close()
+        return api_error("File not found.", 404)
+    requester_id = int(user["user_id"])
+    owner_id = int(file_row.get("seller_user_id") or 0)
+    allowed = requester_id == owner_id
+    if not allowed:
+        listing_ids = marketplace_listing_types_service.listing_ids_referencing_digital_file(cur, owner_id, int(file_id))
+        if listing_ids:
+            paid_ids = marketplace_listing_types_service.buyer_paid_marketplace_listing_ids(cur, requester_id)
+            allowed = bool(paid_ids & set(listing_ids))
+    conn.close()
+    if not allowed:
+        return api_error("Purchase this product to download its files.", 403)
+    download_name = str(file_row.get("file_name") or f"marketplace-file-{int(file_id)}").replace('"', "")
+    delivery = marketplace_listing_types_service.open_digital_file(file_row.get("storage_url") or "")
+    if delivery.get("kind") == "local":
+        return send_file(delivery["path"], as_attachment=True, download_name=download_name, max_age=0)
+    if delivery.get("kind") == "object":
+        try:
+            stored_object = media_storage.get_object(delivery["key"])
+        except Exception:
+            return api_error("File is not available right now.", 404)
+        headers = {
+            "Content-Disposition": f'attachment; filename="{download_name}"',
+            "Cache-Control": "no-store",
+        }
+        if stored_object.get("ContentLength"):
+            headers["Content-Length"] = str(stored_object.get("ContentLength"))
+        return Response(
+            stored_object["Body"].iter_chunks(8192),
+            mimetype=stored_object.get("ContentType") or "application/octet-stream",
+            headers=headers,
+        )
+    return api_error("File is not available right now.", 404)
+
+
 @webhook_app.route("/api/pulse/marketplace/listings/create", methods=["POST"])
 def api_pulse_marketplace_listing_create():
     init_db()
@@ -84889,7 +85002,17 @@ def api_pulse_marketplace_listing_create():
     price = clean_html(payload.get("price_label") or "Request access")[:80]
     currency = clean_html(payload.get("currency") or "USD")[:12]
     quantity = safe_int(payload.get("quantity"), 0)
-    product_type = payload.get("product_type") if payload.get("product_type") in {"digital", "physical", "course", "service"} else "digital"
+    product_type = payload.get("product_type") if payload.get("product_type") in {"digital", "physical", "course", "service", "event", "booking"} else ""
+    listing_type, listing_type_error = marketplace_listing_types_service.resolve_listing_type(payload.get("listing_type"), product_type or "digital")
+    if listing_type_error:
+        return jsonify({"ok": False, "message": listing_type_error}), 400
+    if not product_type:
+        # New clients send listing_type only: map it onto product_type. Old
+        # clients that sent nothing keep the legacy "digital" default.
+        product_type = marketplace_listing_types_service.product_type_for_listing_type(listing_type) if payload.get("listing_type") else "digital"
+    metadata_ok, listing_metadata = marketplace_listing_types_service.validate_listing_metadata(listing_type, payload.get("listing_metadata"))
+    if not metadata_ok:
+        return jsonify({"ok": False, "message": listing_metadata}), 400
     media_ids = [safe_int(x, 0) for x in (payload.get("media_ids") or []) if safe_int(x, 0)]
     if not title or not description:
         return jsonify({"ok": False, "message": "Add a title and description for the listing."}), 400
@@ -84912,6 +85035,11 @@ def api_pulse_marketplace_listing_create():
     if not any(int(m.get("is_cover") or 0) and (m.get("media_type") or "") in {"image", "gif"} for m in media_rows):
         conn.close()
         return api_error("Add a cover photo before creating a listing.", 400)
+    if listing_type == "digital" and (listing_metadata or {}).get("files"):
+        files_ok, files_error = marketplace_listing_types_service.verify_digital_files_owned(cur, user["user_id"], listing_metadata)
+        if not files_ok:
+            conn.close()
+            return api_error(files_error, 400)
     review = revenue_safety_engine.marketplace_listing_review({"title": title, "description": description, "category": category})
     status = "pending_review" if review["status"] != "review_ready" else "review_ready"
     cover = next((m for m in media_rows if int(m.get("is_cover") or 0)), media_rows[0])
@@ -84921,9 +85049,9 @@ def api_pulse_marketplace_listing_create():
         """
         INSERT INTO marketplace_listings
         (seller_user_id, title, short_description, description, category, subcategory, tags_json, cover_image_url,
-         gallery_json, video_url, price_label, currency, quantity, delivery_type, product_type, refund_policy,
+         gallery_json, video_url, price_label, currency, quantity, delivery_type, product_type, listing_type, listing_metadata_json, refund_policy,
          estimated_delivery, seller_notes, status, approval_status, safety_score, safety_flags_json, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user["user_id"], title, short_description, description, category, subcategory,
@@ -84932,6 +85060,7 @@ def api_pulse_marketplace_listing_create():
             json.dumps(gallery, default=str)[:1600],
             clean_html(video or "")[:800],
             price, currency, quantity, product_type, product_type,
+            listing_type, marketplace_listing_types_service.dump_metadata(listing_metadata),
             clean_html(payload.get("refund_policy") or "Reviewed products should state refunds clearly.")[:800],
             clean_html(payload.get("estimated_delivery") or "")[:200],
             clean_html(payload.get("seller_notes") or "")[:1000],
@@ -84957,7 +85086,7 @@ def api_pulse_marketplace_listing_create():
         extra={"review_status": review.get("status"), "risk_score": int(review.get("risk_score") or 0), "media_count": len(media_rows)},
     )
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "listing_id": listing_id, "message": "Listing saved for safety review."})
+    return jsonify({"ok": True, "listing_id": listing_id, "listing_type": listing_type, "listing_metadata": listing_metadata, "message": "Listing saved for safety review."})
 
 
 @webhook_app.route("/api/pulse/marketplace/listings/report", methods=["POST"])
@@ -102209,6 +102338,8 @@ def _init_db_impl():
         ("prerequisites", "TEXT"),
         ("reviewed_by", "INTEGER"),
         ("reviewed_at", "TEXT"),
+        ("listing_type", "TEXT DEFAULT ''"),
+        ("listing_metadata_json", "TEXT DEFAULT ''"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_product_media (
@@ -102252,6 +102383,16 @@ def _init_db_impl():
         listing_id INTEGER,
         created_at TEXT,
         UNIQUE(user_id, listing_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS marketplace_digital_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        seller_user_id INTEGER,
+        file_name TEXT,
+        file_size INTEGER DEFAULT 0,
+        storage_url TEXT,
+        created_at TEXT
     )
     """)
     cur.execute("""
