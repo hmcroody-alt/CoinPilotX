@@ -15,7 +15,9 @@ from typing import Any
 
 import requests
 
+from services import undx_capability_lifecycle
 from services import undx_company_identity
+from services import undx_fact_policy
 
 
 LOGGER = logging.getLogger(__name__)
@@ -75,9 +77,18 @@ def prepare_undx_model_request(messages: list[dict[str, str]], correlation_id: s
     company/founder/product grounding (who builds PulseSoc, the product definition,
     and the fact/capability honesty + injection-resistance rules).
     """
+    try:
+        capability_block = undx_capability_lifecycle.capability_lifecycle_block()
+    except Exception:
+        # Fail closed: a broken lifecycle projection must not let UNDX answer
+        # capability questions ungrounded (it would fabricate availability).
+        LOGGER.exception("capability_grounding_error correlation_id=%s", correlation_id)
+        raise PulseAIProviderError("undx_identity", "capability_grounding_error")
     final_messages = [
         {"role": "system", "content": UNDX_IDENTITY_BLOCK},
         {"role": "system", "content": undx_company_identity.company_identity_block()},
+        {"role": "system", "content": capability_block},
+        {"role": "system", "content": undx_fact_policy.fact_policy_block()},
     ]
     final_messages.extend(dict(item) for item in messages if isinstance(item, dict))
     final_system_context = "\n\n".join(
@@ -85,14 +96,18 @@ def prepare_undx_model_request(messages: list[dict[str, str]], correlation_id: s
     )
     identity_present = UNDX_IDENTITY_REQUIRED_PHRASE in final_system_context
     company_present = undx_company_identity.COMPANY_IDENTITY_REQUIRED_PHRASE in final_system_context
-    if not identity_present or not company_present:
+    capability_present = "UNDX capability state" in final_system_context
+    fact_policy_present = undx_fact_policy.FACT_POLICY_REQUIRED_PHRASE in final_system_context
+    if not identity_present or not company_present or not capability_present or not fact_policy_present:
         LOGGER.error(
-            "identity_configuration_error correlation_id=%s identity_present=%s company_present=%s",
-            correlation_id, identity_present, company_present,
+            "identity_configuration_error correlation_id=%s identity_present=%s company_present=%s "
+            "capability_present=%s fact_policy_present=%s",
+            correlation_id, identity_present, company_present, capability_present, fact_policy_present,
         )
         raise PulseAIProviderError("undx_identity", "identity_configuration_error")
     assert UNDX_IDENTITY_REQUIRED_PHRASE in final_system_context
     assert undx_company_identity.COMPANY_IDENTITY_REQUIRED_PHRASE in final_system_context
+    assert undx_fact_policy.FACT_POLICY_REQUIRED_PHRASE in final_system_context
     LOGGER.info(
         "UNDX_FINAL_MODEL_REQUEST correlation_id=%s identity_present=true system_context=%r roles=%s",
         correlation_id,

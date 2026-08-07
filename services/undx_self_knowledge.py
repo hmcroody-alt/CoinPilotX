@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from services import undx_capability_lifecycle as lifecycle
 from services import undx_capability_registry as registry
 from services import undx_company_identity as company
 from services.undx_agent_contracts import ConfirmationPolicy, RiskLevel
@@ -100,6 +101,13 @@ def self_knowledge() -> dict[str, Any]:
         "capabilities": {
             "counts": _counts(views),
             "available": views,
+            # Full lifecycle projection (AVAILABLE/LIMITED/TRAINING/PLANNED/
+            # DISABLED) over registry + knowledge map + live server policy.
+            # Server-authoritative; supersedes the flat "available" list for
+            # clients that render capability state.
+            "lifecycle": lifecycle.lifecycle_inventory(),
+            "lifecycle_counts": lifecycle.lifecycle_counts(),
+            "canonical_language": dict(lifecycle.CANONICAL_STATUS_LANGUAGE),
         },
         "honesty": {
             "never_fabricates": list(company.UNVERIFIABLE_WITHOUT_SOURCE),
