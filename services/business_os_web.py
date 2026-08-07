@@ -46,6 +46,33 @@ def business_os_page():
     )
 
 
+def _bootstrap_business_os_schema_if_needed():
+    """First-touch schema bootstrap for the Business OS namespace.
+
+    Production Postgres has no migration runner; each Business OS subsystem
+    ships an idempotent ``ensure_schema()`` that historically nothing invoked
+    at startup, so enabling the ``BUSINESS_OS_*`` flags on a fresh database
+    500'd with ``UndefinedTable``. This hook runs the one-shot bootstrap the
+    first time any Business OS page or API route is requested. It is
+    process-idempotent (module-level once latch), flag-aware (no-ops while
+    every flag is off), and never raises.
+    """
+    path = request.path or ""
+    if not (path.startswith("/api/business-os") or path.startswith("/business-os")):
+        return None
+    try:
+        from services.business_os import schema_bootstrap
+
+        schema_bootstrap.ensure_all_once()
+    except Exception:
+        # Never let bootstrap problems mask the request's own error handling.
+        import logging
+
+        logging.exception("BUSINESS_OS_SCHEMA_BOOTSTRAP_HOOK_FAILED (non-fatal)")
+    return None
+
+
 def register(app):
     app.register_blueprint(business_os_web_bp)
+    app.before_request(_bootstrap_business_os_schema_if_needed)
     return True
