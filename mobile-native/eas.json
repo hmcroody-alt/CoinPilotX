@@ -31,7 +31,7 @@
       }
     },
     "production": {
-      "channel": "production",
+     
       "distribution": "store",
       "developmentClient": false,
       "ios": {
