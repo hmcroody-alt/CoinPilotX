@@ -24,7 +24,7 @@
     "i18n:validate": "node scripts/validate-i18n.mjs",
     "i18n:hardcoded": "node scripts/find-hardcoded-strings.mjs",
     "verify": "npm run typecheck && npm run i18n:validate && npm test",
-    "postinstall": "patch-package"
+    "postinstall": "bash scripts/apply-native-patches.sh"
   },
   "dependencies": {
     "@babel/runtime": "^7.29.7",
