@@ -30,3 +30,6 @@ mobile-native/ios/**/DerivedData/
 mobile-native/ios/.xcode.env.local
 mobile-native/.expo/
 mobile-native/node_modules/
+
+# Claude worktrees
+.claude/
