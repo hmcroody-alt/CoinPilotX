@@ -507,7 +507,7 @@ describe("ads manager — §36 corrections", () => {
     // campaign creation, the same one a verified advertiser reaches.
     expect(navigation.navigate).toHaveBeenCalledWith(
       "BusinessOsAdvertising",
-      expect.objectContaining({ mode: "classic" })
+      expect.objectContaining({ mode: "create" })
     );
   });
 

@@ -10,6 +10,9 @@
  *     campaign creation forms and the objective/budget editor. The manager
  *     routes here for those flows rather than reimplementing a second creation
  *     path that could drift from the first.
+ *   • `mode: "create"` — the native campaign-creation wizard (objective →
+ *     setup → audience → placements → creative → budget → review → publish),
+ *     with a persisted draft that survives app restarts.
  *   • `mode: "audiences" | "creatives" | "account" | "policy"` — the manager's
  *     sub-pages. The first two are the destinations behind what used to be two
  *     locked, unopenable tiles; the third is where the ad account number went
@@ -26,6 +29,7 @@
  * screen is untouched, so its existing test keeps passing against it directly.
  */
 
+import { AdsCampaignWizardScreen } from "./AdsCampaignWizardScreen";
 import { AdsManagerScreen } from "./AdsManagerScreen";
 import { AdsSubPageScreen } from "./AdsSubPageScreen";
 import { BusinessOsAdvertisingScreen } from "./BusinessOsAdvertisingScreen";
@@ -38,6 +42,9 @@ type Props = {
 
 export function AdvertisingRoute({ route, navigation }: Props) {
   const mode = route?.params?.mode;
+  if (mode === "create") {
+    return <AdsCampaignWizardScreen route={route} navigation={navigation} />;
+  }
   if (mode === "classic") {
     return <BusinessOsAdvertisingScreen navigation={navigation} />;
   }

@@ -285,6 +285,19 @@ export function AdsManagerScreen({ route, navigation }: Props) {
   );
 
   /**
+   * The native campaign-creation wizard. Same route name, `mode: "create"` —
+   * the classic screen keeps the account form and the objective/budget editor,
+   * but new campaigns start in the wizard now.
+   */
+  const openCreate = useCallback(() => {
+    navigation?.navigate("BusinessOsAdvertising", {
+      title: "Create campaign",
+      mode: "create",
+      accountId: model?.primaryAccount?.id
+    });
+  }, [navigation, model?.primaryAccount?.id]);
+
+  /**
    * The sub-pages. Same route name, different `mode` — see `AdvertisingRoute`.
    * Audiences and Creative library were locked tiles that could not be opened;
    * Account details is where the ad account number lives now that it is out of
@@ -735,7 +748,7 @@ export function AdsManagerScreen({ route, navigation }: Props) {
           title="No campaigns yet"
           body={emptyStateBody}
           ctaLabel="Create campaign"
-          onPress={() => openClassic("Create campaign")}
+          onPress={openCreate}
           secondaryLabel={emptyStateVerifyLabel}
           onSecondaryPress={emptyStateVerifyLabel ? requestVerification : undefined}
           reducedMotion={reducedMotion}
@@ -1072,7 +1085,7 @@ export function AdsManagerScreen({ route, navigation }: Props) {
       {model?.primaryAccount ? (
         <Animated.View style={[styles.section, entrance.styleFor(SLOT.cta)]}>
           <Pressable
-            onPress={() => openClassic("Create campaign")}
+            onPress={openCreate}
             disabled={offline}
             style={[styles.cta, offline && styles.ctaDisabled]}
             accessibilityRole="button"

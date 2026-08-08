@@ -48,6 +48,14 @@ jest.mock("../../api/marketplace", () => ({
   loadCachedSellerStore: (...args: unknown[]) => mockCachedStore(...args)
 }));
 
+jest.mock("../../api/marketplaceCommerce", () => ({
+  addToCart: jest.fn(async () => ({ lines: [], badgeCount: 0 })),
+  actOnOffer: jest.fn(async () => ({})),
+  counterOffer: jest.fn(async () => ({ closed: {}, counter: {} })),
+  fetchCart: jest.fn(async () => ({ lines: [], badgeCount: 0 })),
+  fetchOffers: jest.fn(async () => [])
+}));
+
 jest.mock("@react-native-async-storage/async-storage", () => ({
   getItem: jest.fn(async () => null),
   setItem: jest.fn(async () => undefined)

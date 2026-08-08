@@ -278,6 +278,12 @@ from services import (
     pulse_advertiser_portal,
     pulse_ad_payments,
     pulse_ads_service,
+    pulse_ads_os,
+    pulse_ads_adsets,
+    pulse_ads_audiences,
+    pulse_ads_library,
+    pulse_ads_reporting,
+    pulse_ads_insights,
     pulsesoc_growth_engine,
     pulsesoc_promotions,
     pulse_identity_engine,
@@ -17582,6 +17588,739 @@ def api_pulse_ads_creative_replace(creative_id):
         conn.close()
 
 
+# --- Advertising OS (services/pulse_ads_os.py) -----------------------------
+
+
+@webhook_app.route("/api/pulse/ads/campaigns/<int:campaign_id>/targeting", methods=["GET", "PUT"])
+def api_pulse_ads_campaign_targeting(campaign_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        if request.method == "PUT":
+            if not pulse_ads_verify_write():
+                return jsonify({"ok": False, "error": "Security check failed."}), 403
+            return jsonify({"ok": True, "targeting": pulse_ads_os.put_targeting(conn, user.get("user_id"), campaign_id, pulse_ads_json_payload())})
+        return jsonify({"ok": True, "targeting": pulse_ads_os.get_targeting(conn, user.get("user_id"), campaign_id)})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/audiences", methods=["GET", "POST"])
+def api_pulse_ads_audiences():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        if request.method == "POST":
+            if not pulse_ads_verify_write():
+                return jsonify({"ok": False, "error": "Security check failed."}), 403
+            return jsonify({"ok": True, "audience": pulse_ads_os.create_audience(conn, user.get("user_id"), pulse_ads_json_payload())})
+        account_id = int(request.args.get("account_id", "0") or 0)
+        return jsonify({"ok": True, **pulse_ads_os.list_audiences(conn, user.get("user_id"), account_id)})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/audiences/<int:audience_id>", methods=["PATCH"])
+def api_pulse_ads_audience_update(audience_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, "audience": pulse_ads_audiences.update_audience(conn, user.get("user_id"), audience_id, pulse_ads_json_payload())})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/audiences/<int:audience_id>/archive", methods=["POST"])
+def api_pulse_ads_audience_archive(audience_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, **pulse_ads_os.archive_audience(conn, user.get("user_id"), audience_id)})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/content-inventory", methods=["GET"])
+def api_pulse_ads_content_inventory():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({
+            "ok": True,
+            **pulse_ads_os.content_inventory(
+                conn,
+                user.get("user_id"),
+                kinds=request.args.get("kinds") or "",
+                limit=request.args.get("limit", "25"),
+            ),
+        })
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/campaigns/full", methods=["POST"])
+def api_pulse_ads_campaign_create_full():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("campaign_full", 30, 60):
+        return jsonify({"ok": False, "error": "Too many campaign requests."}), 429
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify(pulse_ads_os.create_campaign_full(conn, user.get("user_id"), pulse_ads_json_payload()))
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/accounts/<int:account_id>/wallet/transactions", methods=["GET"])
+def api_pulse_ads_wallet_transactions(account_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({
+            "ok": True,
+            **pulse_ads_os.wallet_transactions(
+                conn, user.get("user_id"), account_id,
+                limit=request.args.get("limit", "50"),
+                before_id=request.args.get("before_id", "0"),
+            ),
+        })
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/accounts/<int:account_id>/invoices", methods=["GET"])
+def api_pulse_ads_wallet_invoices(account_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({
+            "ok": True,
+            **pulse_ads_os.wallet_invoices(
+                conn, user.get("user_id"), account_id,
+                limit=request.args.get("limit", "50"),
+                before_id=request.args.get("before_id", "0"),
+            ),
+        })
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/accounts/<int:account_id>/receipts", methods=["GET"])
+def api_pulse_ads_wallet_receipts(account_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({
+            "ok": True,
+            **pulse_ads_os.wallet_receipts(
+                conn, user.get("user_id"), account_id,
+                limit=request.args.get("limit", "50"),
+                before_id=request.args.get("before_id", "0"),
+            ),
+        })
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/accounts/<int:account_id>/wallet/spending-limit", methods=["POST"])
+def api_pulse_ads_wallet_spending_limit(account_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, **pulse_ads_os.set_spending_limit(conn, user.get("user_id"), account_id, pulse_ads_json_payload())})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/accounts/<int:account_id>/wallet/auto-topup", methods=["POST"])
+def api_pulse_ads_wallet_auto_topup(account_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, **pulse_ads_os.set_auto_topup(conn, user.get("user_id"), account_id, pulse_ads_json_payload())})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/reports", methods=["GET"])
+def api_pulse_ads_reports():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({
+            "ok": True,
+            **pulse_ads_reporting.build_report(
+                conn,
+                user.get("user_id"),
+                int(request.args.get("account_id", "0") or 0),
+                {
+                    "start": request.args.get("start") or request.args.get("from") or "",
+                    "end": request.args.get("end") or request.args.get("to") or "",
+                    "breakdown": request.args.get("breakdown") or "campaign",
+                    "campaign_id": request.args.get("campaign_id") or 0,
+                },
+            ),
+        })
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/insights", methods=["GET"])
+def api_pulse_ads_insights():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({
+            "ok": True,
+            **pulse_ads_insights.build_insights(conn, user.get("user_id"), int(request.args.get("account_id", "0") or 0)),
+        })
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/insights/apply", methods=["POST"])
+def api_pulse_ads_insights_apply():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("ads_insight_apply", 30, 60):
+        return jsonify({"ok": False, "error": "Too many insight actions."}), 429
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, **pulse_ads_insights.apply_insight(conn, user.get("user_id"), pulse_ads_json_payload())})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/attribution/status", methods=["GET"])
+def api_pulse_ads_attribution_status():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({
+            "ok": True,
+            **pulse_ads_reporting.attribution_status(
+                conn, user.get("user_id"), int(request.args.get("campaign_id", "0") or 0)
+            ),
+        })
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/wallet/transactions", methods=["GET"])
+def api_pulse_ads_wallet_transactions_flat():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({
+            "ok": True,
+            **pulse_ad_payments.list_transactions(
+                conn,
+                user.get("user_id"),
+                int(request.args.get("account_id", "0") or 0),
+                limit=request.args.get("limit", "50"),
+                before_id=request.args.get("before_id", "0"),
+            ),
+        })
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/wallet/invoices", methods=["GET"])
+def api_pulse_ads_wallet_invoices_flat():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({
+            "ok": True,
+            **pulse_ad_payments.list_invoices(
+                conn,
+                user.get("user_id"),
+                int(request.args.get("account_id", "0") or 0),
+                limit=request.args.get("limit", "30"),
+                before_id=request.args.get("before_id", "0"),
+            ),
+        })
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/wallet/limits", methods=["POST"])
+def api_pulse_ads_wallet_limits_set():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        payload = pulse_ads_json_payload()
+        return jsonify(pulse_ad_payments.set_spending_limits(
+            conn, user.get("user_id"), int(payload.get("account_id") or 0), payload
+        ))
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/wallet/auto-topup", methods=["POST"])
+def api_pulse_ads_wallet_auto_topup_flat():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        payload = pulse_ads_json_payload()
+        return jsonify(pulse_ad_payments.set_auto_topup(
+            conn, user.get("user_id"), int(payload.get("account_id") or 0), payload
+        ))
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/policy-center", methods=["GET"])
+def api_pulse_ads_policy_center():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({
+            "ok": True,
+            **pulse_ads_os.policy_center(conn, user.get("user_id"), int(request.args.get("account_id", "0") or 0)),
+        })
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/creatives/<int:creative_id>/appeal", methods=["POST"])
+def api_pulse_ads_creative_appeal(creative_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("ads_appeal", 10, 3600):
+        return jsonify({"ok": False, "error": "Too many appeals. Try again later."}), 429
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, "appeal": pulse_ads_os.create_appeal(conn, user.get("user_id"), creative_id, pulse_ads_json_payload())})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/creatives/<int:creative_id>", methods=["PATCH"])
+def api_pulse_ads_creative_update(creative_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, "creative": pulse_ads_os.update_creative(conn, user.get("user_id"), creative_id, pulse_ads_json_payload())})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/campaign/<int:campaign_id>/detail", methods=["GET"])
+def api_pulse_ads_campaign_full_detail(campaign_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, "detail": pulse_ads_adsets.campaign_detail(conn, user.get("user_id"), campaign_id)})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/campaign/<int:campaign_id>/adsets", methods=["GET", "POST"])
+def api_pulse_ads_campaign_adsets(campaign_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if request.method == "POST":
+        if not pulse_ads_verify_write():
+            return jsonify({"ok": False, "error": "Security check failed."}), 403
+        if pulse_ads_rate_limited("adset_write", 60, 60):
+            return jsonify({"ok": False, "error": "Too many requests. Slow down."}), 429
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        if request.method == "POST":
+            return jsonify({"ok": True, "adset": pulse_ads_adsets.create_adset(conn, user.get("user_id"), campaign_id, pulse_ads_json_payload())})
+        return jsonify({"ok": True, **pulse_ads_adsets.list_adsets(conn, user.get("user_id"), campaign_id)})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/adset/<int:adset_id>/update", methods=["POST"])
+def api_pulse_ads_adset_update(adset_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("adset_write", 60, 60):
+        return jsonify({"ok": False, "error": "Too many requests. Slow down."}), 429
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, "adset": pulse_ads_adsets.update_adset(conn, user.get("user_id"), adset_id, pulse_ads_json_payload())})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/adset/<int:adset_id>/<action>", methods=["POST"])
+def api_pulse_ads_adset_action(adset_id, action):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    action = str(action or "").strip().lower()
+    if action not in pulse_ads_adsets.ADSET_TRANSITIONS:
+        return jsonify({"ok": False, "error": "Unsupported ad set action."}), 400
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("adset_write", 60, 60):
+        return jsonify({"ok": False, "error": "Too many requests. Slow down."}), 429
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, "adset": pulse_ads_adsets.adset_action(conn, user.get("user_id"), adset_id, action)})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/creative/<int:creative_id>/assign-adset", methods=["POST"])
+def api_pulse_ads_creative_assign_adset(creative_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("adset_write", 60, 60):
+        return jsonify({"ok": False, "error": "Too many requests. Slow down."}), 429
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        payload = pulse_ads_json_payload()
+        return jsonify({"ok": True, "creative": pulse_ads_adsets.assign_creative(conn, user.get("user_id"), creative_id, payload.get("adset_id"))})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/campaign/draft", methods=["POST"])
+def api_pulse_ads_campaign_draft():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("campaign_draft", 60, 60):
+        return jsonify({"ok": False, "error": "Too many requests. Slow down."}), 429
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, **pulse_ads_os.save_campaign_draft(conn, user.get("user_id"), pulse_ads_json_payload())})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/campaign/drafts", methods=["GET"])
+def api_pulse_ads_campaign_drafts():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, **pulse_ads_os.list_campaign_drafts(conn, user.get("user_id"))})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/audiences/lookalike", methods=["POST"])
+def api_pulse_ads_audience_lookalike():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("audience_write", 30, 60):
+        return jsonify({"ok": False, "error": "Too many requests. Slow down."}), 429
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, "audience": pulse_ads_audiences.create_lookalike(conn, user.get("user_id"), pulse_ads_json_payload())})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/audiences/<int:audience_id>", methods=["GET"])
+def api_pulse_ads_audience_detail(audience_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, "audience": pulse_ads_audiences.audience_detail(conn, user.get("user_id"), audience_id)})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/audiences/<int:audience_id>/update", methods=["POST"])
+def api_pulse_ads_audience_update_post(audience_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("audience_write", 30, 60):
+        return jsonify({"ok": False, "error": "Too many requests. Slow down."}), 429
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, "audience": pulse_ads_audiences.update_audience(conn, user.get("user_id"), audience_id, pulse_ads_json_payload())})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/library", methods=["GET"])
+def api_pulse_ads_library():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, **pulse_ads_library.library_overview(conn, user.get("user_id"), request.args.get("filter", "all"))})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/library/<int:creative_id>", methods=["GET"])
+def api_pulse_ads_library_detail(creative_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, "creative": pulse_ads_library.asset_detail(conn, user.get("user_id"), creative_id)})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/creative/<int:creative_id>/metadata", methods=["POST"])
+def api_pulse_ads_creative_metadata(creative_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("creative_write", 60, 60):
+        return jsonify({"ok": False, "error": "Too many requests. Slow down."}), 429
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, "creative": pulse_ads_library.update_creative_metadata(conn, user.get("user_id"), creative_id, pulse_ads_json_payload())})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/creative/<int:creative_id>/use-in-campaign", methods=["POST"])
+def api_pulse_ads_creative_use_in_campaign(creative_id):
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("creative_write", 60, 60):
+        return jsonify({"ok": False, "error": "Too many requests. Slow down."}), 429
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        payload = pulse_ads_json_payload()
+        return jsonify({
+            "ok": True,
+            "creative": pulse_ads_library.duplicate_creative_to_campaign(
+                conn,
+                user.get("user_id"),
+                creative_id,
+                int(payload.get("campaign_id") or 0),
+                adset_id=payload.get("adset_id"),
+            ),
+        })
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/appeals", methods=["GET", "POST"])
+def api_pulse_ads_appeals():
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if request.method == "POST":
+        if not pulse_ads_verify_write():
+            return jsonify({"ok": False, "error": "Security check failed."}), 403
+        if pulse_ads_rate_limited("ads_appeal", 10, 3600):
+            return jsonify({"ok": False, "error": "Too many appeals. Try again later."}), 429
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        if request.method == "POST":
+            payload = pulse_ads_json_payload()
+            creative_id = int(payload.get("creative_id") or 0)
+            return jsonify({"ok": True, "appeal": pulse_ads_os.create_appeal(conn, user.get("user_id"), creative_id, payload)})
+        account_id = int(request.args.get("account_id", "0") or 0)
+        return jsonify({"ok": True, **pulse_ads_os.list_appeals(conn, user.get("user_id"), account_id)})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
 @webhook_app.route("/api/admin/pulse/ads/review-board", methods=["GET"])
 def api_admin_pulse_ads_review_board():
     admin, denied = require_admin_api("pulse.moderate")
@@ -17746,6 +18485,33 @@ def api_admin_pulse_ads_creative_needs_changes():
         result = pulse_ads_service.reject_creative(conn, admin.get("id"), int(payload.get("creative_id") or 0), payload.get("reason") or "Creative needs changes before approval.")
         result["review_status"] = "needs_changes"
         return jsonify(result)
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/admin/api/ads/appeal/<int:appeal_id>/decide", methods=["POST"])
+def admin_api_ads_appeal_decide(appeal_id):
+    admin, denied = require_admin_api("pulse.moderate")
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        payload = pulse_ads_json_payload()
+        return jsonify({
+            "ok": True,
+            "appeal": pulse_ads_os.admin_decide_appeal(
+                conn,
+                admin.get("id"),
+                appeal_id,
+                payload.get("decision") or "",
+                payload.get("reason") or "",
+            ),
+        })
     except Exception as exc:
         return pulse_ads_error_response(exc)
     finally:
@@ -104373,6 +105139,88 @@ def _init_db_impl():
     safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_pulse_ad_funding_payment_intent ON pulse_ad_wallet_funding_sessions(provider_payment_intent_id)")
     safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_pulse_ad_funding_charge ON pulse_ad_wallet_funding_sessions(provider_charge_id)")
     safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_pulse_ad_refunds_account ON pulse_ad_refunds(account_id, status, created_at)")
+    # --- Advertising OS (native ads manager) schema -------------------------
+    # Targeting depth: multi-country/language, audience mode, saved audiences.
+    add_columns_if_missing(cur, "pulse_ad_targeting", [
+        ("audience_mode", "TEXT DEFAULT 'everyone'"),
+        ("saved_audience_ids_json", "TEXT DEFAULT '[]'"),
+        ("excluded_audience_ids_json", "TEXT DEFAULT '[]'"),
+        ("countries_json", "TEXT DEFAULT '[]'"),
+        ("languages_json", "TEXT DEFAULT '[]'"),
+    ], conn=conn)
+    # Content-backed creatives + richer ad copy fields.
+    add_columns_if_missing(cur, "pulse_ad_creatives", [
+        ("content_ref_type", "TEXT DEFAULT ''"),
+        ("content_ref_id", "INTEGER DEFAULT 0"),
+        ("headline", "TEXT DEFAULT ''"),
+        ("primary_text", "TEXT DEFAULT ''"),
+        ("aspect_ratio", "TEXT DEFAULT ''"),
+    ], conn=conn)
+    # Advertiser-set spending limits and auto-topup settings (settings only;
+    # auto-topup never charges automatically from here).
+    add_columns_if_missing(cur, "pulse_ad_wallets", [
+        ("daily_limit_cents", "INTEGER DEFAULT 0"),
+        ("lifetime_limit_cents", "INTEGER DEFAULT 0"),
+        ("auto_topup_enabled", "INTEGER DEFAULT 0"),
+        ("auto_topup_threshold_cents", "INTEGER DEFAULT 0"),
+        ("auto_topup_amount_cents", "INTEGER DEFAULT 0"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_ad_saved_audiences (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        kind TEXT DEFAULT 'saved',
+        definition_json TEXT DEFAULT '{}',
+        estimated_size INTEGER DEFAULT 0,
+        archived_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_ad_appeals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        creative_id INTEGER NOT NULL,
+        campaign_id INTEGER,
+        submitted_by_user_id INTEGER,
+        message TEXT,
+        status TEXT DEFAULT 'open',
+        resolution_notes TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_ad_idempotency (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scope TEXT DEFAULT '',
+        idem_key TEXT UNIQUE,
+        result_json TEXT DEFAULT '{}',
+        created_at TEXT
+    )
+    """)
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_pulse_ad_saved_audiences_account ON pulse_ad_saved_audiences(account_id, archived_at)")
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_pulse_ad_appeals_account ON pulse_ad_appeals(account_id, status, created_at)")
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_pulse_ad_appeals_creative ON pulse_ad_appeals(creative_id, status)")
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_pulse_ad_idempotency_key ON pulse_ad_idempotency(idem_key)")
+    try:
+        pulse_ads_adsets.ensure_schema(conn)
+    except Exception as exc:
+        logging.warning("PULSE_ADS_ADSET_SCHEMA_SKIPPED error=%s", exc)
+    try:
+        pulse_ads_os.ensure_schema(conn)
+    except Exception as exc:
+        logging.warning("PULSE_ADS_APPEALS_SCHEMA_SKIPPED error=%s", exc)
+    try:
+        pulse_ads_reporting.ensure_schema(conn)
+    except Exception as exc:
+        logging.warning("PULSE_ADS_REPORTING_SCHEMA_SKIPPED error=%s", exc)
+    try:
+        pulse_ad_payments.ensure_schema(conn)
+    except Exception as exc:
+        logging.warning("PULSE_ADS_PAYMENTS_SCHEMA_SKIPPED error=%s", exc)
     try:
         pulse_ads_service.seed_placements(cur)
     except Exception as exc:

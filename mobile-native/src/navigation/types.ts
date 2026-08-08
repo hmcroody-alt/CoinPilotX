@@ -182,7 +182,7 @@ export type RootStackParamList = {
     | {
         title?: string;
         accountId?: number;
-        mode?: "manager" | "classic" | "audiences" | "creatives" | "account" | "policy";
+        mode?: "manager" | "classic" | "create" | "audiences" | "creatives" | "account" | "policy";
       }
     | undefined;
   BusinessOsInsights: { title?: string } | undefined;

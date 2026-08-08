@@ -116,6 +116,93 @@ def _audit(conn, actor_user_id, action, entity_type, entity_id, before=None, aft
     )
 
 
+def _safe_execute(conn, sql, params=()) -> bool:
+    try:
+        conn.execute(sql, params)
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def _add_column_if_missing(conn, table: str, column: str, ddl_type: str) -> None:
+    try:
+        cur = conn.cursor()
+        cur.execute(f"PRAGMA table_info({table})")
+        existing = {str(row[1] if not hasattr(row, "keys") else row["name"]) for row in cur.fetchall()}
+        if column in existing:
+            return
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        # PRAGMA is SQLite-only; on other engines fall through and let the
+        # ALTER speak for itself.
+    _safe_execute(conn, f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}")
+
+
+def ensure_schema(conn) -> None:
+    """Idempotent DDL for the wallet-completion features.
+
+    Everything here is defensive: production creates most of this in
+    ``bot.init_db()``, tests build a minimal schema inline, and either may be
+    missing a piece. Every statement tolerates the object already existing.
+    """
+    _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS pulse_ad_invoices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            invoice_number TEXT UNIQUE,
+            amount_cents INTEGER NOT NULL DEFAULT 0,
+            currency TEXT DEFAULT 'usd',
+            status TEXT DEFAULT 'open',
+            period_start TEXT,
+            period_end TEXT,
+            metadata_json TEXT,
+            created_at TEXT
+        )
+        """,
+    )
+    _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS pulse_ad_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            campaign_id INTEGER,
+            creative_id INTEGER,
+            recipient_user_id INTEGER,
+            notification_type TEXT,
+            title TEXT,
+            body TEXT,
+            status TEXT DEFAULT 'unread',
+            read_at TEXT,
+            created_at TEXT
+        )
+        """,
+    )
+    # Links a funding-completion invoice back to the checkout that paid it, and
+    # is what makes the invoice write idempotent across webhook retries.
+    _add_column_if_missing(conn, "pulse_ad_invoices", "funding_session_id", "INTEGER")
+    # Advertiser-set guardrails and top-up reminder settings. Production also
+    # adds these in bot.init_db(); tests may not.
+    _add_column_if_missing(conn, "pulse_ad_wallets", "daily_limit_cents", "INTEGER DEFAULT 0")
+    _add_column_if_missing(conn, "pulse_ad_wallets", "lifetime_limit_cents", "INTEGER DEFAULT 0")
+    _add_column_if_missing(conn, "pulse_ad_wallets", "auto_topup_enabled", "INTEGER DEFAULT 0")
+    _add_column_if_missing(conn, "pulse_ad_wallets", "auto_topup_threshold_cents", "INTEGER DEFAULT 0")
+    _add_column_if_missing(conn, "pulse_ad_wallets", "auto_topup_amount_cents", "INTEGER DEFAULT 0")
+    _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS idx_pulse_ad_invoices_account ON pulse_ad_invoices(account_id, id)",
+    )
+
+
 def ensure_wallet(conn, account_id, currency="usd") -> dict:
     account_id = safe_int(account_id, minimum=1)
     currency = _currency(currency)
@@ -174,6 +261,9 @@ def wallet_summary(conn, user_id, account_id) -> dict:
     # is a debt the advertiser owes, and it is surfaced by name rather than left
     # for a reader to infer from a minus sign they may not be looking for.
     amount_owed_cents = max(0, -available_cents)
+    auto_topup_enabled = bool(safe_int(wallet.get("auto_topup_enabled"), 0))
+    auto_topup_threshold = safe_int(wallet.get("auto_topup_threshold_cents"), 0)
+    needs_topup = bool(auto_topup_enabled and auto_topup_threshold > 0 and spendable < auto_topup_threshold)
     return {
         "account_id": safe_int(account_id),
         "currency": wallet.get("currency") or "usd",
@@ -194,6 +284,21 @@ def wallet_summary(conn, user_id, account_id) -> dict:
         "billing_enabled": billing_enabled(),
         "stripe_ready": stripe_ready(),
         "stripe_ids_visible": False,
+        "spending_limits": {
+            "daily_limit_cents": safe_int(wallet.get("daily_limit_cents"), 0),
+            "lifetime_limit_cents": safe_int(wallet.get("lifetime_limit_cents"), 0),
+        },
+        "auto_topup": {
+            "enabled": auto_topup_enabled,
+            "threshold_cents": auto_topup_threshold,
+            "amount_cents": safe_int(wallet.get("auto_topup_amount_cents"), 0),
+            # Honest: funding runs through Stripe Checkout with no saved payment
+            # method, so nothing is ever charged automatically. When the balance
+            # dips below the threshold the advertiser is notified to top up.
+            "auto_charge": False,
+            "note": "No card is charged automatically; a low-balance notification asks you to top up.",
+        },
+        "needs_topup": needs_topup,
         "transactions": transactions,
         "receipts": receipts,
     }
@@ -431,6 +536,23 @@ def credit_wallet_from_stripe_session(conn, event_id: str, session: dict) -> dic
         """,
         (account_id, funding_session_id, invoice_number, receipt_number, amount_cents, currency, hash_value(session.get("id") or ""), now),
     )
+    try:
+        _write_funding_invoice(
+            conn,
+            account_id=account_id,
+            funding_session_id=funding_session_id,
+            amount_cents=amount_cents,
+            currency=currency,
+            receipt_number=receipt_number,
+            now=now,
+        )
+    except Exception:
+        # An invoice is a record of money that has already moved; failing to
+        # file it must never fail the funding credit itself. Deliberately no
+        # rollback here — that would undo the wallet credit sitting in the same
+        # transaction. `list_invoices` backfills any credited funding session
+        # that is missing an invoice.
+        pass
     _audit(conn, safe_int(funding.get("user_id")), "ad_wallet_funded", "pulse_ad_wallets", account_id, after={"amount_cents": amount_cents, "currency": currency})
     conn.commit()
     return {"ok": True, "account_id": account_id, "amount_cents": amount_cents}
@@ -716,6 +838,54 @@ def _allocate_spend(wallet: dict, amount_cents: int) -> dict:
     return allocation
 
 
+def _spent_today_cents(conn, account_id) -> int:
+    """Cents actually charged to this account's wallet since UTC midnight."""
+    cur = conn.cursor()
+    today = now_iso()[:10]
+    cur.execute(
+        """
+        SELECT COALESCE(SUM(amount_cents), 0) AS c
+        FROM pulse_ad_wallet_transactions
+        WHERE account_id=? AND transaction_type='spend' AND status='posted' AND created_at>=?
+        """,
+        (safe_int(account_id, minimum=1), today),
+    )
+    return safe_int(row_to_dict(cur.fetchone()).get("c"), 0)
+
+
+def _spend_limit_reason(conn, account_id, wallet, amount_cents) -> str:
+    """Advertiser-set spending limits. Zero means no limit is set."""
+    daily_limit = safe_int(wallet.get("daily_limit_cents"), 0)
+    if daily_limit > 0 and _spent_today_cents(conn, account_id) + amount_cents > daily_limit:
+        return "daily_limit_reached"
+    lifetime_limit = safe_int(wallet.get("lifetime_limit_cents"), 0)
+    if lifetime_limit > 0 and safe_int(wallet.get("lifetime_spent_cents"), 0) + amount_cents > lifetime_limit:
+        return "lifetime_limit_reached"
+    return ""
+
+
+def _pause_active_campaigns(conn, account_id, reason) -> int:
+    """Pause every active campaign on the account, mirroring the insufficient-wallet path."""
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id FROM pulse_ad_campaigns WHERE ad_account_id=? AND status='active'",
+        (safe_int(account_id, minimum=1),),
+    )
+    campaign_ids = [safe_int(row_to_dict(row).get("id")) for row in cur.fetchall()]
+    now = now_iso()
+    for campaign_id in campaign_ids:
+        cur.execute("UPDATE pulse_ad_campaigns SET status='paused', updated_at=? WHERE id=?", (now, campaign_id))
+        _audit(
+            conn,
+            None,
+            "ad_campaign_auto_paused_spend_limit",
+            "pulse_ad_campaigns",
+            campaign_id,
+            after={"reason": clean_text(reason, 80)},
+        )
+    return len(campaign_ids)
+
+
 def record_spend_event(conn, campaign_id, creative_id, placement_key, amount_cents=1, idempotency_key="") -> dict:
     cur = conn.cursor()
     cur.execute(
@@ -731,7 +901,22 @@ def record_spend_event(conn, campaign_id, creative_id, placement_key, amount_cen
         return {"ok": False, "skipped": "campaign_missing"}
     if clean_text(campaign.get("business_type"), 80) == "internal_promotion":
         return {"ok": True, "skipped": "internal_promotion"}
+    # A spend without a caller-supplied idempotency key used to fall back to a
+    # timestamp-derived key with second granularity — a retried delivery event
+    # more than a second later minted a fresh key and charged the wallet twice
+    # for one impression. Every real caller derives the key from the delivery
+    # token / event identity, so an empty key is a bug, not a convenience.
+    if not clean_text(idempotency_key, 180):
+        raise pulse_ads_service.PulseAdsError(
+            "A spend idempotency key derived from the delivery event is required."
+        )
     amount_cents = safe_int(amount_cents, 1, 1, 10_000)
+    limit_wallet = ensure_wallet(conn, campaign.get("ad_account_id"))
+    limit_reason = _spend_limit_reason(conn, campaign.get("ad_account_id"), limit_wallet, amount_cents)
+    if limit_reason:
+        _pause_active_campaigns(conn, campaign.get("ad_account_id"), limit_reason)
+        conn.commit()
+        return {"ok": False, "paused": True, "reason": limit_reason}
     if spendable_balance_cents(conn, campaign.get("ad_account_id")) < amount_cents:
         cur.execute("UPDATE pulse_ad_campaigns SET status='paused', updated_at=? WHERE id=?", (now_iso(), campaign_id))
         _audit(conn, None, "ad_campaign_auto_paused_insufficient_wallet", "pulse_ad_campaigns", campaign_id, after={"placement_key": placement_key})
@@ -753,7 +938,7 @@ def record_spend_event(conn, campaign_id, creative_id, placement_key, amount_cen
         )
         conn.commit()
         return {"ok": False, "paused": True, "reason": "wallet_insufficient"}
-    key = clean_text(idempotency_key or f"spend:{campaign_id}:{creative_id}:{placement_key}:{now_iso()}", 180)
+    key = clean_text(idempotency_key, 180)
     tx = _insert_transaction(
         conn,
         campaign.get("ad_account_id"),
@@ -791,6 +976,11 @@ def record_spend_event(conn, campaign_id, creative_id, placement_key, amount_cen
         ),
     )
     cur.execute("UPDATE pulse_ad_campaigns SET spent_cents=COALESCE(spent_cents,0)+?, updated_at=? WHERE id=?", (amount_cents, now, campaign_id))
+    try:
+        _maybe_notify_low_balance(conn, campaign.get("ad_account_id"))
+    except Exception:
+        # A reminder must never make a billable delivery fail.
+        pass
     conn.commit()
     return {
         "ok": True,
@@ -847,3 +1037,345 @@ def admin_finance_summary(conn) -> dict:
         "billing_enabled": billing_enabled(),
         "stripe_ready": stripe_ready(),
     }
+
+
+# --------------------------------------------------------------------------
+# Wallet completion: spending limits, invoices, auto top-up, paged ledgers.
+# --------------------------------------------------------------------------
+
+SPENDING_LIMIT_MAX_CENTS = 50_000_000
+NOTIFY_LOW_BALANCE_TYPE = "ad_wallet_low_balance"
+
+
+def _next_invoice_number(cur, account_id: int, offset: int = 0) -> str:
+    """Sequential per-account invoice number: ADINV-{account}-{seq}."""
+    cur.execute("SELECT COUNT(*) FROM pulse_ad_invoices WHERE account_id=?", (safe_int(account_id, minimum=1),))
+    row = cur.fetchone()
+    count = safe_int(row[0] if row is not None else 0, 0)
+    return f"ADINV-{safe_int(account_id)}-{count + 1 + offset:05d}"
+
+
+def _write_funding_invoice(conn, *, account_id, funding_session_id, amount_cents, currency, receipt_number, now) -> int:
+    """File a paid invoice for a completed wallet funding. Idempotent.
+
+    Keyed on `funding_session_id`: a webhook retry that reaches this function a
+    second time finds the existing invoice and writes nothing. The invoice
+    number is sequential per account; a concurrent insert that steals the
+    number is retried with the next one.
+    """
+    account_id = safe_int(account_id, minimum=1)
+    funding_session_id = safe_int(funding_session_id, minimum=1)
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM pulse_ad_invoices WHERE funding_session_id=?", (funding_session_id,))
+    existing = cur.fetchone()
+    if existing:
+        return safe_int(row_to_dict(existing).get("id") if hasattr(existing, "keys") else existing[0])
+    metadata = {
+        "source": "wallet_funding",
+        "funding_session_id": funding_session_id,
+        "receipt_number": clean_text(receipt_number, 120),
+    }
+    day = clean_text(now, 40)[:10]
+    last_error = None
+    for attempt in range(5):
+        invoice_number = _next_invoice_number(cur, account_id, offset=attempt)
+        try:
+            cur.execute(
+                """
+                INSERT INTO pulse_ad_invoices
+                (account_id, funding_session_id, invoice_number, amount_cents, currency, status,
+                 period_start, period_end, metadata_json, created_at)
+                VALUES (?, ?, ?, ?, ?, 'paid', ?, ?, ?, ?)
+                """,
+                (
+                    account_id,
+                    funding_session_id,
+                    invoice_number,
+                    safe_int(amount_cents, 0),
+                    _currency(currency),
+                    day,
+                    day,
+                    clean_json(metadata),
+                    clean_text(now, 40),
+                ),
+            )
+            return safe_int(cur.lastrowid)
+        except Exception as exc:  # UNIQUE collision on invoice_number: retry with next seq
+            last_error = exc
+            continue
+    if last_error:
+        raise last_error
+    return 0
+
+
+def _backfill_funding_invoices(conn, account_id: int) -> int:
+    """Write invoices for credited funding sessions that are missing one.
+
+    This is what makes the invoice write in `credit_wallet_from_stripe_session`
+    safe to fail: any funding that was credited before invoices existed, or
+    whose invoice insert failed, gets its invoice filed on the next read.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT f.id, f.amount_cents, f.currency, f.updated_at, f.created_at
+        FROM pulse_ad_wallet_funding_sessions f
+        WHERE f.account_id=? AND f.status IN ('credited','reversed','partially_reversed')
+          AND NOT EXISTS (SELECT 1 FROM pulse_ad_invoices i WHERE i.funding_session_id=f.id)
+        ORDER BY f.id ASC
+        """,
+        (safe_int(account_id, minimum=1),),
+    )
+    pending = [row_to_dict(row) for row in cur.fetchall()]
+    written = 0
+    for funding in pending:
+        receipt_number = ""
+        try:
+            cur.execute(
+                "SELECT receipt_number FROM pulse_ad_receipts WHERE funding_session_id=? ORDER BY id DESC LIMIT 1",
+                (safe_int(funding.get("id")),),
+            )
+            receipt = row_to_dict(cur.fetchone())
+            receipt_number = clean_text(receipt.get("receipt_number") or "", 120)
+        except Exception:
+            receipt_number = ""
+        try:
+            _write_funding_invoice(
+                conn,
+                account_id=account_id,
+                funding_session_id=funding.get("id"),
+                amount_cents=funding.get("amount_cents"),
+                currency=funding.get("currency") or "usd",
+                receipt_number=receipt_number,
+                now=clean_text(funding.get("updated_at") or funding.get("created_at") or now_iso(), 40),
+            )
+            written += 1
+        except Exception:
+            continue
+    if written:
+        conn.commit()
+    return written
+
+
+def _invoice_item(row: dict) -> dict:
+    return {
+        "id": safe_int(row.get("id")),
+        "invoice_number": clean_text(row.get("invoice_number") or "", 120),
+        "amount_cents": safe_int(row.get("amount_cents")),
+        "amount": money(row.get("amount_cents")),
+        "currency": clean_text(row.get("currency") or "usd", 8),
+        "status": clean_text(row.get("status") or "", 40),
+        "period_start": clean_text(row.get("period_start") or "", 40),
+        "period_end": clean_text(row.get("period_end") or "", 40),
+        "funding_session_id": safe_int(row.get("funding_session_id"), 0) or None,
+        "created_at": clean_text(row.get("created_at") or "", 40),
+    }
+
+
+def list_invoices(conn, user_id, account_id, limit=30, before_id=0) -> dict:
+    """Paid invoices for the account's wallet fundings, newest first. Owner-only."""
+    _owner_account(conn, user_id, account_id)
+    account_id = safe_int(account_id, minimum=1)
+    limit = safe_int(limit, 30, 1, 100)
+    before_id = safe_int(before_id, 0, 0)
+    _backfill_funding_invoices(conn, account_id)
+    cur = conn.cursor()
+    params = [account_id]
+    clause = "account_id=?"
+    if before_id:
+        clause += " AND id<?"
+        params.append(before_id)
+    cur.execute(
+        f"SELECT * FROM pulse_ad_invoices WHERE {clause} ORDER BY id DESC LIMIT ?",
+        (*params, limit),
+    )
+    rows = [_invoice_item(row_to_dict(row)) for row in cur.fetchall()]
+    next_before_id = rows[-1]["id"] if len(rows) == limit else None
+    return {"invoices": rows, "next_before_id": next_before_id, "account_id": account_id}
+
+
+def list_transactions(conn, user_id, account_id, limit=50, before_id=0) -> dict:
+    """Paged wallet ledger, newest first. Owner-only.
+
+    Cursor pagination on the row id: pass `next_before_id` back as `before_id`
+    to get the next page. Stripe identifiers never appear here.
+    """
+    _owner_account(conn, user_id, account_id)
+    account_id = safe_int(account_id, minimum=1)
+    limit = safe_int(limit, 50, 1, 200)
+    before_id = safe_int(before_id, 0, 0)
+    cur = conn.cursor()
+    params = [account_id]
+    clause = "account_id=?"
+    if before_id:
+        clause += " AND id<?"
+        params.append(before_id)
+    cur.execute(
+        f"""
+        SELECT id, campaign_id, creative_id, transaction_type, amount_cents, currency, status,
+               description, created_at
+        FROM pulse_ad_wallet_transactions
+        WHERE {clause}
+        ORDER BY id DESC LIMIT ?
+        """,
+        (*params, limit),
+    )
+    rows = []
+    for raw in cur.fetchall():
+        item = row_to_dict(raw)
+        item["amount"] = money(item.get("amount_cents"))
+        rows.append(item)
+    next_before_id = safe_int(rows[-1].get("id")) if len(rows) == limit else None
+    return {"transactions": rows, "next_before_id": next_before_id, "account_id": account_id}
+
+
+def set_spending_limits(conn, user_id, account_id, payload: dict) -> dict:
+    """Owner-only daily/lifetime spend caps. Zero (or null) clears a limit.
+
+    Enforced by `_spend_limit_reason` inside `record_spend_event`: a spend that
+    would cross a cap is refused and the account's active campaigns are paused
+    with an audited reason.
+    """
+    _owner_account(conn, user_id, account_id)
+    payload = payload or {}
+    wallet = ensure_wallet(conn, account_id)
+
+    def _limit(key: str, current: int) -> int:
+        if key not in payload:
+            return current
+        raw = payload.get(key)
+        if raw is None or raw == "":
+            return 0
+        value = safe_int(raw, -1)
+        if value < 0:
+            raise pulse_ads_service.PulseAdsError("Spending limits cannot be negative.")
+        if value > SPENDING_LIMIT_MAX_CENTS:
+            raise pulse_ads_service.PulseAdsError("Spending limit is above the supported maximum.")
+        return value
+
+    before = {
+        "daily_limit_cents": safe_int(wallet.get("daily_limit_cents"), 0),
+        "lifetime_limit_cents": safe_int(wallet.get("lifetime_limit_cents"), 0),
+    }
+    daily = _limit("daily_limit_cents", before["daily_limit_cents"])
+    lifetime = _limit("lifetime_limit_cents", before["lifetime_limit_cents"])
+    if daily > 0 and lifetime > 0 and daily > lifetime:
+        raise pulse_ads_service.PulseAdsError("Daily limit cannot exceed the lifetime limit.")
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE pulse_ad_wallets SET daily_limit_cents=?, lifetime_limit_cents=?, updated_at=? WHERE id=?",
+        (daily, lifetime, now_iso(), wallet.get("id")),
+    )
+    after = {"daily_limit_cents": daily, "lifetime_limit_cents": lifetime}
+    _audit(conn, user_id, "ad_wallet_limits_updated", "pulse_ad_wallets", safe_int(account_id), before=before, after=after)
+    conn.commit()
+    return {"ok": True, "account_id": safe_int(account_id), **after}
+
+
+def set_auto_topup(conn, user_id, account_id, payload: dict) -> dict:
+    """Owner-only auto top-up settings — honestly a low-balance reminder.
+
+    Funding runs through Stripe Checkout, which stores no payment method on
+    file, so this platform CANNOT charge a card automatically and does not
+    pretend to. What "enabled" actually does: when `record_spend_event` drops
+    the spendable balance below `threshold_cents`, a `pulse_ad_notifications`
+    row (one per account per day) asks the owner to top up `amount_cents`, and
+    `wallet_summary` reports `needs_topup: true`.
+    """
+    _owner_account(conn, user_id, account_id)
+    payload = payload or {}
+    wallet = ensure_wallet(conn, account_id)
+    enabled = bool(payload.get("enabled"))
+    threshold = safe_int(payload.get("threshold_cents"), safe_int(wallet.get("auto_topup_threshold_cents"), 0), 0, SPENDING_LIMIT_MAX_CENTS)
+    amount = safe_int(payload.get("amount_cents"), safe_int(wallet.get("auto_topup_amount_cents"), 0), 0, MAX_FUNDING_CENTS)
+    if enabled:
+        if threshold <= 0:
+            raise pulse_ads_service.PulseAdsError("Auto top-up needs a positive balance threshold.")
+        if amount < MIN_FUNDING_CENTS:
+            raise pulse_ads_service.PulseAdsError("Auto top-up amount must be at least the minimum funding amount.")
+    before = {
+        "auto_topup_enabled": bool(safe_int(wallet.get("auto_topup_enabled"), 0)),
+        "auto_topup_threshold_cents": safe_int(wallet.get("auto_topup_threshold_cents"), 0),
+        "auto_topup_amount_cents": safe_int(wallet.get("auto_topup_amount_cents"), 0),
+    }
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE pulse_ad_wallets
+        SET auto_topup_enabled=?, auto_topup_threshold_cents=?, auto_topup_amount_cents=?, updated_at=?
+        WHERE id=?
+        """,
+        (1 if enabled else 0, threshold, amount, now_iso(), wallet.get("id")),
+    )
+    after = {
+        "auto_topup_enabled": enabled,
+        "auto_topup_threshold_cents": threshold,
+        "auto_topup_amount_cents": amount,
+    }
+    _audit(conn, user_id, "ad_wallet_auto_topup_updated", "pulse_ad_wallets", safe_int(account_id), before=before, after=after)
+    conn.commit()
+    return {
+        "ok": True,
+        "account_id": safe_int(account_id),
+        "enabled": enabled,
+        "threshold_cents": threshold,
+        "amount_cents": amount,
+        "auto_charge": False,
+        "note": "No card is charged automatically; a low-balance notification asks you to top up.",
+    }
+
+
+def _maybe_notify_low_balance(conn, account_id) -> bool:
+    """Write the low-balance reminder when spend crosses the top-up threshold.
+
+    At most one notification per account per UTC day, so a busy campaign does
+    not fill the owner's inbox with one reminder per impression.
+    """
+    account_id = safe_int(account_id, minimum=1)
+    wallet = ensure_wallet(conn, account_id)
+    if not safe_int(wallet.get("auto_topup_enabled"), 0):
+        return False
+    threshold = safe_int(wallet.get("auto_topup_threshold_cents"), 0)
+    if threshold <= 0:
+        return False
+    spendable = spendable_balance_cents(conn, account_id)
+    if spendable >= threshold:
+        return False
+    cur = conn.cursor()
+    today = now_iso()[:10]
+    cur.execute(
+        """
+        SELECT id FROM pulse_ad_notifications
+        WHERE account_id=? AND notification_type=? AND created_at>=?
+        LIMIT 1
+        """,
+        (account_id, NOTIFY_LOW_BALANCE_TYPE, today),
+    )
+    if cur.fetchone():
+        return False
+    account = _account(conn, account_id)
+    amount = safe_int(wallet.get("auto_topup_amount_cents"), 0)
+    body = (
+        f"Your ad wallet spendable balance is {money(spendable)}, below your "
+        f"{money(threshold)} top-up threshold."
+    )
+    if amount > 0:
+        body += f" Top up {money(amount)} to keep campaigns running — no card is charged automatically."
+    else:
+        body += " Top up to keep campaigns running — no card is charged automatically."
+    cur.execute(
+        """
+        INSERT INTO pulse_ad_notifications
+        (account_id, campaign_id, creative_id, recipient_user_id, notification_type, title, body, status, created_at)
+        VALUES (?, NULL, NULL, ?, ?, ?, ?, 'unread', ?)
+        """,
+        (
+            account_id,
+            safe_int(account.get("owner_user_id"), 0) or None,
+            NOTIFY_LOW_BALANCE_TYPE,
+            "Ad wallet balance is low",
+            clean_text(body, 500),
+            now_iso(),
+        ),
+    )
+    return True

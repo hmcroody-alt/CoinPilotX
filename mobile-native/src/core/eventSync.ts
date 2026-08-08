@@ -15,7 +15,8 @@ export type NativeSyncSubsystem =
   | "premium"
   | "intelligence"
   | "status"
-  | "reels";
+  | "reels"
+  | "ads";
 
 export type NativeSyncEvent = {
   event_id?: string | number;
@@ -321,6 +322,7 @@ function isNativeSyncSubsystem(value: unknown): value is NativeSyncSubsystem {
     "premium",
     "intelligence",
     "status",
-    "reels"
+    "reels",
+    "ads"
   ].includes(String(value));
 }

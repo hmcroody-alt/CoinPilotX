@@ -49,7 +49,27 @@ CONTEXT_PLACEMENTS = {
 
 ACTIVE_CAMPAIGN_STATUS = {"active"}
 APPROVED_CREATIVE_STATUS = {"approved"}
-VALID_CREATIVE_TYPES = {"image", "video", "text", "hologram", "audio"}
+VALID_CREATIVE_TYPES = {
+    "image", "video", "text", "hologram", "audio",
+    # Content-backed creative types: the ad IS an existing piece of PulseSoc
+    # content (identified by content_ref_type/content_ref_id on the creative).
+    "listing", "post", "reel", "event", "live_replay",
+}
+
+# Creative types whose media comes from an existing piece of owned content
+# rather than an uploaded ad media asset.
+CONTENT_CREATIVE_TYPES = {"listing", "post", "reel", "event", "live_replay"}
+
+# Which surfaces each content-backed creative type may serve on. Conservative
+# on purpose: listings belong on commerce + feed + search surfaces, posts and
+# events on feed surfaces, reels and live replays on feed + video surfaces.
+CONTENT_CREATIVE_PLACEMENTS = {
+    "listing": {"feed_inline", "feed_inline_ufo_mobile", "marketplace_sponsor", "search_sponsored_result"},
+    "post": {"feed_inline", "feed_side_ufo_desktop", "feed_inline_ufo_mobile"},
+    "event": {"feed_inline", "feed_side_ufo_desktop", "feed_inline_ufo_mobile"},
+    "reel": {"feed_inline", "feed_inline_ufo_mobile", "video_pre_roll"},
+    "live_replay": {"feed_inline", "feed_inline_ufo_mobile", "video_pre_roll"},
+}
 VALID_OBJECTIVES = {
     "awareness",
     "brand_awareness",
@@ -67,7 +87,56 @@ VALID_OBJECTIVES = {
     "app_promotion",
     "event_promotion",
     "hologram_campaign",
+    "video_views",
+    "messages",
+    "app_activity",
+    "lead_generation",
+    "profile_growth",
+    "live_promotion",
 }
+
+# The eleven canonical objectives the Advertising OS clients render. Every value
+# in VALID_OBJECTIVES maps onto exactly one of these; legacy synonyms keep
+# working on write and are normalized on read via `canonical_objective`.
+CANONICAL_OBJECTIVES = {
+    "awareness",
+    "engagement",
+    "video_views",
+    "website_traffic",
+    "messages",
+    "marketplace_sales",
+    "app_activity",
+    "lead_generation",
+    "event_promotion",
+    "profile_growth",
+    "live_promotion",
+}
+
+OBJECTIVE_SYNONYMS = {
+    "brand_awareness": "awareness",
+    "traffic": "website_traffic",
+    "marketplace": "marketplace_sales",
+    "creator_growth": "profile_growth",
+    "creator_promotion": "profile_growth",
+    "app_promotion": "app_activity",
+    "video_promotion": "video_views",
+    "radio": "awareness",
+    "pulse_radio": "awareness",
+    "music_promotion": "awareness",
+    "hologram_campaign": "awareness",
+}
+
+
+def canonical_objective(value) -> str:
+    """Map any stored/submitted objective to one of the 11 canonical objectives.
+
+    Unknown values fall back to 'awareness' rather than leaking a raw string the
+    clients have no rendering for.
+    """
+    objective = str(value or "").strip().lower()
+    if objective in CANONICAL_OBJECTIVES:
+        return objective
+    return OBJECTIVE_SYNONYMS.get(objective, "awareness")
 VALID_EVENTS = {
     "viewability",
     "conversion",
@@ -112,7 +181,11 @@ PLACEMENT_METADATA = {
             "dashboard": "dashboard-sponsor",
             "profile": "profile-sponsor",
         }.get(placement_type, "signal-card"),
-        "supported_creative_types": ["image", "video", "text", "hologram", "audio"],
+        "supported_creative_types": ["image", "video", "text", "hologram", "audio"] + sorted(
+            content_type
+            for content_type, allowed_keys in CONTENT_CREATIVE_PLACEMENTS.items()
+            if key in allowed_keys
+        ),
     }
     for key, name, device_type, placement_type, max_frequency in PLACEMENTS
 }
@@ -127,6 +200,8 @@ TEXT_LIMITS = {
     "objective": 40,
     "title": 100,
     "body": 240,
+    "headline": 100,
+    "primary_text": 500,
     "call_to_action": 40,
     "rejection_reason": 400,
     "notes": 600,
@@ -263,9 +338,15 @@ def validate_destination_url(url: str, required: bool = True) -> str:
         parsed_path = urlparse(cleaned)
         if parsed_path.scheme or parsed_path.netloc:
             raise PulseAdsError("Unsafe destination URL.")
-        if not parsed_path.path.startswith("/pulse/") and parsed_path.path != "/pulse":
-            raise PulseAdsError("Internal ad destinations must stay inside PulseSoc.")
-        if parsed_path.path.startswith(("/pulse/admin", "/pulse/api")):
+        # Any site-internal path is a valid ad destination — content-backed ads
+        # land on posts, reels, listings, events, and profiles, which live
+        # outside the historical /pulse/ prefix. Administrative and API paths
+        # stay off-limits.
+        path_lower = parsed_path.path.lower()
+        blocked_prefixes = ("/admin", "/api", "/pulse/admin", "/pulse/api", "/internal")
+        if path_lower.startswith("/_") or any(
+            path_lower == prefix or path_lower.startswith(prefix + "/") for prefix in blocked_prefixes
+        ):
             raise PulseAdsError("Internal ad destination is not allowed.")
         return cleaned
     parsed = urlparse(cleaned)
@@ -306,6 +387,77 @@ def _asset_type_allowed(creative_type: str, media_type: str) -> bool:
     if not required:
         return True
     return clean_text(media_type, 40).lower() in required
+
+
+# Content references a creative may point at, mapped onto the content types the
+# promotions module already knows how to resolve and authorize.
+CONTENT_REF_TYPES = {"post", "reel", "video", "event", "listing", "live_replay"}
+_CONTENT_REF_PROMOTION_TYPES = {
+    "post": "post",
+    "reel": "reel",
+    "video": "video",
+    "event": "event",
+    "listing": "marketplace_listing",
+    "live_replay": "live_stream",
+}
+
+
+def resolve_content_ref(conn, owner_user_id, content_ref_type, content_ref_id) -> dict:
+    """Resolve a creative's content reference, enforcing ownership.
+
+    Returns the content row (owner, title, body, status, moderation) plus the
+    derived destination_url, media_url and thumbnail_url for that content.
+    Raises PulseAdsError when the reference is unknown, missing, or owned by
+    someone else — an advertiser can only run ads for their own content.
+    """
+    from services import pulsesoc_promotions
+
+    ref_type = clean_text(content_ref_type, 30).lower()
+    if ref_type not in CONTENT_REF_TYPES:
+        raise PulseAdsError("Unsupported content reference type.")
+    ref_id = safe_int(content_ref_id, 0)
+    if ref_id <= 0:
+        raise PulseAdsError("Content reference id is required.")
+    promo_type = _CONTENT_REF_PROMOTION_TYPES[ref_type]
+    content = pulsesoc_promotions._query_content(conn, promo_type, ref_id)
+    if not content:
+        raise PulseAdsError("Referenced content was not found.", 404)
+    if safe_int(content.get("owner_user_id")) != safe_int(owner_user_id):
+        raise PulseAdsError("You can only advertise content you own.", 403)
+    content = dict(content)
+    content["content_ref_type"] = ref_type
+    content["content_ref_id"] = ref_id
+    content["destination_url"] = pulsesoc_promotions._destination(promo_type, ref_id)
+    media_url, thumbnail_url = _content_ref_media(conn, ref_type, ref_id)
+    content["media_url"] = media_url
+    content["thumbnail_url"] = thumbnail_url
+    return content
+
+
+def _content_ref_media(conn, ref_type: str, ref_id: int) -> tuple[str, str]:
+    """Best-effort media/thumbnail for a content reference. Never raises."""
+    cur = conn.cursor()
+    try:
+        if ref_type == "reel":
+            cur.execute("SELECT video_url, poster_url FROM pulse_reels WHERE id=?", (ref_id,))
+            row = row_to_dict(cur.fetchone())
+            return clean_text(row.get("video_url"), 1000), clean_text(row.get("poster_url"), 1000)
+        if ref_type == "video":
+            cur.execute("SELECT COALESCE(playback_url, media_url) AS media_url, thumbnail_url FROM pulse_videos WHERE id=?", (ref_id,))
+            row = row_to_dict(cur.fetchone())
+            return clean_text(row.get("media_url"), 1000), clean_text(row.get("thumbnail_url"), 1000)
+        if ref_type == "listing":
+            cur.execute("SELECT COALESCE(cover_image_url, media_url) AS media_url FROM marketplace_listings WHERE id=?", (ref_id,))
+            row = row_to_dict(cur.fetchone())
+            url = clean_text(row.get("media_url"), 1000)
+            return url, url
+        if ref_type == "live_replay":
+            cur.execute("SELECT replay_url, thumbnail_url FROM pulse_live_sessions WHERE id=?", (ref_id,))
+            row = row_to_dict(cur.fetchone())
+            return clean_text(row.get("replay_url"), 1000), clean_text(row.get("thumbnail_url"), 1000)
+    except Exception:
+        return "", ""
+    return "", ""
 
 
 def _ad_asset_public(asset: dict) -> dict:
@@ -550,6 +702,7 @@ def _owned_campaign(conn, owner_user_id, campaign_id) -> dict:
     campaign = row_to_dict(cur.fetchone())
     if not campaign:
         raise PulseAdsError("Campaign not found.", 404)
+    campaign["objective_canonical"] = canonical_objective(campaign.get("objective"))
     return campaign
 
 
@@ -840,7 +993,12 @@ def list_campaigns(conn, owner_user_id) -> list[dict]:
         """,
         (owner_user_id,),
     )
-    return [row_to_dict(row) for row in cur.fetchall()]
+    campaigns = []
+    for row in cur.fetchall():
+        item = row_to_dict(row)
+        item["objective_canonical"] = canonical_objective(item.get("objective"))
+        campaigns.append(item)
+    return campaigns
 
 
 MAX_CAMPAIGN_PLACEMENTS = 8
@@ -952,9 +1110,24 @@ def create_creative(conn, owner_user_id, payload: dict) -> dict:
         raise PulseAdsError("Unsupported creative type.")
     if payload.get("media_url") or payload.get("thumbnail_url"):
         raise PulseAdsError("Upload media through PulseSoc Creative Studio instead of pasting media URLs.")
-    title = clean_text(payload.get("title"), TEXT_LIMITS["title"])
+    content_ref = {}
+    content_ref_type = clean_text(payload.get("content_ref_type"), 30).lower()
+    content_ref_id = safe_int(payload.get("content_ref_id"), 0)
+    if creative_type in CONTENT_CREATIVE_TYPES and not content_ref_type:
+        raise PulseAdsError(f"A {creative_type} creative must reference existing content via content_ref_type/content_ref_id.")
+    if content_ref_type or content_ref_id:
+        content_ref = resolve_content_ref(conn, owner_user_id, content_ref_type, content_ref_id)
+        if creative_type in CONTENT_CREATIVE_TYPES and content_ref.get("content_ref_type") != creative_type:
+            raise PulseAdsError(f"A {creative_type} creative must reference {creative_type} content.")
+    title = clean_text(payload.get("title") or (content_ref.get("title") if content_ref else ""), TEXT_LIMITS["title"])
     body = clean_text(payload.get("body"), TEXT_LIMITS["body"])
-    destination_url = validate_destination_url(payload.get("destination_url"), required=True)
+    headline = clean_text(payload.get("headline"), TEXT_LIMITS["headline"])
+    primary_text = clean_text(payload.get("primary_text"), TEXT_LIMITS["primary_text"])
+    aspect_ratio = clean_text(payload.get("aspect_ratio"), 20)
+    if content_ref and not payload.get("destination_url"):
+        destination_url = content_ref.get("destination_url") or ""
+    else:
+        destination_url = validate_destination_url(payload.get("destination_url"), required=True)
     if not title:
         raise PulseAdsError("Creative title is required.")
     media_asset = {}
@@ -977,14 +1150,23 @@ def create_creative(conn, owner_user_id, payload: dict) -> dict:
         "media_asset": {k: media_public.get(k) for k in ("media_type", "mime_type", "width", "height", "duration_seconds", "file_size") if media_public.get(k) not in ("", None, 0)},
         "thumbnail_asset": {k: thumb_public.get(k) for k in ("media_type", "mime_type", "width", "height", "file_size") if thumb_public.get(k) not in ("", None, 0)},
     }
+    # Media derived from the referenced content when no ad asset was uploaded.
+    media_url = media_public.get("public_url") or ""
+    thumbnail_url = thumb_public.get("thumbnail_url") or media_public.get("thumbnail_url") or ""
+    if content_ref:
+        media_url = media_url or clean_text(content_ref.get("media_url"), 1000)
+        thumbnail_url = thumbnail_url or clean_text(content_ref.get("thumbnail_url"), 1000)
+        media_metadata["content_ref"] = {"type": content_ref.get("content_ref_type"), "id": content_ref.get("content_ref_id")}
+    media_ready = 1 if (creative_type == "text" or media_asset or (content_ref and creative_type in CONTENT_CREATIVE_TYPES)) else 0
     now = now_iso()
     cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO pulse_ad_creatives
         (ad_account_id, campaign_id, creative_type, title, body, media_url, thumbnail_url, media_asset_id, thumbnail_asset_id,
-         destination_url, call_to_action, status, moderation_status, media_ready, media_metadata_json, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'draft', ?, ?, ?, ?)
+         destination_url, call_to_action, status, moderation_status, media_ready, media_metadata_json,
+         content_ref_type, content_ref_id, headline, primary_text, aspect_ratio, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             ad_account_id,
@@ -992,14 +1174,19 @@ def create_creative(conn, owner_user_id, payload: dict) -> dict:
             creative_type,
             title,
             body,
-            media_public.get("public_url") or "",
-            thumb_public.get("thumbnail_url") or media_public.get("thumbnail_url") or "",
+            media_url,
+            thumbnail_url,
             media_asset.get("id") if media_asset else None,
             thumbnail_asset.get("id") if thumbnail_asset else None,
             destination_url,
             clean_text(payload.get("call_to_action") or "Learn more", TEXT_LIMITS["call_to_action"]),
-            1 if (creative_type == "text" or media_asset) else 0,
+            media_ready,
             clean_json(media_metadata),
+            content_ref.get("content_ref_type") or "",
+            safe_int(content_ref.get("content_ref_id"), 0),
+            headline,
+            primary_text,
+            aspect_ratio,
             now,
             now,
         ),
@@ -1063,7 +1250,11 @@ def attach_creative_media(conn, creative: dict) -> dict:
             item["thumbnail_moderation_status"] = thumbnail_asset.get("moderation_status") or ""
     if not item.get("thumbnail_url") and item.get("media_asset"):
         item["thumbnail_url"] = item["media_asset"].get("thumbnail_url") or ""
-    item["media_ready"] = bool(item.get("media_asset_id") or item.get("creative_type") == "text")
+    item["media_ready"] = bool(
+        item.get("media_asset_id")
+        or item.get("creative_type") == "text"
+        or (safe_int(item.get("content_ref_id"), 0) and item.get("creative_type") in CONTENT_CREATIVE_TYPES)
+    )
     return item
 
 
@@ -1408,6 +1599,154 @@ def _recent_campaigns(conn, viewer_user_id, session_id, placement_key) -> set[in
     return {safe_int(row_to_dict(row).get("campaign_id"), 0) for row in cur.fetchall()}
 
 
+def _audience_filter_ready(conn) -> bool:
+    """Probe whether pulse_ad_targeting carries the saved-audience columns so
+    select_ads can honor audience_mode + saved/excluded audiences."""
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT t.audience_mode, t.saved_audience_ids_json, t.excluded_audience_ids_json
+            FROM pulse_ad_targeting t WHERE 1=0
+            """
+        )
+        cur.fetchall()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def _viewer_follows_owner(conn, viewer_user_id, owner_user_id, cache: dict) -> bool:
+    key = ("follows", viewer_user_id, owner_user_id)
+    if key not in cache:
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT 1 FROM pulse_follows WHERE follower_user_id=? AND followed_user_id=? LIMIT 1",
+                (viewer_user_id, owner_user_id),
+            )
+            cache[key] = cur.fetchone() is not None
+        except Exception:
+            cache[key] = False
+    return cache[key]
+
+
+def _viewer_engaged_with_owner(conn, viewer_user_id, owner_user_id, cache: dict) -> bool:
+    key = ("engaged", viewer_user_id, owner_user_id)
+    if key not in cache:
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT 1 FROM pulse_reactions r
+                JOIN pulse_posts p ON p.id=r.post_id
+                WHERE r.user_id=? AND p.user_id=? LIMIT 1
+                """,
+                (viewer_user_id, owner_user_id),
+            )
+            found = cur.fetchone() is not None
+            if not found:
+                cur.execute(
+                    """
+                    SELECT 1 FROM pulse_comments cm
+                    JOIN pulse_posts p ON p.id=cm.post_id
+                    WHERE cm.user_id=? AND p.user_id=? AND cm.deleted_at IS NULL LIMIT 1
+                    """,
+                    (viewer_user_id, owner_user_id),
+                )
+                found = cur.fetchone() is not None
+            cache[key] = found
+        except Exception:
+            cache[key] = False
+    return cache[key]
+
+
+def _parse_id_list(raw) -> list[int]:
+    try:
+        values = json.loads(raw or "[]")
+    except Exception:
+        return []
+    ids = []
+    for value in values if isinstance(values, list) else []:
+        parsed = safe_int(value, 0)
+        if parsed > 0:
+            ids.append(parsed)
+    return ids
+
+
+def _passes_audience_targeting(conn, viewer_user_id, personalized_opt_out, item, cache: dict) -> bool:
+    """Honor audience_mode + saved/excluded audiences at delivery time.
+
+    Fail-safe rules (deliberate, see slice-2 spec):
+    - A membership that cannot be evaluated cheaply counts as NON-matching
+      for include lists and as MATCHING for exclude lists — when in doubt we
+      withhold the ad rather than violate the advertiser's constraint.
+    - Viewers who opted out of personalized ads (and anonymous viewers) never
+      receive audience-constrained ads, because evaluating membership would
+      use their engagement history.
+    All lookups are cached per select_ads call so the hot path stays cheap.
+    """
+    mode = clean_text(item.get("audience_mode") or "", 20).lower()
+    saved_ids = _parse_id_list(item.get("saved_audience_ids_json"))
+    excluded_ids = _parse_id_list(item.get("excluded_audience_ids_json"))
+    if mode in ("", "everyone") and not saved_ids and not excluded_ids:
+        return True
+    if personalized_opt_out or not viewer_user_id:
+        return False
+    owner_user_id = safe_int(item.get("account_owner_user_id"), 0)
+    try:
+        if mode == "followers" and not _viewer_follows_owner(conn, viewer_user_id, owner_user_id, cache):
+            return False
+        if mode == "non_followers" and _viewer_follows_owner(conn, viewer_user_id, owner_user_id, cache):
+            return False
+        if mode == "engaged" and not _viewer_engaged_with_owner(conn, viewer_user_id, owner_user_id, cache):
+            return False
+        from services import pulse_ads_audiences
+        for audience_id in excluded_ids:
+            member = pulse_ads_audiences.audience_membership(conn, audience_id, viewer_user_id, cache)
+            # Fail-safe: unevaluable exclusions count as matches -> withhold.
+            if member is None or member:
+                return False
+        if saved_ids:
+            for audience_id in saved_ids:
+                member = pulse_ads_audiences.audience_membership(conn, audience_id, viewer_user_id, cache)
+                # None (unevaluable) counts as non-matching for includes.
+                if member:
+                    break
+            else:
+                return False
+        return True
+    except Exception:
+        # Constrained ad we could not evaluate: withhold it.
+        return False
+
+
+def _adset_status_filter_ready(conn) -> bool:
+    """Probe whether pulse_ad_adsets exists so select_ads can filter paused/archived ad sets."""
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT cr.adset_id, ads.status
+            FROM pulse_ad_creatives cr
+            LEFT JOIN pulse_ad_adsets ads ON ads.id=cr.adset_id
+            WHERE 1=0
+            """
+        )
+        cur.fetchall()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
 def select_ads(conn, user_id=None, session_id="", context="home", device_type="desktop", limit=3, **context_kwargs) -> list[dict]:
     if not platform_ads_enabled(conn):
         return []
@@ -1420,6 +1759,14 @@ def select_ads(conn, user_id=None, session_id="", context="home", device_type="d
         return []
     placeholders = ",".join(["?"] * len(placement_keys))
     now = now_iso()
+    adset_filter_ready = _adset_status_filter_ready(conn)
+    adset_join = "LEFT JOIN pulse_ad_adsets adset ON adset.id=cr.adset_id" if adset_filter_ready else ""
+    adset_clause = "AND (cr.adset_id IS NULL OR COALESCE(adset.status,'active')='active')" if adset_filter_ready else ""
+    audience_ready = _audience_filter_ready(conn)
+    audience_columns = (
+        ", t.audience_mode, t.saved_audience_ids_json, t.excluded_audience_ids_json, a.owner_user_id AS account_owner_user_id"
+        if audience_ready else ""
+    )
     cur = conn.cursor()
     cur.execute(
         f"""
@@ -1442,6 +1789,7 @@ def select_ads(conn, user_id=None, session_id="", context="home", device_type="d
                COALESCE(p.supported_creative_types, '') AS supported_creative_types,
                COALESCE(p.card_style, '') AS card_style,
                t.country, t.language, t.device_type AS target_device_type, t.premium_audience, t.contextual_category
+               {audience_columns}
         FROM pulse_ad_creatives cr
         JOIN pulse_ad_campaigns c ON c.id=cr.campaign_id
         JOIN pulse_ad_accounts a ON a.id=c.ad_account_id
@@ -1450,6 +1798,7 @@ def select_ads(conn, user_id=None, session_id="", context="home", device_type="d
         LEFT JOIN pulse_ad_media_assets ma ON ma.id=cr.media_asset_id AND COALESCE(ma.deleted_at, '')=''
         LEFT JOIN pulse_ad_media_assets ta ON ta.id=cr.thumbnail_asset_id AND COALESCE(ta.deleted_at, '')=''
         LEFT JOIN pulse_ad_targeting t ON t.campaign_id=c.id
+        {adset_join}
         WHERE p.placement_key IN ({placeholders})
           AND p.is_active=1
           AND c.status='active'
@@ -1462,12 +1811,14 @@ def select_ads(conn, user_id=None, session_id="", context="home", device_type="d
           AND (c.start_at IS NULL OR c.start_at='' OR c.start_at<=?)
           AND (c.end_at IS NULL OR c.end_at='' OR c.end_at>=?)
           AND (p.device_type='all' OR p.device_type=?)
+          {adset_clause}
         ORDER BY placement_priority DESC, campaign_priority DESC, cr.id DESC LIMIT ?
         """,
         (*placement_keys, now, now, ctx["device_type"], safe_int(limit, 3, 1, 10) * 8),
     )
     personalized_opt_out = user_personalized_ads_opt_out(conn, user_id)
     candidates = []
+    audience_cache: dict = {}
     seen_by_placement = {key: _recent_campaigns(conn, user_id, session_id, key) for key in placement_keys}
     for row in cur.fetchall():
         item = row_to_dict(row)
@@ -1479,6 +1830,8 @@ def select_ads(conn, user_id=None, session_id="", context="home", device_type="d
             "contextual_category": item.get("contextual_category"),
         }
         if not _matches_targeting(target, ctx, personalized_opt_out):
+            continue
+        if audience_ready and not _passes_audience_targeting(conn, user_id, personalized_opt_out, item, audience_cache):
             continue
         if not _compatible_creative(item.get("creative_type"), item.get("supported_creative_types")):
             continue
