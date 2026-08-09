@@ -208,7 +208,11 @@ export async function updateProfileTheme(theme: PulseProfileTheme) {
     })
   });
   const next = { ...theme, ...data, theme_key: data.theme_key || theme.theme_key };
-  await AsyncStorage.setItem(PROFILE_THEME_CACHE_KEY, JSON.stringify(next));
+  const current = await loadCachedProfile("me");
+  await Promise.all([
+    AsyncStorage.setItem(PROFILE_THEME_CACHE_KEY, JSON.stringify(next)),
+    current ? cacheProfile("me", { ...current, theme: normalizeTheme(next) }) : Promise.resolve()
+  ]);
   return next;
 }
 

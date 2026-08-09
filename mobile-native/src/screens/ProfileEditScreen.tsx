@@ -1,4 +1,5 @@
 import * as ImagePicker from "expo-image-picker";
+import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import {
@@ -14,6 +15,7 @@ import {
 } from "../api/profile";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
+import { RootStackParamList } from "../navigation/types";
 
 const THEMES: Array<PulseProfileTheme & { label: string }> = [
   { theme_key: "deep_space", label: "Deep Space", accent_color: "#32e6b3" },
@@ -29,7 +31,9 @@ const THEMES: Array<PulseProfileTheme & { label: string }> = [
 ];
 const LAYOUTS = ["classic", "creator", "professional", "minimal", "artist", "music", "gaming", "developer", "business", "streamer"];
 
-export function ProfileEditScreen() {
+type Props = Partial<NativeStackScreenProps<RootStackParamList, "ProfileEdit">>;
+
+export function ProfileEditScreen({ navigation }: Props) {
   const [profile, setProfile] = useState<PulseProfile | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
@@ -90,13 +94,16 @@ export function ProfileEditScreen() {
         profile_visibility: visibility
       });
       let savedTheme = theme;
+      let themeSaved = true;
       try {
         savedTheme = await updateProfileTheme(theme);
       } catch (themeError) {
+        themeSaved = false;
         setMessage(themeError instanceof Error ? themeError.message : "Profile saved. Theme was not updated.");
       }
       hydrate({ ...updated, theme: savedTheme });
       setMessage((current) => current || "Profile updated.");
+      if (themeSaved) navigation?.goBack();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Profile update failed.");
     } finally {
@@ -221,7 +228,7 @@ export function ProfileEditScreen() {
         </View>
         <Text style={styles.label}>Layout style</Text>
         <View style={styles.themeRow}>
-          {LAYOUTS.map((item) => <Pressable accessibilityRole="button" accessibilityState={{ selected: theme.layout_key === item }} key={item} style={[styles.layoutChoice, theme.layout_key === item && styles.themeActive]} onPress={() => setTheme((current) => ({ ...current, layout_key: item }))}><Text style={styles.themeText}>{item.replace(/_/g, " ")}</Text></Pressable>)}
+          {LAYOUTS.map((item) => <Pressable accessibilityRole="button" accessibilityState={{ selected: theme.layout_key === item }} key={item} style={[styles.layoutChoice, theme.layout_key === item && styles.themeActive]} onPress={() => setTheme((current) => ({ ...current, layout_key: item }))}><Text style={styles.themeText}>{titleCase(item)}</Text></Pressable>)}
         </View>
         <Text style={styles.label}>Motion</Text>
         <View style={styles.segment}>
@@ -231,7 +238,10 @@ export function ProfileEditScreen() {
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: saving }} style={[styles.saveButton, saving && styles.disabled]} disabled={saving} onPress={save}>
             <Text style={styles.saveText}>{saving ? "Saving" : "Save"}</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: saving }} style={styles.cancelButton} disabled={saving} onPress={() => profile && hydrate(profile)}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: saving }} style={styles.cancelButton} disabled={saving} onPress={() => {
+            if (profile) hydrate(profile);
+            navigation?.goBack();
+          }}>
             <Text style={styles.cancelText}>Cancel</Text>
           </Pressable>
         </View>
@@ -258,10 +268,14 @@ function Field(props: { label: string; value: string; onChangeText: (value: stri
 
 function Segment({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
-    <Pressable accessibilityRole="button" style={[styles.segmentButton, active ? styles.segmentActive : undefined]} onPress={onPress}>
+    <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} style={[styles.segmentButton, active ? styles.segmentActive : undefined]} onPress={onPress}>
       <Text style={[styles.segmentText, active ? styles.segmentTextActive : undefined]}>{label}</Text>
     </Pressable>
   );
+}
+
+function titleCase(value: string) {
+  return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 const styles = createThemedStyles(() => ({

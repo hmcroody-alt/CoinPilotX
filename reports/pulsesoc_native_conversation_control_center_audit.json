@@ -168,7 +168,7 @@
     {
       "check": "native control present: Quick label=\"Members\"",
       "detail": "Quick label=\"Members\"",
-      "passed": false
+      "passed": true
     },
     {
       "check": "native control present: Quick label=\"Audio Call\"",
@@ -276,10 +276,10 @@
       "passed": true
     }
   ],
-  "ok": false,
+  "ok": true,
   "summary": {
-    "failed": 1,
-    "passed": 54,
+    "failed": 0,
+    "passed": 55,
     "total": 55
   }
 }

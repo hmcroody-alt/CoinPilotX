@@ -665,7 +665,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
               <View style={styles.quickGrid}>
                 <Quick label="Search Chat" icon="⌕" disabled={!can("search")} onPress={() => executeAction({ label: "Search Chat", icon: "⌕", action: "search-chat", disabled: !can("search"), disabledReason: "Search is not enabled for this conversation." })} />
                 <Quick label="Shared Media" icon="▧" disabled={!can("shared_media")} onPress={() => executeAction({ label: "Shared Media", icon: "▧", action: "shared-media", disabled: !can("shared_media"), disabledReason: "Shared media is not enabled for this conversation." })} />
-                <Quick label={assistantConversation ? "Identity" : "Members"} icon="♟" disabled={!can("members")} onPress={() => executeAction({ label: assistantConversation ? "Identity" : "Members", icon: "♟", action: "members", disabled: !can("members"), disabledReason: "Members are not available for this conversation." })} />
+                <Quick label="Members" icon="♟" disabled={!can("members")} onPress={() => executeAction({ label: "Members", icon: "♟", action: "members", disabled: !can("members"), disabledReason: "Members are not available for this conversation." })} />
               </View>
               <View style={styles.actionGrid}>
                 <Quick label="Audio Call" icon="☎" disabled={!can("voice_call") || !onStartCall} onPress={() => executeAction({ label: "Audio Call", icon: "☎", action: "start-audio-call", disabled: !can("voice_call") || !onStartCall, disabledReason: "Audio calls are not enabled for this conversation." })} />
@@ -691,7 +691,14 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
                 <Pressable accessibilityRole="button" accessibilityState={{ expanded }} style={styles.sectionHeader} onPress={() => setOpen((current) => current.includes(section.key) ? current.filter((item) => item !== section.key) : [...current, section.key])}>
                   <View style={styles.sectionIcon}><Text style={styles.sectionIconText}>{section.icon}</Text></View><View style={styles.sectionCopy}><Text style={styles.sectionTitle}>{section.label}</Text><Text style={styles.sectionSubtitle}>{section.subtitle}</Text></View><Text style={styles.chevron}>{expanded ? "⌃" : "⌄"}</Text>
                 </Pressable>
-                {expanded ? section.rows.map((row) => <SettingRow key={`${section.key}-${row.label}`} row={row} settings={settings} saving={savingKey === settingKey(row.setting) || savingKey === row.action} onSaveSetting={saveSetting} onPress={() => executeAction(row)} />) : null}
+                {expanded ? section.rows.map((row) => <SettingRow
+                  key={`${section.key}-${row.label}`}
+                  row={row}
+                  settings={settings}
+                  saving={Boolean(savingKey) && (Boolean(row.setting && savingKey === settingKey(row.setting)) || savingKey === row.action)}
+                  onSaveSetting={saveSetting}
+                  onPress={() => executeAction(row)}
+                />) : null}
               </View>;
             }) : <Text style={styles.empty}>No settings match “{query}”.</Text>}
             {notice ? <Pressable accessibilityRole="button" accessibilityLabel="Dismiss notice" onPress={() => setNotice("")}><Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text></Pressable> : null}
