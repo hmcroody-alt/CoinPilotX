@@ -5,10 +5,12 @@ import { PulsePost } from "../../api/feed";
 
 const navigate = jest.fn();
 const mockListFeed = jest.fn();
+const mockAuthState = { user: { user_id: 7 } };
+const mockGetMyProfile = jest.fn(async () => ({ user_id: 7, display_name: "Roody Cherie", username: "roodycherie", public_player_id: "roodycherie", post_count: 4 }));
 const mockGetPublicProfile = jest.fn(async (..._args: unknown[]) => ({ user_id: 8, display_name: "Maria Cherie", username: "mariacherie", public_player_id: "Pilot-8008", post_count: 5 }));
 
 jest.mock("../../api/profile", () => ({
-  getMyProfile: jest.fn(async () => ({ user_id: 7, display_name: "Roody Cherie", username: "roodycherie", public_player_id: "roodycherie", post_count: 4 })),
+  getMyProfile: () => mockGetMyProfile(),
   getPublicProfile: (...args: unknown[]) => mockGetPublicProfile(...args),
   listPublicProfilePosts: (...args: unknown[]) => mockListFeed(...args),
   loadCachedProfile: jest.fn(),
@@ -33,6 +35,7 @@ jest.mock("../../sharing/nativeShare", () => ({ sharePulseObject: jest.fn() }));
 jest.mock("../../core/eventSync", () => ({ invalidateNativeSync: jest.fn() }));
 jest.mock("../../api/messenger", () => ({ openDirectConversation: jest.fn() }));
 jest.mock("../../navigation/BottomNavVisibility", () => ({ useBottomNavSurface: () => ({ contentPadding: {}, handlers: { onScroll: jest.fn(), onScrollBeginDrag: jest.fn(), scrollEventThrottle: 16 } }) }));
+jest.mock("../../session/auth", () => ({ useAuth: () => ({ authState: mockAuthState }) }));
 
 const posts: PulsePost[] = [
   { id: 1, post_id: 1, body: "Text-only identity post" },
@@ -44,6 +47,8 @@ const posts: PulsePost[] = [
 describe("Profile posts grid", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAuthState.user = { user_id: 7 };
+    mockGetMyProfile.mockResolvedValue({ user_id: 7, display_name: "Roody Cherie", username: "roodycherie", public_player_id: "roodycherie", post_count: 4 });
     mockListFeed.mockResolvedValue({ posts, next_offset: 4, has_more: false });
   });
 
@@ -59,6 +64,25 @@ describe("Profile posts grid", () => {
     await waitFor(() => screen.getByTestId("profile-grid-tile-3"));
     fireEvent.press(screen.getByTestId("profile-grid-tile-3"));
     expect(navigate).toHaveBeenCalledWith("ProfilePostViewer", expect.objectContaining({ postId: 3, postIds: [1, 2, 3, 4], nextOffset: 4, hasMore: false, contentTab: "posts", source: "PROFILE_GRID" }));
+  });
+
+  it("loads the owner grid from the authenticated canonical user id when the profile payload is count-only", async () => {
+    mockGetMyProfile.mockResolvedValueOnce({
+      user_id: 0,
+      display_name: "Roody Cherie",
+      username: "roodycherie",
+      public_player_id: "PLS-000001",
+      post_count: 12
+    });
+
+    const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
+
+    await waitFor(() => expect(screen.getByTestId("profile-grid-tile-1")).toBeTruthy());
+    expect(mockListFeed).toHaveBeenCalledWith(
+      { userId: 7, profileKey: "7", publicPlayerId: "PLS-000001", username: "roodycherie" },
+      { limit: 20, offset: 0 }
+    );
+    expect(screen.queryByText(/No posts yet/)).toBeNull();
   });
 
   it("renders a readable designed tile for text-only posts", () => {

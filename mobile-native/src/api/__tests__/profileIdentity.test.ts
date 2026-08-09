@@ -5,13 +5,26 @@ jest.mock("../pulseApi", () => ({
 }));
 
 import { mutePostAuthor, normalizePost, PulsePost, toggleFollowAuthor } from "../feed";
-import { listPublicProfilePosts, profileTargetFromPost } from "../profile";
+import { listPublicProfilePosts, normalizeProfile, profileTargetFromPost } from "../profile";
 
 beforeEach(() => {
   mockPulseApi.mockClear();
 });
 
 describe("new-user profile identity", () => {
+  it("normalizes backend id aliases into the canonical user id for profile post loading", () => {
+    const profile = normalizeProfile({
+      id: 1,
+      pulse_id: "pls-000001",
+      display_name: "Roody Cherie",
+      post_count: 12
+    });
+
+    expect(profile.user_id).toBe(1);
+    expect(profile.canonical_profile_key).toBe("1");
+    expect(profile.post_count).toBe(12);
+  });
+
   it("routes feed authors by canonical user id when no legacy handle exists", () => {
     const post = normalizePost({
       id: 77,

@@ -28,6 +28,8 @@ export type PulseProfileTheme = {
 
 export type PulseProfile = {
   user_id: number;
+  id?: number | string;
+  account_id?: number | string;
   pulse_id?: string;
   email?: string;
   username?: string;
@@ -295,10 +297,11 @@ export async function cacheProfileAliases(target: NativeProfileTarget, profile: 
 
 export function normalizeProfile(input: Partial<PulseProfile>): PulseProfile {
   const profile = input || {};
+  const userId = Number(profile.user_id ?? profile.id ?? profile.account_id ?? 0);
   const display = profile.display_name || profile.full_name || profile.username || profile.public_player_id || "PulseSoc member";
   return {
     ...profile,
-    user_id: Number(profile.user_id || 0),
+    user_id: Number.isFinite(userId) && userId > 0 ? userId : 0,
     pulse_id: String(profile.pulse_id || "").toUpperCase(),
     display_name: display,
     username: String(profile.username || "").replace(/^@/, ""),
@@ -312,7 +315,7 @@ export function normalizeProfile(input: Partial<PulseProfile>): PulseProfile {
     profile_visibility: profile.profile_visibility === "private" ? "private" : "public",
     account_status: profile.account_status || "active",
     profile_state: profile.profile_state || "available",
-    canonical_profile_key: profile.canonical_profile_key || profile.public_player_id || profile.username || String(profile.user_id || ""),
+    canonical_profile_key: profile.canonical_profile_key || (userId > 0 ? String(userId) : "") || profile.public_player_id || profile.username || "",
     follower_count: Number(profile.follower_count || 0),
     following_count: Number(profile.following_count || 0),
     post_count: Number(profile.post_count || 0),
