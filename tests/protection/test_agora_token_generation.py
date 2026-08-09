@@ -58,6 +58,12 @@ class AgoraTokenGenerationTests(unittest.TestCase):
         self.assertIn("onFirstLocalVideoFramePublished", adapter)
         self.assertIn('room.provider === "agora" && (audioTracks <= 0 || videoTracks <= 0)', host)
 
+    def test_deployment_audit_catches_missing_canonical_rtc_route(self) -> None:
+        audit = (ROOT / "scripts/pulsesoc_agora_live_route_audit.py").read_text(encoding="utf-8")
+        self.assertIn('/api/pulse/live/{args.live_id}/rtc/token', audit)
+        self.assertIn('status == 401 and error_code == "NOT_AUTHENTICATED"', audit)
+        self.assertNotIn("Authorization", audit)
+
 
 if __name__ == "__main__":
     unittest.main()
