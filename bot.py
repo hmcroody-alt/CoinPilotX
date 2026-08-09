@@ -44832,6 +44832,9 @@ def api_pulse_live_start():
             conn.rollback(); conn.close()
             return jsonify({"ok": False, "message": denial}), 403
         title = clean_html(payload.get("title") or "PulseSoc Live")[:140]
+        audience = clean_html(payload.get("audience") or "public")[:24].lower()
+        if audience not in {"public", "followers", "subscribers", "private"}:
+            audience = "public"
         thumbnail_url = clean_html(payload.get("thumbnail_url") or "")[:600]
         context_type = clean_html(payload.get("context_type") or "general")[:40]
         context_id = clean_html(payload.get("context_id") or "")[:120]
@@ -44888,11 +44891,11 @@ def api_pulse_live_start():
 	             viewer_count, created_at, started_at, stream_uuid, ingest_url, rtmp_url, hls_url, webrtc_room_id, provider,
 	             protocols_json, stream_health, bitrate_kbps, fps, chat_conversation_id, recording_status, active_scene,
 	             audio_chain_json, destinations_json, analytics_json, moderation_status, updated_at)
-	            VALUES (?, ?, ?, ?, 'public', 'starting', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'starting', 0, 0, ?,
+	            VALUES (?, ?, ?, ?, ?, 'starting', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'starting', 0, 0, ?,
 	                    'recording', 'camera_only', ?, ?, ?, 'clear', ?)
             """,
             (
-                user_id, title, category, thumbnail_url, stream_key, channel, chat_room, now, now, stream_uuid,
+                user_id, title, category, thumbnail_url, audience, stream_key, channel, chat_room, now, now, stream_uuid,
                 stream_setup.get("ingest_url") or "", stream_setup.get("rtmp_url") or "", stream_setup.get("hls_url") or "",
                 stream_setup.get("webrtc_room_id") or "", stream_setup.get("provider") or "pulse-native",
                 json.dumps(stream_setup.get("protocols") or ["webrtc", "rtmp", "hls"], default=str),
@@ -44968,6 +44971,8 @@ def api_pulse_live_start():
             live_id=live_id,
             title=title,
             category=category,
+            display_name=pulse_actor_display_name(user),
+            visibility=audience,
             playback_url=playback_url,
             preview_url=thumbnail_url,
             viewer_count=0,
@@ -46085,6 +46090,37 @@ def pulse_live_user_is_blocked(cur, live_id, user_id):
         (int(live_id or 0), int(user_id or 0)),
     )
     return bool(cur.fetchone())
+
+
+def pulse_live_viewer_authorized(cur, live, viewer_user_id):
+    """Canonical audience gate shared by Live tokens and Feed entry."""
+    viewer_user_id = safe_int(viewer_user_id, 0)
+    host_user_id = safe_int((live or {}).get("user_id"), 0)
+    if not viewer_user_id or not host_user_id:
+        return False, "missing_identity"
+    if viewer_user_id == host_user_id or bool(admin_current_user()):
+        return True, "host"
+    if pulse_live_user_is_blocked(cur, safe_int((live or {}).get("id"), 0), viewer_user_id):
+        return False, "live_blocked"
+    cur.execute(
+        """
+        SELECT 1 FROM blocked_users
+        WHERE (blocker_user_id=? AND blocked_user_id=?) OR (blocker_user_id=? AND blocked_user_id=?)
+        LIMIT 1
+        """,
+        (viewer_user_id, host_user_id, host_user_id, viewer_user_id),
+    )
+    if cur.fetchone():
+        return False, "social_blocked"
+    if pulse_live_active_guest(cur, safe_int((live or {}).get("id"), 0), viewer_user_id):
+        return True, "approved_guest"
+    audience = str((live or {}).get("audience") or "public").strip().lower()
+    if audience == "public":
+        return True, "public"
+    if audience == "followers":
+        cur.execute("SELECT 1 FROM pulse_follows WHERE follower_user_id=? AND followed_user_id=? LIMIT 1", (viewer_user_id, host_user_id))
+        return (True, "follower") if cur.fetchone() else (False, "followers_only")
+    return False, f"audience:{audience}"
 
 
 def pulse_live_audit(cur, live_id, actor_user_id, action, *, target_user_id=0, status="ok", metadata=None):
@@ -47213,6 +47249,10 @@ def api_pulse_live_agora_token(live_id):
     user_id = int(user.get("user_id") or 0)
     host_user_id = int(live.get("user_id") or 0)
     is_host = user_id == host_user_id or bool(admin_current_user())
+    viewer_authorized, viewer_reason = pulse_live_viewer_authorized(cur, live, user_id)
+    if not viewer_authorized:
+        conn.close()
+        return pulse_live_cohost_error("NOT_AUTHORIZED", status=403, message="This Live is not available to this account.", trace_id=trace_id, live_id=live_id, viewer_user_id=user_id, host_user_id=host_user_id, diagnostic=viewer_reason)
     is_guest_request = requested_role in {"guest", "cohost", "co-host"}
     guest = pulse_live_active_guest(cur, live_id, user_id) if is_guest_request else {}
     if requested_role in {"publisher", "host", "creator"} and not is_host:
@@ -47491,6 +47531,7 @@ def api_pulse_live_browser_publish(live_id):
                 (audio_tracks, video_tracks, recording_status, recording_error, recording.get("resource_id") or "", recording.get("sid") or "", recording.get("recording_uid") or "", recording.get("prefix") or "", now, live_id),
             )
             cur.execute("UPDATE pulse_live_streams SET status='live', updated_at=? WHERE session_id=?", (now, live_id))
+            cur.execute("UPDATE pulse_posts SET live_status='live', updated_at=? WHERE id=? AND live_session_id=? AND deleted_at IS NULL", (now, int(live.get("feed_post_id") or 0), live_id))
             pulse_live_record_timeline_event(cur, "agora_host_publish_confirmed", live_id=live_id, actor_user_id=user["user_id"], post_id=int(live.get("feed_post_id") or 0), payload={"trace_id": trace_id, "audio_tracks": audio_tracks, "video_tracks": video_tracks, "provider": "agora"})
             logging.info("PULSE_LIVE_AGORA_PUBLISH live_id=%s provider=agora host_uid=%s audio_tracks=%s video_tracks=%s trace_id=%s", live_id, user.get("user_id"), audio_tracks, video_tracks, trace_id)
             conn.commit(); conn.close()
@@ -47694,6 +47735,7 @@ def api_pulse_live_browser_publish(live_id):
             """,
             (status, egress.get("egress_id") or "", livekit_egress_status, livekit_egress_error, mux_status, now, live_id),
         )
+        cur.execute("UPDATE pulse_posts SET live_status='live', updated_at=? WHERE id=? AND live_session_id=? AND deleted_at IS NULL", (now, int(live.get("feed_post_id") or 0), live_id))
         conn.commit(); conn.close()
         try:
             event_name = "livestream_browser_livekit_egress_started" if egress.get("ok") else "livestream_browser_livekit_direct_started"
@@ -48141,6 +48183,10 @@ def api_pulse_live_join(live_id):
     if not live:
         conn.close()
         return api_error("Live stream not found.", 404)
+    viewer_authorized, _viewer_reason = pulse_live_viewer_authorized(cur, live, user["user_id"])
+    if not viewer_authorized:
+        conn.close()
+        return api_error("This Live is not available to this account.", 403)
     visitor = f"user-{int(user['user_id'])}"
     cur.execute("UPDATE pulse_live_viewers SET status='watching', last_seen_at=? WHERE live_id=? AND user_id=?", (now, live_id, user["user_id"]))
     if not cur.rowcount:
@@ -49010,18 +49056,6 @@ def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
         if (live.get("moderation_status") or "clear").strip().lower() not in {"clear", "approved"}:
             conn.close()
             return {"ok": False, "reason": "replay_blocked_by_moderation"}
-        existing_reel_id = safe_int(live.get("replay_reel_id"), 0)
-        if existing_reel_id:
-            cur.execute(
-                "SELECT r.id AS id, r.post_id AS post_id FROM pulse_reels r JOIN pulse_posts p ON p.id=r.post_id WHERE r.id=? AND p.deleted_at IS NULL LIMIT 1",
-                (existing_reel_id,),
-            )
-            existing = dict(cur.fetchone() or {})
-            conn.close()
-            if existing:
-                return {"ok": True, "created": False, "reel_id": int(existing["id"]), "post_id": int(existing["post_id"])}
-            # The creator deleted the auto-published replay; do not resurrect it.
-            return {"ok": False, "reason": "replay_reel_deleted", "reel_id": existing_reel_id}
         playback_id = (live.get("mux_recording_playback_id") or "").strip()
         video_url = f"https://stream.mux.com/{playback_id}.m3u8" if playback_id else (live.get("replay_url") or "").strip()
         if not video_url or not reel_media_source_is_playable(video_url):
@@ -49036,18 +49070,45 @@ def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
         poster_url = (live.get("thumbnail_url") or live.get("preview_url") or "").strip()
         if not poster_url and playback_id:
             poster_url = f"https://image.mux.com/{playback_id}/thumbnail.jpg"
-        conn.close()
         visibility = (live.get("audience") or live.get("visibility") or "public").strip().lower()
         if visibility not in {"public", "followers", "private"}:
-            visibility = "public"
-        result = pulse_feed_engine.create_post(host_user_id, caption, "video", title[:160], tags=tags, visibility=visibility, media_ids=[])
-        if not result.get("ok"):
-            logging.warning("PULSE_LIVE_REPLAY_REEL_POST_FAILED trace_id=%s live_id=%s message=%s", trace_id, live_id, result.get("message"))
-            return {"ok": False, "reason": "post_create_failed"}
-        post_id = int(result.get("post_id") or 0)
+            visibility = "private"
+        existing_reel_id = safe_int(live.get("replay_reel_id"), 0)
+        if existing_reel_id:
+            cur.execute(
+                "SELECT r.id AS id, r.post_id AS post_id FROM pulse_reels r JOIN pulse_posts p ON p.id=r.post_id WHERE r.id=? AND p.deleted_at IS NULL LIMIT 1",
+                (existing_reel_id,),
+            )
+            existing = dict(cur.fetchone() or {})
+            if existing:
+                live_feed_service.mark_live_feed_replay_ready(cur, live_id=live_id, playback_url=video_url, preview_url=poster_url, viewer_count=safe_int(live.get("viewer_count"), 0))
+                conn.commit(); conn.close()
+                return {"ok": True, "created": False, "reel_id": int(existing["id"]), "post_id": int(existing["post_id"])}
+            conn.close()
+            # The creator deleted the canonical post; do not resurrect it on
+            # Feed, Reels, or Profile after a callback retry.
+            return {"ok": False, "reason": "replay_reel_deleted", "reel_id": existing_reel_id}
+        post_id = safe_int(live.get("feed_post_id"), 0)
+        if post_id:
+            cur.execute("SELECT id, deleted_at FROM pulse_posts WHERE id=? AND live_session_id=? LIMIT 1", (post_id, int(live_id)))
+            feed_post = dict(cur.fetchone() or {})
+            if feed_post.get("deleted_at"):
+                conn.close()
+                return {"ok": False, "reason": "replay_post_deleted", "post_id": post_id}
+            post_id = safe_int(feed_post.get("id"), 0)
+        if not post_id:
+            identity = pulse_identity_for_user(cur, host_user_id)
+            post_id = live_feed_service.ensure_live_feed_post(
+                cur, user_id=host_user_id, live_id=int(live_id), title=title, category=category,
+                display_name=identity.get("display_name") or "PulseSoc creator", visibility=visibility,
+                preview_url=poster_url, viewer_count=safe_int(live.get("viewer_count"), 0),
+            )
+            cur.execute("UPDATE pulse_live_sessions SET feed_post_id=? WHERE id=?", (post_id, int(live_id)))
+        if not post_id:
+            conn.rollback(); conn.close()
+            return {"ok": False, "reason": "feed_post_unavailable"}
         now = datetime.utcnow().isoformat(timespec="seconds")
         duration_seconds = max(0.0, float(live.get("mux_recording_duration_seconds") or 0))
-        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         cur.execute(
             """
             INSERT INTO pulse_reels
@@ -49057,23 +49118,23 @@ def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
             """,
             (post_id, host_user_id, category, caption, video_url, poster_url, json.dumps(tags), int(live_id), duration_seconds, live.get("mux_recording_asset_id") or "", playback_id, now, now),
         )
-        reel_id = safe_int(cur.lastrowid, 0)
+        cur.execute("SELECT id FROM pulse_reels WHERE post_id=? LIMIT 1", (post_id,))
+        reel_id = safe_int((cur.fetchone() or [0])[0], 0)
         if not reel_id:
-            cur.execute("SELECT id FROM pulse_reels WHERE post_id=? LIMIT 1", (post_id,))
-            reel_id = safe_int((cur.fetchone() or [0])[0], 0)
-        # Claim the one replay slot for this live session. Only the first
-        # finalize attempt wins; concurrent retries clean up after themselves.
+            conn.rollback(); conn.close()
+            return {"ok": False, "reason": "reel_identity_unavailable"}
+        # Claim the one replay slot. pulse_reels(post_id) is unique, so retries
+        # reuse this canonical Feed post instead of creating another post.
         cur.execute(
             "UPDATE pulse_live_sessions SET replay_reel_id=?, updated_at=? WHERE id=? AND COALESCE(replay_reel_id,0)=0",
             (reel_id, now, int(live_id)),
         )
         if int(cur.rowcount or 0) <= 0:
-            cur.execute("UPDATE pulse_posts SET deleted_at=?, updated_at=? WHERE id=?", (now, now, post_id))
-            cur.execute("UPDATE pulse_reels SET status='removed', updated_at=? WHERE id=?", (now, reel_id))
             cur.execute("SELECT replay_reel_id FROM pulse_live_sessions WHERE id=? LIMIT 1", (int(live_id),))
             winner = safe_int((cur.fetchone() or [0])[0], 0)
             conn.commit(); conn.close()
-            return {"ok": True, "created": False, "reel_id": winner, "post_id": 0}
+            return {"ok": True, "created": False, "reel_id": winner, "post_id": post_id}
+        live_feed_service.mark_live_feed_replay_ready(cur, live_id=live_id, playback_url=video_url, preview_url=poster_url, viewer_count=safe_int(live.get("viewer_count"), 0))
         conn.commit(); conn.close()
         try:
             pulse_video_index_upsert(

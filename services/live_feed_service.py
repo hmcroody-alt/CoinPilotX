@@ -23,26 +23,32 @@ def _row_dict(row) -> dict:
         return {}
 
 
-def ensure_live_feed_post(cur, *, user_id: int, live_id: int, title: str, category: str, playback_url: str = "", preview_url: str = "", viewer_count: int = 0) -> int:
+def ensure_live_feed_post(cur, *, user_id: int, live_id: int, title: str, category: str, display_name: str = "", visibility: str = "public", playback_url: str = "", preview_url: str = "", viewer_count: int = 0) -> int:
     """Create or refresh the PulseSoc feed post that represents an active live."""
     now = _now()
     cur.execute("SELECT public_player_id FROM arena_profiles WHERE user_id=? LIMIT 1", (int(user_id),))
     profile = _row_dict(cur.fetchone())
     cur.execute("SELECT id FROM pulse_posts WHERE live_session_id=? AND deleted_at IS NULL LIMIT 1", (int(live_id),))
     existing = _row_dict(cur.fetchone())
-    body = f"{_clean(title, 140)} is live now. Join the broadcast, chat, and react in realtime."
+    visibility = str(visibility or "public").strip().lower()
+    if visibility not in {"public", "followers", "private"}:
+        # Subscriber/invite-only discovery stays fail-closed until its canonical
+        # membership relation authorizes a viewer.
+        visibility = "private"
+    creator = _clean(display_name, 80) or "A PulseSoc creator"
+    body = f"{creator} is LIVE now"
     tags = ["live", "pulse-live", _clean(category, 40).lower().replace(" ", "-")]
     if existing.get("id"):
         post_id = int(existing["id"])
         cur.execute(
             """
             UPDATE pulse_posts
-            SET post_type='live', title=?, body=?, visibility='public', moderation_status='approved',
-                live_session_id=?, live_status='live', live_viewer_count=?, playback_url=?, preview_url=?,
+            SET post_type='live', title=?, body=?, visibility=?, moderation_status='approved',
+                live_session_id=?, live_status='starting', live_viewer_count=?, playback_url=?, preview_url=?,
                 status='published', updated_at=?
             WHERE id=?
             """,
-            (_clean(title, 160), body, int(live_id), int(viewer_count or 0), playback_url or "", preview_url or "", now, post_id),
+            (_clean(title, 160), body, visibility, int(live_id), int(viewer_count or 0), playback_url or "", preview_url or "", now, post_id),
         )
         return post_id
     cur.execute(
@@ -51,8 +57,8 @@ def ensure_live_feed_post(cur, *, user_id: int, live_id: int, title: str, catego
         (user_id, public_player_id, post_type, body, media_ids_json, title, tags_json, visibility,
          moderation_status, ai_summary, ai_tags_json, sentiment, risk_score, engagement_score,
          live_session_id, live_status, live_viewer_count, playback_url, preview_url, status, created_at, updated_at)
-        VALUES (?, ?, 'live', ?, '[]', ?, ?, 'public', 'approved', ?, ?, 'excited', 0, 75,
-                ?, 'live', ?, ?, ?, 'published', ?, ?)
+        VALUES (?, ?, 'live', ?, '[]', ?, ?, ?, 'approved', ?, ?, 'excited', 0, 75,
+                ?, 'starting', ?, ?, ?, 'published', ?, ?)
         """,
         (
             int(user_id),
@@ -60,6 +66,7 @@ def ensure_live_feed_post(cur, *, user_id: int, live_id: int, title: str, catego
             body,
             _clean(title, 160),
             json.dumps(tags),
+            visibility,
             f"Live now: {_clean(title, 160)}",
             json.dumps(tags),
             int(live_id),
@@ -81,7 +88,7 @@ def mark_live_feed_ended(cur, *, live_id: int, replay_url: str = "", viewer_coun
     if not row:
         return 0
     post_id = int(row.get("id") or 0)
-    status = "archived" if replay_url else "ended"
+    status = "archived" if replay_url else "processing"
     cur.execute(
         """
         UPDATE pulse_posts
@@ -94,10 +101,30 @@ def mark_live_feed_ended(cur, *, live_id: int, replay_url: str = "", viewer_coun
             int(viewer_count or 0),
             replay_url or "",
             replay_url or "",
-            f"{row.get('title') or 'PulseSoc Live'} has ended." + (" Watch the replay." if replay_url else ""),
+            row.get("title") or "PulseSoc Live",
             now,
             post_id,
         ),
+    )
+    return post_id
+
+
+def mark_live_feed_replay_ready(cur, *, live_id: int, playback_url: str, preview_url: str = "", viewer_count: int = 0) -> int:
+    """Turn the one Live post into its playable replay representation."""
+    now = _now()
+    cur.execute("SELECT id, title FROM pulse_posts WHERE live_session_id=? AND deleted_at IS NULL LIMIT 1", (int(live_id),))
+    row = _row_dict(cur.fetchone())
+    if not row or not playback_url:
+        return 0
+    post_id = int(row.get("id") or 0)
+    cur.execute(
+        """
+        UPDATE pulse_posts
+        SET live_status='archived', live_viewer_count=?, replay_url=?, playback_url=?,
+            preview_url=COALESCE(NULLIF(?, ''), preview_url), body=?, status='published', updated_at=?
+        WHERE id=? AND deleted_at IS NULL
+        """,
+        (int(viewer_count or 0), playback_url, playback_url, preview_url or "", row.get("title") or "PulseSoc Live", now, post_id),
     )
     return post_id
 

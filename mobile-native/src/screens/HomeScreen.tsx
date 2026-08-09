@@ -7,6 +7,7 @@ import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Easing, FlatL
 import {
   addPostComment,
   deletePost,
+  getPostDetail,
   hidePost,
   listFeed,
   loadCachedFeed,
@@ -164,6 +165,24 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   }).current;
   const selectionRestoredRef = useRef(false);
   const activeTab = useMemo(() => FEED_TABS.find((tab) => tab.key === selectedFeed) || FEED_TABS[0], [selectedFeed]);
+  const activeLivePost = useMemo(
+    () => posts.find((post) => post.id === activePostId && Number(post.live?.live_session_id || 0) > 0),
+    [activePostId, posts]
+  );
+
+  // The visible Live card alone polls canonical server state. This both keeps
+  // ended/processing/replay transitions truthful and avoids room or API work
+  // for off-screen Live posts.
+  useEffect(() => {
+    if (!isFocused || !activeLivePost) return undefined;
+    let cancelled = false;
+    const refresh = async () => {
+      const detail = await getPostDetail(activeLivePost.id).catch(() => null);
+      if (!cancelled && detail?.post) updatePost(activeLivePost.id, detail.post);
+    };
+    const timer = setInterval(() => { refresh().catch(() => undefined); }, 6_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [activeLivePost?.id, isFocused]);
 
   const isAuthenticated = currentUserId > 0;
 
@@ -699,6 +718,10 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
               active={activePostId === item.id}
               motionEnabled={ambientMotionEnabled}
               onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
+              onOpenLive={(post) => {
+                const liveId = Number(post.live?.live_session_id || 0);
+                if (liveId > 0) navigation.navigate("LiveDetail", { liveId, title: post.title || "PulseSoc Live" });
+              }}
               onReact={handleReact}
               onSave={handleSave}
               onRepost={handleRepost}

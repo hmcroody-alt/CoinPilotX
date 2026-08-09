@@ -26,6 +26,10 @@ type ViewerMode = "connecting" | "livekit" | "hls" | "error" | "offline";
 export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: PulseReel; active: boolean; muted: boolean; poster?: string }) {
   const liveId = reelLiveSessionId(reel);
   const hlsUrl = String(reel.live?.playback_url || "");
+  return <EmbeddedLiveViewerSurface liveId={liveId} hlsUrl={hlsUrl} active={active} muted={muted} poster={poster} identity={reel.id || "unknown"} />;
+}
+
+export function EmbeddedLiveViewerSurface({ liveId, hlsUrl = "", active, muted, poster, identity = "unknown" }: { liveId: number; hlsUrl?: string; active: boolean; muted: boolean; poster?: string; identity?: number | string }) {
   const room = useLiveBroadcastRoom();
   const { joinAsViewer: connect, leaveViewer: disconnect, setRemoteAudioEnabled } = room;
   const [mode, setMode] = useState<ViewerMode>("connecting");
@@ -36,7 +40,7 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
     async function joinAsViewer() {
       if (!active) {
         await disconnect("left_feed_item").catch(() => undefined);
-        await releaseLivePlaybackOwner("feed", liveId || reel.id || "unknown");
+        await releaseLivePlaybackOwner("feed", liveId || identity);
         return;
       }
       if (!liveId) {
@@ -44,7 +48,7 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
         return;
       }
       setMode("connecting");
-      const playbackGranted = await claimLivePlaybackOwner("feed", liveId || reel.id || "unknown", () => disconnect("feed_live_backgrounded").then(() => undefined)).catch(() => false);
+      const playbackGranted = await claimLivePlaybackOwner("feed", liveId || identity, () => disconnect("feed_live_backgrounded").then(() => undefined)).catch(() => false);
       if (!playbackGranted) {
         setMode("error");
         return;
@@ -67,9 +71,9 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
     return () => {
       cancelled = true;
       disconnect("left_feed_item").catch(() => undefined);
-      releaseLivePlaybackOwner("feed", liveId || reel.id || "unknown");
+      releaseLivePlaybackOwner("feed", liveId || identity);
     };
-  }, [active, liveId, hlsUrl, connect, disconnect]);
+  }, [active, connect, disconnect, hlsUrl, identity, liveId]);
 
   useEffect(() => {
     if (mode !== "livekit" || !room.connected) return;
@@ -91,12 +95,12 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
 
   useEffect(() => {
     if (!active || mode !== "livekit" || !room.connected) {
-      releaseLivePlaybackOwner("feed", liveId || reel.id || "unknown");
+      releaseLivePlaybackOwner("feed", liveId || identity);
       return;
     }
-    claimLivePlaybackOwner("feed", liveId || reel.id || "unknown", () => disconnect("feed_live_backgrounded").then(() => undefined)).catch(() => undefined);
-    return () => { releaseLivePlaybackOwner("feed", liveId || reel.id || "unknown"); };
-  }, [active, disconnect, liveId, mode, reel.id, room.connected]);
+    claimLivePlaybackOwner("feed", liveId || identity, () => disconnect("feed_live_backgrounded").then(() => undefined)).catch(() => undefined);
+    return () => { releaseLivePlaybackOwner("feed", liveId || identity); };
+  }, [active, disconnect, identity, liveId, mode, room.connected]);
 
   const videoParticipants = useMemo(
     () =>

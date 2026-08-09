@@ -17,6 +17,7 @@ import { formatShortTime } from "../utils/format";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { ContentTranslation } from "./ContentTranslation";
 import { createThemedStyles } from "../theme/themedStyles";
+import { EmbeddedLiveViewerSurface } from "./reels/ReelLiveViewerSurface";
 
 const MEDIA_ASPECT_MIN = 0.55;
 const MEDIA_ASPECT_MAX = 1.91;
@@ -83,6 +84,7 @@ type PostCardProps = {
   onMute?: (post: PulsePost) => void;
   onDelete?: (post: PulsePost) => void;
   onAuthorPress?: (post: PulsePost) => void;
+  onOpenLive?: (post: PulsePost) => void;
 };
 
 export function PostCard({
@@ -106,7 +108,8 @@ export function PostCard({
   onBlock,
   onMute,
   onDelete,
-  onAuthorPress
+  onAuthorPress,
+  onOpenLive
 }: PostCardProps) {
   const { width: windowWidth } = useWindowDimensions();
   const [cardWidth, setCardWidth] = useState(0);
@@ -118,6 +121,7 @@ export function PostCard({
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
+  const [liveMuted, setLiveMuted] = useState(true);
   const [bodyExpanded, setBodyExpanded] = useState(Boolean(detail));
   const [bodyTruncated, setBodyTruncated] = useState(false);
   const likeScale = useRef(new Animated.Value(1)).current;
@@ -142,6 +146,11 @@ export function PostCard({
   const savableId = savablePostId(post);
   const saveState = useSavedState("post", savableId, typeof (post.saved ?? post.is_saved) === "boolean" ? Boolean(post.saved ?? post.is_saved) : undefined);
   const viewerSaved = saveState.saved;
+  const liveId = Number(post.live?.live_session_id || 0);
+  const liveStatus = String(post.live?.status || "").toLowerCase();
+  const isLivePost = String(post.content_type || post.post_type || "").toLowerCase() === "live" || liveId > 0;
+  const isRealtimeLive = isLivePost && ["starting", "live", "broadcasting", "active", "connecting", "connected", "reconnecting"].includes(liveStatus);
+  const isReplayProcessing = isLivePost && ["ended", "processing"].includes(liveStatus);
 
   async function submitInlineComment() {
     const bodyText = commentBody.trim();
@@ -254,6 +263,13 @@ export function PostCard({
         </View>
       ) : null}
 
+      {isRealtimeLive ? (
+        <View style={styles.liveMetaRow}>
+          <View style={styles.liveBadge}><Text style={styles.liveBadgeText}>LIVE</Text></View>
+          <Text style={styles.liveViewerCount}>{Number(post.live?.viewer_count || 0)} watching</Text>
+        </View>
+      ) : null}
+
       {post.title ? (
         <Text style={styles.title} numberOfLines={detail ? undefined : 2}>
           {post.title}
@@ -282,6 +298,32 @@ export function PostCard({
         </Pressable>
       ) : null}
       </View>
+
+      {isRealtimeLive && liveId > 0 ? (
+        <View style={[styles.liveStage, mediaBleedStyle]}>
+          <EmbeddedLiveViewerSurface
+            liveId={liveId}
+            hlsUrl={String(post.live?.playback_url || "")}
+            active={active}
+            muted={liveMuted}
+            poster={post.live?.preview_url}
+            identity={post.id}
+          />
+          <View style={styles.liveStageActions} pointerEvents="box-none">
+            <Pressable accessibilityRole="button" accessibilityLabel={liveMuted ? "Unmute Live" : "Mute Live"} style={styles.liveStageButton} onPress={(event) => { event.stopPropagation(); setLiveMuted((value) => !value); }}>
+              <Text style={styles.liveStageButtonText}>{liveMuted ? "Unmute" : "Mute"}</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Open full Live" style={[styles.liveStageButton, styles.liveJoinButton]} onPress={(event) => { event.stopPropagation(); onOpenLive?.(post); }}>
+              <Text style={styles.liveStageButtonText}>Join Live</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : isReplayProcessing ? (
+        <View style={[styles.liveProcessing, mediaBleedStyle]}>
+          <Text style={styles.liveProcessingTitle}>Live ended</Text>
+          <Text style={styles.liveProcessingBody}>Replay processing</Text>
+        </View>
+      ) : null}
 
       {post.media?.length ? (
         <View style={[styles.mediaBleed, mediaBleedStyle]}>
@@ -1272,6 +1314,80 @@ const styles = createThemedStyles(() => ({
     color: colors.text,
     fontSize: 24,
     fontWeight: "900"
+  },
+  liveBadge: {
+    backgroundColor: colors.danger,
+    borderRadius: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 4
+  },
+  liveBadgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.8
+  },
+  liveJoinButton: {
+    backgroundColor: "rgba(235,32,88,0.9)",
+    borderColor: "rgba(255,255,255,0.28)"
+  },
+  liveMetaRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10
+  },
+  liveProcessing: {
+    alignItems: "center",
+    aspectRatio: 9 / 16,
+    backgroundColor: "#030812",
+    justifyContent: "center",
+    maxHeight: 620,
+    padding: 24
+  },
+  liveProcessingBody: {
+    color: colors.muted,
+    fontSize: 14,
+    marginTop: 6
+  },
+  liveProcessingTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "900"
+  },
+  liveStage: {
+    aspectRatio: 9 / 16,
+    backgroundColor: "#02050b",
+    maxHeight: 620,
+    overflow: "hidden",
+    position: "relative"
+  },
+  liveStageActions: {
+    bottom: 12,
+    flexDirection: "row",
+    gap: 8,
+    left: 12,
+    position: "absolute",
+    right: 12
+  },
+  liveStageButton: {
+    backgroundColor: "rgba(2,8,17,0.82)",
+    borderColor: "rgba(104,243,222,0.4)",
+    borderRadius: 18,
+    borderWidth: 1,
+    minHeight: 38,
+    justifyContent: "center",
+    paddingHorizontal: 16
+  },
+  liveStageButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  liveViewerCount: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800"
   },
   menuAction: {
     alignItems: "center",

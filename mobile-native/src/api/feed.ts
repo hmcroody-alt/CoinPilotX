@@ -81,6 +81,8 @@ export type PulsePost = {
   id: number;
   post_id: number;
   user_id?: number;
+  post_type?: string;
+  content_type?: string;
   title?: string;
   body: string;
   text?: string;
@@ -133,6 +135,15 @@ export type PulsePost = {
   moderation_status?: string;
   viewer_follows_author?: boolean;
   is_following_author?: boolean;
+  live?: {
+    live_session_id?: number;
+    status?: string;
+    playback_url?: string;
+    preview_url?: string;
+    replay_url?: string;
+    viewer_count?: number;
+    live_url?: string;
+  };
 };
 
 export type FeedResponse = {

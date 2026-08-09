@@ -631,19 +631,41 @@ def _public_post(
     live_session_id = int(item.get("live_session_id") or 0)
     live_payload = {}
     if (item.get("post_type") or "") == "live" or live_session_id:
+        live_status = str(item.get("live_status") or item.get("status") or "live").lower()
+        replay_url = item.get("replay_url") or (item.get("playback_url") if live_status in {"archived", "replay_ready"} else "") or ""
         live_payload = {
             "live_session_id": live_session_id,
-            "status": item.get("live_status") or item.get("status") or "live",
-            "playback_url": item.get("playback_url") or "",
+            "status": live_status,
+            "playback_url": (item.get("playback_url") or "") if live_status not in {"processing", "ended"} else "",
             "preview_url": item.get("preview_url") or "",
-            "replay_url": item.get("replay_url") or "",
+            "replay_url": replay_url,
             "viewer_count": int(item.get("live_viewer_count") or 0),
             "live_url": f"/pulse/reels?live={live_session_id}" if live_session_id else f"/pulse/post/{item.get('id')}",
         }
+        if live_status in {"archived", "replay_ready"} and replay_url and not display_media:
+            display_media = [{
+                "id": f"live-replay-{live_session_id}",
+                "type": "video",
+                "media_type": "video",
+                "media_url": replay_url,
+                "valid_url": replay_url,
+                "playback_url": replay_url,
+                "thumbnail_url": item.get("preview_url") or "",
+                "poster_url": item.get("preview_url") or "",
+                "mime_type": "application/vnd.apple.mpegurl" if ".m3u8" in replay_url else "video/mp4",
+                "playback_mime_type": "application/vnd.apple.mpegurl" if ".m3u8" in replay_url else "video/mp4",
+                "width": 720,
+                "height": 1280,
+                "aspect_ratio": 0.5625,
+                "orientation": "portrait",
+                "processing_status": "ready",
+                "is_available": True,
+            }]
     return {
         "id": item.get("id"),
         "user_id": int(item.get("user_id") or 0),
         "post_type": item.get("post_type") or "text",
+        "content_type": "live" if live_session_id else item.get("post_type") or "text",
         "title": display_title,
         "body": display_body,
         "visibility": item.get("visibility") or "public",
@@ -1036,6 +1058,22 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
         conn.close()
         return None
     visible, _reason = pulse_visibility_decision(row, viewer_user_id=viewer_user_id, include_private=include_private)
+    if not visible and str(row.get("visibility") or "").lower() == "followers" and viewer_user_id:
+        cur.execute(
+            "SELECT 1 FROM pulse_follows WHERE follower_user_id=? AND followed_user_id=? LIMIT 1",
+            (int(viewer_user_id), int(row.get("user_id") or 0)),
+        )
+        visible = bool(cur.fetchone())
+    if visible and viewer_user_id:
+        cur.execute(
+            """
+            SELECT 1 FROM blocked_users
+            WHERE (blocker_user_id=? AND blocked_user_id=?) OR (blocker_user_id=? AND blocked_user_id=?)
+            LIMIT 1
+            """,
+            (int(viewer_user_id), int(row.get("user_id") or 0), int(row.get("user_id") or 0), int(viewer_user_id)),
+        )
+        visible = not bool(cur.fetchone())
     if not visible:
         conn.close()
         return None
@@ -1085,7 +1123,17 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     params = []
     where = _public_feed_where("p")
     if viewer_user_id:
+        where = [
+            clause.replace(
+                "COALESCE(p.visibility,'public')='public'",
+                "(COALESCE(p.visibility,'public')='public' OR (p.post_type='live' AND (p.user_id=? OR (p.visibility='followers' AND EXISTS (SELECT 1 FROM pulse_follows pfl WHERE pfl.follower_user_id=? AND pfl.followed_user_id=p.user_id)))))",
+            )
+            for clause in where
+        ]
+        params.extend([int(viewer_user_id), int(viewer_user_id)])
         where.append("NOT EXISTS (SELECT 1 FROM blocked_users bu WHERE bu.blocker_user_id=? AND bu.blocked_user_id=p.user_id)")
+        params.append(int(viewer_user_id))
+        where.append("NOT EXISTS (SELECT 1 FROM blocked_users bu WHERE bu.blocker_user_id=p.user_id AND bu.blocked_user_id=?)")
         params.append(int(viewer_user_id))
         where.append("NOT EXISTS (SELECT 1 FROM pulse_post_hides ph WHERE ph.user_id=? AND ph.post_id=p.id)")
         params.append(int(viewer_user_id))
