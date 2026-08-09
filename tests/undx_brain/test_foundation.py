@@ -300,9 +300,9 @@ class TheCognitiveEntriesSayTrueThings(unittest.TestCase):
         # says nothing about the system.
         service = (ROOT / "services" / "pulse_ai_service.py").read_text(encoding="utf-8")
         writes = len(re.findall(r"_record_learning_event\(", service)) - 1  # minus the def
-        self.assertEqual(writes, 11, "the number of learning-event writers moved")
+        self.assertEqual(writes, 12, "the number of learning-event writers moved")
         item = f.by_key("memory_learning_event")
-        self.assertIn("eleven call sites", f"{item.note}\n{item.gap}")
+        self.assertIn("twelve call sites", f"{item.note}\n{item.gap}")
 
         selects = [
             line.strip()
@@ -724,7 +724,7 @@ class TheCognitiveEntriesSayTrueThings(unittest.TestCase):
                 with self.subTest(symbol=symbol):
                     self.assertTrue(hasattr(C, symbol), f"calibration has no {symbol}")
         for stale in (
-            "is written by eleven call sites and read by one, which counts its rows",
+            "is written by twelve call sites and read by one, which counts its rows",
             "Nothing observes whether its own answers were right",
             "cannot yet notice a pattern in its own mistakes",
         ):

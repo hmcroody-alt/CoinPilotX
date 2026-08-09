@@ -516,7 +516,29 @@ def _retrieve_knowledge(cur, query: str, limit: int = 8) -> list[dict]:
     return [row for _, row in scored[:limit]]
 
 
-def _user_memory(cur, user_id: int, settings: dict) -> list[dict]:
+_MILITARY_MEMORY_KEY = "professional.military_status"
+_MILITARY_MEMORY_QUERY_MARKERS = (
+    "active duty",
+    "active-duty",
+    "armed forces",
+    "military",
+    "professional background",
+    "my background",
+    "my profile",
+    "remember about me",
+    "know about me",
+)
+
+
+def _memory_is_relevant(item: dict, query: str) -> bool:
+    key = str(item.get("memory_key") or "").strip().lower()
+    if key != _MILITARY_MEMORY_KEY:
+        return True
+    normalized_query = " ".join(str(query or "").lower().split())
+    return any(marker in normalized_query for marker in _MILITARY_MEMORY_QUERY_MARKERS)
+
+
+def _user_memory(cur, user_id: int, settings: dict, query: str = "") -> list[dict]:
     if not int(settings.get("remember_preferences") or 0):
         return []
     cur.execute(
@@ -527,7 +549,7 @@ def _user_memory(cur, user_id: int, settings: dict) -> list[dict]:
         """,
         (int(user_id),),
     )
-    return [dict(row) for row in cur.fetchall()]
+    return [row for row in (dict(item) for item in cur.fetchall()) if _memory_is_relevant(row, query)]
 
 
 def _history_for_prompt(messages: list[dict], settings: dict) -> list[dict]:
@@ -797,7 +819,7 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
             web_context = pulse_ai_web_search.context_block(search_result)
             if web_context:
                 knowledge.insert(0, {"id": 0, "title": "Live web search context", "category": "web_search", "body": web_context})
-        user_memory = _user_memory(cur, int(user_id), settings)
+        user_memory = _user_memory(cur, int(user_id), settings, body)
         compiled_policy = undx_policy.compile_context(body, user_id=int(user_id))
         ui_context = undx_architecture.sanitize_ui_context(payload.get("ui_context"))
         if ui_context:

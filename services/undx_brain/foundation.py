@@ -1185,7 +1185,7 @@ FOUNDATION: tuple[Responsibility, ...] = (
             "This entry read UNOWNED until ``services.undx_brain.learning`` was "
             "written, and the finding that made it the sharpest one in the map is "
             "unchanged and still checkable. ``pulse_ai_learning_events`` is written by "
-            "eleven call sites across ``pulse_ai_service`` — rate limits, safety "
+            "twelve call sites across ``pulse_ai_service`` — rate limits, safety "
             "refusals, agent actions, provider failures, answered messages, "
             "conversation resets, settings changes, memory corrections and deletions, "
             "feedback. Inside ``pulse_ai_service`` it is still read by exactly one: "

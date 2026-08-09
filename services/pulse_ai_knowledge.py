@@ -17,6 +17,13 @@ from services.undx_brain import envelope
 ASSISTANT_NAME = "UNDX"
 ASSISTANT_TITLE = "PulseSOC Intelligence Companion"
 DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "pulse_ai"
+MILITARY_MEMORY_KEY = "professional.military_status"
+MILITARY_CONTEXT_GUARDRAIL = """Military-service memory is private owner personalization context.
+Use only the verified high-level fact and disclose the minimum necessary for the owner's request.
+Branch, rank, specialty, unit, command, duty location, deployment, clearance, mission,
+operational role, and other military details remain unknown unless separately and explicitly
+verified by the owner. Do not solicit operational details unnecessarily, publish this context,
+or use it for targeting, scoring, eligibility, training, or public knowledge."""
 
 CORE_SYSTEM_PROMPT = """You are UNDX, PulseSOC's AGI-class digital intelligence companion.
 
@@ -297,11 +304,13 @@ def build_system_prompt(knowledge_items: list[dict[str, Any]] | None = None, use
             sections.append("Approved PulseSoc knowledge:\n" + "\n".join(knowledge_lines))
     if user_memory:
         memory_lines = []
+        includes_military_context = False
         for item in user_memory[:8]:
             key = compact_text(item.get("memory_key") or item.get("key") or "preference", 120)
             value = compact_text(item.get("memory_value") or item.get("value") or "", 360)
             if value:
                 memory_lines.append(f"- {key}: {value}")
+                includes_military_context = includes_military_context or key == MILITARY_MEMORY_KEY
         if memory_lines:
             # Remembered text is the person's own words, and that is exactly why it
             # needs a fence rather than exempting it from one. An instruction is
@@ -315,6 +324,8 @@ def build_system_prompt(knowledge_items: list[dict[str, Any]] | None = None, use
                 sealed if envelope.is_sealed(sealed)
                 else "User-approved personalization memory:\n" + joined
             )
+            if includes_military_context:
+                sections.append(MILITARY_CONTEXT_GUARDRAIL)
     return "\n\n".join(sections)
 
 
