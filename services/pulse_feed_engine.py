@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import embed_service, media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_moderation_engine, pulsesoc_notification_system, user_context
+from . import embed_service, media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulsesoc_notification_system, user_context
 
 
 REACTIONS = {
@@ -185,6 +185,49 @@ def _public_feed_where(alias="p"):
         f"COALESCE({prefix}moderation_status,'approved')='approved'",
         f"COALESCE({prefix}status,'published') NOT IN ('deleted','removed','archived')",
     ]
+
+
+def _resolve_profile_lookup_user_id(cur, lookup):
+    """Resolve every profile key the public profile endpoint accepts.
+
+    Native profile headers expose permanent Pulse IDs (`PLS-*`) while older feed
+    profile filtering only understood arena public ids, usernames, or numeric
+    user ids. That split let the profile header count posts for a user while the
+    Posts tab queried `/api/pulse/feed?profile=PLS-...` and got an empty list.
+    Keep the feed path on the same canonical identity contract.
+    """
+    value = str(lookup or "").strip().lstrip("@")[:160]
+    if not value or any(ch.isspace() for ch in value):
+        return 0
+    try:
+        resolved = pulse_id_service.resolve_user_id(cur, value)
+        if resolved:
+            return int(resolved)
+    except Exception:
+        pass
+    if value.isdigit() or (value.startswith("-") and value[1:].isdigit()):
+        try:
+            cur.execute("SELECT user_id FROM users WHERE user_id=? LIMIT 1", (int(value),))
+            row = _row(cur.fetchone())
+            if row:
+                return int(row.get("user_id") or 0)
+        except Exception:
+            pass
+    try:
+        cur.execute("SELECT user_id FROM arena_profiles WHERE lower(public_player_id)=lower(?) LIMIT 1", (value,))
+        row = _row(cur.fetchone())
+        if row:
+            return int(row.get("user_id") or 0)
+    except Exception:
+        pass
+    try:
+        cur.execute("SELECT user_id FROM users WHERE lower(username)=lower(?) LIMIT 1", (value,))
+        row = _row(cur.fetchone())
+        if row:
+            return int(row.get("user_id") or 0)
+    except Exception:
+        pass
+    return 0
 
 
 def _ensure_member_000_profile():
@@ -865,10 +908,20 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
     conn = user_context.connect()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT public_player_id FROM arena_profiles WHERE user_id=? LIMIT 1", (int(user_id),))
+        cur.execute(
+            """
+            SELECT ap.public_player_id AS public_player_id, u.pulse_id AS pulse_id, u.username AS username
+            FROM users u
+            LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
+            WHERE u.user_id=?
+            LIMIT 1
+            """,
+            (int(user_id),),
+        )
         profile = _row(cur.fetchone()) or {}
     except Exception:
         profile = {}
+    post_public_player_id = profile.get("public_player_id") or profile.get("pulse_id") or profile.get("username") or ""
     try:
         cur.execute(
             """
@@ -879,7 +932,7 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
             """,
             (
                 int(user_id),
-                profile.get("public_player_id"),
+                post_public_player_id,
                 post_type,
                 body,
                 json.dumps(media_ids),
@@ -1071,11 +1124,15 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         where.append("(p.tags_json LIKE ? OR p.body LIKE ?)")
         token = f"%{topic.strip('#').lower()}%"
         params.extend([token, token])
+    conn = user_context.connect()
+    cur = conn.cursor()
+    _ensure_home_safety_tables(cur)
     if profile_public_player_id:
         profile_lookup = str(profile_public_player_id or "").strip().lstrip("@")[:160]
-        if profile_lookup.isdigit() or (profile_lookup.startswith("-") and profile_lookup[1:].isdigit()):
+        profile_user_id = _resolve_profile_lookup_user_id(cur, profile_lookup)
+        if profile_user_id:
             where.append("p.user_id=?")
-            params.append(int(profile_lookup))
+            params.append(int(profile_user_id))
         else:
             where.append("(p.public_player_id=? OR ap.public_player_id=? OR lower(u.username)=lower(?))")
             params.extend([profile_lookup[:120], profile_lookup[:120], profile_lookup[:40]])
@@ -1092,9 +1149,6 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         )
     if feed != "trending" and not (feed in {"for_you", "following"} and not topic and not profile_public_player_id):
         params.extend([int(viewer_user_id or 0), int(viewer_user_id or 0)])
-    conn = user_context.connect()
-    cur = conn.cursor()
-    _ensure_home_safety_tables(cur)
     cur.execute(
         f"""
         SELECT p.*, u.username, u.email, u.full_name, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
