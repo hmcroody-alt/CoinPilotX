@@ -1115,6 +1115,144 @@ def update_settings(user_id: int, payload: dict | None = None) -> dict:
         conn.close()
 
 
+def save_memory(
+    user_id: int,
+    memory_key: str,
+    memory_value: str,
+    source: str = "user_verified",
+) -> dict:
+    """Store one owner-approved canonical preference without bypassing consent."""
+    if type(user_id) is not int or user_id <= 0:
+        return {
+            "ok": False,
+            "error": "invalid_user_id",
+            "message": "A valid memory owner is required.",
+            "http_status": 400,
+        }
+    key = _clean(memory_key, 160)
+    value = _clean(memory_value, 1200)
+    provenance = _clean(source, 80) or "user_verified"
+    if not key:
+        return {
+            "ok": False,
+            "error": "invalid_memory_key",
+            "message": "Provide a memory key.",
+            "http_status": 400,
+        }
+    if not value:
+        return {
+            "ok": False,
+            "error": "invalid_memory_value",
+            "message": "Provide a memory value.",
+            "http_status": 400,
+        }
+
+    conn, cur = _open_db()
+    try:
+        cur.execute(
+            "SELECT remember_preferences FROM pulse_ai_conversation_context_permissions WHERE user_id=? LIMIT 1",
+            (user_id,),
+        )
+        settings = cur.fetchone()
+        if not settings or not int(dict(settings).get("remember_preferences") or 0):
+            conn.rollback()
+            return {
+                "ok": False,
+                "error": "memory_disabled",
+                "message": "UNDX memory is disabled for this account.",
+                "http_status": 403,
+            }
+
+        cur.execute(
+            """SELECT * FROM pulse_ai_user_memory
+               WHERE user_id=? AND memory_key=? AND status='active'
+                 AND COALESCE(deleted_at,'')=''
+               ORDER BY updated_at DESC, id DESC""",
+            (user_id, key),
+        )
+        active_rows = [dict(row) for row in cur.fetchall()]
+        timestamp = _now()
+        action = "existing"
+        previous_value = None
+
+        if active_rows:
+            canonical = active_rows[0]
+            memory_id = int(canonical["id"])
+            previous_value = canonical.get("memory_value") or ""
+            if previous_value != value:
+                cur.execute(
+                    """UPDATE pulse_ai_user_memory
+                       SET memory_value=?, source=?, updated_at=?
+                       WHERE id=? AND user_id=?""",
+                    (value, provenance, timestamp, memory_id, user_id),
+                )
+                action = "updated"
+            if len(active_rows) > 1:
+                duplicate_ids = [int(row["id"]) for row in active_rows[1:]]
+                placeholders = ",".join("?" for _ in duplicate_ids)
+                cur.execute(
+                    f"""UPDATE pulse_ai_user_memory
+                        SET status='deleted', deleted_at=?, updated_at=?
+                        WHERE user_id=? AND id IN ({placeholders})""",
+                    (timestamp, timestamp, user_id, *duplicate_ids),
+                )
+        else:
+            cur.execute(
+                """INSERT INTO pulse_ai_user_memory
+                   (user_id, memory_key, memory_value, source, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, 'active', ?, ?)""",
+                (user_id, key, value, provenance, timestamp, timestamp),
+            )
+            memory_id = int(cur.lastrowid or 0)
+            action = "created"
+
+        if action in {"created", "updated"}:
+            correction_history = []
+            if action == "updated":
+                correction_history.append(
+                    {"previous": previous_value, "corrected_at": timestamp}
+                )
+            cur.execute(
+                """INSERT INTO pulse_ai_memory_provenance
+                   (memory_id, user_id, provenance, confidence, sensitivity,
+                    correction_history_json, supersedes_memory_id, last_verified_at,
+                    deletion_policy, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, 'user_scoped', ?, ?, ?, 'user_delete', ?, ?)""",
+                (
+                    memory_id,
+                    user_id,
+                    provenance,
+                    1.0 if provenance == "user_verified" else None,
+                    json.dumps(correction_history)[:4000],
+                    memory_id if action == "updated" else None,
+                    timestamp,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            _record_learning_event(
+                cur,
+                user_id,
+                f"memory_{action}",
+                "pulse_ai_memory",
+                {"memory_id": memory_id, "memory_key": key},
+            )
+        conn.commit()
+        return {
+            "ok": True,
+            "memory_id": memory_id,
+            "memory_key": key,
+            "status": action,
+            "created": action == "created",
+            "updated": action == "updated",
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def clear_memory(user_id: int) -> dict:
     conn, cur = _open_db()
     try:
