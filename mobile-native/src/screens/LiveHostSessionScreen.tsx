@@ -291,7 +291,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
       .catch((error) => {
         setToolNote(error instanceof Error ? error.message : "PulseSoc could not confirm native Live media yet.");
       });
-  }, [liveId, refreshLiveMeta, room.connected, room.localAudioTrackCount, room.localVideoTrack, "localVideoTrackCount" in room ? room.localVideoTrackCount : 0, room.provider, room.reconnectCount]);
+  }, [liveId, refreshLiveMeta, room.connected, room.localAudioTrackCount, room.localVideoTrack, room.reconnectCount]);
 
   const finishBroadcast = useCallback(async () => {
     if (endedRef.current) return;

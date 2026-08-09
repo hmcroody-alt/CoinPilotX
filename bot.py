@@ -45287,6 +45287,10 @@ def api_pulse_live_mux_webhook():
     mux_upload_id = clean_html(data.get("id") or "")[:180] if event_type.startswith("video.upload.") else ""
     if event_type.startswith("video.upload.") and data.get("asset_id"):
         mux_asset_id = clean_html(data.get("asset_id") or "")[:180]
+    try:
+        mux_duration_seconds = max(0.0, float(data.get("duration") or 0))
+    except (TypeError, ValueError):
+        mux_duration_seconds = 0.0
     playback_id = ""
     for item in data.get("playback_ids") or []:
         if item.get("policy") == "public" or item.get("id"):
@@ -45365,10 +45369,11 @@ def api_pulse_live_mux_webhook():
                     SET mux_recording_asset_id=COALESCE(NULLIF(?, ''), mux_recording_asset_id),
                         mux_recording_playback_id=COALESCE(NULLIF(?, ''), mux_recording_playback_id),
                         replay_url=COALESCE(NULLIF(?, ''), replay_url),
+                        mux_recording_duration_seconds=CASE WHEN ?>0 THEN ? ELSE mux_recording_duration_seconds END,
                         recording_status=?, recording_error=?, updated_at=?
                     WHERE mux_recording_asset_id=? OR mux_live_stream_id=?
                     """,
-                    (mux_asset_id, playback_id, playback_url, f"mux_asset_{status}", "" if status == "ready" else "Mux recording asset errored.", now, mux_asset_id, mux_live_stream_id),
+                    (mux_asset_id, playback_id, playback_url, mux_duration_seconds, mux_duration_seconds, "mux_asset_ready" if status == "ready" else "mux_retryable", "" if status == "ready" else "Mux recording asset errored; replay finalization may be retried.", now, mux_asset_id, mux_live_stream_id),
                 )
                 cur.execute(
                     "UPDATE pulse_live_streams SET mux_recording_asset_id=COALESCE(NULLIF(?, ''), mux_recording_asset_id), mux_recording_playback_id=COALESCE(NULLIF(?, ''), mux_recording_playback_id), updated_at=? WHERE mux_recording_asset_id=? OR mux_live_stream_id=?",
@@ -49039,15 +49044,16 @@ def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
             return {"ok": False, "reason": "post_create_failed"}
         post_id = int(result.get("post_id") or 0)
         now = datetime.utcnow().isoformat(timespec="seconds")
+        duration_seconds = max(0.0, float(live.get("mux_recording_duration_seconds") or 0))
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         cur.execute(
             """
             INSERT INTO pulse_reels
-            (post_id, user_id, category, caption, video_url, poster_url, ai_tags_json, safety_score, educational_value, reel_score, processing_status, transcoding_status, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 90, 60, 70, 'ready', 'ready', 'active', ?, ?)
-            ON CONFLICT(post_id) DO UPDATE SET video_url=excluded.video_url, poster_url=excluded.poster_url, updated_at=excluded.updated_at
+            (post_id, user_id, category, caption, video_url, poster_url, ai_tags_json, safety_score, educational_value, reel_score, processing_status, transcoding_status, status, source_live_id, duration_seconds, mux_asset_id, mux_playback_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 90, 60, 70, 'ready', 'ready', 'active', ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(post_id) DO UPDATE SET video_url=excluded.video_url, poster_url=excluded.poster_url, source_live_id=excluded.source_live_id, duration_seconds=excluded.duration_seconds, mux_asset_id=excluded.mux_asset_id, mux_playback_id=excluded.mux_playback_id, updated_at=excluded.updated_at
             """,
-            (post_id, host_user_id, category, caption, video_url, poster_url, json.dumps(tags), now, now),
+            (post_id, host_user_id, category, caption, video_url, poster_url, json.dumps(tags), int(live_id), duration_seconds, live.get("mux_recording_asset_id") or "", playback_id, now, now),
         )
         reel_id = safe_int(cur.lastrowid, 0)
         if not reel_id:
@@ -102365,6 +102371,10 @@ def _init_db_impl():
         ("webhook_received_at", "TEXT"),
         ("db_ready_update_at", "TEXT"),
         ("moderation_status", "TEXT DEFAULT 'approved'"),
+        ("source_live_id", "INTEGER DEFAULT 0"),
+        ("duration_seconds", "REAL DEFAULT 0"),
+        ("mux_asset_id", "TEXT"),
+        ("mux_playback_id", "TEXT"),
         ("pinned_at", "TEXT"),
         ("comments_disabled", "INTEGER DEFAULT 0"),
         ("reactions_disabled", "INTEGER DEFAULT 0"),
@@ -104226,6 +104236,7 @@ def _init_db_impl():
         ("mux_live_status", "TEXT"),
         ("mux_recording_asset_id", "TEXT"),
         ("mux_recording_playback_id", "TEXT"),
+        ("mux_recording_duration_seconds", "REAL DEFAULT 0"),
         ("livekit_egress_id", "TEXT"),
         ("livekit_egress_status", "TEXT"),
         ("livekit_egress_error", "TEXT"),
