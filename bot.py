@@ -246,6 +246,7 @@ from services import (
     messenger_media_foundation,
     mux_live_service,
     agora_media_push_service,
+    agora_cloud_recording_service,
     music_service,
     native_push_readiness,
     ai_story_service,
@@ -47466,15 +47467,29 @@ def api_pulse_live_browser_publish(live_id):
             if host and (user_is_owner_account(host) or premium_identity_engine.is_owner(host)):
                 provider = "agora"
         if provider == "agora":
+            recording = {"ok": False, "reason": "not_attempted"}
+            try:
+                channel_name = live.get("webrtc_room_id") or f"pulse-live-{live_id}"
+                acquired = agora_cloud_recording_service.acquire(live_id=live_id, channel_name=channel_name)
+                if acquired.get("ok") and acquired.get("resource_id"):
+                    recording = agora_cloud_recording_service.start(live_id=live_id, channel_name=channel_name, resource_id=acquired["resource_id"], recording_uid=acquired["recording_uid"])
+                    recording.update({"resource_id": acquired["resource_id"], "recording_uid": acquired["recording_uid"]})
+                else:
+                    recording = acquired
+            except Exception:
+                logging.exception("PULSE_LIVE_AGORA_RECORDING_START_FAILED live_id=%s", live_id)
+                recording = {"ok": False, "reason": "exception", "message": "Replay recording could not start."}
+            recording_status = "recording" if recording.get("ok") and recording.get("sid") else "recording_failed"
+            recording_error = "" if recording_status == "recording" else clean_html(recording.get("message") or recording.get("reason") or "Replay recording could not start.")[:500]
             cur.execute(
-                "UPDATE pulse_live_sessions SET provider='agora', publish_state='agora_host_publishing', stream_health='agora_connected', status='live', is_live=1, audio_tracks=?, video_tracks=?, updated_at=? WHERE id=?",
-                (audio_tracks, video_tracks, now, live_id),
+                "UPDATE pulse_live_sessions SET provider='agora', publish_state='agora_host_publishing', stream_health='agora_connected', status='live', is_live=1, audio_tracks=?, video_tracks=?, recording_status=?, recording_error=?, agora_recording_resource_id=?, agora_recording_sid=?, agora_recording_uid=?, agora_recording_prefix=?, updated_at=? WHERE id=?",
+                (audio_tracks, video_tracks, recording_status, recording_error, recording.get("resource_id") or "", recording.get("sid") or "", recording.get("recording_uid") or "", recording.get("prefix") or "", now, live_id),
             )
             cur.execute("UPDATE pulse_live_streams SET status='live', updated_at=? WHERE session_id=?", (now, live_id))
             pulse_live_record_timeline_event(cur, "agora_host_publish_confirmed", live_id=live_id, actor_user_id=user["user_id"], post_id=int(live.get("feed_post_id") or 0), payload={"trace_id": trace_id, "audio_tracks": audio_tracks, "video_tracks": video_tracks, "provider": "agora"})
             logging.info("PULSE_LIVE_AGORA_PUBLISH live_id=%s provider=agora host_uid=%s audio_tracks=%s video_tracks=%s trace_id=%s", live_id, user.get("user_id"), audio_tracks, video_tracks, trace_id)
             conn.commit(); conn.close()
-            return jsonify({"ok": True, "status": "live", "publish_path": "agora_rtc", "audio_tracks": audio_tracks, "video_tracks": video_tracks, "playback": {"supports_webrtc": True, "preferred_transport": "agora", "webrtc_room_id": live.get("webrtc_room_id") or f"pulse-live-{live_id}"}})
+            return jsonify({"ok": True, "status": "live", "publish_path": "agora_rtc", "recording_status": recording_status, "audio_tracks": audio_tracks, "video_tracks": video_tracks, "playback": {"supports_webrtc": True, "preferred_transport": "agora", "webrtc_room_id": live.get("webrtc_room_id") or f"pulse-live-{live_id}"}})
         existing_egress = (live.get("livekit_egress_id") or "").strip()
         existing_egress_status = (live.get("livekit_egress_status") or "").strip().lower()
         existing_mux_status = (live.get("mux_live_status") or "").strip().lower()
@@ -49103,15 +49118,24 @@ def api_pulse_live_end(live_id):
         stopped_bridge = agora_media_push_service.stop_mux_bridge(live.get("agora_converter_id") or "")
         if not stopped_bridge.get("ok"):
             logging.warning("PULSE_LIVE_AGORA_MUX_BRIDGE_STOP_FAILED live_id=%s reason=%s", live_id, stopped_bridge.get("reason") or "unknown")
+    recording_finalize = {}
+    mux_recording = {}
+    if (live.get("provider") or "").strip().lower() == "agora" and live.get("agora_recording_sid"):
+        recording_finalize = agora_cloud_recording_service.stop(channel_name=live.get("webrtc_room_id") or f"pulse-live-{live_id}", resource_id=live.get("agora_recording_resource_id") or "", sid=live.get("agora_recording_sid") or "", recording_uid=live.get("agora_recording_uid") or "")
+        if recording_finalize.get("ok") and recording_finalize.get("filename"):
+            source_url = agora_cloud_recording_service.public_recording_url(live.get("agora_recording_prefix") or "", recording_finalize.get("filename") or "")
+            mux_recording = mux_live_service.create_mux_asset_from_live_recording(source_url=source_url)
+        elif not recording_finalize.get("ok"):
+            logging.warning("PULSE_LIVE_AGORA_RECORDING_STOP_FAILED live_id=%s reason=%s", live_id, recording_finalize.get("reason") or "unknown")
     replay_url = clean_html((request.get_json(silent=True) or {}).get("replay_url") or live.get("replay_url") or "")[:700]
     replay_is_cdn = bool(replay_url and replay_url.startswith((os.getenv("R2_PUBLIC_BASE_URL", "").rstrip("/") or "https://cdn.coinpilotx.app") + "/"))
-    has_mux_recording = bool(live.get("mux_live_stream_id"))
-    recording_status = "replay_ready" if replay_is_cdn else "processing_replay" if has_mux_recording else "replay_unavailable"
-    recording_error = "" if replay_is_cdn or has_mux_recording else "No durable live recording asset was produced for this session."
+    has_mux_recording = bool(mux_recording.get("mux_recording_asset_id") or live.get("mux_recording_asset_id"))
+    recording_status = "replay_ready" if replay_is_cdn else "processing_replay" if has_mux_recording else "replay_failed" if live.get("agora_recording_sid") else "replay_unavailable"
+    recording_error = "" if replay_is_cdn or has_mux_recording else clean_html(recording_finalize.get("message") or mux_recording.get("message") or "No durable live recording asset was produced for this session.")[:500]
     viewer_count = int(live.get("viewer_count") or 0)
     cur.execute(
-        "UPDATE pulse_live_sessions SET status='ended', publish_state='ended', stream_health='ended', agora_converter_status=CASE WHEN provider='agora' THEN 'stopped' ELSE agora_converter_status END, replay_url=?, recording_status=?, recording_error=?, ended_at=?, updated_at=? WHERE id=?",
-        (replay_url if replay_is_cdn else "", recording_status, recording_error, now, now, live_id),
+        "UPDATE pulse_live_sessions SET status='ended', publish_state='ended', stream_health='ended', agora_recording_filename=COALESCE(NULLIF(?,''),agora_recording_filename), mux_recording_asset_id=COALESCE(NULLIF(?,''),mux_recording_asset_id), mux_recording_playback_id=COALESCE(NULLIF(?,''),mux_recording_playback_id), replay_url=COALESCE(NULLIF(?,''),replay_url), recording_status=?, recording_error=?, ended_at=?, updated_at=? WHERE id=?",
+        (recording_finalize.get("filename") or "", mux_recording.get("mux_recording_asset_id") or "", mux_recording.get("mux_recording_playback_id") or "", mux_recording.get("playback_url") or (replay_url if replay_is_cdn else ""), recording_status, recording_error, now, now, live_id),
     )
     cur.execute("UPDATE pulse_live_streams SET status='ended', ended_at=?, updated_at=? WHERE session_id=?", (now, now, live_id))
     cur.execute("UPDATE pulse_live_viewers SET status='left', left_at=?, last_seen_at=? WHERE live_id=? AND status IN ('watching','hosting')", (now, now, live_id))
@@ -104205,6 +104229,11 @@ def _init_db_impl():
         ("agora_converter_id", "TEXT"),
         ("agora_converter_status", "TEXT"),
         ("agora_converter_error", "TEXT"),
+        ("agora_recording_resource_id", "TEXT"),
+        ("agora_recording_sid", "TEXT"),
+        ("agora_recording_uid", "TEXT"),
+        ("agora_recording_prefix", "TEXT"),
+        ("agora_recording_filename", "TEXT"),
         ("engagement_score", "INTEGER DEFAULT 0"),
         ("active_scene", "TEXT DEFAULT 'camera_only'"),
         ("audio_chain_json", "TEXT"),
