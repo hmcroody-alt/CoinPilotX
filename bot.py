@@ -245,6 +245,7 @@ from services import (
     media_storage,
     messenger_media_foundation,
     mux_live_service,
+    agora_media_push_service,
     music_service,
     native_push_readiness,
     ai_story_service,
@@ -45037,12 +45038,9 @@ def api_pulse_live_start():
             "message": "Live session created.",
             "live_id": live_id,
             "stream_id": stream_row_id,
-            "stream_key": stream_key,
             "mux_live_stream_id": mux_setup.get("mux_live_stream_id") or "",
             "mux_playback_id": mux_setup.get("mux_playback_id") or "",
             "mux_live_status": mux_setup.get("mux_live_status") or "",
-            "ingest_url": stream_setup.get("ingest_url") or "",
-            "rtmp_url": stream_setup.get("rtmp_url") or "",
             "hls_url": stream_setup.get("hls_url") or "",
             "playback_url": playback_url,
             "webrtc_room_id": stream_setup.get("webrtc_room_id") or "",
@@ -45181,9 +45179,6 @@ def api_pulse_live_mux_create():
             "mux_live_stream_id": mux.get("mux_live_stream_id") or "",
             "mux_playback_id": mux.get("mux_playback_id") or "",
             "mux_live_status": mux.get("mux_live_status") or "",
-            "ingest_url": mux.get("ingest_url") or "",
-            "rtmp_url": mux.get("rtmp_url") or "",
-            "stream_key": mux.get("mux_stream_key") or "",
             "playback_url": mux.get("playback_url") or "",
             "studio_url": studio_url,
         })
@@ -45232,14 +45227,10 @@ def api_pulse_live_mux_get(mux_live_stream_id):
         "mux_live_status": mux.get("mux_live_status") or live.get("mux_live_status") or "",
         "mux_playback_id": mux.get("mux_playback_id") or live.get("mux_playback_id") or "",
         "playback_url": mux.get("playback_url") or mux_live_service.playback_url(live.get("mux_playback_id") or "") or live.get("playback_url") or "",
-        "ingest_url": live.get("ingest_url") or mux_live_service.MUX_RTMP_INGEST_URL,
         "ingest_active": bool(health.get("ingest_active")),
         "bitrate_label": health.get("bitrate_label") or "0 kbps",
         "fps_label": health.get("fps_label") or "0 FPS",
     }
-    if is_host or admin_current_user() or premium_identity_engine.is_owner(user):
-        safe["stream_key"] = mux.get("mux_stream_key") or live.get("mux_stream_key") or live.get("stream_key") or ""
-        safe["rtmp_url"] = live.get("rtmp_url") or mux_live_service.MUX_RTMP_INGEST_URL
     return jsonify(safe)
 
 
@@ -45306,7 +45297,7 @@ def api_pulse_live_mux_webhook():
                 """
                 UPDATE pulse_live_sessions
                 SET mux_live_status=?, status=CASE WHEN ?='live' THEN 'live' WHEN ?='idle' THEN 'idle' ELSE status END,
-                    publish_state=CASE WHEN ?='live' THEN 'publishing' WHEN ?='idle' THEN 'idle' ELSE publish_state END,
+                    publish_state=CASE WHEN ?='live' THEN CASE WHEN provider='agora' THEN 'agora_mux_live' ELSE 'publishing' END WHEN ?='idle' THEN 'idle' ELSE publish_state END,
                     is_live=CASE WHEN ?='live' THEN 1 WHEN ?='idle' THEN 0 ELSE is_live END,
                     updated_at=?
                 WHERE mux_live_stream_id=?
@@ -47472,15 +47463,36 @@ def api_pulse_live_browser_publish(live_id):
             if host and (user_is_owner_account(host) or premium_identity_engine.is_owner(host)):
                 provider = "agora"
         if provider == "agora":
+            existing_converter_id = (live.get("agora_converter_id") or "").strip()
+            existing_converter_status = (live.get("agora_converter_status") or "").strip().lower()
+            bridge = {"ok": True, "converter_id": existing_converter_id, "state": existing_converter_status, "already_started": True}
+            if not existing_converter_id or existing_converter_status in {"", "failed", "stopped"}:
+                bridge = agora_media_push_service.start_mux_bridge(
+                    live_id=live_id,
+                    channel_name=live.get("webrtc_room_id") or f"pulse-live-{live_id}",
+                    rtmp_url=pulse_livekit_mux_destination(live),
+                    host_uid=int(user["user_id"]),
+                )
+            if not bridge.get("ok"):
+                safe_error = clean_html(bridge.get("message") or "Agora to Mux bridge could not start.")[:500]
+                cur.execute(
+                    "UPDATE pulse_live_sessions SET provider='agora', publish_state='agora_mux_bridge_failed', stream_health='mux_unavailable', is_live=0, audio_tracks=?, video_tracks=?, agora_converter_status='failed', agora_converter_error=?, updated_at=? WHERE id=?",
+                    (audio_tracks, video_tracks, safe_error, now, live_id),
+                )
+                pulse_live_record_timeline_event(cur, "agora_mux_bridge_failed", live_id=live_id, actor_user_id=user["user_id"], post_id=int(live.get("feed_post_id") or 0), payload={"trace_id": trace_id, "reason": bridge.get("reason") or "bridge_failed"})
+                conn.commit(); conn.close()
+                return jsonify({"ok": False, "message": "Audience playback is unavailable because the Agora to Mux bridge could not start.", "reason": bridge.get("reason") or "bridge_failed", "trace_id": trace_id}), 503
+            converter_id = clean_html(bridge.get("converter_id") or existing_converter_id)[:180]
+            converter_status = clean_html(bridge.get("state") or existing_converter_status or "connecting")[:80]
             cur.execute(
-                "UPDATE pulse_live_sessions SET provider='agora', publish_state='agora_host_publishing', stream_health='agora_connected', status='live', is_live=1, audio_tracks=?, video_tracks=?, updated_at=? WHERE id=?",
-                (audio_tracks, video_tracks, now, live_id),
+                "UPDATE pulse_live_sessions SET provider='agora', publish_state='agora_mux_connecting', stream_health='mux_connecting', status='starting', is_live=0, audio_tracks=?, video_tracks=?, agora_converter_id=?, agora_converter_status=?, agora_converter_error='', updated_at=? WHERE id=?",
+                (audio_tracks, video_tracks, converter_id, converter_status, now, live_id),
             )
-            cur.execute("UPDATE pulse_live_streams SET status='live', updated_at=? WHERE session_id=?", (now, live_id))
-            pulse_live_record_timeline_event(cur, "agora_host_publish_confirmed", live_id=live_id, actor_user_id=user["user_id"], post_id=int(live.get("feed_post_id") or 0), payload={"trace_id": trace_id, "audio_tracks": audio_tracks, "video_tracks": video_tracks, "provider": "agora"})
-            logging.info("PULSE_LIVE_AGORA_PUBLISH live_id=%s provider=agora host_uid=%s audio_tracks=%s video_tracks=%s trace_id=%s", live_id, user.get("user_id"), audio_tracks, video_tracks, trace_id)
+            cur.execute("UPDATE pulse_live_streams SET status='starting', agora_converter_id=?, agora_converter_status=?, agora_converter_error='', updated_at=? WHERE session_id=?", (converter_id, converter_status, now, live_id))
+            pulse_live_record_timeline_event(cur, "agora_mux_bridge_started", live_id=live_id, actor_user_id=user["user_id"], post_id=int(live.get("feed_post_id") or 0), payload={"trace_id": trace_id, "audio_tracks": audio_tracks, "video_tracks": video_tracks, "provider": "agora", "converter_id_present": bool(converter_id)})
+            logging.info("PULSE_LIVE_AGORA_MUX_BRIDGE_STARTED live_id=%s host_uid=%s converter_id_present=%s trace_id=%s", live_id, user.get("user_id"), bool(converter_id), trace_id)
             conn.commit(); conn.close()
-            return jsonify({"ok": True, "status": "live", "publish_path": "agora_rtc", "audio_tracks": audio_tracks, "video_tracks": video_tracks, "playback": {"supports_webrtc": True, "preferred_transport": "agora", "webrtc_room_id": live.get("webrtc_room_id") or f"pulse-live-{live_id}"}})
+            return jsonify({"ok": True, "status": "starting", "publish_path": "agora_to_mux", "audience_playback_ready": False, "audio_tracks": audio_tracks, "video_tracks": video_tracks, "playback": {"supports_webrtc": False, "preferred_transport": "hls", "playback_url": ""}}), 202
         existing_egress = (live.get("livekit_egress_id") or "").strip()
         existing_egress_status = (live.get("livekit_egress_status") or "").strip().lower()
         existing_mux_status = (live.get("mux_live_status") or "").strip().lower()
@@ -48993,6 +49005,9 @@ def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
         if (live.get("status") or "") not in ("ended", "archived"):
             conn.close()
             return {"ok": False, "reason": "live_not_ended"}
+        if (live.get("moderation_status") or "clear").strip().lower() not in {"clear", "approved"}:
+            conn.close()
+            return {"ok": False, "reason": "replay_blocked_by_moderation"}
         existing_reel_id = safe_int(live.get("replay_reel_id"), 0)
         if existing_reel_id:
             cur.execute(
@@ -49018,7 +49033,10 @@ def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
         if not poster_url and playback_id:
             poster_url = f"https://image.mux.com/{playback_id}/thumbnail.jpg"
         conn.close()
-        result = pulse_feed_engine.create_post(host_user_id, caption, "video", f"Live Replay: {title}"[:160], tags=tags, visibility="public", media_ids=[])
+        visibility = (live.get("audience") or live.get("visibility") or "public").strip().lower()
+        if visibility not in {"public", "followers", "private"}:
+            visibility = "public"
+        result = pulse_feed_engine.create_post(host_user_id, caption, "video", f"Live Replay: {title}"[:160], tags=tags, visibility=visibility, media_ids=[])
         if not result.get("ok"):
             logging.warning("PULSE_LIVE_REPLAY_REEL_POST_FAILED trace_id=%s live_id=%s message=%s", trace_id, live_id, result.get("message"))
             return {"ok": False, "reason": "post_create_failed"}
@@ -49054,7 +49072,7 @@ def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
         conn.commit(); conn.close()
         try:
             pulse_video_index_upsert(
-                host_user_id, "reel", reel_id, 0, f"Live Replay: {title}", caption, "public",
+                host_user_id, "reel", reel_id, 0, f"Live Replay: {title}", caption, visibility,
                 media={
                     "media_type": "video",
                     "media_url": video_url,
@@ -49099,13 +49117,18 @@ def api_pulse_live_end(live_id):
     if int(live.get("user_id") or 0) != int(user["user_id"] or 0) and not admin_current_user():
         conn.close()
         return api_error("Only the host or an admin can end this stream.", 403)
+    if (live.get("provider") or "").strip().lower() == "agora" and live.get("agora_converter_id"):
+        stopped_bridge = agora_media_push_service.stop_mux_bridge(live.get("agora_converter_id") or "")
+        if not stopped_bridge.get("ok"):
+            logging.warning("PULSE_LIVE_AGORA_MUX_BRIDGE_STOP_FAILED live_id=%s reason=%s", live_id, stopped_bridge.get("reason") or "unknown")
     replay_url = clean_html((request.get_json(silent=True) or {}).get("replay_url") or live.get("replay_url") or "")[:700]
     replay_is_cdn = bool(replay_url and replay_url.startswith((os.getenv("R2_PUBLIC_BASE_URL", "").rstrip("/") or "https://cdn.coinpilotx.app") + "/"))
-    recording_status = "replay_ready" if replay_is_cdn else "replay_unavailable"
-    recording_error = "" if replay_is_cdn else "No durable live recording asset was produced for this session."
+    has_mux_recording = bool(live.get("mux_live_stream_id"))
+    recording_status = "replay_ready" if replay_is_cdn else "processing_replay" if has_mux_recording else "replay_unavailable"
+    recording_error = "" if replay_is_cdn or has_mux_recording else "No durable live recording asset was produced for this session."
     viewer_count = int(live.get("viewer_count") or 0)
     cur.execute(
-        "UPDATE pulse_live_sessions SET status='ended', publish_state='ended', stream_health='ended', replay_url=?, recording_status=?, recording_error=?, ended_at=?, updated_at=? WHERE id=?",
+        "UPDATE pulse_live_sessions SET status='ended', publish_state='ended', stream_health='ended', agora_converter_status=CASE WHEN provider='agora' THEN 'stopped' ELSE agora_converter_status END, replay_url=?, recording_status=?, recording_error=?, ended_at=?, updated_at=? WHERE id=?",
         (replay_url if replay_is_cdn else "", recording_status, recording_error, now, now, live_id),
     )
     cur.execute("UPDATE pulse_live_streams SET status='ended', ended_at=?, updated_at=? WHERE session_id=?", (now, now, live_id))
@@ -104197,6 +104220,9 @@ def _init_db_impl():
         ("livekit_egress_id", "TEXT"),
         ("livekit_egress_status", "TEXT"),
         ("livekit_egress_error", "TEXT"),
+        ("agora_converter_id", "TEXT"),
+        ("agora_converter_status", "TEXT"),
+        ("agora_converter_error", "TEXT"),
         ("engagement_score", "INTEGER DEFAULT 0"),
         ("active_scene", "TEXT DEFAULT 'camera_only'"),
         ("audio_chain_json", "TEXT"),
@@ -104237,6 +104263,9 @@ def _init_db_impl():
         ("livekit_egress_id", "TEXT"),
         ("livekit_egress_status", "TEXT"),
         ("livekit_egress_error", "TEXT"),
+        ("agora_converter_id", "TEXT"),
+        ("agora_converter_status", "TEXT"),
+        ("agora_converter_error", "TEXT"),
         ("custom_category", "TEXT"),
     ], conn=conn)
     cur.execute("""

@@ -12,8 +12,8 @@ import { colors } from "../../theme/colors";
 /**
  * In-feed LIVE viewer. A live Reel plays inside the feed instead of bouncing the
  * user out to a web page or a detail screen. Transport, in priority order:
- *   1. LiveKit subscribe (real multi-guest stage — host + co-hosts as tiles)
- *   2. HLS playback_url via expo-av (when the room has no token / fails)
+ *   1. Mux HLS playback_url via expo-av for the normal audience
+ *   2. RTC subscribe only as the legacy LiveKit rollback when no HLS exists
  *   3. An honest "not available" surface — NEVER a fake camera preview.
  *
  * We only render a video tile when there is a real subscribed track, and only
@@ -41,6 +41,12 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
       }
       if (!liveId) {
         setMode(hlsUrl ? "hls" : "offline");
+        return;
+      }
+      // Audience playback is the canonical Mux output. Normal viewers must not
+      // join the interactive Agora stage or receive RTC credentials merely to watch.
+      if (hlsUrl) {
+        setMode("hls");
         return;
       }
       setMode("connecting");
