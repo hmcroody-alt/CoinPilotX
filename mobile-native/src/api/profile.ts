@@ -223,7 +223,9 @@ export async function toggleProfileFollow(profile: PulseProfile) {
 
 export async function listPublicProfilePosts(input: ProfileTargetInput | NativeProfileTarget) {
   const target = resolveProfileTarget(input);
-  const lookupKey = target?.publicPlayerId || target?.username || (target?.profileKey && !/^\d+$/.test(target.profileKey) ? target.profileKey : "");
+  const lookupKey = target?.userId
+    ? String(target.userId)
+    : target?.publicPlayerId || target?.username || target?.profileKey || "";
   if (!target || !lookupKey) return [];
   const data = await listFeed({ feed: "for_you", profile: lookupKey, limit: 20, offset: 0 });
   return data.posts || [];

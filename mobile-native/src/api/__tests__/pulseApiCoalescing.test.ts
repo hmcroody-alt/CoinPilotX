@@ -19,6 +19,8 @@ import { pulseApi } from "../pulseApi";
 describe("pulseApi in-flight read coalescing", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (mockGetSessionCookie as jest.Mock).mockResolvedValue("");
+    (mockGetSessionEnvelope as jest.Mock).mockResolvedValue(null);
   });
 
   it("shares simultaneous identical canonical GET requests", async () => {
@@ -43,5 +45,22 @@ describe("pulseApi in-flight read coalescing", () => {
       pulseApi("/api/pulse/save", { method: "POST", body: "{}" })
     ]);
     expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("attaches the current mobile bearer token to post writes immediately after login", async () => {
+    (mockGetSessionEnvelope as jest.Mock).mockResolvedValue({
+      version: 1,
+      userId: 42,
+      accessToken: "native-access-token",
+      accessTokenExpiresAt: Date.now() + 60_000,
+      refreshToken: "native-refresh-token",
+      refreshTokenExpiresAt: Date.now() + 3600_000
+    });
+    global.fetch = jest.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })) as jest.Mock;
+
+    await pulseApi("/api/pulse/posts", { method: "POST", body: "{}" });
+
+    const headers = (global.fetch as jest.Mock).mock.calls[0][1].headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer native-access-token");
   });
 });

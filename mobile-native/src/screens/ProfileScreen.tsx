@@ -79,6 +79,11 @@ export function ProfileScreen({ route, navigation }: Props) {
   );
   const profileOsTiles = useMemo(() => visibleProfileOsTiles(profileContext), [profileContext]);
 
+  function postsLookupKey(nextProfile: PulseProfile | null, fallbackKey = profileKey) {
+    if (!nextProfile) return fallbackKey;
+    return nextProfile.public_player_id || nextProfile.username || nextProfile.canonical_profile_key || String(nextProfile.user_id || fallbackKey || "");
+  }
+
   async function load(mode: "initial" | "refresh" = "initial") {
     setErrorState(null);
     setOffline(false);
@@ -92,14 +97,14 @@ export function ProfileScreen({ route, navigation }: Props) {
       if (owner) {
         const me = await getMyProfile();
         setProfile(me);
-        const key = me.public_player_id || me.username || "";
+        const key = postsLookupKey(me);
         const feed = key ? await listFeed({ feed: "for_you", profile: key, limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
         setPosts(feed.posts || []);
         setNextOffset(Number(feed.next_offset || feed.posts?.length || 0));
         setHasMore(Boolean(feed.has_more));
       } else {
         const publicProfile = await getPublicProfile(profileTarget);
-        const key = publicProfile.public_player_id || publicProfile.username || profileKey;
+        const key = postsLookupKey(publicProfile);
         const feed = key ? await listFeed({ feed: "for_you", profile: key, limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
         setPosts(feed.posts || []);
         setNextOffset(Number(feed.next_offset || feed.posts?.length || 0));
@@ -127,7 +132,7 @@ export function ProfileScreen({ route, navigation }: Props) {
 
   async function loadMorePosts() {
     if (loadingMore || !hasMore || !profile) return;
-    const key = profile.public_player_id || profile.username || profileKey;
+    const key = postsLookupKey(profile);
     if (!key) return;
     setLoadingMore(true);
     try {

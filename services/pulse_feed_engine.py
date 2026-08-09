@@ -330,9 +330,12 @@ def _public_author(row):
     else:
         primary_label = "Member"
     return {
+        "id": user_id if user_id > 0 else None,
+        "user_id": user_id if user_id > 0 else None,
         "public_player_id": public_player_id or None,
         "display_name": display[:80],
         "avatar_url": avatar_url,
+        "profile_url": f"/pulse/id/{user_id}" if user_id > 0 else (f"/pulse/@{public_player_id}" if public_player_id else ""),
         "rank": primary_label,
         "primary_label": primary_label,
         "badges": badges,
@@ -596,6 +599,7 @@ def _public_post(
         }
     return {
         "id": item.get("id"),
+        "user_id": int(item.get("user_id") or 0),
         "post_type": item.get("post_type") or "text",
         "title": display_title,
         "body": display_body,
@@ -1081,8 +1085,13 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         token = f"%{topic.strip('#').lower()}%"
         params.extend([token, token])
     if profile_public_player_id:
-        where.append("p.public_player_id=?")
-        params.append(str(profile_public_player_id)[:120])
+        profile_lookup = str(profile_public_player_id or "").strip().lstrip("@")[:160]
+        if profile_lookup.isdigit() or (profile_lookup.startswith("-") and profile_lookup[1:].isdigit()):
+            where.append("p.user_id=?")
+            params.append(int(profile_lookup))
+        else:
+            where.append("(p.public_player_id=? OR ap.public_player_id=? OR lower(u.username)=lower(?))")
+            params.extend([profile_lookup[:120], profile_lookup[:120], profile_lookup[:40]])
     if feed == "trending":
         order = "p.engagement_score DESC, p.created_at DESC"
     elif feed in {"for_you", "following"} and not topic and not profile_public_player_id:
