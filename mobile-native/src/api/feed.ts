@@ -79,6 +79,7 @@ export type PulseComment = {
 export type PulsePost = {
   id: number;
   post_id: number;
+  user_id?: number;
   title?: string;
   body: string;
   text?: string;
@@ -583,8 +584,11 @@ export function mediaKind(media: PulseMedia) {
 
 function normalizeAuthor(item: PulsePost): PulseAuthor {
   const author = item.author || item.user || {};
+  const authorUserId = Number(author.user_id || author.id || item.user_id || 0);
   return {
     ...author,
+    id: authorUserId > 0 ? authorUserId : author.id,
+    user_id: authorUserId > 0 ? authorUserId : author.user_id,
     display_name: author.display_name || author.name || item.author_name || item.author_username || "PulseSoc",
     username: author.username || author.handle || item.author_username || "",
     public_player_id: author.public_player_id || item.author_public_player_id || "",
