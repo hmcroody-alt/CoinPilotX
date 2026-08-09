@@ -45,7 +45,7 @@ export function ProfileScreen({ route, navigation }: Props) {
   const profileKey = profileTarget?.profileKey || "";
   const owner = !profileTarget;
   const { authState } = useAuth();
-  const viewerUserId = authState.user?.user_id;
+  const viewerUserId = Number(authState.user?.user_id || 0);
   const [profile, setProfile] = useState<PulseProfile | null>(null);
   const [posts, setPosts] = useState<PulsePost[]>([]);
   const [nextOffset, setNextOffset] = useState(0);
@@ -81,7 +81,19 @@ export function ProfileScreen({ route, navigation }: Props) {
 
   function postsLookupKey(nextProfile: PulseProfile | null, fallbackKey = profileKey) {
     if (!nextProfile) return fallbackKey;
-    return String(nextProfile.user_id || "") || nextProfile.canonical_profile_key || nextProfile.public_player_id || nextProfile.username || fallbackKey || "";
+    const canonicalUserId = Number(nextProfile.user_id || (owner ? viewerUserId : 0) || 0);
+    return (canonicalUserId > 0 ? String(canonicalUserId) : "") || nextProfile.canonical_profile_key || nextProfile.public_player_id || nextProfile.username || fallbackKey || "";
+  }
+
+  function profilePostTarget(nextProfile: PulseProfile) {
+    const canonicalUserId = Number(nextProfile.user_id || (owner ? viewerUserId : 0) || 0);
+    const key = postsLookupKey(nextProfile);
+    return {
+      userId: canonicalUserId > 0 ? canonicalUserId : undefined,
+      profileKey: key,
+      publicPlayerId: nextProfile.public_player_id,
+      username: nextProfile.username
+    };
   }
 
   async function load(mode: "initial" | "refresh" = "initial") {
@@ -97,15 +109,15 @@ export function ProfileScreen({ route, navigation }: Props) {
       if (owner) {
         const me = await getMyProfile();
         setProfile(me);
-        const key = postsLookupKey(me);
-        const feed = key ? await listPublicProfilePosts({ userId: me.user_id, profileKey: key }, { limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
+        const target = profilePostTarget(me);
+        const feed = target.profileKey ? await listPublicProfilePosts(target, { limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
         setPosts(feed.posts || []);
         setNextOffset(Number(feed.next_offset || feed.posts?.length || 0));
         setHasMore(Boolean(feed.has_more));
       } else {
         const publicProfile = await getPublicProfile(profileTarget);
-        const key = postsLookupKey(publicProfile);
-        const feed = key ? await listPublicProfilePosts({ userId: publicProfile.user_id, profileKey: key, publicPlayerId: publicProfile.public_player_id, username: publicProfile.username }, { limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
+        const target = profilePostTarget(publicProfile);
+        const feed = target.profileKey ? await listPublicProfilePosts(target, { limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
         setPosts(feed.posts || []);
         setNextOffset(Number(feed.next_offset || feed.posts?.length || 0));
         setHasMore(Boolean(feed.has_more));
@@ -132,11 +144,11 @@ export function ProfileScreen({ route, navigation }: Props) {
 
   async function loadMorePosts() {
     if (loadingMore || !hasMore || !profile) return;
-    const key = postsLookupKey(profile);
-    if (!key) return;
+    const target = profilePostTarget(profile);
+    if (!target.profileKey) return;
     setLoadingMore(true);
     try {
-      const page = await listPublicProfilePosts({ userId: profile.user_id, profileKey: key, publicPlayerId: profile.public_player_id, username: profile.username }, { limit: 20, offset: nextOffset });
+      const page = await listPublicProfilePosts(target, { limit: 20, offset: nextOffset });
       setPosts((current) => {
         const seen = new Set(current.map((item) => item.id));
         return current.concat((page.posts || []).filter((item) => !seen.has(item.id)));
@@ -150,9 +162,11 @@ export function ProfileScreen({ route, navigation }: Props) {
     }
   }
 
+  const profileLoadKey = owner ? `owner:${viewerUserId || "pending"}` : profileKey;
+
   useEffect(() => {
     load("initial").catch(() => undefined);
-  }, [profileKey]);
+  }, [profileLoadKey]);
 
   useEffect(() => {
     if (!owner) return undefined;
@@ -164,7 +178,7 @@ export function ProfileScreen({ route, navigation }: Props) {
       },
       isRefreshing: () => refreshingRef.current
     });
-  }, [owner, profileKey]);
+  }, [owner, profileLoadKey]);
 
   async function followProfile() {
     if (!profile || owner || followBusy) return;
