@@ -187,6 +187,9 @@ describe("native Live guest publishing API", () => {
         trace_id: "trace-44",
         participant_identity: "pulse-live-guest-8",
         room_connected: true,
+        provider: "livekit",
+        audio_tracks: 0,
+        video_tracks: 0,
         video_publication_sid: "video-sid",
         audio_publication_sid: "audio-sid"
       })

@@ -52,6 +52,41 @@ export function useAgoraLiveBroadcastRoom() {
       setState((s) => ({ ...s, error: "PulseSoc did not authorize this account to publish.", diagnosticCode: "AGORA_LIVE_PUBLISH_FORBIDDEN" }));
       return false;
     }
+    const activeEngine = engineRef.current;
+    const activeCredentials = credentialsRef.current;
+    const sameAgoraSeat = Boolean(activeEngine && activeCredentials && activeCredentials.provider === "agora" && activeCredentials.channelName === credentials.channelName && activeCredentials.uid === credentials.uid);
+    if (sameAgoraSeat && activeEngine && activeCredentials && Boolean(options.publish) !== Boolean(activeCredentials.canPublish)) {
+      try {
+        const agora = await import("react-native-agora");
+        const promote = Boolean(options.publish && credentials.canPublish);
+        if (activeEngine.renewToken(credentials.token) < 0) throw new Error("Agora rejected the refreshed co-host permission.");
+        if (promote) {
+          activeEngine.enableVideo();
+          activeEngine.setVideoEncoderConfiguration({ dimensions: { width: 720, height: 1280 }, frameRate: 30, bitrate: 0, orientationMode: agora.OrientationMode.OrientationModeAdaptive, degradationPreference: agora.DegradationPreference.MaintainBalanced });
+          if (activeEngine.setClientRole(agora.ClientRoleType.ClientRoleBroadcaster) < 0) throw new Error("Agora rejected the co-host role upgrade.");
+          if (activeEngine.updateChannelMediaOptions({ clientRoleType: agora.ClientRoleType.ClientRoleBroadcaster, publishMicrophoneTrack: true, publishCameraTrack: options.video !== false, autoSubscribeAudio: true, autoSubscribeVideo: true }) < 0) throw new Error("Agora rejected co-host camera or microphone publication.");
+          if (options.video !== false) activeEngine.startPreview();
+          const localTrack = options.video !== false ? { provider: "agora", uid: 0, local: true } : null;
+          const localParticipant: LiveParticipant = { identity: credentials.identity, name: credentials.participantName || "You", isLocal: true, isHost: false, videoTrack: localTrack, audioTrack: { provider: "agora", uid: 0 }, hasVideo: Boolean(localTrack), hasAudio: true, audioMuted: false, speaking: false };
+          setState((s) => ({ ...s, canPublish: true, audioEnabled: true, videoEnabled: Boolean(localTrack), localVideoTrack: localTrack, localAudioTrackCount: 0, localVideoTrackCount: 0, participants: [...s.participants.filter((participant) => !participant.isLocal), localParticipant], error: "", diagnosticCode: "" }));
+          emitAgoraLiveEvent({ name: "role_upgraded", liveId: credentials.broadcastId, uid: credentials.uid, reason: "authorized_cohost" });
+        } else {
+          activeEngine.muteLocalAudioStream(true);
+          activeEngine.muteLocalVideoStream(true);
+          activeEngine.stopPreview();
+          if (activeEngine.updateChannelMediaOptions({ clientRoleType: agora.ClientRoleType.ClientRoleAudience, publishMicrophoneTrack: false, publishCameraTrack: false, autoSubscribeAudio: true, autoSubscribeVideo: true }) < 0) throw new Error("Agora rejected the audience media settings.");
+          if (activeEngine.setClientRole(agora.ClientRoleType.ClientRoleAudience) < 0) throw new Error("Agora rejected the audience role restore.");
+          setState((s) => ({ ...s, canPublish: false, audioEnabled: false, videoEnabled: false, localVideoTrack: null, localAudioTrackCount: 0, localVideoTrackCount: 0, participants: s.participants.filter((participant) => !participant.isLocal), error: "", diagnosticCode: "" }));
+          emitAgoraLiveEvent({ name: "role_demoted", liveId: credentials.broadcastId, uid: credentials.uid, reason: "cohost_left" });
+        }
+        credentialsRef.current = credentials;
+        refreshRef.current = options.refreshCredentials || null;
+        return true;
+      } catch (error) {
+        setState((s) => ({ ...s, error: error instanceof Error ? error.message : "Agora co-host role change failed.", diagnosticCode: "AGORA_LIVE_ROLE_CHANGE_FAILED" }));
+        return false;
+      }
+    }
     if (engineRef.current) await disconnect("replaced_room");
     credentialsRef.current = credentials; refreshRef.current = options.refreshCredentials || null;
     setState((s) => ({ ...initial, supported: s.supported, connecting: true, connectionState: "connecting", canPublish: credentials.canPublish }));

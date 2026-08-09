@@ -97,8 +97,11 @@ export function canConnectAsCohostPublisher(
   return Boolean(
     credentials &&
       credentials.token &&
-      credentials.url &&
+      (credentials.provider === "agora"
+        ? credentials.appId && credentials.channelName && credentials.uid
+        : credentials.url) &&
       credentials.canPublish &&
+      credentials.canPublishSources.includes("camera") &&
       publishSources.includes("microphone") &&
       credentials.guestId > 0
   );

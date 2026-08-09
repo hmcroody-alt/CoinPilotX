@@ -1,5 +1,6 @@
 import {
   buildLiveStartPayload,
+  canConnectAsCohostPublisher,
   elapsedLabel,
   formatViewerCount,
   normalizeGuestRequest,
@@ -257,6 +258,41 @@ describe("normalizeLiveKitCredentials", () => {
       participantName: "Nova",
       traceId: "cohost-trace"
     });
+    expect(canConnectAsCohostPublisher(creds)).toBe(true);
+  });
+
+  it("accepts an authorized Agora co-host without requiring a LiveKit URL", () => {
+    const creds = normalizeLiveKitCredentials({
+      provider: "agora",
+      token: "agora-cohost-token",
+      app_id: "agora-app-id",
+      channel_name: "pulse-live-44",
+      uid: 88,
+      role: "cohost",
+      can_publish: true,
+      can_subscribe: true,
+      can_publish_sources: ["microphone", "camera"],
+      guest_id: 91,
+      request_id: 77
+    });
+    expect(creds?.url).toBe("");
+    expect(canConnectAsCohostPublisher(creds)).toBe(true);
+  });
+
+  it("rejects Agora self-promotion without an accepted guest slot", () => {
+    const creds = normalizeLiveKitCredentials({
+      provider: "agora",
+      token: "viewer-token",
+      app_id: "agora-app-id",
+      channel_name: "pulse-live-44",
+      uid: 88,
+      role: "viewer",
+      can_publish: false,
+      can_subscribe: true,
+      can_publish_sources: [],
+      guest_id: 0
+    });
+    expect(canConnectAsCohostPublisher(creds)).toBe(false);
   });
 
   it("returns null when the token or url is missing", () => {

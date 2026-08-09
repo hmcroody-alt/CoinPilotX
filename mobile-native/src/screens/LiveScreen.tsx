@@ -35,6 +35,7 @@ import {
   PulseLiveState,
   cancelJoinRequest,
   confirmGuestPublishComplete,
+  leaveGuest,
   getLiveJoinStatus,
   reactToLive,
   requestToJoinLive,
@@ -84,7 +85,10 @@ export function LiveScreen({ route, navigation }: Props) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoRef = useRef<Video>(null);
   const guestPublishKeyRef = useRef("");
+  const activeGuestIdRef = useRef(0);
   const room = useLiveBroadcastRoom();
+  const roomRef = useRef(room);
+  roomRef.current = room;
   const connectLiveRoom = room.joinAsViewer;
   const disconnectLiveRoom = room.leaveViewer;
   const setRemoteAudioEnabled = room.setRemoteAudioEnabled;
@@ -316,7 +320,10 @@ export function LiveScreen({ route, navigation }: Props) {
   const posterUrl = useMemo(() => livePosterUrl(state || active), [state, active]);
   const canPlayHls = liveSupportsNativePlayback(state || active) && !playbackFailed;
   const currentStatus = String(state?.status || active?.status || "").toLowerCase();
+  const currentProvider = String(room.provider || (state as any)?.provider || (active as any)?.provider || "livekit").toLowerCase();
+  const currentPublishState = String(state?.publish_state || active?.publish_state || "").toLowerCase();
   const liveMayAcceptWebRtc = Boolean(activeLiveId && !["ended", "offline", "archived", "deleted", "failed"].includes(currentStatus));
+  const liveReadyForGuest = Boolean(["live", "active"].includes(currentStatus) || (currentProvider === "agora" && currentPublishState === "agora_host_publishing"));
   const canUseWebRtc = Boolean((liveSupportsNativeWebRtc(state || active) || (!canPlayHls && liveMayAcceptWebRtc)) && !playbackFailed && !liveKitPlaybackFailed);
   const liveKitParticipants = useMemo(
     () =>
@@ -326,6 +333,7 @@ export function LiveScreen({ route, navigation }: Props) {
     [room.participants]
   );
   const liveKitVideoParticipant = liveKitParticipants.find((participant) => participant.videoTrack);
+  const localVideoParticipant = room.participants.find((participant) => participant.isLocal && participant.videoTrack);
   const soundLabel = canUseWebRtc
     ? room.connected
       ? room.remoteAudioTrackCount > 0
@@ -341,13 +349,13 @@ export function LiveScreen({ route, navigation }: Props) {
       : "Sound on";
   const currentGuest = state?.guest || null;
   const currentJoinRequest = state?.viewer_join_request || null;
-  const canRequestGuest = Boolean(activeLiveId && state?.accepting_guests && joined && !currentGuest && !currentJoinRequest);
+  const canRequestGuest = Boolean(activeLiveId && state?.accepting_guests && liveReadyForGuest && joined && room.connected && !currentGuest && !currentJoinRequest);
   const canCancelGuestRequest = Boolean(activeLiveId && joinRequestId && !currentGuest && ["pending", "requested"].includes(guestStatus));
   const guestIsLive = Boolean(currentGuest && room.connected && room.canPublish && room.localAudioTrackCount > 0);
   const guestActionLabel = guestPublishing
     ? "Joining…"
     : guestIsLive
-      ? "Guest Live"
+      ? "Leave Guest"
       : currentGuest
         ? "Join Guest"
         : canCancelGuestRequest
@@ -418,9 +426,13 @@ export function LiveScreen({ route, navigation }: Props) {
       const deadline = Date.now() + 15000;
       let lastMessage = "";
       while (Date.now() < deadline) {
+        const media = roomRef.current;
         const result = await confirmGuestPublishComplete(liveId, guestId, {
           traceId: credentialsTraceId,
-          participantIdentity: room.participants.find((participant) => participant.isLocal)?.identity || ""
+          participantIdentity: media.participants.find((participant) => participant.isLocal)?.identity || "",
+          provider: media.provider,
+          audioTracks: media.localAudioTrackCount,
+          videoTracks: media.localVideoTrack ? 1 : 0
         });
         lastMessage = result.message;
         if (result.state === "live") {
@@ -430,10 +442,32 @@ export function LiveScreen({ route, navigation }: Props) {
         }
         await new Promise((resolve) => setTimeout(resolve, Math.max(400, Math.min(result.retryAfterMs || 800, 1600))));
       }
-      throw new Error(lastMessage || "LiveKit did not confirm guest audio/video before timeout.");
+      throw new Error(lastMessage || "PulseSoc did not confirm guest audio/video before timeout.");
     },
-    [currentGuest?.guestId, room.participants, state?.guest?.guestId]
+    [currentGuest?.guestId, state?.guest?.guestId]
   );
+
+  const leaveGuestSeat = useCallback(async () => {
+    if (!activeLiveId || !currentGuest?.guestId || busy === "guest") return;
+    setBusy("guest");
+    setGuestError("");
+    try {
+      await leaveGuest(activeLiveId, currentGuest.guestId);
+      const viewerCredentials = await getLiveKitToken(activeLiveId, "viewer");
+      if (!viewerCredentials || !(await connectLiveRoom(viewerCredentials, { publish: false, refreshCredentials: () => getLiveKitToken(activeLiveId, "viewer") }))) {
+        throw new Error("Your co-host slot closed, but audience media could not be restored. Rejoin the Live.");
+      }
+      setGuestStatus("left");
+      setJoinRequestId(0);
+      guestPublishKeyRef.current = "";
+      await refreshLiveState(activeLiveId, "manual");
+      await refreshGuestStatus(activeLiveId).catch(() => undefined);
+    } catch (leaveError) {
+      setGuestError(leaveError instanceof Error ? leaveError.message : "Could not leave the co-host slot.");
+    } finally {
+      setBusy("");
+    }
+  }, [activeLiveId, busy, connectLiveRoom, currentGuest?.guestId, refreshGuestStatus]);
 
   const publishAsGuest = useCallback(async () => {
     if (!activeLiveId || guestPublishing || guestIsLive) return;
@@ -481,7 +515,14 @@ export function LiveScreen({ route, navigation }: Props) {
   ]);
 
   const handleGuestAction = useCallback(() => {
-    if (guestIsLive || guestPublishing) return;
+    if (guestPublishing) return;
+    if (guestIsLive) {
+      Alert.alert("Leave co-host?", "Your camera and microphone will turn off and you will return to the audience.", [
+        { text: "Stay live", style: "cancel" },
+        { text: "Leave co-host", style: "destructive", onPress: () => leaveGuestSeat().catch(() => undefined) }
+      ]);
+      return;
+    }
     if (currentGuest) {
       publishAsGuest().catch(() => undefined);
       return;
@@ -494,7 +535,7 @@ export function LiveScreen({ route, navigation }: Props) {
       return;
     }
     if (canRequestGuest) requestGuestSeat().catch(() => undefined);
-  }, [canCancelGuestRequest, canRequestGuest, cancelGuestSeatRequest, currentGuest, guestIsLive, guestPublishing, publishAsGuest, requestGuestSeat]);
+  }, [canCancelGuestRequest, canRequestGuest, cancelGuestSeatRequest, currentGuest, guestIsLive, guestPublishing, leaveGuestSeat, publishAsGuest, requestGuestSeat]);
 
   useEffect(() => {
     if (!activeLiveId || !currentGuest || guestIsLive || guestPublishing) return;
@@ -504,6 +545,21 @@ export function LiveScreen({ route, navigation }: Props) {
     guestPublishKeyRef.current = key;
     publishAsGuest().catch(() => undefined);
   }, [activeLiveId, currentGuest, guestIsLive, guestPublishing, publishAsGuest]);
+
+  useEffect(() => {
+    if (currentGuest?.guestId) {
+      activeGuestIdRef.current = currentGuest.guestId;
+      return;
+    }
+    if (!activeGuestIdRef.current || !activeLiveId || !room.canPublish || guestPublishing) return;
+    const removedGuestId = activeGuestIdRef.current;
+    activeGuestIdRef.current = 0;
+    getLiveKitToken(activeLiveId, "viewer")
+      .then((credentials) => credentials ? connectLiveRoom(credentials, { publish: false, refreshCredentials: () => getLiveKitToken(activeLiveId, "viewer") }) : false)
+      .then((restored) => { if (!restored) setGuestError("Your co-host slot ended. Rejoin the Live to restore audience media."); })
+      .catch(() => setGuestError("Your co-host slot ended. Rejoin the Live to restore audience media."));
+    setGuestStatus(`removed:${removedGuestId}`);
+  }, [activeLiveId, connectLiveRoom, currentGuest?.guestId, guestPublishing, room.canPublish]);
 
   useEffect(() => {
     if (canUseWebRtc) return;
@@ -587,7 +643,7 @@ export function LiveScreen({ route, navigation }: Props) {
                       {room.connected ? "Waiting for host media" : room.reconnecting ? "Reconnecting to Live" : "Connecting native Live"}
                     </Text>
                     <Text style={styles.unsupportedText}>
-                      {room.error || "PulseSoc is joining the existing LiveKit room and will show audio/video as soon as the host publishes media."}
+                      {room.error || "PulseSoc is joining the Live and will show audio/video as soon as the host publishes media."}
                     </Text>
                     {room.error ? (
                       <Pressable style={styles.primaryButton} onPress={() => connectNativePlayback(activeLiveId).catch(() => undefined)}>
@@ -600,6 +656,11 @@ export function LiveScreen({ route, navigation }: Props) {
                   <View style={styles.liveKitStatus}>
                     <View style={[styles.liveDot, styles.greenDot]} />
                     <Text style={styles.liveKitStatusText}>{room.remoteAudioTrackCount} audio · {room.remoteVideoTrackCount} video</Text>
+                  </View>
+                ) : null}
+                {guestIsLive && localVideoParticipant?.videoTrack ? (
+                  <View style={styles.guestPreview}>
+                    <VideoViewComponent videoTrack={localVideoParticipant.videoTrack} style={StyleSheet.absoluteFill} objectFit="cover" mirror zOrder={1} />
                   </View>
                 ) : null}
               </View>
@@ -622,7 +683,7 @@ export function LiveScreen({ route, navigation }: Props) {
               <View style={styles.unsupported}>
                 <Text style={styles.unsupportedTitle}>Live playback unavailable</Text>
                 <Text style={styles.unsupportedText}>
-                  PulseSoc did not return a native LiveKit room or HLS playback URL for this Live.
+                  {currentProvider === "livekit" ? "PulseSoc did not return a native LiveKit room or HLS playback URL for this Live." : "PulseSoc could not establish native playback for this Live."}
                 </Text>
                 <Pressable style={styles.primaryButton} onPress={() => openLiveWebFallback(activeLiveId).catch(() => undefined)}>
                   <Text style={styles.primaryButtonText}>Open Live Web Viewer</Text>
@@ -677,7 +738,7 @@ export function LiveScreen({ route, navigation }: Props) {
               </View>
               <Text style={styles.guestJoinText}>
                 {guestIsLive
-                  ? "Your camera and microphone are publishing through the same LiveKit room as the host."
+                  ? `Your camera and microphone are publishing through the same ${currentProvider === "agora" ? "Agora Live channel" : "LiveKit room"} as the host.`
                   : currentGuest
                     ? "Tap Join Guest to publish camera and microphone natively. PulseSoc confirms audio/video with the server before marking you live."
                     : currentJoinRequest
@@ -685,13 +746,23 @@ export function LiveScreen({ route, navigation }: Props) {
                       : "Ask to co-host. Your camera and microphone stay off until the host says yes."}
               </Text>
               {guestError ? <Text style={styles.guestJoinError}>{guestError}</Text> : null}
+              {guestIsLive ? (
+                <View style={styles.actionRow}>
+                  <Pressable style={styles.actionButton} onPress={() => room.setMicrophoneEnabled(!room.audioEnabled).catch((controlError) => setGuestError(controlError instanceof Error ? controlError.message : "Microphone control failed."))}>
+                    <Text style={styles.actionText}>{room.audioEnabled ? "Mute mic" : "Unmute mic"}</Text>
+                  </Pressable>
+                  <Pressable style={styles.actionButton} onPress={() => room.setCameraEnabled(!room.videoEnabled).catch((controlError) => setGuestError(controlError instanceof Error ? controlError.message : "Camera control failed."))}>
+                    <Text style={styles.actionText}>{room.videoEnabled ? "Camera off" : "Camera on"}</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               <Pressable
                 style={[
                   styles.guestJoinButton,
                   guestIsLive ? styles.guestJoinButtonLive : undefined,
                   (!canRequestGuest && !canCancelGuestRequest && !currentGuest) || guestPublishing ? styles.disabledButton : undefined
                 ]}
-                disabled={guestIsLive || guestPublishing || (!canRequestGuest && !canCancelGuestRequest && !currentGuest)}
+                disabled={guestPublishing || (!canRequestGuest && !canCancelGuestRequest && !currentGuest)}
                 onPress={handleGuestAction}
               >
                 <Text style={styles.guestJoinButtonText}>{guestActionLabel}</Text>
@@ -995,6 +1066,18 @@ const styles = StyleSheet.create({
   },
   greenDot: {
     backgroundColor: colors.accent
+  },
+  guestPreview: {
+    backgroundColor: colors.surface,
+    borderColor: colors.accent,
+    borderRadius: 12,
+    borderWidth: 1,
+    bottom: 52,
+    height: 176,
+    overflow: "hidden",
+    position: "absolute",
+    right: 12,
+    width: 110
   },
   guestJoinButton: {
     alignItems: "center",

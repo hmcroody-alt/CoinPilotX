@@ -89,6 +89,23 @@ class AgoraTokenGenerationTests(unittest.TestCase):
         self.assertIn("viewer_media_timeout", reels)
         self.assertIn("15_000", reels)
 
+    def test_agora_cohost_uses_provider_ready_state_and_server_confirmed_tracks(self) -> None:
+        backend = (ROOT / "bot.py").read_text(encoding="utf-8")
+        ready = backend[backend.index("def pulse_live_cohost_live_status"):backend.index("def pulse_live_guest_request_payload")]
+        confirmation = backend[backend.index("def api_pulse_live_guest_publish_complete"):backend.index('@webhook_app.route("/api/pulse/live/<int:live_id>/debug-event"')]
+        adapter = (ROOT / "mobile-native/src/live/useAgoraLiveBroadcastRoom.ts").read_text(encoding="utf-8")
+        screen = (ROOT / "mobile-native/src/screens/LiveScreen.tsx").read_text(encoding="utf-8")
+        self.assertIn('provider == "agora"', ready)
+        self.assertIn('publish_state == "agora_host_publishing"', ready)
+        self.assertIn('stream_health == "agora_connected"', ready)
+        self.assertIn('is_agora_live', confirmation)
+        self.assertIn('audio_track_count <= 0 or video_track_count <= 0', confirmation)
+        self.assertIn('not in {"accepted", "joining", "joined", "publishing"}', confirmation)
+        self.assertIn("setClientRole(agora.ClientRoleType.ClientRoleBroadcaster)", adapter)
+        self.assertIn("setClientRole(agora.ClientRoleType.ClientRoleAudience)", adapter)
+        self.assertIn('await leaveGuest(activeLiveId, currentGuest.guestId)', screen)
+        self.assertNotIn('room.error || "PulseSoc is joining the existing LiveKit room', screen)
+
 
 if __name__ == "__main__":
     unittest.main()

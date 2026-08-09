@@ -333,6 +333,14 @@ export const muteGuest = (liveId: number, guestId: number) => guestAction(liveId
 export const unmuteGuest = (liveId: number, guestId: number) => guestAction(liveId, guestId, "unmute");
 export const removeGuest = (liveId: number, guestId: number) => guestAction(liveId, guestId, "remove");
 
+/** Leave your own accepted co-host slot; enforced server-side. */
+export async function leaveGuest(liveId: number, guestId: number) {
+  return pulseApi<{ ok?: boolean; status?: string; guest_id?: number; message?: string }>(
+    `/api/pulse/live/${liveId}/guests/${guestId}/leave`,
+    { method: "POST", body: JSON.stringify({ source: "native" }) }
+  );
+}
+
 /**
  * Moderate a single live-chat comment. `delete`/`pin`/`unpin` are host-only and
  * enforced server-side; `report` is available to any viewer. Wired to
@@ -399,6 +407,9 @@ export async function confirmGuestPublishComplete(
     participantIdentity?: string;
     videoPublicationSid?: string;
     audioPublicationSid?: string;
+    provider?: "livekit" | "agora";
+    audioTracks?: number;
+    videoTracks?: number;
   } = {}
 ) {
   const data = await pulseApi<Record<string, unknown>>(`/api/pulse/live/${liveId}/guests/${guestId}/publish-complete`, {
@@ -407,6 +418,9 @@ export async function confirmGuestPublishComplete(
       trace_id: payload.traceId || "",
       participant_identity: payload.participantIdentity || "",
       room_connected: true,
+      provider: payload.provider || "livekit",
+      audio_tracks: Math.max(0, Number(payload.audioTracks || 0)),
+      video_tracks: Math.max(0, Number(payload.videoTracks || 0)),
       video_publication_sid: payload.videoPublicationSid || "",
       audio_publication_sid: payload.audioPublicationSid || ""
     })

@@ -45952,11 +45952,15 @@ def pulse_live_session_accepts_guest_requests(live):
 
 def pulse_live_cohost_live_status(live):
     status = str((live or {}).get("status") or "").lower()
+    provider = str((live or {}).get("provider") or "").lower()
     publish_state = str((live or {}).get("publish_state") or "").lower()
+    stream_health = str((live or {}).get("stream_health") or "").lower()
     mux_status = str((live or {}).get("mux_live_status") or "").lower()
     if status in {"ended", "offline", "complete", "finished"} or publish_state == "ended":
         return "ended"
     if status in {"live", "active"} or mux_status in {"active", "live"}:
+        return "active"
+    if provider == "agora" and publish_state == "agora_host_publishing" and stream_health == "agora_connected" and bool((live or {}).get("is_live")):
         return "active"
     return "initializing"
 
@@ -47285,6 +47289,36 @@ def api_pulse_live_guest_publish_complete(live_id, guest_id):
         conn.close()
         return jsonify({"ok": True, "status": "live", "state": "live", "step": "cohost_live", "trace_id": trace_id, "guest": pulse_live_guest_payload(guest), "message": "Co-host is live."})
     now = datetime.utcnow().isoformat(timespec="seconds")
+    provider = str(live.get("provider") or "").lower()
+    publish_state = str(live.get("publish_state") or "").lower()
+    is_agora_live = provider == "agora" or publish_state == "agora_host_publishing"
+    if is_agora_live:
+        if str(guest.get("status") or "").lower() not in {"accepted", "joining", "joined", "publishing"}:
+            conn.close()
+            return pulse_live_cohost_error("NOT_AUTHORIZED", status=403, message="This co-host slot is no longer authorized to publish.", step="participant_confirmation", trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"), request_id=guest.get("request_id"))
+        audio_track_count = max(0, safe_int(payload.get("audio_tracks"), 0))
+        video_track_count = max(0, safe_int(payload.get("video_tracks"), 0))
+        if audio_track_count <= 0 or video_track_count <= 0:
+            missing_event = "audio_track_published" if audio_track_count <= 0 else "video_track_published"
+            conn.close()
+            return jsonify({"ok": True, "status": guest.get("status") or "joining", "state": guest.get("status") or "joining", "step": "track_confirmation", "trace_id": trace_id, "guest_id": guest_id, "promotion_pending": True, "missing_event": missing_event, "retry_after_ms": 500, "message": f"Waiting for Agora {missing_event.replace('_', ' ')}."}), 202
+        request_id = int(guest.get("request_id") or 0)
+        participant_identity = clean_html(payload.get("participant_identity") or f"agora-user-{int(user.get('user_id') or 0)}")[:160]
+        cur.execute("UPDATE pulse_live_guests SET status='live', participant_sid=?, participant_joined_at=COALESCE(participant_joined_at,?), joined_at=COALESCE(joined_at,?), audio_published=1, video_published=1, live_at=COALESCE(live_at,?), updated_at=? WHERE id=?", (participant_identity, now, now, now, now, guest_id))
+        cur.execute("UPDATE pulse_live_guest_requests SET status='live', updated_at=? WHERE id=?", (now, request_id))
+        host_user_id = int(live.get("user_id") or 0)
+        pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=host_user_id, request_id=request_id, step="cohost_participant_confirmed", trace_id=trace_id, metadata={"provider": "agora", "participant_identity": participant_identity, "result": "completed"}, post_id=int(live.get("feed_post_id") or 0))
+        pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=host_user_id, request_id=request_id, step="cohost_publish_confirmed", trace_id=trace_id, metadata={"provider": "agora", "audio_tracks": audio_track_count, "video_tracks": video_track_count, "result": "completed"}, post_id=int(live.get("feed_post_id") or 0))
+        pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=host_user_id, request_id=request_id, step="cohost_promotion_completed", trace_id=trace_id, metadata={"provider": "agora", "guest_id": guest_id, "result": "completed"}, post_id=int(live.get("feed_post_id") or 0))
+        conn.commit()
+        live_guest = pulse_live_active_guest(cur, live_id, user["user_id"])
+        conn.close()
+        try:
+            pulse_emit_event("live_cohost_publish_complete", {"live_id": live_id, "guest_id": guest_id, "viewer_user_id": user["user_id"], "host_user_id": host_user_id, "request_id": request_id, "trace_id": trace_id, "provider": "agora", "audio_tracks": audio_track_count, "video_tracks": video_track_count}, user["user_id"], int(live.get("feed_post_id") or 0))
+            pulse_emit_event("live_cohost_guest_live", {"live_id": live_id, "guest_id": guest_id, "viewer_user_id": user["user_id"], "host_user_id": host_user_id, "request_id": request_id, "trace_id": trace_id, "provider": "agora", "state": "live"}, user["user_id"], int(live.get("feed_post_id") or 0))
+        except Exception:
+            logging.exception("PULSE_COHOST_AGORA_PROMOTION_REALTIME_FAILED trace_id=%s live_id=%s guest_id=%s", trace_id, live_id, guest_id)
+        return jsonify({"ok": True, "status": "live", "state": "live", "step": "cohost_live", "trace_id": trace_id, "guest": pulse_live_guest_payload(live_guest), "message": "Co-host is live through Agora."})
     room_name = clean_html(guest.get("livekit_room") or live.get("webrtc_room_id") or f"pulse-live-{live_id}")[:120]
     identity = clean_html(guest.get("livekit_identity") or "")[:160]
     inspected = pulse_livekit_room_participants(room_name, trace_id=trace_id, live_id=live_id)
