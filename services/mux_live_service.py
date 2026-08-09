@@ -170,6 +170,31 @@ def create_mux_asset_from_live_recording(*, recording_asset_id: str = "", source
     return {"ok": False, "message": "Recording asset id or source URL is required."}
 
 
+def create_mux_asset_from_private_recording(source_url: str) -> dict:
+    """Create a Mux VOD asset without logging or preflighting its signed URL."""
+    source_url = str(source_url or "").strip()
+    if not source_url.startswith("https://"):
+        return {"ok": False, "message": "A private HTTPS recording URL is required."}
+    response = _request(
+        "/assets",
+        method="POST",
+        payload={"input": source_url, "playback_policy": ["public"], "mp4_support": "standard"},
+        timeout=float(os.getenv("MUX_ASSET_CREATE_TIMEOUT_SECONDS", "15")),
+    )
+    if not response.get("ok"):
+        return response
+    data = response.get("data") or {}
+    playback_id = next((item.get("id") for item in data.get("playback_ids") or [] if item.get("id")), "")
+    return {
+        "ok": bool(data.get("id")),
+        "mux_recording_asset_id": data.get("id") or "",
+        "mux_recording_playback_id": playback_id,
+        "playback_url": playback_url(playback_id),
+        "mux_status": data.get("status") or "",
+        "raw": data,
+    }
+
+
 def verify_mux_webhook_signature(payload: bytes, signature_header: str | None, *, tolerance_seconds: int = 300) -> dict:
     secret = os.getenv("MUX_WEBHOOK_SECRET", "").strip()
     if not secret:

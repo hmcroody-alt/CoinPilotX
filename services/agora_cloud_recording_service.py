@@ -6,6 +6,8 @@ import base64
 import json
 import logging
 import os
+import posixpath
+import tempfile
 from urllib.error import HTTPError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
@@ -85,5 +87,69 @@ def stop(*, channel_name: str, resource_id: str, sid: str, recording_uid: str) -
 
 def public_recording_url(prefix: str, filename: str) -> str:
     base = os.getenv("R2_PUBLIC_BASE_URL", "").rstrip("/")
-    parts = [quote(p, safe="") for p in f"{prefix}/{filename}".strip("/").split("/")]
+    prefix = str(prefix or "").strip("/")
+    filename = str(filename or "").strip("/")
+    key = filename if filename.startswith(f"{prefix}/") else f"{prefix}/{filename}".strip("/")
+    parts = [quote(p, safe="") for p in key.split("/")]
     return f"{base}/{'/'.join(parts)}" if base and filename else ""
+
+
+def prepare_private_mux_input(prefix: str, filename: str) -> dict:
+    """Build a private, lossless MPEG-TS input Mux can fetch safely.
+
+    Agora returns a finalized HLS playlist whose segments remain private in R2.
+    Mux cannot follow those private relative segment URLs. Preserve the exact
+    media packets by concatenating the playlist's ordered TS segments into one
+    private R2 object and return only a short-lived SigV4 URL in memory.
+    """
+    try:
+        import boto3
+        from botocore.config import Config
+
+        prefix = str(prefix or "").strip("/")
+        filename = str(filename or "").strip("/")
+        manifest_key = filename if filename.startswith(f"{prefix}/") else f"{prefix}/{filename}".strip("/")
+        if not manifest_key.endswith(".m3u8"):
+            return {"ok": False, "reason": "invalid_manifest"}
+        client = boto3.client(
+            "s3",
+            endpoint_url=os.environ["R2_ENDPOINT_URL"],
+            aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+            aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+            config=Config(signature_version="s3v4"),
+        )
+        bucket = os.environ["R2_BUCKET"]
+        manifest = client.get_object(Bucket=bucket, Key=manifest_key)["Body"].read().decode("utf-8", "replace")
+        base_dir = posixpath.dirname(manifest_key)
+        segment_keys = []
+        for line in manifest.splitlines():
+            uri = line.strip()
+            if not uri or uri.startswith("#"):
+                continue
+            if "://" in uri:
+                return {"ok": False, "reason": "external_segment"}
+            segment_key = posixpath.normpath(posixpath.join(base_dir, uri))
+            if not segment_key.startswith(f"{base_dir}/"):
+                return {"ok": False, "reason": "invalid_segment_path"}
+            segment_keys.append(segment_key)
+        if not segment_keys:
+            return {"ok": False, "reason": "empty_recording"}
+        mux_key = posixpath.join(base_dir, "mux-ingest.ts")
+        total_bytes = 0
+        with tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024) as output:
+            for segment_key in segment_keys:
+                body = client.get_object(Bucket=bucket, Key=segment_key)["Body"]
+                while True:
+                    chunk = body.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    output.write(chunk)
+                    total_bytes += len(chunk)
+            output.seek(0)
+            client.upload_fileobj(output, bucket, mux_key, ExtraArgs={"ContentType": "video/mp2t"})
+        expires = max(900, min(int(os.getenv("R2_MUX_SIGNED_URL_TTL_SECONDS", "7200")), 21600))
+        input_url = client.generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": mux_key}, ExpiresIn=expires)
+        return {"ok": True, "input_url": input_url, "object_key": mux_key, "bytes": total_bytes, "segments": len(segment_keys)}
+    except Exception as exc:
+        logging.warning("AGORA_RECORDING_MUX_INPUT_FAILED error_type=%s", type(exc).__name__)
+        return {"ok": False, "reason": "mux_input_failed", "message": "The private recording could not be prepared for Mux."}

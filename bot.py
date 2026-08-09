@@ -49120,11 +49120,14 @@ def api_pulse_live_end(live_id):
             logging.warning("PULSE_LIVE_AGORA_MUX_BRIDGE_STOP_FAILED live_id=%s reason=%s", live_id, stopped_bridge.get("reason") or "unknown")
     recording_finalize = {}
     mux_recording = {}
-    if (live.get("provider") or "").strip().lower() == "agora" and live.get("agora_recording_sid"):
+    if live.get("agora_recording_sid"):
         recording_finalize = agora_cloud_recording_service.stop(channel_name=live.get("webrtc_room_id") or f"pulse-live-{live_id}", resource_id=live.get("agora_recording_resource_id") or "", sid=live.get("agora_recording_sid") or "", recording_uid=live.get("agora_recording_uid") or "")
         if recording_finalize.get("ok") and recording_finalize.get("filename"):
-            source_url = agora_cloud_recording_service.public_recording_url(live.get("agora_recording_prefix") or "", recording_finalize.get("filename") or "")
-            mux_recording = mux_live_service.create_mux_asset_from_live_recording(source_url=source_url)
+            mux_input = agora_cloud_recording_service.prepare_private_mux_input(live.get("agora_recording_prefix") or "", recording_finalize.get("filename") or "")
+            if mux_input.get("ok"):
+                mux_recording = mux_live_service.create_mux_asset_from_private_recording(mux_input.get("input_url") or "")
+            else:
+                mux_recording = mux_input
         elif not recording_finalize.get("ok"):
             logging.warning("PULSE_LIVE_AGORA_RECORDING_STOP_FAILED live_id=%s reason=%s", live_id, recording_finalize.get("reason") or "unknown")
     replay_url = clean_html((request.get_json(silent=True) or {}).get("replay_url") or live.get("replay_url") or "")[:700]

@@ -52,3 +52,4 @@ def test_stop_selects_finalized_hls_manifest(monkeypatch):
 def test_recording_url_is_scoped_and_encoded(monkeypatch):
     monkeypatch.setenv("R2_PUBLIC_BASE_URL", "https://media.example.test/")
     assert recording.public_recording_url("pulsesoc/live-recordings/42", "final stream.m3u8") == "https://media.example.test/pulsesoc/live-recordings/42/final%20stream.m3u8"
+    assert recording.public_recording_url("pulsesoc/live-recordings/42", "pulsesoc/live-recordings/42/final stream.m3u8") == "https://media.example.test/pulsesoc/live-recordings/42/final%20stream.m3u8"
