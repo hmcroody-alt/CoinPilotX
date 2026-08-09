@@ -322,12 +322,9 @@ export function LiveScreen({ route, navigation }: Props) {
   const currentStatus = String(state?.status || active?.status || "").toLowerCase();
   const currentProvider = String(room.provider || (state as any)?.provider || (active as any)?.provider || "livekit").toLowerCase();
   const currentPublishState = String(state?.publish_state || active?.publish_state || "").toLowerCase();
-  const currentGuest = state?.guest || null;
-  const currentJoinRequest = state?.viewer_join_request || null;
   const liveMayAcceptWebRtc = Boolean(activeLiveId && !["ended", "offline", "archived", "deleted", "failed"].includes(currentStatus));
-  const liveReadyForGuest = Boolean(["live", "active"].includes(currentStatus) || (currentProvider === "agora" && ["agora_host_publishing", "agora_mux_live"].includes(currentPublishState)));
-  const interactiveGuest = Boolean(currentGuest && !["left", "removed", "denied", "cancelled"].includes(String(currentGuest.status || "").toLowerCase()));
-  const canUseWebRtc = Boolean((interactiveGuest || (!canPlayHls && (liveSupportsNativeWebRtc(state || active) || liveMayAcceptWebRtc))) && !playbackFailed && !liveKitPlaybackFailed);
+  const liveReadyForGuest = Boolean(["live", "active"].includes(currentStatus) || (currentProvider === "agora" && currentPublishState === "agora_host_publishing"));
+  const canUseWebRtc = Boolean((currentProvider === "agora" || liveSupportsNativeWebRtc(state || active) || (!canPlayHls && liveMayAcceptWebRtc)) && !playbackFailed && !liveKitPlaybackFailed);
   const liveKitParticipants = useMemo(
     () =>
       room.participants
@@ -350,7 +347,9 @@ export function LiveScreen({ route, navigation }: Props) {
     : muted
       ? "Muted"
       : "Sound on";
-  const canRequestGuest = Boolean(activeLiveId && state?.accepting_guests && liveReadyForGuest && joined && !currentGuest && !currentJoinRequest);
+  const currentGuest = state?.guest || null;
+  const currentJoinRequest = state?.viewer_join_request || null;
+  const canRequestGuest = Boolean(activeLiveId && state?.accepting_guests && liveReadyForGuest && joined && room.connected && !currentGuest && !currentJoinRequest);
   const canCancelGuestRequest = Boolean(activeLiveId && joinRequestId && !currentGuest && ["pending", "requested"].includes(guestStatus));
   const guestIsLive = Boolean(currentGuest && room.connected && room.canPublish && room.localAudioTrackCount > 0);
   const guestActionLabel = guestPublishing
