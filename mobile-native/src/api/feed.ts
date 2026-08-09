@@ -366,13 +366,14 @@ export async function toggleFollowAuthor(post: PulsePost) {
     post.author_username ||
     "";
   const followedUserId = Number(target?.userId || author.user_id || author.id || 0);
+  const body: Record<string, string | number> = {
+    public_player_id: publicPlayerId || "",
+    followed_public_player_id: publicPlayerId || ""
+  };
+  if (followedUserId > 0) body.followed_user_id = followedUserId;
   return pulseApi<{ ok?: boolean; following?: boolean; message?: string }>("/api/pulse/follows/toggle", {
     method: "POST",
-    body: JSON.stringify({
-      followed_user_id: followedUserId || 0,
-      public_player_id: publicPlayerId || "",
-      followed_public_player_id: publicPlayerId || ""
-    })
+    body: JSON.stringify(body)
   });
 }
 
@@ -389,15 +390,18 @@ export async function mutePostAuthor(post: PulsePost, reason = "Muted from Home"
     post.author_username ||
     "";
   const mutedUserId = Number(target?.userId || author.user_id || author.id || 0);
+  const body: Record<string, string | number> = {
+    public_player_id: publicPlayerId || "",
+    muted_public_player_id: publicPlayerId || "",
+    reason
+  };
+  if (mutedUserId > 0) {
+    body.muted_user_id = mutedUserId;
+    body.user_id = mutedUserId;
+  }
   return pulseApi<{ ok?: boolean; muted?: boolean; muted_user_id?: number; message?: string }>("/api/pulse/users/mute", {
     method: "POST",
-    body: JSON.stringify({
-      muted_user_id: mutedUserId || 0,
-      user_id: mutedUserId || 0,
-      public_player_id: publicPlayerId || "",
-      muted_public_player_id: publicPlayerId || "",
-      reason
-    })
+    body: JSON.stringify(body)
   });
 }
 

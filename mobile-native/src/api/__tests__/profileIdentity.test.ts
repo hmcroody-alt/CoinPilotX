@@ -1,4 +1,4 @@
-const mockPulseApi = jest.fn(async (_path?: string, _options?: RequestInit) => ({ posts: [], next_offset: 0, has_more: false }));
+const mockPulseApi = jest.fn<Promise<any>, [string?, RequestInit?]>(async (_path?: string, _options?: RequestInit) => ({ posts: [], next_offset: 0, has_more: false }));
 
 jest.mock("../pulseApi", () => ({
   pulseApi: (path: string, options?: RequestInit) => mockPulseApi(path, options)
@@ -43,6 +43,20 @@ describe("new-user profile identity", () => {
     expect(mockPulseApi).toHaveBeenCalledWith(expect.stringContaining("/api/pulse/profile/902/posts?"), undefined);
   });
 
+  it("falls back to the deployed feed profile contract when the profile posts route is empty", async () => {
+    mockPulseApi
+      .mockResolvedValueOnce({ posts: [], next_offset: 0, has_more: false })
+      .mockResolvedValueOnce({ posts: [{ id: 81, post_id: 81, user_id: 902, body: "visible profile post" } as PulsePost], next_offset: 1, has_more: false });
+
+    const result = await listPublicProfilePosts({ userId: 902, username: "fresh902" });
+
+    expect(mockPulseApi).toHaveBeenNthCalledWith(1, expect.stringContaining("/api/pulse/profile/902/posts?"), undefined);
+    expect(mockPulseApi).toHaveBeenNthCalledWith(2, expect.stringContaining("/api/pulse/feed?"), undefined);
+    expect(mockPulseApi.mock.calls[1][0]).toContain("profile=fresh902");
+    expect(result.posts).toHaveLength(1);
+    expect(result.posts[0].id).toBe(81);
+  });
+
   it("keeps pagination on the canonical profile posts route", async () => {
     await listPublicProfilePosts({ userId: 903, username: "fresh_user" }, { limit: 12, offset: 24 });
 
@@ -61,17 +75,42 @@ describe("new-user profile identity", () => {
 
     await toggleFollowAuthor(post);
 
+    const body = JSON.parse(String(mockPulseApi.mock.calls[0][1]?.body || "{}"));
     expect(mockPulseApi).toHaveBeenCalledWith(
       "/api/pulse/follows/toggle",
       expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          followed_user_id: 904,
-          public_player_id: "TestMeNow",
-          followed_public_player_id: "TestMeNow"
-        })
+        method: "POST"
       })
     );
+    expect(body).toEqual({
+      followed_user_id: 904,
+      public_player_id: "TestMeNow",
+      followed_public_player_id: "TestMeNow"
+    });
+  });
+
+  it("does not poison public-id follow resolution with a zero user id", async () => {
+    const post = normalizePost({
+      id: 80,
+      post_id: 80,
+      body: "public id only",
+      author_public_player_id: "PLS-000080",
+      author: { display_name: "Public Only" }
+    } as PulsePost);
+
+    await toggleFollowAuthor(post);
+
+    const body = JSON.parse(String(mockPulseApi.mock.calls[0][1]?.body || "{}"));
+    expect(mockPulseApi).toHaveBeenCalledWith(
+      "/api/pulse/follows/toggle",
+      expect.objectContaining({
+        method: "POST"
+      })
+    );
+    expect(body).toEqual({
+      public_player_id: "PLS-000080",
+      followed_public_player_id: "PLS-000080"
+    });
   });
 
   it("keeps feed mute actions on the same canonical author target", async () => {
@@ -86,18 +125,19 @@ describe("new-user profile identity", () => {
 
     await mutePostAuthor(post);
 
+    const body = JSON.parse(String(mockPulseApi.mock.calls[0][1]?.body || "{}"));
     expect(mockPulseApi).toHaveBeenCalledWith(
       "/api/pulse/users/mute",
       expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          muted_user_id: 905,
-          user_id: 905,
-          public_player_id: "PLS-000905",
-          muted_public_player_id: "PLS-000905",
-          reason: "Muted from Home"
-        })
+        method: "POST"
       })
     );
+    expect(body).toEqual({
+      muted_user_id: 905,
+      user_id: 905,
+      public_player_id: "PLS-000905",
+      muted_public_player_id: "PLS-000905",
+      reason: "Muted from Home"
+    });
   });
 });

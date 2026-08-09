@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSE_API_BASE_URL } from "./config";
-import { FeedResponse, normalizePosts, PulsePost } from "./feed";
+import { FeedResponse, listFeed, normalizePosts, PulsePost } from "./feed";
 import { PulseApiError, pulseApi } from "./pulseApi";
 import {
   NativeProfileTarget,
@@ -227,18 +227,43 @@ export async function listPublicProfilePosts(input: ProfileTargetInput | NativeP
     ? String(target.userId)
     : target?.publicPlayerId || target?.username || target?.profileKey || "";
   if (!target || !lookupKey) return { ok: true, posts: [], feed: [], next_offset: 0, has_more: false };
+  const fallbackLookupKey = target.publicPlayerId || target.username || target.profileKey || lookupKey;
+  const fallbackToFeedProfile = async () => {
+    const fallback = await listFeed({
+      feed: "for_you",
+      profile: fallbackLookupKey,
+      limit: options.limit || 20,
+      offset: options.offset || 0
+    });
+    const fallbackPosts = options.mediaOnly
+      ? (fallback.posts || []).filter((post) => post.media?.length || post.media_assets?.length || post.attachments?.length)
+      : fallback.posts || [];
+    return {
+      ...fallback,
+      posts: fallbackPosts,
+      feed: fallbackPosts,
+      next_offset: Number(fallback.next_offset ?? (options.offset || 0) + fallbackPosts.length),
+      has_more: Boolean(fallback.has_more)
+    };
+  };
   const query = new URLSearchParams();
   query.set("limit", String(options.limit || 20));
   query.set("offset", String(options.offset || 0));
   if (options.mediaOnly) query.set("media", "1");
-  const data = await pulseApi<FeedResponse>(`/api/pulse/profile/${encodeURIComponent(lookupKey)}/posts?${query.toString()}`);
-  const posts = normalizePosts(data.posts || data.feed || []);
-  return {
-    ...data,
-    posts,
-    next_offset: Number(data.next_offset ?? (options.offset || 0) + posts.length),
-    has_more: Boolean(data.has_more)
-  };
+  try {
+    const data = await pulseApi<FeedResponse>(`/api/pulse/profile/${encodeURIComponent(lookupKey)}/posts?${query.toString()}`);
+    const posts = normalizePosts(data.posts || data.feed || []);
+    if (!posts.length && !data.has_more && fallbackLookupKey) return fallbackToFeedProfile();
+    return {
+      ...data,
+      posts,
+      next_offset: Number(data.next_offset ?? (options.offset || 0) + posts.length),
+      has_more: Boolean(data.has_more)
+    };
+  } catch (error) {
+    if (fallbackLookupKey) return fallbackToFeedProfile();
+    throw error;
+  }
 }
 
 export async function loadCachedProfile(cacheKey: string | NativeProfileTarget = "me") {
