@@ -74,7 +74,7 @@ describe("restoreSession deterministic bootstrap phases", () => {
     const state = await restoreSession();
     expect(state.phase).toBe("AUTHENTICATED");
     expect(state.status).toBe("signedIn");
-    expect(state.user).toEqual(user);
+    expect(state.user).toEqual(expect.objectContaining(user));
   });
 
   it("UNAUTHENTICATED on a clean first launch (no session, nothing to recover)", async () => {
@@ -100,7 +100,7 @@ describe("restoreSession deterministic bootstrap phases", () => {
     recoverMock.mockResolvedValue("refreshed");
     const state = await restoreSession();
     expect(state.phase).toBe("AUTHENTICATED");
-    expect(state.user).toEqual(user);
+    expect(state.user).toEqual(expect.objectContaining(user));
   });
 
   it("RECOVERABLE_ERROR when the network is unreachable and no valid cache exists", async () => {
@@ -116,7 +116,7 @@ describe("restoreSession deterministic bootstrap phases", () => {
     getSessionMock.mockRejectedValue(new PulseApiError("offline", 503, "request_unreachable"));
     const state = await restoreSession();
     expect(state.phase).toBe("AUTHENTICATED");
-    expect(state.user).toEqual(user);
+    expect(state.user).toEqual(expect.objectContaining(user));
   });
 
   it("FATAL_ERROR on an unexpected non-transient failure with no cache", async () => {

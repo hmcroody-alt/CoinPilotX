@@ -101,9 +101,28 @@ describe("registerAccount", () => {
     const outcome = await registerAccount(basePayload);
 
     expect(outcome.kind).toBe("signedIn");
-    if (outcome.kind === "signedIn") expect(outcome.state.user).toEqual(user);
-    expect(persistedUsers).toContainEqual(user);
-    expect(rememberedAccounts).toContainEqual(user);
+    if (outcome.kind === "signedIn") expect(outcome.state.user).toEqual(expect.objectContaining(user));
+    expect(persistedUsers).toContainEqual(expect.objectContaining(user));
+    expect(rememberedAccounts).toContainEqual(expect.objectContaining(user));
+  });
+
+  it("normalizes authenticated new-user payloads that use id instead of user_id", async () => {
+    signupMock.mockResolvedValue({
+      ok: true,
+      authenticated: true,
+      user: { id: 43, username: "new_native", display_name: "New Native" },
+      refresh_token: "r",
+      refresh_token_expires_in: 100
+    });
+
+    const outcome = await registerAccount(basePayload);
+
+    expect(outcome.kind).toBe("signedIn");
+    if (outcome.kind === "signedIn") {
+      expect(outcome.state.user?.user_id).toBe(43);
+      expect(outcome.state.status).toBe("signedIn");
+    }
+    expect(persistedUsers).toContainEqual(expect.objectContaining({ user_id: 43, username: "new_native" }));
   });
 
   it("passes the caller's consent flags through verbatim (no hardcoding)", async () => {
@@ -127,7 +146,16 @@ describe("finalizeConfirmedSignup", () => {
 
     expect(loginMock).toHaveBeenCalledWith("ada@example.com", "engine-1843!");
     expect(state.status).toBe("signedIn");
-    expect(state.user).toEqual(user);
+    expect(state.user).toEqual(expect.objectContaining(user));
+  });
+
+  it("normalizes confirmed-login sessions that carry id aliases", async () => {
+    loginMock.mockResolvedValue({ ok: true, authenticated: true, user: { id: 8, username: "confirmed_new" } });
+
+    const state = await finalizeConfirmedSignup("confirmed@example.com", "engine-1843!");
+
+    expect(state.status).toBe("signedIn");
+    expect(state.user?.user_id).toBe(8);
   });
 
   it("stays signed out if login is not yet accepted (link not tapped)", async () => {

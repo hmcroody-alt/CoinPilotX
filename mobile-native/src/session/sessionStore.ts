@@ -146,12 +146,13 @@ export async function getCachedSessionUser<T>() {
 export async function setCachedSessionUser(user: unknown) {
   if (!user) return AsyncStorage.removeItem(CACHED_USER_KEY);
   const input = user as Record<string, unknown>;
+  const userId = Number(input.user_id ?? input.id ?? 0);
   const safeUser = {
-    user_id: Number(input.user_id || 0),
+    user_id: Number.isFinite(userId) && userId > 0 ? userId : 0,
     username: String(input.username || ""),
-    display_name: String(input.display_name || ""),
-    full_name: String(input.full_name || ""),
-    avatar_url: String(input.avatar_url || ""),
+    display_name: String(input.display_name || input.full_name || input.username || ""),
+    full_name: String(input.full_name || input.display_name || ""),
+    avatar_url: String(input.avatar_url || input.avatar_thumbnail_url || ""),
     premium_status: String(input.premium_status || ""),
     account_status: String(input.account_status || "")
   };

@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSE_API_BASE_URL } from "./config";
-import { listFeed, PulsePost } from "./feed";
+import { FeedResponse, normalizePosts, PulsePost } from "./feed";
 import { PulseApiError, pulseApi } from "./pulseApi";
 import {
   NativeProfileTarget,
@@ -221,14 +221,24 @@ export async function toggleProfileFollow(profile: PulseProfile) {
   });
 }
 
-export async function listPublicProfilePosts(input: ProfileTargetInput | NativeProfileTarget) {
+export async function listPublicProfilePosts(input: ProfileTargetInput | NativeProfileTarget, options: { limit?: number; offset?: number; mediaOnly?: boolean } = {}) {
   const target = resolveProfileTarget(input);
   const lookupKey = target?.userId
     ? String(target.userId)
     : target?.publicPlayerId || target?.username || target?.profileKey || "";
-  if (!target || !lookupKey) return [];
-  const data = await listFeed({ feed: "for_you", profile: lookupKey, limit: 20, offset: 0 });
-  return data.posts || [];
+  if (!target || !lookupKey) return { ok: true, posts: [], feed: [], next_offset: 0, has_more: false };
+  const query = new URLSearchParams();
+  query.set("limit", String(options.limit || 20));
+  query.set("offset", String(options.offset || 0));
+  if (options.mediaOnly) query.set("media", "1");
+  const data = await pulseApi<FeedResponse>(`/api/pulse/profile/${encodeURIComponent(lookupKey)}/posts?${query.toString()}`);
+  const posts = normalizePosts(data.posts || data.feed || []);
+  return {
+    ...data,
+    posts,
+    next_offset: Number(data.next_offset ?? (options.offset || 0) + posts.length),
+    has_more: Boolean(data.has_more)
+  };
 }
 
 export async function loadCachedProfile(cacheKey: string | NativeProfileTarget = "me") {

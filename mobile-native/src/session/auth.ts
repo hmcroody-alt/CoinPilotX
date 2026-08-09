@@ -85,8 +85,31 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
+function normalizeSessionUser(user: unknown): PulseUser | null {
+  if (!user || typeof user !== "object") return null;
+  const input = user as Record<string, unknown>;
+  const userId = Number(input.user_id ?? input.id ?? 0);
+  if (!Number.isFinite(userId) || userId <= 0) return null;
+  return {
+    ...(input as PulseUser),
+    user_id: userId,
+    username: String(input.username || "").replace(/^@/, ""),
+    display_name: String(input.display_name || input.full_name || input.username || "PulseSoc member"),
+    full_name: String(input.full_name || input.display_name || ""),
+    email: String(input.email || ""),
+    avatar_url: String(input.avatar_url || input.avatar_thumbnail_url || ""),
+    premium_status: String(input.premium_status || input.subscription_status || ""),
+    account_status: String(input.account_status || "active")
+  };
+}
+
+function sessionUser(session: SessionResponse): PulseUser | null {
+  if (!session.authenticated) return null;
+  return normalizeSessionUser(session.user);
+}
+
 function isValidSession(session: SessionResponse): session is SessionResponse & { user: PulseUser } {
-  return Boolean(session.authenticated && session.user && Number(session.user.user_id || 0) > 0);
+  return Boolean(sessionUser(session));
 }
 
 /** True when the device holds credentials we could refresh, so a rejection means "expired" not "never signed in". */
@@ -104,18 +127,20 @@ export async function restoreSession(): Promise<AuthState> {
   const hadCredentials = await hasStoredCredentials();
   try {
     const session = await getSession();
-    if (isValidSession(session)) {
-      if (shouldRejectTemporaryQaUser(session.user)) return clearTemporaryQaSession();
-      await setCachedSessionUser(session.user);
-      return authenticatedState(session.user);
+    const liveUser = sessionUser(session);
+    if (liveUser) {
+      if (shouldRejectTemporaryQaUser(liveUser)) return clearTemporaryQaSession();
+      await setCachedSessionUser(liveUser);
+      return authenticatedState(liveUser);
     }
     const recovery = await recoverNativeSession();
     if (recovery === "refreshed") {
       const restored = await getSession();
-      if (isValidSession(restored)) {
-        if (shouldRejectTemporaryQaUser(restored.user)) return clearTemporaryQaSession();
-        await setCachedSessionUser(restored.user);
-        return authenticatedState(restored.user);
+      const restoredUser = sessionUser(restored);
+      if (restoredUser) {
+        if (shouldRejectTemporaryQaUser(restoredUser)) return clearTemporaryQaSession();
+        await setCachedSessionUser(restoredUser);
+        return authenticatedState(restoredUser);
       }
       return signedOutPhase(hadCredentials);
     }
@@ -148,21 +173,23 @@ function isTransientBootstrapError(error: unknown): boolean {
 
 export async function signIn(identifier: string, password: string): Promise<AuthState> {
   const session = await login(identifier, password);
-  if (!session.authenticated || !session.user || Number(session.user.user_id || 0) <= 0) return unauthenticatedState();
-  if (shouldRejectTemporaryQaUser(session.user)) return clearTemporaryQaSession();
-  await persistSessionEnvelope(session);
-  await setCachedSessionUser(session.user);
-  await rememberAccount(session.user).catch(() => undefined);
-  return authenticatedState(session.user);
+  const user = sessionUser(session);
+  if (!user) return unauthenticatedState();
+  if (shouldRejectTemporaryQaUser(user)) return clearTemporaryQaSession();
+  await persistSessionEnvelope({ ...session, user });
+  await setCachedSessionUser(user);
+  await rememberAccount(user).catch(() => undefined);
+  return authenticatedState(user);
 }
 
 export async function createAccount(payload: { full_name: string; username: string; email: string; password: string }): Promise<AuthState> {
   const session = await signup({ ...payload, age_confirmed: true, email_opt_in: false });
-  if (!session.authenticated || !session.user) return unauthenticatedState();
-  await persistSessionEnvelope(session);
-  await setCachedSessionUser(session.user);
-  await rememberAccount(session.user).catch(() => undefined);
-  return authenticatedState(session.user);
+  const user = sessionUser(session);
+  if (!user) return unauthenticatedState();
+  await persistSessionEnvelope({ ...session, user });
+  await setCachedSessionUser(user);
+  await rememberAccount(user).catch(() => undefined);
+  return authenticatedState(user);
 }
 
 /**
@@ -190,11 +217,12 @@ export async function registerAccount(payload: {
   email_opt_in: boolean;
 }): Promise<RegisterOutcome> {
   const response: RegisterResponse = await signup(payload);
-  if (response.authenticated && response.user) {
-    await persistSessionEnvelope(response);
-    await setCachedSessionUser(response.user);
-    await rememberAccount(response.user).catch(() => undefined);
-    return { kind: "signedIn", state: authenticatedState(response.user) };
+  const user = sessionUser(response);
+  if (user) {
+    await persistSessionEnvelope({ ...response, user });
+    await setCachedSessionUser(user);
+    await rememberAccount(user).catch(() => undefined);
+    return { kind: "signedIn", state: authenticatedState(user) };
   }
   return {
     kind: "confirmEmail",
@@ -258,7 +286,7 @@ export async function signOutEverywhere(): Promise<AuthState> {
 }
 
 async function persistSessionEnvelope(session: SessionResponse) {
-  const userId = Number(session.user?.user_id || 0);
+  const userId = Number(session.user?.user_id ?? (session.user as Record<string, unknown> | undefined)?.id ?? 0);
   if (!userId || !session.refresh_token) return;
   const now = Date.now();
   const envelope: NativeSessionEnvelope = {
@@ -274,10 +302,11 @@ async function persistSessionEnvelope(session: SessionResponse) {
 
 async function restoreCachedSession(): Promise<AuthState> {
   const [cookie, envelope, cachedUser] = await Promise.all([getSessionCookie(), getSessionEnvelope(), getCachedSessionUser<PulseUser>()]);
-  const userId = Number(cachedUser?.user_id || 0);
-  if (shouldRejectTemporaryQaUser(cachedUser)) return clearTemporaryQaSession();
-  if ((cookie || envelope?.refreshToken) && cachedUser && userId > 0 && (!envelope?.userId || envelope.userId === userId)) {
-    return authenticatedState(cachedUser);
+  const user = normalizeSessionUser(cachedUser);
+  const userId = Number(user?.user_id || 0);
+  if (shouldRejectTemporaryQaUser(user)) return clearTemporaryQaSession();
+  if ((cookie || envelope?.refreshToken) && user && userId > 0 && (!envelope?.userId || envelope.userId === userId)) {
+    return authenticatedState(user);
   }
   return unauthenticatedState();
 }
