@@ -68,7 +68,11 @@ def start(*, live_id: int, channel_name: str, resource_id: str, recording_uid: s
     prefix = ["pulsesoc", "live-recordings", str(int(live_id))]
     client = {
         "token": _rtc_token(channel_name, int(recording_uid)),
-        "recordingConfig": {"channelType": 1, "streamTypes": 2, "streamMode": "default", "videoStreamType": 0, "maxIdleTime": 120, "subscribeUidGroup": 0, "transcodingConfig": {"width": 720, "height": 1280, "fps": 30, "bitrate": 2500, "mixedVideoLayout": 2}},
+        # Best-fit fills the 9:16 canvas for a host-only Live and produces an
+        # intentional equal-tile layout when approved co-hosts publish. Agora's
+        # vertical layout (2) requires maxResolutionUid; without it, the large
+        # pane remains black and the host is relegated to a small side pane.
+        "recordingConfig": {"channelType": 1, "streamTypes": 2, "streamMode": "default", "videoStreamType": 0, "maxIdleTime": 120, "subscribeUidGroup": 0, "transcodingConfig": {"width": 720, "height": 1280, "fps": 30, "bitrate": 2500, "mixedVideoLayout": 1, "backgroundColor": "#000000"}},
         "recordingFileConfig": {"avFileType": ["hls"]},
         "storageConfig": {"vendor": 11, "region": 0, "bucket": os.environ["R2_BUCKET"], "accessKey": os.environ["R2_ACCESS_KEY_ID"], "secretKey": os.environ["R2_SECRET_ACCESS_KEY"], "fileNamePrefix": prefix, "extensionParams": {"endpoint": endpoint}},
     }

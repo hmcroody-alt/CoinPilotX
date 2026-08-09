@@ -49027,8 +49027,10 @@ def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
         if not video_url or not reel_media_source_is_playable(video_url):
             conn.close()
             return {"ok": False, "reason": "replay_not_playable"}
+        # Keep the completed Live's own presentation. The replay tags preserve
+        # provenance without replacing the creator's title with boilerplate.
         title = clean_html(live.get("title") or "PulseSoc Live")[:140]
-        caption = f"Replay of the live broadcast “{title}”. Watch the full stream again."[:2200]
+        caption = title[:2200]
         category = clean_html(live.get("category") or live.get("custom_category") or "Live Replay")[:80]
         tags = ["live-replay", "livestream"]
         poster_url = (live.get("thumbnail_url") or live.get("preview_url") or "").strip()
@@ -49038,7 +49040,7 @@ def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
         visibility = (live.get("audience") or live.get("visibility") or "public").strip().lower()
         if visibility not in {"public", "followers", "private"}:
             visibility = "public"
-        result = pulse_feed_engine.create_post(host_user_id, caption, "video", f"Live Replay: {title}"[:160], tags=tags, visibility=visibility, media_ids=[])
+        result = pulse_feed_engine.create_post(host_user_id, caption, "video", title[:160], tags=tags, visibility=visibility, media_ids=[])
         if not result.get("ok"):
             logging.warning("PULSE_LIVE_REPLAY_REEL_POST_FAILED trace_id=%s live_id=%s message=%s", trace_id, live_id, result.get("message"))
             return {"ok": False, "reason": "post_create_failed"}
@@ -49075,7 +49077,7 @@ def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
         conn.commit(); conn.close()
         try:
             pulse_video_index_upsert(
-                host_user_id, "reel", reel_id, 0, f"Live Replay: {title}", caption, visibility,
+                host_user_id, "reel", reel_id, 0, title, caption, visibility,
                 media={
                     "media_type": "video",
                     "media_url": video_url,

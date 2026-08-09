@@ -28,3 +28,11 @@ def test_long_reel_is_linked_to_original_live_and_mux_vod():
         assert field in creator
     assert "COALESCE(replay_reel_id,0)=0" in creator
     assert '"created": False' in creator
+
+
+def test_long_reel_keeps_original_live_presentation_without_replay_boilerplate():
+    creator = BOT[BOT.index("def pulse_live_publish_replay_reel"):BOT.index("def api_pulse_live_end")]
+    assert 'caption = title[:2200]' in creator
+    assert 'create_post(host_user_id, caption, "video", title[:160]' in creator
+    assert 'f"Live Replay: {title}"' not in creator
+    assert "Replay of the live broadcast" not in creator

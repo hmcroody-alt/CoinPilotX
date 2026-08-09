@@ -34,7 +34,10 @@ def test_start_records_composite_hls_to_server_configured_r2(monkeypatch):
     assert result["sid"] == "sid"
     assert config["recordingFileConfig"] == {"avFileType": ["hls"]}
     assert config["recordingConfig"]["streamTypes"] == 2
-    assert config["recordingConfig"]["transcodingConfig"]["mixedVideoLayout"] == 2
+    transcoding = config["recordingConfig"]["transcodingConfig"]
+    assert (transcoding["width"], transcoding["height"]) == (720, 1280)
+    assert transcoding["mixedVideoLayout"] == 1
+    assert "maxResolutionUid" not in transcoding
     assert config["storageConfig"]["vendor"] == 11
     assert config["storageConfig"]["fileNamePrefix"] == ["pulsesoc", "live-recordings", "42"]
     assert config["storageConfig"]["extensionParams"]["endpoint"] == "example.r2.cloudflarestorage.com"
