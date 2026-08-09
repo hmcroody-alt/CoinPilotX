@@ -32,6 +32,7 @@ class PulseNewUserProfileFlowTest(unittest.TestCase):
             """
             CREATE TABLE users (
                 user_id INTEGER PRIMARY KEY,
+                pulse_id TEXT,
                 username TEXT,
                 email TEXT,
                 full_name TEXT,
@@ -87,8 +88,8 @@ class PulseNewUserProfileFlowTest(unittest.TestCase):
         cur.execute("CREATE TABLE pulse_follows (follower_user_id INTEGER, followed_user_id INTEGER)")
         cur.execute("CREATE TABLE pulse_friends (user_id INTEGER, friend_user_id INTEGER, status TEXT)")
         cur.execute("CREATE TABLE blocked_users (blocker_user_id INTEGER, blocked_user_id INTEGER)")
-        cur.execute("INSERT INTO users (user_id, username, display_name) VALUES (?,?,?)", (self.VIEWER, "viewer", "Viewer"))
-        cur.execute("INSERT INTO users (user_id, username, display_name) VALUES (?,?,?)", (self.NEW_USER, "fresh902", "Fresh Member"))
+        cur.execute("INSERT INTO users (user_id, pulse_id, username, display_name) VALUES (?,?,?,?)", (self.VIEWER, "PLS-000011", "viewer", "Viewer"))
+        cur.execute("INSERT INTO users (user_id, pulse_id, username, display_name) VALUES (?,?,?,?)", (self.NEW_USER, "PLS-000902", "fresh902", "Fresh Member"))
         cur.execute(
             """
             INSERT INTO pulse_posts
@@ -135,6 +136,16 @@ class PulseNewUserProfileFlowTest(unittest.TestCase):
         self.assertEqual(len(result["posts"]), 1)
         self.assertEqual(result["posts"][0]["author"]["user_id"], self.NEW_USER)
 
+    def test_pulse_id_profile_key_uses_same_author_identity_as_profile_header_count(self):
+        profile_count = pulse_feed_engine.count_user_posts(self.NEW_USER, viewer_user_id=self.VIEWER)
+
+        result = pulse_feed_engine.list_feed(self.VIEWER, "for_you", profile_public_player_id="PLS-000902")
+
+        self.assertEqual(profile_count, 1)
+        self.assertEqual(len(result["posts"]), profile_count)
+        self.assertEqual(result["posts"][0]["user_id"], self.NEW_USER)
+        self.assertEqual(result["posts"][0]["author"]["profile_url"], f"/pulse/id/{self.NEW_USER}")
+
     def test_profile_post_listing_uses_same_user_id_as_profile_count(self):
         profile_count = pulse_feed_engine.count_user_posts(self.NEW_USER, viewer_user_id=self.VIEWER)
 
@@ -150,6 +161,20 @@ class PulseNewUserProfileFlowTest(unittest.TestCase):
 
         self.assertEqual(profile_count, 2)
         self.assertEqual(len(result["posts"]), profile_count)
+
+    def test_create_post_stamps_pulse_id_when_legacy_arena_profile_is_missing(self):
+        result = pulse_feed_engine.create_post(
+            self.NEW_USER,
+            body="created without legacy profile",
+            post_type="text",
+            enqueue_background=False,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual((result.get("post") or {}).get("author_public_player_id"), "PLS-000902")
+        feed = pulse_feed_engine.list_feed(self.VIEWER, "for_you", profile_public_player_id="PLS-000902")
+        bodies = [post["body"] for post in feed["posts"]]
+        self.assertIn("created without legacy profile", bodies)
 
     def test_native_profile_posts_route_is_not_shadowed_by_profile_catchall(self):
         with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bot.py"), "r", encoding="utf-8") as source:

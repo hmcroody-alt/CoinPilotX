@@ -227,7 +227,9 @@ export async function listPublicProfilePosts(input: ProfileTargetInput | NativeP
     ? String(target.userId)
     : target?.publicPlayerId || target?.username || target?.profileKey || "";
   if (!target || !lookupKey) return { ok: true, posts: [], feed: [], next_offset: 0, has_more: false };
-  const fallbackLookupKey = target.publicPlayerId || target.username || target.profileKey || lookupKey;
+  const fallbackLookupKey = target.userId
+    ? String(target.userId)
+    : lookupKey || target.publicPlayerId || target.username || target.profileKey;
   const fallbackToFeedProfile = async () => {
     const fallback = await listFeed({
       feed: "for_you",
