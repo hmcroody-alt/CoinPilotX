@@ -4,7 +4,7 @@ jest.mock("../pulseApi", () => ({
   pulseApi: (path: string, options?: RequestInit) => mockPulseApi(path, options)
 }));
 
-import { normalizePost, PulsePost } from "../feed";
+import { mutePostAuthor, normalizePost, PulsePost, toggleFollowAuthor } from "../feed";
 import { listPublicProfilePosts, profileTargetFromPost } from "../profile";
 
 beforeEach(() => {
@@ -48,5 +48,56 @@ describe("new-user profile identity", () => {
 
     expect(mockPulseApi).toHaveBeenCalledWith(expect.stringContaining("limit=12"), undefined);
     expect(mockPulseApi).toHaveBeenCalledWith(expect.stringContaining("offset=24"), undefined);
+  });
+
+  it("uses the shared author resolver for feed follow actions", async () => {
+    const post = normalizePost({
+      id: 78,
+      post_id: 78,
+      user_id: 904,
+      body: "followable signal",
+      author: { display_name: "TestMeNow", username: "TestMeNow" }
+    } as PulsePost);
+
+    await toggleFollowAuthor(post);
+
+    expect(mockPulseApi).toHaveBeenCalledWith(
+      "/api/pulse/follows/toggle",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          followed_user_id: 904,
+          public_player_id: "TestMeNow",
+          followed_public_player_id: "TestMeNow"
+        })
+      })
+    );
+  });
+
+  it("keeps feed mute actions on the same canonical author target", async () => {
+    const post = normalizePost({
+      id: 79,
+      post_id: 79,
+      user_id: 905,
+      body: "mute target",
+      author_public_player_id: "PLS-000905",
+      author: { display_name: "Future Member" }
+    } as PulsePost);
+
+    await mutePostAuthor(post);
+
+    expect(mockPulseApi).toHaveBeenCalledWith(
+      "/api/pulse/users/mute",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          muted_user_id: 905,
+          user_id: 905,
+          public_player_id: "PLS-000905",
+          muted_public_player_id: "PLS-000905",
+          reason: "Muted from Home"
+        })
+      })
+    );
   });
 });

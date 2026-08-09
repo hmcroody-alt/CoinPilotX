@@ -1244,6 +1244,43 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
     return {"ok": True, "feed": "my_posts", "topic": "", "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": safe_intelligence_panel("")}
 
 
+def count_user_posts(user_id, viewer_user_id=None, media_only=False):
+    """Count the same posts ``list_user_posts`` can actually return.
+
+    Profile headers used to count every non-deleted row while the Posts tab used
+    public/moderation/status, hide, mute, and block predicates. That made new
+    profiles show "1 Posts" and then render "No posts yet." Keep the count and
+    listing on one contract.
+    """
+    if not user_id:
+        return 0
+    viewer_is_owner = bool(viewer_user_id and int(viewer_user_id or 0) == int(user_id or 0))
+    where = ["p.deleted_at IS NULL", "p.user_id=?"]
+    params = [int(user_id)]
+    if not viewer_is_owner:
+        where = [f"p.user_id=?", *_public_feed_where("p")]
+        params = [int(user_id)]
+        if viewer_user_id:
+            where.append("NOT EXISTS (SELECT 1 FROM blocked_users bu WHERE bu.blocker_user_id=? AND bu.blocked_user_id=p.user_id)")
+            params.append(int(viewer_user_id))
+            where.append("NOT EXISTS (SELECT 1 FROM pulse_post_hides ph WHERE ph.user_id=? AND ph.post_id=p.id)")
+            params.append(int(viewer_user_id))
+            where.append("NOT EXISTS (SELECT 1 FROM pulse_user_mutes pum WHERE pum.user_id=? AND pum.muted_user_id=p.user_id AND (pum.muted_until IS NULL OR pum.muted_until='' OR pum.muted_until>?))")
+            params.extend([int(viewer_user_id), _now()])
+    if media_only:
+        where.append("COALESCE(p.media_ids_json,'') NOT IN ('', '[]')")
+    conn = user_context.connect()
+    cur = conn.cursor()
+    _ensure_home_safety_tables(cur)
+    cur.execute(f"SELECT COUNT(*) AS total FROM pulse_posts p WHERE {' AND '.join(where)}", tuple(params))
+    row = cur.fetchone()
+    conn.close()
+    try:
+        return int((dict(row) if row else {}).get("total") or 0)
+    except Exception:
+        return int(row[0] or 0) if row else 0
+
+
 def hide_post(user_id, post_id, reason="Hidden from Home"):
     user_id = int(user_id or 0)
     post_id = int(post_id or 0)

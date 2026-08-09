@@ -10,7 +10,7 @@ const mockGetPublicProfile = jest.fn(async (..._args: unknown[]) => ({ user_id: 
 jest.mock("../../api/profile", () => ({
   getMyProfile: jest.fn(async () => ({ user_id: 7, display_name: "Roody Cherie", username: "roodycherie", public_player_id: "roodycherie", post_count: 4 })),
   getPublicProfile: (...args: unknown[]) => mockGetPublicProfile(...args),
-  listPublicProfilePosts: jest.fn(),
+  listPublicProfilePosts: (...args: unknown[]) => mockListFeed(...args),
   loadCachedProfile: jest.fn(),
   profileErrorState: jest.fn(() => ({ title: "Error", body: "Error", retryable: true, offline: false })),
   toggleProfileFollow: jest.fn()
@@ -93,8 +93,8 @@ describe("Profile posts grid", () => {
     fireEvent(screen.UNSAFE_getByType(require("react-native").FlatList), "onEndReached");
 
     await waitFor(() => expect(screen.getByTestId("profile-grid-tile-5")).toBeTruthy());
-    expect(mockListFeed).toHaveBeenNthCalledWith(1, { feed: "for_you", profile: "Pilot-8008", limit: 20, offset: 0 });
-    expect(mockListFeed).toHaveBeenNthCalledWith(2, { feed: "for_you", profile: "Pilot-8008", limit: 20, offset: 4 });
+    expect(mockListFeed).toHaveBeenNthCalledWith(1, { userId: 8, profileKey: "8", publicPlayerId: "Pilot-8008", username: "mariacherie" }, { limit: 20, offset: 0 });
+    expect(mockListFeed).toHaveBeenNthCalledWith(2, { userId: 8, profileKey: "8", publicPlayerId: "Pilot-8008", username: "mariacherie" }, { limit: 20, offset: 4 });
     expect(screen.getAllByTestId("profile-grid-tile-4")).toHaveLength(1);
   });
 });

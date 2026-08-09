@@ -94714,10 +94714,8 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
         return None
     from services import profile_viewer_permissions
     ident = pulse_identity_for_user(cur, target_user_id)
-    cur.execute("SELECT COUNT(*) AS total FROM pulse_posts WHERE user_id=? AND deleted_at IS NULL", (target_user_id,))
-    post_count = int(dict(cur.fetchone() or {}).get("total") or 0)
-    cur.execute("SELECT COUNT(*) AS total FROM pulse_posts WHERE user_id=? AND deleted_at IS NULL AND COALESCE(media_ids_json,'') NOT IN ('', '[]')", (target_user_id,))
-    media_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    post_count = pulse_feed_engine.count_user_posts(target_user_id, viewer_user_id=viewer_user_id)
+    media_count = pulse_feed_engine.count_user_posts(target_user_id, viewer_user_id=viewer_user_id, media_only=True)
     cur.execute("SELECT COUNT(*) AS total FROM pulse_follows WHERE followed_user_id=?", (target_user_id,))
     follower_count = int(dict(cur.fetchone() or {}).get("total") or 0)
     cur.execute("SELECT COUNT(*) AS total FROM pulse_follows WHERE follower_user_id=?", (target_user_id,))

@@ -99,6 +99,16 @@ class PulseNewUserProfileFlowTest(unittest.TestCase):
             """,
             (self.NEW_USER,),
         )
+        cur.execute(
+            """
+            INSERT INTO pulse_posts
+              (user_id, public_player_id, post_type, body, media_ids_json, title, tags_json, visibility,
+               moderation_status, ai_summary, ai_tags_json, sentiment, risk_score, engagement_score, status, created_at, updated_at)
+            VALUES (?, NULL, 'text', 'private draft', '[]', '', '[]', 'private',
+                    'approved', '', '[]', 'neutral', 0, 0, 'published', '2026-08-08T01:01:00', '2026-08-08T01:01:00')
+            """,
+            (self.NEW_USER,),
+        )
         conn.commit()
         conn.close()
         self.real_context = pulse_feed_engine.user_context
@@ -126,17 +136,20 @@ class PulseNewUserProfileFlowTest(unittest.TestCase):
         self.assertEqual(result["posts"][0]["author"]["user_id"], self.NEW_USER)
 
     def test_profile_post_listing_uses_same_user_id_as_profile_count(self):
-        conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM pulse_posts WHERE user_id=? AND deleted_at IS NULL", (self.NEW_USER,))
-        profile_count = int(cur.fetchone()[0])
-        conn.close()
+        profile_count = pulse_feed_engine.count_user_posts(self.NEW_USER, viewer_user_id=self.VIEWER)
 
         result = pulse_feed_engine.list_user_posts(self.NEW_USER, viewer_user_id=self.VIEWER)
 
         self.assertEqual(profile_count, 1)
         self.assertEqual(len(result["posts"]), profile_count)
         self.assertEqual(result["posts"][0]["user_id"], self.NEW_USER)
+
+    def test_owner_profile_count_includes_owner_visible_private_posts(self):
+        profile_count = pulse_feed_engine.count_user_posts(self.NEW_USER, viewer_user_id=self.NEW_USER)
+        result = pulse_feed_engine.list_user_posts(self.NEW_USER, viewer_user_id=self.NEW_USER)
+
+        self.assertEqual(profile_count, 2)
+        self.assertEqual(len(result["posts"]), profile_count)
 
     def test_native_profile_posts_route_is_not_shadowed_by_profile_catchall(self):
         with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bot.py"), "r", encoding="utf-8") as source:
