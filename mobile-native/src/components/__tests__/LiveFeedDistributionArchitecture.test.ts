@@ -22,4 +22,11 @@ describe("Live Feed distribution architecture", () => {
     expect(postCard).toContain("Replay processing");
     expect(postCard).toContain("Join Live");
   });
+
+  it("fills the active Agora canvas while preserving the replay footprint", () => {
+    expect(postCard).toContain('agoraPresentation="cover"');
+    expect(liveSurface).toContain('objectFit="cover"');
+    expect(liveSurface).toContain("resizeMode={ResizeMode.COVER}");
+    expect(postCard).toContain("aspectRatio: 9 / 16");
+  });
 });

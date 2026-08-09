@@ -308,6 +308,7 @@ export function PostCard({
             muted={liveMuted}
             poster={post.live?.preview_url}
             identity={post.id}
+            agoraPresentation="cover"
           />
           <View style={styles.liveStageActions} pointerEvents="box-none">
             <Pressable accessibilityRole="button" accessibilityLabel={liveMuted ? "Unmute Live" : "Mute Live"} style={styles.liveStageButton} onPress={(event) => { event.stopPropagation(); setLiveMuted((value) => !value); }}>

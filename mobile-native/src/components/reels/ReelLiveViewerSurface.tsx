@@ -29,7 +29,7 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
   return <EmbeddedLiveViewerSurface liveId={liveId} hlsUrl={hlsUrl} active={active} muted={muted} poster={poster} identity={reel.id || "unknown"} />;
 }
 
-export function EmbeddedLiveViewerSurface({ liveId, hlsUrl = "", active, muted, poster, identity = "unknown" }: { liveId: number; hlsUrl?: string; active: boolean; muted: boolean; poster?: string; identity?: number | string }) {
+export function EmbeddedLiveViewerSurface({ liveId, hlsUrl = "", active, muted, poster, identity = "unknown", agoraPresentation }: { liveId: number; hlsUrl?: string; active: boolean; muted: boolean; poster?: string; identity?: number | string; agoraPresentation?: "cover" | "fit" }) {
   const room = useLiveBroadcastRoom();
   const { joinAsViewer: connect, leaveViewer: disconnect, setRemoteAudioEnabled } = room;
   const [mode, setMode] = useState<ViewerMode>("connecting");
@@ -125,7 +125,7 @@ export function EmbeddedLiveViewerSurface({ liveId, hlsUrl = "", active, muted, 
       <View style={styles.stage}>
         {videoParticipants.map((participant) => (
           <View key={participant.identity} style={[styles.tile, videoParticipants.length > 1 && styles.tileSplit]}>
-            <VideoTileView videoTrack={participant.videoTrack} style={StyleSheet.absoluteFill} objectFit="cover" mirror={false} zOrder={0} />
+            <VideoTileView videoTrack={participant.videoTrack} style={StyleSheet.absoluteFill} objectFit="cover" agoraPresentation={agoraPresentation} mirror={false} zOrder={0} />
             {participant.speaking ? <View style={styles.speakingRing} pointerEvents="none" /> : null}
           </View>
         ))}
