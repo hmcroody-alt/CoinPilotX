@@ -2,26 +2,50 @@ import { useCallback } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { SettingsHeader, SettingsSection, SettingsShell } from "../../settings/components/SettingsShell";
 import {
-  SettingsSelect,
+  SettingsRow,
   SettingsSlider,
-  SettingsSwitch,
-  SelectOption
+  SettingsSwitch
 } from "../../settings/components/SettingsControls";
 import { usePreferenceGroup } from "../../settings/store";
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP, ThemeMode } from "../../settings/schema";
 import { useTheme } from "../../theme/ThemeContext";
 
-const THEME_OPTIONS: SelectOption<ThemeMode>[] = [
-  { value: "system", label: "Match device", description: "Follow your phone's light or dark setting.", icon: "phone-portrait-outline" },
-  { value: "dark", label: "Dark", description: "PulseSoc's signature dark surface with the full galactic background.", icon: "moon-outline" },
+const THEME_OPTIONS = [
   {
-    value: "light_futuristic",
+    value: "system" as ThemeMode,
+    label: "Match device",
+    description: "Follow your phone's light or dark setting.",
+    icon: "phone-portrait-outline" as const,
+    disabled: true
+  },
+  {
+    value: "dark" as ThemeMode,
+    label: "Dark",
+    description: "PulseSoc's signature dark surface with the full galactic background.",
+    icon: "moon-outline" as const,
+    disabled: false
+  },
+  {
+    value: "light_futuristic" as ThemeMode,
     label: "Light Futuristic",
     description: "Bright glassy surfaces with a faint atmosphere.",
-    icon: "sunny-outline"
+    icon: "sunny-outline" as const,
+    disabled: true
   },
-  { value: "black", label: "Black", description: "True black for OLED screens. Dimmed atmosphere, deeper contrast.", icon: "contrast-outline" },
-  { value: "white", label: "White", description: "Plain white surfaces, no background effects. Maximum clarity.", icon: "square-outline" }
+  {
+    value: "black" as ThemeMode,
+    label: "Black",
+    description: "True black for OLED screens. Dimmed atmosphere, deeper contrast.",
+    icon: "contrast-outline" as const,
+    disabled: true
+  },
+  {
+    value: "white" as ThemeMode,
+    label: "White",
+    description: "Plain white surfaces, no background effects. Maximum clarity.",
+    icon: "square-outline" as const,
+    disabled: true
+  }
 ];
 
 const THEME_LABELS: Record<ThemeMode, string> = {
@@ -51,7 +75,49 @@ export function AppearanceSettingsScreen() {
       <SettingsHeader title="Appearance" subtitle="Changes apply instantly across PulseSoc." />
 
       <SettingsSection title="Background & Theme" busy={pending}>
-        <SettingsSelect options={THEME_OPTIONS} value={value.theme} onChange={setTheme} testID="appearance-theme" />
+        {THEME_OPTIONS.map((option) => {
+          const selected = option.value === "dark";
+
+          return (
+            <SettingsRow
+              key={option.value}
+              testID={`appearance-theme-${option.value}`}
+              title={option.label}
+              subtitle={option.description}
+              icon={option.icon}
+              disabled={option.disabled}
+              accessibilityRole="button"
+              accessibilityState={{
+                selected,
+                disabled: option.disabled
+              }}
+              onPress={option.disabled ? undefined : () => setTheme("dark")}
+              accessory={
+                option.disabled ? (
+                  <Text
+                    style={{
+                      color: theme.colors.muted,
+                      fontSize: theme.scaleFont(10),
+                      fontWeight: "800"
+                    }}
+                  >
+                    COMING SOON
+                  </Text>
+                ) : (
+                  <Text
+                    style={{
+                      color: theme.colors.accent,
+                      fontSize: theme.scaleFont(12),
+                      fontWeight: "800"
+                    }}
+                  >
+                    ACTIVE
+                  </Text>
+                )
+              }
+            />
+          );
+        })}
       </SettingsSection>
 
       <SettingsSection

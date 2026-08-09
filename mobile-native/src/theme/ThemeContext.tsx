@@ -209,8 +209,11 @@ export function buildTheme(
   accessibility: AccessibilityPreferences,
   systemScheme: ColorSchemeName
 ): Theme {
-  const scheme = resolveScheme(appearance.theme, systemScheme);
-  const base = paletteFor(appearance.theme, scheme);
+  // Dark is the only released appearance for now.
+  // Keep the other theme implementations intact for future activation.
+  const activeTheme: ThemeMode = "dark";
+  const scheme = resolveScheme(activeTheme, systemScheme);
+  const base = paletteFor(activeTheme, scheme);
   const contrast = accessibility.highContrast ? (scheme === "light" ? HIGH_CONTRAST_LIGHT : HIGH_CONTRAST_DARK) : null;
   const palette: Palette = contrast ? { ...base, ...contrast } : { ...base };
 
@@ -223,12 +226,12 @@ export function buildTheme(
   const fontScale = appearance.fontScale;
 
   return {
-    mode: appearance.theme,
+    mode: activeTheme,
     scheme,
     colors: palette,
     statusBarStyle: scheme === "dark" ? "light" : "dark",
     keyboardAppearance: scheme === "dark" ? "dark" : "light",
-    galacticBackground: galacticProfileFor(appearance.theme, scheme),
+    galacticBackground: galacticProfileFor(activeTheme, scheme),
     metrics: {
       rowMinHeight: Math.round((compact ? 46 : 56) * Math.max(1, fontScale)),
       rowPaddingVertical: compact ? 8 : 12,
