@@ -48,7 +48,7 @@ export function useAgoraCallRoom() {
     setState((current) => ({ ...baseState, supported: current.supported, disconnectReason: reason, diagnosticCode: reason }));
   }, []);
 
-  const connect = useCallback(async (join: PulseCallJoin, options: { video?: boolean } = {}) => {
+  const connect = useCallback(async (join: PulseCallJoin, options: { video?: boolean; refreshCredentials?: () => Promise<PulseCallJoin> } = {}) => {
     if (Platform.OS === "web") return false;
     if (!join.token || !join.app_id || !join.channel_name || !join.uid) {
       setState((current) => ({ ...current, error: "PulseSoc did not return usable Agora credentials.", diagnosticCode: "AGORA_CREDENTIALS_MISSING" }));
@@ -66,6 +66,21 @@ export function useAgoraCallRoom() {
         engine.enableVideo();
         engine.startPreview();
       }
+      let renewalPromise: Promise<void> | null = null;
+      const renew = () => {
+        if (renewalPromise || !options.refreshCredentials) return renewalPromise;
+        renewalPromise = options.refreshCredentials().then((next) => {
+          if (next.provider !== "agora" || !next.token || next.channel_name !== join.channel_name || Number(next.uid) !== Number(join.uid)) {
+            throw new Error("PulseSoc returned mismatched Agora renewal credentials.");
+          }
+          const renewed = engine.renewToken(next.token);
+          if (renewed < 0) throw new Error(`Agora rejected the renewed token (${renewed}).`);
+          setState((current) => ({ ...current, error: "", diagnosticCode: "" }));
+        }).catch(() => {
+          setState((current) => ({ ...current, error: "Secure call access could not be refreshed. Reconnect before the token expires.", diagnosticCode: "AGORA_TOKEN_RENEWAL_FAILED" }));
+        }).finally(() => { renewalPromise = null; });
+        return renewalPromise;
+      };
       const handler: IRtcEngineEventHandler = {
         onJoinChannelSuccess: (_connection, _elapsed) => setState((current) => ({
           ...current, connecting: false, connected: true, reconnecting: false, connectionState: "connected",
@@ -83,7 +98,8 @@ export function useAgoraCallRoom() {
         },
         onUserJoined: (_connection, remoteUid) => setState((current) => ({ ...current, remoteUid, participantCount: current.participantCount + 1, remoteAudioTrackCount: 1, remoteAudioAvailable: true })),
         onUserOffline: (_connection, remoteUid) => setState((current) => ({ ...current, remoteUid: current.remoteUid === remoteUid ? 0 : current.remoteUid, participantCount: Math.max(1, current.participantCount - 1), remoteAudioTrackCount: Math.max(0, current.remoteAudioTrackCount - 1), remoteAudioAvailable: current.remoteAudioTrackCount > 1 })),
-        onTokenPrivilegeWillExpire: () => setState((current) => ({ ...current, diagnosticCode: "AGORA_TOKEN_RENEWAL_REQUIRED", error: "Refreshing secure call access…" })),
+        onTokenPrivilegeWillExpire: () => { setState((current) => ({ ...current, diagnosticCode: "AGORA_TOKEN_RENEWAL_REQUIRED", error: "Refreshing secure call access…" })); void renew(); },
+        onRequestToken: () => { setState((current) => ({ ...current, diagnosticCode: "AGORA_TOKEN_EXPIRED", error: "Restoring secure call access…" })); void renew(); },
         onError: (errorCode) => setState((current) => ({ ...current, error: `Agora media error (${errorCode}).`, diagnosticCode: `AGORA_${errorCode}` }))
       };
       handlerRef.current = handler;

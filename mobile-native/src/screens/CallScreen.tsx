@@ -128,7 +128,10 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     joinRequested.current = true;
     try {
       const join = target.join?.token ? target.join : await requestCallJoinToken(target.call_id);
-      const joined = await room.connect(join, { video: targetType === "video" });
+      const joined = await room.connect(join, {
+        video: targetType === "video",
+        refreshCredentials: () => requestCallJoinToken(target.call_id)
+      });
       if (!joined) throw new Error("The secure media room could not connect.");
       connectedAtMs.current = Date.now();
       await markCallConnected(target.call_id, {

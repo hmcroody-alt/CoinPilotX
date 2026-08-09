@@ -47187,6 +47187,65 @@ def api_pulse_live_livekit_token(live_id):
     })
 
 
+@webhook_app.route("/api/pulse/live/<int:live_id>/agora/token", methods=["POST"])
+def api_pulse_live_agora_token(live_id):
+    """Mint least-privilege Agora Live credentials using PulseSoc authority."""
+    init_db()
+    user = api_account_user()
+    if not user:
+        return pulse_live_cohost_error("NOT_AUTHENTICATED", status=401, live_id=live_id)
+    payload = request.get_json(silent=True) or {}
+    trace_id = clean_html(payload.get("trace_id") or secrets.token_hex(6))[:80]
+    requested_role = clean_html(payload.get("role") or "viewer")[:40].lower()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+    live = dict(cur.fetchone() or {})
+    if not live:
+        conn.close()
+        return pulse_live_cohost_error("LIVE_NOT_FOUND", status=404, trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"))
+    if str(live.get("status") or "").lower() in {"ended", "cancelled", "failed"}:
+        conn.close()
+        return pulse_live_cohost_error("LIVE_ENDED", status=409, trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"))
+    user_id = int(user.get("user_id") or 0)
+    host_user_id = int(live.get("user_id") or 0)
+    is_host = user_id == host_user_id or bool(admin_current_user())
+    is_guest_request = requested_role in {"guest", "cohost", "co-host"}
+    guest = pulse_live_active_guest(cur, live_id, user_id) if is_guest_request else {}
+    if requested_role in {"publisher", "host", "creator"} and not is_host:
+        conn.close()
+        return pulse_live_cohost_error("NOT_AUTHORIZED", status=403, message="Only the live host can publish this broadcast.", trace_id=trace_id, live_id=live_id, viewer_user_id=user_id, host_user_id=host_user_id)
+    if is_guest_request and not guest:
+        conn.close()
+        return pulse_live_cohost_error("TOKEN_MISSING_PUBLISH_PERMISSION", status=403, trace_id=trace_id, live_id=live_id, viewer_user_id=user_id, host_user_id=host_user_id)
+    if is_guest_request and not pulse_live_session_accepts_guest_requests(live):
+        conn.close()
+        return pulse_live_cohost_error("LIVE_ENDED", status=409, trace_id=trace_id, live_id=live_id, viewer_user_id=user_id, host_user_id=host_user_id)
+    token_role = "cohost" if is_guest_request else "host" if is_host and requested_role in {"publisher", "host", "creator"} else "viewer"
+    room_name = clean_html(live.get("webrtc_room_id") or f"pulse-live-{live_id}")[:120]
+    from services import pulsesoc_communications_engine as call_engine
+    token = call_engine.generate_agora_live_token(
+        room_name,
+        user_id,
+        token_role,
+        live_id=live_id,
+        guest_id=int(guest.get("id") or 0),
+        request_id=int(guest.get("request_id") or 0),
+        host_user_id=host_user_id,
+    )
+    conn.close()
+    if not token.get("ok"):
+        return pulse_live_cohost_error("TOKEN_GENERATION_FAILED", status=int(token.get("http_status") or 503), trace_id=trace_id, live_id=live_id, viewer_user_id=user_id, host_user_id=host_user_id)
+    return jsonify({**token, "trace_id": trace_id, "participant_name": pulse_actor_display_name(user), "authorization_version": "agora-v1"})
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/rtc/token", methods=["POST"])
+def api_pulse_live_rtc_token(live_id):
+    # LiveKit remains the default until physical Agora Live validation passes.
+    if str(os.getenv("LIVE_RTC_PROVIDER", "livekit")).strip().lower() == "agora":
+        return api_pulse_live_agora_token(live_id)
+    return api_pulse_live_livekit_token(live_id)
+
+
 @webhook_app.route("/api/pulse/live/<int:live_id>/guests/<int:guest_id>/publish-complete", methods=["POST"])
 def api_pulse_live_guest_publish_complete(live_id, guest_id):
     init_db()
@@ -47354,6 +47413,15 @@ def api_pulse_live_browser_publish(live_id):
         if audio_tracks <= 0 and video_tracks <= 0:
             conn.close()
             return jsonify({"ok": False, "message": "No camera or microphone tracks were detected.", "trace_id": trace_id}), 400
+        if str(os.getenv("LIVE_RTC_PROVIDER", "livekit")).strip().lower() == "agora":
+            cur.execute(
+                "UPDATE pulse_live_sessions SET provider='agora', publish_state='agora_host_publishing', stream_health='agora_connected', status='live', is_live=1, audio_tracks=?, video_tracks=?, updated_at=? WHERE id=?",
+                (audio_tracks, video_tracks, now, live_id),
+            )
+            cur.execute("UPDATE pulse_live_streams SET status='live', updated_at=? WHERE session_id=?", (now, live_id))
+            pulse_live_record_timeline_event(cur, "agora_host_publish_confirmed", live_id=live_id, actor_user_id=user["user_id"], post_id=int(live.get("feed_post_id") or 0), payload={"trace_id": trace_id, "audio_tracks": audio_tracks, "video_tracks": video_tracks, "provider": "agora"})
+            conn.commit(); conn.close()
+            return jsonify({"ok": True, "status": "live", "publish_path": "agora_rtc", "audio_tracks": audio_tracks, "video_tracks": video_tracks, "playback": {"supports_webrtc": True, "preferred_transport": "agora", "webrtc_room_id": live.get("webrtc_room_id") or f"pulse-live-{live_id}"}})
         existing_egress = (live.get("livekit_egress_id") or "").strip()
         existing_egress_status = (live.get("livekit_egress_status") or "").strip().lower()
         existing_mux_status = (live.get("mux_live_status") or "").strip().lower()

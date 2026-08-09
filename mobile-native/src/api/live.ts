@@ -224,7 +224,7 @@ export async function startLive(draft: LiveStudioDraft): Promise<LiveStartResult
  * token/url so the caller can surface an honest error instead of a blank preview.
  */
 export async function getLiveKitToken(liveId: number, role: LiveKitRole = "viewer"): Promise<LiveKitCredentials | null> {
-  const data = await pulseApi<Record<string, unknown>>(`/api/pulse/live/${liveId}/livekit/token`, {
+  const data = await pulseApi<Record<string, unknown>>(`/api/pulse/live/${liveId}/rtc/token`, {
     method: "POST",
     body: JSON.stringify({ role })
   });

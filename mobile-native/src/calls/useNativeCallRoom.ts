@@ -580,7 +580,7 @@ export function useNativeCallRoom() {
   const agora = useAgoraCallRoom();
   return {
     ...(agora.connected || agora.connecting ? agora : livekit),
-    connect: (join: PulseCallJoin, options: { video?: boolean } = {}) =>
+    connect: (join: PulseCallJoin, options: { video?: boolean; refreshCredentials?: () => Promise<PulseCallJoin> } = {}) =>
       String(join.provider || "livekit").toLowerCase() === "agora" ? agora.connect(join, options) : livekit.connect(join, options),
     disconnect: async (reason = "local_disconnect") => {
       await Promise.all([agora.disconnect(reason), livekit.disconnect(reason)]);

@@ -28,6 +28,13 @@ class AgoraRtcProviderContractTests(unittest.TestCase):
         self.assertIn('"@livekit/react-native"', package)
         self.assertIn('"react-native-agora": "4.6.2"', package)
 
+    def test_native_adapters_renew_without_logging_tokens(self) -> None:
+        call_adapter = (ROOT / "mobile-native" / "src" / "calls" / "useAgoraCallRoom.ts").read_text(encoding="utf-8")
+        live_adapter = (ROOT / "mobile-native" / "src" / "live" / "useAgoraLiveBroadcastRoom.ts").read_text(encoding="utf-8")
+        self.assertIn("engine.renewToken(next.token)", call_adapter)
+        self.assertIn("engineRef.current?.renewToken(next.token)", live_adapter)
+        self.assertNotIn("console.log", call_adapter + live_adapter)
+
 
 if __name__ == "__main__":
     unittest.main()

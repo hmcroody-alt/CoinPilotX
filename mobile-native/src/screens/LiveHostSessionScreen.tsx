@@ -45,6 +45,7 @@ import { useAuth } from "../session/auth";
 import { GlassCircleButton, GlassPill, LiveBottomSheet, ToolTile } from "../live/liveHostUi";
 import { LiveReactionLayer, type ReactionLayerHandle } from "../live/LiveReactionLayer";
 import { LiveChatComposer, LiveChatMessageRow, LiveChatStream, type LiveChatModerationAction } from "../live/LiveChatOverlay";
+import { RtcVideoView } from "../live/RtcVideoView";
 
 type NativeVideoViewProps = {
   videoTrack?: any;
@@ -93,7 +94,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
   const title = String(route.params?.title || "PulseSoc Live");
   const room = useLiveBroadcastRoom();
 
-  const [VideoViewComponent, setVideoViewComponent] = useState<ComponentType<NativeVideoViewProps> | null>(null);
+  const VideoViewComponent = RtcVideoView as ComponentType<NativeVideoViewProps>;
   const [connecting, setConnecting] = useState(true);
   const [fatalError, setFatalError] = useState("");
   const [viewerCount, setViewerCount] = useState(0);
@@ -126,14 +127,6 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
   const composerLift = useRef(new Animated.Value(0)).current;
   const inlineInputRef = useRef<TextInput>(null);
   const sheetInputRef = useRef<TextInput>(null);
-
-  useEffect(() => {
-    if (Platform.OS !== "web") {
-      import("@livekit/react-native")
-        .then((module) => setVideoViewComponent(() => module.VideoView as ComponentType<NativeVideoViewProps>))
-        .catch(() => undefined);
-    }
-  }, []);
 
   useEffect(() => {
     let cancelled = false;

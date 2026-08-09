@@ -48,6 +48,7 @@ import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { claimLivePlaybackOwner, releaseLivePlaybackOwner } from "../live/livePlaybackOwnership";
+import { RtcVideoView } from "../live/RtcVideoView";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "LiveDetail">>;
 type NativeVideoViewProps = {
@@ -79,7 +80,7 @@ export function LiveScreen({ route, navigation }: Props) {
   const [muted, setMuted] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
   const [liveKitPlaybackFailed, setLiveKitPlaybackFailed] = useState(false);
-  const [VideoViewComponent, setVideoViewComponent] = useState<ComponentType<NativeVideoViewProps> | null>(null);
+  const VideoViewComponent = RtcVideoView as ComponentType<NativeVideoViewProps>;
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoRef = useRef<Video>(null);
   const guestPublishKeyRef = useRef("");
@@ -87,19 +88,6 @@ export function LiveScreen({ route, navigation }: Props) {
   const connectLiveRoom = room.joinAsViewer;
   const disconnectLiveRoom = room.leaveViewer;
   const setRemoteAudioEnabled = room.setRemoteAudioEnabled;
-
-  useEffect(() => {
-    if (Platform.OS === "web") return undefined;
-    let mounted = true;
-    import("@livekit/react-native")
-      .then((module) => {
-        if (mounted) setVideoViewComponent(() => module.VideoView as ComponentType<NativeVideoViewProps>);
-      })
-      .catch(() => undefined);
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   async function load(mode: "initial" | "refresh" = "initial") {
     setError("");
@@ -212,7 +200,7 @@ export function LiveScreen({ route, navigation }: Props) {
         setError("PulseSoc could not mint native Live viewer credentials. Retry or wait for the provider room to become available.");
         return;
       }
-      const ok = await connectLiveRoom(credentials, { publish: false });
+      const ok = await connectLiveRoom(credentials, { publish: false, refreshCredentials: () => getLiveKitToken(liveId, "viewer") });
       if (!ok) {
         await releaseLivePlaybackOwner("viewer", liveId);
         setLiveKitPlaybackFailed(true);

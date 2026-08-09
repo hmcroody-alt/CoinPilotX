@@ -488,6 +488,48 @@ def _generate_agora_token(room_name: str, user_id: int, call_type: str = "audio"
     }
 
 
+def generate_agora_live_token(room_name: str, user_id: int, role: str, *, live_id: int, guest_id: int = 0, request_id: int = 0, host_user_id: int = 0) -> dict[str, Any]:
+    missing = _require_agora()
+    if missing:
+        return missing
+    try:
+        from agora_token_builder import RtcTokenBuilder
+    except ImportError:
+        return _err("Agora token generation is unavailable.", 503, "agora_token_builder_missing", provider="agora")
+    normalized_role = str(role or "viewer").strip().lower()
+    can_publish = normalized_role in {"host", "cohost", "guest"}
+    if normalized_role not in {"host", "cohost", "guest", "viewer"}:
+        return _err("Unsupported Agora Live role.", 400, "invalid_live_role", provider="agora")
+    app_id = os.getenv("AGORA_APP_ID", "").strip()
+    certificate = os.getenv("AGORA_APP_CERTIFICATE", "").strip()
+    ttl = 1800 if normalized_role in {"cohost", "guest"} else 7200 if normalized_role == "host" else 3600
+    expires_at = int(time.time()) + ttl
+    uid = _agora_uid(user_id)
+    token = RtcTokenBuilder.buildTokenWithUid(app_id, certificate, room_name, uid, 1 if can_publish else 2, expires_at)
+    return {
+        "ok": True,
+        "provider": "agora",
+        "live_id": int(live_id),
+        "host_user_id": int(host_user_id),
+        "token": token,
+        "app_id": app_id,
+        "channel_name": room_name,
+        "room": room_name,
+        "uid": uid,
+        "identity": f"pulse-user-{uid}",
+        "can_publish": can_publish,
+        "can_subscribe": True,
+        "can_publish_sources": ["microphone", "camera"] if can_publish else [],
+        "can_publish_data": can_publish,
+        "can_update_own_metadata": False,
+        "room_join": True,
+        "role": normalized_role,
+        "guest_id": int(guest_id),
+        "request_id": int(request_id),
+        "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
 def _generate_rtc_token(provider: str, room_name: str, user_id: int, call_type: str = "audio", participant_role: str = "member") -> dict[str, Any]:
     if provider == "agora":
         return _generate_agora_token(room_name, user_id, call_type, participant_role)

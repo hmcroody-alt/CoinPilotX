@@ -2,6 +2,7 @@ import { ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
 import { getLiveKitToken } from "../../api/live";
+import { RtcVideoView } from "../../live/RtcVideoView";
 import { PulseReel } from "../../api/reels";
 import { useLiveBroadcastRoom } from "../../live/useLiveBroadcastRoom";
 import { claimLivePlaybackOwner, releaseLivePlaybackOwner } from "../../live/livePlaybackOwnership";
@@ -28,19 +29,7 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
   const room = useLiveBroadcastRoom();
   const { joinAsViewer: connect, leaveViewer: disconnect, setRemoteAudioEnabled } = room;
   const [mode, setMode] = useState<ViewerMode>("connecting");
-  const [VideoTileView, setVideoTileView] = useState<React.ComponentType<any> | null>(null);
-
-  useEffect(() => {
-    let mounted = true;
-    import("@livekit/react-native")
-      .then((module) => {
-        if (mounted) setVideoTileView(() => module.VideoView as React.ComponentType<any>);
-      })
-      .catch(() => undefined);
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const VideoTileView = RtcVideoView;
 
   useEffect(() => {
     let cancelled = false;
@@ -67,7 +56,7 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
           setMode(hlsUrl ? "hls" : "error");
           return;
         }
-        const connected = await connect(credentials, { publish: false });
+        const connected = await connect(credentials, { publish: false, refreshCredentials: () => getLiveKitToken(liveId, "viewer") });
         if (cancelled) return;
         setMode(connected ? "livekit" : hlsUrl ? "hls" : "error");
       } catch {
@@ -116,7 +105,7 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
     if (room.error) {
       return <LiveMessage poster={poster} title="Live signal dropped" body={room.error} />;
     }
-    if (!videoParticipants.length || !VideoTileView) {
+    if (!videoParticipants.length) {
       return <LiveMessage poster={poster} spinner title="Waiting for the host" body="The broadcaster's camera will appear here the moment it goes live." />;
     }
     return (

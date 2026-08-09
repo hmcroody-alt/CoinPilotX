@@ -86,6 +86,33 @@ describe("normalizeLiveStartResult", () => {
 });
 
 describe("normalizeLiveKitCredentials", () => {
+  it("normalizes Agora credentials without requiring or exposing a LiveKit URL", () => {
+    const creds = normalizeLiveKitCredentials({
+      provider: "agora",
+      token: "agora-token",
+      app_id: "agora-app-id",
+      channel_name: "pulse-live-42",
+      uid: 7,
+      role: "viewer",
+      can_publish: false,
+      can_subscribe: true,
+      expires_at: 1800000000
+    });
+
+    expect(creds).toMatchObject({
+      provider: "agora",
+      token: "agora-token",
+      appId: "agora-app-id",
+      channelName: "pulse-live-42",
+      uid: 7,
+      role: "viewer",
+      canPublish: false,
+      canSubscribe: true,
+      expiresAt: "1800000000"
+    });
+    expect(creds?.url).toBe("");
+  });
+
   it("accepts livekit_url and coerces publish flag and numeric expiry", () => {
     const creds = normalizeLiveKitCredentials({
       token: "tok",

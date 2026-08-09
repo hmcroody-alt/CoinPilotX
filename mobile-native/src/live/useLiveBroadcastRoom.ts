@@ -66,6 +66,7 @@ import {
 import { emitLiveAudioEvent } from "./liveAudioTelemetry";
 import { createLiveAudioTrace, type LiveAudioTrace } from "./liveAudioTrace";
 import type { LiveKitCredentials } from "./liveSession";
+import { useAgoraLiveBroadcastRoom } from "./useAgoraLiveBroadcastRoom";
 
 /**
  * LiveKit room hook for native live broadcasting. Unlike the 1:1 call hook this
@@ -98,6 +99,7 @@ export type LiveParticipant = {
 };
 
 type LiveBroadcastState = {
+  provider: "livekit";
   supported: boolean;
   connecting: boolean;
   connected: boolean;
@@ -137,6 +139,7 @@ type LiveBroadcastState = {
 };
 
 const initialState: LiveBroadcastState = {
+  provider: "livekit",
   supported: Platform.OS !== "web",
   connecting: false,
   connected: false,
@@ -521,7 +524,7 @@ export type LiveConnectOptions = {
   refreshCredentials?: () => Promise<LiveKitCredentials | null>;
 };
 
-export function useLiveBroadcastRoom() {
+function useLiveKitBroadcastRoom() {
   const runtimeRef = useRef(getLiveRuntime());
   const existingResources = runtimeRef.current.getResources();
   const roomRef = useRef<any>(existingResources.room || null);
@@ -2037,5 +2040,20 @@ export function useLiveBroadcastRoom() {
     switchCamera,
     getLastConnectError: () => lastConnectErrorRef.current,
     getAudioTrace: () => traceRef.current?.snapshot() || []
+  };
+}
+
+export function useLiveBroadcastRoom() {
+  const livekit = useLiveKitBroadcastRoom();
+  const agora = useAgoraLiveBroadcastRoom();
+  const select = (credentials: LiveKitCredentials) => credentials.provider === "agora" ? agora : livekit;
+  return {
+    ...(agora.connected || agora.connecting ? agora : livekit),
+    connect: (credentials: LiveKitCredentials, options: LiveConnectOptions = {}) => select(credentials).connect(credentials, options),
+    startBroadcast: (credentials: LiveKitCredentials, options: LiveConnectOptions = {}) => select(credentials).startBroadcast(credentials, options),
+    joinAsViewer: (credentials: LiveKitCredentials, options: LiveConnectOptions = {}) => select(credentials).joinAsViewer(credentials, options),
+    disconnect: async (reason = "local_disconnect") => { await Promise.all([agora.disconnect(reason), livekit.disconnect(reason)]); },
+    stopBroadcast: async (reason = "local_disconnect") => { await Promise.all([agora.stopBroadcast(reason), livekit.stopBroadcast(reason)]); },
+    leaveViewer: async (reason = "local_disconnect") => { await Promise.all([agora.leaveViewer(reason), livekit.leaveViewer(reason)]); }
   };
 }

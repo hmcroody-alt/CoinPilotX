@@ -33,11 +33,15 @@ export type LiveStartResult = {
 };
 
 export type LiveKitCredentials = {
+  provider?: "livekit" | "agora";
   broadcastId: number;
   hostUserId: number;
   authorizationVersion: string;
   token: string;
   url: string;
+  appId?: string;
+  channelName?: string;
+  uid?: number;
   room: string;
   identity: string;
   canPublish: boolean;
@@ -209,14 +213,19 @@ export function normalizeLiveStartResult(raw: Record<string, unknown> | null | u
 export function normalizeLiveKitCredentials(raw: Record<string, unknown> | null | undefined): LiveKitCredentials | null {
   const data = raw || {};
   const token = toStr(data.token);
+  const provider = toStr(data.provider, "livekit").toLowerCase() === "agora" ? "agora" : "livekit";
   const url = toStr(data.livekit_url ?? data.url);
-  if (!token || !url) return null;
+  const appId = toStr(data.app_id);
+  const channelName = toStr(data.channel_name ?? data.room);
+  const uid = toNum(data.uid);
+  if (!token || (provider === "livekit" ? !url : !appId || !channelName || !uid)) return null;
   return {
     broadcastId: toNum(data.live_id ?? data.broadcast_id),
     hostUserId: toNum(data.host_user_id),
     authorizationVersion: toStr(data.authorization_version ?? data.trace_id, "v1"),
     token,
     url,
+    ...(provider === "agora" ? { provider, appId, channelName, uid } : {}),
     room: toStr(data.room),
     identity: toStr(data.identity),
     canPublish: toBool(data.can_publish),
