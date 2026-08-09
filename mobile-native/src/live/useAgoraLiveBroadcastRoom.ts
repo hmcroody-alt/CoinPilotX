@@ -2,12 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { IRtcEngine, IRtcEngineEventHandler } from "react-native-agora";
 import type { LiveKitCredentials } from "./liveSession";
 import type { LiveParticipant } from "./useLiveBroadcastRoom";
+import { emitAgoraLiveEvent } from "./agoraLiveTelemetry";
 
 const initial = {
   provider: "agora" as const, supported: true, connecting: false, connected: false, reconnecting: false,
   connectionState: "disconnected", connectionQuality: "unknown", error: "", canPublish: false,
   audioEnabled: false, videoEnabled: false, speakerEnabled: true, remoteAudioEnabled: true,
-  localVideoTrack: null as any, localAudioTrackCount: 0, remoteAudioTrackCount: 0, remoteVideoTrackCount: 0,
+  localVideoTrack: null as any, localVideoTrackCount: 0, localAudioTrackCount: 0, remoteAudioTrackCount: 0, remoteVideoTrackCount: 0,
   participants: [] as LiveParticipant[], reconnectCount: 0, disconnectReason: "", diagnosticCode: "",
   audioPath: "v1_legacy" as const, audioBusy: false, recovering: false, audioWarning: ""
 };
@@ -30,13 +31,16 @@ export function useAgoraLiveBroadcastRoom() {
       const result = engineRef.current?.renewToken(next.token) ?? -1;
       if (result < 0) throw new Error("renewal rejected");
       credentialsRef.current = next;
+      emitAgoraLiveEvent({ name: "token_renewed", liveId: next.broadcastId, uid: next.uid });
       setState((s) => ({ ...s, error: "", diagnosticCode: "" }));
-    }).catch(() => setState((s) => ({ ...s, error: "Secure Live access could not be refreshed.", diagnosticCode: "AGORA_LIVE_TOKEN_RENEWAL_FAILED" })))
+    }).catch(() => { emitAgoraLiveEvent({ name: "token_renewal_failed", liveId: current.broadcastId, uid: current.uid }); setState((s) => ({ ...s, error: "Secure Live access could not be refreshed.", diagnosticCode: "AGORA_LIVE_TOKEN_RENEWAL_FAILED" })); })
       .finally(() => { renewalRef.current = null; });
   }, []);
 
   const disconnect = useCallback(async (reason = "local_disconnect") => {
     const engine = engineRef.current; engineRef.current = null;
+    const credentials = credentialsRef.current;
+    if (credentials) emitAgoraLiveEvent({ name: "leave", liveId: credentials.broadcastId, uid: credentials.uid, reason });
     if (engine) { if (handlerRef.current) engine.unregisterEventHandler(handlerRef.current); engine.leaveChannel(); engine.release(); }
     handlerRef.current = null; credentialsRef.current = null; refreshRef.current = null;
     setState((s) => ({ ...initial, supported: s.supported, disconnectReason: reason, diagnosticCode: reason }));
@@ -55,21 +59,45 @@ export function useAgoraLiveBroadcastRoom() {
       const agora = await import("react-native-agora");
       const engine = agora.createAgoraRtcEngine(); engineRef.current = engine; engine.initialize({ appId: credentials.appId }); engine.enableAudio();
       const publish = Boolean(options.publish && credentials.canPublish);
-      if (publish && options.video !== false) { engine.enableVideo(); engine.startPreview(); }
+      engine.setAudioProfile(agora.AudioProfileType.AudioProfileMusicHighQuality, agora.AudioScenarioType.AudioScenarioDefault);
+      engine.setRemoteSubscribeFallbackOption(agora.StreamFallbackOptions.StreamFallbackOptionAudioOnly);
+      if (publish && options.video !== false) {
+        engine.enableVideo();
+        engine.setVideoEncoderConfiguration({
+          dimensions: { width: 720, height: 1280 },
+          frameRate: 30,
+          bitrate: 0,
+          orientationMode: agora.OrientationMode.OrientationModeAdaptive,
+          degradationPreference: agora.DegradationPreference.MaintainBalanced
+        });
+        engine.enableDualStreamMode(true);
+        engine.startPreview();
+      }
+      emitAgoraLiveEvent({ name: "provider_selected", liveId: credentials.broadcastId, uid: credentials.uid, reason: publish ? "broadcaster" : "audience" });
       const localTrack = publish && options.video !== false ? { provider: "agora", uid: 0, local: true } : null;
       const localParticipant: LiveParticipant = { identity: credentials.identity, name: credentials.participantName || "You", isLocal: true, isHost: credentials.role === "host", videoTrack: localTrack, audioTrack: publish ? { provider: "agora", uid: 0 } : null, hasVideo: Boolean(localTrack), hasAudio: publish, audioMuted: false, speaking: false };
       const handler: IRtcEngineEventHandler = {
-        onJoinChannelSuccess: () => setState((s) => ({ ...s, connecting: false, connected: true, reconnecting: false, connectionState: "connected", audioEnabled: publish, videoEnabled: Boolean(localTrack), localVideoTrack: localTrack, localAudioTrackCount: publish ? 1 : 0, participants: publish ? [localParticipant] : [], error: "", diagnosticCode: "" })),
+        onJoinChannelSuccess: () => { emitAgoraLiveEvent({ name: "channel_joined", liveId: credentials.broadcastId, uid: credentials.uid }); setState((s) => ({ ...s, connecting: false, connected: true, reconnecting: false, connectionState: "connected", audioEnabled: publish, videoEnabled: Boolean(localTrack), localVideoTrack: localTrack, localVideoTrackCount: 0, localAudioTrackCount: 0, participants: publish ? [localParticipant] : [], error: "", diagnosticCode: "" })); },
         onConnectionStateChanged: (_c, value) => {
           const reconnecting = value === agora.ConnectionStateType.ConnectionStateReconnecting;
           const connected = value === agora.ConnectionStateType.ConnectionStateConnected;
           const failed = value === agora.ConnectionStateType.ConnectionStateFailed;
+          emitAgoraLiveEvent({ name: "connection_state", liveId: credentials.broadcastId, uid: credentials.uid, connectionState: failed ? "failed" : reconnecting ? "reconnecting" : connected ? "connected" : "connecting" });
           setState((s) => ({ ...s, connected, reconnecting, recovering: reconnecting, connecting: !connected && !reconnecting && !failed, connectionState: failed ? "failed" : reconnecting ? "reconnecting" : connected ? "connected" : "connecting", reconnectCount: reconnecting && !s.reconnecting ? s.reconnectCount + 1 : s.reconnectCount, diagnosticCode: failed ? "AGORA_LIVE_CONNECTION_FAILED" : s.diagnosticCode }));
         },
-        onUserJoined: (_c, uid) => setState((s) => { const participant: LiveParticipant = { identity: `agora-${uid}`, name: "Live participant", isLocal: false, isHost: !publish && s.participants.length === 0, videoTrack: { provider: "agora", uid }, audioTrack: { provider: "agora", uid }, hasVideo: true, hasAudio: true, audioMuted: false, speaking: false }; return { ...s, participants: [...s.participants.filter(p => p.identity !== participant.identity), participant], remoteAudioTrackCount: s.remoteAudioTrackCount + 1, remoteVideoTrackCount: s.remoteVideoTrackCount + 1 }; }),
+        onUserJoined: (_c, uid) => setState((s) => { const participant: LiveParticipant = { identity: `agora-${uid}`, name: "Live participant", isLocal: false, isHost: !publish && s.participants.length === 0, videoTrack: { provider: "agora", uid }, audioTrack: { provider: "agora", uid }, hasVideo: true, hasAudio: true, audioMuted: false, speaking: false }; const participants = [...s.participants.filter(p => p.identity !== participant.identity), participant]; emitAgoraLiveEvent({ name: "remote_joined", liveId: credentials.broadcastId, uid, participantCount: participants.length }); return { ...s, participants, remoteAudioTrackCount: s.remoteAudioTrackCount + 1, remoteVideoTrackCount: s.remoteVideoTrackCount + 1 }; }),
         onUserOffline: (_c, uid) => setState((s) => ({ ...s, participants: s.participants.filter(p => p.identity !== `agora-${uid}`), remoteAudioTrackCount: Math.max(0, s.remoteAudioTrackCount - 1), remoteVideoTrackCount: Math.max(0, s.remoteVideoTrackCount - 1) })),
-        onTokenPrivilegeWillExpire: () => renewToken(), onRequestToken: () => renewToken(),
-        onError: (code) => setState((s) => ({ ...s, error: `Agora Live media error (${code}).`, diagnosticCode: `AGORA_LIVE_${code}` }))
+        onFirstLocalAudioFramePublished: () => { emitAgoraLiveEvent({ name: "local_audio_published", liveId: credentials.broadcastId, uid: credentials.uid }); setState((s) => ({ ...s, localAudioTrackCount: 1 })); },
+        onFirstLocalVideoFramePublished: () => { emitAgoraLiveEvent({ name: "local_video_published", liveId: credentials.broadcastId, uid: credentials.uid }); setState((s) => ({ ...s, localVideoTrackCount: 1 })); },
+        onLocalAudioStateChanged: (_c, mediaState, reason) => { emitAgoraLiveEvent({ name: "local_audio_state", liveId: credentials.broadcastId, uid: credentials.uid, code: mediaState, reason: String(reason) }); if (mediaState === agora.LocalAudioStreamState.LocalAudioStreamStateFailed) setState((s) => ({ ...s, error: "Microphone publishing failed. Check microphone permission and retry.", diagnosticCode: `AGORA_LIVE_AUDIO_${reason}` })); },
+        onLocalVideoStateChanged: (_source, mediaState, reason) => { emitAgoraLiveEvent({ name: "local_video_state", liveId: credentials.broadcastId, uid: credentials.uid, code: mediaState, reason: String(reason) }); if (mediaState === agora.LocalVideoStreamState.LocalVideoStreamStateFailed) setState((s) => ({ ...s, error: "Camera publishing failed. Check camera permission and retry.", diagnosticCode: `AGORA_LIVE_VIDEO_${reason}` })); },
+        onNetworkQuality: (_c, uid, txQuality, rxQuality) => emitAgoraLiveEvent({ name: "network_quality", liveId: credentials.broadcastId, uid, txQuality, rxQuality }, true),
+        onRtcStats: (_c, stats) => emitAgoraLiveEvent({ name: "rtc_stats", liveId: credentials.broadcastId, uid: credentials.uid, audioBitrateKbps: stats.txAudioKBitRate, videoBitrateKbps: stats.txVideoKBitRate, latencyMs: stats.lastmileDelay }, true),
+        onLocalAudioStats: (_c, stats) => emitAgoraLiveEvent({ name: "local_audio_stats", liveId: credentials.broadcastId, uid: credentials.uid, audioBitrateKbps: stats.sentBitrate, packetLossPercent: stats.txPacketLossRate }, true),
+        onLocalVideoStats: (_c, _source, stats) => emitAgoraLiveEvent({ name: "local_video_stats", liveId: credentials.broadcastId, uid: credentials.uid, videoBitrateKbps: stats.sentBitrate, videoFps: stats.sentFrameRate, packetLossPercent: stats.txPacketLossRate, width: stats.encodedFrameWidth, height: stats.encodedFrameHeight }, true),
+        onTokenPrivilegeWillExpire: () => { emitAgoraLiveEvent({ name: "token_renewal_requested", liveId: credentials.broadcastId, uid: credentials.uid }); renewToken(); },
+        onRequestToken: () => { emitAgoraLiveEvent({ name: "token_expired_recovery", liveId: credentials.broadcastId, uid: credentials.uid }); renewToken(); },
+        onError: (code) => { emitAgoraLiveEvent({ name: "sdk_error", liveId: credentials.broadcastId, uid: credentials.uid, code }); setState((s) => ({ ...s, error: `Agora Live media error (${code}).`, diagnosticCode: `AGORA_LIVE_${code}` })); }
       };
       handlerRef.current = handler; engine.registerEventHandler(handler);
       const result = engine.joinChannel(credentials.token, credentials.channelName, credentials.uid, { clientRoleType: publish ? agora.ClientRoleType.ClientRoleBroadcaster : agora.ClientRoleType.ClientRoleAudience, channelProfile: agora.ChannelProfileType.ChannelProfileLiveBroadcasting, publishMicrophoneTrack: publish, publishCameraTrack: Boolean(localTrack), autoSubscribeAudio: true, autoSubscribeVideo: true });

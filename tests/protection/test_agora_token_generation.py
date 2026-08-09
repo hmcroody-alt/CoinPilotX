@@ -39,6 +39,25 @@ class AgoraTokenGenerationTests(unittest.TestCase):
         self.assertIn("NOT_AUTHORIZED", route)
         self.assertIn("TOKEN_MISSING_PUBLISH_PERMISSION", route)
 
+    def test_owner_live_override_is_narrow_and_livekit_remains_default(self) -> None:
+        source = (ROOT / "bot.py").read_text(encoding="utf-8")
+        selector = source[source.index('def api_pulse_live_rtc_token'):source.index('@webhook_app.route("/api/pulse/live/<int:live_id>/guests/')]
+        self.assertIn('AGORA_OWNER_LIVE_TEST_ENABLED', selector)
+        self.assertIn('user_is_owner_account(host)', selector)
+        self.assertIn('os.getenv("LIVE_RTC_PROVIDER", "livekit")', selector)
+        self.assertIn('return api_pulse_live_livekit_token(live_id)', selector)
+
+    def test_native_agora_live_quality_and_publish_confirmation_contract(self) -> None:
+        adapter = (ROOT / "mobile-native/src/live/useAgoraLiveBroadcastRoom.ts").read_text(encoding="utf-8")
+        host = (ROOT / "mobile-native/src/screens/LiveHostSessionScreen.tsx").read_text(encoding="utf-8")
+        self.assertIn("AudioProfileMusicHighQuality", adapter)
+        self.assertIn("width: 720, height: 1280", adapter)
+        self.assertIn("MaintainBalanced", adapter)
+        self.assertIn("StreamFallbackOptionAudioOnly", adapter)
+        self.assertIn("onFirstLocalAudioFramePublished", adapter)
+        self.assertIn("onFirstLocalVideoFramePublished", adapter)
+        self.assertIn('room.provider === "agora" && (audioTracks <= 0 || videoTracks <= 0)', host)
+
 
 if __name__ == "__main__":
     unittest.main()

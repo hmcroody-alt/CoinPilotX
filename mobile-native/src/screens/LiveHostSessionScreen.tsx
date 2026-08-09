@@ -265,7 +265,12 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
   useEffect(() => {
     if (!room.connected || liveId <= 0) return;
     const audioTracks = Number(room.localAudioTrackCount || 0);
-    const videoTracks = room.localVideoTrack ? 1 : 0;
+    const videoTracks = room.provider === "agora"
+      ? Number("localVideoTrackCount" in room ? room.localVideoTrackCount || 0 : 0)
+      : room.localVideoTrack ? 1 : 0;
+    // Agora reports channel membership before the first encoded media frames.
+    // Do not reconcile the backend to LIVE until both host tracks are proven.
+    if (room.provider === "agora" && (audioTracks <= 0 || videoTracks <= 0)) return;
     if (audioTracks <= 0 && videoTracks <= 0) return;
     const key = `${liveId}:${audioTracks}:${videoTracks}:${room.reconnectCount}`;
     if (publishConfirmKeyRef.current === key) return;

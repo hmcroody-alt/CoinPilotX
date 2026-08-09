@@ -47240,8 +47240,24 @@ def api_pulse_live_agora_token(live_id):
 
 @webhook_app.route("/api/pulse/live/<int:live_id>/rtc/token", methods=["POST"])
 def api_pulse_live_rtc_token(live_id):
-    # LiveKit remains the default until physical Agora Live validation passes.
+    # LiveKit remains the global default until paired physical validation passes.
+    # The owner-only flag is intentionally narrow and reversible for controlled
+    # physical testing; all participants in that owner's Live must use the same
+    # provider, so selection is based on the server-owned session host.
+    provider = "livekit"
     if str(os.getenv("LIVE_RTC_PROVIDER", "livekit")).strip().lower() == "agora":
+        provider = "agora"
+    elif str(os.getenv("AGORA_OWNER_LIVE_TEST_ENABLED", "false")).strip().lower() in {"1", "true", "yes", "on"}:
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        cur.execute("SELECT user_id FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+        live = dict(cur.fetchone() or {})
+        cur.execute("SELECT * FROM users WHERE user_id=? LIMIT 1", (int(live.get("user_id") or 0),))
+        host = dict(cur.fetchone() or {})
+        conn.close()
+        if host and (user_is_owner_account(host) or premium_identity_engine.is_owner(host)):
+            provider = "agora"
+    logging.info("PULSE_LIVE_RTC_PROVIDER live_id=%s provider=%s owner_test=%s", live_id, provider, provider == "agora" and str(os.getenv("LIVE_RTC_PROVIDER", "livekit")).strip().lower() != "agora")
+    if provider == "agora":
         return api_pulse_live_agora_token(live_id)
     return api_pulse_live_livekit_token(live_id)
 
@@ -47413,13 +47429,22 @@ def api_pulse_live_browser_publish(live_id):
         if audio_tracks <= 0 and video_tracks <= 0:
             conn.close()
             return jsonify({"ok": False, "message": "No camera or microphone tracks were detected.", "trace_id": trace_id}), 400
+        provider = "livekit"
         if str(os.getenv("LIVE_RTC_PROVIDER", "livekit")).strip().lower() == "agora":
+            provider = "agora"
+        elif str(os.getenv("AGORA_OWNER_LIVE_TEST_ENABLED", "false")).strip().lower() in {"1", "true", "yes", "on"}:
+            cur.execute("SELECT * FROM users WHERE user_id=? LIMIT 1", (int(live.get("user_id") or 0),))
+            host = dict(cur.fetchone() or {})
+            if host and (user_is_owner_account(host) or premium_identity_engine.is_owner(host)):
+                provider = "agora"
+        if provider == "agora":
             cur.execute(
                 "UPDATE pulse_live_sessions SET provider='agora', publish_state='agora_host_publishing', stream_health='agora_connected', status='live', is_live=1, audio_tracks=?, video_tracks=?, updated_at=? WHERE id=?",
                 (audio_tracks, video_tracks, now, live_id),
             )
             cur.execute("UPDATE pulse_live_streams SET status='live', updated_at=? WHERE session_id=?", (now, live_id))
             pulse_live_record_timeline_event(cur, "agora_host_publish_confirmed", live_id=live_id, actor_user_id=user["user_id"], post_id=int(live.get("feed_post_id") or 0), payload={"trace_id": trace_id, "audio_tracks": audio_tracks, "video_tracks": video_tracks, "provider": "agora"})
+            logging.info("PULSE_LIVE_AGORA_PUBLISH live_id=%s provider=agora host_uid=%s audio_tracks=%s video_tracks=%s trace_id=%s", live_id, user.get("user_id"), audio_tracks, video_tracks, trace_id)
             conn.commit(); conn.close()
             return jsonify({"ok": True, "status": "live", "publish_path": "agora_rtc", "audio_tracks": audio_tracks, "video_tracks": video_tracks, "playback": {"supports_webrtc": True, "preferred_transport": "agora", "webrtc_room_id": live.get("webrtc_room_id") or f"pulse-live-{live_id}"}})
         existing_egress = (live.get("livekit_egress_id") or "").strip()
