@@ -2046,14 +2046,24 @@ function useLiveKitBroadcastRoom() {
 export function useLiveBroadcastRoom() {
   const livekit = useLiveKitBroadcastRoom();
   const agora = useAgoraLiveBroadcastRoom();
-  const select = (credentials: LiveKitCredentials) => credentials.provider === "agora" ? agora : livekit;
+  const livekitRef = useRef(livekit);
+  const agoraRef = useRef(agora);
+  livekitRef.current = livekit;
+  agoraRef.current = agora;
+  const select = useCallback((credentials: LiveKitCredentials) => credentials.provider === "agora" ? agoraRef.current : livekitRef.current, []);
+  const connect = useCallback((credentials: LiveKitCredentials, options: LiveConnectOptions = {}) => select(credentials).connect(credentials, options), [select]);
+  const startBroadcast = useCallback((credentials: LiveKitCredentials, options: LiveConnectOptions = {}) => select(credentials).startBroadcast(credentials, options), [select]);
+  const joinAsViewer = useCallback((credentials: LiveKitCredentials, options: LiveConnectOptions = {}) => select(credentials).joinAsViewer(credentials, options), [select]);
+  const disconnect = useCallback(async (reason = "local_disconnect") => { await Promise.all([agoraRef.current.disconnect(reason), livekitRef.current.disconnect(reason)]); }, []);
+  const stopBroadcast = useCallback(async (reason = "local_disconnect") => { await Promise.all([agoraRef.current.stopBroadcast(reason), livekitRef.current.stopBroadcast(reason)]); }, []);
+  const leaveViewer = useCallback(async (reason = "local_disconnect") => { await Promise.all([agoraRef.current.leaveViewer(reason), livekitRef.current.leaveViewer(reason)]); }, []);
   return {
     ...(agora.connected || agora.connecting ? agora : livekit),
-    connect: (credentials: LiveKitCredentials, options: LiveConnectOptions = {}) => select(credentials).connect(credentials, options),
-    startBroadcast: (credentials: LiveKitCredentials, options: LiveConnectOptions = {}) => select(credentials).startBroadcast(credentials, options),
-    joinAsViewer: (credentials: LiveKitCredentials, options: LiveConnectOptions = {}) => select(credentials).joinAsViewer(credentials, options),
-    disconnect: async (reason = "local_disconnect") => { await Promise.all([agora.disconnect(reason), livekit.disconnect(reason)]); },
-    stopBroadcast: async (reason = "local_disconnect") => { await Promise.all([agora.stopBroadcast(reason), livekit.stopBroadcast(reason)]); },
-    leaveViewer: async (reason = "local_disconnect") => { await Promise.all([agora.leaveViewer(reason), livekit.leaveViewer(reason)]); }
+    connect,
+    startBroadcast,
+    joinAsViewer,
+    disconnect,
+    stopBroadcast,
+    leaveViewer
   };
 }

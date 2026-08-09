@@ -81,6 +81,15 @@ export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: P
   }, [mode, muted, room.connected, room.remoteAudioTrackCount, setRemoteAudioEnabled]);
 
   useEffect(() => {
+    if (mode !== "livekit" || !room.connected || room.remoteAudioTrackCount > 0 || room.remoteVideoTrackCount > 0) return undefined;
+    const timeout = setTimeout(() => {
+      setMode("error");
+      disconnect("viewer_media_timeout").catch(() => undefined);
+    }, 15_000);
+    return () => clearTimeout(timeout);
+  }, [disconnect, mode, room.connected, room.remoteAudioTrackCount, room.remoteVideoTrackCount]);
+
+  useEffect(() => {
     if (!active || mode !== "livekit" || !room.connected) {
       releaseLivePlaybackOwner("feed", liveId || reel.id || "unknown");
       return;

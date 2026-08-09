@@ -31,6 +31,15 @@ class AgoraTokenGenerationTests(unittest.TestCase):
         self.assertTrue(cohost["can_publish"])
         self.assertEqual(cohost["guest_id"], 7)
 
+    def test_host_and_viewer_share_channel_but_have_unique_positive_uids(self) -> None:
+        with patch.dict(os.environ, self.ENV, clear=False):
+            host = rtc.generate_agora_live_token("pulse-live-88", 41, "host", live_id=88, host_user_id=41)
+            viewer = rtc.generate_agora_live_token("pulse-live-88", 42, "viewer", live_id=88, host_user_id=41)
+        self.assertEqual(host["channel_name"], viewer["channel_name"])
+        self.assertGreater(host["uid"], 0)
+        self.assertGreater(viewer["uid"], 0)
+        self.assertNotEqual(host["uid"], viewer["uid"])
+
     def test_routes_recheck_pulsesoc_identity_and_guest_authorization(self) -> None:
         source = (ROOT / "bot.py").read_text(encoding="utf-8")
         route = source[source.index('def api_pulse_live_agora_token'):source.index('def api_pulse_live_rtc_token')]
@@ -63,6 +72,22 @@ class AgoraTokenGenerationTests(unittest.TestCase):
         self.assertIn('/api/pulse/live/{args.live_id}/rtc/token', audit)
         self.assertIn('status == 401 and error_code == "NOT_AUTHENTICATED"', audit)
         self.assertNotIn("Authorization", audit)
+
+    def test_viewer_adapter_waits_for_real_join_and_remote_media(self) -> None:
+        adapter = (ROOT / "mobile-native/src/live/useAgoraLiveBroadcastRoom.ts").read_text(encoding="utf-8")
+        wrapper = (ROOT / "mobile-native/src/live/useLiveBroadcastRoom.ts").read_text(encoding="utf-8")
+        reels = (ROOT / "mobile-native/src/components/reels/ReelLiveViewerSurface.tsx").read_text(encoding="utf-8")
+        self.assertIn("autoSubscribeAudio: true", adapter)
+        self.assertIn("autoSubscribeVideo: true", adapter)
+        self.assertIn("ClientRoleAudience", adapter)
+        self.assertIn("onFirstRemoteAudioDecoded", adapter)
+        self.assertIn("onFirstRemoteVideoDecoded", adapter)
+        self.assertIn("muteAllRemoteAudioStreams", adapter)
+        self.assertIn("Promise.race([joinOutcome", adapter)
+        self.assertIn("12_000", adapter)
+        self.assertIn("useCallback((credentials", wrapper)
+        self.assertIn("viewer_media_timeout", reels)
+        self.assertIn("15_000", reels)
 
 
 if __name__ == "__main__":
