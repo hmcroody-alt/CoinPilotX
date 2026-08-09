@@ -49,6 +49,9 @@ venv/
 .venv/
 outputs/.mutate*-original
 
+# Timestamped local editor safety copies are not executable source.
+*.backup-*
+
 # Claude Code runtime lock, owned by a live session (not shared state)
 .claude/scheduled_tasks.lock
 
