@@ -195,7 +195,7 @@ async function performNativeSessionRefresh(cookie: string): Promise<RefreshResul
     }
     const data = parseJson(await response.text());
     const user = data.user as Record<string, unknown> | undefined;
-    const userId = Number(user?.user_id || 0);
+    const userId = Number(user?.user_id ?? user?.id ?? 0);
     if (data.authenticated !== true || userId <= 0 || !data.refresh_token) return "temporary";
     if (shouldRejectTemporaryQaUser(user)) {
       await clearNativeSessionCredentials();

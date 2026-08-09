@@ -34,12 +34,19 @@ describe("new-user profile identity", () => {
   it("uses numeric canonical profile keys for profile post retrieval", async () => {
     await listPublicProfilePosts({ profileKey: "901" });
 
-    expect(mockPulseApi).toHaveBeenCalledWith(expect.stringContaining("profile=901"), undefined);
+    expect(mockPulseApi).toHaveBeenCalledWith(expect.stringContaining("/api/pulse/profile/901/posts?"), undefined);
   });
 
   it("prefers the resolved user id over display name for future new users", async () => {
     await listPublicProfilePosts({ userId: 902, display_name: "Future User" });
 
-    expect(mockPulseApi).toHaveBeenCalledWith(expect.stringContaining("profile=902"), undefined);
+    expect(mockPulseApi).toHaveBeenCalledWith(expect.stringContaining("/api/pulse/profile/902/posts?"), undefined);
+  });
+
+  it("keeps pagination on the canonical profile posts route", async () => {
+    await listPublicProfilePosts({ userId: 903, username: "fresh_user" }, { limit: 12, offset: 24 });
+
+    expect(mockPulseApi).toHaveBeenCalledWith(expect.stringContaining("limit=12"), undefined);
+    expect(mockPulseApi).toHaveBeenCalledWith(expect.stringContaining("offset=24"), undefined);
   });
 });

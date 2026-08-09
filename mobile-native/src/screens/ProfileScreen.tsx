@@ -2,9 +2,9 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { deletePost, listFeed, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
+import { deletePost, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
 import { describeDeleteError } from "../api/deleteErrors";
-import { getMyProfile, getPublicProfile, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
+import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
 import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
 import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, resolveProfileTarget } from "../api/profileTarget";
 import { peekSaveState } from "../social/savedStore";
@@ -81,7 +81,7 @@ export function ProfileScreen({ route, navigation }: Props) {
 
   function postsLookupKey(nextProfile: PulseProfile | null, fallbackKey = profileKey) {
     if (!nextProfile) return fallbackKey;
-    return nextProfile.public_player_id || nextProfile.username || nextProfile.canonical_profile_key || String(nextProfile.user_id || fallbackKey || "");
+    return String(nextProfile.user_id || "") || nextProfile.canonical_profile_key || nextProfile.public_player_id || nextProfile.username || fallbackKey || "";
   }
 
   async function load(mode: "initial" | "refresh" = "initial") {
@@ -98,14 +98,14 @@ export function ProfileScreen({ route, navigation }: Props) {
         const me = await getMyProfile();
         setProfile(me);
         const key = postsLookupKey(me);
-        const feed = key ? await listFeed({ feed: "for_you", profile: key, limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
+        const feed = key ? await listPublicProfilePosts({ userId: me.user_id, profileKey: key }, { limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
         setPosts(feed.posts || []);
         setNextOffset(Number(feed.next_offset || feed.posts?.length || 0));
         setHasMore(Boolean(feed.has_more));
       } else {
         const publicProfile = await getPublicProfile(profileTarget);
         const key = postsLookupKey(publicProfile);
-        const feed = key ? await listFeed({ feed: "for_you", profile: key, limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
+        const feed = key ? await listPublicProfilePosts({ userId: publicProfile.user_id, profileKey: key, publicPlayerId: publicProfile.public_player_id, username: publicProfile.username }, { limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
         setPosts(feed.posts || []);
         setNextOffset(Number(feed.next_offset || feed.posts?.length || 0));
         setHasMore(Boolean(feed.has_more));
@@ -136,7 +136,7 @@ export function ProfileScreen({ route, navigation }: Props) {
     if (!key) return;
     setLoadingMore(true);
     try {
-      const page = await listFeed({ feed: "for_you", profile: key, limit: 20, offset: nextOffset });
+      const page = await listPublicProfilePosts({ userId: profile.user_id, profileKey: key, publicPlayerId: profile.public_player_id, username: profile.username }, { limit: 20, offset: nextOffset });
       setPosts((current) => {
         const seen = new Set(current.map((item) => item.id));
         return current.concat((page.posts || []).filter((item) => !seen.has(item.id)));
@@ -418,7 +418,7 @@ export function ProfileScreen({ route, navigation }: Props) {
       ListFooterComponent={loadingMore ? <Text style={styles.loadingMore}>Loading more posts…</Text> : null}
       renderItem={({ item }) => <ProfilePostGridTile post={item} onPress={() => navigation?.navigate("ProfilePostViewer", {
         profileId: profile.user_id,
-        profileKey: profile.public_player_id || profile.username || profileKey,
+        profileKey: String(profile.user_id || "") || profile.canonical_profile_key || profile.public_player_id || profile.username || profileKey,
         postId: item.id,
         postIds: visiblePosts.map((post) => post.id),
         nextOffset,

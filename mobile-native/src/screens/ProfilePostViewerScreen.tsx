@@ -1,7 +1,8 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, StyleSheet, Text, View, ViewToken } from "react-native";
-import { deletePost, getPostDetail, listFeed, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
+import { deletePost, getPostDetail, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
+import { listPublicProfilePosts } from "../api/profile";
 import { PostCard } from "../components/PostCard";
 import { invalidateNativeSync } from "../core/eventSync";
 import { RootStackParamList } from "../navigation/types";
@@ -61,12 +62,10 @@ export function ProfilePostViewerScreen({ route, navigation }: Props) {
     if (loadingMore.current || !hasMoreRef.current || !route.params.profileKey) return;
     loadingMore.current = true;
     try {
-      const page = await listFeed({
-        feed: "for_you",
-        profile: route.params.profileKey,
-        limit: 20,
-        offset: nextOffsetRef.current
-      });
+      const page = await listPublicProfilePosts(
+        { userId: route.params.profileId, profileKey: route.params.profileKey },
+        { limit: 20, offset: nextOffsetRef.current, mediaOnly: route.params.contentTab === "media" }
+      );
       const pagePosts = (page.posts || []).filter((post) => route.params.contentTab !== "media" || Boolean(post.media?.length || post.media_assets?.length || post.attachments?.length));
       if (pagePosts.length) {
         setPosts((current) => {

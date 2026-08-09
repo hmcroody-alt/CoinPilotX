@@ -93504,6 +93504,49 @@ def api_pulse_identity(pulse_id):
     })
 
 
+@webhook_app.route("/api/pulse/profile/<path:profile_key>/posts", methods=["GET"])
+def api_pulse_public_profile_posts(profile_key):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    target_user_id = pulse_user_id_from_profile_key(cur, profile_key)
+    if not target_user_id:
+        conn.close()
+        return api_error("Profile not found.", 404)
+    cur.execute("SELECT user_id, COALESCE(account_status, 'active') AS account_status, COALESCE(profile_visibility, 'public') AS profile_visibility FROM users WHERE user_id=? LIMIT 1", (target_user_id,))
+    account_state = dict(cur.fetchone() or {})
+    conn.close()
+    normalized_status = str(account_state.get("account_status") or "active").lower()
+    if normalized_status in {"deleted", "deactivated", "disabled", "closed"}:
+        return api_error("This PulseSoc account is no longer available.", 410)
+    if normalized_status in {"suspended", "restricted", "banned"}:
+        return api_error("This PulseSoc profile is restricted.", 403)
+    viewer_user_id = int(user["user_id"])
+    if str(account_state.get("profile_visibility") or "public").lower() == "private" and int(target_user_id) != viewer_user_id:
+        return api_error("This PulseSoc profile is private.", 403)
+    result = pulse_feed_engine.list_user_posts(
+        int(target_user_id),
+        viewer_user_id=viewer_user_id,
+        limit=request.args.get("limit") or 20,
+        offset=request.args.get("offset") or 0,
+    )
+    if request.args.get("media") in {"1", "true", "yes"}:
+        media_posts = [
+            post for post in (result.get("posts") or [])
+            if post.get("media") or post.get("media_assets") or post.get("attachments")
+        ]
+        result["posts"] = media_posts
+        result["feed"] = media_posts
+    result["profile_user_id"] = int(target_user_id)
+    result["profile_key"] = str(profile_key or "")
+    pulse_attach_video_detail_links(result.get("posts") or [])
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @webhook_app.route("/api/pulse/profile/<path:profile_key>", methods=["GET"])
 def api_pulse_public_profile(profile_key):
     init_db()

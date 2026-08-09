@@ -4,13 +4,15 @@ import { ProfilePostViewerScreen } from "../ProfilePostViewerScreen";
 
 const mockSetSaved = jest.fn(async (_object?: unknown, _saved?: unknown) => ({ ok: true, saved: true }));
 const mockGetPostDetail = jest.fn(async (postId: number) => ({ post: { id: postId, post_id: postId, body: `Post ${postId}` } }));
-const mockListFeed = jest.fn();
+const mockListPublicProfilePosts = jest.fn();
 
 jest.mock("../../api/feed", () => ({
   getPostDetail: (id: number) => mockGetPostDetail(id),
-  listFeed: (...args: unknown[]) => mockListFeed(...args),
   savablePostId: (post: { id: number }) => post.id,
   pulsePostUrl: jest.fn(), reactToPost: jest.fn(), repostPost: jest.fn(), deletePost: jest.fn()
+}));
+jest.mock("../../api/profile", () => ({
+  listPublicProfilePosts: (...args: unknown[]) => mockListPublicProfilePosts(...args)
 }));
 jest.mock("../../components/PostCard", () => ({
   PostCard: ({ post, onSave }: { post: { id: number }; onSave: (post: { id: number }) => void }) => {
@@ -27,7 +29,7 @@ jest.mock("../../core/eventSync", () => ({ invalidateNativeSync: jest.fn() }));
 describe("ProfilePostViewerScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockListFeed.mockResolvedValue({ posts: [], next_offset: 3, has_more: false });
+    mockListPublicProfilePosts.mockResolvedValue({ posts: [], next_offset: 3, has_more: false });
   });
 
   it("loads the exact selected post and wires its visible Save action to canonical saved storage", async () => {
@@ -60,7 +62,7 @@ describe("ProfilePostViewerScreen", () => {
   });
 
   it("paginates the profile source and deduplicates overlapping posts", async () => {
-    mockListFeed.mockResolvedValueOnce({
+    mockListPublicProfilePosts.mockResolvedValueOnce({
       posts: [
         { id: 33, post_id: 33, body: "Existing" },
         { id: 44, post_id: 44, body: "Next" }
@@ -74,6 +76,6 @@ describe("ProfilePostViewerScreen", () => {
     fireEvent(list, "onEndReached");
 
     await waitFor(() => expect(screen.UNSAFE_getByType(require("react-native").FlatList).props.data).toEqual([22, 33, 44, 11]));
-    expect(mockListFeed).toHaveBeenCalledWith({ feed: "for_you", profile: "roodycherie", limit: 20, offset: 3 });
+    expect(mockListPublicProfilePosts).toHaveBeenCalledWith({ userId: 7, profileKey: "roodycherie" }, { limit: 20, offset: 3, mediaOnly: false });
   });
 });
