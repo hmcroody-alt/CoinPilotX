@@ -38,6 +38,9 @@ export type PulseCallJoin = {
   provider?: string;
   token?: string;
   livekit_url?: string;
+  app_id?: string;
+  channel_name?: string;
+  uid?: number;
   url?: string;
   room_name?: string;
   room_type?: "audio_call" | "video_call" | string;

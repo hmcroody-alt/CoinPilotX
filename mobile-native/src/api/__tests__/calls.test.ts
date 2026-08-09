@@ -69,6 +69,28 @@ describe("native call API contract normalization", () => {
     expect(join.room_name).toBe("pulsesoc-call_join");
   });
 
+  it("preserves provider-scoped Agora credentials without requiring LiveKit fields", async () => {
+    mockPulseApi.mockResolvedValueOnce({
+      ok: true,
+      join: {
+        provider: "agora",
+        token: "redacted-agora-token",
+        app_id: "public-app-id",
+        channel_name: "pulsesoc-call_agora",
+        uid: 42,
+        room_name: "pulsesoc-call_agora"
+      }
+    });
+
+    const join = await requestCallJoinToken("call_agora");
+
+    expect(join.provider).toBe("agora");
+    expect(join.app_id).toBe("public-app-id");
+    expect(join.channel_name).toBe("pulsesoc-call_agora");
+    expect(join.uid).toBe(42);
+    expect(join.livekit_url).toBe("");
+  });
+
   it("normalizes status envelopes without dropping the active call identity", async () => {
     mockPulseApi.mockResolvedValueOnce({
       ok: true,

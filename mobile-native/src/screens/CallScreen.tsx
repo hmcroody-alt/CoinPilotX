@@ -51,6 +51,12 @@ type NativeVideoViewProps = {
   zOrder?: number;
 };
 
+type AgoraVideoViewProps = {
+  canvas: { uid: number; sourceType?: number };
+  style?: any;
+  zOrderMediaOverlay?: boolean;
+};
+
 export function CallScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, "Call">) {
   const params = route.params || {};
   const initialCallId = params.callId ? String(params.callId) : "";
@@ -63,6 +69,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [VideoViewComponent, setVideoViewComponent] = useState<ComponentType<NativeVideoViewProps> | null>(null);
+  const [AgoraVideoViewComponent, setAgoraVideoViewComponent] = useState<ComponentType<AgoraVideoViewProps> | null>(null);
   const autoStartRequested = useRef(false);
   const joinRequested = useRef(false);
   const qualitySubmitted = useRef(false);
@@ -91,6 +98,9 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     if (Platform.OS !== "web") {
       import("@livekit/react-native")
         .then((module) => setVideoViewComponent(() => module.VideoView as ComponentType<NativeVideoViewProps>))
+        .catch(() => undefined);
+      import("react-native-agora")
+        .then((module) => setAgoraVideoViewComponent(() => module.RtcSurfaceView as ComponentType<AgoraVideoViewProps>))
         .catch(() => undefined);
     }
   }, []);
@@ -337,11 +347,14 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     : "";
   const statusLabel = callStatusLabel(call, room.connectionState, room.reconnecting, incoming);
   const showVideo = callType === "video" && Boolean(room.remoteVideoTrack || room.localVideoTrack);
+  const agoraVideo = callType === "video" && room.provider === "agora";
 
   return (
     <View style={styles.screen}>
       <Pressable accessibilityRole="button" accessibilityLabel="Show or hide call controls" style={StyleSheet.absoluteFill} onPress={() => setControlsVisible((visible) => !visible)}>
-        {showVideo && VideoViewComponent && room.remoteVideoTrack ? (
+        {agoraVideo && AgoraVideoViewComponent && room.remoteUid ? (
+          <AgoraVideoViewComponent canvas={{ uid: room.remoteUid }} style={styles.remoteVideo} />
+        ) : showVideo && VideoViewComponent && room.remoteVideoTrack ? (
           <VideoViewComponent videoTrack={room.remoteVideoTrack} style={styles.remoteVideo} objectFit="cover" />
         ) : (
           <View style={styles.audioBackground}>
@@ -366,7 +379,11 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
           <CircleButton label="Call options" icon="ellipsis-horizontal" onPress={() => openCallWebFallback(callId || undefined, params.conversationId)} />
         </View>
 
-        {showVideo && VideoViewComponent && room.localVideoTrack ? (
+        {agoraVideo && AgoraVideoViewComponent && room.localUid ? (
+          <View style={styles.localPreviewShell}>
+            <AgoraVideoViewComponent canvas={{ uid: 0 }} style={styles.localPreview} zOrderMediaOverlay />
+          </View>
+        ) : showVideo && VideoViewComponent && room.localVideoTrack ? (
           <View style={styles.localPreviewShell}>
             <VideoViewComponent videoTrack={room.localVideoTrack} style={styles.localPreview} objectFit="cover" mirror zOrder={2} />
           </View>

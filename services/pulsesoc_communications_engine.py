@@ -1,6 +1,6 @@
 """PulseSoc Communications Engine foundation.
 
-This module owns call state, participant validation, LiveKit readiness, and
+This module owns call state, participant validation, RTC provider readiness, and
 notification hooks for Messenger audio/video calls. It intentionally returns
 explicit config_missing states when provider credentials are absent.
 """
@@ -411,6 +411,89 @@ def livekit_config_status() -> dict[str, Any]:
     }
 
 
+def rtc_provider() -> str:
+    """Return the explicitly selected provider; fail safe to the proven path."""
+    value = os.getenv("RTC_PROVIDER", "livekit").strip().lower()
+    return value if value in {"livekit", "agora"} else "livekit"
+
+
+def agora_config_status() -> dict[str, Any]:
+    required = {
+        "AGORA_APP_ID": os.getenv("AGORA_APP_ID", "").strip(),
+        "AGORA_APP_CERTIFICATE": os.getenv("AGORA_APP_CERTIFICATE", "").strip(),
+    }
+    missing = [name for name, value in required.items() if not value]
+    return {
+        "configured": not missing,
+        "missing": missing,
+        "app_id_configured": bool(required["AGORA_APP_ID"]),
+        "certificate_configured": bool(required["AGORA_APP_CERTIFICATE"]),
+        "token_ttl_seconds": max(300, min(int(os.getenv("AGORA_TOKEN_TTL_SECONDS", "3600") or 3600), 86400)),
+    }
+
+
+def _require_agora() -> dict[str, Any] | None:
+    status = agora_config_status()
+    if status["configured"]:
+        return None
+    logging.info("PULSESOC_AGORA_CONFIG_MISSING missing=%s", ",".join(status.get("missing") or []))
+    return _err("Calling provider is not configured.", 503, "config_missing", provider="agora", agora=status)
+
+
+def _require_rtc_provider(provider: str | None = None) -> dict[str, Any] | None:
+    return _require_agora() if (provider or rtc_provider()) == "agora" else _require_livekit()
+
+
+def _agora_uid(user_id: int) -> int:
+    uid = int(user_id)
+    if uid <= 0 or uid > 0xFFFFFFFF:
+        raise ValueError("PulseSoc user id cannot be represented as an Agora numeric UID")
+    return uid
+
+
+def _generate_agora_token(room_name: str, user_id: int, call_type: str = "audio", participant_role: str = "member") -> dict[str, Any]:
+    missing = _require_agora()
+    if missing:
+        return missing
+    # Imported only on the Agora path so LiveKit rollback never depends on this package.
+    try:
+        from agora_token_builder import RtcTokenBuilder
+    except ImportError:
+        return _err("Agora token generation is unavailable.", 503, "agora_token_builder_missing", provider="agora")
+    app_id = os.getenv("AGORA_APP_ID", "").strip()
+    certificate = os.getenv("AGORA_APP_CERTIFICATE", "").strip()
+    ttl = agora_config_status()["token_ttl_seconds"]
+    expires_at = int(time.time()) + int(ttl)
+    uid = _agora_uid(user_id)
+    # Calls and authorized live stage participants publish. Passive live viewers
+    # are minted separately with the subscriber role by the Live service.
+    token = RtcTokenBuilder.buildTokenWithUid(app_id, certificate, room_name, uid, 1, expires_at)
+    normalized_call_type = "video" if str(call_type).strip().lower() == "video" else "audio"
+    return {
+        "ok": True,
+        "provider": "agora",
+        "token": token,
+        "app_id": app_id,
+        "channel_name": room_name,
+        "room_name": room_name,
+        "room_type": f"{normalized_call_type}_call",
+        "uid": uid,
+        "participant_identity": f"user-{uid}",
+        "participant_role": str(participant_role or "member").strip().lower(),
+        "can_publish": True,
+        "can_subscribe": True,
+        "can_publish_sources": ["microphone", "camera"] if normalized_call_type == "video" else ["microphone"],
+        "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat(timespec="seconds"),
+        **_realtime_audio_v2_status(normalized_call_type),
+    }
+
+
+def _generate_rtc_token(provider: str, room_name: str, user_id: int, call_type: str = "audio", participant_role: str = "member") -> dict[str, Any]:
+    if provider == "agora":
+        return _generate_agora_token(room_name, user_id, call_type, participant_role)
+    return _generate_livekit_token(room_name, user_id, call_type, participant_role)
+
+
 def livekit_hd_quality_policy() -> dict[str, Any]:
     return {
         "provider": "livekit",
@@ -743,9 +826,11 @@ def _serialize_call(cur: Any, call: dict[str, Any], user_id: int = 0, include_to
         "participants": participants,
         "participant": me,
         "livekit": livekit_config_status(),
+        "agora": agora_config_status(),
     }
     if include_token and user_id:
-        payload["join"] = _generate_livekit_token(
+        payload["join"] = _generate_rtc_token(
+            payload["provider"],
             payload["room_name"],
             int(user_id),
             payload["call_type"],
@@ -1194,7 +1279,8 @@ def start_call(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         conversation, access = comm_service._conversation_access(cur, int(user_id), conversation_ref)
         if access != "ok":
             return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403, access)
-        provider_missing = _require_livekit()
+        selected_provider = rtc_provider()
+        provider_missing = _require_rtc_provider(selected_provider)
         if provider_missing:
             return provider_missing
         conversation_id = int(conversation["id"])
@@ -1236,9 +1322,9 @@ def start_call(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
             """
             INSERT INTO communication_calls
             (public_id, conversation_id, room_name, provider, call_type, call_scope, status, created_by_user_id, metadata_json, created_at, updated_at)
-            VALUES (?, ?, ?, 'livekit', ?, ?, 'ringing', ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, 'ringing', ?, ?, ?, ?)
             """,
-            (public_id, conversation_id, room_name, call_type, call_scope, int(user_id), _json_dumps(metadata), now, now),
+            (public_id, conversation_id, room_name, selected_provider, call_type, call_scope, int(user_id), _json_dumps(metadata), now, now),
         )
         call_id = _inserted_call_id(cur, public_id)
         cur.execute(
@@ -1266,30 +1352,30 @@ def start_call(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         _emit_call_sync_event(cur, call, "call_started", int(user_id), [int(user_id), *recipient_ids], status="ringing")
         serialized = _serialize_call(cur, call, int(user_id), include_token=True)
         join = serialized.get("join") if isinstance(serialized.get("join"), dict) else {}
-        if not join.get("ok") or not join.get("token") or not join.get("livekit_url"):
+        if not join.get("ok") or not join.get("token") or (selected_provider == "livekit" and not join.get("livekit_url")) or (selected_provider == "agora" and not join.get("app_id")):
             _event(
                 cur,
                 call_id,
                 int(user_id),
-                "livekit_token_failed",
+                f"{selected_provider}_token_failed",
                 {
                     "token_status": join.get("status") or "missing_join_payload",
                     "token_error_code": join.get("error_code") or "",
                     "token_trace_id": join.get("trace_id") or join.get("correlation_id") or "",
                 },
             )
-            _transition(cur, call, "failed", int(user_id), "livekit_token_failed")
-            _emit_call_sync_event(cur, _get_call(cur, public_id), "call_failed", int(user_id), [int(user_id), *recipient_ids], status="failed", reason="livekit_token_failed")
+            _transition(cur, call, "failed", int(user_id), f"{selected_provider}_token_failed")
+            _emit_call_sync_event(cur, _get_call(cur, public_id), "call_failed", int(user_id), [int(user_id), *recipient_ids], status="failed", reason=f"{selected_provider}_token_failed")
             conn.commit()
             return _err(
                 "Call token could not be generated.",
                 503,
-                "livekit_token_failed",
+                f"{selected_provider}_token_failed",
                 call=_serialize_call(cur, _get_call(cur, public_id), int(user_id)),
-                provider="livekit",
+                provider=selected_provider,
                 error_overrides={
                     "token_status": join.get("status") or "missing_join_payload",
-                    "provider": "livekit",
+                    "provider": selected_provider,
                 },
             )
         caller_name = comm_service._user_summary(cur, int(user_id)).get("display_name") or "Someone"
@@ -1313,7 +1399,8 @@ def join_token(user_id: int, call_ref: str | int) -> dict[str, Any]:
             return denied
         if str(call.get("status") or "") in FINAL_STATUSES:
             return _err("This call has ended.", 409, "call_final")
-        token = _generate_livekit_token(
+        token = _generate_rtc_token(
+            str(call.get("provider") or "livekit"),
             call.get("room_name") or "",
             int(user_id),
             call.get("call_type") or "audio",
@@ -1357,7 +1444,8 @@ def accept_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | Non
         _event(cur, int(call["id"]), int(user_id), "accepted", {})
         refreshed = _get_call(cur, call_ref)
         _emit_call_sync_event(cur, refreshed, "call_accepted", int(user_id), status="accepted")
-        token = _generate_livekit_token(
+        token = _generate_rtc_token(
+            str(refreshed.get("provider") or "livekit"),
             refreshed.get("room_name") or "",
             int(user_id),
             refreshed.get("call_type") or "audio",

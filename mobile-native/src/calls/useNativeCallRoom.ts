@@ -31,6 +31,7 @@ import {
   type MediaQualityPlan
 } from "../core/mediaQualityPolicy";
 import { emitMediaQualityEvent } from "../core/mediaQualityTelemetry";
+import { useAgoraCallRoom } from "./useAgoraCallRoom";
 
 type NativeCallRoomState = {
   supported: boolean;
@@ -52,6 +53,9 @@ type NativeCallRoomState = {
   remoteVideoTrack: any | null;
   reconnectCount: number;
   disconnectReason: string;
+  provider: "livekit";
+  localUid: number;
+  remoteUid: number;
 };
 
 const initialState: NativeCallRoomState = {
@@ -73,7 +77,10 @@ const initialState: NativeCallRoomState = {
   localVideoTrack: null,
   remoteVideoTrack: null,
   reconnectCount: 0,
-  disconnectReason: ""
+  disconnectReason: "",
+  provider: "livekit",
+  localUid: 0,
+  remoteUid: 0
 };
 
 let globalsRegistered = false;
@@ -134,7 +141,7 @@ function readableError(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-export function useNativeCallRoom() {
+function useLiveKitCallRoom() {
   const roomRef = useRef<any>(null);
   const audioSessionRef = useRef<any>(null);
   const audioDeviceModuleRef = useRef<any>(null);
@@ -565,5 +572,18 @@ export function useNativeCallRoom() {
     setSpeakerEnabled,
     showAudioRoutePicker,
     switchCamera
+  };
+}
+
+export function useNativeCallRoom() {
+  const livekit = useLiveKitCallRoom();
+  const agora = useAgoraCallRoom();
+  return {
+    ...(agora.connected || agora.connecting ? agora : livekit),
+    connect: (join: PulseCallJoin, options: { video?: boolean } = {}) =>
+      String(join.provider || "livekit").toLowerCase() === "agora" ? agora.connect(join, options) : livekit.connect(join, options),
+    disconnect: async (reason = "local_disconnect") => {
+      await Promise.all([agora.disconnect(reason), livekit.disconnect(reason)]);
+    }
   };
 }
