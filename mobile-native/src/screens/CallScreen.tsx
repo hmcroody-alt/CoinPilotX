@@ -355,8 +355,14 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   return (
     <View style={styles.screen}>
       <Pressable accessibilityRole="button" accessibilityLabel="Show or hide call controls" style={StyleSheet.absoluteFill} onPress={() => setControlsVisible((visible) => !visible)}>
-        {agoraVideo && AgoraVideoViewComponent && room.remoteUid ? (
-          <AgoraVideoViewComponent canvas={{ uid: room.remoteUid }} style={styles.remoteVideo} />
+        {agoraVideo && AgoraVideoViewComponent && room.remoteUids?.length ? (
+          <View style={styles.agoraRemoteGrid}>
+            {room.remoteUids.slice(0, 4).map((uid: number) => (
+              <View key={uid} style={[styles.agoraRemoteTile, room.remoteUids.length === 1 && styles.agoraRemoteTileSolo]}>
+                <AgoraVideoViewComponent canvas={{ uid }} style={styles.remoteVideo} />
+              </View>
+            ))}
+          </View>
         ) : showVideo && VideoViewComponent && room.remoteVideoTrack ? (
           <VideoViewComponent videoTrack={room.remoteVideoTrack} style={styles.remoteVideo} objectFit="cover" />
         ) : (
@@ -535,6 +541,9 @@ function formatDuration(totalSeconds: number) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#030812", overflow: "hidden" },
   remoteVideo: { ...StyleSheet.absoluteFillObject },
+  agoraRemoteGrid: { ...StyleSheet.absoluteFillObject, flexDirection: "row", flexWrap: "wrap", backgroundColor: "#030812" },
+  agoraRemoteTile: { position: "relative", width: "50%", height: "50%", overflow: "hidden", borderWidth: 1, borderColor: "rgba(97,216,255,0.12)" },
+  agoraRemoteTileSolo: { width: "100%", height: "100%", borderWidth: 0 },
   audioBackground: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", backgroundColor: "#030812" },
   planet: { position: "absolute", width: 520, height: 520, borderRadius: 260, backgroundColor: "rgba(25,64,102,0.24)", right: -220, top: 160, borderWidth: 1, borderColor: "rgba(97,216,255,0.12)" },
   signalHalo: { position: "absolute", width: 280, height: 280, borderRadius: 140, borderWidth: 2, borderColor: colors.accent, shadowColor: colors.accent, shadowOpacity: 0.8, shadowRadius: 38 },

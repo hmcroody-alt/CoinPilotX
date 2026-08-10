@@ -53,9 +53,10 @@ type NativeCallRoomState = {
   remoteVideoTrack: any | null;
   reconnectCount: number;
   disconnectReason: string;
-  provider: "livekit";
+  provider: "livekit" | "agora";
   localUid: number;
   remoteUid: number;
+  remoteUids: number[];
 };
 
 const initialState: NativeCallRoomState = {
@@ -80,7 +81,8 @@ const initialState: NativeCallRoomState = {
   disconnectReason: "",
   provider: "livekit",
   localUid: 0,
-  remoteUid: 0
+  remoteUid: 0,
+  remoteUids: []
 };
 
 let globalsRegistered = false;

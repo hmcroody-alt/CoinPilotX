@@ -24,10 +24,19 @@ const baseState = {
   remoteVideoTrack: null as any,
   localUid: 0,
   remoteUid: 0,
+  remoteUids: [] as number[],
   reconnectCount: 0,
   disconnectReason: "",
   provider: "agora" as const
 };
+
+export function addAgoraRemoteUid(remoteUids: number[], remoteUid: number) {
+  return remoteUids.includes(remoteUid) ? remoteUids : [...remoteUids, remoteUid];
+}
+
+export function removeAgoraRemoteUid(remoteUids: number[], remoteUid: number) {
+  return remoteUids.filter((uid) => uid !== remoteUid);
+}
 
 /** Agora media adapter. PulseSoc backend signaling remains authoritative. */
 export function useAgoraCallRoom() {
@@ -96,8 +105,28 @@ export function useAgoraCallRoom() {
             reconnectCount: reconnecting && !current.reconnecting ? current.reconnectCount + 1 : current.reconnectCount,
             diagnosticCode: failed ? "AGORA_CONNECTION_FAILED" : current.diagnosticCode }));
         },
-        onUserJoined: (_connection, remoteUid) => setState((current) => ({ ...current, remoteUid, participantCount: current.participantCount + 1, remoteAudioTrackCount: 1, remoteAudioAvailable: true })),
-        onUserOffline: (_connection, remoteUid) => setState((current) => ({ ...current, remoteUid: current.remoteUid === remoteUid ? 0 : current.remoteUid, participantCount: Math.max(1, current.participantCount - 1), remoteAudioTrackCount: Math.max(0, current.remoteAudioTrackCount - 1), remoteAudioAvailable: current.remoteAudioTrackCount > 1 })),
+        onUserJoined: (_connection, remoteUid) => setState((current) => {
+          const remoteUids = addAgoraRemoteUid(current.remoteUids, remoteUid);
+          return {
+            ...current,
+            remoteUid: remoteUids[0] || 0,
+            remoteUids,
+            participantCount: 1 + remoteUids.length,
+            remoteAudioTrackCount: remoteUids.length,
+            remoteAudioAvailable: remoteUids.length > 0
+          };
+        }),
+        onUserOffline: (_connection, remoteUid) => setState((current) => {
+          const remoteUids = removeAgoraRemoteUid(current.remoteUids, remoteUid);
+          return {
+            ...current,
+            remoteUid: remoteUids[0] || 0,
+            remoteUids,
+            participantCount: 1 + remoteUids.length,
+            remoteAudioTrackCount: remoteUids.length,
+            remoteAudioAvailable: remoteUids.length > 0
+          };
+        }),
         onTokenPrivilegeWillExpire: () => { setState((current) => ({ ...current, diagnosticCode: "AGORA_TOKEN_RENEWAL_REQUIRED", error: "Refreshing secure call access…" })); void renew(); },
         onRequestToken: () => { setState((current) => ({ ...current, diagnosticCode: "AGORA_TOKEN_EXPIRED", error: "Restoring secure call access…" })); void renew(); },
         onError: (errorCode) => setState((current) => ({ ...current, error: `Agora media error (${errorCode}).`, diagnosticCode: `AGORA_${errorCode}` }))
