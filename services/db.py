@@ -325,6 +325,8 @@ AUTO_PK_TABLES = {
     "pulse_ad_saved_audiences": "id",
     "pulse_ad_appeals": "id",
     "pulse_ad_idempotency": "id",
+    "pulse_ad_jobs": "id",
+    "pulse_ad_daily_aggregates": "id",
     # Ads billing (Stripe wallet funding). Same lastrowid-on-Postgres defect as the
     # saved-content trio above: absent from this list, INSERT gets no RETURNING id,
     # `cur.lastrowid` stays None, and `create_funding_session` re-SELECTs id=None —
