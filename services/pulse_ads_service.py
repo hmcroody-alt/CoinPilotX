@@ -398,7 +398,9 @@ _CONTENT_REF_PROMOTION_TYPES = {
     "video": "video",
     "event": "event",
     "listing": "marketplace_listing",
-    "live_replay": "live_stream",
+    # Finalized replays live in pulse_videos (source_type live/replay); the
+    # promotions module resolves + authorizes them as "live_replay" rows.
+    "live_replay": "live_replay",
 }
 
 
@@ -452,9 +454,12 @@ def _content_ref_media(conn, ref_type: str, ref_id: int) -> tuple[str, str]:
             url = clean_text(row.get("media_url"), 1000)
             return url, url
         if ref_type == "live_replay":
-            cur.execute("SELECT replay_url, thumbnail_url FROM pulse_live_sessions WHERE id=?", (ref_id,))
+            cur.execute(
+                "SELECT COALESCE(playback_url, media_url) AS media_url, thumbnail_url FROM pulse_videos WHERE id=? AND source_type IN ('live','replay')",
+                (ref_id,),
+            )
             row = row_to_dict(cur.fetchone())
-            return clean_text(row.get("replay_url"), 1000), clean_text(row.get("thumbnail_url"), 1000)
+            return clean_text(row.get("media_url"), 1000), clean_text(row.get("thumbnail_url"), 1000)
     except Exception:
         return "", ""
     return "", ""
@@ -1596,7 +1601,8 @@ def _campaign_budget_available(conn, campaign: dict) -> bool:
         return False
     if daily:
         cur = conn.cursor()
-        today = now_iso()[:10]
+        now = now_iso()
+        today = now[:10]
         cur.execute(
             "SELECT COUNT(*) AS c FROM pulse_ad_impressions WHERE campaign_id=? AND created_at>=?",
             (campaign.get("campaign_id") or campaign.get("id"), today),
@@ -1604,6 +1610,19 @@ def _campaign_budget_available(conn, campaign: dict) -> bool:
         impressions_today = safe_int(row_to_dict(cur.fetchone()).get("c"), 0)
         estimated_daily_spend = impressions_today
         if estimated_daily_spend >= daily:
+            return False
+        # Pacing: spread the daily budget across the day instead of spending
+        # it all at once. Deterministic and debuggable: allowed-so-far is the
+        # time-elapsed share of the daily budget plus 25% headroom, with a
+        # small floor so early-morning delivery is never starved. A campaign
+        # ahead of pace simply skips this request — no charge, no state.
+        try:
+            hh, mm = int(now[11:13]), int(now[14:16])
+            elapsed_fraction = max((hh * 60 + mm) / 1440.0, 0.001)
+        except Exception:
+            elapsed_fraction = 1.0
+        allowed_so_far = max(int(daily * elapsed_fraction * 1.25), min(daily, 10))
+        if estimated_daily_spend >= allowed_so_far:
             return False
     try:
         from services import pulse_ad_payments
@@ -2050,6 +2069,20 @@ def record_click(conn, payload: dict, viewer_user_id=None, session_id="") -> dic
     )
     click_id = cur.lastrowid
     conn.commit()
+    # Best-effort: nudge the ads worker to attribute purchases behind this
+    # click soon. Hour-bucketed key dedupes the flood; the worker's periodic
+    # attribution cycle is the safety net if this enqueue ever fails.
+    try:
+        from services import pulse_ads_worker_service
+        pulse_ads_worker_service.enqueue_job(
+            conn,
+            "attribution",
+            "attribute_conversions",
+            {"campaign_id": campaign_id},
+            idempotency_key=f"attr:camp:{campaign_id}:{now[:13]}",
+        )
+    except Exception:
+        pass
     return {"ok": True, "click_id": click_id, "destination_url": creative.get("destination_url")}
 
 
@@ -2078,6 +2111,19 @@ def record_event(conn, payload: dict, viewer_user_id=None, session_id="") -> dic
     )
     event_id = cur.lastrowid
     conn.commit()
+    if event_type in ("conversion", "add_to_cart", "purchase"):
+        # Best-effort attribution nudge; worker cycle is the safety net.
+        try:
+            from services import pulse_ads_worker_service
+            pulse_ads_worker_service.enqueue_job(
+                conn,
+                "attribution",
+                "attribute_conversions",
+                {"campaign_id": campaign_id},
+                idempotency_key=f"attr:camp:{campaign_id}:{now_iso()[:13]}",
+            )
+        except Exception:
+            pass
     return {"ok": True, "event_id": event_id}
 
 

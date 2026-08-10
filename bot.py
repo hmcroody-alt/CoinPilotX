@@ -17155,6 +17155,30 @@ def api_pulsesoc_promotion_eligibility():
         conn.close()
 
 
+@webhook_app.route("/api/promotions/content", methods=["GET"])
+def api_pulsesoc_promotable_content():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify(
+            pulsesoc_promotions.list_promotable_content(
+                conn,
+                user["user_id"],
+                request.args.get("type") or request.args.get("filter") or "all",
+                request.args.get("limit") or 20,
+                request.args.get("offset") or 0,
+            )
+        )
+    except Exception as exc:
+        return pulse_promotion_error_response(exc)
+    finally:
+        conn.close()
+
+
 @webhook_app.route("/api/promotions", methods=["GET", "POST"])
 def api_pulsesoc_promotions():
     init_db()
