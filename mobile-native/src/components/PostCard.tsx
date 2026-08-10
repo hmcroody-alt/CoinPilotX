@@ -121,7 +121,10 @@ export function PostCard({
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
-  const [liveMuted, setLiveMuted] = useState(true);
+  // Feed/Profile Live is a user-initiated authenticated surface, so receive
+  // remote Agora audio by default. The viewer remains receive-only and can
+  // still mute playback locally with the control below.
+  const [liveMuted, setLiveMuted] = useState(false);
   const [bodyExpanded, setBodyExpanded] = useState(Boolean(detail));
   const [bodyTruncated, setBodyTruncated] = useState(false);
   const likeScale = useRef(new Animated.Value(1)).current;
@@ -1343,7 +1346,6 @@ const styles = createThemedStyles(() => ({
     aspectRatio: 9 / 16,
     backgroundColor: "#030812",
     justifyContent: "center",
-    maxHeight: 620,
     padding: 24
   },
   liveProcessingBody: {
@@ -1359,7 +1361,6 @@ const styles = createThemedStyles(() => ({
   liveStage: {
     aspectRatio: 9 / 16,
     backgroundColor: "#02050b",
-    maxHeight: 620,
     overflow: "hidden",
     position: "relative"
   },

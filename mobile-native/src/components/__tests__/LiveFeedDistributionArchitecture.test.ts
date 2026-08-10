@@ -3,6 +3,7 @@ import { join } from "path";
 
 const postCard = readFileSync(join(__dirname, "..", "PostCard.tsx"), "utf8");
 const home = readFileSync(join(__dirname, "..", "..", "screens", "HomeScreen.tsx"), "utf8");
+const profileViewer = readFileSync(join(__dirname, "..", "..", "screens", "ProfilePostViewerScreen.tsx"), "utf8");
 const liveSurface = readFileSync(join(__dirname, "..", "reels", "ReelLiveViewerSurface.tsx"), "utf8");
 
 describe("Live Feed distribution architecture", () => {
@@ -21,6 +22,7 @@ describe("Live Feed distribution architecture", () => {
     expect(home).toContain("getPostDetail(activeLivePost.id)");
     expect(postCard).toContain("Replay processing");
     expect(postCard).toContain("Join Live");
+    expect(profileViewer).toContain("getPostDetail(activePostId)");
   });
 
   it("fills the active Agora canvas while preserving the replay footprint", () => {
@@ -28,5 +30,12 @@ describe("Live Feed distribution architecture", () => {
     expect(liveSurface).toContain('objectFit="cover"');
     expect(liveSurface).toContain("resizeMode={ResizeMode.COVER}");
     expect(postCard).toContain("aspectRatio: 9 / 16");
+    expect(postCard).not.toContain("maxHeight: 620");
+  });
+
+  it("starts receive-only Feed Live with remote audio enabled and keeps truthful mute controls", () => {
+    expect(postCard).toContain("const [liveMuted, setLiveMuted] = useState(false)");
+    expect(postCard).toContain("muted={liveMuted}");
+    expect(postCard).toContain('liveMuted ? "Unmute Live" : "Mute Live"');
   });
 });
