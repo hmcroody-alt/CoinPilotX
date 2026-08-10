@@ -318,10 +318,10 @@ export const PAYMENTS_MOCK_DATA_GAPS: MoneyGap[] = [
       "SECURITY GAP, not a data gap: this app has no re-authentication " +
       "primitive at all. Nothing can be gated behind one.",
     clientBehaviour:
-      "Payout initiation now ships on server-side session auth alone. The " +
-      "blast radius is bounded — the destination is locked server-side to the " +
-      "seller's own connected Stripe account — but a re-authentication " +
-      "primitive is still the right fix and remains unbuilt."
+      "Payout initiation now ships on session auth alone. The blast radius " +
+      "is bounded — PulseSoc locks the destination to the seller's own " +
+      "connected Stripe account before anything moves — but a " +
+      "re-authentication primitive is still the right fix and remains unbuilt."
   }
 ];
 
