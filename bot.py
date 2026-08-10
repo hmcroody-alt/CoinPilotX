@@ -288,6 +288,7 @@ from services import (
     pulse_ads_insights,
     pulsesoc_growth_engine,
     pulsesoc_promotions,
+    pulsesoc_communications_engine as call_engine,
     pulse_identity_engine,
     pulse_id_service,
     pro_access as pro_access_service,

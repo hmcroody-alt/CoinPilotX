@@ -22,6 +22,18 @@ def test_agora_live_start_skips_realtime_mux_stream():
     assert "finalized recording artifact" in BOT
 
 
+def test_agora_live_start_has_its_agora_service_bound_without_livekit():
+    """Regression: the start route created a Live, then failed building JSON."""
+    imports = BOT[BOT.index("from services import ("):BOT.index("from services import (") + 16_000]
+    route = BOT[BOT.index("def api_pulse_live_start"):BOT.index("def pulse_live_can_create_mux_stream")]
+
+    assert "pulsesoc_communications_engine as call_engine" in imports
+    assert '"configured": call_engine.agora_config_status().get("configured")' in route
+    assert '"token_url": f"/api/pulse/live/{live_id}/rtc/token"' in route
+    assert "pulse_livekit_config" not in route
+    assert '"ok": True' in route
+
+
 def test_audience_is_receive_only_and_auto_subscribes():
     assert "ClientRoleAudience" in ROOM
     assert "publishMicrophoneTrack: publish" in ROOM
