@@ -16941,6 +16941,10 @@ def pulse_ads_error_response(exc):
     if isinstance(exc, pulse_ads_service.PulseAdsError):
         return jsonify({"ok": False, "error": str(exc)}), exc.status_code
     logging.exception("PULSE_ADS_API_ERROR path=%s", request.path)
+    try:
+        print(f"PULSE_ADS_API_ERROR path={request.path} exc={type(exc).__name__}: {exc}", flush=True)
+    except Exception:
+        pass
     return jsonify({"ok": False, "error": "Ads system temporarily unavailable."}), 500
 
 
@@ -17569,7 +17573,9 @@ def api_pulse_ads_wallet_funding_session(account_id):
                 "currency": funding.get("currency") or "usd",
             },
         )
-        safe_funding = pulse_ad_payments.attach_checkout_session(conn, funding.get("id"), checkout.get("id"), checkout.get("url") or "")
+        checkout_id = getattr(checkout, "id", "") or ""
+        checkout_url = getattr(checkout, "url", "") or ""
+        safe_funding = pulse_ad_payments.attach_checkout_session(conn, funding.get("id"), checkout_id, checkout_url)
         return jsonify({"ok": True, "funding_session": safe_funding})
     except Exception as exc:
         return pulse_ads_error_response(exc)
