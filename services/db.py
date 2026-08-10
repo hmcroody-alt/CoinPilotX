@@ -325,6 +325,17 @@ AUTO_PK_TABLES = {
     "pulse_ad_saved_audiences": "id",
     "pulse_ad_appeals": "id",
     "pulse_ad_idempotency": "id",
+    # Ads billing (Stripe wallet funding). Same lastrowid-on-Postgres defect as the
+    # saved-content trio above: absent from this list, INSERT gets no RETURNING id,
+    # `cur.lastrowid` stays None, and `create_funding_session` re-SELECTs id=None —
+    # so the checkout session id/url are attached to row 0 and the client never
+    # receives a Stripe checkout URL. Funding silently dead in production.
+    "pulse_ad_wallets": "id",
+    "pulse_ad_wallet_funding_sessions": "id",
+    "pulse_ad_wallet_transactions": "id",
+    "pulse_ad_wallet_events": "id",
+    "pulse_ad_refunds": "id",
+    "pulse_ad_invoices": "id",
     "enterprise_leads": "id",
     "admin_tasks": "id",
     "ai_recommendations": "id",
