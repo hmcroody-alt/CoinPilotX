@@ -818,6 +818,48 @@ def connect():
     return conn
 
 
+#: Parameterized cross-engine column introspection for PostgreSQL. Scoped to
+#: current_schema() so a same-named table in another schema cannot shadow the
+#: answer. Uses `?` placeholders like every other query in this codebase; the
+#: Compat layer rewrites them to `%s` for psycopg2.
+POSTGRES_TABLE_COLUMNS_SQL = (
+    "SELECT column_name FROM information_schema.columns "
+    "WHERE table_schema = current_schema() AND table_name = ?"
+)
+
+_INTROSPECT_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def get_table_columns(conn_or_cursor, table_name, *, engine_name=None):
+    """Column names present on ``table_name``, as a set — cross-engine.
+
+    SQLite answers via ``PRAGMA table_info``; PostgreSQL answers via
+    ``information_schema.columns`` restricted to ``current_schema()``. Postgres
+    has no PRAGMA, so the old pattern of sending ``PRAGMA table_info(...)``
+    unconditionally raised a SQL error there, poisoned the transaction, and made
+    every defensive ``ALTER TABLE ... ADD COLUMN`` fallback silently a no-op.
+    This mirrors the portable pattern in ``services/business_os/*/schema.py``.
+
+    ``conn_or_cursor`` may be a connection (anything with ``.cursor()``) or an
+    already-open cursor. The engine is detected from this module's
+    ``ENGINE_NAME`` (derived from DATABASE_URL); ``engine_name`` exists so tests
+    can exercise the branch that is not active locally. Errors propagate —
+    callers that want the defensive swallow-and-fall-through keep their own
+    try/except, exactly as before.
+    """
+    name = str(table_name or "")
+    if not _INTROSPECT_TABLE_NAME_RE.match(name):
+        raise ValueError(f"invalid table name for introspection: {table_name!r}")
+    cursor = conn_or_cursor.cursor() if hasattr(conn_or_cursor, "cursor") else conn_or_cursor
+    engine = engine_name or ENGINE_NAME
+    if engine == "postgresql":
+        cursor.execute(POSTGRES_TABLE_COLUMNS_SQL, (name,))
+        return {row[0] for row in cursor.fetchall()}
+    cursor.execute(f"PRAGMA table_info({name})")
+    # PRAGMA table_info rows: (cid, name, type, notnull, dflt_value, pk)
+    return {row[1] for row in cursor.fetchall()}
+
+
 @contextmanager
 def session_scope():
     if SessionLocal is None:

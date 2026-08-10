@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from services import pulse_ads_os, pulse_ads_service, pulse_advertiser_portal
+from services import db, pulse_ads_os, pulse_ads_service, pulse_advertiser_portal
 
 PulseAdsError = pulse_ads_service.PulseAdsError
 now_iso = pulse_ads_service.now_iso
@@ -65,13 +65,13 @@ TARGETING_FIELDS = (
 def _add_column_if_missing(conn, table: str, column: str, definition: str) -> None:
     cur = conn.cursor()
     try:
-        cur.execute(f"PRAGMA table_info({table})")
-        existing = {row_to_dict(row).get("name") for row in cur.fetchall()}
+        # Cross-engine introspection (SQLite dev / PostgreSQL prod).
+        existing = db.get_table_columns(conn, table)
         if column in existing:
             return
     except Exception:
-        # Non-SQLite engines have no PRAGMA; fall through and let the ALTER
-        # itself decide (a duplicate column is swallowed below).
+        # Introspection failed; fall through and let the ALTER itself decide
+        # (a duplicate column is swallowed below).
         try:
             conn.rollback()
         except Exception:

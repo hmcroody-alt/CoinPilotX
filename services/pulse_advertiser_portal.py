@@ -12,7 +12,7 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from services import pulse_ad_payments, pulse_ads_service
+from services import db, pulse_ad_payments, pulse_ads_service
 
 
 ACCOUNT_ROLES = {"owner", "campaign_manager", "marketing_manager", "analyst", "viewer"}
@@ -48,10 +48,9 @@ def money(cents) -> str:
 
 
 def _table_columns(conn, table_name: str) -> set[str]:
-    cur = conn.cursor()
     try:
-        cur.execute(f"PRAGMA table_info({table_name})")
-        return {row_to_dict(row).get("name") for row in cur.fetchall()}
+        # Cross-engine introspection (SQLite dev / PostgreSQL prod).
+        return db.get_table_columns(conn, table_name)
     except Exception:
         return set()
 

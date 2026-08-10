@@ -12,7 +12,7 @@ import os
 import secrets
 from datetime import datetime, timezone
 
-from services import pulse_ads_service
+from services import db, pulse_ads_service
 
 
 VALID_TRANSACTION_TYPES = {
@@ -267,9 +267,8 @@ def _wallet_balance_snapshot(wallet: dict) -> dict:
 
 def _add_column_if_missing(conn, table: str, column: str, ddl_type: str) -> None:
     try:
-        cur = conn.cursor()
-        cur.execute(f"PRAGMA table_info({table})")
-        existing = {str(row[1] if not hasattr(row, "keys") else row["name"]) for row in cur.fetchall()}
+        # Cross-engine introspection (SQLite dev / PostgreSQL prod).
+        existing = {str(name) for name in db.get_table_columns(conn, table)}
         if column in existing:
             return
     except Exception:
@@ -277,8 +276,8 @@ def _add_column_if_missing(conn, table: str, column: str, ddl_type: str) -> None
             conn.rollback()
         except Exception:
             pass
-        # PRAGMA is SQLite-only; on other engines fall through and let the
-        # ALTER speak for itself.
+        # Introspection failed; fall through and let the ALTER speak for
+        # itself.
     _safe_execute(conn, f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}")
 
 
