@@ -17607,6 +17607,67 @@ def api_pulse_ads_wallet_funding_session(account_id):
         conn.close()
 
 
+@webhook_app.route("/api/pulse/payments/route", methods=["POST"])
+def api_pulse_payments_route():
+    """Unified payment router: the server decides the provider (Apple guideline
+    3.1.1 / 3.1.3(e) enforcement lives server-side; the client only reports
+    platform + item type and must use whatever provider comes back)."""
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services import pulse_payment_router as _payrouter
+    payload = pulse_ads_json_payload()
+    decision = _payrouter.route_payment(
+        platform=payload.get("platform"), item_type=payload.get("item_type"))
+    status = 200 if decision.get("ok") else 422
+    return jsonify(decision), status
+
+
+@webhook_app.route("/api/pulse/ads/iap/products", methods=["GET"])
+def api_pulse_ads_iap_products():
+    """Server-truth ad-credit IAP catalog (product ids + credit amounts)."""
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services import pulse_payment_router as _payrouter
+    return jsonify({"ok": True, "products": _payrouter.adcredit_catalog()})
+
+
+@webhook_app.route("/api/pulse/ads/accounts/<int:account_id>/wallet/apple-iap/verify", methods=["POST"])
+def api_pulse_ads_wallet_apple_iap_verify(account_id):
+    """StoreKit 2 purchase completion: the client submits the signed transaction
+    JWS; the server verifies it cryptographically and credits the Ad Wallet at
+    most once per Apple transaction (DB-unique idempotency key). The credited
+    amount comes from the server-side catalog, never the client."""
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("ad_wallet_apple_iap", 20, 300):
+        return jsonify({"ok": False, "error": "Too many verification attempts."}), 429
+    from services import pulse_apple_iap_credits as _adiap
+    from services.business_os.entitlements import iap_apple as _iap_apple_mod
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        payload = pulse_ads_json_payload()
+        signed = (payload.get("signed_transaction") or payload.get("jws") or "").strip()
+        result = _adiap.credit_ad_wallet_from_apple_transaction(
+            conn, user.get("user_id"), account_id, signed)
+        if not result.get("ok") and result.get("status") == "setup_required":
+            return jsonify(result), 503
+        wallet_view = pulse_ad_payments.wallet_summary(conn, user.get("user_id"), account_id)
+        return jsonify({**result, "wallet": wallet_view})
+    except _iap_apple_mod.AppleJWSError:
+        # Flat rejection; never echo crypto internals.
+        return jsonify({"ok": False, "error": "Transaction signature could not be verified."}), 400
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
 @webhook_app.route("/api/pulse/ads/campaigns/<int:campaign_id>/reserve-budget", methods=["POST"])
 def api_pulse_ads_campaign_reserve_budget(campaign_id):
     user, denied = pulse_ads_api_user_required()
@@ -23449,6 +23510,21 @@ def webhook_business_os_iap_apple():
         raw = request.get_data(as_text=True) or ""
         body = raw.strip() or {}
     status, resp = _iapapi.apple_notification(body)
+    # Ad-credit consumables: the same verified notification may also carry a
+    # wallet effect (REFUND reversal / uncredited-purchase flag). The handler
+    # verifies independently with the same trust anchors and no-ops for every
+    # non-ad-credit product; it must never break the subscription response.
+    try:
+        signed = body if isinstance(body, str) else (body or {}).get("signedPayload")
+        if signed:
+            from services import pulse_apple_iap_credits as _adiap
+            wallet_result = _adiap.handle_webhook_signed_payload(signed)
+            if isinstance(resp, dict) and wallet_result.get("handled"):
+                resp["ad_wallet"] = {k: wallet_result.get(k) for k in
+                                     ("handled", "ok", "noop", "deduped", "reason")
+                                     if k in wallet_result}
+    except Exception:
+        logging.getLogger(__name__).exception("apple iap ad-credit webhook projection failed")
     return jsonify(resp), status
 
 
