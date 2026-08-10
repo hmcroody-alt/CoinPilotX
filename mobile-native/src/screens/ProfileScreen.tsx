@@ -56,6 +56,7 @@ export function ProfileScreen({ route, navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [offline, setOffline] = useState(false);
   const [errorState, setErrorState] = useState<ReturnType<typeof profileErrorState> | null>(null);
+  const [contentUnavailable, setContentUnavailable] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
   const [followBusy, setFollowBusy] = useState(false);
   const refreshingRef = useRef(false);
@@ -99,6 +100,7 @@ export function ProfileScreen({ route, navigation }: Props) {
   async function load(mode: "initial" | "refresh" = "initial") {
     setErrorState(null);
     setOffline(false);
+    setContentUnavailable(false);
     if (mode === "initial") setLoading(true);
     if (mode === "refresh") {
       if (refreshingRef.current) return;
@@ -106,22 +108,24 @@ export function ProfileScreen({ route, navigation }: Props) {
       setRefreshing(true);
     }
     try {
+      let canonicalProfile: PulseProfile;
       if (owner) {
-        const me = await getMyProfile();
-        setProfile(me);
-        const target = profilePostTarget(me);
-        const feed = target.profileKey ? await listPublicProfilePosts(target, { limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
-        setPosts(feed.posts || []);
-        setNextOffset(Number(feed.next_offset || feed.posts?.length || 0));
-        setHasMore(Boolean(feed.has_more));
+        canonicalProfile = await getMyProfile();
       } else {
-        const publicProfile = await getPublicProfile(profileTarget);
-        const target = profilePostTarget(publicProfile);
+        canonicalProfile = await getPublicProfile(profileTarget);
+      }
+      setProfile(canonicalProfile);
+      try {
+        const target = profilePostTarget(canonicalProfile);
         const feed = target.profileKey ? await listPublicProfilePosts(target, { limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
         setPosts(feed.posts || []);
         setNextOffset(Number(feed.next_offset || feed.posts?.length || 0));
         setHasMore(Boolean(feed.has_more));
-        setProfile(publicProfile);
+      } catch {
+        // Profile identity/About data is already canonical. Preserve it and
+        // any previously loaded grid while reporting the narrower content
+        // outage truthfully; an unavailable query is not an empty profile.
+        setContentUnavailable(true);
       }
     } catch (loadError) {
       const mappedError = profileErrorState(loadError);
@@ -130,6 +134,7 @@ export function ProfileScreen({ route, navigation }: Props) {
         setProfile(cached);
         setOffline(Boolean(mappedError.offline || mappedError.retryable));
         setErrorState(mappedError.retryable ? mappedError : null);
+        setContentUnavailable(true);
       } else if (!owner && posts.length) {
         setOffline(true);
       } else {
@@ -418,6 +423,11 @@ export function ProfileScreen({ route, navigation }: Props) {
           <View style={styles.section}>
             {offline ? <Text style={styles.offline}>Showing saved profile</Text> : null}
             {errorState ? <Text style={styles.error}>{errorState.body}</Text> : null}
+            {contentUnavailable ? (
+              <Pressable accessibilityRole="button" style={styles.retryButton} onPress={() => load("refresh").catch(() => undefined)}>
+                <Text style={styles.retryButtonText}>Retry profile content</Text>
+              </Pressable>
+            ) : null}
             {actionMessage ? <Text accessibilityLiveRegion="polite" style={styles.actionMessage}>{actionMessage}</Text> : null}
             <View style={styles.tabs}>
               <TabButton label="Posts" value="posts" active={tab} onPress={setTab} />
@@ -428,7 +438,7 @@ export function ProfileScreen({ route, navigation }: Props) {
           </View>
         </View>
       }
-      ListEmptyComponent={tab === "about" ? null : <Text style={styles.empty}>{owner ? "No posts yet\nShare your first post and it will appear here." : "No posts yet\nThis profile has not shared any posts."}</Text>}
+      ListEmptyComponent={tab === "about" ? null : <Text style={styles.empty}>{contentUnavailable ? "Profile content temporarily unavailable\nRetry to load canonical posts and media." : owner ? "No posts yet\nShare your first post and it will appear here." : "No posts yet\nThis profile has not shared any posts."}</Text>}
       ListFooterComponent={loadingMore ? <Text style={styles.loadingMore}>Loading more posts…</Text> : null}
       renderItem={({ item }) => <ProfilePostGridTile post={item} onPress={() => navigation?.navigate("ProfilePostViewer", {
         profileId: profile.user_id,

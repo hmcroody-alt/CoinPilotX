@@ -8,12 +8,13 @@ const mockListFeed = jest.fn();
 const mockAuthState = { user: { user_id: 7 } };
 const mockGetMyProfile = jest.fn(async () => ({ user_id: 7, display_name: "Roody Cherie", username: "roodycherie", public_player_id: "roodycherie", post_count: 4 }));
 const mockGetPublicProfile = jest.fn(async (..._args: unknown[]) => ({ user_id: 8, display_name: "Maria Cherie", username: "mariacherie", public_player_id: "Pilot-8008", post_count: 5 }));
+const mockLoadCachedProfile = jest.fn();
 
 jest.mock("../../api/profile", () => ({
   getMyProfile: () => mockGetMyProfile(),
   getPublicProfile: (...args: unknown[]) => mockGetPublicProfile(...args),
   listPublicProfilePosts: (...args: unknown[]) => mockListFeed(...args),
-  loadCachedProfile: jest.fn(),
+  loadCachedProfile: (...args: unknown[]) => mockLoadCachedProfile(...args),
   profileErrorState: jest.fn(() => ({ title: "Error", body: "Error", retryable: true, offline: false })),
   toggleProfileFollow: jest.fn()
 }));
@@ -49,6 +50,7 @@ describe("Profile posts grid", () => {
     jest.clearAllMocks();
     mockAuthState.user = { user_id: 7 };
     mockGetMyProfile.mockResolvedValue({ user_id: 7, display_name: "Roody Cherie", username: "roodycherie", public_player_id: "roodycherie", post_count: 4 });
+    mockLoadCachedProfile.mockResolvedValue(null);
     mockListFeed.mockResolvedValue({ posts, next_offset: 4, has_more: false });
   });
 
@@ -82,6 +84,40 @@ describe("Profile posts grid", () => {
       { userId: 7, profileKey: "7", publicPlayerId: "PLS-000001", username: "roodycherie" },
       { limit: 20, offset: 0 }
     );
+    expect(screen.queryByText(/No posts yet/)).toBeNull();
+  });
+
+  it("keeps a successful canonical profile and reports content failure instead of a false empty grid", async () => {
+    mockListFeed.mockRejectedValueOnce(new Error("network unavailable"));
+
+    const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
+
+    await waitFor(() => expect(screen.getByText(/Profile content temporarily unavailable/)).toBeTruthy());
+    expect(screen.queryByText("Showing saved profile")).toBeNull();
+    expect(screen.queryByText(/No posts yet/)).toBeNull();
+    expect(mockLoadCachedProfile).not.toHaveBeenCalled();
+  });
+
+  it("retries canonical profile content in place and replaces the unavailable state", async () => {
+    mockListFeed.mockRejectedValueOnce(new Error("network unavailable")).mockResolvedValueOnce({ posts, next_offset: 4, has_more: false });
+    const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
+    await waitFor(() => expect(screen.getByText("Retry profile content")).toBeTruthy());
+
+    fireEvent.press(screen.getByText("Retry profile content"));
+
+    await waitFor(() => expect(screen.getByTestId("profile-grid-tile-1")).toBeTruthy());
+    expect(mockGetMyProfile).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/Profile content temporarily unavailable/)).toBeNull();
+  });
+
+  it("does not describe an incomplete saved-profile fallback as having no posts", async () => {
+    mockGetMyProfile.mockRejectedValueOnce(new Error("network unavailable"));
+    mockLoadCachedProfile.mockResolvedValueOnce({ user_id: 7, display_name: "Saved Roody", post_count: 4 });
+
+    const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
+
+    await waitFor(() => expect(screen.getByText("Showing saved profile")).toBeTruthy());
+    expect(screen.getByText(/Profile content temporarily unavailable/)).toBeTruthy();
     expect(screen.queryByText(/No posts yet/)).toBeNull();
   });
 
