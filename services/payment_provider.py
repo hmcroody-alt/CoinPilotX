@@ -150,6 +150,19 @@ def create_transfer(**kwargs) -> dict[str, Any]:
     return {"ok": True, "transfer": dict(transfer), "provider_transfer_id": transfer.get("id")}
 
 
+def create_payout(*, stripe_account: str, idempotency_key: str = "", **kwargs) -> dict[str, Any]:
+    """Create a payout from a connected account's Stripe balance to its bank."""
+    if not _stripe_ready():
+        return setup_required("Payouts are unavailable until Stripe is configured.")
+    if not stripe_account:
+        return {"ok": False, "message": "Connected account id is required."}
+    extra: dict[str, Any] = {"stripe_account": stripe_account}
+    if idempotency_key:
+        extra["idempotency_key"] = idempotency_key
+    payout = stripe.Payout.create(**kwargs, **extra)
+    return {"ok": True, "payout": dict(payout), "provider_payout_id": payout.get("id")}
+
+
 def create_refund(provider_payment_id: str, amount_cents: int | None = None, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
     if not _stripe_ready():
         return setup_required("Refunds are unavailable until Stripe is configured.")

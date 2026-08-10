@@ -34,11 +34,12 @@ import {
 
 describe("PAYMENTS_MOCK_DATA_GAPS", () => {
   it("names every money field with no source, and the count is pinned", () => {
-    expect(PAYMENTS_MOCK_DATA_GAPS).toHaveLength(9);
-    expect(PAYMENTS_MOCK_DATA_GAP_COUNT).toBe(9);
+    // Was 9: "available balance becoming non-zero" left the ledger when the
+    // seller payout endpoints (`./sellerPayouts`) gave the balance a real source.
+    expect(PAYMENTS_MOCK_DATA_GAPS).toHaveLength(8);
+    expect(PAYMENTS_MOCK_DATA_GAP_COUNT).toBe(8);
     expect(PAYMENTS_MOCK_DATA_GAPS.map((gap) => gap.field)).toEqual([
       "next payout date",
-      "available balance becoming non-zero",
       "masked bank destination",
       "instant payout fee and net",
       "held in escrow",
@@ -77,8 +78,13 @@ describe("payments feature gates", () => {
    * so that turning one on cannot happen by accident — it takes a build variable
    * plus a failing line here.
    */
-  it("defaults every money module to off", () => {
-    expect(payoutInitiationIsLive()).toBe(false);
+  it("keeps payout initiation on now that the Stripe payout rail is live", () => {
+    // Flipped deliberately when `./sellerPayouts` bound the three live
+    // endpoints. If this reads false again, the withdraw module vanished.
+    expect(payoutInitiationIsLive()).toBe(true);
+  });
+
+  it("defaults every other money module to off", () => {
     expect(instantPayoutIsLive()).toBe(false);
     expect(statementsAreLive()).toBe(false);
     expect(taxDocumentsAreLive()).toBe(false);

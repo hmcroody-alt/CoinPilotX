@@ -19,6 +19,7 @@ Engine-portable via ``services.db``; does not import ``bot.py``.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Optional
 
@@ -197,6 +198,49 @@ def enqueue_event(
         conn.close()
 
 
+def _escalate_dlq_exhausted(
+    provider: str,
+    provider_event_id: str,
+    *,
+    event_type: str = "",
+    retry_count: int = 0,
+    last_error: str = "",
+) -> None:
+    """File a WEBHOOK_DLQ_EXHAUSTED incident for a dead-lettered event.
+
+    Imported lazily and wrapped defensively: the incident engine is an
+    observer, and an observer failing must never take the inbox down with it.
+    The incident key is per event id, so repeated sweeps land on one row.
+    """
+    try:
+        from services.business_os.payments import incidents
+
+        incidents.open_incident(
+            incidents.WEBHOOK_DLQ_EXHAUSTED,
+            domain="webhooks",
+            severity="critical",
+            summary=(
+                f"Webhook {provider}:{provider_event_id} exhausted its "
+                f"{retry_count} retries and is dead-lettered."
+            ),
+            details={
+                "provider": provider,
+                "provider_event_id": provider_event_id,
+                "event_type": event_type,
+                "retry_count": int(retry_count),
+                "last_error": (last_error or "")[:500],
+            },
+            related_object=f"webhook:{provider}:{provider_event_id}",
+            stripe_ref=provider_event_id if provider == "stripe" else "",
+            incident_key=f"webhook_dlq_exhausted:{provider}:{provider_event_id}",
+        )
+    except Exception:  # noqa: BLE001 — never let observation break ingestion
+        logging.exception(
+            "WEBHOOK_DLQ_INCIDENT_ESCALATION_FAILED provider=%s event=%s",
+            provider, provider_event_id,
+        )
+
+
 def _claim(conn, event_id: int) -> bool:
     """Atomically move a row to 'processing' if it is claimable. Returns True
     if this caller won the claim (prevents double-processing under concurrency).
@@ -262,6 +306,14 @@ def process_event(
             except Exception:
                 _rollback(conn)
                 raise
+            new_retry_count = int(row.get("retry_count") or 0) + 1
+            if new_retry_count >= max_retries:
+                _escalate_dlq_exhausted(
+                    provider, provider_event_id,
+                    event_type=str(row.get("event_type") or ""),
+                    retry_count=new_retry_count,
+                    last_error=str(exc),
+                )
             return {"status": STATUS_FAILED, "error": str(exc)}
 
         now = _utc_now_iso()

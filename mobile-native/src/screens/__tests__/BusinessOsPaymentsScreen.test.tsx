@@ -32,6 +32,9 @@ const mockLedger = jest.fn();
 const mockAdWallet = jest.fn();
 const mockCachedOverview = jest.fn();
 const mockCachedActivity = jest.fn();
+const mockConnectStatus = jest.fn();
+const mockSellerPayouts = jest.fn();
+const mockRequestPayout = jest.fn();
 
 // The formatters, the flag predicates and `payoutMethodState` are deliberately
 // left real. They encode the money rules under test — mocking them out would
@@ -45,7 +48,27 @@ jest.mock("../../api/paymentsHub", () => ({
   loadCachedActivity: (...args: unknown[]) => mockCachedActivity(...args)
 }));
 
+// Same rule for the payout rail: `payoutStatusChip`, `payoutErrorKey`,
+// `mintPayoutKey` and `maskedConnectRef` stay real — only the network is mocked.
+jest.mock("../../api/sellerPayouts", () => ({
+  ...jest.requireActual("../../api/sellerPayouts"),
+  fetchConnectStatus: (...args: unknown[]) => mockConnectStatus(...args),
+  fetchSellerPayouts: (...args: unknown[]) => mockSellerPayouts(...args),
+  requestSellerPayout: (...args: unknown[]) => mockRequestPayout(...args)
+}));
+
 import { BusinessOsPaymentsScreen } from "../BusinessOsPaymentsScreen";
+import { activateLocale } from "../../i18n/engine";
+
+/**
+ * The withdraw flow, the payout history and the Rewards entry all read the
+ * `commerce:payments` catalog. The engine only serves a namespace once it is
+ * loaded — the provider does this before the first frame in the app; without
+ * it here those sections render humanized keys and every query misses.
+ */
+beforeAll(async () => {
+  await activateLocale("en");
+});
 
 const PAYOUT_METHOD = {
   provider: "stripe",
@@ -131,6 +154,34 @@ const AD_WALLET = {
   transactions: []
 };
 
+const CONNECT_STATUS = {
+  connected: true,
+  payouts_enabled: true,
+  state: {
+    connected_account_id: "acct_1AB9876",
+    charges_enabled: true,
+    details_submitted: true,
+    disabled_reason: "",
+    last_synced_at: "2026-08-01T12:00:00Z"
+  }
+};
+
+function payoutRecord(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    payout_key: "payout-k1",
+    amount_cents: 2500,
+    currency: "USD",
+    status: "paid",
+    stripe_payout_id: "po_1",
+    failure_code: "",
+    failure_message: "",
+    created_at: "2026-08-01T10:00:00Z",
+    updated_at: "2026-08-01T10:00:00Z",
+    ...overrides
+  };
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockOverview.mockResolvedValue(overview());
@@ -138,6 +189,13 @@ beforeEach(() => {
   mockAdWallet.mockResolvedValue({ wallet: AD_WALLET, billing: null, accountId: 7 });
   mockCachedOverview.mockResolvedValue(null);
   mockCachedActivity.mockResolvedValue(null);
+  mockConnectStatus.mockResolvedValue(CONNECT_STATUS);
+  mockSellerPayouts.mockResolvedValue({
+    payouts: [],
+    next_before_id: null,
+    has_more: false,
+    balance: null
+  });
 });
 
 /**
@@ -234,14 +292,157 @@ describe("Payments money hub", () => {
     expect(view.queryByText(/checking/i)).toBeNull();
   });
 
-  it("ships no payout controls, statements or tax documents while their flags are off", async () => {
+  it("ships no statements, tax documents or instant payout while their flags are off", async () => {
     const view = await renderScreen();
     expect(view.queryByText(/pay out now/i)).toBeNull();
-    expect(view.queryByText("Move your money")).toBeNull();
     expect(view.queryByText("Statements")).toBeNull();
     // An empty tax section would itself assert a threshold determination that
     // nothing in this system performs.
     expect(view.queryByText("Tax documents")).toBeNull();
+  });
+
+  /**
+   * The withdraw module went live when `payoutInitiationIsLive()` flipped —
+   * these pin the honest-state ladder it renders instead of a dead button.
+   */
+  describe("withdraw", () => {
+    it("offers the payout CTA when money is available and Stripe says payouts are enabled", async () => {
+      const view = await renderScreen();
+      expect(view.getByText("Move your money")).toBeTruthy();
+      expect(view.getByText("Request payout")).toBeTruthy();
+    });
+
+    it("routes a not-ready account to Verification Center rather than showing a dead button", async () => {
+      mockConnectStatus.mockResolvedValue({ ...CONNECT_STATUS, payouts_enabled: false });
+      const view = await renderScreen();
+      expect(view.queryByText("Request payout")).toBeNull();
+      expect(view.getByText(/isn't ready to receive payouts yet/)).toBeTruthy();
+      expect(view.getByText("Set up payouts")).toBeTruthy();
+    });
+
+    it("says the status read failed instead of telling a connected seller to onboard again", async () => {
+      mockConnectStatus.mockRejectedValue(new Error("Network request failed"));
+      const view = await renderScreen();
+      expect(view.queryByText("Request payout")).toBeNull();
+      expect(view.queryByText("Set up payouts")).toBeNull();
+      expect(view.getByText(/couldn't check your payout account status/i)).toBeTruthy();
+    });
+
+    it("says there is nothing to withdraw when the available balance is zero", async () => {
+      mockOverview.mockResolvedValue(overview({ available_cents: 0 }));
+      const view = await renderScreen();
+      expect(view.queryByText("Request payout")).toBeNull();
+      expect(view.getByText(/available balance is zero/i)).toBeTruthy();
+    });
+
+    it("confirms against a masked Stripe reference and submits with one idempotency key", async () => {
+      mockRequestPayout.mockResolvedValue({
+        payout: payoutRecord({ status: "pending" }),
+        duplicate: false,
+        stripe: { submitted: true, stripe_payout_id: "po_9", reason: "" }
+      });
+      const view = await renderScreen();
+
+      await act(async () => {
+        fireEvent.press(view.getByText("Request payout"));
+      });
+      // Prefilled with the full available balance, in dollars.
+      expect(view.getByTestId("withdraw-amount-input").props.value).toBe("42.00");
+
+      await act(async () => {
+        fireEvent.press(view.getByText("Continue"));
+      });
+      // The destination is the overview's masked reference — never a bank number.
+      expect(view.getByText(/To Stripe account ····9999/)).toBeTruthy();
+
+      await act(async () => {
+        // By role, not text: the confirm step's title and its CTA share the
+        // sentence "Confirm payout", and only the CTA is a button.
+        fireEvent.press(view.getByRole("button", { name: "Confirm payout" }));
+      });
+      expect(mockRequestPayout).toHaveBeenCalledTimes(1);
+      const [cents, key] = mockRequestPayout.mock.calls[0] as [number, string];
+      expect(cents).toBe(4200);
+      expect(key).toMatch(/^payout-/);
+      await waitFor(() => expect(view.getByText(/Payout requested/)).toBeTruthy());
+    });
+
+    it("refuses an amount above the available balance before any network call", async () => {
+      const view = await renderScreen();
+      await act(async () => {
+        fireEvent.press(view.getByText("Request payout"));
+      });
+      fireEvent.changeText(view.getByTestId("withdraw-amount-input"), "99.00");
+      await act(async () => {
+        fireEvent.press(view.getByText("Continue"));
+      });
+      expect(view.getByText(/more than your available balance/i)).toBeTruthy();
+      expect(mockRequestPayout).not.toHaveBeenCalled();
+    });
+
+    it("tells the seller a duplicate submission moved no second payout", async () => {
+      mockRequestPayout.mockResolvedValue({
+        payout: payoutRecord({ status: "pending" }),
+        duplicate: true,
+        stripe: { submitted: false, stripe_payout_id: "", reason: "already processed" }
+      });
+      const view = await renderScreen();
+      await act(async () => {
+        fireEvent.press(view.getByText("Request payout"));
+      });
+      await act(async () => {
+        fireEvent.press(view.getByText("Continue"));
+      });
+      await act(async () => {
+        fireEvent.press(view.getByRole("button", { name: "Confirm payout" }));
+      });
+      await waitFor(() => expect(view.getByText(/nothing was sent twice/i)).toBeTruthy());
+    });
+  });
+
+  describe("payout history", () => {
+    it("renders each payout with its status chip, and a failure with its real reason", async () => {
+      mockSellerPayouts.mockResolvedValue({
+        payouts: [
+          payoutRecord({ id: 2, status: "paid", amount_cents: 2500 }),
+          payoutRecord({
+            id: 3,
+            status: "failed",
+            amount_cents: 1000,
+            failure_message: "The bank account has been closed."
+          })
+        ],
+        next_before_id: null,
+        has_more: false,
+        balance: null
+      });
+      const view = await renderScreen();
+      expect(view.getByText("Paid")).toBeTruthy();
+      expect(view.getByText("Failed")).toBeTruthy();
+      expect(view.getByText("The bank account has been closed.")).toBeTruthy();
+    });
+
+    it("renders an unknown status as its raw word rather than guessing a label", async () => {
+      mockSellerPayouts.mockResolvedValue({
+        payouts: [payoutRecord({ id: 4, status: "hovering" })],
+        next_before_id: null,
+        has_more: false,
+        balance: null
+      });
+      const view = await renderScreen();
+      expect(view.getByText("hovering")).toBeTruthy();
+    });
+
+    it("says the payout read failed rather than showing an empty list as truth", async () => {
+      mockSellerPayouts.mockRejectedValue(new Error("Network request failed"));
+      const view = await renderScreen();
+      expect(view.getByText(/Couldn't load your payouts/)).toBeTruthy();
+    });
+  });
+
+  it("links to Rewards as an entry card, with no figure asserted on this screen", async () => {
+    const view = await renderScreen();
+    expect(view.getByText("Rewards & credits")).toBeTruthy();
   });
 
   it("keeps the escrow card absent while no escrow figure exists", async () => {

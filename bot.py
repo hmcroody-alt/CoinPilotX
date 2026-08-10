@@ -18040,6 +18040,31 @@ def api_pulse_ads_wallet_invoices_flat():
         conn.close()
 
 
+@webhook_app.route("/api/pulse/ads/wallet/events", methods=["GET"])
+def api_pulse_ads_wallet_events_flat():
+    """Owner-visible wallet lifecycle events: auto-pauses, limit hits, top-up prompts."""
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({
+            "ok": True,
+            **pulse_ad_payments.list_wallet_events(
+                conn,
+                user.get("user_id"),
+                int(request.args.get("account_id", "0") or 0),
+                limit=request.args.get("limit", "50"),
+                before_id=request.args.get("before_id", "0"),
+            ),
+        })
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
 @webhook_app.route("/api/pulse/ads/wallet/limits", methods=["POST"])
 def api_pulse_ads_wallet_limits_set():
     user, denied = pulse_ads_api_user_required()
@@ -18423,6 +18448,612 @@ def api_pulse_ads_appeals():
         return pulse_ads_error_response(exc)
     finally:
         conn.close()
+
+
+# --- Financial incidents + reconciliation (admin-only observability) --------
+# These routes read/annotate the canonical financial-incident table and trigger
+# the pure-local reconciliation sweep. They never move money and never mutate a
+# balance — incidents are append-only observations (see
+# services/business_os/payments/incidents.py).
+
+def pulse_finance_error_response(exc):
+    status_code = getattr(exc, "status_code", None)
+    if isinstance(exc, ValueError):
+        # PayoutError / RewardError carry a machine token in ``reason``
+        # (e.g. "insufficient_balance"); the mobile client maps it from the
+        # ``error_code`` field (pulseApi -> PulseApiError.code).
+        body = {"ok": False, "error": str(exc)}
+        reason = str(getattr(exc, "reason", "") or "")
+        if reason:
+            body["error_code"] = reason
+        return jsonify(body), int(status_code) if status_code else 400
+    logging.exception("PULSE_FINANCE_API_ERROR path=%s", request.path)
+    return jsonify({"ok": False, "error": "Finance system temporarily unavailable."}), 500
+
+
+@webhook_app.route("/api/pulse/finance/incidents", methods=["GET"])
+def api_pulse_finance_incidents():
+    admin, denied = require_admin_api("billing.view")
+    if denied:
+        return denied
+    try:
+        from services.business_os.payments import incidents as finance_incidents
+
+        try:
+            limit = int(request.args.get("limit", "50") or 50)
+        except (TypeError, ValueError):
+            limit = 50
+        before_id = request.args.get("before_id") or None
+        result = finance_incidents.list_incidents(
+            domain=request.args.get("domain") or None,
+            status=request.args.get("status") or None,
+            incident_type=request.args.get("incident_type") or None,
+            limit=limit,
+            before_id=before_id,
+        )
+        return jsonify({"ok": True, **result, "counts": finance_incidents.counts_by_status()})
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
+
+
+@webhook_app.route("/api/pulse/finance/incidents/<int:incident_id>/status", methods=["POST"])
+def api_pulse_finance_incident_status(incident_id):
+    admin, denied = require_admin_api("billing.repair")
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("finance_incident_write", 30, 60):
+        return jsonify({"ok": False, "error": "Too many requests. Slow down."}), 429
+    try:
+        from services.business_os.payments import incidents as finance_incidents
+
+        payload = pulse_ads_json_payload()
+        incident = finance_incidents.update_incident_status(
+            incident_id,
+            str(payload.get("status") or ""),
+            resolution_note=str(payload.get("note") or payload.get("resolution_note") or ""),
+            actor=f"admin:{admin.get('id')}",
+        )
+        log_admin_audit(
+            admin.get("id"), "finance_incident_status", "financial_incident",
+            str(incident_id), {"status": incident.get("status")},
+        )
+        return jsonify({"ok": True, "incident": incident})
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
+
+
+@webhook_app.route("/api/pulse/finance/reconcile", methods=["POST"])
+def api_pulse_finance_reconcile():
+    admin, denied = require_admin_api("billing.repair")
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    # Reconciliation scans every balance row; keep the trigger deliberately slow.
+    if pulse_ads_rate_limited("finance_reconcile", 6, 300):
+        return jsonify({"ok": False, "error": "Reconciliation already running or rate-limited."}), 429
+    try:
+        from services.business_os.payments import reconciliation as finance_reconciliation
+
+        summary = finance_reconciliation.run_all()
+        log_admin_audit(
+            admin.get("id"), "finance_reconcile_run", "reconciliation_run",
+            summary.get("started_at") or "",
+            {"incidents": summary.get("incidents_opened_or_refreshed")},
+        )
+        return jsonify({"ok": True, "summary": summary})
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
+
+
+@webhook_app.route("/api/pulse/finance/reconcile/status", methods=["GET"])
+def api_pulse_finance_reconcile_status():
+    admin, denied = require_admin_api("billing.view")
+    if denied:
+        return denied
+    try:
+        from services.business_os.payments import reconciliation as finance_reconciliation
+
+        return jsonify({"ok": True, "last_run": finance_reconciliation.last_run()})
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
+
+
+# --- Seller payouts (Wave B: Stripe Connect payout lifecycle) ----------------
+# Seller-facing surface over services/business_os/payments/seller_payouts.py +
+# connect_accounts.py, plus an admin read. Money movement here is ledger-only;
+# the single optional Stripe call (Payout.create) happens server-side and only
+# when STRIPE_SECRET_KEY is configured.
+
+def pulse_seller_connect_state(user_id, refresh=True):
+    """Last-known Connect state for a seller, with a best-effort Stripe refresh.
+
+    Resolution order: the Wave B projection table, then the read-only legacy
+    ``seller_payout_accounts`` mapping (never written here). The refresh only
+    happens when Stripe is configured; without keys the stored projection is
+    returned unchanged.
+    """
+    from services.business_os.payments import connect_accounts as _bos_connect
+
+    state = _bos_connect.get_state(user_id)
+    connected_account_id = str((state or {}).get("connected_account_id") or "")
+    if not connected_account_id:
+        conn = db(); conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute(
+                "SELECT connected_account_id, payouts_enabled, charges_enabled "
+                "FROM seller_payout_accounts "
+                "WHERE user_id=? AND COALESCE(connected_account_id,'') != '' "
+                "ORDER BY id DESC LIMIT 1",
+                (int(user_id or 0),),
+            ).fetchone()
+        except Exception:
+            row = None
+        finally:
+            conn.close()
+        legacy = dict(row or {})
+        connected_account_id = str(legacy.get("connected_account_id") or "")
+        if connected_account_id and state is None:
+            state = {
+                "user_id": str(user_id),
+                "connected_account_id": connected_account_id,
+                "payouts_enabled": bool(legacy.get("payouts_enabled")),
+                "charges_enabled": bool(legacy.get("charges_enabled")),
+                "details_submitted": False,
+                "requirements": {},
+                "disabled_reason": "",
+                "last_synced_at": None,
+                "source": "legacy_seller_payout_accounts",
+            }
+    if refresh and connected_account_id:
+        try:
+            from services import payment_provider as _provider
+
+            status = _provider.get_account_status(connected_account_id)
+            if status.get("ok"):
+                snapshot = _bos_connect.record_account_snapshot(user_id, status)
+                if snapshot.get("ok"):
+                    state = snapshot.get("state")
+        except Exception:
+            logging.exception("SELLER_CONNECT_REFRESH_FAILED user_id=%s", user_id)
+    return state
+
+
+def pulse_submit_seller_payout(payout):
+    """Best-effort server-side Stripe submission of a recorded payout intent.
+
+    Only runs when STRIPE_SECRET_KEY is configured. A Stripe rejection marks
+    the row failed and reverses the fenced funds; no key leaves the row pending
+    for a worker/manual submission — the intent is never lost either way.
+    """
+    from services.business_os.payments import seller_payouts as _bos_payouts
+
+    if not (os.getenv("STRIPE_SECRET_KEY") or "").strip():
+        return {"submitted": False, "reason": "stripe_not_configured"}
+    args = _bos_payouts.build_stripe_payout_args(payout)
+    try:
+        from services import payment_provider as _provider
+
+        created = _provider.create_payout(
+            stripe_account=args["stripe_account"],
+            idempotency_key=args["idempotency_key"],
+            **args["kwargs"],
+        )
+    except Exception as exc:
+        logging.exception("SELLER_PAYOUT_STRIPE_CALL_FAILED payout_id=%s", payout.get("id"))
+        _bos_payouts.fail_payout(payout["id"], failure_code="stripe_api_error",
+                                 failure_message=str(exc)[:400], actor="system")
+        return {"submitted": False, "reason": "stripe_api_error"}
+    if not created.get("ok"):
+        _bos_payouts.fail_payout(payout["id"], failure_code="stripe_rejected",
+                                 failure_message=str(created.get("message") or "")[:400],
+                                 actor="system")
+        return {"submitted": False, "reason": "stripe_rejected"}
+    _bos_payouts.mark_payout_submitted(
+        payout["id"],
+        stripe_payout_id=str(created.get("provider_payout_id") or ""),
+        actor="system",
+    )
+    return {"submitted": True,
+            "stripe_payout_id": str(created.get("provider_payout_id") or "")}
+
+
+@webhook_app.route("/api/pulse/payments/seller/payouts", methods=["GET", "POST"])
+def api_pulse_seller_payouts():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    try:
+        from services.business_os.payments import seller_payouts as _bos_payouts
+
+        if request.method == "GET":
+            try:
+                limit = int(request.args.get("limit", "25") or 25)
+            except (TypeError, ValueError):
+                limit = 25
+            page = _bos_payouts.list_payouts(
+                user["user_id"],
+                status=request.args.get("status") or None,
+                limit=limit,
+                before_id=request.args.get("before_id") or None,
+            )
+            summary = _bos_payouts.seller_balance_summary(
+                user["user_id"], request.args.get("currency") or "usd")
+            response = jsonify({"ok": True, **page, "balance": summary})
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            return response
+
+        if not pulse_ads_verify_write():
+            return jsonify({"ok": False, "error": "Security check failed."}), 403
+        if pulse_ads_rate_limited("seller_payout_request", 10, 3600):
+            return jsonify({"ok": False, "error": "Too many payout requests. Try again later."}), 429
+        payload = request.get_json(silent=True) or {}
+        payout_key = str(payload.get("payout_key") or "").strip()
+        try:
+            amount_cents = int(payload.get("amount_cents"))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "amount_cents must be an integer number of cents."}), 400
+        state = pulse_seller_connect_state(user["user_id"], refresh=True)
+        result = _bos_payouts.request_payout(
+            user["user_id"], amount_cents,
+            requested_by=f"user:{user['user_id']}",
+            payout_key=payout_key,
+            account_status=state or {},
+            currency=str(payload.get("currency") or "usd").lower(),
+        )
+        payout = result["payout"]
+        submission = {"submitted": False, "reason": "stripe_not_configured"}
+        if not result["duplicate"] and payout.get("status") == "pending":
+            submission = pulse_submit_seller_payout(payout)
+            payout = _bos_payouts.get_payout(payout_id=payout["id"]) or payout
+        response = jsonify({"ok": True, "payout": payout,
+                            "duplicate": result["duplicate"],
+                            "stripe": submission})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
+
+
+@webhook_app.route("/api/pulse/payments/seller/connect/status", methods=["GET"])
+def api_pulse_seller_connect_status():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    try:
+        state = pulse_seller_connect_state(user["user_id"], refresh=True)
+        response = jsonify({
+            "ok": True,
+            "connected": bool((state or {}).get("connected_account_id")),
+            "payouts_enabled": bool((state or {}).get("payouts_enabled")),
+            "state": state,
+        })
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
+
+
+@webhook_app.route("/api/pulse/finance/payouts", methods=["GET"])
+def api_pulse_finance_payouts():
+    admin, denied = require_admin_api("billing.view")
+    if denied:
+        return denied
+    try:
+        from services.business_os.payments import seller_payouts as _bos_payouts
+
+        try:
+            limit = int(request.args.get("limit", "50") or 50)
+        except (TypeError, ValueError):
+            limit = 50
+        page = _bos_payouts.list_payouts(
+            request.args.get("user_id") or None,
+            status=request.args.get("status") or None,
+            limit=limit,
+            before_id=request.args.get("before_id") or None,
+        )
+        return jsonify({"ok": True, **page})
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
+
+
+# --- Rewards (Wave D: Pulse Credits + Cash Rewards) --------------------------
+# Member-facing surface over services/business_os/rewards/engine.py plus the
+# admin grant/fraud/approve controls. Pulse Credits are internal and non-cash;
+# cash rewards ride the Wave B seller payout rails with lazy Connect
+# onboarding. Money movement lives in the engine; these routes only gate it.
+
+@webhook_app.route("/api/pulse/rewards", methods=["GET"])
+def api_pulse_rewards():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    try:
+        from services.business_os.rewards import engine as _rewards
+
+        try:
+            limit = int(request.args.get("limit", "25") or 25)
+        except (TypeError, ValueError):
+            limit = 25
+        page = _rewards.list_rewards(
+            user["user_id"],
+            status=request.args.get("status") or None,
+            limit=limit,
+            before_id=request.args.get("before_id") or None,
+        )
+        response = jsonify({
+            "ok": True,
+            **page,
+            "credit_balance": _rewards.get_credit_balance(user["user_id"]),
+        })
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
+
+
+@webhook_app.route("/api/pulse/rewards/credits/ledger", methods=["GET"])
+def api_pulse_rewards_credit_ledger():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    try:
+        from services.business_os.rewards import engine as _rewards
+
+        try:
+            limit = int(request.args.get("limit", "25") or 25)
+        except (TypeError, ValueError):
+            limit = 25
+        page = _rewards.list_credit_ledger(
+            user["user_id"],
+            limit=limit,
+            before_id=request.args.get("before_id") or None,
+        )
+        response = jsonify({
+            "ok": True,
+            **page,
+            "credit_balance": _rewards.get_credit_balance(user["user_id"]),
+        })
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
+
+
+@webhook_app.route("/api/pulse/rewards/credits/redeem", methods=["POST"])
+def api_pulse_rewards_credits_redeem():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("rewards_redeem", 10, 3600):
+        return jsonify({"ok": False, "error": "Too many redemptions. Try again later."}), 429
+    try:
+        from services.business_os.rewards import engine as _rewards
+
+        payload = request.get_json(silent=True) or {}
+        try:
+            credits_amount = int(payload.get("credits_amount"))
+            account_id = int(payload.get("account_id"))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "credits_amount and account_id must be integers."}), 400
+        redemption_key = str(payload.get("redemption_key") or "").strip()
+        result = _rewards.redeem_credits_to_ad_promo(
+            user["user_id"], credits_amount, account_id, redemption_key)
+        response = jsonify(result)
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
+
+
+@webhook_app.route("/api/pulse/rewards/<int:reward_id>/claim", methods=["POST"])
+def api_pulse_rewards_claim(reward_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("rewards_claim", 10, 3600):
+        return jsonify({"ok": False, "error": "Too many claim attempts. Try again later."}), 429
+    try:
+        from services.business_os.rewards import engine as _rewards
+        from services.business_os.payments import seller_payouts as _bos_payouts
+
+        reward = _rewards.get_reward(reward_id=reward_id)
+        if reward is None or str(reward.get("user_id")) != str(user["user_id"]):
+            return jsonify({"ok": False, "error": "Reward not found."}), 404
+
+        # Refresh the Connect projection first so lazy onboarding sees the
+        # latest truth (a user returning from Stripe onboarding claims again).
+        pulse_seller_connect_state(user["user_id"], refresh=True)
+        result = _rewards.disburse_cash_reward(reward_id, actor=f"user:{user['user_id']}")
+
+        if result.get("needs_onboarding"):
+            if (os.getenv("STRIPE_SECRET_KEY") or "").strip():
+                from services import payment_provider as _provider
+                from services.business_os.payments import connect_accounts as _bos_connect
+
+                connected_account_id = str(
+                    (result.get("connect_state") or {}).get("connected_account_id") or "")
+                if not connected_account_id:
+                    created = _provider.create_connected_account(user, "merchant")
+                    if not created.get("ok"):
+                        return jsonify(created), 503
+                    connected_account_id = str(created.get("provider_account_id") or "")
+                    try:
+                        status = _provider.get_account_status(connected_account_id)
+                        if status.get("ok"):
+                            _bos_connect.record_account_snapshot(user["user_id"], status)
+                    except Exception:
+                        logging.exception(
+                            "REWARD_CONNECT_SNAPSHOT_FAILED user_id=%s", user["user_id"])
+                base = (APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
+                link = _provider.create_onboarding_link(
+                    connected_account_id,
+                    refresh_url=f"{base}/pulse/rewards",
+                    return_url=f"{base}/pulse/rewards",
+                )
+                if not link.get("ok"):
+                    return jsonify(link), 503
+                response = jsonify({
+                    "ok": True,
+                    "needs_onboarding": True,
+                    "onboarding_url": link.get("url"),
+                    "reward": result.get("reward"),
+                })
+                response.headers["Cache-Control"] = "no-store, max-age=0"
+                return response
+            response = jsonify({
+                "ok": True,
+                "needs_onboarding": True,
+                "setup_required": True,
+                "reward": result.get("reward"),
+            })
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            return response
+
+        payout = result.get("payout")
+        submission = {"submitted": False, "reason": "stripe_not_configured"}
+        if payout and not result.get("duplicate") and payout.get("status") == "pending":
+            submission = pulse_submit_seller_payout(payout)
+            payout = _bos_payouts.get_payout(payout_id=payout["id"]) or payout
+        response = jsonify({
+            "ok": True,
+            "needs_onboarding": False,
+            "duplicate": bool(result.get("duplicate")),
+            "reward": _rewards.get_reward(reward_id=reward_id),
+            "payout": payout,
+            "stripe": submission,
+        })
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
+
+
+@webhook_app.route("/api/pulse/finance/rewards", methods=["GET"])
+def api_pulse_finance_rewards():
+    admin, denied = require_admin_api("billing.view")
+    if denied:
+        return denied
+    try:
+        from services.business_os.rewards import engine as _rewards
+
+        try:
+            limit = int(request.args.get("limit", "50") or 50)
+        except (TypeError, ValueError):
+            limit = 50
+        page = _rewards.list_rewards(
+            request.args.get("user_id") or None,
+            status=request.args.get("status") or None,
+            fraud_state=request.args.get("fraud_state") or None,
+            limit=limit,
+            before_id=request.args.get("before_id") or None,
+        )
+        return jsonify({"ok": True, **page})
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
+
+
+@webhook_app.route("/api/pulse/finance/rewards/grant", methods=["POST"])
+def api_pulse_finance_rewards_grant():
+    admin, denied = require_admin_api("billing.repair")
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("finance_rewards_write", 30, 60):
+        return jsonify({"ok": False, "error": "Too many requests. Slow down."}), 429
+    try:
+        from services.business_os.rewards import engine as _rewards
+
+        payload = pulse_ads_json_payload()
+        try:
+            amount = int(payload.get("amount"))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "amount must be an integer."}), 400
+        details = payload.get("details")
+        result = _rewards.grant_reward(
+            str(payload.get("event_key") or "").strip(),
+            str(payload.get("user_id") or "").strip(),
+            str(payload.get("event_type") or "").strip(),
+            str(payload.get("reward_kind") or "").strip(),
+            amount,
+            str(payload.get("source") or f"admin:{admin.get('id')}").strip(),
+            details=details if isinstance(details, dict) else None,
+            fraud_state=str(payload.get("fraud_state") or "clear").strip(),
+            currency=str(payload.get("currency") or "usd").strip().lower(),
+        )
+        log_admin_audit(
+            admin.get("id"), "finance_reward_grant", "reward_event",
+            str((result.get("reward") or {}).get("id") or ""),
+            {"event_key": (result.get("reward") or {}).get("event_key"),
+             "duplicate": bool(result.get("duplicate"))},
+        )
+        return jsonify({"ok": True, **result})
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
+
+
+@webhook_app.route("/api/pulse/finance/rewards/<int:reward_id>/fraud", methods=["POST"])
+def api_pulse_finance_rewards_fraud(reward_id):
+    admin, denied = require_admin_api("billing.repair")
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("finance_rewards_write", 30, 60):
+        return jsonify({"ok": False, "error": "Too many requests. Slow down."}), 429
+    try:
+        from services.business_os.rewards import engine as _rewards
+
+        payload = pulse_ads_json_payload()
+        reward = _rewards.set_fraud_state(
+            reward_id,
+            str(payload.get("fraud_state") or "").strip(),
+            actor=f"admin:{admin.get('id')}",
+            note=str(payload.get("note") or ""),
+        )
+        log_admin_audit(
+            admin.get("id"), "finance_reward_fraud", "reward_event",
+            str(reward_id),
+            {"fraud_state": reward.get("fraud_state"), "status": reward.get("status")},
+        )
+        return jsonify({"ok": True, "reward": reward})
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
+
+
+@webhook_app.route("/api/pulse/finance/rewards/<int:reward_id>/approve", methods=["POST"])
+def api_pulse_finance_rewards_approve(reward_id):
+    admin, denied = require_admin_api("billing.repair")
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("finance_rewards_write", 30, 60):
+        return jsonify({"ok": False, "error": "Too many requests. Slow down."}), 429
+    try:
+        from services.business_os.rewards import engine as _rewards
+
+        reward = _rewards.approve_cash_reward(reward_id, actor=f"admin:{admin.get('id')}")
+        log_admin_audit(
+            admin.get("id"), "finance_reward_approve", "reward_event",
+            str(reward_id), {"status": reward.get("status")},
+        )
+        return jsonify({"ok": True, "reward": reward})
+    except Exception as exc:
+        return pulse_finance_error_response(exc)
 
 
 @webhook_app.route("/api/admin/pulse/ads/review-board", methods=["GET"])
@@ -95615,6 +96246,27 @@ def stripe_webhook():
                 )
             else:
                 record_unmatched_payment(event, payment_intent, "payment_intent.payment_failed could not resolve local user")
+
+    # --- Wave B: seller payout lifecycle + Connect account projection --------
+    # Additive: the legacy branch below still records into the old tables. The
+    # appliers are idempotent, so the inbox replay path (stripe_ledger_handler
+    # via reconcile_worker) firing for the same event is harmless.
+    if event_type.startswith("payout.") or event_type in {"transfer.created", "transfer.reversed"}:
+        try:
+            from services.business_os.payments import seller_payouts as _bos_seller_payouts
+            _bos_seller_payouts.ensure_schema()
+            if event_type in {"transfer.created", "transfer.reversed"}:
+                _bos_seller_payouts.apply_stripe_transfer_event(event)
+            else:
+                _bos_seller_payouts.apply_stripe_payout_event(event)
+        except Exception:
+            logging.exception("BOS_SELLER_PAYOUT_EVENT_FAILED event_id=%s type=%s", event_id, event_type)
+    if event_type == "account.updated":
+        try:
+            from services.business_os.payments import connect_accounts as _bos_connect_accounts
+            _bos_connect_accounts.apply_account_updated_event(event)
+        except Exception:
+            logging.exception("BOS_CONNECT_ACCOUNT_EVENT_FAILED event_id=%s", event_id)
 
     if event_type in {"account.updated", "payout.paid", "payout.failed", "charge.refunded", "charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed"}:
         obj = event["data"]["object"]

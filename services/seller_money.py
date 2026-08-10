@@ -327,6 +327,27 @@ def _payouts(cur, user_id: int, currency: str) -> dict:
 # the overview
 # --------------------------------------------------------------------------- #
 
+def _payout_request_schema_present() -> bool:
+    """SELECT-only probe for the Wave B ``seller_payout_requests`` table.
+
+    A read must not write, so no ``ensure_schema`` here — and the probe uses
+    its own connection so a failed SELECT cannot poison the caller's
+    transaction on engines that abort it (PostgreSQL).
+    """
+    conn = db_service.connect()
+    try:
+        conn.execute("SELECT 1 FROM seller_payout_requests LIMIT 1")
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+    finally:
+        conn.close()
+
+
 def seller_money_overview(user_id: Any, currency: str = "USD") -> dict:
     """Every balance the money hub renders, plus what this platform cannot source.
 
@@ -370,8 +391,15 @@ def seller_money_overview(user_id: Any, currency: str = "USD") -> dict:
 
             # --- what this platform cannot source, stated rather than omitted ---
             # Each of these means "ship the affordance ABSENT". See the module
-            # docstring for how each was established.
-            "release_path": "none_in_product",
+            # docstring for how each was established. ``release_path`` is the
+            # one that has since gained a real writer: Wave B added
+            # ``POST /api/pulse/payments/seller/payouts`` backed by
+            # services/business_os/payments/seller_payouts.py. When that schema
+            # exists this reports the path honestly; on a deployment without it
+            # the original absence still holds.
+            "release_path": ("payout_request"
+                             if _payout_request_schema_present()
+                             else "none_in_product"),
             "payout_initiation": "unsupported",
             "instant_payout": "unsupported",
             "statements": "unsupported",

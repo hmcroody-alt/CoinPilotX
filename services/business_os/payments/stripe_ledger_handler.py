@@ -411,7 +411,24 @@ def handle_stripe_event(payload: Mapping[str, Any]) -> dict:
 
     Ignored event types return ``{"ignored": True}`` so the inbox marks the row
     processed.
+
+    Wave B: seller-payout and Connect-account events are delegated to their
+    dedicated engines. Both appliers are idempotent, so this inbox path and the
+    inline ``bot.stripe_webhook`` path can safely both fire for one event.
     """
+    event_type = str((payload or {}).get("type") or "")
+    if event_type.startswith("payout.") or event_type in (
+        "transfer.created", "transfer.reversed"
+    ):
+        from services.business_os.payments import seller_payouts
+        seller_payouts.ensure_schema()
+        if event_type in ("transfer.created", "transfer.reversed"):
+            return seller_payouts.apply_stripe_transfer_event(payload)
+        return seller_payouts.apply_stripe_payout_event(payload)
+    if event_type == "account.updated":
+        from services.business_os.payments import connect_accounts
+        return connect_accounts.apply_account_updated_event(payload)
+
     ledger.ensure_schema()
     postings = map_stripe_postings(payload)
     if not postings:

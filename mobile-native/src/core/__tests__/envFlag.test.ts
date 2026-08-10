@@ -44,7 +44,6 @@ import {
   adTopUpIsLive,
   escrowCardIsLive,
   instantPayoutIsLive,
-  payoutInitiationIsLive,
   statementsAreLive,
   taxDocumentsAreLive
 } from "../../api/paymentsHub";
@@ -79,7 +78,11 @@ const ACCESSORS: Array<[string, () => boolean]> = [
   ["EXPO_PUBLIC_ADS_POST_MODE", adsPostModeEnabled],
   ["EXPO_PUBLIC_ORDERS_ESCROW", ordersEscrowIsLive],
   ["EXPO_PUBLIC_ORDERS_FULFILLMENT", ordersFulfillmentIsLive],
-  ["EXPO_PUBLIC_PAYMENTS_PAYOUT_INITIATION", payoutInitiationIsLive],
+  // EXPO_PUBLIC_PAYMENTS_PAYOUT_INITIATION is retired: `payoutInitiationIsLive`
+  // now answers a hard-coded true because the Stripe payout rail is live
+  // (`api/sellerPayouts`), and a client flag that could hide a live money rail
+  // would be the same kind of lie as a button over a dead one. Its "on" value is
+  // pinned in `api/__tests__/paymentsHub.test.ts` instead.
   ["EXPO_PUBLIC_PAYMENTS_INSTANT_PAYOUT", instantPayoutIsLive],
   ["EXPO_PUBLIC_PAYMENTS_STATEMENTS", statementsAreLive],
   ["EXPO_PUBLIC_PAYMENTS_TAX_DOCUMENTS", taxDocumentsAreLive],
@@ -154,7 +157,10 @@ describe("every flag accessor agrees on what 'on' means", () => {
     // were deleted. Both defaulted off, and both guarded a correction that was
     // therefore never what anyone saw — the account identity row, and the state
     // vocabulary that replaces the em dash. Neither has anything left to switch.
-    expect(ACCESSORS).toHaveLength(21);
+    // 21 before `EXPO_PUBLIC_PAYMENTS_PAYOUT_INITIATION` was retired: the payout
+    // rail went live and its gate became a hard-coded true (see the note in the
+    // table above).
+    expect(ACCESSORS).toHaveLength(20);
     expect(new Set(ACCESSORS.map(([name]) => name)).size).toBe(ACCESSORS.length);
   });
 });

@@ -32,9 +32,11 @@ import { primaryAdAccount } from "../api/adsDashboard";
 import {
   AdAutoTopup,
   AdSpendingLimits,
+  AdWalletEvent,
   AdWalletInvoice,
   AdWalletTxn,
   createAdFundingSession,
+  listAdWalletEvents,
   listAdWalletInvoices,
   listAdWalletTransactions,
   setAdAutoTopup,
@@ -70,6 +72,16 @@ type Props = {
 
 const NS = "commerce:adsWallet";
 
+/**
+ * The three defined wallet event types get labelled headings; anything else
+ * renders under its raw type word rather than being guessed into one of them.
+ */
+const EVENT_TYPE_KEY: Record<string, string> = {
+  auto_pause: "eventAutoPause",
+  limit_hit: "eventLimitHit",
+  topup_prompt: "eventTopupPrompt"
+};
+
 /** "12.50" → 1250; empty → null; junk → NaN so the caller can complain. */
 function parseDollars(text: string): number | null {
   const trimmed = text.trim();
@@ -87,7 +99,7 @@ function centsToDollarInput(cents: number): string {
 export function AdsWalletScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const reducedMotion = useLogiNexusReducedMotion();
-  const entrance = useStoreEntrance(7, reducedMotion);
+  const entrance = useStoreEntrance(8, reducedMotion);
 
   const [accountId, setAccountId] = useState<number>(Number(route?.params?.accountId || 0));
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
@@ -101,6 +113,11 @@ export function AdsWalletScreen({ route, navigation }: Props) {
   const [txNext, setTxNext] = useState<number | null>(null);
   const [txError, setTxError] = useState("");
   const [txLoadingMore, setTxLoadingMore] = useState(false);
+
+  const [events, setEvents] = useState<AdWalletEvent[]>([]);
+  const [eventsNext, setEventsNext] = useState<number | null>(null);
+  const [eventsError, setEventsError] = useState("");
+  const [eventsLoadingMore, setEventsLoadingMore] = useState(false);
 
   const [invoices, setInvoices] = useState<AdWalletInvoice[]>([]);
   const [invError, setInvError] = useState("");
@@ -153,10 +170,11 @@ export function AdsWalletScreen({ route, navigation }: Props) {
           setErrorText(t(`${NS}.noAccount`));
           return;
         }
-        const [walletRes, billingRes, txRes, invRes] = await Promise.allSettled([
+        const [walletRes, billingRes, txRes, eventsRes, invRes] = await Promise.allSettled([
           getAdWallet(id),
           getAdBillingSummary(id),
           listAdWalletTransactions(id, { limit: 50 }),
+          listAdWalletEvents(id, { limit: 30 }),
           listAdWalletInvoices(id)
         ]);
         if (walletRes.status === "fulfilled") {
@@ -180,6 +198,17 @@ export function AdsWalletScreen({ route, navigation }: Props) {
           setTxError(
             txRes.reason instanceof Error && txRes.reason.message
               ? txRes.reason.message
+              : t(`${NS}.loadError`)
+          );
+        }
+        if (eventsRes.status === "fulfilled") {
+          setEvents(eventsRes.value.events);
+          setEventsNext(eventsRes.value.next_before_id);
+          setEventsError("");
+        } else {
+          setEventsError(
+            eventsRes.reason instanceof Error && eventsRes.reason.message
+              ? eventsRes.reason.message
               : t(`${NS}.loadError`)
           );
         }
@@ -222,6 +251,20 @@ export function AdsWalletScreen({ route, navigation }: Props) {
       setTxLoadingMore(false);
     }
   }, [accountId, t, txLoadingMore, txNext]);
+
+  const loadMoreEvents = useCallback(async () => {
+    if (!accountId || !eventsNext || eventsLoadingMore) return;
+    setEventsLoadingMore(true);
+    try {
+      const page = await listAdWalletEvents(accountId, { limit: 30, beforeId: eventsNext });
+      setEvents((prev) => [...prev, ...page.events]);
+      setEventsNext(page.next_before_id);
+    } catch (error) {
+      setEventsError(error instanceof Error && error.message ? error.message : t(`${NS}.loadError`));
+    } finally {
+      setEventsLoadingMore(false);
+    }
+  }, [accountId, eventsLoadingMore, eventsNext, t]);
 
   const addFunds = useCallback(async () => {
     const cents = parseDollars(fundAmount);
@@ -506,8 +549,61 @@ export function AdsWalletScreen({ route, navigation }: Props) {
             )}
           </Animated.View>
 
-          {/* Invoices */}
+          {/* Wallet activity — the auditable "why did my campaign pause" trail.
+              Reasons are the server's sentences, shown verbatim. */}
           <Animated.View style={[s.stack, entrance.styleFor(4)]}>
+            <Text style={s.sectionTitle}>{t(`${NS}.eventsTitle`)}</Text>
+            <Text style={s.cardBody}>{t(`${NS}.eventsBody`)}</Text>
+            {eventsError ? (
+              <AdsSectionError
+                message={eventsError}
+                onRetry={() => load()}
+                reducedMotion={reducedMotion}
+                retryLabel={t(`${NS}.retry`)}
+              />
+            ) : events.length === 0 ? (
+              <AdsEmpty
+                title={t(`${NS}.eventsEmptyTitle`)}
+                body={t(`${NS}.eventsEmptyBody`)}
+                reducedMotion={reducedMotion}
+              />
+            ) : (
+              <>
+                {events.map((event) => (
+                  <View key={event.id} style={s.card}>
+                    <Text style={s.cardTitle}>
+                      {EVENT_TYPE_KEY[event.event_type]
+                        ? t(`${NS}.${EVENT_TYPE_KEY[event.event_type]}`)
+                        : event.event_type}
+                    </Text>
+                    <Text style={s.meta}>
+                      {event.created_at ? event.created_at.slice(0, 10) : ""}
+                      {event.campaign_id
+                        ? ` · ${t(`${NS}.txCampaign`, { id: String(event.campaign_id) })}`
+                        : ""}
+                    </Text>
+                    {event.reason ? <Text style={s.cardBody}>{event.reason}</Text> : null}
+                  </View>
+                ))}
+                {eventsNext ? (
+                  <Pressable
+                    style={s.secondaryBtn}
+                    onPress={loadMoreEvents}
+                    disabled={eventsLoadingMore}
+                    accessibilityRole="button"
+                    accessibilityLabel={t(`${NS}.txLoadMore`)}
+                  >
+                    <Text style={s.secondaryBtnText}>
+                      {eventsLoadingMore ? t(`${NS}.working`) : t(`${NS}.txLoadMore`)}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </>
+            )}
+          </Animated.View>
+
+          {/* Invoices */}
+          <Animated.View style={[s.stack, entrance.styleFor(5)]}>
             <Text style={s.sectionTitle}>{t(`${NS}.invTitle`)}</Text>
             {invError ? (
               <AdsSectionError
@@ -546,7 +642,7 @@ export function AdsWalletScreen({ route, navigation }: Props) {
           </Animated.View>
 
           {/* Spending limits */}
-          <Animated.View style={[s.stack, entrance.styleFor(5)]}>
+          <Animated.View style={[s.stack, entrance.styleFor(6)]}>
             <View style={s.card}>
               <Text style={s.cardTitle}>{t(`${NS}.limitsTitle`)}</Text>
               <Text style={s.cardBody}>{t(`${NS}.limitsBody`)}</Text>
@@ -586,7 +682,7 @@ export function AdsWalletScreen({ route, navigation }: Props) {
           </Animated.View>
 
           {/* Auto top-up + billing info + classic payments link */}
-          <Animated.View style={[s.stack, entrance.styleFor(6)]}>
+          <Animated.View style={[s.stack, entrance.styleFor(7)]}>
             <View style={s.card}>
               <View style={s.headRow}>
                 <Text style={s.cardTitle}>{t(`${NS}.topupTitle`)}</Text>

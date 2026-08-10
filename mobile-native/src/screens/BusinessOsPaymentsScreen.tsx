@@ -10,12 +10,14 @@
  *
  * What is absent today, and why
  * -----------------------------
- * 1. **"Pay out now"** (`payoutInitiationIsLive`). No endpoint in this codebase
- *    initiates a payout. `seller_payouts` rows are inserted only by the Stripe
- *    Connect webhook. A disabled button would still tell the seller a payout is
- *    something they can nearly do.
- * 2. **Instant payout** (`instantPayoutIsLive`). Same absence, plus there is no
- *    fee schedule to quote, and this screen computes no fees.
+ * 1. **Withdraw / request payout** is LIVE (`payoutInitiationIsLive`), bound to
+ *    `POST /api/pulse/payments/seller/payouts` via `api/sellerPayouts`. The
+ *    button renders only when the connect status says `payouts_enabled` and the
+ *    available balance is positive; otherwise the section states the honest
+ *    reason and routes to Verification Center. The idempotency key is minted
+ *    when the confirm step opens, cart-checkout style.
+ * 2. **Instant payout** (`instantPayoutIsLive`) stays absent — there is no fee
+ *    quote endpoint, and this screen computes no fees.
  * 3. **The escrow card** (`escrowCardIsLive`). Per-order escrow lives only in
  *    the Business OS ledger, whose routes are inert in production. The live
  *    wallet has a `hold` entry type but nothing writes per-order holds.
@@ -69,7 +71,16 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Animated,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from "react-native";
 import { AccessibilityInfo } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -98,6 +109,19 @@ import {
   taxDocumentsAreLive
 } from "../api/paymentsHub";
 import {
+  ConnectStatus,
+  SellerPayout,
+  fetchConnectStatus,
+  fetchSellerPayouts,
+  maskedConnectRef,
+  mintPayoutKey,
+  payoutErrorKey,
+  payoutStatusChip,
+  requestSellerPayout,
+  type PayoutStatusTone
+} from "../api/sellerPayouts";
+import { PulseApiError } from "../api/pulseApi";
+import {
   BalanceCard,
   BalanceHero,
   DocumentSection,
@@ -112,6 +136,7 @@ import {
   groupLedgerByDay
 } from "../components/payments";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { useTranslation } from "../i18n";
 import { paymentsLight } from "../theme/paymentsLight";
 import {
   usePaymentsBalanceCascade,
@@ -120,6 +145,32 @@ import {
 } from "../theme/paymentsMotion";
 
 const PAGE_SIZE = 25;
+const PAYOUTS_PAGE_SIZE = 10;
+
+/** New money-flow copy lives here; see AdsWalletScreen for the pattern. */
+const NS = "commerce:payments";
+
+/**
+ * Colour for a payout status chip's tone. The tone is decided in
+ * `payoutStatusChip`; this maps it onto the payments palette — progress takes
+ * the processing blue rather than a hue of its own, because "on its way to the
+ * bank" is the same claim the Processing card already makes in that colour.
+ */
+const TONE_COLOR: Record<PayoutStatusTone, string> = {
+  progress: paymentsLight.balance.processingAccent,
+  success: paymentsLight.status.success,
+  error: paymentsLight.status.error,
+  neutral: paymentsLight.status.neutral
+};
+
+/** "12.50" → 1250; empty → null; junk → NaN so the caller can complain. */
+function parseDollars(text: string): number | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const value = Number(trimmed.replace(/,/g, "."));
+  if (!Number.isFinite(value) || value < 0) return Number.NaN;
+  return Math.round(value * 100);
+}
 
 type Navigation = {
   navigate: (...args: any[]) => void;
@@ -138,6 +189,7 @@ export function BusinessOsPaymentsScreen({
   route
 }: { navigation?: Navigation; route?: PaymentsRoute } = {}) {
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   const headerTitle = route?.params?.title || "Payments";
 
   const [overview, setOverview] = useState<SellerMoneyOverview | null>(null);
@@ -162,6 +214,29 @@ export function BusinessOsPaymentsScreen({
   /** Set only when figures on screen came from cache. Always paired with a time. */
   const [offlineAsOf, setOfflineAsOf] = useState<string | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
+
+  /**
+   * The Stripe Connect status the withdraw affordance gates on. `null` with
+   * `connectFailed` false means "not loaded yet"; with `connectFailed` true it
+   * means the read failed — and the section says so rather than guessing a
+   * connection state that would either hide a live control or show a dead one.
+   */
+  const [connect, setConnect] = useState<ConnectStatus | null>(null);
+  const [connectFailed, setConnectFailed] = useState(false);
+
+  const [payouts, setPayouts] = useState<SellerPayout[]>([]);
+  const [payoutsNext, setPayoutsNext] = useState<number | null>(null);
+  const [payoutsHasMore, setPayoutsHasMore] = useState(false);
+  const [payoutsFailed, setPayoutsFailed] = useState(false);
+  const [payoutsLoadingMore, setPayoutsLoadingMore] = useState(false);
+
+  /** The withdraw sheet. The intent key lives in a ref, cart-checkout style. */
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawStep, setWithdrawStep] = useState<"amount" | "confirm">("amount");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
+  const [withdrawNote, setWithdrawNote] = useState("");
+  const payoutKey = useRef<string>("");
 
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled()
@@ -207,11 +282,14 @@ export function BusinessOsPaymentsScreen({
       if (mode === "initial") setLoading(true);
       else setRefreshing(true);
 
-      const [moneyResult, activityResult, walletResult] = await Promise.allSettled([
-        fetchMoneyOverview(),
-        fetchLedgerPage({ limit: PAGE_SIZE }),
-        fetchAdWallet()
-      ]);
+      const [moneyResult, activityResult, walletResult, connectResult, payoutsResult] =
+        await Promise.allSettled([
+          fetchMoneyOverview(),
+          fetchLedgerPage({ limit: PAGE_SIZE }),
+          fetchAdWallet(),
+          fetchConnectStatus(),
+          fetchSellerPayouts({ limit: PAYOUTS_PAGE_SIZE })
+        ]);
 
       let stale: string | null = null;
 
@@ -263,6 +341,28 @@ export function BusinessOsPaymentsScreen({
         setBilling(null);
       }
 
+      if (connectResult.status === "fulfilled") {
+        setConnect(connectResult.value);
+        setConnectFailed(false);
+      } else {
+        // A failed status read is not "not connected" — the section states the
+        // read failed rather than telling a connected seller to onboard again.
+        setConnect(null);
+        setConnectFailed(true);
+      }
+
+      if (payoutsResult.status === "fulfilled") {
+        setPayouts(payoutsResult.value.payouts);
+        setPayoutsNext(payoutsResult.value.next_before_id);
+        setPayoutsHasMore(payoutsResult.value.has_more);
+        setPayoutsFailed(false);
+      } else {
+        setPayouts([]);
+        setPayoutsNext(null);
+        setPayoutsHasMore(false);
+        setPayoutsFailed(true);
+      }
+
       setOfflineAsOf(stale);
       setLoading(false);
       setRefreshing(false);
@@ -300,7 +400,89 @@ export function BusinessOsPaymentsScreen({
     }
   }, [applyPage, cursor, hasMore, loadingMore]);
 
+  const loadMorePayouts = useCallback(async () => {
+    if (!payoutsNext || !payoutsHasMore || payoutsLoadingMore) return;
+    setPayoutsLoadingMore(true);
+    try {
+      const page = await fetchSellerPayouts({ limit: PAYOUTS_PAGE_SIZE, beforeId: payoutsNext });
+      setPayouts((previous) => {
+        const known = new Set(previous.map((payout) => payout.id));
+        return previous.concat(page.payouts.filter((payout) => !known.has(payout.id)));
+      });
+      setPayoutsNext(page.next_before_id);
+      setPayoutsHasMore(page.has_more);
+    } catch {
+      // A failed page is not a shorter list — leave everything tappable again.
+    } finally {
+      setPayoutsLoadingMore(false);
+    }
+  }, [payoutsHasMore, payoutsLoadingMore, payoutsNext]);
+
+  /** Opening the sheet mints the intent key; closing it discards it. */
+  const openWithdraw = useCallback((availableCents: number, activeCurrency: string) => {
+    payoutKey.current = mintPayoutKey();
+    setWithdrawAmount(availableCents > 0 ? (availableCents / 100).toFixed(2) : "");
+    setWithdrawStep("amount");
+    setWithdrawNote("");
+    setWithdrawOpen(true);
+    void activeCurrency;
+  }, []);
+
+  const closeWithdraw = useCallback(() => {
+    payoutKey.current = "";
+    setWithdrawOpen(false);
+    setWithdrawStep("amount");
+    setWithdrawNote("");
+  }, []);
+
+  const continueWithdraw = useCallback(
+    (availableCents: number) => {
+      const cents = parseDollars(withdrawAmount);
+      if (cents === null || Number.isNaN(cents) || cents <= 0) {
+        setWithdrawNote(t(`${NS}.invalidAmount`));
+        return;
+      }
+      if (cents > availableCents) {
+        setWithdrawNote(t(`${NS}.amountTooHigh`));
+        return;
+      }
+      setWithdrawNote("");
+      setWithdrawStep("confirm");
+    },
+    [t, withdrawAmount]
+  );
+
+  const submitWithdraw = useCallback(async () => {
+    const cents = parseDollars(withdrawAmount);
+    if (cents === null || Number.isNaN(cents) || cents <= 0 || !payoutKey.current) return;
+    setWithdrawBusy(true);
+    setWithdrawNote("");
+    try {
+      const result = await requestSellerPayout(cents, payoutKey.current);
+      closeWithdraw();
+      setWithdrawNote(t(`${NS}.${result.duplicate ? "requestedDuplicate" : "requested"}`));
+      await load("refresh").catch(() => undefined);
+    } catch (error) {
+      // The endpoint's declared codes get their own sentences; anything else
+      // shows the server's message verbatim when there is one. The intent key
+      // survives, so retrying replays the same payout rather than minting two.
+      const key = payoutErrorKey(error);
+      if (key === "errGeneric" && error instanceof PulseApiError && error.message) {
+        setWithdrawNote(error.message);
+      } else {
+        setWithdrawNote(t(`${NS}.${key}`));
+      }
+    } finally {
+      setWithdrawBusy(false);
+    }
+  }, [closeWithdraw, load, t, withdrawAmount]);
+
   const currency = overview?.currency || "USD";
+  const availableCents = overview?.available_cents ?? 0;
+  /** Masked Stripe reference for the confirm step — the overview's own word
+   *  when it carries one, else the connect status account id's last four. */
+  const withdrawDestination =
+    overview?.payout_method?.destination_masked || maskedConnectRef(connect);
   const scheduled = payoutIsScheduled(overview);
   const methodState = payoutMethodState(overview);
   const adSpendable = adWalletSpendableCents(wallet);
@@ -493,13 +675,246 @@ export function BusinessOsPaymentsScreen({
           </View>
         ) : null}
 
-        {/* "Pay out now" and instant payout live behind these flags and render
-            nothing while they are off. See the module docstring. */}
-        {payoutInitiationIsLive() || instantPayoutIsLive() ? (
-          <View style={styles.payoutActions} accessible>
+        {/* Withdraw is live; instant payout stays behind its off flag and
+            contributes nothing here while it is off. See the module docstring. */}
+        {!loading && (payoutInitiationIsLive() || instantPayoutIsLive()) ? (
+          <View style={styles.payoutActions}>
             <Text style={styles.sectionHeading} accessibilityRole="header" allowFontScaling>
-              Move your money
+              {t(`${NS}.withdrawTitle`)}
             </Text>
+            {!payoutInitiationIsLive() ? null : connectFailed ? (
+              // The status read failed. Saying "not connected" here would tell
+              // a connected seller to onboard again; saying nothing would hide
+              // a live control. So the section states exactly what it knows.
+              <Text style={styles.withdrawBody} allowFontScaling>
+                {t(`${NS}.withdrawStatusUnknown`)}
+              </Text>
+            ) : !connect ? null : !connect.connected || !connect.payouts_enabled ? (
+              <>
+                <Text style={styles.withdrawBody} allowFontScaling>
+                  {t(`${NS}.${connect.connected ? "withdrawDisabledBody" : "withdrawNotConnectedBody"}`)}
+                </Text>
+                <Pressable
+                  onPress={() => navigation?.navigate("VerificationCenter")}
+                  style={styles.withdrawSecondary}
+                  accessibilityRole="button"
+                  accessibilityLabel={t(`${NS}.withdrawSetupCta`)}
+                >
+                  <Text style={styles.withdrawSecondaryText} allowFontScaling>
+                    {t(`${NS}.withdrawSetupCta`)}
+                  </Text>
+                </Pressable>
+              </>
+            ) : availableCents <= 0 ? (
+              <Text style={styles.withdrawBody} allowFontScaling>
+                {t(`${NS}.withdrawNothing`)}
+              </Text>
+            ) : withdrawOpen ? (
+              <View style={styles.withdrawSheet}>
+                {withdrawStep === "amount" ? (
+                  <>
+                    <Text style={styles.withdrawLabel} allowFontScaling>
+                      {t(`${NS}.withdrawAmountLabel`)}
+                    </Text>
+                    <TextInput
+                      value={withdrawAmount}
+                      onChangeText={setWithdrawAmount}
+                      keyboardType="decimal-pad"
+                      style={styles.withdrawInput}
+                      accessibilityLabel={t(`${NS}.withdrawAmountLabel`)}
+                      testID="withdraw-amount-input"
+                    />
+                    <Text style={styles.withdrawHint} allowFontScaling>
+                      {t(`${NS}.withdrawAvailable`, {
+                        amount: formatMoney(availableCents, currency)
+                      })}
+                    </Text>
+                    {withdrawNote ? (
+                      <Text style={styles.withdrawError} accessibilityLiveRegion="polite">
+                        {withdrawNote}
+                      </Text>
+                    ) : null}
+                    <View style={styles.withdrawButtonRow}>
+                      <Pressable
+                        onPress={closeWithdraw}
+                        style={styles.withdrawSecondary}
+                        accessibilityRole="button"
+                        accessibilityLabel={t(`${NS}.cancel`)}
+                      >
+                        <Text style={styles.withdrawSecondaryText} allowFontScaling>
+                          {t(`${NS}.cancel`)}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => continueWithdraw(availableCents)}
+                        style={styles.withdrawPrimary}
+                        accessibilityRole="button"
+                        accessibilityLabel={t(`${NS}.withdrawContinue`)}
+                      >
+                        <Text style={styles.withdrawPrimaryText} allowFontScaling>
+                          {t(`${NS}.withdrawContinue`)}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.withdrawLabel} allowFontScaling>
+                      {t(`${NS}.confirmTitle`)}
+                    </Text>
+                    <Text style={styles.withdrawBody} allowFontScaling>
+                      {t(`${NS}.confirmAmount`, {
+                        amount: formatMoney(parseDollars(withdrawAmount) || 0, currency)
+                      })}
+                    </Text>
+                    <Text style={styles.withdrawBody} allowFontScaling>
+                      {withdrawDestination
+                        ? t(`${NS}.destinationStripe`, { ref: withdrawDestination })
+                        : t(`${NS}.destinationStripeNoRef`)}
+                    </Text>
+                    {withdrawNote ? (
+                      <Text style={styles.withdrawError} accessibilityLiveRegion="polite">
+                        {withdrawNote}
+                      </Text>
+                    ) : null}
+                    <View style={styles.withdrawButtonRow}>
+                      <Pressable
+                        onPress={closeWithdraw}
+                        disabled={withdrawBusy}
+                        style={[styles.withdrawSecondary, withdrawBusy && styles.withdrawBusy]}
+                        accessibilityRole="button"
+                        accessibilityLabel={t(`${NS}.cancel`)}
+                        accessibilityState={{ disabled: withdrawBusy }}
+                      >
+                        <Text style={styles.withdrawSecondaryText} allowFontScaling>
+                          {t(`${NS}.cancel`)}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => submitWithdraw().catch(() => undefined)}
+                        disabled={withdrawBusy}
+                        style={[styles.withdrawPrimary, withdrawBusy && styles.withdrawBusy]}
+                        accessibilityRole="button"
+                        accessibilityLabel={t(`${NS}.confirmCta`)}
+                        accessibilityState={{ disabled: withdrawBusy, busy: withdrawBusy }}
+                      >
+                        <Text style={styles.withdrawPrimaryText} allowFontScaling>
+                          {withdrawBusy ? t(`${NS}.working`) : t(`${NS}.confirmCta`)}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </>
+                )}
+              </View>
+            ) : (
+              <>
+                <Pressable
+                  onPress={() => openWithdraw(availableCents, currency)}
+                  style={styles.withdrawPrimary}
+                  accessibilityRole="button"
+                  accessibilityLabel={t(`${NS}.withdrawCta`)}
+                >
+                  <Text style={styles.withdrawPrimaryText} allowFontScaling>
+                    {t(`${NS}.withdrawCta`)}
+                  </Text>
+                </Pressable>
+                {withdrawNote ? (
+                  <Text style={styles.withdrawSuccess} accessibilityLiveRegion="polite">
+                    {withdrawNote}
+                  </Text>
+                ) : null}
+              </>
+            )}
+          </View>
+        ) : null}
+
+        {/* Payout history — every row is a server payout record, chips decided
+            by `payoutStatusChip`. An unknown status renders its raw word. */}
+        {!loading && payoutInitiationIsLive() ? (
+          <View style={styles.payoutsSection}>
+            <Text style={styles.sectionHeading} accessibilityRole="header" allowFontScaling>
+              {t(`${NS}.payoutsTitle`)}
+            </Text>
+            {payoutsFailed ? (
+              <Text style={styles.withdrawBody} allowFontScaling>
+                {t(`${NS}.payoutsUnavailable`)}
+              </Text>
+            ) : payouts.length ? (
+              <>
+                {payouts.map((payout) => {
+                  const chip = payoutStatusChip(payout.status);
+                  const chipColor = TONE_COLOR[chip.tone];
+                  const showFailure =
+                    (payout.status === "failed" || payout.status === "returned") &&
+                    Boolean(payout.failure_message);
+                  return (
+                    <View key={payout.id} style={styles.payoutRow} accessible>
+                      <View style={styles.payoutRowTop}>
+                        <Text style={styles.payoutAmount} allowFontScaling>
+                          {formatMoney(payout.amount_cents, payout.currency)}
+                        </Text>
+                        <View style={[styles.payoutChip, { borderColor: chipColor }]}>
+                          <Text
+                            style={[styles.payoutChipText, { color: chipColor }]}
+                            allowFontScaling
+                          >
+                            {chip.key ? t(`${NS}.${chip.key}`) : payout.status}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.payoutMeta} allowFontScaling>
+                        {formatDay(payout.created_at)}
+                      </Text>
+                      {showFailure ? (
+                        <Text style={styles.payoutFailure} allowFontScaling>
+                          {payout.failure_message}
+                        </Text>
+                      ) : null}
+                    </View>
+                  );
+                })}
+                {payoutsHasMore ? (
+                  <Pressable
+                    onPress={() => loadMorePayouts().catch(() => undefined)}
+                    disabled={payoutsLoadingMore}
+                    style={[styles.loadMore, payoutsLoadingMore && styles.loadMoreBusy]}
+                    accessibilityRole="button"
+                    accessibilityLabel={t(`${NS}.loadMore`)}
+                    accessibilityState={{ disabled: payoutsLoadingMore, busy: payoutsLoadingMore }}
+                  >
+                    <Text style={styles.loadMoreText}>{t(`${NS}.loadMore`)}</Text>
+                  </Pressable>
+                ) : null}
+              </>
+            ) : (
+              <Text style={styles.withdrawBody} allowFontScaling>
+                {t(`${NS}.payoutsEmpty`)}
+              </Text>
+            )}
+          </View>
+        ) : null}
+
+        {/* Rewards entry — a link, not a figure; the balance lives on the
+            Rewards screen where the server's total renders. */}
+        {!loading ? (
+          <View style={styles.rewardsWrap}>
+            <Pressable
+              onPress={() => navigation?.navigate("Rewards")}
+              style={styles.rewardsCard}
+              accessibilityRole="button"
+              accessibilityLabel={t(`${NS}.rewardsEntryTitle`)}
+              accessibilityHint={t(`${NS}.rewardsEntryBody`)}
+            >
+              <View style={styles.rewardsText}>
+                <Text style={styles.rewardsTitle} allowFontScaling>
+                  {t(`${NS}.rewardsEntryTitle`)}
+                </Text>
+                <Text style={styles.rewardsBody} allowFontScaling>
+                  {t(`${NS}.rewardsEntryBody`)}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={paymentsLight.text.muted} />
+            </Pressable>
           </View>
         ) : null}
 
@@ -605,6 +1020,22 @@ function escrowCentsOf(_overview: SellerMoneyOverview | null): number | null {
   return null;
 }
 
+/** A calendar-day label for a payout row. Local, like every date on screen. */
+function formatDay(iso: string): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso.slice(0, 10);
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    }).format(date);
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
 /** A wall-clock label for a cached figure. Local time, because the seller is. */
 function formatClock(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -675,6 +1106,77 @@ const styles = StyleSheet.create({
     marginTop: paymentsLight.space.section,
     paddingHorizontal: paymentsLight.space.gutter
   },
+  payoutAmount: {
+    color: paymentsLight.text.primary,
+    fontSize: paymentsLight.money.row.fontSize,
+    fontWeight: paymentsLight.money.row.fontWeight,
+    fontVariant: ["tabular-nums"]
+  },
+  payoutChip: {
+    borderRadius: paymentsLight.radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2
+  },
+  payoutChipText: {
+    fontSize: 12,
+    fontWeight: "700"
+  },
+  payoutFailure: {
+    color: paymentsLight.status.error,
+    fontSize: 13,
+    marginTop: 4
+  },
+  payoutMeta: {
+    color: paymentsLight.text.muted,
+    fontSize: 12,
+    marginTop: 2
+  },
+  payoutRow: {
+    backgroundColor: paymentsLight.bg.card,
+    borderColor: paymentsLight.border.hairline,
+    borderRadius: paymentsLight.radius.card,
+    borderWidth: 1,
+    marginBottom: 8,
+    marginHorizontal: paymentsLight.space.gutter,
+    padding: paymentsLight.space.card
+  },
+  payoutRowTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  payoutsSection: {
+    marginTop: paymentsLight.space.section
+  },
+  rewardsBody: {
+    color: paymentsLight.text.muted,
+    fontSize: 13,
+    marginTop: 2
+  },
+  rewardsCard: {
+    alignItems: "center",
+    backgroundColor: paymentsLight.bg.card,
+    borderColor: paymentsLight.border.hairline,
+    borderRadius: paymentsLight.radius.card,
+    borderWidth: 1,
+    flexDirection: "row",
+    minHeight: paymentsLight.size.tapTarget,
+    padding: paymentsLight.space.card
+  },
+  rewardsText: {
+    flex: 1,
+    paddingRight: 8
+  },
+  rewardsTitle: {
+    color: paymentsLight.text.primary,
+    fontSize: 15,
+    fontWeight: "700"
+  },
+  rewardsWrap: {
+    marginTop: paymentsLight.space.section,
+    paddingHorizontal: paymentsLight.space.gutter
+  },
   screen: {
     backgroundColor: paymentsLight.bg.page,
     flex: 1
@@ -691,5 +1193,90 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 6,
     paddingHorizontal: paymentsLight.space.gutter
+  },
+  withdrawBody: {
+    color: paymentsLight.text.muted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 2
+  },
+  withdrawBusy: {
+    opacity: 0.6
+  },
+  withdrawButtonRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 12
+  },
+  withdrawError: {
+    color: paymentsLight.status.error,
+    fontSize: 13,
+    marginTop: 8
+  },
+  withdrawHint: {
+    color: paymentsLight.text.muted,
+    fontSize: 12,
+    marginTop: 6
+  },
+  withdrawInput: {
+    borderColor: paymentsLight.border.secondaryButton,
+    borderRadius: paymentsLight.radius.control,
+    borderWidth: 1,
+    color: paymentsLight.text.primary,
+    fontSize: 16,
+    marginTop: 6,
+    minHeight: paymentsLight.size.tapTarget,
+    paddingHorizontal: 12
+  },
+  withdrawLabel: {
+    color: paymentsLight.text.primary,
+    fontSize: 14,
+    fontWeight: "700"
+  },
+  withdrawPrimary: {
+    alignItems: "center",
+    backgroundColor: paymentsLight.cta.from,
+    borderRadius: paymentsLight.radius.control,
+    flexGrow: 1,
+    justifyContent: "center",
+    marginTop: 8,
+    minHeight: paymentsLight.size.tapTarget,
+    paddingHorizontal: 18
+  },
+  withdrawPrimaryText: {
+    color: paymentsLight.cta.text,
+    fontSize: 14,
+    fontWeight: "700"
+  },
+  withdrawSecondary: {
+    alignItems: "center",
+    backgroundColor: paymentsLight.bg.card,
+    borderColor: paymentsLight.border.secondaryButton,
+    borderRadius: paymentsLight.radius.control,
+    borderWidth: 1,
+    flexGrow: 1,
+    justifyContent: "center",
+    marginTop: 8,
+    minHeight: paymentsLight.size.tapTarget,
+    paddingHorizontal: 18
+  },
+  withdrawSecondaryText: {
+    color: paymentsLight.text.primary,
+    fontSize: 14,
+    fontWeight: "700"
+  },
+  withdrawSheet: {
+    backgroundColor: paymentsLight.bg.card,
+    borderColor: paymentsLight.border.hairline,
+    borderRadius: paymentsLight.radius.card,
+    borderWidth: 1,
+    marginTop: 8,
+    padding: paymentsLight.space.card
+  },
+  withdrawSuccess: {
+    color: paymentsLight.status.success,
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 8
   }
 });

@@ -128,6 +128,143 @@ def _safe_execute(conn, sql, params=()) -> bool:
         return False
 
 
+def _begin_immediate(conn) -> bool:
+    """Take the write lock for a read-decide-write money sequence.
+
+    ``record_spend_event`` and ``reserve_campaign_budget`` read wallet columns,
+    decide affordability, then write absolute balances computed from that read.
+    Two connections interleaving that sequence can both read the same balance
+    and both spend it — the classic read-modify-write overdraw. ``BEGIN
+    IMMEDIATE`` (SQLite) takes the write lock *before* the reads, so the whole
+    sequence is serialized against every other writer.
+
+    Returns True only when this call actually started the transaction — the
+    caller then owns ending it (commit on the write paths, rollback on the
+    no-write early exits). Already-in-a-transaction and non-SQLite drivers
+    return False: the connection's existing transaction semantics apply and
+    nothing here must double-BEGIN inside them.
+    """
+    try:
+        if getattr(conn, "in_transaction", False):
+            return False
+        conn.execute("BEGIN IMMEDIATE")
+        return True
+    except Exception:
+        return False
+
+
+def _release_spend_lock(conn, locked: bool) -> None:
+    """End a lock taken by `_begin_immediate` on a path that wrote nothing."""
+    if not locked:
+        return
+    try:
+        conn.rollback()
+    except Exception:
+        pass
+
+
+def _open_wallet_incident(incident_type_name: str, *, severity, summary, details=None,
+                          related_object="", stripe_ref="", incident_key="") -> bool:
+    """Best-effort financial-incident report for the ad_wallet domain.
+
+    Lazy defensive import: wallet operations move real money and must never
+    fail — or hold a webhook retry hostage — because the observability layer
+    is broken, missing, or its database is momentarily locked. Anything that
+    goes wrong here is swallowed; the incident is a *report about* money, not
+    money.
+    """
+    try:
+        from services.business_os.payments import incidents as _incidents
+
+        _incidents.open_incident(
+            getattr(_incidents, incident_type_name),
+            domain="ad_wallet",
+            severity=severity,
+            summary=summary,
+            details=details or {},
+            related_object=related_object or "",
+            stripe_ref=stripe_ref or "",
+            incident_key=incident_key or "",
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _flush_wallet_incidents(pending) -> None:
+    """Open queued incidents. Called only when the caller holds no write lock
+    (before any write, or just after commit) so the incident engine's own
+    connection can never deadlock against the wallet transaction."""
+    for kwargs in pending or []:
+        try:
+            _open_wallet_incident(**kwargs)
+        except Exception:
+            continue
+
+
+def _wallet_event(conn, account_id, event_type, reason, *, details=None, campaign_id=None) -> None:
+    """Append an auditable wallet lifecycle row (auto_pause / limit_hit / topup_prompt).
+
+    Best-effort by design: the row exists to explain a pause after the fact,
+    and failing to file it must never fail the pause (or the spend) itself.
+    The write is fenced with a savepoint so a missing table cannot poison the
+    caller's open money transaction on engines where one failed statement
+    aborts the whole transaction.
+    """
+    try:
+        try:
+            conn.execute("SAVEPOINT pulse_ad_wallet_event")
+        except Exception:
+            pass
+        try:
+            conn.execute(
+                """
+                INSERT INTO pulse_ad_wallet_events
+                (account_id, event_type, reason, details_json, campaign_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    safe_int(account_id, minimum=1),
+                    clean_text(event_type, 60),
+                    clean_text(reason, 120),
+                    clean_json(details or {}),
+                    safe_int(campaign_id, 0) or None,
+                    now_iso(),
+                ),
+            )
+            try:
+                conn.execute("RELEASE SAVEPOINT pulse_ad_wallet_event")
+            except Exception:
+                pass
+        except Exception:
+            try:
+                conn.execute("ROLLBACK TO SAVEPOINT pulse_ad_wallet_event")
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _wallet_balance_snapshot(wallet: dict) -> dict:
+    """The wallet's money columns at decision time, for event/incident details."""
+    available = safe_int(wallet.get("available_balance_cents"))
+    credits = (
+        safe_int(wallet.get("promotional_credits_cents"))
+        + safe_int(wallet.get("bonus_credits_cents"))
+        + safe_int(wallet.get("refund_credits_cents"))
+    )
+    reserved = safe_int(wallet.get("reserved_budget_cents"))
+    return {
+        "available_balance_cents": available,
+        "promotional_credits_cents": safe_int(wallet.get("promotional_credits_cents")),
+        "bonus_credits_cents": safe_int(wallet.get("bonus_credits_cents")),
+        "refund_credits_cents": safe_int(wallet.get("refund_credits_cents")),
+        "reserved_budget_cents": reserved,
+        "lifetime_spent_cents": safe_int(wallet.get("lifetime_spent_cents")),
+        "spendable_balance_cents": max(0, available + credits - reserved),
+    }
+
+
 def _add_column_if_missing(conn, table: str, column: str, ddl_type: str) -> None:
     try:
         cur = conn.cursor()
@@ -200,6 +337,27 @@ def ensure_schema(conn) -> None:
     _safe_execute(
         conn,
         "CREATE INDEX IF NOT EXISTS idx_pulse_ad_invoices_account ON pulse_ad_invoices(account_id, id)",
+    )
+    # Auditable wallet lifecycle events: why a campaign paused, which limit
+    # tripped, when a top-up prompt was sent. Written best-effort by
+    # `_wallet_event`; read by the owner-facing events route.
+    _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS pulse_ad_wallet_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            reason TEXT,
+            details_json TEXT,
+            campaign_id INTEGER,
+            created_at TEXT
+        )
+        """,
+    )
+    _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS idx_pulse_ad_wallet_events_account ON pulse_ad_wallet_events(account_id, id)",
     )
 
 
@@ -384,6 +542,70 @@ def _insert_transaction(
     return row_to_dict(cur.fetchone())
 
 
+def grant_promotional_credits(
+    conn,
+    account_id,
+    amount_cents,
+    *,
+    reason="",
+    idempotency_key="",
+    commit=True,
+) -> dict:
+    """Credit promotional (non-cash) ad credits to a wallet, idempotently.
+
+    Used by the rewards engine when Pulse Credits are redeemed into ad promo
+    balance. Promotional credits are spendable on ads but are never cash:
+    this function only ever touches ``promotional_credits_cents`` and must
+    never move ``available_balance_cents`` or any other cash bucket.
+
+    Idempotent via the ``pulse_ad_wallet_transactions`` unique
+    ``idempotency_key``: a replay returns the recorded transaction with
+    ``deduped=True`` and applies no wallet delta.
+
+    ``commit=False`` lets a caller compose this into its own transaction on
+    the shared connection (the rewards redeem path burns credits and grants
+    promo atomically); the caller then owns commit/rollback.
+    """
+    account_id = safe_int(account_id, minimum=1)
+    amount_cents = safe_int(amount_cents, 0)
+    if account_id <= 0:
+        raise pulse_ads_service.PulseAdsError("A valid ad account is required.")
+    if amount_cents <= 0:
+        raise pulse_ads_service.PulseAdsError("Promotional credit amount must be positive.")
+    idempotency_key = clean_text(idempotency_key, 160)
+    if not idempotency_key:
+        raise pulse_ads_service.PulseAdsError("Promotional credits require an idempotency key.")
+    wallet = ensure_wallet(conn, account_id)
+    tx = _insert_transaction(
+        conn,
+        account_id,
+        "promo_credit",
+        amount_cents,
+        idempotency_key=idempotency_key,
+        description=clean_text(reason or "Promotional credit grant", 300),
+        metadata={"source": "promo_grant"},
+    )
+    if tx.get("deduped"):
+        return {"ok": True, "deduped": True, "transaction": tx, "wallet_id": wallet.get("id")}
+    now = now_iso()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE pulse_ad_wallets
+        SET promotional_credits_cents=?, updated_at=?
+        WHERE id=?
+        """,
+        (
+            safe_int(wallet.get("promotional_credits_cents")) + amount_cents,
+            now,
+            wallet.get("id"),
+        ),
+    )
+    if commit:
+        conn.commit()
+    return {"ok": True, "deduped": False, "transaction": tx, "wallet_id": wallet.get("id")}
+
+
 def create_funding_session(conn, user_id, account_id, payload: dict) -> dict:
     _owner_account(conn, user_id, account_id)
     if not billing_enabled():
@@ -472,6 +694,32 @@ def credit_wallet_from_stripe_session(conn, event_id: str, session: dict) -> dic
     cur.execute("SELECT * FROM pulse_ad_wallet_funding_sessions WHERE id=? AND account_id=?", (funding_session_id, account_id))
     funding = row_to_dict(cur.fetchone())
     if not funding:
+        # A verified Stripe webhook naming a funding session this database has
+        # never heard of. The raise below preserves the existing behaviour
+        # (Stripe will retry, staff will see the failure); the incident makes
+        # sure a human sees the money that has nowhere to land. No wallet
+        # write is pending here, so the incident engine's own connection
+        # cannot deadlock against ours.
+        _open_wallet_incident(
+            "ORPHAN_STRIPE_OBJECT",
+            severity="warning",
+            summary=(
+                "Stripe funding webhook references unknown ad wallet funding "
+                f"session {funding_session_id} (account {account_id})."
+            ),
+            details={
+                "funding_session_id": funding_session_id,
+                "account_id": account_id,
+                "amount_cents": amount_cents,
+                "event_hash": hash_value(event_id),
+            },
+            related_object=f"pulse_ad_wallet_funding_sessions:{funding_session_id}",
+            stripe_ref=clean_text(session.get("id") or "", 200),
+            incident_key=(
+                "orphan_stripe_object:ad_wallet:"
+                f"{clean_text(event_id, 120)}:{funding_session_id}"
+            ),
+        )
         raise pulse_ads_service.PulseAdsError("Ad wallet funding session not found.", 404)
     tx_key = f"stripe:{clean_text(event_id, 120)}:{funding_session_id}"
     existing = _insert_transaction(
@@ -485,6 +733,35 @@ def credit_wallet_from_stripe_session(conn, event_id: str, session: dict) -> dic
         metadata={"provider_session_hash": hash_value(session.get("id") or ""), "event_hash": hash_value(event_id)},
     )
     if existing.get("deduped"):
+        recorded = safe_int(existing.get("amount_cents"), 0)
+        if recorded != amount_cents:
+            # Same Stripe event, different amount than the credit we already
+            # posted. An exact replay is normal webhook redelivery and stays
+            # silent; a replay that disagrees about the money is either a bug
+            # or an attack, and either way a human must see it. The credit
+            # itself stays deduped — Stripe's first verified delivery is the
+            # truth of record. Safe to open inline: the dedup read wrote
+            # nothing, so no wallet lock is held.
+            _open_wallet_incident(
+                "DUPLICATE_CREDIT_ATTEMPT",
+                severity="critical",
+                summary=(
+                    f"Replayed ad wallet funding credit for account {account_id} "
+                    f"changed amount: recorded {recorded}c, replay says {amount_cents}c."
+                ),
+                details={
+                    "account_id": account_id,
+                    "funding_session_id": funding_session_id,
+                    "recorded_amount_cents": recorded,
+                    "replayed_amount_cents": amount_cents,
+                    "event_hash": hash_value(event_id),
+                },
+                related_object=f"pulse_ad_wallet_transactions:{safe_int(existing.get('id'))}",
+                stripe_ref=clean_text(session.get("id") or "", 200),
+                incident_key=(
+                    f"duplicate_credit_attempt:ad_wallet:{tx_key}:{recorded}:{amount_cents}"
+                ),
+            )
         return {"ok": True, "deduped": True, "account_id": account_id}
     wallet = ensure_wallet(conn, account_id, currency)
     now = now_iso()
@@ -636,11 +913,45 @@ def reverse_wallet_funding(conn, event_id: str, obj: dict, event_type: str) -> d
     else:
         # Cumulative. See the docstring.
         target_total = safe_int(obj.get("amount_refunded"), 0)
+    # Incidents queue here and are flushed only when this connection holds no
+    # write lock (early exits, or after commit) — the incident engine writes
+    # on its own connection and must never block behind ours.
+    pending_incidents = []
+    reported_total = target_total
     # Never reverse more than was credited, whatever Stripe reports — a wallet
     # top-up cannot be undone by more than it added.
     target_total = max(0, min(target_total, funded_cents))
+    if reported_total > funded_cents:
+        # Stripe says more came back than ever went in. The clamp above keeps
+        # the wallet honest; the incident records Stripe's figure so finance
+        # can chase the difference instead of never learning about it.
+        pending_incidents.append(dict(
+            incident_type_name="REFUND_MISMATCH",
+            severity="critical",
+            summary=(
+                f"Reversal for ad wallet funding session {safe_int(funding.get('id'))} "
+                f"reports {reported_total}c against an original funding of "
+                f"{funded_cents}c (account {account_id}). Debit clamped to the funded amount."
+            ),
+            details={
+                "account_id": account_id,
+                "funding_session_id": safe_int(funding.get("id")),
+                "reported_reversal_cents": reported_total,
+                "funded_cents": funded_cents,
+                "already_reversed_cents": already_reversed,
+                "event_type": clean_text(event_type, 60),
+                "event_hash": hash_value(event_id),
+            },
+            related_object=f"pulse_ad_wallet_funding_sessions:{safe_int(funding.get('id'))}",
+            stripe_ref=clean_text(_stripe_ref(obj.get("id")) or "", 200),
+            incident_key=(
+                f"refund_mismatch:ad_wallet:{safe_int(funding.get('id'))}:"
+                f"{clean_text(event_id, 120)}:{reported_total}:{funded_cents}"
+            ),
+        ))
     delta = target_total - already_reversed
     if delta <= 0:
+        _flush_wallet_incidents(pending_incidents)
         return {"ok": True, "noop": True, "account_id": account_id, "already_reversed_cents": already_reversed}
 
     currency = _currency(funding.get("currency") or "usd")
@@ -657,6 +968,7 @@ def reverse_wallet_funding(conn, event_id: str, obj: dict, event_type: str) -> d
         metadata={"event_hash": hash_value(event_id), "funding_session_id": safe_int(funding.get("id"))},
     )
     if tx.get("deduped"):
+        _flush_wallet_incidents(pending_incidents)
         return {"ok": True, "deduped": True, "account_id": account_id}
 
     wallet = ensure_wallet(conn, account_id, currency)
@@ -664,6 +976,31 @@ def reverse_wallet_funding(conn, event_id: str, obj: dict, event_type: str) -> d
     # Deliberately not clamped at zero. See the docstring — the negative IS the
     # information, and `spendable_balance_cents` is what stops it being spent.
     new_available = safe_int(wallet.get("available_balance_cents")) - delta
+    if new_available < 0:
+        # The debt state is designed behaviour (see docstring), but it is also
+        # a state finance must know exists — recorded, never hidden.
+        pending_incidents.append(dict(
+            incident_type_name="NEGATIVE_BALANCE_DETECTED",
+            severity="warning",
+            summary=(
+                f"Ad wallet for account {account_id} went negative "
+                f"({new_available}c) after a funding reversal; advertiser owes "
+                f"{-new_available}c."
+            ),
+            details={
+                "account_id": account_id,
+                "available_balance_cents": new_available,
+                "amount_owed_cents": -new_available,
+                "reversal_delta_cents": delta,
+                "funding_session_id": safe_int(funding.get("id")),
+                "event_type": clean_text(event_type, 60),
+            },
+            related_object=f"pulse_ad_wallets:{safe_int(wallet.get('id'))}",
+            stripe_ref=clean_text(_stripe_ref(obj.get("id")) or "", 200),
+            incident_key=(
+                f"negative_balance_detected:ad_wallet:{account_id}:{new_available}"
+            ),
+        ))
     new_lifetime_funded = max(0, safe_int(wallet.get("lifetime_funded_cents")) - delta)
     cur = conn.cursor()
     cur.execute(
@@ -699,6 +1036,19 @@ def reverse_wallet_funding(conn, event_id: str, obj: dict, event_type: str) -> d
         ),
     )
     paused = _pause_campaigns_without_balance(conn, account_id)
+    if paused:
+        _wallet_event(
+            conn,
+            account_id,
+            "auto_pause",
+            "wallet_funding_reversed",
+            details={
+                "available_balance_cents": new_available,
+                "campaigns_paused": paused,
+                "reversed_cents": delta,
+                "event_type": clean_text(event_type, 60),
+            },
+        )
     _audit(
         conn,
         safe_int(funding.get("user_id")),
@@ -714,6 +1064,9 @@ def reverse_wallet_funding(conn, event_id: str, obj: dict, event_type: str) -> d
         },
     )
     conn.commit()
+    # After commit: our lock is released, so the incident engine's own
+    # connection can write freely.
+    _flush_wallet_incidents(pending_incidents)
     return {
         "ok": True,
         "account_id": account_id,
@@ -773,8 +1126,12 @@ def reserve_campaign_budget(conn, user_id, campaign_id) -> dict:
     budget = safe_int(campaign.get("lifetime_budget_cents") or campaign.get("daily_budget_cents"), 0)
     if budget <= 0:
         raise pulse_ads_service.PulseAdsError("Campaign budget must be greater than zero.")
+    # Serialize the affordability check against every other writer — two
+    # concurrent reserves must not both pass the check on the same balance.
+    locked = _begin_immediate(conn)
     spendable = spendable_balance_cents(conn, campaign.get("ad_account_id"))
     if spendable < min(budget, 50_000):
+        _release_spend_lock(conn, locked)
         raise pulse_ads_service.PulseAdsError("Wallet balance is too low for this campaign.", 409)
     reserve_cents = min(budget, 50_000)
     wallet = ensure_wallet(conn, campaign.get("ad_account_id"))
@@ -794,6 +1151,9 @@ def reserve_campaign_budget(conn, user_id, campaign_id) -> dict:
             (safe_int(wallet.get("reserved_budget_cents")) + reserve_cents, now_iso(), wallet.get("id")),
         )
         conn.commit()
+    else:
+        # Replayed reserve wrote nothing; release the lock taken above.
+        _release_spend_lock(conn, locked)
     return {"ok": True, "reserved_cents": reserve_cents, "reserved": money(reserve_cents)}
 
 
@@ -911,15 +1271,44 @@ def record_spend_event(conn, campaign_id, creative_id, placement_key, amount_cen
             "A spend idempotency key derived from the delivery event is required."
         )
     amount_cents = safe_int(amount_cents, 1, 1, 10_000)
+    # Serialize the read-decide-write sequence: without this, two concurrent
+    # deliveries can both read the same balance, both pass the affordability
+    # check, and both write absolute balances computed from the stale read —
+    # the wallet overdraws by one of the two spends. See `_begin_immediate`.
+    locked = _begin_immediate(conn)
     limit_wallet = ensure_wallet(conn, campaign.get("ad_account_id"))
     limit_reason = _spend_limit_reason(conn, campaign.get("ad_account_id"), limit_wallet, amount_cents)
     if limit_reason:
-        _pause_active_campaigns(conn, campaign.get("ad_account_id"), limit_reason)
+        paused_count = _pause_active_campaigns(conn, campaign.get("ad_account_id"), limit_reason)
+        _wallet_event(
+            conn,
+            campaign.get("ad_account_id"),
+            "limit_hit",
+            limit_reason,
+            details={
+                **_wallet_balance_snapshot(limit_wallet),
+                "attempted_amount_cents": amount_cents,
+                "campaigns_paused": paused_count,
+            },
+            campaign_id=campaign_id,
+        )
         conn.commit()
         return {"ok": False, "paused": True, "reason": limit_reason}
-    if spendable_balance_cents(conn, campaign.get("ad_account_id")) < amount_cents:
+    spendable = spendable_balance_cents(conn, campaign.get("ad_account_id"))
+    if spendable < amount_cents:
         cur.execute("UPDATE pulse_ad_campaigns SET status='paused', updated_at=? WHERE id=?", (now_iso(), campaign_id))
         _audit(conn, None, "ad_campaign_auto_paused_insufficient_wallet", "pulse_ad_campaigns", campaign_id, after={"placement_key": placement_key})
+        _wallet_event(
+            conn,
+            campaign.get("ad_account_id"),
+            "auto_pause",
+            "insufficient_funds",
+            details={
+                **_wallet_balance_snapshot(limit_wallet),
+                "attempted_amount_cents": amount_cents,
+            },
+            campaign_id=campaign_id,
+        )
         conn.commit()
         return {"ok": False, "paused": True, "reason": "wallet_insufficient"}
     # Work out which buckets pay for this before writing the transaction. A
@@ -936,6 +1325,18 @@ def record_spend_event(conn, campaign_id, creative_id, placement_key, amount_cen
             campaign_id,
             after={"placement_key": placement_key, "unfunded_cents": allocation["unfunded_cents"]},
         )
+        _wallet_event(
+            conn,
+            campaign.get("ad_account_id"),
+            "auto_pause",
+            "insufficient_funds",
+            details={
+                **_wallet_balance_snapshot(wallet),
+                "attempted_amount_cents": amount_cents,
+                "unfunded_cents": allocation["unfunded_cents"],
+            },
+            campaign_id=campaign_id,
+        )
         conn.commit()
         return {"ok": False, "paused": True, "reason": "wallet_insufficient"}
     key = clean_text(idempotency_key, 180)
@@ -950,6 +1351,8 @@ def record_spend_event(conn, campaign_id, creative_id, placement_key, amount_cen
         description=f"Ad delivery spend for {clean_text(placement_key, 80)}",
     )
     if tx.get("deduped"):
+        # Wrote nothing; release the write lock taken above.
+        _release_spend_lock(conn, locked)
         return {"ok": True, "deduped": True}
     now = now_iso()
     # Every bucket the allocation touched is debited. No max(0, ...) here: the
@@ -1229,6 +1632,47 @@ def list_transactions(conn, user_id, account_id, limit=50, before_id=0) -> dict:
     return {"transactions": rows, "next_before_id": next_before_id, "account_id": account_id}
 
 
+def list_wallet_events(conn, user_id, account_id, limit=50, before_id=0) -> dict:
+    """Owner-visible wallet lifecycle events, newest first, keyset paginated.
+
+    The rows `_wallet_event` writes: why campaigns auto-paused, which spending
+    limit tripped, when a top-up reminder went out. Same pagination contract as
+    `list_transactions` — pass `next_before_id` back as `before_id` for the
+    next page.
+    """
+    _owner_account(conn, user_id, account_id)
+    account_id = safe_int(account_id, minimum=1)
+    limit = safe_int(limit, 50, 1, 200)
+    before_id = safe_int(before_id, 0, 0)
+    ensure_schema(conn)
+    cur = conn.cursor()
+    params = [account_id]
+    clause = "account_id=?"
+    if before_id:
+        clause += " AND id<?"
+        params.append(before_id)
+    cur.execute(
+        f"""
+        SELECT id, event_type, reason, details_json, campaign_id, created_at
+        FROM pulse_ad_wallet_events
+        WHERE {clause}
+        ORDER BY id DESC LIMIT ?
+        """,
+        (*params, limit),
+    )
+    rows = []
+    for raw in cur.fetchall():
+        item = row_to_dict(raw)
+        try:
+            item["details"] = json.loads(item.pop("details_json") or "{}")
+        except Exception:
+            item["details"] = {}
+            item.pop("details_json", None)
+        rows.append(item)
+    next_before_id = safe_int(rows[-1].get("id")) if len(rows) == limit else None
+    return {"events": rows, "next_before_id": next_before_id, "account_id": account_id}
+
+
 def set_spending_limits(conn, user_id, account_id, payload: dict) -> dict:
     """Owner-only daily/lifetime spend caps. Zero (or null) clears a limit.
 
@@ -1377,5 +1821,16 @@ def _maybe_notify_low_balance(conn, account_id) -> bool:
             clean_text(body, 500),
             now_iso(),
         ),
+    )
+    _wallet_event(
+        conn,
+        account_id,
+        "topup_prompt",
+        "low_balance",
+        details={
+            "spendable_balance_cents": spendable,
+            "threshold_cents": threshold,
+            "suggested_topup_cents": amount,
+        },
     )
     return True

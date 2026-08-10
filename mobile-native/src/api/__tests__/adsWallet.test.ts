@@ -15,6 +15,8 @@ import {
   normalizeAdAutoTopup,
   normalizeAdFundingSession,
   normalizeAdSpendingLimits,
+  normalizeAdWalletEvent,
+  normalizeAdWalletEventPage,
   normalizeAdWalletInvoice,
   normalizeAdWalletTxn,
   normalizeAdWalletTxnPage
@@ -56,6 +58,49 @@ describe("normalizeAdWalletTxnPage", () => {
       normalizeAdWalletTxnPage({ transactions: [], next_before_id: "x" as never }).next_before_id
     ).toBeNull();
     expect(normalizeAdWalletTxnPage(null).transactions).toEqual([]);
+  });
+});
+
+describe("normalizeAdWalletEvent", () => {
+  it("keeps the server's reason sentence verbatim — it is the explanation", () => {
+    const event = normalizeAdWalletEvent({
+      id: 4,
+      event_type: "auto_pause",
+      reason: "Daily limit of $50.00 reached at 14:02 UTC."
+    });
+    expect(event.reason).toBe("Daily limit of $50.00 reached at 14:02 UTC.");
+    expect(event.event_type).toBe("auto_pause");
+  });
+
+  it("passes an unknown event_type through raw rather than guessing a label", () => {
+    expect(normalizeAdWalletEvent({ id: 1, event_type: "solar_flare" }).event_type).toBe(
+      "solar_flare"
+    );
+  });
+
+  it("nulls an absent campaign reference and non-object details", () => {
+    expect(normalizeAdWalletEvent({ id: 1, campaign_id: 0 }).campaign_id).toBeNull();
+    expect(normalizeAdWalletEvent({ id: 1, campaign_id: 12 }).campaign_id).toBe(12);
+    expect(normalizeAdWalletEvent({ id: 1, details: [] as never }).details).toBeNull();
+    expect(normalizeAdWalletEvent({ id: 1, details: { limit: 5000 } }).details).toEqual({
+      limit: 5000
+    });
+  });
+});
+
+describe("normalizeAdWalletEventPage", () => {
+  it("drops id-less rows and reads a junk cursor as the last page", () => {
+    const page = normalizeAdWalletEventPage({
+      events: [{ id: 6, event_type: "limit_hit" }, { id: 0 }, {}],
+      next_before_id: 6
+    });
+    expect(page.events).toHaveLength(1);
+    expect(page.next_before_id).toBe(6);
+    expect(normalizeAdWalletEventPage({ events: [], next_before_id: 0 }).next_before_id).toBeNull();
+    expect(
+      normalizeAdWalletEventPage({ events: [], next_before_id: "x" as never }).next_before_id
+    ).toBeNull();
+    expect(normalizeAdWalletEventPage(null).events).toEqual([]);
   });
 });
 

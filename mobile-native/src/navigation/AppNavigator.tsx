@@ -29,6 +29,7 @@ import { BusinessBuyerPreviewScreen } from "../screens/BusinessBuyerPreviewScree
 import { BusinessHubRoute } from "../screens/BusinessHubRoute";
 import { BusinessOsInsightsScreen } from "../screens/BusinessOsInsightsScreen";
 import { BusinessOsPaymentsScreen } from "../screens/BusinessOsPaymentsScreen";
+import { RewardsScreen } from "../screens/RewardsScreen";
 import { BusinessProfileScreen } from "../screens/BusinessProfileScreen";
 import { EventsRoute } from "../screens/EventsRoute";
 import { MarketplaceManagerScreen } from "../screens/MarketplaceManagerScreen";
@@ -429,6 +430,9 @@ export function AppNavigator() {
           headerShown: false
         })}
       />
+      {/* Rewards draws its own header via AdsScreenShell, like the ads-family
+          screens, so the stack header stays hidden. */}
+      <Stack.Screen name="Rewards" component={RewardsScreen} options={{ headerShown: false }} />
       {/* `SellerStoreRoute` picks the rebuilt dashboard for `mode: "dashboard"`
           and `SellerStoreScreen` for every other mode. The dashboard draws its
           own navy header with a back chevron and title, so the stack header is

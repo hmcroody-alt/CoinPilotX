@@ -35,9 +35,11 @@
  * --------------------------------
  * The server reports its own gaps as machine-readable fields rather than
  * omitting them, and this module surfaces them as `PAYMENTS_MOCK_DATA_GAPS` and
- * a set of `paymentsCan*` predicates. Every one of them currently answers false,
- * and the screen's contract is to render the affordance **absent** — not
- * disabled, not with a placeholder figure. See the constant for the full list.
+ * a set of gate predicates. Payout initiation is now live (see
+ * `payoutInitiationIsLive` and `./sellerPayouts`); every other gate still
+ * answers false, and the screen's contract is to render an off module
+ * **absent** — not disabled, not with a placeholder figure. See the constant
+ * for the full list.
  */
 
 import {
@@ -182,12 +184,19 @@ export type LedgerPage = {
  * ------------------------------------------------------------------ */
 
 /**
- * Gates "Pay out now". No endpoint initiates a payout anywhere in this codebase
- * — `seller_payouts` rows are only ever inserted by the Stripe Connect webhook.
- * Turning this on before that exists ships a button that cannot do anything.
+ * Gates the withdraw / request-payout flow.
+ *
+ * This answered false for as long as no endpoint initiated a payout. That is no
+ * longer true: `POST /api/pulse/payments/seller/payouts` exists and moves money
+ * to the seller's connected Stripe account, gated server-side on
+ * `payouts_enabled` and the available balance, with a `payout_key` idempotency
+ * contract. The gate now states that reality rather than reading a build flag —
+ * a client flag that could hide a live money rail would be the same kind of lie
+ * as a button over a dead one. The data layer for the flow lives in
+ * `./sellerPayouts`.
  */
 export function payoutInitiationIsLive(): boolean {
-  return envFlagOn("EXPO_PUBLIC_PAYMENTS_PAYOUT_INITIATION");
+  return true;
 }
 
 /** Gates instant payout and its fee quote. Requires a backend quote endpoint,
@@ -254,17 +263,6 @@ export const PAYMENTS_MOCK_DATA_GAPS: MoneyGap[] = [
       "pinging 'scheduled' dot renders only when payout_in_flight is a real row."
   },
   {
-    field: "available balance becoming non-zero",
-    why:
-      "No code path writes a credit or release ledger entry, so " +
-      "available = max(0, credits - debits) is structurally zero and a " +
-      "seller's money stays in Processing. Reported as release_path: " +
-      "none_in_product and asserted by test_no_release_path_exists_anywhere.",
-    clientBehaviour:
-      "The hero renders the real zero and explains where the money actually is, " +
-      "rather than showing an unexplained $0.00 beside a non-zero Processing."
-  },
-  {
     field: "masked bank destination",
     why:
       "seller_payout_accounts stores a Stripe connected-account id, not an " +
@@ -320,9 +318,10 @@ export const PAYMENTS_MOCK_DATA_GAPS: MoneyGap[] = [
       "SECURITY GAP, not a data gap: this app has no re-authentication " +
       "primitive at all. Nothing can be gated behind one.",
     clientBehaviour:
-      "Every action that would require step-up is already absent for other " +
-      "reasons, so nothing currently ships unprotected. This must be built " +
-      "before any of those flags is turned on."
+      "Payout initiation now ships on server-side session auth alone. The " +
+      "blast radius is bounded — the destination is locked server-side to the " +
+      "seller's own connected Stripe account — but a re-authentication " +
+      "primitive is still the right fix and remains unbuilt."
   }
 ];
 
@@ -335,8 +334,12 @@ export const PAYMENTS_MOCK_DATA_GAPS: MoneyGap[] = [
  * A literal rather than `PAYMENTS_MOCK_DATA_GAPS.length`: derived from the array
  * it would only ever restate the array, and the point is to make closing a money
  * gap an edit somebody has to mean.
+ *
+ * Was 9. "Available balance becoming non-zero" left the ledger when the Stripe
+ * webhook release path and `POST /api/pulse/payments/seller/payouts` shipped —
+ * a gap closed by a real source, which is the only way a row leaves this list.
  */
-export const PAYMENTS_MOCK_DATA_GAP_COUNT = 9;
+export const PAYMENTS_MOCK_DATA_GAP_COUNT = 8;
 
 /* ------------------------------------------------------------------ *
  * Reads.

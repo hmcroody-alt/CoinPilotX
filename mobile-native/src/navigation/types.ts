@@ -206,6 +206,8 @@ export type RootStackParamList = {
     | undefined;
   BusinessOsInsights: { title?: string } | undefined;
   BusinessOsPayments: { title?: string; accountId?: number } | undefined;
+  /** Pulse Credits and cash rewards — reached from the Payments money hub. */
+  Rewards: { title?: string } | undefined;
   /**
    * One route, two perspectives. The rebuilt two-sided Orders surface; the
    * header toggle switches between the seller fulfillment queue and the buyer's

@@ -7,6 +7,8 @@
  *     (params `account_id`, `limit` ≤ 200, `before_id`; pages via `next_before_id`,
  *     null when the page came back short).
  *   • `GET  /api/pulse/ads/wallet/invoices` → `pulse_ad_payments.list_invoices`.
+ *   • `GET  /api/pulse/ads/wallet/events` — auditable wallet events (auto-pause,
+ *     limit hit, top-up prompt) answering "why did my campaign pause".
  *   • `POST /api/pulse/ads/wallet/limits` → `set_spending_limits`
  *     (`account_id` in the body; null/"" clears a limit to 0).
  *   • `POST /api/pulse/ads/wallet/auto-topup` → `set_auto_topup`. The backend
@@ -89,6 +91,75 @@ export async function listAdWalletTransactions(
     `/api/pulse/ads/wallet/transactions?${params.toString()}`
   );
   return normalizeAdWalletTxnPage(data);
+}
+
+/* ------------------------------------------------------------------ *
+ * Wallet events — the auditable "why did my campaign pause" trail.
+ *
+ * `GET /api/pulse/ads/wallet/events` (params `account_id`, `limit`,
+ * `before_id`; pages via `next_before_id`). Three event types are defined —
+ * `auto_pause`, `limit_hit`, `topup_prompt` — and anything else renders under
+ * its raw type word rather than being guessed into one of the three.
+ * ------------------------------------------------------------------ */
+
+export type AdWalletEventType = "auto_pause" | "limit_hit" | "topup_prompt";
+
+export type AdWalletEvent = {
+  id: number;
+  /** One of `AdWalletEventType`, or the server's raw word if unknown. */
+  event_type: string;
+  /** The server's reason sentence, shown verbatim. */
+  reason: string;
+  details: Record<string, unknown> | null;
+  campaign_id: number | null;
+  created_at: string;
+};
+
+export function normalizeAdWalletEvent(value?: Partial<AdWalletEvent> | null): AdWalletEvent {
+  const campaign = Number(value?.campaign_id);
+  return {
+    id: nonNegInt(value?.id),
+    event_type: String(value?.event_type || ""),
+    reason: String(value?.reason || ""),
+    details:
+      value?.details && typeof value.details === "object" && !Array.isArray(value.details)
+        ? (value.details as Record<string, unknown>)
+        : null,
+    campaign_id: Number.isFinite(campaign) && campaign > 0 ? Math.round(campaign) : null,
+    created_at: String(value?.created_at || "")
+  };
+}
+
+export type AdWalletEventPage = {
+  events: AdWalletEvent[];
+  next_before_id: number | null;
+};
+
+export function normalizeAdWalletEventPage(value?: {
+  events?: Partial<AdWalletEvent>[];
+  next_before_id?: number | null;
+} | null): AdWalletEventPage {
+  const next = Number(value?.next_before_id);
+  return {
+    events: (Array.isArray(value?.events) ? value!.events : [])
+      .map(normalizeAdWalletEvent)
+      .filter((event) => event.id > 0),
+    next_before_id: Number.isFinite(next) && next > 0 ? Math.round(next) : null
+  };
+}
+
+export async function listAdWalletEvents(
+  accountId: number,
+  options: { limit?: number; beforeId?: number } = {}
+): Promise<AdWalletEventPage> {
+  const params = new URLSearchParams();
+  params.set("account_id", String(accountId));
+  params.set("limit", String(options.limit || 30));
+  if (options.beforeId) params.set("before_id", String(options.beforeId));
+  const data = await pulseApi<Parameters<typeof normalizeAdWalletEventPage>[0]>(
+    `/api/pulse/ads/wallet/events?${params.toString()}`
+  );
+  return normalizeAdWalletEventPage(data);
 }
 
 /* ------------------------------------------------------------------ *
