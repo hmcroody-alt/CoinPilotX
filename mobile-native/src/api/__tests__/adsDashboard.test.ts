@@ -34,10 +34,14 @@ import {
   campaignTabs,
   blockedCampaigns,
   deliverySwitchState,
+  derivePostPromotions,
   entityDisplay,
   filterCampaigns,
-  loadMockPostKpis,
   loadMockRecentPosts,
+  loadMockSuggestion,
+  postContentTypeFor,
+  postSurfaceKpis,
+  promotionPhaseForCampaign,
   promotionSwitchState,
   spendChartWeekdays,
   walletSummary
@@ -90,9 +94,9 @@ describe("post-mode feature flag", () => {
     expect(adsPostModeEnabled()).toBe(true);
   });
 
-  it("returns no preview promotions or KPIs while the flag is off", () => {
+  it("returns no preview suggestion or rail posts while the flag is off", () => {
     delete process.env[ADS_POST_MODE_FLAG];
-    expect(loadMockPostKpis()).toBeNull();
+    expect(loadMockSuggestion()).toBeNull();
     expect(loadMockRecentPosts()).toEqual([]);
   });
 
@@ -104,7 +108,7 @@ describe("post-mode feature flag", () => {
     // Everything the preview returns is marked, so nothing here can be mistaken
     // for a live number by a later reader of the code.
     for (const post of loadMockRecentPosts()) expect(post.mock).toBe(true);
-    expect(loadMockPostKpis()?.mock).toBe(true);
+    expect(loadMockSuggestion()?.mock).toBe(true);
   });
 });
 
@@ -155,7 +159,7 @@ describe("deliverySwitchState", () => {
 });
 
 describe("promotionSwitchState", () => {
-  it("is disabled in every live phase, because no backend accepts the transition", () => {
+  it("is disabled in every live phase, because the card itself never acts", () => {
     for (const phase of ["submitted", "in_review", "promoting", "paused"] as const) {
       const state = promotionSwitchState({ phase } as never);
       expect(state.show).toBe(true);
@@ -164,10 +168,144 @@ describe("promotionSwitchState", () => {
     }
   });
 
-  it("hides the switch entirely once a promotion is finished or rejected", () => {
-    for (const phase of ["completed", "rejected"] as const) {
+  it("hides the switch entirely on drafts and once a promotion is finished or rejected", () => {
+    for (const phase of ["draft", "completed", "rejected"] as const) {
       expect(promotionSwitchState({ phase } as never).show).toBe(false);
     }
+  });
+
+  it("points a real promotion at its campaign page, and calls a fixture a preview", () => {
+    const real = promotionSwitchState({ phase: "promoting", mock: false, campaignId: 31 } as never);
+    expect(real.disabled).toBe(true);
+    expect(real.on).toBe(true);
+    expect(real.reason).toMatch(/campaign/i);
+    const preview = promotionSwitchState({ phase: "promoting", mock: true } as never);
+    expect(preview.disabled).toBe(true);
+    expect(preview.reason).toMatch(/[Pp]review/);
+  });
+});
+
+/* ------------------------------------------------ real post promotions */
+
+/**
+ * Post promotions are REAL in wave 2: campaigns whose creatives are
+ * content-backed, joined to live analytics rows. The rules pinned here are the
+ * money rules — no invented reach, spend read from the server's row, a portal
+ * that never arrived means "unavailable", not "no promotions".
+ */
+function postPortal(): Parameters<typeof derivePostPromotions>[0] {
+  return {
+    campaigns: [
+      campaign({ id: 31, campaign_name: "Studio tour promo", status: "active", spent_cents: 100 }),
+      campaign({ id: 32, campaign_name: "Marketplace listing", status: "active" }),
+      campaign({
+        id: 33,
+        campaign_name: "Announcement push",
+        status: "active",
+        budget_type: "lifetime",
+        lifetime_budget_cents: 8000,
+        daily_budget_cents: 0
+      })
+    ],
+    creatives: [
+      { id: 1, campaign_id: 31, creative_type: "reel", title: "Studio tour", moderation_status: "approved" },
+      { id: 2, campaign_id: 32, creative_type: "image", title: "Listing art", moderation_status: "approved" },
+      {
+        id: 3,
+        campaign_id: 33,
+        creative_type: "post",
+        title: "Announcement",
+        moderation_status: "rejected",
+        rejection_reason: "Too much overlay text"
+      }
+    ],
+    analytics: {
+      campaigns: [
+        { campaign_id: 31, spent_cents: 4200, clicks: 30, impressions: 900 },
+        { campaign_id: 32, spent_cents: 9900, clicks: 80, impressions: 5000 },
+        { campaign_id: 33, spent_cents: 100, clicks: 1, impressions: 40 }
+      ]
+    }
+  } as never;
+}
+
+describe("derivePostPromotions", () => {
+  it("returns nothing for a missing portal — unavailable is not 'no promotions'", () => {
+    expect(derivePostPromotions(null)).toEqual([]);
+  });
+
+  it("keeps only campaigns with a content-backed creative", () => {
+    const promotions = derivePostPromotions(postPortal());
+    expect(promotions.map((promotion) => promotion.campaignId)).toEqual([31, 33]);
+    // The image-creative campaign belongs to the marketplace mode, not here.
+  });
+
+  it("reads spend from the live analytics row, never inventing a figure", () => {
+    const promotions = derivePostPromotions(postPortal());
+    const reel = promotions.find((promotion) => promotion.campaignId === 31);
+    // The analytics row (4200) wins over the campaign's own counter (100).
+    expect(reel?.spendCents).toBe(4200);
+    expect(reel?.mock).toBe(false);
+    // Reach has no source, so no real record may carry one.
+    for (const promotion of promotions) expect(promotion.reach).toBeUndefined();
+  });
+
+  it("lets a rejected creative outrank the campaign status and carries the reason verbatim", () => {
+    const promotions = derivePostPromotions(postPortal());
+    const rejected = promotions.find((promotion) => promotion.campaignId === 33);
+    expect(rejected?.phase).toBe("rejected");
+    expect(rejected?.rejectionReason).toBe("Too much overlay text");
+    expect(rejected?.budgetCents).toBe(8000);
+  });
+});
+
+describe("postSurfaceKpis", () => {
+  it("is null when there is nothing to sum, so the screen shows an empty state, not zeros", () => {
+    expect(postSurfaceKpis(null, [])).toBeNull();
+    expect(postSurfaceKpis(postPortal(), [])).toBeNull();
+  });
+
+  it("sums spend, clicks and impressions over the promotion campaigns only", () => {
+    const portal = postPortal();
+    const promotions = derivePostPromotions(portal);
+    const kpis = postSurfaceKpis(portal, promotions);
+    // Rows 31 and 33 count; the marketplace campaign's row (32) must not leak in.
+    expect(kpis).toEqual({
+      spendCents: 4300,
+      clicks: 31,
+      impressions: 940,
+      campaignCount: 2,
+      mock: false
+    });
+  });
+});
+
+describe("promotionPhaseForCampaign", () => {
+  it("maps campaign statuses onto promotion phases", () => {
+    expect(promotionPhaseForCampaign(campaign({ status: "pending_review" }), false)).toBe("in_review");
+    expect(promotionPhaseForCampaign(campaign({ status: "active" }), false)).toBe("promoting");
+    expect(promotionPhaseForCampaign(campaign({ status: "paused" }), false)).toBe("paused");
+    expect(promotionPhaseForCampaign(campaign({ status: "archived" }), false)).toBe("completed");
+    expect(promotionPhaseForCampaign(campaign({ status: "completed" }), false)).toBe("completed");
+    expect(promotionPhaseForCampaign(campaign({ status: "draft" }), false)).toBe("draft");
+  });
+
+  it("lets a rejection outrank whatever the campaign row still says", () => {
+    for (const status of ["active", "paused", "draft", "pending_review"]) {
+      expect(promotionPhaseForCampaign(campaign({ status }), true)).toBe("rejected");
+    }
+  });
+});
+
+describe("postContentTypeFor", () => {
+  it("maps creative types onto the card's three content flavours", () => {
+    expect(postContentTypeFor("reel")).toBe("reel");
+    expect(postContentTypeFor("video")).toBe("reel");
+    expect(postContentTypeFor("live_replay")).toBe("live");
+    expect(postContentTypeFor("live")).toBe("live");
+    expect(postContentTypeFor("post")).toBe("post");
+    expect(postContentTypeFor("something_new")).toBe("post");
+    expect(postContentTypeFor(null)).toBe("post");
   });
 });
 

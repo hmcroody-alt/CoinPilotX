@@ -282,6 +282,7 @@ ACTIVATION_BLOCKERS = {
     "creative_media_missing": "The approved ad has no uploaded media. Re-upload the file in the campaign editor.",
     "no_placement": "Choose at least one placement so this campaign has somewhere to run.",
     "no_budget": "Set a daily or lifetime budget before running this campaign.",
+    "wallet_insufficient": "Your ad wallet doesn't have enough spendable balance to run this campaign. Top up your wallet to activate it.",
 }
 
 
@@ -924,6 +925,154 @@ def campaign_action(conn, user_id, campaign_id, action: str) -> dict:
     if reserve_result:
         result["budget_reserve"] = reserve_result
     return result
+
+
+def campaign_review_gate(conn, account_id, campaign: dict) -> tuple[str, str] | None:
+    """The activation blockers plus the wallet check, for review-time decisions.
+
+    `activation_blocker` covers account, creative, placement and budget but not
+    the wallet — resume leaves that to `reserve_campaign_budget`, which raises.
+    Review-time activation needs a non-raising answer so the auto-activate hook
+    can leave a blocked campaign in `pending_review` and tell the owner why,
+    instead of failing the creative approval that triggered it.
+    """
+    gate = activation_blocker(conn, account_id, campaign)
+    if gate:
+        return gate
+    if not pulse_ad_payments.campaign_can_spend(conn, campaign):
+        return ("wallet_insufficient", ACTIVATION_BLOCKERS["wallet_insufficient"])
+    return None
+
+
+def activate_reviewed_campaign(conn, actor_user_id, campaign: dict, owner_user_id) -> dict:
+    """The one `pending_review` → `active` implementation.
+
+    Called from admin `approve_campaign` and from `approve_creative`'s
+    auto-activate hook — one implementation so the two paths cannot drift.
+    Caller has already verified the campaign is `pending_review` and that
+    `campaign_review_gate` passes.
+
+    Budget is reserved exactly the way resume reserves it — via
+    `pulse_ad_payments.reserve_campaign_budget`, run as the account owner
+    because that function's owner check is the rule that only the owner's
+    wallet backs a campaign. It can still raise (its spendable threshold is
+    stricter than `campaign_can_spend`); nothing is written before it runs.
+
+    There is no `scheduled` status in this product. A campaign whose
+    `start_at` is in the future activates now and `select_ads` withholds it
+    until `start_at` — delivery already filters on `start_at`/`end_at`.
+    """
+    campaign_id = safe_int(campaign.get("id"), minimum=1)
+    account_id = safe_int(campaign.get("ad_account_id"), minimum=1)
+    reserve_result = pulse_ad_payments.reserve_campaign_budget(conn, owner_user_id, campaign_id)
+    now = now_iso()
+    set_parts = ["status='active'", "updated_at=?"]
+    params = [now]
+    if _has_column(conn, "pulse_ad_campaigns", "approved_at"):
+        set_parts.append("approved_at=?")
+        params.append(now)
+    params.append(campaign_id)
+    cur = conn.cursor()
+    cur.execute(f"UPDATE pulse_ad_campaigns SET {', '.join(set_parts)} WHERE id=?", tuple(params))
+    cur.execute("SELECT * FROM pulse_ad_campaigns WHERE id=?", (campaign_id,))
+    after = row_to_dict(cur.fetchone())
+    name = clean_text(campaign.get("campaign_name"), 120)
+    start_at = clean_text(campaign.get("start_at"), 40)
+    body = f"{name} was approved and is now active."
+    if start_at and start_at > now:
+        body = f"{name} was approved and will start delivering at its scheduled start time ({start_at})."
+    _add_history(conn, campaign_id, actor_user_id, "campaign_approved", campaign, after)
+    _add_notification(conn, account_id, campaign_id, None, owner_user_id, "campaign_approved", "Campaign approved", body)
+    pulse_ads_service.audit_log(conn, actor_user_id, "ad_campaign_approved", "pulse_ad_campaigns", campaign_id, before=campaign, after=after)
+    conn.commit()
+    return {"campaign_id": campaign_id, "status": "active", "budget_reserve": reserve_result}
+
+
+def _campaign_with_owner(conn, campaign_id) -> dict:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT c.*, a.owner_user_id AS account_owner_user_id
+        FROM pulse_ad_campaigns c
+        JOIN pulse_ad_accounts a ON a.id=c.ad_account_id
+        WHERE c.id=?
+        """,
+        (safe_int(campaign_id, minimum=1),),
+    )
+    campaign = row_to_dict(cur.fetchone())
+    if not campaign:
+        raise pulse_ads_service.PulseAdsError("Campaign not found.", 404)
+    return campaign
+
+
+def approve_campaign(conn, admin_user_id, campaign_id) -> dict:
+    """Admin approves a submitted campaign, closing the review dead end.
+
+    `approve_creative` decides the creative and the auto-activate hook usually
+    finishes the job; this is the explicit admin decision for campaigns the
+    hook could not activate (blocked at approval time, then fixed) or where a
+    reviewer wants to decide the campaign as a whole.
+
+    Only `pending_review` can be approved. Approving an already-active
+    campaign is idempotent rather than an error, matching the transitions
+    map's stance on resume. The blockers are re-checked here — approval is
+    the moment money gets reserved, and the state may have changed since the
+    creatives were reviewed.
+    """
+    campaign = _campaign_with_owner(conn, campaign_id)
+    status = clean_text(campaign.get("status"), 40).lower()
+    if status in {"active", "running"}:
+        return {"campaign_id": safe_int(campaign.get("id")), "status": status, "already_active": True}
+    if status != "pending_review":
+        raise pulse_ads_service.PulseAdsError(
+            f"This campaign is {status or 'draft'} and isn't waiting for review, so it can't be approved.", 409
+        )
+    account_id = safe_int(campaign.get("ad_account_id"))
+    gate = campaign_review_gate(conn, account_id, campaign)
+    if gate:
+        raise pulse_ads_service.PulseAdsError(gate[1], 409)
+    return activate_reviewed_campaign(conn, admin_user_id, campaign, safe_int(campaign.get("account_owner_user_id")))
+
+
+def reject_campaign(conn, admin_user_id, campaign_id, reason: str = "") -> dict:
+    """Admin declines a submitted campaign, with a reason the advertiser can act on.
+
+    The reason is required for the same cause `reject_account_verification`
+    requires one: a rejection with no reason is a locked door with no sign on
+    it. `rejected` is a modeled status — submit and archive both accept it, so
+    the advertiser can fix the campaign and resubmit, or archive it.
+    """
+    reason = clean_text(reason, 500)
+    if not reason:
+        raise pulse_ads_service.PulseAdsError("A rejection reason is required so the advertiser knows what to fix.")
+    campaign = _campaign_with_owner(conn, campaign_id)
+    status = clean_text(campaign.get("status"), 40).lower()
+    if status == "rejected":
+        return {"campaign_id": safe_int(campaign.get("id")), "status": "rejected", "already_rejected": True}
+    if status != "pending_review":
+        raise pulse_ads_service.PulseAdsError(
+            f"This campaign is {status or 'draft'} and isn't waiting for review, so it can't be rejected.", 409
+        )
+    resolved_id = safe_int(campaign.get("id"))
+    account_id = safe_int(campaign.get("ad_account_id"))
+    owner_user_id = safe_int(campaign.get("account_owner_user_id"))
+    now = now_iso()
+    cur = conn.cursor()
+    cur.execute("UPDATE pulse_ad_campaigns SET status='rejected', updated_at=? WHERE id=?", (now, resolved_id))
+    cur.execute("SELECT * FROM pulse_ad_campaigns WHERE id=?", (resolved_id,))
+    after = row_to_dict(cur.fetchone())
+    name = clean_text(campaign.get("campaign_name"), 120)
+    _add_history(conn, resolved_id, admin_user_id, "campaign_rejected", campaign, after)
+    _add_notification(
+        conn, account_id, resolved_id, None, owner_user_id, "campaign_rejected",
+        "Campaign rejected", f"{name} was rejected: {reason} Fix it and submit it again, or archive it.",
+    )
+    pulse_ads_service.audit_log(
+        conn, admin_user_id, "ad_campaign_rejected", "pulse_ad_campaigns", resolved_id,
+        before=campaign, after={"status": "rejected", "reason": reason},
+    )
+    conn.commit()
+    return {"campaign_id": resolved_id, "status": "rejected", "reason": reason}
 
 
 def creative_action(conn, user_id, creative_id, action: str) -> dict:

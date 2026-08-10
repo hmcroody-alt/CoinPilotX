@@ -168,6 +168,32 @@ export const AD_OBJECTIVE_METADATA: Record<AdCanonicalObjective, ObjectiveMeta> 
   }
 };
 
+/**
+ * Every optimization goal any objective can imply. The Budget & Delivery step
+ * lets the advertiser pick one; the value is draft-local only — the backend's
+ * campaign create accepts no such field — so it colors the wizard summary and
+ * nothing else. Values are i18n suffixes under `commerce:adsWizard.`.
+ */
+export const AD_OPTIMIZATION_GOAL_KEYS = [
+  "optimizationReach",
+  "optimizationEngagement",
+  "optimizationVideoViews",
+  "optimizationClicks",
+  "optimizationConversations",
+  "optimizationSales",
+  "optimizationAppActivity",
+  "optimizationLeads",
+  "optimizationEventResponses",
+  "optimizationFollows",
+  "optimizationLiveViewers"
+] as const;
+
+export type AdOptimizationGoalKey = (typeof AD_OPTIMIZATION_GOAL_KEYS)[number];
+
+export function isAdOptimizationGoalKey(value: unknown): value is AdOptimizationGoalKey {
+  return AD_OPTIMIZATION_GOAL_KEYS.includes(value as AdOptimizationGoalKey);
+}
+
 /* ------------------------------------------------------------------ *
  * Draft shape
  * ------------------------------------------------------------------ */
@@ -222,6 +248,14 @@ export type CampaignCreativeDraft = {
   destinationUrl: string;
 };
 
+/**
+ * Client-side delivery preferences. Nothing here reaches the server — see
+ * `AD_OPTIMIZATION_GOAL_KEYS`. `""` means "use the objective's default".
+ */
+export type CampaignDeliveryDraft = {
+  optimizationGoal: AdOptimizationGoalKey | "";
+};
+
 export type CampaignDraft = {
   version: 1;
   step: CampaignWizardStep;
@@ -234,6 +268,7 @@ export type CampaignDraft = {
   audience: CampaignAudienceDraft;
   placements: CampaignPlacementsDraft;
   creative: CampaignCreativeDraft;
+  delivery: CampaignDeliveryDraft;
 };
 
 export function createCampaignIdempotencyKey(): string {
@@ -290,6 +325,9 @@ export function createCampaignDraft(): CampaignDraft {
       body: "",
       callToAction: "Learn More",
       destinationUrl: ""
+    },
+    delivery: {
+      optimizationGoal: ""
     }
   };
 }
@@ -312,6 +350,7 @@ export function normalizeCampaignDraft(value: Partial<CampaignDraft> | null | un
   const audience = value.audience || ({} as Partial<CampaignAudienceDraft>);
   const placements = value.placements || ({} as Partial<CampaignPlacementsDraft>);
   const creative = value.creative || ({} as Partial<CampaignCreativeDraft>);
+  const delivery = value.delivery || ({} as Partial<CampaignDeliveryDraft>);
   const callToAction = AD_CALL_TO_ACTIONS.includes(creative.callToAction as AdCallToAction)
     ? (creative.callToAction as AdCallToAction)
     : base.creative.callToAction;
@@ -375,8 +414,21 @@ export function normalizeCampaignDraft(value: Partial<CampaignDraft> | null | un
       body: String(creative.body || ""),
       callToAction,
       destinationUrl: String(creative.destinationUrl || "")
+    },
+    delivery: {
+      optimizationGoal: isAdOptimizationGoalKey(delivery.optimizationGoal) ? delivery.optimizationGoal : ""
     }
   };
+}
+
+/**
+ * The optimization goal shown on Budget & Delivery: the advertiser's explicit
+ * pick if there is one, else the objective's default, else reach.
+ */
+export function campaignOptimizationGoal(draft: CampaignDraft): AdOptimizationGoalKey {
+  if (draft.delivery.optimizationGoal) return draft.delivery.optimizationGoal;
+  const key = draft.objective ? AD_OBJECTIVE_METADATA[draft.objective].optimizationKey : "";
+  return isAdOptimizationGoalKey(key) ? key : "optimizationReach";
 }
 
 function isContentKind(value: unknown): value is AdContentKind {
@@ -511,9 +563,13 @@ export function validateCampaignStep(step: CampaignWizardStep, draft: CampaignDr
       if (url && !isHttpUrl(url)) issues.push(ERROR("destinationUrl", "errorDestinationFormat"));
       break;
     }
-    case "budget":
-      // Display-only step; its inputs live in "setup" and are re-checked at review.
+    case "budget": {
+      // The step edits `setup`'s budget/schedule fields; re-run just those
+      // checks so a bad edit blocks here instead of surfacing at review.
+      const budgetFields = new Set(["budgetAmount", "endDate"]);
+      issues.push(...validateCampaignStep("setup", draft).filter((issue) => budgetFields.has(issue.field)));
       break;
+    }
   }
   return issues;
 }

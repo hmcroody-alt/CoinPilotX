@@ -11,11 +11,14 @@
  *     truth, and no new payment path is created: "Add funds" opens the existing
  *     `BusinessOsPayments` wallet screen.
  *
- *   • POST ADS (violet = content promotion) is an unbacked preview behind
- *     `EXPO_PUBLIC_ADS_POST_MODE`. With the flag off the mode says the product
- *     is coming rather than inventing promotions; with it on every figure is
- *     tagged MOCK-DATA and visibly labelled Preview. It never shows a
- *     fabricated balance — the one real wallet chip funds both modes.
+ *   • POST ADS (violet = content promotion) is real where the data is (wave 2),
+ *     still behind `EXPO_PUBLIC_ADS_POST_MODE`. Promotions are the account's
+ *     own post-surface campaigns (`derivePostPromotions`) and the KPI tiles sum
+ *     the same analytics rows the marketplace pane reads (`postSurfaceKpis`).
+ *     Two pieces remain sample data and say so on screen: the suggestion card
+ *     and the recent-posts rail, whose sources aren't bound yet. Delivered
+ *     reach is not shown anywhere because it is not measured — see
+ *     ADS_MOCK_DATA_GAPS. The one real wallet chip funds both modes.
  *
  * Both panes stay mounted (the inactive one is `display: "none"`) so each keeps
  * its own scroll position across a swap, and the wallet chip lives on the header
@@ -58,12 +61,12 @@ import {
   campaignSpendCents,
   campaignTabs,
   deliverySwitchState,
+  derivePostPromotions,
   filterCampaigns,
   loadAdsMarketplace,
-  loadMockPostKpis,
-  loadMockPostPromotions,
   loadMockRecentPosts,
   loadMockSuggestion,
+  postSurfaceKpis,
   promotionPhaseLabel,
   promotionPhaseTone,
   promotionSwitchState,
@@ -227,7 +230,9 @@ export function AdsManagerScreen({ route, navigation }: Props) {
 
   const openWallet = useCallback(() => {
     const accountId = model?.wallet?.accountId ?? model?.primaryAccount?.id;
-    navigation?.navigate("BusinessOsPayments", { title: "Ad wallet", accountId });
+    // The ads-scoped wallet screen (wave 2). It keeps a link to the classic
+    // BusinessOsPayments screen for Stripe receipts and older funding history.
+    navigation?.navigate("BusinessOsAdvertising", { title: "Ad wallet", mode: "wallet", accountId });
   }, [navigation, model]);
 
   /**
@@ -269,7 +274,12 @@ export function AdsManagerScreen({ route, navigation }: Props) {
   }, [load, model, verifying]);
 
   const openReports = useCallback(() => {
-    navigation?.navigate("BusinessOsInsights", { title: "Ad reports" });
+    // The ads reporting table (wave 2) — presets, breakdowns, totals, CSV.
+    navigation?.navigate("BusinessOsAdvertising", { title: "Ad reports", mode: "reports" });
+  }, [navigation]);
+
+  const openInsights = useCallback(() => {
+    navigation?.navigate("BusinessOsAdvertising", { title: "Insights", mode: "insights" });
   }, [navigation]);
 
   /**
@@ -280,6 +290,17 @@ export function AdsManagerScreen({ route, navigation }: Props) {
   const openClassic = useCallback(
     (title: string) => {
       navigation?.navigate("BusinessOsAdvertising", { title, mode: "classic" });
+    },
+    [navigation]
+  );
+
+  /**
+   * Per-campaign management. Same route name, `mode: "detail"` — overview,
+   * ad sets, creatives, insights and lifecycle actions for one campaign.
+   */
+  const openDetail = useCallback(
+    (campaignId: number, title: string) => {
+      navigation?.navigate("BusinessOsAdvertising", { title, mode: "detail", campaignId });
     },
     [navigation]
   );
@@ -902,7 +923,7 @@ export function AdsManagerScreen({ route, navigation }: Props) {
               blockedVerification={blocked.some((entry) => entry.id === campaign.id)}
               onVerify={verificationIsRequestable ? requestVerification : undefined}
               actions={actions}
-              onPress={() => openClassic(campaign.campaign_name || "Campaign")}
+              onPress={() => openDetail(campaign.id, campaign.campaign_name || "Campaign")}
               reducedMotion={reducedMotion}
             />
           );
@@ -1034,6 +1055,13 @@ export function AdsManagerScreen({ route, navigation }: Props) {
               onPress: openReports,
               reducedMotion
             },
+            {
+              icon: "bulb-outline",
+              label: "Insights",
+              subtitle: "Optimization suggestions",
+              onPress: openInsights,
+              reducedMotion
+            },
             // Both of these used to be `disabled: true` with the subtitle "Not
             // available in the app yet". Accurate, and still a dead end: the
             // reader was told "no" in the one place that should have told them
@@ -1108,9 +1136,17 @@ export function AdsManagerScreen({ route, navigation }: Props) {
    * Post mode
    * -------------------------------------------------------------- */
 
+  // Real: post-surface promotions are the account's campaigns whose creatives
+  // are content-backed (post / reel / video / live replay), with spend read
+  // from the same analytics rows the marketplace pane uses. The suggestion
+  // card and the recent-posts rail remain fixtures — no engagement-ranking or
+  // recent-posts feed is bound here yet — and stay visibly labelled as such.
   const suggestion = useMemo(() => loadMockSuggestion(), []);
-  const promotions = useMemo(() => loadMockPostPromotions(), []);
-  const postKpis = useMemo(() => loadMockPostKpis(), []);
+  const promotions = useMemo(() => derivePostPromotions(model?.portal ?? null), [model?.portal]);
+  const postKpis = useMemo(
+    () => postSurfaceKpis(model?.portal ?? null, promotions),
+    [model?.portal, promotions]
+  );
   const recentPosts = useMemo(() => loadMockRecentPosts(), []);
 
   const railItems: PromoteRailItem[] = recentPosts.map((post) => ({
@@ -1121,9 +1157,19 @@ export function AdsManagerScreen({ route, navigation }: Props) {
     hotLabel: post.hotMultiplier ? `${post.hotMultiplier}×` : null
   }));
 
-  const previewOnly = useCallback(() => {
-    setMessage("Promoting posts is a preview — nothing is submitted and nothing is charged.");
-  }, []);
+  /**
+   * Promote-a-post is real now: it opens the campaign wizard with the surface
+   * preset to "post", so the flow lands in the same draft → review → publish
+   * path as every other campaign. Nothing is charged from this screen.
+   */
+  const openPromotePost = useCallback(() => {
+    navigation?.navigate("BusinessOsAdvertising", {
+      title: "Promote a post",
+      mode: "create",
+      surface: "post",
+      accountId: model?.primaryAccount?.id
+    });
+  }, [navigation, model?.primaryAccount?.id]);
 
   const postBody = (
     <ScrollView
@@ -1138,31 +1184,32 @@ export function AdsManagerScreen({ route, navigation }: Props) {
           twice the honesty; it is the whole page spent on a refusal. The
           flag-off pane is now one card that explains the product instead. */}
       {postEnabled ? (
-        <AdsPreviewNote text="Post ads is a preview. Every figure below is sample data — no promotion is running, nothing is submitted and nothing is charged. Your ad wallet above is real and funds Marketplace ads." />
+        <AdsPreviewNote text="Your promotions and their figures below are real. The suggestion card and the recent-posts strip are still sample data — those two sources aren't connected yet." />
       ) : null}
 
+      {/* Real KPIs, summed from the same analytics rows the marketplace pane
+          reads, over the campaigns classified as post-surface. Reach, new
+          followers and engagements are NOT here: none of them is measured for
+          promotions yet (see ADS_MOCK_DATA_GAPS), and a tile with an invented
+          figure is worse than no tile. */}
       {postEnabled && postKpis ? (
         <Animated.View style={[styles.kpiRow, entrance.styleFor(SLOT.kpis)]}>
           <StoreKpiCard
-            label="Reach · preview"
-            value={formatters.count(postKpis.reach)}
+            label="Spent"
+            value={money(postKpis.spendCents)}
+            caption={`${formatters.count(postKpis.campaignCount)} promotions`}
             reducedMotion={reducedMotion}
             delay={SLOT.kpis * STORE_STAGGER_MS}
           />
           <StoreKpiCard
-            label="New followers · preview"
-            value={formatters.count(postKpis.newFollowers)}
-            caption={
-              postKpis.costPerFollowerCents == null
-                ? null
-                : `${money(postKpis.costPerFollowerCents)} each`
-            }
+            label="Impressions"
+            value={formatters.count(postKpis.impressions)}
             reducedMotion={reducedMotion}
             delay={SLOT.kpis * STORE_STAGGER_MS}
           />
           <StoreKpiCard
-            label="Engagements · preview"
-            value={formatters.count(postKpis.engagements)}
+            label="Clicks"
+            value={formatters.count(postKpis.clicks)}
             reducedMotion={reducedMotion}
             delay={SLOT.kpis * STORE_STAGGER_MS}
           />
@@ -1175,7 +1222,7 @@ export function AdsManagerScreen({ route, navigation }: Props) {
             contentType={suggestion.contentType}
             title={suggestion.title}
             reason={suggestion.reason}
-            onPromote={previewOnly}
+            onPromote={openPromotePost}
             onDismiss={() => setSuggestionDismissed(true)}
             reducedMotion={reducedMotion}
           />
@@ -1249,9 +1296,9 @@ export function AdsManagerScreen({ route, navigation }: Props) {
         ) : !promotions.length ? (
           <AdsEmpty
             title="Nothing promoted yet"
-            body="Promote a post and it appears here with its review status, reach and spend."
-            ctaLabel={railItems.length ? "Promote a post" : null}
-            onPress={railItems.length ? previewOnly : undefined}
+            body="Promote a post and it appears here with its review status and spend."
+            ctaLabel="Promote a post"
+            onPress={openPromotePost}
             reducedMotion={reducedMotion}
             tone="post"
           />
@@ -1262,6 +1309,9 @@ export function AdsManagerScreen({ route, navigation }: Props) {
               const budgetCents = Number(promotion.budgetCents || 0);
               const spentCents = Number(promotion.spendCents || 0);
               const known = promotion.phase === "promoting" || promotion.phase === "completed";
+              const openThis = promotion.campaignId
+                ? () => openDetail(promotion.campaignId!, promotion.title)
+                : undefined;
               return (
                 <PromotedPostCard
                   key={promotion.id}
@@ -1271,48 +1321,26 @@ export function AdsManagerScreen({ route, navigation }: Props) {
                   phaseLabel={promotionPhaseLabel(promotion.phase)}
                   phaseTone={promotionPhaseTone(promotion.phase)}
                   /*
-                   * Two cells, not four, and no dashes in either.
+                   * One cell, and it is real.
                    *
-                   * This strip used to be Reach / Likes / Follows / Cost per 1k
-                   * with a literal "—" in three of them. §31 prohibits the
-                   * universal dash precisely because it flattens four unrelated
-                   * facts into one glyph: "this hasn't started", "we don't
-                   * collect this", "there's nothing to divide by" and "the
-                   * request failed" are different things and the reader can act
-                   * on only some of them.
-                   *
-                   * Likes and Follows are gone rather than reworded. They had no
-                   * source at all — not an empty one, not a failing one, none —
-                   * so a cell for them was a label promising a measurement that
-                   * does not exist anywhere in the product. That is the same
-                   * finding as conversions in Phase 4 and it gets the same
-                   * answer: say it in a sentence, because the thing being
-                   * reported is the absence of a number and a cell cannot say
-                   * that without printing something under the word.
-                   *
-                   * The two that remain are real. `reach` is measured once the
-                   * promotion delivers; before that "None yet" is the truth, not
-                   * a placeholder. Cost per 1k is derived from it and cannot
-                   * exist before reach does.
+                   * These promotions are the account's own campaigns now, so
+                   * Spend comes from the same analytics rows as everything on
+                   * the marketplace pane. Reach is NOT a cell: delivered reach
+                   * (unique viewers) is simply not measured for promotions —
+                   * impressions exist, reach does not (see ADS_MOCK_DATA_GAPS)
+                   * — and §31 forbids printing a number, a zero or a dash under
+                   * a label whose measurement does not exist. The sentence in
+                   * `metricsNote` says so and points at where the measured
+                   * figures live.
                    */
                   metrics={[
                     {
-                      key: "reach",
-                      label: "Reach",
-                      value: known
-                        ? formatters.count(Number(promotion.reach || 0))
-                        : absentValueText("no_activity")
-                    },
-                    {
-                      key: "cpm",
-                      label: "Cost per 1k views",
-                      value:
-                        known && Number(promotion.reach || 0) > 0
-                          ? money(Math.round((spentCents / Number(promotion.reach)) * 1000))
-                          : absentValueText("no_activity")
+                      key: "spend",
+                      label: "Spent",
+                      value: known || spentCents > 0 ? money(spentCents) : absentValueText("no_activity")
                     }
                   ]}
-                  metricsNote="Likes and follows from a promotion aren’t tracked."
+                  metricsNote="Delivered reach, likes and follows aren’t measured for promotions. Impressions and clicks are in Reports."
                   pacing={
                     budgetCents > 0
                       ? {
@@ -1329,8 +1357,8 @@ export function AdsManagerScreen({ route, navigation }: Props) {
                   switchDisabled={switchState.disabled}
                   switchReason={switchState.reason}
                   rejectionReason={promotion.rejectionReason}
-                  onEdit={previewOnly}
-                  onPress={previewOnly}
+                  onEdit={openThis}
+                  onPress={openThis ?? (() => undefined)}
                   reducedMotion={reducedMotion}
                 />
               );
@@ -1342,8 +1370,14 @@ export function AdsManagerScreen({ route, navigation }: Props) {
       {postEnabled ? (
         <Animated.View style={[styles.section, entrance.styleFor(SLOT.tools)]}>
           <Text style={styles.sectionTitle}>Promote a recent post</Text>
+          {/* The rail's posts are still fixtures — the recent-posts feed isn't
+              bound here yet — but Promote is a real entry point: it opens the
+              campaign wizard with the surface preset to "post". */}
           {railItems.length ? (
-            <PromoteRail items={railItems} onPromote={previewOnly} reducedMotion={reducedMotion} />
+            <>
+              <AdsPreviewNote text="Sample posts. Your real recent posts aren't connected to this strip yet." />
+              <PromoteRail items={railItems} onPromote={openPromotePost} reducedMotion={reducedMotion} />
+            </>
           ) : (
             <AdsEmpty
               title="No recent posts"
@@ -1364,15 +1398,16 @@ export function AdsManagerScreen({ route, navigation }: Props) {
       {postEnabled ? (
         <Animated.View style={[styles.section, entrance.styleFor(SLOT.cta)]}>
           <Pressable
-            onPress={previewOnly}
+            onPress={openPromotePost}
             style={[styles.cta, styles.ctaPost]}
             accessibilityRole="button"
-            accessibilityLabel="Promote a post, preview"
+            accessibilityLabel="Promote a post"
           >
             <Text style={styles.ctaPostText}>🚀 Promote a post</Text>
           </Pressable>
           <Text style={styles.footnote}>
-            Preview only. Nothing is submitted for review and nothing is charged.
+            Opens the campaign wizard with the post surface preset. Promotions start as drafts —
+            nothing is charged and nothing delivers until you submit for review.
           </Text>
         </Animated.View>
       ) : null}

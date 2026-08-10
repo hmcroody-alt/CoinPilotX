@@ -52,6 +52,8 @@ export type { SuggestionCardProps } from "./SuggestionCard";
 export { AdsTabBar } from "./AdsTabBar";
 export type { AdsTab, AdsTabBarProps } from "./AdsTabBar";
 
+export { AdsScreenShell, adsSubStyles } from "./AdsScreenShell";
+
 export {
   AdsCampaignSkeleton,
   AdsChartSkeleton,

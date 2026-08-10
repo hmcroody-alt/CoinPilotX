@@ -1335,7 +1335,71 @@ def approve_creative(conn, admin_user_id, creative_id, notes="") -> dict:
     )
     audit_log(conn, admin_user_id, "ad_creative_approved", "pulse_ad_creatives", creative_id, before=before, after={"moderation_status": "approved"})
     conn.commit()
-    return {"ok": True, "creative_id": creative_id, "moderation_status": "approved"}
+    result = {"ok": True, "creative_id": creative_id, "moderation_status": "approved"}
+    activation = _maybe_activate_reviewed_campaign(conn, admin_user_id, before.get("campaign_id"))
+    if activation:
+        result["campaign_activation"] = activation
+    return result
+
+
+def _maybe_activate_reviewed_campaign(conn, admin_user_id, campaign_id) -> dict | None:
+    """Close the review loop after a creative approval.
+
+    There was no transition out of `pending_review` at all: `approve_creative`
+    decided the creative, resume refused `pending_review`, and delivery
+    requires `active` — so a submitted campaign whose creatives were approved
+    was stuck forever. Once every non-archived creative on a `pending_review`
+    campaign is approved, the campaign itself activates through the same
+    shared implementation the admin approve action uses.
+
+    If the campaign can't activate (unfunded wallet, missing placement, …) it
+    stays `pending_review` and the owner is told exactly what is blocking it —
+    the creative approval itself still succeeds either way, which is why this
+    runs after that commit and never raises past it.
+    """
+    campaign_id = safe_int(campaign_id, 0)
+    if not campaign_id:
+        return None
+    # Local import: pulse_advertiser_portal imports this module at top level.
+    from services import pulse_advertiser_portal
+    try:
+        campaign = pulse_advertiser_portal._campaign_with_owner(conn, campaign_id)
+    except PulseAdsError:
+        return None
+    if clean_text(campaign.get("status"), 40).lower() != "pending_review":
+        return None
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT COUNT(*) AS n FROM pulse_ad_creatives
+        WHERE campaign_id=?
+          AND COALESCE(status, '') != 'archived'
+          AND COALESCE(moderation_status, '') != 'approved'
+        """,
+        (campaign_id,),
+    )
+    if safe_int(row_to_dict(cur.fetchone()).get("n"), 0):
+        # Review isn't finished — sibling creatives are still undecided (or
+        # rejected, which the advertiser resolves before the campaign runs).
+        return None
+    account_id = safe_int(campaign.get("ad_account_id"))
+    owner_user_id = safe_int(campaign.get("account_owner_user_id"))
+    gate = pulse_advertiser_portal.campaign_review_gate(conn, account_id, campaign)
+    if gate is None:
+        try:
+            return pulse_advertiser_portal.activate_reviewed_campaign(conn, admin_user_id, campaign, owner_user_id)
+        except PulseAdsError as exc:
+            # `reserve_campaign_budget` holds a stricter spendable threshold
+            # than the gate's `campaign_can_spend`; its refusal is a blocker
+            # like any other, not a failure of the creative approval.
+            gate = ("wallet_insufficient", str(exc))
+    name = clean_text(campaign.get("campaign_name"), 120)
+    pulse_advertiser_portal._add_notification(
+        conn, account_id, campaign_id, None, owner_user_id, "campaign_activation_blocked",
+        "Campaign approved — action needed", f"{name} passed review but isn't running yet: {gate[1]}",
+    )
+    conn.commit()
+    return {"campaign_id": campaign_id, "status": "pending_review", "blocked_by": gate[0], "detail": gate[1]}
 
 
 def reject_creative(conn, admin_user_id, creative_id, reason="") -> dict:

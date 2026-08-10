@@ -375,6 +375,42 @@ def put_targeting(conn, user_id, campaign_id, payload: dict, *, commit=True) -> 
     return public
 
 
+def estimate_targeting(conn, user_id, payload: dict) -> dict:
+    """Stateless reach estimate for the wizard's live preview.
+
+    The campaign doesn't exist yet during creation, so the per-campaign
+    PUT cannot serve the estimate. Accepts the same body as
+    ``put_targeting`` but persists nothing; invalid values raise the same
+    PulseAdsError sentences so the wizard learns about them early.
+    """
+    payload = payload or {}
+    min_age = safe_int(payload.get("min_age"), 0, 0, 120)
+    max_age = safe_int(payload.get("max_age"), 0, 0, 120)
+    if min_age and min_age < 13:
+        raise PulseAdsError("Ads cannot target users under 13.")
+    if min_age and max_age and max_age < min_age:
+        raise PulseAdsError("max_age must be greater than or equal to min_age.")
+    device_type = clean_text(payload.get("device_type") or "all", 20).lower()
+    if device_type not in TARGETING_DEVICE_TYPES:
+        raise PulseAdsError("device_type must be one of all, mobile, desktop.")
+    audience_mode = clean_text(payload.get("audience_mode") or "everyone", 20).lower()
+    if audience_mode not in AUDIENCE_MODES:
+        raise PulseAdsError("audience_mode must be one of everyone, followers, non_followers, engaged.")
+    targeting = {
+        "countries": _parse_list(payload.get("countries"), max_items=50, max_len=8, upper=True),
+        "languages": _parse_list(payload.get("languages"), max_items=50, max_len=12, lower=True),
+        "min_age": min_age or None,
+        "max_age": max_age or None,
+        "device_type": device_type,
+        "interests": _parse_list(payload.get("interests"), max_items=50, lower=True),
+        "keywords": _parse_list(payload.get("keywords"), max_items=50, lower=True),
+        "audience_mode": audience_mode,
+        "saved_audience_ids": _parse_int_list(payload.get("saved_audience_ids")),
+        "excluded_audience_ids": _parse_int_list(payload.get("excluded_audience_ids")),
+    }
+    return {"targeting": targeting, "estimate": _estimate_audience(conn, user_id, targeting)}
+
+
 # ---------------------------------------------------------------------------
 # Item 3 — Saved audiences + engagement presets
 # ---------------------------------------------------------------------------

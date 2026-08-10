@@ -13,12 +13,21 @@
  *   • `mode: "create"` — the native campaign-creation wizard (objective →
  *     setup → audience → placements → creative → budget → review → publish),
  *     with a persisted draft that survives app restarts.
- *   • `mode: "audiences" | "creatives" | "account" | "policy"` — the manager's
- *     sub-pages. The first two are the destinations behind what used to be two
- *     locked, unopenable tiles; the third is where the ad account number went
- *     when it was taken out of the dashboard header; the fourth is the Policy
- *     Center, which reads the review board and is the only one of the four that
- *     shows server data about this advertiser's own creatives.
+ *   • `mode: "detail"` (+ `campaignId`) — the per-campaign management screen:
+ *     overview, ad sets, creatives, insights, lifecycle actions.
+ *   • `mode: "audiences"` — the audience manager (wave 2): list, create,
+ *     lookalike, detail, edit, archive.
+ *   • `mode: "creatives"` — the browsable creative library (wave 2): filters,
+ *     asset detail, metadata editing, "use in campaign".
+ *   • `mode: "policy"` — the Policy Center (wave 2): account status, review
+ *     sections, rejection detail, appeals.
+ *   • `mode: "reports"` — the reporting table (wave 2): presets, breakdowns,
+ *     totals, CSV export.
+ *   • `mode: "wallet"` — ads wallet & billing (wave 2): balance, funding,
+ *     transactions, invoices, limits, auto top-up.
+ *   • `mode: "insights"` — optimization recommendations with Apply (wave 2).
+ *   • `mode: "account"` — the read-only account-standing sub-page, still on
+ *     `AdsSubPageScreen`.
  *
  * Keeping the sub-pages under this route name is deliberate. A tile pointed at
  * a route name the navigator doesn't know does not degrade — it throws. One
@@ -29,9 +38,16 @@
  * screen is untouched, so its existing test keeps passing against it directly.
  */
 
+import { AdsAudiencesScreen } from "./AdsAudiencesScreen";
+import { AdsCampaignDetailScreen } from "./AdsCampaignDetailScreen";
 import { AdsCampaignWizardScreen } from "./AdsCampaignWizardScreen";
+import { AdsInsightsScreen } from "./AdsInsightsScreen";
+import { AdsLibraryScreen } from "./AdsLibraryScreen";
 import { AdsManagerScreen } from "./AdsManagerScreen";
+import { AdsPolicyCenterScreen } from "./AdsPolicyCenterScreen";
+import { AdsReportsScreen } from "./AdsReportsScreen";
 import { AdsSubPageScreen } from "./AdsSubPageScreen";
+import { AdsWalletScreen } from "./AdsWalletScreen";
 import { BusinessOsAdvertisingScreen } from "./BusinessOsAdvertisingScreen";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -45,10 +61,31 @@ export function AdvertisingRoute({ route, navigation }: Props) {
   if (mode === "create") {
     return <AdsCampaignWizardScreen route={route} navigation={navigation} />;
   }
+  if (mode === "detail") {
+    return <AdsCampaignDetailScreen route={route} navigation={navigation} />;
+  }
   if (mode === "classic") {
     return <BusinessOsAdvertisingScreen navigation={navigation} />;
   }
-  if (mode === "audiences" || mode === "creatives" || mode === "account" || mode === "policy") {
+  if (mode === "audiences") {
+    return <AdsAudiencesScreen route={route} navigation={navigation} />;
+  }
+  if (mode === "creatives") {
+    return <AdsLibraryScreen route={route} navigation={navigation} />;
+  }
+  if (mode === "policy") {
+    return <AdsPolicyCenterScreen route={route} navigation={navigation} />;
+  }
+  if (mode === "reports") {
+    return <AdsReportsScreen route={route} navigation={navigation} />;
+  }
+  if (mode === "wallet") {
+    return <AdsWalletScreen route={route} navigation={navigation} />;
+  }
+  if (mode === "insights") {
+    return <AdsInsightsScreen route={route} navigation={navigation} />;
+  }
+  if (mode === "account") {
     return <AdsSubPageScreen surface={mode} route={route} navigation={navigation} />;
   }
   return <AdsManagerScreen route={route} navigation={navigation} />;

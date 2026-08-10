@@ -33,10 +33,18 @@ import {
   AdReachEstimate,
   createFullAdCampaign,
   getAdContentInventory,
+  isAdCanonicalObjective,
+  isAdPlacementKey,
   listAdAudiences,
   previewAdTargetingEstimate,
   uploadAdMedia
 } from "../api/adsOs";
+import {
+  AdServerDraft,
+  listAdServerCampaignDrafts,
+  saveAdServerCampaignDraft
+} from "../api/adsDetail";
+import { PulseApiError } from "../api/pulseApi";
 import {
   AdAccount,
   adAccountCanTransact,
@@ -64,11 +72,13 @@ import { invalidateNativeSync } from "../core/eventSync";
 import { useFormatters, useTranslation } from "../i18n";
 import {
   AD_OBJECTIVE_METADATA,
+  AD_OPTIMIZATION_GOAL_KEYS,
   AD_PLACEMENT_LABEL_KEYS,
   AD_SPECIAL_CATEGORIES,
   buildCampaignTargetingPayload,
   buildFullCampaignPayload,
   CAMPAIGN_WIZARD_STEPS,
+  campaignOptimizationGoal,
   CampaignDraft,
   CampaignDraftIssue,
   campaignDraftIssueFor,
@@ -91,7 +101,9 @@ import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../navigation/BottomNavVisibility"
 import { storeLight } from "../theme/storeLight";
 
 type Props = {
-  route?: { params?: { title?: string; accountId?: number } };
+  route?: {
+    params?: { title?: string; accountId?: number; surface?: "post" | "marketplace" };
+  };
   navigation?: {
     navigate: (...args: any[]) => void;
     goBack?: () => void;
@@ -99,6 +111,9 @@ type Props = {
 };
 
 const ESTIMATE_DEBOUNCE_MS = 700;
+
+/** Server-draft autosave debounce — step changes cluster, one POST per burst. */
+const SERVER_DRAFT_SYNC_MS = 800;
 
 const NS = "commerce:adsWizard";
 
@@ -117,6 +132,7 @@ export function AdsCampaignWizardScreen({ route, navigation }: Props) {
   const draft = useCampaignDraft();
 
   const [resumePrompt, setResumePrompt] = useState(false);
+  const [serverDraft, setServerDraft] = useState<AdServerDraft | null>(null);
   const [issues, setIssues] = useState<CampaignDraftIssue[]>([]);
   const [attempted, setAttempted] = useState(false);
   const [openSelect, setOpenSelect] = useState<string | null>(null);
@@ -157,7 +173,17 @@ export function AdsCampaignWizardScreen({ route, navigation }: Props) {
     let cancelled = false;
     hydrateCampaignDraft()
       .then((stored) => {
-        if (!cancelled && stored) setResumePrompt(true);
+        if (cancelled) return;
+        if (stored) {
+          setResumePrompt(true);
+          return;
+        }
+        // No local draft — offer the most recent server-side autosave, if any.
+        listAdServerCampaignDrafts()
+          .then((data) => {
+            if (!cancelled && data.drafts.length > 0) setServerDraft(data.drafts[0]);
+          })
+          .catch(() => undefined);
       })
       .catch(() => undefined);
     return () => {
@@ -165,7 +191,110 @@ export function AdsCampaignWizardScreen({ route, navigation }: Props) {
     };
   }, []);
 
+  /* -------------------------------------------------------------- *
+   * Server draft autosave — fire-and-forget on step transitions
+   * -------------------------------------------------------------- */
+
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const serverSyncStopped = useRef(false);
+  const serverSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const syncServerDraft = useCallback(() => {
+    if (serverSyncStopped.current) return;
+    if (serverSyncTimer.current) clearTimeout(serverSyncTimer.current);
+    serverSyncTimer.current = setTimeout(() => {
+      serverSyncTimer.current = null;
+      const snapshot = draftRef.current;
+      if (snapshot.accountId <= 0) return;
+      const payload = buildFullCampaignPayload(snapshot, { submit: false });
+      saveAdServerCampaignDraft({
+        draft_key: snapshot.idempotencyKey,
+        ad_account_id: snapshot.accountId,
+        campaign: payload.campaign as unknown as Record<string, unknown>,
+        targeting: payload.targeting,
+        creative: payload.creative as unknown as Record<string, unknown>,
+        placements: payload.placements
+      }).catch((error) => {
+        // 409 = the draft already became a real campaign: stop autosaving.
+        // Anything else (offline, 5xx) is silently retried on the next step.
+        if (error instanceof PulseApiError && error.status === 409) {
+          serverSyncStopped.current = true;
+        }
+      });
+    }, SERVER_DRAFT_SYNC_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (serverSyncTimer.current) clearTimeout(serverSyncTimer.current);
+    },
+    []
+  );
+
+  /** Copies a server-side autosave into the local draft and resumes. */
+  const applyServerDraft = useCallback((stored: AdServerDraft) => {
+    updateCampaignDraft((current) => {
+      const targeting = stored.targeting;
+      const lifetime = stored.budget_type === "lifetime";
+      const cents = lifetime ? stored.lifetime_budget_cents : stored.daily_budget_cents;
+      return {
+        ...current,
+        idempotencyKey: stored.draft_key,
+        accountId: stored.ad_account_id > 0 ? stored.ad_account_id : current.accountId,
+        objective: isAdCanonicalObjective(stored.objective) ? stored.objective : current.objective,
+        setup: {
+          ...current.setup,
+          name: stored.campaign_name || current.setup.name,
+          budgetType: lifetime ? "lifetime" : "daily",
+          budgetAmount: cents > 0 ? String(cents / 100) : current.setup.budgetAmount,
+          startDate: (stored.start_at || "").slice(0, 10) || current.setup.startDate,
+          endDate: (stored.end_at || "").slice(0, 10) || current.setup.endDate
+        },
+        audience: targeting
+          ? {
+              ...current.audience,
+              countries: targeting.countries,
+              languages: targeting.languages,
+              minAge: targeting.min_age,
+              maxAge: targeting.max_age,
+              deviceType: targeting.device_type,
+              interests: targeting.interests,
+              keywords: targeting.keywords,
+              audienceMode: targeting.audience_mode,
+              savedAudienceIds: targeting.saved_audience_ids,
+              excludedAudienceIds: targeting.excluded_audience_ids
+            }
+          : current.audience,
+        placements:
+          stored.placements.length > 0
+            ? { mode: "manual", keys: stored.placements.filter(isAdPlacementKey) }
+            : current.placements,
+        step: isAdCanonicalObjective(stored.objective) ? "setup" : "objective"
+      };
+    });
+    void persistCampaignDraft();
+    setServerDraft(null);
+  }, []);
+
   const routeAccountId = Number(route?.params?.accountId || 0);
+  const routeSurface = route?.params?.surface;
+
+  /**
+   * "Promote a post" arrives with `surface: "post"` — preset the ad surface
+   * once on mount so the wizard opens in the post flow. Applied only while the
+   * draft is still on the default; a resumed draft the advertiser already
+   * steered is not overwritten by an entry-point hint.
+   */
+  useEffect(() => {
+    if (routeSurface !== "post" && routeSurface !== "marketplace") return;
+    updateCampaignDraft((current) =>
+      current.step === "objective" && current.setup.adSurface !== routeSurface
+        ? { ...current, setup: { ...current.setup, adSurface: routeSurface } }
+        : current
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,12 +334,16 @@ export function AdsCampaignWizardScreen({ route, navigation }: Props) {
 
   const stepIndex = CAMPAIGN_WIZARD_STEPS.indexOf(draft.step);
 
-  const goToStep = useCallback((step: CampaignWizardStep) => {
-    setAttempted(false);
-    setIssues([]);
-    updateCampaignDraft({ step });
-    void persistCampaignDraft();
-  }, []);
+  const goToStep = useCallback(
+    (step: CampaignWizardStep) => {
+      setAttempted(false);
+      setIssues([]);
+      updateCampaignDraft({ step });
+      void persistCampaignDraft();
+      syncServerDraft();
+    },
+    [syncServerDraft]
+  );
 
   const continueFromStep = useCallback(() => {
     setAttempted(true);
@@ -231,22 +364,27 @@ export function AdsCampaignWizardScreen({ route, navigation }: Props) {
 
   const saveDraftAndExit = useCallback(async () => {
     await persistCampaignDraft();
+    syncServerDraft();
     setDraftSavedNote(true);
     navigation?.goBack?.();
-  }, [navigation]);
+  }, [navigation, syncServerDraft]);
 
-  const chooseObjective = useCallback((objective: (typeof AD_CANONICAL_OBJECTIVES)[number]) => {
-    updateCampaignDraft((current) => ({
-      ...current,
-      objective,
-      step: "setup",
-      creative: {
-        ...current.creative,
-        callToAction: AD_OBJECTIVE_METADATA[objective].defaultCallToAction
-      }
-    }));
-    void persistCampaignDraft();
-  }, []);
+  const chooseObjective = useCallback(
+    (objective: (typeof AD_CANONICAL_OBJECTIVES)[number]) => {
+      updateCampaignDraft((current) => ({
+        ...current,
+        objective,
+        step: "setup",
+        creative: {
+          ...current.creative,
+          callToAction: AD_OBJECTIVE_METADATA[objective].defaultCallToAction
+        }
+      }));
+      void persistCampaignDraft();
+      syncServerDraft();
+    },
+    [syncServerDraft]
+  );
 
   /* -------------------------------------------------------------- *
    * Audience data — saved audiences and the debounced reach estimate
@@ -277,7 +415,8 @@ export function AdsCampaignWizardScreen({ route, navigation }: Props) {
   const estimateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (draft.step !== "audience") return;
+    // Review re-runs the estimate so "Estimated results" reflects final targeting.
+    if (draft.step !== "audience" && draft.step !== "review") return;
     setEstimateLoading(true);
     if (estimateTimer.current) clearTimeout(estimateTimer.current);
     let cancelled = false;
@@ -528,6 +667,24 @@ export function AdsCampaignWizardScreen({ route, navigation }: Props) {
               setResumePrompt(false);
             }}
           />
+        </WizardCard>
+      </View>
+    );
+  }
+
+  if (serverDraft) {
+    return (
+      <View style={[styles.root, styles.centerFill]}>
+        <WizardCard style={styles.resumeCard}>
+          <Ionicons name="cloud-outline" size={30} color={storeLight.accent.brandOnLight} />
+          <Text style={styles.resumeTitle}>{t(`${NS}.serverResumeTitle`)}</Text>
+          <Text style={styles.resumeBody}>
+            {serverDraft.campaign_name
+              ? t(`${NS}.serverResumeBodyNamed`, { name: serverDraft.campaign_name })
+              : t(`${NS}.serverResumeBody`)}
+          </Text>
+          <WizardPrimaryButton label={t(`${NS}.resume`)} onPress={() => applyServerDraft(serverDraft)} />
+          <WizardSecondaryButton label={t(`${NS}.startOver`)} onPress={() => setServerDraft(null)} />
         </WizardCard>
       </View>
     );
@@ -1232,24 +1389,79 @@ export function AdsCampaignWizardScreen({ route, navigation }: Props) {
    * -------------------------------------------------------------- */
 
   function renderBudget() {
-    const meta = draft.objective ? AD_OBJECTIVE_METADATA[draft.objective] : null;
+    const optimizationGoal = campaignOptimizationGoal(draft);
     return (
       <View style={styles.stack}>
         <WizardCard>
           <WizardSectionTitle text={t(`${NS}.deliveryTitle`)} />
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>{t(`${NS}.optimizationLabel`)}</Text>
-            <Text style={styles.summaryValue}>{meta ? t(`${NS}.${meta.optimizationKey}`) : "—"}</Text>
-          </View>
-          <WizardHint text={t(`${NS}.optimizationHint`)} />
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>{t(`${NS}.budgetTypeLabel`)}</Text>
-            <Text style={styles.summaryValue}>{budgetSummary || "—"}</Text>
-          </View>
+          <WizardSegmented
+            label={t(`${NS}.budgetTypeLabel`)}
+            options={[
+              { key: "daily" as const, label: t(`${NS}.budgetDaily`) },
+              { key: "lifetime" as const, label: t(`${NS}.budgetLifetime`) }
+            ]}
+            value={draft.setup.budgetType}
+            onChange={(budgetType) => updateCampaignDraft((c) => ({ ...c, setup: { ...c.setup, budgetType } }))}
+          />
+          <WizardTextField
+            label={t(
+              draft.setup.budgetType === "lifetime" ? `${NS}.budgetAmountLifetimeLabel` : `${NS}.budgetAmountDailyLabel`
+            )}
+            value={draft.setup.budgetAmount}
+            onChangeText={(value) =>
+              updateCampaignDraft((c) => ({
+                ...c,
+                setup: { ...c.setup, budgetAmount: value.replace(/[^0-9.]/g, "") }
+              }))
+            }
+            placeholder={t(`${NS}.budgetPlaceholder`)}
+            error={issueFor("budgetAmount")}
+            keyboardType="decimal-pad"
+          />
+          {draft.setup.budgetType === "lifetime" ? (
+            <WizardTextField
+              label={t(`${NS}.endDateLifetimeLabel`)}
+              value={draft.setup.endDate}
+              onChangeText={(value) =>
+                updateCampaignDraft((c) => ({
+                  ...c,
+                  setup: { ...c.setup, endDate: value.replace(/[^0-9-]/g, "").slice(0, 10) }
+                }))
+              }
+              placeholder="YYYY-MM-DD"
+              error={issueFor("endDate")}
+              keyboardType="numbers-and-punctuation"
+            />
+          ) : null}
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>{t(`${NS}.scheduleLabel`)}</Text>
             <Text style={styles.summaryValue}>{scheduleSummary || "—"}</Text>
           </View>
+        </WizardCard>
+        <WizardCard>
+          <WizardSectionTitle text={t(`${NS}.optimizationLabel`)} />
+          <WizardSelect
+            label={t(`${NS}.optimizationLabel`)}
+            sheetTitle={t(`${NS}.optimizationLabel`)}
+            options={AD_OPTIMIZATION_GOAL_KEYS.map((key) => ({ key, label: t(`${NS}.${key}`) }))}
+            selectedKey={optimizationGoal}
+            onSelect={(key) =>
+              updateCampaignDraft((c) => ({
+                ...c,
+                delivery: { ...c.delivery, optimizationGoal: key as CampaignDraft["delivery"]["optimizationGoal"] }
+              }))
+            }
+            open={openSelect === "optimizationGoal"}
+            onOpen={() => setOpenSelect("optimizationGoal")}
+            onClose={() => setOpenSelect(null)}
+          />
+          <WizardHint text={t(`${NS}.optimizationHint`)} />
+          <WizardHint text={t(`${NS}.optimizationDeviceHint`)} />
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>{t(`${NS}.bidStrategyLabel`)}</Text>
+            <Text style={styles.summaryValue}>{t(`${NS}.bidStrategyLowestCost`)}</Text>
+          </View>
+          <WizardHint text={t(`${NS}.bidStrategyHint`)} />
           <View style={styles.noteBox}>
             <Ionicons name="information-circle-outline" size={18} color={storeLight.text.muted} />
             <Text style={styles.noteText}>{t(`${NS}.chargeNote`)}</Text>
@@ -1317,6 +1529,18 @@ export function AdsCampaignWizardScreen({ route, navigation }: Props) {
               })}
             </Text>
           ) : null}
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>{t(`${NS}.verificationStatusLabel`)}</Text>
+            <Text style={styles.summaryValue}>
+              {t(`${NS}.${verificationOk ? "statusVerified" : "statusUnverified"}`)}
+            </Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>{t(`${NS}.policyStatusLabel`)}</Text>
+            <Text style={styles.summaryValue}>
+              {t(`${NS}.${accountActive ? "statusPolicyOk" : "statusPolicyHold"}`)}
+            </Text>
+          </View>
           {walletZero ? (
             <>
               <View style={styles.warnBox}>
@@ -1331,6 +1555,25 @@ export function AdsCampaignWizardScreen({ route, navigation }: Props) {
               <Ionicons name="shield-outline" size={18} color={storeLight.status.warning} />
               <Text style={styles.warnText}>{t(`${NS}.verificationWarning`)}</Text>
             </View>
+          ) : null}
+        </WizardCard>
+
+        <WizardCard>
+          <WizardSectionTitle text={t(`${NS}.estimatedResultsTitle`)} />
+          {estimateLoading ? <WizardHint text={t(`${NS}.estimateLoading`)} /> : null}
+          {!estimateLoading && (estimateFailed || !estimate) ? (
+            <WizardHint text={t(`${NS}.estimateUnavailable`)} />
+          ) : null}
+          {!estimateLoading && !estimateFailed && estimate ? (
+            <>
+              <Text style={styles.estimateValue}>
+                {t(`${NS}.estimateRange`, {
+                  min: formatters.number(estimate.estimated_min),
+                  max: formatters.number(estimate.estimated_max)
+                })}
+              </Text>
+              <WizardHint text={t(`${NS}.estimatedResultsHint`)} />
+            </>
           ) : null}
         </WizardCard>
 

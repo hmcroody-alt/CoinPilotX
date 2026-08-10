@@ -10,12 +10,15 @@
  *     figure is computed on the client — every number is read from the server
  *     response and formatted, never derived.
  *
- *   • POST ADS, the seven-day spend series, and the post-performance
- *     suggestion are NOT backed by any endpoint today. They are gated behind a
- *     feature flag (off by default) and, when on, every value they show is
- *     tagged `MOCK-DATA` and visibly labelled in the UI as a preview. They never
- *     present a fabricated balance or spend as truth — the wallet chip in both
- *     modes reads the one real wallet.
+ *   • POST ADS (wave 2) are now REAL where a source exists: promotions are the
+ *     account's own campaigns whose creatives are content-backed (post, reel,
+ *     video, live replay) — the backend treats post and marketplace campaigns
+ *     identically — and their spend/clicks/impressions come from the same live
+ *     analytics rows the marketplace mode reads. Only the pieces with no source
+ *     remain flag-gated previews tagged `MOCK-DATA` and labelled in the UI: the
+ *     outperforming-post suggestion, the promote-a-post picker rail, and any
+ *     reach/follower figure. Nothing ever presents a fabricated balance or
+ *     spend as truth — the wallet chip in both modes reads the one real wallet.
  *
  * `ADS_MOCK_DATA_GAPS` lists every unsourced field and the backend work it
  * needs, so the completion report is generated from code rather than memory and
@@ -42,7 +45,7 @@ import {
   loadCachedAdAnalytics,
   loadCachedAdCampaigns
 } from "./businessOs";
-import { AdsPortal, getAdsPortal } from "./adsPortal";
+import { AdCreative, AdsPortal, getAdsPortal } from "./adsPortal";
 import { envFlagOn } from "../core/envFlag";
 
 /* ------------------------------------------------------------------ *
@@ -113,12 +116,14 @@ export const ADS_MOCK_DATA_GAPS: readonly AdsDataGap[] = [
     needs: "campaign status extended with a delivery-phase field (learning, limited)",
     mode: "marketplace"
   },
-  // MOCK-DATA: post promotions. There is no endpoint to promote a feed post,
-  // Reel or live replay, list promotions, or read their review status and
-  // delivered metrics. The entire Post-ads product is a flag-gated preview.
+  // Post / Reel / Live promotions are now REAL — they are campaigns whose
+  // creatives are content-backed, read from the live portal/campaign list. The
+  // remaining gap is delivered reach: analytics carries impressions and clicks
+  // per campaign but no unique-viewer count, so promotion cards show spend and
+  // never print a reach figure.
   {
-    field: "Post / Reel / Live promotions",
-    needs: "a post-promotion service (create, list, review status, delivered metrics)",
+    field: "Post promotion delivered reach (unique viewers)",
+    needs: "per-campaign reach in `/api/pulse/ads/analytics` — impressions exist, reach does not",
     mode: "post"
   },
   // MOCK-DATA: post-performance suggestion. "This Reel is outperforming —
@@ -161,14 +166,14 @@ export const ADS_MOCK_DATA_GAPS: readonly AdsDataGap[] = [
   // approved, a card declined, delivery limited. The app's notification feed is
   // global, and putting a DM count on an ads bell would misreport it, so the
   // bell is omitted rather than wired to the wrong number.
-  // MOCK-DATA: the Post-ads KPI trio. Reach, new followers and engagements for
-  // promoted content need the promotion service that does not exist, plus a
-  // follower-attribution signal that says which follows came from a promotion.
-  // With the flag off no tile is drawn at all; with it on they are labelled
-  // Preview and carry sample figures.
+  // The Post-ads KPI trio is now REAL for spend, clicks and impressions —
+  // summed from live analytics rows over the post-surface campaigns. Reach,
+  // new followers and engagements remain unsourced: they need a unique-viewer
+  // count plus a follower/engagement-attribution signal that says which follows
+  // came from a promotion. No tile invents them.
   {
-    field: "Post-ads KPIs (reach, new followers, engagements)",
-    needs: "post-promotion delivered metrics + follower attribution per promotion",
+    field: "Post-ads reach / new followers / engagements",
+    needs: "delivered reach + follower and engagement attribution per promotion",
     mode: "post"
   },
   {
@@ -428,10 +433,11 @@ export { availableAdCampaignActions };
 export type { AdCampaignAction };
 
 /* ------------------------------------------------------------------ *
- * Promotion state machine (Post ads) — NOT backed, flag-gated preview
+ * Promotion state machine (Post ads)
  * ------------------------------------------------------------------ */
 
 export type PromotionPhase =
+  | "draft"
   | "submitted"
   | "in_review"
   | "promoting"
@@ -442,26 +448,33 @@ export type PromotionPhase =
 export type PromotedContentType = "post" | "reel" | "live";
 
 /**
- * A promoted post. MOCK-DATA: no endpoint backs this. Every instance is a
- * preview and is tagged as such. `mock` is always true today; it is on the type
- * so a real backend value can later arrive with `mock: false` and the UI can
- * drop the preview labelling per record rather than per build.
+ * A promoted post.
+ *
+ * Real records (`mock: false`) are campaigns whose creatives are content-backed
+ * — see {@link derivePostPromotions} — and carry `campaignId` so a tap can open
+ * the campaign page. `reach` is never set on a real record because analytics
+ * has no unique-viewer count (see ADS_MOCK_DATA_GAPS). Fixture records from
+ * {@link loadMockPostPromotions} keep `mock: true` and are labelled previews.
  */
 export type PostPromotion = {
   id: string;
   contentType: PromotedContentType;
   title: string;
   phase: PromotionPhase;
-  /** Preview-only figures. Never a real balance or spend. */
+  /** The real campaign behind this promotion; undefined on preview fixtures. */
+  campaignId?: number;
+  /** Never set on real records — analytics has no reach. Preview-only. */
   reach?: number;
   spendCents?: number;
   budgetCents?: number;
   rejectionReason?: string;
-  mock: true;
+  mock: boolean;
 };
 
 export function promotionPhaseLabel(phase: PromotionPhase): string {
   switch (phase) {
+    case "draft":
+      return "Draft";
     case "submitted":
       return "Submitted";
     case "in_review":
@@ -488,6 +501,7 @@ export function promotionPhaseTone(phase: PromotionPhase): CampaignTone {
       return "info";
     case "rejected":
       return "error";
+    case "draft":
     case "paused":
     case "completed":
       return "neutral";
@@ -534,6 +548,128 @@ export function loadMockPostPromotions(): PostPromotion[] {
       mock: true
     }
   ];
+}
+
+/* ------------------------------------------------------------------ *
+ * Post-surface campaigns — backed. The real Post-ads records.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Creative types that make a campaign a "post promotion". The backend stores
+ * post and marketplace campaigns in the same tables with no surface column, so
+ * the split the two manager modes draw is a classification of what the campaign
+ * promotes: content someone posted (a post, a Reel, a video, a live replay)
+ * versus a marketplace listing or plain ad copy.
+ */
+export const POST_SURFACE_CREATIVE_TYPES = ["post", "reel", "video", "live_replay"] as const;
+
+/** Map a creative_type onto the card's three content flavours. */
+export function postContentTypeFor(creativeType?: string | null): PromotedContentType {
+  const key = String(creativeType || "").toLowerCase();
+  if (key === "reel" || key === "video") return "reel";
+  if (key === "live_replay" || key === "live") return "live";
+  return "post";
+}
+
+/**
+ * The promotion phase a real campaign maps to. A rejected creative outranks the
+ * campaign status — "your promotion was rejected" is the fact that needs acting
+ * on, whatever the campaign row still says.
+ */
+export function promotionPhaseForCampaign(campaign: AdCampaign, rejected: boolean): PromotionPhase {
+  if (rejected) return "rejected";
+  const phase = campaignPhase(campaign);
+  if (phase === "in_review") return "in_review";
+  if (phase === "delivering" || phase === "learning" || phase === "limited") return "promoting";
+  if (phase === "paused") return "paused";
+  if (phase === "ended") return "completed";
+  return "draft";
+}
+
+/**
+ * Derive the REAL post promotions from the portal payload: campaigns with at
+ * least one content-backed creative, joined to their live analytics row for
+ * spend. Every figure is read from the server; `reach` is deliberately never
+ * set (no source). Returns [] when the portal is unavailable — §31's
+ * "Unavailable", which the screen renders as such, not as "no promotions".
+ */
+export function derivePostPromotions(portal: AdsPortal | null): PostPromotion[] {
+  if (!portal) return [];
+  const byCampaign = new Map<number, AdCreative[]>();
+  for (const creative of portal.creatives) {
+    const campaignId = Number(creative.campaign_id || 0);
+    if (campaignId <= 0) continue;
+    const list = byCampaign.get(campaignId);
+    if (list) list.push(creative);
+    else byCampaign.set(campaignId, [creative]);
+  }
+  const analyticsRows = new Map(
+    portal.analytics.campaigns.map((row) => [Number(row.campaign_id || 0), row])
+  );
+  const contentTypes = POST_SURFACE_CREATIVE_TYPES as readonly string[];
+  const out: PostPromotion[] = [];
+  for (const campaign of portal.campaigns) {
+    const creatives = byCampaign.get(campaign.id) || [];
+    const content = creatives.find((creative) =>
+      contentTypes.includes(String(creative.creative_type || "").toLowerCase())
+    );
+    if (!content) continue;
+    const rejected = creatives.find(
+      (creative) => String(creative.moderation_status || "").toLowerCase() === "rejected"
+    );
+    const row = analyticsRows.get(campaign.id);
+    const budgetCents = Number(campaign.lifetime_budget_cents || campaign.daily_budget_cents || 0);
+    out.push({
+      id: `campaign-${campaign.id}`,
+      campaignId: campaign.id,
+      contentType: postContentTypeFor(content.creative_type),
+      title: String(campaign.campaign_name || content.title || ""),
+      phase: promotionPhaseForCampaign(campaign, Boolean(rejected)),
+      spendCents: Number(row?.spent_cents ?? campaign.spent_cents ?? 0),
+      budgetCents: budgetCents > 0 ? budgetCents : undefined,
+      rejectionReason: rejected ? String(rejected.rejection_reason || "") || undefined : undefined,
+      mock: false
+    });
+  }
+  return out;
+}
+
+/**
+ * The real Post-ads KPI trio: spend, clicks and impressions summed from live
+ * analytics rows over the post-surface campaigns. Null when there is nothing to
+ * sum — the screen shows its empty state rather than three zeros that would
+ * read as "your promotions did nothing". Reach and follower counts are NOT here
+ * on purpose; see ADS_MOCK_DATA_GAPS.
+ */
+export type PostSurfaceKpis = {
+  spendCents: number;
+  clicks: number;
+  impressions: number;
+  campaignCount: number;
+  mock: false;
+};
+
+export function postSurfaceKpis(
+  portal: AdsPortal | null,
+  promotions: PostPromotion[]
+): PostSurfaceKpis | null {
+  if (!portal || promotions.length === 0) return null;
+  const ids = new Set(
+    promotions
+      .map((promotion) => Number(promotion.campaignId || 0))
+      .filter((campaignId) => campaignId > 0)
+  );
+  if (ids.size === 0) return null;
+  let spendCents = 0;
+  let clicks = 0;
+  let impressions = 0;
+  for (const row of portal.analytics.campaigns) {
+    if (!ids.has(Number(row.campaign_id || 0))) continue;
+    spendCents += Number(row.spent_cents || 0);
+    clicks += Number(row.clicks || 0);
+    impressions += Number(row.impressions || 0);
+  }
+  return { spendCents, clicks, impressions, campaignCount: ids.size, mock: false };
 }
 
 /* ------------------------------------------------------------------ *
@@ -1135,48 +1271,20 @@ export function spendChartTodayIndex(count = 7): number {
 }
 
 /* ------------------------------------------------------------------ *
- * Post-ads KPIs — NOT backed, flag-gated preview
+ * The promotion switch
  * ------------------------------------------------------------------ */
 
-export type PostKpis = {
-  reach: number;
-  newFollowers: number;
-  engagements: number;
-  /** Cost per follower in cents, or null when no followers were attributed. */
-  costPerFollowerCents: number | null;
-  mock: true;
-};
-
 /**
- * Null when the preview flag is off — the Post mode then explains the product
- * is coming rather than drawing three tiles of numbers nobody produced. When
- * the flag is on, reach is summed from the mock promotions so the tiles and the
- * cards below them agree, and the rest are fixtures tagged `mock`.
- */
-export function loadMockPostKpis(): PostKpis | null {
-  if (!adsPostModeEnabled()) return null;
-  const promotions = loadMockPostPromotions();
-  const reach = promotions.reduce((total, promotion) => total + Number(promotion.reach || 0), 0);
-  const spendCents = promotions.reduce((total, promotion) => total + Number(promotion.spendCents || 0), 0);
-  const newFollowers = 214;
-  return {
-    reach,
-    newFollowers,
-    engagements: 1863,
-    costPerFollowerCents: newFollowers > 0 ? Math.round(spendCents / newFollowers) : null,
-    mock: true
-  };
-}
-
-/**
- * The promotion equivalent of `deliverySwitchState`. There is no backend to
- * accept these transitions yet, so `disabled` is true in every state and the
- * reason says so plainly — a preview switch that appeared to work would be the
- * exact "silently no-ops" failure the marketplace side is careful to avoid.
+ * The promotion equivalent of `deliverySwitchState`. The switch itself never
+ * acts from the card: real promotions are campaigns, and the enabled, server-
+ * mirrored pause control lives on the campaign page — the card's reason points
+ * there. Preview fixtures stay inert with a reason that says so plainly; a
+ * switch that appeared to work would be the exact "silently no-ops" failure
+ * the marketplace side is careful to avoid.
  */
 export function promotionSwitchState(promotion: PostPromotion): DeliverySwitchState {
   const phase = promotion.phase;
-  if (phase === "completed" || phase === "rejected") {
+  if (phase === "draft" || phase === "completed" || phase === "rejected") {
     return { show: false, on: false, disabled: true, reason: null, action: null };
   }
   if (phase === "submitted" || phase === "in_review") {
@@ -1185,6 +1293,15 @@ export function promotionSwitchState(promotion: PostPromotion): DeliverySwitchSt
       on: false,
       disabled: true,
       reason: "In review. You'll be able to pause it once it starts.",
+      action: null
+    };
+  }
+  if (!promotion.mock) {
+    return {
+      show: true,
+      on: phase === "promoting",
+      disabled: true,
+      reason: "Open the campaign to pause or resume delivery.",
       action: null
     };
   }

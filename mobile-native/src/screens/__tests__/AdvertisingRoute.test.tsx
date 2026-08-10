@@ -20,6 +20,30 @@ jest.mock("../AdsSubPageScreen", () => {
   const { Text } = require("react-native");
   return { AdsSubPageScreen: ({ surface }: { surface: string }) => <Text>{`SUB:${surface}`}</Text> };
 });
+jest.mock("../AdsAudiencesScreen", () => {
+  const { Text } = require("react-native");
+  return { AdsAudiencesScreen: () => <Text>AUDIENCES</Text> };
+});
+jest.mock("../AdsLibraryScreen", () => {
+  const { Text } = require("react-native");
+  return { AdsLibraryScreen: () => <Text>LIBRARY</Text> };
+});
+jest.mock("../AdsPolicyCenterScreen", () => {
+  const { Text } = require("react-native");
+  return { AdsPolicyCenterScreen: () => <Text>POLICY</Text> };
+});
+jest.mock("../AdsReportsScreen", () => {
+  const { Text } = require("react-native");
+  return { AdsReportsScreen: () => <Text>REPORTS</Text> };
+});
+jest.mock("../AdsWalletScreen", () => {
+  const { Text } = require("react-native");
+  return { AdsWalletScreen: () => <Text>WALLET</Text> };
+});
+jest.mock("../AdsInsightsScreen", () => {
+  const { Text } = require("react-native");
+  return { AdsInsightsScreen: () => <Text>INSIGHTS</Text> };
+});
 
 import { AdvertisingRoute } from "../AdvertisingRoute";
 
@@ -39,13 +63,24 @@ describe("BusinessOsAdvertising route", () => {
   /**
    * The sub-pages share this route name on purpose. A tile pointed at a name the
    * navigator doesn't know does not degrade to a blank screen — it throws — so
-   * the destinations behind the two formerly locked tiles, and the new home of
-   * the ad account number, are reached by `mode` rather than by new names.
+   * every wave-2 surface, and the read-only account-standing page, are reached
+   * by `mode` rather than by new names. `audiences` and `creatives` used to
+   * land on the static `AdsSubPageScreen`; wave 2 gave each its own manager,
+   * so those modes now dispatch to the full screens.
    */
   it("dispatches each sub-page mode to its own surface", () => {
-    for (const mode of ["audiences", "creatives", "account"] as const) {
+    const expectations = [
+      ["audiences", "AUDIENCES"],
+      ["creatives", "LIBRARY"],
+      ["policy", "POLICY"],
+      ["reports", "REPORTS"],
+      ["wallet", "WALLET"],
+      ["insights", "INSIGHTS"],
+      ["account", "SUB:account"]
+    ] as const;
+    for (const [mode, marker] of expectations) {
       const view = render(<AdvertisingRoute route={{ params: { mode } }} />);
-      expect(view.getByText(`SUB:${mode}`)).toBeTruthy();
+      expect(view.getByText(marker)).toBeTruthy();
     }
   });
 

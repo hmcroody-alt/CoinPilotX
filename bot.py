@@ -2399,6 +2399,13 @@ def add_pwa_headers(response):
         response.headers["Cache-Control"] = "no-store, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
+    elif request.path == "/admin" or request.path.startswith("/admin/") or request.path.startswith("/api/admin/"):
+        # Admin surfaces must never enter browser/proxy caches: after logout
+        # or session expiry the back button must not resurface protected
+        # screens, and the login gateway itself must always be fresh.
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
     elif request.path.startswith(("/static/", "/icons/")):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-live.xml", "/sitemap-replays.xml", "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
@@ -14430,55 +14437,61 @@ def _ops_search_payments(q, limit=6):
 
 @webhook_app.route("/admin/login", methods=["GET", "POST"])
 def admin_login_page():
+    # PRE-AUTH BOUNDARY: this route must never render the Operations Center
+    # shell (sidebar, topbar, status strip, nav index, admin JS). Everything
+    # an unauthenticated visitor sees comes from services.admin_gateway,
+    # which is a standalone closed-door page. See
+    # tests/admin_auth/test_pre_auth_gateway.py for the enforced contract.
+    from services import admin_gateway
     init_db()
     if admin_current_user():
         return redirect(url_for("admin_dashboard_page"))
-    message = ""
+    state = "expired" if request.args.get("expired") else "idle"
     if request.method == "POST":
-        if not verify_csrf():
-            message = "Security check failed. Please try again."
-        else:
-            email = normalize_email(clean_html(request.form.get("email", "")))
-            password = request.form.get("password", "")
-            admin = load_admin_by_email(email)
-            fallback_ok = admin and admin.get("role") == "owner" and not admin.get("password_hash") and os.getenv("ADMIN_ANALYTICS_PASSWORD") and password == os.getenv("ADMIN_ANALYTICS_PASSWORD")
-            locked_until = parse_iso_datetime((admin or {}).get("locked_until"))
-            locked = bool(locked_until and locked_until > datetime.now(locked_until.tzinfo) if locked_until and locked_until.tzinfo else locked_until and locked_until > datetime.now())
-            auth_ok = admin and admin.get("status") == "active" and not locked and ((admin.get("password_hash") and check_password_hash(admin["password_hash"], password)) or fallback_ok)
-            if auth_ok:
-                session["admin_user_id"] = admin["id"]
-                conn = db()
-                cur = conn.cursor()
-                cur.execute(
-                    "UPDATE admin_users SET last_login_at=?, failed_login_count=0, locked_until=NULL, updated_at=? WHERE id=?",
-                    (datetime.now().isoformat(), datetime.now().isoformat(), admin["id"])
-                )
-                cur.execute(
-                    "INSERT INTO admin_session_logs (admin_id, action, ip_hash, user_agent, created_at) VALUES (?, 'login', ?, ?, ?)",
-                    (admin["id"], client_ip_hash(), request.headers.get("User-Agent", "")[:500], datetime.now().isoformat()),
-                )
-                conn.commit()
+        # Every failure path below collapses to the same generic "Access
+        # denied." so responses cannot be used for account enumeration.
+        state = "denied"
+        if verify_csrf():
+            ip_hash = client_ip_hash()
+            conn = db()
+            try:
+                limited = admin_gateway.login_rate_limited(conn, ip_hash)
+            finally:
                 conn.close()
-                log_admin_audit(admin["id"], "admin_login_success", "admin_user", str(admin["id"]), {})
-                if int(admin.get("must_change_password") or 0) == 1:
-                    return redirect(url_for("admin_change_password_page"))
-                return redirect(url_for("admin_dashboard_page"))
-            update_admin_failed_login(admin)
-            message = "Admin login failed."
-    body = f"""
-    <section class="card" style="max-width:520px;margin:7vh auto">
-      <h1>Admin Login</h1>
-      <p class="muted">Private owner and team access for CoinPlotXAI Inc.</p>
-      {f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
-      <form method="post">
-        <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
-        <p><input name="email" type="email" autocomplete="email" placeholder="Admin email" required /></p>
-        <p><input name="password" type="password" autocomplete="current-password" placeholder="Password" required /></p>
-        <button type="submit">Log In</button>
-      </form>
-    </section>
-    """
-    return admin_page_html("Admin Login", body)
+            if limited:
+                log_admin_audit(0, "admin_login_rate_limited", "admin_user", "", {"window_minutes": admin_gateway.RATE_LIMIT_WINDOW_MINUTES})
+                state = "rate_limited"
+            else:
+                email = normalize_email(clean_html(request.form.get("email", "")))
+                password = request.form.get("password", "")
+                admin = load_admin_by_email(email)
+                fallback_ok = admin and admin.get("role") == "owner" and not admin.get("password_hash") and os.getenv("ADMIN_ANALYTICS_PASSWORD") and password == os.getenv("ADMIN_ANALYTICS_PASSWORD")
+                locked_until = parse_iso_datetime((admin or {}).get("locked_until"))
+                locked = bool(locked_until and locked_until > datetime.now(locked_until.tzinfo) if locked_until and locked_until.tzinfo else locked_until and locked_until > datetime.now())
+                auth_ok = admin and admin.get("status") == "active" and not locked and ((admin.get("password_hash") and check_password_hash(admin["password_hash"], password)) or fallback_ok)
+                if auth_ok:
+                    session["admin_user_id"] = admin["id"]
+                    # Rotate the CSRF token at the auth boundary so a token
+                    # captured pre-auth is useless inside the admin session.
+                    session.pop("csrf_token", None)
+                    conn = db()
+                    cur = conn.cursor()
+                    cur.execute(
+                        "UPDATE admin_users SET last_login_at=?, failed_login_count=0, locked_until=NULL, updated_at=? WHERE id=?",
+                        (datetime.now().isoformat(), datetime.now().isoformat(), admin["id"])
+                    )
+                    cur.execute(
+                        "INSERT INTO admin_session_logs (admin_id, action, ip_hash, user_agent, created_at) VALUES (?, 'login', ?, ?, ?)",
+                        (admin["id"], ip_hash, request.headers.get("User-Agent", "")[:500], datetime.now().isoformat()),
+                    )
+                    conn.commit()
+                    conn.close()
+                    log_admin_audit(admin["id"], "admin_login_success", "admin_user", str(admin["id"]), {})
+                    if int(admin.get("must_change_password") or 0) == 1:
+                        return redirect(url_for("admin_change_password_page"))
+                    return redirect(url_for("admin_dashboard_page"))
+                update_admin_failed_login(admin)
+    return Response(admin_gateway.render_gateway(get_csrf_token(), state=state), mimetype="text/html")
 
 
 @webhook_app.route("/admin/bootstrap-owner", methods=["GET"])
@@ -14496,30 +14509,29 @@ def admin_bootstrap_owner_page():
     if not temp_password and OWNER_BOOTSTRAP_TEMP.get("display_available"):
         temp_password = OWNER_BOOTSTRAP_TEMP.get("password") or ""
         reason = OWNER_BOOTSTRAP_TEMP.get("reason") or "owner_temp_password_generated"
+    # PRE-AUTH BOUNDARY: token-gated but unauthenticated — must use the
+    # standalone gateway chrome, never the Operations Center shell.
+    from services import admin_gateway
     if temp_password:
         OWNER_BOOTSTRAP_TEMP["display_available"] = False
         body = f"""
-        <section class="card" style="max-width:680px;margin:5vh auto">
-          <h1>Owner Bootstrap Created</h1>
-          <p class="muted">This temporary password is shown once. Store it securely, log in, then change it immediately.</p>
+          <p>This temporary password is shown once. Store it securely, log in, then change it immediately.</p>
           <p><strong>Email:</strong> {clean_html(OWNER_ADMIN_EMAIL)}</p>
           <p><strong>Temporary password:</strong></p>
-          <p style="font-size:1.2rem"><code>{clean_html(temp_password)}</code></p>
+          <p style="font-size:1.15rem"><code>{clean_html(temp_password)}</code></p>
           <p><strong>Reason:</strong> {clean_html(reason)}</p>
-          <p>The account must change this password before accessing the admin dashboard.</p>
-          <p><a class="button" href="/admin/login">Go to Admin Login</a></p>
-        </section>
+          <p>The account must change this password before continuing.</p>
+          <p><a href="/admin/login" style="color:#2ce8c4">Go to secure login</a></p>
         """
+        title = "Owner Bootstrap Created"
     else:
         body = f"""
-        <section class="card" style="max-width:680px;margin:5vh auto">
-          <h1>Owner Bootstrap Status</h1>
           <p>Owner admin exists for {clean_html(OWNER_ADMIN_EMAIL)}.</p>
-          <p class="muted">No temporary password is available to display. Set <code>ADMIN_RESET_OWNER_PASSWORD=true</code> and reload this route with the bootstrap token if you need a one-time reset.</p>
-          <p><a class="button" href="/admin/login">Go to Admin Login</a></p>
-        </section>
+          <p>No temporary password is available to display. Set <code>ADMIN_RESET_OWNER_PASSWORD=true</code> and reload this route with the bootstrap token if you need a one-time reset.</p>
+          <p><a href="/admin/login" style="color:#2ce8c4">Go to secure login</a></p>
         """
-    return admin_page_html("Owner Bootstrap", body)
+        title = "Owner Bootstrap Status"
+    return Response(admin_gateway.render_notice(title, body), mimetype="text/html")
 
 
 @webhook_app.route("/admin/change-password", methods=["GET", "POST"])
@@ -16769,7 +16781,7 @@ def require_admin_page(permission):
     init_db()
     admin = admin_login_required()
     if not admin:
-        return None, redirect(url_for("admin_login_page"))
+        return None, redirect(url_for("admin_login_page", expired=1))
     if not admin_has_permission(admin, permission):
         log_admin_audit(admin.get("id"), "admin_permission_denied", "permission", permission, {"role": admin.get("role")})
         return None, Response("Forbidden", status=403)
@@ -16791,7 +16803,7 @@ def require_owner_admin_page():
     init_db()
     admin = admin_login_required()
     if not admin:
-        return None, redirect(url_for("admin_login_page"))
+        return None, redirect(url_for("admin_login_page", expired=1))
     if not admin_is_owner_level(admin):
         log_admin_audit(admin.get("id"), "owner_permission_denied", "admin_user", str(admin.get("id")), {"path": request.path})
         return None, Response("Forbidden", status=403)
@@ -17590,8 +17602,29 @@ def api_pulse_ads_campaign_targeting(campaign_id):
         if request.method == "PUT":
             if not pulse_ads_verify_write():
                 return jsonify({"ok": False, "error": "Security check failed."}), 403
-            return jsonify({"ok": True, "targeting": pulse_ads_os.put_targeting(conn, user.get("user_id"), campaign_id, pulse_ads_json_payload())})
-        return jsonify({"ok": True, "targeting": pulse_ads_os.get_targeting(conn, user.get("user_id"), campaign_id)})
+            targeting = pulse_ads_os.put_targeting(conn, user.get("user_id"), campaign_id, pulse_ads_json_payload())
+        else:
+            targeting = pulse_ads_os.get_targeting(conn, user.get("user_id"), campaign_id)
+        # Mobile reads the estimate at the top level of the response.
+        return jsonify({"ok": True, "targeting": targeting, "estimate": targeting.get("estimate")})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pulse/ads/targeting/estimate", methods=["POST"])
+def api_pulse_ads_targeting_estimate():
+    """Stateless reach preview for the campaign wizard (no campaign row yet)."""
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if pulse_ads_rate_limited("targeting_estimate", 120, 60):
+        return jsonify({"ok": False, "error": "Too many requests. Slow down."}), 429
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, **pulse_ads_os.estimate_targeting(conn, user.get("user_id"), pulse_ads_json_payload())})
     except Exception as exc:
         return pulse_ads_error_response(exc)
     finally:
@@ -18051,7 +18084,10 @@ def api_pulse_ads_campaign_adsets(campaign_id):
     try:
         if request.method == "POST":
             return jsonify({"ok": True, "adset": pulse_ads_adsets.create_adset(conn, user.get("user_id"), campaign_id, pulse_ads_json_payload())})
-        return jsonify({"ok": True, **pulse_ads_adsets.list_adsets(conn, user.get("user_id"), campaign_id)})
+        # `list_adsets` returns a list; spreading it with ** raised TypeError on
+        # every GET, so this endpoint 500'd since it shipped (mobile routes
+        # around it via /detail). Keyed, it serializes.
+        return jsonify({"ok": True, "adsets": pulse_ads_adsets.list_adsets(conn, user.get("user_id"), campaign_id)})
     except Exception as exc:
         return pulse_ads_error_response(exc)
     finally:
@@ -18500,6 +18536,41 @@ def admin_api_ads_appeal_decide(appeal_id):
                 payload.get("reason") or "",
             ),
         })
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/admin/api/ads/campaign/<int:campaign_id>/approve", methods=["POST"])
+def admin_api_ads_campaign_approve(campaign_id):
+    admin, denied = require_admin_api("pulse.moderate")
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        return jsonify({"ok": True, **pulse_advertiser_portal.approve_campaign(conn, admin.get("id"), campaign_id)})
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/admin/api/ads/campaign/<int:campaign_id>/reject", methods=["POST"])
+def admin_api_ads_campaign_reject(campaign_id):
+    admin, denied = require_admin_api("pulse.moderate")
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        payload = pulse_ads_json_payload()
+        return jsonify({"ok": True, **pulse_advertiser_portal.reject_campaign(conn, admin.get("id"), campaign_id, payload.get("reason") or "")})
     except Exception as exc:
         return pulse_ads_error_response(exc)
     finally:

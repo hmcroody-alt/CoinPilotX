@@ -167,22 +167,41 @@ export type RootStackParamList = {
    * the navigator does not know, which is how a "destination" becomes a crash
    * instead of a page.
    *
-   *   • `"audiences"`  — what targeting the platform enforces, and what it
-   *     refuses, while audience editing is not yet in the app.
-   *   • `"creatives"`  — the creative rules (ownership, destinations, review
-   *     versioning) while there is no browsable library.
+   *   • `"audiences"`  — the audience manager: list, create (engagement or
+   *     lookalike), detail with size estimate and in-use campaigns, edit,
+   *     archive.
+   *   • `"creatives"`  — the browsable creative library with filters, asset
+   *     detail, metadata editing and "use in campaign".
    *   • `"account"`    — account standing plus the ad account number, which was
    *     removed from the dashboard header and had to land somewhere real.
-   *   • `"policy"`     — the Policy Center. The only one of these that reads
-   *     server data about the advertiser's own creatives rather than reporting
-   *     platform rules: it renders `portal.review_board`, so a rejection's
-   *     reason is reachable instead of implied.
+   *   • `"policy"`     — the Policy Center: account status, review sections,
+   *     rejection detail and the appeal flow.
+   *   • `"reports"`    — the reporting table: range presets, breakdowns,
+   *     totals, CSV export.
+   *   • `"wallet"`     — ads wallet & billing: balance, funding, transactions,
+   *     invoices, spending limits, auto top-up.
+   *   • `"insights"`   — every optimization recommendation with why + Apply.
    */
   BusinessOsAdvertising:
     | {
         title?: string;
         accountId?: number;
-        mode?: "manager" | "classic" | "create" | "audiences" | "creatives" | "account" | "policy";
+        mode?:
+          | "manager"
+          | "classic"
+          | "create"
+          | "audiences"
+          | "creatives"
+          | "account"
+          | "policy"
+          | "detail"
+          | "reports"
+          | "wallet"
+          | "insights";
+        /** Required when `mode` is `"detail"` — which campaign to open. */
+        campaignId?: number;
+        /** Presets the wizard's ad surface when `mode` is `"create"`. */
+        surface?: "post" | "marketplace";
       }
     | undefined;
   BusinessOsInsights: { title?: string } | undefined;
