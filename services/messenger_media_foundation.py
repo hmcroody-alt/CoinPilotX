@@ -812,7 +812,12 @@ def attach_to_message(cur: Any, conn: Any, user: dict[str, Any], payload: dict[s
         attachment_id = int(raw_id or 0)
         row = _fetch_attachment(cur, attachment_id)
         _require_attachment_access(cur, row, user_id, require_sender=True)
-        if str(_row_get(row, "upload_status", "")).lower() != "uploaded":
+        upload_status = str(_row_get(row, "upload_status", "")).lower()
+        existing_message_id = int(_row_get(row, "message_id", 0) or 0)
+        if upload_status == "attached" and existing_message_id == message_id:
+            attached.append(attachment_id)
+            continue
+        if upload_status != "uploaded":
             raise MessengerMediaError("attachment_not_uploaded", "Attachment must finish uploading before it can be attached.", 409)
         _validate_message_for_attachment(cur, message_id, row, user_id)
         cur.execute(

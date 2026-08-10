@@ -82931,6 +82931,7 @@ def pulse_comm_pulse_messages(cur, user, conversation_id, limit=80, before_id=0)
     else:
         cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' " + PULSE_VISIBLE_MESSAGE_FILTER + " ORDER BY id DESC LIMIT ?", (conversation_id, limit))
     messages = [_pulse_message_payload(row, user["user_id"]) for row in reversed(cur.fetchall())]
+    messages = pulse_attach_private_message_media(cur, messages)
     messages = pulse_attach_reply_previews(cur, messages)
     pulse_mark_conversation_read(cur, conversation_id, user["user_id"])
     convo_type = conversation.get("conversation_type") or "direct"
@@ -82959,6 +82960,63 @@ def pulse_comm_pulse_messages(cur, user, conversation_id, limit=80, before_id=0)
         "current_user_id": user["user_id"],
         "features": pulse_comm_features(),
     }, 200
+
+
+def pulse_attach_private_message_media(cur, messages):
+    """Add authorized, expiring attachment playback URLs to message payloads.
+
+    This runs only after conversation membership has been established by the
+    caller. Permanent object URLs and storage keys never enter the message row.
+    """
+    message_ids = [safe_int(message.get("id") or message.get("message_id"), 0) for message in messages]
+    message_ids = [message_id for message_id in message_ids if message_id > 0]
+    if not message_ids:
+        return messages
+    placeholders = ",".join("?" for _ in message_ids)
+    cur.execute(
+        f"""
+        SELECT * FROM message_attachments
+        WHERE message_id IN ({placeholders})
+          AND upload_status='attached'
+          AND COALESCE(deleted_at,'')=''
+        ORDER BY id ASC
+        """,
+        tuple(message_ids),
+    )
+    attachments_by_message = {}
+    for raw_row in cur.fetchall() or []:
+        row = dict(raw_row)
+        message_id = safe_int(row.get("message_id"), 0)
+        attachment_id = safe_int(row.get("id"), 0)
+        if not message_id or not attachment_id:
+            continue
+        signed_url = messenger_media_foundation.signed_or_private_url(row)
+        download_url = f"/api/messages/media/{attachment_id}/download"
+        attachment = {
+            "attachment_id": attachment_id,
+            "media_type": row.get("media_type") or "file",
+            "mime_type": row.get("mime_type") or "application/octet-stream",
+            "duration_ms": safe_int(row.get("duration_ms"), 0),
+            "duration_seconds": safe_int(row.get("duration_ms"), 0) / 1000,
+            "size_bytes": safe_int(row.get("size_bytes"), 0),
+            "playback_url": signed_url or download_url,
+            "download_url": download_url,
+        }
+        attachments_by_message.setdefault(message_id, []).append(attachment)
+    for message in messages:
+        attached = attachments_by_message.get(safe_int(message.get("id") or message.get("message_id"), 0), [])
+        if not attached:
+            continue
+        first = attached[0]
+        message["attachments"] = attached
+        message["attachment_id"] = first["attachment_id"]
+        message["media_url"] = first["playback_url"]
+        if not float(message.get("duration_seconds") or 0):
+            message["duration_seconds"] = first["duration_seconds"]
+            message["duration"] = first["duration_seconds"]
+        if not int(message.get("file_size") or 0):
+            message["file_size"] = first["size_bytes"]
+    return messages
 
 
 def pulse_comm_legacy_messages(user, thread_id, limit=80, after_id=0):
@@ -83100,7 +83158,15 @@ def api_pulse_communications_send_message(conversation_ref):
         return pulse_comm_error("Login required.", 401, reason="login_required", endpoint=request.path)
     payload = request.get_json(silent=True) or {}
     body = clean_html(payload.get("message") or payload.get("body") or payload.get("content") or "")[:2000].strip()
-    if not body:
+    message_type = clean_html(payload.get("message_type") or payload.get("type") or "text")[:40].lower()
+    media_url = clean_html(payload.get("media_url") or "")[:1000]
+    raw_attachment_ids = payload.get("attachment_ids") or payload.get("message_attachment_ids") or []
+    if isinstance(raw_attachment_ids, (str, int)):
+        raw_attachment_ids = [raw_attachment_ids]
+    attachment_ids = [safe_int(value, 0) for value in raw_attachment_ids] if isinstance(raw_attachment_ids, list) else []
+    attachment_ids = [value for value in attachment_ids if value > 0]
+    media_only_message = message_type in {"image", "gif", "video", "voice", "audio", "file"} and bool(media_url) and bool(attachment_ids)
+    if not body and not media_only_message:
         return pulse_comm_error("Write a message before sending.", 400, reason="empty_message", endpoint=request.path)
     trace_id = secrets.token_hex(6)
     source, conversation_id = pulse_comm_ref(conversation_ref)
@@ -83139,10 +83205,19 @@ def api_pulse_communications_send_message(conversation_ref):
         if state == "forbidden":
             conn.close()
             return pulse_comm_error("You do not have access to this chat.", 403, trace_id, reason="permission_denied", endpoint=request.path)
-        result, status = pulse_send_conversation_message(cur, user, conversation_id, body, payload.get("message_type") or "text", payload.get("media_url") or "", payload.get("thumbnail_url") or "", payload.get("media_metadata") if isinstance(payload.get("media_metadata"), dict) else {}, safe_int(payload.get("reply_to_id"), 0), safe_int(payload.get("file_size"), 0), float(payload.get("duration") or payload.get("duration_seconds") or 0), payload.get("client_message_id") or payload.get("local_id") or "", payload.get("local_created_at") or "")
+        result, status = pulse_send_conversation_message(cur, user, conversation_id, body, message_type, media_url, payload.get("thumbnail_url") or "", payload.get("media_metadata") if isinstance(payload.get("media_metadata"), dict) else {}, safe_int(payload.get("reply_to_id"), 0), safe_int(payload.get("file_size"), 0), float(payload.get("duration") or payload.get("duration_seconds") or 0), payload.get("client_message_id") or payload.get("local_id") or "", payload.get("local_created_at") or "")
         result["trace_id"] = trace_id
         result.setdefault("endpoint", request.path)
         if result.get("ok"):
+            if attachment_ids:
+                messenger_media_foundation.attach_to_message(
+                    cur,
+                    conn,
+                    user,
+                    {"message_id": result.get("message_id"), "attachment_ids": attachment_ids},
+                )
+                if isinstance(result.get("data"), dict):
+                    result["data"] = pulse_attach_private_message_media(cur, [result["data"]])[0]
             conn.commit()
         else:
             conn.rollback()
@@ -83153,6 +83228,15 @@ def api_pulse_communications_send_message(conversation_ref):
             pulse_emit_event(result.get("event_name") or "message_created", event, user["user_id"], conversation_id)
             pulse_emit_event("conversation_updated", event, user["user_id"], conversation_id)
         return jsonify(result), status
+    except messenger_media_foundation.MessengerMediaError as exc:
+        try:
+            if conn:
+                conn.rollback(); conn.close()
+        except Exception:
+            pass
+        error_payload, error_status = messenger_media_foundation.error_response(exc, trace_id=trace_id)
+        error_payload["endpoint"] = request.path
+        return jsonify(error_payload), error_status
     except Exception as exc:
         logging.exception("PULSE_COMM_SEND_FAILED trace_id=%s user_id=%s conversation_ref=%s", trace_id, user.get("user_id"), conversation_ref)
         return pulse_comm_error("Message could not be sent.", 500, trace_id, reason="query_failure", endpoint=request.path, error_type=exc.__class__.__name__)
