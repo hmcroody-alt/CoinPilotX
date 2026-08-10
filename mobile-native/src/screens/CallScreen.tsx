@@ -43,14 +43,6 @@ import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackC
 const STATUS_REFRESH_MS = 4200;
 const RINGING_STATUS_REFRESH_MS = 1100;
 
-type NativeVideoViewProps = {
-  videoTrack?: any;
-  style?: any;
-  objectFit?: "cover" | "contain";
-  mirror?: boolean;
-  zOrder?: number;
-};
-
 type AgoraVideoViewProps = {
   canvas: { uid: number; sourceType?: number };
   style?: any;
@@ -68,7 +60,6 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [error, setError] = useState("");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [VideoViewComponent, setVideoViewComponent] = useState<ComponentType<NativeVideoViewProps> | null>(null);
   const [AgoraVideoViewComponent, setAgoraVideoViewComponent] = useState<ComponentType<AgoraVideoViewProps> | null>(null);
   const autoStartRequested = useRef(false);
   const joinRequested = useRef(false);
@@ -96,9 +87,6 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
 
   useEffect(() => {
     if (Platform.OS !== "web") {
-      import("@livekit/react-native")
-        .then((module) => setVideoViewComponent(() => module.VideoView as ComponentType<NativeVideoViewProps>))
-        .catch(() => undefined);
       import("react-native-agora")
         .then((module) => setAgoraVideoViewComponent(() => module.RtcSurfaceView as ComponentType<AgoraVideoViewProps>))
         .catch(() => undefined);
@@ -350,7 +338,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     : "";
   const statusLabel = callStatusLabel(call, room.connectionState, room.reconnecting, incoming);
   const showVideo = callType === "video" && Boolean(room.remoteVideoTrack || room.localVideoTrack);
-  const agoraVideo = callType === "video" && room.provider === "agora";
+  const agoraVideo = callType === "video";
 
   return (
     <View style={styles.screen}>
@@ -363,8 +351,6 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
               </View>
             ))}
           </View>
-        ) : showVideo && VideoViewComponent && room.remoteVideoTrack ? (
-          <VideoViewComponent videoTrack={room.remoteVideoTrack} style={styles.remoteVideo} objectFit="cover" />
         ) : (
           <View style={styles.audioBackground}>
             <View style={styles.planet} />
@@ -391,10 +377,6 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
         {agoraVideo && AgoraVideoViewComponent && room.localUid ? (
           <View style={styles.localPreviewShell}>
             <AgoraVideoViewComponent canvas={{ uid: 0 }} style={styles.localPreview} zOrderMediaOverlay />
-          </View>
-        ) : showVideo && VideoViewComponent && room.localVideoTrack ? (
-          <View style={styles.localPreviewShell}>
-            <VideoViewComponent videoTrack={room.localVideoTrack} style={styles.localPreview} objectFit="cover" mirror zOrder={2} />
           </View>
         ) : null}
 

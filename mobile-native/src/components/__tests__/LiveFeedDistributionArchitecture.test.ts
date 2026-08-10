@@ -9,7 +9,7 @@ describe("Live Feed distribution architecture", () => {
   it("renders authenticated receive-only Live media only for the active Feed card", () => {
     expect(postCard).toContain("EmbeddedLiveViewerSurface");
     expect(postCard).toContain("active={active}");
-    expect(liveSurface).toContain('getLiveKitToken(liveId, "viewer")');
+    expect(liveSurface).toContain('getLiveRtcToken(liveId, "viewer")');
     expect(liveSurface).toContain("publish: false");
     expect(liveSurface).toContain('disconnect("left_feed_item")');
     expect(home).toContain("itemVisiblePercentThreshold: 72");

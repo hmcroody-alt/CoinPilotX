@@ -8,16 +8,16 @@ import {
   normalizeGuestRequests,
   normalizeLiveGuest,
   normalizeLiveGuests,
-  normalizeLiveKitCredentials,
+  normalizeLiveRtcCredentials,
   normalizeLiveStartResult,
   type LiveGuest,
   type LiveGuestRequest,
-  type LiveKitCredentials,
+  type LiveRtcCredentials,
   type LiveStartResult
 } from "../live/liveSession";
 import type { LiveStudioDraft } from "../live/liveStudioReadiness";
 
-export type LiveKitRole = "host" | "guest" | "cohost" | "viewer";
+export type LiveRtcRole = "host" | "guest" | "cohost" | "viewer";
 
 const LIVE_CACHE_KEY = "pulsesoc.native.live.discovery";
 const liveStateCacheKey = (liveId: number) => `pulsesoc.native.live.state.${liveId}`;
@@ -103,11 +103,6 @@ export type PulseLiveState = {
     playback_id?: string;
     playback_url?: string;
     quota_exhausted?: boolean;
-  };
-  livekit?: {
-    room?: string;
-    egress_status?: string;
-    egress_error?: string;
   };
   message?: string;
 };
@@ -201,7 +196,7 @@ export async function cacheLiveDiscovery(data: LiveNowResponse) {
 /**
  * Start a native broadcast. Maps the Live Studio draft into the backend
  * `/api/pulse/live/start` contract and returns the normalized go-live result
- * (live id, LiveKit room, token url, feed post). Throws a real PulseApiError on
+ * (live id, Agora channel, token URL, feed post). Throws a real PulseApiError on
  * failure — callers must surface the honest message, never a fake success.
  */
 export async function startLive(draft: LiveStudioDraft): Promise<LiveStartResult> {
@@ -218,17 +213,17 @@ export async function startLive(draft: LiveStudioDraft): Promise<LiveStartResult
 }
 
 /**
- * Mint a LiveKit access token for a live room. `role: "host"` requests publish
+ * Mint an Agora access token for a live channel. `role: "host"` requests publish
  * permission (host only), `"guest"` requests a co-host publish token, `"viewer"`
  * a subscribe-only token. Returns null when the backend returns no usable
  * token/url so the caller can surface an honest error instead of a blank preview.
  */
-export async function getLiveKitToken(liveId: number, role: LiveKitRole = "viewer"): Promise<LiveKitCredentials | null> {
+export async function getLiveRtcToken(liveId: number, role: LiveRtcRole = "viewer"): Promise<LiveRtcCredentials | null> {
   const data = await pulseApi<Record<string, unknown>>(`/api/pulse/live/${liveId}/rtc/token`, {
     method: "POST",
     body: JSON.stringify({ role })
   });
-  return normalizeLiveKitCredentials(data);
+  return normalizeLiveRtcCredentials(data);
 }
 
 export async function confirmHostLivePublish(
@@ -264,7 +259,7 @@ export async function getLiveJoinStatus(liveId: number): Promise<{
   request: LiveGuestRequest | null;
   guest: LiveGuest | null;
   canPublish: boolean;
-  livekitConfigured: boolean;
+  rtcConfigured: boolean;
   tokenUrl: string;
   message: string;
   errorCode: string;
@@ -277,7 +272,7 @@ export async function getLiveJoinStatus(liveId: number): Promise<{
     request: normalizeGuestRequest(data.request as Record<string, unknown> | null | undefined),
     guest: normalizeLiveGuest(data.guest as Record<string, unknown> | null | undefined),
     canPublish: Boolean(data.can_publish),
-    livekitConfigured: Boolean(data.livekit_configured),
+    rtcConfigured: Boolean(data.rtc_configured ?? data.agora_configured),
     tokenUrl: String(data.token_url || ""),
     message: String(data.message || ""),
     errorCode: String(data.error_code || "")
@@ -407,7 +402,7 @@ export async function confirmGuestPublishComplete(
     participantIdentity?: string;
     videoPublicationSid?: string;
     audioPublicationSid?: string;
-    provider?: "livekit" | "agora";
+    provider?: "agora";
     audioTracks?: number;
     videoTracks?: number;
   } = {}
@@ -418,7 +413,7 @@ export async function confirmGuestPublishComplete(
       trace_id: payload.traceId || "",
       participant_identity: payload.participantIdentity || "",
       room_connected: true,
-      provider: payload.provider || "livekit",
+      provider: "agora",
       audio_tracks: Math.max(0, Number(payload.audioTracks || 0)),
       video_tracks: Math.max(0, Number(payload.videoTracks || 0)),
       video_publication_sid: payload.videoPublicationSid || "",
@@ -541,7 +536,7 @@ export function liveSupportsNativeWebRtc(item: PulseLiveItem | PulseLiveState | 
     playback.supports_webrtc ||
       playback.webrtc_room_id ||
       playback.preferred_transport === "webrtc" ||
-      ("livekit" in (item || {}) && Boolean((item as PulseLiveState).livekit?.room))
+      Boolean((item as any).webrtc_room_id)
   );
 }
 

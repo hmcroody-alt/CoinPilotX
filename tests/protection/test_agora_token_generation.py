@@ -48,13 +48,11 @@ class AgoraTokenGenerationTests(unittest.TestCase):
         self.assertIn("NOT_AUTHORIZED", route)
         self.assertIn("TOKEN_MISSING_PUBLISH_PERMISSION", route)
 
-    def test_owner_live_override_is_narrow_and_livekit_remains_default(self) -> None:
+    def test_canonical_live_route_is_agora_only(self) -> None:
         source = (ROOT / "bot.py").read_text(encoding="utf-8")
         selector = source[source.index('def api_pulse_live_rtc_token'):source.index('@webhook_app.route("/api/pulse/live/<int:live_id>/guests/')]
-        self.assertIn('AGORA_OWNER_LIVE_TEST_ENABLED', selector)
-        self.assertIn('user_is_owner_account(host)', selector)
-        self.assertIn('os.getenv("LIVE_RTC_PROVIDER", "livekit")', selector)
-        self.assertIn('return api_pulse_live_livekit_token(live_id)', selector)
+        self.assertIn('return api_pulse_live_agora_token(live_id)', selector)
+        self.assertNotIn('os.getenv("LIVE_RTC_PROVIDER"', selector)
 
     def test_native_agora_live_quality_and_publish_confirmation_contract(self) -> None:
         adapter = (ROOT / "mobile-native/src/live/useAgoraLiveBroadcastRoom.ts").read_text(encoding="utf-8")
@@ -85,7 +83,7 @@ class AgoraTokenGenerationTests(unittest.TestCase):
         self.assertIn("muteAllRemoteAudioStreams", adapter)
         self.assertIn("Promise.race([joinOutcome", adapter)
         self.assertIn("12_000", adapter)
-        self.assertIn("useCallback((credentials", wrapper)
+        self.assertIn("return useAgoraLiveBroadcastRoom()", wrapper)
         self.assertIn("viewer_media_timeout", reels)
         self.assertIn("15_000", reels)
 

@@ -87,18 +87,6 @@
       "expo-font",
       "expo-video",
       [
-        "@livekit/react-native-expo-plugin",
-        {
-          "android": {
-            "audioType": "media"
-          },
-          "ios": {
-            "enableMultitaskingCameraAccess": false
-          }
-        }
-      ],
-      "@config-plugins/react-native-webrtc",
-      [
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",

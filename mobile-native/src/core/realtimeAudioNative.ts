@@ -3,7 +3,7 @@ import { NativeModules, Platform } from "react-native";
 /**
  * Native audio-engine diagnostics.
  *
- * The three booleans the LiveKit JS wrapper exposes (`isPlaying`, `isRecording`,
+ * The three booleans the Agora JS wrapper exposes (`isPlaying`, `isRecording`,
  * `isEngineRunning`) collapse two distinct native concepts - ENABLED and RUNNING
  * - into one bit each. That is why a Live host can report `recording=true` while
  * `engine=false`: the ADM's record path is *enabled* (and, with always-prepared
@@ -13,7 +13,7 @@ import { NativeModules, Platform } from "react-native";
  * `RTCAudioDeviceModule.engineState` carries both halves, plus the init-level
  * flags, and WebRTC already logs the exact `AVAudioEngine` start failure. Neither
  * reaches JS in the stock package, so both are bridged by
- * `patches/@livekit+react-native-webrtc+144.1.1.patch`.
+ * the native realtime audio module.
  *
  * Every function here is read-only with respect to audio state and returns a
  * neutral value when the bridge is missing (Android, Expo Go, an older native

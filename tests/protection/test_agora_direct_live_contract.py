@@ -10,15 +10,16 @@ LIVE_SCREEN = (ROOT / "mobile-native/src/screens/LiveScreen.tsx").read_text(enco
 
 def test_agora_publish_does_not_require_mux_media_push():
     route = BOT[BOT.index("def api_pulse_live_browser_publish"):BOT.index("def pulse_live_publish_replay_reel")]
-    agora_branch = route[route.index('if provider == "agora":'):route.index("existing_egress =")]
+    agora_branch = route[route.index('if provider == "agora":'):]
     assert "start_mux_bridge" not in agora_branch
     assert "agora_host_publishing" in agora_branch
     assert '"preferred_transport": "agora"' in agora_branch
 
 
 def test_agora_live_start_skips_realtime_mux_stream():
-    assert 'os.getenv("LIVE_RTC_PROVIDER", "livekit")' in BOT
-    assert "post-Live VOD is created from the finalized" in BOT
+    assert 'os.getenv("LIVE_RTC_PROVIDER"' not in BOT
+    assert "post-Live VOD is created from" in BOT
+    assert "finalized recording artifact" in BOT
 
 
 def test_audience_is_receive_only_and_auto_subscribes():
@@ -33,7 +34,7 @@ def test_audience_is_receive_only_and_auto_subscribes():
 
 
 def test_reels_and_live_screen_choose_direct_agora_viewer():
-    assert 'const credentials = await getLiveKitToken(liveId, "viewer")' in REELS_VIEWER
+    assert 'const credentials = await getLiveRtcToken(liveId, "viewer")' in REELS_VIEWER
     assert 'if (hlsUrl) {\n        setMode("hls")' not in REELS_VIEWER
-    assert 'currentProvider === "agora"' in LIVE_SCREEN
+    assert 'const currentProvider = "agora"' in LIVE_SCREEN
     assert "PulseSoc could not establish native playback for this Live." in LIVE_SCREEN

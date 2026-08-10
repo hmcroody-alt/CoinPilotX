@@ -2439,11 +2439,6 @@ def add_pwa_headers(response):
                 html = re.sub(r"</head>", call_overlay_css + "</head>", html, count=1, flags=re.I)
                 response.set_data(html)
                 response.headers.pop("Content-Length", None)
-            if call_overlay_allowed and "</body>" in html.lower() and "/static/js/pulsesoc_global_call_overlay.js" not in html:
-                call_overlay_script = '<script src="/static/js/pulsesoc_global_call_overlay.js?v=fullscreen-incoming-20260704" defer></script>'
-                html = re.sub(r"</body>", call_overlay_script + "</body>", html, count=1, flags=re.I)
-                response.set_data(html)
-                response.headers.pop("Content-Length", None)
         except Exception as exc:
             logging.info("GLOBAL_FAVICON_INJECT_SKIPPED path=%s error=%s", request.path, exc)
     try:
@@ -14298,20 +14293,10 @@ def admin_ops_status_json():
     else:
         services["ai"] = "warn"
 
-    # Calls (LiveKit): honest config-presence signal. Audio/video calling is
-    # fully dependent on the three LiveKit credentials; if any is missing the
-    # client never receives a usable token and every call fails silently, so
-    # surface that as "down" rather than leaving it invisible. All three present
-    # => ok; partial config => warn (misconfigured); none => down.
-    _lk_url = os.getenv("LIVEKIT_URL", "").strip()
-    _lk_key = os.getenv("LIVEKIT_API_KEY", "").strip()
-    _lk_secret = os.getenv("LIVEKIT_API_SECRET", "").strip()
-    if _lk_url and _lk_key and _lk_secret:
-        services["calls"] = "ok"
-    elif _lk_url or _lk_key or _lk_secret:
-        services["calls"] = "warn"
-    else:
-        services["calls"] = "down"
+    # Calls: honest Agora config-presence signal.
+    _agora_id = os.getenv("AGORA_APP_ID", "").strip()
+    _agora_certificate = os.getenv("AGORA_APP_CERTIFICATE", "").strip()
+    services["calls"] = "ok" if _agora_id and _agora_certificate else "down"
 
     # Queues + Live: worker heartbeat freshness (stale workers degrade honestly).
     any_worker = None
@@ -44238,7 +44223,7 @@ def pulse_live_page():
         for option in live_category_options
     )
     destination_cards = [
-        ("pulse", "PulseSoc Live", "Ready", "Native PulseSoc LiveKit/Mux path is available.", "ready", True, False),
+        ("pulse", "PulseSoc Live", "Ready", "Native PulseSoc Agora path is available.", "ready", True, False),
         ("facebook", "Facebook Live", "Connect required", "Connect your Facebook Live destination before selecting it.", "setup_required", False, True),
         ("youtube", "YouTube Live", "Connect required", "Connect YouTube Live before selecting it.", "setup_required", False, True),
         ("twitch", "Twitch", "Connect required", "Connect Twitch before selecting it.", "setup_required", False, True),
@@ -44463,9 +44448,9 @@ def pulse_live_studio_page(stream_id):
     mux_stream_key = clean_html(live.get("mux_stream_key") or live.get("stream_key") or "")
     mux_stream_key_preview = ("••••••••" + mux_stream_key[-6:]) if mux_stream_key else "Not ready"
     livekit_room = clean_html(live.get("webrtc_room_id") or f"pulse-live-{stream_id}")
-    livekit_configured = pulse_livekit_config().get("configured")
+    agora_configured = call_engine.agora_config_status().get("configured")
     direct_mode = mux_status.lower() in {"egress_quota_exhausted", "livekit_direct"} or (live.get("publish_state") or "").lower() in {"browser_live_livekit_direct", "livekit_direct"}
-    bridge_copy = "LiveKit direct mode is active. Mux replay resumes when egress minutes are available." if direct_mode else "Browser Live is publishing through LiveKit and forwarding to Mux. OBS/RTMP remains available as an advanced backup."
+    bridge_copy = "Agora direct mode is active. Mux replay resumes when egress minutes are available." if direct_mode else "Browser Live is publishing through Agora and forwarding to Mux. OBS/RTMP remains available as an advanced backup."
     health_level_raw = str(health.get("level") or live.get("stream_health") or live_status or "ready").lower()
     if live_status in {"ended", "complete", "finished"}:
         friendly_health = "Offline"
@@ -44523,8 +44508,8 @@ def pulse_live_studio_page(stream_id):
               <label>Viewer playback URL<code data-copy-value>{mux_playback_url or playback_url}</code><button type='button' data-copy-live-value>Copy</button></label>
               <label>Host RTMP ingest URL<code data-copy-value>{mux_ingest_url}</code><button type='button' data-copy-live-value>Copy</button></label>
               <label>Host stream key<code data-copy-value='{mux_stream_key}' data-secret-live-value data-secret-masked='{clean_html(mux_stream_key_preview)}'>{clean_html(mux_stream_key_preview)}</code><button type='button' data-reveal-live-secret>Reveal</button><button type='button' data-copy-live-value>Copy</button></label>
-              <label>LiveKit room<code>{livekit_room}</code></label>
-              <p class='muted'>LiveKit bridge: {clean_html('ready' if livekit_configured else 'not configured')}.</p>
+              <label>Agora channel<code>{livekit_room}</code></label>
+              <p class='muted'>Agora service: {clean_html('ready' if agora_configured else 'not configured')}.</p>
               <button type='button' data-check-mux-status data-mux-live-id='{clean_html(live.get("mux_live_stream_id") or live.get("stream_mux_live_stream_id") or "")}'>Check Mux Status</button>
               <p class='muted'>Stream keys are visible only to the host Studio. Public viewers receive playback only.</p>
             </details>
@@ -44544,7 +44529,7 @@ def pulse_live_studio_page(stream_id):
           <div class='live-ready-state'>
             <div>
               <h2>{clean_html(live_status or 'waiting')} stream</h2>
-              <p class='muted'>Stream has not started yet. Start Browser Live to publish through LiveKit and forward to Mux, or use OBS/RTMP in advanced mode.</p>
+              <p class='muted'>Stream has not started yet. Start Browser Live to publish through Agora and forward to Mux, or use OBS/RTMP in advanced mode.</p>
               <p><span class='pill'>HLS {clean_html('ready' if playback.get('supports_hls') else 'pending')}</span> <span class='pill'>WebRTC {clean_html(live.get('webrtc_room_id') or 'ready')}</span></p>
               <div class='live-waveform'><span></span><span></span><span></span><span></span><span></span></div>
             </div>
@@ -44565,7 +44550,7 @@ def pulse_live_studio_page(stream_id):
         <section class='live-ai-card live-cohost-card' data-live-cohost-card>
           <span>Live Co-host</span>
           <strong data-live-cohost-state>{'Available' if pulse_live_session_accepts_guest_requests(live) else 'Closed'}</strong>
-          <p data-live-cohost-copy>Viewers can request camera and microphone access. Accept them from Backstage to create a real multi-host LiveKit publisher.</p>
+          <p data-live-cohost-copy>Viewers can request camera and microphone access. Accept them from Backstage to create a real multi-host Agora broadcaster.</p>
           <div class='live-cohost-stats'>
             <span><strong data-live-guest-count>{len(active_guests)}</strong> active</span>
             <span><strong data-live-request-count>{len(pending_requests)}</strong> pending</span>
@@ -44597,7 +44582,7 @@ def pulse_live_studio_page(stream_id):
               <div class='studio-preview-badges'>
                 <span class='studio-chip is-live'>LIVE</span>
                 <span class='studio-chip'>HD</span>
-                <span class='studio-chip' data-live-transport-summary>{clean_html('LiveKit direct fallback' if direct_mode else 'LiveKit to Mux')}</span>
+                <span class='studio-chip' data-live-transport-summary>{clean_html('Agora direct fallback' if direct_mode else 'Agora interactive Live')}</span>
               </div>
               <div class='live-host-header-card'>
                 <span class='live-chat-avatar'>{clean_html((user.get('display_name') or user.get('username') or 'P')[:1].upper())}</span>
@@ -44607,7 +44592,7 @@ def pulse_live_studio_page(stream_id):
               <div class='live-ready-state' data-live-idle-overlay>
                 <div>
                   <h2>Camera off</h2>
-                  <p class='muted'>Start camera to begin Browser Live through LiveKit.</p>
+                  <p class='muted'>Start camera to begin Browser Live through Agora.</p>
                   <div class='live-waveform'><span></span><span></span><span></span><span></span><span></span></div>
                 </div>
               </div>
@@ -44688,8 +44673,6 @@ def pulse_live_studio_page(stream_id):
       </div>
       <div class='live-mobile-controls' data-mobile-studio-controls><button class='primary' data-live-start-camera type='button'>Start Live</button><button data-live-mute type='button'>Mic</button><button data-live-flip type='button'>Flip</button><button data-live-settings-toggle type='button'>Settings</button><button data-live-open-backstage type='button'>Backstage</button><button id='studioEndMobile' class='danger' type='button'>End</button></div>
     </section>
-    <script src='/static/vendor/livekit-client.umd.js?v=20260610-livekit-bridge-v2' defer></script>
-    <script src='/static/js/pulse_live_studio_runtime.js?v=live-studio-owner-20260702d' defer></script>
     """
     script = f"""
     document.getElementById('studioEnd').onclick=async()=>{{if(!confirm('End this live stream?'))return;try{{await pulseApi('/api/pulse/live/{stream_id}/end',{{method:'POST',body:JSON.stringify({{}})}});toast('Live ended.');location.href='/pulse/live';}}catch(err){{toast(err.message)}}}};
@@ -44844,10 +44827,9 @@ def api_pulse_live_start():
         logging.info("PULSE_LIVE_START_TRACE trace_id=%s step=rtmp_bootstrap user_id=%s", trace_id, user_id)
         stream_setup = live_stream_engine.start_stream(user_id, title=title, category=category, premium_only=bool(payload.get("premium_only")))
         mux_setup = {}
-        # Mux Live is retained only for the LiveKit rollback path. Agora Live
-        # viewers subscribe directly; post-Live VOD is created from the finalized
-        # recording artifact rather than a realtime Mux ingest.
-        if str(os.getenv("LIVE_RTC_PROVIDER", "livekit")).strip().lower() != "agora" and mux_live_service.diagnostics().get("configured"):
+        # Agora Live viewers subscribe directly; post-Live VOD is created from
+        # the finalized recording artifact rather than a realtime Mux ingest.
+        if False:  # Legacy realtime-ingest migration data; intentionally unreachable.
             mux_setup = mux_live_service.create_mux_live_stream(
                 title=title,
                 record=True,
@@ -45063,9 +45045,9 @@ def api_pulse_live_start():
             "chat_room_id": chat_room,
             "chat_conversation_id": chat_conversation_id,
             "livekit": {
-                "configured": pulse_livekit_config().get("configured"),
+                "configured": call_engine.agora_config_status().get("configured"),
                 "room": stream_setup.get("webrtc_room_id") or "",
-                "token_url": f"/api/pulse/live/{live_id}/livekit/token",
+                "token_url": f"/api/pulse/live/{live_id}/rtc/token",
             },
             "trace_id": trace_id,
             "audio": audio_engine.score_audio_health({"rms_db": -28, "sync_drift_ms": 0}),
@@ -45413,18 +45395,6 @@ def api_pulse_live_mux_webhook():
         return jsonify({"ok": False, "message": "Mux webhook could not be processed."}), 500
 
 
-def pulse_livekit_config():
-    livekit_url = (os.getenv("LIVEKIT_URL") or "").strip()
-    api_key = (os.getenv("LIVEKIT_API_KEY") or "").strip()
-    api_secret = (os.getenv("LIVEKIT_API_SECRET") or "").strip()
-    return {
-        "configured": bool(livekit_url and api_key and api_secret),
-        "url": livekit_url,
-        "api_key": api_key,
-        "api_secret": api_secret,
-    }
-
-
 PULSE_LIVE_AUDIO_V2_SALT = "pulsesoc.live.audio.v2"
 
 
@@ -45435,7 +45405,7 @@ def pulse_live_audio_v2_env_flag(name, default=""):
 def pulse_live_audio_v2_enabled(user_id=0, *, is_qa=False):
     """Server-authoritative rollout gate for the isolated livestream audio route.
 
-    The decision is made here and shipped to the client on the LiveKit token
+    The decision is made here and shipped to the client on the Agora token
     response it already fetches for every broadcast, so flipping
     LIVESTREAM_AUDIO_V2_ENABLED to a falsy value is a real kill switch: the very
     next token fetch runs the legacy path, with no app release and no client
@@ -45510,259 +45480,6 @@ def pulse_live_audio_trace_enabled(user_id=0, *, is_qa=False):
         if parsed > 0:
             allowlist.add(parsed)
     return bool(is_qa or (uid > 0 and uid in allowlist))
-
-
-def pulse_livekit_b64url(raw):
-    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
-
-
-def pulse_livekit_access_token(identity, room_name, *, can_publish=False, name="", metadata=None, ttl_seconds=3600, can_publish_data=None, can_update_own_metadata=None, can_publish_sources=None):
-    """Mint a least-privilege LiveKit access token for a PulseSoc livestream.
-
-    canPublishData / canUpdateOwnMetadata now default to the publish grant
-    rather than to True. A listen-only viewer that can rewrite its own metadata
-    can set role="host" and impersonate the broadcaster in every other
-    participant's participant list, because clients read the displayed role from
-    participant metadata. Publishers keep both grants: the web Live Studio
-    requires them on the cohost path (static/js/pulse_live_studio_runtime.js).
-    """
-    config = pulse_livekit_config()
-    if not config.get("configured"):
-        return ""
-    now = int(time.time())
-    grant_publish = bool(can_publish)
-    grant_publish_data = grant_publish if can_publish_data is None else bool(can_publish_data)
-    grant_update_metadata = grant_publish if can_update_own_metadata is None else bool(can_update_own_metadata)
-    grant_publish_sources = [str(source).strip().lower() for source in (can_publish_sources or []) if str(source).strip()]
-    if grant_publish and not grant_publish_sources:
-        grant_publish_sources = ["microphone", "camera"]
-    if not grant_publish:
-        grant_publish_sources = []
-    claims = {
-        "iss": config["api_key"],
-        "sub": str(identity),
-        "nbf": now - 10,
-        "exp": now + max(300, min(int(ttl_seconds or 3600), 24 * 3600)),
-        "name": str(name or identity),
-        "video": {
-            "room": str(room_name),
-            "roomJoin": True,
-            "canSubscribe": True,
-            "canPublish": grant_publish,
-            "canPublishData": grant_publish_data,
-            "canUpdateOwnMetadata": grant_update_metadata,
-            "canPublishSources": grant_publish_sources,
-        },
-    }
-    if metadata:
-        claims["metadata"] = json.dumps(metadata, separators=(",", ":"), default=str)[:2000]
-    header = {"alg": "HS256", "typ": "JWT"}
-    signing_input = ".".join([
-        pulse_livekit_b64url(json.dumps(header, separators=(",", ":")).encode("utf-8")),
-        pulse_livekit_b64url(json.dumps(claims, separators=(",", ":"), default=str).encode("utf-8")),
-    ])
-    signature = hmac.new(config["api_secret"].encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256).digest()
-    return f"{signing_input}.{pulse_livekit_b64url(signature)}"
-
-
-def pulse_livekit_verify_token_claims(token, *, identity="", room_name="", role="", require_publish=False, expect_publish_data=None, expect_update_own_metadata=None, expect_publish_sources=None):
-    """Verify a freshly minted token actually carries the grants we intended.
-
-    The data grants are checked against what was requested, not hard-required to
-    be True. A listen-only viewer is now minted without canPublishData /
-    canUpdateOwnMetadata, and this verifier asserts that absence rather than
-    treating it as a defect - that assertion is what stops a future change from
-    silently re-widening viewer grants.
-    """
-    config = pulse_livekit_config()
-    result = {"ok": False, "error_code": "TOKEN_CLAIMS_INVALID", "message": "LiveKit token claims are invalid.", "claims": {}}
-    try:
-        parts = str(token or "").split(".")
-        if len(parts) != 3 or not config.get("configured"):
-            return result
-        signing_input = f"{parts[0]}.{parts[1]}"
-        expected = pulse_livekit_b64url(hmac.new(config["api_secret"].encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256).digest())
-        if not hmac.compare_digest(expected, parts[2]):
-            result["message"] = "LiveKit token signature verification failed."
-            return result
-        padding = "=" * (-len(parts[1]) % 4)
-        claims = json.loads(base64.urlsafe_b64decode((parts[1] + padding).encode("ascii")).decode("utf-8"))
-        video = claims.get("video") if isinstance(claims.get("video"), dict) else {}
-        metadata = json.loads(claims.get("metadata") or "{}") if isinstance(claims.get("metadata"), str) else (claims.get("metadata") or {})
-        now = int(time.time())
-        expected_publish_data = bool(require_publish) if expect_publish_data is None else bool(expect_publish_data)
-        expected_update_metadata = bool(require_publish) if expect_update_own_metadata is None else bool(expect_update_own_metadata)
-        expected_sources = [str(source).strip().lower() for source in (expect_publish_sources or (["microphone", "camera"] if require_publish else [])) if str(source).strip()]
-        actual_sources = [str(source).strip().lower() for source in (video.get("canPublishSources") or []) if str(source).strip()]
-        checks = {
-            "identity": str(claims.get("sub") or "") == str(identity or ""),
-            "room": str(video.get("room") or "") == str(room_name or ""),
-            "participant_name": bool(str(claims.get("name") or "").strip()),
-            "role": str((metadata or {}).get("role") or "") == str(role or ""),
-            "room_join": video.get("roomJoin") is True,
-            "publish": video.get("canPublish") is True if require_publish else isinstance(video.get("canPublish"), bool),
-            "subscribe": video.get("canSubscribe") is True,
-            "publish_data": video.get("canPublishData") is expected_publish_data,
-            "update_own_metadata": video.get("canUpdateOwnMetadata") is expected_update_metadata,
-            "publish_sources": actual_sources == expected_sources,
-            "expiration": int(claims.get("exp") or 0) > now,
-            "metadata": isinstance(metadata, dict) and int((metadata or {}).get("live_id") or 0) > 0,
-        }
-        result["claims"] = {
-            "identity": str(claims.get("sub") or ""),
-            "room": str(video.get("room") or ""),
-            "participant_name": clean_html(claims.get("name") or "")[:160],
-            "role": clean_html((metadata or {}).get("role") or "")[:40],
-            "publish": bool(video.get("canPublish")),
-            "subscribe": bool(video.get("canSubscribe")),
-            "publish_data": bool(video.get("canPublishData")),
-            "update_own_metadata": bool(video.get("canUpdateOwnMetadata")),
-            "publish_sources": actual_sources,
-            "room_join": bool(video.get("roomJoin")),
-            "expiration": int(claims.get("exp") or 0),
-            "metadata": pulse_live_safe_debug_payload(metadata if isinstance(metadata, dict) else {}),
-        }
-        result["checks"] = checks
-        result["ok"] = all(checks.values())
-        if not result["ok"]:
-            result["message"] = "Missing or invalid LiveKit claims: " + ", ".join(key for key, passed in checks.items() if not passed)
-        return result
-    except Exception as exc:
-        result["message"] = f"LiveKit token verification failed: {exc.__class__.__name__}"
-        return result
-
-
-def pulse_livekit_http_url():
-    config = pulse_livekit_config()
-    raw_url = (config.get("url") or "").strip().rstrip("/")
-    if raw_url.startswith("wss://"):
-        return "https://" + raw_url[6:]
-    if raw_url.startswith("ws://"):
-        return "http://" + raw_url[5:]
-    return raw_url
-
-
-def pulse_livekit_ws_url():
-    # Client-facing LiveKit endpoint. The livekit-client / @livekit/react-native
-    # SDKs refuse to connect to an http(s) URL, so an operator who pastes the
-    # https:// dashboard URL into LIVEKIT_URL silently breaks every live join
-    # with no server error. Normalize https->wss and http->ws (bare host
-    # defaults to wss); ws/wss pass through unchanged.
-    raw_url = (pulse_livekit_config().get("url") or "").strip().rstrip("/")
-    if not raw_url:
-        return ""
-    if raw_url.startswith("https://"):
-        return "wss://" + raw_url[8:]
-    if raw_url.startswith("http://"):
-        return "ws://" + raw_url[7:]
-    if raw_url.startswith(("wss://", "ws://")):
-        return raw_url
-    return "wss://" + raw_url
-
-
-def pulse_livekit_egress_token(room_name):
-    config = pulse_livekit_config()
-    if not config.get("configured"):
-        return ""
-    now = int(time.time())
-    claims = {
-        "iss": config["api_key"],
-        "sub": "pulsesoc-livekit-egress",
-        "nbf": now - 10,
-        "exp": now + 900,
-        "name": "PulseSoc LiveKit Egress",
-        "video": {
-            "room": str(room_name),
-            "roomJoin": True,
-            "roomRecord": True,
-            "canSubscribe": True,
-            "canPublish": False,
-            "canPublishData": False,
-        },
-    }
-    header = {"alg": "HS256", "typ": "JWT"}
-    signing_input = ".".join([
-        pulse_livekit_b64url(json.dumps(header, separators=(",", ":")).encode("utf-8")),
-        pulse_livekit_b64url(json.dumps(claims, separators=(",", ":"), default=str).encode("utf-8")),
-    ])
-    signature = hmac.new(config["api_secret"].encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256).digest()
-    return f"{signing_input}.{pulse_livekit_b64url(signature)}"
-
-
-def pulse_livekit_room_admin_token(room_name):
-    config = pulse_livekit_config()
-    if not config.get("configured"):
-        return ""
-    now = int(time.time())
-    claims = {
-        "iss": config["api_key"],
-        "sub": "pulsesoc-livekit-room-monitor",
-        "nbf": now - 10,
-        "exp": now + 900,
-        "name": "PulseSoc LiveKit Room Monitor",
-        "video": {
-            "room": str(room_name),
-            "roomJoin": False,
-            "roomAdmin": True,
-            "roomList": True,
-            "canSubscribe": False,
-            "canPublish": False,
-            "canPublishData": False,
-        },
-    }
-    header = {"alg": "HS256", "typ": "JWT"}
-    signing_input = ".".join([
-        pulse_livekit_b64url(json.dumps(header, separators=(",", ":")).encode("utf-8")),
-        pulse_livekit_b64url(json.dumps(claims, separators=(",", ":"), default=str).encode("utf-8")),
-    ])
-    signature = hmac.new(config["api_secret"].encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256).digest()
-    return f"{signing_input}.{pulse_livekit_b64url(signature)}"
-
-
-def pulse_livekit_mux_destination(live):
-    stream_key = (live.get("mux_stream_key") or live.get("stream_key") or "").strip()
-    if not stream_key:
-        return ""
-    ingest_url = (live.get("ingest_url") or live.get("rtmp_url") or mux_live_service.MUX_RTMP_INGEST_URL or "").strip().rstrip("/")
-    if not ingest_url:
-        return ""
-    if ingest_url.endswith("/" + stream_key) or ingest_url.endswith(stream_key):
-        return ingest_url
-    return f"{ingest_url}/{stream_key}"
-
-
-def pulse_livekit_safe_error(data, fallback="LiveKit egress was rejected."):
-    if not isinstance(data, dict):
-        return fallback
-    parts = []
-    for key in ("msg", "message", "error", "details", "code"):
-        value = data.get(key)
-        if value is None:
-            continue
-        text = clean_html(str(value))[:240]
-        text = re.sub(r"rtmps?://[^\s\"'<>]+", "rtmp://[redacted]", text)
-        text = re.sub(r"(stream[_ -]?key|key|token|secret)[=:]\s*[^\s\"'<>]+", r"\1=[redacted]", text, flags=re.IGNORECASE)
-        if text and text not in parts:
-            parts.append(text)
-    message = " | ".join(parts).strip() or fallback
-    return message[:500]
-
-
-def pulse_livekit_egress_resource_exhausted(egress):
-    if not isinstance(egress, dict):
-        return False
-    text = " ".join(
-        str(egress.get(key) or "")
-        for key in (
-            "message",
-            "reason",
-            "error",
-            "participant_error",
-            "room_composite_error",
-            "status_code",
-        )
-    ).lower()
-    return any(marker in text for marker in ("resource_exhausted", "egress minutes exceeded", "quota", "minutes exceeded"))
 
 
 def pulse_live_safe_debug_payload(payload, *, max_depth=3):
@@ -45927,17 +45644,17 @@ PULSE_COHOST_ERROR_CODES = {
     "BLOCKED_BY_HOST": ("The host has blocked this co-host request.", "checking_live_availability"),
     "CAMERA_PERMISSION_DENIED": ("Allow camera access before requesting to co-host.", "camera_permission_denied"),
     "MIC_PERMISSION_DENIED": ("Allow microphone access before requesting to co-host.", "mic_permission_denied"),
-    "TOKEN_GENERATION_FAILED": ("LiveKit token could not be created.", "token_failed"),
-    "TOKEN_CLAIMS_INVALID": ("LiveKit token permissions could not be verified.", "token_verification"),
+    "TOKEN_GENERATION_FAILED": ("Agora token could not be created.", "token_failed"),
+    "TOKEN_CLAIMS_INVALID": ("Agora token permissions could not be verified.", "token_verification"),
     "TOKEN_DELIVERY_FAILED": ("The co-host token did not reach the viewer correctly.", "token_delivery"),
     "TOKEN_MISSING_PUBLISH_PERMISSION": ("Host approval is required before you can publish into this Live.", "requesting_cohost_token"),
-    "LIVEKIT_ROOM_JOIN_FAILED": ("LiveKit room join failed.", "room_join_failed"),
-    "ROOM_JOIN_TIMEOUT": ("The LiveKit room connection timed out.", "room_join"),
+    "LIVEKIT_ROOM_JOIN_FAILED": ("Agora channel join failed.", "room_join_failed"),
+    "ROOM_JOIN_TIMEOUT": ("The Agora channel connection timed out.", "room_join"),
     "VIDEO_TRACK_FAILED": ("The camera track could not be published.", "video_track"),
     "AUDIO_TRACK_FAILED": ("The microphone track could not be published.", "audio_track"),
     "COHOST_PROMOTION_FAILED": ("The server could not confirm the active co-host.", "cohost_promotion"),
     "ACCEPTANCE_TRANSACTION_FAILED": ("The host approval could not be committed.", "request_acceptance"),
-    "LIVEKIT_PUBLISH_FAILED": ("LiveKit camera or microphone publish failed.", "publish_failed"),
+    "LIVEKIT_PUBLISH_FAILED": ("Agora camera or microphone publish failed.", "publish_failed"),
     "NETWORK_TIMEOUT": ("Network timeout while preparing co-host access.", "network_failed"),
     "UNKNOWN_COHOST_ERROR": ("Co-host request could not be completed.", "unavailable_with_reason"),
 }
@@ -46426,49 +46143,6 @@ def pulse_live_readiness_payload(payload):
     }
 
 
-def pulse_livekit_stop_egress(egress_id, room_name="", *, trace_id="", live_id=0):
-    egress_id = clean_html(egress_id or "")[:180]
-    room_name = clean_html(room_name or "")[:120]
-    if not egress_id:
-        return {"ok": False, "reason": "missing_egress_id"}
-    http_url = pulse_livekit_http_url()
-    token = pulse_livekit_egress_token(room_name or f"pulse-live-{int(live_id or 0)}")
-    if not http_url or not token:
-        return {"ok": False, "reason": "missing_livekit"}
-    stopped = pulse_livekit_post_egress(http_url, token, "StopEgress", {"egress_id": egress_id}, trace_id=trace_id, live_id=live_id, strategy="stop_stale")
-    logging.info("PULSE_LIVEKIT_STOP_EGRESS trace_id=%s live_id=%s room=%s egress_id=%s ok=%s reason=%s", trace_id, live_id, room_name, egress_id, bool(stopped.get("ok")), stopped.get("reason") or "")
-    return stopped
-
-
-def pulse_livekit_delete_room(room_name, *, trace_id="", live_id=0):
-    room_name = clean_html(room_name or "")[:120]
-    http_url = pulse_livekit_http_url()
-    token = pulse_livekit_room_admin_token(room_name)
-    if not room_name:
-        return {"ok": False, "reason": "missing_room"}
-    if not http_url or not token:
-        return {"ok": False, "reason": "missing_livekit"}
-    endpoint = f"{http_url}/twirp/livekit.RoomService/DeleteRoom"
-    try:
-        response = requests.post(
-            endpoint,
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json={"room": room_name},
-            timeout=float(os.getenv("LIVEKIT_ROOM_DELETE_TIMEOUT_SECONDS", "6")),
-        )
-        data = response.json() if response.headers.get("content-type", "").lower().startswith("application/json") else {}
-    except Exception as exc:
-        safe_error = clean_html(str(exc))[:300]
-        logging.warning("PULSE_LIVEKIT_DELETE_ROOM_FAILED trace_id=%s live_id=%s room=%s error=%s", trace_id, live_id, room_name, safe_error)
-        return {"ok": False, "reason": "request_failed", "message": safe_error}
-    if response.status_code < 200 or response.status_code >= 300:
-        safe_error = pulse_livekit_safe_error(data, "LiveKit room cleanup failed.")
-        logging.warning("PULSE_LIVEKIT_DELETE_ROOM_REJECTED trace_id=%s live_id=%s room=%s status=%s error=%s", trace_id, live_id, room_name, response.status_code, safe_error)
-        return {"ok": False, "reason": "delete_rejected", "status_code": response.status_code, "message": safe_error}
-    logging.info("PULSE_LIVEKIT_DELETE_ROOM_OK trace_id=%s live_id=%s room=%s", trace_id, live_id, room_name)
-    return {"ok": True, "room": room_name}
-
-
 def pulse_live_cleanup_stale_sessions(cur, user_id, *, trace_id="", keep_live_id=0):
     now = datetime.utcnow().isoformat(timespec="seconds")
     cur.execute(
@@ -46508,15 +46182,11 @@ def pulse_live_cleanup_stale_sessions(cur, user_id, *, trace_id="", keep_live_id
                 "publish_state": live.get("publish_state") or "",
             },
         )
-        if egress_id:
-            pulse_livekit_stop_egress(egress_id, room_name, trace_id=trace_id, live_id=live_id)
-        if room_name:
-            pulse_livekit_delete_room(room_name, trace_id=trace_id, live_id=live_id)
         mux_disabled = {}
         if mux_id:
             mux_disabled = mux_live_service.disable_mux_live_stream(mux_id)
             logging.info("PULSE_LIVE_STALE_MUX_DISABLED trace_id=%s live_id=%s mux_live_stream_id=%s ok=%s status=%s", trace_id, live_id, mux_id, bool(mux_disabled.get("ok")), mux_disabled.get("mux_live_status") or "")
-        failure_reason = "Ended stale livestream before starting a fresh LiveKit/Mux session."
+        failure_reason = "Ended stale livestream before starting a fresh Agora session."
         cur.execute(
             """
             UPDATE pulse_live_sessions
@@ -46608,625 +46278,6 @@ def pulse_sync_mux_live_state(cur, live, *, trace_id=""):
     return {**mux, "live": updated}
 
 
-def pulse_livekit_track_type(track):
-    value = str((track or {}).get("type") or (track or {}).get("kind") or (track or {}).get("source") or "").upper()
-    if value in {"0", "AUDIO"} or "AUDIO" in value:
-        return "audio"
-    if value in {"1", "VIDEO", "CAMERA", "SCREEN_SHARE"} or "VIDEO" in value or "CAMERA" in value or "SCREEN" in value:
-        return "video"
-    return value.lower()
-
-
-def pulse_livekit_room_participants(room_name, *, trace_id="", live_id=0):
-    http_url = pulse_livekit_http_url()
-    token = pulse_livekit_room_admin_token(room_name)
-    if not http_url or not token:
-        return {"ok": False, "reason": "missing_livekit", "message": "LiveKit room inspection is not configured."}
-    endpoint = f"{http_url}/twirp/livekit.RoomService/ListParticipants"
-    try:
-        response = requests.post(
-            endpoint,
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json={"room": room_name},
-            timeout=float(os.getenv("LIVEKIT_ROOM_INSPECT_TIMEOUT_SECONDS", "5")),
-        )
-        data = response.json() if response.headers.get("content-type", "").lower().startswith("application/json") else {}
-    except Exception as exc:
-        safe_error = clean_html(str(exc))[:300]
-        logging.warning("PULSE_LIVEKIT_ROOM_INSPECT_FAILED trace_id=%s live_id=%s room=%s error=%s", trace_id, live_id, room_name, safe_error)
-        return {"ok": False, "reason": "request_failed", "message": safe_error}
-    if response.status_code < 200 or response.status_code >= 300:
-        safe_error = pulse_livekit_safe_error(data, "LiveKit room inspection failed.")
-        logging.warning("PULSE_LIVEKIT_ROOM_INSPECT_REJECTED trace_id=%s live_id=%s room=%s status=%s error=%s", trace_id, live_id, room_name, response.status_code, safe_error)
-        return {"ok": False, "reason": "inspect_rejected", "status_code": response.status_code, "message": safe_error}
-    return {"ok": True, "participants": data.get("participants") or []}
-
-
-def pulse_livekit_host_track_snapshot(live, *, trace_id=""):
-    room_name = clean_html(live.get("webrtc_room_id") or f"pulse-live-{int(live.get('id') or 0)}")[:120]
-    host_identity = f"pulse-user-{int(live.get('user_id') or 0)}"
-    inspected = pulse_livekit_room_participants(room_name, trace_id=trace_id, live_id=int(live.get("id") or 0))
-    if not inspected.get("ok"):
-        return {**inspected, "room": room_name, "host_identity": host_identity, "audio_tracks": 0, "video_tracks": 0}
-    participants = inspected.get("participants") or []
-    host = {}
-    for participant in participants:
-        if str(participant.get("identity") or "") == host_identity:
-            host = participant
-            break
-    tracks = host.get("tracks") or host.get("track_publications") or []
-    audio_tracks = 0
-    video_tracks = 0
-    published = []
-    for track in tracks:
-        track_type = pulse_livekit_track_type(track)
-        muted = bool(track.get("muted"))
-        sid = clean_html(track.get("sid") or track.get("track_sid") or "")[:120]
-        if track_type == "audio":
-            audio_tracks += 1
-        if track_type == "video" and not muted:
-            video_tracks += 1
-        if track_type:
-            published.append({"sid": sid, "type": track_type, "muted": muted})
-    return {
-        "ok": bool(host),
-        "reason": "" if host else "host_not_joined",
-        "room": room_name,
-        "host_identity": host_identity,
-        "participant_count": len(participants),
-        "host_joined": bool(host),
-        "audio_tracks": audio_tracks,
-        "video_tracks": video_tracks,
-        "published_tracks": published,
-    }
-
-
-def pulse_livekit_wait_for_host_tracks(live, *, trace_id="", timeout_seconds=None, interval_seconds=None):
-    timeout = float(timeout_seconds if timeout_seconds is not None else os.getenv("LIVEKIT_TRACK_READY_TIMEOUT_SECONDS", "12"))
-    interval = max(0.35, float(interval_seconds if interval_seconds is not None else os.getenv("LIVEKIT_TRACK_READY_POLL_SECONDS", "1")))
-    stable_required = max(1, int(os.getenv("LIVEKIT_TRACK_STABLE_CHECKS", "3")))
-    deadline = time.time() + max(0, timeout)
-    last = {}
-    stable_count = 0
-    stable_signature = ""
-    while True:
-        last = pulse_livekit_host_track_snapshot(live, trace_id=trace_id)
-        track_signature = "|".join(sorted(
-            f"{track.get('type')}:{track.get('sid')}:{track.get('muted')}"
-            for track in (last.get("published_tracks") or [])
-            if track.get("type") in {"audio", "video"}
-        ))
-        if last.get("host_joined") and int(last.get("video_tracks") or 0) > 0:
-            if track_signature and track_signature == stable_signature:
-                stable_count += 1
-            else:
-                stable_signature = track_signature
-                stable_count = 1
-        else:
-            stable_count = 0
-            stable_signature = ""
-        logging.info(
-            "PULSE_LIVEKIT_TRACK_READY_CHECK trace_id=%s live_id=%s room=%s host_joined=%s audio_tracks=%s video_tracks=%s participant_count=%s stable_count=%s stable_required=%s reason=%s",
-            trace_id,
-            live.get("id"),
-            last.get("room") or "",
-            bool(last.get("host_joined")),
-            int(last.get("audio_tracks") or 0),
-            int(last.get("video_tracks") or 0),
-            int(last.get("participant_count") or 0),
-            stable_count,
-            stable_required,
-            last.get("reason") or "",
-        )
-        if stable_count >= stable_required:
-            return {**last, "ready": True, "stable_checks": stable_count}
-        if time.time() >= deadline:
-            reason = last.get("reason") or ("video_track_not_stable" if stable_count else "video_track_not_ready")
-            return {**last, "ready": False, "reason": reason, "stable_checks": stable_count}
-        time.sleep(interval)
-
-
-def pulse_livekit_post_egress(http_url, token, endpoint_name, payload, *, trace_id="", live_id=0, strategy=""):
-    endpoint = f"{http_url}/twirp/livekit.Egress/{endpoint_name}"
-    try:
-        response = requests.post(
-            endpoint,
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json=payload,
-            timeout=float(os.getenv("LIVEKIT_EGRESS_TIMEOUT_SECONDS", "12")),
-        )
-        data = response.json() if response.headers.get("content-type", "").lower().startswith("application/json") else {}
-    except Exception as exc:
-        safe_error = clean_html(str(exc))[:500]
-        logging.warning(
-            "PULSE_LIVEKIT_EGRESS_REQUEST_FAILED trace_id=%s live_id=%s strategy=%s error=%s",
-            trace_id, live_id, strategy, safe_error,
-        )
-        return {
-            "ok": False,
-            "message": "LiveKit egress request failed.",
-            "reason": "request_failed",
-            "error": safe_error,
-            "strategy": strategy,
-        }
-    if response.status_code < 200 or response.status_code >= 300:
-        safe_error = pulse_livekit_safe_error(data)
-        logging.warning(
-            "PULSE_LIVEKIT_EGRESS_REJECTED trace_id=%s live_id=%s strategy=%s status=%s error=%s",
-            trace_id, live_id, strategy, response.status_code, safe_error,
-        )
-        return {
-            "ok": False,
-            "message": safe_error,
-            "reason": "egress_rejected",
-            "status_code": response.status_code,
-            "strategy": strategy,
-            "raw": data,
-        }
-    egress_id = clean_html(data.get("egress_id") or data.get("egressId") or "")[:180]
-    status = clean_html(data.get("status") or "EGRESS_STARTING")[:80]
-    return {
-        "ok": True,
-        "egress_id": egress_id,
-        "status": status,
-        "strategy": strategy,
-        "raw": data,
-    }
-
-
-def pulse_livekit_start_mux_egress(live, *, trace_id=""):
-    room_name = clean_html(live.get("webrtc_room_id") or f"pulse-live-{int(live.get('id') or 0)}")[:120]
-    if not room_name:
-        return {"ok": False, "message": "LiveKit room is missing.", "reason": "missing_room"}
-    existing = (live.get("livekit_egress_id") or "").strip()
-    existing_status = (live.get("livekit_egress_status") or "").strip().lower()
-    if existing and existing_status in {"egress_starting", "egress_active", "egress_ending", "starting", "active"}:
-        return {"ok": True, "already_started": True, "egress_id": existing, "status": existing_status}
-    http_url = pulse_livekit_http_url()
-    token = pulse_livekit_egress_token(room_name)
-    destination = pulse_livekit_mux_destination(live)
-    if not http_url or not token:
-        return {"ok": False, "message": "LiveKit egress is not configured.", "reason": "missing_livekit"}
-    if not destination:
-        return {"ok": False, "message": "Mux RTMP destination is missing.", "reason": "missing_mux_destination"}
-    stream_output = {
-        "protocol": "RTMP",
-        "urls": [destination],
-    }
-    composite_payload = {
-        "room_name": room_name,
-        "layout": "speaker",
-        "stream_outputs": [stream_output],
-        "preset": "H264_720P_30",
-    }
-    composite = pulse_livekit_post_egress(
-        http_url,
-        token,
-        "StartRoomCompositeEgress",
-        composite_payload,
-        trace_id=trace_id,
-        live_id=live.get("id"),
-        strategy="room_composite",
-    )
-    if composite.get("ok"):
-        return {
-            "ok": True,
-            "egress_id": composite.get("egress_id") or "",
-            "status": composite.get("status") or "EGRESS_STARTING",
-            "room": room_name,
-            "strategy": "room_composite",
-            "destination_configured": True,
-            "raw": composite.get("raw") or {},
-        }
-    host_identity = f"pulse-user-{int(live.get('user_id') or 0)}"
-    participant_payload = {
-        "room_name": room_name,
-        "identity": host_identity,
-        "stream_outputs": [stream_output],
-        "preset": "H264_720P_30",
-    }
-    participant = pulse_livekit_post_egress(
-        http_url,
-        token,
-        "StartParticipantEgress",
-        participant_payload,
-        trace_id=trace_id,
-        live_id=live.get("id"),
-        strategy="participant_fallback",
-    )
-    if participant.get("ok"):
-        return {
-            "ok": True,
-            "egress_id": participant.get("egress_id") or "",
-            "status": participant.get("status") or "EGRESS_STARTING",
-            "room": room_name,
-            "strategy": "participant_fallback",
-            "fallback_from": composite.get("message") or composite.get("reason") or "",
-            "destination_configured": True,
-            "raw": participant.get("raw") or {},
-        }
-    participant_error = participant.get("message") or participant.get("reason") or "participant egress rejected"
-    composite_error = composite.get("message") or composite.get("reason") or "room composite egress rejected"
-    message = f"LiveKit egress was rejected. Participant: {participant_error}. Room composite: {composite_error}."[:500]
-    return {
-        "ok": False,
-        "message": message,
-        "reason": "egress_rejected",
-        "status_code": composite.get("status_code") or participant.get("status_code"),
-        "participant_error": participant_error,
-        "room_composite_error": composite_error,
-    }
-
-
-def pulse_livekit_webhook_receiver():
-    from livekit import api as livekit_api
-
-    api_key = (os.getenv("LIVEKIT_API_KEY") or "").strip()
-    signing_secret = (os.getenv("LIVEKIT_WEBHOOK_SECRET") or os.getenv("LIVEKIT_API_SECRET") or "").strip()
-    if not api_key or not signing_secret:
-        return None
-    return livekit_api.WebhookReceiver(livekit_api.TokenVerifier(api_key, signing_secret))
-
-
-def pulse_livekit_event_payload(event):
-    from google.protobuf.json_format import MessageToDict
-
-    return MessageToDict(event, preserving_proto_field_name=True)
-
-
-def pulse_livekit_event_status(event_type, payload):
-    egress = payload.get("egress_info") or {}
-    raw_status = clean_html(egress.get("status") or "")[:80]
-    normalized = raw_status.lower()
-    if event_type == "egress_started":
-        return raw_status or "EGRESS_STARTING", "egress_starting", ""
-    if event_type == "egress_updated":
-        if "active" in normalized:
-            return raw_status or "EGRESS_ACTIVE", "egress_active", ""
-        if "fail" in normalized or "abort" in normalized:
-            return raw_status or "EGRESS_FAILED", "egress_failed", clean_html(egress.get("error") or "LiveKit egress failed.")[:500]
-        return raw_status or "EGRESS_STARTING", "egress_starting", ""
-    if event_type == "egress_ended":
-        ended_error = clean_html(egress.get("error") or egress.get("error_message") or "")[:500]
-        if "fail" in normalized or "abort" in normalized:
-            return raw_status or "EGRESS_FAILED", "egress_failed", ended_error or "LiveKit egress failed."
-        return raw_status or "EGRESS_COMPLETE", "egress_ended", ended_error
-    return "", "", ""
-
-
-@webhook_app.route("/api/livekit/webhook", methods=["POST"])
-@webhook_app.route("/api/pulse/live/livekit/webhook", methods=["POST"])
-def api_pulse_livekit_webhook():
-    receiver = pulse_livekit_webhook_receiver()
-    if receiver is None:
-        logging.error("PULSE_LIVEKIT_WEBHOOK_NOT_CONFIGURED")
-        return jsonify({"ok": False, "message": "LiveKit webhook verification is not configured."}), 503
-    auth_header = (request.headers.get("Authorization") or "").strip()
-    auth_token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else auth_header
-    raw_body = request.get_data(cache=True, as_text=True)
-    if not auth_token or not raw_body:
-        return jsonify({"ok": False, "message": "Missing signed LiveKit webhook payload."}), 400
-    try:
-        event = receiver.receive(raw_body, auth_token)
-        payload = pulse_livekit_event_payload(event)
-    except Exception as exc:
-        logging.warning("PULSE_LIVEKIT_WEBHOOK_REJECTED error=%s", str(exc)[:300])
-        return jsonify({"ok": False, "message": "Invalid LiveKit webhook signature."}), 401
-
-    event_id = clean_html(payload.get("id") or "")[:180]
-    event_type = clean_html(payload.get("event") or "unknown")[:80]
-    room_name = clean_html((payload.get("room") or {}).get("name") or "")[:180]
-    egress = payload.get("egress_info") or {}
-    egress_id = clean_html(egress.get("egress_id") or "")[:180]
-    now = datetime.utcnow().isoformat(timespec="seconds")
-    cohost_realtime = {}
-    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    try:
-        if event_id:
-            cur.execute(
-                "INSERT OR IGNORE INTO pulse_live_provider_events (provider,provider_event_id,event_type,room_name,payload_json,created_at) VALUES ('livekit',?,?,?,?,?)",
-                (event_id, event_type, room_name, json.dumps(payload, default=str)[:20000], now),
-            )
-            if cur.rowcount == 0:
-                conn.commit(); conn.close()
-                return jsonify({"ok": True, "duplicate": True})
-
-        cur.execute("SELECT * FROM pulse_live_sessions WHERE webrtc_room_id=? ORDER BY id DESC LIMIT 1", (room_name,))
-        live = dict(cur.fetchone() or {})
-        if live:
-            live_id = int(live.get("id") or 0)
-            feed_post_id = int(live.get("feed_post_id") or 0)
-            participant = payload.get("participant") or {}
-            track = payload.get("track") or {}
-            participant_identity = clean_html(participant.get("identity") or track.get("participant_identity") or "")[:160]
-            track_type = pulse_livekit_track_type(track)
-            if participant_identity:
-                cur.execute("SELECT * FROM pulse_live_guests WHERE live_id=? AND livekit_identity=? ORDER BY id DESC LIMIT 1", (live_id, participant_identity))
-                cohost_guest = dict(cur.fetchone() or {})
-                if cohost_guest:
-                    guest_id = int(cohost_guest.get("id") or 0)
-                    viewer_user_id = int(cohost_guest.get("user_id") or 0)
-                    request_id = int(cohost_guest.get("request_id") or 0)
-                    guest_meta = {}
-                    try:
-                        guest_meta = json.loads(cohost_guest.get("metadata_json") or "{}")
-                    except Exception:
-                        guest_meta = {}
-                    cohost_trace_id = clean_html(guest_meta.get("trace_id") or event_id or secrets.token_hex(6))[:80]
-                    if event_type == "participant_joined":
-                        cur.execute("UPDATE pulse_live_guests SET status='joined', participant_sid=?, participant_joined_at=?, joined_at=COALESCE(joined_at,?), updated_at=? WHERE id=?", (clean_html(participant.get("sid") or "")[:160], now, now, now, guest_id))
-                        cur.execute("UPDATE pulse_live_guest_requests SET status='joined', updated_at=? WHERE id=?", (now, request_id))
-                        pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=viewer_user_id, host_user_id=int(live.get("user_id") or 0), request_id=request_id, step="cohost_participant_confirmed", trace_id=cohost_trace_id, metadata={"participant_sid": participant.get("sid") or "", "result": "completed"}, post_id=feed_post_id)
-                    elif event_type == "track_published" and track_type in {"audio", "video"}:
-                        column = "audio_published" if track_type == "audio" else "video_published"
-                        cur.execute(f"UPDATE pulse_live_guests SET {column}=1, status='publishing', updated_at=? WHERE id=?", (now, guest_id))
-                        cur.execute("UPDATE pulse_live_guest_requests SET status='publishing', updated_at=? WHERE id=?", (now, request_id))
-                        trace_step = "cohost_microphone_publish_success" if track_type == "audio" else "cohost_camera_publish_success"
-                        pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=viewer_user_id, host_user_id=int(live.get("user_id") or 0), request_id=request_id, step=trace_step, trace_id=cohost_trace_id, metadata={"track_sid": track.get("sid") or track.get("track_sid") or "", "source": "livekit_webhook", "result": "completed"}, post_id=feed_post_id)
-                    cur.execute("SELECT * FROM pulse_live_guests WHERE id=? LIMIT 1", (guest_id,))
-                    refreshed_guest = dict(cur.fetchone() or {})
-                    if refreshed_guest.get("participant_joined_at") and refreshed_guest.get("audio_published") and refreshed_guest.get("video_published"):
-                        cur.execute("UPDATE pulse_live_guests SET status='live', live_at=COALESCE(live_at,?), updated_at=? WHERE id=?", (now, now, guest_id))
-                        cur.execute("UPDATE pulse_live_guest_requests SET status='live', updated_at=? WHERE id=?", (now, request_id))
-                        pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=viewer_user_id, host_user_id=int(live.get("user_id") or 0), request_id=request_id, step="cohost_promotion_completed", trace_id=cohost_trace_id, metadata={"guest_id": guest_id, "result": "completed"}, post_id=feed_post_id)
-                        pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=viewer_user_id, host_user_id=int(live.get("user_id") or 0), request_id=request_id, step="cohost_live_success", trace_id=cohost_trace_id, metadata={"guest_id": guest_id, "result": "completed"}, post_id=feed_post_id)
-                        cohost_realtime = {"live_id": live_id, "guest_id": guest_id, "viewer_user_id": viewer_user_id, "host_user_id": int(live.get("user_id") or 0), "request_id": request_id, "trace_id": cohost_trace_id, "state": "live"}
-            timeline_name = {
-                "room_started": "live_room_connected",
-                "room_finished": "live_room_disconnected",
-                "participant_joined": "live_participant_joined",
-                "participant_left": "live_participant_disconnected",
-                "participant_disconnected": "live_participant_disconnected",
-                "track_published": f"live_{track_type or 'unknown'}_track_published",
-                "track_unpublished": f"live_{track_type or 'unknown'}_track_unpublished",
-                "egress_started": "live_egress_started",
-                "egress_updated": "live_egress_updated",
-                "egress_ended": "live_egress_ended",
-            }.get(event_type, f"live_livekit_{event_type}")
-            pulse_live_record_timeline_event(
-                cur,
-                timeline_name,
-                live_id=live_id,
-                actor_user_id=0,
-                post_id=feed_post_id,
-                payload={
-                    "source": "livekit_webhook",
-                    "event_id": event_id,
-                    "room": room_name,
-                    "participant_identity": participant_identity,
-                    "track_type": track_type,
-                    "track_sid": clean_html(track.get("sid") or track.get("track_sid") or "")[:120],
-                    "egress_id": egress_id,
-                    "egress_status": clean_html(egress.get("status") or "")[:80],
-                    "reason": clean_html(egress.get("error") or egress.get("error_message") or "")[:500],
-                },
-            )
-            if event_type in {"room_started", "participant_joined", "track_published"}:
-                updates = ["updated_at=?"]
-                values = [now]
-                if event_type == "room_started":
-                    updates.extend(["publish_state=?", "stream_health=?"]); values.extend(["livekit_room_active", "livekit_connected"])
-                elif event_type == "participant_joined":
-                    updates.extend(["publish_state=?", "stream_health=?"]); values.extend(["livekit_participant_joined", "livekit_connected"])
-                else:
-                    track_type = str((payload.get("track") or {}).get("type") or "").upper()
-                    if track_type == "audio":
-                        updates.append("audio_tracks=CASE WHEN audio_tracks<1 THEN 1 ELSE audio_tracks END")
-                    if track_type == "video":
-                        updates.append("video_tracks=CASE WHEN video_tracks<1 THEN 1 ELSE video_tracks END")
-                    updates.extend(["publish_state=?", "stream_health=?"]); values.extend(["livekit_tracks_published", "livekit_connected"])
-                values.append(live_id)
-                cur.execute(f"UPDATE pulse_live_sessions SET {', '.join(updates)} WHERE id=?", tuple(values))
-            elif event_type in {"track_unpublished", "participant_left", "participant_disconnected", "room_finished"}:
-                host_identity = f"pulse-user-{int(live.get('user_id') or 0)}"
-                if event_type == "track_unpublished":
-                    updates = ["publish_state=?", "stream_health=?", "updated_at=?"]
-                    values = ["livekit_track_unpublished", "livekit_source_unstable", now]
-                    if track_type == "audio":
-                        updates.append("audio_tracks=CASE WHEN audio_tracks>0 THEN audio_tracks-1 ELSE 0 END")
-                    if track_type == "video":
-                        updates.append("video_tracks=CASE WHEN video_tracks>0 THEN video_tracks-1 ELSE 0 END")
-                    values.append(live_id)
-                    cur.execute(f"UPDATE pulse_live_sessions SET {', '.join(updates)} WHERE id=?", tuple(values))
-                elif participant_identity == host_identity or event_type == "room_finished":
-                    next_state = "livekit_room_disconnected" if event_type == "room_finished" else "livekit_host_disconnected"
-                    cur.execute(
-                        "UPDATE pulse_live_sessions SET publish_state=?, stream_health=?, updated_at=? WHERE id=?",
-                        (next_state, "livekit_source_closed", now, live_id),
-                    )
-
-            egress_status, stream_health, egress_error = pulse_livekit_event_status(event_type, payload)
-            if egress_status:
-                mux_state = "egress_active" if stream_health == "egress_active" else "idle" if stream_health in {"egress_failed", "egress_ended"} else stream_health
-                next_status = "starting" if stream_health in {"egress_starting", "egress_active"} else "starting" if stream_health in {"egress_failed", "egress_ended"} else (live.get("status") or "starting")
-                next_is_live = 0
-                if stream_health == "egress_ended" and egress_error:
-                    stream_health = "egress_source_closed" if "source closed" in egress_error.lower() else stream_health
-                cur.execute(
-                    "UPDATE pulse_live_sessions SET livekit_egress_id=COALESCE(NULLIF(?,''),livekit_egress_id), livekit_egress_status=?, livekit_egress_error=?, stream_health=?, mux_live_status=?, status=?, is_live=?, updated_at=? WHERE id=?",
-                    (egress_id, egress_status, egress_error or ("LiveKit egress ended before Mux became active." if stream_health == "egress_ended" else ""), stream_health, mux_state, next_status, next_is_live, now, live_id),
-                )
-                cur.execute(
-                    "UPDATE pulse_live_streams SET livekit_egress_id=COALESCE(NULLIF(?,''),livekit_egress_id), livekit_egress_status=?, livekit_egress_error=?, mux_live_status=?, status=?, updated_at=? WHERE session_id=?",
-                    (egress_id, egress_status, egress_error or ("LiveKit egress ended before Mux became active." if stream_health == "egress_ended" else ""), mux_state, next_status, now, live_id),
-                )
-        cur.execute(
-            "INSERT INTO pulse_live_events (event_type,actor_user_id,post_id,payload_json,created_at) VALUES (?,0,0,?,?)",
-            (f"livekit_{event_type}", json.dumps({"event_id": event_id, "room": room_name, "egress_id": egress_id}, default=str), now),
-        )
-        conn.commit(); conn.close()
-        if cohost_realtime:
-            try:
-                pulse_emit_event("live_cohost_guest_live", cohost_realtime, cohost_realtime.get("viewer_user_id") or 0, 0)
-            except Exception:
-                logging.exception("PULSE_COHOST_LIVE_REALTIME_FAILED trace_id=%s live_id=%s guest_id=%s", cohost_realtime.get("trace_id"), cohost_realtime.get("live_id"), cohost_realtime.get("guest_id"))
-        return jsonify({"ok": True, "event": event_type})
-    except Exception as exc:
-        logging.exception("PULSE_LIVEKIT_WEBHOOK_PROCESSING_FAILED event=%s room=%s error=%s", event_type, room_name, exc)
-        try:
-            conn.rollback(); conn.close()
-        except Exception:
-            pass
-        return jsonify({"ok": False, "message": "LiveKit webhook processing failed."}), 500
-
-
-@webhook_app.route("/api/pulse/live/<int:live_id>/livekit/token", methods=["POST"])
-def api_pulse_live_livekit_token(live_id):
-    init_db()
-    user = api_account_user()
-    if not user:
-        return pulse_live_cohost_error("NOT_AUTHENTICATED", status=401, live_id=live_id)
-    payload = request.get_json(silent=True) or {}
-    trace_id = clean_html(payload.get("trace_id") or secrets.token_hex(6))[:80]
-    requested_role = clean_html(payload.get("role") or "viewer")[:40].lower()
-    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
-    live = dict(cur.fetchone() or {})
-    if not live:
-        conn.close()
-        return pulse_live_cohost_error("LIVE_NOT_FOUND", status=404, trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"))
-    is_host = int(live.get("user_id") or 0) == int(user.get("user_id") or 0)
-    is_guest_request = requested_role in {"guest", "cohost", "co-host"}
-    guest = {}
-    can_publish = requested_role in {"publisher", "host", "creator"} and (is_host or bool(admin_current_user()))
-    if is_guest_request:
-        guest = pulse_live_active_guest(cur, live_id, int(user.get("user_id") or 0))
-        can_publish = bool(guest)
-        try:
-            guest_metadata = json.loads(guest.get("metadata_json") or "{}") if guest else {}
-        except Exception:
-            guest_metadata = {}
-        if guest_metadata.get("trace_id"):
-            trace_id = clean_html(guest_metadata.get("trace_id"))[:80]
-    if requested_role in {"publisher", "host", "creator"} and not can_publish:
-        conn.close()
-        return pulse_live_cohost_error("NOT_AUTHORIZED", status=403, message="Only the live host can publish this broadcast.", trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"))
-    if is_guest_request and not can_publish:
-        conn.close()
-        return pulse_live_cohost_error("TOKEN_MISSING_PUBLISH_PERMISSION", status=403, trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"))
-    if is_guest_request and not pulse_live_session_accepts_guest_requests(live):
-        conn.close()
-        return pulse_live_cohost_error("LIVE_ENDED", status=409, message="This Live is no longer accepting guest publishers.", trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"), request_id=guest.get("request_id"))
-    config = pulse_livekit_config()
-    if not config.get("configured"):
-        conn.close()
-        return pulse_live_cohost_error("TOKEN_GENERATION_FAILED", status=503, message="LiveKit is not configured for production broadcasting yet.", trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"), request_id=guest.get("request_id"))
-    room_name = clean_html(live.get("webrtc_room_id") or f"pulse-live-{live_id}")[:120]
-    identity = clean_html(guest.get("livekit_identity") or f"pulse-user-{int(user.get('user_id') or 0)}")[:120] if is_guest_request else f"pulse-user-{int(user.get('user_id') or 0)}"
-    token_role = "cohost" if requested_role in {"cohost", "co-host"} else "guest" if is_guest_request else "host" if can_publish else "viewer"
-    request_id = int(guest.get("request_id") or 0)
-    # Least privilege: the data channel and self-metadata grants follow the
-    # publish grant. Clients render a participant's role from its LiveKit
-    # metadata, so a viewer able to rewrite its own metadata could set
-    # role="host" and impersonate the broadcaster for everyone in the room.
-    grant_publish_data = bool(can_publish)
-    grant_update_own_metadata = bool(can_publish)
-    token_permissions = {
-        "roomJoin": True,
-        "canSubscribe": True,
-        "canPublish": bool(can_publish),
-        "canPublishData": grant_publish_data,
-        "canUpdateOwnMetadata": grant_update_own_metadata,
-        "canPublishSources": ["microphone", "camera"] if can_publish else [],
-    }
-    pulse_live_cohost_step_log(
-        trace_id,
-        "livekit_token_identity_resolved",
-        live_id=live_id,
-        viewer_user_id=user["user_id"],
-        payload={
-            "authenticated_user_id": int(user["user_id"]),
-            "requester_user_id": int(user["user_id"]),
-            "host_user_id": int(live.get("user_id") or 0),
-            "room_owner_id": int(live.get("user_id") or 0),
-            "participant_identity": identity,
-            "participant_name": pulse_actor_display_name(user),
-            "role": token_role,
-            "room": room_name,
-            "permissions": token_permissions,
-            "guest_id": int(guest.get("id") or 0),
-            "request_id": request_id,
-            "device_hash": getattr(g, "pulse_device_hash", "")[:32],
-            "ip_hash": client_ip_hash(),
-        },
-    )
-    if is_guest_request:
-        pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=int(live.get("user_id") or 0), request_id=request_id, step="cohost_identity_generated", trace_id=trace_id, metadata={"identity": identity, "room": room_name, "result": "completed"}, post_id=int(live.get("feed_post_id") or 0))
-        pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=int(live.get("user_id") or 0), request_id=request_id, step="cohost_token_request_started", trace_id=trace_id, metadata={"role": token_role, "result": "started"}, post_id=int(live.get("feed_post_id") or 0))
-    token = pulse_livekit_access_token(
-        identity,
-        room_name,
-        can_publish=can_publish,
-        name=pulse_actor_display_name(user),
-        metadata={"live_id": live_id, "role": token_role, "guest_id": int(guest.get("id") or 0)},
-        ttl_seconds=1800 if is_guest_request else 7200 if can_publish else 3600,
-        can_publish_data=grant_publish_data,
-        can_update_own_metadata=grant_update_own_metadata,
-        can_publish_sources=token_permissions["canPublishSources"],
-    )
-    if not token:
-        conn.rollback(); conn.close()
-        return pulse_live_cohost_error("TOKEN_GENERATION_FAILED", status=503, trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"), request_id=guest.get("request_id"))
-    verification = pulse_livekit_verify_token_claims(token, identity=identity, room_name=room_name, role=token_role, require_publish=can_publish, expect_publish_data=grant_publish_data, expect_update_own_metadata=grant_update_own_metadata, expect_publish_sources=token_permissions["canPublishSources"])
-    logging.info("PULSE_COHOST_TOKEN_CLAIMS trace_id=%s live_id=%s user_id=%s claims=%s checks=%s", trace_id, live_id, user["user_id"], json.dumps(verification.get("claims") or {}, default=str)[:3000], json.dumps(verification.get("checks") or {}, default=str)[:2000])
-    if not verification.get("ok"):
-        if is_guest_request:
-            pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=int(live.get("user_id") or 0), request_id=request_id, step="cohost_failure", trace_id=trace_id, error_code="TOKEN_CLAIMS_INVALID", status="failed", metadata={"stage_number": 14, "stage_name": "publish_permissions_verified", "result": "failed", "error_message": verification.get("message") or "Token claims invalid."}, post_id=int(live.get("feed_post_id") or 0))
-        conn.commit(); conn.close()
-        return pulse_live_cohost_error("TOKEN_CLAIMS_INVALID", status=503, message=verification.get("message") or "LiveKit token claims are invalid.", step="token_verification", trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"), request_id=request_id)
-    token_transaction_started_at = time.perf_counter()
-    try:
-        if is_guest_request:
-            joining_at = datetime.utcnow().isoformat(timespec="seconds")
-            cur.execute("UPDATE pulse_live_guests SET status='joining', updated_at=? WHERE id=? AND live_id=? AND user_id=? AND status IN ('accepted','joining')", (joining_at, int(guest.get("id") or 0), live_id, user["user_id"]))
-            cur.execute("UPDATE pulse_live_guest_requests SET status='joining', updated_at=? WHERE id=? AND live_id=? AND user_id=? AND status IN ('accepted','joining')", (joining_at, request_id, live_id, user["user_id"]))
-            pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=int(live.get("user_id") or 0), request_id=request_id, step="cohost_token_issued", trace_id=trace_id, metadata={"identity": identity, "room": room_name, "role": token_role, "permissions": token_permissions, "result": "completed"}, post_id=int(live.get("feed_post_id") or 0))
-            pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=int(live.get("user_id") or 0), request_id=request_id, step="cohost_token_verified", trace_id=trace_id, metadata={"claims": verification.get("claims") or {}, "checks": verification.get("checks") or {}, "result": "completed"}, post_id=int(live.get("feed_post_id") or 0))
-        conn.commit()
-    except Exception as exc:
-        owner_debug = pulse_live_log_db_exception(exc, trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"), request_id=request_id, stage="token_state_transition", transaction_started_at=token_transaction_started_at)
-        try:
-            conn.rollback(); conn.close()
-        except Exception:
-            pass
-        return pulse_live_cohost_error("DB_TRANSACTION_FAILED", status=500, message="The co-host token was created, but the joining state could not be committed.", step="token_state_transition", trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"), request_id=request_id, debug_error=exc, diagnostic=owner_debug.get("db_error"))
-    conn.close()
-    verified_claims = verification.get("claims") or {}
-    audio_v2_enabled = pulse_live_audio_v2_enabled(user.get("user_id"), is_qa=bool(admin_current_user()))
-    if is_guest_request:
-        try:
-            pulse_emit_event("live_cohost_token_ready", {"live_id": live_id, "guest_id": int(guest.get("id") or 0), "request_id": request_id, "viewer_user_id": user["user_id"], "host_user_id": int(live.get("user_id") or 0), "trace_id": trace_id, "state": "joining"}, user["user_id"], int(live.get("feed_post_id") or 0))
-        except Exception:
-            logging.exception("PULSE_COHOST_TOKEN_REALTIME_FAILED trace_id=%s live_id=%s guest_id=%s", trace_id, live_id, guest.get("id"))
-    return jsonify({
-        "ok": True,
-        "live_id": live_id,
-        "trace_id": trace_id,
-        "livekit_url": pulse_livekit_ws_url(),
-        "room": room_name,
-        "identity": identity,
-        "can_publish": can_publish,
-        "can_subscribe": True,
-        "can_publish_sources": token_permissions["canPublishSources"],
-        "can_publish_data": grant_publish_data,
-        "can_update_own_metadata": grant_update_own_metadata,
-        "room_join": True,
-        "role": token_role,
-        "audio_v2_enabled": audio_v2_enabled,
-        "publisher_audio_v2_enabled": bool(can_publish and audio_v2_enabled),
-        "audio_v2_fallback_enabled": pulse_live_audio_v2_fallback_enabled(),
-        "audio_trace_enabled": pulse_live_audio_trace_enabled(user.get("user_id"), is_qa=bool(admin_current_user())),
-        "guest_id": int(guest.get("id") or 0),
-        "request_id": request_id,
-        "participant_name": verified_claims.get("participant_name") or pulse_actor_display_name(user),
-        "expires_at": int(verified_claims.get("expiration") or 0),
-        "token_claims": verified_claims,
-        "step": "token_verified",
-        "state": "joining" if is_guest_request else "token_ready",
-        "token": token,
-    })
-
-
 @webhook_app.route("/api/pulse/live/<int:live_id>/agora/token", methods=["POST"])
 def api_pulse_live_agora_token(live_id):
     """Mint least-privilege Agora Live credentials using PulseSoc authority."""
@@ -47284,26 +46335,8 @@ def api_pulse_live_agora_token(live_id):
 
 @webhook_app.route("/api/pulse/live/<int:live_id>/rtc/token", methods=["POST"])
 def api_pulse_live_rtc_token(live_id):
-    # LiveKit remains the global default until paired physical validation passes.
-    # The owner-only flag is intentionally narrow and reversible for controlled
-    # physical testing; all participants in that owner's Live must use the same
-    # provider, so selection is based on the server-owned session host.
-    provider = "livekit"
-    if str(os.getenv("LIVE_RTC_PROVIDER", "livekit")).strip().lower() == "agora":
-        provider = "agora"
-    elif str(os.getenv("AGORA_OWNER_LIVE_TEST_ENABLED", "false")).strip().lower() in {"1", "true", "yes", "on"}:
-        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-        cur.execute("SELECT user_id FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
-        live = dict(cur.fetchone() or {})
-        cur.execute("SELECT * FROM users WHERE user_id=? LIMIT 1", (int(live.get("user_id") or 0),))
-        host = dict(cur.fetchone() or {})
-        conn.close()
-        if host and (user_is_owner_account(host) or premium_identity_engine.is_owner(host)):
-            provider = "agora"
-    logging.info("PULSE_LIVE_RTC_PROVIDER live_id=%s provider=%s owner_test=%s", live_id, provider, provider == "agora" and str(os.getenv("LIVE_RTC_PROVIDER", "livekit")).strip().lower() != "agora")
-    if provider == "agora":
-        return api_pulse_live_agora_token(live_id)
-    return api_pulse_live_livekit_token(live_id)
+    logging.info("PULSE_LIVE_RTC_PROVIDER live_id=%s provider=agora", live_id)
+    return api_pulse_live_agora_token(live_id)
 
 
 @webhook_app.route("/api/pulse/live/<int:live_id>/guests/<int:guest_id>/publish-complete", methods=["POST"])
@@ -47359,49 +46392,6 @@ def api_pulse_live_guest_publish_complete(live_id, guest_id):
         except Exception:
             logging.exception("PULSE_COHOST_AGORA_PROMOTION_REALTIME_FAILED trace_id=%s live_id=%s guest_id=%s", trace_id, live_id, guest_id)
         return jsonify({"ok": True, "status": "live", "state": "live", "step": "cohost_live", "trace_id": trace_id, "guest": pulse_live_guest_payload(live_guest), "message": "Co-host is live through Agora."})
-    room_name = clean_html(guest.get("livekit_room") or live.get("webrtc_room_id") or f"pulse-live-{live_id}")[:120]
-    identity = clean_html(guest.get("livekit_identity") or "")[:160]
-    inspected = pulse_livekit_room_participants(room_name, trace_id=trace_id, live_id=live_id)
-    if not inspected.get("ok"):
-        conn.close()
-        return jsonify({"ok": True, "status": guest.get("status") or "joining", "state": guest.get("status") or "joining", "step": "participant_confirmation", "trace_id": trace_id, "guest_id": guest_id, "promotion_pending": True, "missing_event": "participant_joined", "retry_after_ms": 800, "message": "Waiting for LiveKit participant confirmation."}), 202
-    participant = next((item for item in inspected.get("participants") or [] if str(item.get("identity") or "") == identity), {})
-    tracks = participant.get("tracks") or participant.get("track_publications") or []
-    audio_tracks = [track for track in tracks if pulse_livekit_track_type(track) == "audio"]
-    video_tracks = [track for track in tracks if pulse_livekit_track_type(track) == "video" and not bool(track.get("muted"))]
-    if not participant or not audio_tracks or not video_tracks:
-        missing_event = "participant_joined" if not participant else "audio_track_published" if not audio_tracks else "video_track_published"
-        if participant:
-            participant_sid = clean_html(participant.get("sid") or "")[:160]
-            cur.execute("UPDATE pulse_live_guests SET status='joined', participant_sid=?, participant_joined_at=COALESCE(participant_joined_at,?), joined_at=COALESCE(joined_at,?), updated_at=? WHERE id=?", (participant_sid, now, now, now, guest_id))
-            cur.execute("UPDATE pulse_live_guest_requests SET status='joined', updated_at=? WHERE id=?", (now, int(guest.get("request_id") or 0)))
-            conn.commit()
-        conn.close()
-        return jsonify({"ok": True, "status": "joined" if participant else guest.get("status") or "joining", "state": "joined" if participant else guest.get("status") or "joining", "step": "track_confirmation", "trace_id": trace_id, "guest_id": guest_id, "promotion_pending": True, "missing_event": missing_event, "retry_after_ms": 800, "message": f"Waiting for {missing_event.replace('_', ' ')}."}), 202
-    participant_sid = clean_html(participant.get("sid") or "")[:160]
-    request_id = int(guest.get("request_id") or 0)
-    cur.execute("UPDATE pulse_live_guests SET status='joined', participant_sid=?, participant_joined_at=COALESCE(participant_joined_at,?), joined_at=COALESCE(joined_at,?), updated_at=? WHERE id=?", (participant_sid, now, now, now, guest_id))
-    cur.execute("UPDATE pulse_live_guest_requests SET status='joined', updated_at=? WHERE id=?", (now, request_id))
-    cur.execute("UPDATE pulse_live_guests SET status='publishing', audio_published=1, video_published=1, updated_at=? WHERE id=?", (now, guest_id))
-    cur.execute("UPDATE pulse_live_guest_requests SET status='publishing', updated_at=? WHERE id=?", (now, request_id))
-    cur.execute("UPDATE pulse_live_guests SET status='live', live_at=COALESCE(live_at,?), updated_at=? WHERE id=?", (now, now, guest_id))
-    cur.execute("UPDATE pulse_live_guest_requests SET status='live', updated_at=? WHERE id=?", (now, request_id))
-    host_user_id = int(live.get("user_id") or 0)
-    pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=host_user_id, request_id=request_id, step="cohost_participant_confirmed", trace_id=trace_id, metadata={"participant_sid": participant_sid, "result": "completed"}, post_id=int(live.get("feed_post_id") or 0))
-    pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=host_user_id, request_id=request_id, step="cohost_publish_confirmed", trace_id=trace_id, metadata={"audio_tracks": len(audio_tracks), "video_tracks": len(video_tracks), "result": "completed"}, post_id=int(live.get("feed_post_id") or 0))
-    pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=host_user_id, request_id=request_id, step="cohost_promotion_completed", trace_id=trace_id, metadata={"guest_id": guest_id, "result": "completed"}, post_id=int(live.get("feed_post_id") or 0))
-    conn.commit()
-    live_guest = pulse_live_active_guest(cur, live_id, user["user_id"])
-    conn.close()
-    try:
-        pulse_emit_event("live_cohost_participant_joined", {"live_id": live_id, "guest_id": guest_id, "viewer_user_id": user["user_id"], "host_user_id": host_user_id, "request_id": request_id, "trace_id": trace_id, "participant_sid": participant_sid}, user["user_id"], int(live.get("feed_post_id") or 0))
-        pulse_emit_event("live_cohost_publish_complete", {"live_id": live_id, "guest_id": guest_id, "viewer_user_id": user["user_id"], "host_user_id": host_user_id, "request_id": request_id, "trace_id": trace_id, "audio_tracks": len(audio_tracks), "video_tracks": len(video_tracks)}, user["user_id"], int(live.get("feed_post_id") or 0))
-        pulse_emit_event("live_cohost_guest_live", {"live_id": live_id, "guest_id": guest_id, "viewer_user_id": user["user_id"], "host_user_id": host_user_id, "request_id": request_id, "trace_id": trace_id, "state": "live"}, user["user_id"], int(live.get("feed_post_id") or 0))
-    except Exception:
-        logging.exception("PULSE_COHOST_PROMOTION_REALTIME_FAILED trace_id=%s live_id=%s guest_id=%s", trace_id, live_id, guest_id)
-    return jsonify({"ok": True, "status": "live", "state": "live", "step": "cohost_live", "trace_id": trace_id, "guest": pulse_live_guest_payload(live_guest), "message": "Co-host is live."})
-
-
 @webhook_app.route("/api/pulse/live/<int:live_id>/debug-event", methods=["POST"])
 def api_pulse_live_debug_event(live_id):
     init_db()
@@ -47503,14 +46493,7 @@ def api_pulse_live_browser_publish(live_id):
         if audio_tracks <= 0 and video_tracks <= 0:
             conn.close()
             return jsonify({"ok": False, "message": "No camera or microphone tracks were detected.", "trace_id": trace_id}), 400
-        provider = "livekit"
-        if str(os.getenv("LIVE_RTC_PROVIDER", "livekit")).strip().lower() == "agora":
-            provider = "agora"
-        elif str(os.getenv("AGORA_OWNER_LIVE_TEST_ENABLED", "false")).strip().lower() in {"1", "true", "yes", "on"}:
-            cur.execute("SELECT * FROM users WHERE user_id=? LIMIT 1", (int(live.get("user_id") or 0),))
-            host = dict(cur.fetchone() or {})
-            if host and (user_is_owner_account(host) or premium_identity_engine.is_owner(host)):
-                provider = "agora"
+        provider = "agora"
         if provider == "agora":
             recording = {"ok": False, "reason": "not_attempted"}
             try:
@@ -47536,269 +46519,13 @@ def api_pulse_live_browser_publish(live_id):
             logging.info("PULSE_LIVE_AGORA_PUBLISH live_id=%s provider=agora host_uid=%s audio_tracks=%s video_tracks=%s trace_id=%s", live_id, user.get("user_id"), audio_tracks, video_tracks, trace_id)
             conn.commit(); conn.close()
             return jsonify({"ok": True, "status": "live", "publish_path": "agora_rtc", "recording_status": recording_status, "audio_tracks": audio_tracks, "video_tracks": video_tracks, "playback": {"supports_webrtc": True, "preferred_transport": "agora", "webrtc_room_id": live.get("webrtc_room_id") or f"pulse-live-{live_id}"}})
-        existing_egress = (live.get("livekit_egress_id") or "").strip()
-        existing_egress_status = (live.get("livekit_egress_status") or "").strip().lower()
-        existing_mux_status = (live.get("mux_live_status") or "").strip().lower()
-        if existing_egress and existing_egress_status in {"egress_starting", "egress_active", "starting", "active"} and existing_mux_status in {"", "idle", "egress_ended", "failed"}:
-            stopped = pulse_livekit_stop_egress(existing_egress, live.get("webrtc_room_id") or "", trace_id=trace_id, live_id=live_id)
-            cur.execute(
-                """
-                UPDATE pulse_live_sessions
-                SET livekit_egress_id='', livekit_egress_status='stale_stopped',
-                    livekit_egress_error=?, mux_live_status='idle',
-                    publish_state='livekit_restarting_egress', stream_health='mux_idle', is_live=0, updated_at=?
-                WHERE id=?
-                """,
-                ((stopped.get("message") or stopped.get("reason") or "Stopped stale LiveKit egress before retrying Mux.")[:500], now, live_id),
-            )
-            cur.execute(
-                """
-                UPDATE pulse_live_streams
-                SET livekit_egress_id='', livekit_egress_status='stale_stopped',
-                    livekit_egress_error=?, mux_live_status='idle', status='starting', updated_at=?
-                WHERE session_id=?
-                """,
-                ((stopped.get("message") or stopped.get("reason") or "Stopped stale LiveKit egress before retrying Mux.")[:500], now, live_id),
-            )
-            conn.commit()
-            live["livekit_egress_id"] = ""
-            live["livekit_egress_status"] = "stale_stopped"
-            existing_egress = ""
-            existing_egress_status = "stale_stopped"
-        track_ready = {"ready": True, "audio_tracks": audio_tracks, "video_tracks": video_tracks, "reason": "egress_already_started"}
-        if not (existing_egress and existing_egress_status in {"egress_starting", "egress_active", "starting", "active"} and existing_mux_status in {"active", "live"}):
-            track_ready = pulse_livekit_wait_for_host_tracks(live, trace_id=trace_id)
-            if not track_ready.get("ready"):
-                stream_health = "livekit_waiting_for_tracks"
-                publish_state = "livekit_waiting_for_tracks"
-                safe_reason = clean_html(track_ready.get("reason") or "video_track_not_ready")[:120]
-                pulse_live_record_timeline_event(
-                    cur,
-                    "live_backend_waiting_for_tracks",
-                    live_id=live_id,
-                    actor_user_id=user["user_id"],
-                    post_id=int(live.get("feed_post_id") or 0),
-                    payload={
-                        "trace_id": trace_id,
-                        "room": track_ready.get("room") or live.get("webrtc_room_id") or "",
-                        "host_joined": bool(track_ready.get("host_joined")),
-                        "participant_count": int(track_ready.get("participant_count") or 0),
-                        "audio_tracks": int(track_ready.get("audio_tracks") or 0),
-                        "video_tracks": int(track_ready.get("video_tracks") or 0),
-                        "stable_checks": int(track_ready.get("stable_checks") or 0),
-                        "reason": safe_reason,
-                    },
-                )
-                cur.execute(
-                    """
-                    UPDATE pulse_live_sessions
-                    SET publish_state=?, stream_health=?, audio_tracks=?, video_tracks=?,
-                        livekit_egress_status=?, livekit_egress_error=?, mux_live_status=?, is_live=0, updated_at=?
-                    WHERE id=?
-                    """,
-                    (
-                        publish_state,
-                        stream_health,
-                        max(audio_tracks, safe_int(track_ready.get("audio_tracks"), 0)),
-                        max(video_tracks, safe_int(track_ready.get("video_tracks"), 0)),
-                        "waiting_for_tracks",
-                        f"LiveKit host video track is not published yet: {safe_reason}"[:500],
-                        live.get("mux_live_status") or "idle",
-                        now,
-                        live_id,
-                    ),
-                )
-                cur.execute(
-                    "UPDATE pulse_live_streams SET status='starting', livekit_egress_status=?, livekit_egress_error=?, mux_live_status=?, updated_at=? WHERE session_id=?",
-                    ("waiting_for_tracks", f"LiveKit host video track is not published yet: {safe_reason}"[:500], live.get("mux_live_status") or "idle", now, live_id),
-                )
-                conn.commit(); conn.close()
-                logging.info(
-                    "PULSE_LIVE_BROWSER_PUBLISH_WAITING_FOR_TRACKS trace_id=%s live_id=%s room=%s host_joined=%s audio_tracks=%s video_tracks=%s reason=%s",
-                    trace_id,
-                    live_id,
-                    track_ready.get("room") or live.get("webrtc_room_id") or "",
-                    bool(track_ready.get("host_joined")),
-                    int(track_ready.get("audio_tracks") or 0),
-                    int(track_ready.get("video_tracks") or 0),
-                    safe_reason,
-                )
-                return jsonify({
-                    "ok": False,
-                    "status": "waiting_for_tracks",
-                    "message": "LiveKit is connected, but the host video track is not visible to the room yet. Retrying egress shortly.",
-                    "trace_id": trace_id,
-                    "live_id": live_id,
-                    "retryable": True,
-                    "retry_after_ms": int(os.getenv("LIVEKIT_BROWSER_PUBLISH_RETRY_MS", "1500")),
-                    "audio_tracks": max(audio_tracks, safe_int(track_ready.get("audio_tracks"), 0)),
-                    "video_tracks": max(video_tracks, safe_int(track_ready.get("video_tracks"), 0)),
-                    "livekit": {
-                        "room": track_ready.get("room") or live.get("webrtc_room_id") or "",
-                        "host_joined": bool(track_ready.get("host_joined")),
-                        "participant_count": int(track_ready.get("participant_count") or 0),
-                        "published_tracks": track_ready.get("published_tracks") or [],
-                    },
-                }), 409
-        verified_audio_tracks = max(audio_tracks, safe_int(track_ready.get("audio_tracks"), 0))
-        verified_video_tracks = max(video_tracks, safe_int(track_ready.get("video_tracks"), 0))
-        live["audio_tracks"] = verified_audio_tracks
-        live["video_tracks"] = verified_video_tracks
-        logging.info(
-            "PULSE_LIVE_BROWSER_PUBLISH_EGRESS_READY trace_id=%s live_id=%s room=%s audio_tracks=%s video_tracks=%s mux_playback=%s",
-            trace_id,
-            live_id,
-            live.get("webrtc_room_id") or "",
-            verified_audio_tracks,
-            verified_video_tracks,
-            bool(live.get("mux_playback_id") or live.get("playback_url") or live.get("hls_url")),
-        )
-        pulse_live_record_timeline_event(
-            cur,
-            "live_egress_start_requested",
-            live_id=live_id,
-            actor_user_id=user["user_id"],
-            post_id=int(live.get("feed_post_id") or 0),
-            payload={
-                "trace_id": trace_id,
-                "room": live.get("webrtc_room_id") or "",
-                "audio_tracks": verified_audio_tracks,
-                "video_tracks": verified_video_tracks,
-                "stable_checks": int(track_ready.get("stable_checks") or 0),
-            },
-        )
-        egress = pulse_livekit_start_mux_egress(live, trace_id=trace_id)
-        quota_exhausted = (not egress.get("ok")) and pulse_livekit_egress_resource_exhausted(egress)
-        if egress.get("ok"):
-            publish_state = "browser_live_egress"
-            stream_health = "egress_starting" if not egress.get("already_started") else "egress_active"
-            mux_status = "egress_starting"
-            livekit_egress_status = egress.get("status") or stream_health
-            livekit_egress_error = ""
-            is_live = 1
-            status = "live"
-            publish_path = "livekit_mux_egress"
-        elif quota_exhausted:
-            publish_state = "browser_live_livekit_direct"
-            stream_health = "livekit_direct"
-            mux_status = "egress_quota_exhausted"
-            livekit_egress_status = "quota_exhausted"
-            livekit_egress_error = (egress.get("message") or egress.get("reason") or "LiveKit egress minutes are exhausted.")[:500]
-            is_live = 1
-            status = "live"
-            publish_path = "livekit_direct"
-        else:
-            publish_state = "browser_live_livekit_direct"
-            stream_health = "livekit_direct"
-            mux_status = live.get("mux_live_status") or "idle"
-            livekit_egress_status = "failed"
-            livekit_egress_error = (egress.get("message") or egress.get("reason") or "LiveKit egress failed.")[:500]
-            is_live = 1
-            status = "live"
-            publish_path = "livekit_direct"
-        pulse_live_record_timeline_event(
-            cur,
-            "live_egress_start_response",
-            live_id=live_id,
-            actor_user_id=user["user_id"],
-            post_id=int(live.get("feed_post_id") or 0),
-            payload={
-                "trace_id": trace_id,
-                "room": live.get("webrtc_room_id") or "",
-                "ok": bool(egress.get("ok")),
-                "egress_id": egress.get("egress_id") or "",
-                "status": egress.get("status") or "",
-                "strategy": egress.get("strategy") or "",
-                "already_started": bool(egress.get("already_started")),
-                "quota_exhausted": bool(quota_exhausted),
-                "reason": egress.get("reason") or "",
-                "message": egress.get("message") or "",
-            },
-        )
-        cur.execute(
-            """
-            UPDATE pulse_live_sessions
-            SET status=?, publish_state=?, stream_health=?, audio_tracks=?, video_tracks=?,
-                livekit_egress_id=COALESCE(NULLIF(?, ''), livekit_egress_id),
-                livekit_egress_status=?, livekit_egress_error=?, mux_live_status=?,
-                is_live=?, updated_at=?
-            WHERE id=?
-            """,
-            (status, publish_state, stream_health, verified_audio_tracks, verified_video_tracks, egress.get("egress_id") or "", livekit_egress_status, livekit_egress_error, mux_status, is_live, now, live_id),
-        )
-        cur.execute(
-            """
-            UPDATE pulse_live_streams
-            SET status=?, livekit_egress_id=COALESCE(NULLIF(?, ''), livekit_egress_id),
-                livekit_egress_status=?, livekit_egress_error=?, mux_live_status=?, updated_at=?
-            WHERE session_id=?
-            """,
-            (status, egress.get("egress_id") or "", livekit_egress_status, livekit_egress_error, mux_status, now, live_id),
-        )
-        cur.execute("UPDATE pulse_posts SET live_status='live', updated_at=? WHERE id=? AND live_session_id=? AND deleted_at IS NULL", (now, int(live.get("feed_post_id") or 0), live_id))
-        conn.commit(); conn.close()
-        try:
-            event_name = "livestream_browser_livekit_egress_started" if egress.get("ok") else "livestream_browser_livekit_direct_started"
-            pulse_emit_event(event_name, {"live_id": live_id, "audio_tracks": verified_audio_tracks, "video_tracks": verified_video_tracks, "publish_path": publish_path, "egress_id": egress.get("egress_id") or "", "egress_ok": bool(egress.get("ok")), "egress_quota_exhausted": bool(quota_exhausted)}, user["user_id"], None)
-        except Exception:
-            logging.exception("PULSE_LIVE_BROWSER_PUBLISH_EMIT_FAILED live_id=%s trace_id=%s", live_id, trace_id)
-        live_for_playback = dict(live)
-        live_for_playback.update({
-            "status": status,
-            "publish_state": publish_state,
-            "stream_health": stream_health,
-            "mux_live_status": mux_status,
-            "livekit_egress_status": livekit_egress_status,
-            "livekit_egress_error": livekit_egress_error,
-        })
-        playback = live_distribution_service.playback_manifest(live_for_playback)
-        if not egress.get("ok") and not quota_exhausted:
-            return jsonify({
-                "ok": True,
-                "message": "Native LiveKit playback is active. Public HLS replay is waiting for provider egress recovery.",
-                "trace_id": trace_id,
-                "live_id": live_id,
-	                "audio_tracks": verified_audio_tracks,
-	                "video_tracks": verified_video_tracks,
-                "publish_path": publish_path,
-                "requires_rtmp_encoder": False,
-                "egress": {
-                    "ok": False,
-                    "reason": egress.get("reason") or "",
-                    "status_code": egress.get("status_code"),
-                    "participant_error": egress.get("participant_error") or "",
-                    "room_composite_error": egress.get("room_composite_error") or "",
-                },
-                "playback": playback,
-            })
-        return jsonify({
-            "ok": True,
-            "message": "LiveKit egress quota is unavailable. Public Mux playback will stay offline until egress minutes are available." if quota_exhausted else "LiveKit egress started. Waiting for Mux to become active before public playback opens.",
-            "trace_id": trace_id,
-            "live_id": live_id,
-	            "audio_tracks": verified_audio_tracks,
-	            "video_tracks": verified_video_tracks,
-            "publish_path": publish_path,
-            "mux_waiting": bool(egress.get("ok") and not quota_exhausted),
-            "requires_rtmp_encoder": False,
-            "egress": {
-                "ok": bool(egress.get("ok")),
-                "quota_exhausted": bool(quota_exhausted),
-                "egress_id": egress.get("egress_id") or "",
-                "status": egress.get("status") or "",
-                "strategy": egress.get("strategy") or "",
-                "already_started": bool(egress.get("already_started")),
-                "reason": egress.get("reason") or "",
-            },
-            "playback": playback,
-        })
     except Exception as exc:
-        logging.exception("PULSE_LIVE_BROWSER_PUBLISH_FAILED trace_id=%s live_id=%s user_id=%s error=%s", trace_id, live_id, user.get("user_id"), exc)
+        logging.exception("PULSE_LIVE_AGORA_PUBLISH_FAILED live_id=%s error=%s", live_id, exc)
         try:
             conn.rollback(); conn.close()
         except Exception:
             pass
-        return jsonify({"ok": False, "message": "Live media could not publish.", "trace_id": trace_id}), 500
+        return api_error("Agora Live publishing could not be confirmed.", 500)
 
 
 @webhook_app.route("/api/pulse/live/<int:live_id>/webrtc/signal", methods=["POST"])
@@ -48114,7 +46841,7 @@ def api_pulse_live_state(live_id):
             "active_count": len(guests),
             "max_active": 12,
             "room": live.get("webrtc_room_id") or "",
-            "livekit_configured": bool(pulse_livekit_config().get("configured")),
+            "agora_configured": bool(call_engine.agora_config_status().get("configured")),
         },
         "health": health,
         "presence": presence,
@@ -48643,8 +47370,8 @@ def api_pulse_live_join_status(live_id):
         "request": pulse_live_guest_request_payload(latest) if latest else None,
         "guest": pulse_live_guest_payload(guest) if guest else None,
         "can_publish": bool(guest),
-        "livekit_configured": bool(pulse_livekit_config().get("configured")),
-        "token_url": f"/api/pulse/live/{live_id}/livekit/token" if guest else "",
+        "agora_configured": bool(call_engine.agora_config_status().get("configured")),
+        "token_url": f"/api/pulse/live/{live_id}/rtc/token" if guest else "",
     })
 
 

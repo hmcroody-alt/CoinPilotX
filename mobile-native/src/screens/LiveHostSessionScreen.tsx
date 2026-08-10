@@ -21,7 +21,7 @@ import * as Haptics from "expo-haptics";
 import {
   endLive,
   confirmHostLivePublish,
-  getLiveKitToken,
+  getLiveRtcToken,
   getLiveState,
   liveWebUrl,
   listGuestManagement,
@@ -138,7 +138,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
       }
       try {
         await claimLivePlaybackOwner("host", liveId).catch(() => undefined);
-        const credentials = await getLiveKitToken(liveId, "host");
+        const credentials = await getLiveRtcToken(liveId, "host");
         if (cancelled) return;
         if (!credentials || !credentials.canPublish) {
           await releaseLivePlaybackOwner("host", liveId);
@@ -146,7 +146,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
           setConnecting(false);
           return;
         }
-        // The host token is minted with a 2h TTL, but LiveKit reuses the ORIGINAL
+        // The host token is minted with a 2h TTL, but Agora reuses the ORIGINAL
         // join token on every reconnect, so a broadcast that runs past the TTL
         // cannot recover from a network drop unless the client re-mints. This
         // fetcher is what the room uses to refresh in place; it re-hits the
@@ -154,12 +154,12 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
         // broadcast was ended will not be re-issued a publish token.
         const ok = await room.startBroadcast(credentials, {
           publish: true,
-          refreshCredentials: () => getLiveKitToken(liveId, "host")
+          refreshCredentials: () => getLiveRtcToken(liveId, "host")
         });
         if (cancelled) return;
         if (!ok) {
           await releaseLivePlaybackOwner("host", liveId);
-          setFatalError(room.getLastConnectError?.() || room.error || "The native broadcast could not connect to LiveKit.");
+          setFatalError(room.getLastConnectError?.() || room.error || "The native broadcast could not connect to Agora.");
           setConnecting(false);
           return;
         }
@@ -278,7 +278,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
     confirmHostLivePublish(liveId, { audioTracks, videoTracks })
       .then((result) => {
         if (result.ok) {
-          setToolNote(result.message || "Native LiveKit media is confirmed for viewers.");
+          setToolNote(result.message || "Native Agora media is confirmed for viewers.");
           refreshLiveMeta().catch(() => undefined);
         } else if (result.retryable) {
           setTimeout(() => {

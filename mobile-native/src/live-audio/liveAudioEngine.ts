@@ -41,7 +41,7 @@ export type LiveAudioOwner = {
 
 export type LiveAudioLease = Pick<LiveAudioOwner, "ownerId" | "leaseId" | "mode">;
 
-type LiveKitAudioSession = {
+type RealtimeAudioSession = {
   setAppleAudioConfiguration?: (config: any) => Promise<void>;
   configureAudio?: (config: Record<string, unknown>) => Promise<void>;
   startAudioSession?: () => Promise<void>;
@@ -133,7 +133,7 @@ function notifyDisplaced(ownerId: string) {
 /**
  * Canonical PulseSoc live audio profile.
  *
- * LiveKit real-time media shares the known-good call path. Listen-only viewers
+ * Agora real-time media shares the known-good call path. Listen-only viewers
  * still do not publish or start microphone capture (`modePublishesMicrophone`
  * remains false for `live_viewer`), but iOS remote WebRTC audio is rendered
  * through the same communication session profile as calls. A playback-only
@@ -249,7 +249,7 @@ export function claimLiveAudioSession(
 }
 
 export async function activateLiveAudioSession(
-  audioSession: LiveKitAudioSession,
+  audioSession: RealtimeAudioSession,
   mode: LiveAudioMode,
   ownerId: string,
   options: { speaker?: boolean; onDisplaced?: () => void; correlationId?: string; participantRole?: string } = {}
@@ -290,7 +290,7 @@ export async function activateLiveAudioSession(
 }
 
 export async function releaseLiveAudioSession(
-  audioSession: LiveKitAudioSession | null | undefined,
+  audioSession: RealtimeAudioSession | null | undefined,
   lease: string | LiveAudioLease
 ): Promise<boolean> {
   const ownerId = typeof lease === "string" ? lease : lease.ownerId;
@@ -324,7 +324,7 @@ export async function releaseLiveAudioSession(
  * teardown, and test setup - never for ordinary feature exit, which must use
  * the owner-scoped release above.
  */
-export async function resetLiveAudioOwnership(audioSession?: LiveKitAudioSession | null): Promise<void> {
+export async function resetLiveAudioOwnership(audioSession?: RealtimeAudioSession | null): Promise<void> {
   const owner = activeLiveAudioOwner;
   activeLiveAudioOwner = null;
   lastOwnershipDecision = null;
@@ -345,7 +345,7 @@ export async function resetLiveAudioOwnership(audioSession?: LiveKitAudioSession
  * session already holds this configuration, the native call is a no-op.
  */
 export async function reapplyLiveAudioConfiguration(
-  audioSession: LiveKitAudioSession | null | undefined,
+  audioSession: RealtimeAudioSession | null | undefined,
   mode: LiveAudioMode
 ): Promise<void> {
   if (Platform.OS !== "ios" || !audioSession) return;
@@ -355,12 +355,12 @@ export async function reapplyLiveAudioConfiguration(
   }
 }
 
-export async function selectLiveAudioOutput(audioSession: LiveKitAudioSession, speakerEnabled: boolean): Promise<void> {
+export async function selectLiveAudioOutput(audioSession: RealtimeAudioSession, speakerEnabled: boolean): Promise<void> {
   const output = Platform.OS === "ios" ? (speakerEnabled ? "force_speaker" : "default") : speakerEnabled ? "speaker" : "earpiece";
   await audioSession.selectAudioOutput?.(output);
 }
 
-export async function showLiveAudioRoutePicker(audioSession: LiveKitAudioSession): Promise<void> {
+export async function showLiveAudioRoutePicker(audioSession: RealtimeAudioSession): Promise<void> {
   if (Platform.OS === "ios") await audioSession.showAudioRoutePicker?.();
 }
 
@@ -560,7 +560,7 @@ export function liveAudioProfileFor(role: LiveAudioRole): LiveAudioHealthProfile
  * Reassert the native WebRTC engine after camera startup.
  *
  * Production CoreAudio evidence showed the failing video path stopping its
- * RemoteIO engine less than half a second after camera startup while LiveKit
+ * RemoteIO engine less than half a second after camera startup while Agora
  * still reported both microphone publications. A published SID is therefore
  * necessary but not sufficient: the adapter must also prove that the native
  * playout/recording engine is running after the camera transition settles.
@@ -1006,7 +1006,7 @@ export async function applyRemoteAudioEnabled(room: any, enabled: boolean): Prom
 
 /**
  * Reassert an already-published microphone after camera or route transitions.
- * This never unpublishes or creates a second track: LiveKit resolves an enabled
+ * This never unpublishes or creates a second track: Agora resolves an enabled
  * source to the existing publication, while the explicit track enable repairs
  * a native media track left disabled by a camera transition.
  */

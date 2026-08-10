@@ -1,13 +1,17 @@
 import { canConnectAsCohostPublisher } from "../liveSession";
-import type { LiveKitCredentials } from "../liveSession";
+import type { LiveRtcCredentials } from "../liveSession";
 
-function creds(overrides: Partial<LiveKitCredentials> = {}): LiveKitCredentials {
+function creds(overrides: Partial<LiveRtcCredentials> = {}): LiveRtcCredentials {
   return {
     broadcastId: 1,
     hostUserId: 9,
     authorizationVersion: "auth-v1",
     token: "tok-abc",
-    url: "wss://live.example",
+    provider: "agora",
+    appId: "agora-app-id",
+    channelName: "room-1",
+    uid: 9,
+    url: "",
     room: "room-1",
     identity: "user-9",
     canPublish: true,
@@ -53,8 +57,9 @@ describe("canConnectAsCohostPublisher (Issue 5: guest joining fails)", () => {
     expect(canConnectAsCohostPublisher(creds({ guestId: -1 }))).toBe(false);
   });
 
-  it("refuses when the token or url is missing", () => {
+  it("refuses when the token or Agora channel identity is missing", () => {
     expect(canConnectAsCohostPublisher(creds({ token: "" }))).toBe(false);
-    expect(canConnectAsCohostPublisher(creds({ url: "" }))).toBe(false);
+    expect(canConnectAsCohostPublisher(creds({ appId: "" }))).toBe(false);
+    expect(canConnectAsCohostPublisher(creds({ channelName: "" }))).toBe(false);
   });
 });

@@ -23,7 +23,7 @@ PROVIDER_REQUIREMENTS: dict[str, tuple[Any, ...]] = {
     "brevo_email": ("BREVO_API_KEY", "BREVO_SENDER_EMAIL"),
     "brevo_sms": ("BREVO_API_KEY", "BREVO_SMS_SENDER"),
     "stripe": ("STRIPE_SECRET_KEY",),
-    "livekit": ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"),
+    "agora": ("AGORA_APP_ID", "AGORA_APP_CERTIFICATE"),
     "web_push": ("WEB_PUSH_PUBLIC_KEY", "WEB_PUSH_PRIVATE_KEY", "WEB_PUSH_SUBJECT"),
     "fcm": ("FCM_PROJECT_ID", "FCM_CLIENT_EMAIL", "FCM_PRIVATE_KEY"),
     "apns": ("APNS_TEAM_ID", "APNS_KEY_ID", "APNS_PRIVATE_KEY", "APNS_BUNDLE_ID"),

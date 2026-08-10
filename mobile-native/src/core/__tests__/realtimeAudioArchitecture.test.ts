@@ -190,46 +190,16 @@ describe("real-time audio protected boundary", () => {
     });
   });
 
-  it("keeps the LiveKit SDK from configuring the audio session behind the coordinator", () => {
-    // registerGlobals is allowed in the two adapters, but only in the form that
-    // disables the SDK's own session management. Allowing the call without
-    // checking its argument would permit the one variant that breaks everything.
-    ["mobile-native/src/calls/useNativeCallRoom.ts", "mobile-native/src/live/useLiveBroadcastRoom.ts"].forEach(
-      (rel) => {
-        const text = fs.readFileSync(path.join(REPO_ROOT, rel), "utf8");
-        const calls = text.match(/registerGlobals\(\{[^}]*\}\)/g) ?? [];
-        expect(calls.length).toBeGreaterThan(0);
-        calls.forEach((call) => {
-          expect(call).toContain("autoConfigureAudioSession: false");
-        });
-      }
-    );
-  });
-
-  // Live no longer imports the call publisher; it imports its own copy of it.
-  // That is a deliberate reversal of the previous rule, so this test is rewritten
-  // rather than deleted - the property being protected changed, it did not
-  // disappear. The old rule protected SAMENESS BY SHARING. This one protects
-  // SAMENESS BY COPY, which is weaker on its own and so needs two assertions
-  // where one used to do: each adapter uses its own module, AND the two modules
-  // still describe the same startup sequence. Without the second half the copy is
-  // free to drift, and the drift stays invisible until a broadcast goes silent on
-  // a real device.
-  it("gives calls and Live separate publisher modules that still run the same sequence", () => {
+  it("keeps both public RTC adapters pinned to Agora", () => {
     const call = fs.readFileSync(path.join(REPO_ROOT, "mobile-native/src/calls/useNativeCallRoom.ts"), "utf8");
-    expect(call).toContain('from "../core/realtimePublisherMedia"');
-    expect(call).toContain("initializeCallGradePublisherMedia({");
-    expect(call).not.toContain("live-audio/");
+    expect(call).toContain('from "./useAgoraCallRoom"');
+    expect(call).toContain("useAgoraCallRoom()");
 
     const live = fs.readFileSync(path.join(REPO_ROOT, "mobile-native/src/live/useLiveBroadcastRoom.ts"), "utf8");
-    expect(live).toContain('from "../live-audio/livePublisherMedia"');
-    expect(live).toContain("initializeCallGradePublisherMedia({");
-    // The isolation the copy exists to provide. A Live adapter still reaching
-    // into src/core/ for audio control flow would carry all of the duplication
-    // cost and none of the benefit.
-    ["realtimeAudioEngine", "realtimeMicrophonePublisher", "realtimePublisherMedia", "realtimeAudioNative"].forEach(
-      (mod) => expect(live).not.toContain(`from "../core/${mod}"`)
-    );
+    expect(live).toContain('from "./useAgoraLiveBroadcastRoom"');
+    expect(live).toContain("useAgoraLiveBroadcastRoom(");
+
+    expect(`${call}\n${live}`).not.toMatch(/livekit|registerGlobals|livekitClient/i);
   });
 
   // The other half of "sameness by copy". Comments and identifier names differ on

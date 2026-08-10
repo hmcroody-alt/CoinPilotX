@@ -7,7 +7,7 @@ import {
   normalizeGuestRequests,
   normalizeLiveGuest,
   normalizeLiveGuests,
-  normalizeLiveKitCredentials,
+  normalizeLiveRtcCredentials,
   normalizeLiveStartResult,
   pendingGuestRequests
 } from "../liveSession";
@@ -68,7 +68,7 @@ describe("normalizeLiveStartResult", () => {
       webrtc_room_id: "pulse-live-42",
       hls_url: "https://stream.mux.com/abc.m3u8",
       feed_post_id: 900,
-      livekit: { room: "pulse-live-42", token_url: "/api/pulse/live/42/livekit/token" }
+      agora: { room: "pulse-live-42", token_url: "/api/pulse/live/42/rtc/token" }
     });
     expect(result).toEqual({
       liveId: 42,
@@ -76,7 +76,7 @@ describe("normalizeLiveStartResult", () => {
       webrtcRoomId: "pulse-live-42",
       hlsUrl: "https://stream.mux.com/abc.m3u8",
       feedPostId: 900,
-      tokenUrl: "/api/pulse/live/42/livekit/token"
+      tokenUrl: "/api/pulse/live/42/rtc/token"
     });
   });
 
@@ -86,9 +86,9 @@ describe("normalizeLiveStartResult", () => {
   });
 });
 
-describe("normalizeLiveKitCredentials", () => {
-  it("normalizes Agora credentials without requiring or exposing a LiveKit URL", () => {
-    const creds = normalizeLiveKitCredentials({
+describe("normalizeLiveRtcCredentials", () => {
+  it("normalizes Agora credentials without requiring or exposing a Agora URL", () => {
+    const creds = normalizeLiveRtcCredentials({
       provider: "agora",
       token: "agora-token",
       app_id: "agora-app-id",
@@ -114,86 +114,34 @@ describe("normalizeLiveKitCredentials", () => {
     expect(creds?.url).toBe("");
   });
 
-  it("accepts livekit_url and coerces publish flag and numeric expiry", () => {
-    const creds = normalizeLiveKitCredentials({
-      token: "tok",
-      livekit_url: "wss://livekit.example",
-      room: "pulse-live-1",
-      identity: "pulse-user-7",
-      can_publish: true,
-      can_subscribe: true,
-      can_publish_data: true,
-      can_update_own_metadata: true,
-      room_join: true,
-      role: "host",
-      guest_id: 0,
-      request_id: 0,
-      participant_name: "Roody",
-      trace_id: "trace-1",
-      expires_at: 1700000000
-    });
-    expect(creds).toEqual({
-      broadcastId: 0,
-      hostUserId: 0,
-      authorizationVersion: "trace-1",
-      token: "tok",
-      url: "wss://livekit.example",
-      room: "pulse-live-1",
-      identity: "pulse-user-7",
-      canPublish: true,
-      canSubscribe: true,
-      canPublishSources: [],
-      canPublishData: true,
-      canUpdateOwnMetadata: true,
-      roomJoin: true,
-      role: "host",
-      guestId: 0,
-      requestId: 0,
-      participantName: "Roody",
-      traceId: "trace-1",
-      expiresAt: "1700000000",
-      // Absent from this payload, so the rollout gate stays OFF and the legacy
-      // fallback stays available.
-      audioV2Enabled: false,
-      publisherAudioV2Enabled: false,
-      audioV2FallbackEnabled: true,
-      audioTraceEnabled: false,
-      // Also absent, so the client carries no quality flags at all and the
-      // policy resolver falls back to the verified stable configuration. This
-      // assertion is exhaustive on purpose: a new field appearing here should
-      // require someone to say so.
-      mediaQuality: null
-    });
-  });
-
   describe("QA-only audio trace gate", () => {
-    const base = { token: "tok", livekit_url: "wss://livekit.example" };
+    const base = { provider: "agora", token: "tok", app_id: "app", channel_name: "room", uid: 7 };
 
     it("is OFF when omitted or expressed as a non-boolean", () => {
       for (const raw of [undefined, false, "true", 1, "1"]) {
-        expect(normalizeLiveKitCredentials({ ...base, audio_trace_enabled: raw })?.audioTraceEnabled).toBe(false);
+        expect(normalizeLiveRtcCredentials({ ...base, audio_trace_enabled: raw })?.audioTraceEnabled).toBe(false);
       }
     });
 
     it("is ON only when the server explicitly authorizes the account", () => {
-      expect(normalizeLiveKitCredentials({ ...base, audio_trace_enabled: true })?.audioTraceEnabled).toBe(true);
+      expect(normalizeLiveRtcCredentials({ ...base, audio_trace_enabled: true })?.audioTraceEnabled).toBe(true);
     });
   });
 
   describe("livestream audio V2 rollout gate", () => {
-    const base = { token: "tok", livekit_url: "wss://livekit.example" };
+    const base = { provider: "agora", token: "tok", app_id: "app", channel_name: "room", uid: 7 };
 
     it("is OFF when the server omits the field, so an older backend runs the legacy path", () => {
-      expect(normalizeLiveKitCredentials(base)?.audioV2Enabled).toBe(false);
-      expect(normalizeLiveKitCredentials(base)?.publisherAudioV2Enabled).toBe(false);
+      expect(normalizeLiveRtcCredentials(base)?.audioV2Enabled).toBe(false);
+      expect(normalizeLiveRtcCredentials(base)?.publisherAudioV2Enabled).toBe(false);
     });
 
     it("is ON only for an explicit server true", () => {
-      expect(normalizeLiveKitCredentials({ ...base, audio_v2_enabled: true })?.audioV2Enabled).toBe(true);
+      expect(normalizeLiveRtcCredentials({ ...base, audio_v2_enabled: true })?.audioV2Enabled).toBe(true);
     });
 
     it("normalizes publisher audio and source grants from the server token response", () => {
-      const creds = normalizeLiveKitCredentials({
+      const creds = normalizeLiveRtcCredentials({
         ...base,
         can_publish: true,
         can_publish_sources: ["microphone", "camera"],
@@ -208,61 +156,19 @@ describe("normalizeLiveKitCredentials", () => {
 
     it("KILL SWITCH: any non-true value runs the legacy path", () => {
       for (const raw of [false, "true", "false", 1, 0, "1", "0", null, undefined, {}]) {
-        expect(normalizeLiveKitCredentials({ ...base, audio_v2_enabled: raw })?.audioV2Enabled).toBe(false);
+        expect(normalizeLiveRtcCredentials({ ...base, audio_v2_enabled: raw })?.audioV2Enabled).toBe(false);
       }
     });
 
     it("keeps the legacy fallback available unless the server explicitly disables it", () => {
-      expect(normalizeLiveKitCredentials(base)?.audioV2FallbackEnabled).toBe(true);
-      expect(normalizeLiveKitCredentials({ ...base, audio_v2_fallback_enabled: true })?.audioV2FallbackEnabled).toBe(true);
-      expect(normalizeLiveKitCredentials({ ...base, audio_v2_fallback_enabled: false })?.audioV2FallbackEnabled).toBe(false);
+      expect(normalizeLiveRtcCredentials(base)?.audioV2FallbackEnabled).toBe(true);
+      expect(normalizeLiveRtcCredentials({ ...base, audio_v2_fallback_enabled: true })?.audioV2FallbackEnabled).toBe(true);
+      expect(normalizeLiveRtcCredentials({ ...base, audio_v2_fallback_enabled: false })?.audioV2FallbackEnabled).toBe(false);
     });
   });
 
-  it("accepts a plain url field and defaults role to viewer", () => {
-    const creds = normalizeLiveKitCredentials({ token: "tok", url: "wss://x" });
-    expect(creds?.role).toBe("viewer");
-    expect(creds?.canPublish).toBe(false);
-  });
-
-  it("normalizes server-verified co-host publishing claims", () => {
-    const creds = normalizeLiveKitCredentials({
-      token: "cohost-token",
-      livekit_url: "wss://livekit.example",
-      room: "pulse-live-44",
-      identity: "pulse-live-guest-8",
-      role: "cohost",
-      can_publish: true,
-      can_subscribe: true,
-      can_publish_sources: ["microphone", "camera"],
-      can_publish_data: true,
-      can_update_own_metadata: true,
-      room_join: true,
-      guest_id: 91,
-      request_id: 77,
-      participant_name: "Nova",
-      trace_id: "cohost-trace",
-      expires_at: 1800000000
-    });
-
-    expect(creds).toMatchObject({
-      role: "cohost",
-      canPublish: true,
-      canSubscribe: true,
-      canPublishSources: ["microphone", "camera"],
-      canPublishData: true,
-      canUpdateOwnMetadata: true,
-      roomJoin: true,
-      guestId: 91,
-      requestId: 77,
-      participantName: "Nova",
-      traceId: "cohost-trace"
-    });
-    expect(canConnectAsCohostPublisher(creds)).toBe(true);
-  });
-
-  it("accepts an authorized Agora co-host without requiring a LiveKit URL", () => {
-    const creds = normalizeLiveKitCredentials({
+  it("accepts an authorized Agora co-host", () => {
+    const creds = normalizeLiveRtcCredentials({
       provider: "agora",
       token: "agora-cohost-token",
       app_id: "agora-app-id",
@@ -280,7 +186,7 @@ describe("normalizeLiveKitCredentials", () => {
   });
 
   it("rejects Agora self-promotion without an accepted guest slot", () => {
-    const creds = normalizeLiveKitCredentials({
+    const creds = normalizeLiveRtcCredentials({
       provider: "agora",
       token: "viewer-token",
       app_id: "agora-app-id",
@@ -295,10 +201,10 @@ describe("normalizeLiveKitCredentials", () => {
     expect(canConnectAsCohostPublisher(creds)).toBe(false);
   });
 
-  it("returns null when the token or url is missing", () => {
-    expect(normalizeLiveKitCredentials({ token: "tok" })).toBeNull();
-    expect(normalizeLiveKitCredentials({ url: "wss://x" })).toBeNull();
-    expect(normalizeLiveKitCredentials(null)).toBeNull();
+  it("returns null when canonical Agora credentials are incomplete", () => {
+    expect(normalizeLiveRtcCredentials({ token: "tok" })).toBeNull();
+    expect(normalizeLiveRtcCredentials({ provider: "agora", token: "tok", app_id: "app" })).toBeNull();
+    expect(normalizeLiveRtcCredentials(null)).toBeNull();
   });
 });
 

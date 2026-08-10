@@ -16,4 +16,3 @@ apply_patch() {
 }
 
 apply_patch "patches/react-native+0.81.5.patch"
-apply_patch "patches/@livekit+react-native-webrtc+144.1.1.patch"

@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS communication_calls (
     public_id TEXT UNIQUE,
     conversation_id INTEGER,
     room_name TEXT UNIQUE,
-    provider TEXT DEFAULT 'livekit',
+    provider TEXT DEFAULT 'agora',
     call_type TEXT CHECK (call_type IN ('audio','video')),
     call_scope TEXT CHECK (call_scope IN ('direct','group','live','room')),
     status TEXT CHECK (status IN ('created','ringing','accepted','connecting','connected','reconnecting','ended','missed','declined','failed','canceled')),

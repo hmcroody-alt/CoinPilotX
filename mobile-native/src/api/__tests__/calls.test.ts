@@ -23,7 +23,7 @@ describe("native call API contract normalization", () => {
     mockPulseApi.mockReset();
   });
 
-  it("keeps the LiveKit join token from canonical accept envelopes", async () => {
+  it("keeps the Agora join token from canonical accept envelopes", async () => {
     mockPulseApi.mockResolvedValueOnce({
       ok: true,
       call: {
@@ -35,8 +35,8 @@ describe("native call API contract normalization", () => {
       },
       join: {
         ok: true,
-        token: "livekit-token",
-        livekit_url: "wss://livekit.example",
+        token: "agora-token",
+        app_id: "agora-app-id",
         room_name: "pulsesoc-call_accepted"
       }
     });
@@ -45,8 +45,8 @@ describe("native call API contract normalization", () => {
 
     expect(call.call_id).toBe("call_accepted");
     expect(call.call_type).toBe("video");
-    expect(call.join?.token).toBe("livekit-token");
-    expect(call.join?.livekit_url).toBe("wss://livekit.example");
+    expect(call.join?.token).toBe("agora-token");
+    expect(call.join?.app_id).toBe("agora-app-id");
     expect(call.room_name).toBe("pulsesoc-call_accepted");
   });
 
@@ -57,7 +57,7 @@ describe("native call API contract normalization", () => {
       join: {
         ok: true,
         token: "join-token",
-        livekit_url: "wss://livekit.example",
+        app_id: "agora-app-id",
         room_name: "pulsesoc-call_join"
       }
     });
@@ -65,11 +65,11 @@ describe("native call API contract normalization", () => {
     const join = await requestCallJoinToken("call_join");
 
     expect(join.token).toBe("join-token");
-    expect(join.livekit_url).toBe("wss://livekit.example");
+    expect(join.app_id).toBe("agora-app-id");
     expect(join.room_name).toBe("pulsesoc-call_join");
   });
 
-  it("preserves provider-scoped Agora credentials without requiring LiveKit fields", async () => {
+  it("preserves provider-scoped Agora credentials", async () => {
     mockPulseApi.mockResolvedValueOnce({
       ok: true,
       join: {
@@ -88,7 +88,6 @@ describe("native call API contract normalization", () => {
     expect(join.app_id).toBe("public-app-id");
     expect(join.channel_name).toBe("pulsesoc-call_agora");
     expect(join.uid).toBe(42);
-    expect(join.livekit_url).toBe("");
   });
 
   it("normalizes status envelopes without dropping the active call identity", async () => {
@@ -135,21 +134,24 @@ describe("native call API contract normalization", () => {
     });
   });
 
-  it("preserves legacy flat call payloads", () => {
+  it("preserves flat Agora call payloads", () => {
     const call = normalizeCallPayload({
       public_id: "call_flat",
       call_type: "video",
       status: "ringing",
       join: {
         token: "flat-token",
-        url: "wss://legacy-livekit.example",
+        provider: "agora",
+        app_id: "agora-app-id",
+        channel_name: "pulsesoc-call_flat",
+        uid: 42,
         room_name: "pulsesoc-call_flat"
       }
     });
 
     expect(call.call_id).toBe("call_flat");
     expect(call.call_type).toBe("video");
-    expect(call.join?.livekit_url).toBe("wss://legacy-livekit.example");
+    expect(call.join?.app_id).toBe("agora-app-id");
     expect(call.join?.token).toBe("flat-token");
   });
 });

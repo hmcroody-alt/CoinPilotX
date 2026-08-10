@@ -1,7 +1,7 @@
 /**
  * Livestream recovery policy.
  *
- * Pure decision logic, kept free of LiveKit and React Native imports so the
+ * Pure decision logic, kept free of Agora and React Native imports so the
  * whole matrix is unit-testable without a device.
  *
  * Two problems this solves:
@@ -12,7 +12,7 @@
  *    indistinguishable. Retrying a terminal state forever is just as wrong as
  *    not retrying a recoverable one.
  *
- * 2. TOKEN EXPIRY. LiveKit reuses the join token on reconnect. Guest tokens are
+ * 2. TOKEN EXPIRY. Agora reuses the join token on reconnect. Guest tokens are
  *    minted with a 30 minute TTL (bot.py: `ttl_seconds=1800 if is_guest_request`),
  *    so a guest in a 40 minute broadcast who hits a blip reconnects with an
  *    already-expired token and can never rejoin. Hosts get 2h, viewers 1h - the
@@ -22,7 +22,7 @@
 export type DisconnectClassification = "recoverable" | "terminal" | "unknown";
 
 /**
- * LiveKit disconnect reasons plus PulseSoc's own internal reasons.
+ * Agora disconnect reasons plus PulseSoc's own internal reasons.
  * Terminal reasons represent an authorization or lifecycle decision that
  * retrying cannot reverse.
  */

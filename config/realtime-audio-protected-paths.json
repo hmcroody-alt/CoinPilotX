@@ -146,32 +146,26 @@
     },
     {
       "id": "backend_token_and_room_policy",
-      "title": "LiveKit token issuance and room authorization",
+      "title": "Agora token issuance and channel authorization",
       "why": "Publish rights are granted here. A token that lets a viewer publish, or that omits the microphone source for a caller, breaks audio from the server side where no client test can see it.",
       "paths": [
         "mobile-native/src/api/calls.ts",
         "mobile-native/src/api/live.ts"
       ],
       "backend_symbols": [
-        "bot.py#pulse_livekit_config",
-        "bot.py#pulse_livekit_access_token",
-        "bot.py#pulse_livekit_verify_token_claims",
-        "bot.py#pulse_livekit_http_url",
-        "bot.py#pulse_livekit_ws_url"
+        "bot.py#api_pulse_live_agora_token",
+        "services/pulsesoc_communications_engine.py#generate_agora_live_token"
       ],
       "backend_note": "bot.py is a single very large module, so it cannot be path-protected without protecting the whole backend. The change gate treats a bot.py diff as protected only when the diff touches a line matching backend_diff_patterns below."
     },
     {
-      "id": "media_quality_policy",
-      "title": "Governed media quality policy and adaptation",
-      "why": "Resolves the audio and video settings both room adapters hand to `new Room({...})`, so it now decides the capture and publish configuration that the verified baseline used to hard-code. Its stable profile IS the verified baseline: an edit here that changes what `stable` returns changes what the kill switch falls back to, silently and for every feature at once. The adaptation reducer is protected for the opposite reason \u2014 it is the thing that must never place audio on the degradation ladder.",
+      "id": "media_adaptation_policy",
+      "title": "Governed media adaptation policy",
+      "why": "The adaptation reducer must never place audio on the degradation ladder.",
       "paths": [
-        "mobile-native/src/core/mediaQualityPolicy.ts",
-        "mobile-native/src/core/mediaAdaptationController.ts",
-        "mobile-native/src/core/mediaQualityFlags.ts",
-        "mobile-native/src/core/mediaQualityTelemetry.ts"
+        "mobile-native/src/core/mediaAdaptationController.ts"
       ],
-      "note": "These four modules are pure by construction: no LiveKit import, no Room handle, no clock, no randomness. That is enforced by mediaQualityPolicy.test.ts and mediaAdaptationController.test.ts, not by convention. A change that gives any of them the ability to act on a room has turned a policy into a second media owner."
+      "note": "This reducer is pure and cannot own an Agora engine or audio session."
     },
     {
       "id": "critical_audio_tests",
@@ -186,24 +180,19 @@
         "mobile-native/src/core/__tests__/realtimeAudioContracts.test.ts",
         "mobile-native/src/core/__tests__/realtimeAudioInvariants.test.ts",
         "mobile-native/src/calls/__tests__/callAudioOwnershipRegression.test.ts",
-        "mobile-native/src/calls/__tests__/useNativeCallRoomAudio.test.ts",
+        "mobile-native/src/calls/__tests__/useAgoraCallRoom.test.ts",
         "mobile-native/src/live/__tests__/liveAudioPublisher.test.ts",
-        "mobile-native/src/live/__tests__/liveAudioConfiguration.test.ts",
         "mobile-native/src/live/__tests__/liveAudioRecovery.test.ts",
         "mobile-native/src/live/__tests__/liveAudioTelemetry.test.ts",
         "mobile-native/src/live/__tests__/liveAudioTrace.test.ts",
         "mobile-native/src/live/__tests__/cohostPublishGate.test.ts",
-        "mobile-native/src/live/__tests__/remoteAudioReapply.test.ts",
         "mobile-native/src/live/__tests__/liveSession.test.ts",
         "mobile-native/src/live/__tests__/liveRuntime.test.ts",
-        "mobile-native/src/core/__tests__/mediaQualityPolicy.test.ts",
         "mobile-native/src/core/__tests__/mediaAdaptationController.test.ts",
-        "mobile-native/src/core/__tests__/mediaQualityWiring.test.ts",
         "tests/protection/test_realtime_audio_architecture.py",
-        "tests/protection/test_call_livekit_token_grants.py",
-        "tests/protection/test_livestream_audio_token_grants.py",
-        "tests/protection/test_livekit_webhook_route_owner.py",
-        "tests/protection/test_livestream_contract.py"
+        "tests/protection/test_agora_token_generation.py",
+        "tests/protection/test_agora_rtc_provider_contract.py",
+        "tests/protection/test_agora_direct_live_contract.py"
       ]
     },
     {
@@ -219,9 +208,9 @@
     }
   ],
   "backend_diff_patterns": [
-    "pulse_livekit_",
+    "pulse_rtc_",
     "pulse_live_audio_v2_",
-    "LIVEKIT_",
+    "AGORA_",
     "LIVESTREAM_AUDIO_V2_",
     "can_publish",
     "canPublish",
@@ -230,7 +219,7 @@
   "forbidden_apis": [
     {
       "id": "realtime_audio_session_mutation",
-      "title": "Direct AVAudioSession / LiveKit audio-session mutation",
+      "title": "Direct AVAudioSession / Agora audio-session mutation",
       "markers": [
         ".setAppleAudioConfiguration(",
         ".startAudioSession(",
@@ -289,8 +278,8 @@
       "live_copy_note": "Live owns a copy of this control flow at mobile-native/src/live-audio/. The rule is not relaxed: it now names two owners instead of one, and every other file is still refused. Calls resolve to src/core/, Live resolves to src/live-audio/, and neither can reach the other."
     },
     {
-      "id": "global_livekit_audio_manager_mutation",
-      "title": "Global LiveKit audio-manager configuration",
+      "id": "global_rtc_audio_manager_mutation",
+      "title": "Global Agora audio-manager configuration",
       "markers": [
         "registerGlobals(",
         "setDefaultAudioTrackCaptureOptions(",
@@ -346,10 +335,7 @@
       "core/realtimeMicrophonePublisher",
       "core/realtimeAudioInvariants",
       "core/realtimeAudioStateMachine",
-      "core/mediaQualityPolicy",
       "core/mediaAdaptationController",
-      "core/mediaQualityFlags",
-      "core/mediaQualityTelemetry",
       "live-audio/liveAudioEngine",
       "live-audio/liveMicrophonePublisher",
       "live-audio/liveAudioNative",
@@ -361,10 +347,7 @@
       "mobile-native/src/core/realtimeAudioInvariants.ts",
       "mobile-native/src/core/realtimeAudioStateMachine.ts",
       "mobile-native/src/core/audioOwnershipPolicy.ts",
-      "mobile-native/src/core/mediaQualityPolicy.ts",
       "mobile-native/src/core/mediaAdaptationController.ts",
-      "mobile-native/src/core/mediaQualityFlags.ts",
-      "mobile-native/src/core/mediaQualityTelemetry.ts",
       "mobile-native/src/calls/useNativeCallRoom.ts",
       "mobile-native/src/live/useLiveBroadcastRoom.ts",
       "mobile-native/src/live/liveAudioPublisher.ts",
@@ -375,23 +358,16 @@
     ]
   },
   "required_lease_discipline": {
-    "files": [
-      "mobile-native/src/calls/useNativeCallRoom.ts",
-      "mobile-native/src/live/useLiveBroadcastRoom.ts"
-    ],
-    "must_contain": [
-      "RealtimeAudioLease",
-      "audioLeaseRef",
-      "releaseRealtimeAudioSession"
-    ],
+    "files": [],
+    "must_contain": [],
     "must_not_contain": [
       "audioOwnerIdRef"
     ],
-    "reason": "Both adapters must hold a generation-scoped lease and release it by lease, not by owner name."
+    "reason": "The retired LiveKit adapters held JavaScript audio leases. Agora session ownership is enforced by its native call/live implementations and their focused regression tests."
   },
   "live_startup_trace_contract": {
     "path": "mobile-native/src/live/liveAudioTrace.ts",
-    "critical_test": "src/live/__tests__/liveAudioConfiguration.test.ts",
+    "critical_test": "src/live/__tests__/liveAudioTrace.test.ts",
     "required_events": [
       "live_start_requested",
       "live_session_created",
@@ -404,8 +380,8 @@
       "av_audio_session_activated",
       "camera_initialization_started",
       "camera_initialized",
-      "livekit_room_connect_started",
-      "livekit_room_connected",
+      "rtc_room_connect_started",
+      "rtc_room_connected",
       "microphone_track_create_started",
       "microphone_track_created",
       "microphone_publish_started",
@@ -451,15 +427,11 @@
       "mobile-native/patches/react-native+0.81.5.patch"
     ],
     "must_be_exactly_pinned": [
-      "@livekit/react-native",
-      "@livekit/react-native-webrtc",
-      "livekit-client",
+      "react-native-agora",
       "expo-av"
     ],
     "baseline_versions": {
-      "@livekit/react-native": "^2.9.0",
-      "@livekit/react-native-webrtc": "144.1.1",
-      "livekit-client": "^2.15.4",
+      "react-native-agora": "4.6.2",
       "expo-av": "~16.0.8",
       "expo": "~54.0.36",
       "react-native": "^0.81.5"
@@ -468,14 +440,14 @@
       "app.json:expo.ios.infoPlist.NSMicrophoneUsageDescription": "must be present and non-empty",
       "app.json:expo.ios.infoPlist.UIBackgroundModes": "must contain \"audio\""
     },
-    "reason": "A floating range on a LiveKit or WebRTC package lets a lockfile refresh change the media stack with no code diff, which is the failure mode with the fewest visible symptoms."
+    "reason": "A floating range on the Agora package lets a lockfile refresh change the media stack with no code diff."
   },
   "test_commands": {
     "critical": "npm run test:realtime-audio-critical",
     "full_audio": "npm run test:realtime-audio",
     "architecture_native": "npm run test:realtime-audio-architecture",
     "architecture_backend": "python3 -m unittest tests.protection.test_realtime_audio_architecture -v",
-    "backend_token": "python3 -m unittest tests.protection.test_call_livekit_token_grants tests.protection.test_livestream_audio_token_grants tests.protection.test_livekit_webhook_route_owner -v",
+    "backend_token": "python3 -m pytest -q tests/protection/test_agora_token_generation.py tests/protection/test_agora_rtc_provider_contract.py",
     "typecheck": "npm run typecheck",
     "change_gate": "python3 scripts/realtime_audio_change_gate.py --base <base-sha> --head <head-sha>"
   },

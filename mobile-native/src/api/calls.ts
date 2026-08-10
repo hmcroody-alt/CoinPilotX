@@ -37,7 +37,6 @@ export type PulseCallJoin = {
   ok?: boolean;
   provider?: string;
   token?: string;
-  livekit_url?: string;
   app_id?: string;
   channel_name?: string;
   uid?: number;
@@ -79,14 +78,6 @@ export type PulseCall = {
   end_reason?: string;
   participants?: PulseCallParticipant[];
   participant?: PulseCallParticipant;
-  livekit?: {
-    ok?: boolean;
-    configured?: boolean;
-    provider?: string;
-    room_name?: string;
-    livekit_url?: string;
-    message?: string;
-  };
   join?: PulseCallJoin;
   message?: string;
 };
@@ -327,7 +318,7 @@ function normalizeCallRecord(call: PulseCall): PulseCall {
     conversation_id: Number(call.conversation_id || 0) || undefined,
     call_type: call.call_type === "video" ? "video" : "audio",
     status: String(call.status || "ringing"),
-    room_name: String(call.room_name || call.livekit?.room_name || join.room_name || ""),
+    room_name: String(call.room_name || join.room_name || ""),
     participants: call.participants || [],
     join
   };
@@ -337,9 +328,8 @@ function normalizeJoin(join: PulseCallJoin): PulseCallJoin {
   return {
     ...join,
     token: String(join.token || ""),
-    livekit_url: String(join.livekit_url || join.url || ""),
     room_name: String(join.room_name || ""),
-    provider: String(join.provider || "livekit")
+    provider: "agora"
   };
 }
 

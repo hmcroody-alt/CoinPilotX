@@ -445,7 +445,7 @@ WIDGETS: list[dict[str, Any]] = [
     _widget("platform_metrics", "Platform Metrics", "Admin / Moderator Only", "/admin/analytics", "Platform health and analytics.", admin_only=True, free_visible_locked=False, sort_order=60, accent="purple"),
     _widget("infrastructure_health", "Infrastructure Health", "Admin / Moderator Only", "/admin/system", "Railway, database, Redis, and service checks.", admin_only=True, free_visible_locked=False, sort_order=70),
     _widget("push_notification_health", "Push Notification Health", "Admin / Moderator Only", "/admin/notifications", "Push and notification delivery health.", admin_only=True, free_visible_locked=False, sort_order=80),
-    _widget("livekit_mux_health", "LiveKit / Mux Health", "Admin / Moderator Only", "/admin/livestreams", "Live media provider diagnostics.", admin_only=True, free_visible_locked=False, sort_order=90),
+    _widget("livekit_mux_health", "Agora / Mux Health", "Admin / Moderator Only", "/admin/livestreams", "Live media provider diagnostics.", admin_only=True, free_visible_locked=False, sort_order=90),
     _widget("galaxy_intelligence_center", "Galaxy Intelligence Center", "Admin / Moderator Only", "/admin/intelligence", "Admin-only collector, source, forecast, signal, delivery, feedback, and health controls.", admin_only=True, free_visible_locked=False, sort_order=100, accent="purple"),
 ]
 
@@ -515,7 +515,7 @@ WIDGETS.extend([
 
     _widget("feed_status", "Feed Intelligence", "System Status", "/dashboard/system/feed", "Feed latency, ranking health, realtime hydration, discovery confidence, and prediction graph.", sort_order=10, accent="emerald", status="BETA", tables=("posts",), dependencies=("feed",)),
     _widget("messenger_status", "Messenger Intelligence", "System Status", "/dashboard/system/messenger", "Realtime delivery, receipts, typing, push health, media delivery, and network quality.", sort_order=20, accent="cyan", status="BETA", tables=("conversations", "private_messages"), dependencies=("messaging",)),
-    _widget("live_status", "Live Network", "System Status", "/dashboard/system/live", "Streams, viewers, encoder health, LiveKit, Mux, bitrate, recording, audio, and prediction.", sort_order=30, accent="emerald", status="BETA", tables=("live_streams",), dependencies=("live",)),
+    _widget("live_status", "Live Network", "System Status", "/dashboard/system/live", "Streams, viewers, encoder health, Agora, Mux, bitrate, recording, audio, and prediction.", sort_order=30, accent="emerald", status="BETA", tables=("live_streams",), dependencies=("live",)),
     _widget("radio_status", "Radio Intelligence", "System Status", "/dashboard/system/radio", "Listeners, now playing, buffer health, creator uploads, recommendations, and licensing readiness.", sort_order=40, accent="purple", status="BETA", tables=("audio_tracks",), dependencies=("music",)),
     _widget("marketplace_status", "Marketplace Intelligence", "System Status", "/dashboard/system/marketplace", "Listings, orders, transactions, fraud detection, seller health, revenue, and trust score.", sort_order=50, accent="gold", status="BETA", tables=("marketplace_listings",), dependencies=("marketplace",)),
     _widget("notifications_status", "Notification Intelligence", "System Status", "/dashboard/system/notifications", "Push, SMS, email, in-app, retries, queues, failures, delivery rate, and prediction.", sort_order=60, accent="gold", status="BETA", tables=("notifications", "notification_delivery_logs"), dependencies=("notifications",)),

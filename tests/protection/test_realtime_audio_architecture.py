@@ -91,7 +91,7 @@ class ManifestIntegrityTests(unittest.TestCase):
         # bot.py is protected by diff content rather than by path. With no
         # patterns, every backend audio change would pass the gate unnoticed.
         self.assertTrue(patterns)
-        for required in ("pulse_livekit_", "LIVEKIT_", "can_publish"):
+        for required in ("pulse_rtc_", "AGORA_", "can_publish"):
             self.assertIn(required, patterns)
 
 

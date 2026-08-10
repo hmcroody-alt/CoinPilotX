@@ -1,7 +1,7 @@
 import { ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
-import { getLiveKitToken } from "../../api/live";
+import { getLiveRtcToken } from "../../api/live";
 import { RtcVideoView } from "../../live/RtcVideoView";
 import { PulseReel } from "../../api/reels";
 import { useLiveBroadcastRoom } from "../../live/useLiveBroadcastRoom";
@@ -12,7 +12,7 @@ import { colors } from "../../theme/colors";
 /**
  * In-feed LIVE viewer. A live Reel plays inside the feed instead of bouncing the
  * user out to a web page or a detail screen. Transport, in priority order:
- *   1. Native RTC subscribe (Agora direct audience or LiveKit rollback)
+ *   1. Native Agora RTC subscribe
  *   2. HLS playback_url only for a legacy provider that supplies it
  *   3. An honest "not available" surface — NEVER a fake camera preview.
  *
@@ -21,7 +21,7 @@ import { colors } from "../../theme/colors";
  * a labeled state, so the UI can never claim to be showing a broadcast it isn't.
  */
 
-type ViewerMode = "connecting" | "livekit" | "hls" | "error" | "offline";
+type ViewerMode = "connecting" | "agora" | "hls" | "error" | "offline";
 
 export function ReelLiveViewerSurface({ reel, active, muted, poster }: { reel: PulseReel; active: boolean; muted: boolean; poster?: string }) {
   const liveId = reelLiveSessionId(reel);
@@ -54,15 +54,15 @@ export function EmbeddedLiveViewerSurface({ liveId, hlsUrl = "", active, muted, 
         return;
       }
       try {
-        const credentials = await getLiveKitToken(liveId, "viewer");
+        const credentials = await getLiveRtcToken(liveId, "viewer");
         if (cancelled) return;
         if (!credentials) {
           setMode(hlsUrl ? "hls" : "error");
           return;
         }
-        const connected = await connect(credentials, { publish: false, refreshCredentials: () => getLiveKitToken(liveId, "viewer") });
+        const connected = await connect(credentials, { publish: false, refreshCredentials: () => getLiveRtcToken(liveId, "viewer") });
         if (cancelled) return;
-        setMode(connected ? "livekit" : hlsUrl ? "hls" : "error");
+        setMode(connected ? "agora" : hlsUrl ? "hls" : "error");
       } catch {
         if (!cancelled) setMode(hlsUrl ? "hls" : "error");
       }
@@ -76,7 +76,7 @@ export function EmbeddedLiveViewerSurface({ liveId, hlsUrl = "", active, muted, 
   }, [active, connect, disconnect, hlsUrl, identity, liveId]);
 
   useEffect(() => {
-    if (mode !== "livekit" || !room.connected) return;
+    if (mode !== "agora" || !room.connected) return;
     // Truly enable/disable the subscribed host audio track(s) rather than only
     // re-routing output. When the feed is not muted (the default) this also acts
     // as a belt-and-suspenders re-subscribe so host audio always plays; when the
@@ -85,7 +85,7 @@ export function EmbeddedLiveViewerSurface({ liveId, hlsUrl = "", active, muted, 
   }, [mode, muted, room.connected, room.remoteAudioTrackCount, setRemoteAudioEnabled]);
 
   useEffect(() => {
-    if (mode !== "livekit" || !room.connected || room.remoteAudioTrackCount > 0 || room.remoteVideoTrackCount > 0) return undefined;
+    if (mode !== "agora" || !room.connected || room.remoteAudioTrackCount > 0 || room.remoteVideoTrackCount > 0) return undefined;
     const timeout = setTimeout(() => {
       setMode("error");
       disconnect("viewer_media_timeout").catch(() => undefined);
@@ -94,7 +94,7 @@ export function EmbeddedLiveViewerSurface({ liveId, hlsUrl = "", active, muted, 
   }, [disconnect, mode, room.connected, room.remoteAudioTrackCount, room.remoteVideoTrackCount]);
 
   useEffect(() => {
-    if (!active || mode !== "livekit" || !room.connected) {
+    if (!active || mode !== "agora" || !room.connected) {
       releaseLivePlaybackOwner("feed", liveId || identity);
       return;
     }
@@ -111,7 +111,7 @@ export function EmbeddedLiveViewerSurface({ liveId, hlsUrl = "", active, muted, 
     [room.participants]
   );
 
-  if (mode === "livekit") {
+  if (mode === "agora") {
     if (!room.connected) {
       return <LiveMessage poster={poster} spinner title={room.reconnecting ? "Reconnecting to LIVE" : "Joining the broadcast"} body="Holding your place in the room." />;
     }

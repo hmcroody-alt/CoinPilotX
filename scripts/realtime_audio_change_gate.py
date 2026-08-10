@@ -152,9 +152,8 @@ REQUIRED_VALIDATION = [
     ),
     (
         "backend token tests",
-        "python3 -m unittest tests.protection.test_call_livekit_token_grants "
-        "tests.protection.test_livestream_audio_token_grants "
-        "tests.protection.test_livekit_webhook_route_owner",
+        "python3 -m pytest -q tests/protection/test_agora_token_generation.py "
+        "tests/protection/test_agora_rtc_provider_contract.py",
     ),
     ("TypeScript compilation", "npm run typecheck"),
     ("native build verification", "npx expo prebuild --platform ios --no-install (or an EAS build)"),

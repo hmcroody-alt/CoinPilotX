@@ -155,7 +155,7 @@ def build_system_state(
         "stripe": _env_ready("STRIPE_SECRET_KEY"),
         "brevo": _env_ready("BREVO_API_KEY"),
         "openai": _env_ready("OPENAI_API_KEY"),
-        "livekit": _env_ready("LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"),
+        "agora": _env_ready("AGORA_APP_ID", "AGORA_APP_CERTIFICATE"),
         "vapid": _env_ready("VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY"),
     }
     modules: list[dict[str, Any]] = []
@@ -165,7 +165,7 @@ def build_system_state(
         signal_count = _module_count(cur, tables)
         external_ready = True
         if module["key"] == "live":
-            external_ready = external["mux"] or external["livekit"]
+            external_ready = external["mux"] or external["agora"]
         elif module["key"] == "radio":
             external_ready = external["r2"] or _table_exists(cur, "pulse_music_tracks")
         elif module["key"] == "marketplace":

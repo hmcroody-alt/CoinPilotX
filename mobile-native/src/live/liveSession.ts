@@ -2,9 +2,9 @@
  * Pure, testable helpers for native live broadcasting.
  *
  * Everything that maps the Live Studio draft into the backend `/api/pulse/live/start`
- * contract, normalizes the responses (start result, LiveKit credentials, guest requests),
+ * contract, normalizes the responses (start result, RTC credentials, guest requests),
  * and formats live UI values lives here so it can be unit-tested without a device, a
- * network, or the LiveKit native module.
+ * network, or the Agora native module.
  */
 
 import { normalizeLiveAudioV2Flag } from "./liveAudioFlags";
@@ -32,8 +32,8 @@ export type LiveStartResult = {
   tokenUrl: string;
 };
 
-export type LiveKitCredentials = {
-  provider?: "livekit" | "agora";
+export type LiveRtcCredentials = {
+  provider?: "agora";
   broadcastId: number;
   hostUserId: number;
   authorizationVersion: string;
@@ -79,7 +79,7 @@ export type LiveKitCredentials = {
 /**
  * Guard the co-host publish path (Issue 5: "guest joining fails"). A viewer, or a
  * requester the host has not accepted yet, is handed a token with
- * `can_publish:false` and `guest_id:0`. Connecting the LiveKit room as a
+ * `can_publish:false` and `guest_id:0`. Connecting the RTC channel as a
  * *publisher* with such a token silently produces no outgoing audio/video — the
  * guest appears to join but nobody can hear or see them. Callers must confirm the
  * minted credentials actually grant publish AND are bound to a real guest slot
@@ -87,8 +87,8 @@ export type LiveKitCredentials = {
  * surface an honest "not verified yet" error instead of a dead on-stage bubble.
  */
 export function canConnectAsCohostPublisher(
-  credentials: LiveKitCredentials | null | undefined
-): credentials is LiveKitCredentials {
+  credentials: LiveRtcCredentials | null | undefined
+): credentials is LiveRtcCredentials {
   const publishSources = credentials?.canPublishSources?.length
     ? credentials.canPublishSources
     : credentials?.canPublish
@@ -97,9 +97,7 @@ export function canConnectAsCohostPublisher(
   return Boolean(
     credentials &&
       credentials.token &&
-      (credentials.provider === "agora"
-        ? credentials.appId && credentials.channelName && credentials.uid
-        : credentials.url) &&
+      credentials.provider === "agora" && credentials.appId && credentials.channelName && credentials.uid &&
       credentials.canPublish &&
       credentials.canPublishSources.includes("camera") &&
       publishSources.includes("microphone") &&
@@ -195,40 +193,38 @@ export function buildLiveStartPayload(draft: LiveStudioDraft): LiveStartPayload 
 /** Normalize the `/api/pulse/live/start` response into a stable native shape. */
 export function normalizeLiveStartResult(raw: Record<string, unknown> | null | undefined): LiveStartResult | null {
   const data = raw || {};
-  const livekit = (data.livekit as Record<string, unknown> | undefined) || {};
   const liveId = toNum(data.live_id ?? data.id);
   if (liveId <= 0) return null;
   return {
     liveId,
-    room: toStr(livekit.room ?? data.webrtc_room_id),
-    webrtcRoomId: toStr(data.webrtc_room_id ?? livekit.room),
+    room: toStr(data.webrtc_room_id ?? data.channel_name),
+    webrtcRoomId: toStr(data.webrtc_room_id ?? data.channel_name),
     hlsUrl: toStr(data.hls_url ?? data.playback_url),
     feedPostId: toNum(data.feed_post_id),
-    tokenUrl: toStr(livekit.token_url)
+    tokenUrl: toStr(data.rtc_token_url, `/api/pulse/live/${liveId}/rtc/token`)
   };
 }
 
 /**
- * Normalize the `/api/pulse/live/<id>/livekit/token` response. Accepts either
- * `livekit_url` or `url` for the wss endpoint. Returns null when there is no usable
- * token or url — callers must surface an honest error, never a fake preview.
+ * Normalize the canonical Agora RTC token response. Returns null when the
+ * server-authorized channel credentials are incomplete.
  */
-export function normalizeLiveKitCredentials(raw: Record<string, unknown> | null | undefined): LiveKitCredentials | null {
+export function normalizeLiveRtcCredentials(raw: Record<string, unknown> | null | undefined): LiveRtcCredentials | null {
   const data = raw || {};
   const token = toStr(data.token);
-  const provider = toStr(data.provider, "livekit").toLowerCase() === "agora" ? "agora" : "livekit";
-  const url = toStr(data.livekit_url ?? data.url);
+  const provider = toStr(data.provider, "agora").toLowerCase();
+  const url = "";
   const appId = toStr(data.app_id);
   const channelName = toStr(data.channel_name ?? data.room);
   const uid = toNum(data.uid);
-  if (!token || (provider === "livekit" ? !url : !appId || !channelName || !uid)) return null;
+  if (provider !== "agora" || !token || !appId || !channelName || !uid) return null;
   return {
     broadcastId: toNum(data.live_id ?? data.broadcast_id),
     hostUserId: toNum(data.host_user_id),
     authorizationVersion: toStr(data.authorization_version ?? data.trace_id, "v1"),
     token,
     url,
-    ...(provider === "agora" ? { provider, appId, channelName, uid } : {}),
+    provider: "agora", appId, channelName, uid,
     room: toStr(data.room),
     identity: toStr(data.identity),
     canPublish: toBool(data.can_publish),

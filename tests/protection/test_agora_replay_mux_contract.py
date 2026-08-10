@@ -16,7 +16,7 @@ def test_private_r2_recording_is_prepared_for_mux_without_public_objects():
 
 
 def test_mux_ready_stores_replay_identity_and_duration_before_reel_creation():
-    webhook = BOT[BOT.index("def api_pulse_live_mux_webhook"):BOT.index("def pulse_livekit_config")]
+    webhook = BOT[BOT.index("def api_pulse_live_mux_webhook"):BOT.index("def pulse_live_audio_v2_env_flag")]
     assert "mux_recording_duration_seconds" in webhook
     assert '"mux_asset_ready" if status == "ready" else "mux_retryable"' in webhook
     assert "pulse_live_publish_replay_reel" in webhook

@@ -31,7 +31,7 @@ CALL_TABLES = (
         public_id TEXT UNIQUE,
         conversation_id INTEGER,
         room_name TEXT UNIQUE,
-        provider TEXT DEFAULT 'livekit',
+        provider TEXT DEFAULT 'agora',
         call_type TEXT,
         call_scope TEXT,
         status TEXT,
@@ -142,16 +142,16 @@ def _trace() -> str:
 
 ERROR_CATALOG = {
     "config_missing": (
-        "LIVEKIT_CONFIG_MISSING",
+        "AGORA_CONFIG_MISSING",
         "Calling provider is not configured",
-        "PulseSoc is missing one or more LiveKit provider settings.",
-        "Check LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET in the active deployment.",
+        "PulseSoc is missing one or more Agora provider settings.",
+        "Check the server-side Agora application configuration in the active deployment.",
     ),
-    "livekit_token_failed": (
-        "LIVEKIT_TOKEN_FAILED",
+    "agora_token_failed": (
+        "AGORA_TOKEN_FAILED",
         "Call token could not be generated",
-        "PulseSoc could not create a LiveKit access token for this call.",
-        "Run the Calls Command Center config test and verify the LiveKit key and secret.",
+        "PulseSoc could not create an Agora access token for this call.",
+        "Run the Calls Command Center config test and verify the Agora server configuration.",
     ),
     "missing_conversation": (
         "MISSING_CONVERSATION",
@@ -288,7 +288,7 @@ CALL_COMPAT_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
         ("public_id", "TEXT"),
         ("conversation_id", "INTEGER"),
         ("room_name", "TEXT"),
-        ("provider", "TEXT DEFAULT 'livekit'"),
+        ("provider", "TEXT DEFAULT 'agora'"),
         ("call_type", "TEXT"),
         ("call_scope", "TEXT"),
         ("status", "TEXT"),
@@ -394,27 +394,9 @@ def ensure_schema(cur: Any) -> None:
         cur.execute(sql)
 
 
-def livekit_config_status() -> dict[str, Any]:
-    required = {
-        "LIVEKIT_URL": os.getenv("LIVEKIT_URL", "").strip(),
-        "LIVEKIT_API_KEY": os.getenv("LIVEKIT_API_KEY", "").strip(),
-        "LIVEKIT_API_SECRET": os.getenv("LIVEKIT_API_SECRET", "").strip(),
-    }
-    missing = [name for name, value in required.items() if not value]
-    return {
-        "configured": not missing,
-        "missing": missing,
-        "url_configured": bool(required["LIVEKIT_URL"]),
-        "webhook_secret_configured": bool(os.getenv("LIVEKIT_WEBHOOK_SECRET", "").strip()),
-        "turn_configured": bool(os.getenv("TURN_SERVER_URL", "").strip()),
-        "stun_configured": bool(os.getenv("STUN_SERVER_URL", "").strip()),
-    }
-
-
 def rtc_provider() -> str:
-    """Return the explicitly selected provider; fail safe to the proven path."""
-    value = os.getenv("RTC_PROVIDER", "livekit").strip().lower()
-    return value if value in {"livekit", "agora"} else "livekit"
+    """Agora is PulseSoc's canonical realtime communications provider."""
+    return "agora"
 
 
 def agora_config_status() -> dict[str, Any]:
@@ -441,7 +423,7 @@ def _require_agora() -> dict[str, Any] | None:
 
 
 def _require_rtc_provider(provider: str | None = None) -> dict[str, Any] | None:
-    return _require_agora() if (provider or rtc_provider()) == "agora" else _require_livekit()
+    return _require_agora()
 
 
 def _agora_uid(user_id: int) -> int:
@@ -455,7 +437,6 @@ def _generate_agora_token(room_name: str, user_id: int, call_type: str = "audio"
     missing = _require_agora()
     if missing:
         return missing
-    # Imported only on the Agora path so LiveKit rollback never depends on this package.
     try:
         from agora_token_builder import RtcTokenBuilder
     except ImportError:
@@ -531,67 +512,7 @@ def generate_agora_live_token(room_name: str, user_id: int, role: str, *, live_i
 
 
 def _generate_rtc_token(provider: str, room_name: str, user_id: int, call_type: str = "audio", participant_role: str = "member") -> dict[str, Any]:
-    if provider == "agora":
-        return _generate_agora_token(room_name, user_id, call_type, participant_role)
-    return _generate_livekit_token(room_name, user_id, call_type, participant_role)
-
-
-def livekit_hd_quality_policy() -> dict[str, Any]:
-    return {
-        "provider": "livekit",
-        "adaptive_stream": True,
-        "dynacast": True,
-        "simulcast": True,
-        "video_codec": "vp8",
-        "audio_capture": {
-            "echo_cancellation": True,
-            "noise_suppression": True,
-            "auto_gain_control": True,
-        },
-        "video_calls": {
-            "default": "1280x720@30",
-            "ideal_width": 1280,
-            "ideal_height": 720,
-            "ideal_fps": 30,
-            "max_width": 1920,
-            "max_height": 1080,
-            "bitrate_bps": 2_500_000,
-            "subscription": "high layer for active full-screen remote video; medium layer when minimized",
-        },
-        "live_hosts": {
-            "default": "auto_hd",
-            "preferred": "1920x1080@30",
-            "fallbacks": ["1280x720@30", "960x540@24", "640x480@20"],
-            "bitrate_bps": 4_200_000,
-        },
-        "layers": {
-            "low": "180p",
-            "medium": "360p",
-            "call_high": "540p",
-            "live_high": "720p",
-        },
-        "mux_egress": {
-            "rule": "Mux quality depends on the LiveKit input track; verify LiveKit published resolution before tuning replay output.",
-        },
-    }
-
-
-def _require_livekit() -> dict[str, Any] | None:
-    status = livekit_config_status()
-    if status["configured"]:
-        return None
-    logging.info("PULSESOC_CALL_CONFIG_MISSING missing=%s", ",".join(status.get("missing") or []))
-    return _err(
-        "Calling provider is not configured.",
-        503,
-        "config_missing",
-        provider="livekit",
-        livekit=status,
-        error_overrides={
-            "missing": status.get("missing") or [],
-            "provider": "livekit",
-        },
-    )
+    return _generate_agora_token(room_name, user_id, call_type, participant_role)
 
 
 def _env_enabled(name: str, default: bool = False) -> bool:
@@ -608,180 +529,6 @@ def _realtime_audio_v2_status(call_type: str) -> dict[str, bool]:
         "realtime_audio_v2_enabled": platform_enabled and _env_enabled(feature_flag, False),
         "realtime_audio_v2_fallback_enabled": _env_enabled("REALTIME_AUDIO_V2_FALLBACK_ENABLED", True),
     }
-
-
-def _generate_livekit_token(
-    room_name: str,
-    user_id: int,
-    call_type: str = "audio",
-    participant_role: str = "member",
-) -> dict[str, Any]:
-    missing = _require_livekit()
-    if missing:
-        return missing
-    api_key = os.getenv("LIVEKIT_API_KEY", "").strip()
-    api_secret = os.getenv("LIVEKIT_API_SECRET", "").strip()
-    now = int(time.time())
-    normalized_call_type = "video" if str(call_type).strip().lower() == "video" else "audio"
-    room_type = "video_call" if normalized_call_type == "video" else "audio_call"
-    normalized_role = str(participant_role or "member").strip().lower()
-    if normalized_role not in {"caller", "callee"}:
-        normalized_role = "member"
-    publish_sources = ["microphone", "camera"] if normalized_call_type == "video" else ["microphone"]
-    grants = {
-        "roomJoin": True,
-        "room": room_name,
-        "canPublish": True,
-        "canSubscribe": True,
-        "canPublishData": True,
-        "canPublishSources": publish_sources,
-    }
-    participant_identity = f"user-{int(user_id)}"
-    payload = {
-        "iss": api_key,
-        "sub": participant_identity,
-        "name": f"PulseSoc member {int(user_id)}",
-        "metadata": _json_dumps({
-            "room_type": room_type,
-            "participant_role": normalized_role,
-            "authenticated_user_id": int(user_id),
-        }),
-        "nbf": now - 10,
-        "exp": now + 60 * 60,
-        "video": grants,
-    }
-    header = {"alg": "HS256", "typ": "JWT"}
-    signing_input = f"{_base64url(_json_dumps(header).encode())}.{_base64url(_json_dumps(payload).encode())}"
-    signature = hmac.new(api_secret.encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256).digest()
-    return {
-        "ok": True,
-        "provider": "livekit",
-        "token": f"{signing_input}.{_base64url(signature)}",
-        "livekit_url": _livekit_ws_url(),
-        "room_name": room_name,
-        "room_type": room_type,
-        "participant_identity": participant_identity,
-        "participant_role": normalized_role,
-        "can_publish": True,
-        "can_subscribe": True,
-        "can_publish_sources": publish_sources,
-        **_realtime_audio_v2_status(normalized_call_type),
-        "expires_at": datetime.fromtimestamp(payload["exp"], timezone.utc).isoformat(timespec="seconds"),
-    }
-
-
-def _generate_livekit_admin_token(room_name: str) -> dict[str, Any]:
-    missing = _require_livekit()
-    if missing:
-        return missing
-    api_key = os.getenv("LIVEKIT_API_KEY", "").strip()
-    api_secret = os.getenv("LIVEKIT_API_SECRET", "").strip()
-    now = int(time.time())
-    payload = {
-        "iss": api_key,
-        "sub": "pulsesoc-admin-config-check",
-        "nbf": now - 10,
-        "exp": now + 5 * 60,
-        "video": {
-            "roomCreate": True,
-            "roomList": True,
-            "roomAdmin": True,
-            "room": room_name,
-        },
-    }
-    header = {"alg": "HS256", "typ": "JWT"}
-    signing_input = f"{_base64url(_json_dumps(header).encode())}.{_base64url(_json_dumps(payload).encode())}"
-    signature = hmac.new(api_secret.encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256).digest()
-    return {"ok": True, "token": f"{signing_input}.{_base64url(signature)}", "room_name": room_name}
-
-
-def _livekit_http_url() -> str:
-    raw = os.getenv("LIVEKIT_URL", "").strip().rstrip("/")
-    parsed = urlparse(raw)
-    scheme = "https" if parsed.scheme == "wss" else "http" if parsed.scheme == "ws" else parsed.scheme
-    return urlunparse((scheme, parsed.netloc, parsed.path.rstrip("/"), "", "", ""))
-
-
-def _livekit_ws_url() -> str:
-    """Client-facing LiveKit endpoint, always a WebSocket scheme.
-
-    The LiveKit client SDKs (livekit-client / @livekit/react-native) expect a
-    ws:// or wss:// URL and refuse to connect to an http(s) endpoint. Operators
-    routinely paste the https:// dashboard URL into LIVEKIT_URL, which then
-    silently breaks every call with no server-side error. Normalize
-    https->wss and http->ws (and default a bare host to wss) so that common
-    misconfiguration cannot take calling down. ws/wss pass through unchanged.
-    """
-    raw = os.getenv("LIVEKIT_URL", "").strip().rstrip("/")
-    if not raw:
-        return ""
-    parsed = urlparse(raw)
-    scheme = (parsed.scheme or "").lower()
-    if not parsed.netloc:
-        # Bare host with no scheme lands entirely in `path`; assume secure ws.
-        return f"wss://{raw}"
-    if scheme == "https":
-        scheme = "wss"
-    elif scheme == "http":
-        scheme = "ws"
-    elif scheme not in ("ws", "wss"):
-        scheme = "wss"
-    return urlunparse((scheme, parsed.netloc, parsed.path.rstrip("/"), "", "", ""))
-
-
-def _livekit_room_connectivity_check() -> dict[str, Any]:
-    room_name = f"pulsesoc-config-check-{secrets.token_hex(6)}"
-    token_payload = _generate_livekit_admin_token(room_name)
-    if not token_payload.get("ok"):
-        return {
-            "can_create_test_room": False,
-            "can_cleanup_test_room": False,
-            "provider_error": token_payload.get("status") or "config_missing",
-        }
-    try:
-        import requests
-    except Exception:
-        return {
-            "can_create_test_room": False,
-            "can_cleanup_test_room": False,
-            "provider_error": "requests_unavailable",
-        }
-    base_url = _livekit_http_url()
-    headers = {
-        "Authorization": f"Bearer {token_payload['token']}",
-        "Content-Type": "application/json",
-    }
-    body = {"name": room_name, "empty_timeout": 60, "max_participants": 2}
-    try:
-        create = requests.post(
-            f"{base_url}/twirp/livekit.RoomService/CreateRoom",
-            json=body,
-            headers=headers,
-            timeout=6,
-        )
-        if create.status_code >= 300:
-            return {
-                "can_create_test_room": False,
-                "can_cleanup_test_room": False,
-                "provider_error": f"create_room_http_{create.status_code}",
-            }
-        cleanup = requests.post(
-            f"{base_url}/twirp/livekit.RoomService/DeleteRoom",
-            json={"room": room_name},
-            headers=headers,
-            timeout=6,
-        )
-        return {
-            "can_create_test_room": True,
-            "can_cleanup_test_room": cleanup.status_code < 300,
-            "provider_error": "" if cleanup.status_code < 300 else f"delete_room_http_{cleanup.status_code}",
-        }
-    except requests.RequestException as exc:
-        return {
-            "can_create_test_room": False,
-            "can_cleanup_test_room": False,
-            "provider_error": exc.__class__.__name__,
-        }
 
 
 def _conversation_participants(cur: Any, conversation_id: int) -> list[dict[str, Any]]:
@@ -853,7 +600,7 @@ def _serialize_call(cur: Any, call: dict[str, Any], user_id: int = 0, include_to
         "public_id": call.get("public_id"),
         "conversation_id": int(call.get("conversation_id") or 0),
         "room_name": call.get("room_name") or "",
-        "provider": call.get("provider") or "livekit",
+        "provider": "agora",
         "call_type": call.get("call_type") or "audio",
         "call_scope": call.get("call_scope") or "direct",
         "status": call.get("status") or "created",
@@ -867,7 +614,7 @@ def _serialize_call(cur: Any, call: dict[str, Any], user_id: int = 0, include_to
         "end_reason": call.get("end_reason") or "",
         "participants": participants,
         "participant": me,
-        "livekit": livekit_config_status(),
+        "agora": agora_config_status(),
         "agora": agora_config_status(),
     }
     if include_token and user_id:
@@ -1394,7 +1141,7 @@ def start_call(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         _emit_call_sync_event(cur, call, "call_started", int(user_id), [int(user_id), *recipient_ids], status="ringing")
         serialized = _serialize_call(cur, call, int(user_id), include_token=True)
         join = serialized.get("join") if isinstance(serialized.get("join"), dict) else {}
-        if not join.get("ok") or not join.get("token") or (selected_provider == "livekit" and not join.get("livekit_url")) or (selected_provider == "agora" and not join.get("app_id")):
+        if not join.get("ok") or not join.get("token") or not join.get("app_id"):
             _event(
                 cur,
                 call_id,
@@ -1442,7 +1189,7 @@ def join_token(user_id: int, call_ref: str | int) -> dict[str, Any]:
         if str(call.get("status") or "") in FINAL_STATUSES:
             return _err("This call has ended.", 409, "call_final")
         token = _generate_rtc_token(
-            str(call.get("provider") or "livekit"),
+            "agora",
             call.get("room_name") or "",
             int(user_id),
             call.get("call_type") or "audio",
@@ -1487,7 +1234,7 @@ def accept_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | Non
         refreshed = _get_call(cur, call_ref)
         _emit_call_sync_event(cur, refreshed, "call_accepted", int(user_id), status="accepted")
         token = _generate_rtc_token(
-            str(refreshed.get("provider") or "livekit"),
+            "agora",
             refreshed.get("room_name") or "",
             int(user_id),
             refreshed.get("call_type") or "audio",
@@ -1775,38 +1522,11 @@ def update_participant_control(user_id: int, call_ref: str | int, action: str, p
         conn.close()
 
 
-def livekit_webhook(headers: dict[str, Any], raw_body: bytes, payload: dict[str, Any]) -> dict[str, Any]:
-    secret = os.getenv("LIVEKIT_WEBHOOK_SECRET", "").strip()
-    if not secret:
-        return _err("LIVEKIT_WEBHOOK_SECRET is not configured; webhook processing is disabled.", 503, "config_missing")
-    provided = str(headers.get("X-LiveKit-Signature") or headers.get("X-PulseSoc-Signature") or headers.get("Authorization") or "").strip()
-    digest = hmac.new(secret.encode("utf-8"), raw_body or b"", hashlib.sha256).hexdigest()
-    accepted = {digest, f"sha256={digest}", f"Bearer {digest}"}
-    if provided not in accepted:
-        return _err("LiveKit webhook signature could not be verified.", 403, "forbidden")
-    room_name = str(payload.get("room", {}).get("name") if isinstance(payload.get("room"), dict) else payload.get("room_name") or "").strip()
-    conn, cur = _open_db()
-    try:
-        cur.execute("SELECT * FROM communication_calls WHERE room_name=? LIMIT 1", (room_name,))
-        call = _row(cur.fetchone())
-        call_id = int(call.get("id") or 0)
-        _event(cur, call_id, 0, "provider_webhook_received", {"room_name": room_name, "event": payload.get("event") or payload.get("type")})
-        if call and str(payload.get("event") or payload.get("type") or "").lower() in {"room_finished", "room_ended"}:
-            _transition(cur, call, "ended", 0, "provider_room_ended")
-        conn.commit()
-        return _ok({"message": "Webhook recorded.", "call_id": call_id})
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
-
 def recent_calls(limit: int = 40) -> dict[str, Any]:
     conn, cur = _open_db()
     try:
         cur.execute("SELECT * FROM communication_calls ORDER BY id DESC LIMIT ?", (max(1, min(int(limit or 40), 100)),))
-        return _ok({"calls": [_serialize_call(cur, dict(row), 0) for row in cur.fetchall()], "livekit": livekit_config_status()})
+        return _ok({"calls": [_serialize_call(cur, dict(row), 0) for row in cur.fetchall()], "agora": agora_config_status()})
     finally:
         conn.close()
 
@@ -1912,7 +1632,7 @@ def admin_calls_list(kind: str = "recent", limit: int = 60) -> dict[str, Any]:
             )
         else:
             cur.execute("SELECT * FROM communication_calls ORDER BY id DESC LIMIT ?", (limit_value,))
-        return _ok({"kind": kind, "calls": [_serialize_admin_call(cur, dict(row)) for row in cur.fetchall()], "livekit": livekit_config_status()})
+        return _ok({"kind": kind, "calls": [_serialize_admin_call(cur, dict(row)) for row in cur.fetchall()], "agora": agora_config_status()})
     finally:
         conn.close()
 
@@ -1966,7 +1686,7 @@ def calls_dashboard_summary() -> dict[str, Any]:
             delivery_counts = {}
         return _ok({
             "summary": {
-                "livekit_config": "Configured" if livekit_config_status().get("configured") else "Missing",
+                "agora_config": "Configured" if agora_config_status().get("configured") else "Missing",
                 "active_calls": active_total,
                 "calls_today": calls_today,
                 "failed_calls": failed_total,
@@ -1976,7 +1696,7 @@ def calls_dashboard_summary() -> dict[str, Any]:
                 "notification_delivery": delivery_counts,
                 "last_error": last_error,
             },
-            "livekit": livekit_config_status(),
+            "agora": agora_config_status(),
         })
     finally:
         conn.close()
@@ -1994,7 +1714,7 @@ def call_timeline(call_ref: str | int) -> dict[str, Any]:
             item = dict(row)
             item["event_payload"] = _decode_payload(item.pop("event_payload_json", "") or "")
             events.append(item)
-        return _ok({"call": _serialize_admin_call(cur, call), "events": events, "livekit": livekit_config_status()})
+        return _ok({"call": _serialize_admin_call(cur, call), "events": events, "agora": agora_config_status()})
     finally:
         conn.close()
 
@@ -2159,7 +1879,7 @@ def call_delivery_diagnostics(call_ref: str | int) -> dict[str, Any]:
                 "incoming_notification_created": any((note.get("type") or note.get("notification_type")) == "incoming_call" for note in notifications),
                 "push_job_created": any(job.get("channel") == "push" for job in delivery_jobs),
                 "call_job_created": any(job.get("channel") == "call" for job in delivery_jobs),
-                "livekit_configured": bool(livekit_config_status().get("configured")),
+                "agora_configured": bool(agora_config_status().get("configured")),
                 "realtime_event_emitted": realtime_emitted,
                 "realtime_event_failed": realtime_failed,
                 "recipient_online": any(bool(item.get("recipient_online", {}).get("online")) for item in device_status.values()),
@@ -2171,7 +1891,7 @@ def call_delivery_diagnostics(call_ref: str | int) -> dict[str, Any]:
             "notifications": notifications,
             "delivery_jobs": delivery_jobs,
             "events": events,
-            "livekit": livekit_config_status(),
+            "agora": agora_config_status(),
         })
     finally:
         conn.close()
@@ -2192,37 +1912,33 @@ def admin_call_detail(call_ref: str | int) -> dict[str, Any]:
             "events": events,
             "quality_reports": quality,
             "quality_summary": _quality_summary(quality),
-            "livekit": livekit_config_status(),
-            "hd_quality_policy": livekit_hd_quality_policy(),
+            "agora": agora_config_status(),
         })
     finally:
         conn.close()
 
 
 def test_config(payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    status = livekit_config_status()
+    status = agora_config_status()
     missing = list(status.get("missing") or [])
     base = {
-        "provider": "livekit",
+        "provider": "agora",
         "configured": bool(status.get("configured")),
-        "url_present": bool(status.get("url_configured")),
-        "api_key_present": "LIVEKIT_API_KEY" not in missing,
-        "api_secret_present": "LIVEKIT_API_SECRET" not in missing,
-        "webhook_secret_present": bool(status.get("webhook_secret_configured")),
+        "app_id_present": bool(status.get("app_id_configured")),
+        "certificate_present": bool(status.get("certificate_configured")),
         "turn_present": bool(status.get("turn_configured")),
         "stun_present": bool(status.get("stun_configured")),
         "missing": missing,
         "safe_mode": "" if status.get("configured") else "config_missing",
         "provider_ready": bool(status.get("configured")),
-        "livekit": status,
-        "hd_quality_policy": livekit_hd_quality_policy(),
+        "agora": status,
     }
     if not status.get("configured"):
         error = _err(
             "Calling provider is not configured.",
             200,
             "config_missing",
-            error_overrides={"missing": missing, "provider": "livekit"},
+            error_overrides={"missing": missing, "provider": "agora"},
         )
         return {
             **error,
@@ -2233,46 +1949,17 @@ def test_config(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         }
 
     room_name = f"pulsesoc-config-token-{secrets.token_hex(6)}"
-    token = _generate_livekit_token(room_name, 0, "audio")
-    connectivity = _livekit_room_connectivity_check()
+    token = _generate_agora_token(room_name, 1, "audio")
     return _ok({
         **base,
         "can_generate_token": bool(token.get("ok") and token.get("token")),
-        "can_create_test_room": bool(connectivity.get("can_create_test_room")),
-        "can_cleanup_test_room": bool(connectivity.get("can_cleanup_test_room")),
-        "provider_error": connectivity.get("provider_error") or "",
+        "can_create_test_room": False,
+        "can_cleanup_test_room": False,
+        "provider_error": "",
         "room_check": {
             "attempted": True,
-            "created": bool(connectivity.get("can_create_test_room")),
-            "cleaned_up": bool(connectivity.get("can_cleanup_test_room")),
-        },
-    })
-
-
-def admin_livekit_quality_test(payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    config = test_config(payload or {})
-    policy = livekit_hd_quality_policy()
-    configured = bool(config.get("configured"))
-    can_generate = bool(config.get("can_generate_token"))
-    can_create = bool(config.get("can_create_test_room"))
-    return _ok({
-        "provider": "livekit",
-        "configured": configured,
-        "provider_ready": bool(configured and can_generate and can_create),
-        "can_generate_token": can_generate,
-        "can_create_test_room": can_create,
-        "can_cleanup_test_room": bool(config.get("can_cleanup_test_room")),
-        "provider_error": config.get("provider_error") or "",
-        "missing": config.get("missing") or [],
-        "hd_quality_policy": policy,
-        "browser_quality_test": {
-            "requires_browser_camera": True,
-            "call_capture_target": policy["video_calls"]["default"],
-            "live_capture_preferred": policy["live_hosts"]["preferred"],
-            "notes": [
-                "Actual capture width, rendered width, fps, bitrate, RTT, jitter, and packet loss are reported by active calls through the quality endpoint.",
-                "Mux replay quality must be checked after LiveKit publishes an HD input track.",
-            ],
+            "created": False,
+            "cleaned_up": False,
         },
     })
 

@@ -79,13 +79,13 @@
   <main class="wrap">
     <section class="hero">
       <div>
-        <p class="pill"><span class="status-dot {{ '' if summary.livekit.configured else 'warn' }}"></span> LiveKit {{ summary.summary.livekit_config if summary.ok else 'Unavailable' }}</p>
+        <p class="pill"><span class="status-dot {{ '' if summary.agora.configured else 'warn' }}"></span> Agora {{ summary.summary.agora_config if summary.ok else 'Unavailable' }}</p>
         <h1>Calls Command Center</h1>
-        <p class="muted">Backend truth for active calls, participants, LiveKit readiness, call notifications, push delivery, quality reports, and failures. Secret values are never rendered.</p>
+        <p class="muted">Backend truth for active calls, participants, Agora readiness, call notifications, push delivery, quality reports, and failures. Secret values are never rendered.</p>
       </div>
       <div class="actions">
         <form method="post" action="/admin/calls/test-config">
-          <button type="submit">Run LiveKit Config Test</button>
+          <button type="submit">Run Agora Config Test</button>
         </form>
         <form method="post" action="/admin/calls/quality-test">
           <button type="submit">Run HD Quality Test</button>
@@ -95,7 +95,7 @@
 
     {% set s = summary.summary or {} %}
     <section class="grid" aria-label="Call dashboard cards">
-      <article class="card glow"><strong>LiveKit Config</strong><p class="metric">{{ s.livekit_config or 'Missing' }}</p><p class="muted">{{ (summary.livekit.missing or [])|join(', ') if not summary.livekit.configured else 'Required provider variables are present.' }}</p></article>
+      <article class="card glow"><strong>Agora Config</strong><p class="metric">{{ s.agora_config or 'Missing' }}</p><p class="muted">{{ (summary.agora.missing or [])|join(', ') if not summary.agora.configured else 'Required provider variables are present.' }}</p></article>
       <article class="card"><strong>Active Calls</strong><p class="metric">{{ s.active_calls or 0 }}</p></article>
       <article class="card"><strong>Calls Today</strong><p class="metric">{{ s.calls_today or 0 }}</p></article>
       <article class="card"><strong>Failed Calls</strong><p class="metric">{{ s.failed_calls or 0 }}</p></article>
@@ -120,7 +120,7 @@
 
     {% if test_result %}
       <section class="card glow" style="margin-top:14px">
-        <h2>{{ 'LiveKit HD Quality Test Result' if panel == 'quality-test' else 'LiveKit Config Test Result' }}</h2>
+        <h2>{{ 'Agora HD Quality Test Result' if panel == 'quality-test' else 'Agora Config Test Result' }}</h2>
         <p><span class="pill {{ '' if test_result.configured else 'warn' }}">Configured: {{ test_result.configured }}</span><span class="pill">Generate token: {{ test_result.can_generate_token }}</span><span class="pill">Create room: {{ test_result.can_create_test_room }}</span><span class="pill">Cleanup: {{ test_result.can_cleanup_test_room }}</span></p>
         <pre>{{ test_result|tojson(indent=2) }}</pre>
       </section>
@@ -167,7 +167,7 @@
 
       <aside class="card">
         <h2>Provider Config Status</h2>
-        <p><span class="pill {{ '' if summary.livekit.configured else 'warn' }}">LIVEKIT_URL {{ 'present' if summary.livekit.url_configured else 'missing' }}</span><span class="pill {{ '' if 'LIVEKIT_API_KEY' not in (summary.livekit.missing or []) else 'warn' }}">LIVEKIT_API_KEY {{ 'present' if 'LIVEKIT_API_KEY' not in (summary.livekit.missing or []) else 'missing' }}</span><span class="pill {{ '' if 'LIVEKIT_API_SECRET' not in (summary.livekit.missing or []) else 'warn' }}">LIVEKIT_API_SECRET {{ 'present' if 'LIVEKIT_API_SECRET' not in (summary.livekit.missing or []) else 'missing' }}</span><span class="pill {{ '' if summary.livekit.webhook_secret_configured else 'warn' }}">LIVEKIT_WEBHOOK_SECRET {{ 'present' if summary.livekit.webhook_secret_configured else 'missing' }}</span></p>
+        <p><span class="pill {{ '' if summary.agora.app_id_configured else 'warn' }}">Agora App ID {{ 'present' if summary.agora.app_id_configured else 'missing' }}</span><span class="pill {{ '' if summary.agora.certificate_configured else 'warn' }}">Agora certificate {{ 'present' if summary.agora.certificate_configured else 'missing' }}</span></p>
         <p class="muted">Only presence/missing state is shown. Provider secrets and token values are hidden.</p>
       </aside>
     </section>

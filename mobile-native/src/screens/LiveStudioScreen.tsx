@@ -363,7 +363,7 @@ export function LiveStudioScreen() {
         <Text style={styles.noteTitle}>How broadcasting works</Text>
         <Text style={styles.noteBody}>
           This native pre-flight checks your device and captures your setup. Tapping Go Live starts a real native
-          broadcast on this device — your camera and microphone publish through PulseSoc's LiveKit rooms, and you can
+          broadcast on this device — your camera and microphone publish through PulseSoc's Agora rooms, and you can
           accept guest requests from the host screen. No web Studio and no browser handoff.
         </Text>
       </LogiNexusPanel>

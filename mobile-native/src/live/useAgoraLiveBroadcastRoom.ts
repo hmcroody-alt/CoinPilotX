@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { IRtcEngine, IRtcEngineEventHandler } from "react-native-agora";
-import type { LiveKitCredentials } from "./liveSession";
+import type { LiveRtcCredentials } from "./liveSession";
 import type { LiveParticipant } from "./useLiveBroadcastRoom";
 import { emitAgoraLiveEvent } from "./agoraLiveTelemetry";
 
@@ -16,8 +16,8 @@ const initial = {
 export function useAgoraLiveBroadcastRoom() {
   const engineRef = useRef<IRtcEngine | null>(null);
   const handlerRef = useRef<IRtcEngineEventHandler | null>(null);
-  const refreshRef = useRef<(() => Promise<LiveKitCredentials | null>) | null>(null);
-  const credentialsRef = useRef<LiveKitCredentials | null>(null);
+  const refreshRef = useRef<(() => Promise<LiveRtcCredentials | null>) | null>(null);
+  const credentialsRef = useRef<LiveRtcCredentials | null>(null);
   const renewalRef = useRef<Promise<void> | null>(null);
   const [state, setState] = useState(initial);
 
@@ -46,7 +46,7 @@ export function useAgoraLiveBroadcastRoom() {
     setState((s) => ({ ...initial, supported: s.supported, disconnectReason: reason, diagnosticCode: reason }));
   }, []);
 
-  const connect = useCallback(async (credentials: LiveKitCredentials, options: { publish?: boolean; video?: boolean; refreshCredentials?: () => Promise<LiveKitCredentials | null> } = {}) => {
+  const connect = useCallback(async (credentials: LiveRtcCredentials, options: { publish?: boolean; video?: boolean; refreshCredentials?: () => Promise<LiveRtcCredentials | null> } = {}) => {
     if (credentials.provider !== "agora" || !credentials.token || !credentials.appId || !credentials.channelName || !credentials.uid) return false;
     if (options.publish && !credentials.canPublish) {
       setState((s) => ({ ...s, error: "PulseSoc did not authorize this account to publish.", diagnosticCode: "AGORA_LIVE_PUBLISH_FORBIDDEN" }));

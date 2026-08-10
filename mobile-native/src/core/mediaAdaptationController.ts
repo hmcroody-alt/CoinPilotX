@@ -102,7 +102,7 @@ export function normalizeConditions(
 /* -------------------------------------------------------------------------- */
 
 /**
- * LiveKit's ConnectionQuality enum, as observed at the adapter. Kept as a
+ * Agora's ConnectionQuality enum, as observed at the adapter. Kept as a
  * string union rather than importing the SDK enum so this module stays free of
  * SDK imports and remains testable without a Room.
  */
