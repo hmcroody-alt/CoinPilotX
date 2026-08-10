@@ -149,5 +149,143 @@ class LoginRateLimitTests(unittest.TestCase):
         self.assertFalse(admin_gateway.login_rate_limited(conn, "src-hash"))
 
 
+class IdentifierRateLimitTests(unittest.TestCase):
+    """Second throttling dimension: hashed login identifier."""
+
+    def _conn(self):
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            "CREATE TABLE admin_audit_logs (id INTEGER PRIMARY KEY, admin_user_id INTEGER,"
+            " admin_email TEXT, action TEXT, target_type TEXT, target_id TEXT,"
+            " metadata TEXT, ip_hash TEXT, created_at TEXT)"
+        )
+        return conn
+
+    def _add_identifier_failures(self, conn, count, identifier_hash, minutes_ago=1):
+        stamp = (datetime.now() - timedelta(minutes=minutes_ago)).isoformat()
+        for _ in range(count):
+            conn.execute(
+                "INSERT INTO admin_audit_logs (action, target_id, created_at) VALUES (?, ?, ?)",
+                (admin_gateway.IDENTIFIER_FAILED_ACTION, identifier_hash, stamp))
+        conn.commit()
+
+    def test_hash_identifier_normalizes_and_is_salted(self):
+        a = admin_gateway.hash_identifier("Owner@Example.com ", salt="s1")
+        b = admin_gateway.hash_identifier("owner@example.com", salt="s1")
+        c = admin_gateway.hash_identifier("owner@example.com", salt="s2")
+        self.assertEqual(a, b)
+        self.assertNotEqual(a, c)
+        self.assertEqual(len(a), 64)
+        self.assertNotIn("owner", a)
+
+    def test_identifier_threshold_limits_across_sources(self):
+        conn = self._conn()
+        idh = admin_gateway.hash_identifier("target@x.com")
+        self._add_identifier_failures(conn, admin_gateway.RATE_LIMIT_MAX_IDENTIFIER_FAILURES, idh)
+        # Fresh source IP, but the identifier itself is saturated.
+        self.assertTrue(admin_gateway.login_rate_limited(conn, "fresh-src", idh))
+
+    def test_identifier_under_threshold_not_limited(self):
+        conn = self._conn()
+        idh = admin_gateway.hash_identifier("target@x.com")
+        self._add_identifier_failures(conn, admin_gateway.RATE_LIMIT_MAX_IDENTIFIER_FAILURES - 1, idh)
+        self.assertFalse(admin_gateway.login_rate_limited(conn, "fresh-src", idh))
+
+    def test_identifier_failures_expire(self):
+        conn = self._conn()
+        idh = admin_gateway.hash_identifier("target@x.com")
+        self._add_identifier_failures(
+            conn, admin_gateway.RATE_LIMIT_MAX_IDENTIFIER_FAILURES + 3, idh,
+            minutes_ago=admin_gateway.RATE_LIMIT_WINDOW_MINUTES + 5)
+        self.assertFalse(admin_gateway.login_rate_limited(conn, "fresh-src", idh))
+
+    def test_csrf_rejected_counts_toward_source_dimension(self):
+        conn = self._conn()
+        stamp = datetime.now().isoformat()
+        for _ in range(admin_gateway.RATE_LIMIT_MAX_FAILURES):
+            conn.execute(
+                "INSERT INTO admin_audit_logs (action, ip_hash, created_at) "
+                "VALUES ('admin_login_csrf_rejected', 'src-hash', ?)", (stamp,))
+        conn.commit()
+        self.assertTrue(admin_gateway.login_rate_limited(conn, "src-hash"))
+
+
+class MemoryFallbackTests(unittest.TestCase):
+    """Fail-safe (not fail-open) limiter fallback with guaranteed expiry."""
+
+    class _BrokenConn:
+        def cursor(self):
+            raise RuntimeError("audit store unavailable")
+
+    def setUp(self):
+        admin_gateway._MEMORY_WINDOW.clear()
+
+    def tearDown(self):
+        admin_gateway._MEMORY_WINDOW.clear()
+
+    def test_db_error_without_failures_stays_open(self):
+        # Owner must not be locked out just because the audit store is down.
+        self.assertFalse(admin_gateway.login_rate_limited(self._BrokenConn(), "src", "idh"))
+
+    def test_db_error_with_memory_failures_limits(self):
+        for _ in range(admin_gateway.RATE_LIMIT_MAX_FAILURES):
+            admin_gateway.note_failure(ip_hash="src")
+        self.assertTrue(admin_gateway.login_rate_limited(self._BrokenConn(), "src", ""))
+
+    def test_memory_identifier_dimension(self):
+        for _ in range(admin_gateway.RATE_LIMIT_MAX_IDENTIFIER_FAILURES):
+            admin_gateway.note_failure(identifier_hash="idh")
+        self.assertTrue(admin_gateway.login_rate_limited(self._BrokenConn(), "other-src", "idh"))
+
+    def test_memory_window_expires_no_permanent_lockout(self):
+        old = datetime.now() - timedelta(minutes=admin_gateway.RATE_LIMIT_WINDOW_MINUTES + 5)
+        for _ in range(admin_gateway.RATE_LIMIT_MAX_FAILURES + 10):
+            admin_gateway.note_failure(ip_hash="src", now=old)
+        self.assertFalse(admin_gateway.login_rate_limited(self._BrokenConn(), "src", ""))
+
+
+class CinematicPresentationContractTests(unittest.TestCase):
+    """The visual layer must stay decorative, factual, and isolated."""
+
+    def render(self, state="idle"):
+        return admin_gateway.render_gateway("test-csrf-token", state=state)
+
+    def test_real_logo_asset_referenced(self):
+        body = self.render()
+        self.assertIn(admin_gateway.GATEWAY_MARK_SRC, body)
+        self.assertIn("/static/brand/pulsesoc-gateway-mark-", body)
+
+    def test_threat_state_only_on_denied_and_rate_limited(self):
+        self.assertIn("gw gw-threat", self.render("denied"))
+        self.assertIn("gw gw-threat", self.render("rate_limited"))
+        for state in ("idle", "expired", "unavailable"):
+            self.assertNotIn("gw-threat'", self.render(state).split("<body")[1].split(">")[0])
+
+    def test_no_military_or_government_claims(self):
+        for state in ("idle", "denied"):
+            low = self.render(state).lower()
+            for claim in ("military", "government-grade", "nsa", "pentagon", "classified"):
+                self.assertNotIn(claim, low)
+
+    def test_no_operational_api_calls_in_gateway_js(self):
+        body = self.render()
+        # The only fetch permitted is the login form's own POST to its action.
+        for endpoint in ("/api/", "status.json", "search.json", "EventSource", "WebSocket", "setInterval"):
+            self.assertNotIn(endpoint, body)
+
+    def test_reduced_motion_collapses_animation(self):
+        body = self.render()
+        self.assertIn("prefers-reduced-motion", body)
+        reduced = body.split("prefers-reduced-motion", 1)[1]
+        self.assertIn("animation", reduced)
+
+    def test_form_immediately_interactive(self):
+        body = self.render()
+        self.assertNotIn("type='submit' disabled", body)  # idle: enabled
+        form_markup = body.split("<section class='gw-card'>", 1)[1].split("</form>")[0]
+        self.assertNotIn("pointer-events:none", form_markup)
+        self.assertIn("autofocus", form_markup)
+
+
 if __name__ == "__main__":
     unittest.main()

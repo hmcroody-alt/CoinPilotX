@@ -207,5 +207,137 @@ class PreAuthGatewayTests(unittest.TestCase):
         self.assertIn("Access denied.", response.get_data(as_text=True))
 
 
+class AdminAuthHardeningTests(unittest.TestCase):
+    """Route-level pins for the final hardening pass: CSRF-rejected auditing,
+    identifier throttling wiring, session lifetimes, logout invalidation,
+    /admin-dashboard fail-closed, and gateway script isolation."""
+
+    @classmethod
+    def setUpClass(cls):
+        bot.init_db()
+        _seed_admin()
+
+    def setUp(self):
+        self.client = bot.webhook_app.test_client()
+        _seed_admin()
+
+    def _audit_count(self, action, since=None):
+        conn = sqlite3.connect(_DB_PATH)
+        cur = conn.cursor()
+        if since:
+            cur.execute("SELECT COUNT(*) FROM admin_audit_logs WHERE action=? AND created_at>=?", (action, since))
+        else:
+            cur.execute("SELECT COUNT(*) FROM admin_audit_logs WHERE action=?", (action,))
+        n = cur.fetchone()[0]
+        conn.close()
+        return n
+
+    def _login(self):
+        token = _csrf_token(self.client)
+        return self.client.post("/admin/login", data={
+            "csrf_token": token, "email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+
+    def test_csrf_rejected_login_is_audited_and_hashed(self):
+        since = datetime.now().isoformat()
+        self.client.post("/admin/login", data={"email": ADMIN_EMAIL, "password": "x"})
+        self.assertGreaterEqual(self._audit_count("admin_login_csrf_rejected", since), 1)
+        # Identifier failure row exists and never contains the raw email.
+        conn = sqlite3.connect(_DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT target_id, metadata FROM admin_audit_logs WHERE action=? AND created_at>=?",
+            (admin_gateway.IDENTIFIER_FAILED_ACTION, since))
+        rows = cur.fetchall()
+        conn.close()
+        self.assertGreaterEqual(len(rows), 1)
+        for target_id, metadata in rows:
+            self.assertNotIn(ADMIN_EMAIL, target_id or "")
+            self.assertNotIn(ADMIN_EMAIL, metadata or "")
+            self.assertEqual(len(target_id or ""), 64)
+
+    def test_failed_login_records_identifier_dimension(self):
+        since = datetime.now().isoformat()
+        token = _csrf_token(self.client)
+        self.client.post("/admin/login", data={
+            "csrf_token": token, "email": ADMIN_EMAIL, "password": "wrong"})
+        self.assertGreaterEqual(self._audit_count(admin_gateway.IDENTIFIER_FAILED_ACTION, since), 1)
+        _seed_admin()
+
+    def test_successful_login_rotates_and_stamps_session(self):
+        response = self._login()
+        self.assertEqual(response.status_code, 302)
+        with self.client.session_transaction() as flask_session:
+            self.assertTrue(flask_session.get("admin_user_id"))
+            self.assertTrue(flask_session.get("admin_session_issued_at"))
+            self.assertTrue(flask_session.get("admin_session_last_seen"))
+            # Pre-auth CSRF token was rotated away at the boundary.
+            self.assertIsNone(flask_session.get("csrf_token"))
+        self.client.get("/admin/logout")
+
+    def test_absolute_session_lifetime_expires(self):
+        self._login()
+        stale = (datetime.now() - timedelta(hours=bot.ADMIN_SESSION_ABSOLUTE_HOURS + 1)).isoformat()
+        with self.client.session_transaction() as flask_session:
+            flask_session["admin_session_issued_at"] = stale
+            flask_session["admin_session_last_seen"] = datetime.now().isoformat()
+        since = datetime.now().isoformat()
+        response = self.client.get("/admin/dashboard")
+        self.assertIn(response.status_code, (301, 302))
+        self.assertIn("/admin/login", response.headers.get("Location", ""))
+        self.assertGreaterEqual(self._audit_count("admin_session_expired", since), 1)
+        with self.client.session_transaction() as flask_session:
+            self.assertIsNone(flask_session.get("admin_user_id"))
+
+    def test_idle_session_lifetime_expires(self):
+        self._login()
+        idle = (datetime.now() - timedelta(minutes=bot.ADMIN_SESSION_IDLE_MINUTES + 5)).isoformat()
+        with self.client.session_transaction() as flask_session:
+            flask_session["admin_session_last_seen"] = idle
+        response = self.client.get("/admin/dashboard")
+        self.assertIn(response.status_code, (301, 302))
+        self.assertIn("/admin/login", response.headers.get("Location", ""))
+
+    def test_legacy_session_without_lifetime_metadata_expires(self):
+        with self.client.session_transaction() as flask_session:
+            flask_session["admin_user_id"] = 1  # pre-hardening cookie shape
+        response = self.client.get("/admin/dashboard")
+        self.assertIn(response.status_code, (301, 302))
+        self.assertIn("/admin/login", response.headers.get("Location", ""))
+
+    def test_logout_clears_all_admin_session_keys(self):
+        self._login()
+        self.client.get("/admin/dashboard")  # mint post-auth csrf via render
+        self.client.get("/admin/logout")
+        with self.client.session_transaction() as flask_session:
+            for key in ("admin_user_id", "admin_session_issued_at",
+                        "admin_session_last_seen", "csrf_token"):
+                self.assertIsNone(flask_session.get(key), key)
+
+    def test_admin_dashboard_route_fails_closed_anonymously(self):
+        response = self.client.get("/admin-dashboard")
+        self.assertEqual(response.status_code, 401)
+        response = self.client.get("/admin-dashboard?token=guess")
+        self.assertEqual(response.status_code, 401)
+
+    def test_admin_dashboard_route_allows_admin_session(self):
+        self._login()
+        response = self.client.get("/admin-dashboard")
+        self.assertEqual(response.status_code, 200)
+        self.client.get("/admin/logout")
+
+    def test_gateway_exempt_from_public_script_injection(self):
+        body = self.client.get("/admin/login").get_data(as_text=True)
+        self.assertNotIn("pulse_pwa_install.js", body)
+        self.assertNotIn("pulse_i18n.js", body)
+
+    def test_simple_content_types_enforce_csrf_on_admin_posts(self):
+        self._login()
+        for content_type in ("text/plain",):
+            response = self.client.post(
+                "/admin/users", data="x", content_type=content_type)
+            self.assertEqual(response.status_code, 400, content_type)
+        self.client.get("/admin/logout")
+
+
 if __name__ == "__main__":
     unittest.main()

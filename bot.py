@@ -2429,12 +2429,17 @@ def add_pwa_headers(response):
                 html = re.sub(r"</head>", favicon_tags + "</head>", html, count=1, flags=re.I)
                 response.set_data(html)
                 response.headers.pop("Content-Length", None)
-            if "</body>" in html.lower() and "/static/js/pulse_pwa_install.js" not in html:
+            # PRE-AUTH GATEWAY ISOLATION: /admin/login must ship zero external
+            # scripts (see tests/admin_auth/test_pre_auth_gateway.py). Favicon
+            # tags above are inert markup and stay; the PWA/i18n scripts below
+            # are public-app concerns and are not injected into the gateway.
+            gateway_isolated = request.path == "/admin/login"
+            if not gateway_isolated and "</body>" in html.lower() and "/static/js/pulse_pwa_install.js" not in html:
                 pwa_install_script = '<script src="/static/js/pulse_pwa_install.js?v=install-20260606-restore" defer></script>'
                 html = re.sub(r"</body>", pwa_install_script + "</body>", html, count=1, flags=re.I)
                 response.set_data(html)
                 response.headers.pop("Content-Length", None)
-            if "</head>" in html.lower() and "/static/js/pulse_i18n.js" not in html:
+            if not gateway_isolated and "</head>" in html.lower() and "/static/js/pulse_i18n.js" not in html:
                 i18n_script = '<script src="/static/js/pulse_i18n.js?v=persistent-language-20260701" defer></script>'
                 html = re.sub(r"</head>", i18n_script + "</head>", html, count=1, flags=re.I)
                 response.set_data(html)
@@ -2943,7 +2948,13 @@ def enforce_admin_form_csrf():
     if path in CSRF_EXEMPT_ADMIN_PATHS:
         return None
     content_type = (request.content_type or "").split(";")[0].strip().lower()
-    if content_type not in ("application/x-www-form-urlencoded", "multipart/form-data"):
+    # CSRF enforcement covers every content type a cross-site attacker can
+    # send WITHOUT a CORS preflight: form encodings, text/plain, and a missing
+    # content type. application/json stays exempt deliberately — the browser
+    # preflights it cross-site and this app sets no CORS headers, so a forged
+    # JSON request can never reach these routes; enforcing it would break
+    # header-token API clients that don't carry the session CSRF token.
+    if content_type not in ("application/x-www-form-urlencoded", "multipart/form-data", "text/plain", ""):
         return None
     if not session.get("admin_user_id"):
         return None
@@ -13566,10 +13577,53 @@ def require_admin_password():
     return supplied == expected
 
 
+ADMIN_SESSION_ABSOLUTE_HOURS = max(1, int(os.getenv("ADMIN_SESSION_ABSOLUTE_HOURS", "12") or 12))
+ADMIN_SESSION_IDLE_MINUTES = max(5, int(os.getenv("ADMIN_SESSION_IDLE_MINUTES", "60") or 60))
+
+
+def _admin_session_expired_reason():
+    """Return '' if the admin session is within lifetime, else the expiry reason.
+
+    Enforces an absolute lifetime and an idle timeout on top of the signed
+    cookie, because PERMANENT_SESSION_LIFETIME is intentionally long for
+    regular user sessions and must not govern admin sessions.
+    """
+    issued_raw = session.get("admin_session_issued_at")
+    if not issued_raw:
+        # Legacy admin session created before lifetimes existed: treat as
+        # expired so every live admin session carries lifetime metadata.
+        return "legacy_session"
+    try:
+        issued = datetime.fromisoformat(str(issued_raw))
+        last_seen = datetime.fromisoformat(str(session.get("admin_session_last_seen") or issued_raw))
+    except Exception:
+        return "invalid_timestamps"
+    now = datetime.now()
+    if now - issued > timedelta(hours=ADMIN_SESSION_ABSOLUTE_HOURS):
+        return "absolute"
+    if now - last_seen > timedelta(minutes=ADMIN_SESSION_IDLE_MINUTES):
+        return "idle"
+    return ""
+
+
 def admin_current_user():
     admin_id = session.get("admin_user_id")
     if not admin_id:
         return None
+    expired_reason = _admin_session_expired_reason()
+    if expired_reason:
+        # Clear the admin keys BEFORE logging so log_admin_audit's own call
+        # to admin_current_user() sees no session and cannot recurse here.
+        session.pop("admin_user_id", None)
+        session.pop("admin_session_issued_at", None)
+        session.pop("admin_session_last_seen", None)
+        session.pop("csrf_token", None)
+        try:
+            log_admin_audit(int(admin_id), "admin_session_expired", "admin_user", str(admin_id), {"reason": expired_reason})
+        except Exception:
+            pass
+        return None
+    session["admin_session_last_seen"] = datetime.now().isoformat()
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -14451,18 +14505,28 @@ def admin_login_page():
         # Every failure path below collapses to the same generic "Access
         # denied." so responses cannot be used for account enumeration.
         state = "denied"
-        if verify_csrf():
-            ip_hash = client_ip_hash()
+        ip_hash = client_ip_hash()
+        email = normalize_email(clean_html(request.form.get("email", "")))
+        # Second throttling dimension: the login identifier, hashed with the
+        # analytics salt so raw emails never land in audit rows or memory.
+        identifier_hash = admin_gateway.hash_identifier(email, salt=os.getenv("ANALYTICS_SALT", "")) if email else ""
+        if not verify_csrf():
+            # CSRF-rejected attempts are audited and count toward throttling:
+            # they are indistinguishable from forged/scripted login traffic.
+            log_admin_audit(0, "admin_login_csrf_rejected", "admin_user", "", {"path": "/admin/login"})
+            if identifier_hash:
+                log_admin_audit(0, admin_gateway.IDENTIFIER_FAILED_ACTION, "login_identifier", identifier_hash, {"csrf": True})
+            admin_gateway.note_failure(ip_hash=ip_hash, identifier_hash=identifier_hash)
+        else:
             conn = db()
             try:
-                limited = admin_gateway.login_rate_limited(conn, ip_hash)
+                limited = admin_gateway.login_rate_limited(conn, ip_hash, identifier_hash)
             finally:
                 conn.close()
             if limited:
                 log_admin_audit(0, "admin_login_rate_limited", "admin_user", "", {"window_minutes": admin_gateway.RATE_LIMIT_WINDOW_MINUTES})
                 state = "rate_limited"
             else:
-                email = normalize_email(clean_html(request.form.get("email", "")))
                 password = request.form.get("password", "")
                 admin = load_admin_by_email(email)
                 fallback_ok = admin and admin.get("role") == "owner" and not admin.get("password_hash") and os.getenv("ADMIN_ANALYTICS_PASSWORD") and password == os.getenv("ADMIN_ANALYTICS_PASSWORD")
@@ -14470,10 +14534,18 @@ def admin_login_page():
                 locked = bool(locked_until and locked_until > datetime.now(locked_until.tzinfo) if locked_until and locked_until.tzinfo else locked_until and locked_until > datetime.now())
                 auth_ok = admin and admin.get("status") == "active" and not locked and ((admin.get("password_hash") and check_password_hash(admin["password_hash"], password)) or fallback_ok)
                 if auth_ok:
-                    session["admin_user_id"] = admin["id"]
-                    # Rotate the CSRF token at the auth boundary so a token
-                    # captured pre-auth is useless inside the admin session.
+                    # Session rotation at the auth boundary: drop every
+                    # admin-scoped key plus the pre-auth CSRF token before
+                    # issuing the authenticated session, so nothing captured
+                    # pre-auth carries into the admin session.
+                    session.pop("admin_user_id", None)
+                    session.pop("admin_session_issued_at", None)
+                    session.pop("admin_session_last_seen", None)
                     session.pop("csrf_token", None)
+                    now_iso = datetime.now().isoformat()
+                    session["admin_user_id"] = admin["id"]
+                    session["admin_session_issued_at"] = now_iso
+                    session["admin_session_last_seen"] = now_iso
                     conn = db()
                     cur = conn.cursor()
                     cur.execute(
@@ -14491,6 +14563,9 @@ def admin_login_page():
                         return redirect(url_for("admin_change_password_page"))
                     return redirect(url_for("admin_dashboard_page"))
                 update_admin_failed_login(admin)
+                if identifier_hash:
+                    log_admin_audit(0, admin_gateway.IDENTIFIER_FAILED_ACTION, "login_identifier", identifier_hash, {})
+                admin_gateway.note_failure(ip_hash=ip_hash, identifier_hash=identifier_hash)
     return Response(admin_gateway.render_gateway(get_csrf_token(), state=state), mimetype="text/html")
 
 
@@ -14609,7 +14684,12 @@ def admin_logout_page():
             conn.close()
         except Exception:
             pass
+    # Full invalidation: every admin-scoped key plus the CSRF token, so a
+    # cookie replayed after logout carries no admin state at all.
     session.pop("admin_user_id", None)
+    session.pop("admin_session_issued_at", None)
+    session.pop("admin_session_last_seen", None)
+    session.pop("csrf_token", None)
     return redirect(url_for("admin_login_page"))
 
 
@@ -110512,9 +110592,14 @@ def database_health_check():
 
 @webhook_app.route("/admin-dashboard", methods=["GET"])
 def admin_dashboard_route():
-    dashboard_token = os.getenv("ADMIN_DASHBOARD_TOKEN")
-    if dashboard_token and request.args.get("token") != dashboard_token:
-        return "Unauthorized", 401
+    # FAIL CLOSED: an authenticated admin session always passes; otherwise a
+    # configured token is required. With no token configured, anonymous
+    # access is denied — never open.
+    if not admin_current_user():
+        dashboard_token = os.getenv("ADMIN_DASHBOARD_TOKEN") or ""
+        supplied = request.args.get("token") or ""
+        if not dashboard_token or not supplied or not secrets.compare_digest(supplied, dashboard_token):
+            return "Unauthorized", 401
 
     summary = admin_summary().replace("\n", "<br>")
     return f"""
