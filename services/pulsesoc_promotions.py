@@ -32,6 +32,8 @@ CONTENT_ALIASES = {
     "live": "live_stream",
     "photo_post": "photo",
     "video_post": "video",
+    "replay": "live_replay",
+    "live_replays": "live_replay",
 }
 POST_CONTENT_TYPES = {"post", "photo", "business_post", "creator_content", "article", "blog", "podcast", "event"}
 GOALS_BY_CONTENT = {
@@ -42,6 +44,7 @@ GOALS_BY_CONTENT = {
     "story": {"more_views", "more_profile_visits", "more_engagement"},
     "status": {"more_views", "more_profile_visits", "more_engagement"},
     "live_stream": {"more_views", "more_followers", "more_engagement", "more_messages"},
+    "live_replay": {"more_views", "more_followers", "more_engagement"},
     "marketplace_listing": {"more_marketplace_visits", "more_messages", "more_product_sales"},
     "event": {"more_event_responses", "more_profile_visits", "more_engagement"},
     "music_release": {"more_music_plays", "more_followers", "more_engagement"},
@@ -80,10 +83,20 @@ OBJECTIVE_BY_GOAL = {
 PLACEMENTS_BY_CONTENT = {
     "reel": ["video_pre_roll", "feed_inline"],
     "video": ["video_pre_roll", "feed_inline"],
+    "live_replay": ["video_pre_roll", "feed_inline"],
     "status": ["status_interstitial"],
     "story": ["status_interstitial"],
     "marketplace_listing": ["marketplace_sponsor"],
     "music_release": ["pulse_radio_sponsor", "feed_inline"],
+}
+# Content-backed creative reference types by promotion content type. Anything
+# absent here (and outside POST_CONTENT_TYPES, which map to "post") falls back
+# to a plain text creative with a destination link.
+CREATIVE_REF_BY_CONTENT = {
+    "reel": "reel",
+    "live_replay": "live_replay",
+    "marketplace_listing": "listing",
+    "event": "event",
 }
 MIN_BUDGET_CENTS = 500
 MAX_BUDGET_CENTS = 500_000
@@ -170,6 +183,14 @@ def ensure_tables(conn: Any) -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_content_promotions_owner ON pulse_content_promotions(owner_user_id, updated_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_content_promotions_content ON pulse_content_promotions(content_type, content_id, owner_user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_content_promotion_audit ON pulse_content_promotion_audit(promotion_id, created_at)")
+    try:
+        cur.execute("ALTER TABLE pulse_content_promotions ADD COLUMN idempotency_key TEXT")
+    except Exception:
+        pass  # column already exists
+    cur.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_content_promotions_idem ON pulse_content_promotions(owner_user_id, idempotency_key) "
+        "WHERE idempotency_key IS NOT NULL AND idempotency_key != ''"
+    )
     conn.commit()
 
 
@@ -182,7 +203,7 @@ def _query_content(conn: Any, content_type: str, content_id: int) -> dict:
                 SELECT r.id, r.user_id AS owner_user_id, COALESCE(p.title,'PulseSoc Reel') AS title,
                        COALESCE(r.caption,p.body,'') AS body, COALESCE(p.visibility,'public') AS visibility,
                        COALESCE(p.moderation_status,r.moderation_status,'approved') AS moderation_status,
-                       COALESCE(r.status,'active') AS status
+                       COALESCE(r.status,'active') AS status, COALESCE(r.processing_status,'ready') AS processing_status
                 FROM pulse_reels r LEFT JOIN pulse_posts p ON p.id=r.post_id
                 WHERE r.id=? AND COALESCE(r.status,'active')!='deleted' LIMIT 1
                 """,
@@ -200,6 +221,17 @@ def _query_content(conn: Any, content_type: str, content_id: int) -> dict:
             )
         elif content_type == "video":
             cur.execute("SELECT id, owner_user_id, COALESCE(title,'PulseSoc Video') AS title, COALESCE(description,'') AS body, visibility, moderation_status, status FROM pulse_videos WHERE id=? LIMIT 1", (content_id,))
+        elif content_type == "live_replay":
+            cur.execute(
+                """
+                SELECT id, owner_user_id, COALESCE(title,'PulseSoc Live Replay') AS title, COALESCE(description,'') AS body,
+                       COALESCE(visibility,'public') AS visibility, COALESCE(moderation_status,'approved') AS moderation_status,
+                       COALESCE(status,'active') AS status, COALESCE(processing_status,'processing') AS processing_status,
+                       COALESCE(mux_status,'processing') AS mux_status
+                FROM pulse_videos WHERE id=? AND source_type IN ('live','replay') AND COALESCE(status,'active')!='deleted' LIMIT 1
+                """,
+                (content_id,),
+            )
         elif content_type == "story":
             cur.execute("SELECT id, user_id AS owner_user_id, 'PulseSoc Story' AS title, COALESCE(body,'') AS body, visibility, 'approved' AS moderation_status, CASE WHEN deleted_at IS NULL THEN 'active' ELSE 'deleted' END AS status FROM pulse_stories WHERE id=? LIMIT 1", (content_id,))
         elif content_type == "status":
@@ -222,7 +254,7 @@ def _destination(content_type: str, content_id: int) -> str:
         return f"/pulse/reels/{content_id}"
     if content_type in POST_CONTENT_TYPES:
         return f"/pulse/post/{content_id}"
-    if content_type == "video":
+    if content_type in {"video", "live_replay"}:
         return f"/pulse/videos/{content_id}"
     if content_type in {"story", "status"}:
         return f"/pulse/status?status={content_id}"
@@ -251,6 +283,9 @@ def assert_content_owner(conn: Any, content_type: Any, content_id: Any, current_
     return content
 
 
+READY_PROCESSING_STATES = {"", "ready", "complete", "completed", "finished", "done"}
+
+
 def _content_eligibility(content: dict) -> tuple[bool, str]:
     if _text(content.get("visibility") or "public", 30).lower() != "public":
         return False, "Only public content can be promoted."
@@ -260,6 +295,12 @@ def _content_eligibility(content: dict) -> tuple[bool, str]:
     moderation = _text(content.get("moderation_status") or "approved", 40).lower()
     if moderation not in {"approved", "clear", "review_ready", "safe"}:
         return False, "Content must pass safety review before promotion."
+    if "processing_status" in content:
+        processing = _text(content.get("processing_status"), 40).lower()
+        if processing not in READY_PROCESSING_STATES:
+            if content.get("content_type") == "live_replay" or "mux_status" in content:
+                return False, "This replay is still processing and cannot be promoted yet."
+            return False, "This content is still processing and cannot be promoted yet."
     return True, "Content is eligible for promotion review."
 
 
@@ -372,7 +413,7 @@ def _audit(conn: Any, promotion_id: int, actor_user_id: int, action: str, before
 
 def _safe(row: dict) -> dict:
     item = dict(row or {})
-    for key in ("audience_json", "policy_reason"):
+    for key in ("audience_json", "policy_reason", "idempotency_key"):
         item.pop(key, None)
     item["promotion_id"] = _int(item.get("id"))
     item["daily_budget"] = f"${_int(item.get('daily_budget_cents')) / 100:,.2f}"
@@ -394,6 +435,7 @@ def get_promotion(conn: Any, owner_user_id: Any, promotion_id: Any) -> dict:
 
 def list_promotions(conn: Any, owner_user_id: Any, content_type: Any = "", content_id: Any = 0) -> list[dict]:
     ensure_tables(conn)
+    enforce_source_integrity(conn, owner_user_id)
     cur = conn.cursor()
     if content_type and _int(content_id):
         normalized = normalize_content_type(content_type)
@@ -418,6 +460,23 @@ def _launch(conn: Any, owner_user_id: int, promotion: dict, content: dict) -> di
         blocked = get_promotion(conn, owner_user_id, promotion["id"])
         raise PromotionError(billing.get("message") or "Promotion billing is unavailable.", 409, promotion=blocked)
     amount = _int(promotion.get("daily_budget_cents") or promotion.get("total_budget_cents"))
+    try:
+        return _launch_into_ads_engine(conn, owner_user_id, promotion, content, billing, amount)
+    except pulse_ads_service.PulseAdsError as exc:
+        # Ads-engine refusals (e.g. a wallet drained between the readiness
+        # check and the reserve) must surface as promotion errors with the
+        # draft preserved — never as a fake launch or an opaque 500.
+        state = "funding_required" if _int(getattr(exc, "status_code", 400)) == 409 else "launch_failed"
+        conn.execute(
+            "UPDATE pulse_content_promotions SET billing_status=?, updated_at=? WHERE id=? AND owner_user_id=?",
+            (state, _now(), promotion["id"], owner_user_id),
+        )
+        conn.commit()
+        blocked = get_promotion(conn, owner_user_id, promotion["id"])
+        raise PromotionError(str(exc), _int(getattr(exc, "status_code", 400)) or 400, promotion=blocked) from exc
+
+
+def _launch_into_ads_engine(conn: Any, owner_user_id: int, promotion: dict, content: dict, billing: dict, amount: int) -> dict:
     campaign = pulse_ads_service.create_campaign(
         conn,
         owner_user_id,
@@ -433,19 +492,25 @@ def _launch(conn: Any, owner_user_id: int, promotion: dict, content: dict) -> di
             "placements": PLACEMENTS_BY_CONTENT.get(content["content_type"], ["feed_inline"]),
         },
     )
-    creative = pulse_ads_service.create_creative(
-        conn,
-        owner_user_id,
-        {
-            "campaign_id": campaign["id"],
-            "creative_type": "text",
-            "title": content.get("title") or "PulseSoc content",
-            "body": content.get("body") or "View this PulseSoc content.",
-            "destination_url": content["destination_url"],
-            "call_to_action": "View",
-            "category": content["content_type"],
-        },
-    )
+    # Content-backed creatives REFERENCE the original content (never duplicate
+    # it): the ads engine resolves ownership + media through the reference.
+    ref_type = CREATIVE_REF_BY_CONTENT.get(content["content_type"])
+    if not ref_type and content["content_type"] in POST_CONTENT_TYPES:
+        ref_type = "post"
+    creative_payload = {
+        "campaign_id": campaign["id"],
+        "creative_type": ref_type or "text",
+        "title": content.get("title") or "PulseSoc content",
+        "body": content.get("body") or "View this PulseSoc content.",
+        "call_to_action": "View",
+        "category": content["content_type"],
+    }
+    if ref_type:
+        creative_payload["content_ref_type"] = ref_type
+        creative_payload["content_ref_id"] = content["content_id"]
+    else:
+        creative_payload["destination_url"] = content["destination_url"]
+    creative = pulse_ads_service.create_creative(conn, owner_user_id, creative_payload)
     submitted = pulse_ads_service.submit_creative_for_review(conn, owner_user_id, creative["id"])
     pulse_ad_payments.reserve_campaign_budget(conn, owner_user_id, campaign["id"])
     now = _now()
@@ -462,25 +527,48 @@ def _launch(conn: Any, owner_user_id: int, promotion: dict, content: dict) -> di
     return get_promotion(conn, owner_user_id, promotion["id"])
 
 
+ACTIVE_PROMOTION_STATUSES = {"pending_review", "promoting", "paused"}
+
+
 def create_promotion(conn: Any, owner_user_id: Any, payload: dict) -> dict:
     ensure_tables(conn)
     content = assert_content_owner(conn, payload.get("content_type"), payload.get("content_id"), owner_user_id)
     eligible, reason = _content_eligibility(content)
     if not eligible:
         raise PromotionError(reason, 403)
+    idempotency_key = _text(payload.get("idempotency_key"), 120)
+    cur = conn.cursor()
+    if idempotency_key:
+        cur.execute(
+            "SELECT * FROM pulse_content_promotions WHERE owner_user_id=? AND idempotency_key=? LIMIT 1",
+            (_int(owner_user_id), idempotency_key),
+        )
+        existing = _row(cur.fetchone())
+        if existing:
+            return get_promotion(conn, owner_user_id, existing["id"])
+    cur.execute(
+        "SELECT * FROM pulse_content_promotions WHERE owner_user_id=? AND content_type=? AND content_id=? AND status IN ('pending_review','promoting','paused') ORDER BY id DESC LIMIT 1",
+        (_int(owner_user_id), content["content_type"], str(content["content_id"])),
+    )
+    duplicate = _row(cur.fetchone())
+    if duplicate:
+        raise PromotionError(
+            "This content already has an active promotion. Pause or cancel it before starting another.",
+            409,
+            promotion=_safe(duplicate),
+        )
     data = _validated_payload(content, payload)
     now = _now()
     billing = billing_readiness(conn, owner_user_id)
-    cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO pulse_content_promotions
         (owner_user_id, content_type, content_id, goal, audience_type, audience_json, budget_type,
          daily_budget_cents, total_budget_cents, start_date, end_date, duration_days, placement, status,
-         policy_status, policy_reason, billing_status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)
+         policy_status, policy_reason, billing_status, idempotency_key, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)
         """,
-        (_int(owner_user_id), content["content_type"], str(content["content_id"]), data["goal"], data["audience_type"], data["audience_json"], data["budget_type"], data["daily_budget_cents"], data["total_budget_cents"], data["start_date"], data["end_date"], data["duration_days"], data["placement"], data["policy_status"], data["policy_reason"], billing.get("state") or "not_ready", now, now),
+        (_int(owner_user_id), content["content_type"], str(content["content_id"]), data["goal"], data["audience_type"], data["audience_json"], data["budget_type"], data["daily_budget_cents"], data["total_budget_cents"], data["start_date"], data["end_date"], data["duration_days"], data["placement"], data["policy_status"], data["policy_reason"], billing.get("state") or "not_ready", idempotency_key or None, now, now),
     )
     promotion_id = _int(cur.lastrowid)
     _audit(conn, promotion_id, _int(owner_user_id), "promotion_draft_created", after={"content_type": content["content_type"], "content_id": content["content_id"], "goal": data["goal"]})
@@ -570,4 +658,254 @@ def analytics(conn: Any, owner_user_id: Any, promotion_id: Any) -> dict:
             "end_date": campaign.get("end_at") or promotion.get("end_date"),
         },
         "unavailable_metrics": ["engagement", "followers_gained", "messages_started", "marketplace_visits", "music_plays"],
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Source integrity — a deleted / hidden / re-moderated source must stop paid
+# delivery. Called from the owner surfaces (list/detail); campaigns whose
+# source fails eligibility are suspended in the ads engine so select_ads stops
+# serving them, and the promotion is closed with an audited reason.
+# --------------------------------------------------------------------------- #
+
+def enforce_source_integrity(conn: Any, owner_user_id: Any) -> int:
+    ensure_tables(conn)
+    owner = _int(owner_user_id)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM pulse_content_promotions WHERE owner_user_id=? AND status IN ('pending_review','promoting','paused')",
+        (owner,),
+    )
+    revoked = 0
+    for row in [_row(r) for r in cur.fetchall()]:
+        content = _query_content(conn, row["content_type"], _int(row["content_id"]))
+        ok = False
+        reason = "The promoted content is no longer available."
+        if content:
+            content["content_type"] = row["content_type"]
+            ok, live_reason = _content_eligibility(content)
+            if not ok:
+                reason = live_reason
+        if ok:
+            continue
+        now = _now()
+        conn.execute(
+            "UPDATE pulse_content_promotions SET status='canceled', canceled_at=?, updated_at=? WHERE id=? AND owner_user_id=?",
+            (now, now, row["id"], owner),
+        )
+        _audit(conn, _int(row["id"]), owner, "promotion_source_revoked", row, {"status": "canceled", "reason": reason})
+        campaign_id = _int(row.get("ad_campaign_id"))
+        if campaign_id:
+            try:
+                pulse_ads_service.suspend_campaign(conn, owner, campaign_id, f"Source content unavailable: {reason}")
+            except Exception:
+                pass  # campaign already gone/suspended; the promotion is closed regardless
+        revoked += 1
+    if revoked:
+        conn.commit()
+    return revoked
+
+
+# --------------------------------------------------------------------------- #
+# Promotable-content listing — the authenticated owner's own feed posts,
+# Reels, and finalized live replays, each stamped with a server-decided
+# eligibility status. Presentation-safe fields only: titles, snippets,
+# poster/thumbnail URLs or public Mux thumbnails — never raw media URLs or
+# storage keys.
+# --------------------------------------------------------------------------- #
+
+CONTENT_FILTERS = {"all", "post", "reel", "live_replay"}
+_ALLOWED_MODERATION = {"approved", "clear", "review_ready", "safe"}
+
+
+def _mux_thumb(playback_id: Any) -> str:
+    pid = _text(playback_id, 120)
+    return f"https://image.mux.com/{pid}/thumbnail.jpg?width=640&fit_mode=smartcrop" if pid else ""
+
+
+def _eligibility_status(
+    *, visibility: str, status: str, moderation: str, processing: str, promotion_status: str, is_replay: bool = False
+) -> tuple[str, str]:
+    if promotion_status in {"promoting", "paused"}:
+        return "ACTIVE_PROMOTION", "This content is already being promoted."
+    if promotion_status == "pending_review":
+        return "UNDER_REVIEW", "A promotion for this content is in review."
+    if (visibility or "public").lower() != "public":
+        return "PRIVATE", "Only public content can be promoted."
+    if (processing or "").lower() not in READY_PROCESSING_STATES:
+        if is_replay:
+            return "REPLAY_PROCESSING", "This replay is still processing."
+        return "PROCESSING", "This content is still processing."
+    if (moderation or "approved").lower() not in _ALLOWED_MODERATION:
+        return "MODERATION_BLOCKED", "This content did not pass safety review."
+    if (status or "").lower() not in ACTIVE_CONTENT_STATUSES:
+        return "NOT_ELIGIBLE", "This content is not active."
+    return "PROMOTABLE", "Ready to promote."
+
+
+def _post_thumbnail(cur: Any, media_ids_json: Any) -> str:
+    try:
+        media_ids = json.loads(media_ids_json or "[]")
+    except (TypeError, ValueError):
+        media_ids = []
+    for media_id in media_ids[:1]:
+        cur.execute(
+            "SELECT thumbnail_url, poster_url, mux_playback_id FROM pulse_media_assets WHERE media_id=? ORDER BY id ASC LIMIT 1",
+            (_int(media_id),),
+        )
+        asset = _row(cur.fetchone())
+        if asset:
+            return _text(asset.get("thumbnail_url") or asset.get("poster_url"), 500) or _mux_thumb(asset.get("mux_playback_id"))
+    return ""
+
+
+def list_promotable_content(conn: Any, owner_user_id: Any, content_filter: Any = "all", limit: Any = 20, offset: Any = 0) -> dict:
+    ensure_tables(conn)
+    enforce_source_integrity(conn, owner_user_id)
+    owner = _int(owner_user_id)
+    if owner <= 0:
+        raise PromotionError("Login required.", 401)
+    chosen = _text(content_filter or "all", 30).lower().replace("-", "_") or "all"
+    chosen = CONTENT_ALIASES.get(chosen, chosen)
+    if chosen == "posts":
+        chosen = "post"
+    if chosen == "reels":
+        chosen = "reel"
+    if chosen not in CONTENT_FILTERS:
+        raise PromotionError("Unsupported content filter. Use all, post, reel, or live_replay.")
+    limit = max(1, min(_int(limit, 20), 40))
+    offset = max(0, _int(offset, 0))
+    window = offset + limit + 1
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT content_type, content_id, status FROM pulse_content_promotions WHERE owner_user_id=? AND status IN ('pending_review','promoting','paused')",
+        (owner,),
+    )
+    promo_map: dict[tuple[str, str], str] = {}
+    for row in [_row(r) for r in cur.fetchall()]:
+        promo_map[(row["content_type"], str(row["content_id"]))] = row["status"]
+
+    def _promo_status(kind: str, content_id: Any) -> str:
+        return promo_map.get((kind, str(_int(content_id)))) or ""
+
+    items: list[dict] = []
+
+    if chosen in {"all", "post"}:
+        cur.execute(
+            """
+            SELECT p.id, COALESCE(p.title,'') AS title, COALESCE(p.body,'') AS body, COALESCE(p.post_type,'post') AS post_type,
+                   COALESCE(p.visibility,'public') AS visibility, COALESCE(p.moderation_status,'approved') AS moderation_status,
+                   COALESCE(p.status,'published') AS status, p.media_ids_json, p.created_at
+            FROM pulse_posts p
+            WHERE p.user_id=? AND p.deleted_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM pulse_reels r WHERE r.post_id=p.id)
+            ORDER BY p.created_at DESC, p.id DESC LIMIT ?
+            """,
+            (owner, window),
+        )
+        for row in [_row(r) for r in cur.fetchall()]:
+            state, reason = _eligibility_status(
+                visibility=row.get("visibility") or "public",
+                status=row.get("status") or "",
+                moderation=row.get("moderation_status") or "approved",
+                processing="ready",
+                promotion_status=_promo_status("post", row["id"]),
+            )
+            items.append({
+                "content_type": "post",
+                "content_id": _int(row["id"]),
+                "title": _text(row.get("title"), 140) or "PulseSoc post",
+                "snippet": _text(row.get("body"), 180),
+                "media_kind": _text(row.get("post_type"), 30) or "post",
+                "thumbnail_url": _post_thumbnail(cur, row.get("media_ids_json")),
+                "duration_seconds": None,
+                "created_at": row.get("created_at") or "",
+                "eligibility": state,
+                "eligibility_reason": reason,
+                "promotable": state == "PROMOTABLE",
+            })
+
+    if chosen in {"all", "reel"}:
+        cur.execute(
+            """
+            SELECT r.id, COALESCE(p.title,'') AS title, COALESCE(r.caption,p.body,'') AS body,
+                   COALESCE(p.visibility,'public') AS visibility,
+                   COALESCE(p.moderation_status,r.moderation_status,'approved') AS moderation_status,
+                   COALESCE(r.status,'active') AS status, COALESCE(r.processing_status,'ready') AS processing_status,
+                   r.poster_url, r.mux_playback_id, COALESCE(r.duration_seconds,0) AS duration_seconds, r.created_at
+            FROM pulse_reels r LEFT JOIN pulse_posts p ON p.id=r.post_id
+            WHERE r.user_id=? AND COALESCE(r.status,'active')!='deleted' AND (p.id IS NULL OR p.deleted_at IS NULL)
+            ORDER BY r.created_at DESC, r.id DESC LIMIT ?
+            """,
+            (owner, window),
+        )
+        for row in [_row(r) for r in cur.fetchall()]:
+            state, reason = _eligibility_status(
+                visibility=row.get("visibility") or "public",
+                status=row.get("status") or "",
+                moderation=row.get("moderation_status") or "approved",
+                processing=row.get("processing_status") or "ready",
+                promotion_status=_promo_status("reel", row["id"]),
+            )
+            items.append({
+                "content_type": "reel",
+                "content_id": _int(row["id"]),
+                "title": _text(row.get("title"), 140) or "PulseSoc Reel",
+                "snippet": _text(row.get("body"), 180),
+                "media_kind": "reel",
+                "thumbnail_url": _text(row.get("poster_url"), 500) or _mux_thumb(row.get("mux_playback_id")),
+                "duration_seconds": round(float(row.get("duration_seconds") or 0), 1) or None,
+                "created_at": row.get("created_at") or "",
+                "eligibility": state,
+                "eligibility_reason": reason,
+                "promotable": state == "PROMOTABLE",
+            })
+
+    if chosen in {"all", "live_replay"}:
+        cur.execute(
+            """
+            SELECT id, COALESCE(title,'') AS title, COALESCE(description,'') AS body,
+                   COALESCE(visibility,'public') AS visibility, COALESCE(moderation_status,'approved') AS moderation_status,
+                   COALESCE(status,'active') AS status, COALESCE(processing_status,'processing') AS processing_status,
+                   thumbnail_url, mux_playback_id, COALESCE(duration_seconds,0) AS duration_seconds, created_at
+            FROM pulse_videos
+            WHERE owner_user_id=? AND source_type IN ('live','replay') AND COALESCE(status,'active')!='deleted'
+            ORDER BY created_at DESC, id DESC LIMIT ?
+            """,
+            (owner, window),
+        )
+        for row in [_row(r) for r in cur.fetchall()]:
+            state, reason = _eligibility_status(
+                visibility=row.get("visibility") or "public",
+                status=row.get("status") or "",
+                moderation=row.get("moderation_status") or "approved",
+                processing=row.get("processing_status") or "processing",
+                promotion_status=_promo_status("live_replay", row["id"]),
+                is_replay=True,
+            )
+            items.append({
+                "content_type": "live_replay",
+                "content_id": _int(row["id"]),
+                "title": _text(row.get("title"), 140) or "Live replay",
+                "snippet": _text(row.get("body"), 180),
+                "media_kind": "live_replay",
+                "thumbnail_url": _text(row.get("thumbnail_url"), 500) or _mux_thumb(row.get("mux_playback_id")),
+                "duration_seconds": round(float(row.get("duration_seconds") or 0), 1) or None,
+                "created_at": row.get("created_at") or "",
+                "eligibility": state,
+                "eligibility_reason": reason,
+                "promotable": state == "PROMOTABLE",
+            })
+
+    items.sort(key=lambda item: (item.get("created_at") or "", item.get("content_id") or 0), reverse=True)
+    page = items[offset : offset + limit]
+    return {
+        "ok": True,
+        "items": page,
+        "filter": chosen,
+        "limit": limit,
+        "offset": offset,
+        "next_offset": offset + len(page),
+        "has_more": len(items) > offset + limit,
     }
