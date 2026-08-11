@@ -79,12 +79,22 @@ plus webhook signing secret (webhook signatures verified via
 
 ## 6. Owner actions outstanding before submission
 
-1. App Store Connect → Business: add bank account and tax forms (Paid Apps Agreement).
-2. Create the five consumable IAP products above in ASC and attach to the app version.
-3. Set the Apple IAP environment variables on Railway (names in §5).
+1. ~~ASC Business: bank account + tax forms~~ DONE 2026-08-11 (Paid Apps Agreement
+   ACTIVE; bank ACTIVE; U.S. W-9 ACTIVE. Optional: Brazil/Mexico tax forms).
+2. ~~Create the five consumable IAP products in ASC~~ DONE 2026-08-11 (all five fully
+   specced, Prepare for Submission). ASC's current flow bundles IAPs at submission time —
+   there is no pre-attach step; submit them together with version 1.0.1.
+3. ~~Set the Apple IAP environment variables on Railway~~ DONE (all five SET).
 4. `cd mobile-native && npm install` (expo-iap ^4.3.1), then EAS build and device QA of
-   the sandbox purchase + restore path.
-5. Push branch `codex/agora-rtc-migration`.
+   the sandbox purchase + restore path; capture IAP review screenshots from that build.
+5. **Push + deploy:** `git push origin codex/agora-rtc-migration`, then fast-forward
+   `main` to it (`git push origin codex/agora-rtc-migration:main`). Production currently
+   runs `main` WITHOUT the payments feature — `GET /api/pulse/ads/iap/products` 404s in
+   prod until this lands. The local merge commit `f509b7eb` already contains all of main
+   (conflicts resolved), so main fast-forwards cleanly.
+
+Note: ASC version 1.0.1 (Developer Rejected, editable) has demo sign-in credentials and
+review notes updated 2026-08-11 with the IAP reviewer path.
 
 ## 7. Test evidence
 
