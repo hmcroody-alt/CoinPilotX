@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Image,
   InputAccessoryView,
   Keyboard,
   Platform,
@@ -46,6 +47,8 @@ import { GlassCircleButton, GlassPill, LiveBottomSheet, ToolTile } from "../live
 import { LiveReactionLayer, type ReactionLayerHandle } from "../live/LiveReactionLayer";
 import { LiveChatComposer, LiveChatMessageRow, LiveChatStream, type LiveChatModerationAction } from "../live/LiveChatOverlay";
 import { RtcVideoView } from "../live/RtcVideoView";
+import { listPulseRadioTracks, recordPulseRadioPlay } from "../api/radio";
+import { recordPulseMusicEvent, searchPulseMusic, type PulseMusicTrack } from "../api/music";
 
 type NativeVideoViewProps = {
   videoTrack?: any;
@@ -111,6 +114,11 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("spotlight");
   const [trayExpanded, setTrayExpanded] = useState(true);
   const [toolNote, setToolNote] = useState("");
+  const [musicTracks, setMusicTracks] = useState<PulseMusicTrack[]>([]);
+  const [musicQueue, setMusicQueue] = useState<PulseMusicTrack[]>([]);
+  const [musicQuery, setMusicQuery] = useState("");
+  const [musicLoading, setMusicLoading] = useState(false);
+  const [musicError, setMusicError] = useState("");
 
   // Comment composer + keyboard controller. Draft/sending/error live here so the
   // same draft survives every dismissal path and is shared by the ambient
@@ -442,6 +450,118 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
   const flagComingSoon = useCallback((key: keyof typeof COMING_SOON) => {
     setToolNote(COMING_SOON[key]);
   }, []);
+
+  const loadMusic = useCallback(async (mode: "trending" | "search" = "trending") => {
+    setMusicLoading(true);
+    setMusicError("");
+    try {
+      const result = await searchPulseMusic({
+        query: mode === "search" ? musicQuery : "",
+        lane: mode === "search" ? "" : "trending",
+        limit: 12
+      });
+      setMusicTracks(result.tracks);
+      if (!result.tracks.length) setMusicError(mode === "search" ? "No approved tracks matched this search." : "No approved PulseSoc Music tracks are available right now.");
+    } catch (error) {
+      setMusicError(error instanceof Error && error.message ? error.message : "PulseSoc Music could not load.");
+    } finally {
+      setMusicLoading(false);
+    }
+  }, [musicQuery]);
+
+  useEffect(() => {
+    if (sheet !== "music" || musicTracks.length || musicLoading) return;
+    loadMusic("trending").catch(() => undefined);
+  }, [loadMusic, musicLoading, musicTracks.length, sheet]);
+
+  const startLiveTrack = useCallback(async (track: PulseMusicTrack, source = "native_live_host_music") => {
+    if (!room.connected || !room.canPublish) {
+      setMusicError("Start the Live broadcast before adding music.");
+      return;
+    }
+    setMusicError("");
+    try {
+      await room.startLiveMusicMixing({
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        audioUrl: track.audioUrl || track.previewUrl,
+        coverArtUrl: track.coverArtUrl
+      });
+      setMusicQueue((current) => [track, ...current.filter((item) => item.id !== track.id)].slice(0, 8));
+      await recordPulseMusicEvent(track.id, "play", source).catch(() => undefined);
+    } catch (error) {
+      setMusicError(error instanceof Error && error.message ? error.message : "PulseSoc Music could not start.");
+    }
+  }, [room]);
+
+  const startPulseRadioInLive = useCallback(async () => {
+    if (!room.connected || !room.canPublish) {
+      setMusicError("Start the Live broadcast before adding PulseSoc Radio.");
+      return;
+    }
+    setMusicLoading(true);
+    setMusicError("");
+    try {
+      const radioTracks = await listPulseRadioTracks(12);
+      const first = radioTracks[0];
+      if (!first) throw new Error("PulseSoc Radio has no approved playable tracks right now.");
+      const track: PulseMusicTrack = {
+        id: first.id,
+        title: first.title,
+        artist: first.artist,
+        audioUrl: first.audioUrl,
+        previewUrl: first.audioUrl,
+        coverArtUrl: first.coverArtUrl || "",
+        artistUserId: 0,
+        durationSeconds: 0,
+        waveform: [0.18, 0.38, 0.66, 0.42, 0.72, 0.5, 0.3, 0.58],
+        genre: "radio",
+        language: "music",
+        mood: "live",
+        licenseLabel: "approved",
+        moderationStatus: "approved",
+        approvedByAdmin: true,
+        active: true,
+        playCount: 0,
+        usageCount: 0,
+        trendScore: 0,
+        saveCount: 0,
+        shareCount: 0
+      };
+      await startLiveTrack(track, "native_live_pulse_radio");
+      await recordPulseRadioPlay(first.id).catch(() => undefined);
+    } catch (error) {
+      setMusicError(error instanceof Error && error.message ? error.message : "PulseSoc Radio could not start in Live.");
+    } finally {
+      setMusicLoading(false);
+    }
+  }, [room.canPublish, room.connected, startLiveTrack]);
+
+  const toggleLiveMusicPlayback = useCallback(() => {
+    const status = room.liveMusic.status;
+    if (status === "playing" || status === "loading") {
+      room.pauseLiveMusicMixing().catch((error) => setMusicError(error instanceof Error ? error.message : "PulseSoc Music could not pause."));
+      return;
+    }
+    if (status === "paused") {
+      room.resumeLiveMusicMixing().catch((error) => setMusicError(error instanceof Error ? error.message : "PulseSoc Music could not resume."));
+      return;
+    }
+    if (musicQueue[0]) startLiveTrack(musicQueue[0]).catch(() => undefined);
+    else startPulseRadioInLive().catch(() => undefined);
+  }, [musicQueue, room, startLiveTrack, startPulseRadioInLive]);
+
+  const playNextLiveMusic = useCallback(() => {
+    if (!musicQueue.length) {
+      startPulseRadioInLive().catch(() => undefined);
+      return;
+    }
+    const currentId = room.liveMusic.track?.id || "";
+    const currentIndex = musicQueue.findIndex((track) => track.id === currentId);
+    const next = musicQueue[(currentIndex + 1 + musicQueue.length) % musicQueue.length] || musicQueue[0];
+    startLiveTrack(next).catch(() => undefined);
+  }, [musicQueue, room.liveMusic.track?.id, startLiveTrack, startPulseRadioInLive]);
 
   // Host-side per-comment moderation. Pin/unpin/remove are host-authoritative and
   // enforced again server-side; the local list is updated optimistically so the
@@ -906,23 +1026,64 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
       <LiveBottomSheet visible={sheet === "music"} onClose={closeSheet} title="Music" subtitle="Soundtrack your broadcast" accent={colors.creator} maxHeightRatio={0.5}>
         <View style={styles.musicCard}>
           <View style={styles.musicArt}>
-            <Ionicons name="musical-notes" size={28} color={colors.creator} />
+            {room.liveMusic.track?.coverArtUrl ? <Image source={{ uri: room.liveMusic.track.coverArtUrl }} style={styles.musicCover} /> : <Ionicons name="musical-notes" size={28} color={colors.creator} />}
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.musicTitle}>No track playing</Text>
-            <Text style={styles.musicMeta}>Mic-only broadcast</Text>
+            <Text style={styles.musicTitle}>{room.liveMusic.track?.title || "PulseSoc Music"}</Text>
+            <Text style={styles.musicMeta}>
+              {room.liveMusic.track ? `${room.liveMusic.track.artist} · ${room.liveMusic.status}` : "Choose a track or PulseSoc Radio"}
+            </Text>
           </View>
         </View>
         <View style={styles.musicTransport}>
-          <Ionicons name="play-skip-back" size={22} color={colors.muted} />
-          <View style={styles.musicPlay}>
-            <Ionicons name="play" size={24} color={colors.background} />
-          </View>
-          <Ionicons name="play-skip-forward" size={22} color={colors.muted} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Stop Live music" onPress={() => room.stopLiveMusicMixing().catch((error) => setMusicError(error instanceof Error ? error.message : "PulseSoc Music could not stop."))}>
+            <Ionicons name="stop" size={22} color={room.liveMusic.track ? colors.text : colors.muted} />
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={room.liveMusic.status === "playing" ? "Pause Live music" : "Play Live music"} style={styles.musicPlay} onPress={toggleLiveMusicPlayback}>
+            <Ionicons name={room.liveMusic.status === "playing" || room.liveMusic.status === "loading" ? "pause" : "play"} size={24} color={colors.background} />
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Next Live music track" onPress={playNextLiveMusic}>
+            <Ionicons name="play-skip-forward" size={22} color={musicQueue.length || musicTracks.length ? colors.text : colors.muted} />
+          </Pressable>
         </View>
-        <Text style={styles.sheetEmpty}>
-          Live music mixing (queue, waveform, and mic/music balance) is coming to native soon. Your voice is broadcasting now.
-        </Text>
+        <View style={styles.levelGroup}>
+          <LiveLevelControl label="Mic" value={room.liveMusic.micVolume} onChange={(value) => room.setLiveMicVolume(value).catch((error) => setMusicError(error instanceof Error ? error.message : "Mic level could not update."))} />
+          <LiveLevelControl label="Music" value={room.liveMusic.musicVolume} onChange={(value) => room.setLiveMusicVolume(value).catch((error) => setMusicError(error instanceof Error ? error.message : "Music level could not update."))} />
+        </View>
+        <View style={styles.musicSearchRow}>
+          <TextInput
+            style={styles.musicSearchInput}
+            value={musicQuery}
+            onChangeText={setMusicQuery}
+            placeholder="Search songs or artists"
+            placeholderTextColor={colors.muted}
+            returnKeyType="search"
+            onSubmitEditing={() => loadMusic("search").catch(() => undefined)}
+          />
+          <Pressable style={styles.musicSearchButton} onPress={() => loadMusic("search").catch(() => undefined)} accessibilityRole="button" accessibilityLabel="Search PulseSoc Music">
+            <Ionicons name="search" size={18} color={colors.background} />
+          </Pressable>
+        </View>
+        <Pressable style={[styles.radioMixButton, (!room.connected || musicLoading) && styles.disabled]} onPress={startPulseRadioInLive} disabled={musicLoading || !room.connected} accessibilityRole="button" accessibilityLabel="Start PulseSoc Radio in this Live">
+          <Ionicons name="radio" size={16} color={colors.background} />
+          <Text style={styles.radioMixButtonText}>{musicLoading ? "Loading…" : "Start PulseSoc Radio"}</Text>
+        </Pressable>
+        {musicError || room.liveMusic.error ? <Text style={styles.musicError}>{musicError || room.liveMusic.error}</Text> : null}
+        {musicTracks.slice(0, 6).map((track) => (
+          <Pressable key={track.id} style={styles.musicRow} onPress={() => startLiveTrack(track).catch(() => undefined)} accessibilityRole="button" accessibilityLabel={`Play ${track.title} by ${track.artist} in Live`}>
+            <View style={styles.musicRowArt}>
+              {track.coverArtUrl ? <Image source={{ uri: track.coverArtUrl }} style={styles.musicCover} /> : <Ionicons name="musical-notes" size={18} color={colors.creator} />}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.musicRowTitle} numberOfLines={1}>{track.title}</Text>
+              <Text style={styles.musicRowMeta} numberOfLines={1}>{track.artist} · {track.genre} · {track.licenseLabel}</Text>
+            </View>
+            <Ionicons name={room.liveMusic.track?.id === track.id && room.liveMusic.status === "playing" ? "volume-high" : "play"} size={18} color={colors.creator} />
+          </Pressable>
+        ))}
+        {!musicLoading && !musicTracks.length && !musicError ? (
+          <Text style={styles.sheetEmpty}>Search PulseSoc Music or start PulseSoc Radio. Nothing plays until you choose it.</Text>
+        ) : null}
       </LiveBottomSheet>
 
       <LiveBottomSheet visible={sheet === "more"} onClose={() => { closeSheet(); setToolNote(""); }} title="Live tools" subtitle="Everything for this broadcast" maxHeightRatio={0.66}>
@@ -1030,6 +1191,34 @@ function FloatingGuestTile({ participant, VideoView }: { participant: LivePartic
           {participant.name}
         </Text>
       </View>
+    </View>
+  );
+}
+
+function LiveLevelControl({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+  const [width, setWidth] = useState(1);
+  const percent = Math.round(Math.max(0, Math.min(value, 1)) * 100);
+  return (
+    <View style={styles.levelControl}>
+      <View style={styles.levelHeader}>
+        <Text style={styles.levelLabel}>{label}</Text>
+        <Text style={styles.levelValue}>{percent}%</Text>
+      </View>
+      <Pressable
+        accessibilityRole="adjustable"
+        accessibilityLabel={`${label} level`}
+        accessibilityValue={{ min: 0, max: 100, now: percent }}
+        accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
+        onAccessibilityAction={(event) => {
+          onChange(Math.max(0, Math.min(value + (event.nativeEvent.actionName === "increment" ? 0.08 : -0.08), 1)));
+        }}
+        onLayout={(event) => setWidth(Math.max(1, event.nativeEvent.layout.width))}
+        onPress={(event) => onChange(event.nativeEvent.locationX / width)}
+        style={styles.levelTrack}
+      >
+        <View style={[styles.levelFill, { width: `${percent}%` }]} />
+        <View style={[styles.levelThumb, { left: `${percent}%` }]} />
+      </Pressable>
     </View>
   );
 }
@@ -1580,7 +1769,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     height: 56,
     justifyContent: "center",
+    overflow: "hidden",
     width: 56
+  },
+  musicCover: {
+    height: "100%",
+    width: "100%"
+  },
+  musicError: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18
   },
   musicTitle: {
     color: colors.text,
@@ -1607,6 +1807,124 @@ const styles = StyleSheet.create({
     height: 56,
     justifyContent: "center",
     width: 56
+  },
+  levelGroup: {
+    gap: 12,
+    paddingVertical: 4
+  },
+  levelControl: {
+    gap: 7
+  },
+  levelHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  levelLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textTransform: "uppercase"
+  },
+  levelValue: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  levelTrack: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 999,
+    height: 18,
+    justifyContent: "center",
+    overflow: "hidden"
+  },
+  levelFill: {
+    backgroundColor: colors.creator,
+    borderRadius: 999,
+    height: 18
+  },
+  levelThumb: {
+    backgroundColor: colors.text,
+    borderColor: colors.creator,
+    borderRadius: 999,
+    borderWidth: 2,
+    height: 18,
+    marginLeft: -9,
+    position: "absolute",
+    width: 18
+  },
+  musicSearchRow: {
+    flexDirection: "row",
+    gap: 8
+  },
+  musicSearchInput: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.12)",
+    borderRadius: 14,
+    borderWidth: 1,
+    color: colors.text,
+    flex: 1,
+    fontSize: 14,
+    minHeight: 44,
+    paddingHorizontal: 12
+  },
+  musicSearchButton: {
+    alignItems: "center",
+    backgroundColor: colors.creator,
+    borderRadius: 14,
+    justifyContent: "center",
+    minHeight: 44,
+    width: 48
+  },
+  radioMixButton: {
+    alignItems: "center",
+    backgroundColor: colors.creator,
+    borderRadius: 16,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    minHeight: 48,
+    paddingHorizontal: 14
+  },
+  radioMixButtonText: {
+    color: colors.background,
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  musicRow: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: "rgba(255,255,255,0.1)",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 58,
+    padding: 9
+  },
+  musicRowArt: {
+    alignItems: "center",
+    backgroundColor: "rgba(66,231,212,0.1)",
+    borderRadius: 10,
+    height: 42,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 42
+  },
+  musicRowTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  musicRowMeta: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 2
+  },
+  disabled: {
+    opacity: 0.52
   },
   noteBanner: {
     alignItems: "center",

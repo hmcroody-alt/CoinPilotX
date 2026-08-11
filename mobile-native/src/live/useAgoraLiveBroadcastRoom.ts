@@ -3,6 +3,13 @@ import type { IRtcEngine, IRtcEngineEventHandler } from "react-native-agora";
 import type { LiveRtcCredentials } from "./liveSession";
 import type { LiveParticipant } from "./useLiveBroadcastRoom";
 import { emitAgoraLiveEvent } from "./agoraLiveTelemetry";
+import {
+  DEFAULT_LIVE_MUSIC_MIXING_STATE,
+  clampLiveMixLevel,
+  liveMixLevelToAgoraVolume,
+  normalizeLiveMusicTrack,
+  type LiveMusicMixingTrack
+} from "./liveMusicMixing";
 
 const initial = {
   provider: "agora" as const, supported: true, connecting: false, connected: false, reconnecting: false,
@@ -10,7 +17,8 @@ const initial = {
   audioEnabled: false, videoEnabled: false, speakerEnabled: true, remoteAudioEnabled: true,
   localVideoTrack: null as any, localVideoTrackCount: 0, localAudioTrackCount: 0, remoteAudioTrackCount: 0, remoteVideoTrackCount: 0,
   participants: [] as LiveParticipant[], reconnectCount: 0, disconnectReason: "", diagnosticCode: "",
-  audioPath: "v1_legacy" as const, audioBusy: false, recovering: false, audioWarning: ""
+  audioPath: "v1_legacy" as const, audioBusy: false, recovering: false, audioWarning: "",
+  liveMusic: DEFAULT_LIVE_MUSIC_MIXING_STATE
 };
 
 export function useAgoraLiveBroadcastRoom() {
@@ -41,7 +49,7 @@ export function useAgoraLiveBroadcastRoom() {
     const engine = engineRef.current; engineRef.current = null;
     const credentials = credentialsRef.current;
     if (credentials) emitAgoraLiveEvent({ name: "leave", liveId: credentials.broadcastId, uid: credentials.uid, reason });
-    if (engine) { if (handlerRef.current) engine.unregisterEventHandler(handlerRef.current); engine.leaveChannel(); engine.release(); }
+    if (engine) { engine.stopAudioMixing?.(); if (handlerRef.current) engine.unregisterEventHandler(handlerRef.current); engine.leaveChannel(); engine.release(); }
     handlerRef.current = null; credentialsRef.current = null; refreshRef.current = null;
     setState((s) => ({ ...initial, supported: s.supported, disconnectReason: reason, diagnosticCode: reason }));
   }, []);
@@ -134,6 +142,24 @@ export function useAgoraLiveBroadcastRoom() {
         onNetworkQuality: (_c, uid, txQuality, rxQuality) => emitAgoraLiveEvent({ name: "network_quality", liveId: credentials.broadcastId, uid, txQuality, rxQuality }, true),
         onRtcStats: (_c, stats) => emitAgoraLiveEvent({ name: "rtc_stats", liveId: credentials.broadcastId, uid: credentials.uid, audioBitrateKbps: stats.txAudioKBitRate, videoBitrateKbps: stats.txVideoKBitRate, latencyMs: stats.lastmileDelay }, true),
         onLocalAudioStats: (_c, stats) => emitAgoraLiveEvent({ name: "local_audio_stats", liveId: credentials.broadcastId, uid: credentials.uid, audioBitrateKbps: stats.sentBitrate, packetLossPercent: stats.txPacketLossRate }, true),
+        onAudioMixingStateChanged: (mixingState, reason) => {
+          emitAgoraLiveEvent({ name: "audio_mixing_state", liveId: credentials.broadcastId, uid: credentials.uid, code: mixingState, reason: String(reason) });
+          setState((s) => {
+            if (mixingState === agora.AudioMixingStateType.AudioMixingStatePlaying) {
+              return { ...s, liveMusic: { ...s.liveMusic, status: "playing", error: "" } };
+            }
+            if (mixingState === agora.AudioMixingStateType.AudioMixingStatePaused) {
+              return { ...s, liveMusic: { ...s.liveMusic, status: "paused", error: "" } };
+            }
+            if (mixingState === agora.AudioMixingStateType.AudioMixingStateStopped) {
+              return { ...s, liveMusic: { ...s.liveMusic, status: "idle", track: null, error: "" } };
+            }
+            if (mixingState === agora.AudioMixingStateType.AudioMixingStateFailed) {
+              return { ...s, liveMusic: { ...s.liveMusic, status: "error", error: `PulseSoc Music could not start (${reason}).` } };
+            }
+            return s;
+          });
+        },
         onLocalVideoStats: (_c, _source, stats) => emitAgoraLiveEvent({ name: "local_video_stats", liveId: credentials.broadcastId, uid: credentials.uid, videoBitrateKbps: stats.sentBitrate, videoFps: stats.sentFrameRate, packetLossPercent: stats.txPacketLossRate, width: stats.encodedFrameWidth, height: stats.encodedFrameHeight }, true),
         onTokenPrivilegeWillExpire: () => { emitAgoraLiveEvent({ name: "token_renewal_requested", liveId: credentials.broadcastId, uid: credentials.uid }); renewToken(); },
         onRequestToken: () => { emitAgoraLiveEvent({ name: "token_expired_recovery", liveId: credentials.broadcastId, uid: credentials.uid }); renewToken(); },
@@ -156,6 +182,55 @@ export function useAgoraLiveBroadcastRoom() {
   const setRemoteAudioEnabled = useCallback(async (enabled: boolean) => { engine().muteAllRemoteAudioStreams(!enabled); setState(s => ({...s,remoteAudioEnabled:enabled})); }, []);
   const switchCamera = useCallback(async () => { engine().switchCamera(); }, []);
   const showAudioRoutePicker = useCallback(async () => { throw new Error("Use the iOS system audio-route control for Agora Live."); }, []);
+  const startLiveMusicMixing = useCallback(async (input: LiveMusicMixingTrack) => {
+    const track = normalizeLiveMusicTrack(input);
+    if (!track) throw new Error("Choose an approved PulseSoc Music track with playable audio.");
+    const rtcEngine = engine();
+    const current = credentialsRef.current;
+    if (!current?.canPublish) throw new Error("Only the Live host or approved co-host can publish music.");
+    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, status: "loading", track, error: "" } }));
+    const startResult = rtcEngine.startAudioMixing(track.audioUrl, false, -1, 0);
+    if (startResult < 0) {
+      setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, status: "error", track, error: `PulseSoc Music could not start (${startResult}).` } }));
+      throw new Error(`PulseSoc Music could not start (${startResult}).`);
+    }
+    const musicVolume = liveMixLevelToAgoraVolume(state.liveMusic.musicVolume);
+    rtcEngine.adjustAudioMixingPublishVolume(musicVolume);
+    rtcEngine.adjustAudioMixingPlayoutVolume(musicVolume);
+    rtcEngine.adjustRecordingSignalVolume(liveMixLevelToAgoraVolume(state.liveMusic.micVolume, 100));
+    emitAgoraLiveEvent({ name: "audio_mixing_started", liveId: current.broadcastId, uid: current.uid, reason: track.id });
+    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, status: "playing", track, error: "" } }));
+  }, [state.liveMusic.micVolume, state.liveMusic.musicVolume]);
+  const pauseLiveMusicMixing = useCallback(async () => {
+    const result = engine().pauseAudioMixing();
+    if (result < 0) throw new Error(`PulseSoc Music could not pause (${result}).`);
+    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, status: "paused", error: "" } }));
+  }, []);
+  const resumeLiveMusicMixing = useCallback(async () => {
+    const result = engine().resumeAudioMixing();
+    if (result < 0) throw new Error(`PulseSoc Music could not resume (${result}).`);
+    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, status: "playing", error: "" } }));
+  }, []);
+  const stopLiveMusicMixing = useCallback(async () => {
+    const result = engine().stopAudioMixing();
+    if (result < 0) throw new Error(`PulseSoc Music could not stop (${result}).`);
+    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, status: "idle", track: null, error: "" } }));
+  }, []);
+  const setLiveMusicVolume = useCallback(async (level: number) => {
+    const next = clampLiveMixLevel(level);
+    const volume = liveMixLevelToAgoraVolume(next);
+    const rtcEngine = engine();
+    const publishResult = rtcEngine.adjustAudioMixingPublishVolume(volume);
+    const playoutResult = rtcEngine.adjustAudioMixingPlayoutVolume(volume);
+    if (publishResult < 0 || playoutResult < 0) throw new Error("PulseSoc Music level could not be updated.");
+    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, musicVolume: next, error: "" } }));
+  }, []);
+  const setLiveMicVolume = useCallback(async (level: number) => {
+    const next = clampLiveMixLevel(level);
+    const result = engine().adjustRecordingSignalVolume(liveMixLevelToAgoraVolume(next, 100));
+    if (result < 0) throw new Error("Microphone level could not be updated.");
+    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, micVolume: next, error: "" } }));
+  }, []);
   useEffect(() => () => { disconnect("unmounted").catch(() => undefined); }, [disconnect]);
-  return { ...state, lifecycle: null, connect, disconnect, startBroadcast: connect, stopBroadcast: disconnect, joinAsViewer: connect, leaveViewer: disconnect, setMicrophoneEnabled, setCameraEnabled, setSpeakerEnabled, setRemoteAudioEnabled, showAudioRoutePicker, recheckAudio: async () => undefined, switchCamera, getLastConnectError: () => state.error, getAudioTrace: () => [] };
+  return { ...state, lifecycle: null, connect, disconnect, startBroadcast: connect, stopBroadcast: disconnect, joinAsViewer: connect, leaveViewer: disconnect, setMicrophoneEnabled, setCameraEnabled, setSpeakerEnabled, setRemoteAudioEnabled, showAudioRoutePicker, recheckAudio: async () => undefined, switchCamera, startLiveMusicMixing, pauseLiveMusicMixing, resumeLiveMusicMixing, stopLiveMusicMixing, setLiveMusicVolume, setLiveMicVolume, getLastConnectError: () => state.error, getAudioTrace: () => [] };
 }
