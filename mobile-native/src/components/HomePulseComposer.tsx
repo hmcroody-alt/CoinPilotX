@@ -920,7 +920,7 @@ function visibilityLabel(visibility: Visibility) {
 const styles = createThemedStyles(() => ({
   actionButton: {
     alignItems: "center",
-    backgroundColor: "rgba(18, 26, 61, 0.14)",
+    backgroundColor: "rgba(18, 26, 61, 0.03)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 16,
     borderWidth: 1,
@@ -966,7 +966,7 @@ const styles = createThemedStyles(() => ({
   },
   collapsedComposer: {
     alignItems: "center",
-    backgroundColor: "rgba(10, 18, 43, 0.14)",
+    backgroundColor: "rgba(10, 18, 43, 0.03)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 28,
     borderWidth: 1,
@@ -1015,7 +1015,7 @@ const styles = createThemedStyles(() => ({
   },
   collapsedQuickTools: {
     alignItems: "center",
-    backgroundColor: "rgba(18, 26, 61, 0.14)",
+    backgroundColor: "rgba(18, 26, 61, 0.03)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 23,
     borderWidth: 1,
@@ -1224,7 +1224,7 @@ const styles = createThemedStyles(() => ({
     backgroundColor: colors.accent
   },
   modeRow: {
-    backgroundColor: "rgba(18, 26, 61, 0.14)",
+    backgroundColor: "rgba(18, 26, 61, 0.03)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 21,
     borderWidth: 1,
@@ -1274,7 +1274,7 @@ const styles = createThemedStyles(() => ({
     lineHeight: 15
   },
   musicPanel: {
-    backgroundColor: "rgba(18, 26, 61, 0.16)",
+    backgroundColor: "rgba(18, 26, 61, 0.03)",
     borderColor: logiNexus.colors.home.borderIntelligence,
     borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
@@ -1452,7 +1452,7 @@ const styles = createThemedStyles(() => ({
     fontWeight: "900",
   },
   toolsPanel: {
-    backgroundColor: "rgba(18, 26, 61, 0.14)",
+    backgroundColor: "rgba(18, 26, 61, 0.03)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
@@ -1474,7 +1474,7 @@ const styles = createThemedStyles(() => ({
     gap: 8
   },
   wrap: {
-    backgroundColor: "rgba(7, 19, 32, 0.82)",
+    backgroundColor: "rgba(7, 19, 32, 0.03)",
     borderColor: "rgba(97, 216, 255, 0.38)",
     borderRadius: 20,
     marginBottom: 10,
