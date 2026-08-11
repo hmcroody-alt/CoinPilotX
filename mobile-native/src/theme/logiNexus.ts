@@ -12,8 +12,8 @@ export const logiNexus = {
     home: {
       backgroundDeepSpace: "#030712",
       backgroundNetworkVoid: "#07101d",
-      surfaceGlass: "rgba(11, 22, 51, 0.84)",
-      surfaceGlassStrong: "rgba(18, 26, 61, 0.86)",
+      surfaceGlass: "rgba(11, 22, 51, 0.78)",
+      surfaceGlassStrong: "rgba(18, 26, 61, 0.8)",
       surfaceSignal: "rgba(50, 230, 179, 0.105)",
       /**
        * The feed's hairline: post separators, count rows, panel edges. Used only

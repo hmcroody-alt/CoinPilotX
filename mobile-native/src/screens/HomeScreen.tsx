@@ -1367,7 +1367,7 @@ const styles = createThemedStyles(() => ({
   },
   addStatusIcon: {
     color: colors.accent,
-    backgroundColor: "rgba(11, 22, 51, 0.78)",
+    backgroundColor: "rgba(11, 22, 51, 0.7)",
     borderColor: logiNexus.colors.home.borderActive,
     borderRadius: 24,
     borderWidth: 1,
@@ -1506,7 +1506,7 @@ const styles = createThemedStyles(() => ({
   },
   commandRadioNow: {
     alignItems: "center",
-    backgroundColor: "rgba(10, 18, 43, 0.74)",
+    backgroundColor: "rgba(10, 18, 43, 0.66)",
     borderColor: logiNexus.colors.home.borderActive,
     borderRadius: 14,
     borderWidth: 1,
@@ -1892,7 +1892,7 @@ const styles = createThemedStyles(() => ({
   },
   heroHealthPill: {
     alignItems: "center",
-    backgroundColor: "rgba(10, 18, 43, 0.74)",
+    backgroundColor: "rgba(10, 18, 43, 0.66)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: logiNexus.radius.capsule,
     borderWidth: 1,
@@ -1931,7 +1931,7 @@ const styles = createThemedStyles(() => ({
     zIndex: 2
   },
   heroMetricCell: {
-    backgroundColor: "rgba(10, 18, 43, 0.74)",
+    backgroundColor: "rgba(10, 18, 43, 0.66)",
     borderRadius: 14,
     borderWidth: 1,
     flex: 1,
@@ -2004,7 +2004,7 @@ const styles = createThemedStyles(() => ({
   },
   heroRadioPill: {
     alignItems: "center",
-    backgroundColor: "rgba(18, 26, 61, 0.8)",
+    backgroundColor: "rgba(18, 26, 61, 0.72)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 26,
     borderWidth: 1,
@@ -2149,7 +2149,7 @@ const styles = createThemedStyles(() => ({
     maxWidth: 118
   },
   heroMetricBlock: {
-    backgroundColor: "rgba(10, 18, 43, 0.74)",
+    backgroundColor: "rgba(10, 18, 43, 0.66)",
     borderRadius: 18,
     borderWidth: 1,
     justifyContent: "center",
@@ -2364,7 +2364,7 @@ const styles = createThemedStyles(() => ({
   },
   heroTile: {
     alignItems: "center",
-    backgroundColor: "rgba(18, 26, 61, 0.8)",
+    backgroundColor: "rgba(18, 26, 61, 0.72)",
     borderRadius: 22,
     borderWidth: 1,
     flex: 1,
@@ -2574,7 +2574,7 @@ const styles = createThemedStyles(() => ({
   },
   sideHashRow: {
     alignItems: "center",
-    backgroundColor: "rgba(10, 18, 43, 0.74)",
+    backgroundColor: "rgba(10, 18, 43, 0.66)",
     borderRadius: 12,
     flexDirection: "row",
     gap: 10,
@@ -2586,7 +2586,7 @@ const styles = createThemedStyles(() => ({
     fontWeight: "900"
   },
   sideMetricBox: {
-    backgroundColor: "rgba(10, 18, 43, 0.74)",
+    backgroundColor: "rgba(10, 18, 43, 0.66)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 12,
     borderWidth: 1,
