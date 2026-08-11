@@ -58,6 +58,7 @@ jest.mock("../../core/pulseRadio", () => ({
 }));
 jest.mock("../../navigation/BottomNavVisibility", () => ({
   BOTTOM_NAV_CONTENT_CLEARANCE: 0,
+  useBottomNavContentPadding: () => 0,
   useBottomNavScrollVisibility: () => ({ onScroll: jest.fn(), onScrollBeginDrag: jest.fn(), scrollEventThrottle: 16 })
 }));
 jest.mock("../../navigation/homeReselect", () => ({ registerHomeReselectHandler: jest.fn(() => () => undefined) }));

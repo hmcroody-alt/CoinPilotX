@@ -23,7 +23,7 @@ import {
   useBottomNavSurface,
   useBottomNavVisibility
 } from "../BottomNavVisibility";
-import { BOTTOM_NAV_CONTENT_CLEARANCE, BOTTOM_NAV_UNDOCKED_PADDING } from "../bottomNavMetrics";
+import { BOTTOM_NAV_ACTIVE_PLAYER_CLEARANCE, BOTTOM_NAV_CONTENT_CLEARANCE, BOTTOM_NAV_UNDOCKED_PADDING } from "../bottomNavMetrics";
 
 /**
  * A navigation object with just the surface the focus hook uses.
@@ -178,6 +178,21 @@ describe("useBottomNavSurface clearance", () => {
     // clearance is added to it rather than assumed to contain it.
     expect(result.current.paddingBottom).toBe(34 + BOTTOM_NAV_CONTENT_CLEARANCE);
     expect(result.current.contentPadding).toEqual({ paddingBottom: 34 + BOTTOM_NAV_CONTENT_CLEARANCE });
+  });
+
+  it("adds player clearance only while the distinct mini-player is visible", () => {
+    const { result } = renderHook(
+      () => ({ surface: useBottomNavSurface(), dock: useBottomNavVisibility() }),
+      { wrapper }
+    );
+
+    expect(result.current.surface.paddingBottom).toBe(34 + BOTTOM_NAV_CONTENT_CLEARANCE);
+    act(() => result.current.dock.setMiniPlayerVisible(true));
+    expect(result.current.surface.paddingBottom).toBe(
+      34 + BOTTOM_NAV_CONTENT_CLEARANCE + BOTTOM_NAV_ACTIVE_PLAYER_CLEARANCE
+    );
+    act(() => result.current.dock.setMiniPlayerVisible(false));
+    expect(result.current.surface.paddingBottom).toBe(34 + BOTTOM_NAV_CONTENT_CLEARANCE);
   });
 
   it("drops to plain inset padding when there is no dock below the surface", () => {

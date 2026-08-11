@@ -2,7 +2,7 @@ import { NavigationContext } from "@react-navigation/native";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Keyboard, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BOTTOM_NAV_CONTENT_CLEARANCE, BOTTOM_NAV_UNDOCKED_PADDING } from "./bottomNavMetrics";
+import { BOTTOM_NAV_ACTIVE_PLAYER_CLEARANCE, BOTTOM_NAV_CONTENT_CLEARANCE, BOTTOM_NAV_UNDOCKED_PADDING } from "./bottomNavMetrics";
 
 type BottomNavVisibilityContextValue = {
   /**
@@ -19,8 +19,10 @@ type BottomNavVisibilityContextValue = {
   hidden: boolean;
   pinned: boolean;
   keyboardVisible: boolean;
+  miniPlayerVisible: boolean;
   setBottomNavHidden: (hidden: boolean) => void;
   setBottomNavPinned: (reason: string, pinned: boolean) => void;
+  setMiniPlayerVisible: (visible: boolean) => void;
   showBottomNav: () => void;
 };
 
@@ -49,6 +51,7 @@ const BottomNavVisibilityContext = createContext<BottomNavVisibilityContextValue
 export function BottomNavVisibilityProvider({ children }: { children: ReactNode }) {
   const [requestedHidden, setRequestedHidden] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [miniPlayerVisible, setMiniPlayerVisible] = useState(false);
   const [pinVersion, setPinVersion] = useState(0);
   const pinnedReasons = useRef(new Set<string>());
 
@@ -87,11 +90,13 @@ export function BottomNavVisibilityProvider({ children }: { children: ReactNode 
       hidden,
       pinned,
       keyboardVisible,
+      miniPlayerVisible,
       setBottomNavHidden,
       setBottomNavPinned,
+      setMiniPlayerVisible,
       showBottomNav
     }),
-    [hidden, pinned, keyboardVisible, setBottomNavHidden, setBottomNavPinned, showBottomNav]
+    [hidden, pinned, keyboardVisible, miniPlayerVisible, setBottomNavHidden, setBottomNavPinned, showBottomNav]
   );
 
   return <BottomNavVisibilityContext.Provider value={value}>{children}</BottomNavVisibilityContext.Provider>;
@@ -105,8 +110,10 @@ export function useBottomNavVisibility() {
       hidden: false,
       pinned: false,
       keyboardVisible: false,
+      miniPlayerVisible: false,
       setBottomNavHidden: () => undefined,
       setBottomNavPinned: () => undefined,
+      setMiniPlayerVisible: () => undefined,
       showBottomNav: () => undefined
     } satisfies BottomNavVisibilityContextValue;
   }
@@ -268,13 +275,26 @@ export function useBottomNavScrollVisibility({
 export function useBottomNavSurface(options: ScrollVisibilityOptions = {}) {
   const insets = useSafeAreaInsets();
   const { docked: dockPresent } = useBottomNavVisibility();
+  const playerClearance = usePulseRadioPlayerClearance();
   // `enabled: false` is a caller opting out; `docked: false` is there being no
   // dock to opt out of. Either way the surface pads itself as undocked.
   const docked = dockPresent && options.enabled !== false;
   const handlers = useBottomNavScrollVisibility(options);
 
-  const paddingBottom = Math.max(insets.bottom, 12) + (docked ? BOTTOM_NAV_CONTENT_CLEARANCE : BOTTOM_NAV_UNDOCKED_PADDING);
+  const paddingBottom = Math.max(insets.bottom, 12) + (docked ? BOTTOM_NAV_CONTENT_CLEARANCE + playerClearance : BOTTOM_NAV_UNDOCKED_PADDING);
   const contentPadding = useMemo(() => ({ paddingBottom }), [paddingBottom]);
 
   return { handlers, contentPadding, paddingBottom };
+}
+
+/** Dynamic padding for surfaces that manage their own scroll handlers. */
+export function useBottomNavContentPadding() {
+  const insets = useSafeAreaInsets();
+  const playerClearance = usePulseRadioPlayerClearance();
+  return Math.max(insets.bottom, 12) + BOTTOM_NAV_CONTENT_CLEARANCE + playerClearance;
+}
+
+function usePulseRadioPlayerClearance() {
+  const { miniPlayerVisible } = useBottomNavVisibility();
+  return miniPlayerVisible ? BOTTOM_NAV_ACTIVE_PLAYER_CLEARANCE : 0;
 }

@@ -91,7 +91,7 @@ describe("dock wiring covers every scroll-responsive tab", () => {
     const source = SHELL_BACKED[tab] ? readFileSync(SHELL_BACKED[tab], "utf8") : read(TAB_SOURCES[tab] as string);
     // Either shape is fine: the hook that returns the padding, or the constant
     // added to the safe-area inset by hand. What is not fine is neither.
-    expect(source).toMatch(/dock\.contentPadding|BOTTOM_NAV_CONTENT_CLEARANCE/);
+    expect(source).toMatch(/dock\.contentPadding|BOTTOM_NAV_CONTENT_CLEARANCE|useBottomNavContentPadding/);
   });
 
   it.each(scrollResponsiveTabs)("%s does not hardcode a dock-sized bottom padding", (tab) => {

@@ -31,6 +31,12 @@ export const BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT = 106;
 /** Padding the pill panel draws on every side of its row of items. */
 export const BOTTOM_NAV_DOCK_PANEL_PADDING = 10;
 
+/** Compact Pulse Radio surface shown above the navigation panel. */
+export const BOTTOM_NAV_MINI_PLAYER_HEIGHT = 76;
+
+/** Visible separation that keeps playback from reading as a navigation row. */
+export const BOTTOM_NAV_MINI_PLAYER_GAP = 10;
+
 /**
  * The Create button is taller than its siblings and is pulled upward so that it
  * overhangs the pill rather than stretching it. These are the two numbers that
@@ -86,6 +92,10 @@ export const BOTTOM_NAV_CONTENT_CLEARANCE =
   BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT +
   BOTTOM_NAV_CREATE_OVERHANG +
   BOTTOM_NAV_CONTENT_GAP;
+
+/** Additional clearance required only while a loaded Radio item is visible. */
+export const BOTTOM_NAV_ACTIVE_PLAYER_CLEARANCE =
+  BOTTOM_NAV_MINI_PLAYER_HEIGHT + BOTTOM_NAV_MINI_PLAYER_GAP;
 
 /**
  * Bottom padding for a scrollable surface that is *not* under the dock — a

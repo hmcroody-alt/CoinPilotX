@@ -36,8 +36,7 @@ import { fetchSponsoredAds, SponsoredAd } from "../api/ads";
 import { FeedRow, injectAds } from "../feed/injectAds";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { getPulseRadioState, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
-import { BOTTOM_NAV_CONTENT_CLEARANCE, useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useBottomNavContentPadding, useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { GlobalNavigationBadges, GlobalNavigationIdentity, LogiNexusGlobalHeader } from "../navigation/GlobalNavigation";
 import { openDashboardRoute } from "../navigation/dashboardRouting";
 import { registerRefreshDestination } from "../navigation/refreshCoordinator";
@@ -115,7 +114,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const { authState } = useAuth();
   const isFocused = useIsFocused();
   const currentUserId = Number(authState.user?.user_id || 0);
-  const insets = useSafeAreaInsets();
+  const bottomContentPadding = useBottomNavContentPadding();
   const listRef = useRef<FlatList<HomeFeedRow>>(null);
   const offsetRef = useRef(0);
   const hasMoreRef = useRef(false);
@@ -624,7 +623,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         testID="native-home-feed"
         ref={listRef}
         style={styles.list}
-        contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 12) + BOTTOM_NAV_CONTENT_CLEARANCE }]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomContentPadding }]}
         data={feedRows}
         keyExtractor={(row) => row.key}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => refreshHome()} />}

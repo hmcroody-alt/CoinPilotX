@@ -13,10 +13,9 @@ describe("Home bottom-dock clearance (NRB-058)", () => {
     expect(homeSource).not.toMatch(/paddingBottom:\s*172/);
   });
 
-  it("derives the feed's bottom padding from safe-area insets + the shared dock constant", () => {
-    expect(homeSource).toContain("useSafeAreaInsets");
-    expect(homeSource).toContain("BOTTOM_NAV_CONTENT_CLEARANCE");
-    expect(homeSource).toMatch(/Math\.max\(insets\.bottom,\s*12\)\s*\+\s*BOTTOM_NAV_CONTENT_CLEARANCE/);
+  it("derives the feed's bottom padding from the shared dynamic dock hook", () => {
+    expect(homeSource).toContain("useBottomNavContentPadding");
+    expect(homeSource).toContain("paddingBottom: bottomContentPadding");
   });
 
   it("shares the same clearance constant with the standard scroll shell", () => {

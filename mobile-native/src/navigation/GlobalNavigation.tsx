@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LogiNexusBadge, LogiNexusSignalIndicator } from "../components/LogiNexus";
-import { getPulseRadioState, playNextTrack, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
+import { getPulseRadioState, playNextTrack, playPreviousTrack, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
 // The scope wording lives with the counts, in the unread store — not here, where
 // it could drift from the number it describes.
 import { badgeSpokenLabel, scopedBadgesEnabled } from "../core/unreadCounts";
@@ -18,7 +18,9 @@ import {
   BOTTOM_NAV_CREATE_MIN_HEIGHT,
   BOTTOM_NAV_DOCK_PADDING_TOP,
   BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT,
-  BOTTOM_NAV_DOCK_PANEL_PADDING
+  BOTTOM_NAV_DOCK_PANEL_PADDING,
+  BOTTOM_NAV_MINI_PLAYER_GAP,
+  BOTTOM_NAV_MINI_PLAYER_HEIGHT
 } from "./bottomNavMetrics";
 import { resolveBottomNavPolicy } from "./bottomNavPolicy";
 import {
@@ -362,7 +364,12 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
 // screen; the play/pause and next controls work in place without navigating.
 function PulseMiniPlayerBar({ navigation }: { navigation: BottomTabBarProps["navigation"] }) {
   const [radio, setRadio] = useState<PulseRadioState>(getPulseRadioState());
+  const { setMiniPlayerVisible } = useBottomNavVisibility();
   useEffect(() => subscribePulseRadio(setRadio), []);
+  useEffect(() => {
+    setMiniPlayerVisible(Boolean(radio.track));
+    return () => setMiniPlayerVisible(false);
+  }, [radio.track, setMiniPlayerVisible]);
 
   if (!radio.track) return null;
 
@@ -383,7 +390,15 @@ function PulseMiniPlayerBar({ navigation }: { navigation: BottomTabBarProps["nav
         <View style={[styles.miniPlayerProgressFill, { width: `${progress * 100}%` }]} />
       </View>
       <View style={styles.miniPlayerRow}>
+        {radio.track.coverArtUrl ? (
+          <Image source={{ uri: radio.track.coverArtUrl }} style={styles.miniPlayerArtwork} />
+        ) : (
+          <View style={styles.miniPlayerArtworkFallback}>
+            <Ionicons name="radio" size={20} color={colors.accent} />
+          </View>
+        )}
         <View style={styles.miniPlayerText}>
+          <Text style={styles.miniPlayerLabel} numberOfLines={1}>PULSE RADIO</Text>
           <Text style={styles.miniPlayerTitle} numberOfLines={1}>
             {radio.track.title}
           </Text>
@@ -391,6 +406,19 @@ function PulseMiniPlayerBar({ navigation }: { navigation: BottomTabBarProps["nav
             {radio.track.artist}
           </Text>
         </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Previous track"
+          testID="global-mini-player-previous"
+          style={[styles.miniPlayerButton, styles.miniPlayerButtonSecondary]}
+          onPress={(event) => {
+            event.stopPropagation();
+            Haptics.selectionAsync().catch(() => undefined);
+            playPreviousTrack().catch(() => undefined);
+          }}
+        >
+          <Ionicons name="play-skip-back" size={17} color={colors.text} />
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={playing ? "Pause" : "Play"}
@@ -570,8 +598,8 @@ const styles = createThemedStyles(() => ({
   },
   bottomPanel: {
     alignItems: "center",
-    backgroundColor: "rgba(11, 22, 51, 0.58)",
-    borderColor: logiNexus.colors.home.borderSubtle,
+    backgroundColor: "rgba(7, 14, 32, 0.95)",
+    borderColor: "rgba(77, 150, 255, 0.25)",
     borderRadius: 38,
     borderWidth: 1,
     flexDirection: "row",
@@ -581,8 +609,8 @@ const styles = createThemedStyles(() => ({
     minHeight: BOTTOM_NAV_DOCK_PANEL_MIN_HEIGHT,
     padding: BOTTOM_NAV_DOCK_PANEL_PADDING,
     shadowColor: colors.accent,
-    shadowOpacity: 0.16,
-    shadowRadius: 22
+    shadowOpacity: 0.2,
+    shadowRadius: 24
   },
   bottomShell: {
     backgroundColor: "transparent",
@@ -783,12 +811,16 @@ const styles = createThemedStyles(() => ({
     fontSize: 25
   },
   miniPlayer: {
-    backgroundColor: "rgba(11, 22, 51, 0.03)",
-    borderColor: logiNexus.colors.home.borderSubtle,
+    backgroundColor: "rgba(10, 24, 52, 0.94)",
+    borderColor: "rgba(65, 185, 255, 0.4)",
     borderRadius: 20,
     borderWidth: 1,
-    marginBottom: 8,
-    overflow: "hidden"
+    marginBottom: BOTTOM_NAV_MINI_PLAYER_GAP,
+    minHeight: BOTTOM_NAV_MINI_PLAYER_HEIGHT,
+    overflow: "hidden",
+    shadowColor: "#41b9ff",
+    shadowOpacity: 0.14,
+    shadowRadius: 18
   },
   miniPlayerProgressTrack: {
     backgroundColor: "rgba(255,255,255,0.08)",
@@ -802,9 +834,25 @@ const styles = createThemedStyles(() => ({
   miniPlayerRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10
+    gap: 8,
+    minHeight: BOTTOM_NAV_MINI_PLAYER_HEIGHT - 2,
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  miniPlayerArtwork: {
+    borderRadius: 12,
+    height: 48,
+    width: 48
+  },
+  miniPlayerArtworkFallback: {
+    alignItems: "center",
+    backgroundColor: "rgba(65, 185, 255, 0.12)",
+    borderColor: "rgba(65, 185, 255, 0.3)",
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 48,
+    justifyContent: "center",
+    width: 48
   },
   miniPlayerText: {
     flex: 1,
@@ -815,6 +863,13 @@ const styles = createThemedStyles(() => ({
     fontSize: 13,
     fontWeight: "700"
   },
+  miniPlayerLabel: {
+    color: colors.accent,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+    marginBottom: 1
+  },
   miniPlayerArtist: {
     color: colors.muted,
     fontSize: 11,
@@ -824,9 +879,9 @@ const styles = createThemedStyles(() => ({
     alignItems: "center",
     backgroundColor: colors.accent,
     borderRadius: 17,
-    height: 34,
+    height: 44,
     justifyContent: "center",
-    width: 34
+    width: 44
   },
   miniPlayerButtonSecondary: {
     backgroundColor: "rgba(255,255,255,0.08)"
