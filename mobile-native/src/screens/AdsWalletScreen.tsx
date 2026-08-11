@@ -3,9 +3,12 @@
  *
  * Balance header reads `getAdWallet` (businessOs) and honours its
  * `unavailable` flag — a wallet the server could not read shows the retry
- * banner, never a zero. Funding goes through `createAdFundingSession` and the
- * Stripe checkout URL opens in the browser; the iOS 403 sentence from the
- * server ("funding lives on the web portal") is shown verbatim. Transactions
+ * banner, never a zero. Funding is platform-routed: on iOS the card shows the
+ * fixed App Store credit tiers (StoreKit purchase → server verify → ledger
+ * credit, no browser hop; see `payments/appleIapAdCredits`), falling back to
+ * the classic form when the catalog is empty. Elsewhere funding goes through
+ * `createAdFundingSession` and the Stripe checkout URL opens in the browser;
+ * the iOS 403 sentence from the server is shown verbatim. Transactions
  * page via `before_id`, limits and auto top-up post through `api/adsWallet`,
  * and the auto top-up copy states plainly that it prompts and never charges —
  * the backend pins `auto_charge: false`.
@@ -19,6 +22,7 @@ import {
   Alert,
   Animated,
   Linking,
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -51,6 +55,11 @@ import {
   listAdAccounts,
   loadCachedAdAccounts
 } from "../api/businessOs";
+import { getIapAdCreditProducts, IapAdCreditProduct } from "../api/payments";
+import {
+  purchaseAdCredits,
+  restoreUnfinishedAdCreditPurchases
+} from "../payments/appleIapAdCredits";
 import {
   AdsEmpty,
   AdsOfflineNote,
@@ -125,6 +134,10 @@ export function AdsWalletScreen({ route, navigation }: Props) {
   const [fundAmount, setFundAmount] = useState("");
   const [fundBusy, setFundBusy] = useState(false);
   const [fundNote, setFundNote] = useState("");
+
+  const [iapProducts, setIapProducts] = useState<IapAdCreditProduct[]>([]);
+  const [iapBusy, setIapBusy] = useState<string | null>(null);
+  const [iapNote, setIapNote] = useState("");
 
   const [dailyInput, setDailyInput] = useState("");
   const [lifetimeInput, setLifetimeInput] = useState("");
@@ -237,6 +250,81 @@ export function AdsWalletScreen({ route, navigation }: Props) {
   useEffect(() => {
     load().catch(() => setStatus("error"));
   }, [load]);
+
+  /** Balance-only refresh after an in-app purchase credits — cheaper than a
+   *  full reload, and the transactions list catches up on pull-to-refresh. */
+  const refreshWallet = useCallback(async () => {
+    if (!accountId) return;
+    try {
+      const res = await getAdWallet(accountId);
+      setWallet(res.wallet || null);
+    } catch {
+      // Best effort; pull-to-refresh recovers.
+    }
+  }, [accountId]);
+
+  // iOS funding tiers. An empty or failed catalog quietly leaves the classic
+  // funding form in place — the wallet never loses its funding path.
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    let cancelled = false;
+    getIapAdCreditProducts()
+      .then((products) => {
+        if (!cancelled) setIapProducts(products);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Recover purchases that paid but never finished crediting (app died
+  // mid-verify). Idempotent: an already-credited purchase is simply closed.
+  useEffect(() => {
+    if (Platform.OS !== "ios" || !accountId) return;
+    let cancelled = false;
+    restoreUnfinishedAdCreditPurchases(accountId)
+      .then((result) => {
+        if (!cancelled && result.credited > 0) {
+          setIapNote(t(`${NS}.iapRestored`));
+          refreshWallet();
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId, refreshWallet, t]);
+
+  const buyIapTier = useCallback(
+    async (productId: string) => {
+      if (iapBusy) return;
+      setIapBusy(productId);
+      setIapNote("");
+      try {
+        const result = await purchaseAdCredits(accountId, productId);
+        if (result.status === "credited") {
+          setIapNote(t(`${NS}.iapCredited`, { amount: money(result.amountCents) }));
+          await refreshWallet();
+        } else if (result.status === "verification_pending") {
+          setIapNote(t(`${NS}.iapPending`));
+        } else if (result.status === "cancelled") {
+          setIapNote(t(`${NS}.iapCancelled`));
+        } else if (result.status === "iap_unavailable") {
+          setIapNote(t(`${NS}.iapUnavailable`));
+        } else if (result.status === "use_other_provider" || result.status === "routing_flagged") {
+          setIapNote(t(`${NS}.iapUseOtherProvider`));
+        } else {
+          setIapNote(t(`${NS}.iapFailed`));
+        }
+      } catch (error) {
+        setIapNote(error instanceof Error && error.message ? error.message : t(`${NS}.iapFailed`));
+      } finally {
+        setIapBusy(null);
+      }
+    },
+    [accountId, iapBusy, money, refreshWallet, t]
+  );
 
   const loadMoreTxns = useCallback(async () => {
     if (!accountId || !txNext || txLoadingMore) return;
@@ -437,29 +525,57 @@ export function AdsWalletScreen({ route, navigation }: Props) {
           <Animated.View style={[s.stack, entrance.styleFor(1)]}>
             <View style={s.card}>
               <Text style={s.cardTitle}>{t(`${NS}.addFundsTitle`)}</Text>
-              <Text style={s.cardBody}>{t(`${NS}.addFundsBody`)}</Text>
-              <Text style={s.inputLabel}>{t(`${NS}.addFundsAmountLabel`, { currency })}</Text>
-              <TextInput
-                style={s.input}
-                value={fundAmount}
-                onChangeText={setFundAmount}
-                keyboardType="decimal-pad"
-                placeholder="25"
-                placeholderTextColor={adsLight.text.muted}
-                accessibilityLabel={t(`${NS}.addFundsAmountLabel`, { currency })}
-              />
-              <Pressable
-                style={[s.primaryBtn, fundBusy ? styles.busy : null]}
-                onPress={addFunds}
-                disabled={fundBusy}
-                accessibilityRole="button"
-                accessibilityLabel={t(`${NS}.addFundsCta`)}
-              >
-                <Text style={s.primaryBtnText}>
-                  {fundBusy ? t(`${NS}.working`) : t(`${NS}.addFundsCta`)}
-                </Text>
-              </Pressable>
-              {fundNote ? <AdsOfflineNote text={fundNote} /> : null}
+              {Platform.OS === "ios" && iapProducts.length > 0 ? (
+                // Fixed App Store tiers: purchase in the native sheet, credit
+                // lands only after the wallet confirms it. No browser hop.
+                <>
+                  <Text style={s.cardBody}>{t(`${NS}.iapBody`)}</Text>
+                  {iapProducts.map((product) => (
+                    <Pressable
+                      key={product.productId}
+                      style={[s.primaryBtn, iapBusy ? styles.busy : null]}
+                      onPress={() => buyIapTier(product.productId)}
+                      disabled={iapBusy !== null}
+                      accessibilityRole="button"
+                      accessibilityLabel={t(`${NS}.iapBuyTier`, { amount: product.creditDisplay })}
+                    >
+                      <Text style={s.primaryBtnText}>
+                        {iapBusy === product.productId
+                          ? t(`${NS}.working`)
+                          : t(`${NS}.iapBuyTier`, { amount: product.creditDisplay })}
+                      </Text>
+                    </Pressable>
+                  ))}
+                  {iapNote ? <AdsOfflineNote text={iapNote} /> : null}
+                </>
+              ) : (
+                <>
+                  <Text style={s.cardBody}>{t(`${NS}.addFundsBody`)}</Text>
+                  <Text style={s.inputLabel}>{t(`${NS}.addFundsAmountLabel`, { currency })}</Text>
+                  <TextInput
+                    style={s.input}
+                    value={fundAmount}
+                    onChangeText={setFundAmount}
+                    keyboardType="decimal-pad"
+                    placeholder="25"
+                    placeholderTextColor={adsLight.text.muted}
+                    accessibilityLabel={t(`${NS}.addFundsAmountLabel`, { currency })}
+                  />
+                  <Pressable
+                    style={[s.primaryBtn, fundBusy ? styles.busy : null]}
+                    onPress={addFunds}
+                    disabled={fundBusy}
+                    accessibilityRole="button"
+                    accessibilityLabel={t(`${NS}.addFundsCta`)}
+                  >
+                    <Text style={s.primaryBtnText}>
+                      {fundBusy ? t(`${NS}.working`) : t(`${NS}.addFundsCta`)}
+                    </Text>
+                  </Pressable>
+                  {fundNote ? <AdsOfflineNote text={fundNote} /> : null}
+                  {iapNote ? <AdsOfflineNote text={iapNote} /> : null}
+                </>
+              )}
             </View>
           </Animated.View>
 

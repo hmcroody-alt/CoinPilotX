@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import os
 import signal
+import sys
 import time
 
 import bot
@@ -80,17 +81,39 @@ def run_cycle(state: dict) -> dict:
     return summary
 
 
+def _configure_logging():
+    """Route worker logs to stdout.
+
+    `import bot` already configured the root logger with a
+    RotatingFileHandler("coinpilotx.log") plus a stdout handler that only
+    passes PUSH_TRACE lines. Railway captures stdout/stderr only, so without
+    this every ADS_WORKER_* log line lands in a file inside the container and
+    the deployment looks silent after DB init. A plain basicConfig() here is a
+    no-op because the root logger already has handlers — attach explicitly.
+    """
+    root = logging.getLogger()
+    if any(getattr(h, "_ads_worker_stdout", False) for h in root.handlers):
+        return
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(os.getenv("LOG_LEVEL", "INFO"))
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    handler._ads_worker_stdout = True
+    root.addHandler(handler)
+    if root.level > logging.INFO:
+        root.setLevel(logging.INFO)
+
+
 def main():
-    logging.basicConfig(
-        level=os.getenv("LOG_LEVEL", "INFO"),
-        format="%(asctime)s %(levelname)s %(message)s",
-    )
+    _configure_logging()
     signal.signal(signal.SIGTERM, _handle_stop)
     signal.signal(signal.SIGINT, _handle_stop)
+    print("ADS_WORKER_BOOT_BEGIN", flush=True)
     bot.init_db()
     conn = _conn()
     try:
+        print("ADS_WORKER_SCHEMA_ENSURE started", flush=True)
         engine.ensure_schema(conn)
+        print("ADS_WORKER_SCHEMA_READY", flush=True)
     finally:
         conn.close()
     logging.info(
