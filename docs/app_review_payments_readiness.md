@@ -24,13 +24,17 @@ Status date: 2026-08-11. Branch `codex/agora-rtc-migration`, mission commits thr
 
 ## 2. IAP product catalog (consumables)
 
-| Product ID | Credit |
-|---|---|
-| `com.pulsesoc.adcredits.tier1` | $4.99 |
-| `com.pulsesoc.adcredits.tier2` | $9.99 |
-| `com.pulsesoc.adcredits.tier3` | $24.99 |
-| `com.pulsesoc.adcredits.tier4` | $49.99 |
-| `com.pulsesoc.adcredits.tier5` | $99.99 |
+| Product ID | Credit | ASC Apple ID | ASC status (2026-08-11) |
+|---|---|---|---|
+| `com.pulsesoc.adcredits.tier1` | $4.99 | 6800110602 | Prepare for Submission — price, en-US localization, review notes ✓ |
+| `com.pulsesoc.adcredits.tier2` | $9.99 | 6800120648 | Prepare for Submission — price, en-US localization, review notes ✓ |
+| `com.pulsesoc.adcredits.tier3` | $24.99 | 6800116824 | Prepare for Submission — price, en-US localization, review notes ✓ |
+| `com.pulsesoc.adcredits.tier4` | $49.99 | 6800125742 | Prepare for Submission — price, en-US localization, review notes ✓ |
+| `com.pulsesoc.adcredits.tier5` | $99.99 | 6800133055 | Prepare for Submission — price, en-US localization, review notes ✓ |
+
+All five are CONSUMABLE, available in 175 countries, tax category "Match to parent
+app". Review screenshots pending device build. ASC requires the first consumable to
+be submitted with a new app version — attach all five to the next version.
 
 Catalog is served by `GET /api/pulse/ads/iap/products`; the client filters to entries
 with a product ID and positive amount, so an empty/failed catalog degrades gracefully.

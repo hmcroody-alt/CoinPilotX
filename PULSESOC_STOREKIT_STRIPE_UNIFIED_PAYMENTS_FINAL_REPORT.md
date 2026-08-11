@@ -283,3 +283,45 @@ FLAGGED (not guessed)
    untouched by this mission).
 
 REAL MONEY USED: NO · STRIPE MODE: TEST · APPLE: SANDBOX-ONLY CODE PATHS
+
+==================================================
+
+ADDENDUM — 2026-08-11 (post-owner-action verification, same day)
+
+Owner completed the ASC/Railway/push actions; verified live as follows.
+
+APPLE COMMERCIAL (verified in ASC → Business):
+- Paid Apps Agreement: ACTIVE (Jun 8, 2026 – Jun 6, 2027)
+- Bank Account: Navy Federal Credit Union (8564), USD — ACTIVE
+- Tax: U.S. Form W-9 ACTIVE (submitted Aug 11, 2026)
+- OPEN: Brazil Tax Form + Mexico Tax Questionnaire — Missing Tax Info (blocks
+  sales in those two storefronts only; not a US/App Review blocker)
+
+APPLE IAP CATALOG (created by owner; metadata completed + verified this session):
+- tier1 $4.99  Apple ID 6800110602 — price $4.99/$4.24, en-US localization,
+  review notes SAVED
+- tier2 $9.99  Apple ID 6800120648 — price $9.99/$8.49, en-US, review notes SAVED
+- tier3 $24.99 Apple ID 6800116824 — price $24.99/$21.24, en-US, review notes SAVED
+- tier4 $49.99 Apple ID 6800125742 — price $49.99/$42.49, en-US, review notes SAVED
+- tier5 $99.99 Apple ID 6800133055 — price $99.99/$84.99, en-US, review notes SAVED
+All five: CONSUMABLE, Prepare for Submission, 175 countries, tax category
+"Match to parent app", product IDs exactly match services/pulse_payment_router.py.
+Each save verified by fresh page reload.
+
+RAILWAY (CoinPilotX web service, names only, values masked):
+APPLE_IAP_ISSUER_ID SET · APPLE_IAP_KEY_ID SET · APPLE_IAP_PRIVATE_KEY SET ·
+APPLE_ROOT_CA_CERTS SET · APPLE_IAP_ALLOW_SANDBOX SET (remove/disable for
+production once App Review passes). Latest deploy: "chore(iap): package Apple
+Root CA G3 trust anchor" — successful.
+
+GIT: branch codex/agora-rtc-migration PUSHED (origin top = 9004984c final report).
+
+REMAINING BLOCKERS (all device/submission-stage):
+1. `cd mobile-native && npm install` + EAS build + sandbox device QA (owner).
+2. IAP review screenshots (need device build) — then attach all 5 IAPs to a NEW
+   app version and submit together (ASC: first consumable must ship with a
+   version).
+3. Brazil/Mexico tax forms (optional, region-limited).
+4. Housekeeping: delete .git junk_*.lock files.
+5. Before live: disable APPLE_IAP_ALLOW_SANDBOX in production; confirm
+   refund-after-spend business policy.
