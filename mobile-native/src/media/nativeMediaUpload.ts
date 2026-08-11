@@ -30,12 +30,15 @@ export type NativeMediaAsset = {
 export type NativeMediaUploadOptions = {
   contextType: NativeMediaContext | string;
   contextId?: string;
+  endpointPath?: string;
+  extraFields?: Record<string, string | number | boolean | null | undefined>;
   target?: string;
   mode?: string;
   filterName?: string;
   effectKey?: string;
   compressionPolicy?: string;
   destination?: string;
+  skipProcessingPoll?: boolean;
 };
 
 export type NativeMediaUploadResult = {
@@ -212,7 +215,7 @@ export function uploadNativeMedia(
       return;
     }
     onProgress?.({ stage: "uploading", percent: 2, message: "Starting upload." });
-    xhr.open("POST", `${PULSE_API_BASE_URL}/api/pulse/media/upload`);
+    xhr.open("POST", nativeMediaUploadUrl(options.endpointPath));
     getSessionCookie()
       .then((cookie) => {
         if (cookie) xhr.setRequestHeader("Cookie", cookie);
@@ -252,6 +255,9 @@ export function uploadNativeMedia(
         if (options.effectKey) form.append("effect_key", options.effectKey);
         if (options.compressionPolicy) form.append("compression_policy", options.compressionPolicy);
         if (options.destination) form.append("destination", options.destination);
+        Object.entries(options.extraFields || {}).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) form.append(key, String(value));
+        });
         form.append("file", {
           uri: asset.uri,
           name: asset.name,
@@ -285,6 +291,12 @@ export async function pollNativeMediaProcessing(mediaId: number, attempts = 8, d
 
 export function uploadResultMediaId(result: NativeMediaUploadResult) {
   return Number(result.media_id || result.media?.id || result.media?.media_id || 0);
+}
+
+export function nativeMediaUploadUrl(endpointPath?: string) {
+  const path = endpointPath || "/api/pulse/media/upload";
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${PULSE_API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
 export function nativeMediaPreviewUrl(asset?: NativeMediaAsset | null, media?: PulseMedia | null) {

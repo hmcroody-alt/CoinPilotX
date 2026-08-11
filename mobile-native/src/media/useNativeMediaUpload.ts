@@ -60,12 +60,15 @@ export function useNativeMediaUpload(defaultOptions: NativeMediaUploadOptions) {
     return picked.asset;
   }, []);
 
-  const upload = useCallback(async (overrideOptions: Partial<NativeMediaUploadOptions> = {}) => {
-    if (!asset) {
+  const upload = useCallback(async (
+    overrideOptions: Partial<NativeMediaUploadOptions> = {},
+    overrideAsset: NativeMediaAsset | null = asset
+  ) => {
+    if (!overrideAsset) {
       setError("Choose media before uploading.");
       return null;
     }
-    const validation = validateNativeMedia(asset);
+    const validation = validateNativeMedia(overrideAsset);
     if (validation) {
       setError(validation);
       setProgress({ stage: "failed", percent: 0, message: validation });
@@ -74,12 +77,14 @@ export function useNativeMediaUpload(defaultOptions: NativeMediaUploadOptions) {
     setError("");
     setUploading(true);
     const options = { ...defaultOptions, ...overrideOptions };
-    const uploadTask = uploadNativeMedia(asset, options, setProgress);
+    const uploadTask = uploadNativeMedia(overrideAsset, options, setProgress);
     controllerRef.current = uploadTask.controller;
     try {
       const uploaded = await uploadTask.promise;
       const mediaId = uploadResultMediaId(uploaded);
-      const finalResult = mediaId ? await pollNativeMediaProcessing(mediaId, 8, 1500, setProgress) : uploaded;
+      const finalResult = mediaId && !options.skipProcessingPoll
+        ? await pollNativeMediaProcessing(mediaId, 8, 1500, setProgress)
+        : uploaded;
       const result = finalResult || uploaded;
       const media = result.media || {};
       const processingStatus = String(result.processing_status || media.processing_status || "").toLowerCase();

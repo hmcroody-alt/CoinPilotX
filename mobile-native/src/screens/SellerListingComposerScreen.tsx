@@ -185,7 +185,16 @@ export function SellerListingComposerScreen({ navigation }: Props) {
       if (!asset) return;
       setMediaBusy(true);
       try {
-        const result = await media.upload();
+        const isCover = draft.coverMediaId <= 0;
+        const result = await media.upload(
+          {
+            endpointPath: "/api/pulse/marketplace/media/upload",
+            contextId: "draft",
+            extraFields: { kind: kind === "video" ? "video" : isCover ? "cover" : "gallery" },
+            skipProcessingPoll: true
+          },
+          asset
+        );
         const mediaId = result ? uploadResultMediaId(result) : 0;
         if (mediaId > 0) {
           updateListingDraft((current) =>
@@ -193,6 +202,7 @@ export function SellerListingComposerScreen({ navigation }: Props) {
               ? { ...current, galleryMediaIds: [...current.galleryMediaIds, mediaId] }
               : { ...current, coverMediaId: mediaId, coverPreviewUri: asset.uri }
           );
+          void persistListingDraft();
         } else {
           setMediaError(media.error || t("commerce:listingWizard.errorMediaUpload"));
         }
@@ -201,7 +211,7 @@ export function SellerListingComposerScreen({ navigation }: Props) {
         media.reset();
       }
     },
-    [media, t]
+    [draft.coverMediaId, media, t]
   );
 
   const removeCover = useCallback(() => {
