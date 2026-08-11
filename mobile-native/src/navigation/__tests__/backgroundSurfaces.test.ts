@@ -239,7 +239,7 @@ describe("the Home Feed defers to the shared background", () => {
    */
   it("keeps the feed hairline in the background's own family", () => {
     const tokens = flat(read(SRC, "theme", "logiNexus.ts"));
-    expect(tokens).toContain('borderSubtle: "rgba(138, 152, 232, 0.2)"');
+    expect(tokens).toContain('borderSubtle: "rgba(100, 160, 255, 0.28)"');
     expect(tokens).not.toContain('borderSubtle: "rgba(121, 210, 255, 0.18)"');
   });
 

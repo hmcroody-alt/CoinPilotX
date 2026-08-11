@@ -570,8 +570,8 @@ const styles = createThemedStyles(() => ({
   },
   bottomPanel: {
     alignItems: "center",
-    backgroundColor: "rgba(8, 16, 29, 0.9)",
-    borderColor: "rgba(121, 210, 255, 0.24)",
+    backgroundColor: "rgba(11, 22, 51, 0.88)",
+    borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 38,
     borderWidth: 1,
     flexDirection: "row",
@@ -615,8 +615,8 @@ const styles = createThemedStyles(() => ({
     shadowRadius: 22
   },
   bottomCreateSymbol: {
-    backgroundColor: "rgba(3, 10, 21, 0.88)",
-    borderColor: "rgba(121, 210, 255, 0.95)",
+    backgroundColor: "rgba(18, 26, 61, 0.82)",
+    borderColor: "rgba(100, 160, 255, 0.6)",
     borderWidth: 1,
     height: 82,
     shadowColor: "#9f7cff",
@@ -783,8 +783,8 @@ const styles = createThemedStyles(() => ({
     fontSize: 25
   },
   miniPlayer: {
-    backgroundColor: "rgba(8, 16, 29, 0.94)",
-    borderColor: "rgba(121, 210, 255, 0.24)",
+    backgroundColor: "rgba(11, 22, 51, 0.88)",
+    borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 20,
     borderWidth: 1,
     marginBottom: 8,

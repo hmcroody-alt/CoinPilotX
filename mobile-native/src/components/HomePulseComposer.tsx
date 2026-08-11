@@ -920,7 +920,7 @@ function visibilityLabel(visibility: Visibility) {
 const styles = createThemedStyles(() => ({
   actionButton: {
     alignItems: "center",
-    backgroundColor: "rgba(9, 20, 33, 0.54)",
+    backgroundColor: "rgba(18, 26, 61, 0.72)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 16,
     borderWidth: 1,
@@ -966,7 +966,7 @@ const styles = createThemedStyles(() => ({
   },
   collapsedComposer: {
     alignItems: "center",
-    backgroundColor: "rgba(3, 10, 21, 0.62)",
+    backgroundColor: "rgba(10, 18, 43, 0.74)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 28,
     borderWidth: 1,
@@ -1015,7 +1015,7 @@ const styles = createThemedStyles(() => ({
   },
   collapsedQuickTools: {
     alignItems: "center",
-    backgroundColor: "rgba(3, 9, 18, 0.42)",
+    backgroundColor: "rgba(18, 26, 61, 0.72)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 23,
     borderWidth: 1,
@@ -1224,7 +1224,7 @@ const styles = createThemedStyles(() => ({
     backgroundColor: colors.accent
   },
   modeRow: {
-    backgroundColor: "rgba(3, 7, 18, 0.4)",
+    backgroundColor: "rgba(18, 26, 61, 0.72)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 21,
     borderWidth: 1,
@@ -1274,7 +1274,7 @@ const styles = createThemedStyles(() => ({
     lineHeight: 15
   },
   musicPanel: {
-    backgroundColor: "rgba(3, 7, 18, 0.72)",
+    backgroundColor: "rgba(18, 26, 61, 0.8)",
     borderColor: logiNexus.colors.home.borderIntelligence,
     borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
@@ -1428,7 +1428,7 @@ const styles = createThemedStyles(() => ({
     textAlign: "center"
   },
   statusPanel: {
-    backgroundColor: "rgba(9, 20, 33, 0.74)",
+    backgroundColor: logiNexus.colors.home.surfaceGlass,
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: logiNexus.radius.medium,
     borderWidth: 1,
@@ -1452,7 +1452,7 @@ const styles = createThemedStyles(() => ({
     fontWeight: "900",
   },
   toolsPanel: {
-    backgroundColor: "rgba(3, 7, 18, 0.42)",
+    backgroundColor: "rgba(18, 26, 61, 0.72)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: logiNexus.radius.medium,
     borderWidth: 1,

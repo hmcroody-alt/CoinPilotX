@@ -12,8 +12,8 @@ export const logiNexus = {
     home: {
       backgroundDeepSpace: "#030712",
       backgroundNetworkVoid: "#07101d",
-      surfaceGlass: "rgba(9, 20, 33, 0.78)",
-      surfaceGlassStrong: "rgba(11, 27, 44, 0.94)",
+      surfaceGlass: "rgba(11, 22, 51, 0.84)",
+      surfaceGlassStrong: "rgba(18, 26, 61, 0.86)",
       surfaceSignal: "rgba(50, 230, 179, 0.105)",
       /**
        * The feed's hairline: post separators, count rows, panel edges. Used only
@@ -30,11 +30,11 @@ export const logiNexus = {
        * violet separator on a violet field stops being a division and starts
        * being decoration.
        */
-      borderSubtle: "rgba(138, 152, 232, 0.2)",
-      borderActive: "rgba(50, 230, 179, 0.72)",
-      borderIntelligence: "rgba(159, 124, 255, 0.62)",
-      borderCreator: "rgba(66, 231, 212, 0.58)",
-      borderSafety: "rgba(63, 240, 160, 0.6)",
+      borderSubtle: "rgba(100, 160, 255, 0.28)",
+      borderActive: "rgba(45, 226, 194, 0.55)",
+      borderIntelligence: "rgba(139, 92, 246, 0.5)",
+      borderCreator: "rgba(45, 226, 194, 0.48)",
+      borderSafety: "rgba(63, 240, 160, 0.5)",
       accentPrimary: colors.accent,
       accentSecondary: colors.accentStrong,
       accentUndx: colors.intelligence,
