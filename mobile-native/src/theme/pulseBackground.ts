@@ -28,10 +28,10 @@
 
 /** The approved palette. Nothing outside this object may introduce a colour. */
 export const PULSE_BACKGROUND_COLORS = {
-  base: "#050714",
-  navy: "#090B22",
-  indigo: "#111032",
-  darkViolet: "#1A1040",
+  base: "#101A4A",
+  navy: "#13235C",
+  indigo: "#1E2B78",
+  darkViolet: "#31206E",
   accentPurple: "#7C4DFF",
   softLavender: "#A67CFF",
   /** Used on two nodes out of fourteen. Any more and it stops being an accent. */
@@ -175,8 +175,8 @@ export type PulseBackgroundSurface = {
 
 export const PULSE_BACKGROUND_SURFACES: Record<"dark" | "light", PulseBackgroundSurface> = {
   /**
-   * Near-black navy at the top, deep indigo with a restrained violet through
-   * the middle, back to near-black at the bottom. Six stops rather than three
+   * Royal navy at the top, deep indigo with a restrained violet through the
+   * middle, back to rich navy at the bottom. Six stops rather than three
    * because a three-stop ramp over this range bands visibly on OLED.
    */
   dark: {
@@ -192,7 +192,7 @@ export const PULSE_BACKGROUND_SURFACES: Record<"dark" | "light", PulseBackground
       locations: [0, 0.22, 0.46, 0.62, 0.84, 1]
     },
     bottomGlow: {
-      colors: ["rgba(124,77,255,0)", "rgba(124,77,255,0.07)", "rgba(5,7,20,0.55)"],
+      colors: ["rgba(124,77,255,0)", "rgba(124,77,255,0.08)", "rgba(16,26,74,0.5)"],
       locations: [0, 0.62, 1]
     },
     node: {
