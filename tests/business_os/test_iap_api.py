@@ -10,6 +10,7 @@ verifier projects.
 """
 
 import base64
+import datetime
 import json
 import os
 import tempfile
@@ -90,6 +91,40 @@ def test_apple_not_configured():
             os.environ["APPLE_ROOT_CA_CERTS"] = prev
 
 
+def test_packaged_apple_root_ca_g3_initializes_verifier():
+    """The production trust path is the official, pinned Apple G3 root."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.x509.oid import NameOID
+
+    cert_path = os.path.abspath(os.path.join(
+        os.path.dirname(__file__), "..", "..", "certificates", "apple",
+        "AppleRootCA-G3.pem"))
+    with open(cert_path, "rb") as fh:
+        cert = x509.load_pem_x509_certificate(fh.read())
+
+    assert cert.subject == cert.issuer
+    assert cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == (
+        "Apple Root CA - G3")
+    assert cert.fingerprint(hashes.SHA256()).hex() == (
+        "63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    assert cert.not_valid_before_utc <= now <= cert.not_valid_after_utc
+
+    prev = os.environ.get("APPLE_ROOT_CA_CERTS")
+    os.environ["APPLE_ROOT_CA_CERTS"] = cert_path
+    try:
+        anchors = api._load_apple_anchors()
+        verifier, error = api._apple_verifier_or_error(None)
+        assert len(anchors) == 1
+        assert verifier is not None and error is None
+    finally:
+        if prev is None:
+            os.environ.pop("APPLE_ROOT_CA_CERTS", None)
+        else:
+            os.environ["APPLE_ROOT_CA_CERTS"] = prev
+
+
 # --- (f) google without verifier acks but grants nothing --------------------
 def test_google_no_verifier():
     body_obj = {"packageName": "com.pulsesoc.app",
@@ -126,6 +161,7 @@ def _run_standalone():
         test_apple_bad_signature,
         test_apple_valid_projects,
         test_apple_not_configured,
+        test_packaged_apple_root_ca_g3_initializes_verifier,
         test_google_no_verifier,
         test_google_with_verifier,
     ]
