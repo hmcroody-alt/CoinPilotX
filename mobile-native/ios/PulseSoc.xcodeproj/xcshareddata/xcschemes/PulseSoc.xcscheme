@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-               BuildableName = "PulseSocNative.app"
-               BlueprintName = "PulseSocNative"
-               ReferencedContainer = "container:PulseSocNative.xcodeproj">
+               BuildableName = "PulseSoc.app"
+               BlueprintName = "PulseSoc"
+               ReferencedContainer = "container:PulseSoc.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -27,30 +27,21 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
-      <MacroExpansion>
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "PulseSocNative.app"
-            BlueprintName = "PulseSocNative"
-            ReferencedContainer = "container:PulseSocNative.xcodeproj">
-         </BuildableReference>
-      </MacroExpansion>
       <Testables>
          <TestableReference
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "A1B2C3D40000000000000009"
-               BuildableName = "PulseSocNativeUITests.xctest"
-               BlueprintName = "PulseSocNativeUITests"
-               ReferencedContainer = "container:PulseSocNative.xcodeproj">
+               BlueprintIdentifier = "00E356ED1AD99517003FC87E"
+               BuildableName = "PulseSocTests.xctest"
+               BlueprintName = "PulseSocTests"
+               ReferencedContainer = "container:PulseSoc.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
-      buildConfiguration = "Release"
+      buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       launchStyle = "0"
@@ -64,9 +55,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "PulseSocNative.app"
-            BlueprintName = "PulseSocNative"
-            ReferencedContainer = "container:PulseSocNative.xcodeproj">
+            BuildableName = "PulseSoc.app"
+            BlueprintName = "PulseSoc"
+            ReferencedContainer = "container:PulseSoc.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -81,9 +72,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "PulseSocNative.app"
-            BlueprintName = "PulseSocNative"
-            ReferencedContainer = "container:PulseSocNative.xcodeproj">
+            BuildableName = "PulseSoc.app"
+            BlueprintName = "PulseSoc"
+            ReferencedContainer = "container:PulseSoc.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

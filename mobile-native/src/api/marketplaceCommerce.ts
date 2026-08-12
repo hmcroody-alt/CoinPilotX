@@ -19,6 +19,7 @@
 
 import { pulseApi } from "./pulseApi";
 import { sellerStoreNameOrEmpty } from "./sellerIdentity";
+import type { PaymentSheetBootstrap } from "./stripePaymentSheet";
 
 /* ------------------------------------------------------------------ *
  * Cart
@@ -145,8 +146,13 @@ export async function validateCart(): Promise<CartValidation> {
 export async function checkoutCartGroup(
   sellerUserId: number,
   idempotencyKey: string,
-  fulfillment: "pickup" | "shipping" | "" = ""
-): Promise<{ checkoutUrl: string; transactionIds: readonly number[] }> {
+  fulfillment: "pickup" | "shipping" | "" = "",
+  // Ask for a PaymentIntent the in-app Stripe sheet can present instead of a
+  // hosted page the phone would have to open in Safari. Only set when this
+  // binary actually contains the Stripe SDK, so a build without it never
+  // creates an intent it has no way to collect on.
+  paymentMode: "payment_sheet" | "" = ""
+): Promise<CheckoutHandoff> {
   const data = (await pulseApi("/api/pulse/marketplace/cart/checkout", {
     method: "POST",
     body: JSON.stringify({
@@ -155,12 +161,56 @@ export async function checkoutCartGroup(
       // Sent only when the buyer actually had a choice to make. The server
       // refuses the session rather than guessing, so an omitted value can never
       // quietly become "shipping" for someone who meant to collect in person.
-      ...(fulfillment ? { fulfillment } : {})
+      ...(fulfillment ? { fulfillment } : {}),
+      ...(paymentMode ? { payment_mode: paymentMode } : {})
     })
-  })) as { checkout_url?: string; transaction_ids?: number[] };
+  })) as CheckoutResponse;
+  return readCheckoutHandoff(data, data.transaction_ids ?? []);
+}
+
+/** Raw shape of both checkout endpoints. Exactly one of `checkout_url` (hosted)
+ * or `payment_intent_client_secret` (native sheet) is populated, decided by the
+ * `payment_mode` the client asked for. */
+export type CheckoutResponse = {
+  checkout_url?: string;
+  transaction_ids?: number[];
+  transaction_id?: number;
+  payment_intent_client_secret?: string;
+  payment_intent_id?: string;
+  publishable_key?: string;
+  merchant_display_name?: string;
+  apple_pay_merchant_id?: string;
+  amount_cents?: number;
+  currency?: string;
+};
+
+/** What the checkout screen needs to act: either a sheet bootstrap or a URL. */
+export type CheckoutHandoff = {
+  checkoutUrl: string;
+  transactionIds: readonly number[];
+  sheet: PaymentSheetBootstrap | null;
+};
+
+/** Normalise either response shape. A bootstrap is only reported when the
+ * client secret is actually present — a partially-filled sheet response would
+ * otherwise strand the buyer on a Pay button that does nothing. */
+export function readCheckoutHandoff(data: CheckoutResponse, transactionIds: readonly number[]): CheckoutHandoff {
+  const clientSecret = data.payment_intent_client_secret ?? "";
   return {
     checkoutUrl: data.checkout_url ?? "",
-    transactionIds: data.transaction_ids ?? []
+    transactionIds,
+    sheet: clientSecret
+      ? {
+          clientSecret,
+          paymentIntentId: data.payment_intent_id ?? "",
+          publishableKey: data.publishable_key ?? "",
+          merchantDisplayName: data.merchant_display_name ?? "",
+          applePayMerchantId: data.apple_pay_merchant_id ?? "",
+          amountCents: Number(data.amount_cents ?? 0),
+          currency: data.currency ?? "USD",
+          transactionIds
+        }
+      : null
   };
 }
 

@@ -43,6 +43,7 @@ from flask import Blueprint, jsonify, request
 
 from services import marketplace_listing_lifecycle as listing_lifecycle
 from services import marketplace_seller_identity as seller_identity
+from services.marketplace_payment_errors import classify_provider_exception
 
 LOGGER = logging.getLogger(__name__)
 
@@ -239,6 +240,19 @@ def _fulfillment(listing: dict) -> str:
     if delivery in {"both", "pickup_or_shipping", "shipping_or_pickup"}:
         return "both"
     return "shipping"
+
+
+def _apple_pay_merchant_id() -> str:
+    """Empty means the native sheet offers card only.
+
+    Apple Pay needs a merchant identifier that matches an entitlement in the
+    signed binary; announcing one the app cannot honour makes the sheet fail at
+    presentation rather than fall back, so an unset value is returned as-is and
+    the client simply does not request Apple Pay.
+    """
+    import os
+
+    return str(os.getenv("APPLE_PAY_MERCHANT_ID") or "").strip()
 
 
 def _stripe_payment_intent_data(*, bot, tx_ids: list[int], buyer_id: int,
@@ -540,6 +554,12 @@ def cart_checkout():
     # It decides whether Stripe asks for a delivery address, so it has to arrive
     # with the checkout request rather than be inferred afterwards.
     fulfillment_choice = str(payload.get("fulfillment") or "").strip().lower()
+    # `payment_sheet` keeps the buyer inside the app: the same validated group is
+    # settled with a PaymentIntent the native Stripe sheet can present, instead
+    # of a hosted Session the phone has to open in Safari. Everything before the
+    # provider call — eligibility, price authority, inventory reservation — is
+    # deliberately shared, so the two surfaces cannot drift into two policies.
+    native_sheet = str(payload.get("payment_mode") or "").strip().lower() == "payment_sheet"
     if not seller_user_id:
         return _error("Choose a seller group to check out.", 400, code="INVALID_REQUEST")
 
@@ -655,6 +675,60 @@ def cart_checkout():
             payment_intent_data, connected_account_id = _stripe_payment_intent_data(
                 bot=bot, tx_ids=tx_ids, buyer_id=buyer_id, platform_fee=platform_fee, payout=payout
             )
+            checkout_metadata = {
+                "seller_transaction_ids": ",".join(str(t) for t in tx_ids),
+                "cart_checkout": "1",
+                "buyer_user_id": str(buyer_id),
+                "seller_user_id": str(seller_user_id),
+                "cart_line_ids": ",".join(str(l["line_id"]) for l in lines),
+                "listing_ids": ",".join(str(l["listing_id"]) for l in lines),
+                "quantities": ",".join(str(l["qty"]) for l in lines),
+                "fulfillment": ",".join(resolved_lanes),
+                "idempotency_key": idempotency_key,
+            }
+            if native_sheet:
+                # The amount is the server's, computed from the same snapshot the
+                # buyer was shown. The sheet renders it; it never supplies it.
+                intent = bot.stripe.PaymentIntent.create(
+                    amount=total_minor,
+                    currency=currency.lower(),
+                    automatic_payment_methods={"enabled": True},
+                    metadata=checkout_metadata,
+                    **{k: v for k, v in payment_intent_data.items() if k != "metadata"},
+                    idempotency_key=f"marketplace-cart-sheet:{buyer_id}:{idempotency_key or primary_tx}",
+                )
+                for tx_id in tx_ids:
+                    cur.execute(
+                        "UPDATE seller_transactions SET stripe_payment_intent_id=?, status='checkout_created', updated_at=? WHERE id=?",
+                        (intent.get("id"), now, tx_id),
+                    )
+                response_payload = {
+                    "ok": True,
+                    "payment_intent_client_secret": intent.get("client_secret"),
+                    "payment_intent_id": intent.get("id"),
+                    "publishable_key": bot.STRIPE_PUBLISHABLE_KEY,
+                    # The sheet header names the store, never the account holder.
+                    "merchant_display_name": seller_identity.display_store_name(lines[0]),
+                    "apple_pay_merchant_id": _apple_pay_merchant_id(),
+                    # Echoed so the sheet cannot be presented against a number the
+                    # review screen never showed.
+                    "amount_cents": total_minor,
+                    "currency": currency,
+                    "transaction_ids": tx_ids,
+                    "platform_fee_cents": platform_fee,
+                    "seller_net_cents": seller_net,
+                    "payout_state": "connect_routed" if connected_account_id else "ledger_pending_onboarding",
+                }
+                if idempotency_key:
+                    cur.execute(
+                        """
+                        INSERT INTO marketplace_cart_checkout_keys (user_id, idempotency_key, response_json, created_at)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(user_id, idempotency_key) DO NOTHING
+                        """,
+                        (buyer_id, idempotency_key, json.dumps(response_payload, default=str), now),
+                    )
+                return _json(response_payload)
             session_obj = bot.stripe.checkout.Session.create(
                 mode="payment",
                 line_items=[
@@ -667,15 +741,7 @@ def cart_checkout():
                 success_url=f"{base}/pulse/payments/success?transaction_id={primary_tx}",
                 cancel_url=f"{base}/pulse/payments/cancel?transaction_id={primary_tx}",
                 payment_intent_data=payment_intent_data,
-                metadata={"seller_transaction_ids": ",".join(str(t) for t in tx_ids),
-                          "cart_checkout": "1",
-                          "buyer_user_id": str(buyer_id),
-                          "seller_user_id": str(seller_user_id),
-                          "cart_line_ids": ",".join(str(l["line_id"]) for l in lines),
-                          "listing_ids": ",".join(str(l["listing_id"]) for l in lines),
-                          "quantities": ",".join(str(l["qty"]) for l in lines),
-                          "fulfillment": ",".join(resolved_lanes),
-                          "idempotency_key": idempotency_key},
+                metadata=checkout_metadata,
                 idempotency_key=f"marketplace-cart:{buyer_id}:{idempotency_key or primary_tx}",
                 # Resolved lanes, not raw ones: a buyer who chose pickup is never
                 # asked for a delivery address.
@@ -710,14 +776,21 @@ def cart_checkout():
         except Exception as exc:
             trace_id = secrets.token_hex(6)
             LOGGER.exception("CART_CHECKOUT_CREATE_FAILED trace_id=%s", trace_id)
+            # Collapse the opaque catch-all into a canonical, self-diagnosing
+            # error: the buyer gets copy matched to the actual failure class and
+            # the owner sees the provider fingerprint (type/code/param) on the
+            # response itself, not only in a Railway log.
+            classified = classify_provider_exception(exc)
             for tx_id in tx_ids:
                 release_inventory_reservation(cur, tx_id, now=now)
                 cur.execute(
                     "UPDATE seller_transactions SET status='checkout_failed', metadata_json=?, updated_at=? WHERE id=?",
-                    (json.dumps({"error": str(exc), "trace_id": trace_id}, default=str), now, tx_id),
+                    (json.dumps({"error": str(exc), "trace_id": trace_id,
+                                 "provider_error": classified["provider_error"]}, default=str), now, tx_id),
                 )
-            return _error("Checkout could not be created. No card was charged.", 500,
-                          code="PAYMENT_UNAVAILABLE", trace_id=trace_id, transaction_ids=tx_ids)
+            return _error(classified["message"], classified["status"],
+                          code=classified["code"], trace_id=trace_id, transaction_ids=tx_ids,
+                          provider_error=classified["provider_error"])
 
     return _with_db(handler)
 

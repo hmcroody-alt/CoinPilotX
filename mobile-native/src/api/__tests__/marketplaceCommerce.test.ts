@@ -10,7 +10,13 @@
  * build that predates hydration.
  */
 
-import { groupCartLines, offerFromServer, type CartLine } from "../marketplaceCommerce";
+import {
+  groupCartLines,
+  offerFromServer,
+  readCheckoutHandoff,
+  type CartLine,
+  type CheckoutResponse
+} from "../marketplaceCommerce";
 
 function line(overrides: Partial<CartLine> = {}): CartLine {
   return {
@@ -69,6 +75,45 @@ describe("groupCartLines", () => {
 
   it("returns no groups for an empty cart", () => {
     expect(groupCartLines([])).toEqual([]);
+  });
+});
+
+describe("readCheckoutHandoff", () => {
+  it("promotes a sheet bootstrap only when the client secret is actually present", () => {
+    const data: CheckoutResponse = {
+      payment_intent_client_secret: "pi_1_secret_2",
+      payment_intent_id: "pi_1",
+      publishable_key: "pk_live_1",
+      merchant_display_name: "M&W Store",
+      apple_pay_merchant_id: "",
+      amount_cents: 500,
+      currency: "USD"
+    };
+    const handoff = readCheckoutHandoff(data, [11]);
+    expect(handoff.sheet).not.toBeNull();
+    expect(handoff.sheet).toMatchObject({
+      clientSecret: "pi_1_secret_2",
+      merchantDisplayName: "M&W Store",
+      amountCents: 500,
+      transactionIds: [11]
+    });
+    // A native handoff carries no hosted URL — the sheet is the whole path.
+    expect(handoff.checkoutUrl).toBe("");
+  });
+
+  it("leaves the sheet null and keeps the hosted URL when no secret came back", () => {
+    const handoff = readCheckoutHandoff({ checkout_url: "https://checkout.stripe.com/x" }, [12]);
+    expect(handoff.sheet).toBeNull();
+    expect(handoff.checkoutUrl).toBe("https://checkout.stripe.com/x");
+    expect(handoff.transactionIds).toEqual([12]);
+  });
+
+  it("never strands the buyer on a half-filled sheet (secret missing, other fields present)", () => {
+    const handoff = readCheckoutHandoff(
+      { payment_intent_id: "pi_9", publishable_key: "pk_live_9", amount_cents: 900 },
+      [13]
+    );
+    expect(handoff.sheet).toBeNull();
   });
 });
 

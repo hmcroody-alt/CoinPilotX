@@ -84736,6 +84736,11 @@ def api_pulse_payments_checkout():
     idempotency_key = str(payload.get("idempotency_key") or "").strip()[:120]
     if not item_type or not item_id:
         return api_error("Choose an item to buy.", 400)
+    # Only physical marketplace goods may settle through the native Stripe sheet.
+    # Courses and live classes stay on their existing surface, which is also what
+    # keeps the Apple digital-goods boundary where it already is.
+    native_sheet = (item_type == "marketplace_product"
+                    and str(payload.get("payment_mode") or "").strip().lower() == "payment_sheet")
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     if item_type == "marketplace_product":
@@ -84753,7 +84758,8 @@ def api_pulse_payments_checkout():
     item = {}
     seller_type = "merchant"
     if item_type == "marketplace_product":
-        cur.execute("""SELECT l.*, COALESCE(ms.status,'missing') AS seller_status
+        cur.execute(f"""SELECT l.*, COALESCE(ms.status,'missing') AS seller_status,
+                   {marketplace_seller_identity.store_name_select('ms')}
             FROM marketplace_listings l LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
             WHERE l.id=? LIMIT 1""", (item_id,))
         item = dict(cur.fetchone() or {})
@@ -84903,6 +84909,56 @@ def api_pulse_payments_checkout():
         if connected_account_id:
             payment_intent_data.update({"application_fee_amount": platform_fee,
                                         "transfer_data": {"destination": connected_account_id}})
+        payout_state = "connect_routed" if connected_account_id else "ledger_pending_onboarding"
+        # `payment_sheet` settles this purchase with a PaymentIntent the native
+        # Stripe sheet can present in-app, instead of a hosted Session the phone
+        # has to open in Safari. Everything above — eligibility, price authority,
+        # inventory reservation — is deliberately shared with the hosted path, so
+        # the two surfaces cannot become two different policies.
+        if native_sheet:
+            intent = stripe.PaymentIntent.create(
+                amount=amount_cents,
+                currency=currency.lower(),
+                automatic_payment_methods={"enabled": True},
+                metadata=checkout_metadata,
+                **{k: v for k, v in payment_intent_data.items() if k != "metadata"},
+                idempotency_key=f"marketplace-buy-now-sheet:{int(buyer['user_id'])}:{idempotency_key or tx_id}",
+            )
+            cur.execute("UPDATE seller_transactions SET stripe_payment_intent_id=?, status='checkout_created', updated_at=? WHERE id=?",
+                        (intent.get("id"), now, tx_id))
+            pulse_emit_payment_checkout_event(
+                cur,
+                {**tx_event, "status": "checkout_created", "stripe_payment_intent_id": intent.get("id") or ""},
+                "checkout_created",
+                status="checkout_created",
+                actor_user_id=buyer["user_id"],
+                extra={"stripe_payment_intent_id": intent.get("id") or "", "payment_mode": "payment_sheet"},
+            )
+            response_payload = {
+                "ok": True,
+                "payment_intent_client_secret": intent.get("client_secret"),
+                "payment_intent_id": intent.get("id"),
+                "publishable_key": STRIPE_PUBLISHABLE_KEY,
+                # The sheet header names the store, never the account holder.
+                "merchant_display_name": marketplace_seller_identity.display_store_name(item),
+                "apple_pay_merchant_id": marketplace_cart_service._apple_pay_merchant_id(),
+                # Echoed so the sheet cannot be presented against a number the
+                # review screen never showed.
+                "amount_cents": amount_cents,
+                "currency": currency,
+                "transaction_id": tx_id,
+                "platform_fee_cents": platform_fee,
+                "seller_net_cents": seller_net,
+                "payout_state": payout_state,
+            }
+            if item_type == "marketplace_product" and idempotency_key:
+                cur.execute(
+                    """INSERT INTO marketplace_cart_checkout_keys (user_id,idempotency_key,response_json,created_at)
+                    VALUES (?,?,?,?) ON CONFLICT(user_id,idempotency_key) DO NOTHING""",
+                    (int(buyer["user_id"]), idempotency_key, json.dumps(response_payload, default=str), now),
+                )
+            conn.commit(); conn.close()
+            return jsonify(response_payload)
         session_obj = stripe.checkout.Session.create(
             mode="payment",
             line_items=[{"price_data": {"currency": currency.lower(), "unit_amount": amount_cents, "product_data": {"name": title[:120]}}, "quantity": 1}],
@@ -84924,7 +84980,7 @@ def api_pulse_payments_checkout():
         )
         response_payload = {"ok": True, "checkout_url": session_obj.get("url"), "transaction_id": tx_id,
                             "platform_fee_cents": platform_fee, "seller_net_cents": seller_net,
-                            "payout_state": "connect_routed" if connected_account_id else "ledger_pending_onboarding"}
+                            "payout_state": payout_state}
         if item_type == "marketplace_product" and idempotency_key:
             cur.execute(
                 """INSERT INTO marketplace_cart_checkout_keys (user_id,idempotency_key,response_json,created_at)
@@ -96471,9 +96527,14 @@ def stripe_webhook():
             logging.error("checkout.session.completed could not resolve local user session_id=%s customer_id=%s email=%s", session_id, customer_id, bool(resolved_email))
             record_unmatched_payment(event, session, "checkout.session.completed could not resolve local user")
 
-    if event_type == "checkout.session.expired":
+    # `async_payment_failed` is grouped with `expired` deliberately. Delayed
+    # payment methods hold stock from checkout creation until the bank answers;
+    # without this event the answer "declined" never releases the hold, and the
+    # listing stays invisibly out of stock forever.
+    if event_type in {"checkout.session.expired", "checkout.session.async_payment_failed"}:
         session = event["data"]["object"]
         metadata = session.get("metadata") or {}
+        terminal_status = "checkout_expired" if event_type == "checkout.session.expired" else "checkout_failed"
         tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
         plural_tx_ids = [safe_int(value, 0) for value in str(metadata.get("seller_transaction_ids") or "").split(",")]
         plural_tx_ids = [value for value in plural_tx_ids if value]
@@ -96484,7 +96545,7 @@ def stripe_webhook():
             marketplace_cart_service._ensure_schema(cur)
             for cart_tx_id in plural_tx_ids:
                 marketplace_cart_service.release_inventory_reservation(cur, cart_tx_id, now=now)
-                cur.execute("UPDATE seller_transactions SET status='checkout_expired', updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')", (now, cart_tx_id))
+                cur.execute("UPDATE seller_transactions SET status=?, updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')", (terminal_status, now, cart_tx_id))
             conn.commit(); conn.close()
             record_stripe_event(event, "processed", safe_int(metadata.get("buyer_user_id"), 0) or None)
             creator_economy_service.update_webhook_event(event_id, "processed")
@@ -96492,15 +96553,20 @@ def stripe_webhook():
         if tx_id:
             now = datetime.utcnow().isoformat(timespec="seconds")
             conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+            from services import marketplace_cart_routes as marketplace_cart_service
+            marketplace_cart_service._ensure_schema(cur)
             cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
             tx = dict(cur.fetchone() or {})
             if tx:
-                cur.execute("UPDATE seller_transactions SET status='checkout_expired', stripe_checkout_session_id=COALESCE(NULLIF(?, ''), stripe_checkout_session_id), updated_at=? WHERE id=?", (session.get("id") or "", now, tx_id))
+                # The buy-now and accepted-offer lanes reserve stock too, so the
+                # single-transaction path has to give it back as well.
+                marketplace_cart_service.release_inventory_reservation(cur, tx_id, now=now)
+                cur.execute("UPDATE seller_transactions SET status=?, stripe_checkout_session_id=COALESCE(NULLIF(?, ''), stripe_checkout_session_id), updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')", (terminal_status, session.get("id") or "", now, tx_id))
                 pulse_emit_payment_checkout_event(
                     cur,
-                    {**tx, "status": "checkout_expired", "stripe_checkout_session_id": session.get("id") or ""},
-                    "checkout_expired",
-                    status="checkout_expired",
+                    {**tx, "status": terminal_status, "stripe_checkout_session_id": session.get("id") or ""},
+                    terminal_status,
+                    status=terminal_status,
                     actor_user_id=tx.get("buyer_user_id") or 0,
                     extra={"stripe_event_id": event_id, "stripe_checkout_session_id": session.get("id") or ""},
                 )
@@ -96606,29 +96672,104 @@ def stripe_webhook():
                 creator_economy_service.update_webhook_event(event_id, "processed")
                 record_stripe_event(event, "processed", safe_int(metadata.get("buyer_user_id"), 0) or None)
                 return "OK", 200
-        if metadata.get("seller_transaction_id"):
-            tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
+        # A Marketplace PaymentIntent — the native Stripe sheet settles here
+        # rather than through checkout.session.completed, so this branch has to
+        # do everything that branch does: capture the held inventory, create the
+        # order, empty the paid cart lines. It also has to run *before* the
+        # singular branch below, because the buy-now sheet writes both keys.
+        marketplace_pi = metadata.get("cart_checkout") == "1" and metadata.get("seller_transaction_ids")
+        if marketplace_pi:
+            tx_ids = [safe_int(value, 0) for value in str(metadata.get("seller_transaction_ids") or "").split(",")]
+            tx_ids = [value for value in tx_ids if value]
             now = datetime.utcnow().isoformat(timespec="seconds")
+            intent_id = payment_intent.get("id") or ""
             conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-            cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
-            tx = dict(cur.fetchone() or {})
-            if tx:
-                cur.execute("UPDATE seller_transactions SET status='paid', stripe_payment_intent_id=?, updated_at=? WHERE id=?", (payment_intent.get("id") or "", now, tx_id))
-                pulse_upsert_marketplace_order(cur, tx, payment_intent.get("id") or "", now)
+            from services import marketplace_cart_routes as marketplace_cart_service
+            marketplace_cart_service._ensure_schema(cur)
+            affected_buyers = set(); affected_sellers = set()
+            for tx_id in tx_ids:
+                cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
+                tx = dict(cur.fetchone() or {})
+                if not tx:
+                    continue
+                affected_buyers.add(int(tx.get("buyer_user_id") or 0)); affected_sellers.add(int(tx.get("seller_user_id") or 0))
+                # Guarded so a replayed or late event cannot walk a refunded
+                # order back to paid.
+                cur.execute("""UPDATE seller_transactions SET status='paid', stripe_payment_intent_id=?,
+                    updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')""",
+                    (intent_id, now, tx_id))
+                marketplace_cart_service.capture_inventory_reservation(cur, tx_id, now=now)
+                pulse_upsert_marketplace_order(cur, tx, intent_id, now)
                 pulse_emit_payment_checkout_event(
                     cur,
-                    {**tx, "status": "paid", "stripe_payment_intent_id": payment_intent.get("id") or ""},
+                    {**tx, "status": "paid", "stripe_payment_intent_id": intent_id},
                     "payment_succeeded",
                     status="paid",
                     actor_user_id=tx.get("buyer_user_id") or 0,
-                    extra={"stripe_event_id": event_id, "stripe_payment_intent_id": payment_intent.get("id") or ""},
+                    extra={"stripe_event_id": event_id, "stripe_payment_intent_id": intent_id},
+                )
+            line_ids = [safe_int(value, 0) for value in str(metadata.get("cart_line_ids") or "").split(",")]
+            line_ids = [value for value in line_ids if value]
+            if line_ids:
+                cur.execute(f"DELETE FROM marketplace_cart_items WHERE id IN ({','.join(['?']*len(line_ids))}) AND user_id=?",
+                            (*line_ids, safe_int(metadata.get("buyer_user_id"), 0)))
+            for seller_id in affected_sellers:
+                if seller_id:
+                    notify_user(cur, seller_id, "marketplace_order", "New Marketplace order", "A buyer completed payment for your listing.", "/pulse/seller-store?mode=orders")
+            for buyer_id in affected_buyers:
+                if buyer_id:
+                    notify_user(cur, buyer_id, "purchase", "Marketplace order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
+            conn.commit(); conn.close()
+            resolved_event_user_id = safe_int(metadata.get("buyer_user_id"), 0) or None
+            record_stripe_event(event, "processed", resolved_event_user_id)
+            creator_economy_service.update_webhook_event(event_id, "processed")
+            return "OK", 200
+        if metadata.get("seller_transaction_id"):
+            tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            intent_id = payment_intent.get("id") or ""
+            conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+            from services import marketplace_cart_routes as marketplace_cart_service
+            marketplace_cart_service._ensure_schema(cur)
+            cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
+            tx = dict(cur.fetchone() or {})
+            if tx:
+                # Conditional: a refund that already settled must not be undone
+                # by a duplicate delivery of the original success event.
+                cur.execute("UPDATE seller_transactions SET status='paid', stripe_payment_intent_id=?, updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')",
+                            (intent_id, now, tx_id))
+                # The accepted-offer sheet reserves stock the same way the cart
+                # does, so the reservation has to be captured here too or the
+                # hold sits open forever against a sold item.
+                marketplace_cart_service.capture_inventory_reservation(cur, tx_id, now=now)
+                pulse_upsert_marketplace_order(cur, tx, intent_id, now)
+                pulse_emit_payment_checkout_event(
+                    cur,
+                    {**tx, "status": "paid", "stripe_payment_intent_id": intent_id},
+                    "payment_succeeded",
+                    status="paid",
+                    actor_user_id=tx.get("buyer_user_id") or 0,
+                    extra={"stripe_event_id": event_id, "stripe_payment_intent_id": intent_id},
                 )
                 notify_user(cur, tx.get("seller_user_id"), "seller_payment", "Payment succeeded", "Stripe confirmed a seller payment. Net payout is tracked in your payout dashboard.", f"/pulse/{tx.get('seller_type')}/payouts")
+                if int(tx.get("buyer_user_id") or 0):
+                    notify_user(cur, int(tx.get("buyer_user_id") or 0), "purchase", "Order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
                 resolved_event_user_id = int(tx.get("buyer_user_id") or 0) or None
                 conn.commit()
             conn.close()
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
+            return "OK", 200
+        # Below this line the intent is treated as a Premium Pro purchase. A
+        # Marketplace intent whose transaction rows could not be resolved must
+        # never reach that path: paying $5 for a ball is not a subscription
+        # upgrade. Record it as unmatched so it can be repaired by hand.
+        if metadata.get("item_type") == "marketplace_product" or metadata.get("listing_ids") or metadata.get("cart_checkout") == "1":
+            logging.error("MARKETPLACE_PI_UNRESOLVED event_id=%s intent=%s metadata=%s",
+                          event_id, payment_intent.get("id"), sorted(metadata.keys()))
+            record_unmatched_payment(event, payment_intent, "marketplace payment_intent had no resolvable seller_transactions")
+            record_stripe_event(event, "unmatched_marketplace", safe_int(metadata.get("buyer_user_id"), 0) or None)
+            creator_economy_service.update_webhook_event(event_id, "unmatched")
             return "OK", 200
         customer_id = payment_intent.get("customer") or ""
         user_id = find_user_by_stripe(
@@ -96702,10 +96843,15 @@ def stripe_webhook():
         now = datetime.utcnow().isoformat(timespec="seconds")
         if tx_id:
             conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+            from services import marketplace_cart_routes as marketplace_cart_service
+            marketplace_cart_service._ensure_schema(cur)
             cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
             tx = dict(cur.fetchone() or {})
             cur.execute("UPDATE creator_transactions SET status='failed', updated_at=? WHERE id=?", (now, tx_id))
-            cur.execute("UPDATE seller_transactions SET status='failed', metadata_json=?, updated_at=? WHERE id=?", (json.dumps({"stripe_event_id": event_id, "failure": failure}, default=str)[:4000], now, tx_id))
+            # A declined card must give the item back to the listing; the buy-now
+            # and accepted-offer lanes both hold stock from checkout creation.
+            marketplace_cart_service.release_inventory_reservation(cur, tx_id, now=now)
+            cur.execute("UPDATE seller_transactions SET status='failed', metadata_json=?, updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')", (json.dumps({"stripe_event_id": event_id, "failure": failure}, default=str)[:4000], now, tx_id))
             if tx:
                 pulse_emit_payment_checkout_event(
                     cur,

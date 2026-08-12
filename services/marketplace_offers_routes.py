@@ -35,6 +35,17 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, jsonify, request
 
 from services import marketplace_listing_lifecycle as listing_lifecycle
+from services import marketplace_seller_identity as seller_identity
+# The offers lane settles through the cart's helpers rather than its own copies.
+# Three checkout entry points with three private reservation implementations is
+# how one of them ends up overselling while the other two look correct.
+from services.marketplace_cart_routes import (
+    _apple_pay_merchant_id,
+    _fulfillment,
+    release_inventory_reservation,
+    stripe_shipping_checkout_params,
+)
+from services.marketplace_payment_errors import classify_provider_exception
 
 LOGGER = logging.getLogger(__name__)
 
@@ -477,7 +488,14 @@ def offer_checkout(offer_id: int):
             return _error("This offer is not open for checkout.", 409, state=state)
         seller_id = int(offer.get("seller_user_id") or 0)
         listing_id = int(offer.get("listing_id") or 0)
-        cur.execute("""SELECT l.*, COALESCE(ms.status,'missing') AS seller_status
+        payload = request.get_json(silent=True) or {}
+        # Same opt-in flag the cart lane uses: `payment_sheet` settles the offer
+        # with a PaymentIntent the native Stripe sheet can present, instead of a
+        # hosted Session the phone has to open in Safari. Everything before the
+        # provider call is shared, so the two surfaces cannot drift apart.
+        native_sheet = str(payload.get("payment_mode") or "").strip().lower() == "payment_sheet"
+        cur.execute(f"""SELECT l.*, COALESCE(ms.status,'missing') AS seller_status,
+                   {seller_identity.store_name_select('ms')}
             FROM marketplace_listings l LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
             WHERE l.id=? LIMIT 1""", (listing_id,))
         listing = dict(cur.fetchone() or {})
@@ -510,42 +528,118 @@ def offer_checkout(offer_id: int):
         tx_id = int(cur.lastrowid)
         if not bot.STRIPE_SECRET_KEY:
             cur.execute("UPDATE seller_transactions SET status='blocked_stripe_not_configured', updated_at=? WHERE id=?", (now, tx_id))
-            return _error("Stripe checkout is not configured yet. No card was charged.", 503, transaction_id=tx_id)
+            return _error("Stripe checkout is not configured yet. No card was charged.", 503,
+                          code="PAYMENT_UNAVAILABLE", transaction_id=tx_id)
+
+        qty = max(1, int(offer.get("qty") or 1))
+        fulfillment = _fulfillment(listing)
+        # An accepted offer used to skip reservation entirely, so two buyers with
+        # two accepted offers on a one-of-a-kind item could both reach Stripe.
+        # Same keyed reservation the cart uses; released if the provider call fails.
+        if fulfillment != "digital":
+            cur.execute(
+                "UPDATE marketplace_listings SET quantity=quantity-?, updated_at=? WHERE id=? AND quantity>=?",
+                (qty, now, listing_id, qty),
+            )
+            if not cur.rowcount:
+                cur.execute("UPDATE seller_transactions SET status='out_of_stock', updated_at=? WHERE id=?", (now, tx_id))
+                return _error("This item sold out before checkout. No card was charged.", 409,
+                              code="OUT_OF_STOCK", transaction_id=tx_id)
+            cur.execute(
+                """INSERT INTO marketplace_inventory_reservations
+                (seller_transaction_id,buyer_user_id,listing_id,quantity,status,created_at,updated_at)
+                VALUES (?,?,?,?, 'held',?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
+                (tx_id, buyer_id, listing_id, qty, now, now),
+            )
+
         try:
             base = (bot.APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
-            payment_intent_data = {"metadata": {"seller_transaction_id": str(tx_id),
-                                                 "buyer_user_id": str(buyer_id)}}
-            connected_account_id = str(payout.get("connected_account_id") or payout.get("provider_account_id") or "")
+            checkout_metadata = {"seller_transaction_id": str(tx_id), "offer_id": str(offer_id),
+                                 "item_type": "marketplace_product", "item_id": str(listing_id),
+                                 "buyer_user_id": str(buyer_id), "seller_user_id": str(seller_id),
+                                 "listing_ids": str(listing_id), "quantities": str(qty),
+                                 "fulfillment": fulfillment}
+            payment_intent_data = {"metadata": dict(checkout_metadata)}
+            # The old gate here read the raw account id, which exists from the
+            # moment onboarding *starts*. Stripe then rejects the transfer to an
+            # account that cannot yet accept charges, and the buyer sees
+            # "Checkout could not be created." The shared capability check routes
+            # to Connect only when charges and payouts are both enabled, and
+            # otherwise settles on the platform with the seller's share recorded
+            # in seller_transactions — an unfinished seller onboarding is not a
+            # buyer checkout prerequisite.
+            connected_account_id = bot.seller_destination_account_id(payout)
             if connected_account_id:
                 payment_intent_data.update({"application_fee_amount": platform_fee,
                                             "transfer_data": {"destination": connected_account_id}})
+            payout_state = "connect_routed" if connected_account_id else "ledger_pending_onboarding"
+            if native_sheet:
+                # Server-authoritative amount: the accepted offer price times qty,
+                # the same number the review screen was given. The sheet renders
+                # it, it never supplies it.
+                intent = bot.stripe.PaymentIntent.create(
+                    amount=amount,
+                    currency=currency.lower(),
+                    automatic_payment_methods={"enabled": True},
+                    metadata=checkout_metadata,
+                    **{k: v for k, v in payment_intent_data.items() if k != "metadata"},
+                    idempotency_key=f"marketplace-offer-sheet:{buyer_id}:{tx_id}",
+                )
+                cur.execute(
+                    "UPDATE seller_transactions SET stripe_payment_intent_id=?, status='checkout_created', updated_at=? WHERE id=?",
+                    (intent.get("id"), now, tx_id),
+                )
+                return _json({
+                    "ok": True,
+                    "payment_intent_client_secret": intent.get("client_secret"),
+                    "payment_intent_id": intent.get("id"),
+                    "publishable_key": bot.STRIPE_PUBLISHABLE_KEY,
+                    # The sheet header names the store, never the account holder.
+                    "merchant_display_name": seller_identity.display_store_name(listing),
+                    "apple_pay_merchant_id": _apple_pay_merchant_id(),
+                    "amount_cents": amount,
+                    "currency": currency,
+                    "transaction_id": tx_id,
+                    "platform_fee_cents": platform_fee,
+                    "seller_net_cents": amount - platform_fee,
+                    "payout_state": payout_state,
+                })
             session_obj = bot.stripe.checkout.Session.create(
                 mode="payment",
                 line_items=[{"price_data": {"currency": currency.lower(),
                                              "unit_amount": int(offer.get("amount_minor") or 0),
                                              "product_data": {"name": (listing.get("title") or "Marketplace item")[:120]}},
-                             "quantity": max(1, int(offer.get("qty") or 1))}],
+                             "quantity": qty}],
                 success_url=f"{base}/pulse/payments/success?transaction_id={tx_id}",
                 cancel_url=f"{base}/pulse/payments/cancel?transaction_id={tx_id}",
                 payment_intent_data=payment_intent_data,
-                metadata={"seller_transaction_id": str(tx_id), "offer_id": str(offer_id),
-                          "item_type": "marketplace_product", "item_id": str(listing_id),
-                          "buyer_user_id": str(buyer_id), "seller_user_id": str(seller_id)},
+                metadata=checkout_metadata,
+                idempotency_key=f"marketplace-offer:{buyer_id}:{tx_id}",
+                # A pickup-only offer is never asked for a delivery address.
+                **stripe_shipping_checkout_params([fulfillment]),
             )
             cur.execute(
                 "UPDATE seller_transactions SET stripe_checkout_session_id=?, status='checkout_created', updated_at=? WHERE id=?",
                 (session_obj.get("id"), now, tx_id),
             )
             return _json({"ok": True, "checkout_url": session_obj.get("url"),
-                          "transaction_id": tx_id, "amount_cents": amount})
+                          "transaction_id": tx_id, "amount_cents": amount,
+                          "platform_fee_cents": platform_fee,
+                          "seller_net_cents": amount - platform_fee,
+                          "payout_state": payout_state})
         except Exception as exc:
             trace_id = secrets.token_hex(6)
             LOGGER.exception("OFFER_CHECKOUT_CREATE_FAILED trace_id=%s offer_id=%s", trace_id, offer_id)
+            classified = classify_provider_exception(exc)
+            release_inventory_reservation(cur, tx_id, now=now)
             cur.execute(
                 "UPDATE seller_transactions SET status='checkout_failed', metadata_json=?, updated_at=? WHERE id=?",
-                (json.dumps({"error": str(exc), "trace_id": trace_id}, default=str), now, tx_id),
+                (json.dumps({"error": str(exc), "trace_id": trace_id,
+                             "provider_error": classified["provider_error"]}, default=str), now, tx_id),
             )
-            return _error("Checkout could not be created.", 500, trace_id=trace_id, transaction_id=tx_id)
+            return _error(classified["message"], classified["status"],
+                          code=classified["code"], trace_id=trace_id, transaction_id=tx_id,
+                          provider_error=classified["provider_error"])
 
     return _with_db(handler)
 

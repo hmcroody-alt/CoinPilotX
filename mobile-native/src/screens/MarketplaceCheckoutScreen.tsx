@@ -9,6 +9,11 @@ import {
   validateCart
 } from "../api/marketplaceCommerce";
 import { buyerErrorCopy } from "../api/marketplaceErrors";
+import {
+  isPaymentSheetAvailable,
+  presentPaymentSheet,
+  type PaymentSheetBootstrap
+} from "../api/stripePaymentSheet";
 import { RootStackParamList } from "../navigation/types";
 import { MARKETPLACE_CART_CTA, storeLight } from "../theme/marketplaceLight";
 
@@ -45,6 +50,9 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   const [stage, setStage] = useState<Stage>("review");
   const [transactionIds, setTransactionIds] = useState<number[]>([]);
   const [checkoutUrl, setCheckoutUrl] = useState("");
+  // The native-sheet bootstrap for this intent, cached alongside the ids so a
+  // retry re-presents the same PaymentIntent rather than minting a second one.
+  const [sheet, setSheet] = useState<PaymentSheetBootstrap | null>(null);
   const [message, setMessage] = useState("");
   const checking = useRef(false);
   // Only asked when the seller offers both lanes. There is no default: picking
@@ -117,9 +125,15 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
     setStage("opening");
     setMessage("");
     try {
+      // Only ask the server for a PaymentIntent the in-app sheet can present when
+      // this binary actually carries the Stripe SDK. A build without it stays on
+      // the hosted page and never creates an intent it cannot collect on.
+      const wantsSheet = isPaymentSheetAvailable();
+      const paymentMode = wantsSheet ? "payment_sheet" : "";
       let url = checkoutUrl;
       let ids = transactionIds;
-      if (!url || !ids.length) {
+      let bootstrap = sheet;
+      if ((!url && !bootstrap) || !ids.length) {
         if (params.mode === "cart") {
           const validation = await validateCart();
           const sellerLines = validation.lines.filter(
@@ -134,23 +148,57 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
           const result = await checkoutCartGroup(
             Number(params.sellerUserId),
             intentKey.current,
-            mustChooseLane ? (lane as Lane) : ""
+            mustChooseLane ? (lane as Lane) : "",
+            paymentMode
           );
           url = result.checkoutUrl;
           ids = [...result.transactionIds];
+          bootstrap = result.sheet;
         } else {
           const result = await openMarketplaceCheckout(
             Number(params.listingId),
             intentKey.current,
-            mustChooseLane ? (lane as Lane) : ""
+            mustChooseLane ? (lane as Lane) : "",
+            paymentMode
           );
-          url = result.checkout_url || "";
-          ids = result.transaction_id ? [Number(result.transaction_id)] : [];
+          url = result.handoff.checkoutUrl;
+          ids = [...result.handoff.transactionIds];
+          bootstrap = result.handoff.sheet;
         }
-        if (!url || !ids.length) throw new Error("Secure checkout could not be created.");
+        // A usable handoff is: a transaction to confirm against, and *some* way
+        // to collect — the native sheet or, failing that, a hosted URL.
+        if (!ids.length || (!url && !bootstrap)) throw new Error("Secure checkout could not be created.");
         setCheckoutUrl(url);
         setTransactionIds(ids);
+        setSheet(bootstrap);
       }
+
+      // Native, in-app Stripe sheet is the path whenever the server handed one
+      // back — no Safari, no webview. Success here is not proof of payment: the
+      // order is only paid once the webhook says so, which the poller below
+      // confirms. So every non-error outcome routes into `processing`.
+      if (bootstrap) {
+        const outcome = await presentPaymentSheet(bootstrap, { collectAddress: resolvedLane === "shipping" });
+        if (outcome.result === "completed") {
+          setStage("processing");
+          setMessage("Confirming your payment…");
+          return;
+        }
+        if (outcome.result === "canceled") {
+          setStage("review");
+          setMessage("You closed the payment sheet before paying. No card was charged.");
+          return;
+        }
+        if (outcome.result === "failed") {
+          setStage("review");
+          setMessage(outcome.message || "Your payment could not be completed. No card was charged.");
+          return;
+        }
+        // "unavailable": the SDK went missing between the availability check and
+        // now. Fall through to the hosted page if the server gave us one.
+      }
+
+      if (!url) throw new Error("Secure checkout could not be created.");
       setStage("processing");
       setMessage("Complete payment securely, then return to PulseSoc.");
       await Linking.openURL(url);
@@ -162,7 +210,7 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
       const local = error instanceof Error ? error.message : "";
       setMessage(buyerErrorCopy(error, local || "Checkout could not start. No card was charged."));
     }
-  }, [checkoutUrl, lane, mustChooseLane, params.listingId, params.mode, params.sellerUserId, stage, transactionIds]);
+  }, [checkoutUrl, lane, mustChooseLane, params.listingId, params.mode, params.sellerUserId, resolvedLane, sheet, stage, transactionIds]);
 
   if (stage === "confirmed") {
     const primaryId = transactionIds[0];

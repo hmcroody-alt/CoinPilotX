@@ -1,6 +1,7 @@
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { PulseAuthor, PulseMedia, mediaDisplayUrl } from "./feed";
+import { readCheckoutHandoff, type CheckoutHandoff, type CheckoutResponse } from "./marketplaceCommerce";
 import { pulseApi } from "./pulseApi";
 import { sellerStoreName, sellerStoreNameOrEmpty } from "./sellerIdentity";
 
@@ -418,12 +419,28 @@ export async function startMarketplaceSellerChat(
   });
 }
 
+/** Buy-Now result: the raw action response, plus a `handoff` normalised the
+ * exact same way the cart path is (`readCheckoutHandoff`). The checkout screen
+ * reads `handoff` alone, so Buy-Now and cart take an identical native-sheet /
+ * hosted-URL branch instead of two divergent shapes. */
+export type MarketplaceCheckoutResult = MarketplaceActionResponse & { handoff: CheckoutHandoff };
+
+/**
+ * Buy Now.
+ *
+ * `paymentMode: "payment_sheet"` asks the server for a PaymentIntent the native
+ * Stripe sheet can present in-app, instead of a hosted Checkout Session whose
+ * URL the phone can only open in Safari. The caller sends it only when the SDK
+ * is actually present in this binary, so a build without it never creates a
+ * PaymentIntent it has no way to collect on.
+ */
 export async function openMarketplaceCheckout(
   listingId: number,
   idempotencyKey = "",
-  fulfillment: "pickup" | "shipping" | "" = ""
-) {
-  const result = await pulseApi<MarketplaceActionResponse>("/api/pulse/payments/checkout", {
+  fulfillment: "pickup" | "shipping" | "" = "",
+  paymentMode: "payment_sheet" | "" = ""
+): Promise<MarketplaceCheckoutResult> {
+  const result = await pulseApi<MarketplaceActionResponse & CheckoutResponse>("/api/pulse/payments/checkout", {
     method: "POST",
     body: JSON.stringify({
       item_type: "marketplace_product",
@@ -431,10 +448,14 @@ export async function openMarketplaceCheckout(
       idempotency_key: idempotencyKey,
       // Present only for a listing that offers pickup *or* shipping, where the
       // buyer's answer decides whether Stripe collects a delivery address.
-      ...(fulfillment ? { fulfillment } : {})
+      ...(fulfillment ? { fulfillment } : {}),
+      ...(paymentMode ? { payment_mode: paymentMode } : {})
     })
   });
-  return result;
+  // Single Buy-Now returns one transaction id; the sheet bootstrap only
+  // materialises when the server actually included a client secret.
+  const ids = result.transaction_id ? [Number(result.transaction_id)] : [];
+  return { ...result, handoff: readCheckoutHandoff(result, ids) };
 }
 
 export function marketplaceWebUrl(listingId?: number) {
