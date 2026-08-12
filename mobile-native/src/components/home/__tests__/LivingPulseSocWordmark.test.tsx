@@ -10,8 +10,8 @@ jest.mock("@react-navigation/native", () => ({
 
 import { LivingPulseSocWordmark } from "../LivingPulseSocWordmark";
 
-const WELCOME_INTERVAL_MS = 60000;
-const ANIMATION_DURATION_MS = 3200;
+const WELCOME_INTERVAL_MS = 10000;
+const ANIMATION_DURATION_MS = 2200;
 
 function phaseOf(view: ReturnType<typeof render>) {
   return view.getByTestId("pulsesoc-wordmark").props.accessibilityValue.text;

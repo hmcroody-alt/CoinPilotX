@@ -6,23 +6,40 @@ import { logiNexus } from "../../theme/logiNexus";
 
 /**
  * The PulseSoc header wordmark, at rest, and its rare "welcome" signature
- * moment. Isolated from Home so the ~60s scheduling loop and its Animated
+ * moment. Isolated from Home so the ~10s scheduling loop and its Animated
  * values never cause Home (or any of its siblings in the header row) to
  * rerender — this component owns its own timer, focus/app-state awareness,
  * and animation lifecycle, and renders nothing that changes the header's
  * height or the horizontal space it occupies.
+ *
+ * Cadence is one-shot and additive, never a countdown: ~10s of quiet, then a
+ * single ~1.9s animated burst, then quiet again. The stage envelope
+ * constants below (ENTRANCE/UNDERLINE/HOLD/EXIT) exist so the schedule that
+ * unmounts the particle layer and the total-cycle math stay derived from the
+ * same numbers the Animated sequence actually uses, instead of duplicated
+ * magic numbers drifting apart over time.
  */
 
-const WELCOME_INTERVAL_MS = 60000;
+const WELCOME_INTERVAL_MS = 10000;
 const LETTERS = "PulseSoc".split("");
 const ACCENT_START_INDEX = 5; // "Pulse" | "Soc"
-const PARTICLE_COUNT = 4;
+const PARTICLE_COUNT = 3;
 const PARTICLE_OFFSETS: Array<{ left: number; top: number }> = [
-  { left: -34, top: -2 },
-  { left: -14, top: 10 },
-  { left: 14, top: 10 },
-  { left: 34, top: -2 }
+  { left: -30, top: -2 },
+  { left: 0, top: 12 },
+  { left: 30, top: -2 }
 ];
+
+// Envelope durations (ms) for the full-motion sequence. Each is an upper
+// bound on how long its stage's Animated.parallel actually takes to settle;
+// the individual timings below are tuned to land at or under these.
+const ENTRANCE_MS = 500;
+const UNDERLINE_MS = 480;
+const HOLD_MS = 500;
+const EXIT_MS = 460;
+const REDUCED_MOTION_IN_MS = 300;
+const REDUCED_MOTION_HOLD_MS = 1200;
+const REDUCED_MOTION_OUT_MS = 300;
 
 type Phase = "idle" | "welcome";
 
@@ -108,9 +125,19 @@ export function LivingPulseSocWordmark() {
 
     if (reducedMotion) {
       const sequence = Animated.sequence([
-        Animated.timing(welcomeOpacity, { toValue: 1, duration: 420, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.delay(2500),
-        Animated.timing(welcomeOpacity, { toValue: 0, duration: 420, easing: Easing.in(Easing.quad), useNativeDriver: true })
+        Animated.timing(welcomeOpacity, {
+          toValue: 1,
+          duration: REDUCED_MOTION_IN_MS,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true
+        }),
+        Animated.delay(REDUCED_MOTION_HOLD_MS),
+        Animated.timing(welcomeOpacity, {
+          toValue: 0,
+          duration: REDUCED_MOTION_OUT_MS,
+          easing: Easing.in(Easing.quad),
+          useNativeDriver: true
+        })
       ]);
       sequenceRef.current = sequence;
       setParticlesVisible(false);
@@ -123,49 +150,49 @@ export function LivingPulseSocWordmark() {
     }
 
     const entrance = Animated.parallel([
-      Animated.timing(welcomeOpacity, { toValue: 1, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(welcomeTranslate, { toValue: 0, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(staticOpacity, { toValue: 0, duration: 240, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-      Animated.timing(lettersOpacity, { toValue: 1, duration: 240, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(welcomeOpacity, { toValue: 1, duration: 250, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(welcomeTranslate, { toValue: 0, duration: 250, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(staticOpacity, { toValue: 0, duration: 180, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(lettersOpacity, { toValue: 1, duration: 180, easing: Easing.out(Easing.quad), useNativeDriver: true }),
       Animated.sequence([
-        Animated.spring(scale, { toValue: 1.05, speed: 18, bounciness: 10, useNativeDriver: true }),
-        Animated.spring(scale, { toValue: 1, speed: 14, bounciness: 6, useNativeDriver: true })
+        Animated.spring(scale, { toValue: 1.05, speed: 22, bounciness: 8, useNativeDriver: true }),
+        Animated.spring(scale, { toValue: 1, speed: 18, bounciness: 5, useNativeDriver: true })
       ]),
       Animated.stagger(
-        45,
+        25,
         letterOffsets.map((value) =>
           Animated.sequence([
-            Animated.timing(value, { toValue: -3, duration: 180, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-            Animated.timing(value, { toValue: 0, duration: 220, easing: Easing.out(Easing.quad), useNativeDriver: true })
+            Animated.timing(value, { toValue: -3, duration: 130, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+            Animated.timing(value, { toValue: 0, duration: 170, easing: Easing.out(Easing.quad), useNativeDriver: true })
           ])
         )
       )
     ]);
 
     const underlineAndParticles = Animated.parallel([
-      Animated.timing(underlinePulse, { toValue: 1, duration: 720, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(underlinePulse, { toValue: 1, duration: UNDERLINE_MS, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
       Animated.stagger(
-        55,
+        40,
         particleValues.map((value) =>
           Animated.sequence([
-            Animated.timing(value, { toValue: 1, duration: 260, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-            Animated.timing(value, { toValue: 0, duration: 340, easing: Easing.in(Easing.quad), useNativeDriver: true })
+            Animated.timing(value, { toValue: 1, duration: 180, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+            Animated.timing(value, { toValue: 0, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true })
           ])
         )
       )
     ]);
 
     const exit = Animated.parallel([
-      Animated.timing(welcomeOpacity, { toValue: 0, duration: 460, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(welcomeTranslate, { toValue: 6, duration: 460, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(staticOpacity, { toValue: 1, duration: 460, easing: Easing.in(Easing.quad), useNativeDriver: true }),
-      Animated.timing(lettersOpacity, { toValue: 0, duration: 460, easing: Easing.in(Easing.quad), useNativeDriver: true })
+      Animated.timing(welcomeOpacity, { toValue: 0, duration: EXIT_MS, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(welcomeTranslate, { toValue: 6, duration: EXIT_MS, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(staticOpacity, { toValue: 1, duration: EXIT_MS, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(lettersOpacity, { toValue: 0, duration: EXIT_MS, easing: Easing.in(Easing.quad), useNativeDriver: true })
     ]);
 
-    const sequence = Animated.sequence([entrance, underlineAndParticles, Animated.delay(1400), exit]);
+    const sequence = Animated.sequence([entrance, underlineAndParticles, Animated.delay(HOLD_MS), exit]);
     sequenceRef.current = sequence;
 
-    particleTimerRef.current = setTimeout(() => setParticlesVisible(false), 1100);
+    particleTimerRef.current = setTimeout(() => setParticlesVisible(false), ENTRANCE_MS + UNDERLINE_MS);
 
     sequence.start(({ finished }) => {
       setParticlesVisible(false);
