@@ -103401,6 +103401,18 @@ def _init_db_impl():
     )
     """)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS marketplace_inventory_reservations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        seller_transaction_id INTEGER UNIQUE,
+        buyer_user_id INTEGER,
+        listing_id INTEGER,
+        quantity INTEGER DEFAULT 1,
+        status TEXT DEFAULT 'held',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_reports (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         reporter_user_id INTEGER,
