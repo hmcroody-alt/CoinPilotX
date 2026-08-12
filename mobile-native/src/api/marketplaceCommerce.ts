@@ -18,6 +18,7 @@
  */
 
 import { pulseApi } from "./pulseApi";
+import { sellerStoreNameOrEmpty } from "./sellerIdentity";
 
 /* ------------------------------------------------------------------ *
  * Cart
@@ -44,6 +45,9 @@ export type CartLine = {
   title: string;
   cover_image_url: string;
   seller_user_id: number;
+  /** Canonical store identity; `seller_name` is the legacy alias of the same
+   * value. Resolve with `sellerStoreName()` rather than reading either directly. */
+  seller_store_name?: string;
   seller_name: string;
   fulfillment: "digital" | "pickup" | "shipping";
   added_at: string;
@@ -204,7 +208,9 @@ export function groupCartLines(
     }
     return {
       sellerUserId,
-      sellerName: sellerLines[0]?.seller_name ?? "",
+      // The group header names the store the buyer checks out with — the same
+      // name they saw on the product page, carried into checkout and the order.
+      sellerName: sellerStoreNameOrEmpty(sellerLines[0]),
       fulfillments: [...byFulfillment.entries()].map(([fulfillment, grouped]) => ({
         fulfillment,
         lines: grouped

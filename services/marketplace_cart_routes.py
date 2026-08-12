@@ -42,6 +42,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request
 
 from services import marketplace_listing_lifecycle as listing_lifecycle
+from services import marketplace_seller_identity as seller_identity
 
 LOGGER = logging.getLogger(__name__)
 
@@ -85,8 +86,26 @@ def _json(payload, status: int = 200):
     return response, status
 
 
-def _error(message: str, status: int = 400, **extra):
-    return _json({"ok": False, "message": message, **extra}, status)
+def _error(message: str, status: int = 400, *, code: str = "", **extra):
+    """A rejection the buyer can act on.
+
+    ``code`` is the stable, machine-readable half of the contract — the native
+    client maps it to buyer-facing copy and never parses ``message``. Prose gets
+    reworded; codes do not. The vocabulary is fixed and shared with the client:
+
+        ITEM_UNAVAILABLE, OUT_OF_STOCK, SELLER_UNAVAILABLE, INVALID_QUANTITY,
+        CART_FULL, PRICE_CHANGED, ADDRESS_REQUIRED, PAYMENT_UNAVAILABLE,
+        LOGIN_REQUIRED, NOT_FOUND
+
+    ``message`` stays human because web and admin surfaces render it directly.
+    """
+    payload = {"ok": False, "message": message, **extra}
+    if code:
+        # Both spellings: `error_code` is what `pulseApi` reads, `error` is what
+        # the older web handlers already look for.
+        payload["error_code"] = code
+        payload.setdefault("error", code)
+    return _json(payload, status)
 
 
 def _require_user():
@@ -96,7 +115,7 @@ def _require_user():
         LOGGER.exception("CART_AUTH_LOOKUP_FAILED")
         user = None
     if not user:
-        return None, _error("Login required.", 401)
+        return None, _error("Login required.", 401, code="LOGIN_REQUIRED")
     return user, None
 
 
@@ -213,20 +232,27 @@ def _fulfillment(listing: dict) -> str:
         return "digital"
     if delivery in {"pickup", "local", "meetup"}:
         return "pickup"
+    # A seller who offers both is reported as ``both`` rather than being silently
+    # resolved to shipping. Collapsing it here is how a buyer ends up entering a
+    # delivery address for an item they intended to collect in person — the
+    # choice is theirs to make, so it has to survive to the checkout screen.
+    if delivery in {"both", "pickup_or_shipping", "shipping_or_pickup"}:
+        return "both"
     return "shipping"
 
 
-def _stripe_payment_intent_data(*, tx_ids: list[int], buyer_id: int,
+def _stripe_payment_intent_data(*, bot, tx_ids: list[int], buyer_id: int,
                                 platform_fee: int, payout: dict) -> tuple[dict, str]:
     """Build a platform charge by default, upgrading to a destination charge
-    only when the seller already has a Connect account. Seller earnings remain
-    recorded in ``seller_transactions`` either way."""
+    only when the seller's Connect account is one Stripe will actually accept a
+    transfer to. Seller earnings are recorded in ``seller_transactions`` either
+    way, so an unfinished onboarding never blocks the buyer from paying."""
     data = {"metadata": {
         "seller_transaction_ids": ",".join(str(value) for value in tx_ids),
         "cart_checkout": "1",
         "buyer_user_id": str(buyer_id),
     }}
-    connected_account_id = str(payout.get("connected_account_id") or payout.get("provider_account_id") or "")
+    connected_account_id = bot.seller_destination_account_id(payout)
     if connected_account_id:
         data.update({
             "application_fee_amount": int(platform_fee),
@@ -236,19 +262,21 @@ def _stripe_payment_intent_data(*, tx_ids: list[int], buyer_id: int,
 
 
 def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
+    # The cart names the *store* the buyer is buying from, exactly as the product
+    # page did. `users` is not joined at all here: with no personal name in the
+    # result set there is nothing for a later edit to fall back to by accident.
     cur.execute(
-        """
+        f"""
         SELECT c.id AS line_id, c.listing_id, c.qty, c.price_snapshot_minor,
                c.currency AS snapshot_currency, c.added_at,
                l.id AS l_id, l.seller_user_id, l.title, l.price_label,
                l.currency, l.quantity, l.status, l.approval_status,
                l.delivery_type, l.product_type, l.listing_type, l.cover_image_url,
                COALESCE(ms.status, 'missing') AS seller_status,
-               COALESCE(u.display_name, u.username, 'PulseSoc Seller') AS seller_name
+               {seller_identity.store_name_select('ms')}
         FROM marketplace_cart_items c
         LEFT JOIN marketplace_listings l ON l.id = c.listing_id
         LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id
-        LEFT JOIN users u ON u.user_id = l.seller_user_id
         WHERE c.user_id = ?
         ORDER BY c.added_at DESC
         """,
@@ -274,8 +302,14 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
             "currency": currency_now,
             "title": listing.get("title") or "Removed listing",
             "cover_image_url": listing.get("cover_image_url") or "",
+            # Routing identity and presented identity, side by side and never
+            # conflated: `seller_user_id` addresses the account (DMs, payouts),
+            # `seller_store_name` is the only thing the buyer reads. `seller_name`
+            # stays as an alias of the same value so older consumers keep working
+            # without drifting back to the account holder's personal name.
             "seller_user_id": int(listing.get("seller_user_id") or 0),
-            "seller_name": row.get("seller_name") or "PulseSoc Seller",
+            "seller_store_name": seller_identity.display_store_name(row),
+            "seller_name": seller_identity.display_store_name(row),
             "fulfillment": _fulfillment(listing) if listing else "shipping",
             "added_at": row.get("added_at") or "",
         })
@@ -318,40 +352,70 @@ def cart_add():
     listing_id = int(payload.get("listing_id") or 0)
     qty = max(1, min(int(payload.get("qty") or 1), MAX_QTY_PER_LINE))
     if not listing_id:
-        return _error("Choose an item to add.", 400)
+        return _error("Choose an item to add.", 400, code="ITEM_UNAVAILABLE")
 
     def handler(cur, conn):
         cur.execute("SELECT * FROM marketplace_listings WHERE id=? LIMIT 1", (listing_id,))
         listing = dict(cur.fetchone() or {})
         if not listing:
-            return _error("Listing not found.", 404)
+            return _error("Listing not found.", 404, code="ITEM_UNAVAILABLE")
         if int(listing.get("seller_user_id") or 0) == int(user["user_id"]):
-            return _error("You cannot add your own listing.", 400)
+            return _error("You cannot add your own listing.", 400, code="OWN_LISTING")
         seller = bot.approved_marketplace_seller_for_user(cur, listing.get("seller_user_id"))
         listing["seller_status"] = (seller or {}).get("status") or ""
-        if not listing_lifecycle.is_public(listing):
-            return _error("This listing is no longer available.", 409)
+        # Project the store name onto the listing explicitly rather than relying
+        # on `SELECT *` to have carried a same-named column: publication depends
+        # on the seller having a public store identity, and that judgement must
+        # be made from the seller record it actually lives on.
+        listing["seller_store_name"] = seller_identity.store_name(seller)
+        # One helper names *why* the listing is not purchasable, so a suspended
+        # seller, a withdrawn listing, and an empty shelf stay distinguishable
+        # all the way to the buyer's screen.
+        denial = listing_lifecycle.public_denial_code(listing, qty)
+        if denial:
+            return _error({
+                "SELLER_UNAVAILABLE": "This seller is not accepting orders right now.",
+                "OUT_OF_STOCK": "This item is out of stock.",
+            }.get(denial, "This listing is no longer available."), 409, code=denial)
         price_minor, currency = _listing_price_minor(bot, listing)
         if price_minor <= 0:
-            return _error("This item is not priced for checkout.", 400)
+            return _error("This item is not priced for checkout.", 400, code="ITEM_UNAVAILABLE")
         cur.execute(
             "SELECT COUNT(*) AS n FROM marketplace_cart_items WHERE user_id=?",
             (int(user["user_id"]),),
         )
         if int(dict(cur.fetchone() or {}).get("n") or 0) >= MAX_LINES:
-            return _error("Cart is full.", 409)
+            return _error("Cart is full.", 409, code="CART_FULL")
         now = _now()
         # A duplicate tap must not duplicate the line: the UNIQUE constraint
         # turns the second add into a quantity update.
+        #
+        # The clamp is a CASE expression, not `MIN(qty + excluded.qty, N)`.
+        # `MIN(a, b)` is a SQLite-only scalar — PostgreSQL's `min()` is a
+        # one-argument aggregate (the scalar is `LEAST`), and aggregates are
+        # illegal inside DO UPDATE SET regardless. Postgres plans the whole
+        # statement up front, so that form failed on the *first* add rather than
+        # only on conflict: add-to-cart passed on local SQLite and returned a
+        # 500 in production. `services/db.py` has no MIN→LEAST rewrite, so the
+        # portable CASE form is what keeps one statement correct on both.
         cur.execute(
             """
             INSERT INTO marketplace_cart_items
                 (user_id, listing_id, qty, price_snapshot_minor, currency, added_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, listing_id)
-            DO UPDATE SET qty=MIN(qty + excluded.qty, %d), updated_at=excluded.updated_at
-            """ % MAX_QTY_PER_LINE,
-            (int(user["user_id"]), listing_id, qty, price_minor, currency, now, now),
+            DO UPDATE SET
+                qty=CASE WHEN marketplace_cart_items.qty + excluded.qty > ?
+                         THEN ?
+                         ELSE marketplace_cart_items.qty + excluded.qty END,
+                price_snapshot_minor=excluded.price_snapshot_minor,
+                currency=excluded.currency,
+                updated_at=excluded.updated_at
+            """,
+            (
+                int(user["user_id"]), listing_id, qty, price_minor, currency, now, now,
+                MAX_QTY_PER_LINE, MAX_QTY_PER_LINE,
+            ),
         )
         lines = _serialize_lines(bot, cur, int(user["user_id"]))
         return _json({"ok": True, "lines": lines,
@@ -376,7 +440,7 @@ def cart_update(line_id: int):
             (qty, _now(), line_id, int(user["user_id"])),
         )
         if not cur.rowcount:
-            return _error("Cart line not found.", 404)
+            return _error("Cart line not found.", 404, code="NOT_FOUND")
         return _json({"ok": True, "line_id": line_id, "qty": qty})
 
     return _with_db(handler)
@@ -396,7 +460,7 @@ def cart_remove(line_id: int):
             (line_id, int(user["user_id"])),
         )
         if not cur.rowcount:
-            return _error("Cart line not found.", 404)
+            return _error("Cart line not found.", 404, code="NOT_FOUND")
         return _json({"ok": True, "line_id": line_id})
 
     return _with_db(handler)
@@ -423,10 +487,10 @@ def cart_confirm_price(line_id: int):
         )
         row = dict(cur.fetchone() or {})
         if not row:
-            return _error("Cart line not found.", 404)
+            return _error("Cart line not found.", 404, code="NOT_FOUND")
         price_minor, currency = _listing_price_minor(bot, row)
         if price_minor <= 0:
-            return _error("This item is no longer priced for checkout.", 409)
+            return _error("This item is no longer priced for checkout.", 409, code="ITEM_UNAVAILABLE")
         cur.execute(
             "UPDATE marketplace_cart_items SET price_snapshot_minor=?, currency=?, updated_at=? WHERE id=?",
             (price_minor, currency, _now(), line_id),
@@ -472,8 +536,12 @@ def cart_checkout():
     payload = request.get_json(silent=True) or {}
     seller_user_id = int(payload.get("seller_user_id") or 0)
     idempotency_key = str(payload.get("idempotency_key") or "").strip()[:120]
+    # How the buyer chose to receive the order, when the seller offers a choice.
+    # It decides whether Stripe asks for a delivery address, so it has to arrive
+    # with the checkout request rather than be inferred afterwards.
+    fulfillment_choice = str(payload.get("fulfillment") or "").strip().lower()
     if not seller_user_id:
-        return _error("Choose a seller group to check out.", 400)
+        return _error("Choose a seller group to check out.", 400, code="INVALID_REQUEST")
 
     def handler(cur, conn):
         buyer_id = int(user["user_id"])
@@ -488,25 +556,33 @@ def cart_checkout():
 
         lines = [l for l in _serialize_lines(bot, cur, buyer_id) if l["seller_user_id"] == seller_user_id]
         if not lines:
-            return _error("No items from this seller in your cart.", 404)
+            return _error("No items from this seller in your cart.", 404, code="NOT_FOUND")
         if bot.ios_native_app_request() and any(l["fulfillment"] == "digital" for l in lines):
             return bot.ios_paid_digital_unavailable_response(api=True)
         blocking = [l for l in lines if l["state"] in {"sold", "removed", "restricted"}]
         if blocking:
-            return _error("Some items are no longer available.", 409,
-                          blocking_line_ids=[l["line_id"] for l in blocking])
+            return _error(
+                "Some items are no longer available.", 409,
+                code="OUT_OF_STOCK" if all(l["state"] == "sold" for l in blocking) else "ITEM_UNAVAILABLE",
+                blocking_line_ids=[l["line_id"] for l in blocking],
+            )
         unconfirmed = [l for l in lines if l["state"] == "price_changed"]
         if unconfirmed:
             return _error("Prices changed since you added these items. Confirm the new prices first.", 409,
+                          code="PRICE_CHANGED",
                           price_changed_line_ids=[l["line_id"] for l in unconfirmed])
 
         currency = lines[0]["currency"]
         if any(l["currency"] != currency for l in lines):
-            return _error("Items in different currencies must be checked out separately.", 409)
+            return _error("Items in different currencies must be checked out separately.", 409,
+                          code="MIXED_CURRENCY")
 
         approved = bot.approved_marketplace_seller_for_user(cur, seller_user_id)
         if not approved:
-            return _error("Seller is not approved for payments.", 403)
+            # Seller *approval* is a marketplace-eligibility gate and is a real
+            # reason to stop. Seller *Connect onboarding* is not: that routes to
+            # a platform charge below rather than blocking the buyer.
+            return _error("This seller is not accepting orders right now.", 403, code="SELLER_UNAVAILABLE")
         payout = bot.seller_payout_account(cur, seller_user_id, "merchant")
         fee_bps = bot.seller_fee_bps(cur, "merchant")
 
@@ -536,7 +612,8 @@ def cart_checkout():
         if not bot.STRIPE_SECRET_KEY:
             for tx_id in tx_ids:
                 cur.execute("UPDATE seller_transactions SET status='blocked_stripe_not_configured', updated_at=? WHERE id=?", (now, tx_id))
-            return _error("Stripe checkout is not configured yet. No card was charged.", 503, transaction_ids=tx_ids)
+            return _error("Stripe checkout is not configured yet. No card was charged.", 503,
+                          code="PAYMENT_UNAVAILABLE", transaction_ids=tx_ids)
         # Reserve physical inventory before handing the buyer to Stripe. The
         # reservation is keyed to the transaction, so duplicate taps cannot
         # decrement twice; expiry/failure restores it.
@@ -551,7 +628,8 @@ def cart_checkout():
             if not cur.rowcount:
                 for held_tx in tx_ids:
                     release_inventory_reservation(cur, held_tx, now=now)
-                return _error("An item sold out before checkout. No card was charged.", 409)
+                return _error("An item sold out before checkout. No card was charged.", 409,
+                              code="OUT_OF_STOCK")
             cur.execute(
                 """INSERT INTO marketplace_inventory_reservations
                 (seller_transaction_id,buyer_user_id,listing_id,quantity,status,created_at,updated_at)
@@ -563,7 +641,7 @@ def cart_checkout():
             base = (bot.APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
             primary_tx = tx_ids[0]
             payment_intent_data, connected_account_id = _stripe_payment_intent_data(
-                tx_ids=tx_ids, buyer_id=buyer_id, platform_fee=platform_fee, payout=payout
+                bot=bot, tx_ids=tx_ids, buyer_id=buyer_id, platform_fee=platform_fee, payout=payout
             )
             session_obj = bot.stripe.checkout.Session.create(
                 mode="payment",
@@ -623,7 +701,8 @@ def cart_checkout():
                     "UPDATE seller_transactions SET status='checkout_failed', metadata_json=?, updated_at=? WHERE id=?",
                     (json.dumps({"error": str(exc), "trace_id": trace_id}, default=str), now, tx_id),
                 )
-            return _error("Checkout could not be created.", 500, trace_id=trace_id, transaction_ids=tx_ids)
+            return _error("Checkout could not be created. No card was charged.", 500,
+                          code="PAYMENT_UNAVAILABLE", trace_id=trace_id, transaction_ids=tx_ids)
 
     return _with_db(handler)
 

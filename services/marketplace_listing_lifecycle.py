@@ -1,8 +1,19 @@
-"""Canonical publication and inventory policy for PulseSoc Marketplace listings."""
+"""Canonical publication and inventory policy for PulseSoc Marketplace listings.
+
+Publication has a fourth condition alongside listing status, moderation state and
+stock: the seller must have a public store name. A buyer has to know who they are
+buying from, and "who" is the storefront — see
+``services/marketplace_seller_identity``. Allowing a nameless seller to sell would
+force every buyer surface to invent an identity, and the only name lying around
+is the account holder's personal one. Better to hold the listing back and repair
+the seller record (``scripts/marketplace_store_identity_audit.py``).
+"""
 
 from __future__ import annotations
 
 from typing import Any, Mapping
+
+from services import marketplace_seller_identity as seller_identity
 
 
 DRAFT = "draft"
@@ -44,13 +55,52 @@ def inventory_available(listing: Mapping[str, Any], quantity: int = 1) -> bool:
         return False
 
 
+def seller_identity_missing(listing: Mapping[str, Any]) -> bool:
+    """True only when the row proves the seller has no public store name.
+
+    A row that was never projected with a store-name column proves nothing, so it
+    is not treated as a failure here; the SQL predicate in :func:`public_sql` is
+    where the invariant binds for discovery.
+    """
+    return (
+        seller_identity.store_identity_known(listing)
+        and not seller_identity.has_store_identity(listing)
+    )
+
+
 def is_public(listing: Mapping[str, Any]) -> bool:
     return (
         normalized(listing.get("status")) in PUBLIC_STATUSES
         and normalized(listing.get("approval_status")) in APPROVED_STATES
         and normalized(listing.get("seller_status")) == "approved"
+        and not seller_identity_missing(listing)
         and inventory_available(listing)
     )
+
+
+def public_denial_code(listing: Mapping[str, Any], quantity: int = 1) -> str:
+    """Why this listing is not purchasable, as a stable client-facing code.
+
+    Returns ``""`` when the listing *is* purchasable. Buyer clients branch on
+    this rather than on prose, and the three outcomes are genuinely different
+    next moves: a suspended seller is nobody's fault and nothing the buyer can
+    retry, an unavailable listing may come back, and out-of-stock means lower
+    the quantity or wait for a restock. Collapsing them into one "unavailable"
+    message is what makes a marketplace feel broken.
+    """
+    if normalized(listing.get("seller_status")) != "approved" or seller_identity_missing(listing):
+        # A seller with no store name is not presentable to a buyer, and the
+        # buyer's next move is the same as for a suspended one: none. It is the
+        # seller's record that needs repair, not the buyer's attempt.
+        return "SELLER_UNAVAILABLE"
+    if (
+        normalized(listing.get("status")) not in PUBLIC_STATUSES
+        or normalized(listing.get("approval_status")) not in APPROVED_STATES
+    ):
+        return "ITEM_UNAVAILABLE"
+    if not inventory_available(listing, quantity):
+        return "OUT_OF_STOCK"
+    return ""
 
 
 def public_sql(alias: str = "l", seller_alias: str = "ms") -> str:
@@ -59,6 +109,9 @@ def public_sql(alias: str = "l", seller_alias: str = "ms") -> str:
         f"LOWER(COALESCE({alias}.status,'')) IN ('published','live','active') "
         f"AND LOWER(COALESCE({alias}.approval_status,''))='approved' "
         f"AND LOWER(COALESCE({seller_alias}.status,''))='approved' "
+        # The store-name invariant. Every caller of this predicate already joins
+        # the seller row for its status, so this costs no extra join.
+        f"AND {seller_identity.store_name_sql(seller_alias)} IS NOT NULL "
         f"AND (LOWER(COALESCE({alias}.product_type,{alias}.listing_type,'')) "
         "IN ('digital','course','service','event','booking') "
         f"OR COALESCE({alias}.quantity,0)>0)"

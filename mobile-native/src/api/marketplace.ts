@@ -2,6 +2,7 @@ import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { PulseAuthor, PulseMedia, mediaDisplayUrl } from "./feed";
 import { pulseApi } from "./pulseApi";
+import { sellerStoreName, sellerStoreNameOrEmpty } from "./sellerIdentity";
 
 const MARKETPLACE_CACHE_KEY = "pulsesoc.native.marketplace.search";
 const SELLER_STORE_CACHE_KEY = "pulsesoc.native.marketplace.seller_store";
@@ -10,6 +11,13 @@ export type MarketplaceListing = {
   id: number;
   listing_id: number;
   seller_user_id?: number;
+  /**
+   * `seller_store_name` is the canonical buyer-facing identity the server
+   * projects on every marketplace payload. `seller_name` is the legacy alias of
+   * the same value, kept so older cached payloads still render. Read them
+   * through `sellerStoreName()` in `./sellerIdentity` rather than directly.
+   */
+  seller_store_name?: string;
   seller_name?: string;
   seller_username?: string;
   seller_public_player_id?: string;
@@ -382,10 +390,31 @@ export async function reportMarketplaceListing(listingId: number, reason = "Need
   });
 }
 
-export async function startMarketplaceSellerChat(sellerUserId: number) {
+/**
+ * Hand a listing off to the canonical direct conversation with its seller.
+ *
+ * The seller is identified by user id — never by listing id, store id, or
+ * display name. `/api/pulse/messages/start` also accepts a username or public
+ * Pulse id, so those are sent as a fallback for the case where a listing
+ * snapshot reaches this screen without `seller_user_id` resolved; without it
+ * the button dead-ends with "this seller cannot be messaged" even though the
+ * seller is perfectly reachable. Messenger itself is untouched: this is only
+ * the Marketplace → DM handoff.
+ */
+export async function startMarketplaceSellerChat(
+  sellerUserId: number,
+  fallback: { username?: string; publicPlayerId?: string } = {}
+) {
+  const body: Record<string, string | number> = {};
+  if (Number(sellerUserId) > 0) body.user_id = Number(sellerUserId);
+  if (fallback.publicPlayerId) body.public_player_id = fallback.publicPlayerId;
+  if (fallback.username) body.username = fallback.username;
+  if (!Object.keys(body).length) {
+    throw new Error("This seller cannot be messaged yet.");
+  }
   return pulseApi<MarketplaceActionResponse>("/api/pulse/messages/start", {
     method: "POST",
-    body: JSON.stringify({ user_id: sellerUserId })
+    body: JSON.stringify(body)
   });
 }
 
@@ -424,6 +453,11 @@ export function normalizeMarketplaceListing(item: MarketplaceListing): Marketpla
     id,
     listing_id: id,
     seller_user_id: Number(item.seller_user_id || 0),
+    // Collapse the two spellings once, here, so every downstream screen and any
+    // cached payload written before the server added `seller_store_name` agree
+    // on a single store identity.
+    seller_store_name: sellerStoreNameOrEmpty(item),
+    seller_name: sellerStoreNameOrEmpty(item),
     title: String(item.title || "PulseSoc Listing"),
     short_description: String(item.short_description || ""),
     description: String(item.description || ""),
@@ -440,7 +474,7 @@ export function marketplaceSellerAuthor(listing: MarketplaceListing): PulseAutho
   return {
     id: Number(listing.seller_user_id || 0),
     user_id: Number(listing.seller_user_id || 0),
-    display_name: listing.seller_name || "PulseSoc Seller",
+    display_name: sellerStoreName(listing),
     username: listing.seller_username || "",
     public_player_id: listing.seller_public_player_id || ""
   };

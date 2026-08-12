@@ -46,6 +46,7 @@ import {
   marketplaceAvailabilityCopy as availabilityCopy
 } from "../api/marketplaceBuyerPresentation";
 import { mediaDisplayUrl } from "../api/feed";
+import { sellerStoreName } from "../api/sellerIdentity";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
@@ -379,7 +380,7 @@ function ProductCard({ listing, busy, onOpen, onSave, onAddToCart }: {
         <Text style={styles.cardPrice} numberOfLines={1}>{listing.price_label || "Price at checkout"}</Text>
         <Text style={styles.cardTitle} numberOfLines={2}>{listing.title || "Marketplace product"}</Text>
         <Text style={[styles.cardAvailability, !purchasable && styles.cardSold]} numberOfLines={1}>{availabilityCopy(listing)}</Text>
-        <Text style={styles.cardSeller} numberOfLines={1}>{listing.seller_name || "PulseSoc Seller"}</Text>
+        <Text style={styles.cardSeller} numberOfLines={1}>{sellerStoreName(listing)}</Text>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={purchasable ? `Add ${listing.title || "product"} to cart` : "Sold out"}

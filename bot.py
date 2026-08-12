@@ -242,6 +242,7 @@ from services import (
     market_data as market_data_service,
     marketplace_listing_types as marketplace_listing_types_service,
     marketplace_listing_lifecycle as marketplace_listing_lifecycle,
+    marketplace_seller_identity as marketplace_seller_identity,
     media_service,
     media_storage,
     messenger_media_foundation,
@@ -38306,9 +38307,9 @@ def api_pulse_search():
         "marketplace",
         """
         SELECT l.id, l.title, l.description, l.short_description, l.category, l.price_label,
-               COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name
+               COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name
         FROM marketplace_listings l
-        LEFT JOIN users u ON u.user_id=l.seller_user_id
+        LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
         WHERE l.status IN ('active','approved')
           AND COALESCE(l.approval_status,'approved') IN ('approved','review_ready','')
           AND (
@@ -38317,16 +38318,20 @@ def api_pulse_search():
             OR COALESCE(l.short_description,'') LIKE ?
             OR COALESCE(l.category,'') LIKE ?
             OR COALESCE(l.tags_json,'') LIKE ?
-            OR COALESCE(u.display_name,'') LIKE ?
+            OR COALESCE(ms.display_name,'') LIKE ?
+            OR COALESCE(ms.business_name,'') LIKE ?
           )
         ORDER BY l.featured DESC, l.id DESC
         LIMIT ?
         """,
-        (like, like, like, like, like, like, limit),
+        # Marketplace search matches the store name, not the account holder's
+        # personal name: a buyer searching the owner's legal name should not
+        # surface a shop that never advertised it.
+        (like, like, like, like, like, like, like, limit),
         lambda r: {
             "id": r.get("id"),
             "title": r.get("title") or "Marketplace listing",
-            "description": (r.get("short_description") or r.get("description") or r.get("seller_name") or "Marketplace")[:180],
+            "description": (r.get("short_description") or r.get("description") or r.get("seller_store_name") or "Marketplace")[:180],
             "type": "marketplace",
             "url": f"/pulse/marketplace?listing={r.get('id')}",
             "meta": r.get("price_label") or r.get("category") or "Marketplace",
@@ -49237,9 +49242,8 @@ def pulse_marketplace_page():
     cur = conn.cursor()
     cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
     seller = dict(cur.fetchone() or {})
-    cur.execute(f"""SELECT l.*, COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name
+    cur.execute(f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')}
         FROM marketplace_listings l
-        LEFT JOIN users u ON u.user_id=l.seller_user_id
         LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
         WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
         ORDER BY l.featured DESC, l.id DESC LIMIT 40""")
@@ -49251,7 +49255,7 @@ def pulse_marketplace_page():
         promote = ""
         if seller_id == int(user.get("user_id") or 0):
             promote = f"<button data-promote-content='marketplace_listing' data-content-id='{listing_id}' data-content-label='{clean_html(row.get('title') or 'Marketplace listing')}'>Promote Listing</button>"
-        return f"<article class='card'><h2>{clean_html(row.get('title'))}</h2><p>{clean_html(row.get('description'))}</p><p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> <span class='pill'>{clean_html(row.get('price_label') or 'Request access')}</span> <span class='pill'>Safety {int(row.get('safety_score') or 0)}</span></p><p>Seller: {clean_html(row.get('seller_name'))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
+        return f"<article class='card'><h2>{clean_html(row.get('title'))}</h2><p>{clean_html(row.get('description'))}</p><p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> <span class='pill'>{clean_html(row.get('price_label') or 'Request access')}</span> <span class='pill'>Safety {int(row.get('safety_score') or 0)}</span></p><p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
 
     listing_html = "".join(marketplace_card(row) for row in listings)
     seller_form = "<section class='card'><h2>Merchant Access</h2><p class='muted'>Apply, verify, and wait for approval before listing products.</p><div class='actions'><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a><a class='button' href='/pulse/merchant/dashboard'>Merchant Dashboard</a></div></section>"
@@ -49265,7 +49269,7 @@ def pulse_marketplace_page():
     const marketplaceSearch=document.querySelector('[data-marketplace-search]');
     const marketplaceCurrentUserId=%d;
     const marketplaceEsc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';return `<article class="card"><h2>${marketplaceEsc(row.title||'Marketplace listing')}</h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> <span class="pill">${marketplaceEsc(row.price_label||'Request access')}</span> <span class="pill">Safety ${Number(row.safety_score||0)}</span></p><p>Seller: ${marketplaceEsc(row.seller_name||'PulseSoc Seller')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
+    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';return `<article class="card"><h2>${marketplaceEsc(row.title||'Marketplace listing')}</h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> <span class="pill">${marketplaceEsc(row.price_label||'Request access')}</span> <span class="pill">Safety ${Number(row.safety_score||0)}</span></p><p>Seller: ${marketplaceEsc(row.seller_store_name||row.seller_name||'PulseSoc Store')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
     let marketplaceSearchTimer=0;
     async function runMarketplaceSearch(query=''){if(!marketplaceResults)return;marketplaceResults.innerHTML='<article class="card"><p class="muted">Searching marketplace...</p></article>';try{const d=await pulseApi('/api/pulse/marketplace/search?q='+encodeURIComponent(query||''));marketplaceResults.innerHTML=(d.items||[]).map(marketplaceListingHtml).join('')||'<article class="card"><h2>No marketplace matches.</h2><p class="muted">Try another item, category, or seller.</p></article>'}catch(err){marketplaceResults.innerHTML=`<article class="card"><p class="muted">${marketplaceEsc(err.message||'Marketplace search failed.')}</p></article>`}}
     marketplaceSearch?.addEventListener('submit',e=>{e.preventDefault();runMarketplaceSearch(e.target.q.value.trim())});
@@ -49400,7 +49404,15 @@ def pulse_marketplace_listing_payload(listing, media_rows=None):
         "id": listing_id,
         "listing_id": listing_id,
         "seller_user_id": safe_int(item.get("seller_user_id"), 0),
-        "seller_name": item.get("seller_name") or "PulseSoc Seller",
+        # Buyers transact with a store, so the store name is the identity every
+        # buyer surface renders. `seller_store_name` is the explicit canonical
+        # field — the client reads that one key rather than guessing which of
+        # several name-shaped columns is the business. `seller_name` is kept as
+        # an alias of the same value so existing consumers (cart, checkout,
+        # receipts, purchase history) cannot drift back to the account holder's
+        # personal name. `seller_user_id` above stays the routing identity.
+        "seller_store_name": marketplace_seller_identity.display_store_name(item),
+        "seller_name": marketplace_seller_identity.display_store_name(item),
         "seller_username": item.get("seller_username") or "",
         "title": item.get("title") or "PulseSoc Listing",
         "short_description": item.get("short_description") or "",
@@ -49440,8 +49452,11 @@ def api_pulse_marketplace_search():
         params.append(seller_user_id)
     if query:
         like = f"%{query}%"
-        where.append("(LOWER(COALESCE(l.title,'')) LIKE ? OR LOWER(COALESCE(l.description,'')) LIKE ? OR LOWER(COALESCE(l.short_description,'')) LIKE ? OR LOWER(COALESCE(l.category,'')) LIKE ? OR LOWER(COALESCE(l.tags_json,'')) LIKE ? OR LOWER(COALESCE(u.display_name,'')) LIKE ? OR LOWER(COALESCE(u.username,'')) LIKE ?)")
-        params.extend([like, like, like, like, like, like, like])
+        # Seller matching is on the *store* name and the public handle. The
+        # account holder's personal name (users.display_name) is deliberately
+        # not searchable: a shop is discoverable by what it trades as.
+        where.append("(LOWER(COALESCE(l.title,'')) LIKE ? OR LOWER(COALESCE(l.description,'')) LIKE ? OR LOWER(COALESCE(l.short_description,'')) LIKE ? OR LOWER(COALESCE(l.category,'')) LIKE ? OR LOWER(COALESCE(l.tags_json,'')) LIKE ? OR LOWER(COALESCE(ms.display_name,'')) LIKE ? OR LOWER(COALESCE(ms.business_name,'')) LIKE ? OR LOWER(COALESCE(u.username,'')) LIKE ?)")
+        params.extend([like, like, like, like, like, like, like, like])
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -49451,7 +49466,7 @@ def api_pulse_marketplace_search():
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
                l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
                COALESCE(ms.status,'missing') AS seller_status,
-               COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
+               {marketplace_seller_identity.store_name_select('ms')},
                COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
         LEFT JOIN users u ON u.user_id=l.seller_user_id
@@ -49492,7 +49507,7 @@ def api_pulse_marketplace_seller_listings():
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
                l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
                COALESCE(ms.status,'missing') AS seller_status,
-               COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
+               {marketplace_seller_identity.store_name_select('ms')},
                COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
         LEFT JOIN users u ON u.user_id=l.seller_user_id
@@ -49517,10 +49532,11 @@ def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
         SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
                l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
-               COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
+               COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name,
                COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
         LEFT JOIN users u ON u.user_id=l.seller_user_id
+        LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
         WHERE l.id=? AND l.seller_user_id=?
         LIMIT 1
         """,
@@ -84618,6 +84634,35 @@ def seller_payout_account(cur, user_id, seller_type):
     return dict(cur.fetchone() or {})
 
 
+def seller_destination_account_id(payout):
+    """The Connect account a destination charge may safely be routed to, or "".
+
+    A payout row is written the moment a seller *starts* Connect onboarding, so
+    it carries a real ``connected_account_id`` long before Stripe will accept a
+    transfer to it — ``charges_enabled``/``payouts_enabled`` stay 0 until
+    onboarding actually completes. Attaching ``transfer_data.destination`` to
+    such an account makes Stripe reject the whole session, which turned a
+    seller's unfinished onboarding into a *buyer-facing* checkout failure.
+
+    Buyers must always be able to pay. When the account is not yet chargeable we
+    return "" so the caller falls back to a plain platform charge and records the
+    seller's earnings as ``ledger_pending_onboarding``.
+    """
+    payout = dict(payout or {})
+    account_id = str(payout.get("connected_account_id") or payout.get("provider_account_id") or "").strip()
+    if not account_id:
+        return ""
+
+    def _enabled(value):
+        return str(value).strip().lower() in {"1", "true", "yes", "t", "on"}
+
+    if not (_enabled(payout.get("charges_enabled")) and _enabled(payout.get("payouts_enabled"))):
+        return ""
+    if str(payout.get("onboarding_status") or "").strip().lower() in {"onboarding_started", "pending", "restricted", "disabled", "rejected"}:
+        return ""
+    return account_id
+
+
 @webhook_app.route("/api/pulse/payouts/connect", methods=["POST"])
 def api_pulse_payouts_connect():
     init_db()
@@ -84840,7 +84885,11 @@ def api_pulse_payments_checkout():
                 "idempotency_key": idempotency_key,
             })
         payment_intent_data = {"metadata": checkout_metadata}
-        connected_account_id = str(payout.get("connected_account_id") or payout.get("provider_account_id") or "")
+        # Seller Connect state must never be a prerequisite for the buyer to
+        # pay. Route a destination charge only to an account Stripe will
+        # actually accept; otherwise take the platform charge and settle the
+        # seller from the ledger once they finish onboarding.
+        connected_account_id = seller_destination_account_id(payout)
         if connected_account_id:
             payment_intent_data.update({"application_fee_amount": platform_fee,
                                         "transfer_data": {"destination": connected_account_id}})
@@ -85085,7 +85134,20 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
     seller_user_id = safe_int(raw.get("seller_user_id"), 0)
     seller = {}
     if seller_user_id:
-        cur.execute("SELECT user_id, username, display_name, avatar_url FROM users WHERE user_id=? LIMIT 1", (seller_user_id,))
+        # An order records who the buyer bought *from*, and that is the store.
+        # The seller's personal `users.display_name` is not selected at all here
+        # so it cannot reach a receipt or purchase-history row by accident; the
+        # username and avatar stay because they are already public identity.
+        cur.execute(
+            """
+            SELECT u.user_id, u.username, u.avatar_url,
+                   COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name
+            FROM users u
+            LEFT JOIN marketplace_sellers ms ON ms.user_id=u.user_id
+            WHERE u.user_id=? LIMIT 1
+            """,
+            (seller_user_id,),
+        )
         seller = dict(cur.fetchone() or {})
     listing = {}
     if numeric_item_id and item_type in {"marketplace_product", "product"}:
@@ -85094,10 +85156,11 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
             SELECT l.id, l.title, l.seller_user_id, l.category, l.price_label, l.currency,
                    l.cover_image_url, l.media_url AS image_url, l.cover_image_url AS thumbnail_url, l.video_url,
                    l.product_type, l.listing_type, l.listing_metadata_json,
-                   COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
+                   COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name,
                    u.username AS seller_username
             FROM marketplace_listings l
             LEFT JOIN users u ON u.user_id=l.seller_user_id
+            LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
             WHERE l.id=?
             LIMIT 1
             """,
@@ -85107,6 +85170,10 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
         if listing:
             listing["listing_type"] = marketplace_listing_types_service.effective_listing_type(listing.get("listing_type"), listing.get("product_type"))
             listing["listing_metadata"] = marketplace_listing_types_service.parse_metadata(listing.pop("listing_metadata_json", ""))
+            # `seller_name` is retained as an alias so older consumers keep
+            # rendering — but it now resolves to the store, never the owner.
+            listing["seller_store_name"] = marketplace_seller_identity.display_store_name(listing)
+            listing["seller_name"] = listing["seller_store_name"]
     title = metadata.get("title") or listing.get("title") or item_type.replace("_", " ").title()
     amount_cents = safe_int(raw.get("amount_cents"), 0) or safe_int(raw.get("gross_amount_cents"), 0)
     currency = str(raw.get("currency") or listing.get("currency") or "USD").upper()
@@ -85156,7 +85223,12 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
         "payment_status": payment_status,
         "seller": {
             "user_id": seller_user_id,
-            "display_name": seller.get("display_name") or listing.get("seller_name") or "PulseSoc Seller",
+            # The same store identity the buyer saw on the product page and in
+            # the cart, carried through payment into the order and the receipt.
+            # Switching to a personal name at any step of that chain would make
+            # the buyer's own purchase history unrecognisable to them.
+            "store_name": marketplace_seller_identity.display_store_name(seller or listing),
+            "display_name": marketplace_seller_identity.display_store_name(seller or listing),
             "username": seller.get("username") or listing.get("seller_username") or "",
             "public_player_id": "",
             "avatar_url": seller.get("avatar_url") or "",
@@ -88750,7 +88822,11 @@ def admin_payments_page():
             counts[key] = int(dict(cur.fetchone() or {}).get("total") or 0)
         except Exception:
             counts[key] = 0
-    cur.execute("SELECT t.*, COALESCE(b.display_name,b.username,'Buyer') AS buyer_name, COALESCE(s.display_name,s.username,'Seller') AS seller_name FROM seller_transactions t LEFT JOIN users b ON b.user_id=t.buyer_user_id LEFT JOIN users s ON s.user_id=t.seller_user_id ORDER BY t.id DESC LIMIT 100")
+    # Finance review: the store is the trading identity, the owner is who the
+    # money belongs to. Both, named for what they are — `seller_owner_name`
+    # rather than `seller_name`, so nothing here can be copied onto a buyer
+    # surface and quietly become the seller's public name.
+    cur.execute(f"SELECT t.*, COALESCE(b.display_name,b.username,'Buyer') AS buyer_name, COALESCE(s.display_name,s.username,'Unknown owner') AS seller_owner_name, {marketplace_seller_identity.store_name_select('ms')} FROM seller_transactions t LEFT JOIN users b ON b.user_id=t.buyer_user_id LEFT JOIN users s ON s.user_id=t.seller_user_id LEFT JOIN marketplace_sellers ms ON ms.user_id=t.seller_user_id ORDER BY t.id DESC LIMIT 100")
     transactions = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT * FROM seller_payout_accounts ORDER BY updated_at DESC, id DESC LIMIT 80")
     accounts = [dict(row) for row in cur.fetchall()]
@@ -88759,7 +88835,7 @@ def admin_payments_page():
         f"<div class='card'><h2>{clean_html(k.replace('_',' ').title())}</h2><p class='metric'>{(f'${v/100:.2f}' if k.endswith('_cents') else v)}</p></div>"
         for k, v in counts.items()
     )
-    tx_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('buyer_name') or '')}</td><td>{clean_html(t.get('seller_name') or '')}</td><td>{clean_html(t.get('seller_type') or '')}</td><td>{clean_html(t.get('item_type') or '')} #{int(t.get('item_id') or 0)}</td><td>{(int(t.get('amount_cents') or 0)/100):.2f} {clean_html(t.get('currency') or 'USD')}</td><td>{(int(t.get('platform_fee_cents') or 0)/100):.2f}</td><td>{clean_html(t.get('status') or '')}</td></tr>" for t in transactions)
+    tx_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('buyer_name') or '')}</td><td>{clean_html(marketplace_seller_identity.display_store_name(t))}<br><small>Owner: {clean_html(t.get('seller_owner_name') or '')}</small></td><td>{clean_html(t.get('seller_type') or '')}</td><td>{clean_html(t.get('item_type') or '')} #{int(t.get('item_id') or 0)}</td><td>{(int(t.get('amount_cents') or 0)/100):.2f} {clean_html(t.get('currency') or 'USD')}</td><td>{(int(t.get('platform_fee_cents') or 0)/100):.2f}</td><td>{clean_html(t.get('status') or '')}</td></tr>" for t in transactions)
     acct_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{int(a.get('user_id') or 0)}</td><td>{clean_html(a.get('seller_type') or '')}</td><td>{clean_html(a.get('onboarding_status') or '')}</td><td>{'yes' if a.get('charges_enabled') else 'no'}</td><td>{'yes' if a.get('payouts_enabled') else 'no'}</td><td>{clean_html(a.get('connected_account_id') or '')}</td></tr>" for a in accounts)
     core = creator_summary.get("summary") or {}
     core_cards = "".join(
@@ -90159,7 +90235,12 @@ def admin_marketplace_command_page():
             counts[key] = int(dict(cur.fetchone() or {}).get("total") or 0)
         except Exception:
             counts[key] = 0
-    cur.execute("""SELECT l.*, COALESCE(u.display_name,u.username,'Seller') AS seller_name,
+    # Moderation is the one place both identities belong, and they are selected
+    # under names that say which is which. A reviewer needs the store (what the
+    # buyer sees) *and* the account holder (who is accountable); the aliases keep
+    # them from being mistaken for each other, here or by a later copy-paste.
+    cur.execute(f"""SELECT l.*, COALESCE(u.display_name,u.username,'Unknown owner') AS seller_owner_name,
+        {marketplace_seller_identity.store_name_select('ms')},
         COALESCE(ms.status,'missing') AS seller_status, COALESCE(ms.verification_status,'unverified') AS seller_verification_status
         FROM marketplace_listings l LEFT JOIN users u ON u.user_id=l.seller_user_id
         LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
@@ -90179,7 +90260,7 @@ def admin_marketplace_command_page():
     for l in listings:
         media_items = media_by_listing.get(int(l.get("id") or 0), [])
         media_html = "".join((f"<video src='{clean_html(m.get('media_url') or '')}' playsinline preload='metadata'></video>" if (m.get("media_type") or "") == "video" else f"<img src='{clean_html(m.get('thumbnail_url') or m.get('media_url') or '')}' alt='Product media' loading='lazy'>") for m in media_items[:4]) or "<span class='muted'>No media</span>"
-        rows += f"<tr><td>{l.get('id')}</td><td><strong>{clean_html(l.get('title') or '')}</strong><p>{clean_html(l.get('description') or '')}</p><div class='market-media-strip'>{media_html}</div></td><td>{clean_html(l.get('seller_name') or '')}<br><small>{clean_html(l.get('seller_status') or '')} · {clean_html(l.get('seller_verification_status') or '')}</small></td><td>{clean_html(l.get('category') or '')}<br>{clean_html(l.get('price_label') or '')} {clean_html(l.get('currency') or '')}<br>Qty {int(l.get('quantity') or 0)}</td><td>{clean_html(l.get('status') or '')}<br><small>{clean_html(l.get('approval_status') or '')}</small></td><td>{int(l.get('safety_score') or 0)}</td><td><form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option><option>Prohibited item</option><option>Incomplete description</option><option>Misleading listing</option><option>Invalid price</option><option>Unsupported category</option><option>Media problem</option><option>Counterfeit concern</option><option>Policy violation</option><option>Insufficient seller information</option><option>Other</option></select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea><button name='action' value='approve'>Approve + Publish</button><button name='action' value='request_changes'>Request Changes</button><button name='action' value='reject'>Reject</button><button name='action' value='suspend'>Suspend</button><button name='action' value='archive'>Archive</button><button name='action' value='feature'>Feature</button></form></td></tr>"
+        rows += f"<tr><td>{l.get('id')}</td><td><strong>{clean_html(l.get('title') or '')}</strong><p>{clean_html(l.get('description') or '')}</p><div class='market-media-strip'>{media_html}</div></td><td>{clean_html(marketplace_seller_identity.display_store_name(l))}<br><small>Owner: {clean_html(l.get('seller_owner_name') or '')} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{clean_html(l.get('seller_status') or '')} · {clean_html(l.get('seller_verification_status') or '')}</small></td><td>{clean_html(l.get('category') or '')}<br>{clean_html(l.get('price_label') or '')} {clean_html(l.get('currency') or '')}<br>Qty {int(l.get('quantity') or 0)}</td><td>{clean_html(l.get('status') or '')}<br><small>{clean_html(l.get('approval_status') or '')}</small></td><td>{int(l.get('safety_score') or 0)}</td><td><form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option><option>Prohibited item</option><option>Incomplete description</option><option>Misleading listing</option><option>Invalid price</option><option>Unsupported category</option><option>Media problem</option><option>Counterfeit concern</option><option>Policy violation</option><option>Insufficient seller information</option><option>Other</option></select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea><button name='action' value='approve'>Approve + Publish</button><button name='action' value='request_changes'>Request Changes</button><button name='action' value='reject'>Reject</button><button name='action' value='suspend'>Suspend</button><button name='action' value='archive'>Archive</button><button name='action' value='feature'>Feature</button></form></td></tr>"
     body = f"<style>.market-media-strip{{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}}.market-media-strip img,.market-media-strip video{{width:72px;height:72px;object-fit:cover;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#020817}}td form{{display:grid;gap:6px;min-width:210px}}td textarea{{min-height:64px}}</style><h1>Marketplace Review</h1><p class='muted'>Canonical seller submission, listing moderation, publication, suspension, and audit controls.</p><p>{clean_html(message)}</p><section class='grid'>{cards}</section><section class='card'><h2>Listing Review Queue</h2><table class='table'><tr><th>ID</th><th>Product + Media</th><th>Seller</th><th>Commerce</th><th>State</th><th>Risk</th><th>Actions</th></tr>{rows or '<tr><td colspan=7>No listings yet.</td></tr>'}</table></section><p><a class='button' href='/admin/merchant-applications'>Merchant Applications</a></p>"
     return admin_page_html("Marketplace Command", body, admin)
 

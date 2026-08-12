@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LogiNexusBadge, LogiNexusSignalIndicator } from "../components/LogiNexus";
+import { LivingPulseSocWordmark } from "../components/home/LivingPulseSocWordmark";
 import { getPulseRadioState, playNextTrack, playPreviousTrack, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
 // The scope wording lives with the counts, in the unread store — not here, where
 // it could drift from the number it describes.
@@ -118,16 +119,14 @@ export function LogiNexusGlobalHeader({
           <View style={styles.brandRow}>
             {homeMode ? null : <LogiNexusSignalIndicator active tone={intelligenceMode ? "intelligence" : "default"} />}
             {homeMode && title === "PulseSoc" ? (
-              <Text style={[styles.headerTitle, styles.headerTitleHome]} numberOfLines={1}>
-                Pulse<Text style={styles.headerTitleHomeAccent}>Soc</Text>
-              </Text>
+              <LivingPulseSocWordmark />
             ) : (
               <Text style={[styles.headerTitle, homeMode && styles.headerTitleHome]} numberOfLines={1}>
                 {title}
               </Text>
             )}
           </View>
-          {homeMode ? (
+          {homeMode && title !== "PulseSoc" ? (
             <View pointerEvents="none" style={styles.homeBrandSignal}>
               <View style={styles.homeBrandSignalPrimary} />
               <Text style={styles.homeBrandPulse}>⌁</Text>

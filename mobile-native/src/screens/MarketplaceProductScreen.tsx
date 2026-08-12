@@ -52,8 +52,11 @@ import {
   marketplaceFulfillmentCopy as fulfillmentCopy,
   marketplaceListingFulfillment as listingFulfillment
 } from "../api/marketplaceBuyerPresentation";
+import { buyerErrorCopy } from "../api/marketplaceErrors";
+import { sellerStoreInitial, sellerStoreName } from "../api/sellerIdentity";
 import { conversationSplitEnabled } from "../api/conversationDomain";
 import { mediaDisplayUrl } from "../api/feed";
+import { useAuth } from "../session/auth";
 import { ContentTranslation } from "../components/ContentTranslation";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { RootStackParamList } from "../navigation/types";
@@ -64,6 +67,9 @@ import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "MarketplaceProduct">;
 
+/** The buyer actions that own a progress state of their own. */
+type ProductAction = "save" | "report" | "message" | "cart" | "buy";
+
 /** Quantity is capped to match the cart's own ceiling, so the two agree. */
 const MAX_QTY = 20;
 
@@ -71,8 +77,20 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
   const listing = route.params?.listing as MarketplaceListing | undefined;
   const listingId = Number(route.params?.listingId || listing?.id || 0);
   const { width } = useWindowDimensions();
+  const { authState } = useAuth();
+  // Seller-only affordances are hidden on identity, not on a guess. Every QA
+  // pass runs cross-account, so the common case is buyer !== seller and every
+  // buyer action must be live; only the account that owns the listing loses
+  // "Message seller" (you cannot open a DM with yourself) and the buy actions.
+  const viewerUserId = Number(authState.user?.user_id || 0);
+  const sellerUserId = Number(listing?.seller_user_id || 0);
+  const isOwnListing = viewerUserId > 0 && sellerUserId > 0 && viewerUserId === sellerUserId;
   const [qty, setQty] = useState(1);
-  const [busy, setBusy] = useState(false);
+  // One action at a time, but each action reports its own progress. A shared
+  // "busy" boolean made every button read "Please wait…" while a different
+  // button was working, which is indistinguishable from a hang.
+  const [pending, setPending] = useState<ProductAction | "">("");
+  const busy = pending !== "";
   const [notice, setNotice] = useState("");
   const [mediaIndex, setMediaIndex] = useState(0);
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -114,7 +132,16 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
   const location = readMetadata(metadata, "location");
   const brand = readMetadata(metadata, "brand");
   const availability = availabilityCopy(listing);
+  // The buyer is buying from a store. The account holder's personal name is
+  // private-side identity and must never appear on this screen, so resolve the
+  // store name once and use it for the card, the avatar, the chat title, and
+  // the checkout hand-off — a single value cannot drift between them.
+  const storeName = sellerStoreName(listing);
   const purchasable = canPurchaseListing(listing);
+  // Availability is about the listing; buyability adds "and you are not the
+  // one selling it". Keeping them separate means an owner previewing their own
+  // page still sees honest stock copy instead of a false "Sold out".
+  const canBuy = purchasable && !isOwnListing;
   const stockCeiling = isStockless(listing) ? MAX_QTY : Math.min(MAX_QTY, Math.max(1, Number(listing.quantity || 1)));
   const canNavigateStore = Boolean(listing.seller_public_player_id || listing.seller_username);
 
@@ -124,36 +151,45 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
   }
 
   async function handleSave() {
+    if (busy) return;
     const wasSaved = peekSaveState("marketplace", listingId)?.saved ?? Boolean(listing?.saved);
-    setBusy(true);
+    setPending("save");
     try {
       const outcome = await setSaved({ type: "marketplace", id: listingId }, !wasSaved);
       if (!outcome.ok && outcome.message) setNotice(outcome.message);
     } finally {
-      setBusy(false);
+      setPending("");
     }
   }
 
   async function handleReport() {
-    setBusy(true);
+    if (busy) return;
+    setPending("report");
     try {
       await reportMarketplaceListing(listingId, "Needs review");
       setNotice("Thanks — this listing has been reported.");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "This listing could not be reported.");
+      setNotice(buyerErrorCopy(error, "This listing could not be reported."));
     } finally {
-      setBusy(false);
+      setPending("");
     }
   }
 
   async function handleMessageSeller() {
-    if (!listing?.seller_user_id) {
-      setNotice("This seller cannot be messaged from the app yet.");
-      return;
-    }
-    setBusy(true);
+    if (busy) return;
+    // You cannot DM yourself, and you cannot DM a listing that hasn't loaded.
+    if (!listing || isOwnListing) return;
+    setPending("message");
+    setNotice("");
     try {
-      const result = await startMarketplaceSellerChat(Number(listing.seller_user_id));
+      // The seller is resolved by canonical user id. Username and public Pulse
+      // id ride along only as a fallback for a listing snapshot that reached
+      // this screen without the id — never as the primary identity, and never
+      // the listing id or the display name.
+      const result = await startMarketplaceSellerChat(Number(listing.seller_user_id || 0), {
+        username: listing.seller_username || undefined,
+        publicPlayerId: listing.seller_public_player_id || undefined
+      });
       if (!result.conversation_id) {
         setNotice("Seller chat is not available for this listing yet.");
         return;
@@ -163,36 +199,41 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
       if (conversationSplitEnabled()) {
         navigation.navigate("BusinessOsMessages", { title: "Messages", focusConversationId: result.conversation_id });
       } else {
-        navigation.navigate("Chat", { conversationId: result.conversation_id, title: listing.seller_name || "Seller" });
+        // Routed by `seller_user_id` above; titled with the store. Presentation
+        // and message ownership are different things and stay separate.
+        navigation.navigate("Chat", { conversationId: result.conversation_id, title: sellerStoreName(listing) });
       }
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Seller chat could not be opened.");
+      setNotice(buyerErrorCopy(error, "Seller chat could not be opened."));
     } finally {
-      setBusy(false);
+      setPending("");
     }
   }
 
   async function handleAddToCart() {
-    if (!listing || !purchasable) {
-      setNotice("This item is no longer available.");
+    if (busy) return;
+    if (!listing || !canBuy) {
+      setNotice(isOwnListing ? "This is your own listing." : "This item is no longer available.");
       return;
     }
-    setBusy(true);
+    setPending("cart");
+    setNotice("");
     try {
       // Add to cart never navigates. The buyer asked to keep shopping; sending
       // them to checkout here is the bug this screen exists to remove.
       await addToCart(listingId, qty);
       setNotice(`Added to cart · ${qty} × ${listing.title || "item"}`);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "This item could not be added to your cart.");
+      setNotice(buyerErrorCopy(error, "This item could not be added to your cart."));
     } finally {
-      setBusy(false);
+      setPending("");
     }
   }
 
   function handleBuyNow() {
-    if (!listing || !purchasable) {
-      setNotice("This item is no longer available.");
+    if (busy) return;
+    if (!listing || !canBuy) {
+      setNotice(isOwnListing ? "This is your own listing." : "This item is no longer available.");
       return;
     }
     // Buy now bypasses the cart entirely — the backend's `buy_now` intent, not a
@@ -202,7 +243,7 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
       listingId,
       itemTitle: listing.title || "Marketplace item",
       sellerUserId: Number(listing.seller_user_id || 0),
-      sellerName: listing.seller_name || "PulseSoc seller",
+      sellerName: sellerStoreName(listing),
       priceLabel: listing.price_label || "",
       quantity: qty,
       fulfillment: listingFulfillment(listing)
@@ -334,17 +375,17 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={canNavigateStore ? `View ${listing.seller_name || "seller"}'s store` : "Seller"}
+          accessibilityLabel={canNavigateStore ? `View ${storeName}'s store` : "Seller"}
           accessibilityState={{ disabled: !canNavigateStore }}
           disabled={!canNavigateStore}
           style={styles.sellerCard}
-          onPress={() => navigation.navigate("MarketplaceDetail", { sellerUserId: Number(listing.seller_user_id || 0), title: listing.seller_name || "Seller store" })}
+          onPress={() => navigation.navigate("MarketplaceDetail", { sellerUserId: Number(listing.seller_user_id || 0), title: storeName })}
         >
           <View style={styles.sellerAvatar}>
-            <Text style={styles.sellerAvatarText}>{(listing.seller_name || "P").trim().slice(0, 1).toUpperCase()}</Text>
+            <Text style={styles.sellerAvatarText}>{sellerStoreInitial(listing)}</Text>
           </View>
           <View style={styles.sellerBody}>
-            <Text style={styles.sellerName}>{listing.seller_name || "PulseSoc Seller"}</Text>
+            <Text style={styles.sellerName}>{storeName}</Text>
             <View style={styles.sellerMetaRow}>
               <Ionicons name="storefront-outline" size={14} color={storeLight.status.success} />
               <Text style={styles.sellerMeta}>Marketplace seller</Text>
@@ -378,42 +419,71 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
         </View>
 
         <View style={styles.secondaryRow}>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} disabled={busy} style={styles.secondaryAction} onPress={handleMessageSeller}>
-            <Ionicons name="chatbubble-outline" size={18} color={storeLight.text.link} />
-            <Text style={styles.secondaryActionText}>Message seller</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} disabled={busy} style={styles.secondaryAction} onPress={handleReport}>
+          {/* Message seller is hidden for exactly one viewer — the seller. Any
+              other buyer, on any account, gets a live button. */}
+          {isOwnListing ? null : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Message seller"
+              accessibilityState={{ disabled: busy, busy: pending === "message" }}
+              disabled={busy}
+              style={[styles.secondaryAction, busy && styles.disabled]}
+              onPress={handleMessageSeller}
+            >
+              <Ionicons name="chatbubble-outline" size={18} color={storeLight.text.link} />
+              <Text style={styles.secondaryActionText}>{pending === "message" ? "Opening chat…" : "Message seller"}</Text>
+            </Pressable>
+          )}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Report this listing"
+            accessibilityState={{ disabled: busy, busy: pending === "report" }}
+            disabled={busy}
+            style={[styles.secondaryAction, busy && styles.disabled]}
+            onPress={handleReport}
+          >
             <Ionicons name="flag-outline" size={18} color={storeLight.text.link} />
-            <Text style={styles.secondaryActionText}>Report</Text>
+            <Text style={styles.secondaryActionText}>{pending === "report" ? "Reporting…" : "Report"}</Text>
           </Pressable>
         </View>
 
         {notice ? <Text style={styles.notice} accessibilityLiveRegion="polite">{notice}</Text> : null}
       </ScrollView>
 
-      <View style={styles.purchaseBar}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={purchasable ? `Add ${qty} to cart` : "Sold out"}
-          accessibilityState={{ disabled: busy || !purchasable }}
-          disabled={busy || !purchasable}
-          style={[styles.addToCart, (busy || !purchasable) && styles.disabled]}
-          onPress={handleAddToCart}
-        >
-          <Ionicons name="cart-outline" size={19} color={storeLight.text.link} />
-          <Text style={styles.addToCartText}>{purchasable ? "Add to cart" : "Sold out"}</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Buy now"
-          accessibilityState={{ disabled: busy || !purchasable }}
-          disabled={busy || !purchasable}
-          style={[styles.buyNow, (busy || !purchasable) && styles.disabled]}
-          onPress={handleBuyNow}
-        >
-          <Text style={styles.buyNowText}>{busy ? "Please wait…" : "Buy now"}</Text>
-        </Pressable>
-      </View>
+      {isOwnListing ? (
+        <View style={styles.purchaseBar}>
+          <Text style={styles.ownListingNote}>This is your listing. Buyers see the purchase options here.</Text>
+        </View>
+      ) : (
+        <View style={styles.purchaseBar}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={canBuy ? `Add ${qty} to cart` : "Sold out"}
+            accessibilityState={{ disabled: busy || !canBuy, busy: pending === "cart" }}
+            disabled={busy || !canBuy}
+            style={[styles.addToCart, (busy || !canBuy) && styles.disabled]}
+            onPress={handleAddToCart}
+          >
+            <Ionicons name="cart-outline" size={19} color={storeLight.text.link} />
+            {/* Each button reports its own progress. A single shared "Please
+                wait…" made every control look stuck whenever any one of them
+                was working, which reads as a hang rather than as feedback. */}
+            <Text style={styles.addToCartText}>
+              {pending === "cart" ? "Adding…" : canBuy ? "Add to cart" : "Sold out"}
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Buy now"
+            accessibilityState={{ disabled: busy || !canBuy }}
+            disabled={busy || !canBuy}
+            style={[styles.buyNow, (busy || !canBuy) && styles.disabled]}
+            onPress={handleBuyNow}
+          >
+            <Text style={styles.buyNowText}>Buy now</Text>
+          </Pressable>
+        </View>
+      )}
 
       <NativeMediaViewer
         visible={viewerOpen}
@@ -520,6 +590,13 @@ const styles = createThemedStyles(() => ({
     fontWeight: "700",
     marginHorizontal: 16,
     marginTop: 14
+  },
+  ownListingNote: {
+    color: storeLight.text.muted,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    textAlign: "center"
   },
   pill: {
     backgroundColor: storeLight.bg.page,

@@ -38,6 +38,7 @@ import {
   type MarketplaceSellerOrder,
   type SellerStoreSnapshot
 } from "./marketplace";
+import { sellerStoreName } from "./sellerIdentity";
 import { listingHealth, type StoreListingHealth } from "./storeDashboard";
 
 /* ------------------------------------------------------------------ *
@@ -458,7 +459,7 @@ export function deriveBuyingItems(
       imageUrl: thumbnailOf(listing),
       badge: listingBadge(listing, options.now),
       saved: Boolean(listing.saved),
-      sellerName: String(listing.seller_name || "PulseSoc Seller"),
+      sellerName: sellerStoreName(listing),
       sellerUserId: Number(listing.seller_user_id || 0),
       category: String(listing.category || ""),
       fulfillment,

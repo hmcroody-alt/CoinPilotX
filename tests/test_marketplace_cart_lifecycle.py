@@ -1,8 +1,11 @@
 """Focused cart eligibility and inventory reservation tests."""
 
+import pathlib
 import sqlite3
 
 from services import marketplace_cart_routes as cart
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 def public_listing(**overrides):
@@ -50,9 +53,40 @@ def test_inventory_release_is_idempotent():
     conn.close()
 
 
+def _routing_bot():
+    """Stands in for the bot module, which owns the payout-routing decision.
+
+    Importing ``bot`` would pull in the whole Flask monolith for what is a pure
+    function, so the cart contract is exercised against a mirror of it.
+    """
+    import types
+
+    return types.SimpleNamespace(seller_destination_account_id=_seller_destination_account_id)
+
+
+def _seller_destination_account_id(payout):
+    """Mirror of ``bot.seller_destination_account_id``."""
+    payout = dict(payout or {})
+    account_id = str(payout.get("connected_account_id") or payout.get("provider_account_id") or "").strip()
+    if not account_id:
+        return ""
+
+    def _enabled(value):
+        return str(value).strip().lower() in {"1", "true", "yes", "t", "on"}
+
+    if not (_enabled(payout.get("charges_enabled")) and _enabled(payout.get("payouts_enabled"))):
+        return ""
+    if str(payout.get("onboarding_status") or "").strip().lower() in {
+        "onboarding_started", "pending", "restricted", "disabled", "rejected"
+    }:
+        return ""
+    return account_id
+
+
 def test_stripe_wiring_supports_platform_and_connect_charges():
+    bot = _routing_bot()
     platform, account = cart._stripe_payment_intent_data(
-        tx_ids=[11, 12], buyer_id=5, platform_fee=300, payout={}
+        bot=bot, tx_ids=[11, 12], buyer_id=5, platform_fee=300, payout={}
     )
     assert account == ""
     assert platform["metadata"]["seller_transaction_ids"] == "11,12"
@@ -60,12 +94,64 @@ def test_stripe_wiring_supports_platform_and_connect_charges():
     assert "application_fee_amount" not in platform
 
     destination, account = cart._stripe_payment_intent_data(
-        tx_ids=[11], buyer_id=5, platform_fee=300,
-        payout={"connected_account_id": "acct_test_contract"},
+        bot=bot, tx_ids=[11], buyer_id=5, platform_fee=300,
+        payout={
+            "connected_account_id": "acct_test_contract",
+            "charges_enabled": 1,
+            "payouts_enabled": 1,
+            "onboarding_status": "complete",
+        },
     )
     assert account == "acct_test_contract"
     assert destination["transfer_data"]["destination"] == "acct_test_contract"
     assert destination["application_fee_amount"] == 300
+
+
+def test_unfinished_seller_onboarding_still_lets_the_buyer_pay():
+    # A payout row is written the moment a seller *starts* Connect onboarding,
+    # so it carries a real account id while charges_enabled is still 0. Routing
+    # a destination charge there makes Stripe reject the session — turning the
+    # seller's paperwork into a buyer-facing checkout failure. The buyer must
+    # fall through to a platform charge instead.
+    bot = _routing_bot()
+    started, account = cart._stripe_payment_intent_data(
+        bot=bot, tx_ids=[11], buyer_id=5, platform_fee=300,
+        payout={
+            "connected_account_id": "acct_started_not_enabled",
+            "charges_enabled": 0,
+            "payouts_enabled": 0,
+            "onboarding_status": "onboarding_started",
+        },
+    )
+    assert account == ""
+    assert "transfer_data" not in started
+    assert "application_fee_amount" not in started
+    # The buyer's money still moves; the seller is paid from the ledger.
+    assert started["metadata"]["seller_transaction_ids"] == "11"
+
+
+def test_buy_now_shares_the_same_payout_routing_rule():
+    # The cart pack calls bot.seller_destination_account_id and the buy-now
+    # route uses it directly, so the two lanes cannot diverge. Guard the name
+    # and the capability check the mirror above depends on.
+    source = (REPO_ROOT / "bot.py").read_text(encoding="utf-8", errors="ignore")
+    assert "def seller_destination_account_id(payout):" in source
+    assert 'payout.get("charges_enabled")' in source
+    assert 'payout.get("payouts_enabled")' in source
+    assert "connected_account_id = seller_destination_account_id(payout)" in source
+
+
+def test_cart_upsert_avoids_sqlite_only_min():
+    # MIN(a, b) is a SQLite scalar; PostgreSQL's min() is a one-argument
+    # aggregate and aggregates are illegal in ON CONFLICT DO UPDATE SET. That
+    # form passed locally and 500'd in production, so it must not come back.
+    source = (REPO_ROOT / "services" / "marketplace_cart_routes.py").read_text(encoding="utf-8")
+    # The prose above the statement names both dialects, so only executable
+    # lines are searched.
+    code = "\n".join(line for line in source.splitlines() if not line.lstrip().startswith("#"))
+    assert "MIN(qty" not in code
+    assert "LEAST(" not in code  # Postgres-only in the other direction
+    assert "CASE WHEN marketplace_cart_items.qty + excluded.qty" in code
 
 
 def test_shipping_address_is_collected_only_for_shipped_orders(monkeypatch):
