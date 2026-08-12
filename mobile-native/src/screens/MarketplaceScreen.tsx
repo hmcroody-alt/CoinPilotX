@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
-  Linking,
   Modal,
   Pressable,
   RefreshControl,
@@ -21,7 +20,6 @@ import {
   marketplaceSellerAuthor,
   MarketplaceListing,
   marketplaceWebUrl,
-  openMarketplaceCheckout,
   reportMarketplaceListing,
   searchMarketplace,
   startMarketplaceSellerChat
@@ -35,7 +33,6 @@ import {
 } from "../api/marketplaceBuyerPresentation";
 import { conversationSplitEnabled } from "../api/conversationDomain";
 import { mediaDisplayUrl } from "../api/feed";
-import { profileNavigationParams, resolveProfileTarget } from "../api/profileTarget";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { ContentTranslation } from "../components/ContentTranslation";
 import { registerSyncInvalidation } from "../core/eventSync";
@@ -54,6 +51,7 @@ export function MarketplaceScreen({ route, navigation }: Props) {
   // reserves the matching clearance so the last row never sits under the dock.
   const dock = useBottomNavSurface();
   const initialListingId = Number(route?.params?.listingId || 0);
+  const sellerUserId = Number(route?.params?.sellerUserId || 0);
   const [items, setItems] = useState<MarketplaceListing[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -63,6 +61,15 @@ export function MarketplaceScreen({ route, navigation }: Props) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [detail, setDetail] = useState<MarketplaceListing | null>(null);
   const [cartCount, setCartCount] = useState(0);
+  const [category, setCategory] = useState("All");
+  const categories = useMemo(
+    () => ["All", ...Array.from(new Set(items.map((item) => String(item.category || "").trim()).filter(Boolean))).slice(0, 10)],
+    [items]
+  );
+  const visibleItems = useMemo(
+    () => category === "All" ? items : items.filter((item) => String(item.category || "") === category),
+    [category, items]
+  );
 
   async function load(mode: "initial" | "refresh" | "search" = "initial", nextQuery = query) {
     setError("");
@@ -70,7 +77,7 @@ export function MarketplaceScreen({ route, navigation }: Props) {
     if (mode === "initial") setLoading(true);
     if (mode === "refresh") setRefreshing(true);
     try {
-      const result = await searchMarketplace({ query: nextQuery, limit: 32 });
+      const result = await searchMarketplace({ query: nextQuery, limit: 32, sellerUserId });
       const nextItems = focusInitialListing(result.items || [], initialListingId);
       // A live search result is newer than anything the store holds, so it
       // corrects it — that is how a listing unsaved from the Saved screen stops
@@ -98,12 +105,12 @@ export function MarketplaceScreen({ route, navigation }: Props) {
   useEffect(() => {
     load("initial").catch(() => undefined);
     fetchCart().then((cart) => setCartCount(cart.badgeCount)).catch(() => undefined);
-  }, [initialListingId]);
+  }, [initialListingId, sellerUserId]);
 
   useEffect(() => {
     const unregisterMarketplace = registerSyncInvalidation("marketplace", () => load("refresh"));
     return unregisterMarketplace;
-  }, [initialListingId, query]);
+  }, [initialListingId, query, sellerUserId]);
 
   function updateListing(listingId: number, next: Partial<MarketplaceListing>) {
     setItems((current) => current.map((item) => (item.id === listingId ? { ...item, ...next } : item)));
@@ -182,16 +189,16 @@ export function MarketplaceScreen({ route, navigation }: Props) {
       setError("This item is no longer available.");
       return;
     }
-    setBusyId(listing.id);
-    try {
-      const result = await openMarketplaceCheckout(listing.id);
-      if (result.checkout_url) await Linking.openURL(result.checkout_url);
-      else setError(result.message || "Checkout is not available for this listing yet.");
-    } catch (checkoutError) {
-      setError(checkoutError instanceof Error ? checkoutError.message : "Checkout is not available for this listing yet.");
-    } finally {
-      setBusyId(null);
-    }
+    navigation?.navigate("MarketplaceCheckout", {
+      mode: "buy_now",
+      listingId: listing.id,
+      itemTitle: listing.title || "Marketplace item",
+      sellerUserId: Number(listing.seller_user_id || 0),
+      sellerName: listing.seller_name || "PulseSoc seller",
+      priceLabel: listing.price_label || "Confirmed at checkout",
+      quantity: 1,
+      fulfillment: listingFulfillment(listing)
+    });
   }
 
   async function handleAddToCart(listing: MarketplaceListing) {
@@ -226,19 +233,18 @@ export function MarketplaceScreen({ route, navigation }: Props) {
         style={styles.list}
         {...dock.handlers}
         contentContainerStyle={[styles.content, dock.contentPadding]}
-        data={items}
+        data={visibleItems}
+        numColumns={2}
+        columnWrapperStyle={styles.gridRow}
         keyExtractor={(item) => String(item.id)}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
         ListHeaderComponent={
           <View style={styles.header}>
-            <Text style={styles.title}>Marketplace</Text>
-            <Text style={styles.subtitle}>{offline ? "Showing saved marketplace results" : "PulseSoc native marketplace"}</Text>
-            <Pressable accessibilityRole="button" style={styles.sellerGatewayButton} onPress={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })}>
-              <Text style={styles.sellerGatewayText}>Seller / Store Management</Text>
-            </Pressable>
-            <Pressable accessibilityRole="button" style={styles.sellerGatewayButton} onPress={() => navigation?.navigate("BuyerOrders", { title: "Purchase History" })}>
-              <Text style={styles.sellerGatewayText}>Purchase History</Text>
-            </Pressable>
+            <View style={styles.marketHeaderRow}>
+              <View style={styles.flexTitle}><Text style={styles.title}>{sellerUserId ? route?.params?.title || "Seller store" : "Marketplace"}</Text><Text style={styles.subtitle}>{offline ? "Showing saved results" : sellerUserId ? "Approved products from this seller" : "Discover products from PulseSoc sellers"}</Text></View>
+              <Pressable accessibilityRole="button" accessibilityLabel="Saved Marketplace items" style={styles.headerIcon} onPress={() => navigation?.navigate("Saved")}><Ionicons name="heart-outline" size={22} color={colors.text} /></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Cart, ${cartCount} items`} style={styles.headerIcon} onPress={() => navigation?.navigate("MarketplaceCart", { title: `Cart${cartCount ? ` (${cartCount})` : ""}` })}><Ionicons name="cart-outline" size={23} color={colors.text} />{cartCount ? <Text style={styles.cartBadge}>{cartCount > 99 ? "99+" : cartCount}</Text> : null}</Pressable>
+            </View>
             <View style={styles.searchRow}>
               <TextInput
                 style={styles.searchInput}
@@ -252,6 +258,14 @@ export function MarketplaceScreen({ route, navigation }: Props) {
               <Pressable accessibilityRole="button" style={styles.searchButton} onPress={() => load("search", query).catch(() => undefined)}>
                 <Text style={styles.searchButtonText}>Search</Text>
               </Pressable>
+            </View>
+            <View style={styles.primaryTab}><Text style={styles.primaryTabText}>For You</Text></View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRail}>
+              {categories.map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: category === value }} style={[styles.categoryChip, category === value && styles.categoryChipActive]} onPress={() => setCategory(value)}><Text style={[styles.categoryText, category === value && styles.categoryTextActive]}>{value}</Text></Pressable>)}
+            </ScrollView>
+            <View style={styles.utilityRow}>
+              <Pressable accessibilityRole="button" onPress={() => navigation?.navigate("BuyerOrders", { title: "Purchase History" })}><Text style={styles.utilityLink}>Orders</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })}><Text style={styles.utilityLink}>Sell on PulseSoc</Text></Pressable>
             </View>
             {error ? <Text style={styles.error}>{error}</Text> : null}
           </View>
@@ -282,19 +296,19 @@ export function MarketplaceScreen({ route, navigation }: Props) {
         onCheckout={handleCheckout}
         onAddToCart={handleAddToCart}
         onOpenCart={() => navigation?.navigate("MarketplaceCart", { title: `Cart${cartCount ? ` (${cartCount})` : ""}` })}
-        onProfile={(listing) => {
-          const params = profileNavigationParams(resolveProfileTarget({
-            userId: listing.seller_user_id,
-            public_player_id: listing.seller_public_player_id,
-            username: listing.seller_username,
-            display_name: listing.seller_name,
-            source: "marketplace"
-          }), listing.seller_name || "Seller");
-          if (params) navigation?.navigate("ProfileDetail", params);
-        }}
+        onProfile={(listing) => navigation?.navigate("MarketplaceDetail", { sellerUserId: Number(listing.seller_user_id || 0), title: listing.seller_name || "Seller store" })}
       />
     </View>
   );
+}
+
+function listingFulfillment(listing: MarketplaceListing): "digital" | "pickup" | "shipping" {
+  const value = String(listing.delivery_type || listing.product_type || "").toLowerCase();
+  const metadata = (listing.listing_metadata || {}) as Record<string, unknown>;
+  const delivery = String(metadata.delivery_options || "").toLowerCase();
+  if (value === "digital" || listing.listing_type === "digital") return "digital";
+  if (value === "pickup" || delivery === "pickup") return "pickup";
+  return "shipping";
 }
 
 function MarketplaceCard({ listing, busy, onOpen, onSave, onAddToCart }: {
@@ -333,8 +347,8 @@ function MarketplaceCard({ listing, busy, onOpen, onSave, onAddToCart }: {
           <Pressable accessibilityRole="button" accessibilityLabel={`${savedState.saved ? "Remove" : "Save"} ${listing.title || "listing"}`} accessibilityState={{ disabled: busy, selected: savedState.saved }} style={styles.smallButton} disabled={busy} onPress={() => onSave(listing)}>
             <Text style={styles.smallButtonText}>{savedState.saved ? "Saved" : "Save"}</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || !canPurchaseListing(listing) }} style={styles.smallButton} disabled={busy || !canPurchaseListing(listing)} onPress={() => onAddToCart(listing)}>
-            <Text style={styles.smallButtonText}>{canPurchaseListing(listing) ? "Add to cart" : "Sold out"}</Text>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || !canPurchaseListing(listing) }} style={[styles.smallButton, styles.cardCartButton, !canPurchaseListing(listing) && styles.disabledButton]} disabled={busy || !canPurchaseListing(listing)} onPress={() => onAddToCart(listing)}>
+            <Text style={styles.cardCartText}>{canPurchaseListing(listing) ? "Add to cart" : "Sold out"}</Text>
           </Pressable>
         </View>
       </View>
@@ -423,7 +437,7 @@ function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onCo
           <View style={styles.sellerAvatar}><Text style={styles.sellerAvatarText}>{(listing.seller_name || "P").trim().slice(0, 1).toUpperCase()}</Text></View>
           <View style={styles.sellerInfo}>
             <Text style={styles.sellerTitle}>{listing.seller_name || "PulseSoc Seller"}</Text>
-            <View style={styles.verifiedRow}><Ionicons name="shield-checkmark" size={14} color={storeLight.status.success} /><Text style={styles.sellerMeta}>Verified Marketplace seller</Text></View>
+            <View style={styles.verifiedRow}><Ionicons name="storefront-outline" size={14} color={storeLight.status.success} /><Text style={styles.sellerMeta}>Marketplace seller</Text></View>
           </View>
           <Text style={styles.viewStoreText}>{canNavigateProfile ? "View store" : "Seller"}</Text>
         </Pressable>
@@ -492,26 +506,27 @@ const styles = createThemedStyles(() => ({
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
-    marginBottom: 12,
+    flex: 1,
+    marginBottom: 10,
+    maxWidth: "49%",
     overflow: "hidden"
   },
   cardActions: {
-    flexDirection: "row",
-    gap: 12,
+    gap: 8,
     marginTop: 12
   },
   cardBody: {
-    gap: 8,
-    padding: 14
+    gap: 6,
+    padding: 10
   },
   cardDescription: {
     color: colors.muted,
-    fontSize: 14,
-    lineHeight: 20
+    fontSize: 12,
+    lineHeight: 17
   },
   cardTitle: {
     color: colors.text,
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: "900"
   },
   center: {
@@ -534,17 +549,17 @@ const styles = createThemedStyles(() => ({
     fontWeight: "900"
   },
   content: {
-    padding: 16,
+    padding: 12,
     paddingBottom: 32
   },
   cover: {
-    aspectRatio: 16 / 9,
+    aspectRatio: 1,
     backgroundColor: colors.surfaceRaised,
     width: "100%"
   },
   coverFallback: {
     alignItems: "center",
-    aspectRatio: 16 / 9,
+    aspectRatio: 1,
     backgroundColor: colors.surfaceRaised,
     justifyContent: "center"
   },
@@ -626,6 +641,20 @@ const styles = createThemedStyles(() => ({
   header: {
     marginBottom: 14
   },
+  gridRow: { gap: 10 },
+  marketHeaderRow: { alignItems: "center", flexDirection: "row", gap: 7 },
+  flexTitle: { flex: 1 },
+  headerIcon: { alignItems: "center", borderColor: colors.border, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, height: 40, justifyContent: "center", position: "relative", width: 40 },
+  cartBadge: { backgroundColor: colors.danger, borderRadius: 10, color: "#fff", fontSize: 9, fontWeight: "900", minWidth: 17, overflow: "hidden", paddingHorizontal: 3, paddingVertical: 2, position: "absolute", right: -4, textAlign: "center", top: -4 },
+  primaryTab: { alignSelf: "flex-start", borderBottomColor: colors.accent, borderBottomWidth: 3, marginTop: 14, paddingBottom: 7, paddingHorizontal: 5 },
+  primaryTabText: { color: colors.text, fontSize: 14, fontWeight: "900" },
+  categoryRail: { gap: 8, paddingVertical: 11 },
+  categoryChip: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth, minHeight: 35, justifyContent: "center", paddingHorizontal: 13 },
+  categoryChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  categoryText: { color: colors.text, fontSize: 12, fontWeight: "700" },
+  categoryTextActive: { color: colors.background, fontWeight: "900" },
+  utilityRow: { flexDirection: "row", gap: 18, marginBottom: 4 },
+  utilityLink: { color: colors.accentStrong, fontSize: 13, fontWeight: "800" },
   list: {
     backgroundColor: "transparent",
     flex: 1
@@ -741,9 +770,13 @@ const styles = createThemedStyles(() => ({
     fontWeight: "900"
   },
   smallButton: {
+    alignItems: "center",
+    justifyContent: "center",
     minHeight: 34,
     paddingVertical: 8
   },
+  cardCartButton: { backgroundColor: colors.accent, borderRadius: 8, paddingHorizontal: 8 },
+  cardCartText: { color: colors.background, fontSize: 13, fontWeight: "900" },
   smallButtonText: {
     color: colors.accentStrong,
     fontSize: 13,

@@ -168,10 +168,10 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
 
   const hero = (
     <View style={styles.hero}>
-      <Text style={styles.kicker}>Commerce Ledger</Text>
+      <Text style={styles.kicker}>YOUR PURCHASES</Text>
       <Text style={styles.title}>{selected ? "Order Detail" : "Purchase History"}</Text>
       <Text style={styles.subtitle}>
-        Buyer-side order state is read from PulseSoc payment ledgers. Checkout, refunds, disputes, shipping, and receipts remain server and provider controlled.
+        Track purchases, delivery, receipts, returns, and support in one place.
       </Text>
     </View>
   );
@@ -237,7 +237,7 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
           {loadingPanel}
           <Panel>
             <Text style={styles.sectionTitle}>Transaction Timeline</Text>
-            <Text style={styles.copy}>Receipts, disputes, payment confirmation, and seller fulfillment stay aligned with existing PulseSoc backend records.</Text>
+            <Text style={styles.copy}>Open an order to view its receipt, seller, delivery status, or request support.</Text>
             <View style={styles.stats}>
               <Metric label="Orders" value={String(orders.length)} />
               <Metric label="Paid" value={String(orders.filter((order) => order.status_group === "paid").length)} />
@@ -273,7 +273,7 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
         ) : (
           <Panel>
             <Text style={styles.sectionTitle}>No purchases yet</Text>
-            <Text style={styles.copy}>Marketplace and learning purchases will appear here after checkout creates a server-side transaction.</Text>
+            <Text style={styles.copy}>Completed and processing purchases will appear here after checkout.</Text>
             <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
               <Text style={styles.primaryText}>Browse Marketplace</Text>
             </Pressable>
@@ -318,12 +318,12 @@ function OrderDetail({
         <View style={styles.timeline}>
           <TimelineStep label="Created" value={formatDate(order.created_at)} active />
           <TimelineStep label="Payment" value={STATUS_COPY[String(order.status_group)] || String(order.status || "Pending")} active={["paid", "processing", "shipped", "delivered"].includes(String(order.status_group))} />
-          <TimelineStep label="Fulfillment" value={order.tracking?.message || "Provider controlled"} active={["shipped", "delivered"].includes(String(order.status_group))} />
+          <TimelineStep label="Fulfillment" value={order.tracking?.message || "Waiting for seller update"} active={["shipped", "delivered"].includes(String(order.status_group))} />
         </View>
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Financial summary</Text>
+        <Text style={styles.sectionTitle}>Order summary</Text>
         <Line label="Amount" value={formatOrderMoney(order)} />
         <Line label="Currency" value={String(order.currency || "USD")} />
         <Line label="Payment" value={String(order.payment_status || order.status_group || "pending")} />
@@ -349,8 +349,8 @@ function OrderDetail({
       ) : null}
 
       <Panel>
-        <Text style={styles.sectionTitle}>Buyer controls</Text>
-        <Text style={styles.copy}>Receipt, support, dispute, shipping, and provider pages open through existing PulseSoc web/provider flows.</Text>
+        <Text style={styles.sectionTitle}>Receipt and support</Text>
+        <Text style={styles.copy}>Your receipt reflects the confirmed payment and order state.</Text>
         <View style={styles.buttonRow}>
           <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => openBuyerOrderFallback(order.receipt_url || buyerOrderWebUrl(order)).catch(() => undefined)}>
             <Text style={styles.primaryText}>View Receipt</Text>

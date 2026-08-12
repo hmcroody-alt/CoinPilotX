@@ -49432,8 +49432,12 @@ def api_pulse_marketplace_search():
         return api_error("Login required.", 401)
     query = clean_html(request.args.get("q") or "")[:120].strip().lower()
     limit = max(1, min(safe_int(request.args.get("limit"), 24), 40))
+    seller_user_id = max(0, safe_int(request.args.get("seller_user_id"), 0))
     where = [marketplace_listing_lifecycle.public_sql("l", "ms")]
     params = []
+    if seller_user_id:
+        where.append("l.seller_user_id=?")
+        params.append(seller_user_id)
     if query:
         like = f"%{query}%"
         where.append("(LOWER(COALESCE(l.title,'')) LIKE ? OR LOWER(COALESCE(l.description,'')) LIKE ? OR LOWER(COALESCE(l.short_description,'')) LIKE ? OR LOWER(COALESCE(l.category,'')) LIKE ? OR LOWER(COALESCE(l.tags_json,'')) LIKE ? OR LOWER(COALESCE(u.display_name,'')) LIKE ? OR LOWER(COALESCE(u.username,'')) LIKE ?)")
@@ -84681,15 +84685,26 @@ def api_pulse_payments_checkout():
     buyer = api_account_user()
     if not buyer:
         return api_error("Login required.", 401)
-    if ios_native_app_request():
-        return ios_paid_digital_unavailable_response(api=True)
     payload = request.get_json(silent=True) or {}
     item_type = payload.get("item_type") if payload.get("item_type") in {"marketplace_product", "course", "lesson", "live_class"} else ""
     item_id = safe_int(payload.get("item_id"), 0)
+    idempotency_key = str(payload.get("idempotency_key") or "").strip()[:120]
     if not item_type or not item_id:
         return api_error("Choose an item to buy.", 400)
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    if item_type == "marketplace_product":
+        from services import marketplace_cart_routes as marketplace_cart_service
+        marketplace_cart_service._ensure_schema(cur)
+        if idempotency_key:
+            cur.execute(
+                "SELECT response_json FROM marketplace_cart_checkout_keys WHERE user_id=? AND idempotency_key=? LIMIT 1",
+                (int(buyer["user_id"]), idempotency_key),
+            )
+            replay = dict(cur.fetchone() or {})
+            if replay.get("response_json"):
+                conn.close()
+                return jsonify({**json.loads(replay["response_json"]), "replayed": True})
     item = {}
     seller_type = "merchant"
     if item_type == "marketplace_product":
@@ -84782,11 +84797,48 @@ def api_pulse_payments_checkout():
         )
         conn.commit(); conn.close()
         return api_error("Stripe checkout is not configured yet. No card was charged.", 503, transaction_id=tx_id)
+    inventory_held = False
+    shipping_checkout_params = {}
+    if item_type == "marketplace_product":
+        listing_kind = str(item.get("listing_type") or item.get("product_type") or "physical").lower()
+        try:
+            listing_metadata = json.loads(item.get("listing_metadata_json") or "{}")
+            if not isinstance(listing_metadata, dict):
+                listing_metadata = {}
+        except Exception:
+            listing_metadata = {}
+        delivery_kind = str(item.get("delivery_type") or listing_metadata.get("delivery_options") or "shipping").lower()
+        shipping_checkout_params = marketplace_cart_service.stripe_shipping_checkout_params([delivery_kind])
+        inventory_limited = listing_kind not in {"digital", "service", "event", "booking"} and delivery_kind != "digital"
+        if inventory_limited:
+            cur.execute(
+                "UPDATE marketplace_listings SET quantity=quantity-1, updated_at=? WHERE id=? AND quantity>=1",
+                (now, item_id),
+            )
+            if not cur.rowcount:
+                cur.execute("UPDATE seller_transactions SET status='checkout_failed', updated_at=? WHERE id=?", (now, tx_id))
+                conn.commit(); conn.close()
+                return api_error("This item is no longer available. No card was charged.", 409, transaction_id=tx_id)
+            cur.execute(
+                """INSERT INTO marketplace_inventory_reservations
+                (seller_transaction_id,buyer_user_id,listing_id,quantity,status,created_at,updated_at)
+                VALUES (?,?,?,?, 'held',?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
+                (tx_id, int(buyer["user_id"]), item_id, 1, now, now),
+            )
+            inventory_held = True
     try:
         base = (APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
         checkout_metadata = {"seller_transaction_id": str(tx_id), "seller_type": seller_type,
             "item_type": item_type, "item_id": str(item_id), "buyer_user_id": str(buyer["user_id"]),
             "seller_user_id": str(seller_user_id)}
+        if item_type == "marketplace_product":
+            checkout_metadata.update({
+                "cart_checkout": "1",
+                "seller_transaction_ids": str(tx_id),
+                "listing_ids": str(item_id),
+                "quantities": "1",
+                "idempotency_key": idempotency_key,
+            })
         payment_intent_data = {"metadata": checkout_metadata}
         connected_account_id = str(payout.get("connected_account_id") or payout.get("provider_account_id") or "")
         if connected_account_id:
@@ -84799,6 +84851,8 @@ def api_pulse_payments_checkout():
             cancel_url=f"{base}/pulse/payments/cancel?transaction_id={tx_id}",
             payment_intent_data=payment_intent_data,
             metadata=checkout_metadata,
+            idempotency_key=f"marketplace-buy-now:{int(buyer['user_id'])}:{idempotency_key or tx_id}",
+            **shipping_checkout_params,
         )
         cur.execute("UPDATE seller_transactions SET stripe_checkout_session_id=?, status='checkout_created', updated_at=? WHERE id=?", (session_obj.get("id"), now, tx_id))
         pulse_emit_payment_checkout_event(
@@ -84809,13 +84863,22 @@ def api_pulse_payments_checkout():
             actor_user_id=buyer["user_id"],
             extra={"stripe_checkout_session_id": session_obj.get("id") or ""},
         )
+        response_payload = {"ok": True, "checkout_url": session_obj.get("url"), "transaction_id": tx_id,
+                            "platform_fee_cents": platform_fee, "seller_net_cents": seller_net,
+                            "payout_state": "connect_routed" if connected_account_id else "ledger_pending_onboarding"}
+        if item_type == "marketplace_product" and idempotency_key:
+            cur.execute(
+                """INSERT INTO marketplace_cart_checkout_keys (user_id,idempotency_key,response_json,created_at)
+                VALUES (?,?,?,?) ON CONFLICT(user_id,idempotency_key) DO NOTHING""",
+                (int(buyer["user_id"]), idempotency_key, json.dumps(response_payload, default=str), now),
+            )
         conn.commit(); conn.close()
-        return jsonify({"ok": True, "checkout_url": session_obj.get("url"), "transaction_id": tx_id,
-                        "platform_fee_cents": platform_fee, "seller_net_cents": seller_net,
-                        "payout_state": "connect_routed" if connected_account_id else "ledger_pending_onboarding"})
+        return jsonify(response_payload)
     except Exception as exc:
         trace_id = secrets.token_hex(6)
         logging.exception("SELLER_CHECKOUT_CREATE_FAILED trace_id=%s tx_id=%s", trace_id, tx_id)
+        if inventory_held:
+            marketplace_cart_service.release_inventory_reservation(cur, tx_id, now=now)
         cur.execute("UPDATE seller_transactions SET status='checkout_failed', metadata_json=?, updated_at=? WHERE id=?", (json.dumps({"error": str(exc), "trace_id": trace_id}, default=str), now, tx_id))
         pulse_emit_payment_checkout_event(
             cur,

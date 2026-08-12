@@ -153,6 +153,31 @@ export async function checkoutCartGroup(
   };
 }
 
+export type MarketplacePaymentStatus = "pending" | "paid" | "failed" | "canceled" | "refunded";
+
+export type MarketplacePaymentOrder = {
+  id: number;
+  status: string;
+  paymentStatus: MarketplacePaymentStatus;
+  fulfilled: boolean;
+};
+
+/** Read the canonical server transaction after Stripe hands control back.
+ * The client never promotes a browser return into payment success. */
+export async function getMarketplacePaymentOrder(transactionId: number): Promise<MarketplacePaymentOrder> {
+  const data = (await pulseApi(`/api/pulse/payments/orders/${transactionId}`)) as {
+    order?: { id?: number; status?: string };
+    payment_status?: MarketplacePaymentStatus;
+    fulfilled?: boolean;
+  };
+  return {
+    id: Number(data.order?.id || transactionId),
+    status: String(data.order?.status || data.payment_status || "pending"),
+    paymentStatus: data.payment_status || "pending",
+    fulfilled: Boolean(data.fulfilled)
+  };
+}
+
 /** Group lines the way checkout charges them: one group per seller, split by
  * fulfillment inside the group so digital / pickup / shipping never blur. */
 export function groupCartLines(

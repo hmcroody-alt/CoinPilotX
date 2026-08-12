@@ -220,14 +220,15 @@ export type SellerStoreSnapshot = {
   cached_at?: string;
 };
 
-export async function searchMarketplace(params: { query?: string; limit?: number } = {}) {
+export async function searchMarketplace(params: { query?: string; limit?: number; sellerUserId?: number } = {}) {
   const query = new URLSearchParams({
     q: params.query || "",
     limit: String(params.limit || 24)
   });
+  if (params.sellerUserId) query.set("seller_user_id", String(params.sellerUserId));
   const data = await pulseApi<MarketplaceSearchResponse>(`/api/pulse/marketplace/search?${query.toString()}`);
   const items = normalizeMarketplaceListings(data.items || data.listings || []);
-  await cacheMarketplace(items).catch(() => undefined);
+  if (!params.sellerUserId) await cacheMarketplace(items).catch(() => undefined);
   return { ...data, items };
 }
 
@@ -382,10 +383,14 @@ export async function startMarketplaceSellerChat(sellerUserId: number) {
   });
 }
 
-export async function openMarketplaceCheckout(listingId: number) {
+export async function openMarketplaceCheckout(listingId: number, idempotencyKey = "") {
   const result = await pulseApi<MarketplaceActionResponse>("/api/pulse/payments/checkout", {
     method: "POST",
-    body: JSON.stringify({ item_type: "marketplace_product", item_id: listingId })
+    body: JSON.stringify({
+      item_type: "marketplace_product",
+      item_id: listingId,
+      idempotency_key: idempotencyKey
+    })
   });
   return result;
 }

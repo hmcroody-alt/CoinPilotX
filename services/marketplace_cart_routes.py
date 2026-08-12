@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import secrets
 from datetime import datetime, timezone
 
@@ -47,6 +48,20 @@ LOGGER = logging.getLogger(__name__)
 cart_blueprint = Blueprint("pulse_marketplace_cart", __name__)
 
 API_PREFIX = "/api/pulse/marketplace/cart"
+
+
+def stripe_shipping_checkout_params(fulfillments) -> dict:
+    """Collect a shipping address only when an order actually ships.
+
+    Stripe requires an explicit country allowlist. Production may widen it via
+    ``MARKETPLACE_SHIPPING_COUNTRIES``; the conservative default matches the
+    currently launched US Marketplace instead of pretending global delivery.
+    """
+    if not {"shipping", "both"}.intersection({str(value or "").lower() for value in fulfillments}):
+        return {}
+    configured = [value.strip().upper() for value in os.getenv("MARKETPLACE_SHIPPING_COUNTRIES", "US").split(",")]
+    allowed = [value for value in configured if len(value) == 2 and value.isalpha()]
+    return {"shipping_address_collection": {"allowed_countries": allowed or ["US"]}}
 
 MAX_QTY_PER_LINE = 20
 MAX_LINES = 100
@@ -571,6 +586,7 @@ def cart_checkout():
                           "quantities": ",".join(str(l["qty"]) for l in lines),
                           "idempotency_key": idempotency_key},
                 idempotency_key=f"marketplace-cart:{buyer_id}:{idempotency_key or primary_tx}",
+                **stripe_shipping_checkout_params(l["fulfillment"] for l in lines),
             )
             for tx_id in tx_ids:
                 cur.execute(

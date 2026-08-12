@@ -66,3 +66,12 @@ def test_stripe_wiring_supports_platform_and_connect_charges():
     assert account == "acct_test_contract"
     assert destination["transfer_data"]["destination"] == "acct_test_contract"
     assert destination["application_fee_amount"] == 300
+
+
+def test_shipping_address_is_collected_only_for_shipped_orders(monkeypatch):
+    monkeypatch.setenv("MARKETPLACE_SHIPPING_COUNTRIES", "US,CA,invalid,1")
+    assert cart.stripe_shipping_checkout_params(["pickup"]) == {}
+    assert cart.stripe_shipping_checkout_params(["shipping"]) == {
+        "shipping_address_collection": {"allowed_countries": ["US", "CA"]}
+    }
+    assert cart.stripe_shipping_checkout_params(["both"])["shipping_address_collection"]["allowed_countries"] == ["US", "CA"]

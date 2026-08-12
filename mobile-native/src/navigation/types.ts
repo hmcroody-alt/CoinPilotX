@@ -116,7 +116,7 @@ export type RootStackParamList = {
   Reels: { reelId?: number; title?: string } | undefined;
   ReelDetail: { reelId: number; title?: string };
   StatusDetail: { statusId: number; title?: string };
-  MarketplaceDetail: { listingId?: number; title?: string } | undefined;
+  MarketplaceDetail: { listingId?: number; sellerUserId?: number; title?: string } | undefined;
   /**
    * The dark Business OS sections screen. `mode` is retained but currently
    * inert: the light hub redesign was reverted, so every value — including
@@ -155,6 +155,19 @@ export type RootStackParamList = {
    * charges. Reached from the Marketplace buying header's cart badge.
    */
   MarketplaceCart: { title?: string } | undefined;
+  MarketplaceCheckout: {
+    mode: "cart" | "buy_now";
+    title?: string;
+    sellerUserId?: number;
+    sellerName?: string;
+    listingId?: number;
+    itemTitle?: string;
+    priceLabel?: string;
+    subtotalMinor?: number;
+    currency?: string;
+    quantity?: number;
+    fulfillment?: "digital" | "pickup" | "shipping";
+  };
   /**
    * One route, several screens. Default is the rebuilt two-sided ads manager;
    * `mode: "classic"` renders the previous screen, which still owns the

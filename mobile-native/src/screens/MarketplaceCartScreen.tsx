@@ -37,11 +37,10 @@
  */
 
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Image,
-  Linking,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -49,13 +48,11 @@ import {
   View
 } from "react-native";
 import {
-  checkoutCartGroup,
   confirmCartLinePrice,
   fetchCart,
   groupCartLines,
   removeCartLine,
   updateCartLine,
-  validateCart,
   type CartLine,
   type CartSnapshot
 } from "../api/marketplaceCommerce";
@@ -101,9 +98,6 @@ export function MarketplaceCartScreen({ navigation }: Props) {
   const [busyLines, setBusyLines] = useState<readonly number[]>([]);
   /** Seller whose confirm step is open, and the per-intent idempotency key. */
   const [confirmSeller, setConfirmSeller] = useState<number | null>(null);
-  const [checkoutBusy, setCheckoutBusy] = useState(false);
-  const [checkoutNote, setCheckoutNote] = useState("");
-  const intentKey = useRef<string>("");
 
   useScreenPerf("MarketplaceCart");
 
@@ -176,61 +170,30 @@ export function MarketplaceCartScreen({ navigation }: Props) {
 
   /** Opening the confirm step mints the intent key; closing it discards it. */
   const openConfirm = useCallback((sellerUserId: number) => {
-    intentKey.current = `cart-${sellerUserId}-${Date.now().toString(36)}-${Math.random()
-      .toString(36)
-      .slice(2, 10)}`;
     setConfirmSeller(sellerUserId);
-    setCheckoutNote("");
   }, []);
 
   const closeConfirm = useCallback(() => {
-    intentKey.current = "";
     setConfirmSeller(null);
-    setCheckoutNote("");
   }, []);
 
-  const confirmCheckout = useCallback(
-    async (sellerUserId: number) => {
-      if (checkoutBusy) return;
-      setCheckoutBusy(true);
-      setCheckoutNote("");
-      try {
-        // Validate first so a stale screen learns about a sold line here, with
-        // copy, rather than as a bare 409 from checkout.
-        const validation = await validateCart();
-        setCart({ lines: validation.lines, badgeCount: validation.lines.length });
-        const groupLineIds = validation.lines
-          .filter((line) => line.seller_user_id === sellerUserId)
-          .map((line) => line.line_id);
-        const blocked = validation.blockingLineIds.some((id) => groupLineIds.includes(id));
-        const needsConfirm = validation.priceChangedLineIds.some((id) =>
-          groupLineIds.includes(id)
-        );
-        if (blocked) {
-          setCheckoutNote("Some items are no longer available. Remove them to continue.");
-          return;
-        }
-        if (needsConfirm) {
-          setCheckoutNote("A price changed. Review and accept it to continue.");
-          return;
-        }
-        const result = await checkoutCartGroup(sellerUserId, intentKey.current);
-        if (result.checkoutUrl) {
-          setCheckoutNote("Secure checkout is ready. PulseSoc will confirm your order only after payment succeeds.");
-          await Linking.openURL(result.checkoutUrl);
-        } else {
-          setCheckoutNote("Checkout is not available for this seller yet.");
-        }
-      } catch (checkoutError) {
-        setCheckoutNote(
-          checkoutError instanceof Error ? checkoutError.message : "Checkout could not start."
-        );
-      } finally {
-        setCheckoutBusy(false);
-      }
-    },
-    [checkoutBusy]
-  );
+  const openCheckout = useCallback((group: (typeof groups)[number]) => {
+    const fulfillment = group.fulfillments.some((entry) => entry.fulfillment === "shipping")
+      ? "shipping"
+      : group.fulfillments.some((entry) => entry.fulfillment === "pickup") ? "pickup" : "digital";
+    navigation.navigate("MarketplaceCheckout", {
+      mode: "cart",
+      sellerUserId: group.sellerUserId,
+      sellerName: group.sellerName,
+      itemTitle: group.fulfillments.flatMap((entry) => entry.lines).length === 1
+        ? group.fulfillments[0]?.lines[0]?.title || "Marketplace item"
+        : `${group.fulfillments.flatMap((entry) => entry.lines).length} Marketplace items`,
+      subtotalMinor: group.totalMinor,
+      currency: group.currency,
+      quantity: group.fulfillments.flatMap((entry) => entry.lines).reduce((sum, line) => sum + line.qty, 0),
+      fulfillment
+    });
+  }, [navigation, groups]);
 
   /* ---------------------------------------------------------------- *
    * Render
@@ -373,20 +336,16 @@ export function MarketplaceCartScreen({ navigation }: Props) {
                   <Text style={styles.confirmText}>
                     {`Review checkout with ${group.sellerName || "this seller"} for ${formatMinor(group.totalMinor, group.currency)} subtotal.`}
                   </Text>
-                  {checkoutNote ? <Text style={styles.note}>{checkoutNote}</Text> : null}
                   <View style={styles.confirmRow}>
                     <Pressable accessibilityRole="button" onPress={closeConfirm} style={styles.secondaryBtn}>
                       <Text style={styles.secondaryText}>Not now</Text>
                     </Pressable>
                     <Pressable
                       accessibilityRole="button"
-                      disabled={checkoutBusy}
-                      onPress={() => void confirmCheckout(group.sellerUserId)}
-                      style={[styles.cta, checkoutBusy && styles.ctaBusy]}
+                      onPress={() => openCheckout(group)}
+                      style={styles.cta}
                     >
-                      <Text style={styles.ctaText}>
-                        {checkoutBusy ? "Preparing secure checkout…" : "Continue securely"}
-                      </Text>
+                      <Text style={styles.ctaText}>Review secure checkout</Text>
                     </Pressable>
                   </View>
                 </View>
