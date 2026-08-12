@@ -223,6 +223,35 @@ class ListingTypesTestCase(unittest.TestCase):
         listing_id = response.get_json()["listing_id"]
         self.assertEqual(self.listing_row(listing_id)["status"], "draft")
 
+        saved_again = self.client.patch(
+            f"/api/pulse/marketplace/seller/listings/{listing_id}",
+            json={
+                "title": "Physical draft revised",
+                "description": "",
+                "category": "Education",
+                "price_label": "$20",
+                "quantity": 3,
+                "listing_type": "physical",
+                "listing_metadata": VALID_METADATA["physical"],
+            },
+        )
+        self.assertEqual(saved_again.status_code, 200, saved_again.get_json())
+        self.assertEqual(self.listing_row(listing_id)["status"], "draft")
+        self.assertEqual(self.listing_row(listing_id)["title"], "Physical draft revised")
+        completed = self.client.patch(
+            f"/api/pulse/marketplace/seller/listings/{listing_id}",
+            json={
+                "title": "Physical draft revised",
+                "description": "A complete description ready for review.",
+                "category": "Education",
+                "price_label": "$20",
+                "quantity": 3,
+                "listing_type": "physical",
+                "listing_metadata": VALID_METADATA["physical"],
+            },
+        )
+        self.assertEqual(completed.status_code, 200, completed.get_json())
+
         hidden = self.client.get("/api/pulse/marketplace/search?q=Physical")
         self.assertFalse(any(item["id"] == listing_id for item in hidden.get_json()["items"]))
 
@@ -255,6 +284,24 @@ class ListingTypesTestCase(unittest.TestCase):
         self.login(OTHER_SELLER, "other_seller")
         denied = self.client.post(f"/api/pulse/marketplace/seller/listings/{listing_id}/submit")
         self.assertEqual(denied.status_code, 404)
+
+    def test_marketplace_order_projection_is_idempotent(self):
+        conn = self.db()
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO seller_transactions
+            (buyer_user_id,seller_user_id,seller_type,item_type,item_id,amount_cents,currency,status,metadata_json,created_at,updated_at)
+            VALUES (?,?, 'merchant','marketplace_product',77,2500,'USD','paid',?, ?, ?)""",
+            (BUYER, SELLER, json.dumps({"qty": 2}), NOW, NOW),
+        )
+        tx_id = int(cur.lastrowid)
+        tx = dict(conn.execute("SELECT * FROM seller_transactions WHERE id=?", (tx_id,)).fetchone())
+        bot.pulse_upsert_marketplace_order(cur, tx, "pi_contract", NOW)
+        bot.pulse_upsert_marketplace_order(cur, tx, "pi_contract", NOW)
+        count = conn.execute("SELECT COUNT(*) FROM marketplace_orders WHERE seller_transaction_id=?", (tx_id,)).fetchone()[0]
+        self.assertEqual(count, 1)
+        conn.commit()
+        conn.close()
 
     def test_create_one_listing_of_each_of_the_five_types(self):
         digital_file = self.digital_file_id()

@@ -85,6 +85,7 @@ export type BookingDraft = {
 
 export type ListingDraft = {
   version: 1;
+  serverListingId: number;
   step: ListingWizardStep;
   listingType: MarketplaceListingType | null;
   updatedAt: string;
@@ -152,6 +153,7 @@ export function defaultBookingAvailability(): BookingAvailability {
 export function createListingDraft(): ListingDraft {
   return {
     version: 1,
+    serverListingId: 0,
     step: "type",
     listingType: null,
     updatedAt: new Date().toISOString(),
@@ -234,6 +236,7 @@ export function normalizeListingDraft(value: Partial<ListingDraft> | null | unde
   }
   return {
     ...base,
+    serverListingId: Number(value.serverListingId || 0),
     step,
     listingType,
     updatedAt: String(value.updatedAt || base.updatedAt),

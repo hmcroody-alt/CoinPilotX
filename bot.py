@@ -49699,6 +49699,29 @@ def pulse_emit_payment_checkout_event(
         )
 
 
+def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now=""):
+    """Project one paid Marketplace transaction into exactly one order."""
+    tx = dict(tx or {})
+    if str(tx.get("item_type") or "") != "marketplace_product" or not int(tx.get("id") or 0):
+        return
+    try:
+        details = json.loads(tx.get("metadata_json") or "{}")
+    except Exception:
+        details = {}
+    quantity = max(1, safe_int(details.get("qty"), 1))
+    timestamp = now or datetime.utcnow().isoformat(timespec="seconds")
+    amount = int(tx.get("amount_cents") or 0)
+    cur.execute("""INSERT INTO marketplace_orders
+        (seller_transaction_id,buyer_user_id,seller_user_id,listing_id,quantity,unit_price_cents,
+         amount_cents,currency,status,payment_provider,provider_payment_id,created_at,paid_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?, 'paid','stripe',?,?,?,?)
+        ON CONFLICT(seller_transaction_id) DO UPDATE SET status='paid',provider_payment_id=excluded.provider_payment_id,
+            paid_at=COALESCE(marketplace_orders.paid_at,excluded.paid_at),updated_at=excluded.updated_at""",
+        (int(tx["id"]), tx.get("buyer_user_id"), tx.get("seller_user_id"), tx.get("item_id"), quantity,
+         amount // quantity, amount, tx.get("currency") or "USD", provider_payment_id,
+         tx.get("created_at") or timestamp, timestamp, timestamp))
+
+
 def pulse_emit_comms_safety_event(
     cur,
     user_id,
@@ -49832,8 +49855,8 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
     category = clean_html(payload.get("category") or "Education")[:80]
     price = clean_html(payload.get("price_label") or "Request access")[:80]
     quantity = safe_int(payload.get("quantity"), 0)
-    if not title or not description:
-        return api_error("Add a title and description before updating the listing.", 400)
+    if not title:
+        return api_error("Add a title before updating the listing.", 400)
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db()
     conn.row_factory = sqlite3.Row
@@ -49850,6 +49873,30 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
     if str(existing.get("status") or "").lower() in {"seller_deleted", "deleted", "removed"}:
         conn.close()
         return api_error("Deleted listings cannot be edited.", 400)
+    if not description and str(existing.get("status") or "").lower() != "draft":
+        conn.close()
+        return api_error("Add a description before updating the listing.", 400)
+    media_ids = [safe_int(value, 0) for value in (payload.get("media_ids") or []) if safe_int(value, 0)]
+    if media_ids:
+        placeholders = ",".join(["?"] * len(media_ids))
+        cur.execute(
+            f"SELECT * FROM marketplace_product_media WHERE id IN ({placeholders}) AND merchant_id=? "
+            "AND (product_id=0 OR product_id=?) ORDER BY is_cover DESC,id ASC",
+            (*media_ids, int(user["user_id"]), int(listing_id)),
+        )
+        media_rows = [dict(row) for row in cur.fetchall()]
+        if len(media_rows) != len(set(media_ids)):
+            conn.close()
+            return api_error("One or more listing media items are unavailable.", 400)
+        cover = next((row for row in media_rows if int(row.get("is_cover") or 0)), media_rows[0])
+        gallery = [row.get("media_url") for row in media_rows if (row.get("media_type") or "") in {"image", "gif"}]
+        video = next((row.get("media_url") for row in media_rows if (row.get("media_type") or "") == "video"), "")
+        cur.execute("UPDATE marketplace_listings SET cover_image_url=?,gallery_json=?,video_url=? WHERE id=? AND seller_user_id=?",
+            (clean_html(cover.get("media_url") or "")[:800], json.dumps(gallery, default=str)[:1600],
+             clean_html(video or "")[:800], int(listing_id), int(user["user_id"])))
+        for position, media_row in enumerate(media_rows):
+            cur.execute("UPDATE marketplace_product_media SET product_id=?,position=? WHERE id=? AND merchant_id=?",
+                (int(listing_id), position, int(media_row.get("id") or 0), int(user["user_id"])))
     effective_listing_type = marketplace_listing_types_service.effective_listing_type(existing.get("listing_type"), existing.get("product_type"))
     requested_listing_type = str(payload.get("listing_type") or "").strip().lower()
     if requested_listing_type and requested_listing_type != effective_listing_type:
@@ -88518,7 +88565,7 @@ def admin_monetization_page():
             "teacher_courses": "SELECT COUNT(*) AS total FROM pulse_courses",
             "enterprise_leads": "SELECT COUNT(*) AS total FROM enterprise_leads",
             "creator_payouts": "SELECT COUNT(*) AS total FROM creator_payouts_placeholder",
-            "marketplace_orders": "SELECT COUNT(*) AS total FROM marketplace_orders_placeholder",
+            "marketplace_orders": "SELECT COUNT(*) AS total FROM marketplace_orders",
             "teacher_earnings": "SELECT COUNT(*) AS total FROM teacher_earnings_placeholder",
         }.items():
             try:
@@ -88555,7 +88602,7 @@ def admin_monetization_health_page():
         return denied
     init_db()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    tables = ["monetization_events", "sponsor_slots", "ad_reviews", "enterprise_leads", "creator_payouts_placeholder", "marketplace_orders_placeholder", "teacher_earnings_placeholder", "creator_profiles", "creator_revenue_events"]
+    tables = ["monetization_events", "sponsor_slots", "ad_reviews", "enterprise_leads", "creator_payouts_placeholder", "marketplace_orders", "teacher_earnings_placeholder", "creator_profiles", "creator_revenue_events"]
     table_rows = []
     for table in tables:
         try:
@@ -96099,19 +96146,7 @@ def stripe_webhook():
                         stripe_payment_intent_id=?, updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')""",
                         (session_id, session.get("payment_intent") or "", now, tx_id))
                     marketplace_cart_service.capture_inventory_reservation(cur, tx_id, now=now)
-                    try:
-                        details = json.loads(tx.get("metadata_json") or "{}")
-                    except Exception:
-                        details = {}
-                    quantity = max(1, safe_int(details.get("qty"), 1))
-                    cur.execute("""INSERT INTO marketplace_orders
-                        (seller_transaction_id,buyer_user_id,seller_user_id,listing_id,quantity,unit_price_cents,
-                         amount_cents,currency,status,payment_provider,provider_payment_id,created_at,paid_at,updated_at)
-                        VALUES (?,?,?,?,?,?,?,?, 'paid','stripe',?,?,?,?)
-                        ON CONFLICT(seller_transaction_id) DO NOTHING""",
-                        (tx_id, tx.get("buyer_user_id"), tx.get("seller_user_id"), tx.get("item_id"), quantity,
-                         int(tx.get("amount_cents") or 0)//quantity, int(tx.get("amount_cents") or 0), tx.get("currency") or "USD",
-                         session.get("payment_intent") or "", tx.get("created_at") or now, now, now))
+                    pulse_upsert_marketplace_order(cur, tx, session.get("payment_intent") or "", now)
                 else:
                     cur.execute("UPDATE seller_transactions SET status=?, updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')",
                                 (f"checkout_{payment_status or 'pending'}", now, tx_id))
@@ -96160,6 +96195,8 @@ def stripe_webhook():
                     "UPDATE seller_transactions SET status=?, stripe_checkout_session_id=?, stripe_payment_intent_id=?, updated_at=? WHERE id=?",
                     (status, session_id, session.get("payment_intent") or "", now, tx_id),
                 )
+                if payment_status in {"paid", "no_payment_required"}:
+                    pulse_upsert_marketplace_order(cur, tx, session.get("payment_intent") or "", now)
                 pulse_emit_payment_checkout_event(
                     cur,
                     {**tx, "status": status, "stripe_checkout_session_id": session_id, "stripe_payment_intent_id": session.get("payment_intent") or ""},
@@ -96423,6 +96460,7 @@ def stripe_webhook():
             tx = dict(cur.fetchone() or {})
             if tx:
                 cur.execute("UPDATE seller_transactions SET status='paid', stripe_payment_intent_id=?, updated_at=? WHERE id=?", (payment_intent.get("id") or "", now, tx_id))
+                pulse_upsert_marketplace_order(cur, tx, payment_intent.get("id") or "", now)
                 pulse_emit_payment_checkout_event(
                     cur,
                     {**tx, "status": "paid", "stripe_payment_intent_id": payment_intent.get("id") or ""},

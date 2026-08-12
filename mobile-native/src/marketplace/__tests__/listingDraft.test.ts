@@ -237,6 +237,9 @@ describe("buildListingCreatePayload", () => {
 });
 
 describe("normalizeListingDraft", () => {
+  it("preserves the server listing id so draft saves update one row", () => {
+    expect(normalizeListingDraft({ serverListingId: 42 } as never).serverListingId).toBe(42);
+  });
   it("recovers a fresh draft from garbage", () => {
     const draft = normalizeListingDraft({ step: "preview", listingType: "hoverboard" } as never);
     expect(draft.listingType).toBeNull();

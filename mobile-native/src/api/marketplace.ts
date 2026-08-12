@@ -191,14 +191,7 @@ export type MarketplaceListingCreateResponse = MarketplaceActionResponse & {
   listing_id?: number;
 };
 
-export type MarketplaceListingUpdatePayload = {
-  title: string;
-  short_description?: string;
-  description: string;
-  category?: string;
-  price_label?: string;
-  quantity?: number;
-};
+export type MarketplaceListingUpdatePayload = Omit<MarketplaceListingCreatePayload, "submission_action">;
 
 export type MarketplaceListingMutationResponse = MarketplaceActionResponse & {
   listing?: MarketplaceListing;
@@ -288,6 +281,13 @@ export async function createMarketplaceListing(payload: MarketplaceListingCreate
   return pulseApi<MarketplaceListingCreateResponse>("/api/pulse/marketplace/listings/create", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export async function submitMarketplaceSellerListing(listingId: number) {
+  return pulseApi<MarketplaceListingMutationResponse>(`/api/pulse/marketplace/seller/listings/${listingId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({})
   });
 }
 

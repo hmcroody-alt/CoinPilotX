@@ -25,6 +25,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   createMarketplaceListing,
   MarketplaceListingType,
+  submitMarketplaceSellerListing,
+  updateMarketplaceSellerListing,
   uploadMarketplaceDigitalFile
 } from "../api/marketplace";
 import {
@@ -158,10 +160,21 @@ export function SellerListingComposerScreen({ navigation }: Props) {
   );
 
   const saveDraftAndExit = useCallback(async () => {
+    if (draft.title.trim()) {
+      const payload = { ...buildListingCreatePayload(draft), submission_action: "draft" as const };
+      if (draft.serverListingId > 0) {
+        const { submission_action: _submissionAction, ...updatePayload } = payload;
+        await updateMarketplaceSellerListing(draft.serverListingId, updatePayload);
+      } else {
+        const saved = await createMarketplaceListing(payload);
+        const listingId = Number(saved.listing_id || 0);
+        if (listingId > 0) updateListingDraft({ serverListingId: listingId });
+      }
+    }
     await persistListingDraft();
     setDraftSavedNote(true);
     navigation.goBack?.();
-  }, [navigation]);
+  }, [draft, navigation]);
 
   const continueToPreview = useCallback(() => {
     setAttempted(true);
@@ -277,10 +290,17 @@ export function SellerListingComposerScreen({ navigation }: Props) {
     setPublishError("");
     try {
       const payload = buildListingCreatePayload(draft);
-      const result = await createMarketplaceListing(payload);
+      let listingId = draft.serverListingId;
+      if (listingId > 0) {
+        await updateMarketplaceSellerListing(listingId, payload);
+        await submitMarketplaceSellerListing(listingId);
+      } else {
+        const result = await createMarketplaceListing(payload);
+        listingId = Number(result.listing_id || 0);
+      }
       await clearListingDraft();
       await invalidateNativeSync(["seller_inventory", "marketplace", "activity"], "listing_wizard_publish", [
-        { event_type: "marketplace_listing_created", entity_type: "marketplace_listing", entity_id: result.listing_id }
+        { event_type: "marketplace_listing_submitted", entity_type: "marketplace_listing", entity_id: listingId }
       ]).catch(() => undefined);
       setPublished(true);
     } catch (error) {
