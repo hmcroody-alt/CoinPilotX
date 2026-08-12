@@ -13,6 +13,10 @@
  *   • `mode: "create"` — the native campaign-creation wizard (objective →
  *     setup → audience → placements → creative → budget → review → publish),
  *     with a persisted draft that survives app restarts.
+ *   • `mode: "promote"` (+ `promoteContent`) — the "Promote your content"
+ *     wizard: boost an already-published post / reel / live replay (content →
+ *     goal → audience → budget → duration → review → submit). The promotion
+ *     references the original content object; nothing is duplicated.
  *   • `mode: "detail"` (+ `campaignId`) — the per-campaign management screen:
  *     overview, ad sets, creatives, insights, lifecycle actions.
  *   • `mode: "audiences"` — the audience manager (wave 2): list, create,
@@ -48,6 +52,7 @@ import { AdsPolicyCenterScreen } from "./AdsPolicyCenterScreen";
 import { AdsReportsScreen } from "./AdsReportsScreen";
 import { AdsSubPageScreen } from "./AdsSubPageScreen";
 import { AdsWalletScreen } from "./AdsWalletScreen";
+import { PromoteContentWizardScreen } from "./PromoteContentWizardScreen";
 import { BusinessOsAdvertisingScreen } from "./BusinessOsAdvertisingScreen";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -60,6 +65,9 @@ export function AdvertisingRoute({ route, navigation }: Props) {
   const mode = route?.params?.mode;
   if (mode === "create") {
     return <AdsCampaignWizardScreen route={route} navigation={navigation} />;
+  }
+  if (mode === "promote") {
+    return <PromoteContentWizardScreen route={route} navigation={navigation} />;
   }
   if (mode === "detail") {
     return <AdsCampaignDetailScreen route={route} navigation={navigation} />;

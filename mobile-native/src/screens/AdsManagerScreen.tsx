@@ -61,15 +61,8 @@ import {
   campaignSpendCents,
   campaignTabs,
   deliverySwitchState,
-  derivePostPromotions,
   filterCampaigns,
   loadAdsMarketplace,
-  loadMockRecentPosts,
-  loadMockSuggestion,
-  postSurfaceKpis,
-  promotionPhaseLabel,
-  promotionPhaseTone,
-  promotionSwitchState,
   spendChartWeekdays
 } from "../api/adsDashboard";
 import {
@@ -79,8 +72,6 @@ import {
   AdsHeader,
   AdsKpiSkeleton,
   AdsOfflineNote,
-  AdsPreviewNote,
-  AdsPromotionSkeleton,
   AdsSectionError,
   AdsTabBar,
   AdsVerificationBanner,
@@ -89,14 +80,11 @@ import {
   CampaignCard,
   type CampaignCardAction,
   type CampaignCardMetric,
-  PromoteRail,
-  type PromoteRailItem,
-  PromotedPostCard,
   ACCOUNT_SPEND_TITLE,
   SEVEN_DAY_SPEND_TITLE,
-  SpendBarChart,
-  SuggestionCard
+  SpendBarChart
 } from "../components/ads";
+import { PromoteContentPane } from "../components/ads/PromoteContentPane";
 import { policyCenterModel } from "../api/adsPolicy";
 import { creativeLibraryModel } from "../api/adsCreatives";
 import {
@@ -167,7 +155,6 @@ export function AdsManagerScreen({ route, navigation }: Props) {
   const [busyKey, setBusyKey] = useState("");
   const [message, setMessage] = useState("");
   const [verifying, setVerifying] = useState(false);
-  const [suggestionDismissed, setSuggestionDismissed] = useState(false);
 
   /**
    * Guards the delivery switch against a double tap. A second press while the
@@ -202,21 +189,20 @@ export function AdsManagerScreen({ route, navigation }: Props) {
     return () => unregister.forEach((fn) => fn());
   }, [load]);
 
-  // Restore the last mode. Post is only restored when the preview flag is on, so
-  // a build without the flag never lands the advertiser on an empty product.
+  // Restore the last mode. Post ads is a real product now (the promote-your-
+  // content browser), so either mode restores.
   useEffect(() => {
     let active = true;
     readJsonCache<{ mode: AdsMode }>(MODE_CACHE_KEY, (value) => value)
       .then((cached) => {
         if (!active || !cached) return;
-        if (cached.mode === "post" && !postEnabled) return;
         if (cached.mode === "post" || cached.mode === "marketplace") setMode(cached.mode);
       })
       .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, [postEnabled]);
+  }, []);
 
   const changeMode = useCallback((next: AdsMode) => {
     setMode(next);
@@ -1136,283 +1122,21 @@ export function AdsManagerScreen({ route, navigation }: Props) {
    * Post mode
    * -------------------------------------------------------------- */
 
-  // Real: post-surface promotions are the account's campaigns whose creatives
-  // are content-backed (post / reel / video / live replay), with spend read
-  // from the same analytics rows the marketplace pane uses. The suggestion
-  // card and the recent-posts rail remain fixtures — no engagement-ranking or
-  // recent-posts feed is bound here yet — and stay visibly labelled as such.
-  const suggestion = useMemo(() => loadMockSuggestion(), []);
-  const promotions = useMemo(() => derivePostPromotions(model?.portal ?? null), [model?.portal]);
-  const postKpis = useMemo(
-    () => postSurfaceKpis(model?.portal ?? null, promotions),
-    [model?.portal, promotions]
-  );
-  const recentPosts = useMemo(() => loadMockRecentPosts(), []);
-
-  const railItems: PromoteRailItem[] = recentPosts.map((post) => ({
-    id: post.id,
-    contentType: post.contentType,
-    title: post.title,
-    reachLabel: `${formatters.count(post.reach)} reached`,
-    hotLabel: post.hotMultiplier ? `${post.hotMultiplier}×` : null
-  }));
-
-  /**
-   * Promote-a-post is real now: it opens the campaign wizard with the surface
-   * preset to "post", so the flow lands in the same draft → review → publish
-   * path as every other campaign. Nothing is charged from this screen.
-   */
-  const openPromotePost = useCallback(() => {
-    navigation?.navigate("BusinessOsAdvertising", {
-      title: "Promote a post",
-      mode: "create",
-      surface: "post",
-      accountId: model?.primaryAccount?.id
-    });
-  }, [navigation, model?.primaryAccount?.id]);
-
+  // Post ads is the "Promote your content" browser: the owner's real published
+  // Posts, Reels and finalized Live replays from `GET /api/promotions/content`,
+  // each server-stamped with an eligibility verdict, with Promote opening the
+  // promotion wizard against the one ad engine and one shared ad wallet. The
+  // placeholder and the sample suggestion/recent-post rails are gone — this pane
+  // is entirely real, so it no longer depends on the EXPO_PUBLIC_ADS_POST_MODE
+  // preview flag.
   const postBody = (
-    <ScrollView
-      style={mode === "post" ? undefined : styles.hidden}
-      contentContainerStyle={[styles.content, { paddingBottom: bottomPad(insets.bottom) }]}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* The disclosure only appears when there is sample data to disclaim.
-          With the flag off there are no figures on this page, and this note
-          used to run anyway — directly above an empty state that said the same
-          thing in different words. Two notices saying "not available" is not
-          twice the honesty; it is the whole page spent on a refusal. The
-          flag-off pane is now one card that explains the product instead. */}
-      {postEnabled ? (
-        <AdsPreviewNote text="Your promotions and their figures below are real. The suggestion card and the recent-posts strip are still sample data — those two sources aren't connected yet." />
-      ) : null}
-
-      {/* Real KPIs, summed from the same analytics rows the marketplace pane
-          reads, over the campaigns classified as post-surface. Reach, new
-          followers and engagements are NOT here: none of them is measured for
-          promotions yet (see ADS_MOCK_DATA_GAPS), and a tile with an invented
-          figure is worse than no tile. */}
-      {postEnabled && postKpis ? (
-        <Animated.View style={[styles.kpiRow, entrance.styleFor(SLOT.kpis)]}>
-          <StoreKpiCard
-            label="Spent"
-            value={money(postKpis.spendCents)}
-            caption={`${formatters.count(postKpis.campaignCount)} promotions`}
-            reducedMotion={reducedMotion}
-            delay={SLOT.kpis * STORE_STAGGER_MS}
-          />
-          <StoreKpiCard
-            label="Impressions"
-            value={formatters.count(postKpis.impressions)}
-            reducedMotion={reducedMotion}
-            delay={SLOT.kpis * STORE_STAGGER_MS}
-          />
-          <StoreKpiCard
-            label="Clicks"
-            value={formatters.count(postKpis.clicks)}
-            reducedMotion={reducedMotion}
-            delay={SLOT.kpis * STORE_STAGGER_MS}
-          />
-        </Animated.View>
-      ) : null}
-
-      {postEnabled && suggestion && !suggestionDismissed ? (
-        <Animated.View style={[styles.section, entrance.styleFor(SLOT.banners)]}>
-          <SuggestionCard
-            contentType={suggestion.contentType}
-            title={suggestion.title}
-            reason={suggestion.reason}
-            onPromote={openPromotePost}
-            onDismiss={() => setSuggestionDismissed(true)}
-            reducedMotion={reducedMotion}
-          />
-        </Animated.View>
-      ) : null}
-
-      <Animated.View style={[styles.section, entrance.styleFor(SLOT.list)]}>
-        {!postEnabled ? (
-          <View style={styles.stack}>
-            <View style={styles.infoCard}>
-              <Text style={styles.infoTitle}>Post ads isn’t switched on yet</Text>
-              <Text style={styles.infoBody}>
-                It will let you put money behind something you already posted, instead of
-                building an ad from scratch. Nothing about it is live in this build — there is
-                no promotion running, and nothing here can be charged.
-              </Text>
-              <View style={styles.infoPoints}>
-                {[
-                  "Promote a post, a Reel or a live replay",
-                  "Paid from the same ad wallet as your Marketplace campaigns — there is no second balance to top up",
-                  "Reviewed before it delivers, the same way a Marketplace ad is"
-                ].map((point) => (
-                  <View key={point} style={styles.infoPointRow}>
-                    <View
-                      style={styles.infoPointDot}
-                      accessibilityElementsHidden
-                      importantForAccessibility="no"
-                    />
-                    <Text style={styles.infoPointText}>{point}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.infoCard}>
-              <Text style={styles.infoTitle}>What you can run today</Text>
-              {/* Was "…deliver in the feed and in Reels". There is no Reels
-                  placement: `PLACEMENTS` seeds twelve rows and none of them is
-                  Reels, so this named one surface that does not exist while
-                  omitting eleven that do — Marketplace, Search and Pulse Radio
-                  among them. The Audiences page now lists the real set from the
-                  portal, so this points there instead of guessing again. */}
-              <Text style={styles.infoBody}>
-                Marketplace ads are live and deliver across a dozen placements — the feed,
-                Marketplace, search and more, listed under Audiences. They use the same wallet,
-                so anything you add now is spendable the moment post promotion arrives.
-              </Text>
-              <Pressable
-                onPress={() => changeMode("marketplace")}
-                accessibilityRole="button"
-                accessibilityLabel="Switch to Marketplace ads"
-                hitSlop={6}
-              >
-                <Text style={styles.infoLink}>Go to Marketplace ads ›</Text>
-              </Pressable>
-              <Pressable
-                onPress={openWallet}
-                accessibilityRole="button"
-                accessibilityLabel="Open the ad wallet"
-                hitSlop={6}
-              >
-                <Text style={styles.infoLink}>Ad wallet and billing ›</Text>
-              </Pressable>
-            </View>
-          </View>
-        ) : loading ? (
-          <View style={styles.stack}>
-            <AdsPromotionSkeleton reducedMotion={reducedMotion} />
-            <AdsPromotionSkeleton reducedMotion={reducedMotion} />
-          </View>
-        ) : !promotions.length ? (
-          <AdsEmpty
-            title="Nothing promoted yet"
-            body="Promote a post and it appears here with its review status and spend."
-            ctaLabel="Promote a post"
-            onPress={openPromotePost}
-            reducedMotion={reducedMotion}
-            tone="post"
-          />
-        ) : (
-          <View style={styles.stack}>
-            {promotions.map((promotion) => {
-              const switchState = promotionSwitchState(promotion);
-              const budgetCents = Number(promotion.budgetCents || 0);
-              const spentCents = Number(promotion.spendCents || 0);
-              const known = promotion.phase === "promoting" || promotion.phase === "completed";
-              const openThis = promotion.campaignId
-                ? () => openDetail(promotion.campaignId!, promotion.title)
-                : undefined;
-              return (
-                <PromotedPostCard
-                  key={promotion.id}
-                  contentType={promotion.contentType}
-                  title={promotion.title}
-                  phase={promotion.phase}
-                  phaseLabel={promotionPhaseLabel(promotion.phase)}
-                  phaseTone={promotionPhaseTone(promotion.phase)}
-                  /*
-                   * One cell, and it is real.
-                   *
-                   * These promotions are the account's own campaigns now, so
-                   * Spend comes from the same analytics rows as everything on
-                   * the marketplace pane. Reach is NOT a cell: delivered reach
-                   * (unique viewers) is simply not measured for promotions —
-                   * impressions exist, reach does not (see ADS_MOCK_DATA_GAPS)
-                   * — and §31 forbids printing a number, a zero or a dash under
-                   * a label whose measurement does not exist. The sentence in
-                   * `metricsNote` says so and points at where the measured
-                   * figures live.
-                   */
-                  metrics={[
-                    {
-                      key: "spend",
-                      label: "Spent",
-                      value: known || spentCents > 0 ? money(spentCents) : absentValueText("no_activity")
-                    }
-                  ]}
-                  metricsNote="Delivered reach, likes and follows aren’t measured for promotions. Impressions and clicks are in Reports."
-                  pacing={
-                    budgetCents > 0
-                      ? {
-                          spentLabel: money(spentCents),
-                          budgetLabel: `${money(budgetCents)} boost total`,
-                          fraction: Math.max(0, Math.min(1, spentCents / budgetCents)),
-                          hot: spentCents / budgetCents >= 0.9
-                        }
-                      : null
-                  }
-                  showSwitch={switchState.show}
-                  promoting={switchState.on}
-                  onTogglePromotion={() => undefined}
-                  switchDisabled={switchState.disabled}
-                  switchReason={switchState.reason}
-                  rejectionReason={promotion.rejectionReason}
-                  onEdit={openThis}
-                  onPress={openThis ?? (() => undefined)}
-                  reducedMotion={reducedMotion}
-                />
-              );
-            })}
-          </View>
-        )}
-      </Animated.View>
-
-      {postEnabled ? (
-        <Animated.View style={[styles.section, entrance.styleFor(SLOT.tools)]}>
-          <Text style={styles.sectionTitle}>Promote a recent post</Text>
-          {/* The rail's posts are still fixtures — the recent-posts feed isn't
-              bound here yet — but Promote is a real entry point: it opens the
-              campaign wizard with the surface preset to "post". */}
-          {railItems.length ? (
-            <>
-              <AdsPreviewNote text="Sample posts. Your real recent posts aren't connected to this strip yet." />
-              <PromoteRail items={railItems} onPromote={openPromotePost} reducedMotion={reducedMotion} />
-            </>
-          ) : (
-            <AdsEmpty
-              title="No recent posts"
-              body="Post something and it'll show up here, ready to promote."
-              reducedMotion={reducedMotion}
-              tone="post"
-            />
-          )}
-        </Animated.View>
-      ) : null}
-
-      {message && mode === "post" ? (
-        <Text style={styles.message} accessibilityLiveRegion="polite">
-          {message}
-        </Text>
-      ) : null}
-
-      {postEnabled ? (
-        <Animated.View style={[styles.section, entrance.styleFor(SLOT.cta)]}>
-          <Pressable
-            onPress={openPromotePost}
-            style={[styles.cta, styles.ctaPost]}
-            accessibilityRole="button"
-            accessibilityLabel="Promote a post"
-          >
-            <Text style={styles.ctaPostText}>🚀 Promote a post</Text>
-          </Pressable>
-          <Text style={styles.footnote}>
-            Opens the campaign wizard with the post surface preset. Promotions start as drafts —
-            nothing is charged and nothing delivers until you submit for review.
-          </Text>
-        </Animated.View>
-      ) : null}
-    </ScrollView>
+    <PromoteContentPane
+      visible={mode === "post"}
+      accountId={model?.primaryAccount?.id}
+      navigation={navigation}
+    />
   );
+
 
   /* -------------------------------------------------------------- *
    * Frame
@@ -1426,7 +1150,7 @@ export function AdsManagerScreen({ route, navigation }: Props) {
           mode={mode}
           onChangeMode={changeMode}
           onBack={() => navigation?.goBack?.()}
-          postIsPreview={!postEnabled}
+          postIsPreview={false}
           wallet={walletProp}
           onWallet={openWallet}
           reducedMotion={reducedMotion}

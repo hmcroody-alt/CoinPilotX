@@ -215,6 +215,7 @@ export type RootStackParamList = {
           | "manager"
           | "classic"
           | "create"
+          | "promote"
           | "audiences"
           | "creatives"
           | "account"
@@ -227,6 +228,18 @@ export type RootStackParamList = {
         campaignId?: number;
         /** Presets the wizard's ad surface when `mode` is `"create"`. */
         surface?: "post" | "marketplace";
+        /**
+         * Seeds the "Promote your content" wizard when `mode` is `"promote"`.
+         * References an already-published content object — the promotion boosts
+         * the original; nothing is duplicated or reposted.
+         */
+        promoteContent?: {
+          contentType: "post" | "reel" | "live_replay";
+          contentId: number;
+          title?: string;
+          thumbnailUrl?: string;
+          mediaKind?: string;
+        };
       }
     | undefined;
   BusinessOsInsights: { title?: string } | undefined;
