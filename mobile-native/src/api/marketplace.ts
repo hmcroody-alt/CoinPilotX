@@ -22,7 +22,13 @@ export type MarketplaceListing = {
   currency?: string;
   quantity?: number;
   product_type?: string;
-  safety_score?: number;
+  /**
+   * Internal moderation fields. These are never buyer-facing — `safety_score`
+   * in particular is a reviewer signal, not a product attribute, and was
+   * dropped from the client model entirely so no screen can render it by
+   * accident. `approval_status` stays because the seller's own store rows
+   * legitimately show it back to the seller.
+   */
   status?: string;
   approval_status?: string;
   publication_state?: string;
@@ -425,7 +431,6 @@ export function normalizeMarketplaceListing(item: MarketplaceListing): Marketpla
     price_label: String(item.price_label || "Request access"),
     quantity: Number(item.quantity || 0),
     product_type: String(item.product_type || ""),
-    safety_score: Number(item.safety_score || 0),
     saved: Boolean(item.saved || item.is_saved),
     media: normalizeMarketplaceMedia(item)
   };

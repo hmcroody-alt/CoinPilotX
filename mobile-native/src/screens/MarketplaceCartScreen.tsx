@@ -283,9 +283,19 @@ export function MarketplaceCartScreen({ navigation }: Props) {
                             </Pressable>
                           </View>
                         ) : (
-                          <Text style={styles.linePrice}>
-                            {formatMinor(line.price_snapshot_minor, line.currency)}
-                          </Text>
+                          <View>
+                            <Text style={styles.linePrice}>
+                              {formatMinor(line.price_snapshot_minor * line.qty, line.currency)}
+                            </Text>
+                            {/* Only worth saying when qty > 1 — at one unit the
+                                line total and the unit price are the same
+                                number, and printing it twice reads as a bug. */}
+                            {line.qty > 1 ? (
+                              <Text style={styles.lineUnit}>
+                                {`${formatMinor(line.price_snapshot_minor, line.currency)} each`}
+                              </Text>
+                            ) : null}
+                          </View>
                         )}
                         {stateCopy ? <Text style={styles.lineState}>{stateCopy}</Text> : null}
                         <View style={styles.lineControls}>
@@ -329,12 +339,12 @@ export function MarketplaceCartScreen({ navigation }: Props) {
             <View style={styles.groupFooter}>
               <Text style={styles.summaryTitle}>Order summary</Text>
               <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Subtotal</Text><Text style={styles.groupTotal}>{formatMinor(group.totalMinor, group.currency)}</Text></View>
-              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Delivery</Text><Text style={styles.summaryValue}>Confirmed at checkout</Text></View>
-              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Taxes and fees</Text><Text style={styles.summaryValue}>Confirmed at checkout</Text></View>
+              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Delivery</Text><Text style={styles.summaryValue}>Added at payment</Text></View>
+              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Taxes and fees</Text><Text style={styles.summaryValue}>Added at payment</Text></View>
               {confirmOpen ? (
                 <View style={styles.confirmBox}>
                   <Text style={styles.confirmText}>
-                    {`Review checkout with ${group.sellerName || "this seller"} for ${formatMinor(group.totalMinor, group.currency)} subtotal.`}
+                    {`Checking out with ${group.sellerName || "this seller"} — ${formatMinor(group.totalMinor, group.currency)} so far, before delivery and tax.`}
                   </Text>
                   <View style={styles.confirmRow}>
                     <Pressable accessibilityRole="button" onPress={closeConfirm} style={styles.secondaryBtn}>
@@ -345,7 +355,7 @@ export function MarketplaceCartScreen({ navigation }: Props) {
                       onPress={() => openCheckout(group)}
                       style={styles.cta}
                     >
-                      <Text style={styles.ctaText}>Review secure checkout</Text>
+                      <Text style={styles.ctaText}>Continue</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -415,6 +425,7 @@ const styles = StyleSheet.create({
   lineBody: { flex: 1, gap: 4 },
   lineTitle: { color: storeLight.text.primary, fontSize: 14 },
   linePrice: { color: storeLight.text.primary, fontSize: 15, fontWeight: "700" },
+  lineUnit: { color: storeLight.text.muted, fontSize: 12 },
   priceChanged: { color: storeLight.status.warning, fontSize: 13, fontWeight: "600" },
   lineState: { color: storeLight.status.warning, fontSize: 12 },
   lineControls: { flexDirection: "row", alignItems: "center", gap: 16, marginTop: 4 },

@@ -1,5 +1,7 @@
 import { NavigatorScreenParams } from "@react-navigation/native";
 
+import type { MarketplaceListing } from "../api/marketplace";
+
 /**
  * Context carried by every destination opened from a Profile OS tile.
  *
@@ -117,6 +119,14 @@ export type RootStackParamList = {
   ReelDetail: { reelId: number; title?: string };
   StatusDetail: { statusId: number; title?: string };
   MarketplaceDetail: { listingId?: number; sellerUserId?: number; title?: string } | undefined;
+  /**
+   * The buyer's product page. `listing` travels in the params because there is
+   * no read-one endpoint — `/api/pulse/marketplace/search` is the only buyer
+   * read path — so refetching here would put a spinner in front of data the
+   * caller already holds. `listingId` is carried separately so identity (cart
+   * writes, save state, reports) never depends on that snapshot.
+   */
+  MarketplaceProduct: { listingId: number; listing?: MarketplaceListing; title?: string };
   /**
    * The dark Business OS sections screen. `mode` is retained but currently
    * inert: the light hub redesign was reverted, so every value — including

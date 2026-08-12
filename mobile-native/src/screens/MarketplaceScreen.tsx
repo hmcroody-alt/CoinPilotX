@@ -1,3 +1,25 @@
+/**
+ * Marketplace discovery — the buyer's browse surface.
+ *
+ * Two things changed here and both were defects rather than preferences.
+ *
+ * First, the grid rendered in the dark `colors` tokens while the product detail
+ * rendered in `storeLight`, so a buyer crossed a hard theme seam on every tap and
+ * the light-mode grid put pale text on a pale card. Marketplace is now one light
+ * commerce surface end to end, matching Store and the product page.
+ *
+ * Second, the product detail lived in a `Modal` mounted by this screen. It is now
+ * a real route (`MarketplaceProduct`), so it can be deep-linked, shared, and
+ * returned to from checkout. This screen keeps only what discovery needs.
+ *
+ * The tab strip lists exactly the orderings this backend can actually produce —
+ * relevance, recency, and boosted — and nothing else. "Deals", "Best Sellers",
+ * "Top Rated" and "Trending" have no backing field on `marketplace_listings`, so
+ * they are absent rather than present and empty. Likewise there is no filter chip:
+ * the only real filter is the category rail below it, which is built from the
+ * categories the returned listings actually carry.
+ */
+
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
@@ -5,10 +27,8 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
-  Modal,
   Pressable,
   RefreshControl,
-  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,34 +37,38 @@ import {
 } from "react-native";
 import {
   loadCachedMarketplace,
-  marketplaceSellerAuthor,
   MarketplaceListing,
-  marketplaceWebUrl,
-  reportMarketplaceListing,
-  searchMarketplace,
-  startMarketplaceSellerChat
+  searchMarketplace
 } from "../api/marketplace";
 import { addToCart, fetchCart } from "../api/marketplaceCommerce";
 import {
   canPurchaseMarketplaceListing as canPurchaseListing,
-  isStocklessMarketplaceListing as isStockless,
-  marketplaceAvailabilityCopy as availabilityCopy,
-  marketplaceFulfillmentCopy as fulfillmentCopy
+  marketplaceAvailabilityCopy as availabilityCopy
 } from "../api/marketplaceBuyerPresentation";
-import { conversationSplitEnabled } from "../api/conversationDomain";
 import { mediaDisplayUrl } from "../api/feed";
-import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
-import { ContentTranslation } from "../components/ContentTranslation";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
 import { observeSavedStates, peekSaveState, useSavedState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
-import { colors } from "../theme/colors";
 import { storeLight } from "../theme/marketplaceLight";
 import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "MarketplaceDetail">>;
+
+type SortKey = "relevance" | "new" | "boosted";
+
+/**
+ * Only orderings the backend can honestly produce. `relevance` is the server's
+ * own ordering (`featured DESC, id DESC`), `new` reads `created_at`, `boosted`
+ * filters on `featured`. Anything requiring sales, ratings or view counts is
+ * omitted because `marketplace_listings` stores none of them.
+ */
+const SORT_TABS: { key: SortKey; label: string }[] = [
+  { key: "relevance", label: "For you" },
+  { key: "new", label: "New arrivals" },
+  { key: "boosted", label: "Boosted" }
+];
 
 export function MarketplaceScreen({ route, navigation }: Props) {
   // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
@@ -59,17 +83,23 @@ export function MarketplaceScreen({ route, navigation }: Props) {
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [detail, setDetail] = useState<MarketplaceListing | null>(null);
   const [cartCount, setCartCount] = useState(0);
   const [category, setCategory] = useState("All");
+  const [sort, setSort] = useState<SortKey>("relevance");
+
   const categories = useMemo(
-    () => ["All", ...Array.from(new Set(items.map((item) => String(item.category || "").trim()).filter(Boolean))).slice(0, 10)],
+    () => ["All", ...Array.from(new Set(items.map((item) => String(item.category || "").trim()).filter(Boolean))).slice(0, 12)],
     [items]
   );
-  const visibleItems = useMemo(
-    () => category === "All" ? items : items.filter((item) => String(item.category || "") === category),
-    [category, items]
-  );
+  const hasBoosted = useMemo(() => items.some(isBoosted), [items]);
+  const tabs = useMemo(() => SORT_TABS.filter((tab) => tab.key !== "boosted" || hasBoosted), [hasBoosted]);
+
+  const visibleItems = useMemo(() => {
+    const byCategory = category === "All" ? items : items.filter((item) => String(item.category || "") === category);
+    if (sort === "boosted") return byCategory.filter(isBoosted);
+    if (sort === "new") return [...byCategory].sort((a, b) => listingCreatedAt(b) - listingCreatedAt(a));
+    return byCategory;
+  }, [category, items, sort]);
 
   async function load(mode: "initial" | "refresh" | "search" = "initial", nextQuery = query) {
     setError("");
@@ -78,21 +108,20 @@ export function MarketplaceScreen({ route, navigation }: Props) {
     if (mode === "refresh") setRefreshing(true);
     try {
       const result = await searchMarketplace({ query: nextQuery, limit: 32, sellerUserId });
-      const nextItems = focusInitialListing(result.items || [], initialListingId);
+      const nextItems = result.items || [];
       // A live search result is newer than anything the store holds, so it
       // corrects it — that is how a listing unsaved from the Saved screen stops
-      // showing "Saved" here without this screen knowing that screen exists.
+      // showing as saved here without this screen knowing that screen exists.
       // Cached results below deliberately do not: they are, by definition, old.
       observeSavedStates("marketplace", nextItems.map((item) => ({ id: item.id, saved: item.saved })));
       setItems(nextItems);
-      if (initialListingId && nextItems.length) setDetail(nextItems.find((item) => item.id === initialListingId) || nextItems[0]);
+      openInitialListing(nextItems);
     } catch (loadError) {
       const cached = await loadCachedMarketplace();
       if (cached.length) {
-        const nextItems = focusInitialListing(cached, initialListingId);
-        setItems(nextItems);
+        setItems(cached);
         setOffline(true);
-        if (initialListingId) setDetail(nextItems[0]);
+        openInitialListing(cached);
       } else {
         setError(loadError instanceof Error ? loadError.message : "Marketplace could not load.");
       }
@@ -102,9 +131,21 @@ export function MarketplaceScreen({ route, navigation }: Props) {
     }
   }
 
+  /**
+   * A deep link or notification that names a listing wants the product page, not
+   * the grid with that listing nudged to the front. The grid still renders
+   * underneath so Back lands on Marketplace rather than on nothing.
+   */
+  function openInitialListing(source: MarketplaceListing[]) {
+    if (!initialListingId || !navigation) return;
+    const target = source.find((item) => item.id === initialListingId);
+    if (!target) return;
+    navigation.navigate("MarketplaceProduct", { listingId: target.id, listing: target, title: target.title });
+  }
+
   useEffect(() => {
     load("initial").catch(() => undefined);
-    fetchCart().then((cart) => setCartCount(cart.badgeCount)).catch(() => undefined);
+    refreshCartCount();
   }, [initialListingId, sellerUserId]);
 
   useEffect(() => {
@@ -112,93 +153,26 @@ export function MarketplaceScreen({ route, navigation }: Props) {
     return unregisterMarketplace;
   }, [initialListingId, query, sellerUserId]);
 
-  function updateListing(listingId: number, next: Partial<MarketplaceListing>) {
-    setItems((current) => current.map((item) => (item.id === listingId ? { ...item, ...next } : item)));
-    setDetail((current) => (current?.id === listingId ? { ...current, ...next } : current));
+  function refreshCartCount() {
+    fetchCart().then((cart) => setCartCount(cart.badgeCount)).catch(() => undefined);
   }
 
-  /**
-   * Save *and* unsave. This could only ever add: it forced `saved: true`, and
-   * the card's answer to "what if the user taps again" was to disable the
-   * button permanently, which left a mis-tap unrecoverable. The route now
-   * accepts the state being asked for, so this is the same toggle every other
-   * savable surface has.
-   */
+  function updateListing(listingId: number, next: Partial<MarketplaceListing>) {
+    setItems((current) => current.map((item) => (item.id === listingId ? { ...item, ...next } : item)));
+  }
+
   async function handleSave(listing: MarketplaceListing) {
-    // The state to invert is the one on screen, which is the store's, not the
-    // one baked into the search payload. Taking it from `listing.saved` meant a
-    // listing saved from the Saved screen was toggled from "not saved" here and
-    // the tap re-saved something already saved.
+    // Invert the state that is on screen — the store's — not the one baked into
+    // the search payload, which may predate a save made on another surface.
     const wasSaved = peekSaveState("marketplace", listing.id)?.saved ?? Boolean(listing.saved);
     setBusyId(listing.id);
     try {
       const outcome = await setSaved({ type: "marketplace", id: listing.id }, !wasSaved);
-      // Keep the payload in step so a later re-seed of an unmounted card agrees
-      // with the store. The buttons read the store; this is bookkeeping.
       updateListing(listing.id, { saved: outcome.saved });
       if (!outcome.ok && outcome.message) setError(outcome.message);
     } finally {
       setBusyId(null);
     }
-  }
-
-  async function handleReport(listing: MarketplaceListing) {
-    setBusyId(listing.id);
-    try {
-      await reportMarketplaceListing(listing.id, "Needs review");
-      setError("Listing report sent.");
-    } catch (reportError) {
-      setError(reportError instanceof Error ? reportError.message : "Listing report failed.");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function handleContactSeller(listing: MarketplaceListing) {
-    if (!listing.seller_user_id) {
-      setError("This seller cannot be messaged from the app yet.");
-      return;
-    }
-    setBusyId(listing.id);
-    try {
-      const result = await startMarketplaceSellerChat(listing.seller_user_id);
-      if (result.conversation_id && navigation) {
-        // A message about a listing is commerce, so it belongs to the Commerce
-        // Inbox. Routing through it (rather than straight to the thread) is what
-        // makes Back land on the seller's commerce list instead of their friends.
-        if (conversationSplitEnabled()) {
-          navigation.navigate("BusinessOsMessages", {
-            title: "Messages",
-            focusConversationId: result.conversation_id
-          });
-        } else {
-          navigation.navigate("Chat", { conversationId: result.conversation_id, title: listing.seller_name || "Seller" });
-        }
-      } else {
-        setError("Seller chat is not available for this listing yet.");
-      }
-    } catch (contactError) {
-      setError(contactError instanceof Error ? contactError.message : "Seller chat could not be opened.");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function handleCheckout(listing: MarketplaceListing) {
-    if (!canPurchaseListing(listing)) {
-      setError("This item is no longer available.");
-      return;
-    }
-    navigation?.navigate("MarketplaceCheckout", {
-      mode: "buy_now",
-      listingId: listing.id,
-      itemTitle: listing.title || "Marketplace item",
-      sellerUserId: Number(listing.seller_user_id || 0),
-      sellerName: listing.seller_name || "PulseSoc seller",
-      priceLabel: listing.price_label || "Confirmed at checkout",
-      quantity: 1,
-      fulfillment: listingFulfillment(listing)
-    });
   }
 
   async function handleAddToCart(listing: MarketplaceListing) {
@@ -208,9 +182,11 @@ export function MarketplaceScreen({ route, navigation }: Props) {
     }
     setBusyId(listing.id);
     try {
+      // Add to cart stays on the grid. Navigating to checkout from a grid tile
+      // is the behaviour this rebuild exists to remove.
       const cart = await addToCart(listing.id, 1);
       setCartCount(cart.badgeCount);
-      setError(`${listing.title || "Item"} added to cart.`);
+      setError(`Added to cart · ${listing.title || "Item"}`);
     } catch (cartError) {
       setError(cartError instanceof Error ? cartError.message : "This item could not be added to your cart.");
     } finally {
@@ -218,10 +194,14 @@ export function MarketplaceScreen({ route, navigation }: Props) {
     }
   }
 
+  function openProduct(listing: MarketplaceListing) {
+    navigation?.navigate("MarketplaceProduct", { listingId: listing.id, listing, title: listing.title });
+  }
+
   if (loading && !items.length) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={colors.accent} />
+        <ActivityIndicator color={storeLight.accent.brandOnLight} />
         <Text style={styles.centerText}>Loading Marketplace</Text>
       </View>
     );
@@ -237,81 +217,125 @@ export function MarketplaceScreen({ route, navigation }: Props) {
         numColumns={2}
         columnWrapperStyle={styles.gridRow}
         keyExtractor={(item) => String(item.id)}
-        refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            tintColor={storeLight.accent.brandOnLight}
+            onRefresh={() => {
+              refreshCartCount();
+              load("refresh").catch(() => undefined);
+            }}
+          />
+        }
         ListHeaderComponent={
           <View style={styles.header}>
-            <View style={styles.marketHeaderRow}>
-              <View style={styles.flexTitle}><Text style={styles.title}>{sellerUserId ? route?.params?.title || "Seller store" : "Marketplace"}</Text><Text style={styles.subtitle}>{offline ? "Showing saved results" : sellerUserId ? "Approved products from this seller" : "Discover products from PulseSoc sellers"}</Text></View>
-              <Pressable accessibilityRole="button" accessibilityLabel="Saved Marketplace items" style={styles.headerIcon} onPress={() => navigation?.navigate("Saved")}><Ionicons name="heart-outline" size={22} color={colors.text} /></Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Cart, ${cartCount} items`} style={styles.headerIcon} onPress={() => navigation?.navigate("MarketplaceCart", { title: `Cart${cartCount ? ` (${cartCount})` : ""}` })}><Ionicons name="cart-outline" size={23} color={colors.text} />{cartCount ? <Text style={styles.cartBadge}>{cartCount > 99 ? "99+" : cartCount}</Text> : null}</Pressable>
+            <View style={styles.headerRow}>
+              <View style={styles.headerTitles}>
+                <Text style={styles.title}>{sellerUserId ? route?.params?.title || "Seller store" : "Marketplace"}</Text>
+                <Text style={styles.subtitle}>
+                  {offline ? "Showing saved results" : sellerUserId ? "Products from this seller" : "Buy from PulseSoc sellers"}
+                </Text>
+              </View>
+              <Pressable accessibilityRole="button" accessibilityLabel="Saved items" style={styles.headerIcon} onPress={() => navigation?.navigate("Saved")}>
+                <Ionicons name="heart-outline" size={22} color={storeLight.text.primary} />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Cart, ${cartCount} item${cartCount === 1 ? "" : "s"}`}
+                style={styles.headerIcon}
+                onPress={() => navigation?.navigate("MarketplaceCart", { title: "Cart" })}
+              >
+                <Ionicons name="cart-outline" size={23} color={storeLight.text.primary} />
+                {cartCount ? <Text style={styles.cartBadge}>{cartCount > 99 ? "99+" : cartCount}</Text> : null}
+              </Pressable>
             </View>
+
             <View style={styles.searchRow}>
+              <Ionicons name="search" size={18} color={storeLight.text.muted} style={styles.searchIcon} />
               <TextInput
                 style={styles.searchInput}
                 value={query}
                 onChangeText={setQuery}
-                placeholder="Search listings, categories, sellers"
-                placeholderTextColor={colors.muted}
+                placeholder="Search products, categories, sellers"
+                placeholderTextColor={storeLight.text.muted}
                 returnKeyType="search"
                 onSubmitEditing={() => load("search", query).catch(() => undefined)}
               />
-              <Pressable accessibilityRole="button" style={styles.searchButton} onPress={() => load("search", query).catch(() => undefined)}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Search Marketplace" style={styles.searchButton} onPress={() => load("search", query).catch(() => undefined)}>
                 <Text style={styles.searchButtonText}>Search</Text>
               </Pressable>
             </View>
-            <View style={styles.primaryTab}><Text style={styles.primaryTabText}>For You</Text></View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRail}>
-              {categories.map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: category === value }} style={[styles.categoryChip, category === value && styles.categoryChipActive]} onPress={() => setCategory(value)}><Text style={[styles.categoryText, category === value && styles.categoryTextActive]}>{value}</Text></Pressable>)}
-            </ScrollView>
-            <View style={styles.utilityRow}>
-              <Pressable accessibilityRole="button" onPress={() => navigation?.navigate("BuyerOrders", { title: "Purchase History" })}><Text style={styles.utilityLink}>Orders</Text></Pressable>
-              <Pressable accessibilityRole="button" onPress={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })}><Text style={styles.utilityLink}>Sell on PulseSoc</Text></Pressable>
+
+            <View style={styles.tabRow}>
+              {tabs.map((tab) => (
+                <Pressable
+                  key={tab.key}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: sort === tab.key }}
+                  style={[styles.tab, sort === tab.key && styles.tabActive]}
+                  onPress={() => setSort(tab.key)}
+                >
+                  <Text style={[styles.tabText, sort === tab.key && styles.tabTextActive]}>{tab.label}</Text>
+                </Pressable>
+              ))}
             </View>
-            {error ? <Text style={styles.error}>{error}</Text> : null}
+
+            {categories.length > 1 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRail}>
+                {categories.map((value) => (
+                  <Pressable
+                    key={value}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: category === value }}
+                    style={[styles.categoryChip, category === value && styles.categoryChipActive]}
+                    onPress={() => setCategory(value)}
+                  >
+                    <Text style={[styles.categoryText, category === value && styles.categoryTextActive]}>{value}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : null}
+
+            <View style={styles.utilityRow}>
+              <Pressable accessibilityRole="button" onPress={() => navigation?.navigate("BuyerOrders", { title: "Purchase History" })}>
+                <Text style={styles.utilityLink}>Your orders</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" onPress={() => navigation?.navigate("SellerStore", { title: "Seller / Store" })}>
+                <Text style={styles.utilityLink}>Sell on PulseSoc</Text>
+              </Pressable>
+            </View>
+
+            {error ? <Text style={styles.notice} accessibilityLiveRegion="polite">{error}</Text> : null}
           </View>
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>{error ? "Marketplace unavailable" : "No marketplace listings"}</Text>
-            <Text style={styles.emptyText}>{error || "Approved PulseSoc marketplace listings will appear here."}</Text>
+            <Ionicons name="storefront-outline" size={34} color={storeLight.text.muted} />
+            <Text style={styles.emptyTitle}>{error ? "Marketplace unavailable" : "Nothing to show here yet"}</Text>
+            <Text style={styles.emptyText}>
+              {error || (query ? "No products matched that search. Try a different word or clear the search." : "Products from PulseSoc sellers will appear here.")}
+            </Text>
           </View>
         }
         renderItem={({ item }) => (
-          <MarketplaceCard
+          <ProductCard
             listing={item}
             busy={busyId === item.id}
-            onOpen={setDetail}
+            onOpen={openProduct}
             onSave={handleSave}
             onAddToCart={handleAddToCart}
           />
         )}
       />
-      <MarketplaceDetailModal
-        listing={detail}
-        busy={busyId === detail?.id}
-        onClose={() => setDetail(null)}
-        onSave={handleSave}
-        onReport={handleReport}
-        onContactSeller={handleContactSeller}
-        onCheckout={handleCheckout}
-        onAddToCart={handleAddToCart}
-        onOpenCart={() => navigation?.navigate("MarketplaceCart", { title: `Cart${cartCount ? ` (${cartCount})` : ""}` })}
-        onProfile={(listing) => navigation?.navigate("MarketplaceDetail", { sellerUserId: Number(listing.seller_user_id || 0), title: listing.seller_name || "Seller store" })}
-      />
     </View>
   );
 }
 
-function listingFulfillment(listing: MarketplaceListing): "digital" | "pickup" | "shipping" {
-  const value = String(listing.delivery_type || listing.product_type || "").toLowerCase();
-  const metadata = (listing.listing_metadata || {}) as Record<string, unknown>;
-  const delivery = String(metadata.delivery_options || "").toLowerCase();
-  if (value === "digital" || listing.listing_type === "digital") return "digital";
-  if (value === "pickup" || delivery === "pickup") return "pickup";
-  return "shipping";
-}
-
-function MarketplaceCard({ listing, busy, onOpen, onSave, onAddToCart }: {
+/**
+ * A grid tile. Image first, price second, title third — the buyer scans on price
+ * and photo, so leading with the description (as this did) buried both.
+ */
+function ProductCard({ listing, busy, onOpen, onSave, onAddToCart }: {
   listing: MarketplaceListing;
   busy?: boolean;
   onOpen: (listing: MarketplaceListing) => void;
@@ -319,610 +343,227 @@ function MarketplaceCard({ listing, busy, onOpen, onSave, onAddToCart }: {
   onAddToCart: (listing: MarketplaceListing) => void;
 }) {
   const cover = listing.media?.[0] ? mediaDisplayUrl(listing.media[0]) : "";
-  // Read from the shared store, not from the listing payload. The payload is a
-  // snapshot of whatever the last search returned; the store is what every other
-  // surface writes to, so a listing saved from the Saved screen — or from the
-  // detail modal rendered on top of this very card — shows as saved here without
-  // a refetch. `listing.saved` still seeds it on first sight.
+  // Read from the shared store, not from the payload: a listing saved on the
+  // product page or the Saved screen shows as saved here without a refetch.
   const savedState = useSavedState("marketplace", listing.id, listing.saved);
+  const purchasable = canPurchaseListing(listing);
   return (
-    <Pressable accessibilityRole="button" style={styles.card} onPress={() => onOpen(listing)}>
-      {cover ? <Image source={{ uri: cover }} style={styles.cover} resizeMode="cover" /> : <View style={styles.coverFallback}><Text style={styles.coverText}>Marketplace</Text></View>}
+    <Pressable accessibilityRole="button" accessibilityLabel={listing.title || "Marketplace product"} style={styles.card} onPress={() => onOpen(listing)}>
+      <View style={styles.cardMedia}>
+        {cover ? (
+          <Image source={{ uri: cover }} style={styles.cardImage} resizeMode="cover" />
+        ) : (
+          <View style={[styles.cardImage, styles.cardImageFallback]}>
+            <Ionicons name="image-outline" size={26} color={storeLight.text.muted} />
+          </View>
+        )}
+        {isBoosted(listing) ? <Text style={styles.sponsoredBadge}>Sponsored</Text> : null}
+        {!purchasable ? (
+          <View style={styles.soldScrim}>
+            <Text style={styles.soldScrimText}>SOLD OUT</Text>
+          </View>
+        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${savedState.saved ? "Remove" : "Save"} ${listing.title || "product"}`}
+          accessibilityState={{ selected: savedState.saved, disabled: busy }}
+          disabled={busy}
+          hitSlop={8}
+          style={styles.heartButton}
+          onPress={() => onSave(listing)}
+        >
+          <Ionicons name={savedState.saved ? "heart" : "heart-outline"} size={18} color={savedState.saved ? storeLight.status.error : storeLight.text.primary} />
+        </Pressable>
+      </View>
       <View style={styles.cardBody}>
-        <Text style={styles.cardTitle}>{listing.title}</Text>
-        <ContentTranslation
-          contentType="marketplace"
-          contentRef={listing.id}
-          text={listing.short_description || listing.description || "PulseSoc listing"}
-          textStyle={styles.cardDescription}
-          numberOfLines={2}
-        />
-        <View style={styles.pillRow}>
-          <Text style={styles.pill}>{listing.category || "Education"}</Text>
-          <Text style={styles.pill}>{listing.price_label || "Request access"}</Text>
-          <Text style={styles.pill}>{availabilityCopy(listing)}</Text>
-        </View>
-        <Text style={styles.sellerText}>Seller: {listing.seller_name || "PulseSoc Seller"}</Text>
-        <View style={styles.cardActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel={`${savedState.saved ? "Remove" : "Save"} ${listing.title || "listing"}`} accessibilityState={{ disabled: busy, selected: savedState.saved }} style={styles.smallButton} disabled={busy} onPress={() => onSave(listing)}>
-            <Text style={styles.smallButtonText}>{savedState.saved ? "Saved" : "Save"}</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || !canPurchaseListing(listing) }} style={[styles.smallButton, styles.cardCartButton, !canPurchaseListing(listing) && styles.disabledButton]} disabled={busy || !canPurchaseListing(listing)} onPress={() => onAddToCart(listing)}>
-            <Text style={styles.cardCartText}>{canPurchaseListing(listing) ? "Add to cart" : "Sold out"}</Text>
-          </Pressable>
-        </View>
+        <Text style={styles.cardPrice} numberOfLines={1}>{listing.price_label || "Price at checkout"}</Text>
+        <Text style={styles.cardTitle} numberOfLines={2}>{listing.title || "Marketplace product"}</Text>
+        <Text style={[styles.cardAvailability, !purchasable && styles.cardSold]} numberOfLines={1}>{availabilityCopy(listing)}</Text>
+        <Text style={styles.cardSeller} numberOfLines={1}>{listing.seller_name || "PulseSoc Seller"}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={purchasable ? `Add ${listing.title || "product"} to cart` : "Sold out"}
+          accessibilityState={{ disabled: busy || !purchasable }}
+          disabled={busy || !purchasable}
+          style={[styles.cardCta, (busy || !purchasable) && styles.disabled]}
+          onPress={() => onAddToCart(listing)}
+        >
+          <Text style={styles.cardCtaText}>{purchasable ? "Add to cart" : "Sold out"}</Text>
+        </Pressable>
       </View>
     </Pressable>
   );
 }
 
-function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onContactSeller, onCheckout, onAddToCart, onOpenCart, onProfile }: {
-  listing: MarketplaceListing | null;
-  busy?: boolean;
-  onClose: () => void;
-  onSave: (listing: MarketplaceListing) => void;
-  onReport: (listing: MarketplaceListing) => void;
-  onContactSeller: (listing: MarketplaceListing) => void;
-  onCheckout: (listing: MarketplaceListing) => void;
-  onAddToCart: (listing: MarketplaceListing) => void;
-  onOpenCart: () => void;
-  onProfile: (listing: MarketplaceListing) => void;
-}) {
-  const [viewerOpen, setViewerOpen] = useState(false);
-  const viewerItems = useMemo(() => {
-    if (!listing) return [];
-    const author = marketplaceSellerAuthor(listing);
-    return (listing.media || []).map((media) =>
-      mediaViewerItemFromPulseMedia(media, {
-        title: listing.title || "Marketplace listing",
-        subtitle: listing.price_label || listing.category || "Marketplace",
-        author,
-        sourceUrl: marketplaceWebUrl(listing.id)
-      })
-    );
-  }, [listing]);
-  // Same store, same key as the card underneath this modal — which is the point:
-  // saving here used to leave that card still offering to save the same listing.
-  // Called with id 0 when there is no listing so the hook order stays stable
-  // across the early return below; nothing subscribes to `marketplace:0`.
-  const savedState = useSavedState("marketplace", listing?.id || 0, listing?.saved);
-  if (!listing) return null;
-  const cover = listing.media?.[0] ? mediaDisplayUrl(listing.media[0]) : "";
-  const canNavigateProfile = Boolean(listing.seller_public_player_id || listing.seller_username);
-  const metadata = listing.listing_metadata || {};
-  const condition = readMetadata(metadata, "condition");
-  const location = readMetadata(metadata, "location");
-  const fulfillment = fulfillmentCopy(listing);
-  const availability = availabilityCopy(listing);
-  const purchasable = canPurchaseListing(listing);
-  return (
-    <Modal visible={Boolean(listing)} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.detailShell}>
-      <ScrollView style={styles.detailRoot} contentContainerStyle={styles.detailContent}>
-        <View style={styles.detailHeader}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Back to Marketplace" style={styles.iconButton} onPress={onClose}>
-            <Ionicons name="arrow-back" size={24} color={storeLight.text.primary} />
-          </Pressable>
-          <View style={styles.detailHeaderActions}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Share listing" style={styles.iconButton} onPress={() => Share.share({ title: listing.title || "Marketplace listing", message: `${listing.title || "Marketplace listing"}\n${marketplaceWebUrl(listing.id)}` }).catch(() => undefined)}>
-              <Ionicons name="share-outline" size={23} color={storeLight.text.primary} />
-            </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel={savedState.saved ? "Remove from saved" : "Save listing"} accessibilityState={{ selected: savedState.saved }} style={styles.iconButton} onPress={() => onSave(listing)}>
-              <Ionicons name={savedState.saved ? "heart" : "heart-outline"} size={24} color={savedState.saved ? storeLight.status.error : storeLight.text.primary} />
-            </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="Open cart" style={styles.iconButton} onPress={onOpenCart}>
-              <Ionicons name="cart-outline" size={24} color={storeLight.text.primary} />
-            </Pressable>
-          </View>
-        </View>
-        <Pressable style={styles.detailMedia} accessibilityRole="button" accessibilityLabel={`View ${viewerItems.length || 1} product media item${viewerItems.length === 1 ? "" : "s"}`} accessibilityState={{ disabled: !viewerItems.length }} disabled={!viewerItems.length} onPress={() => setViewerOpen(true)}>
-          {cover ? <Image source={{ uri: cover }} style={styles.detailCover} resizeMode="cover" /> : <View style={styles.detailCoverFallback}><Text style={styles.coverText}>No media loaded</Text></View>}
-          <View style={styles.mediaCount}><Text style={styles.mediaCountText}>1/{Math.max(1, viewerItems.length)}</Text></View>
-        </Pressable>
-        <View style={styles.productSection}>
-          <Text style={styles.detailTitle}>{listing.title}</Text>
-          <Text style={styles.detailPrice}>{listing.price_label || "Request access"}</Text>
-          <View style={styles.pillRow}>
-            <Text style={styles.consumerPill}>{listing.category || "Marketplace"}</Text>
-            {condition ? <Text style={styles.consumerPill}>{humanize(condition)}</Text> : null}
-            <Text style={[styles.consumerPill, !purchasable && styles.soldPill]}>{availability}</Text>
-          </View>
-          <DetailFact label="Category" value={[listing.category, listing.subcategory].filter(Boolean).join(" › ")} />
-          {condition ? <DetailFact label="Condition" value={humanize(condition)} /> : null}
-          {location ? <DetailFact label="Location" value={location} /> : null}
-          <DetailFact label="Delivery" value={fulfillment} />
-          {listing.quantity != null && !isStockless(listing) ? <DetailFact label="Quantity" value={availability} /> : null}
-        </View>
-        <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canNavigateProfile }} style={styles.sellerPanel} disabled={!canNavigateProfile} onPress={() => onProfile(listing)}>
-          <View style={styles.sellerAvatar}><Text style={styles.sellerAvatarText}>{(listing.seller_name || "P").trim().slice(0, 1).toUpperCase()}</Text></View>
-          <View style={styles.sellerInfo}>
-            <Text style={styles.sellerTitle}>{listing.seller_name || "PulseSoc Seller"}</Text>
-            <View style={styles.verifiedRow}><Ionicons name="storefront-outline" size={14} color={storeLight.status.success} /><Text style={styles.sellerMeta}>Marketplace seller</Text></View>
-          </View>
-          <Text style={styles.viewStoreText}>{canNavigateProfile ? "View store" : "Seller"}</Text>
-        </Pressable>
-        <View style={styles.infoSection}>
-          <Text style={styles.sectionTitle}>Description</Text>
-        <ContentTranslation
-          contentType="marketplace"
-          contentRef={listing.id}
-          text={listing.description || listing.short_description || "No description loaded."}
-          textStyle={styles.detailDescription}
-        />
-        </View>
-        <View style={styles.infoSection}>
-          <Text style={styles.sectionTitle}>Buyer protection</Text>
-          <ProtectionRow icon="lock-closed-outline" text="Payment is handled through PulseSoc secure checkout." />
-          <ProtectionRow icon="receipt-outline" text="Your order and receipt appear in Purchase History after payment confirmation." />
-          <ProtectionRow icon="refresh-outline" text="Eligible returns and disputes are managed from your order." />
-        </View>
-        <View style={styles.secondaryActions}>
-          <Pressable accessibilityRole="button" style={styles.textAction} onPress={() => onContactSeller(listing)}><Ionicons name="chatbubble-outline" size={18} color={storeLight.text.link} /><Text style={styles.textActionLabel}>Message seller</Text></Pressable>
-          <Pressable accessibilityRole="button" style={styles.textAction} onPress={() => onReport(listing)}><Ionicons name="flag-outline" size={18} color={storeLight.text.link} /><Text style={styles.textActionLabel}>Report</Text></Pressable>
-        </View>
-      </ScrollView>
-        <View style={styles.purchaseBar}>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || !purchasable }} style={[styles.cartButton, (!purchasable || busy) && styles.disabledButton]} disabled={busy || !purchasable} onPress={() => onAddToCart(listing)}>
-            <Ionicons name="cart-outline" size={19} color={storeLight.text.link} /><Text style={styles.cartButtonText}>{purchasable ? "Add to cart" : "Sold out"}</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || !purchasable }} style={[styles.buyButton, (!purchasable || busy) && styles.disabledButton]} disabled={busy || !purchasable} onPress={() => onCheckout(listing)}>
-            <Text style={styles.buyButtonText}>{busy ? "Please wait…" : "Buy now"}</Text>
-          </Pressable>
-        </View>
-      </View>
-      <NativeMediaViewer visible={viewerOpen} items={viewerItems} title="Marketplace media" onClose={() => setViewerOpen(false)} />
-    </Modal>
-  );
+function isBoosted(listing: MarketplaceListing) {
+  return listing.featured === true || Number(listing.featured || 0) > 0;
 }
 
-function DetailFact({ label, value }: { label: string; value: string }) {
-  if (!value) return null;
-  return <View style={styles.factRow}><Text style={styles.factLabel}>{label}</Text><Text style={styles.factValue}>{value}</Text></View>;
-}
-
-function ProtectionRow({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }) {
-  return <View style={styles.protectionRow}><Ionicons name={icon} size={19} color={storeLight.status.success} /><Text style={styles.protectionText}>{text}</Text></View>;
-}
-
-function readMetadata(metadata: Record<string, unknown>, key: string) {
-  const value = metadata[key];
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function humanize(value: string) {
-  return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function focusInitialListing(items: MarketplaceListing[], listingId: number) {
-  if (!listingId) return items;
-  const index = items.findIndex((item) => item.id === listingId);
-  if (index <= 0) return items;
-  return [items[index], ...items.slice(0, index), ...items.slice(index + 1)];
+/** Absent `created_at` sorts last rather than as "now" — unknown is not new. */
+function listingCreatedAt(listing: MarketplaceListing) {
+  const parsed = Date.parse(String(listing.created_at || ""));
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 const styles = createThemedStyles(() => ({
   card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
+    backgroundColor: storeLight.bg.card,
+    borderColor: storeLight.border.hairline,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
     flex: 1,
     marginBottom: 10,
     maxWidth: "49%",
     overflow: "hidden"
   },
-  cardActions: {
-    gap: 8,
-    marginTop: 12
+  cardAvailability: { color: storeLight.status.success, fontSize: 12, fontWeight: "700" },
+  cardBody: { gap: 4, padding: 10 },
+  cardCta: {
+    alignItems: "center",
+    backgroundColor: storeLight.accent.brandOnLight,
+    borderRadius: 999,
+    justifyContent: "center",
+    marginTop: 6,
+    minHeight: 38
   },
-  cardBody: {
-    gap: 6,
-    padding: 10
+  cardCtaText: { color: storeLight.cta.text, fontSize: 13, fontWeight: "900" },
+  cardImage: { aspectRatio: 1, backgroundColor: storeLight.bg.skeleton, width: "100%" },
+  cardImageFallback: { alignItems: "center", justifyContent: "center" },
+  cardMedia: { position: "relative" },
+  cardPrice: { color: storeLight.status.success, fontSize: 17, fontWeight: "900" },
+  cardSeller: { color: storeLight.text.muted, fontSize: 12 },
+  cardSold: { color: storeLight.status.error },
+  cardTitle: { color: storeLight.text.primary, fontSize: 14, fontWeight: "700", lineHeight: 19 },
+  cartBadge: {
+    backgroundColor: storeLight.status.error,
+    borderRadius: 10,
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "900",
+    minWidth: 17,
+    overflow: "hidden",
+    paddingHorizontal: 3,
+    paddingVertical: 2,
+    position: "absolute",
+    right: -3,
+    textAlign: "center",
+    top: -3
   },
-  cardDescription: {
-    color: colors.muted,
-    fontSize: 12,
-    lineHeight: 17
+  categoryChip: {
+    backgroundColor: storeLight.bg.card,
+    borderColor: storeLight.border.hairline,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    justifyContent: "center",
+    minHeight: 36,
+    paddingHorizontal: 14
   },
-  cardTitle: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "900"
-  },
+  categoryChipActive: { backgroundColor: storeLight.bg.headerFrom, borderColor: storeLight.bg.headerFrom },
+  categoryRail: { gap: 8, paddingVertical: 10 },
+  categoryText: { color: storeLight.text.primary, fontSize: 12, fontWeight: "700" },
+  categoryTextActive: { color: storeLight.text.onDark, fontWeight: "900" },
   center: {
     alignItems: "center",
-    backgroundColor: "transparent",
+    backgroundColor: storeLight.bg.page,
     flex: 1,
     justifyContent: "center",
     padding: 24
   },
-  centerText: {
-    color: colors.muted,
-    marginTop: 12
-  },
-  closeButton: {
-    minHeight: 38,
-    paddingVertical: 9
-  },
-  closeText: {
-    color: colors.text,
-    fontWeight: "900"
-  },
-  content: {
-    padding: 12,
-    paddingBottom: 32
-  },
-  cover: {
-    aspectRatio: 1,
-    backgroundColor: colors.surfaceRaised,
-    width: "100%"
-  },
-  coverFallback: {
-    alignItems: "center",
-    aspectRatio: 1,
-    backgroundColor: colors.surfaceRaised,
-    justifyContent: "center"
-  },
-  coverText: {
-    color: colors.muted,
-    fontWeight: "900"
-  },
-  detailActions: {
-    gap: 10,
-    marginTop: 16
-  },
-  detailContent: {
-    paddingBottom: 28
-  },
-  detailCover: {
-    aspectRatio: 1,
-    backgroundColor: storeLight.bg.skeleton,
-    width: "100%"
-  },
-  detailCoverFallback: {
-    alignItems: "center",
-    aspectRatio: 1,
-    backgroundColor: storeLight.bg.skeleton,
-    justifyContent: "center"
-  },
-  detailDescription: {
-    color: storeLight.text.primary,
-    fontSize: 15,
-    lineHeight: 23,
-    marginTop: 12
-  },
-  detailHeader: {
+  centerText: { color: storeLight.text.muted, marginTop: 12 },
+  content: { padding: 12, paddingBottom: 32 },
+  disabled: { opacity: 0.45 },
+  empty: {
     alignItems: "center",
     backgroundColor: storeLight.bg.card,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: 58,
-    paddingHorizontal: 10
+    borderColor: storeLight.border.hairline,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+    padding: 24
   },
-  detailPrice: {
-    color: storeLight.status.success,
-    fontSize: 23,
-    fontWeight: "900",
-    marginTop: 4
-  },
-  detailRoot: {
-    backgroundColor: storeLight.bg.page,
-    flex: 1
-  },
-  detailTitle: {
-    color: storeLight.text.primary,
-    fontSize: 27,
-    fontWeight: "900",
-    lineHeight: 32
-  },
-  empty: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    padding: 18
-  },
-  emptyText: {
-    color: colors.muted,
-    lineHeight: 21,
-    marginTop: 6
-  },
-  emptyTitle: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: "900"
-  },
-  error: {
-    color: colors.accent,
-    fontSize: 13,
-    fontWeight: "800",
-    marginTop: 10
-  },
-  header: {
-    marginBottom: 14
-  },
+  emptyText: { color: storeLight.text.muted, fontSize: 13, lineHeight: 20, textAlign: "center" },
+  emptyTitle: { color: storeLight.text.primary, fontSize: 17, fontWeight: "900" },
   gridRow: { gap: 10 },
-  marketHeaderRow: { alignItems: "center", flexDirection: "row", gap: 7 },
-  flexTitle: { flex: 1 },
-  headerIcon: { alignItems: "center", borderColor: colors.border, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, height: 40, justifyContent: "center", position: "relative", width: 40 },
-  cartBadge: { backgroundColor: colors.danger, borderRadius: 10, color: "#fff", fontSize: 9, fontWeight: "900", minWidth: 17, overflow: "hidden", paddingHorizontal: 3, paddingVertical: 2, position: "absolute", right: -4, textAlign: "center", top: -4 },
-  primaryTab: { alignSelf: "flex-start", borderBottomColor: colors.accent, borderBottomWidth: 3, marginTop: 14, paddingBottom: 7, paddingHorizontal: 5 },
-  primaryTabText: { color: colors.text, fontSize: 14, fontWeight: "900" },
-  categoryRail: { gap: 8, paddingVertical: 11 },
-  categoryChip: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth, minHeight: 35, justifyContent: "center", paddingHorizontal: 13 },
-  categoryChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  categoryText: { color: colors.text, fontSize: 12, fontWeight: "700" },
-  categoryTextActive: { color: colors.background, fontWeight: "900" },
-  utilityRow: { flexDirection: "row", gap: 18, marginBottom: 4 },
-  utilityLink: { color: colors.accentStrong, fontSize: 13, fontWeight: "800" },
-  list: {
-    backgroundColor: "transparent",
-    flex: 1
-  },
-  pill: {
-    backgroundColor: colors.surfaceRaised,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "800",
-    overflow: "hidden",
-    paddingHorizontal: 9,
-    paddingVertical: 6
-  },
-  pillRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8
-  },
-  primaryButton: {
+  header: { marginBottom: 12 },
+  headerIcon: {
     alignItems: "center",
-    backgroundColor: colors.accent,
-    borderRadius: 8,
-    paddingVertical: 13
+    borderColor: storeLight.border.hairline,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 40,
+    justifyContent: "center",
+    position: "relative",
+    width: 40
   },
-  primaryText: {
-    color: colors.background,
-    fontWeight: "900"
+  headerRow: { alignItems: "center", flexDirection: "row", gap: 7 },
+  headerTitles: { flex: 1 },
+  heartButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: 16,
+    height: 32,
+    justifyContent: "center",
+    position: "absolute",
+    right: 6,
+    top: 6,
+    width: 32
   },
-  root: {
-    backgroundColor: "transparent",
-    flex: 1
-  },
-  safetyNotice: {
-    color: colors.muted,
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 14
-  },
+  list: { backgroundColor: storeLight.bg.page, flex: 1 },
+  notice: { color: storeLight.text.primary, fontSize: 13, fontWeight: "700", marginTop: 10 },
+  root: { backgroundColor: storeLight.bg.page, flex: 1 },
   searchButton: {
     alignItems: "center",
-    backgroundColor: colors.accent,
+    backgroundColor: storeLight.accent.brandOnLight,
     borderRadius: 8,
     justifyContent: "center",
+    minHeight: 40,
     paddingHorizontal: 14
   },
-  searchButtonText: {
-    color: colors.background,
-    fontWeight: "900"
-  },
+  searchButtonText: { color: storeLight.cta.text, fontWeight: "900" },
+  searchIcon: { left: 11, position: "absolute", zIndex: 1 },
   searchInput: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    color: colors.text,
-    flex: 1,
-    padding: 12
-  },
-  searchRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 14
-  },
-  secondaryButton: {
-    alignItems: "center",
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingVertical: 13
-  },
-  secondaryText: {
-    color: colors.text,
-    fontWeight: "900"
-  },
-  sellerMeta: {
-    color: storeLight.text.muted,
-    fontSize: 12,
-    fontWeight: "600"
-  },
-  sellerPanel: {
-    alignItems: "center",
     backgroundColor: storeLight.bg.card,
     borderColor: storeLight.border.hairline,
-    borderRadius: 14,
-    borderWidth: 1,
-    flexDirection: "row",
-    marginHorizontal: 16,
-    marginTop: 12,
-    padding: 14
-  },
-  sellerGatewayButton: {
-    alignItems: "center",
-    borderColor: "rgba(37, 208, 167, 0.36)",
     borderRadius: 8,
-    borderWidth: 1,
-    justifyContent: "center",
-    marginTop: 12,
-    minHeight: 42
-  },
-  sellerGatewayText: {
-    color: colors.accent,
-    fontWeight: "900"
-  },
-  sellerText: {
-    color: colors.muted,
-    fontSize: 13
-  },
-  sellerTitle: {
+    borderWidth: StyleSheet.hairlineWidth,
     color: storeLight.text.primary,
-    fontWeight: "900"
-  },
-  smallButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 34,
-    paddingVertical: 8
-  },
-  cardCartButton: { backgroundColor: colors.accent, borderRadius: 8, paddingHorizontal: 8 },
-  cardCartText: { color: colors.background, fontSize: 13, fontWeight: "900" },
-  smallButtonText: {
-    color: colors.accentStrong,
-    fontSize: 13,
-    fontWeight: "900"
-  },
-  subtitle: {
-    color: colors.muted,
-    fontSize: 13,
-    marginTop: 3
-  },
-  title: {
-    color: colors.text,
-    fontSize: 24,
-    fontWeight: "900"
-  },
-  webButton: {
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
+    flex: 1,
+    minHeight: 44,
     paddingHorizontal: 12,
-    paddingVertical: 9
+    paddingLeft: 34
   },
-  webButtonText: {
-    color: colors.text,
-    fontWeight: "900"
-  },
-  detailShell: {
-    backgroundColor: storeLight.bg.page,
-    flex: 1
-  },
-  detailHeaderActions: {
+  searchRow: { alignItems: "center", flexDirection: "row", gap: 8, marginTop: 12 },
+  soldScrim: {
     alignItems: "center",
-    flexDirection: "row",
-    gap: 4
-  },
-  iconButton: {
-    alignItems: "center",
-    height: 46,
+    backgroundColor: "rgba(19, 26, 34, 0.55)",
+    bottom: 0,
     justifyContent: "center",
-    width: 46
-  },
-  detailMedia: {
-    backgroundColor: storeLight.bg.skeleton,
-    position: "relative"
-  },
-  mediaCount: {
-    backgroundColor: "rgba(15,17,17,.76)",
-    borderRadius: 14,
-    bottom: 12,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    left: 0,
     position: "absolute",
-    right: 12
+    right: 0,
+    top: 0
   },
-  mediaCountText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
-  productSection: {
-    backgroundColor: storeLight.bg.card,
-    borderBottomColor: storeLight.border.hairline,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 8,
-    padding: 16
-  },
-  consumerPill: {
-    backgroundColor: storeLight.bg.page,
-    borderColor: storeLight.border.hairline,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    color: storeLight.text.primary,
-    fontSize: 12,
-    fontWeight: "700",
+  soldScrimText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900", letterSpacing: 1.5 },
+  sponsoredBadge: {
+    backgroundColor: storeLight.bg.headerFrom,
+    borderRadius: 4,
+    color: storeLight.accent.brand,
+    fontSize: 10,
+    fontWeight: "900",
+    left: 6,
     overflow: "hidden",
-    paddingHorizontal: 10,
-    paddingVertical: 6
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    position: "absolute",
+    top: 6
   },
-  soldPill: { color: storeLight.status.error },
-  factRow: { flexDirection: "row", gap: 14, paddingTop: 3 },
-  factLabel: { color: storeLight.text.muted, fontSize: 13, width: 82 },
-  factValue: { color: storeLight.text.primary, flex: 1, fontSize: 13, fontWeight: "600" },
-  sellerAvatar: {
-    alignItems: "center",
-    backgroundColor: "#DDF8EE",
-    borderRadius: 24,
-    height: 48,
-    justifyContent: "center",
-    width: 48
-  },
-  sellerAvatarText: { color: storeLight.text.primary, fontSize: 18, fontWeight: "900" },
-  sellerInfo: { flex: 1, gap: 4, marginLeft: 11 },
-  verifiedRow: { alignItems: "center", flexDirection: "row", gap: 4 },
-  viewStoreText: { color: storeLight.text.link, fontSize: 13, fontWeight: "800" },
-  infoSection: {
-    backgroundColor: storeLight.bg.card,
-    borderColor: storeLight.border.hairline,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: 10,
-    marginHorizontal: 16,
-    marginTop: 12,
-    padding: 15
-  },
-  sectionTitle: { color: storeLight.text.primary, fontSize: 17, fontWeight: "900" },
-  protectionRow: { alignItems: "flex-start", flexDirection: "row", gap: 10 },
-  protectionText: { color: storeLight.text.muted, flex: 1, fontSize: 13, lineHeight: 19 },
-  secondaryActions: { flexDirection: "row", gap: 12, marginHorizontal: 16, marginTop: 14 },
-  textAction: {
-    alignItems: "center",
-    borderColor: storeLight.border.secondaryButton,
-    borderRadius: 999,
-    borderWidth: 1,
-    flex: 1,
-    flexDirection: "row",
-    gap: 7,
-    justifyContent: "center",
-    minHeight: 46
-  },
-  textActionLabel: { color: storeLight.text.link, fontSize: 13, fontWeight: "800" },
-  purchaseBar: {
-    backgroundColor: storeLight.bg.card,
-    borderTopColor: storeLight.border.hairline,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    gap: 10,
-    paddingBottom: 12,
-    paddingHorizontal: 14,
-    paddingTop: 10
-  },
-  cartButton: {
-    alignItems: "center",
-    borderColor: storeLight.text.link,
-    borderRadius: 999,
-    borderWidth: 1.5,
-    flex: 1,
-    flexDirection: "row",
-    gap: 7,
-    justifyContent: "center",
-    minHeight: 52
-  },
-  cartButtonText: { color: storeLight.text.link, fontSize: 15, fontWeight: "900" },
-  buyButton: {
-    alignItems: "center",
-    backgroundColor: storeLight.accent.brand,
-    borderRadius: 999,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 52
-  },
-  buyButtonText: { color: storeLight.text.primary, fontSize: 15, fontWeight: "900" },
-  disabledButton: { opacity: 0.45 }
+  subtitle: { color: storeLight.text.muted, fontSize: 13, marginTop: 3 },
+  tab: { borderBottomColor: "transparent", borderBottomWidth: 3, paddingBottom: 7, paddingHorizontal: 4 },
+  tabActive: { borderBottomColor: storeLight.accent.brandOnLight },
+  tabRow: { borderBottomColor: storeLight.border.hairline, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", gap: 18, marginTop: 14 },
+  tabText: { color: storeLight.text.muted, fontSize: 14, fontWeight: "700" },
+  tabTextActive: { color: storeLight.text.primary, fontWeight: "900" },
+  title: { color: storeLight.text.primary, fontSize: 24, fontWeight: "900" },
+  utilityLink: { color: storeLight.text.link, fontSize: 13, fontWeight: "800" },
+  utilityRow: { flexDirection: "row", gap: 18, marginTop: 6 }
 }));

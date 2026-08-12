@@ -49,7 +49,7 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   const amount = useMemo(
     () => params.subtotalMinor != null
       ? formatMinor(params.subtotalMinor, params.currency || "USD")
-      : params.priceLabel || "Confirmed by server at checkout",
+      : params.priceLabel || "Shown at checkout",
     [params.currency, params.priceLabel, params.subtotalMinor]
   );
 
@@ -67,10 +67,10 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
         setMessage("Payment was not completed. Your order was not marked paid.");
       } else {
         setStage("processing");
-        setMessage("Waiting for secure payment confirmation…");
+        setMessage("Waiting for your payment to be confirmed…");
       }
     } catch {
-      setMessage("Payment confirmation is still pending. PulseSoc will keep checking safely.");
+      setMessage("Still confirming your payment. We'll keep checking.");
     } finally {
       checking.current = false;
     }
@@ -135,7 +135,7 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
       <View style={styles.center}>
         <View style={styles.check}><Text style={styles.checkText}>✓</Text></View>
         <Text style={styles.confirmedTitle}>Order confirmed</Text>
-        <Text style={styles.centerCopy}>Your payment was confirmed by PulseSoc and your receipt is ready.</Text>
+        <Text style={styles.centerCopy}>Your payment went through and your receipt is ready.</Text>
         <SummaryRow label="Order" value={`#${primaryId}`} />
         <SummaryRow label="Seller" value={params.sellerName || "PulseSoc seller"} />
         <SummaryRow label="Amount" value={amount} />
@@ -154,7 +154,7 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
       <View style={styles.center}>
         <View style={styles.processingMark}><Text style={styles.processingIcon}>⌛</Text></View>
         <Text style={styles.confirmedTitle}>Processing your payment</Text>
-        <Text style={styles.centerCopy}>Please do not start another checkout. Success appears only after PulseSoc receives Stripe confirmation.</Text>
+        <Text style={styles.centerCopy}>Please do not close this screen or start another checkout. We'll confirm as soon as your payment clears.</Text>
         {message ? <Text style={styles.note}>{message}</Text> : null}
         {checkoutUrl ? (
           <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => void Linking.openURL(checkoutUrl)}>
@@ -171,34 +171,37 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <Text style={styles.kicker}>PULSESOC MARKETPLACE</Text>
-      <Text style={styles.title}>Review checkout</Text>
-      <Text style={styles.subtitle}>Review the server-backed order before opening Stripe.</Text>
+      <Text style={styles.title}>Review your order</Text>
+      <Text style={styles.subtitle}>Check the details below, then pay securely.</Text>
 
-      <Section title="Ship to / delivery">
-        <Text style={styles.body}>{params.fulfillment === "pickup" ? "Pickup details are confirmed in secure checkout." : params.fulfillment === "digital" ? "Digital delivery follows the listing policy." : "Shipping details are entered and confirmed securely in Stripe checkout."}</Text>
-        <Text style={styles.muted}>PulseSoc does not guess an address or delivery charge.</Text>
+      <Section title={params.fulfillment === "pickup" ? "Pickup" : params.fulfillment === "digital" ? "Delivery" : "Ship to"}>
+        <Text style={styles.body}>{params.fulfillment === "pickup" ? "You'll arrange pickup with the seller after your order is confirmed." : params.fulfillment === "digital" ? "This item is delivered digitally — no shipping address needed." : "You'll enter your delivery address on the secure payment page."}</Text>
+        <Text style={styles.muted}>Delivery cost is added there, not estimated here.</Text>
       </Section>
 
-      <Section title="Payment method">
-        <Text style={styles.body}>Stripe secure checkout</Text>
-        <Text style={styles.muted}>Cards and Apple Pay appear only when Stripe reports them as available for this device and session.</Text>
+      <Section title="Payment">
+        <Text style={styles.body}>Card or Apple Pay, handled by Stripe</Text>
+        <Text style={styles.muted}>Your card details go straight to Stripe — PulseSoc never sees them, and neither does the seller.</Text>
       </Section>
 
       <Section title="Order summary">
         <SummaryRow label={params.itemTitle || "Marketplace items"} value={params.quantity ? `×${params.quantity}` : ""} />
         <SummaryRow label="Seller" value={params.sellerName || "PulseSoc seller"} />
         <SummaryRow label="Subtotal" value={amount} />
-        <SummaryRow label="Shipping" value="Confirmed at checkout" />
-        <SummaryRow label="Taxes / fees" value="Confirmed at checkout" />
+        <SummaryRow label="Shipping" value="Added at payment" />
+        <SummaryRow label="Taxes and fees" value="Added at payment" />
         <View style={styles.rule} />
-        <SummaryRow label="Server-authoritative total" value={amount} strong />
+        {/* The subtotal, not a guess at the final charge. Shipping and tax are
+            computed by Stripe from the address the buyer enters there, so a
+            "total" here would be a number this screen cannot stand behind. */}
+        <SummaryRow label="Total so far" value={amount} strong />
       </Section>
 
       {message ? <Text style={styles.error}>{message}</Text> : null}
       <Pressable accessibilityRole="button" accessibilityState={{ disabled: stage === "opening" }} disabled={stage === "opening"} style={[styles.primary, stage === "opening" && styles.disabled]} onPress={() => void beginCheckout()}>
-        <Text style={styles.primaryText}>{stage === "opening" ? "Preparing secure checkout…" : `Continue to Stripe · ${amount}`}</Text>
+        <Text style={styles.primaryText}>{stage === "opening" ? "Opening secure payment…" : `Pay securely · ${amount}`}</Text>
       </Pressable>
-      <Text style={styles.footnote}>Your order is not confirmed until PulseSoc receives authoritative payment confirmation.</Text>
+      <Text style={styles.footnote}>Your order isn't confirmed until your payment clears.</Text>
     </ScrollView>
   );
 }

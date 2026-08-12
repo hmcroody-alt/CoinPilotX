@@ -21,6 +21,23 @@ export function marketplaceAvailabilityCopy(listing: MarketplaceListing) {
   return `${quantity} available`;
 }
 
+/**
+ * The fulfillment lane the checkout screen needs, as opposed to the sentence a
+ * buyer reads. Kept beside `marketplaceFulfillmentCopy` so the label and the
+ * lane are derived from the same fields and cannot drift — a listing that reads
+ * "Local pickup" must not check out as "shipping".
+ */
+export function marketplaceListingFulfillment(
+  listing: MarketplaceListing
+): "digital" | "pickup" | "shipping" {
+  const value = String(listing.delivery_type || listing.product_type || "").toLowerCase();
+  const metadata = (listing.listing_metadata || {}) as Record<string, unknown>;
+  const delivery = String(metadata.delivery_options || "").toLowerCase();
+  if (value === "digital" || listing.listing_type === "digital") return "digital";
+  if (value === "pickup" || delivery === "pickup") return "pickup";
+  return "shipping";
+}
+
 export function marketplaceFulfillmentCopy(listing: MarketplaceListing) {
   const metadata = (listing.listing_metadata || {}) as Record<string, unknown>;
   const raw = metadata.delivery_options;

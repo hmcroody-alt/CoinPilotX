@@ -60,6 +60,7 @@ import { LiveStudioScreen } from "../screens/LiveStudioScreen";
 import { LiveHostSessionScreen } from "../screens/LiveHostSessionScreen";
 import { MarketplaceCartScreen } from "../screens/MarketplaceCartScreen";
 import { MarketplaceCheckoutScreen } from "../screens/MarketplaceCheckoutScreen";
+import { MarketplaceProductScreen } from "../screens/MarketplaceProductScreen";
 import { MarketplaceScreen } from "../screens/MarketplaceScreen";
 import { MessengerScreen } from "../screens/MessengerScreen";
 import { MusicScreen } from "../screens/MusicScreen";
@@ -345,6 +346,10 @@ export function AppNavigator() {
       <Stack.Screen name="ReelDetail" component={ReelsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="StatusDetail" component={StatusScreen} options={({ route }) => ({ title: route.params.title || t("common:screens.status") })} />
       <Stack.Screen name="MarketplaceDetail" component={MarketplaceScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.marketplace") })} />
+      {/* The buyer's product page draws its own header (back, share, save,
+          cart), so the stack header is off — two stacked headers on the primary
+          commerce surface pushed the gallery below the fold. */}
+      <Stack.Screen name="MarketplaceProduct" component={MarketplaceProductScreen} options={{ headerShown: false }} />
       {/* Back to the original stack header, unconditionally. The light hub drew
           its own navy header, so this was briefly conditional on `mode`; the
           redesign is reverted and the dark sections screen relies on the stack
