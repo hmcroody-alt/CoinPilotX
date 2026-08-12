@@ -212,6 +212,50 @@ class ListingTypesTestCase(unittest.TestCase):
 
     # -- creation: one listing of each type ----------------------------------
 
+    def test_draft_submit_and_publication_gate(self):
+        response = self.create_listing(
+            "physical",
+            VALID_METADATA["physical"],
+            submission_action="draft",
+            quantity=3,
+        )
+        self.assertEqual(response.status_code, 200, response.get_json())
+        listing_id = response.get_json()["listing_id"]
+        self.assertEqual(self.listing_row(listing_id)["status"], "draft")
+
+        hidden = self.client.get("/api/pulse/marketplace/search?q=Physical")
+        self.assertFalse(any(item["id"] == listing_id for item in hidden.get_json()["items"]))
+
+        submitted = self.client.post(f"/api/pulse/marketplace/seller/listings/{listing_id}/submit")
+        self.assertEqual(submitted.status_code, 200, submitted.get_json())
+        self.assertEqual(self.listing_row(listing_id)["status"], "pending_review")
+
+        conn = self.db()
+        conn.execute(
+            "UPDATE marketplace_listings SET status='published', approval_status='approved' WHERE id=?",
+            (listing_id,),
+        )
+        conn.commit()
+        conn.close()
+        public = self.client.get("/api/pulse/marketplace/search?q=Physical")
+        self.assertTrue(any(item["id"] == listing_id for item in public.get_json()["items"]))
+
+        conn = self.db()
+        conn.execute("UPDATE marketplace_listings SET status='suspended' WHERE id=?", (listing_id,))
+        conn.commit()
+        conn.close()
+        suspended = self.client.get("/api/pulse/marketplace/search?q=Physical")
+        self.assertFalse(any(item["id"] == listing_id for item in suspended.get_json()["items"]))
+
+    def test_foreign_seller_cannot_submit_listing(self):
+        response = self.create_listing(
+            "physical", VALID_METADATA["physical"], submission_action="draft"
+        )
+        listing_id = response.get_json()["listing_id"]
+        self.login(OTHER_SELLER, "other_seller")
+        denied = self.client.post(f"/api/pulse/marketplace/seller/listings/{listing_id}/submit")
+        self.assertEqual(denied.status_code, 404)
+
     def test_create_one_listing_of_each_of_the_five_types(self):
         digital_file = self.digital_file_id()
         metadata_by_type = dict(VALID_METADATA)

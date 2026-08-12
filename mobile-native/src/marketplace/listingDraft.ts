@@ -473,6 +473,7 @@ export function buildListingCreatePayload(draft: ListingDraft): MarketplaceListi
   const listingType = draft.listingType || "physical";
   const mediaIds = [draft.coverMediaId, ...draft.galleryMediaIds].filter((id) => id > 0);
   const payload: MarketplaceListingCreatePayload = {
+    submission_action: "submit",
     title: draft.title.trim(),
     description: draft.description.trim(),
     short_description: draft.description.trim().slice(0, 140),

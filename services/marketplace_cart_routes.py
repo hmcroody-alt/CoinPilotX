@@ -40,6 +40,8 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
+from services import marketplace_listing_lifecycle as listing_lifecycle
+
 LOGGER = logging.getLogger(__name__)
 
 cart_blueprint = Blueprint("pulse_marketplace_cart", __name__)
@@ -142,6 +144,20 @@ def _ensure_schema(cur) -> None:
         )
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS marketplace_inventory_reservations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            seller_transaction_id INTEGER UNIQUE,
+            buyer_user_id INTEGER,
+            listing_id INTEGER,
+            quantity INTEGER DEFAULT 1,
+            status TEXT DEFAULT 'held',
+            created_at TEXT,
+            updated_at TEXT
+        )
+        """
+    )
     _SCHEMA_READY = True
 
 
@@ -162,13 +178,12 @@ def _line_state(line: dict, listing: dict, price_now_minor: int) -> str:
     if not listing:
         return "removed"
     status = (listing.get("status") or "").lower()
-    approval = (listing.get("approval_status") or "approved").lower()
+    approval = (listing.get("approval_status") or "").lower()
+    seller_status = (listing.get("seller_status") or "").lower()
     quantity = listing.get("quantity")
-    if status not in {"active", "approved"}:
-        return "sold"
-    if approval not in {"approved", "review_ready", ""}:
+    if seller_status != "approved" or status not in listing_lifecycle.PUBLIC_STATUSES or approval not in listing_lifecycle.APPROVED_STATES:
         return "restricted"
-    if quantity is not None and int(quantity or 0) <= 0:
+    if not listing_lifecycle.inventory_available(listing, int(line.get("qty") or 1)):
         return "sold"
     if price_now_minor != int(line.get("price_snapshot_minor") or 0):
         return "price_changed"
@@ -193,10 +208,12 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
                c.currency AS snapshot_currency, c.added_at,
                l.id AS l_id, l.seller_user_id, l.title, l.price_label,
                l.currency, l.quantity, l.status, l.approval_status,
-               l.delivery_type, l.cover_image_url,
+               l.delivery_type, l.product_type, l.listing_type, l.cover_image_url,
+               COALESCE(ms.status, 'missing') AS seller_status,
                COALESCE(u.display_name, u.username, 'PulseSoc Seller') AS seller_name
         FROM marketplace_cart_items c
         LEFT JOIN marketplace_listings l ON l.id = c.listing_id
+        LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id
         LEFT JOIN users u ON u.user_id = l.seller_user_id
         WHERE c.user_id = ?
         ORDER BY c.added_at DESC
@@ -208,7 +225,7 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
         row = dict(row)
         listing = {k: row.get(k) for k in (
             "seller_user_id", "title", "price_label", "currency", "quantity",
-            "status", "approval_status", "delivery_type", "cover_image_url",
+            "status", "approval_status", "seller_status", "delivery_type", "product_type", "listing_type", "cover_image_url",
         )} if row.get("l_id") else {}
         price_now, currency_now = (_listing_price_minor(bot, listing)
                                    if listing else (0, row.get("snapshot_currency") or "USD"))
@@ -276,7 +293,9 @@ def cart_add():
             return _error("Listing not found.", 404)
         if int(listing.get("seller_user_id") or 0) == int(user["user_id"]):
             return _error("You cannot add your own listing.", 400)
-        if (listing.get("status") or "").lower() not in {"active", "approved"}:
+        seller = bot.approved_marketplace_seller_for_user(cur, listing.get("seller_user_id"))
+        listing["seller_status"] = (seller or {}).get("status") or ""
+        if not listing_lifecycle.is_public(listing):
             return _error("This listing is no longer available.", 409)
         price_minor, currency = _listing_price_minor(bot, listing)
         if price_minor <= 0:
@@ -416,8 +435,6 @@ def cart_checkout():
     user, err = _require_user()
     if err:
         return err
-    if bot.ios_native_app_request():
-        return bot.ios_paid_digital_unavailable_response(api=True)
     payload = request.get_json(silent=True) or {}
     seller_user_id = int(payload.get("seller_user_id") or 0)
     idempotency_key = str(payload.get("idempotency_key") or "").strip()[:120]
@@ -438,6 +455,8 @@ def cart_checkout():
         lines = [l for l in _serialize_lines(bot, cur, buyer_id) if l["seller_user_id"] == seller_user_id]
         if not lines:
             return _error("No items from this seller in your cart.", 404)
+        if bot.ios_native_app_request() and any(l["fulfillment"] == "digital" for l in lines):
+            return bot.ios_paid_digital_unavailable_response(api=True)
         blocking = [l for l in lines if l["state"] in {"sold", "removed", "restricted"}]
         if blocking:
             return _error("Some items are no longer available.", 409,
@@ -489,6 +508,28 @@ def cart_checkout():
                 cur.execute("UPDATE seller_transactions SET status='blocked_payout_onboarding_required', updated_at=? WHERE id=?", (now, tx_id))
             return _error("Seller payout onboarding is required before checkout.", 409, transaction_ids=tx_ids)
 
+        # Reserve physical inventory before handing the buyer to Stripe. The
+        # reservation is keyed to the transaction, so duplicate taps cannot
+        # decrement twice; expiry/failure restores it.
+        for line, tx_id in zip(lines, tx_ids):
+            if line["fulfillment"] == "digital":
+                continue
+            cur.execute(
+                "UPDATE marketplace_listings SET quantity=quantity-?, updated_at=? "
+                "WHERE id=? AND quantity>=?",
+                (line["qty"], now, line["listing_id"], line["qty"]),
+            )
+            if not cur.rowcount:
+                for held_tx in tx_ids:
+                    release_inventory_reservation(cur, held_tx, now=now)
+                return _error("An item sold out before checkout. No card was charged.", 409)
+            cur.execute(
+                """INSERT INTO marketplace_inventory_reservations
+                (seller_transaction_id,buyer_user_id,listing_id,quantity,status,created_at,updated_at)
+                VALUES (?,?,?,?, 'held',?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
+                (tx_id, buyer_id, line["listing_id"], line["qty"], now, now),
+            )
+
         try:
             base = (bot.APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
             primary_tx = tx_ids[0]
@@ -504,11 +545,19 @@ def cart_checkout():
                 success_url=f"{base}/pulse/payments/success?transaction_id={primary_tx}",
                 cancel_url=f"{base}/pulse/payments/cancel?transaction_id={primary_tx}",
                 payment_intent_data={"application_fee_amount": platform_fee,
-                                      "transfer_data": {"destination": payout.get("connected_account_id")}},
+                                      "transfer_data": {"destination": payout.get("connected_account_id")},
+                                      "metadata": {"seller_transaction_ids": ",".join(str(t) for t in tx_ids),
+                                                   "cart_checkout": "1",
+                                                   "buyer_user_id": str(buyer_id)}},
                 metadata={"seller_transaction_ids": ",".join(str(t) for t in tx_ids),
                           "cart_checkout": "1",
                           "buyer_user_id": str(buyer_id),
-                          "seller_user_id": str(seller_user_id)},
+                          "seller_user_id": str(seller_user_id),
+                          "cart_line_ids": ",".join(str(l["line_id"]) for l in lines),
+                          "listing_ids": ",".join(str(l["listing_id"]) for l in lines),
+                          "quantities": ",".join(str(l["qty"]) for l in lines),
+                          "idempotency_key": idempotency_key},
+                idempotency_key=f"marketplace-cart:{buyer_id}:{idempotency_key or primary_tx}",
             )
             for tx_id in tx_ids:
                 cur.execute(
@@ -539,6 +588,7 @@ def cart_checkout():
             trace_id = secrets.token_hex(6)
             LOGGER.exception("CART_CHECKOUT_CREATE_FAILED trace_id=%s", trace_id)
             for tx_id in tx_ids:
+                release_inventory_reservation(cur, tx_id, now=now)
                 cur.execute(
                     "UPDATE seller_transactions SET status='checkout_failed', metadata_json=?, updated_at=? WHERE id=?",
                     (json.dumps({"error": str(exc), "trace_id": trace_id}, default=str), now, tx_id),
@@ -546,6 +596,23 @@ def cart_checkout():
             return _error("Checkout could not be created.", 500, trace_id=trace_id, transaction_ids=tx_ids)
 
     return _with_db(handler)
+
+
+def capture_inventory_reservation(cur, seller_transaction_id: int, *, now: str | None = None) -> None:
+    cur.execute("UPDATE marketplace_inventory_reservations SET status='captured', updated_at=? WHERE seller_transaction_id=? AND status='held'",
+                (now or _now(), int(seller_transaction_id)))
+
+
+def release_inventory_reservation(cur, seller_transaction_id: int, *, now: str | None = None) -> None:
+    cur.execute("SELECT listing_id,quantity FROM marketplace_inventory_reservations WHERE seller_transaction_id=? AND status='held' LIMIT 1",
+                (int(seller_transaction_id),))
+    held = dict(cur.fetchone() or {})
+    if not held:
+        return
+    cur.execute("UPDATE marketplace_listings SET quantity=COALESCE(quantity,0)+?, updated_at=? WHERE id=?",
+                (int(held.get("quantity") or 0), now or _now(), int(held.get("listing_id") or 0)))
+    cur.execute("UPDATE marketplace_inventory_reservations SET status='released', updated_at=? WHERE seller_transaction_id=? AND status='held'",
+                (now or _now(), int(seller_transaction_id)))
 
 
 def register(app) -> None:

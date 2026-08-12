@@ -183,7 +183,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     [listings]
   );
 
-  const activeListings = listings.filter((listing) => ["active", "approved", "review_ready"].includes(String(listing.status || listing.approval_status || "").toLowerCase()));
+  const activeListings = listings.filter((listing) => listing.buyer_visible === true);
   const pendingListings = listings.filter((listing) => statusKey(listing) === "pending");
   const editingListing = listings.find((listing) => listing.id === editingListingId) || listings[0] || null;
 
@@ -213,7 +213,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         </View>
         <View style={styles.metricGrid}>
           <Metric label="Listings loaded" value={String(listings.length)} />
-          <Metric label="Active/review ready" value={String(activeListings.length)} />
+          <Metric label="Published" value={String(activeListings.length)} />
           <Metric label="Pending review" value={String(pendingListings.length)} />
           <Metric label="Orders loaded" value={String(orders.length)} />
         </View>
@@ -425,7 +425,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 }
 
 function statusKey(listing: MarketplaceListing) {
-  const raw = String(listing.status || listing.approval_status || "draft").toLowerCase();
+  const raw = String(listing.publication_state || listing.status || listing.approval_status || "draft").toLowerCase();
   if (raw.includes("delete") || raw.includes("removed")) return "removed";
   if (raw.includes("reject") || raw.includes("blocked")) return "rejected";
   if (raw.includes("pause")) return "paused";
@@ -438,8 +438,9 @@ function statusKey(listing: MarketplaceListing) {
 }
 
 function statusLabel(listing: MarketplaceListing) {
+  if (listing.publication_label) return listing.publication_label;
   const key = statusKey(listing);
-  if (key === "live") return "Approved/live";
+  if (key === "live") return "Published";
   if (key === "pending") return "Pending review";
   if (key === "out_of_stock") return "Out of stock";
   if (key === "removed") return "Removed";

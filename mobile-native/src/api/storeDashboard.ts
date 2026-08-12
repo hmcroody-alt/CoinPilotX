@@ -146,6 +146,10 @@ function stockCount(listing: MarketplaceListing): number | null {
  */
 export function listingHealth(listing: MarketplaceListing): StoreListingHealth {
   const status = normalizedStatus(listing);
+  const publication = String(listing.publication_state || listing.status || "").toLowerCase();
+  if (!["published", "live", "active"].includes(publication)) {
+    return publication.includes("draft") ? "draft" : "hidden";
+  }
   if (status.includes("draft")) return "draft";
   if (
     status.includes("pause") ||

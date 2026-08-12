@@ -25,6 +25,10 @@ export type MarketplaceListing = {
   safety_score?: number;
   status?: string;
   approval_status?: string;
+  publication_state?: string;
+  publication_label?: string;
+  buyer_visible?: boolean;
+  inventory_state?: string;
   saved?: boolean;
   is_saved?: boolean;
   cover_image_url?: string;
@@ -164,6 +168,7 @@ export type ListingMetadata =
   | BookingListingMetadata;
 
 export type MarketplaceListingCreatePayload = {
+  submission_action?: "draft" | "submit";
   title: string;
   short_description?: string;
   description: string;

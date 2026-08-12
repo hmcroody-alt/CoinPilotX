@@ -241,6 +241,7 @@ from services import (
     intelligence as intelligence_service,
     market_data as market_data_service,
     marketplace_listing_types as marketplace_listing_types_service,
+    marketplace_listing_lifecycle as marketplace_listing_lifecycle,
     media_service,
     media_storage,
     messenger_media_foundation,
@@ -49238,7 +49239,12 @@ def pulse_marketplace_page():
     cur = conn.cursor()
     cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
     seller = dict(cur.fetchone() or {})
-    cur.execute("SELECT l.*, COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name FROM marketplace_listings l LEFT JOIN users u ON u.user_id=l.seller_user_id WHERE l.status IN ('active','approved') AND COALESCE(l.approval_status,'approved') IN ('approved','review_ready','') ORDER BY l.featured DESC, l.id DESC LIMIT 40")
+    cur.execute(f"""SELECT l.*, COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name
+        FROM marketplace_listings l
+        LEFT JOIN users u ON u.user_id=l.seller_user_id
+        LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+        WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+        ORDER BY l.featured DESC, l.id DESC LIMIT 40""")
     listings = [dict(row) for row in cur.fetchall()]
     conn.close()
     def marketplace_card(row):
@@ -49389,6 +49395,8 @@ def pulse_marketplace_listing_payload(listing, media_rows=None):
     gallery_urls = [entry.get("media_url") for entry in media if entry.get("media_type") == "image" and entry.get("media_url")]
     cover = next((entry for entry in media if entry.get("is_cover")), media[0] if media else {})
     video = next((entry for entry in media if entry.get("media_type") == "video"), {})
+    publication_label = marketplace_listing_lifecycle.seller_label(item)
+    inventory_available = marketplace_listing_lifecycle.inventory_available(item)
     return {
         **item,
         "id": listing_id,
@@ -49411,6 +49419,10 @@ def pulse_marketplace_listing_payload(listing, media_rows=None):
         "video_url": video.get("media_url") or video_url,
         "media": media,
         "media_assets": media,
+        "publication_state": str(item.get("status") or "draft").lower(),
+        "publication_label": publication_label,
+        "buyer_visible": marketplace_listing_lifecycle.is_public(item),
+        "inventory_state": "available" if inventory_available else "out_of_stock",
     }
 
 
@@ -49422,7 +49434,7 @@ def api_pulse_marketplace_search():
         return api_error("Login required.", 401)
     query = clean_html(request.args.get("q") or "")[:120].strip().lower()
     limit = max(1, min(safe_int(request.args.get("limit"), 24), 40))
-    where = ["l.status IN ('active','approved')", "COALESCE(l.approval_status,'approved') IN ('approved','review_ready','')"]
+    where = [marketplace_listing_lifecycle.public_sql("l", "ms")]
     params = []
     if query:
         like = f"%{query}%"
@@ -49436,10 +49448,12 @@ def api_pulse_marketplace_search():
         SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
                l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
+               COALESCE(ms.status,'missing') AS seller_status,
                COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
                COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
         LEFT JOIN users u ON u.user_id=l.seller_user_id
+        LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
         WHERE {' AND '.join(where)}
         ORDER BY l.featured DESC, l.id DESC
         LIMIT ?
@@ -49475,10 +49489,12 @@ def api_pulse_marketplace_seller_listings():
         SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
                l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
+               COALESCE(ms.status,'missing') AS seller_status,
                COALESCE(u.display_name,u.username,'PulseSoc Seller') AS seller_name,
                COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
         LEFT JOIN users u ON u.user_id=l.seller_user_id
+        LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
         WHERE l.seller_user_id=?
         {removal_filter}
         ORDER BY l.id DESC
@@ -49854,12 +49870,26 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
                 return api_error(files_error, 400)
         listing_metadata_update = marketplace_listing_types_service.dump_metadata(cleaned_metadata)
     review = revenue_safety_engine.marketplace_listing_review({"title": title, "description": description, "category": category})
-    next_status = "pending_review" if review["status"] != "review_ready" else "review_ready"
+    changed_fields = {name for name, value in {
+        "title": title, "short_description": short_description, "description": description,
+        "category": category, "price_label": price,
+    }.items() if str(existing.get(name) or "") != str(value or "")}
+    if listing_metadata_update is not None and listing_metadata_update != str(existing.get("listing_metadata_json") or ""):
+        changed_fields.add("listing_metadata_json")
+    old_status = str(existing.get("status") or "draft").lower()
+    old_approval = str(existing.get("approval_status") or "draft").lower()
+    material_change = marketplace_listing_lifecycle.requires_rereview(changed_fields)
+    if old_status in marketplace_listing_lifecycle.PUBLIC_STATUSES and old_approval == "approved" and material_change:
+        next_status, next_approval = "pending_review", "pending_review"
+    else:
+        next_status, next_approval = old_status, old_approval
     cur.execute(
         """
         UPDATE marketplace_listings
         SET title=?, short_description=?, description=?, category=?, price_label=?, quantity=?,
-            status=?, approval_status=?, safety_score=?, safety_flags_json=?, updated_at=?
+            status=?, approval_status=?, safety_score=?, safety_flags_json=?,
+            submitted_at=CASE WHEN ?='pending_review' THEN ? ELSE submitted_at END,
+            published_at=CASE WHEN ?='pending_review' THEN NULL ELSE published_at END, updated_at=?
         WHERE id=? AND seller_user_id=?
         """,
         (
@@ -49870,9 +49900,12 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
             price,
             quantity,
             next_status,
-            review["status"],
+            next_approval,
             int(review["risk_score"]),
             json.dumps(review["flags"], default=str),
+            next_status,
+            now,
+            next_status,
             now,
             int(listing_id),
             int(user["user_id"]),
@@ -49897,7 +49930,8 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
     )
     conn.commit()
     conn.close()
-    return jsonify({"ok": True, "message": "Listing updated and sent through marketplace review.", "listing": item})
+    message = "Material changes submitted for review." if material_change and next_status == "pending_review" else "Listing updated."
+    return jsonify({"ok": True, "message": message, "listing": item})
 
 
 @webhook_app.route("/api/pulse/marketplace/seller/listings/<int:listing_id>/pause", methods=["POST"])
@@ -50373,7 +50407,10 @@ def pulse_merchant_profile_page(username):
     seller = dict(cur.fetchone() or {})
     listings = []
     if seller:
-        cur.execute("SELECT * FROM marketplace_listings WHERE seller_user_id=? AND status IN ('approved','review_ready','active') ORDER BY id DESC LIMIT 20", (seller.get("user_id"),))
+        cur.execute(f"""SELECT l.* FROM marketplace_listings l
+            LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+            WHERE l.seller_user_id=? AND {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+            ORDER BY l.id DESC LIMIT 20""", (seller.get("user_id"),))
         listings = [dict(row) for row in cur.fetchall()]
     conn.close()
     if not seller:
@@ -85688,6 +85725,9 @@ def api_pulse_marketplace_listing_create():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
+    submission_action = str(payload.get("submission_action") or "submit").strip().lower()
+    if submission_action not in {"draft", "submit"}:
+        return api_error("Choose save draft or submit for review.", 400)
     title = clean_html(payload.get("title") or "")[:140]
     short_description = clean_html(payload.get("short_description") or "")[:260]
     description = clean_html(payload.get("description") or "")[:1400]
@@ -85708,7 +85748,7 @@ def api_pulse_marketplace_listing_create():
     if not metadata_ok:
         return jsonify({"ok": False, "message": listing_metadata}), 400
     media_ids = [safe_int(x, 0) for x in (payload.get("media_ids") or []) if safe_int(x, 0)]
-    if not title or not description:
+    if not title or (submission_action == "submit" and not description):
         return jsonify({"ok": False, "message": "Add a title and description for the listing."}), 400
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
@@ -85720,13 +85760,13 @@ def api_pulse_marketplace_listing_create():
     if seller.get("status") != "approved":
         conn.close()
         return api_error("Merchant approval is required before creating listings.", 403)
-    if not media_ids:
+    if submission_action == "submit" and not media_ids:
         conn.close()
         return api_error("Upload or capture a cover photo before creating a listing.", 400)
     placeholders = ",".join(["?"] * len(media_ids))
     cur.execute(f"SELECT * FROM marketplace_product_media WHERE id IN ({placeholders}) AND merchant_id=? AND product_id=0 ORDER BY is_cover DESC, id ASC", media_ids + [user["user_id"]])
     media_rows = [dict(row) for row in cur.fetchall()]
-    if not any(int(m.get("is_cover") or 0) and (m.get("media_type") or "") in {"image", "gif"} for m in media_rows):
+    if submission_action == "submit" and not any(int(m.get("is_cover") or 0) and (m.get("media_type") or "") in {"image", "gif"} for m in media_rows):
         conn.close()
         return api_error("Add a cover photo before creating a listing.", 400)
     if listing_type == "digital" and (listing_metadata or {}).get("files"):
@@ -85735,8 +85775,9 @@ def api_pulse_marketplace_listing_create():
             conn.close()
             return api_error(files_error, 400)
     review = revenue_safety_engine.marketplace_listing_review({"title": title, "description": description, "category": category})
-    status = "pending_review" if review["status"] != "review_ready" else "review_ready"
-    cover = next((m for m in media_rows if int(m.get("is_cover") or 0)), media_rows[0])
+    status = "draft" if submission_action == "draft" else "pending_review"
+    approval_status = "draft" if submission_action == "draft" else "pending_review"
+    cover = next((m for m in media_rows if int(m.get("is_cover") or 0)), media_rows[0] if media_rows else {})
     gallery = [m.get("media_url") for m in media_rows if (m.get("media_type") or "") in {"image", "gif"}]
     video = next((m.get("media_url") for m in media_rows if (m.get("media_type") or "") == "video"), "")
     cur.execute(
@@ -85744,8 +85785,8 @@ def api_pulse_marketplace_listing_create():
         INSERT INTO marketplace_listings
         (seller_user_id, title, short_description, description, category, subcategory, tags_json, cover_image_url,
          gallery_json, video_url, price_label, currency, quantity, delivery_type, product_type, listing_type, listing_metadata_json, refund_policy,
-         estimated_delivery, seller_notes, status, approval_status, safety_score, safety_flags_json, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         estimated_delivery, seller_notes, status, approval_status, safety_score, safety_flags_json, submitted_at, review_version, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user["user_id"], title, short_description, description, category, subcategory,
@@ -85758,7 +85799,8 @@ def api_pulse_marketplace_listing_create():
             clean_html(payload.get("refund_policy") or "Reviewed products should state refunds clearly.")[:800],
             clean_html(payload.get("estimated_delivery") or "")[:200],
             clean_html(payload.get("seller_notes") or "")[:1000],
-            status, review["status"], int(review["risk_score"]), json.dumps(review["flags"], default=str), now, now,
+            status, approval_status, int(review["risk_score"]), json.dumps(review["flags"], default=str),
+            now if submission_action == "submit" else None, 1 if submission_action == "submit" else 0, now, now,
         ),
     )
     listing_id = int(cur.lastrowid)
@@ -85771,16 +85813,51 @@ def api_pulse_marketplace_listing_create():
     pulse_emit_marketplace_inventory_event(
         cur,
         user["user_id"],
-        "seller_listing_created",
+        "seller_listing_created" if submission_action == "draft" else "seller_listing_submitted",
         listing_id=listing_id,
         actor_user_id=user["user_id"],
         status=status,
-        approval_status=review.get("status"),
+        approval_status=approval_status,
         title=title,
         extra={"review_status": review.get("status"), "risk_score": int(review.get("risk_score") or 0), "media_count": len(media_rows)},
     )
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "listing_id": listing_id, "listing_type": listing_type, "listing_metadata": listing_metadata, "message": "Listing saved for safety review."})
+    return jsonify({"ok": True, "listing_id": listing_id, "status": status, "approval_status": approval_status,
+                    "listing_type": listing_type, "listing_metadata": listing_metadata,
+                    "message": "Draft saved privately." if submission_action == "draft" else "Listing submitted for review."})
+
+
+@webhook_app.route("/api/pulse/marketplace/seller/listings/<int:listing_id>/submit", methods=["POST"])
+def api_pulse_marketplace_seller_listing_submit(listing_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1",
+                (listing_id, int(user["user_id"])))
+    listing = dict(cur.fetchone() or {})
+    if not listing:
+        conn.close(); return api_error("Listing not found.", 404)
+    if str(listing.get("status") or "").lower() not in {"draft", "changes_requested", "rejected"}:
+        conn.close(); return api_error("This listing cannot be submitted from its current state.", 409)
+    if not str(listing.get("title") or "").strip() or not str(listing.get("description") or "").strip():
+        conn.close(); return api_error("Add a title and description before submitting.", 400)
+    cur.execute("SELECT COUNT(*) AS total FROM marketplace_product_media WHERE product_id=? AND is_cover=1 AND media_type IN ('image','gif')",
+                (listing_id,))
+    if int(dict(cur.fetchone() or {}).get("total") or 0) < 1:
+        conn.close(); return api_error("Add a cover photo before submitting.", 400)
+    review = revenue_safety_engine.marketplace_listing_review({"title": listing.get("title"), "description": listing.get("description"), "category": listing.get("category")})
+    cur.execute("""UPDATE marketplace_listings SET status='pending_review', approval_status='pending_review',
+        submitted_at=?, moderation_reason='', moderation_category='', safety_score=?, safety_flags_json=?,
+        review_version=COALESCE(review_version,0)+1, updated_at=? WHERE id=? AND seller_user_id=?""",
+        (now, int(review.get("risk_score") or 0), json.dumps(review.get("flags") or [], default=str), now, listing_id, int(user["user_id"])))
+    item = pulse_marketplace_owned_listing_response(cur, listing_id, user["user_id"])
+    pulse_emit_marketplace_inventory_event(cur, user["user_id"], "seller_listing_submitted", listing_id=listing_id,
+        actor_user_id=user["user_id"], status="pending_review", approval_status="pending_review", title=listing.get("title") or "")
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Listing submitted for review.", "listing": item})
 
 
 @webhook_app.route("/api/pulse/marketplace/listings/report", methods=["POST"])
@@ -89896,14 +89973,41 @@ def admin_marketplace_command_page():
     message = ""
     if request.method == "POST":
         listing_id = int(request.form.get("listing_id") or 0)
-        action = request.form.get("action") or ""
+        action = clean_html(request.form.get("action") or "")[:40]
+        reason = clean_html(request.form.get("reason") or "")[:1200]
+        reason_category = clean_html(request.form.get("reason_category") or "")[:80]
         now = datetime.utcnow().isoformat(timespec="seconds")
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-        if listing_id and action in {"approve", "reject", "hide", "suspend", "feature"}:
-            status = {"approve": "approved", "reject": "rejected", "hide": "hidden", "suspend": "suspended", "feature": "approved"}[action]
-            cur.execute("SELECT seller_user_id, title FROM marketplace_listings WHERE id=? LIMIT 1", (listing_id,))
+        allowed_actions = {"approve", "reject", "request_changes", "suspend", "archive", "feature"}
+        reason_required = {"reject", "request_changes", "suspend", "archive"}
+        if listing_id and action in allowed_actions and (action not in reason_required or reason):
+            status, approval = {
+                "approve": ("published", "approved"),
+                "reject": ("rejected", "rejected"),
+                "request_changes": ("changes_requested", "changes_requested"),
+                "suspend": ("suspended", "suspended"),
+                "archive": ("archived", "archived"),
+                "feature": ("published", "approved"),
+            }[action]
+            cur.execute("SELECT * FROM marketplace_listings WHERE id=? LIMIT 1", (listing_id,))
             listing_row = dict(cur.fetchone() or {})
-            cur.execute("UPDATE marketplace_listings SET status=?, approval_status=?, featured=CASE WHEN ?='feature' THEN 1 ELSE COALESCE(featured,0) END, reviewed_by=?, reviewed_at=?, updated_at=? WHERE id=?", (status, status, action, admin.get("id"), now, now, listing_id))
+            previous_status = str(listing_row.get("status") or "").lower()
+            previous_approval = str(listing_row.get("approval_status") or "").lower()
+            if not listing_row:
+                conn.close(); return api_error("Listing not found.", 404)
+            if action in {"approve", "reject", "request_changes"} and previous_status not in {"pending_review", "review_ready"}:
+                conn.close(); return api_error("Listing review state changed. Reload before deciding.", 409)
+            if action == "feature" and (previous_status not in marketplace_listing_lifecycle.PUBLIC_STATUSES or previous_approval != "approved"):
+                conn.close(); return api_error("Only an approved published listing can be featured.", 409)
+            cur.execute("""UPDATE marketplace_listings SET status=?, approval_status=?,
+                featured=CASE WHEN ?='feature' THEN 1 ELSE COALESCE(featured,0) END,
+                reviewed_by=?, reviewed_at=?, approved_at=CASE WHEN ?='approved' THEN ? ELSE approved_at END,
+                published_at=CASE WHEN ?='published' THEN ? ELSE NULL END,
+                moderation_reason=?, moderation_category=?, updated_at=? WHERE id=?""",
+                (status, approval, action, admin.get("id"), now, approval, now, status, now,
+                 reason, reason_category, now, listing_id))
+            if action in {"approve", "feature"}:
+                cur.execute("UPDATE marketplace_product_media SET moderation_status='approved' WHERE product_id=? AND moderation_status NOT IN ('rejected','removed')", (listing_id,))
             pulse_emit_marketplace_inventory_event(
                 cur,
                 listing_row.get("seller_user_id"),
@@ -89911,19 +90015,24 @@ def admin_marketplace_command_page():
                 listing_id=listing_id,
                 actor_user_id=admin.get("id") or 0,
                 status=status,
-                approval_status=status,
+                approval_status=approval,
                 title=listing_row.get("title") or "Marketplace listing",
-                extra={"review_action": action},
+                extra={"review_action": action, "reason": reason, "reason_category": reason_category},
             )
             conn.commit()
-            log_admin_audit(admin.get("id"), "marketplace_listing_reviewed", "marketplace_listing", str(listing_id), {"action": action})
+            log_admin_audit(admin.get("id"), f"marketplace_listing_{action}", "marketplace_listing", str(listing_id),
+                {"previous_status": previous_status, "previous_approval_status": previous_approval,
+                 "new_status": status, "new_approval_status": approval, "reason": reason,
+                 "reason_category": reason_category, "trace_id": request.headers.get("X-Request-ID") or request.environ.get("request_id") or ""})
             message = "Listing updated."
+        elif listing_id and action in reason_required and not reason:
+            message = "A moderation reason is required for this action."
         conn.close()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     counts = {}
     for key, sql in {
         "pending_merchants": "SELECT COUNT(*) AS total FROM marketplace_merchant_applications WHERE status IN ('pending_review','under_review')",
-        "pending_products": "SELECT COUNT(*) AS total FROM marketplace_listings WHERE status IN ('pending_review','review_ready') OR approval_status IN ('needs_review','blocked_review','review_ready')",
+        "pending_products": "SELECT COUNT(*) AS total FROM marketplace_listings WHERE status IN ('pending_review','review_ready')",
         "approved_merchants": "SELECT COUNT(*) AS total FROM marketplace_sellers WHERE status='approved'",
         "risky_products": "SELECT COUNT(*) AS total FROM marketplace_listings WHERE COALESCE(safety_score,0)>=30",
         "saved_products": "SELECT COUNT(*) AS total FROM marketplace_saved_products",
@@ -89933,7 +90042,11 @@ def admin_marketplace_command_page():
             counts[key] = int(dict(cur.fetchone() or {}).get("total") or 0)
         except Exception:
             counts[key] = 0
-    cur.execute("SELECT l.*, COALESCE(u.display_name,u.username,'Seller') AS seller_name FROM marketplace_listings l LEFT JOIN users u ON u.user_id=l.seller_user_id ORDER BY CASE l.status WHEN 'pending_review' THEN 0 WHEN 'review_ready' THEN 1 ELSE 2 END, l.id DESC LIMIT 100")
+    cur.execute("""SELECT l.*, COALESCE(u.display_name,u.username,'Seller') AS seller_name,
+        COALESCE(ms.status,'missing') AS seller_status, COALESCE(ms.verification_status,'unverified') AS seller_verification_status
+        FROM marketplace_listings l LEFT JOIN users u ON u.user_id=l.seller_user_id
+        LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+        ORDER BY CASE l.status WHEN 'pending_review' THEN 0 WHEN 'changes_requested' THEN 1 ELSE 2 END, l.id DESC LIMIT 100""")
     listings = [dict(row) for row in cur.fetchall()]
     listing_ids = [int(l.get("id") or 0) for l in listings]
     media_by_listing = {}
@@ -89949,8 +90062,8 @@ def admin_marketplace_command_page():
     for l in listings:
         media_items = media_by_listing.get(int(l.get("id") or 0), [])
         media_html = "".join((f"<video src='{clean_html(m.get('media_url') or '')}' playsinline preload='metadata'></video>" if (m.get("media_type") or "") == "video" else f"<img src='{clean_html(m.get('thumbnail_url') or m.get('media_url') or '')}' alt='Product media' loading='lazy'>") for m in media_items[:4]) or "<span class='muted'>No media</span>"
-        rows += f"<tr><td>{l.get('id')}</td><td>{clean_html(l.get('title') or '')}<div class='market-media-strip'>{media_html}</div></td><td>{clean_html(l.get('seller_name') or '')}</td><td>{clean_html(l.get('category') or '')}</td><td>{clean_html(l.get('status') or '')}</td><td>{int(l.get('safety_score') or 0)}</td><td><form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button><button name='action' value='hide'>Hide</button><button name='action' value='suspend'>Suspend</button><button name='action' value='feature'>Feature</button></form></td></tr>"
-    body = f"<style>.market-media-strip{{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}}.market-media-strip img,.market-media-strip video{{width:72px;height:72px;object-fit:cover;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#020817}}</style><h1>Marketplace Command</h1><p class='muted'>Merchant approvals, product moderation, scam-risk alerts, seller trust, and listing trends.</p><p>{clean_html(message)}</p><section class='grid'>{cards}</section><section class='card'><h2>Product Review Queue</h2><table class='table'><tr><th>ID</th><th>Product + Media</th><th>Seller</th><th>Category</th><th>Status</th><th>Safety</th><th>Actions</th></tr>{rows or '<tr><td colspan=7>No listings yet.</td></tr>'}</table></section><p><a class='button' href='/admin/merchant-applications'>Merchant Applications</a></p>"
+        rows += f"<tr><td>{l.get('id')}</td><td><strong>{clean_html(l.get('title') or '')}</strong><p>{clean_html(l.get('description') or '')}</p><div class='market-media-strip'>{media_html}</div></td><td>{clean_html(l.get('seller_name') or '')}<br><small>{clean_html(l.get('seller_status') or '')} · {clean_html(l.get('seller_verification_status') or '')}</small></td><td>{clean_html(l.get('category') or '')}<br>{clean_html(l.get('price_label') or '')} {clean_html(l.get('currency') or '')}<br>Qty {int(l.get('quantity') or 0)}</td><td>{clean_html(l.get('status') or '')}<br><small>{clean_html(l.get('approval_status') or '')}</small></td><td>{int(l.get('safety_score') or 0)}</td><td><form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option><option>Prohibited item</option><option>Incomplete description</option><option>Misleading listing</option><option>Invalid price</option><option>Unsupported category</option><option>Media problem</option><option>Counterfeit concern</option><option>Policy violation</option><option>Insufficient seller information</option><option>Other</option></select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea><button name='action' value='approve'>Approve + Publish</button><button name='action' value='request_changes'>Request Changes</button><button name='action' value='reject'>Reject</button><button name='action' value='suspend'>Suspend</button><button name='action' value='archive'>Archive</button><button name='action' value='feature'>Feature</button></form></td></tr>"
+    body = f"<style>.market-media-strip{{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}}.market-media-strip img,.market-media-strip video{{width:72px;height:72px;object-fit:cover;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#020817}}td form{{display:grid;gap:6px;min-width:210px}}td textarea{{min-height:64px}}</style><h1>Marketplace Review</h1><p class='muted'>Canonical seller submission, listing moderation, publication, suspension, and audit controls.</p><p>{clean_html(message)}</p><section class='grid'>{cards}</section><section class='card'><h2>Listing Review Queue</h2><table class='table'><tr><th>ID</th><th>Product + Media</th><th>Seller</th><th>Commerce</th><th>State</th><th>Risk</th><th>Actions</th></tr>{rows or '<tr><td colspan=7>No listings yet.</td></tr>'}</table></section><p><a class='button' href='/admin/merchant-applications'>Merchant Applications</a></p>"
     return admin_page_html("Marketplace Command", body, admin)
 
 
@@ -95959,6 +96072,59 @@ def stripe_webhook():
             creator_economy_service.update_webhook_event(event_id, "processed")
             record_stripe_event(event, "processed", safe_int(metadata.get("user_id"), 0) or None)
             return "OK", 200
+        if metadata.get("cart_checkout") == "1" and metadata.get("seller_transaction_ids"):
+            tx_ids = [safe_int(value, 0) for value in str(metadata.get("seller_transaction_ids") or "").split(",")]
+            tx_ids = [value for value in tx_ids if value]
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            paid = payment_status in {"paid", "no_payment_required"}
+            conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+            from services import marketplace_cart_routes as marketplace_cart_service
+            marketplace_cart_service._ensure_schema(cur)
+            affected_buyers = set(); affected_sellers = set()
+            for tx_id in tx_ids:
+                cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
+                tx = dict(cur.fetchone() or {})
+                if not tx:
+                    continue
+                affected_buyers.add(int(tx.get("buyer_user_id") or 0)); affected_sellers.add(int(tx.get("seller_user_id") or 0))
+                if paid:
+                    cur.execute("""UPDATE seller_transactions SET status='paid', stripe_checkout_session_id=?,
+                        stripe_payment_intent_id=?, updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')""",
+                        (session_id, session.get("payment_intent") or "", now, tx_id))
+                    marketplace_cart_service.capture_inventory_reservation(cur, tx_id, now=now)
+                    try:
+                        details = json.loads(tx.get("metadata_json") or "{}")
+                    except Exception:
+                        details = {}
+                    quantity = max(1, safe_int(details.get("qty"), 1))
+                    cur.execute("""INSERT INTO marketplace_orders
+                        (seller_transaction_id,buyer_user_id,seller_user_id,listing_id,quantity,unit_price_cents,
+                         amount_cents,currency,status,payment_provider,provider_payment_id,created_at,paid_at,updated_at)
+                        VALUES (?,?,?,?,?,?,?,?, 'paid','stripe',?,?,?,?)
+                        ON CONFLICT(seller_transaction_id) DO NOTHING""",
+                        (tx_id, tx.get("buyer_user_id"), tx.get("seller_user_id"), tx.get("item_id"), quantity,
+                         int(tx.get("amount_cents") or 0)//quantity, int(tx.get("amount_cents") or 0), tx.get("currency") or "USD",
+                         session.get("payment_intent") or "", tx.get("created_at") or now, now, now))
+                else:
+                    cur.execute("UPDATE seller_transactions SET status=?, updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')",
+                                (f"checkout_{payment_status or 'pending'}", now, tx_id))
+            if paid:
+                line_ids = [safe_int(value, 0) for value in str(metadata.get("cart_line_ids") or "").split(",")]
+                line_ids = [value for value in line_ids if value]
+                if line_ids:
+                    cur.execute(f"DELETE FROM marketplace_cart_items WHERE id IN ({','.join(['?']*len(line_ids))}) AND user_id=?",
+                                (*line_ids, safe_int(metadata.get("buyer_user_id"), 0)))
+                for seller_id in affected_sellers:
+                    if seller_id:
+                        notify_user(cur, seller_id, "marketplace_order", "New Marketplace order", "A buyer completed payment for your listing.", "/pulse/seller-store?mode=orders")
+                for buyer_id in affected_buyers:
+                    if buyer_id:
+                        notify_user(cur, buyer_id, "purchase", "Marketplace order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
+            conn.commit(); conn.close()
+            resolved_event_user_id = safe_int(metadata.get("buyer_user_id"), 0) or None
+            record_stripe_event(event, "processed", resolved_event_user_id)
+            creator_economy_service.update_webhook_event(event_id, "processed")
+            return "OK", 200
         if metadata.get("transaction_id"):
             tx_id = safe_int(metadata.get("transaction_id"), 0)
             if payment_status in {"paid", "no_payment_required"} and tx_id:
@@ -96111,6 +96277,20 @@ def stripe_webhook():
         session = event["data"]["object"]
         metadata = session.get("metadata") or {}
         tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
+        plural_tx_ids = [safe_int(value, 0) for value in str(metadata.get("seller_transaction_ids") or "").split(",")]
+        plural_tx_ids = [value for value in plural_tx_ids if value]
+        if metadata.get("cart_checkout") == "1" and plural_tx_ids:
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+            from services import marketplace_cart_routes as marketplace_cart_service
+            marketplace_cart_service._ensure_schema(cur)
+            for cart_tx_id in plural_tx_ids:
+                marketplace_cart_service.release_inventory_reservation(cur, cart_tx_id, now=now)
+                cur.execute("UPDATE seller_transactions SET status='checkout_expired', updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')", (now, cart_tx_id))
+            conn.commit(); conn.close()
+            record_stripe_event(event, "processed", safe_int(metadata.get("buyer_user_id"), 0) or None)
+            creator_economy_service.update_webhook_event(event_id, "processed")
+            return "OK", 200
         if tx_id:
             now = datetime.utcnow().isoformat(timespec="seconds")
             conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
@@ -96299,6 +96479,25 @@ def stripe_webhook():
     if event_type == "payment_intent.payment_failed":
         payment_intent = event["data"]["object"]
         metadata = payment_intent.get("metadata") or {}
+        plural_tx_ids = [safe_int(value, 0) for value in str(metadata.get("seller_transaction_ids") or "").split(",")]
+        plural_tx_ids = [value for value in plural_tx_ids if value]
+        if metadata.get("cart_checkout") == "1" and plural_tx_ids:
+            failure = payment_intent.get("last_payment_error") or {}
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+            from services import marketplace_cart_routes as marketplace_cart_service
+            marketplace_cart_service._ensure_schema(cur)
+            for cart_tx_id in plural_tx_ids:
+                marketplace_cart_service.release_inventory_reservation(cur, cart_tx_id, now=now)
+                cur.execute(
+                    "UPDATE seller_transactions SET status='failed', metadata_json=?, updated_at=? "
+                    "WHERE id=? AND status NOT IN ('paid','refunded')",
+                    (json.dumps({"stripe_event_id": event_id, "failure": failure}, default=str)[:4000], now, cart_tx_id),
+                )
+            conn.commit(); conn.close()
+            record_stripe_event(event, "processed", safe_int(metadata.get("buyer_user_id"), 0) or None)
+            creator_economy_service.update_webhook_event(event_id, "processed")
+            return "OK", 200
         tx_id = safe_int(metadata.get("transaction_id") or metadata.get("seller_transaction_id"), 0)
         failure = payment_intent.get("last_payment_error") or {}
         now = datetime.utcnow().isoformat(timespec="seconds")
@@ -103100,6 +103299,12 @@ def _init_db_impl():
         ("reviewed_at", "TEXT"),
         ("listing_type", "TEXT DEFAULT ''"),
         ("listing_metadata_json", "TEXT DEFAULT ''"),
+        ("submitted_at", "TEXT"),
+        ("approved_at", "TEXT"),
+        ("published_at", "TEXT"),
+        ("moderation_reason", "TEXT DEFAULT ''"),
+        ("moderation_category", "TEXT DEFAULT ''"),
+        ("review_version", "INTEGER DEFAULT 0"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_product_media (
@@ -103174,6 +103379,25 @@ def _init_db_impl():
         listing_id INTEGER,
         status TEXT DEFAULT 'interest',
         created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS marketplace_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        seller_transaction_id INTEGER UNIQUE,
+        buyer_user_id INTEGER NOT NULL,
+        seller_user_id INTEGER NOT NULL,
+        listing_id INTEGER NOT NULL,
+        quantity INTEGER DEFAULT 1,
+        unit_price_cents INTEGER DEFAULT 0,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        status TEXT DEFAULT 'pending_payment',
+        payment_provider TEXT DEFAULT 'stripe',
+        provider_payment_id TEXT,
+        created_at TEXT,
+        paid_at TEXT,
+        updated_at TEXT
     )
     """)
     cur.execute("""
