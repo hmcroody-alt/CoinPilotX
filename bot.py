@@ -11415,8 +11415,6 @@ def api_premium_checkout():
     user = api_account_user()
     if not user:
         return premium_json_response({"ok": False, "message": "Login required.", "login_url": url_for("login_page", next="/pulse/premium")}, 401)
-    if ios_native_app_request():
-        return ios_paid_digital_unavailable_response(api=True)
     payload = request.get_json(silent=True) or {}
     plan_key = clean_html(payload.get("plan_key") or payload.get("plan") or "founder_premium")[:80]
     if plan_key != "founder_premium":
@@ -84648,7 +84646,9 @@ def api_pulse_payments_checkout():
     item = {}
     seller_type = "merchant"
     if item_type == "marketplace_product":
-        cur.execute("SELECT * FROM marketplace_listings WHERE id=? LIMIT 1", (item_id,))
+        cur.execute("""SELECT l.*, COALESCE(ms.status,'missing') AS seller_status
+            FROM marketplace_listings l LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+            WHERE l.id=? LIMIT 1""", (item_id,))
         item = dict(cur.fetchone() or {})
         seller_user_id = int(item.get("seller_user_id") or 0)
         amount_cents, currency = parse_price_label_to_cents(item.get("price_label") or "", item.get("currency") or "USD")
@@ -84678,6 +84678,15 @@ def api_pulse_payments_checkout():
     if not item or not seller_user_id:
         conn.close()
         return api_error("Item not found.", 404)
+    if item_type == "marketplace_product" and not marketplace_listing_lifecycle.is_public(item):
+        conn.close()
+        return api_error("This listing is no longer available.", 409)
+    if ios_native_app_request() and (
+        item_type != "marketplace_product" or
+        str(item.get("product_type") or item.get("listing_type") or item.get("delivery_type") or "").lower() in {"digital", "course"}
+    ):
+        conn.close()
+        return ios_paid_digital_unavailable_response(api=True)
     if seller_user_id == int(buyer["user_id"]):
         conn.close()
         return api_error("You cannot buy your own item.", 400)
@@ -84726,27 +84735,23 @@ def api_pulse_payments_checkout():
         )
         conn.commit(); conn.close()
         return api_error("Stripe checkout is not configured yet. No card was charged.", 503, transaction_id=tx_id)
-    if not payout.get("connected_account_id"):
-        cur.execute("UPDATE seller_transactions SET status='blocked_payout_onboarding_required', updated_at=? WHERE id=?", (now, tx_id))
-        pulse_emit_payment_checkout_event(
-            cur,
-            {**tx_event, "status": "blocked_payout_onboarding_required"},
-            "checkout_blocked",
-            status="blocked_payout_onboarding_required",
-            actor_user_id=buyer["user_id"],
-            extra={"block_reason": "payout_onboarding_required"},
-        )
-        conn.commit(); conn.close()
-        return api_error("Seller payout onboarding is required before checkout.", 409, transaction_id=tx_id)
     try:
         base = (APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
+        checkout_metadata = {"seller_transaction_id": str(tx_id), "seller_type": seller_type,
+            "item_type": item_type, "item_id": str(item_id), "buyer_user_id": str(buyer["user_id"]),
+            "seller_user_id": str(seller_user_id)}
+        payment_intent_data = {"metadata": checkout_metadata}
+        connected_account_id = str(payout.get("connected_account_id") or payout.get("provider_account_id") or "")
+        if connected_account_id:
+            payment_intent_data.update({"application_fee_amount": platform_fee,
+                                        "transfer_data": {"destination": connected_account_id}})
         session_obj = stripe.checkout.Session.create(
             mode="payment",
             line_items=[{"price_data": {"currency": currency.lower(), "unit_amount": amount_cents, "product_data": {"name": title[:120]}}, "quantity": 1}],
             success_url=f"{base}/pulse/payments/success?transaction_id={tx_id}",
             cancel_url=f"{base}/pulse/payments/cancel?transaction_id={tx_id}",
-            payment_intent_data={"application_fee_amount": platform_fee, "transfer_data": {"destination": payout.get("connected_account_id")}},
-            metadata={"seller_transaction_id": str(tx_id), "seller_type": seller_type, "item_type": item_type, "item_id": str(item_id), "buyer_user_id": str(buyer["user_id"]), "seller_user_id": str(seller_user_id)},
+            payment_intent_data=payment_intent_data,
+            metadata=checkout_metadata,
         )
         cur.execute("UPDATE seller_transactions SET stripe_checkout_session_id=?, status='checkout_created', updated_at=? WHERE id=?", (session_obj.get("id"), now, tx_id))
         pulse_emit_payment_checkout_event(
@@ -84758,7 +84763,9 @@ def api_pulse_payments_checkout():
             extra={"stripe_checkout_session_id": session_obj.get("id") or ""},
         )
         conn.commit(); conn.close()
-        return jsonify({"ok": True, "checkout_url": session_obj.get("url"), "transaction_id": tx_id, "platform_fee_cents": platform_fee, "seller_net_cents": seller_net})
+        return jsonify({"ok": True, "checkout_url": session_obj.get("url"), "transaction_id": tx_id,
+                        "platform_fee_cents": platform_fee, "seller_net_cents": seller_net,
+                        "payout_state": "connect_routed" if connected_account_id else "ledger_pending_onboarding"})
     except Exception as exc:
         trace_id = secrets.token_hex(6)
         logging.exception("SELLER_CHECKOUT_CREATE_FAILED trace_id=%s tx_id=%s", trace_id, tx_id)

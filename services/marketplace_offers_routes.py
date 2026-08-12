@@ -34,6 +34,8 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request
 
+from services import marketplace_listing_lifecycle as listing_lifecycle
+
 LOGGER = logging.getLogger(__name__)
 
 offers_blueprint = Blueprint("pulse_marketplace_offers", __name__)
@@ -463,9 +465,6 @@ def offer_checkout(offer_id: int):
     user, err = _require_user()
     if err:
         return err
-    if bot.ios_native_app_request():
-        return bot.ios_paid_digital_unavailable_response(api=True)
-
     def handler(cur, conn):
         buyer_id = int(user["user_id"])
         offer = _load_offer(cur, offer_id)
@@ -478,10 +477,14 @@ def offer_checkout(offer_id: int):
             return _error("This offer is not open for checkout.", 409, state=state)
         seller_id = int(offer.get("seller_user_id") or 0)
         listing_id = int(offer.get("listing_id") or 0)
-        cur.execute("SELECT * FROM marketplace_listings WHERE id=? LIMIT 1", (listing_id,))
+        cur.execute("""SELECT l.*, COALESCE(ms.status,'missing') AS seller_status
+            FROM marketplace_listings l LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+            WHERE l.id=? LIMIT 1""", (listing_id,))
         listing = dict(cur.fetchone() or {})
-        if not listing or (listing.get("status") or "").lower() not in {"active", "approved"}:
+        if not listing or not listing_lifecycle.is_public(listing):
             return _error("The listing behind this offer is no longer available.", 409)
+        if bot.ios_native_app_request() and str(listing.get("product_type") or listing.get("listing_type") or listing.get("delivery_type") or "").lower() in {"digital", "course"}:
+            return bot.ios_paid_digital_unavailable_response(api=True)
         approved = bot.approved_marketplace_seller_for_user(cur, seller_id)
         if not approved:
             return _error("Seller is not approved for payments.", 403)
@@ -508,11 +511,14 @@ def offer_checkout(offer_id: int):
         if not bot.STRIPE_SECRET_KEY:
             cur.execute("UPDATE seller_transactions SET status='blocked_stripe_not_configured', updated_at=? WHERE id=?", (now, tx_id))
             return _error("Stripe checkout is not configured yet. No card was charged.", 503, transaction_id=tx_id)
-        if not payout.get("connected_account_id"):
-            cur.execute("UPDATE seller_transactions SET status='blocked_payout_onboarding_required', updated_at=? WHERE id=?", (now, tx_id))
-            return _error("Seller payout onboarding is required before checkout.", 409, transaction_id=tx_id)
         try:
             base = (bot.APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
+            payment_intent_data = {"metadata": {"seller_transaction_id": str(tx_id),
+                                                 "buyer_user_id": str(buyer_id)}}
+            connected_account_id = str(payout.get("connected_account_id") or payout.get("provider_account_id") or "")
+            if connected_account_id:
+                payment_intent_data.update({"application_fee_amount": platform_fee,
+                                            "transfer_data": {"destination": connected_account_id}})
             session_obj = bot.stripe.checkout.Session.create(
                 mode="payment",
                 line_items=[{"price_data": {"currency": currency.lower(),
@@ -521,8 +527,7 @@ def offer_checkout(offer_id: int):
                              "quantity": max(1, int(offer.get("qty") or 1))}],
                 success_url=f"{base}/pulse/payments/success?transaction_id={tx_id}",
                 cancel_url=f"{base}/pulse/payments/cancel?transaction_id={tx_id}",
-                payment_intent_data={"application_fee_amount": platform_fee,
-                                      "transfer_data": {"destination": payout.get("connected_account_id")}},
+                payment_intent_data=payment_intent_data,
                 metadata={"seller_transaction_id": str(tx_id), "offer_id": str(offer_id),
                           "item_type": "marketplace_product", "item_id": str(listing_id),
                           "buyer_user_id": str(buyer_id), "seller_user_id": str(seller_id)},

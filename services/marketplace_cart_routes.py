@@ -201,6 +201,25 @@ def _fulfillment(listing: dict) -> str:
     return "shipping"
 
 
+def _stripe_payment_intent_data(*, tx_ids: list[int], buyer_id: int,
+                                platform_fee: int, payout: dict) -> tuple[dict, str]:
+    """Build a platform charge by default, upgrading to a destination charge
+    only when the seller already has a Connect account. Seller earnings remain
+    recorded in ``seller_transactions`` either way."""
+    data = {"metadata": {
+        "seller_transaction_ids": ",".join(str(value) for value in tx_ids),
+        "cart_checkout": "1",
+        "buyer_user_id": str(buyer_id),
+    }}
+    connected_account_id = str(payout.get("connected_account_id") or payout.get("provider_account_id") or "")
+    if connected_account_id:
+        data.update({
+            "application_fee_amount": int(platform_fee),
+            "transfer_data": {"destination": connected_account_id},
+        })
+    return data, connected_account_id
+
+
 def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
     cur.execute(
         """
@@ -503,11 +522,6 @@ def cart_checkout():
             for tx_id in tx_ids:
                 cur.execute("UPDATE seller_transactions SET status='blocked_stripe_not_configured', updated_at=? WHERE id=?", (now, tx_id))
             return _error("Stripe checkout is not configured yet. No card was charged.", 503, transaction_ids=tx_ids)
-        if not payout.get("connected_account_id"):
-            for tx_id in tx_ids:
-                cur.execute("UPDATE seller_transactions SET status='blocked_payout_onboarding_required', updated_at=? WHERE id=?", (now, tx_id))
-            return _error("Seller payout onboarding is required before checkout.", 409, transaction_ids=tx_ids)
-
         # Reserve physical inventory before handing the buyer to Stripe. The
         # reservation is keyed to the transaction, so duplicate taps cannot
         # decrement twice; expiry/failure restores it.
@@ -533,6 +547,9 @@ def cart_checkout():
         try:
             base = (bot.APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
             primary_tx = tx_ids[0]
+            payment_intent_data, connected_account_id = _stripe_payment_intent_data(
+                tx_ids=tx_ids, buyer_id=buyer_id, platform_fee=platform_fee, payout=payout
+            )
             session_obj = bot.stripe.checkout.Session.create(
                 mode="payment",
                 line_items=[
@@ -544,11 +561,7 @@ def cart_checkout():
                 ],
                 success_url=f"{base}/pulse/payments/success?transaction_id={primary_tx}",
                 cancel_url=f"{base}/pulse/payments/cancel?transaction_id={primary_tx}",
-                payment_intent_data={"application_fee_amount": platform_fee,
-                                      "transfer_data": {"destination": payout.get("connected_account_id")},
-                                      "metadata": {"seller_transaction_ids": ",".join(str(t) for t in tx_ids),
-                                                   "cart_checkout": "1",
-                                                   "buyer_user_id": str(buyer_id)}},
+                payment_intent_data=payment_intent_data,
                 metadata={"seller_transaction_ids": ",".join(str(t) for t in tx_ids),
                           "cart_checkout": "1",
                           "buyer_user_id": str(buyer_id),
@@ -573,6 +586,7 @@ def cart_checkout():
                 "total_cents": total_minor,
                 "platform_fee_cents": platform_fee,
                 "seller_net_cents": seller_net,
+                "payout_state": "connect_routed" if connected_account_id else "ledger_pending_onboarding",
             }
             if idempotency_key:
                 cur.execute(

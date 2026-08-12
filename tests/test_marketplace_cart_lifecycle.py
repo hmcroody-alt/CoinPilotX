@@ -48,3 +48,21 @@ def test_inventory_release_is_idempotent():
     assert cur.execute("SELECT quantity FROM marketplace_listings WHERE id=7").fetchone()[0] == 3
     assert cur.execute("SELECT status FROM marketplace_inventory_reservations WHERE seller_transaction_id=10").fetchone()[0] == "released"
     conn.close()
+
+
+def test_stripe_wiring_supports_platform_and_connect_charges():
+    platform, account = cart._stripe_payment_intent_data(
+        tx_ids=[11, 12], buyer_id=5, platform_fee=300, payout={}
+    )
+    assert account == ""
+    assert platform["metadata"]["seller_transaction_ids"] == "11,12"
+    assert "transfer_data" not in platform
+    assert "application_fee_amount" not in platform
+
+    destination, account = cart._stripe_payment_intent_data(
+        tx_ids=[11], buyer_id=5, platform_fee=300,
+        payout={"connected_account_id": "acct_test_contract"},
+    )
+    assert account == "acct_test_contract"
+    assert destination["transfer_data"]["destination"] == "acct_test_contract"
+    assert destination["application_fee_amount"] == 300
