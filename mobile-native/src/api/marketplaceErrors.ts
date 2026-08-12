@@ -24,6 +24,7 @@ export type MarketplaceErrorCode =
   | "SELLER_UNAVAILABLE"
   | "INVALID_QUANTITY"
   | "ADDRESS_REQUIRED"
+  | "FULFILLMENT_REQUIRED"
   | "PAYMENT_UNAVAILABLE"
   | "PRICE_CHANGED"
   | "CART_FULL"
@@ -37,6 +38,7 @@ const COPY: Record<MarketplaceErrorCode, string> = {
   SELLER_UNAVAILABLE: "This seller is not accepting orders right now.",
   INVALID_QUANTITY: "Choose a quantity the seller still has in stock.",
   ADDRESS_REQUIRED: "Add a delivery address to continue.",
+  FULFILLMENT_REQUIRED: "Choose pickup or delivery before you pay.",
   PAYMENT_UNAVAILABLE: "Payment is unavailable right now. No card was charged.",
   PRICE_CHANGED: "The price changed. Review the new price before you continue.",
   CART_FULL: "Your cart is full. Remove an item to add another.",

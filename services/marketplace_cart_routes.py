@@ -577,6 +577,18 @@ def cart_checkout():
             return _error("Items in different currencies must be checked out separately.", 409,
                           code="MIXED_CURRENCY")
 
+        # When the seller offers pickup *or* shipping, the buyer picks — the
+        # server does not guess. The choice decides whether Stripe collects a
+        # delivery address, so it is resolved here, before any money surface
+        # exists, and refused rather than defaulted if it is missing.
+        if any(l["fulfillment"] == "both" for l in lines) and fulfillment_choice not in {"pickup", "shipping"}:
+            return _error("Choose pickup or delivery before you pay.", 400,
+                          code="FULFILLMENT_REQUIRED")
+        resolved_lanes = [
+            fulfillment_choice if l["fulfillment"] == "both" else l["fulfillment"]
+            for l in lines
+        ]
+
         approved = bot.approved_marketplace_seller_for_user(cur, seller_user_id)
         if not approved:
             # Seller *approval* is a marketplace-eligibility gate and is a real
@@ -662,9 +674,12 @@ def cart_checkout():
                           "cart_line_ids": ",".join(str(l["line_id"]) for l in lines),
                           "listing_ids": ",".join(str(l["listing_id"]) for l in lines),
                           "quantities": ",".join(str(l["qty"]) for l in lines),
+                          "fulfillment": ",".join(resolved_lanes),
                           "idempotency_key": idempotency_key},
                 idempotency_key=f"marketplace-cart:{buyer_id}:{idempotency_key or primary_tx}",
-                **stripe_shipping_checkout_params(l["fulfillment"] for l in lines),
+                # Resolved lanes, not raw ones: a buyer who chose pickup is never
+                # asked for a delivery address.
+                **stripe_shipping_checkout_params(resolved_lanes),
             )
             for tx_id in tx_ids:
                 cur.execute(

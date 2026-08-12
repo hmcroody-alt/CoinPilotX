@@ -178,9 +178,15 @@ export function MarketplaceCartScreen({ navigation }: Props) {
   }, []);
 
   const openCheckout = useCallback((group: (typeof groups)[number]) => {
-    const fulfillment = group.fulfillments.some((entry) => entry.fulfillment === "shipping")
-      ? "shipping"
-      : group.fulfillments.some((entry) => entry.fulfillment === "pickup") ? "pickup" : "digital";
+    // A group carrying any undecided line is undecided as a whole — one Stripe
+    // session covers the group, so one answer governs it. `both` is passed
+    // through rather than resolved here so the buyer is the one who answers.
+    const lanes = group.fulfillments.map((entry) => entry.fulfillment);
+    const fulfillment = lanes.includes("both")
+      ? "both"
+      : lanes.includes("shipping")
+        ? "shipping"
+        : lanes.includes("pickup") ? "pickup" : "digital";
     navigation.navigate("MarketplaceCheckout", {
       mode: "cart",
       sellerUserId: group.sellerUserId,

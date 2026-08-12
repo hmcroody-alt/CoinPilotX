@@ -418,13 +418,20 @@ export async function startMarketplaceSellerChat(
   });
 }
 
-export async function openMarketplaceCheckout(listingId: number, idempotencyKey = "") {
+export async function openMarketplaceCheckout(
+  listingId: number,
+  idempotencyKey = "",
+  fulfillment: "pickup" | "shipping" | "" = ""
+) {
   const result = await pulseApi<MarketplaceActionResponse>("/api/pulse/payments/checkout", {
     method: "POST",
     body: JSON.stringify({
       item_type: "marketplace_product",
       item_id: listingId,
-      idempotency_key: idempotencyKey
+      idempotency_key: idempotencyKey,
+      // Present only for a listing that offers pickup *or* shipping, where the
+      // buyer's answer decides whether Stripe collects a delivery address.
+      ...(fulfillment ? { fulfillment } : {})
     })
   });
   return result;

@@ -49,7 +49,9 @@ export type CartLine = {
    * value. Resolve with `sellerStoreName()` rather than reading either directly. */
   seller_store_name?: string;
   seller_name: string;
-  fulfillment: "digital" | "pickup" | "shipping";
+  /** `both` means the seller offers pickup *or* shipping and the buyer has not
+   * chosen yet. It stays unresolved all the way to checkout on purpose. */
+  fulfillment: "digital" | "pickup" | "shipping" | "both";
   added_at: string;
 };
 
@@ -142,13 +144,18 @@ export async function validateCart(): Promise<CartValidation> {
  */
 export async function checkoutCartGroup(
   sellerUserId: number,
-  idempotencyKey: string
+  idempotencyKey: string,
+  fulfillment: "pickup" | "shipping" | "" = ""
 ): Promise<{ checkoutUrl: string; transactionIds: readonly number[] }> {
   const data = (await pulseApi("/api/pulse/marketplace/cart/checkout", {
     method: "POST",
     body: JSON.stringify({
       seller_user_id: sellerUserId,
-      idempotency_key: idempotencyKey
+      idempotency_key: idempotencyKey,
+      // Sent only when the buyer actually had a choice to make. The server
+      // refuses the session rather than guessing, so an omitted value can never
+      // quietly become "shipping" for someone who meant to collect in person.
+      ...(fulfillment ? { fulfillment } : {})
     })
   })) as { checkout_url?: string; transaction_ids?: number[] };
   return {

@@ -8,11 +8,13 @@ import {
   getMarketplacePaymentOrder,
   validateCart
 } from "../api/marketplaceCommerce";
+import { buyerErrorCopy } from "../api/marketplaceErrors";
 import { RootStackParamList } from "../navigation/types";
 import { MARKETPLACE_CART_CTA, storeLight } from "../theme/marketplaceLight";
 
 type Props = NativeStackScreenProps<RootStackParamList, "MarketplaceCheckout">;
 type Stage = "review" | "opening" | "processing" | "confirmed" | "failed";
+type Lane = "pickup" | "shipping";
 
 const POLL_INTERVAL_MS = 2500;
 
@@ -45,7 +47,24 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   const [checkoutUrl, setCheckoutUrl] = useState("");
   const [message, setMessage] = useState("");
   const checking = useRef(false);
+  // Only asked when the seller offers both lanes. There is no default: picking
+  // one for the buyer is how someone collecting in person ends up entering a
+  // delivery address, and the server refuses the session without an answer.
+  const mustChooseLane = params.fulfillment === "both";
+  const [lane, setLane] = useState<Lane | "">("");
+  const resolvedLane: Lane | "digital" | "" = mustChooseLane
+    ? lane
+    : params.fulfillment === "pickup"
+      ? "pickup"
+      : params.fulfillment === "digital"
+        ? "digital"
+        : "shipping";
 
+  // Whether this screen knows the exact amount PulseSoc will charge. It does
+  // whenever it was handed a minor-unit subtotal: the Stripe session is built
+  // from `price × quantity` alone — no shipping options, no automatic tax — so
+  // that number *is* the charge, not a running estimate.
+  const knowsFinalAmount = params.subtotalMinor != null;
   const amount = useMemo(
     () => params.subtotalMinor != null
       ? formatMinor(params.subtotalMinor, params.currency || "USD")
@@ -91,6 +110,10 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
 
   const beginCheckout = useCallback(async () => {
     if (stage === "opening") return;
+    if (mustChooseLane && !lane) {
+      setMessage("Choose pickup or delivery before you pay.");
+      return;
+    }
     setStage("opening");
     setMessage("");
     try {
@@ -108,11 +131,19 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
           if (!sellerLines.length) throw new Error("These cart items are no longer available.");
           if (blocked) throw new Error("An item is no longer available. Return to your cart to review it.");
           if (changed) throw new Error("A price changed. Return to your cart and accept the new total.");
-          const result = await checkoutCartGroup(Number(params.sellerUserId), intentKey.current);
+          const result = await checkoutCartGroup(
+            Number(params.sellerUserId),
+            intentKey.current,
+            mustChooseLane ? (lane as Lane) : ""
+          );
           url = result.checkoutUrl;
           ids = [...result.transactionIds];
         } else {
-          const result = await openMarketplaceCheckout(Number(params.listingId), intentKey.current);
+          const result = await openMarketplaceCheckout(
+            Number(params.listingId),
+            intentKey.current,
+            mustChooseLane ? (lane as Lane) : ""
+          );
           url = result.checkout_url || "";
           ids = result.transaction_id ? [Number(result.transaction_id)] : [];
         }
@@ -125,9 +156,13 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
       await Linking.openURL(url);
     } catch (error) {
       setStage("review");
-      setMessage(error instanceof Error ? error.message : "Checkout could not start.");
+      // The locally thrown messages above already name the buyer's next move,
+      // so they are their own fallback; `buyerErrorCopy` is what keeps a server
+      // 500's "temporary service issue" from becoming the dominant sentence.
+      const local = error instanceof Error ? error.message : "";
+      setMessage(buyerErrorCopy(error, local || "Checkout could not start. No card was charged."));
     }
-  }, [checkoutUrl, params.listingId, params.mode, params.sellerUserId, stage, transactionIds]);
+  }, [checkoutUrl, lane, mustChooseLane, params.listingId, params.mode, params.sellerUserId, stage, transactionIds]);
 
   if (stage === "confirmed") {
     const primaryId = transactionIds[0];
@@ -174,10 +209,38 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
       <Text style={styles.title}>Review your order</Text>
       <Text style={styles.subtitle}>Check the details below, then pay securely.</Text>
 
-      <Section title={params.fulfillment === "pickup" ? "Pickup" : params.fulfillment === "digital" ? "Delivery" : "Ship to"}>
-        <Text style={styles.body}>{params.fulfillment === "pickup" ? "You'll arrange pickup with the seller after your order is confirmed." : params.fulfillment === "digital" ? "This item is delivered digitally — no shipping address needed." : "You'll enter your delivery address on the secure payment page."}</Text>
-        <Text style={styles.muted}>Delivery cost is added there, not estimated here.</Text>
-      </Section>
+      {mustChooseLane ? (
+        <Section title="How do you want it?">
+          <Text style={styles.muted}>This seller offers both. Pick one — it decides whether you need to give a delivery address.</Text>
+          <LaneOption
+            selected={lane === "pickup"}
+            title="Local pickup"
+            detail="Arrange a time and place with the seller after your order is confirmed. No delivery address, no delivery charge."
+            onPress={() => { setLane("pickup"); setMessage(""); }}
+          />
+          <LaneOption
+            selected={lane === "shipping"}
+            title="Shipping"
+            detail="You'll enter your delivery address on the secure payment page. The seller ships to it."
+            onPress={() => { setLane("shipping"); setMessage(""); }}
+          />
+        </Section>
+      ) : (
+        <Section title={resolvedLane === "pickup" ? "Pickup" : resolvedLane === "digital" ? "Delivery" : "Ship to"}>
+          <Text style={styles.body}>
+            {resolvedLane === "pickup"
+              ? "You'll arrange pickup with the seller after your order is confirmed."
+              : resolvedLane === "digital"
+                ? "This item is delivered digitally — no delivery address needed."
+                : "You'll enter your delivery address on the secure payment page."}
+          </Text>
+          <Text style={styles.muted}>
+            {resolvedLane === "shipping"
+              ? "The address is for the seller to ship to. It does not change what you pay."
+              : "Nothing is added to your total for delivery."}
+          </Text>
+        </Section>
+      )}
 
       <Section title="Payment">
         <Text style={styles.body}>Card or Apple Pay, handled by Stripe</Text>
@@ -187,19 +250,40 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
       <Section title="Order summary">
         <SummaryRow label={params.itemTitle || "Marketplace items"} value={params.quantity ? `×${params.quantity}` : ""} />
         <SummaryRow label="Seller" value={params.sellerName || "PulseSoc seller"} />
-        <SummaryRow label="Subtotal" value={amount} />
-        <SummaryRow label="Shipping" value="Added at payment" />
-        <SummaryRow label="Taxes and fees" value="Added at payment" />
+        <SummaryRow label="Item total" value={amount} />
+        {/* Not "added at payment". The Stripe session is built from item price ×
+            quantity with no shipping options and no automatic tax, so there is
+            no second number waiting at the payment page. Saying otherwise made
+            the buyer brace for a charge that never comes — and would have hidden
+            a real one if it ever did. */}
+        <SummaryRow label="Delivery" value={resolvedLane === "pickup" ? "Free — you collect" : "No delivery charge"} />
+        <SummaryRow label="Taxes and fees" value="None added by PulseSoc" />
         <View style={styles.rule} />
-        {/* The subtotal, not a guess at the final charge. Shipping and tax are
-            computed by Stripe from the address the buyer enters there, so a
-            "total" here would be a number this screen cannot stand behind. */}
-        <SummaryRow label="Total so far" value={amount} strong />
+        <SummaryRow label={knowsFinalAmount ? "Total to pay" : "Total"} value={amount} strong />
+        {knowsFinalAmount ? (
+          <Text style={styles.muted}>This is the full amount you'll be charged. Nothing is added after this screen.</Text>
+        ) : (
+          <Text style={styles.muted}>The exact amount is confirmed on the secure payment page before you authorize anything.</Text>
+        )}
       </Section>
 
       {message ? <Text style={styles.error}>{message}</Text> : null}
-      <Pressable accessibilityRole="button" accessibilityState={{ disabled: stage === "opening" }} disabled={stage === "opening"} style={[styles.primary, stage === "opening" && styles.disabled]} onPress={() => void beginCheckout()}>
-        <Text style={styles.primaryText}>{stage === "opening" ? "Opening secure payment…" : `Pay securely · ${amount}`}</Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ disabled: stage === "opening" || (mustChooseLane && !lane) }}
+        disabled={stage === "opening" || (mustChooseLane && !lane)}
+        style={[styles.primary, (stage === "opening" || (mustChooseLane && !lane)) && styles.disabled]}
+        onPress={() => void beginCheckout()}
+      >
+        {/* The CTA states an amount only when this screen knows the exact charge.
+            Otherwise it promises nothing it cannot keep. */}
+        <Text style={styles.primaryText}>
+          {stage === "opening"
+            ? "Opening secure payment…"
+            : knowsFinalAmount
+              ? `Pay securely · ${amount}`
+              : "Continue to secure payment"}
+        </Text>
       </Pressable>
       <Text style={styles.footnote}>Your order isn't confirmed until your payment clears.</Text>
     </ScrollView>
@@ -208,6 +292,37 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return <View style={styles.section}><Text style={styles.sectionTitle}>{title}</Text>{children}</View>;
+}
+
+function LaneOption({
+  selected,
+  title,
+  detail,
+  onPress
+}: {
+  selected: boolean;
+  title: string;
+  detail: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      accessibilityLabel={title}
+      accessibilityHint={detail}
+      onPress={onPress}
+      style={[styles.lane, selected && styles.laneSelected]}
+    >
+      <View style={[styles.laneMark, selected && styles.laneMarkSelected]}>
+        {selected ? <Text style={styles.laneTick}>✓</Text> : null}
+      </View>
+      <View style={styles.laneCopy}>
+        <Text style={styles.laneTitle}>{title}</Text>
+        <Text style={styles.muted}>{detail}</Text>
+      </View>
+    </Pressable>
+  );
 }
 
 function SummaryRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
@@ -229,6 +344,13 @@ const styles = StyleSheet.create({
   rowValue: { color: storeLight.text.primary, fontSize: 14, textAlign: "right", flexShrink: 1 },
   strong: { color: storeLight.text.primary, fontWeight: "900", fontSize: 15 },
   rule: { height: StyleSheet.hairlineWidth, backgroundColor: storeLight.border.hairline, marginVertical: 3 },
+  lane: { flexDirection: "row", alignItems: "flex-start", gap: 12, borderWidth: 1, borderColor: storeLight.border.hairline, borderRadius: 14, padding: 14, minHeight: 64 },
+  laneSelected: { borderColor: MARKETPLACE_CART_CTA.to, borderWidth: 2 },
+  laneMark: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: storeLight.border.secondaryButton, alignItems: "center", justifyContent: "center", marginTop: 1 },
+  laneMarkSelected: { backgroundColor: MARKETPLACE_CART_CTA.to, borderColor: MARKETPLACE_CART_CTA.to },
+  laneTick: { color: "#fff", fontSize: 13, fontWeight: "900" },
+  laneCopy: { flex: 1, gap: 4 },
+  laneTitle: { color: storeLight.text.primary, fontSize: 15, fontWeight: "800" },
   primary: { minHeight: 52, borderRadius: 14, backgroundColor: MARKETPLACE_CART_CTA.to, alignItems: "center", justifyContent: "center", paddingHorizontal: 18 },
   primaryText: { color: "#fff", fontSize: 16, fontWeight: "900", textAlign: "center" },
   secondary: { minHeight: 50, borderRadius: 14, borderWidth: 1, borderColor: storeLight.border.secondaryButton, alignItems: "center", justifyContent: "center", paddingHorizontal: 18, width: "100%" },

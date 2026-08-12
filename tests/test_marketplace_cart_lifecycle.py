@@ -161,3 +161,38 @@ def test_shipping_address_is_collected_only_for_shipped_orders(monkeypatch):
         "shipping_address_collection": {"allowed_countries": ["US", "CA"]}
     }
     assert cart.stripe_shipping_checkout_params(["both"])["shipping_address_collection"]["allowed_countries"] == ["US", "CA"]
+
+
+def test_a_seller_offering_both_lanes_is_not_silently_resolved_to_shipping():
+    # "Local pickup or shipping" was being collapsed to shipping before the
+    # buyer ever saw a choice, which is how someone collecting in person ends up
+    # entering a delivery address. The undecided lane has to survive to checkout.
+    assert cart._fulfillment({"delivery_type": "both"}) == "both"
+    assert cart._fulfillment({"delivery_type": "pickup_or_shipping"}) == "both"
+    assert cart._fulfillment({"delivery_type": "pickup"}) == "pickup"
+    assert cart._fulfillment({"delivery_type": "shipping"}) == "shipping"
+    assert cart._fulfillment({"delivery_type": "digital"}) == "digital"
+
+
+def test_checkout_refuses_to_guess_the_buyers_fulfillment_choice():
+    # The refusal is what makes the choice real: without it an omitted answer
+    # would default to shipping and collect an address nobody asked for.
+    source = (REPO_ROOT / "services" / "marketplace_cart_routes.py").read_text(encoding="utf-8")
+    code = "\n".join(line for line in source.splitlines() if not line.lstrip().startswith("#"))
+    assert 'fulfillment_choice = str(payload.get("fulfillment")' in code
+    assert 'code="FULFILLMENT_REQUIRED"' in code
+    # Stripe must be handed the *resolved* lanes, never the raw ones — passing
+    # `both` through would collect an address for a pickup buyer.
+    assert "stripe_shipping_checkout_params(resolved_lanes)" in code
+    assert 'stripe_shipping_checkout_params(l["fulfillment"] for l in lines)' not in code
+
+
+def test_the_stripe_session_adds_nothing_to_the_displayed_subtotal():
+    # The checkout screen tells the buyer the amount it shows is the amount
+    # charged. That promise is only true while the session carries no shipping
+    # options and no automatic tax, so the promise is pinned to the code here.
+    source = (REPO_ROOT / "services" / "marketplace_cart_routes.py").read_text(encoding="utf-8")
+    code = "\n".join(line for line in source.splitlines() if not line.lstrip().startswith("#"))
+    assert "shipping_options" not in code
+    assert "automatic_tax" not in code
+    assert '"unit_amount": l["price_snapshot_minor"]' in code

@@ -32,9 +32,9 @@ beforeAll(async () => {
 describe("navigator header titles", () => {
   it("finds the title options it is meant to be checking", () => {
     // A refactor that changed the `options={{ title: ... }}` shape would make
-    // every assertion below vacuously pass. 101 stack screens + 14 tabs, plus
+    // every assertion below vacuously pass. 102 stack screens + 14 tabs, plus
     // the `title` param the header passes when opening the activity inbox.
-    expect(TITLE_OPTIONS.length).toBe(118);
+    expect(TITLE_OPTIONS.length).toBe(119);
   });
 
   it("has no hardcoded string literal titles", () => {

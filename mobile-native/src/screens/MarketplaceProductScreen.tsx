@@ -50,7 +50,8 @@ import {
   isStocklessMarketplaceListing as isStockless,
   marketplaceAvailabilityCopy as availabilityCopy,
   marketplaceFulfillmentCopy as fulfillmentCopy,
-  marketplaceListingFulfillment as listingFulfillment
+  marketplaceListingFulfillment as listingFulfillment,
+  marketplaceListingPriceMinor
 } from "../api/marketplaceBuyerPresentation";
 import { buyerErrorCopy } from "../api/marketplaceErrors";
 import { sellerStoreInitial, sellerStoreName } from "../api/sellerIdentity";
@@ -238,6 +239,9 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
     }
     // Buy now bypasses the cart entirely — the backend's `buy_now` intent, not a
     // cart group of one, so nothing already in the cart is dragged into it.
+    // The unit price is multiplied out here: passing the bare label would have
+    // let the checkout CTA read "$5.00" on an order for two.
+    const unitMinor = marketplaceListingPriceMinor(listing);
     navigation.navigate("MarketplaceCheckout", {
       mode: "buy_now",
       listingId,
@@ -245,6 +249,7 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
       sellerUserId: Number(listing.seller_user_id || 0),
       sellerName: sellerStoreName(listing),
       priceLabel: listing.price_label || "",
+      ...(unitMinor != null ? { subtotalMinor: unitMinor * qty, currency: listing.currency || "USD" } : {}),
       quantity: qty,
       fulfillment: listingFulfillment(listing)
     });

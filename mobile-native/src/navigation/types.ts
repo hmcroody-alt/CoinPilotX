@@ -176,7 +176,9 @@ export type RootStackParamList = {
     subtotalMinor?: number;
     currency?: string;
     quantity?: number;
-    fulfillment?: "digital" | "pickup" | "shipping";
+    // `both` means the seller offers pickup *or* shipping and the buyer has not
+    // chosen yet — the checkout screen makes them choose before it will pay.
+    fulfillment?: "digital" | "pickup" | "shipping" | "both";
   };
   /**
    * One route, several screens. Default is the rebuilt two-sided ads manager;

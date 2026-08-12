@@ -84853,6 +84853,16 @@ def api_pulse_payments_checkout():
         except Exception:
             listing_metadata = {}
         delivery_kind = str(item.get("delivery_type") or listing_metadata.get("delivery_options") or "shipping").lower()
+        # When the seller offers pickup *or* shipping the buyer decides, and the
+        # decision is what tells Stripe whether to ask for a delivery address.
+        # Refusing here is deliberate: defaulting to shipping is how a buyer who
+        # meant to collect in person ends up typing an address they don't need.
+        buyer_fulfillment = str(payload.get("fulfillment") or "").strip().lower()
+        if delivery_kind in {"both", "pickup_or_shipping", "shipping_or_pickup"}:
+            if buyer_fulfillment not in {"pickup", "shipping"}:
+                conn.close()
+                return api_error("Choose pickup or delivery before you pay.", 400, error_code="FULFILLMENT_REQUIRED")
+            delivery_kind = buyer_fulfillment
         shipping_checkout_params = marketplace_cart_service.stripe_shipping_checkout_params([delivery_kind])
         inventory_limited = listing_kind not in {"digital", "service", "event", "booking"} and delivery_kind != "digital"
         if inventory_limited:

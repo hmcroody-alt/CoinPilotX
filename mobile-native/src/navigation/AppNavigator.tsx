@@ -457,7 +457,7 @@ export function AppNavigator() {
       <Stack.Screen name="BuyerOrderDetail" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.orderDetail") })} />
       <Stack.Screen name="BuyerPurchases" component={BuyerOrdersScreen} options={{ title: t("common:screens.purchaseHistory") }} />
       <Stack.Screen name="MarketplaceCart" component={MarketplaceCartScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.cart") })} />
-      <Stack.Screen name="MarketplaceCheckout" component={MarketplaceCheckoutScreen} options={{ title: "Secure checkout" }} />
+      <Stack.Screen name="MarketplaceCheckout" component={MarketplaceCheckoutScreen} options={{ title: t("common:screens.secureCheckout") }} />
       <Stack.Screen name="BuyerOrdersDashboard" component={BuyerOrdersScreen} options={{ title: t("common:screens.purchaseHistory") }} />
       <Stack.Screen name="MerchantApply" component={SellerApplicationScreen} options={{ title: t("common:screens.merchantApplication") }} />
       <Stack.Screen name="MerchantDashboard" component={SellerStoreScreen} options={{ title: t("common:screens.merchantDashboard") }} />
