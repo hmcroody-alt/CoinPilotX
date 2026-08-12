@@ -41,6 +41,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Image,
+  Linking,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -215,8 +216,8 @@ export function MarketplaceCartScreen({ navigation }: Props) {
         }
         const result = await checkoutCartGroup(sellerUserId, intentKey.current);
         if (result.checkoutUrl) {
-          // Payment stays behind the provider boundary — report, don't fake.
-          setCheckoutNote("Checkout session created. Complete payment on pulsesoc.com — your order will appear in Purchases.");
+          setCheckoutNote("Secure checkout is ready. PulseSoc will confirm your order only after payment succeeds.");
+          await Linking.openURL(result.checkoutUrl);
         } else {
           setCheckoutNote("Checkout is not available for this seller yet.");
         }
@@ -363,13 +364,14 @@ export function MarketplaceCartScreen({ navigation }: Props) {
               </View>
             ))}
             <View style={styles.groupFooter}>
-              <Text style={styles.groupTotal}>
-                {`Total ${formatMinor(group.totalMinor, group.currency)}`}
-              </Text>
+              <Text style={styles.summaryTitle}>Order summary</Text>
+              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Subtotal</Text><Text style={styles.groupTotal}>{formatMinor(group.totalMinor, group.currency)}</Text></View>
+              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Delivery</Text><Text style={styles.summaryValue}>Confirmed at checkout</Text></View>
+              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Taxes and fees</Text><Text style={styles.summaryValue}>Confirmed at checkout</Text></View>
               {confirmOpen ? (
                 <View style={styles.confirmBox}>
                   <Text style={styles.confirmText}>
-                    {`Pay ${group.sellerName || "this seller"} ${formatMinor(group.totalMinor, group.currency)}?`}
+                    {`Review checkout with ${group.sellerName || "this seller"} for ${formatMinor(group.totalMinor, group.currency)} subtotal.`}
                   </Text>
                   {checkoutNote ? <Text style={styles.note}>{checkoutNote}</Text> : null}
                   <View style={styles.confirmRow}>
@@ -383,7 +385,7 @@ export function MarketplaceCartScreen({ navigation }: Props) {
                       style={[styles.cta, checkoutBusy && styles.ctaBusy]}
                     >
                       <Text style={styles.ctaText}>
-                        {checkoutBusy ? "Starting checkout…" : "Confirm"}
+                        {checkoutBusy ? "Preparing secure checkout…" : "Continue securely"}
                       </Text>
                     </Pressable>
                   </View>
@@ -475,6 +477,10 @@ const styles = StyleSheet.create({
   link: { color: storeLight.text.link, fontSize: 13 },
   groupFooter: { borderTopWidth: StyleSheet.hairlineWidth, borderColor: storeLight.border.hairline, paddingTop: 10, gap: 8 },
   groupTotal: { color: storeLight.text.primary, fontSize: 15, fontWeight: "700" },
+  summaryTitle: { color: storeLight.text.primary, fontSize: 16, fontWeight: "800" },
+  summaryRow: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
+  summaryLabel: { color: storeLight.text.muted, fontSize: 13 },
+  summaryValue: { color: storeLight.text.primary, fontSize: 13, textAlign: "right" },
   cta: {
     backgroundColor: MARKETPLACE_CART_CTA.to,
     borderRadius: storeLight.radius.pill,

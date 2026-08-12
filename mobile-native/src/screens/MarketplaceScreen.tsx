@@ -1,12 +1,15 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Image,
+  Linking,
   Modal,
   Pressable,
   RefreshControl,
+  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,7 +26,13 @@ import {
   searchMarketplace,
   startMarketplaceSellerChat
 } from "../api/marketplace";
-import { DIGITAL_COMMERCE_ENABLED } from "../api/config";
+import { addToCart, fetchCart } from "../api/marketplaceCommerce";
+import {
+  canPurchaseMarketplaceListing as canPurchaseListing,
+  isStocklessMarketplaceListing as isStockless,
+  marketplaceAvailabilityCopy as availabilityCopy,
+  marketplaceFulfillmentCopy as fulfillmentCopy
+} from "../api/marketplaceBuyerPresentation";
 import { conversationSplitEnabled } from "../api/conversationDomain";
 import { mediaDisplayUrl } from "../api/feed";
 import { profileNavigationParams, resolveProfileTarget } from "../api/profileTarget";
@@ -35,6 +44,7 @@ import { RootStackParamList } from "../navigation/types";
 import { observeSavedStates, peekSaveState, useSavedState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
+import { storeLight } from "../theme/marketplaceLight";
 import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "MarketplaceDetail">>;
@@ -52,6 +62,7 @@ export function MarketplaceScreen({ route, navigation }: Props) {
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
   const [detail, setDetail] = useState<MarketplaceListing | null>(null);
+  const [cartCount, setCartCount] = useState(0);
 
   async function load(mode: "initial" | "refresh" | "search" = "initial", nextQuery = query) {
     setError("");
@@ -86,6 +97,7 @@ export function MarketplaceScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     load("initial").catch(() => undefined);
+    fetchCart().then((cart) => setCartCount(cart.badgeCount)).catch(() => undefined);
   }, [initialListingId]);
 
   useEffect(() => {
@@ -166,12 +178,34 @@ export function MarketplaceScreen({ route, navigation }: Props) {
   }
 
   async function handleCheckout(listing: MarketplaceListing) {
+    if (!canPurchaseListing(listing)) {
+      setError("This item is no longer available.");
+      return;
+    }
     setBusyId(listing.id);
     try {
       const result = await openMarketplaceCheckout(listing.id);
-      if (!result.checkout_url) setError(result.message || "Checkout is not available for this listing yet.");
+      if (result.checkout_url) await Linking.openURL(result.checkout_url);
+      else setError(result.message || "Checkout is not available for this listing yet.");
     } catch (checkoutError) {
       setError(checkoutError instanceof Error ? checkoutError.message : "Checkout is not available for this listing yet.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleAddToCart(listing: MarketplaceListing) {
+    if (!canPurchaseListing(listing)) {
+      setError("This item is no longer available.");
+      return;
+    }
+    setBusyId(listing.id);
+    try {
+      const cart = await addToCart(listing.id, 1);
+      setCartCount(cart.badgeCount);
+      setError(`${listing.title || "Item"} added to cart.`);
+    } catch (cartError) {
+      setError(cartError instanceof Error ? cartError.message : "This item could not be added to your cart.");
     } finally {
       setBusyId(null);
     }
@@ -234,7 +268,7 @@ export function MarketplaceScreen({ route, navigation }: Props) {
             busy={busyId === item.id}
             onOpen={setDetail}
             onSave={handleSave}
-            onReport={handleReport}
+            onAddToCart={handleAddToCart}
           />
         )}
       />
@@ -246,6 +280,8 @@ export function MarketplaceScreen({ route, navigation }: Props) {
         onReport={handleReport}
         onContactSeller={handleContactSeller}
         onCheckout={handleCheckout}
+        onAddToCart={handleAddToCart}
+        onOpenCart={() => navigation?.navigate("MarketplaceCart", { title: `Cart${cartCount ? ` (${cartCount})` : ""}` })}
         onProfile={(listing) => {
           const params = profileNavigationParams(resolveProfileTarget({
             userId: listing.seller_user_id,
@@ -261,12 +297,12 @@ export function MarketplaceScreen({ route, navigation }: Props) {
   );
 }
 
-function MarketplaceCard({ listing, busy, onOpen, onSave, onReport }: {
+function MarketplaceCard({ listing, busy, onOpen, onSave, onAddToCart }: {
   listing: MarketplaceListing;
   busy?: boolean;
   onOpen: (listing: MarketplaceListing) => void;
   onSave: (listing: MarketplaceListing) => void;
-  onReport: (listing: MarketplaceListing) => void;
+  onAddToCart: (listing: MarketplaceListing) => void;
 }) {
   const cover = listing.media?.[0] ? mediaDisplayUrl(listing.media[0]) : "";
   // Read from the shared store, not from the listing payload. The payload is a
@@ -290,15 +326,15 @@ function MarketplaceCard({ listing, busy, onOpen, onSave, onReport }: {
         <View style={styles.pillRow}>
           <Text style={styles.pill}>{listing.category || "Education"}</Text>
           <Text style={styles.pill}>{listing.price_label || "Request access"}</Text>
-          <Text style={styles.pill}>Safety {listing.safety_score || 0}</Text>
+          <Text style={styles.pill}>{availabilityCopy(listing)}</Text>
         </View>
         <Text style={styles.sellerText}>Seller: {listing.seller_name || "PulseSoc Seller"}</Text>
         <View style={styles.cardActions}>
           <Pressable accessibilityRole="button" accessibilityLabel={`${savedState.saved ? "Remove" : "Save"} ${listing.title || "listing"}`} accessibilityState={{ disabled: busy, selected: savedState.saved }} style={styles.smallButton} disabled={busy} onPress={() => onSave(listing)}>
             <Text style={styles.smallButtonText}>{savedState.saved ? "Saved" : "Save"}</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.smallButton} disabled={busy} onPress={() => onReport(listing)}>
-            <Text style={styles.smallButtonText}>Report</Text>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || !canPurchaseListing(listing) }} style={styles.smallButton} disabled={busy || !canPurchaseListing(listing)} onPress={() => onAddToCart(listing)}>
+            <Text style={styles.smallButtonText}>{canPurchaseListing(listing) ? "Add to cart" : "Sold out"}</Text>
           </Pressable>
         </View>
       </View>
@@ -306,7 +342,7 @@ function MarketplaceCard({ listing, busy, onOpen, onSave, onReport }: {
   );
 }
 
-function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onContactSeller, onCheckout, onProfile }: {
+function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onContactSeller, onCheckout, onAddToCart, onOpenCart, onProfile }: {
   listing: MarketplaceListing | null;
   busy?: boolean;
   onClose: () => void;
@@ -314,6 +350,8 @@ function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onCo
   onReport: (listing: MarketplaceListing) => void;
   onContactSeller: (listing: MarketplaceListing) => void;
   onCheckout: (listing: MarketplaceListing) => void;
+  onAddToCart: (listing: MarketplaceListing) => void;
+  onOpenCart: () => void;
   onProfile: (listing: MarketplaceListing) => void;
 }) {
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -337,55 +375,108 @@ function MarketplaceDetailModal({ listing, busy, onClose, onSave, onReport, onCo
   if (!listing) return null;
   const cover = listing.media?.[0] ? mediaDisplayUrl(listing.media[0]) : "";
   const canNavigateProfile = Boolean(listing.seller_public_player_id || listing.seller_username);
+  const metadata = listing.listing_metadata || {};
+  const condition = readMetadata(metadata, "condition");
+  const location = readMetadata(metadata, "location");
+  const fulfillment = fulfillmentCopy(listing);
+  const availability = availabilityCopy(listing);
+  const purchasable = canPurchaseListing(listing);
   return (
     <Modal visible={Boolean(listing)} animationType="slide" onRequestClose={onClose}>
+      <View style={styles.detailShell}>
       <ScrollView style={styles.detailRoot} contentContainerStyle={styles.detailContent}>
         <View style={styles.detailHeader}>
-          <Pressable accessibilityRole="button" style={styles.closeButton} onPress={onClose}>
-            <Text style={styles.closeText}>Close</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Back to Marketplace" style={styles.iconButton} onPress={onClose}>
+            <Ionicons name="arrow-back" size={24} color={storeLight.text.primary} />
           </Pressable>
+          <View style={styles.detailHeaderActions}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Share listing" style={styles.iconButton} onPress={() => Share.share({ title: listing.title || "Marketplace listing", message: `${listing.title || "Marketplace listing"}\n${marketplaceWebUrl(listing.id)}` }).catch(() => undefined)}>
+              <Ionicons name="share-outline" size={23} color={storeLight.text.primary} />
+            </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={savedState.saved ? "Remove from saved" : "Save listing"} accessibilityState={{ selected: savedState.saved }} style={styles.iconButton} onPress={() => onSave(listing)}>
+              <Ionicons name={savedState.saved ? "heart" : "heart-outline"} size={24} color={savedState.saved ? storeLight.status.error : storeLight.text.primary} />
+            </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Open cart" style={styles.iconButton} onPress={onOpenCart}>
+              <Ionicons name="cart-outline" size={24} color={storeLight.text.primary} />
+            </Pressable>
+          </View>
         </View>
-        <Pressable accessibilityRole="button" accessibilityState={{ disabled: !viewerItems.length }} disabled={!viewerItems.length} onPress={() => setViewerOpen(true)}>
+        <Pressable style={styles.detailMedia} accessibilityRole="button" accessibilityLabel={`View ${viewerItems.length || 1} product media item${viewerItems.length === 1 ? "" : "s"}`} accessibilityState={{ disabled: !viewerItems.length }} disabled={!viewerItems.length} onPress={() => setViewerOpen(true)}>
           {cover ? <Image source={{ uri: cover }} style={styles.detailCover} resizeMode="cover" /> : <View style={styles.detailCoverFallback}><Text style={styles.coverText}>No media loaded</Text></View>}
+          <View style={styles.mediaCount}><Text style={styles.mediaCountText}>1/{Math.max(1, viewerItems.length)}</Text></View>
         </Pressable>
-        <Text style={styles.detailTitle}>{listing.title}</Text>
-        <Text style={styles.detailPrice}>{listing.price_label || "Request access"}</Text>
+        <View style={styles.productSection}>
+          <Text style={styles.detailTitle}>{listing.title}</Text>
+          <Text style={styles.detailPrice}>{listing.price_label || "Request access"}</Text>
+          <View style={styles.pillRow}>
+            <Text style={styles.consumerPill}>{listing.category || "Marketplace"}</Text>
+            {condition ? <Text style={styles.consumerPill}>{humanize(condition)}</Text> : null}
+            <Text style={[styles.consumerPill, !purchasable && styles.soldPill]}>{availability}</Text>
+          </View>
+          <DetailFact label="Category" value={[listing.category, listing.subcategory].filter(Boolean).join(" › ")} />
+          {condition ? <DetailFact label="Condition" value={humanize(condition)} /> : null}
+          {location ? <DetailFact label="Location" value={location} /> : null}
+          <DetailFact label="Delivery" value={fulfillment} />
+          {listing.quantity != null && !isStockless(listing) ? <DetailFact label="Quantity" value={availability} /> : null}
+        </View>
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canNavigateProfile }} style={styles.sellerPanel} disabled={!canNavigateProfile} onPress={() => onProfile(listing)}>
+          <View style={styles.sellerAvatar}><Text style={styles.sellerAvatarText}>{(listing.seller_name || "P").trim().slice(0, 1).toUpperCase()}</Text></View>
+          <View style={styles.sellerInfo}>
+            <Text style={styles.sellerTitle}>{listing.seller_name || "PulseSoc Seller"}</Text>
+            <View style={styles.verifiedRow}><Ionicons name="shield-checkmark" size={14} color={storeLight.status.success} /><Text style={styles.sellerMeta}>Verified Marketplace seller</Text></View>
+          </View>
+          <Text style={styles.viewStoreText}>{canNavigateProfile ? "View store" : "Seller"}</Text>
+        </Pressable>
+        <View style={styles.infoSection}>
+          <Text style={styles.sectionTitle}>Description</Text>
         <ContentTranslation
           contentType="marketplace"
           contentRef={listing.id}
           text={listing.description || listing.short_description || "No description loaded."}
           textStyle={styles.detailDescription}
         />
-        <View style={styles.pillRow}>
-          <Text style={styles.pill}>{listing.category || "Education"}</Text>
-          <Text style={styles.pill}>Safety {listing.safety_score || 0}</Text>
-          <Text style={styles.pill}>{listing.approval_status || listing.status || "approved"}</Text>
         </View>
-        <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canNavigateProfile }} style={styles.sellerPanel} disabled={!canNavigateProfile} onPress={() => onProfile(listing)}>
-          <Text style={styles.sellerTitle}>{listing.seller_name || "PulseSoc Seller"}</Text>
-          <Text style={styles.sellerMeta}>{canNavigateProfile ? "Open profile" : "This seller has no profile to open"}</Text>
-        </Pressable>
-        <Text style={styles.safetyNotice}>Safety notice: marketplace business rules, checkout, seller approval, moderation, refunds, disputes, and payout release remain server-authoritative.</Text>
-        <View style={styles.detailActions}>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.primaryButton} disabled={busy} onPress={() => onContactSeller(listing)}>
-            <Text style={styles.primaryText}>Contact Seller</Text>
-          </Pressable>
-          {DIGITAL_COMMERCE_ENABLED ? (
-            <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.secondaryButton} disabled={busy} onPress={() => onCheckout(listing)}>
-              <Text style={styles.secondaryText}>Checkout</Text>
-            </Pressable>
-          ) : null}
-          <Pressable accessibilityRole="button" accessibilityLabel={`${savedState.saved ? "Remove" : "Save"} ${listing.title || "listing"}`} accessibilityState={{ disabled: busy, selected: savedState.saved }} style={styles.secondaryButton} disabled={busy} onPress={() => onSave(listing)}>
-            <Text style={styles.secondaryText}>{savedState.saved ? "Saved" : "Save"}</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} style={styles.secondaryButton} disabled={busy} onPress={() => onReport(listing)}>
-            <Text style={styles.secondaryText}>Report</Text>
-          </Pressable>
+        <View style={styles.infoSection}>
+          <Text style={styles.sectionTitle}>Buyer protection</Text>
+          <ProtectionRow icon="lock-closed-outline" text="Payment is handled through PulseSoc secure checkout." />
+          <ProtectionRow icon="receipt-outline" text="Your order and receipt appear in Purchase History after payment confirmation." />
+          <ProtectionRow icon="refresh-outline" text="Eligible returns and disputes are managed from your order." />
+        </View>
+        <View style={styles.secondaryActions}>
+          <Pressable accessibilityRole="button" style={styles.textAction} onPress={() => onContactSeller(listing)}><Ionicons name="chatbubble-outline" size={18} color={storeLight.text.link} /><Text style={styles.textActionLabel}>Message seller</Text></Pressable>
+          <Pressable accessibilityRole="button" style={styles.textAction} onPress={() => onReport(listing)}><Ionicons name="flag-outline" size={18} color={storeLight.text.link} /><Text style={styles.textActionLabel}>Report</Text></Pressable>
         </View>
       </ScrollView>
+        <View style={styles.purchaseBar}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || !purchasable }} style={[styles.cartButton, (!purchasable || busy) && styles.disabledButton]} disabled={busy || !purchasable} onPress={() => onAddToCart(listing)}>
+            <Ionicons name="cart-outline" size={19} color={storeLight.text.link} /><Text style={styles.cartButtonText}>{purchasable ? "Add to cart" : "Sold out"}</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || !purchasable }} style={[styles.buyButton, (!purchasable || busy) && styles.disabledButton]} disabled={busy || !purchasable} onPress={() => onCheckout(listing)}>
+            <Text style={styles.buyButtonText}>{busy ? "Please wait…" : "Buy now"}</Text>
+          </Pressable>
+        </View>
+      </View>
       <NativeMediaViewer visible={viewerOpen} items={viewerItems} title="Marketplace media" onClose={() => setViewerOpen(false)} />
     </Modal>
   );
+}
+
+function DetailFact({ label, value }: { label: string; value: string }) {
+  if (!value) return null;
+  return <View style={styles.factRow}><Text style={styles.factLabel}>{label}</Text><Text style={styles.factValue}>{value}</Text></View>;
+}
+
+function ProtectionRow({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }) {
+  return <View style={styles.protectionRow}><Ionicons name={icon} size={19} color={storeLight.status.success} /><Text style={styles.protectionText}>{text}</Text></View>;
+}
+
+function readMetadata(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function humanize(value: string) {
+  return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function focusInitialListing(items: MarketplaceListing[], listingId: number) {
@@ -466,50 +557,48 @@ const styles = createThemedStyles(() => ({
     marginTop: 16
   },
   detailContent: {
-    padding: 16,
-    paddingBottom: 42
+    paddingBottom: 28
   },
   detailCover: {
-    aspectRatio: 16 / 10,
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: 8,
+    aspectRatio: 1,
+    backgroundColor: storeLight.bg.skeleton,
     width: "100%"
   },
   detailCoverFallback: {
     alignItems: "center",
-    aspectRatio: 16 / 10,
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: 8,
+    aspectRatio: 1,
+    backgroundColor: storeLight.bg.skeleton,
     justifyContent: "center"
   },
   detailDescription: {
-    color: colors.text,
+    color: storeLight.text.primary,
     fontSize: 15,
     lineHeight: 23,
     marginTop: 12
   },
   detailHeader: {
     alignItems: "center",
+    backgroundColor: storeLight.bg.card,
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 12
+    minHeight: 58,
+    paddingHorizontal: 10
   },
   detailPrice: {
-    color: colors.accent,
-    fontSize: 18,
+    color: storeLight.status.success,
+    fontSize: 23,
     fontWeight: "900",
-    marginTop: 8
+    marginTop: 4
   },
   detailRoot: {
-    backgroundColor: "transparent",
+    backgroundColor: storeLight.bg.page,
     flex: 1
   },
   detailTitle: {
-    color: colors.text,
-    fontSize: 25,
+    color: storeLight.text.primary,
+    fontSize: 27,
     fontWeight: "900",
-    lineHeight: 31,
-    marginTop: 16
+    lineHeight: 32
   },
   empty: {
     backgroundColor: colors.surface,
@@ -615,16 +704,19 @@ const styles = createThemedStyles(() => ({
     fontWeight: "900"
   },
   sellerMeta: {
-    color: colors.muted,
+    color: storeLight.text.muted,
     fontSize: 12,
-    marginTop: 3
+    fontWeight: "600"
   },
   sellerPanel: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
+    alignItems: "center",
+    backgroundColor: storeLight.bg.card,
+    borderColor: storeLight.border.hairline,
+    borderRadius: 14,
     borderWidth: 1,
-    marginTop: 16,
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginTop: 12,
     padding: 14
   },
   sellerGatewayButton: {
@@ -645,7 +737,7 @@ const styles = createThemedStyles(() => ({
     fontSize: 13
   },
   sellerTitle: {
-    color: colors.text,
+    color: storeLight.text.primary,
     fontWeight: "900"
   },
   smallButton: {
@@ -677,5 +769,127 @@ const styles = createThemedStyles(() => ({
   webButtonText: {
     color: colors.text,
     fontWeight: "900"
-  }
+  },
+  detailShell: {
+    backgroundColor: storeLight.bg.page,
+    flex: 1
+  },
+  detailHeaderActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4
+  },
+  iconButton: {
+    alignItems: "center",
+    height: 46,
+    justifyContent: "center",
+    width: 46
+  },
+  detailMedia: {
+    backgroundColor: storeLight.bg.skeleton,
+    position: "relative"
+  },
+  mediaCount: {
+    backgroundColor: "rgba(15,17,17,.76)",
+    borderRadius: 14,
+    bottom: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    position: "absolute",
+    right: 12
+  },
+  mediaCountText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
+  productSection: {
+    backgroundColor: storeLight.bg.card,
+    borderBottomColor: storeLight.border.hairline,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+    padding: 16
+  },
+  consumerPill: {
+    backgroundColor: storeLight.bg.page,
+    borderColor: storeLight.border.hairline,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    color: storeLight.text.primary,
+    fontSize: 12,
+    fontWeight: "700",
+    overflow: "hidden",
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  soldPill: { color: storeLight.status.error },
+  factRow: { flexDirection: "row", gap: 14, paddingTop: 3 },
+  factLabel: { color: storeLight.text.muted, fontSize: 13, width: 82 },
+  factValue: { color: storeLight.text.primary, flex: 1, fontSize: 13, fontWeight: "600" },
+  sellerAvatar: {
+    alignItems: "center",
+    backgroundColor: "#DDF8EE",
+    borderRadius: 24,
+    height: 48,
+    justifyContent: "center",
+    width: 48
+  },
+  sellerAvatarText: { color: storeLight.text.primary, fontSize: 18, fontWeight: "900" },
+  sellerInfo: { flex: 1, gap: 4, marginLeft: 11 },
+  verifiedRow: { alignItems: "center", flexDirection: "row", gap: 4 },
+  viewStoreText: { color: storeLight.text.link, fontSize: 13, fontWeight: "800" },
+  infoSection: {
+    backgroundColor: storeLight.bg.card,
+    borderColor: storeLight.border.hairline,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 15
+  },
+  sectionTitle: { color: storeLight.text.primary, fontSize: 17, fontWeight: "900" },
+  protectionRow: { alignItems: "flex-start", flexDirection: "row", gap: 10 },
+  protectionText: { color: storeLight.text.muted, flex: 1, fontSize: 13, lineHeight: 19 },
+  secondaryActions: { flexDirection: "row", gap: 12, marginHorizontal: 16, marginTop: 14 },
+  textAction: {
+    alignItems: "center",
+    borderColor: storeLight.border.secondaryButton,
+    borderRadius: 999,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: "row",
+    gap: 7,
+    justifyContent: "center",
+    minHeight: 46
+  },
+  textActionLabel: { color: storeLight.text.link, fontSize: 13, fontWeight: "800" },
+  purchaseBar: {
+    backgroundColor: storeLight.bg.card,
+    borderTopColor: storeLight.border.hairline,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: 10,
+    paddingBottom: 12,
+    paddingHorizontal: 14,
+    paddingTop: 10
+  },
+  cartButton: {
+    alignItems: "center",
+    borderColor: storeLight.text.link,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    flex: 1,
+    flexDirection: "row",
+    gap: 7,
+    justifyContent: "center",
+    minHeight: 52
+  },
+  cartButtonText: { color: storeLight.text.link, fontSize: 15, fontWeight: "900" },
+  buyButton: {
+    alignItems: "center",
+    backgroundColor: storeLight.accent.brand,
+    borderRadius: 999,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 52
+  },
+  buyButtonText: { color: storeLight.text.primary, fontSize: 15, fontWeight: "900" },
+  disabledButton: { opacity: 0.45 }
 }));
