@@ -19,38 +19,77 @@ from contextlib import contextmanager
 
 from services import db as platform_db
 
-DEPLOYMENT_SHA_ENV = "RAILWAY_GIT_COMMIT"
+# Same precedence list bot.py's health surface uses — the two must agree or
+# the "deployment mismatch" rule would fire against ourselves.
+DEPLOYMENT_SHA_ENVS = (
+    "RAILWAY_GIT_COMMIT_SHA", "GIT_COMMIT", "SOURCE_VERSION", "COMMIT_SHA",
+    "RAILWAY_GIT_COMMIT",
+)
 
 
 def deployment_sha() -> str:
-    return os.getenv(DEPLOYMENT_SHA_ENV, "").strip() or "unknown"
+    for env in DEPLOYMENT_SHA_ENVS:
+        value = os.getenv(env, "").strip()
+        if value:
+            return value
+    return "unknown"
 
 
 SCHEMA_STATEMENTS: tuple[str, ...] = (
-    # Canonical events (Stage 2). dedupe_key UNIQUE = persist-before-process
-    # idempotency, same DB-level pattern as webhook_inbox.
+    # Canonical events — SentinelEventV1 envelope (Mission 2). dedupe_key
+    # UNIQUE = persist-before-process idempotency, same DB-level pattern as
+    # webhook_inbox. V1 columns land in the initial CREATE (nothing deployed
+    # yet), so this remains purely additive to the platform.
     """CREATE TABLE IF NOT EXISTS sentinel_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         event_id TEXT NOT NULL UNIQUE,
+        event_version TEXT NOT NULL DEFAULT '1',
         dedupe_key TEXT NOT NULL UNIQUE,
         category TEXT NOT NULL,
         event_type TEXT NOT NULL,
         severity TEXT NOT NULL,
+        confidence REAL NOT NULL DEFAULT 1.0,
+        actor_type TEXT NOT NULL DEFAULT 'SYSTEM',
         actor_id TEXT NOT NULL,
         subject_type TEXT,
         subject_id TEXT,
+        resource_type TEXT,
+        resource_ref TEXT,
+        session_ref TEXT,
+        device_ref TEXT,
+        network_ref TEXT,
         source TEXT NOT NULL,
+        source_system TEXT NOT NULL DEFAULT '',
+        source_component TEXT NOT NULL DEFAULT '',
+        source_event_id TEXT NOT NULL DEFAULT '',
+        source_trust TEXT NOT NULL DEFAULT 'UNKNOWN',
+        environment TEXT NOT NULL DEFAULT '',
         occurred_at TEXT NOT NULL,
         recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+        received_at TEXT NOT NULL DEFAULT '',
+        expires_at TEXT,
+        operational_impact TEXT NOT NULL DEFAULT 'none',
+        security_impact TEXT NOT NULL DEFAULT 'none',
+        financial_impact TEXT NOT NULL DEFAULT 'none',
+        privacy_impact TEXT NOT NULL DEFAULT 'none',
+        compliance_impact TEXT NOT NULL DEFAULT 'none',
+        correlation_keys_json TEXT NOT NULL DEFAULT '[]',
+        evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+        policy_context_json TEXT NOT NULL DEFAULT '{}',
         deployment_sha TEXT NOT NULL,
         policy_version TEXT NOT NULL,
         payload_json TEXT NOT NULL DEFAULT '{}'
     )""",
     "CREATE INDEX IF NOT EXISTS idx_sentinel_events_cat ON sentinel_events(category, occurred_at)",
     "CREATE INDEX IF NOT EXISTS idx_sentinel_events_actor ON sentinel_events(actor_id, occurred_at)",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_events_type ON sentinel_events(event_type, occurred_at)",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_events_source ON sentinel_events(source_system, source_event_id)",
 
-    # Incidents (Stage 7). Idempotent by incident_key, append-only history in
-    # sentinel_incident_transitions.
+    # Incidents (Stage 7, extended Mission 2). Idempotent by incident_key
+    # (the deterministic dedupe key), append-only history in
+    # sentinel_incident_transitions. Recurrence bumps observation_count and
+    # last_seen_at instead of duplicating. Suppression carries a reason and
+    # an expiry — suppressed incidents still exist.
     """CREATE TABLE IF NOT EXISTS sentinel_incidents (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         incident_key TEXT NOT NULL UNIQUE,
@@ -61,10 +100,18 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         opened_by TEXT NOT NULL,
         opened_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+        observation_count INTEGER NOT NULL DEFAULT 1,
+        owner_action_required INTEGER NOT NULL DEFAULT 0,
+        resolution_code TEXT NOT NULL DEFAULT '',
+        suppressed_reason TEXT NOT NULL DEFAULT '',
+        suppressed_until TEXT,
         deployment_sha TEXT NOT NULL,
         policy_version TEXT NOT NULL,
         detail_json TEXT NOT NULL DEFAULT '{}'
     )""",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_incidents_state ON sentinel_incidents(state, updated_at)",
     """CREATE TABLE IF NOT EXISTS sentinel_incident_transitions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         incident_key TEXT NOT NULL,
@@ -129,6 +176,24 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         verification_note TEXT NOT NULL DEFAULT '',
         result_json TEXT NOT NULL DEFAULT '{}'
     )""",
+
+    # Health snapshots (Mission 2, Stage 7): freshness-aware health with the
+    # trust of the observation attached. Append-only; "current" health is the
+    # newest unexpired row per component, never a mutable flag.
+    """CREATE TABLE IF NOT EXISTS sentinel_health_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        component TEXT NOT NULL,
+        status TEXT NOT NULL,
+        source_trust TEXT NOT NULL,
+        observed_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        measurement TEXT NOT NULL DEFAULT '',
+        threshold TEXT NOT NULL DEFAULT '',
+        confidence REAL NOT NULL DEFAULT 0.0,
+        deployment_sha TEXT NOT NULL,
+        evidence_ref TEXT NOT NULL DEFAULT ''
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_health_component ON sentinel_health_snapshots(component, id)",
 
     # Self-metrics (Stage 28).
     """CREATE TABLE IF NOT EXISTS sentinel_metrics (

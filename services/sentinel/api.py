@@ -6,6 +6,9 @@ the app factory region (documented in docs/sentinel/architecture.md):
     from services.sentinel.api import sentinel_bp
     webhook_app.register_blueprint(sentinel_bp)
 
+Mounted at /api/admin/sentinel (Mission 2): the path itself states the
+privilege level.
+
 Reasons for shipping unwired: bot.py is under concurrent change and is
 protected by the audio diff gate; registering a new privileged surface is an
 owner decision, not something the foundation commit does implicitly (SC10).
@@ -21,7 +24,7 @@ from flask import Blueprint, jsonify, request, session
 from services.sentinel import (events, incidents, killswitches, observability,
                                providers, store)
 
-sentinel_bp = Blueprint("sentinel", __name__, url_prefix="/api/sentinel")
+sentinel_bp = Blueprint("sentinel", __name__, url_prefix="/api/admin/sentinel")
 
 
 def _admin_guard():
@@ -44,6 +47,13 @@ def _guard():
 @sentinel_bp.get("/health")
 def health():
     return jsonify({"ok": True, "health": observability.self_health()})
+
+
+@sentinel_bp.get("/summary")
+def summary():
+    """Owner status contract (Mission 2): overall_status, incident counts,
+    per-domain statuses, stale signal count, deployment SHA."""
+    return jsonify({"ok": True, "summary": observability.owner_summary()})
 
 
 @sentinel_bp.get("/switches")

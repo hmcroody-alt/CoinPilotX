@@ -136,14 +136,53 @@ class TestObservabilityAndBridge:
 
     def test_bridge_tolerates_missing_source_tables(self, conn):
         result = security_center_bridge.sync_security_events(conn=conn)
-        assert result == {"ingested": 0, "deduped": 0}
+        assert result == {"ingested": 0, "deduped": 0, "skipped": 0}
 
     def test_bridge_ingests_and_dedupes(self, conn):
+        # Real platform schema: the payload column is details_json (the
+        # Mission 1 bridge asked for `details` and silently lost this table).
         conn.execute("CREATE TABLE security_events (id INTEGER PRIMARY KEY, "
-                     "event_type TEXT, user_id INTEGER, created_at TEXT, details TEXT)")
-        conn.execute("INSERT INTO security_events (event_type, user_id, created_at, details) "
-                     "VALUES ('unusual_device', 42, '2026-08-13 10:00:00', '{}')")
+                     "event_type TEXT, user_id INTEGER, ip_address TEXT, path TEXT, "
+                     "status TEXT, details_json TEXT, created_at TEXT)")
+        conn.execute("INSERT INTO security_events (event_type, user_id, ip_address, "
+                     "path, status, details_json, created_at) VALUES "
+                     "('unusual_device', 42, '10.0.0.1', '/login', 'observed', '{}', "
+                     "'2026-08-13T10:00:00')")
         first = security_center_bridge.sync_security_events(conn=conn)
         assert first["ingested"] == 1
         second = security_center_bridge.sync_security_events(conn=conn)
         assert second["ingested"] == 0 and second["deduped"] == 1
+        # Raw IP never persists; 'T' timestamp is normalised; trust recorded.
+        cur = conn.cursor()
+        cur.execute("SELECT network_ref, occurred_at, source_trust, actor_type, "
+                    "payload_json FROM sentinel_events")
+        row = cur.fetchone()
+        assert row[0].startswith("network:") and "10.0.0.1" not in str(row[4])
+        assert row[1] == "2026-08-13 10:00:00"
+        assert row[2] == "AUTHORITATIVE" and row[3] == "USER"
+
+    def test_bridge_skips_unmapped_types_not_guesses(self, conn):
+        conn.execute("CREATE TABLE security_events (id INTEGER PRIMARY KEY, "
+                     "event_type TEXT, user_id INTEGER, ip_address TEXT, path TEXT, "
+                     "status TEXT, details_json TEXT, created_at TEXT)")
+        conn.execute("INSERT INTO security_events (event_type, user_id, ip_address, "
+                     "path, status, details_json, created_at) VALUES "
+                     "('some_novel_type', 1, '', '', '', '{}', '2026-08-13T10:00:00')")
+        result = security_center_bridge.sync_security_events(conn=conn)
+        assert result["ingested"] == 0 and result["skipped"] == 1
+
+    def test_bridge_maps_real_auth_event_types(self, conn):
+        conn.execute("CREATE TABLE auth_events (id INTEGER PRIMARY KEY, event_type TEXT, "
+                     "user_id INTEGER, email_hash TEXT, status TEXT, severity TEXT, "
+                     "ip_address TEXT, country TEXT, device TEXT, route TEXT, created_at TEXT)")
+        conn.execute("INSERT INTO auth_events (event_type, user_id, email_hash, status, "
+                     "severity, ip_address, country, device, route, created_at) VALUES "
+                     "('forgot_password_invalid_email', 0, 'abc123', 'invalid', 'low', "
+                     "'1.2.3.4', 'US', 'iPhone', '/forgot', '2026-08-13T09:00:00')")
+        result = security_center_bridge.sync_security_events(conn=conn)
+        assert result["ingested"] == 1
+        cur = conn.cursor()
+        cur.execute("SELECT event_type, subject_type, subject_id FROM sentinel_events")
+        row = cur.fetchone()
+        assert row[0] == "password_reset_invalid_email"
+        assert row[1] == "email_hash" and row[2] == "abc123"

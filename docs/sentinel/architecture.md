@@ -12,7 +12,7 @@ bot.py (Flask monolith)          workers (undx_worker, email_worker, …)
         │  (bridge reads existing tables)   │
         ▼                                   ▼
 ┌─────────────────────────────────────────────────────┐
-│ services/sentinel/            (24 modules)          │
+│ services/sentinel/         (27 modules, Mission 2)  │
 │                                                     │
 │  constitution ── the 15 rules everything cites      │
 │  classification ─ 5-level data classification       │
@@ -20,29 +20,52 @@ bot.py (Flask monolith)          workers (undx_worker, email_worker, …)
 │  authority ────── 5 dimensions × 5 levels           │
 │  risk ─────────── bounded budgets (SC14)            │
 │  killswitches ─── env-driven, default OFF           │
-│  store ────────── 8 sentinel_* tables, existing DB  │
-│  events ───────── canonical envelope, 15 categories │
+│  store ────────── sentinel_* tables, existing DB    │
+│  source_trust ─── 7 trust grades + confidence caps  │
+│  entities ─────── typed refs + closed actor types   │
+│  events ───────── SentinelEventV1, 15 categories    │
+│  health ───────── freshness-decaying snapshots      │
 │  evidence ─────── append-only sha256 hash chain     │
 │  incidents ────── 11-state lifecycle engine         │
 │  correlation ──── deterministic multi-signal rules  │
+│  detections ───── OP1-4 / SEC1-3 deterministic rules│
 │  graph ────────── relational edges (no graph DB)    │
 │  journeys ─────── 6 canonical user/system journeys  │
-│  invariants ───── read-only financial checks        │
+│  invariants ───── read-only financial+privacy checks│
 │  providers ────── provider→capability→status health │
 │  runbooks ─────── governed, registered actions only │
 │  verification ─── independent post-action checks    │
 │  ai_security ──── injection heuristics (honest)     │
-│  undx_interface ─ structured read/analyze for UNDX  │
+│  undx_interface ─ read/analyze/hypothesis for UNDX  │
 │  adapters ─────── external signal normalization     │
 │  security_center_bridge ─ ingests existing events   │
-│  observability ── self-metrics + self-health        │
-│  api ──────────── read-only Blueprint (NOT wired)   │
+│  observability ── self-health + owner summary       │
+│  api ──────────── /api/admin/sentinel (NOT wired)   │
 └─────────────────────────────────────────────────────┘
         │
         ▼
    existing database (SQLite locally, PostgreSQL in prod)
    via services/db.py — no Kafka, no Neo4j, no ClickHouse, no Elasticsearch
 ```
+
+## Mission 2 signal path
+
+```
+platform tables ─ bridge/adapters ─▶ SentinelEventV1 (trust + refs + freshness)
+                                          │
+                     detections (OP1-4, SEC1-3) + correlation + invariants
+                                          │
+                                canonical incidents (11 states)
+                                          │
+                        evidence chain (append-only, hash-linked)
+                                          │
+              owner_summary / read-only API / UNDX structured context
+```
+
+Every hop is deterministic; the only model-facing surfaces are read-only
+(`undx_interface.read`) or advisory (`submit_analysis`,
+`submit_hypothesis` — confidence capped at 0.8, closed field set,
+`required_authority` can only name human gates).
 
 ## Core doctrine
 
@@ -83,4 +106,14 @@ Lower layers never import higher ones: constitution/classification are
 leaf modules; store depends only on services/db; events depends on
 classification+killswitches+store; everything else composes those.
 `api.py` is the outermost layer and is intentionally not imported by
-anything (including bot.py).
+anything (including bot.py). Its mount point is `/api/admin/sentinel`;
+wiring it is a one-line owner decision (`init_sentinel(app)`), never an
+implicit side effect of a foundation commit (SC10).
+
+## Companion docs
+
+`event_model.md` (SentinelEventV1 envelope), `source_trust.md` (trust
+grades + confidence ceilings), `incident_model.md` (types + lifecycle),
+`evidence.md` (hash chain), `undx_interface.md` (model-facing contract),
+`security_center_integration.md` (bridge), `operations.md` (switches,
+containment, self-health, API).

@@ -69,3 +69,103 @@ def submit_analysis(subject_type: str, subject_id: str, summary: str,
                  "authority": "ADVISORY"}), conn=conn)
     return {"ok": True, "stored": stored, "authority": "ADVISORY",
             "note": "analysis recorded as intelligence; it authorizes nothing (SC2)"}
+
+
+# --- Hypothesis output contract (Mission 2, Stage 19) -----------------------
+#
+# When UNDX reasons about an incident it must return THIS shape and nothing
+# else. Every field is validated; the contract is deliberately explicit about
+# what the model does NOT know (missing_evidence) and what it may NOT do
+# (required_authority names a human gate, it never grants one).
+
+HYPOTHESIS_FIELDS = (
+    "hypothesis", "confidence", "supporting_evidence_ids",
+    "contradicting_evidence_ids", "affected_domains", "estimated_impact",
+    "recommended_next_step", "required_authority", "missing_evidence",
+)
+
+# The only authorities a hypothesis may name. None of them is self-granting:
+# each maps to a human decision outside this interface.
+REQUIRED_AUTHORITY_LEVELS = ("NONE", "OWNER_REVIEW", "OWNER_APPROVAL")
+
+_IMPACT_LEVELS = ("none", "low", "medium", "high", "critical")
+
+# A model opinion is DERIVED at best — its confidence may never claim more
+# than the DERIVED trust ceiling (SC2/SC4).
+_HYPOTHESIS_CONFIDENCE_CEILING = 0.8
+
+
+def _str_tuple(value, cap: int = 50) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, (str, bytes)):
+        raise ValueError("expected a list of ids, got a bare string")
+    return tuple(str(v)[:120] for v in list(value)[:cap])
+
+
+def submit_hypothesis(incident_key: str, data: dict, conn=None) -> dict:
+    """Validate and store a structured UNDX hypothesis for an incident.
+
+    Fails closed on any malformed field. Stored as an ADVISORY UNDX event —
+    a hypothesis is intelligence about an incident, never a verdict on it,
+    and required_authority documents which human gate the recommended step
+    would need. Nothing here executes that step (SC2, SC10).
+    """
+    if not isinstance(data, dict):
+        return {"ok": False, "error": "hypothesis must be a structured dict"}
+    unknown = sorted(set(data) - set(HYPOTHESIS_FIELDS))
+    missing = sorted(set(HYPOTHESIS_FIELDS) - set(data))
+    if unknown or missing:
+        return {"ok": False, "error": f"contract mismatch: missing={missing} unknown={unknown}",
+                "required_fields": HYPOTHESIS_FIELDS}
+
+    incident = incidents.get(str(incident_key), conn=conn)
+    if not incident:
+        return {"ok": False, "error": f"unknown incident {incident_key!r} (SC15)"}
+
+    hypothesis = str(data["hypothesis"] or "").strip()
+    if not hypothesis:
+        return {"ok": False, "error": "empty hypothesis"}
+    try:
+        confidence = float(data["confidence"])
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "confidence must be numeric"}
+    if not (0.0 <= confidence <= _HYPOTHESIS_CONFIDENCE_CEILING):
+        return {"ok": False,
+                "error": f"confidence must be within [0, {_HYPOTHESIS_CONFIDENCE_CEILING}] — "
+                         "model output never exceeds the DERIVED ceiling (SC2)"}
+    impact = str(data["estimated_impact"] or "").lower()
+    if impact not in _IMPACT_LEVELS:
+        return {"ok": False, "error": f"estimated_impact must be one of {_IMPACT_LEVELS}"}
+    authority = str(data["required_authority"] or "").upper()
+    if authority not in REQUIRED_AUTHORITY_LEVELS:
+        return {"ok": False,
+                "error": f"required_authority must be one of {REQUIRED_AUTHORITY_LEVELS}"}
+    try:
+        supporting = _str_tuple(data["supporting_evidence_ids"])
+        contradicting = _str_tuple(data["contradicting_evidence_ids"])
+        domains = _str_tuple(data["affected_domains"], cap=15)
+        missing_ev = _str_tuple(data["missing_evidence"], cap=25)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    stored = events.ingest(events.Event(
+        category="UNDX", event_type="model_hypothesis", severity="info",
+        actor_id=UNDX_MODEL.actor_id, source="undx.interface",
+        subject_type="incident", subject_id=str(incident_key),
+        payload={
+            "hypothesis": hypothesis[:2000],
+            "confidence": confidence,
+            "supporting_evidence_ids": list(supporting),
+            "contradicting_evidence_ids": list(contradicting),
+            "affected_domains": list(domains),
+            "estimated_impact": impact,
+            "recommended_next_step": str(data["recommended_next_step"] or "")[:500],
+            "required_authority": authority,
+            "missing_evidence": list(missing_ev),
+            "authority": "ADVISORY",
+        }), conn=conn)
+    return {"ok": True, "stored": stored, "authority": "ADVISORY",
+            "required_authority": authority,
+            "note": "hypothesis recorded; required_authority names a human "
+                    "gate — it grants nothing (SC2/SC10)"}

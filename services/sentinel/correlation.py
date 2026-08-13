@@ -101,16 +101,38 @@ def evaluate_rule(rule: CorrelationRule, conn=None) -> list[dict]:
             # Bucket by day so a persisting condition doesn't spam new incidents.
             bucket = str(row[3] or "")[:10]
             key = _incident_key(rule, subject_id, bucket)
+            # Correlation output contract (Mission 2): the exact events behind
+            # the finding, a human-readable reason, and a DETERMINISTIC
+            # confidence capped at the DERIVED trust ceiling — arithmetic on
+            # evidence margin, never a model opinion (SC2).
+            cur.execute(
+                f"""SELECT event_id FROM sentinel_events
+                    WHERE category = ? AND event_type IN ({placeholders})
+                      AND subject_id = ? AND occurred_at >= ?
+                    ORDER BY id DESC LIMIT 50""",
+                (rule.category, *rule.event_types, subject_id, cutoff))
+            related_event_ids = [str(r[0]) for r in cur.fetchall()]
+            confidence = min(0.8, round(
+                0.5 + 0.05 * (n - rule.min_events)
+                + 0.1 * (distinct_types - rule.min_distinct_types), 2))
+            reason = (f"[{rule.rule_id}] {rule.description}: {n} events "
+                      f"({distinct_types} distinct types) within "
+                      f"{rule.window_minutes}m for subject {subject_id}")
             ref = incidents.open_incident(
                 key, rule.incident_type, rule.severity,
                 f"[{rule.rule_id}] {rule.description} (subject={subject_id}, "
                 f"events={n}, distinct={distinct_types})",
                 SENTINEL_CORRELATOR.actor_id,
                 detail={"rule_id": rule.rule_id, "subject_id": subject_id,
-                        "event_count": n, "distinct_types": distinct_types},
+                        "event_count": n, "distinct_types": distinct_types,
+                        "correlation_reason": reason, "confidence": confidence},
+                event_ids=tuple(related_event_ids),
                 conn=c)
             findings.append({"rule_id": rule.rule_id, "subject_id": subject_id,
-                             "incident_key": key, "created": ref.created})
+                             "incident_key": key, "created": ref.created,
+                             "related_event_ids": related_event_ids,
+                             "correlation_reason": reason,
+                             "confidence": confidence})
     return findings
 
 

@@ -19,15 +19,18 @@ from services.sentinel import store
 
 STATUSES = ("up", "degraded", "down", "unknown")
 
-# Known provider capabilities (extend as adapters land).
+# Known provider capabilities (extend as adapters land). Mission 2 pins the
+# capability vocabulary for the providers the platform actually depends on.
 KNOWN_CAPABILITIES = {
-    "stripe": ("checkout", "webhooks", "payouts", "refunds"),
+    "stripe": ("api", "payment_intent", "webhook", "connect", "apple_pay",
+               "checkout", "payouts", "refunds"),
+    "railway": ("deployment", "runtime", "database"),
     # Real-time media provider is tracked under a neutral key: sentinel must
     # not reference the protected audio/live stack by name (see change policy).
     "rtc_media": ("rooms", "egress"),
     "mux": ("ingest", "playback"),
-    "brevo": ("email", "sms"),
-    "r2": ("storage",),
+    "brevo": ("email_send", "sms"),
+    "r2": ("object_write", "object_read"),
     "fcm": ("push",),
     "apns": ("push",),
 }
