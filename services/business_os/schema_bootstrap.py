@@ -48,6 +48,7 @@ _ENSURES = (
     ("business", "services.business_os.business.schema", "ensure_schema"),
     ("profile", "services.business_os.profile.schema", "ensure_schema"),
     ("advertising", "services.business_os.advertising.schema", "ensure_schema"),
+    ("ad_guardrails", "services.business_os.advertising.guardrails", "ensure_schema"),
     ("commerce", "services.business_os.commerce_gateway", "ensure_schemas"),
     ("reputation", "services.business_os.marketplace.reputation", "ensure_schema"),
     ("confirmations", "services.business_os.confirmations", "ensure_schema"),
