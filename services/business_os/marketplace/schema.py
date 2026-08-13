@@ -153,6 +153,22 @@ def ensure_schema(conn=None) -> None:
             "CREATE INDEX IF NOT EXISTS idx_mkt_orders_seller "
             "ON business_os_mkt_orders (seller_user_id)"
         )
+        _ensure_columns(conn, "business_os_mkt_orders", {
+            "merchandise_gross_cents": "INTEGER NOT NULL DEFAULT 0",
+            "seller_discount_cents": "INTEGER NOT NULL DEFAULT 0",
+            "merchandise_net_cents": "INTEGER NOT NULL DEFAULT 0",
+            "shipping_cents": "INTEGER NOT NULL DEFAULT 0",
+            "tax_cents": "INTEGER NOT NULL DEFAULT 0",
+            "buyer_service_fee_cents": "INTEGER NOT NULL DEFAULT 0",
+            "seller_shipping_credit_cents": "INTEGER NOT NULL DEFAULT 0",
+            "fee_policy_version": "TEXT",
+            "fee_base": "TEXT",
+            "return_policy_version": "TEXT",
+            "listing_policy_version": "TEXT",
+            "payout_policy_version": "TEXT",
+            "payout_status": "TEXT NOT NULL DEFAULT 'pending_order'",
+            "policy_snapshot_json": "TEXT",
+        })
 
         # Immutable per-order line items (price/qty snapshot at purchase time).
         conn.execute(
