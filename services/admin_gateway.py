@@ -196,7 +196,7 @@ def login_rate_limited(conn, ip_hash, identifier_hash="",
 # All decorative. No operational data, real or fake, is displayed.
 # ---------------------------------------------------------------------------
 
-GATEWAY_MARK_SRC = "/static/brand/pulsesoc-gateway-mark-20260810.png"
+GATEWAY_MARK_SRC = "/static/brand/pulsesoc-gateway-mark-20260813.png"
 
 _GATEWAY_CSS = """
 :root{--gw-bg0:#02050b;--gw-bg1:#061018;--gw-teal:#2ce8c4;--gw-green:#5ff05f;

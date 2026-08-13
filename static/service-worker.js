@@ -1,14 +1,14 @@
-const CACHE_NAME = "pulsesoc-cache-v26-launch-readiness";
+const CACHE_NAME = "pulsesoc-cache-v27-brand-refresh";
 const DEBUG_SW = false;
 const STATIC_ASSETS = [
   "/manifest.json",
   "/static/analytics.js",
   "/static/notifications.js",
   "/static/sounds/notification-soft.wav",
-  "/static/brand/pulsesoc-logo-20260606.png",
-  "/static/brand/pulsesoc-icon-192-20260606.png",
-  "/static/brand/pulsesoc-icon-512-20260606.png",
-  "/static/brand/pulsesoc-apple-touch-icon-20260606.png"
+  "/static/brand/pulsesoc-logo-20260813.png",
+  "/static/brand/pulsesoc-icon-192-20260813.png",
+  "/static/brand/pulsesoc-icon-512-20260813.png",
+  "/static/brand/pulsesoc-apple-touch-icon-20260813.png"
 ];
 
 function isNeverCachePath(pathname) {
@@ -207,7 +207,7 @@ function buildPushNotification(payload) {
   const displayBody = isIntelligence && intelligenceHeadline
     ? `${intelligenceHeadline}\n${payload.body || payload.message || "Open PulseSoc to review this signal."}`
     : (payload.body || payload.message || "New PulseSoc update.");
-  const defaultBadge = "/static/brand/pulsesoc-icon-192-20260606.png";
+  const defaultBadge = "/static/brand/pulsesoc-icon-192-20260813.png";
   const badgeAsset = typeof payload.badge === "string" && payload.badge.trim().startsWith("/") ? payload.badge : defaultBadge;
   const notificationTag = payload.tag || (
     conversationId
@@ -218,7 +218,7 @@ function buildPushNotification(payload) {
   );
   const options = {
     body: displayBody,
-    icon: payload.icon || "/static/brand/pulsesoc-icon-192-20260606.png",
+    icon: payload.icon || "/static/brand/pulsesoc-icon-192-20260813.png",
     badge: badgeAsset,
     vibrate: payload.vibrate || payload.vibration || data.vibrate || data.vibration || [200, 100, 200],
     data: {

@@ -9,13 +9,14 @@ import { createThemedStyles } from "../../../theme/themedStyles";
 // Same official brand asset the login screen uses (transparent, no image
 // boundary). Documented path: src/assets/brand/pulsesoc-mark.png.
 const PULSESOC_LOGO = require("../../../assets/brand/pulsesoc-mark.png");
-const LOGO_ASPECT = 512 / 362;
+const LOGO_ASPECT = 1;
 
-// Deliberately smaller than the login lockup (login uses 244) so the form is the
+// Deliberately smaller than the login mark (login uses 188) so the form is the
 // primary focus while the brand still anchors the screen in PulseSoc auth.
-const LOGO_WIDTH = 150;
+const LOGO_WIDTH = 128;
 const LOGO_HEIGHT = LOGO_WIDTH / LOGO_ASPECT;
-const SYMBOL_OFFSET_Y = LOGO_HEIGHT * 0.4 - LOGO_HEIGHT / 2;
+// Canonical mark is a centered square symbol; glow/rings emanate from center.
+const SYMBOL_OFFSET_Y = 0;
 const RING_SIZE = 104;
 const GLOW_SIZE = 68;
 

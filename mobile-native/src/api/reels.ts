@@ -480,7 +480,7 @@ function reelForCache(reel: PulseReel): PulseReel {
 
 function reelsQaFixtures(): PulseReel[] {
   const video = "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8";
-  const poster = `${PULSE_API_BASE_URL}/static/brand/pulsesoc-logo-20260606.png`;
+  const poster = `${PULSE_API_BASE_URL}/static/brand/pulsesoc-logo-20260813.png`;
   const author = { user_id: 9001, display_name: "Nova Signal", username: "novasignal", public_player_id: "qa-nova" };
   return normalizeReels([
     { id: 81001, reel_id: 81001, title: "A living signal", caption: "Video stays dominant. Comments remain hidden until you ask for them. #PulseSoc #Future", author, video_url: video, poster_url: poster, processing_status: "ready", reactions_count: 1284, reaction_counts: { fire: 740, smart: 544 }, comments_count: 86, share_count: 31, view_count: 18420, preview_comments: qaComments(81001) },

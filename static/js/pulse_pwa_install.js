@@ -125,7 +125,7 @@
       : "Add PulseSoc to your home screen for quicker access to PulseSoc.com.";
     prompt.innerHTML = `
       <div class="pulse-pwa-install__top">
-        <img class="pulse-pwa-install__logo" src="/static/brand/pulsesoc-logo-20260606.png" alt="" width="44" height="44">
+        <img class="pulse-pwa-install__logo" src="/static/brand/pulsesoc-logo-20260813.png" alt="" width="44" height="44">
         <div>
           <h2>${kind === "ios" ? "Add PulseSoc to your home screen" : "Install PulseSoc"}</h2>
           <p>${body}</p>
