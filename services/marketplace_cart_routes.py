@@ -44,6 +44,8 @@ from flask import Blueprint, jsonify, request
 from services import marketplace_listing_lifecycle as listing_lifecycle
 from services import marketplace_seller_identity as seller_identity
 from services.marketplace_payment_errors import classify_provider_exception, stripe_response_value
+from services import marketplace_quote_service
+from services import marketplace_goods_policy
 
 LOGGER = logging.getLogger(__name__)
 
@@ -286,6 +288,7 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
                l.id AS l_id, l.seller_user_id, l.title, l.price_label,
                l.currency, l.quantity, l.status, l.approval_status,
                l.delivery_type, l.product_type, l.listing_type, l.cover_image_url,
+               l.category, l.subcategory, l.description,
                COALESCE(ms.status, 'missing') AS seller_status,
                {seller_identity.store_name_select('ms')}
         FROM marketplace_cart_items c
@@ -302,6 +305,7 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
         listing = {k: row.get(k) for k in (
             "seller_user_id", "title", "price_label", "currency", "quantity",
             "status", "approval_status", "seller_status", "delivery_type", "product_type", "listing_type", "cover_image_url",
+            "category", "subcategory", "description",
         )} if row.get("l_id") else {}
         price_now, currency_now = (_listing_price_minor(bot, listing)
                                    if listing else (0, row.get("snapshot_currency") or "USD"))
@@ -325,6 +329,7 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
             "seller_store_name": seller_identity.display_store_name(row),
             "seller_name": seller_identity.display_store_name(row),
             "fulfillment": _fulfillment(listing) if listing else "shipping",
+            "goods_policy": marketplace_goods_policy.evaluate(listing) if listing else {},
             "added_at": row.get("added_at") or "",
         })
     return lines
@@ -524,7 +529,8 @@ def cart_validate():
 
     def handler(cur, conn):
         lines = _serialize_lines(bot, cur, int(user["user_id"]))
-        blocking = [l for l in lines if l["state"] in {"sold", "removed", "restricted"}]
+        blocking = [l for l in lines if l["state"] in {"sold", "removed", "restricted"}
+                    or l.get("goods_policy", {}).get("decision") != "ALLOWED"]
         needs_confirmation = [l for l in lines if l["state"] == "price_changed"]
         return _json({
             "ok": True,
@@ -579,7 +585,8 @@ def cart_checkout():
             return _error("No items from this seller in your cart.", 404, code="NOT_FOUND")
         if bot.ios_native_app_request() and any(l["fulfillment"] == "digital" for l in lines):
             return bot.ios_paid_digital_unavailable_response(api=True)
-        blocking = [l for l in lines if l["state"] in {"sold", "removed", "restricted"}]
+        blocking = [l for l in lines if l["state"] in {"sold", "removed", "restricted"}
+                    or l.get("goods_policy", {}).get("decision") != "ALLOWED"]
         if blocking:
             return _error(
                 "Some items are no longer available.", 409,
@@ -619,14 +626,20 @@ def cart_checkout():
         fee_bps = bot.seller_fee_bps(cur, "merchant")
 
         now = _now()
-        total_minor = sum(l["price_snapshot_minor"] * l["qty"] for l in lines)
-        platform_fee = int(round(total_minor * fee_bps / 10000))
-        seller_net = total_minor - platform_fee
+        line_quotes = [marketplace_quote_service.create_quote(
+            listing_id=l["listing_id"], seller_id=seller_user_id,
+            quantity=l["qty"], unit_price_minor=l["price_snapshot_minor"],
+            currency=currency, live_fee_bps=fee_bps,
+            shipping={"fulfillment": lane},
+        ) for l, lane in zip(lines, resolved_lanes)]
+        total_minor = sum(q["buyer_total_minor"] for q in line_quotes)
+        platform_fee = sum(q["platform_fee_minor"] for q in line_quotes)
+        seller_net = sum(q["seller_earnings_minor"] for q in line_quotes)
 
         tx_ids = []
-        for l in lines:
-            line_amount = l["price_snapshot_minor"] * l["qty"]
-            line_fee = int(round(line_amount * fee_bps / 10000))
+        for l, commercial_quote in zip(lines, line_quotes):
+            line_amount = commercial_quote["buyer_total_minor"]
+            line_fee = commercial_quote["platform_fee_minor"]
             cur.execute(
                 """
                 INSERT INTO seller_transactions
@@ -635,8 +648,10 @@ def cart_checkout():
                 VALUES (?, ?, 'merchant', 'marketplace_product', ?, ?, ?, ?, ?, 'created', ?, ?, ?)
                 """,
                 (buyer_id, seller_user_id, l["listing_id"], line_amount, currency,
-                 line_fee, line_amount - line_fee,
-                 json.dumps({"title": l["title"], "qty": l["qty"], "cart_line_id": l["line_id"]}, default=str),
+                 line_fee, commercial_quote["seller_earnings_minor"],
+                 marketplace_quote_service.transaction_metadata(
+                     {"title": l["title"], "qty": l["qty"], "cart_line_id": l["line_id"]},
+                     commercial_quote, payout_state="pending_checkout"),
                  now, now),
             )
             tx_ids.append(int(cur.lastrowid))
@@ -719,6 +734,7 @@ def cart_checkout():
                     "transaction_ids": tx_ids,
                     "platform_fee_cents": platform_fee,
                     "seller_net_cents": seller_net,
+                    "commercial_quotes": line_quotes,
                     "payout_state": "connect_routed" if connected_account_id else "ledger_pending_onboarding",
                 }
                 if idempotency_key:
@@ -763,6 +779,7 @@ def cart_checkout():
                 "total_cents": total_minor,
                 "platform_fee_cents": platform_fee,
                 "seller_net_cents": seller_net,
+                "commercial_quotes": line_quotes,
                 "payout_state": "connect_routed" if connected_account_id else "ledger_pending_onboarding",
             }
             if idempotency_key:

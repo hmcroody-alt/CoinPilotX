@@ -85136,6 +85136,14 @@ def api_pulse_payments_checkout():
     if item_type == "marketplace_product" and not marketplace_listing_lifecycle.is_public(item):
         conn.close()
         return api_error("This listing is no longer available.", 409)
+    if item_type == "marketplace_product":
+        from services import marketplace_goods_policy
+        goods_decision = marketplace_goods_policy.evaluate(item)
+        if goods_decision["decision"] != "ALLOWED":
+            conn.close()
+            return jsonify({"ok": False, "error": "LISTING_POLICY_BLOCKED",
+                            "message": "This listing requires Marketplace policy review.",
+                            "goods_policy": goods_decision}), 409
     if ios_native_app_request() and (
         item_type != "marketplace_product" or
         str(item.get("product_type") or item.get("listing_type") or item.get("delivery_type") or "").lower() in {"digital", "course"}
@@ -85154,8 +85162,19 @@ def api_pulse_payments_checkout():
         return api_error("Seller is not approved for payments.", 403)
     payout = seller_payout_account(cur, seller_user_id, seller_type)
     fee_bps = seller_fee_bps(cur, seller_type)
-    platform_fee = int(round(amount_cents * fee_bps / 10000))
-    seller_net = amount_cents - platform_fee
+    commercial_quote = None
+    if item_type == "marketplace_product":
+        from services import marketplace_quote_service
+        commercial_quote = marketplace_quote_service.create_quote(
+            listing_id=item_id, seller_id=seller_user_id, quantity=1,
+            unit_price_minor=amount_cents, currency=currency, live_fee_bps=fee_bps,
+        )
+        amount_cents = commercial_quote["buyer_total_minor"]
+        platform_fee = commercial_quote["platform_fee_minor"]
+        seller_net = commercial_quote["seller_earnings_minor"]
+    else:
+        platform_fee = int(round(amount_cents * fee_bps / 10000))
+        seller_net = amount_cents - platform_fee
     cur.execute(
         """
         INSERT INTO seller_transactions
@@ -85163,7 +85182,9 @@ def api_pulse_payments_checkout():
          platform_fee_cents, seller_net_cents, status, metadata_json, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, ?, ?)
         """,
-        (buyer["user_id"], seller_user_id, seller_type, item_type, item_id, amount_cents, currency, platform_fee, seller_net, json.dumps({"title": title}, default=str), now, now),
+        (buyer["user_id"], seller_user_id, seller_type, item_type, item_id, amount_cents, currency, platform_fee, seller_net,
+         (marketplace_quote_service.transaction_metadata({"title": title}, commercial_quote, payout_state="pending_checkout")
+          if commercial_quote else json.dumps({"title": title}, default=str)), now, now),
     )
     tx_id = int(cur.lastrowid)
     tx_event = {
@@ -85294,6 +85315,7 @@ def api_pulse_payments_checkout():
                 "platform_fee_cents": platform_fee,
                 "seller_net_cents": seller_net,
                 "payout_state": payout_state,
+                "commercial_quote": commercial_quote,
             }
             if item_type == "marketplace_product" and idempotency_key:
                 cur.execute(
@@ -85324,7 +85346,7 @@ def api_pulse_payments_checkout():
         )
         response_payload = {"ok": True, "checkout_url": session_obj.get("url"), "transaction_id": tx_id,
                             "platform_fee_cents": platform_fee, "seller_net_cents": seller_net,
-                            "payout_state": payout_state}
+                            "payout_state": payout_state, "commercial_quote": commercial_quote}
         if item_type == "marketplace_product" and idempotency_key:
             cur.execute(
                 """INSERT INTO marketplace_cart_checkout_keys (user_id,idempotency_key,response_json,created_at)
@@ -86349,6 +86371,14 @@ def api_pulse_marketplace_listing_create():
     media_ids = [safe_int(x, 0) for x in (payload.get("media_ids") or []) if safe_int(x, 0)]
     if not title or (submission_action == "submit" and not description):
         return jsonify({"ok": False, "message": "Add a title and description for the listing."}), 400
+    from services import marketplace_goods_policy
+    goods_decision = marketplace_goods_policy.evaluate({
+        "title": title, "description": description, "category": category, "subcategory": subcategory,
+    })
+    if submission_action == "submit" and goods_decision["decision"] != "ALLOWED":
+        return jsonify({"ok": False, "error": "LISTING_POLICY_BLOCKED",
+                        "message": "This category cannot be submitted without Marketplace policy clearance.",
+                        "goods_policy": goods_decision}), 409
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT id, status FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
@@ -86418,7 +86448,8 @@ def api_pulse_marketplace_listing_create():
         status=status,
         approval_status=approval_status,
         title=title,
-        extra={"review_status": review.get("status"), "risk_score": int(review.get("risk_score") or 0), "media_count": len(media_rows)},
+        extra={"review_status": review.get("status"), "risk_score": int(review.get("risk_score") or 0), "media_count": len(media_rows),
+               "goods_policy": goods_decision},
     )
     conn.commit(); conn.close()
     return jsonify({"ok": True, "listing_id": listing_id, "status": status, "approval_status": approval_status,
@@ -86443,6 +86474,13 @@ def api_pulse_marketplace_seller_listing_submit(listing_id):
         conn.close(); return api_error("This listing cannot be submitted from its current state.", 409)
     if not str(listing.get("title") or "").strip() or not str(listing.get("description") or "").strip():
         conn.close(); return api_error("Add a title and description before submitting.", 400)
+    from services import marketplace_goods_policy
+    goods_decision = marketplace_goods_policy.evaluate(listing)
+    if goods_decision["decision"] != "ALLOWED":
+        conn.close()
+        return jsonify({"ok": False, "error": "LISTING_POLICY_BLOCKED",
+                        "message": "This category cannot be submitted without Marketplace policy clearance.",
+                        "goods_policy": goods_decision}), 409
     cur.execute("SELECT COUNT(*) AS total FROM marketplace_product_media WHERE product_id=? AND is_cover=1 AND media_type IN ('image','gif')",
                 (listing_id,))
     if int(dict(cur.fetchone() or {}).get("total") or 0) < 1:
