@@ -14073,6 +14073,21 @@ def admin_saas_summary():
     mrr_from_payments = cur.fetchone()[0] or 0
     cur.execute("SELECT COUNT(*) FROM admin_audit_logs")
     audit_count = cur.fetchone()[0]
+    # Advertiser accounts waiting on a verification decision, plus the oldest wait,
+    # so the dashboard can surface a queue that otherwise has no entrance on it.
+    ad_verification_pending = 0
+    ad_verification_oldest = ""
+    try:
+        cur.execute(
+            "SELECT COUNT(*), MIN(COALESCE(verification_submitted_at, created_at)) FROM pulse_ad_accounts "
+            "WHERE lower(COALESCE(verification_status,'')) IN ('pending','submitted','in_review')"
+        )
+        _pending_row = cur.fetchone()
+        ad_verification_pending = int(_pending_row[0] or 0)
+        ad_verification_oldest = _pending_row[1] or ""
+    except Exception:
+        # The ads subsystem may not have booted; a missing table is not a dashboard error.
+        ad_verification_pending = 0
     conn.close()
     mrr_estimate = float(mrr_from_payments or 0) if mrr_from_payments else paid_pro * 14.99
     logging.info(
@@ -14102,6 +14117,8 @@ def admin_saas_summary():
         "total_revenue": round(float(total_revenue), 2),
         "mrr_estimate": round(mrr_estimate, 2),
         "audit_count": audit_count,
+        "ad_verification_pending": ad_verification_pending,
+        "ad_verification_oldest": ad_verification_oldest,
     }
 
 
@@ -14178,6 +14195,10 @@ def admin_page_html(title, body, admin=None):
             ("☷", "Chat Reports", "/admin/private-chat-reports", False),
             ("◉", "Watch Rules", "/admin/watch-rules", False),
             ("⛨", "Scam Shield", "/admin/scam-shield", False),
+        ]),
+        ("Advertising", [
+            ("✔", "Advertiser Verification", "/admin/pulse-ads-verification", False),
+            ("▣", "Ad Review", "/admin/pulse-ads-review-board", False),
         ]),
         ("Social Platform", [
             ("〰", "Feed Health", "/admin/pulse-feed-health", False),
@@ -14793,10 +14814,13 @@ def admin_dashboard_page():
         + _stat_card("Active Pro Access", stats["active_pro_access"], "/admin/users")
         + "</div>"
     )
+    ad_verif_pending = int(stats.get("ad_verification_pending") or 0)
+    ad_verif_sub = "oldest " + clean_html(str(stats.get("ad_verification_oldest") or "")) if stats.get("ad_verification_oldest") else "none waiting"
     attention = (
         "<h2>Needs attention</h2><div class='grid'>"
         + _stat_card("Failed Payments", stats["failed_payments"], "/admin/transactions", cls=attn_pay, sub="past due / unpaid")
         + _stat_card("Unmatched Payments", stats["unmatched"], "/admin/unmatched-payments", cls=attn_unm, sub="need reconciliation")
+        + _stat_card("Advertiser verification", ad_verif_pending, "/admin/pulse-ads-verification", cls="attention" if ad_verif_pending else "", sub=ad_verif_sub)
         + "</div>"
     )
     activity = (
@@ -19377,6 +19401,136 @@ def admin_pulse_ads_review_board_action():
     return redirect("/admin/pulse-ads-review-board")
 
 
+# The advertiser *account* verification center — a distinct surface from the
+# creative review board above. Verifying the business behind an account and
+# moderating an individual ad are two different decisions §CRITICAL keeps apart:
+# an account can be verified while a creative is pending, and a creative can be
+# approved while the account is still in review. This page owns the first.
+_VERIFICATION_FILTER_LABELS = [
+    ("pending", "Pending"),
+    ("changes_requested", "Changes requested"),
+    ("approved", "Approved"),
+    ("rejected", "Rejected"),
+    ("suspended", "Suspended"),
+    ("all", "All"),
+]
+
+
+@webhook_app.route("/admin/pulse-ads-verification", methods=["GET"])
+def admin_pulse_ads_verification_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    if not admin_has_permission(admin, "pulse.moderate"):
+        return admin_page_html("Advertiser Verification", "<h1>Advertiser Verification</h1><div class='card error'>Permission denied.</div>", admin), 403
+    active_filter = (request.args.get("filter") or "pending").strip().lower()
+    if active_filter not in {key for key, _ in _VERIFICATION_FILTER_LABELS}:
+        active_filter = "pending"
+    search = (request.args.get("q") or "").strip()[:120]
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        counts = pulse_ads_service.verification_summary_counts(conn)
+        accounts = pulse_ads_service.account_review_board(conn, 200, active_filter, search)
+    finally:
+        conn.close()
+    oldest_pending = clean_html(counts.get("oldest_pending") or "—")
+    summary_cards = (
+        "<div class='grid'>"
+        f"<div class='card'><div class='muted'>Pending</div><div class='metric'>{safe_int(counts.get('pending'), 0)}</div></div>"
+        f"<div class='card'><div class='muted'>Changes requested</div><div class='metric'>{safe_int(counts.get('changes_requested'), 0)}</div></div>"
+        f"<div class='card'><div class='muted'>Approved</div><div class='metric'>{safe_int(counts.get('approved'), 0)}</div></div>"
+        f"<div class='card'><div class='muted'>Suspended</div><div class='metric'>{safe_int(counts.get('suspended'), 0)}</div></div>"
+        f"<div class='card'><div class='muted'>Oldest pending</div><div class='metric' style='font-size:15px'>{oldest_pending}</div></div>"
+        "</div>"
+    )
+    filter_tabs = "<div class='card' style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"
+    for key, label in _VERIFICATION_FILTER_LABELS:
+        count = safe_int(counts.get(key if key != "all" else "all"), 0)
+        badge = f" ({count})" if key in counts else ""
+        style = "font-weight:700;text-decoration:underline" if key == active_filter else ""
+        filter_tabs += f"<a href='/admin/pulse-ads-verification?filter={key}' style='{style}'>{clean_html(label)}{badge}</a>"
+    filter_tabs += (
+        "<form method='get' action='/admin/pulse-ads-verification' style='margin-left:auto;display:flex;gap:6px'>"
+        f"<input type='hidden' name='filter' value='{clean_html(active_filter)}'>"
+        f"<input name='q' value='{clean_html(search)}' placeholder='Name, email, account or owner ID'>"
+        "<button>Search</button></form></div>"
+    )
+    token = get_csrf_token()
+    rows = ""
+    for account in accounts:
+        account_id = safe_int(account.get("id"), 0)
+        state = clean_html(account.get("verification_state") or "unverified")
+        acct_status = clean_html(account.get("status") or "")
+        submitted = clean_html(account.get("verification_submitted_at") or "—")
+        reason = clean_html(account.get("verification_reason") or "")
+        owner = safe_int(account.get("owner_user_id"), 0)
+        detail = (
+            f"<span class='muted'>Owner #{owner}</span><br>"
+            f"<span class='muted'>{clean_html(account.get('business_email') or '')}</span><br>"
+            f"<span class='muted'>{clean_html(account.get('business_type') or '')}</span>"
+        )
+        reason_html = f"<br><span class='muted'>Last note: {reason}</span>" if reason else ""
+        actions = (
+            f"<form method='post' action='/admin/pulse-ads-verification/action'><input type='hidden' name='csrf_token' value='{token}'><input type='hidden' name='account_id' value='{account_id}'><input type='hidden' name='action' value='approve'><input name='reason' placeholder='Approval note (optional)'><button>Approve</button></form>"
+            f"<form method='post' action='/admin/pulse-ads-verification/action'><input type='hidden' name='csrf_token' value='{token}'><input type='hidden' name='account_id' value='{account_id}'><input type='hidden' name='action' value='request_changes'><input name='user_note' placeholder='What the advertiser must change' required><button>Request changes</button></form>"
+            f"<form method='post' action='/admin/pulse-ads-verification/action'><input type='hidden' name='csrf_token' value='{token}'><input type='hidden' name='account_id' value='{account_id}'><input type='hidden' name='action' value='reject'><input name='reason' placeholder='Rejection reason' required><button>Reject</button></form>"
+            f"<form method='post' action='/admin/pulse-ads-verification/action'><input type='hidden' name='csrf_token' value='{token}'><input type='hidden' name='account_id' value='{account_id}'><input type='hidden' name='action' value='suspend'><input name='reason' placeholder='Suspension reason' required><button>Suspend</button></form>"
+            f"<form method='post' action='/admin/pulse-ads-verification/action'><input type='hidden' name='csrf_token' value='{token}'><input type='hidden' name='account_id' value='{account_id}'><input type='hidden' name='action' value='restore'><input name='notes' placeholder='Restore note (optional)'><button>Reopen</button></form>"
+        )
+        rows += (
+            "<tr>"
+            f"<td>{clean_html(account.get('business_name') or 'Unnamed account')}<br>{detail}</td>"
+            f"<td><span class='pill'>{state}</span><br><span class='muted'>account: {acct_status}</span>{reason_html}</td>"
+            f"<td>{submitted}</td>"
+            f"<td>{actions}</td>"
+            "</tr>"
+        )
+    rows_html = rows or '<tr><td colspan="4" class="muted">No advertiser accounts match this filter.</td></tr>'
+    body = (
+        "<h1>Advertiser Verification</h1>"
+        "<p class='muted'>Account verification is separate from ad review. Verifying an account lets its approved campaigns deliver; an unverified account cannot spend or serve even when a campaign is approved.</p>"
+        f"{summary_cards}"
+        f"{filter_tabs}"
+        "<div class='card'><h2>Verification queue</h2><table><tr><th>Advertiser</th><th>Status</th><th>Submitted</th><th>Actions</th></tr>"
+        f"{rows_html}</table></div>"
+    )
+    return admin_page_html("Advertiser Verification", body, admin)
+
+
+@webhook_app.route("/admin/pulse-ads-verification/action", methods=["POST"])
+def admin_pulse_ads_verification_action():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    if not admin_has_permission(admin, "pulse.moderate"):
+        return admin_page_html("Advertiser Verification", "<h1>Advertiser Verification</h1><div class='card error'>Permission denied.</div>", admin), 403
+    if not verify_csrf():
+        return admin_page_html("Advertiser Verification", "<h1>Security check failed.</h1>", admin), 403
+    action = (request.form.get("action") or "").strip().lower()
+    account_id = safe_int(request.form.get("account_id"), 0)
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        if action == "approve":
+            pulse_ads_service.approve_account_verification(conn, admin.get("id"), account_id, request.form.get("reason") or "")
+        elif action == "request_changes":
+            pulse_ads_service.request_account_changes(conn, admin.get("id"), account_id, request.form.get("reason") or "", request.form.get("user_note") or "")
+        elif action == "reject":
+            pulse_ads_service.reject_account_verification(conn, admin.get("id"), account_id, request.form.get("reason") or "")
+        elif action == "suspend":
+            pulse_ads_service.suspend_account(conn, admin.get("id"), account_id, request.form.get("reason") or "")
+        elif action == "restore":
+            pulse_ads_service.restore_account(conn, admin.get("id"), account_id, request.form.get("notes") or "")
+    except pulse_ads_service.PulseAdsError:
+        pass
+    finally:
+        conn.close()
+    return redirect("/admin/pulse-ads-verification")
+
+
 @webhook_app.route("/api/admin/pulse/ads/creatives/approve", methods=["POST"])
 def api_admin_pulse_ads_creative_approve():
     admin, denied = require_admin_api("pulse.moderate")
@@ -19572,6 +19726,70 @@ def api_admin_pulse_ads_account_reject_verification():
         payload = pulse_ads_json_payload()
         result = pulse_ads_service.reject_account_verification(
             conn, admin.get("id"), safe_int(payload.get("account_id"), 0), payload.get("reason") or ""
+        )
+        return jsonify(result)
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/admin/pulse/ads/accounts/request-changes", methods=["POST"])
+def api_admin_pulse_ads_account_request_changes():
+    admin, denied = require_admin_api("pulse.moderate")
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        payload = pulse_ads_json_payload()
+        result = pulse_ads_service.request_account_changes(
+            conn, admin.get("id"), safe_int(payload.get("account_id"), 0),
+            payload.get("reason") or "", payload.get("user_note") or "",
+        )
+        return jsonify(result)
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/admin/pulse/ads/accounts/suspend", methods=["POST"])
+def api_admin_pulse_ads_account_suspend():
+    admin, denied = require_admin_api("pulse.moderate")
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        payload = pulse_ads_json_payload()
+        result = pulse_ads_service.suspend_account(
+            conn, admin.get("id"), safe_int(payload.get("account_id"), 0), payload.get("reason") or ""
+        )
+        return jsonify(result)
+    except Exception as exc:
+        return pulse_ads_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/admin/pulse/ads/accounts/restore", methods=["POST"])
+def api_admin_pulse_ads_account_restore():
+    admin, denied = require_admin_api("pulse.moderate")
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        payload = pulse_ads_json_payload()
+        result = pulse_ads_service.restore_account(
+            conn, admin.get("id"), safe_int(payload.get("account_id"), 0), payload.get("notes") or ""
         )
         return jsonify(result)
     except Exception as exc:

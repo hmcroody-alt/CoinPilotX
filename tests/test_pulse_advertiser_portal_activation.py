@@ -459,3 +459,126 @@ def test_the_review_board_is_oldest_first():
 def test_the_review_board_excludes_decided_accounts():
     conn = _conn()  # verified
     assert pulse_ads_service.account_review_board(conn) == []
+
+
+# --------------------------------------------------------------------------
+# Changes requested — an open ask, not a closed rejection
+# --------------------------------------------------------------------------
+
+def test_requesting_changes_leaves_the_account_answerable():
+    """A change request is distinct from a rejection: the review stays open and
+    the advertiser is expected to correct one thing and resubmit. It writes
+    `verification_status='changes_requested'` and keeps the account out of
+    'active', so delivery stays blocked while the ask is outstanding."""
+    conn = _conn(account_status="pending_verification", verification="pending")
+    pulse_ads_service.request_account_changes(
+        conn, 1, 1, reason="internal: address unverifiable", user_note="Add a business address."
+    )
+    row = conn.execute(
+        "SELECT status, verification_status, verification_reason FROM pulse_ad_accounts WHERE id=1"
+    ).fetchone()
+    assert row["verification_status"] == "changes_requested"
+    assert row["status"] != "active"
+    # The user-facing note is what the advertiser reads, not the internal reason.
+    assert "address" in (row["verification_reason"] or "").lower()
+    # State normaliser agrees, and the account gate still blocks delivery.
+    assert pulse_ads_service.account_verification_state(dict(row)) == "changes_requested"
+    assert pulse_advertiser_portal._account_activation_blocker(conn, 1) is not None
+
+
+def test_changes_requested_account_can_resubmit_as_a_new_pass():
+    conn = _conn(account_status="pending_verification", verification="changes_requested")
+    result = pulse_ads_service.submit_account_verification(conn, OWNER, 1, {})
+    assert result["verification_status"] == "pending"
+
+
+def test_requesting_changes_requires_something_the_advertiser_can_read():
+    # A change request with no note is a dead end: it stops delivery without
+    # telling the advertiser what to fix.
+    conn = _conn(account_status="pending_verification", verification="pending")
+    try:
+        pulse_ads_service.request_account_changes(conn, 1, 1, reason="", user_note="")
+    except pulse_ads_service.PulseAdsError:
+        pass
+    else:
+        raise AssertionError("a change request with no note should be refused")
+
+
+# --------------------------------------------------------------------------
+# Suspend / restore — enforcement, and the way back
+# --------------------------------------------------------------------------
+
+def test_suspending_an_account_pauses_its_running_campaigns():
+    conn = _conn(campaign_status="active")  # verified + active account, live campaign
+    pulse_ads_service.suspend_account(conn, 1, 1, reason="Policy: prohibited product.")
+    assert _status(conn) == "paused"
+    row = conn.execute("SELECT status FROM pulse_ad_accounts WHERE id=1").fetchone()
+    assert row["status"] == "suspended"
+    # A suspended account is blocked regardless of its verification column.
+    assert pulse_advertiser_portal._account_activation_blocker(conn, 1) is not None
+
+
+def test_suspension_requires_a_reason():
+    conn = _conn()
+    try:
+        pulse_ads_service.suspend_account(conn, 1, 1, reason="")
+    except pulse_ads_service.PulseAdsError:
+        pass
+    else:
+        raise AssertionError("a suspension with no reason should be refused")
+
+
+def test_restoring_a_verified_account_returns_it_to_active():
+    conn = _conn(campaign_status="active")
+    pulse_ads_service.suspend_account(conn, 1, 1, reason="Temporary hold.")
+    pulse_ads_service.restore_account(conn, 1, 1, notes="Cleared on appeal.")
+    row = conn.execute("SELECT status, verification_status FROM pulse_ad_accounts WHERE id=1").fetchone()
+    # Verified before suspension, so it goes back to active — not back to a queue.
+    assert row["status"] == "active"
+    assert pulse_advertiser_portal._account_activation_blocker(conn, 1) is None
+
+
+# --------------------------------------------------------------------------
+# Idempotency — double approve is one event
+# --------------------------------------------------------------------------
+
+def test_approving_an_already_verified_account_is_deduped_not_doubled():
+    conn = _conn(account_status="pending_verification", verification="pending")
+    first = pulse_ads_service.approve_account_verification(conn, 1, 1, "Looks fine")
+    assert not first.get("deduped")
+    second = pulse_ads_service.approve_account_verification(conn, 1, 1, "Looks fine")
+    assert second.get("deduped") is True
+
+
+# --------------------------------------------------------------------------
+# Summary counts feed the admin dashboard card
+# --------------------------------------------------------------------------
+
+def test_summary_counts_bucket_each_state():
+    conn = _conn(account_status="pending_verification", verification="pending")
+    conn.execute(
+        "INSERT INTO pulse_ad_accounts (id, owner_user_id, business_name, status, verification_status)"
+        " VALUES (2, 5, 'Changes Co', 'pending_verification', 'changes_requested')"
+    )
+    conn.execute(
+        "INSERT INTO pulse_ad_accounts (id, owner_user_id, business_name, status, verification_status)"
+        " VALUES (3, 6, 'Suspended Co', 'suspended', 'verified')"
+    )
+    conn.commit()
+    counts = pulse_ads_service.verification_summary_counts(conn)
+    assert counts["pending"] >= 1
+    assert counts["changes_requested"] >= 1
+    assert counts["suspended"] >= 1
+
+
+def test_review_board_filters_to_changes_requested():
+    conn = _conn(account_status="pending_verification", verification="pending")
+    conn.execute(
+        "INSERT INTO pulse_ad_accounts (id, owner_user_id, business_name, status, verification_status)"
+        " VALUES (2, 5, 'Changes Co', 'pending_verification', 'changes_requested')"
+    )
+    conn.commit()
+    board = pulse_ads_service.account_review_board(conn, status_filter="changes_requested")
+    names = [row["business_name"] for row in board]
+    assert "Changes Co" in names
+    assert "Roody Goods" not in names

@@ -228,7 +228,7 @@ export function AdsVerificationBanner({
   /** The campaign this is actually costing, named. Null when more than one. */
   campaignName: string | null;
   /** Mirrors `accountVerificationState` in `api/adsDelivery.ts`. */
-  state: "unverified" | "pending" | "rejected" | "verified";
+  state: "unverified" | "pending" | "rejected" | "verified" | "changes_requested" | "suspended";
   /** The reviewer's stored reason, when the request was declined. */
   reason?: string | null;
   submitting?: boolean;
@@ -275,7 +275,7 @@ export function AdsVerificationBanner({
 }
 
 function verificationBannerCopy(
-  state: "unverified" | "pending" | "rejected" | "verified",
+  state: "unverified" | "pending" | "rejected" | "verified" | "changes_requested" | "suspended",
   subject: string,
   reason?: string | null
 ): { head: string; body: string; action: string; actionable: boolean } {
@@ -285,6 +285,29 @@ function verificationBannerCopy(
       return {
         head: "Verification in review",
         body: `${subject} can’t deliver until your account review is decided. Nothing is charged while you wait.`,
+        action: "",
+        actionable: false
+      };
+    case "changes_requested":
+      // Distinct from a flat rejection: the review isn't closed, it's waiting on
+      // the advertiser to correct something specific. Surface the note and give
+      // them the resubmit action rather than implying they must start over.
+      return {
+        head: "A change is needed before approval",
+        body: trimmed
+          ? `${trimmed} Update the details above, then resubmit for review.`
+          : "The reviewer asked for a correction before this account can be approved. Update your business details, then resubmit for review.",
+        action: "Resubmit for review ›",
+        actionable: true
+      };
+    case "suspended":
+      // A suspension is an enforcement action, not a step the advertiser skipped.
+      // No self-serve control clears it, so state it and route to support.
+      return {
+        head: "Ad account suspended",
+        body: trimmed
+          ? `${trimmed} ${subject} can’t deliver while the account is suspended. Contact support to appeal.`
+          : `${subject} can’t deliver: this ad account is suspended. Contact support to appeal.`,
         action: "",
         actionable: false
       };
