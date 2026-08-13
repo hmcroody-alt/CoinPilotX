@@ -69,8 +69,22 @@ def upload_env(tmp_path, monkeypatch):
 def test_rejects_mime_mismatch_and_oversize(upload_env):
     result, status = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "image/jpeg", "file_size_bytes": 100, "context_type": "pulse_post"})
     assert status == 400 and result["error"] == "mime_mismatch"
-    result, status = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "video/mp4", "file_size_bytes": 151 * 1024 * 1024, "context_type": "pulse_post"})
+    result, status = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "video/mp4", "file_size_bytes": 701 * 1024 * 1024, "context_type": "pulse_post"})
     assert status == 413 and result["error"] == "file_too_large"
+
+
+@pytest.mark.parametrize("size_mb", [10, 50, 100, 250, 500])
+def test_creator_video_sizes_use_direct_storage(upload_env, size_mb):
+    result, status = uploads.create_session(7, {"filename": f"clip-{size_mb}.mp4", "mime_type": "video/mp4", "file_size_bytes": size_mb * 1024 * 1024, "context_type": "pulse_post"})
+    assert status == 201
+    assert result["strategy"] == ("single" if size_mb < 16 else "multipart")
+
+
+def test_status_video_has_bounded_size_policy(upload_env):
+    accepted, accepted_status = uploads.create_session(7, {"filename": "status-250.mp4", "mime_type": "video/mp4", "file_size_bytes": 250 * 1024 * 1024, "context_type": "pulse_status"})
+    assert accepted_status == 201 and accepted["strategy"] == "multipart"
+    rejected, rejected_status = uploads.create_session(7, {"filename": "status-351.mp4", "mime_type": "video/mp4", "file_size_bytes": 351 * 1024 * 1024, "context_type": "pulse_status"})
+    assert rejected_status == 413 and rejected["error"] == "file_too_large"
 
 
 def test_multipart_owner_complete_and_finalize_are_idempotent(upload_env):

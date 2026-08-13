@@ -74,7 +74,8 @@ export type UploadController = {
 // remains authoritative when an environment-specific limit is lower.
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_GIF_BYTES = 8 * 1024 * 1024;
-const MAX_VIDEO_BYTES = 150 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 700 * 1024 * 1024;
+const MAX_STATUS_VIDEO_BYTES = 350 * 1024 * 1024;
 const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
 const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "webm"]);
 
@@ -178,14 +179,14 @@ export function cameraCompressionPolicy(mode: "photo" | "video" | "status" | "re
     imageQuality: status ? 0.86 : 0.9,
     videoQuality: status ? "720p" : "1080p",
     maxVideoDurationSeconds: status ? 60 : 180,
-    maxVideoBytes: video ? Math.min(MAX_VIDEO_BYTES, status ? 350 * 1024 * 1024 : 700 * 1024 * 1024) : 0,
+    maxVideoBytes: video ? (status ? MAX_STATUS_VIDEO_BYTES : MAX_VIDEO_BYTES) : 0,
     serverAuthoritative: true,
     deviceVerified: false,
     note: "The app asks your camera for efficient settings. PulseSoc checks, stores, and reviews whatever you upload."
   };
 }
 
-export function validateNativeMedia(asset: NativeMediaAsset) {
+export function validateNativeMedia(asset: NativeMediaAsset, contextType = "") {
   const ext = extensionFor(asset.name || asset.uri);
   if (asset.mediaType === "image") {
     if (ext && !IMAGE_EXTENSIONS.has(ext)) return "Choose a JPG, PNG, WEBP, or GIF image. HEIC is not accepted by the production upload service yet.";
@@ -193,7 +194,8 @@ export function validateNativeMedia(asset: NativeMediaAsset) {
     if (asset.size && asset.size > limit) return `Image is too large. Choose ${ext === "gif" ? "a GIF under 8 MB" : "an image under 5 MB"}.`;
   } else {
     if (ext && !VIDEO_EXTENSIONS.has(ext)) return "Choose an MP4, MOV, or WEBM video.";
-    if (asset.size && asset.size > MAX_VIDEO_BYTES) return "Video is too large. Choose a video under 150 MB.";
+    const limit = contextType === "pulse_status" ? MAX_STATUS_VIDEO_BYTES : MAX_VIDEO_BYTES;
+    if (asset.size && asset.size > limit) return `This video is too large to upload. The maximum is ${limit / (1024 * 1024)} MB.`;
   }
   if (!asset.uri) return "Media file is missing.";
   return "";
@@ -204,7 +206,7 @@ export function uploadNativeMedia(
   options: NativeMediaUploadOptions,
   onProgress?: (progress: UploadProgress) => void
 ): { promise: Promise<NativeMediaUploadResult>; controller: UploadController } {
-  const validation = validateNativeMedia(asset);
+  const validation = validateNativeMedia(asset, options.contextType);
   if (validation) return { promise: Promise.reject(new Error(validation)), controller: { cancel: () => undefined } };
   // Product-specific endpoints may perform additional server-side attachment
   // work. Keep those existing contracts intact until they explicitly adopt

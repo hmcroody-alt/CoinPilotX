@@ -74,7 +74,7 @@ def validate_media(filename: str, mime_type: str = "", size_bytes: int = 0) -> d
         return {"ok": False, "message": "Upload an image, short video, or audio file."}
     media_type = "video" if ext in allowed_videos else "audio" if ext in allowed_audio else "image"
     max_mb = {
-        "video": os.getenv("PULSE_CAMERA_MAX_VIDEO_MB", os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "150")),
+        "video": os.getenv("PULSE_CAMERA_MAX_VIDEO_MB", os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "700")),
         "audio": os.getenv("PULSE_CAMERA_MAX_AUDIO_MB", os.getenv("MEDIA_UPLOAD_MAX_AUDIO_MB", "15")),
         "image": os.getenv("PULSE_CAMERA_MAX_IMAGE_MB", os.getenv("MEDIA_UPLOAD_MAX_IMAGE_MB", "12")),
     }.get(media_type, "12")

@@ -69,7 +69,10 @@ def _limit_bytes_for(media_type: str, *, context_type: str = "") -> tuple[int, s
         mb = float(os.getenv("COMM_V2_IMAGE_MAX_MB", "100"))
         return int(mb * 1024 * 1024), f"{int(mb)} MB"
     if media_type == "video":
-        mb = float(os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "150"))
+        if str(context_type or "") == "pulse_status":
+            mb = float(os.getenv("MEDIA_UPLOAD_MAX_STATUS_VIDEO_MB", "350"))
+        else:
+            mb = float(os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "700"))
         return int(mb * 1024 * 1024), f"{int(mb)} MB"
     if media_type == "audio":
         mb = float(os.getenv("MEDIA_UPLOAD_MAX_AUDIO_MB", "15"))
