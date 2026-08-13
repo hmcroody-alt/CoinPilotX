@@ -300,9 +300,9 @@ def _insert_event(conn, payload: dict, validation: dict, *,
                 percent_visible, duration_ms, value_cents, currency, validity,
                 invalid_reason, billable, quality_status, quality_notes,
                 schema_version, processing_version, ingest_source, batch_key,
-                meta_json, created_at
+                meta_json, privacy_class, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event_id,
@@ -337,6 +337,11 @@ def _insert_event(conn, payload: dict, validation: dict, *,
                 ingest_source,
                 batch_key,
                 meta_json,
+                # Pinned at write time. The class is derivable from the event
+                # name, but deriving it on read would let a future
+                # reclassification retroactively widen what an already-collected
+                # signal may be used for.
+                privacy.classify_event(name),
                 now_iso,
             ),
         )

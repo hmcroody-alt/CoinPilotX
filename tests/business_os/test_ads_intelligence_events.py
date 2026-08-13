@@ -104,11 +104,57 @@ def test_privacy_classes_fail_closed():
             "an unknown purpose must deny")
 
 
-def test_negative_signals_are_measurement_only():
-    # A complaint must inform reporting without becoming a profile attribute.
-    _assert(privacy.classify_event("ad_hide") == "measurement_only")
-    _assert(privacy.classify_event("ad_report") == "measurement_only")
+def test_negative_signals_are_classified_by_who_concluded_the_dislike():
+    """Explicit and inferred negatives are not the same kind of fact.
+
+    This test previously asserted that every negative event was
+    ``measurement_only``, reasoning that a complaint should not become a profile
+    attribute. The reasoning was right and the mechanism was wrong.
+    ``measurement_only`` carries ``targeting: False``, which does not stop a
+    complaint becoming a profile attribute — it stops the complaint doing
+    anything at all, so pressing "not interested" would change nothing about
+    what the person is shown.
+
+    The original concern is now enforced by the sign of the weight instead:
+    explicit negatives may act, but only ever downward.
+    """
+    # Stated by the person, using a control built for the purpose. It must act.
+    _assert(privacy.classify_event("ad_hide") == "product_signal")
+    _assert(privacy.classify_event("ad_not_interested") == "product_signal")
+    _assert(privacy.classify_event("ad_report") == "product_signal")
+
+    # Inferred by the system from ambiguous behaviour. Counted, never acted on.
+    _assert(privacy.classify_event("ad_quick_skip") == "measurement_only")
+    _assert(privacy.classify_event("ad_landing_bounce") == "measurement_only")
+    _assert(not privacy.allows(privacy.classify_event("ad_quick_skip"), "targeting"))
+
     _assert(privacy.classify_event("ad_click") == "product_signal")
+
+
+def test_every_negative_event_is_deliberately_explicit_or_inferred():
+    """A new negative event must be placed on purpose, not defaulted.
+
+    Without this, adding one to NEGATIVE_EVENTS and forgetting the split lands
+    it on the permissive side silently.
+    """
+    for name in taxonomy.NEGATIVE_EVENTS:
+        _assert(name in taxonomy.EXPLICIT_NEGATIVE_EVENTS
+                or name in taxonomy.INFERRED_NEGATIVE_EVENTS,
+                f"{name} is neither explicit nor inferred")
+    overlap = taxonomy.EXPLICIT_NEGATIVE_EVENTS & taxonomy.INFERRED_NEGATIVE_EVENTS
+    _assert(not overlap, f"an event cannot be both: {overlap}")
+
+
+def test_every_explicit_negative_carries_a_negative_weight():
+    """The property the privacy argument rests on.
+
+    Explicit negatives are allowed to shape delivery *because* they can only
+    subtract. A positive weight here would break that argument at its source.
+    """
+    for name in taxonomy.EXPLICIT_NEGATIVE_EVENTS:
+        weight = taxonomy.SIGNAL_WEIGHTS.get(name)
+        _assert(weight is not None and weight < 0,
+                f"{name} has weight {weight}; it must be negative")
 
 
 def test_forbidden_sources_are_recognised():

@@ -122,13 +122,29 @@ def is_forbidden_source(source) -> bool:
 def classify_event(event_name: str) -> str:
     """Default privacy class for an event name.
 
-    Conversions and engagement are ordinary product behaviour. Anything the
-    system infers about *dislike* is measurement-only: a hide or a report must
-    shape reporting and fraud review, but letting it shape targeting turns a
-    complaint into a profile attribute.
+    Conversions and engagement are ordinary product behaviour.
+
+    Negative signals are split by *who concluded the dislike*. When the system
+    infers it from behaviour — a fast scroll, a bounce — the conclusion is
+    ambiguous, and the class is ``measurement_only``: counted and reported,
+    never allowed to quietly decide what somebody sees.
+
+    When the person states it explicitly by pressing "not interested", "hide" or
+    "report", the class is ``product_signal``. An earlier version of this
+    function classified those as measurement-only as well, reasoning that a
+    complaint should not become a profile attribute. The reasoning was right and
+    the mechanism was wrong: ``targeting: False`` does not stop a complaint
+    becoming a profile attribute, it stops the complaint doing anything at all.
+    The control would have been decoration — the platform would record that
+    someone asked not to see a thing, and then keep showing it to them.
+
+    What actually enforces the original concern is the sign of the weight. Every
+    explicit negative carries a negative weight in ``SIGNAL_WEIGHTS``, and
+    ``interest.py`` refuses to let one raise an affinity. An explicit negative
+    can therefore suppress a category and can never build one up.
     """
     name = str(event_name or "")
-    if name in taxonomy.NEGATIVE_EVENTS:
+    if name in taxonomy.INFERRED_NEGATIVE_EVENTS:
         return "measurement_only"
     return "product_signal"
 

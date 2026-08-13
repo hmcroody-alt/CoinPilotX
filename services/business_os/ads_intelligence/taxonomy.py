@@ -48,6 +48,31 @@ NEGATIVE_EVENTS = (
     "ad_repeated_exposure_ignore", "ad_landing_bounce",
 )
 
+#: Negative signals split by who concluded the dislike, because the two deserve
+#: different privacy treatment and collapsing them breaks one of them.
+#:
+#: An EXPLICIT negative is the person telling us, in words, using a control we
+#: built for the purpose. Acting on it is honouring a request, not profiling —
+#: and refusing to act on it means the button does nothing, which is worse than
+#: not having the button. These are allowed to shape delivery.
+#:
+#: An INFERRED negative is the system guessing from behaviour. A fast scroll may
+#: be boredom, a misfire, or a train going into a tunnel. That ambiguity is
+#: exactly what `measurement_only` exists for: count it, report it, never let it
+#: quietly decide what somebody sees.
+#:
+#: The safety property that makes the explicit set safe to act on is not the
+#: class but the sign: every weight in `SIGNAL_WEIGHTS` for these events is
+#: negative, and `interest.py` enforces that they may only ever decrease an
+#: affinity. A complaint can therefore suppress a category but can never become
+#: a positive profile attribute.
+EXPLICIT_NEGATIVE_EVENTS = frozenset({
+    "ad_hide", "ad_not_interested", "ad_report",
+})
+INFERRED_NEGATIVE_EVENTS = frozenset({
+    "ad_quick_skip", "ad_repeated_exposure_ignore", "ad_landing_bounce",
+})
+
 #: Commerce outcomes. `ad_purchase_completed` is present in the taxonomy but is
 #: NOT accepted from a client — see `CLIENT_FORBIDDEN_EVENTS`.
 CONVERSION_EVENTS = (

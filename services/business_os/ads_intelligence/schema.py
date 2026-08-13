@@ -176,6 +176,21 @@ def _ensure_events(conn) -> None:
         )
         """
     )
+    # The privacy class the row was written under, stored rather than derived.
+    #
+    # The class is a pure function of the event name, so a reader could compute
+    # it. It is stored anyway, because deriving it at read time means every
+    # future change to the classification silently rewrites the past — and the
+    # dangerous direction is the permissive one. If an event is reclassified
+    # from measurement-only to product-signal, read-time derivation
+    # retroactively grants permission to shape delivery for signals that were
+    # collected under the narrower promise.
+    #
+    # Storing it makes the two directions behave differently, which is what we
+    # want: a restriction can be applied to history by a deliberate, visible
+    # backfill, and an expansion cannot happen by accident at all.
+    _ensure_columns(conn, "ads_intel_events", {"privacy_class": "TEXT"})
+
     for name, cols in (
         ("idx_ads_intel_events_campaign_day", "(campaign_id, occurred_at)"),
         ("idx_ads_intel_events_creative_day", "(creative_id, occurred_at)"),
