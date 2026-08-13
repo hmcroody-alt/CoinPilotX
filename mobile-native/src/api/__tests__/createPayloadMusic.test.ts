@@ -54,6 +54,11 @@ describe("createReel music payload", () => {
     expect(body.original_audio_muted).toBe(false);
     expect(body.attached_audio_url).toBe("");
   });
+
+  it("keeps baked-in attribution without attaching duplicate playback", async () => {
+    await createReel({ media_ids: [10], music_track_id: "trk_9", audio_start_time: 12, original_audio_muted: false, audio_baked_in: true });
+    expect(lastBody()).toMatchObject({ music_track_id: "trk_9", sound_start_seconds: 12, original_audio_muted: false, audio_baked_in: true });
+  });
 });
 
 describe("createStatus music payload", () => {

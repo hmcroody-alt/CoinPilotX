@@ -1,0 +1,10 @@
+{
+  "name": "pulse-video-mixer",
+  "version": "1.0.0",
+  "description": "PulseSoc iOS offline camera music and microphone mixer.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "UNLICENSED",
+  "private": true,
+  "author": "PulseSoc"
+}

@@ -498,8 +498,9 @@ def _music_for_posts(post_ids):
             if post_id in music:
                 continue
             snapshot = _json(item.get("license_snapshot_json"), {})
-            audio_url = _public_media_url(item.get("current_audio_url") or snapshot.get("audio_url") or snapshot.get("preview_url") or "")
-            if not audio_url:
+            audio_baked_in = bool(snapshot.get("audio_baked_in"))
+            audio_url = "" if audio_baked_in else _public_media_url(item.get("current_audio_url") or snapshot.get("audio_url") or snapshot.get("preview_url") or "")
+            if not audio_url and not audio_baked_in:
                 continue
             music[post_id] = {
                 "audio_id": str(item.get("audio_track_id") or snapshot.get("track_id") or ""),
@@ -514,6 +515,7 @@ def _music_for_posts(post_ids):
                 "audio_start_time": float(item.get("audio_start_time") or snapshot.get("audio_start_time") or snapshot.get("start_seconds") or 0),
                 "audio_volume": max(0.0, min(float(item.get("audio_volume") or snapshot.get("volume") or snapshot.get("audio_volume") or 1), 1.0)),
                 "original_audio_muted": bool(int(item.get("original_audio_muted") if item.get("original_audio_muted") is not None else 1)),
+                "audio_baked_in": audio_baked_in,
                 "source": _clean_text(item.get("source") or snapshot.get("source") or "PulseSoc", 120),
                 "is_creator_safe": True,
             }

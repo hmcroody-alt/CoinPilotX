@@ -39380,7 +39380,7 @@ def pulse_music_page():
     return pulse_social_shell("PulseSoc Music", "Upload, discover, preview, report, and attach rights-confirmed music to PulseSoc content.", main, "", script)
 
 
-def pulse_attach_music_to_content(cur, *, content_type, content_id, track_id, user_id, start_seconds=0, volume=None):
+def pulse_attach_music_to_content(cur, *, content_type, content_id, track_id, user_id, start_seconds=0, volume=None, audio_baked_in=False):
     track = music_service.attach_music_payload(str(track_id or ""), volume=float(volume if volume is not None else 0.82))
     if not track.get("is_creator_safe"):
         return {"ok": False, "message": "Music track is not approved for Pulse use."}
@@ -39389,7 +39389,7 @@ def pulse_attach_music_to_content(cur, *, content_type, content_id, track_id, us
         """
         INSERT OR IGNORE INTO pulse_content_music
         (content_type, content_id, audio_track_id, title, artist, source, license_snapshot_json, attached_by_user_id, created_at, original_audio_muted, audio_start_time, audio_volume)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             str(content_type or "")[:60],
@@ -39398,9 +39398,10 @@ def pulse_attach_music_to_content(cur, *, content_type, content_id, track_id, us
             str(track.get("title") or "")[:180],
             str(track.get("artist") or "")[:180],
             str(track.get("source") or "")[:120],
-            json.dumps({**track, "original_audio_muted": True, "audio_start_time": float(start_seconds or track.get("audio_start_time") or track.get("start_seconds") or 0), "audio_volume": float(track.get("volume") or 1)}, default=str)[:4000],
+            json.dumps({**track, "audio_baked_in": bool(audio_baked_in), "original_audio_muted": not bool(audio_baked_in), "audio_start_time": float(start_seconds or track.get("audio_start_time") or track.get("start_seconds") or 0), "audio_volume": float(track.get("volume") or 1)}, default=str)[:4000],
             safe_int(user_id, 0),
             now,
+            0 if audio_baked_in else 1,
             float(start_seconds or track.get("audio_start_time") or track.get("start_seconds") or 0),
             max(0.0, min(float(track.get("volume") or 1), 1.0)),
         ),
@@ -39408,13 +39409,14 @@ def pulse_attach_music_to_content(cur, *, content_type, content_id, track_id, us
     cur.execute(
         """
         UPDATE pulse_content_music
-        SET original_audio_muted=1, audio_start_time=?, audio_volume=?, license_snapshot_json=?
+        SET original_audio_muted=?, audio_start_time=?, audio_volume=?, license_snapshot_json=?
         WHERE content_type=? AND content_id=? AND CAST(audio_track_id AS TEXT)=CAST(? AS TEXT)
         """,
         (
+            0 if audio_baked_in else 1,
             float(start_seconds or track.get("audio_start_time") or track.get("start_seconds") or 0),
             max(0.0, min(float(track.get("volume") or 1), 1.0)),
-            json.dumps({**track, "original_audio_muted": True, "audio_start_time": float(start_seconds or track.get("audio_start_time") or track.get("start_seconds") or 0), "audio_volume": float(track.get("volume") or 1)}, default=str)[:4000],
+            json.dumps({**track, "audio_baked_in": bool(audio_baked_in), "original_audio_muted": not bool(audio_baked_in), "audio_start_time": float(start_seconds or track.get("audio_start_time") or track.get("start_seconds") or 0), "audio_volume": float(track.get("volume") or 1)}, default=str)[:4000],
             str(content_type or "")[:60],
             safe_int(content_id, 0),
             str(track.get("track_id") or track_id or "")[:120],
@@ -44264,7 +44266,7 @@ def pulse_reel_payload(reel_id=0, post_id=0, viewer_user_id=0, include_preview_c
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT at.*, ra.start_seconds, ra.end_seconds, ra.volume
+            SELECT at.*, ra.start_seconds, ra.end_seconds, ra.volume, ra.audio_baked_in
             FROM pulse_reel_audio ra
             JOIN pulse_audio_tracks at ON at.id=ra.audio_track_id
             WHERE ra.reel_id=?
@@ -44281,14 +44283,15 @@ def pulse_reel_payload(reel_id=0, post_id=0, viewer_user_id=0, include_preview_c
         "track_id": int(audio.get("id") or 0),
         "title": audio.get("title") or reel_row.get("sound_title") or "",
         "artist": audio.get("artist") or "",
-        "attached_audio_url": media_service.normalize_url(audio.get("audio_url") or audio.get("preview_url") or ""),
+        "attached_audio_url": "" if (audio.get("audio_baked_in") or reel_row.get("audio_baked_in")) else media_service.normalize_url(audio.get("audio_url") or audio.get("preview_url") or ""),
         "audio_url": media_service.normalize_url(audio.get("audio_url") or audio.get("preview_url") or ""),
         "preview_url": media_service.normalize_url(audio.get("preview_url") or audio.get("audio_url") or ""),
         "duration": float(audio.get("duration_seconds") or 0),
         "audio_duration": float(audio.get("duration_seconds") or 0),
         "audio_start_time": float(audio.get("start_seconds") or reel_row.get("sound_start_seconds") or 0),
         "audio_volume": max(0.0, min(float(audio.get("volume") or 1), 1.0)),
-        "original_audio_muted": bool(audio.get("id")),
+        "original_audio_muted": bool(audio.get("id")) and not bool(audio.get("audio_baked_in") or reel_row.get("audio_baked_in")),
+        "audio_baked_in": bool(audio.get("audio_baked_in") or reel_row.get("audio_baked_in")),
         "waveform": audio.get("waveform_json") or "",
         "bpm": int(audio.get("bpm") or 0),
         "usage_count": int(audio.get("usage_count") or 0),
@@ -44882,14 +44885,15 @@ def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0, l
             "track_id": int(audio.get("id") or 0),
             "title": audio.get("title") or row.get("sound_title") or "",
             "artist": audio.get("artist") or "",
-            "attached_audio_url": media_service.normalize_url(audio.get("audio_url") or audio.get("preview_url") or ""),
+            "attached_audio_url": "" if row.get("audio_baked_in") else media_service.normalize_url(audio.get("audio_url") or audio.get("preview_url") or ""),
             "audio_url": media_service.normalize_url(audio.get("audio_url") or audio.get("preview_url") or ""),
             "preview_url": media_service.normalize_url(audio.get("preview_url") or audio.get("audio_url") or ""),
             "duration": float(audio.get("duration_seconds") or 0),
             "audio_duration": float(audio.get("duration_seconds") or 0),
             "audio_start_time": float(row.get("sound_start_seconds") or 0),
             "audio_volume": 1,
-            "original_audio_muted": bool(audio.get("id")),
+            "original_audio_muted": bool(audio.get("id")) and not bool(row.get("audio_baked_in")),
+            "audio_baked_in": bool(row.get("audio_baked_in")),
             "waveform": audio.get("waveform_json") or "",
             "bpm": int(audio.get("bpm") or 0),
             "usage_count": int(audio.get("usage_count") or 0),
@@ -79340,7 +79344,7 @@ def api_pulse_posts():
             if music_track_id:
                 conn = db()
                 cur = conn.cursor()
-                attach_result = pulse_attach_music_to_content(cur, content_type="post", content_id=result.get("post_id"), track_id=music_track_id, user_id=user["user_id"])
+                attach_result = pulse_attach_music_to_content(cur, content_type="post", content_id=result.get("post_id"), track_id=music_track_id, user_id=user["user_id"], start_seconds=(payload or {}).get("audio_start_time") or 0, volume=(payload or {}).get("audio_volume"), audio_baked_in=bool((payload or {}).get("audio_baked_in")))
                 if attach_result.get("ok"):
                     conn.commit()
                 else:
@@ -79359,7 +79363,7 @@ def api_pulse_posts():
                 if music_track_id:
                     conn = db()
                     cur = conn.cursor()
-                    attach_result = pulse_attach_music_to_content(cur, content_type="video", content_id=result.get("post_id"), track_id=music_track_id, user_id=user["user_id"])
+                    attach_result = pulse_attach_music_to_content(cur, content_type="video", content_id=result.get("post_id"), track_id=music_track_id, user_id=user["user_id"], start_seconds=(payload or {}).get("audio_start_time") or 0, volume=(payload or {}).get("audio_volume"), audio_baked_in=bool((payload or {}).get("audio_baked_in")))
                     if attach_result.get("ok"):
                         conn.commit()
                     conn.close()
@@ -79673,6 +79677,7 @@ def api_pulse_reels_create():
         if media_type == "video" and not processing_status:
             processing_status = "ready" if not mux_status or mux_status in {"ready", "asset_ready", "available"} else "mux_processing"
         audio_track_id = safe_int(payload.get("audio_track_id") or payload.get("sound_id") or payload.get("music_track_id"), 0)
+        audio_baked_in = bool(payload.get("audio_baked_in"))
         try:
             sound_start = max(0.0, float(payload.get("sound_start_seconds") or payload.get("audio_start_seconds") or 0))
             sound_end = max(0.0, float(payload.get("sound_end_seconds") or payload.get("audio_end_seconds") or 0))
@@ -79740,7 +79745,7 @@ def api_pulse_reels_create():
             )
             track = dict(cur.fetchone() or {})
             if track:
-                cur.execute("UPDATE pulse_reels SET audio_track_id=?, sound_title=?, sound_start_seconds=?, sound_end_seconds=? WHERE id=?", (audio_track_id, track.get("title") or "", sound_start, sound_end, reel_id))
+                cur.execute("UPDATE pulse_reels SET audio_track_id=?, sound_title=?, sound_start_seconds=?, sound_end_seconds=?, audio_baked_in=? WHERE id=?", (audio_track_id, track.get("title") or "", sound_start, sound_end, 1 if audio_baked_in else 0, reel_id))
                 cur.execute(
                     """
                     INSERT INTO pulse_reel_audio
@@ -79754,7 +79759,8 @@ def api_pulse_reels_create():
                     """,
                     (reel_id, audio_track_id, sound_start, sound_end, audio_volume, now),
                 )
-                attach_result = pulse_attach_music_to_content(cur, content_type="reel", content_id=reel_id, track_id=audio_track_id, user_id=user["user_id"], start_seconds=sound_start, volume=audio_volume)
+                cur.execute("UPDATE pulse_reel_audio SET audio_baked_in=? WHERE reel_id=? AND audio_track_id=?", (1 if audio_baked_in else 0, reel_id, audio_track_id))
+                attach_result = pulse_attach_music_to_content(cur, content_type="reel", content_id=reel_id, track_id=audio_track_id, user_id=user["user_id"], start_seconds=sound_start, volume=audio_volume, audio_baked_in=audio_baked_in)
                 if not attach_result.get("ok"):
                     logging.warning("PULSE_REEL_MUSIC_ATTACH_BLOCKED user_id=%s reel_id=%s track_id=%s reason=%s", user["user_id"], reel_id, audio_track_id, attach_result.get("message"))
                 if share_to_feed and post_id:
@@ -102687,6 +102693,7 @@ def _init_db_impl():
         ("educational_value", "INTEGER DEFAULT 50"),
         ("reel_score", "INTEGER DEFAULT 0"),
         ("audio_track_id", "INTEGER"),
+        ("audio_baked_in", "INTEGER DEFAULT 0"),
         ("sound_title", "TEXT"),
         ("sound_start_seconds", "REAL DEFAULT 0"),
         ("sound_end_seconds", "REAL DEFAULT 0"),
@@ -102930,10 +102937,12 @@ def _init_db_impl():
         start_seconds REAL DEFAULT 0,
         end_seconds REAL DEFAULT 0,
         volume REAL DEFAULT 1,
+        audio_baked_in INTEGER DEFAULT 0,
         created_at TEXT,
         UNIQUE(reel_id, audio_track_id)
     )
     """)
+    add_columns_if_missing(cur, "pulse_reel_audio", [("audio_baked_in", "INTEGER DEFAULT 0")], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_content_music (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

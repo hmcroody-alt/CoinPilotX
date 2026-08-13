@@ -68,6 +68,11 @@ export function getPulseRadioState() {
   return state;
 }
 
+/** Camera-only monitoring control; it never changes queue or playback state. */
+export async function setPulseRadioVideoMonitorVolume(value: number) {
+  await sound?.setVolumeAsync(Math.max(0, Math.min(1, value)) * 0.72).catch(() => undefined);
+}
+
 export function subscribePulseRadio(listener: (next: PulseRadioState) => void) {
   listeners.add(listener);
   listener(state);

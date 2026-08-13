@@ -1,4 +1,5 @@
 import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from "expo-camera";
+import { Audio } from "expo-av";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import {
@@ -30,6 +31,17 @@ import { useNativeMediaUpload } from "../media/useNativeMediaUpload";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
+import { getPulseRadioState, setPulseRadioVideoMonitorVolume, subscribePulseRadio } from "../core/pulseRadio";
+import { recordPulseMusicEvent } from "../api/music";
+import { VideoMusicPicker } from "../video/VideoMusicPicker";
+import {
+  configureVideoMusicMonitoring,
+  createVideoMusicMonitor,
+  DEFAULT_VIDEO_MIX_SETTINGS,
+  exportVideoMusicMix,
+  VideoMixSettings,
+  VideoMusicSource
+} from "../video/videoMusicMix";
 
 type Props = {
   route: { params?: RootStackParamList["CameraStudio"] };
@@ -76,6 +88,11 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   const [captureMode, setCaptureMode] = useState<NativeCaptureMode>(initialModeFromParams(route.params, initialDestination));
   const [cameraFacing, setCameraFacing] = useState<CameraType>("back");
   const [micEnabled, setMicEnabled] = useState(true);
+  const [showMusicPicker, setShowMusicPicker] = useState(false);
+  const [videoMusic, setVideoMusic] = useState<VideoMusicSource | null>(null);
+  const [capturedMusic, setCapturedMusic] = useState<VideoMusicSource | null>(null);
+  const [mixSettings, setMixSettings] = useState<VideoMixSettings>(DEFAULT_VIDEO_MIX_SETTINGS);
+  const [radioState, setRadioState] = useState(getPulseRadioState());
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
   const [config, setConfig] = useState<PulseCameraConfig | null>(null);
@@ -92,6 +109,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const cameraRef = useRef<CameraView | null>(null);
+  const musicMonitorRef = useRef<Audio.Sound | null>(null);
   const qaMediaSeedRef = useRef("");
   const qaPublishRef = useRef("");
   const uploadOptions = useMemo(
@@ -112,6 +130,13 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   const nativeCameraUnavailable = Platform.OS === "web";
   const composerReturnMode = Boolean(route.params?.returnToComposer);
   const composerMode = route.params?.composerMode || createComposerModeFromCameraTarget(destination.key, destination.mode);
+
+  useEffect(() => subscribePulseRadio(setRadioState), []);
+
+  useEffect(() => () => {
+    musicMonitorRef.current?.unloadAsync().catch(() => undefined);
+    musicMonitorRef.current = null;
+  }, []);
 
   useEffect(() => {
     getCameraConfig({ target: destination.target, mode: destination.mode })
@@ -210,20 +235,80 @@ export function CameraStudioScreen({ route, navigation }: Props) {
       return;
     }
     setRecording(true);
-    setMessage("Recording video.");
+    setMessage(videoMusic ? `Recording with ${videoMusic.title}.` : "Recording video.");
     try {
+      let musicStartSeconds = videoMusic?.startOffsetSeconds || 0;
+      if (videoMusic) {
+        await configureVideoMusicMonitoring();
+        if (videoMusic.kind === "pulse_radio") {
+          musicStartSeconds = getPulseRadioState().positionMillis / 1000;
+          await setPulseRadioVideoMonitorVolume(mixSettings.musicVolume);
+        } else if (musicMonitorRef.current) {
+          const monitorStatus = await musicMonitorRef.current.getStatusAsync();
+          if (monitorStatus.isLoaded) musicStartSeconds = monitorStatus.positionMillis / 1000;
+          await musicMonitorRef.current.setVolumeAsync(mixSettings.musicVolume * 0.72);
+        }
+      }
       const video = await cameraRef.current?.recordAsync({
         maxDuration: policy.maxVideoDurationSeconds,
         maxFileSize: policy.maxVideoBytes
       });
       if (!video?.uri) throw new Error("Camera did not return a video.");
-      const asset = await nativeMediaAssetFromUri(video.uri, "video", { mimeType: "video/mp4" });
+      let finalUri = video.uri;
+      if (videoMusic) {
+        setMessage("Creating the final music and microphone mix.");
+        try {
+          const mixed = await exportVideoMusicMix(video.uri, videoMusic, mixSettings, musicStartSeconds);
+          finalUri = mixed.uri;
+          setCapturedMusic({ ...videoMusic, startOffsetSeconds: musicStartSeconds });
+          recordPulseMusicEvent(videoMusic.trackId, "use_video", "native_video_camera").catch(() => undefined);
+        } catch (mixError) {
+          setCapturedMusic(null);
+          setError(`${mixError instanceof Error ? mixError.message : "Music mixing failed."} The original video and microphone recording were preserved.`);
+        }
+      } else {
+        setCapturedMusic(null);
+      }
+      const asset = await nativeMediaAssetFromUri(finalUri, "video", { mimeType: "video/mp4" });
       await handleCapturedAsset(asset);
     } catch (captureError) {
       setError(captureError instanceof Error ? captureError.message : "Video capture failed.");
     } finally {
       setRecording(false);
     }
+  }
+
+  async function selectVideoMusic(source: VideoMusicSource) {
+    setError("");
+    if (musicMonitorRef.current) await musicMonitorRef.current.unloadAsync().catch(() => undefined);
+    musicMonitorRef.current = null;
+    setVideoMusic(source);
+    try {
+      if (source.kind === "pulse_radio") {
+        await configureVideoMusicMonitoring();
+        await setPulseRadioVideoMonitorVolume(mixSettings.musicVolume);
+      } else {
+        musicMonitorRef.current = await createVideoMusicMonitor(source, mixSettings.musicVolume);
+      }
+      setMessage(`${source.title} is ready for this video.`);
+    } catch (musicError) {
+      setVideoMusic(null);
+      setError(musicError instanceof Error ? musicError.message : "That track could not be previewed.");
+    }
+  }
+
+  async function removeVideoMusic() {
+    if (musicMonitorRef.current) await musicMonitorRef.current.unloadAsync().catch(() => undefined);
+    musicMonitorRef.current = null;
+    setVideoMusic(null);
+    setCapturedMusic(null);
+    setMessage("Music removed. Video will record with microphone audio only.");
+  }
+
+  function updateMixSettings(next: VideoMixSettings) {
+    setMixSettings(next);
+    if (videoMusic?.kind === "pulse_radio") setPulseRadioVideoMonitorVolume(next.musicVolume).catch(() => undefined);
+    else musicMonitorRef.current?.setVolumeAsync(next.musicVolume * 0.72).catch(() => undefined);
   }
 
   async function chooseFromGallery() {
@@ -393,7 +478,13 @@ export function CameraStudioScreen({ route, navigation }: Props) {
         caption: caption.trim(),
         title: caption.trim() || "Camera Reel",
         visibility: privacy,
-        share_to_feed: false
+        share_to_feed: false,
+        music_track_id: capturedMusic?.trackId,
+        original_audio_muted: false,
+        audio_start_time: capturedMusic?.startOffsetSeconds,
+        sound_start_seconds: capturedMusic?.startOffsetSeconds,
+        audio_volume: mixSettings.musicVolume,
+        audio_baked_in: Boolean(capturedMusic)
       });
       if (!reel.reel_id || !reel.post_id) throw new Error("Reel publication did not return canonical identifiers. Your uploaded video is preserved for retry.");
       await markCameraPreviewPublished({ preview_token: previewToken, entity_type: "reel", entity_id: reel.reel_id }).catch(() => undefined);
@@ -410,7 +501,12 @@ export function CameraStudioScreen({ route, navigation }: Props) {
       body: caption.trim() || "Created with PulseSoc Camera",
       title: caption.trim() ? "PulseSoc Camera" : "",
       post_type: asset.mediaType,
-      visibility: privacy
+      visibility: privacy,
+      music_track_id: capturedMusic?.trackId,
+      original_audio_muted: false,
+      audio_start_time: capturedMusic?.startOffsetSeconds,
+      audio_volume: mixSettings.musicVolume,
+      audio_baked_in: Boolean(capturedMusic)
     });
     if (!post.post_id || !post.post) throw new Error("Post publication did not return a canonical post. Your uploaded media is preserved for retry.");
     await markCameraPreviewPublished({ preview_token: previewToken, entity_type: "post", entity_id: post.post_id }).catch(() => undefined);
@@ -504,7 +600,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: captureMode === "photo" }}
             style={[styles.dockButton, captureMode === "photo" && styles.disabled]}
             disabled={captureMode === "photo"}
-            onPress={async () => {
+            onPress={captureMode === "video" ? () => setShowMusicPicker(true) : async () => {
               if (!microphonePermission?.granted) {
                 const next = await requestMicrophonePermission();
                 setMicEnabled(next.granted);
@@ -513,7 +609,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
               }
             }}
           >
-            <Text style={styles.dockText}>{micEnabled ? "Mic" : "Muted"}</Text>
+            <Text style={styles.dockText}>{captureMode === "video" ? (videoMusic ? "Music ✓" : "Music") : (micEnabled ? "Mic" : "Muted")}</Text>
           </Pressable>
         </View>
         {composerReturnMode ? (
@@ -607,6 +703,16 @@ export function CameraStudioScreen({ route, navigation }: Props) {
         error={liveError}
         onClose={() => setShowPreLive(false)}
         onGoLive={handleGoLive}
+      />
+      <VideoMusicPicker
+        visible={showMusicPicker && captureMode === "video"}
+        radio={radioState}
+        selected={videoMusic}
+        settings={mixSettings}
+        onClose={() => setShowMusicPicker(false)}
+        onSelect={(source) => selectVideoMusic(source).catch(() => undefined)}
+        onRemove={() => removeVideoMusic().catch(() => undefined)}
+        onSettings={updateMixSettings}
       />
     </View>
   );

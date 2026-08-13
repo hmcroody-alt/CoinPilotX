@@ -49,6 +49,8 @@ export type PulsePostMusic = {
   attached_audio_url?: string;
   audio_start_time?: number;
   audio_volume?: number;
+  /** Music is already digitally mixed into the uploaded MP4; retain attribution without double playback. */
+  audio_baked_in?: boolean;
   original_audio_muted?: boolean;
 };
 
@@ -177,6 +179,7 @@ export type CreatePostPayload = {
   original_audio_muted?: boolean;
   audio_start_time?: number;
   audio_volume?: number;
+  audio_baked_in?: boolean;
 };
 
 export type CreatePostResponse = {
@@ -275,7 +278,8 @@ export async function createPost(payload: CreatePostPayload) {
       original_audio_muted:
         payload.original_audio_muted ?? Boolean(payload.music_track_id),
       audio_start_time: payload.audio_start_time ?? 0,
-      audio_volume: payload.audio_volume ?? 1
+      audio_volume: payload.audio_volume ?? 1,
+      audio_baked_in: Boolean(payload.audio_baked_in)
     })
   });
   const post = data.post ? normalizePost(data.post) : undefined;

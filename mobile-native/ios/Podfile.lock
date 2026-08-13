@@ -332,6 +332,8 @@ PODS:
   - openiap (2.4.4)
   - PulseNowPlaying (1.0.0):
     - ExpoModulesCore
+  - PulseVideoMixer (1.0.0):
+    - ExpoModulesCore
   - RCT-Folly (2024.11.18.00):
     - boost
     - DoubleConversion
@@ -2753,6 +2755,7 @@ DEPENDENCIES:
   - glog (from `../node_modules/react-native/third-party-podspecs/glog.podspec`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
   - PulseNowPlaying (from `../modules/pulse-now-playing/ios`)
+  - PulseVideoMixer (from `../modules/pulse-video-mixer/ios`)
   - RCT-Folly (from `../node_modules/react-native/third-party-podspecs/RCT-Folly.podspec`)
   - RCTDeprecation (from `../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
   - RCTRequired (from `../node_modules/react-native/Libraries/Required`)
@@ -2921,6 +2924,8 @@ EXTERNAL SOURCES:
     :tag: hermes-2025-07-07-RNv0.81.0-e0fc67142ec0763c6b6153ca2bf96df815539782
   PulseNowPlaying:
     :path: "../modules/pulse-now-playing/ios"
+  PulseVideoMixer:
+    :path: "../modules/pulse-video-mixer/ios"
   RCT-Folly:
     :podspec: "../node_modules/react-native/third-party-podspecs/RCT-Folly.podspec"
   RCTDeprecation:
@@ -3106,6 +3111,7 @@ SPEC CHECKSUMS:
   hermes-engine: 9f4dfe93326146a1c99eb535b1cb0b857a3cd172
   openiap: 15b2c855d1c670d1d7afb765bee781f6d638c18c
   PulseNowPlaying: b09bd41cd6492be2b32615db10f194f9de77a040
+  PulseVideoMixer: 224c2191be77da6e44341209aedbbce3d19f0996
   RCT-Folly: 846fda9475e61ec7bcbf8a3fe81edfcaeb090669
   RCTDeprecation: 5eb1d2eeff5fb91151e8a8eef45b6c7658b6c897
   RCTRequired: cebcf9442fc296c9b89ac791dfd463021d9f6f23
