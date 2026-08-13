@@ -18,11 +18,12 @@ describe("new-user profile identity", () => {
       pulse_id: "pls-000001",
       display_name: "Roody Cherie",
       post_count: 12
-    });
+    } as unknown as Parameters<typeof normalizeProfile>[0]);
 
     expect(profile.user_id).toBe(1);
     expect(profile.canonical_profile_key).toBe("1");
     expect(profile.post_count).toBe(12);
+    expect(profile).not.toHaveProperty("pulse_id");
   });
 
   it("routes feed authors by canonical user id when no legacy handle exists", () => {

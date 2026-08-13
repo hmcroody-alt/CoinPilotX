@@ -1146,6 +1146,7 @@ PUBLIC_FIELDS: Tuple[str, ...] = (
 
 #: Named so the reason is greppable from the test that asserts their absence.
 NEVER_PUBLIC: Tuple[str, ...] = (
+    "pulse_id",             # stable internal account identifier
     "legal_name",            # review evidence, not a shop sign
     "addresses",             # pickup and warehouse addresses
     "locks",                 # internal review mechanics
@@ -1215,7 +1216,6 @@ def public_profile(user_id: int, *, viewer_has_purchased: bool = False,
         }
 
         return {
-            "pulse_id": str(user.get("pulse_id") or ""),
             "handle": normalize_handle(user.get("username") or application.get("pulse_username")),
             "business_name": _text(profile.get("business_name"), NAME_MAX),
             "business_category": str(profile.get("business_category") or ""),

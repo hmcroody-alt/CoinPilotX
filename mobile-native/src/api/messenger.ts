@@ -132,7 +132,6 @@ export type MessengerUserSearchResult = {
   id: number;
   user_id: number;
   display_name: string;
-  pulse_id?: string;
   public_pulse_id?: string;
   public_player_id?: string;
   avatar_url?: string;
@@ -1193,7 +1192,6 @@ function normalizeMessengerUser(item: MessengerUserSearchResult): MessengerUserS
     id,
     user_id: id,
     display_name: String(item.display_name || item.public_pulse_id || item.public_player_id || "PulseSoc member"),
-    pulse_id: String(item.pulse_id || "").toUpperCase(),
     public_pulse_id: String(item.public_pulse_id || (item.public_player_id ? `@${item.public_player_id}` : "")),
     public_player_id: String(item.public_player_id || item.public_pulse_id || "").replace(/^@/, ""),
     avatar_url: String(item.avatar_url || ""),

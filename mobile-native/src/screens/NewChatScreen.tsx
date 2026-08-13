@@ -14,7 +14,6 @@ import {
 } from "react-native";
 import { MessengerUserSearchResult, openDirectConversation, searchMessengerUsers } from "../api/messenger";
 import { PulseApiError } from "../api/pulseApi";
-import { PulseIdBadge } from "../components/PulseIdBadge";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
@@ -121,7 +120,7 @@ export function NewChatScreen({ route, navigation }: Props) {
               value={query}
               onChangeText={setQuery}
               onSubmitEditing={() => runSearch()}
-              placeholder="Name, username, or Pulse ID"
+              placeholder="Name or username"
               placeholderTextColor={colors.muted}
               style={styles.searchInput}
             />
@@ -143,7 +142,7 @@ export function NewChatScreen({ route, navigation }: Props) {
               <LogiNexusStatePanel
                 state="empty"
                 title={hasQuery ? "No people found" : "Find someone on PulseSoc"}
-                body={hasQuery ? "Check the spelling or try their public Pulse ID." : "Type a name, username, or public Pulse ID to begin."}
+                body={hasQuery ? "Check the spelling or try their username." : "Type a name or username to begin."}
               />
             ) : null}
             renderItem={({ item }) => (
@@ -171,7 +170,6 @@ function RecipientRow({ item, opening, disabled, onPress }: { item: MessengerUse
       <View style={styles.recipientCopy}>
         <View style={styles.nameRow}><Text style={styles.name} numberOfLines={1}>{item.display_name}</Text>{item.premium ? <Text style={styles.premium}>PRO</Text> : null}</View>
         <Text style={styles.handle} numberOfLines={1}>{handle}{item.label ? ` · ${item.label}` : ""}</Text>
-        {item.pulse_id ? <PulseIdBadge pulseId={item.pulse_id} compact /> : null}
       </View>
       {opening ? <ActivityIndicator color={colors.accent} /> : <Text style={styles.messageAction}>Message</Text>}
     </Pressable>
