@@ -46,6 +46,8 @@ from services.marketplace_cart_routes import (
     stripe_shipping_checkout_params,
 )
 from services.marketplace_payment_errors import classify_provider_exception, stripe_response_value
+from services import marketplace_quote_service
+from services import marketplace_goods_policy
 
 LOGGER = logging.getLogger(__name__)
 
@@ -501,6 +503,10 @@ def offer_checkout(offer_id: int):
         listing = dict(cur.fetchone() or {})
         if not listing or not listing_lifecycle.is_public(listing):
             return _error("The listing behind this offer is no longer available.", 409)
+        goods_decision = marketplace_goods_policy.evaluate(listing)
+        if goods_decision["decision"] != "ALLOWED":
+            return _error("This listing requires Marketplace policy review.", 409,
+                          code="LISTING_POLICY_BLOCKED", goods_policy=goods_decision)
         if bot.ios_native_app_request() and str(listing.get("product_type") or listing.get("listing_type") or listing.get("delivery_type") or "").lower() in {"digital", "course"}:
             return bot.ios_paid_digital_unavailable_response(api=True)
         approved = bot.approved_marketplace_seller_for_user(cur, seller_id)
@@ -508,9 +514,18 @@ def offer_checkout(offer_id: int):
             return _error("Seller is not approved for payments.", 403)
         payout = bot.seller_payout_account(cur, seller_id, "merchant")
         fee_bps = bot.seller_fee_bps(cur, "merchant")
-        amount = int(offer.get("amount_minor") or 0) * max(1, int(offer.get("qty") or 1))
+        qty = max(1, int(offer.get("qty") or 1))
         currency = offer.get("currency") or "USD"
-        platform_fee = int(round(amount * fee_bps / 10000))
+        commercial_quote = marketplace_quote_service.create_quote(
+            listing_id=listing_id, seller_id=seller_id, quantity=qty,
+            unit_price_minor=int(offer.get("amount_minor") or 0), currency=currency,
+            live_fee_bps=fee_bps, offer_id=offer_id,
+            offer_accepted_at=offer.get("responded_at") or offer.get("updated_at"),
+            offer_expires_at=offer.get("accept_expires_at") or offer.get("expires_at"),
+            shipping={"fulfillment": _fulfillment(listing)},
+        )
+        amount = commercial_quote["buyer_total_minor"]
+        platform_fee = commercial_quote["platform_fee_minor"]
         now = _now()
         cur.execute(
             """
@@ -520,9 +535,11 @@ def offer_checkout(offer_id: int):
             VALUES (?, ?, 'merchant', 'marketplace_product', ?, ?, ?, ?, ?, 'created', ?, ?, ?)
             """,
             (buyer_id, seller_id, listing_id, amount, currency, platform_fee,
-             amount - platform_fee,
-             json.dumps({"title": listing.get("title") or "Marketplace item",
-                         "offer_id": offer_id, "qty": offer.get("qty") or 1}, default=str),
+             commercial_quote["seller_earnings_minor"],
+             marketplace_quote_service.transaction_metadata(
+                 {"title": listing.get("title") or "Marketplace item",
+                  "offer_id": offer_id, "qty": qty}, commercial_quote,
+                 payout_state="pending_checkout"),
              now, now),
         )
         tx_id = int(cur.lastrowid)
@@ -531,7 +548,6 @@ def offer_checkout(offer_id: int):
             return _error("Stripe checkout is not configured yet. No card was charged.", 503,
                           code="PAYMENT_UNAVAILABLE", transaction_id=tx_id)
 
-        qty = max(1, int(offer.get("qty") or 1))
         fulfillment = _fulfillment(listing)
         # An accepted offer used to skip reservation entirely, so two buyers with
         # two accepted offers on a one-of-a-kind item could both reach Stripe.
@@ -603,7 +619,8 @@ def offer_checkout(offer_id: int):
                     "currency": currency,
                     "transaction_id": tx_id,
                     "platform_fee_cents": platform_fee,
-                    "seller_net_cents": amount - platform_fee,
+                    "seller_net_cents": commercial_quote["seller_earnings_minor"],
+                    "commercial_quote": commercial_quote,
                     "payout_state": payout_state,
                 })
             session_obj = bot.stripe.checkout.Session.create(
@@ -627,7 +644,8 @@ def offer_checkout(offer_id: int):
             return _json({"ok": True, "checkout_url": session_obj.get("url"),
                           "transaction_id": tx_id, "amount_cents": amount,
                           "platform_fee_cents": platform_fee,
-                          "seller_net_cents": amount - platform_fee,
+                          "seller_net_cents": commercial_quote["seller_earnings_minor"],
+                          "commercial_quote": commercial_quote,
                           "payout_state": payout_state})
         except Exception as exc:
             trace_id = secrets.token_hex(6)
