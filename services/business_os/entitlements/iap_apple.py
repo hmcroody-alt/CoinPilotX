@@ -266,6 +266,10 @@ class AppleNotificationVerifier:
             payload["data"] = data
         return payload
 
+    def verify_transaction(self, signed_transaction: str) -> dict:
+        """Verify and decode a StoreKit 2 signedTransaction JWS."""
+        return self._decode(signed_transaction)
+
 
 # ---------------------------------------------------------------------------
 # productId -> canonical plan_key
@@ -378,6 +382,14 @@ def apply_apple_notification(signed_payload: str, *,
     if owned:
         conn = db.connect()
     try:
+        if norm["subject_id"] is None:
+            prior = conn.execute(
+                "SELECT subject_id FROM business_os_ent_provider_subs "
+                "WHERE provider='apple_app_store' AND provider_subscription_id=? LIMIT 1",
+                (norm["provider_subscription_id"],),
+            ).fetchone()
+            if prior:
+                norm["subject_id"] = str(_row_first(prior))
         # Always record the provider subscription row (even unmapped plans).
         _prov.upsert_provider_subscription(
             provider="apple_app_store",
@@ -437,6 +449,84 @@ def apply_apple_notification(signed_payload: str, *,
         if owned:
             conn.commit()
         return result
+    finally:
+        if owned:
+            conn.close()
+
+
+def apply_verified_subscription_transaction(signed_transaction: str, *,
+                                            verifier: AppleNotificationVerifier,
+                                            subject_id: str,
+                                            expected_app_account_token: str | None = None,
+                                            conn=None) -> dict:
+    """Verify an authenticated StoreKit purchase and project Premium once.
+
+    The authenticated server subject is authoritative for the initial purchase;
+    later App Store notifications resolve the same original transaction row.
+    """
+    from services import pulse_payment_router as _router
+
+    txn = verifier.verify_transaction(signed_transaction)
+    product_id = str(txn.get("productId") or "")
+    plan_key = APPLE_PRODUCT_TO_PLAN.get(product_id)
+    if product_id not in {v["product_id"] for v in _router.APPLE_PREMIUM_PRODUCTS.values()} or not plan_key:
+        raise AppleJWSError("transaction is not a supported Premium product")
+    if str(txn.get("bundleId") or "") not in _router.expected_bundle_ids():
+        raise AppleJWSError("transaction bundle id mismatch")
+    if str(txn.get("type") or "") != "Auto-Renewable Subscription":
+        raise AppleJWSError("transaction is not an auto-renewable subscription")
+    if expected_app_account_token and str(txn.get("appAccountToken") or "") != expected_app_account_token:
+        raise AppleJWSError("transaction account binding mismatch")
+    environment = str(txn.get("environment") or "").lower()
+    sandbox_allowed = str(__import__("os").environ.get("APPLE_IAP_ALLOW_SANDBOX", "")).lower() in {
+        "1", "true", "yes", "on"
+    }
+    if environment == "sandbox" and not sandbox_allowed:
+        raise AppleJWSError("sandbox transaction rejected")
+    if environment not in {"production", "sandbox"}:
+        raise AppleJWSError("transaction environment is invalid")
+    transaction_id = str(txn.get("transactionId") or "")
+    original_id = str(txn.get("originalTransactionId") or transaction_id)
+    if not transaction_id or not original_id:
+        raise AppleJWSError("transaction id missing")
+    if txn.get("revocationDate"):
+        raise AppleJWSError("transaction was revoked")
+    period_end = _ms_to_iso(txn.get("expiresDate"))
+    if not period_end:
+        raise AppleJWSError("subscription expiration missing")
+    try:
+        if datetime.fromisoformat(period_end.replace("Z", "+00:00")) <= datetime.now(timezone.utc):
+            raise AppleJWSError("subscription is expired")
+    except ValueError as exc:
+        raise AppleJWSError("subscription expiration invalid") from exc
+
+    owned = conn is None
+    if owned:
+        conn = db.connect()
+    try:
+        prior = conn.execute(
+            "SELECT subject_id FROM business_os_ent_provider_subs WHERE provider_subscription_id=? LIMIT 1",
+            (original_id,),
+        ).fetchone()
+        if prior and str(_row_first(prior)) != str(subject_id):
+            raise AppleJWSError("transaction already belongs to another account")
+        _prov.upsert_provider_subscription(
+            provider="apple_app_store", provider_subscription_id=original_id,
+            subject_id=str(subject_id), plan_key=plan_key, status="active",
+            current_period_end=period_end, subject_type="user", raw=txn, conn=conn,
+        )
+        projection = _svc.sync_subscription_entitlements(
+            str(subject_id), plan_key, status="active", source="apple_app_store",
+            source_reference=original_id, period_end=period_end,
+            subject_type="user", actor="apple_storekit_verify", conn=conn,
+        )
+        if owned:
+            conn.commit()
+        return {"verified": True, "product_id": product_id,
+                "provider_subscription_id": original_id,
+                "current_period_end": period_end,
+                "granted_keys": projection.get("granted_keys", []),
+                "environment": environment or "unknown"}
     finally:
         if owned:
             conn.close()

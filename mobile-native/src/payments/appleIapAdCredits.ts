@@ -27,7 +27,7 @@
 import { Platform } from "react-native";
 import {
   getIapAdCreditProducts,
-  routePayment,
+  createPaymentIntent,
   verifyAppleAdCreditPurchase,
   AppleVerifyOutcome,
   IapAdCreditProduct,
@@ -45,8 +45,8 @@ export type StoreKitPurchase = Record<string, unknown>;
 
 export interface StoreKitAdapter {
   initConnection(): Promise<void>;
-  requestPurchase(sku: string): Promise<StoreKitPurchase | null>;
-  finishTransaction(purchase: StoreKitPurchase): Promise<void>;
+  requestPurchase(sku: string, type?: "in-app" | "subs", appAccountToken?: string): Promise<StoreKitPurchase | null>;
+  finishTransaction(purchase: StoreKitPurchase, isConsumable?: boolean): Promise<void>;
   getAvailablePurchases(): Promise<StoreKitPurchase[]>;
 }
 
@@ -68,17 +68,17 @@ export function loadStoreKitAdapter(): StoreKitAdapter | null {
       initConnection: async () => {
         if (typeof iap.initConnection === "function") await iap.initConnection();
       },
-      requestPurchase: async (sku: string) => {
+      requestPurchase: async (sku: string, type: "in-app" | "subs" = "in-app", appAccountToken?: string) => {
         // expo-iap v4 request shape; `type` distinguishes in-app from subs.
         const result = await iap.requestPurchase({
-          request: { ios: { sku }, sku },
-          type: "in-app"
+          request: { ios: { sku, ...(appAccountToken ? { appAccountToken } : {}) }, sku },
+          type
         });
         const purchase = Array.isArray(result) ? result[0] : result;
         return purchase && typeof purchase === "object" ? (purchase as StoreKitPurchase) : null;
       },
-      finishTransaction: async (purchase: StoreKitPurchase) => {
-        await iap.finishTransaction({ purchase, isConsumable: true });
+      finishTransaction: async (purchase: StoreKitPurchase, isConsumable = true) => {
+        await iap.finishTransaction({ purchase, isConsumable });
       },
       getAvailablePurchases: async () => {
         if (typeof iap.getAvailablePurchases !== "function") return [];
@@ -154,7 +154,7 @@ export type AdCreditPurchaseResult =
 
 export type PurchaseDeps = {
   adapter?: StoreKitAdapter | null;
-  route?: typeof routePayment;
+  route?: (params: { platform: string; purchaseContext: string; productId: string }) => Promise<PaymentRouteDecision>;
   catalog?: typeof getIapAdCreditProducts;
   verify?: typeof verifyAppleAdCreditPurchase;
   platform?: string;
@@ -165,13 +165,13 @@ export async function purchaseAdCredits(
   productId: string,
   deps: PurchaseDeps = {}
 ): Promise<AdCreditPurchaseResult> {
-  const route = deps.route ?? routePayment;
+  const route = deps.route ?? createPaymentIntent;
   const catalog = deps.catalog ?? getIapAdCreditProducts;
   const verify = deps.verify ?? verifyAppleAdCreditPurchase;
   const platform = deps.platform ?? Platform.OS;
 
   // 1. Server decides the provider.
-  const decision = await route({ platform, itemType: "ad_credits" });
+  const decision = await route({ platform, purchaseContext: "ad_credits", productId });
   if (!decision.ok || decision.flagged) return { status: "routing_flagged", decision };
   if (decision.provider !== "apple_iap") return { status: "use_other_provider", decision };
 
@@ -185,7 +185,10 @@ export async function purchaseAdCredits(
   let purchase: StoreKitPurchase | null;
   try {
     await adapter.initConnection();
-    purchase = await adapter.requestPurchase(productId);
+    const accountToken = "appAccountToken" in decision
+      ? String((decision as PaymentRouteDecision & { appAccountToken?: string }).appAccountToken || "")
+      : "";
+    purchase = await adapter.requestPurchase(productId, "in-app", accountToken || undefined);
   } catch (error) {
     return isUserCancellation(error) ? { status: "cancelled" } : { status: "purchase_failed" };
   }

@@ -20,6 +20,7 @@ import os
 import sqlite3
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, os.path.join(
@@ -242,6 +243,38 @@ class PaymentRouterTests(unittest.TestCase):
             "com.pulsesoc.adcredits.tier4": 4999,
             "com.pulsesoc.adcredits.tier5": 9999,
         })
+
+    def test_canonical_intent_matrix(self):
+        physical = router.create_payment_instruction(
+            platform="ios", purchase_context="marketplace_listing", resource_id=12)
+        self.assertEqual((physical["provider"], physical["flow"]), ("stripe", "payment_sheet"))
+        for plan, product in (("monthly", "com.pulsesoc.premium.monthly"),
+                              ("annual", "com.pulsesoc.premium.annual")):
+            premium = router.create_payment_instruction(
+                platform="ios", purchase_context="premium", plan=plan)
+            self.assertEqual((premium["provider"], premium["flow"]), ("apple_iap", "storekit"))
+            self.assertEqual(premium["apple_product_id"], product)
+            self.assertEqual(premium["entitlement"], "pulsesoc_premium")
+        self.assertEqual(router.create_payment_instruction(
+            platform="ios", purchase_context="seller_payout")["provider"], "stripe_connect")
+        self.assertEqual(router.create_payment_instruction(
+            platform="ios", purchase_context="post_boost")["provider"], "internal_ledger")
+
+    def test_ad_credit_intent_accepts_only_catalog_product(self):
+        for product_id in router.APPLE_ADCREDIT_PRODUCTS:
+            decision = router.create_payment_instruction(
+                platform="ios", purchase_context="ad_credits", product_id=product_id)
+            self.assertTrue(decision["ok"])
+            self.assertEqual(decision["wallet_behavior"], "credit_canonical_ad_wallet")
+        bad = router.create_payment_instruction(
+            platform="ios", purchase_context="ad_credits", product_id="com.pulsesoc.bad")
+        self.assertFalse(bad["ok"])
+
+    def test_storekit_account_token_is_stable_and_user_scoped(self):
+        with mock.patch.dict(os.environ, {"SESSION_SECRET": "test-only-secret"}):
+            first = router.apple_app_account_token(7)
+            self.assertEqual(first, router.apple_app_account_token(7))
+            self.assertNotEqual(first, router.apple_app_account_token(8))
 
 
 class AppleCreditTests(_Base):

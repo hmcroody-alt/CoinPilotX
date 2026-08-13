@@ -30,6 +30,17 @@ const intCents = (value: unknown): number => Math.max(0, Math.round(Number(value
 
 export type PaymentProvider = "apple_iap" | "stripe" | "stripe_connect" | "internal_ledger";
 
+export type PaymentInstruction = PaymentRouteDecision & {
+  flow: "storekit" | "payment_sheet" | "wallet" | "connect_payout" | "";
+  purchaseContext: string;
+  resourceId: string | number | null;
+  quantity: number;
+  appleProductId: string;
+  planKey: string;
+  entitlement: string;
+  appAccountToken: string;
+};
+
 export type PaymentRouteDecision = {
   ok: boolean;
   provider: PaymentProvider | null;
@@ -65,6 +76,47 @@ export async function routePayment(params: { platform: string; itemType: string 
     }
     throw error;
   }
+}
+
+export async function createPaymentIntent(params: {
+  platform: string;
+  purchaseContext: string;
+  resourceId?: string | number;
+  quantity?: number;
+  plan?: "monthly" | "annual";
+  productId?: string;
+}): Promise<PaymentInstruction> {
+  const value = await pulseApi<Record<string, unknown>>("/api/pulse/payments/intents", {
+    method: "POST",
+    body: JSON.stringify({
+      platform: params.platform,
+      purchase_context: params.purchaseContext,
+      resource_id: params.resourceId,
+      quantity: params.quantity ?? 1,
+      plan: params.plan,
+      product_id: params.productId
+    })
+  });
+  return {
+    ...normalizePaymentRouteDecision(value),
+    flow: (["storekit", "payment_sheet", "wallet", "connect_payout"].includes(String(value.flow))
+      ? String(value.flow)
+      : "") as PaymentInstruction["flow"],
+    purchaseContext: String(value.purchase_context || ""),
+    resourceId: (value.resource_id as string | number | null) ?? null,
+    quantity: Math.max(1, Math.round(Number(value.quantity) || 1)),
+    appleProductId: String(value.apple_product_id || ""),
+    planKey: String(value.plan_key || ""),
+    entitlement: String(value.entitlement || ""),
+    appAccountToken: String(value.app_account_token || "")
+  };
+}
+
+export async function verifyApplePremiumPurchase(signedTransaction: string) {
+  return pulseApi<{ ok: boolean; verified?: boolean; product_id?: string; current_period_end?: string }>(
+    "/api/pulse/payments/apple/premium/verify",
+    { method: "POST", body: JSON.stringify({ signed_transaction: signedTransaction }) }
+  );
 }
 
 /* ------------------------------------------------------------------ *

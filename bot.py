@@ -17624,6 +17624,61 @@ def api_pulse_payments_route():
     return jsonify(decision), status
 
 
+@webhook_app.route("/api/pulse/payments/intents", methods=["POST"])
+def api_pulse_payments_intents():
+    """Canonical purchase-policy entry point.
+
+    The client supplies only purchase context. Provider, amount, credits, and
+    payout destination are intentionally not client-selectable.
+    """
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    payload = pulse_ads_json_payload()
+    forbidden = {"provider", "payment_provider", "amount", "amount_cents",
+                 "credits", "connect_destination", "seller_destination"}
+    if forbidden.intersection(payload):
+        return jsonify({"ok": False, "flagged": True,
+                        "error": "Payment authority fields are server-controlled."}), 400
+    context = str(payload.get("purchase_context") or "").strip().lower()
+    if context == "marketplace_listing":
+        listing_id = safe_int(payload.get("resource_id"), 0)
+        conn = db(); conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT listing_type, product_type, delivery_type FROM marketplace_listings WHERE id=? LIMIT 1",
+            (listing_id,),
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"ok": False, "error": "Listing not found."}), 404
+        kind = str(row["listing_type"] or row["product_type"] or row["delivery_type"] or "physical").lower()
+        if kind in {"digital", "course"}:
+            return jsonify({"ok": False, "flagged": True,
+                            "classification": "digital_marketplace_unsupported",
+                            "error": "Digital Marketplace checkout is not supported yet."}), 422
+        payload["purchase_context"] = "marketplace_service" if kind in {"service", "booking"} else "marketplace_listing"
+    from services import pulse_payment_router as _payrouter
+    instruction = _payrouter.create_payment_instruction(
+        platform=payload.get("platform"),
+        purchase_context=payload.get("purchase_context"),
+        resource_id=payload.get("resource_id"),
+        quantity=payload.get("quantity", 1),
+        plan=payload.get("plan"),
+        product_id=payload.get("product_id"),
+    )
+    if instruction.get("ok") and instruction.get("flow") == "storekit":
+        try:
+            instruction["app_account_token"] = _payrouter.apple_app_account_token(user.get("user_id"))
+        except RuntimeError:
+            return jsonify({"ok": False, "error": "StoreKit account binding is not configured."}), 503
+    logging.getLogger(__name__).info(
+        "PAYMENT_POLICY provider_selected user_id=%s context=%s provider=%s flow=%s ok=%s",
+        user.get("user_id"), str(payload.get("purchase_context") or "")[:40],
+        instruction.get("provider"), instruction.get("flow"), instruction.get("ok"),
+    )
+    return jsonify(instruction), (200 if instruction.get("ok") else 422)
+
+
 @webhook_app.route("/api/pulse/ads/iap/products", methods=["GET"])
 def api_pulse_ads_iap_products():
     """Server-truth ad-credit IAP catalog (product ids + credit amounts)."""
@@ -17667,6 +17722,39 @@ def api_pulse_ads_wallet_apple_iap_verify(account_id):
         return pulse_ads_error_response(exc)
     finally:
         conn.close()
+
+
+@webhook_app.route("/api/pulse/payments/apple/premium/verify", methods=["POST"])
+def api_pulse_payments_apple_premium_verify():
+    """Verify a StoreKit 2 Premium transaction for the authenticated user."""
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "Security check failed."}), 403
+    if pulse_ads_rate_limited("premium_apple_iap", 20, 300):
+        return jsonify({"ok": False, "error": "Too many verification attempts."}), 429
+    from services.business_os.entitlements import iap_api as _iap_api
+    from services.business_os.entitlements import iap_apple as _iap_apple
+    from services import pulse_payment_router as _payrouter
+    verifier, config_error = _iap_api._apple_verifier_or_error(None)
+    if config_error is not None:
+        status, body = config_error
+        return jsonify(body), status
+    signed = str((pulse_ads_json_payload().get("signed_transaction") or "")).strip()
+    if not signed:
+        return jsonify({"ok": False, "error": "Signed transaction is required."}), 400
+    try:
+        result = _iap_apple.apply_verified_subscription_transaction(
+            signed, verifier=verifier, subject_id=str(user.get("user_id")),
+            expected_app_account_token=_payrouter.apple_app_account_token(user.get("user_id")))
+    except _iap_apple.AppleJWSError:
+        return jsonify({"ok": False, "error": "Transaction could not be verified."}), 400
+    logging.getLogger(__name__).info(
+        "PAYMENT_POLICY entitlement_granted user_id=%s provider=apple_iap product_id=%s environment=%s",
+        user.get("user_id"), result.get("product_id"), result.get("environment"),
+    )
+    return jsonify({"ok": True, **result})
 
 
 @webhook_app.route("/api/pulse/ads/campaigns/<int:campaign_id>/reserve-budget", methods=["POST"])

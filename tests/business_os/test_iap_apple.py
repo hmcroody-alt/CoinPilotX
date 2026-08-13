@@ -198,6 +198,35 @@ def test_unmapped_product_no_grant():
     assert ent_svc.has_entitlement(uid, "premium.profile.customization") is False
 
 
+def test_authenticated_storekit_transaction_grants_once():
+    chain = Chain()
+    uid = "605"
+    original = "1000000000000605"
+    signed = chain.sign_jws({
+        "transactionId": "2000000000000605",
+        "originalTransactionId": original,
+        "productId": "com.pulsesoc.premium.annual",
+        "bundleId": "com.pulsesoc.app",
+        "environment": "Production",
+        "type": "Auto-Renewable Subscription",
+        "expiresDate": ms(datetime.now(timezone.utc) + timedelta(days=365)),
+    })
+    first = apple.apply_verified_subscription_transaction(
+        signed, verifier=_verifier(chain), subject_id=uid)
+    second = apple.apply_verified_subscription_transaction(
+        signed, verifier=_verifier(chain), subject_id=uid)
+    assert first["verified"] is True and second["verified"] is True
+    assert ent_svc.has_entitlement(uid, "premium.profile.customization") is True
+    conn = db.connect()
+    try:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM business_os_ent_provider_subs WHERE provider_subscription_id=?",
+            (original,),
+        ).fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
 def _run_standalone():
     setup_module()
     tests = [
@@ -212,6 +241,7 @@ def _run_standalone():
         test_refund_revokes,
         test_idempotent_replay,
         test_unmapped_product_no_grant,
+        test_authenticated_storekit_transaction_grants_once,
     ]
     passed = 0
     for t in tests:

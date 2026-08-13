@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { openMarketplaceCheckout } from "../api/marketplace";
 import { marketplaceCheckoutStage } from "../api/marketplaceCheckoutState";
 import {
@@ -125,11 +125,10 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
     setStage("opening");
     setMessage("");
     try {
-      // Only ask the server for a PaymentIntent the in-app sheet can present when
-      // this binary actually carries the Stripe SDK. A build without it stays on
-      // the hosted page and never creates an intent it cannot collect on.
-      const wantsSheet = isPaymentSheetAvailable();
-      const paymentMode = wantsSheet ? "payment_sheet" : "";
+      if (!isPaymentSheetAvailable()) {
+        throw new Error("This build cannot open secure in-app checkout. Update PulseSoc and try again.");
+      }
+      const paymentMode = "payment_sheet";
       let url = checkoutUrl;
       let ids = transactionIds;
       let bootstrap = sheet;
@@ -165,9 +164,7 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
           ids = [...result.handoff.transactionIds];
           bootstrap = result.handoff.sheet;
         }
-        // A usable handoff is: a transaction to confirm against, and *some* way
-        // to collect — the native sheet or, failing that, a hosted URL.
-        if (!ids.length || (!url && !bootstrap)) throw new Error("Secure checkout could not be created.");
+        if (!ids.length || !bootstrap) throw new Error("Secure in-app checkout could not be created.");
         setCheckoutUrl(url);
         setTransactionIds(ids);
         setSheet(bootstrap);
@@ -194,14 +191,9 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
           setMessage(outcome.message || "Your payment could not be completed. No card was charged.");
           return;
         }
-        // "unavailable": the SDK went missing between the availability check and
-        // now. Fall through to the hosted page if the server gave us one.
+        throw new Error("Secure in-app checkout became unavailable. No card was charged.");
       }
-
-      if (!url) throw new Error("Secure checkout could not be created.");
-      setStage("processing");
-      setMessage("Complete payment securely, then return to PulseSoc.");
-      await Linking.openURL(url);
+      throw new Error("Secure in-app checkout could not be created.");
     } catch (error) {
       setStage("review");
       // The locally thrown messages above already name the buyer's next move,
@@ -239,11 +231,6 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
         <Text style={styles.confirmedTitle}>Processing your payment</Text>
         <Text style={styles.centerCopy}>Please do not close this screen or start another checkout. We'll confirm as soon as your payment clears.</Text>
         {message ? <Text style={styles.note}>{message}</Text> : null}
-        {checkoutUrl ? (
-          <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => void Linking.openURL(checkoutUrl)}>
-            <Text style={styles.secondaryText}>Return to secure checkout</Text>
-          </Pressable>
-        ) : null}
         <Pressable accessibilityRole="button" style={styles.primary} onPress={() => void checkStatus()}>
           <Text style={styles.primaryText}>Check payment status</Text>
         </Pressable>

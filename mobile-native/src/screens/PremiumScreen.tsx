@@ -9,8 +9,8 @@ import {
   premiumPlanLabel,
   PremiumStatus,
   premiumStateLabel,
-  startPremiumCheckout
 } from "../api/premium";
+import { purchasePremium, PremiumPlan } from "../payments/appleIapPremium";
 import { DIGITAL_COMMERCE_ENABLED } from "../api/config";
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
@@ -26,7 +26,7 @@ export function PremiumScreen({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState("");
-  const [busyAction, setBusyAction] = useState<"checkout" | "billing" | "web" | "">("");
+  const [busyAction, setBusyAction] = useState<"monthly" | "annual" | "billing" | "web" | "">("");
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
     setError("");
@@ -61,12 +61,19 @@ export function PremiumScreen({ navigation }: Props) {
     return () => sub.remove();
   }, [load]);
 
-  async function runAction(action: "checkout" | "billing" | "web") {
+  async function runAction(action: "monthly" | "annual" | "billing" | "web") {
     setBusyAction(action);
     try {
-      if (action === "checkout") {
-        const result = await startPremiumCheckout();
-        Alert.alert("Premium checkout", result.message || "Opening existing PulseSoc checkout.");
+      if (action === "monthly" || action === "annual") {
+        const result = await purchasePremium(action as PremiumPlan);
+        Alert.alert(
+          result.status === "verified" ? "Premium active" : "Premium purchase",
+          result.status === "verified"
+            ? "Your App Store purchase was verified by PulseSoc."
+            : result.status === "cancelled"
+              ? "You closed the App Store purchase sheet."
+              : "The purchase was not granted. PulseSoc will only activate Premium after server verification."
+        );
       } else if (action === "billing") {
         const result = await openPremiumBillingPortal();
         Alert.alert("Billing", result.message || "Opening existing PulseSoc billing portal.");
@@ -134,9 +141,12 @@ export function PremiumScreen({ navigation }: Props) {
         <Text style={styles.title}>Actions</Text>
         {DIGITAL_COMMERCE_ENABLED ? (
           <>
-            <Text style={styles.muted}>Checkout and billing use existing PulseSoc backend/provider routes. Native never grants Premium access.</Text>
-            <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyAction) }} style={styles.button} disabled={Boolean(busyAction)} onPress={() => runAction("checkout")}>
-              <Text style={styles.buttonText}>{busyAction === "checkout" ? "Opening..." : status?.premium_active ? "Review Premium Options" : "Upgrade with PulseSoc Checkout"}</Text>
+            <Text style={styles.muted}>Premium subscriptions use the App Store. PulseSoc activates access only after server verification.</Text>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyAction) }} style={styles.button} disabled={Boolean(busyAction)} onPress={() => runAction("monthly")}>
+              <Text style={styles.buttonText}>{busyAction === "monthly" ? "Opening App Store..." : "Monthly · $9.99"}</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyAction) }} style={styles.button} disabled={Boolean(busyAction)} onPress={() => runAction("annual")}>
+              <Text style={styles.buttonText}>{busyAction === "annual" ? "Opening App Store..." : "Annual · $99.99"}</Text>
             </Pressable>
             <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyAction) }} style={styles.secondaryButton} disabled={Boolean(busyAction)} onPress={() => runAction("billing")}>
               <Text style={styles.secondaryText}>{busyAction === "billing" ? "Opening..." : "Manage Billing"}</Text>
