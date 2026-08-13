@@ -36,7 +36,7 @@ import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 APP_JSON = ROOT / "mobile-native/app.json"
-PBXPROJ = ROOT / "mobile-native/ios/PulseSocNative.xcodeproj/project.pbxproj"
+PBXPROJ = ROOT / "mobile-native/ios/PulseSoc.xcodeproj/project.pbxproj"
 
 CURRENT_PROJECT_VERSION = re.compile(r"^\s*CURRENT_PROJECT_VERSION = ([^;]+);", re.M)
 MARKETING_VERSION = re.compile(r"^\s*MARKETING_VERSION = ([^;]+);", re.M)
