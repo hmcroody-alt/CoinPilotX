@@ -1,6 +1,7 @@
-import { Audio, InterruptionModeIOS } from "expo-av";
+import { Audio } from "expo-av";
 import type { PulseMusicTrack } from "../api/music";
 import type { PulseRadioState } from "../core/pulseRadio";
+import { configureVideoCaptureMonitoringSession } from "../core/reelsAudioSession";
 import { isPulseVideoMixerSupported, mixVideoWithMusic } from "pulse-video-mixer";
 
 export type VideoMusicSource = {
@@ -51,16 +52,15 @@ export function videoMusicSourceFromRadio(state: PulseRadioState): VideoMusicSou
   };
 }
 
-/** Recording monitoring only. Final music comes from the native digital mix. */
+/**
+ * Recording monitoring only. Final music comes from the native digital mix.
+ *
+ * The AVAudioSession mutation itself is delegated to core/reelsAudioSession because the
+ * `expo_av_global_audio_mode` protected-path rule freezes which files may call
+ * Audio.setAudioModeAsync; this module is not one of them.
+ */
 export async function configureVideoMusicMonitoring() {
-  await Audio.setAudioModeAsync({
-    allowsRecordingIOS: true,
-    playsInSilentModeIOS: true,
-    staysActiveInBackground: false,
-    interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
-    shouldDuckAndroid: false,
-    playThroughEarpieceAndroid: false
-  });
+  await configureVideoCaptureMonitoringSession();
 }
 
 export async function createVideoMusicMonitor(source: VideoMusicSource, volume: number) {
