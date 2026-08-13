@@ -50,7 +50,7 @@ if running_on_railway() and not os.getenv("DATABASE_URL"):
 
 try:
     import bot
-    from services import media_covers, media_service, media_storage
+    from services import creator_music_mix, media_covers, media_service, media_storage
 except Exception as exc:
     print("CoinPilotX media engine import failed", repr(exc), flush=True)
     traceback.print_exc()
@@ -282,11 +282,21 @@ def _media_row_matches_target(row: dict, target_id: int) -> bool:
     )
 
 
+def _has_pending_music_mix(row: dict) -> bool:
+    return bool(str(row.get("music_track_id") or "").strip()) and str(row.get("music_mix_status") or "").strip().lower() == "pending"
+
+
 def _needs_playback_transcode(row: dict) -> bool:
     if str(row.get("media_type") or "").lower() != "video":
         return False
     if str(row.get("playback_storage_key") or "").strip():
         return False
+    # A take with music needs this pass whatever its container is. Most phone
+    # recordings arrive as MP4 and would otherwise skip transcoding entirely,
+    # which would publish the video with the creator's bare microphone and no
+    # sign that a soundtrack was ever chosen.
+    if _has_pending_music_mix(row):
+        return True
     mime_type = str(row.get("mime_type") or "").lower()
     storage_key = str(row.get("storage_key") or row.get("object_key") or row.get("media_url") or "").lower()
     return mime_type in {"video/quicktime", "application/quicktime"} or storage_key.split("?", 1)[0].endswith((".mov", ".qt"))
@@ -359,6 +369,68 @@ def _transcode_video_to_mp4(source: Path, target: Path) -> None:
         raise RuntimeError((error[0] if error else "ffmpeg failed")[:500])
 
 
+def _fetch_music_source(url: str, target: Path) -> Path | None:
+    """Get the catalogue master onto local disk for the mix.
+
+    Downloaded rather than handed to ffmpeg as a URL on purpose. ffmpeg would
+    stream it over the length of the encode, so a slow origin stalls the encoder
+    mid-file and a dropped connection fails a take that was otherwise finished.
+    Fetching first also means a music failure happens before any video work.
+    """
+    source = str(url or "").strip()
+    if not source:
+        return None
+    try:
+        local = media_service.local_path_for_url(source)
+    except Exception:
+        local = None
+    if local and Path(local).exists():
+        return Path(local)
+    if not source.lower().startswith(("http://", "https://")):
+        return None
+    try:
+        import requests
+
+        with requests.get(source, stream=True, timeout=int(os.getenv("MEDIA_WORKER_MUSIC_FETCH_TIMEOUT_SECONDS", "45"))) as response:
+            response.raise_for_status()
+            with target.open("wb") as fh:
+                for chunk in response.iter_content(chunk_size=1024 * 256):
+                    if chunk:
+                        fh.write(chunk)
+    except Exception as exc:
+        logging.warning("MEDIA_WORKER_MUSIC_FETCH_FAILED url=%s error=%s", source[:200], exc)
+        return None
+    if not target.exists() or target.stat().st_size <= 0:
+        return None
+    return target
+
+
+def _transcode_video_with_music(source: Path, target: Path, spec) -> None:
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        raise RuntimeError("ffmpeg is not installed")
+    command = creator_music_mix.build_music_mix_command(
+        ffmpeg_path,
+        str(source),
+        str(target),
+        spec,
+        has_mic_audio=creator_music_mix.source_has_audio_stream(str(source)),
+        video_preset=os.getenv("MEDIA_WORKER_FFMPEG_PRESET", "veryfast"),
+        video_crf=os.getenv("MEDIA_WORKER_FFMPEG_CRF", "23"),
+    )
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        # Mixing decodes a second stream and runs a filter chain, so it takes
+        # meaningfully longer than a plain transcode of the same video.
+        timeout=int(os.getenv("MEDIA_WORKER_MUSIC_MIX_TIMEOUT_SECONDS", "420")),
+    )
+    if result.returncode != 0 or not target.exists() or target.stat().st_size <= 0:
+        error = (result.stderr or result.stdout or "ffmpeg music mix failed").strip().splitlines()[-1:]
+        raise RuntimeError((error[0] if error else "ffmpeg music mix failed")[:500])
+
+
 def _save_local_playback_file(source: Path, playback_key: str) -> str:
     root = Path(bot.webhook_app.root_path, "static", "uploads").resolve()
     target = root / playback_key
@@ -382,6 +454,60 @@ def _mark_video_processing_failed(cur, media_id: int, message: str) -> None:
     )
 
 
+def _music_mix_spec_for_row(row: dict, tmp_dir: Path):
+    """Rebuild the mix request the upload route approved, with the audio on disk.
+
+    Returns ``None`` whenever the mix cannot proceed, which the caller reads as
+    "transcode this the ordinary way". Only rows the route already cleared reach
+    here; the rights decision is not re-litigated, but the fetch can still fail.
+    """
+    if not _has_pending_music_mix(row):
+        return None
+    try:
+        source_url = _music_source_url_for_track(row.get("music_track_id"))
+        music_file = _fetch_music_source(source_url, tmp_dir / "music-source")
+        if not music_file:
+            return None
+        return creator_music_mix.spec_from_row(row, str(music_file))
+    except Exception as exc:
+        logging.warning("MEDIA_WORKER_MUSIC_SPEC_FAILED media_id=%s error=%s", row.get("id"), exc)
+        return None
+
+
+def _music_source_url_for_track(track_id) -> str:
+    """Resolve the catalogue asset at mix time, not at upload time.
+
+    Read fresh because the URL recorded a week ago may point at an object that
+    has since been re-encoded or moved.
+    """
+    try:
+        track = int(track_id or 0)
+    except (TypeError, ValueError):
+        return ""
+    if track <= 0:
+        return ""
+    conn = bot.db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT audio_url FROM pulse_audio_tracks WHERE id=? LIMIT 1", (track,))
+        found = cur.fetchone()
+    finally:
+        conn.close()
+    if not found:
+        return ""
+    return str((dict(found).get("audio_url") if hasattr(found, "keys") else found[0]) or "").strip()
+
+
+def _mark_music_mix_result(cur, media_id: int, status: str, error: str = "") -> None:
+    if not _table_has_column(cur, "chat_media_uploads", "music_mix_status"):
+        return
+    value = status if not error else f"{status}:{error}"
+    cur.execute(
+        "UPDATE chat_media_uploads SET music_mix_status=?, updated_at=? WHERE id=?",
+        (value[:200], _now(), int(media_id)),
+    )
+
+
 def _ensure_video_playback_asset(cur, row: dict) -> bool:
     media_id = int(row.get("id") or 0)
     if not media_id or not _needs_playback_transcode(row):
@@ -401,7 +527,41 @@ def _ensure_video_playback_asset(cur, row: dict) -> bool:
             if not local:
                 raise RuntimeError("Original video file is missing.")
             source_path = local
-        _transcode_video_to_mp4(source_path, output_path)
+
+        # The music mix replaces the ordinary transcode rather than running after
+        # it, so a video with a soundtrack is still encoded exactly once. Every
+        # failure below falls back to the plain transcode: a soundtrack that
+        # cannot be mixed must cost the creator their music, never their video.
+        music_status = ""
+        music_error = ""
+        spec = _music_mix_spec_for_row(row, tmp_dir)
+        if spec is not None:
+            try:
+                _transcode_video_with_music(source_path, output_path, spec)
+                music_status = "mixed"
+                logging.info(
+                    "MEDIA_WORKER_MUSIC_MIX_COMPLETE media_id=%s track_id=%s start_offset=%s music_db=%.2f mic_db=%.2f",
+                    media_id,
+                    spec.track_id,
+                    spec.start_offset_seconds,
+                    spec.music_gain_db,
+                    spec.mic_gain_db,
+                )
+            except Exception as exc:
+                music_status = "failed"
+                music_error = str(exc)[:300]
+                logging.warning("MEDIA_WORKER_MUSIC_MIX_FAILED media_id=%s track_id=%s error=%s", media_id, spec.track_id, music_error)
+                # A partial file from the failed attempt would be mistaken for a
+                # finished master by the upload step below.
+                if output_path.exists():
+                    output_path.unlink()
+        elif _has_pending_music_mix(row):
+            music_status = "failed"
+            music_error = "music source unavailable"
+            logging.warning("MEDIA_WORKER_MUSIC_SOURCE_UNAVAILABLE media_id=%s", media_id)
+
+        if music_status != "mixed":
+            _transcode_video_to_mp4(source_path, output_path)
         if provider in {"r2", "s3"}:
             uploaded, upload_error = media_storage._upload_to_object_storage(output_path, playback_key, "video/mp4")
             if not uploaded:
@@ -420,7 +580,9 @@ def _ensure_video_playback_asset(cur, row: dict) -> bool:
             """,
             (playback_url, playback_key, _now(), _now(), media_id),
         )
-    logging.info("MEDIA_WORKER_VIDEO_TRANSCODE_COMPLETE media_id=%s playback_key=%s", media_id, playback_key)
+        if music_status:
+            _mark_music_mix_result(cur, media_id, music_status, music_error)
+    logging.info("MEDIA_WORKER_VIDEO_TRANSCODE_COMPLETE media_id=%s playback_key=%s music=%s", media_id, playback_key, music_status or "none")
     return True
 
 
@@ -458,6 +620,10 @@ def process_playback_backlog(limit: int = 2) -> dict:
           AND (
             LOWER(COALESCE(mime_type, '')) IN ('video/quicktime', 'application/quicktime')
             OR LOWER(COALESCE(storage_key, object_key, media_url, '')) LIKE ?
+            -- Takes with a soundtrack, whatever their container. Matching only
+            -- the transcode candidates here would leave an MP4 recording
+            -- permanently unmixed if its upload job was lost.
+            OR (COALESCE(music_track_id, '')<>'' AND COALESCE(music_mix_status, '')='pending')
           )
         ORDER BY id DESC
         LIMIT ?
