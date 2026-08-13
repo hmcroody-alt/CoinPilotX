@@ -14,6 +14,12 @@ import { createReel, listReels, PulseReel } from "../api/reels";
 import { sendConversationMessage, uploadMessengerMedia } from "../api/messenger";
 import { uploadProfileAvatar, uploadProfileCover } from "../api/profile";
 import { createStatus, StatusVisibility } from "../api/status";
+import { CreatorMusicSheet } from "../audio/CreatorMusicSheet";
+import {
+  CreatorMusicSelection,
+  creatorMusicAttributionFields,
+  creatorMusicAttributionFieldsForAsset
+} from "../audio/creatorMusicSelection";
 import { createComposerModeFromCameraTarget, saveCreateCameraCaptureResult } from "../create/createComposerHandoff";
 import { startLive } from "../api/live";
 import { PreLiveConfigurationSheet } from "../live/PreLiveConfigurationSheet";
@@ -85,6 +91,8 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   const [selectedEffect, setSelectedEffect] = useState("natural");
   const [recording, setRecording] = useState(false);
   const [showPreLive, setShowPreLive] = useState(false);
+  const [musicSelection, setMusicSelection] = useState<CreatorMusicSelection | null>(null);
+  const [showMusicSheet, setShowMusicSheet] = useState(false);
   const [goingLive, setGoingLive] = useState(false);
   const [liveError, setLiveError] = useState("");
   const [publishing, setPublishing] = useState(false);
@@ -94,6 +102,29 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   const cameraRef = useRef<CameraView | null>(null);
   const qaMediaSeedRef = useRef("");
   const qaPublishRef = useRef("");
+  const composerReturnMode = Boolean(route.params?.returnToComposer);
+  const composerMode = route.params?.composerMode || createComposerModeFromCameraTarget(destination.key, destination.mode);
+  /**
+   * MUSIC is a video-mode control, and only on the path that actually uploads.
+   *
+   * Composer-return mode hands the raw file to the Create composer and never
+   * calls the media upload, so a track chosen here would be silently dropped
+   * somewhere between two screens. Offering a control whose effect disappears is
+   * worse than not offering it, so it is hidden rather than made to fail late.
+   */
+  const musicControlAvailable = captureMode === "video" && !composerReturnMode;
+  /**
+   * The attribution lives in the hook's *default* options, not only at the
+   * publish call site, because `MediaUploadPreview`'s Retry goes straight to
+   * `mediaUpload.retry()` with no overrides. Carrying it only at the call site
+   * would mean the first attempt has the soundtrack and the retry silently does
+   * not — the worst version of this bug, because the creator sees a successful
+   * publish.
+   */
+  const musicUploadFields = useMemo(
+    () => (musicControlAvailable ? creatorMusicAttributionFields(musicSelection) : {}),
+    [musicControlAvailable, musicSelection]
+  );
   const uploadOptions = useMemo(
     () => ({
       contextType: "pulse_camera",
@@ -103,15 +134,14 @@ export function CameraStudioScreen({ route, navigation }: Props) {
       destination: destination.key,
       compressionPolicy: cameraCompressionPolicy(captureMode === "video" ? "video" : destination.mode, destination.key).key,
       filterName: selectedEffect,
-      effectKey: selectedEffect
+      effectKey: selectedEffect,
+      extraFields: musicUploadFields
     }),
-    [captureMode, destination.key, destination.mode, destination.target, selectedEffect]
+    [captureMode, destination.key, destination.mode, destination.target, musicUploadFields, selectedEffect]
   );
   const mediaUpload = useNativeMediaUpload(uploadOptions);
   const policy = cameraCompressionPolicy(captureMode === "video" ? "video" : destination.mode, destination.key);
   const nativeCameraUnavailable = Platform.OS === "web";
-  const composerReturnMode = Boolean(route.params?.returnToComposer);
-  const composerMode = route.params?.composerMode || createComposerModeFromCameraTarget(destination.key, destination.mode);
 
   useEffect(() => {
     getCameraConfig({ target: destination.target, mode: destination.mode })
@@ -153,6 +183,15 @@ export function CameraStudioScreen({ route, navigation }: Props) {
     qaPublishRef.current = publishKey;
     publish().catch(() => undefined);
   }, [destination.key, mediaUpload.asset, mediaUpload.uploading, publishing, route.params?.qaAutoPublish]);
+
+  async function toggleMicrophone() {
+    if (!microphonePermission?.granted) {
+      const next = await requestMicrophonePermission();
+      setMicEnabled(next.granted);
+      return;
+    }
+    setMicEnabled((current) => !current);
+  }
 
   async function ensureCameraReady() {
     setError("");
@@ -352,7 +391,12 @@ export function CameraStudioScreen({ route, navigation }: Props) {
     // received the bytes. Re-uploading here creates orphaned duplicates.
     const uploaded = mediaUpload.result && uploadResultMediaId(mediaUpload.result)
       ? mediaUpload.result
-      : await mediaUpload.upload(uploadOptions);
+      : await mediaUpload.upload({
+          ...uploadOptions,
+          // Final gate, checked against the asset rather than the capture mode:
+          // the mode can have changed between the shot and the publish.
+          extraFields: creatorMusicAttributionFieldsForAsset(musicControlAvailable ? musicSelection : null, asset.mediaType)
+        });
     const mediaId = uploaded ? uploadResultMediaId(uploaded) : 0;
     const media = uploaded?.media || {};
     const mediaUrl = uploaded?.media_url || uploaded?.playback_url || media.media_url || media.valid_url || media.playback_url || "";
@@ -491,6 +535,34 @@ export function CameraStudioScreen({ route, navigation }: Props) {
           </View>
         )}
 
+        {musicControlAvailable ? (
+          <View style={styles.stageChips}>
+            {/* The mic toggle moves up here in video mode so the dock can carry
+                MUSIC without the microphone control being lost. It stays in the
+                dock for photo and live, where there is no music button. */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: micEnabled }}
+              style={[styles.stageChip, !micEnabled && styles.stageChipMuted]}
+              onPress={toggleMicrophone}
+            >
+              <Text style={styles.stageChipText}>{micEnabled ? "Mic on" : "Mic muted"}</Text>
+            </Pressable>
+            {musicSelection ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Music: ${musicSelection.track.title} by ${musicSelection.track.artist}. Tap to change.`}
+                style={[styles.stageChip, styles.stageChipMusic]}
+                onPress={() => setShowMusicSheet(true)}
+              >
+                <Text style={styles.stageChipText} numberOfLines={1}>
+                  {musicSelection.track.title} · {musicSelection.track.artist}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+
         <View style={styles.captureDock}>
           <Pressable accessibilityRole="button"
             style={styles.dockButton}
@@ -501,20 +573,24 @@ export function CameraStudioScreen({ route, navigation }: Props) {
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: publishing }} style={[styles.captureButton, recording && styles.recording]} disabled={publishing} onPress={capture}>
             <Text style={styles.captureText}>{recording ? "Stop" : captureMode === "live" ? "Live" : captureMode === "video" ? "Record" : "Snap"}</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: captureMode === "photo" }}
-            style={[styles.dockButton, captureMode === "photo" && styles.disabled]}
-            disabled={captureMode === "photo"}
-            onPress={async () => {
-              if (!microphonePermission?.granted) {
-                const next = await requestMicrophonePermission();
-                setMicEnabled(next.granted);
-              } else {
-                setMicEnabled((current) => !current);
-              }
-            }}
-          >
-            <Text style={styles.dockText}>{micEnabled ? "Mic" : "Muted"}</Text>
-          </Pressable>
+          {musicControlAvailable ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={musicSelection ? "Change music" : "Add music"}
+              style={[styles.dockButton, musicSelection && styles.dockButtonActive]}
+              onPress={() => setShowMusicSheet(true)}
+            >
+              <Text style={styles.dockText}>Music</Text>
+            </Pressable>
+          ) : (
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: captureMode === "photo" }}
+              style={[styles.dockButton, captureMode === "photo" && styles.disabled]}
+              disabled={captureMode === "photo"}
+              onPress={toggleMicrophone}
+            >
+              <Text style={styles.dockText}>{micEnabled ? "Mic" : "Muted"}</Text>
+            </Pressable>
+          )}
         </View>
         {composerReturnMode ? (
           <View style={styles.returnStatusPanel}>
@@ -607,6 +683,28 @@ export function CameraStudioScreen({ route, navigation }: Props) {
         error={liveError}
         onClose={() => setShowPreLive(false)}
         onGoLive={handleGoLive}
+      />
+
+      <CreatorMusicSheet
+        visible={showMusicSheet}
+        selection={musicSelection}
+        title="Add music"
+        confirmLabel="Use this track"
+        onClose={() => setShowMusicSheet(false)}
+        onSelect={(selection) => {
+          setMusicSelection(selection);
+          setShowMusicSheet(false);
+          setMessage(
+            micEnabled
+              ? `${selection.track.title} will be mixed under your recording.`
+              : `${selection.track.title} added. Your microphone is muted, so the video will carry the track only.`
+          );
+        }}
+        onRemove={() => {
+          setMusicSelection(null);
+          setShowMusicSheet(false);
+          setMessage("Music removed. The video will use your own audio.");
+        }}
       />
     </View>
   );
@@ -759,6 +857,10 @@ const styles = createThemedStyles(() => ({
     minHeight: 48,
     minWidth: 78,
     paddingHorizontal: 10
+  },
+  dockButtonActive: {
+    backgroundColor: "rgba(50, 230, 179, 0.22)",
+    borderColor: colors.accent
   },
   dockText: {
     color: colors.text,
@@ -915,6 +1017,35 @@ const styles = createThemedStyles(() => ({
     flex: 1,
     minHeight: 320,
     overflow: "hidden"
+  },
+  stageChip: {
+    backgroundColor: "rgba(2, 7, 16, 0.78)",
+    borderColor: "rgba(255,255,255,0.14)",
+    borderRadius: 14,
+    borderWidth: 1,
+    maxWidth: "62%",
+    paddingHorizontal: 12,
+    paddingVertical: 7
+  },
+  stageChipMusic: {
+    borderColor: colors.accent
+  },
+  stageChipMuted: {
+    borderColor: colors.warning
+  },
+  stageChipText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "700"
+  },
+  stageChips: {
+    alignItems: "center",
+    bottom: 78,
+    flexDirection: "row",
+    gap: 8,
+    left: 18,
+    position: "absolute",
+    right: 18
   },
   subtitle: {
     color: colors.muted,
