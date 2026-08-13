@@ -74,3 +74,10 @@ def test_native_live_responses_do_not_expose_mux_publish_credentials():
     assert '"rtmp_url":' not in start_response
     assert 'safe["stream_key"]' not in get_route
     assert 'safe["rtmp_url"]' not in get_route
+
+
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _runner import run_module_tests
+
+    raise SystemExit(run_module_tests(globals()))

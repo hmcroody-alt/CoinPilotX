@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 
@@ -50,3 +51,10 @@ def test_reels_and_live_screen_choose_direct_agora_viewer():
     assert 'if (hlsUrl) {\n        setMode("hls")' not in REELS_VIEWER
     assert 'const currentProvider = "agora"' in LIVE_SCREEN
     assert "PulseSoc could not establish native playback for this Live." in LIVE_SCREEN
+
+
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _runner import run_module_tests
+
+    raise SystemExit(run_module_tests(globals()))

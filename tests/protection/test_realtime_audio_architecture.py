@@ -155,25 +155,37 @@ class LeaseDisciplineTests(unittest.TestCase):
         # What still has to hold is that both run the SAME sequence, so this
         # asserts the two are on separate modules and that neither can reach
         # the other's.
-        call = (ROOT / "mobile-native/src/calls/useNativeCallRoom.ts").read_text(encoding="utf-8")
-        self.assertIn('from "../core/realtimePublisherMedia"', call)
-        self.assertIn("initializeCallGradePublisherMedia({", call)
-        self.assertNotIn("live-audio/", call, "the call path must never import Live's copy")
-
-        live = (ROOT / "mobile-native/src/live/useLiveBroadcastRoom.ts").read_text(encoding="utf-8")
-        self.assertIn('from "../live-audio/livePublisherMedia"', live)
-        self.assertIn("initializeCallGradePublisherMedia({", live)
-        for module in (
-            "realtimeAudioEngine",
-            "realtimeMicrophonePublisher",
-            "realtimePublisherMedia",
-            "realtimeAudioNative",
+        #
+        # This previously required useNativeCallRoom.ts to import
+        # core/realtimePublisherMedia and call initializeCallGradePublisherMedia.
+        # That was the LiveKit-era wiring. Agora is now the sole RTC provider and
+        # both room files are thin delegators to the Agora adapters, so the check
+        # is made against the adapters that actually hold the media session -
+        # otherwise it would pass by inspecting a file with no logic in it. The
+        # separation rule itself is unchanged, and is now enforced on both halves.
+        for rel in (
+            "mobile-native/src/calls/useNativeCallRoom.ts",
+            "mobile-native/src/calls/useAgoraCallRoom.ts",
         ):
-            self.assertNotIn(
-                f'from "../core/{module}"',
-                live,
-                f"Live still imports the call-owned {module}; the copy is not authoritative",
-            )
+            call = (ROOT / rel).read_text(encoding="utf-8")
+            self.assertNotIn("live-audio/", call, f"{rel}: the call path must never import Live's copy")
+
+        for rel in (
+            "mobile-native/src/live/useLiveBroadcastRoom.ts",
+            "mobile-native/src/live/useAgoraLiveBroadcastRoom.ts",
+        ):
+            live = (ROOT / rel).read_text(encoding="utf-8")
+            for module in (
+                "realtimeAudioEngine",
+                "realtimeMicrophonePublisher",
+                "realtimePublisherMedia",
+                "realtimeAudioNative",
+            ):
+                self.assertNotIn(
+                    f'from "../core/{module}"',
+                    live,
+                    f"{rel} imports the call-owned {module}; Live's copy is not authoritative",
+                )
 
     def test_the_live_publisher_copy_stays_identical_to_the_call_original(self) -> None:
         # A copy that is allowed to drift is worse than no copy: it looks like
@@ -202,18 +214,36 @@ class LeaseDisciplineTests(unittest.TestCase):
                 # session a newer feature has since acquired.
                 self.assertNotIn(needle, text, f"{rel} reintroduced {needle}")
 
-    def test_livekit_sdk_never_configures_the_session_behind_the_coordinator(self) -> None:
+    def test_the_rtc_sdk_never_configures_the_session_behind_the_coordinator(self) -> None:
+        # The LiveKit form of this rule required
+        # registerGlobals({ autoConfigureAudioSession: false }) in both room files:
+        # the SDK had to be told explicitly not to take the AVAudioSession for
+        # itself. Agora is now the sole RTC provider and LiveKit is gone from
+        # src/ entirely, so that call can no longer exist - the matching JS suite
+        # asserts its absence, and this suite used to demand its presence, which
+        # is why the two contradicted each other.
+        #
+        # The hazard it guarded has not changed, so it is asserted directly
+        # instead of through one SDK's option name: a room adapter must not
+        # mutate the global audio mode. Session policy belongs to the coordinator
+        # and to the frozen expo_av allowlist, never to a room hook.
         for rel in (
             "mobile-native/src/calls/useNativeCallRoom.ts",
+            "mobile-native/src/calls/useAgoraCallRoom.ts",
             "mobile-native/src/live/useLiveBroadcastRoom.ts",
+            "mobile-native/src/live/useAgoraLiveBroadcastRoom.ts",
         ):
             text = (ROOT / rel).read_text(encoding="utf-8")
-            calls = re.findall(r"registerGlobals\(\{[^}]*\}\)", text)
-            self.assertTrue(calls, f"{rel} no longer calls registerGlobals")
-            for call in calls:
-                # Allowing the call without checking its argument would permit
-                # the one variant that breaks everything.
-                self.assertIn("autoConfigureAudioSession: false", call, f"{rel}: {call}")
+            self.assertNotIn(
+                "Audio.setAudioModeAsync(",
+                text,
+                f"{rel} configures the global audio session itself; it must route through the coordinator",
+            )
+            self.assertNotRegex(
+                text,
+                r"registerGlobals|livekit",
+                f"{rel} reintroduces the LiveKit SDK; Agora is the sole RTC provider",
+            )
 
 
 class LiveStartupTraceContractTests(unittest.TestCase):

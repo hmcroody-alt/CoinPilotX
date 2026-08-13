@@ -1,6 +1,10 @@
 import json
+import sys
+from pathlib import Path
 
-from services import agora_cloud_recording_service as recording
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from services import agora_cloud_recording_service as recording  # noqa: E402
 
 
 def test_acquire_uses_server_authority_without_rtc_token(monkeypatch):
@@ -56,3 +60,10 @@ def test_recording_url_is_scoped_and_encoded(monkeypatch):
     monkeypatch.setenv("R2_PUBLIC_BASE_URL", "https://media.example.test/")
     assert recording.public_recording_url("pulsesoc/live-recordings/42", "final stream.m3u8") == "https://media.example.test/pulsesoc/live-recordings/42/final%20stream.m3u8"
     assert recording.public_recording_url("pulsesoc/live-recordings/42", "pulsesoc/live-recordings/42/final stream.m3u8") == "https://media.example.test/pulsesoc/live-recordings/42/final%20stream.m3u8"
+
+
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _runner import run_module_tests
+
+    raise SystemExit(run_module_tests(globals()))

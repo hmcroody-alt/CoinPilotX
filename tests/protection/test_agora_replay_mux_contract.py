@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 
@@ -37,3 +38,10 @@ def test_long_reel_keeps_original_live_presentation_without_replay_boilerplate()
     assert "mark_live_feed_replay_ready" in creator
     assert 'f"Live Replay: {title}"' not in creator
     assert "Replay of the live broadcast" not in creator
+
+
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _runner import run_module_tests
+
+    raise SystemExit(run_module_tests(globals()))

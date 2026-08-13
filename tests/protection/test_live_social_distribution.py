@@ -1,5 +1,8 @@
 import sqlite3
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from services import live_feed_service
 
@@ -83,3 +86,10 @@ def test_live_authorization_is_applied_to_feed_and_token_paths():
     assert "pfl.follower_user_id" in FEED
     assert 'return True, "approved_guest"' in BOT
     assert "SELECT 1 FROM pulse_follows WHERE follower_user_id=? AND followed_user_id=? LIMIT 1" in FEED
+
+
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _runner import run_module_tests
+
+    raise SystemExit(run_module_tests(globals()))
