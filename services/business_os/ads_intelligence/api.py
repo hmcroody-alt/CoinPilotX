@@ -102,7 +102,7 @@ def ingest_events(*, viewer_user_id: Any, payload: Optional[dict]) -> tuple:
 
 def delivery_health(*, placement_key: Optional[str] = None,
                     since: Optional[str] = None) -> tuple:
-    """``GET /api/admin/business-os/ads-intel/delivery-health`` — admin only.
+    """``GET /admin/business-os/ads-intel/delivery-health`` — admin only.
 
     Fill rate and the ranked causes of no-fill. This is the report that makes
     "we showed nothing" answerable; ``bot.py`` gates it behind admin RBAC.
@@ -171,7 +171,7 @@ def campaign_delivery_diagnosis(*, owner_user_id: Any, campaign_id: Any) -> tupl
 
 
 def status() -> tuple:
-    """``GET /api/admin/business-os/ads-intel/status`` — rollout visibility."""
+    """``GET /admin/business-os/ads-intel/status`` — rollout visibility."""
     if not measurement_enabled():
         return _DARK
     return 200, {"ok": True,

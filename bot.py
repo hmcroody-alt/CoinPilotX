@@ -22089,6 +22089,110 @@ def admin_business_os_advertising_resolve_appeal(appeal_id):
 
 
 # =====================================================================
+# Business OS — Ads intelligence (measurement surface over the ads system).
+#
+# Stage 1 of the advertising-intelligence rollout: collect what the ad system
+# did, change nothing about what it does. Every route below is dark (404)
+# unless BUSINESS_OS_ADS_INTELLIGENCE_MEASUREMENT is set, so the default
+# posture is exactly the current behaviour.
+#
+# These are thin adapters. All decision logic lives in the importable
+# controller services.business_os.ads_intelligence.api, which knows nothing
+# about Flask; this layer owns only what Flask owns — authentication, CSRF,
+# admin RBAC, and rate limiting.
+#
+# The ingest route treats its caller as hostile, because an ad measurement
+# endpoint reachable from an untrusted device is a fraud target. Two things
+# are enforced HERE rather than in the controller, because only here is the
+# truth available: the subject is taken from the authenticated session and
+# passed in explicitly (the client never names an account, so it cannot
+# attribute behaviour to someone else), and the batch is rate limited per
+# account+IP so a device cannot flood the event log.
+#
+# The flag is checked BEFORE authentication on the public routes. The
+# controller checks it too, but by then auth has already run — and a dark
+# endpoint that answers 401 to an anonymous caller has told them it exists.
+# Checking here keeps "disabled" and "no such route" indistinguishable.
+# =====================================================================
+def _business_os_ads_intel_enabled():
+    """True when the measurement layer is on. The master flag implies it."""
+    truthy = ("1", "true", "on", "yes", "enabled", "canonical")
+    if (os.getenv("BUSINESS_OS_ADS_INTELLIGENCE", "") or "").strip().lower() in truthy:
+        return True
+    return (os.getenv("BUSINESS_OS_ADS_INTELLIGENCE_MEASUREMENT", "")
+            or "").strip().lower() in truthy
+
+
+@webhook_app.route("/api/business-os/ads-intel/events", methods=["POST"])
+def api_business_os_ads_intel_ingest():
+    """Batched client event ingest. Identity is server-derived, never claimed."""
+    if not _business_os_ads_intel_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    if not pulse_ads_verify_write():
+        return jsonify({"ok": False, "error": "CSRF check failed."}), 400
+    # 60 batches/minute per account+IP. Batches are capped at MAX_BATCH_EVENTS
+    # by the controller, so this bounds the total event rate as well.
+    if pulse_ads_rate_limited("ads_intel_events", 60, 60):
+        return jsonify({"ok": False, "error": "Too many event batches."}), 429
+    from services.business_os.ads_intelligence import api as _aiapi
+    return _bo_ad_reply(_aiapi.ingest_events(
+        viewer_user_id=user.get("user_id"), payload=pulse_ads_json_payload()))
+
+
+@webhook_app.route("/api/business-os/ads-intel/campaigns/<campaign_id>/delivery",
+                   methods=["GET"])
+def api_business_os_ads_intel_campaign_delivery(campaign_id):
+    """Why this campaign is or is not delivering. Ownership-scoped; a caller who
+    does not own the campaign gets 404, not 403, so existence is not leaked."""
+    if not _business_os_ads_intel_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.ads_intelligence import api as _aiapi
+    return _bo_ad_reply(_aiapi.campaign_delivery_diagnosis(
+        owner_user_id=user.get("user_id"), campaign_id=campaign_id))
+
+
+@webhook_app.route("/admin/business-os/ads-intel/delivery-health", methods=["GET"])
+def admin_business_os_ads_intel_delivery_health():
+    """Fill rate and the ranked causes of no-fill — the report that makes
+    "we showed nothing" an answerable question instead of an absence of rows."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    # 409 rather than the controller's 404: darkness protects against untrusted
+    # callers, and an authenticated owner is not one. Telling an operator the
+    # flag is off is the whole point of an operational endpoint.
+    if not _business_os_ads_intel_enabled():
+        return jsonify({
+            "ok": False,
+            "error": "BUSINESS_OS_ADS_INTELLIGENCE_MEASUREMENT flag is off."}), 409
+    from services.business_os.ads_intelligence import api as _aiapi
+    return _bo_ad_reply(_aiapi.delivery_health(
+        placement_key=(request.args.get("placement_key") or "").strip() or None,
+        since=(request.args.get("since") or "").strip() or None))
+
+
+@webhook_app.route("/admin/business-os/ads-intel/status", methods=["GET"])
+def admin_business_os_ads_intel_status():
+    """Rollout visibility: measurement can be on while the master flag is off."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not _business_os_ads_intel_enabled():
+        # The one endpoint that must answer when everything is off, because
+        # "off" is the answer it exists to give.
+        return jsonify({"ok": True, "measurement_enabled": False,
+                        "fully_enabled": False}), 200
+    from services.business_os.ads_intelligence import api as _aiapi
+    return _bo_ad_reply(_aiapi.status())
+
+
+# =====================================================================
 # Business OS — Business HQ, Section 1 (canonical HTTP surface).
 #
 # The canonical source of truth for business identity: identity, brand, contact,
