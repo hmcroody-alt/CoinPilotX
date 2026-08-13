@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   connectMarketplacePayout,
+  acceptMarketplaceCommercialTerms,
+  getMarketplaceCommercialTerms,
   deleteMarketplaceSellerListing,
   loadCachedSellerStore,
   loadSellerStoreSnapshot,
@@ -35,6 +37,8 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   const mode = route?.params?.mode || "overview";
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
   const [orders, setOrders] = useState<MarketplaceSellerOrder[]>([]);
+  const [liability, setLiability] = useState<Record<string, number>>({});
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
   const [busy, setBusy] = useState("");
@@ -56,6 +60,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       const snapshot = await loadSellerStoreSnapshot();
       setListings(snapshot.listings || []);
       setOrders(snapshot.orders || []);
+      setLiability(snapshot.commercial_summary?.seller_liability_by_state || {});
+      const terms = await getMarketplaceCommercialTerms();
+      setTermsAccepted(Boolean(terms?.terms?.acceptance));
     } catch (error) {
       const cached = await loadCachedSellerStore();
       if (cached) {
@@ -97,6 +104,13 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     } finally {
       setBusy("");
     }
+  }
+
+  async function acceptTerms() {
+    setBusy("terms");
+    try { await acceptMarketplaceCommercialTerms(); setTermsAccepted(true); setMessage("Marketplace Fees & Terms accepted."); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Terms acceptance could not be saved."); }
+    finally { setBusy(""); }
   }
 
   function startListingEdit(listing: MarketplaceListing) {
@@ -381,11 +395,20 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       {shows("orders") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Orders and payouts</Text>
-        <Text style={styles.copy}>Orders, seller fees, Stripe Connect onboarding, checkout, and payout release remain provider and backend controlled.</Text>
+        <Text style={styles.copy}>Your applied fee is shown per order. Current Marketplace terms remain 10%; the proposed 5% policy is not active.</Text>
+        <View style={styles.actionRow}>
+          {Object.entries(liability).map(([state, amount]) => <View key={state} style={styles.orderRow}><Text style={styles.orderTitle}>{state.replace(/_/g, " ")}</Text><Text style={styles.orderMeta}>{formatMoney(amount, "USD")}</Text></View>)}
+        </View>
         {orders.slice(0, 4).map((order) => (
           <View key={`${order.id}-${order.created_at}`} style={styles.orderRow}>
             <Text style={styles.orderTitle}>{order.item_type || "Order"} #{order.item_id || order.id || "pending"}</Text>
             <Text style={styles.orderMeta}>{formatMoney(order.amount_cents || order.gross_amount_cents || 0, order.currency || "USD")} · {order.status || "pending"}</Text>
+            {order.commercial_economics ? <>
+              <Text style={styles.orderMeta}>Merchandise {formatMoney(order.commercial_economics.merchandise_net_minor || 0, order.currency || "USD")} · Shipping credit {formatMoney(order.commercial_economics.seller_shipping_credit_minor || 0, order.currency || "USD")}</Text>
+              <Text style={styles.orderMeta}>PulseSoc fee {(Number(order.commercial_economics.fee_rate_bps || 0) / 100).toFixed(2)}% · Refund adjustments {formatMoney(order.commercial_economics.seller_reversed_minor || 0, order.currency || "USD")}</Text>
+              <Text style={styles.orderMeta}>Net earnings {formatMoney(order.commercial_economics.net_seller_earnings_minor || 0, order.currency || "USD")} · {(order.commercial_economics.payout_state || "pending").replace(/_/g, " ")}</Text>
+              {order.commercial_economics.blocker_code ? <Text style={styles.meta}>Blocked: {order.commercial_economics.blocker_code.replace(/_/g, " ")}. Resolve this issue before payout.</Text> : null}
+            </> : null}
           </View>
         ))}
         {!orders.length ? <Text style={styles.emptyText}>No seller orders loaded.</Text> : null}
@@ -398,6 +421,13 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         ) : (
           <Text style={styles.meta}>Payout onboarding and payout release are managed by PulseSoc and its payment provider. You will be notified when your payouts are ready.</Text>
         )}
+        <View style={styles.orderRow}>
+          <Text style={styles.orderTitle}>Marketplace Fees &amp; Terms</Text>
+          <Text style={styles.orderMeta}>Seller Terms · 10% current platform fee · Returns · Payouts · Prohibited Goods · Appeals</Text>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: termsAccepted || busy === "terms" }} style={styles.secondaryButton} disabled={termsAccepted || busy === "terms"} onPress={acceptTerms}>
+            <Text style={styles.secondaryText}>{termsAccepted ? "Accepted" : busy === "terms" ? "Saving..." : "Review and Accept"}</Text>
+          </Pressable>
+        </View>
       </Panel>
       ) : null}
 
