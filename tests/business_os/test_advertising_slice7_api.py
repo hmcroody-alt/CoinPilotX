@@ -49,15 +49,19 @@ def setup_module(module=None):
             "CREATE TABLE IF NOT EXISTS pulse_media_assets "
             "(id INTEGER PRIMARY KEY, owner_user_id TEXT, media_type TEXT, "
             "processing_status TEXT)")
+        # Keyed by user_id to match bot.init_db. This suite asserts the
+        # "Sponsored by" identity, so seeding the production column name is
+        # what makes that assertion meaningful rather than self-fulfilling.
         conn.execute(
             "CREATE TABLE IF NOT EXISTS users "
-            "(id INTEGER PRIMARY KEY, display_name TEXT, username TEXT)")
+            "(user_id INTEGER PRIMARY KEY, display_name TEXT, username TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS pulse_posts (id INTEGER PRIMARY KEY)")
         conn.execute("CREATE TABLE IF NOT EXISTS pulse_reels (id INTEGER PRIMARY KEY)")
         conn.execute(
             "CREATE TABLE IF NOT EXISTS marketplace_listings (id INTEGER PRIMARY KEY)")
         conn.execute(
-            "INSERT OR IGNORE INTO users (id, display_name, username) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO users (user_id, display_name, username) "
+            "VALUES (?, ?, ?)",
             (_DEST_USER, "Dest Profile", "dest"))
         conn.commit()
     finally:
@@ -75,7 +79,8 @@ def _new_owner():
     conn = db.connect()
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO users (id, display_name, username) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO users (user_id, display_name, username) "
+            "VALUES (?, ?, ?)",
             (uid, f"Advertiser {uid}", f"adv{uid}"))
         conn.commit()
     finally:

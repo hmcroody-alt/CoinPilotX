@@ -53,7 +53,12 @@ _TYPE_TO_MEDIA = {
 DESTINATION_TYPES = {"profile", "post", "reel", "marketplace_product", "external"}
 # internal destination type -> (authoritative table, id column). Fixed literals.
 _INTERNAL_DEST = {
-    "profile": ("users", "id"),
+    # The canonical users table is keyed by `user_id` (bot.init_db), not `id`.
+    # With `id` here the existence probe raised UndefinedColumn on PostgreSQL
+    # and `_verify_internal_destination` fail-safed to rejection, so a profile
+    # destination could never be created OR pass delivery eligibility in
+    # production. The other three tables really do key on `id`.
+    "profile": ("users", "user_id"),
     "post": ("pulse_posts", "id"),
     "reel": ("pulse_reels", "id"),
     "marketplace_product": ("marketplace_listings", "id"),

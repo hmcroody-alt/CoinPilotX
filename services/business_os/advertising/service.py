@@ -340,12 +340,19 @@ def advertiser_eligibility(user_id: Any, *, context: Optional[dict] = None,
                            conn=None) -> dict:
     """Explainable eligibility to act as an advertiser.
 
-    Composes, WITHOUT merging, the three separate inputs and returns why:
+    Composes, WITHOUT merging, the four separate inputs and returns why:
 
-        {eligible, reason, flag_enabled, account_hold, advertiser_status}
+        {eligible, reason, flag_enabled, account_hold, advertiser_status,
+         guardrail}
 
-    Precedence: rollout flag → account hold (overrides) → advertiser approved.
+    Precedence: rollout flag → account hold (overrides) → advertiser approved →
+    account guardrails (emergency stop, then daily spend ceiling).
     Fails safe (not eligible) on any missing input.
+
+    The guardrail check is last because it is the only input that can change
+    within a day: an account that is approved and not on hold can still be over
+    its own ceiling for the next few hours, and that is a different sentence to
+    show the advertiser than "your account is not approved".
     """
     flag_enabled = is_enabled()
     result = {
@@ -354,6 +361,7 @@ def advertiser_eligibility(user_id: Any, *, context: Optional[dict] = None,
         "flag_enabled": flag_enabled,
         "account_hold": None,
         "advertiser_status": None,
+        "guardrail": None,
     }
     if not flag_enabled:
         result["reason"] = "advertising_disabled"
@@ -379,6 +387,24 @@ def advertiser_eligibility(user_id: Any, *, context: Optional[dict] = None,
         return result
     if advertiser.get("status") != "approved":
         result["reason"] = f"advertiser_{advertiser.get('status')}"
+        return result
+
+    # Input #4: account-level emergency stop and daily spend ceiling. Imported
+    # locally so that an account with no guardrail row — the overwhelming
+    # majority — pays nothing for a feature it is not using, and so a failure to
+    # import cannot take down eligibility for the whole platform.
+    try:
+        from . import guardrails as _guardrails
+        guardrail = _guardrails.check(user_id, conn=conn)
+    except Exception:
+        # The guardrail module deliberately fails closed on its own reads. An
+        # import or wiring failure is a different thing: it is our bug, not a
+        # signal about this account, and refusing every advertiser because of it
+        # would be a self-inflicted outage.
+        guardrail = None
+    result["guardrail"] = guardrail
+    if guardrail is not None and not guardrail.get("allowed", True):
+        result["reason"] = guardrail.get("reason") or "account_guardrail"
         return result
 
     result["eligible"] = True

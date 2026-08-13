@@ -25,6 +25,7 @@ Hard guarantees:
 from __future__ import annotations
 
 import json
+import time as _time
 from datetime import timedelta
 from typing import Any, Optional
 
@@ -38,6 +39,48 @@ from . import delivery_common as _c
 
 
 SPONSORED_LABEL = "Sponsored"
+
+
+# --- passive measurement hook (ads intelligence, Stage 1) --------------------
+def _record_opportunity(placement, subject, ctx, result, winner, latency_ms,
+                        *, forced_reason=None):
+    """Record this ad opportunity for measurement. Observer only.
+
+    Stage 1 of the advertising-intelligence rollout is measurement with NO
+    delivery change, and this function is where that promise is kept:
+
+    * It is called *after* selection has already decided, so it cannot influence
+      the outcome even by accident.
+    * It runs on its OWN connection rather than the caller's. Sharing the
+      delivery transaction would mean a failed CREATE TABLE or a constraint
+      error inside measurement aborts the surrounding transaction on
+      PostgreSQL — turning a lost log line into a failed ad request.
+    * Every failure is swallowed and logged by ``record_safely``.
+    * It is off unless the measurement flag is set, so the default posture is
+      byte-for-byte the current behaviour.
+
+    Returns the decision id, or None when disabled or on any failure.
+    """
+    try:
+        from services.business_os import ads_intelligence as _ai  # noqa: PLC0415
+        if not _ai.measurement_enabled():
+            return None
+        from services.business_os.ads_intelligence import decisions as _dec  # noqa: PLC0415
+        return _dec.record_safely(
+            placement_key=placement,
+            surface=(ctx or {}).get("surface") or placement,
+            platform=(ctx or {}).get("platform"),
+            subject_ref=subject,
+            session_ref=(ctx or {}).get("session_ref"),
+            selection=result,
+            winner=winner,
+            latency_ms=latency_ms,
+            ranking_mode="legacy",
+            forced_no_fill_reason=forced_reason,
+        )
+    except Exception:
+        # Import-time or flag-check failure must not touch delivery either.
+        return None
 
 
 # --- request rate limit (basic abuse control, spec §8) ----------------------
@@ -64,9 +107,13 @@ def _advertiser_identity(conn, advertiser_uid: Any) -> dict:
     canonical users table defensively; never exposes private/account internals."""
     ident = {"advertiser_ref": _c.sid(advertiser_uid), "display_name": None,
              "username": None}
+    # The canonical users table is keyed by `user_id` (bot.init_db), NOT `id`.
+    # This previously selected on `id`, which raises UndefinedColumn on
+    # PostgreSQL — swallowed by the except below, so every served ad rendered a
+    # blank "Sponsored by" line in production instead of failing loudly.
     try:
         row = _svc._row_to_dict(conn.execute(
-            "SELECT * FROM users WHERE id = ?", (advertiser_uid,)).fetchone())
+            "SELECT * FROM users WHERE user_id = ?", (advertiser_uid,)).fetchone())
     except Exception:
         row = None
     if row:
@@ -179,11 +226,15 @@ def request_placement(viewer_user_id: Any, placement: Any, *,
             raise AdvertisingError(
                 "Too many delivery requests.", 429, "rate_limited")
 
+        _select_started = _time.monotonic()
         result = _selection.select_candidate(
             conn, placement=placement, subject_ref=subject,
             request_ctx=ctx, strategy=strategy)
+        _latency_ms = int((_time.monotonic() - _select_started) * 1000)
         winner = result.get("winner")
         if winner is None:
+            _record_opportunity(placement, subject, ctx, result, None,
+                                _latency_ms)
             return _no_placement(placement, "no_eligible_candidate",
                                  {"candidate_count": result.get("candidate_count"),
                                   "eligible_count": result.get("eligible_count")})
@@ -192,6 +243,11 @@ def request_placement(viewer_user_id: Any, placement: Any, *,
         creative_row = _creative._get_row(
             conn, winner.get("creative_id"), requester_user_id=None)
         if creative_row is None:
+            # A winner that cannot be loaded is an unfilled opportunity with a
+            # cause of its own — recording it as a generic no-candidate would
+            # hide a real data-integrity problem.
+            _record_opportunity(placement, subject, ctx, result, None,
+                                _latency_ms, forced_reason="CREATIVE_UNAVAILABLE")
             return _no_placement(placement, "no_eligible_candidate")
 
         _svc._begin(conn)
@@ -236,11 +292,27 @@ def request_placement(viewer_user_id: Any, placement: Any, *,
         )
         _svc._commit(conn)
 
+        # Recorded only after the delivery has actually committed, so the
+        # measurement log can never claim a fill that was rolled back.
+        decision_id = _record_opportunity(
+            placement, subject, ctx, result,
+            {"campaign_id": creative_row.get("campaign_id"),
+             "creative_id": creative_row.get("creative_id")},
+            _latency_ms)
+
         delivery_row = load_delivery_row(conn, delivery_id)
-        return {
+        out = {
             "placement": placement,
             "sponsored": _sponsored_payload(conn, delivery_row, creative_row),
         }
+        # Sibling of `sponsored`, deliberately NOT inside it: the sponsored
+        # payload is a strict allowlist of client-safe creative fields, and the
+        # decision id is correlation metadata rather than ad content. Clients
+        # echo it back on ad events so an event can be joined to the decision
+        # that produced it.
+        if decision_id:
+            out["decision_id"] = decision_id
+        return out
     except AdvertisingError:
         _svc._rollback(conn)
         raise

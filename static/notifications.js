@@ -398,7 +398,7 @@
     host.hidden = false;
     host.innerHTML = `
       <section class="pulse-foreground-card" aria-label="${escapeHtml(copy.label)}">
-        <div class="pulse-foreground-logo"><img src="/static/brand/pulsesoc-icon-192-20260606.png" alt="" aria-hidden="true"></div>
+        <div class="pulse-foreground-logo"><img src="/static/brand/pulsesoc-icon-192-20260813.png" alt="" aria-hidden="true"></div>
         <div class="pulse-foreground-copy">
           <div class="pulse-foreground-label">${escapeHtml(copy.label)}</div>
           <div class="pulse-foreground-headline">${escapeHtml(copy.headline)}</div>

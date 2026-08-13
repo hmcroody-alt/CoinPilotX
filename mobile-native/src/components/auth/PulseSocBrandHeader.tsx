@@ -5,22 +5,21 @@ import { logiNexus } from "../../theme/logiNexus";
 import { useLogiNexusReducedMotion } from "../../theme/logiNexusMotion";
 import { createThemedStyles } from "../../theme/themedStyles";
 
-// Official PulseSoc brand lockup (real asset, symbol + wordmark), pre-processed to
-// a transparent background so it blends into the login environment with no image
-// boundary. Source: src/assets/brand/pulsesoc-mark.png.
+// Official PulseSoc brand mark (canonical logo: pulse waveform + three connected
+// people), pre-processed to a transparent background so it blends into the login
+// environment with no image boundary. Derived from assets/brand/pulsesoc-logo-master.png.
 const PULSESOC_LOGO = require("../../assets/brand/pulsesoc-mark.png");
-const LOGO_ASPECT = 512 / 362;
+const LOGO_ASPECT = 1;
 
 const RING_COUNT = 3;
 const RING_DURATION = 2600;
 const RING_STAGGER = 850;
 
-const LOGO_WIDTH = 244;
+const LOGO_WIDTH = 188;
 const LOGO_HEIGHT = LOGO_WIDTH / LOGO_ASPECT;
-// The pulse symbol sits above the wordmark, so shift the ambient glow and signal
-// rings up from the lockup's center onto the symbol — the light then reads as
-// emanating from the mark rather than the text.
-const SYMBOL_OFFSET_Y = LOGO_HEIGHT * 0.4 - LOGO_HEIGHT / 2;
+// The canonical mark is a centered square symbol, so the ambient glow and signal
+// rings emanate from the image center.
+const SYMBOL_OFFSET_Y = 0;
 const RING_SIZE = 148;
 
 /**

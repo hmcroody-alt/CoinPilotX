@@ -64,14 +64,18 @@ def setup_module(module=None):
             "(id INTEGER PRIMARY KEY, owner_user_id TEXT, media_type TEXT, "
             "processing_status TEXT)")
         conn.execute(
+            # Keyed by user_id to match bot.init_db; this suite asserts the
+            # advertiser identity on the served payload, so the production
+            # column name is what makes that assertion real.
             "CREATE TABLE IF NOT EXISTS users "
-            "(id INTEGER PRIMARY KEY, display_name TEXT, username TEXT)")
+            "(user_id INTEGER PRIMARY KEY, display_name TEXT, username TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS pulse_posts (id INTEGER PRIMARY KEY)")
         conn.execute("CREATE TABLE IF NOT EXISTS pulse_reels (id INTEGER PRIMARY KEY)")
         conn.execute(
             "CREATE TABLE IF NOT EXISTS marketplace_listings (id INTEGER PRIMARY KEY)")
         conn.execute(
-            "INSERT OR IGNORE INTO users (id, display_name, username) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO users (user_id, display_name, username) "
+            "VALUES (?, ?, ?)",
             (_DEST_USER, "Dest Profile", "dest"))
         conn.commit()
     finally:
@@ -89,7 +93,8 @@ def _new_owner():
     conn = db.connect()
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO users (id, display_name, username) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO users (user_id, display_name, username) "
+            "VALUES (?, ?, ?)",
             (uid, f"Advertiser {uid}", f"adv{uid}"))
         conn.commit()
     finally:
@@ -236,7 +241,7 @@ def test_flag_off_dark():
 
 # 2 -- happy path: eligible creative -> sponsored feed payload -------------
 def test_request_returns_sponsored_payload():
-    h = _ready_feed()
+    _ready_feed()
     res = deliv.request_placement(7001, "feed", request={"country": "us"})
     _assert(res["placement"] == "feed", res)
     sp = res.get("sponsored")
@@ -248,13 +253,27 @@ def test_request_returns_sponsored_payload():
     _assert(sp["destination"]["type"] == "profile", sp)
     _assert(sp["destination"]["ref"] == str(_DEST_USER), sp)
     _assert(sp["disclosure"]["kind"] == "paid_advertisement", sp)
-    # a delivery row was actually persisted, bound to the approved creative
+    # A delivery row was actually persisted, bound to an APPROVED creative.
+    #
+    # This deliberately does not assert the row names `h["crid"]` specifically.
+    # These suites share one database, so any other module that has already run
+    # may have left its own approved, active, feed-eligible campaign behind, and
+    # the rotation is then free to select it — which is correct behaviour, not a
+    # bug. `test_no_creative_substitution` covers the identity invariant that
+    # actually matters (the click echoes exactly the creative bound to this
+    # delivery id) and is written the same pollution-tolerant way.
     conn = db.connect()
     try:
         row = deliv.load_delivery_row(conn, sp["delivery_id"])
+        _assert(row is not None, ("no delivery row persisted", sp))
+        creative = _svc._row_to_dict(conn.execute(
+            "SELECT * FROM business_os_ad_creatives WHERE creative_id = ?",
+            (row["creative_id"],)).fetchone())
     finally:
         conn.close()
-    _assert(row is not None and row["creative_id"] == h["crid"], row)
+    _assert(creative is not None, ("delivery bound to unknown creative", row))
+    _assert(creative["status"] == "approved",
+            ("delivery bound to a non-approved creative", creative))
     _assert(row["status"] == "active", row)
 
 
@@ -594,10 +613,105 @@ def test_selection_deterministic():
 
 
 # --- standalone runner ------------------------------------------------------
+# --- ads-intelligence measurement hook (Stage 1: observe, never influence) ---
+#
+# These live here rather than in the ads_intelligence suite because the property
+# under test is about THIS module: that switching measurement on records the
+# opportunity, and that nothing about measurement — including it failing outright
+# — can change what delivery returns.
+
+_MEASURE_FLAG = "BUSINESS_OS_ADS_INTELLIGENCE_MEASUREMENT"
+
+
+def test_measurement_off_records_nothing():
+    """Default posture: no decision id, no rows, delivery untouched."""
+    os.environ.pop(_MEASURE_FLAG, None)
+    os.environ.pop("BUSINESS_OS_ADS_INTELLIGENCE", None)
+    _ready_feed()
+
+    from services.business_os.ads_intelligence.schema import ensure_schema
+    ensure_schema()
+    conn = db.connect()
+    try:
+        before = conn.execute(
+            "SELECT COUNT(*) FROM ads_intel_delivery_decisions").fetchone()[0]
+    finally:
+        conn.close()
+
+    res = deliv.request_placement(9301, "feed", request={"country": "us"})
+    _assert(res.get("sponsored"), ("delivery must still work", res))
+    _assert("decision_id" not in res,
+            ("no decision id may be exposed while measurement is off", res))
+
+    conn = db.connect()
+    try:
+        after = conn.execute(
+            "SELECT COUNT(*) FROM ads_intel_delivery_decisions").fetchone()[0]
+    finally:
+        conn.close()
+    _assert(before == after, f"measurement wrote {after - before} rows while off")
+
+
+def test_measurement_on_records_the_decision():
+    os.environ[_MEASURE_FLAG] = "on"
+    try:
+        _ready_feed()
+        res = deliv.request_placement(9302, "feed", request={"country": "us"})
+        _assert(res.get("sponsored"), ("delivery must still work", res))
+        decision_id = res.get("decision_id")
+        _assert(decision_id, ("a filled opportunity must be recorded", res))
+
+        from services.business_os.ads_intelligence import decisions as _dec
+        conn = db.connect()
+        try:
+            row = _dec.load_decision(conn, decision_id)
+        finally:
+            conn.close()
+        _assert(row is not None, "decision row missing")
+        _assert(row["filled"] == 1, row)
+        _assert(row["no_fill_reason"] is None, row)
+        _assert(row["placement_key"] == "feed", row)
+        _assert(row["campaign_id"] and row["creative_id"], row)
+        # Recorded pseudonymously: the raw viewer id must not appear.
+        _assert(str(row["subject_ref"]) != "9302",
+                "raw viewer id reached the decision log")
+    finally:
+        os.environ.pop(_MEASURE_FLAG, None)
+
+
+def test_measurement_failure_cannot_break_delivery():
+    """The Stage 1 promise, tested by actually breaking the recorder.
+
+    If measurement can take delivery down, no amount of care at the call site
+    makes it safe to enable in production.
+    """
+    os.environ[_MEASURE_FLAG] = "on"
+    from services.business_os.ads_intelligence import decisions as _dec
+    original = _dec.record_decision
+
+    def _explode(**_kwargs):
+        raise RuntimeError("measurement is down")
+
+    _dec.record_decision = _explode
+    try:
+        _ready_feed()
+        res = deliv.request_placement(9303, "feed", request={"country": "us"})
+        _assert(res.get("sponsored"),
+                ("delivery must survive a failing recorder", res))
+        _assert("decision_id" not in res,
+                ("a failed recording must not fabricate an id", res))
+    finally:
+        _dec.record_decision = original
+        os.environ.pop(_MEASURE_FLAG, None)
+
+
 def _run_standalone():
     setup_module()
     tests = [
         test_flag_off_dark,
+        test_measurement_off_records_nothing,
+        test_measurement_on_records_the_decision,
+        test_measurement_failure_cannot_break_delivery,
         test_request_returns_sponsored_payload,
         test_payload_hides_internal_fields,
         test_reels_placement_served,
