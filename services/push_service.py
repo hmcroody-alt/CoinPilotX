@@ -538,6 +538,41 @@ def save_subscription(user_id, subscription, user_agent="", device_type="", brow
     )
     device_id = explicit_device_id or _endpoint_hash(endpoint)
     if explicit_device_id:
+        if provider == "expo":
+            # Registrations created before native stable installation IDs cannot
+            # be attributed safely at send time. Once this account supplies a
+            # current stable installation, retire only those legacy Expo rows;
+            # other stable installations remain active and can each receive one
+            # push. Opening an older physical device registers it again with its
+            # own installation ID.
+            cur.execute(
+                """
+                SELECT id, endpoint, subscription_json
+                FROM push_subscriptions
+                WHERE user_id=? AND COALESCE(is_active, active, 1)=1 AND endpoint<>?
+                """,
+                (int(user_id), str(endpoint)),
+            )
+            legacy_ids = []
+            for candidate in cur.fetchall():
+                candidate_id = candidate["id"] if hasattr(candidate, "keys") else candidate[0]
+                candidate_endpoint = candidate["endpoint"] if hasattr(candidate, "keys") else candidate[1]
+                candidate_json = candidate["subscription_json"] if hasattr(candidate, "keys") else candidate[2]
+                try:
+                    candidate_subscription = json.loads(candidate_json or "{}")
+                except Exception:
+                    candidate_subscription = {}
+                candidate_device_id = (
+                    candidate_subscription.get("device_id")
+                    or candidate_subscription.get("deviceId")
+                    or candidate_subscription.get("installation_id")
+                )
+                if _is_expo_token(candidate_endpoint, candidate_subscription) and not candidate_device_id:
+                    legacy_ids.append(int(candidate_id))
+            for legacy_id in legacy_ids:
+                _deactivate_subscription(cur, legacy_id)
+            if legacy_ids:
+                _trace("legacy_expo_subscriptions_retired", user_id=int(user_id), count=len(legacy_ids))
         # A refreshed Expo token replaces the old endpoint for this exact app
         # installation. Leaving both active makes one message fan out twice.
         cur.execute(

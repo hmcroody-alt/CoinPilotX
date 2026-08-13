@@ -61,6 +61,13 @@ def test_same_installation_refresh_retires_old_token_and_sends_once(push_db, mon
     assert calls == ["ExponentPushToken[new]"]
 
 
+def test_stable_registration_retires_only_unattributed_legacy_expo(push_db):
+    push_service.save_subscription(7, {"endpoint": "ExponentPushToken[legacy]", "provider": "expo"})
+    push_service.save_subscription(7, registration("iphone-a", "ExponentPushToken[current]"))
+    push_service.save_subscription(7, registration("ipad-b", "ExponentPushToken[ipad]"))
+    assert active_endpoints(push_db) == ["ExponentPushToken[current]", "ExponentPushToken[ipad]"]
+
+
 def test_two_installations_each_receive_one_push(push_db, monkeypatch):
     push_service.save_subscription(7, registration("iphone-a", "ExponentPushToken[a]"))
     push_service.save_subscription(7, registration("ipad-b", "ExponentPushToken[b]"))
