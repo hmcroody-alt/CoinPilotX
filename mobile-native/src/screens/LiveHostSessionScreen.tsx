@@ -48,14 +48,7 @@ import { LiveReactionLayer, type ReactionLayerHandle } from "../live/LiveReactio
 import { LiveChatComposer, LiveChatMessageRow, LiveChatStream, type LiveChatModerationAction } from "../live/LiveChatOverlay";
 import { RtcVideoView } from "../live/RtcVideoView";
 import { listPulseRadioTracks, recordPulseRadioPlay } from "../api/radio";
-import { recordPulseMusicEvent, type PulseMusicTrack } from "../api/music";
-import { CreatorMusicSheet } from "../audio/CreatorMusicSheet";
-import {
-  CreatorMusicSelection,
-  createCreatorMusicSelection,
-  describeCreatorMusicSelection
-} from "../audio/creatorMusicSelection";
-import { DEFAULT_CREATOR_MIXER_SETTINGS } from "../audio/creatorMixer";
+import { recordPulseMusicEvent, searchPulseMusic, type PulseMusicTrack } from "../api/music";
 
 type NativeVideoViewProps = {
   videoTrack?: any;
@@ -121,18 +114,11 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("spotlight");
   const [trayExpanded, setTrayExpanded] = useState(true);
   const [toolNote, setToolNote] = useState("");
+  const [musicTracks, setMusicTracks] = useState<PulseMusicTrack[]>([]);
   const [musicQueue, setMusicQueue] = useState<PulseMusicTrack[]>([]);
+  const [musicQuery, setMusicQuery] = useState("");
   const [musicLoading, setMusicLoading] = useState(false);
   const [musicError, setMusicError] = useState("");
-  /**
-   * The host's current pick, in the same shape the camera path uses.
-   *
-   * Held here rather than derived from `room.liveMusic` because it carries the
-   * mixer and start point the host chose, which survive stopping and restarting
-   * a track — the engine's view resets, the creator's intent should not.
-   */
-  const [musicSelection, setMusicSelection] = useState<CreatorMusicSelection | null>(null);
-  const [showMusicPicker, setShowMusicPicker] = useState(false);
 
   // Comment composer + keyboard controller. Draft/sending/error live here so the
   // same draft survives every dismissal path and is shared by the ambient
@@ -465,57 +451,28 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
     setToolNote(COMING_SOON[key]);
   }, []);
 
-  /**
-   * Push a selection into the running broadcast.
-   *
-   * The distinction this makes is the one the mission turns on: a *different*
-   * track has to be started, but a change of levels or cue point on the track
-   * already playing must be applied in place. Restarting the mix to move a fader
-   * would drop the music out of the published stream while the file reopens, and
-   * viewers hear that as a stutter every time the host touches anything.
-   *
-   * It is also the Live audition path. There is no local preview player here on
-   * purpose — the microphone is open, so anything coming out of the speaker
-   * would be re-recorded into the broadcast. Choosing a track puts it straight
-   * into the SDK's mixer, which is the clean digital route the viewer hears.
-   */
-  const applyLiveSelection = useCallback(async (selection: CreatorMusicSelection) => {
-    setMusicSelection(selection);
-    if (!room.connected || !room.canPublish) {
-      setMusicError("Start the Live broadcast before adding music.");
-      return;
-    }
+  const loadMusic = useCallback(async (mode: "trending" | "search" = "trending") => {
+    setMusicLoading(true);
     setMusicError("");
     try {
-      const playingId = room.liveMusic.track?.id || "";
-      const isPlaying = playingId === selection.track.trackId && room.liveMusic.status !== "idle";
-      if (!isPlaying) {
-        await room.startLiveMusicMixing(
-          {
-            id: selection.track.trackId,
-            title: selection.track.title,
-            artist: selection.track.artist,
-            audioUrl: selection.track.audioUrl,
-            coverArtUrl: selection.track.coverArtUrl,
-            durationSeconds: selection.track.durationSeconds,
-            licenseLabel: selection.track.licenseLabel,
-            artistUserId: selection.track.artistUserId
-          },
-          { startOffsetSeconds: selection.startOffsetSeconds, mixer: selection.mixer }
-        );
-        await recordPulseMusicEvent(selection.track.trackId, "play", "native_live_host_music").catch(() => undefined);
-        return;
-      }
-      await room.setLiveMusicMixer(selection.mixer);
-      // Dead zone: the start slider emits continuously while dragged, and re-cueing
-      // on every emitted value would make the music skip under the host's thumb.
-      if (Math.abs(selection.startOffsetSeconds - room.liveMusic.startOffsetSeconds) > 0.25) {
-        await room.setLiveMusicPosition(selection.startOffsetSeconds);
-      }
+      const result = await searchPulseMusic({
+        query: mode === "search" ? musicQuery : "",
+        lane: mode === "search" ? "" : "trending",
+        limit: 12
+      });
+      setMusicTracks(result.tracks);
+      if (!result.tracks.length) setMusicError(mode === "search" ? "No approved tracks matched this search." : "No approved PulseSoc Music tracks are available right now.");
     } catch (error) {
-      setMusicError(error instanceof Error && error.message ? error.message : "PulseSoc Music could not start.");
+      setMusicError(error instanceof Error && error.message ? error.message : "PulseSoc Music could not load.");
+    } finally {
+      setMusicLoading(false);
     }
-  }, [room]);
+  }, [musicQuery]);
+
+  useEffect(() => {
+    if (sheet !== "music" || musicTracks.length || musicLoading) return;
+    loadMusic("trending").catch(() => undefined);
+  }, [loadMusic, musicLoading, musicTracks.length, sheet]);
 
   const startLiveTrack = useCallback(async (track: PulseMusicTrack, source = "native_live_host_music") => {
     if (!room.connected || !room.canPublish) {
@@ -524,30 +481,19 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
     }
     setMusicError("");
     try {
-      // Reuse the mixer the host already settled on. A track started from the
-      // transport or from Radio must land at the same balance as one started from
-      // the picker, or the levels appear to reset themselves at random.
-      const selection = createCreatorMusicSelection(track, musicSelection?.mixer || DEFAULT_CREATOR_MIXER_SETTINGS, 0);
-      await room.startLiveMusicMixing(
-        {
-          id: track.id,
-          title: track.title,
-          artist: track.artist,
-          audioUrl: track.audioUrl || track.previewUrl,
-          coverArtUrl: track.coverArtUrl,
-          durationSeconds: track.durationSeconds,
-          licenseLabel: track.licenseLabel,
-          artistUserId: track.artistUserId
-        },
-        { startOffsetSeconds: 0, mixer: selection.mixer }
-      );
-      setMusicSelection(selection);
+      await room.startLiveMusicMixing({
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        audioUrl: track.audioUrl || track.previewUrl,
+        coverArtUrl: track.coverArtUrl
+      });
       setMusicQueue((current) => [track, ...current.filter((item) => item.id !== track.id)].slice(0, 8));
       await recordPulseMusicEvent(track.id, "play", source).catch(() => undefined);
     } catch (error) {
       setMusicError(error instanceof Error && error.message ? error.message : "PulseSoc Music could not start.");
     }
-  }, [musicSelection?.mixer, room]);
+  }, [room]);
 
   const startPulseRadioInLive = useCallback(async () => {
     if (!room.connected || !room.canPublish) {
@@ -605,25 +551,6 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
     if (musicQueue[0]) startLiveTrack(musicQueue[0]).catch(() => undefined);
     else startPulseRadioInLive().catch(() => undefined);
   }, [musicQueue, room, startLiveTrack, startPulseRadioInLive]);
-
-  /**
-   * The one line that tells a host what is actually going out.
-   *
-   * Rendered in dB rather than percent because the fader position is not the
-   * question a host has when the balance sounds wrong, and because the duck
-   * readout is the only visible evidence that the sidechain is working at all.
-   */
-  const liveMixSummary = useMemo(() => {
-    const summary = describeCreatorMusicSelection(
-      musicSelection || {
-        track: { trackId: "", title: "", artist: "", artistUserId: 0, audioUrl: "", coverArtUrl: "", durationSeconds: 0, licenseLabel: "", moderationStatus: "" },
-        startOffsetSeconds: 0,
-        mixer: room.liveMusic.mixer
-      }
-    );
-    const duck = room.liveMusic.duckGainDb < -0.25 ? ` · ducking ${room.liveMusic.duckGainDb.toFixed(1)} dB` : summary.duckDepthDb ? ` · duck ${summary.duckDepthDb} dB` : " · no ducking";
-    return `Music ${summary.musicBusGainDb} dB · Mic ${summary.micBusGainDb} dB${duck}`;
-  }, [musicSelection, room.liveMusic.duckGainDb, room.liveMusic.mixer]);
 
   const playNextLiveMusic = useCallback(() => {
     if (!musicQueue.length) {
@@ -1116,60 +1043,48 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
             <Ionicons name={room.liveMusic.status === "playing" || room.liveMusic.status === "loading" ? "pause" : "play"} size={24} color={colors.background} />
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Next Live music track" onPress={playNextLiveMusic}>
-            <Ionicons name="play-skip-forward" size={22} color={musicQueue.length ? colors.text : colors.muted} />
+            <Ionicons name="play-skip-forward" size={22} color={musicQueue.length || musicTracks.length ? colors.text : colors.muted} />
           </Pressable>
         </View>
-        {/*
-          The two coarse faders that used to live here are gone, along with the
-          six-row search list beside them. Both were a second, smaller music
-          catalog and a second, looser mixer — the picker below is the same
-          component the camera uses, against the same endpoints, editing the same
-          settings object.
-        */}
-        <Pressable
-          style={[styles.radioMixButton, !room.connected && styles.disabled]}
-          onPress={() => { setMusicError(""); setShowMusicPicker(true); }}
-          disabled={!room.connected}
-          accessibilityRole="button"
-          accessibilityLabel="Open PulseSoc Music and mix levels"
-        >
-          <Ionicons name="options" size={16} color={colors.background} />
-          <Text style={styles.radioMixButtonText}>Music &amp; levels</Text>
-        </Pressable>
-        <Text style={styles.musicMixSummary}>{liveMixSummary}</Text>
+        <View style={styles.levelGroup}>
+          <LiveLevelControl label="Mic" value={room.liveMusic.micVolume} onChange={(value) => room.setLiveMicVolume(value).catch((error) => setMusicError(error instanceof Error ? error.message : "Mic level could not update."))} />
+          <LiveLevelControl label="Music" value={room.liveMusic.musicVolume} onChange={(value) => room.setLiveMusicVolume(value).catch((error) => setMusicError(error instanceof Error ? error.message : "Music level could not update."))} />
+        </View>
+        <View style={styles.musicSearchRow}>
+          <TextInput
+            style={styles.musicSearchInput}
+            value={musicQuery}
+            onChangeText={setMusicQuery}
+            placeholder="Search songs or artists"
+            placeholderTextColor={colors.muted}
+            returnKeyType="search"
+            onSubmitEditing={() => loadMusic("search").catch(() => undefined)}
+          />
+          <Pressable style={styles.musicSearchButton} onPress={() => loadMusic("search").catch(() => undefined)} accessibilityRole="button" accessibilityLabel="Search PulseSoc Music">
+            <Ionicons name="search" size={18} color={colors.background} />
+          </Pressable>
+        </View>
         <Pressable style={[styles.radioMixButton, (!room.connected || musicLoading) && styles.disabled]} onPress={startPulseRadioInLive} disabled={musicLoading || !room.connected} accessibilityRole="button" accessibilityLabel="Start PulseSoc Radio in this Live">
           <Ionicons name="radio" size={16} color={colors.background} />
           <Text style={styles.radioMixButtonText}>{musicLoading ? "Loading…" : "Start PulseSoc Radio"}</Text>
         </Pressable>
         {musicError || room.liveMusic.error ? <Text style={styles.musicError}>{musicError || room.liveMusic.error}</Text> : null}
-        {!room.connected ? (
-          <Text style={styles.sheetEmpty}>Music publishes into the broadcast, so it waits until you are live. Nothing plays until you choose it.</Text>
+        {musicTracks.slice(0, 6).map((track) => (
+          <Pressable key={track.id} style={styles.musicRow} onPress={() => startLiveTrack(track).catch(() => undefined)} accessibilityRole="button" accessibilityLabel={`Play ${track.title} by ${track.artist} in Live`}>
+            <View style={styles.musicRowArt}>
+              {track.coverArtUrl ? <Image source={{ uri: track.coverArtUrl }} style={styles.musicCover} /> : <Ionicons name="musical-notes" size={18} color={colors.creator} />}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.musicRowTitle} numberOfLines={1}>{track.title}</Text>
+              <Text style={styles.musicRowMeta} numberOfLines={1}>{track.artist} · {track.genre} · {track.licenseLabel}</Text>
+            </View>
+            <Ionicons name={room.liveMusic.track?.id === track.id && room.liveMusic.status === "playing" ? "volume-high" : "play"} size={18} color={colors.creator} />
+          </Pressable>
+        ))}
+        {!musicLoading && !musicTracks.length && !musicError ? (
+          <Text style={styles.sheetEmpty}>Search PulseSoc Music or start PulseSoc Radio. Nothing plays until you choose it.</Text>
         ) : null}
       </LiveBottomSheet>
-
-      {/*
-        The canonical picker, opened over the Live console.
-
-        `allowPreview={false}` is the load-bearing prop: the microphone is open,
-        so a local preview player would be re-recorded into the broadcast. Every
-        change here goes through `applyLiveSelection`, which puts the track into
-        Agora's own mixer and adjusts the running mix in place.
-      */}
-      <CreatorMusicSheet
-        visible={showMusicPicker}
-        selection={musicSelection}
-        title="Live music"
-        confirmLabel="Keep playing"
-        allowPreview={false}
-        onClose={() => setShowMusicPicker(false)}
-        onSelectionPreview={(selection) => { void applyLiveSelection(selection); }}
-        onSelect={(selection) => { void applyLiveSelection(selection); setShowMusicPicker(false); }}
-        onRemove={() => {
-          setMusicSelection(null);
-          setShowMusicPicker(false);
-          room.stopLiveMusicMixing().catch((error) => setMusicError(error instanceof Error ? error.message : "PulseSoc Music could not stop."));
-        }}
-      />
 
       <LiveBottomSheet visible={sheet === "more"} onClose={() => { closeSheet(); setToolNote(""); }} title="Live tools" subtitle="Everything for this broadcast" maxHeightRatio={0.66}>
         {toolNote ? (
@@ -1276,6 +1191,34 @@ function FloatingGuestTile({ participant, VideoView }: { participant: LivePartic
           {participant.name}
         </Text>
       </View>
+    </View>
+  );
+}
+
+function LiveLevelControl({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+  const [width, setWidth] = useState(1);
+  const percent = Math.round(Math.max(0, Math.min(value, 1)) * 100);
+  return (
+    <View style={styles.levelControl}>
+      <View style={styles.levelHeader}>
+        <Text style={styles.levelLabel}>{label}</Text>
+        <Text style={styles.levelValue}>{percent}%</Text>
+      </View>
+      <Pressable
+        accessibilityRole="adjustable"
+        accessibilityLabel={`${label} level`}
+        accessibilityValue={{ min: 0, max: 100, now: percent }}
+        accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
+        onAccessibilityAction={(event) => {
+          onChange(Math.max(0, Math.min(value + (event.nativeEvent.actionName === "increment" ? 0.08 : -0.08), 1)));
+        }}
+        onLayout={(event) => setWidth(Math.max(1, event.nativeEvent.layout.width))}
+        onPress={(event) => onChange(event.nativeEvent.locationX / width)}
+        style={styles.levelTrack}
+      >
+        <View style={[styles.levelFill, { width: `${percent}%` }]} />
+        <View style={[styles.levelThumb, { left: `${percent}%` }]} />
+      </Pressable>
     </View>
   );
 }
@@ -1833,13 +1776,6 @@ const styles = StyleSheet.create({
     height: "100%",
     width: "100%"
   },
-  musicMixSummary: {
-    color: colors.muted,
-    fontSize: 12,
-    fontVariant: ["tabular-nums"],
-    marginBottom: 10,
-    textAlign: "center"
-  },
   musicError: {
     color: colors.danger,
     fontSize: 13,
@@ -1872,6 +1808,75 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 56
   },
+  levelGroup: {
+    gap: 12,
+    paddingVertical: 4
+  },
+  levelControl: {
+    gap: 7
+  },
+  levelHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  levelLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textTransform: "uppercase"
+  },
+  levelValue: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  levelTrack: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 999,
+    height: 18,
+    justifyContent: "center",
+    overflow: "hidden"
+  },
+  levelFill: {
+    backgroundColor: colors.creator,
+    borderRadius: 999,
+    height: 18
+  },
+  levelThumb: {
+    backgroundColor: colors.text,
+    borderColor: colors.creator,
+    borderRadius: 999,
+    borderWidth: 2,
+    height: 18,
+    marginLeft: -9,
+    position: "absolute",
+    width: 18
+  },
+  musicSearchRow: {
+    flexDirection: "row",
+    gap: 8
+  },
+  musicSearchInput: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.12)",
+    borderRadius: 14,
+    borderWidth: 1,
+    color: colors.text,
+    flex: 1,
+    fontSize: 14,
+    minHeight: 44,
+    paddingHorizontal: 12
+  },
+  musicSearchButton: {
+    alignItems: "center",
+    backgroundColor: colors.creator,
+    borderRadius: 14,
+    justifyContent: "center",
+    minHeight: 44,
+    width: 48
+  },
   radioMixButton: {
     alignItems: "center",
     backgroundColor: colors.creator,
@@ -1886,6 +1891,37 @@ const styles = StyleSheet.create({
     color: colors.background,
     fontSize: 14,
     fontWeight: "900"
+  },
+  musicRow: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: "rgba(255,255,255,0.1)",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 58,
+    padding: 9
+  },
+  musicRowArt: {
+    alignItems: "center",
+    backgroundColor: "rgba(66,231,212,0.1)",
+    borderRadius: 10,
+    height: 42,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 42
+  },
+  musicRowTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  musicRowMeta: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 2
   },
   disabled: {
     opacity: 0.52

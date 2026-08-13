@@ -243,7 +243,6 @@ from services import (
     marketplace_listing_types as marketplace_listing_types_service,
     marketplace_listing_lifecycle as marketplace_listing_lifecycle,
     marketplace_seller_identity as marketplace_seller_identity,
-    creator_music_mix,
     media_service,
     media_storage,
     messenger_media_foundation,
@@ -94576,139 +94575,6 @@ def api_pulse_media_repair(media_id):
     return jsonify({"ok": True, "message": "Media readiness checked.", "media_id": media_id, "media": media_service.resolve_media(row, check_remote=False)})
 
 
-def pulse_persist_creator_music_selection(cur, media_id, form, trace_id=""):
-    """Vet a camera take's music choice and record it for the mix worker.
-
-    The client sends identifiers and fader positions; it does not send a licence
-    decision, and nothing it sends about rights is believed. The track is looked
-    up here and re-checked against the catalogue, because a draft can sit on a
-    phone for a week and in that week a track can be reported, pulled by its
-    uploader, or lose its licence. This is the last moment the platform can
-    decline to bake it into a master.
-
-    Returns ``(status, reason)``. Never raises: a video that recorded fine must
-    publish fine even when its soundtrack cannot be cleared, so every failure
-    here degrades to the ordinary no-music path rather than failing the upload.
-    """
-    try:
-        parsed = creator_music_mix.parse_creator_music_fields(form)
-    except Exception:
-        return "", ""
-    if not parsed:
-        return "", ""
-
-    track_id = safe_int(parsed.get("track_id"), 0)
-    status = "rejected"
-    reason = "track_not_found"
-    track = None
-    if track_id > 0:
-        try:
-            cur.execute(
-                """
-                SELECT active, safety_status, approved_by_admin, commercial_use_allowed,
-                       remix_edit_allowed, audio_url, uploader_user_id, license_type,
-                       title, artist, duration_seconds
-                FROM pulse_audio_tracks WHERE id=? LIMIT 1
-                """,
-                (track_id,),
-            )
-            found = cur.fetchone()
-            if found is not None:
-                # Read column names off the cursor rather than assuming a row
-                # factory. This route's connection returns plain tuples, and so
-                # does psycopg2 in production — going through dict(row) here
-                # would raise, be swallowed, and silently refuse every track.
-                track = dict(zip([column[0] for column in (cur.description or [])], found))
-        except Exception:
-            track = None
-
-    eligibility = creator_music_mix.evaluate_track_eligibility(track)
-    if not eligibility.allowed:
-        reason = eligibility.reason or "not_eligible"
-        logging.warning(
-            "PULSE_CREATOR_MUSIC_REJECTED trace_id=%s media_id=%s track_id=%s reason=%s",
-            trace_id,
-            media_id,
-            track_id,
-            reason,
-        )
-        try:
-            cur.execute(
-                "UPDATE chat_media_uploads SET music_mix_status=?, updated_at=? WHERE id=?",
-                (f"rejected:{reason}"[:80], datetime.utcnow().isoformat(timespec="seconds"), int(media_id)),
-            )
-        except Exception:
-            pass
-        return status, reason
-
-    # The catalogue's answers win over the client's. Title and artist are
-    # overwritten too: they are only ever display strings, and letting an upload
-    # choose its own credit line is how a track ends up attributed to the wrong
-    # artist on the finished video.
-    duration = eligibility.duration_seconds or parsed.get("duration_seconds") or 0.0
-    vetted = dict(parsed)
-    vetted["track_id"] = str(track_id)
-    vetted["artist_user_id"] = eligibility.artist_user_id
-    vetted["rights_ref"] = eligibility.rights_ref
-    vetted["title"] = eligibility.title
-    vetted["artist"] = eligibility.artist
-    vetted["duration_seconds"] = duration
-    vetted["start_offset_seconds"] = creator_music_mix.clamp_start_offset(parsed.get("start_offset_seconds"), duration)
-
-    # Stored in the flat ``music_*`` shape the parser reads, so the worker
-    # rebuilds exactly this request rather than re-reading client form fields
-    # that no longer exist by then.
-    mix_json = json.dumps({
-        "music_track_id": vetted["track_id"],
-        "music_artist_user_id": vetted["artist_user_id"],
-        "music_rights_ref": vetted["rights_ref"],
-        "music_title": vetted["title"],
-        "music_artist": vetted["artist"],
-        "music_duration_seconds": vetted["duration_seconds"],
-        "music_start_offset_seconds": vetted["start_offset_seconds"],
-        "music_level": vetted["music_level"],
-        "mic_level": vetted["mic_level"],
-        "music_preset": vetted["preset"],
-        "music_duck_enabled": 1 if vetted["duck_enabled"] else 0,
-        "music_duck_threshold_db": vetted["duck_threshold_db"],
-        "music_duck_depth_db": vetted["duck_depth_db"],
-        "music_duck_attack_ms": vetted["duck_attack_ms"],
-        "music_duck_release_ms": vetted["duck_release_ms"],
-    })
-
-    now = datetime.utcnow().isoformat(timespec="seconds")
-    cur.execute(
-        """
-        UPDATE chat_media_uploads
-        SET music_track_id=?, music_artist_user_id=?, music_rights_ref=?,
-            music_start_offset_seconds=?, music_duration_seconds=?,
-            music_mix_json=?, music_mix_status='pending', updated_at=?
-        WHERE id=?
-        """,
-        (
-            vetted["track_id"],
-            int(vetted["artist_user_id"] or 0),
-            clean_html(vetted["rights_ref"])[:200],
-            float(vetted["start_offset_seconds"] or 0),
-            float(vetted["duration_seconds"] or 0),
-            mix_json,
-            now,
-            int(media_id),
-        ),
-    )
-    logging.info(
-        "PULSE_CREATOR_MUSIC_ACCEPTED trace_id=%s media_id=%s track_id=%s start_offset=%s music_level=%s mic_level=%s preset=%s",
-        trace_id,
-        media_id,
-        track_id,
-        vetted["start_offset_seconds"],
-        vetted["music_level"],
-        vetted["mic_level"],
-        vetted["preset"],
-    )
-    return "pending", ""
-
-
 @webhook_app.route("/api/pulse/media/upload", methods=["POST"])
 def api_pulse_media_upload():
     init_db()
@@ -94830,18 +94696,6 @@ def api_pulse_media_upload():
                         now,
                     ),
                 )
-            music_status, music_reason = pulse_persist_creator_music_selection(
-                cur, safe_int(media.get("id"), 0), request.form, trace_id
-            )
-            if music_status == "pending":
-                result["media"]["music_mix_status"] = "pending"
-            elif music_status == "rejected":
-                # The video is fine and will publish with the creator's own audio.
-                # Saying so is better than a silent downgrade, which reads as the
-                # music having been mixed at zero.
-                result["media"]["music_mix_status"] = "rejected"
-                result["media"]["music_mix_reason"] = music_reason
-                result["message"] = "Video uploaded. The selected track is no longer cleared for use, so it was left out of the mix."
             conn.commit()
             conn.close()
         except Exception:
@@ -102674,23 +102528,6 @@ def _init_db_impl():
         ("db_ready_update_at", "TEXT"),
         ("trace_id", "TEXT"),
         ("error_message", "TEXT"),
-        # Creator music mixer. The take is uploaded as picture + microphone only;
-        # the chosen track is re-fetched server-side and mixed in during the
-        # transcode, so the music reaches the master as a clean digital source
-        # rather than as something the phone's speaker played at its own mic.
-        # Identifiers, not display strings: a video that stored only "Midnight
-        # Drive - Ava Lang" cannot be re-mixed, credited with a working link, or
-        # taken down when the rights lapse.
-        ("music_track_id", "TEXT"),
-        ("music_artist_user_id", "INTEGER"),
-        ("music_rights_ref", "TEXT"),
-        ("music_start_offset_seconds", "REAL"),
-        ("music_duration_seconds", "REAL"),
-        # The vetted, clamped mixer request, kept verbatim so the worker mixes
-        # what was actually approved at upload time rather than re-reading fields
-        # a client could have changed since.
-        ("music_mix_json", "TEXT"),
-        ("music_mix_status", "TEXT"),
         ("updated_at", "TEXT"),
         ("created_at", "TEXT"),
         ("deleted_at", "TEXT"),

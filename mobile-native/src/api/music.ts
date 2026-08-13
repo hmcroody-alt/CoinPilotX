@@ -102,24 +102,6 @@ export async function searchPulseMusic(params: PulseMusicSearchParams = {}) {
   };
 }
 
-/**
- * The Radio lane of the same catalog.
- *
- * `src/api/radio.ts` already calls this endpoint, but its normalizer keeps only
- * what a background player needs — id, title, artist, url — and drops duration,
- * artist user id and licence. Those three are exactly what the creator mixer
- * persists, so a track picked from Radio through that path would arrive with a
- * zero duration (no start-point slider) and an empty rights reference. Same
- * endpoint, same catalog, full-fidelity normalizer.
- */
-export async function listPulseMusicRadioTracks(limit = 40) {
-  const data = await pulseApi<MusicSearchResponse>(`/api/pulse/music/radio?limit=${encodeURIComponent(String(Math.max(1, Math.min(limit, 80))))}`);
-  // Deliberately not written to the offline snapshot: that cache backs the
-  // search results MusicScreen falls back to, and a radio shuffle overwriting it
-  // would make the last search look like it returned an unrelated set of songs.
-  return (data.items || data.sounds || []).map(normalizeMusicTrack).filter((track): track is PulseMusicTrack => Boolean(track));
-}
-
 export async function loadCachedPulseMusicSnapshot() {
   try {
     const raw = await AsyncStorage.getItem(MUSIC_CACHE_KEY);
