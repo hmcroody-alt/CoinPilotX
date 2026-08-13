@@ -562,6 +562,14 @@ def save_subscription(user_id, subscription, user_agent="", device_type="", brow
                 )
             except Exception:
                 pass
+        cur.execute(
+            """
+            UPDATE user_device_tokens
+            SET enabled=0, revoked_at=?, updated_at=?
+            WHERE user_id=? AND device_id=? AND push_token<>?
+            """,
+            (_now(), _now(), int(user_id), str(device_id)[:180], str(endpoint)),
+        )
     cur.execute(
         """
         INSERT INTO push_subscriptions
@@ -587,15 +595,27 @@ def save_subscription(user_id, subscription, user_agent="", device_type="", brow
     app_version = (subscription or {}).get("app_version") or (subscription or {}).get("appVersion") or ""
     label = _device_label(subscription, user_agent, device_type, browser)
     cur.execute(
-        """
-        UPDATE user_device_tokens
-        SET user_id=?, platform=?, push_token=?, push_provider=?, environment=?, app_version=?,
-            device_label=?, enabled=1, updated_at=?, last_seen_at=?, revoked_at=''
-        WHERE device_id=?
-        """,
-        (int(user_id), str(platform)[:80], endpoint, provider, str(environment)[:120], str(app_version)[:80], label, _now(), _now(), str(device_id)[:180]),
+        "SELECT id FROM user_device_tokens WHERE user_id=? AND device_id=? ORDER BY id DESC",
+        (int(user_id), str(device_id)[:180]),
     )
-    if cur.rowcount == 0:
+    device_rows = [int((row["id"] if hasattr(row, "keys") else row[0]) or 0) for row in cur.fetchall()]
+    if device_rows:
+        current_device_row = device_rows[0]
+        cur.execute(
+            """
+            UPDATE user_device_tokens
+            SET platform=?, push_token=?, push_provider=?, environment=?, app_version=?,
+                device_label=?, enabled=1, updated_at=?, last_seen_at=?, revoked_at=''
+            WHERE id=? AND user_id=?
+            """,
+            (str(platform)[:80], endpoint, provider, str(environment)[:120], str(app_version)[:80], label, _now(), _now(), current_device_row, int(user_id)),
+        )
+        for duplicate_device_row in device_rows[1:]:
+            cur.execute(
+                "UPDATE user_device_tokens SET enabled=0, revoked_at=?, updated_at=? WHERE id=? AND user_id=?",
+                (_now(), _now(), duplicate_device_row, int(user_id)),
+            )
+    else:
         cur.execute(
             """
             INSERT INTO user_device_tokens
@@ -730,8 +750,15 @@ def _send_expo_push(endpoint, payload):
                 "http_status": http_status,
                 "provider_status": status,
             }
-        if details.get("error") == "DeviceNotRegistered":
-            return {"ok": False, "status": "invalid", "provider": "expo", "message": "Expo device token is no longer registered.", "http_status": http_status, "provider_status": status, "provider_error": "DeviceNotRegistered"}
+        provider_error = str(details.get("error") or status or "rejected")
+        if provider_error == "DeviceNotRegistered":
+            return {"ok": False, "status": "invalid", "provider": "expo", "message": "Expo device token is no longer registered.", "http_status": http_status, "provider_status": status, "provider_error": provider_error}
+        if provider_error == "InvalidCredentials":
+            # Expo has conclusively rejected this registration for the app's
+            # configured credentials. A future successful registration will
+            # reactivate the endpoint; repeated sends must not retain a known
+            # unusable row indefinitely.
+            return {"ok": False, "status": "invalid", "provider": "expo", "message": "Expo credentials do not match this device registration.", "http_status": http_status, "provider_status": status, "provider_error": provider_error}
         return {"ok": False, "status": "failed", "provider": "expo", "message": "Expo push service rejected the notification.", "http_status": http_status, "provider_status": status, "provider_error": details.get("error") or status or "rejected"}
     except Exception as exc:
         return {"ok": False, "status": "failed", "provider": "expo", "message": "Expo push service request failed.", "error_type": type(exc).__name__}
@@ -753,9 +780,7 @@ def send_expo_push_token(token, title, body, data=None, push_type="general"):
 
 
 def _subscription_device_key(row):
-    """Stable per-device identity for a push_subscriptions row: the expo token when the
-    row is an Expo device, otherwise the web-push endpoint. Used to collapse duplicate
-    registrations of the same device so a single notification is delivered once."""
+    """Stable installation identity when explicitly registered, else token/endpoint."""
     endpoint = row[1] if len(row) > 1 else ""
     subscription_json = row[2] if len(row) > 2 else ""
     try:
@@ -763,6 +788,13 @@ def _subscription_device_key(row):
     except Exception:
         subscription = {}
     if _is_expo_token(endpoint, subscription):
+        installation_id = (
+            subscription.get("device_id")
+            or subscription.get("deviceId")
+            or subscription.get("installation_id")
+        )
+        if installation_id:
+            return f"expo-installation:{str(installation_id)[:180]}"
         return f"expo:{_expo_token(endpoint, subscription)}"
     return f"endpoint:{str(endpoint or '')}"
 
@@ -788,7 +820,21 @@ def _dedupe_subscription_rows(rows):
             existing_seen = (existing[6] if len(existing) > 6 else "") or (existing[5] if len(existing) > 5 else "") or ""
             if str(last_seen) > str(existing_seen):
                 best_by_key[key] = row
-    return [best_by_key[key] for key in order]
+    installation_deduped = [best_by_key[key] for key in order]
+    best_by_endpoint = {}
+    endpoint_order = []
+    for row in installation_deduped:
+        endpoint_key = f"endpoint:{str(row[1] if len(row) > 1 else '')}"
+        if endpoint_key not in best_by_endpoint:
+            best_by_endpoint[endpoint_key] = row
+            endpoint_order.append(endpoint_key)
+            continue
+        existing = best_by_endpoint[endpoint_key]
+        seen = (row[6] if len(row) > 6 else "") or (row[5] if len(row) > 5 else "") or ""
+        existing_seen = (existing[6] if len(existing) > 6 else "") or (existing[5] if len(existing) > 5 else "") or ""
+        if str(seen) > str(existing_seen):
+            best_by_endpoint[endpoint_key] = row
+    return [best_by_endpoint[key] for key in endpoint_order]
 
 
 def send_push(user_id, title, body, data=None, push_type="general"):
