@@ -121,6 +121,7 @@ import {
   type PayoutStatusTone
 } from "../api/sellerPayouts";
 import { PulseApiError } from "../api/pulseApi";
+import { PaymentController } from "../payments/PaymentController";
 import {
   BalanceCard,
   BalanceHero,
@@ -458,6 +459,10 @@ export function BusinessOsPaymentsScreen({
     setWithdrawBusy(true);
     setWithdrawNote("");
     try {
+      const policy = await PaymentController.instruction("seller_payout");
+      if (!policy.ok || policy.provider !== "stripe_connect" || policy.flow !== "connect_payout") {
+        throw new Error("PulseSoc could not authorize the payout provider.");
+      }
       const result = await requestSellerPayout(cents, payoutKey.current);
       closeWithdraw();
       setWithdrawNote(t(`${NS}.${result.duplicate ? "requestedDuplicate" : "requested"}`));

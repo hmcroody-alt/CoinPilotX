@@ -1110,6 +1110,13 @@ def _pause_campaigns_without_balance(conn, account_id) -> int:
 
 
 def reserve_campaign_budget(conn, user_id, campaign_id) -> dict:
+    # Assert the unified payment policy inside the money-moving service so HTTP,
+    # workers, and scheduled launches all use the same restricted Ad Wallet.
+    from services import pulse_payment_router as _payment_router
+    policy = _payment_router.create_payment_instruction(
+        platform="web", purchase_context="post_boost")
+    if not policy.get("ok") or policy.get("provider") != _payment_router.PROVIDER_INTERNAL_LEDGER:
+        raise pulse_ads_service.PulseAdsError("Advertising wallet policy is unavailable.", 503)
     cur = conn.cursor()
     cur.execute(
         """

@@ -7,7 +7,7 @@
  * fixed App Store credit tiers (StoreKit purchase → server verify → ledger
  * credit, no browser hop; see `payments/appleIapAdCredits`), falling back to
  * the classic form when the catalog is empty. Elsewhere funding goes through
- * `createAdFundingSession` and the Stripe checkout URL opens in the browser;
+ * the unified controller and Stripe PaymentSheet without a browser handoff;
  * the iOS 403 sentence from the server is shown verbatim. Transactions
  * page via `before_id`, limits and auto top-up post through `api/adsWallet`,
  * and the auto top-up copy states plainly that it prompts and never charges —
@@ -21,7 +21,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Animated,
-  Linking,
   Platform,
   Pressable,
   RefreshControl,
@@ -39,7 +38,6 @@ import {
   AdWalletEvent,
   AdWalletInvoice,
   AdWalletTxn,
-  createAdFundingSession,
   listAdWalletEvents,
   listAdWalletInvoices,
   listAdWalletTransactions,
@@ -57,9 +55,9 @@ import {
 } from "../api/businessOs";
 import { getIapAdCreditProducts, IapAdCreditProduct } from "../api/payments";
 import {
-  purchaseAdCredits,
   restoreUnfinishedAdCreditPurchases
 } from "../payments/appleIapAdCredits";
+import { PaymentController } from "../payments/PaymentController";
 import {
   AdsEmpty,
   AdsOfflineNote,
@@ -302,7 +300,7 @@ export function AdsWalletScreen({ route, navigation }: Props) {
       setIapBusy(productId);
       setIapNote("");
       try {
-        const result = await purchaseAdCredits(accountId, productId);
+        const result = await PaymentController.purchaseAdCredits(accountId, productId);
         if (result.status === "credited") {
           setIapNote(t(`${NS}.iapCredited`, { amount: money(result.amountCents) }));
           await refreshWallet();
@@ -363,13 +361,15 @@ export function AdsWalletScreen({ route, navigation }: Props) {
     setFundBusy(true);
     setFundNote("");
     try {
-      const session = await createAdFundingSession(accountId, cents);
-      if (!session.checkout_url) {
-        setFundNote(t(`${NS}.fundingNoUrl`));
-        return;
+      const result = await PaymentController.fundAdWallet(accountId, cents);
+      if (result.status === "completed") {
+        setFundNote("Payment submitted. PulseSoc will update the wallet after Stripe confirms it.");
+        await refreshWallet();
+      } else if (result.status === "canceled") {
+        setFundNote("You closed the payment sheet. No funds were added.");
+      } else {
+        setFundNote(t(`${NS}.fundingError`));
       }
-      await Linking.openURL(session.checkout_url);
-      setFundNote(t(`${NS}.fundingOpened`));
     } catch (error) {
       // The iOS-native 403 arrives as a full sentence from the server and is
       // shown verbatim — it explains where funding lives, it is not a failure.
@@ -377,7 +377,7 @@ export function AdsWalletScreen({ route, navigation }: Props) {
     } finally {
       setFundBusy(false);
     }
-  }, [accountId, fundAmount, t]);
+  }, [accountId, fundAmount, refreshWallet, t]);
 
   const saveLimits = useCallback(() => {
     const daily = parseDollars(dailyInput);

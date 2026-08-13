@@ -17574,6 +17574,35 @@ def api_pulse_ads_wallet_funding_session(account_id):
         if not STRIPE_SECRET_KEY or not pulse_ad_payments.stripe_ready():
             return jsonify({"ok": False, "error": "Promotion funding is not configured.", "funding_session": funding}), 503
         stripe.api_key = STRIPE_SECRET_KEY
+        if str(payload.get("payment_mode") or "").strip().lower() == "payment_sheet":
+            metadata = {
+                "purpose": "pulse_ad_wallet_funding",
+                "funding_session_id": str(funding.get("id")),
+                "ad_account_id": str(account_id),
+                "user_id": str(user.get("user_id")),
+                "amount_cents": str(funding.get("amount_cents")),
+                "currency": funding.get("currency") or "usd",
+            }
+            intent = stripe.PaymentIntent.create(
+                amount=pulse_ad_payments.safe_int(funding.get("amount_cents"), 0),
+                currency=(funding.get("currency") or "usd").lower(),
+                automatic_payment_methods={"enabled": True},
+                metadata=metadata,
+                idempotency_key=f"ad-wallet-sheet:{user.get('user_id')}:{funding.get('id')}",
+            )
+            safe_funding = pulse_ad_payments.attach_checkout_session(
+                conn, funding.get("id"), intent.get("id") or "", "")
+            return jsonify({
+                "ok": True,
+                "funding_session": safe_funding,
+                "payment_intent_client_secret": intent.get("client_secret"),
+                "payment_intent_id": intent.get("id"),
+                "publishable_key": STRIPE_PUBLISHABLE_KEY,
+                "merchant_display_name": "PulseSoc Ads",
+                "apple_pay_merchant_id": "",
+                "amount_cents": funding.get("amount_cents"),
+                "currency": funding.get("currency") or "usd",
+            })
         success_url = f"{APP_BASE_URL}/pulse/ads?funding=success&session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{APP_BASE_URL}/pulse/ads?funding=cancel"
         checkout = stripe.checkout.Session.create(
@@ -96833,6 +96862,20 @@ def stripe_webhook():
     if event_type == "payment_intent.succeeded":
         payment_intent = event["data"]["object"]
         metadata = payment_intent.get("metadata") or {}
+        if metadata.get("purpose") == "pulse_ad_wallet_funding":
+            wallet_event = {
+                **payment_intent,
+                "amount_total": payment_intent.get("amount_received") or payment_intent.get("amount"),
+                "payment_intent": payment_intent.get("id") or "",
+            }
+            conn = db(); conn.row_factory = sqlite3.Row
+            try:
+                pulse_ad_payments.credit_wallet_from_stripe_session(conn, event_id, wallet_event)
+            finally:
+                conn.close()
+            creator_economy_service.update_webhook_event(event_id, "processed")
+            record_stripe_event(event, "processed", safe_int(metadata.get("user_id"), 0) or None)
+            return "OK", 200
         if metadata.get("transaction_id"):
             tx_id = safe_int(metadata.get("transaction_id"), 0)
             if tx_id:
@@ -96988,6 +97031,20 @@ def stripe_webhook():
     if event_type == "payment_intent.payment_failed":
         payment_intent = event["data"]["object"]
         metadata = payment_intent.get("metadata") or {}
+        if metadata.get("purpose") == "pulse_ad_wallet_funding":
+            funding_id = safe_int(metadata.get("funding_session_id"), 0)
+            conn = db()
+            if funding_id:
+                conn.execute(
+                    "UPDATE pulse_ad_wallet_funding_sessions SET status='failed', updated_at=? "
+                    "WHERE id=? AND status NOT IN ('credited','reversed','partially_reversed')",
+                    (datetime.utcnow().isoformat(timespec="seconds"), funding_id),
+                )
+                conn.commit()
+            conn.close()
+            creator_economy_service.update_webhook_event(event_id, "processed")
+            record_stripe_event(event, "processed", safe_int(metadata.get("user_id"), 0) or None)
+            return "OK", 200
         plural_tx_ids = [safe_int(value, 0) for value in str(metadata.get("seller_transaction_ids") or "").split(",")]
         plural_tx_ids = [value for value in plural_tx_ids if value]
         if metadata.get("cart_checkout") == "1" and plural_tx_ids:

@@ -248,6 +248,9 @@ class PaymentRouterTests(unittest.TestCase):
         physical = router.create_payment_instruction(
             platform="ios", purchase_context="marketplace_listing", resource_id=12)
         self.assertEqual((physical["provider"], physical["flow"]), ("stripe", "payment_sheet"))
+        for context in ("marketplace_cart", "marketplace_offer"):
+            checkout = router.create_payment_instruction(platform="ios", purchase_context=context)
+            self.assertEqual((checkout["provider"], checkout["flow"]), ("stripe", "payment_sheet"))
         for plan, product in (("monthly", "com.pulsesoc.premium.monthly"),
                               ("annual", "com.pulsesoc.premium.annual")):
             premium = router.create_payment_instruction(
@@ -269,6 +272,9 @@ class PaymentRouterTests(unittest.TestCase):
         bad = router.create_payment_instruction(
             platform="ios", purchase_context="ad_credits", product_id="com.pulsesoc.bad")
         self.assertFalse(bad["ok"])
+        stripe = router.create_payment_instruction(platform="web", purchase_context="ad_credits")
+        self.assertTrue(stripe["ok"])
+        self.assertEqual((stripe["provider"], stripe["flow"]), ("stripe", "payment_sheet"))
 
     def test_storekit_account_token_is_stable_and_user_scoped(self):
         with mock.patch.dict(os.environ, {"SESSION_SECRET": "test-only-secret"}):

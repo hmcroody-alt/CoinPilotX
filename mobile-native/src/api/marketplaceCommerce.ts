@@ -389,15 +389,19 @@ export async function counterOffer(
 /** Accepted-offer checkout: charges the offered amount inside the acceptance
  * window, through the same Stripe surface as every other purchase. */
 export async function checkoutOffer(
-  offerId: string
-): Promise<{ checkoutUrl: string; transactionId: number }> {
+  offerId: string,
+  paymentMode: "payment_sheet" | "" = ""
+): Promise<{ checkoutUrl: string; transactionId: number; sheet: PaymentSheetBootstrap | null }> {
   const data = (await pulseApi(
     `/api/pulse/marketplace/offers/${offerId}/checkout`,
-    { method: "POST", body: JSON.stringify({}) }
-  )) as { checkout_url?: string; transaction_id?: number };
+    { method: "POST", body: JSON.stringify(paymentMode ? { payment_mode: paymentMode } : {}) }
+  )) as CheckoutResponse;
+  const transactionId = Number(data.transaction_id || 0);
+  const handoff = readCheckoutHandoff(data, transactionId ? [transactionId] : []);
   return {
-    checkoutUrl: data.checkout_url ?? "",
-    transactionId: data.transaction_id ?? 0
+    checkoutUrl: handoff.checkoutUrl,
+    transactionId,
+    sheet: handoff.sheet
   };
 }
 

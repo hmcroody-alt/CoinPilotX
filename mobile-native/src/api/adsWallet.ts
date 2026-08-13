@@ -15,14 +15,14 @@
  *     pins `auto_charge: false` — this setting only prompts, it never charges a
  *     card, and the screen copy must say so.
  *   • `POST /api/pulse/ads/accounts/<id>/wallet/funding-session` → Stripe
- *     checkout. On iOS-native requests the server answers 403 with a sentence
- *     explaining funding lives on the web portal; that message is surfaced
- *     verbatim, not treated as a generic failure.
+ *     PaymentSheet off iOS and hosted checkout for web. iOS-native funding is
+ *     StoreKit-only and never enters this endpoint.
  *
  * The wallet summary itself (`GET /accounts/<id>/wallet`) already has a binding
  * in `businessOs.ts` (`getAdWallet`); this module adds only what wave 2 needs.
  */
 import { pulseApi } from "./pulseApi";
+import type { PaymentSheetBootstrap } from "./stripePaymentSheet";
 
 const nonNegInt = (value: unknown): number => Math.max(0, Math.round(Number(value) || 0));
 
@@ -294,6 +294,7 @@ export type AdFundingSession = {
   status: string;
   /** The Stripe checkout URL. Opened in the browser; no in-app payment path. */
   checkout_url: string;
+  sheet?: PaymentSheetBootstrap;
 };
 
 export function normalizeAdFundingSession(value?: Partial<AdFundingSession> | null): AdFundingSession {
@@ -308,11 +309,34 @@ export function normalizeAdFundingSession(value?: Partial<AdFundingSession> | nu
 
 export async function createAdFundingSession(
   accountId: number,
-  amountCents: number
+  amountCents: number,
+  paymentMode: "payment_sheet" | "" = ""
 ): Promise<AdFundingSession> {
-  const data = await pulseApi<{ funding_session?: Partial<AdFundingSession> }>(
+  const data = await pulseApi<{
+    funding_session?: Partial<AdFundingSession>;
+    payment_intent_client_secret?: string;
+    payment_intent_id?: string;
+    publishable_key?: string;
+    merchant_display_name?: string;
+    apple_pay_merchant_id?: string;
+    amount_cents?: number;
+    currency?: string;
+  }>(
     `/api/pulse/ads/accounts/${encodeURIComponent(String(accountId))}/wallet/funding-session`,
-    { method: "POST", body: JSON.stringify({ amount_cents: amountCents }) }
+    { method: "POST", body: JSON.stringify({ amount_cents: amountCents, ...(paymentMode ? { payment_mode: paymentMode } : {}) }) }
   );
-  return normalizeAdFundingSession(data.funding_session);
+  const session = normalizeAdFundingSession(data.funding_session);
+  if (data.payment_intent_client_secret) {
+    session.sheet = {
+      clientSecret: String(data.payment_intent_client_secret),
+      paymentIntentId: String(data.payment_intent_id || ""),
+      publishableKey: String(data.publishable_key || ""),
+      merchantDisplayName: String(data.merchant_display_name || "PulseSoc Ads"),
+      applePayMerchantId: String(data.apple_pay_merchant_id || ""),
+      amountCents: nonNegInt(data.amount_cents),
+      currency: String(data.currency || "USD").toUpperCase(),
+      transactionIds: []
+    };
+  }
+  return session;
 }

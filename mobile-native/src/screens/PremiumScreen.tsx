@@ -10,7 +10,7 @@ import {
   PremiumStatus,
   premiumStateLabel,
 } from "../api/premium";
-import { purchasePremium, PremiumPlan } from "../payments/appleIapPremium";
+import { PaymentController } from "../payments/PaymentController";
 import { DIGITAL_COMMERCE_ENABLED } from "../api/config";
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
@@ -65,7 +65,7 @@ export function PremiumScreen({ navigation }: Props) {
     setBusyAction(action);
     try {
       if (action === "monthly" || action === "annual") {
-        const result = await purchasePremium(action as PremiumPlan);
+        const result = await PaymentController.purchasePremium(action);
         Alert.alert(
           result.status === "verified" ? "Premium active" : "Premium purchase",
           result.status === "verified"

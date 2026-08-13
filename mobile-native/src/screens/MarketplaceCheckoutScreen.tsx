@@ -16,6 +16,7 @@ import {
 } from "../api/stripePaymentSheet";
 import { RootStackParamList } from "../navigation/types";
 import { MARKETPLACE_CART_CTA, storeLight } from "../theme/marketplaceLight";
+import { PaymentController } from "../payments/PaymentController";
 
 type Props = NativeStackScreenProps<RootStackParamList, "MarketplaceCheckout">;
 type Stage = "review" | "opening" | "processing" | "confirmed" | "failed";
@@ -127,6 +128,13 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
     try {
       if (!isPaymentSheetAvailable()) {
         throw new Error("This build cannot open secure in-app checkout. Update PulseSoc and try again.");
+      }
+      const policy = await PaymentController.instruction(
+        params.mode === "cart" ? "marketplace_cart" : "marketplace_listing",
+        params.mode === "cart" ? {} : { resourceId: Number(params.listingId) }
+      );
+      if (!policy.ok || policy.provider !== "stripe" || policy.flow !== "payment_sheet") {
+        throw new Error("PulseSoc could not authorize the payment method for this purchase.");
       }
       const paymentMode = "payment_sheet";
       let url = checkoutUrl;

@@ -204,6 +204,8 @@ def create_payment_instruction(*, platform: str, purchase_context: str,
 
     item_type = {
         "marketplace_listing": "marketplace_physical",
+        "marketplace_cart": "marketplace_physical",
+        "marketplace_offer": "marketplace_physical",
         "marketplace_service": "real_world_service",
         "ad_credits": "ad_credits",
         "post_boost": "post_boost",
@@ -225,17 +227,21 @@ def create_payment_instruction(*, platform: str, purchase_context: str,
         "resource_id": resource_id,
         "quantity": qty,
     }
-    if context == "marketplace_listing":
+    if context in {"marketplace_listing", "marketplace_cart", "marketplace_offer"}:
         instruction.update({"flow": "payment_sheet", "stripe_mode": "payment_intent",
                             "purchase_constraints": ["server_price", "server_inventory", "webhook_confirmation"]})
     elif context == "marketplace_service":
         instruction.update({"flow": "payment_sheet", "stripe_mode": "payment_intent"})
     elif context == "ad_credits":
         pid = str(product_id or "")
-        if pid not in APPLE_ADCREDIT_PRODUCTS:
+        if decision.get("provider") == PROVIDER_APPLE_IAP and pid not in APPLE_ADCREDIT_PRODUCTS:
             return {"ok": False, "flagged": True, "error": "Unknown Ad Credit product."}
-        instruction.update({"flow": "storekit", "apple_product_id": pid,
-                            "wallet_behavior": "credit_canonical_ad_wallet"})
+        instruction.update({
+            "flow": "storekit" if decision.get("provider") == PROVIDER_APPLE_IAP else "payment_sheet",
+            "apple_product_id": pid if decision.get("provider") == PROVIDER_APPLE_IAP else "",
+            "stripe_mode": "payment_intent" if decision.get("provider") == PROVIDER_STRIPE else None,
+            "wallet_behavior": "credit_canonical_ad_wallet",
+        })
     elif context in WALLET_SPEND_ITEM_TYPES:
         instruction.update({"flow": "wallet", "wallet_behavior": "spend_canonical_ad_wallet"})
     elif context == "premium":
