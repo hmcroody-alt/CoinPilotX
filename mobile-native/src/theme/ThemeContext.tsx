@@ -380,6 +380,16 @@ export function useThemedStyles<T>(factory: (theme: Theme) => T): T {
 }
 
 export const __testing = {
+  /**
+   * The raw context, so a test can render a component against a Theme it
+   * constructs rather than one `buildTheme` is willing to produce. `buildTheme`
+   * pins the active appearance to dark for the current release, which makes the
+   * light and white surfaces unreachable through `ThemeProvider` even though
+   * their implementations are intact. Components that branch on those surfaces
+   * still need coverage; injecting here keeps that coverage without reopening
+   * the release decision.
+   */
+  ThemeContext,
   LIGHT_FUTURISTIC,
   DARK,
   BLACK,

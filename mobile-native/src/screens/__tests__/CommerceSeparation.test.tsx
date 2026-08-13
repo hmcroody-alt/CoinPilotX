@@ -123,34 +123,45 @@ jest.mock("../../components/NativeMediaViewer", () => ({
   NativeMediaViewer: () => null
 }));
 
-import { MarketplaceScreen } from "../MarketplaceScreen";
+import { MarketplaceProductScreen } from "../MarketplaceProductScreen";
 
 const LISTING = {
   id: 77,
   title: "Aeron chair",
-  price: 95,
+  price_label: "$95.00",
   seller_user_id: 12,
   seller_name: "Dana",
   currency: "USD"
 };
 
+/**
+ * Drive the seller-message action on the product screen.
+ *
+ * This used to render `MarketplaceScreen`, tap a grid card, and press a
+ * "Contact Seller" button inside a modal that screen mounted. The product
+ * detail has since become a real route (`MarketplaceProduct`) so it can be
+ * deep-linked and returned to from checkout, and the button it carries is
+ * labelled "Message seller". Neither of those is what this file is about — the
+ * invariant under test is where the resulting conversation is opened — so the
+ * test follows the button to its new screen rather than asserting the old
+ * screen still holds it.
+ */
 async function openListingAndContactSeller(navigate: jest.Mock) {
-  mockSearchMarketplace.mockResolvedValue({ items: [LISTING] });
-  mockLoadCachedMarketplace.mockResolvedValue([LISTING]);
   mockStartSellerChat.mockResolvedValue({ conversation_id: 4242 });
 
   const screen = render(
-    <MarketplaceScreen navigation={{ navigate } as never} route={{ params: undefined } as never} />
+    <MarketplaceProductScreen
+      navigation={{ navigate, goBack: jest.fn() } as never}
+      route={{ params: { listingId: 77, listing: LISTING, title: LISTING.title } } as never}
+    />
   );
-  const title = await screen.findByText("Aeron chair");
-  await act(async () => {
-    fireEvent.press(title);
-  });
-  const button = await screen.findByText("Contact Seller");
+  const button = await screen.findByText("Message seller");
   await act(async () => {
     fireEvent.press(button);
   });
-  await waitFor(() => expect(mockStartSellerChat).toHaveBeenCalledWith(12));
+  // Resolved by canonical user id. The identity fallbacks ride along in the
+  // options bag; the id is what must never be a listing id or a display name.
+  await waitFor(() => expect(mockStartSellerChat).toHaveBeenCalledWith(12, expect.anything()));
   return screen;
 }
 

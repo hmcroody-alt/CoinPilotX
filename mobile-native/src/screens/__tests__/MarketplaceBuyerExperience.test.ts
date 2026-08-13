@@ -60,7 +60,18 @@ describe("Marketplace buyer purchase presentation", () => {
     expect(fulfillmentLane(listing({ delivery_type: "pickup" }))).toBe("pickup");
     expect(fulfillmentLane(listing({ listing_metadata: { delivery_options: "pickup" } }))).toBe("pickup");
     expect(fulfillmentLane(listing({ listing_type: "digital", product_type: "digital" }))).toBe("digital");
-    expect(fulfillmentLane(listing())).toBe("shipping");
+
+    // A listing offering both reads "Local pickup or shipping" (asserted above)
+    // and must route to "both", not to either half of it. MarketplaceCheckout
+    // turns that lane into the buyer's choice — `mustChooseLane` is exactly
+    // `fulfillment === "both"` — so collapsing it to "shipping" here would take
+    // the pickup option away from a buyer whose listing page just offered it.
+    expect(fulfillmentCopy(listing())).toBe("Local pickup or shipping");
+    expect(fulfillmentLane(listing())).toBe("both");
+
+    // Shipping is the lane for a listing that only ships, not the fallback for
+    // one that also offers pickup.
+    expect(fulfillmentLane(listing({ listing_metadata: { delivery_options: "shipping" } }))).toBe("shipping");
   });
 
   it("keeps moderation signals out of the buyer listing model", () => {

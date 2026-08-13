@@ -21,7 +21,8 @@ jest.mock("expo-linear-gradient", () => {
 });
 
 import { PulseBackground } from "../PulseBackground";
-import { ThemeProvider } from "../../theme/ThemeContext";
+import { ThemeProvider, buildTheme, __testing } from "../../theme/ThemeContext";
+import type { GalacticBackgroundProfile } from "../../theme/ThemeContext";
 import {
   PULSE_BACKGROUND_CEILINGS,
   PULSE_BACKGROUND_LINES,
@@ -51,6 +52,37 @@ function withTheme(theme: ThemeMode, children: ReactNode, reduceMotion = false) 
   );
 }
 
+/**
+ * Render against a chosen atmosphere profile rather than a chosen theme.
+ *
+ * `buildTheme` pins the active appearance to dark for this release (see the
+ * comment at its top), so `withTheme("white", …)` no longer produces a white
+ * theme — it produces the dark one, and any assertion about the white or light
+ * surface written through `ThemeProvider` is asserting against dark. The
+ * profiles themselves are still implemented and `galacticProfileFor` still maps
+ * every mode, so what is testable is the pair: the mapping is a pure function,
+ * and `PulseBackground`'s branch on the resulting profile is a component
+ * concern. Splitting them keeps both covered while the pin stands.
+ */
+function withProfile(profile: GalacticBackgroundProfile, children: ReactNode, reduceMotion = false) {
+  const theme = {
+    ...buildTheme(
+      { theme: "dark", fontScale: 1, reduceTransparency: false, compactDensity: false },
+      {
+        reduceMotion,
+        boldText: false,
+        highContrast: false,
+        captionsEnabled: true,
+        hapticFeedback: true,
+        screenReaderHints: true
+      },
+      "dark"
+    ),
+    galacticBackground: profile
+  };
+  return <__testing.ThemeContext.Provider value={theme}>{children}</__testing.ThemeContext.Provider>;
+}
+
 function flatten(style: unknown): Record<string, unknown> {
   if (Array.isArray(style)) return Object.assign({}, ...style.filter(Boolean).map(flatten));
   return (style as Record<string, unknown>) ?? {};
@@ -75,9 +107,26 @@ describe("PulseBackground", () => {
   });
   afterEach(() => jest.restoreAllMocks());
 
-  it("renders nothing when the theme turns the backdrop off", () => {
-    // White's promise is a plain page, so its profile is disabled.
+  it("maps each theme to the atmosphere that theme promises", () => {
+    // White's promise is a plain page, so its profile is disabled. This is the
+    // mapping only; whether the app can currently reach it is the next test.
+    expect(__testing.galacticProfileFor("white", "light").enabled).toBe(false);
+    expect(__testing.galacticProfileFor("light_futuristic", "light").variant).toBe("light");
+    expect(__testing.galacticProfileFor("dark", "dark")).toEqual({ enabled: true, intensity: 1, variant: "dark" });
+  });
+
+  it("ships the dark atmosphere regardless of the requested theme", () => {
+    // `buildTheme` pins the active appearance to dark for this release. Asking
+    // for white must therefore still yield the dark backdrop — and when that pin
+    // is lifted, this test is what fails and points at the two below, which are
+    // the real per-profile coverage.
     const screen = render(withTheme("white", <PulseBackground />));
+    expect(screen.queryByTestId("pulse-background-field", HIDDEN)).not.toBeNull();
+    expect(__testing.galacticProfileFor("white", "light").enabled).toBe(false);
+  });
+
+  it("renders nothing when the profile turns the backdrop off", () => {
+    const screen = render(withProfile({ enabled: false, intensity: 0, variant: "light" }, <PulseBackground />));
     expect(screen.toJSON()).toBeNull();
     expect(screen.queryByTestId("pulse-background")).toBeNull();
   });
@@ -205,8 +254,9 @@ describe("PulseBackground", () => {
     }
   });
 
-  it("uses the light surface under a light theme instead of a dimmed dark one", () => {
-    const screen = render(withTheme("light_futuristic", <PulseBackground />, true));
+  it("uses the light surface under a light profile instead of a dimmed dark one", () => {
+    const light = __testing.galacticProfileFor("light_futuristic", "light");
+    const screen = render(withProfile(light, <PulseBackground />, true));
     expect(one(screen, "pulse-background-gradient").props.colors).toEqual(
       PULSE_BACKGROUND_SURFACES.light.gradient.colors
     );

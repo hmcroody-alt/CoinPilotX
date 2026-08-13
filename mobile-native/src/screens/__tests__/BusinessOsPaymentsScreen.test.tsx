@@ -35,6 +35,24 @@ const mockCachedActivity = jest.fn();
 const mockConnectStatus = jest.fn();
 const mockSellerPayouts = jest.fn();
 const mockRequestPayout = jest.fn();
+const mockPaymentInstruction = jest.fn();
+
+/**
+ * The payout provider is chosen by the server, not by the client.
+ *
+ * `submitWithdraw` asks `PaymentController.instruction("seller_payout")` before
+ * it moves any money and refuses anything that is not Stripe Connect's
+ * `connect_payout` flow. Mocking the network here rather than the controller
+ * keeps that refusal real — see "refuses to move money when the server has not
+ * authorized Stripe Connect" below, which is the reason this mock returns a
+ * value the tests can make wrong.
+ */
+jest.mock("../../api/payments", () => ({
+  ...jest.requireActual("../../api/payments"),
+  createPaymentIntent: (...args: unknown[]) => mockPaymentInstruction(...args)
+}));
+
+const CONNECT_PAYOUT_POLICY = { ok: true, provider: "stripe_connect", flow: "connect_payout" };
 
 // The formatters, the flag predicates and `payoutMethodState` are deliberately
 // left real. They encode the money rules under test — mocking them out would
@@ -196,6 +214,7 @@ beforeEach(() => {
     has_more: false,
     balance: null
   });
+  mockPaymentInstruction.mockResolvedValue(CONNECT_PAYOUT_POLICY);
 });
 
 /**
@@ -365,6 +384,48 @@ describe("Payments money hub", () => {
       expect(cents).toBe(4200);
       expect(key).toMatch(/^payout-/);
       await waitFor(() => expect(view.getByText(/Payout requested/)).toBeTruthy());
+      // The provider is asked for, not assumed.
+      expect(mockPaymentInstruction).toHaveBeenCalledWith(
+        expect.objectContaining({ purchaseContext: "seller_payout" })
+      );
+    });
+
+    it.each([
+      ["the instruction is not ok", { ok: false, provider: "stripe_connect", flow: "connect_payout" }],
+      ["a different provider is selected", { ok: true, provider: "stripe", flow: "connect_payout" }],
+      ["a different flow is selected", { ok: true, provider: "stripe_connect", flow: "payment_sheet" }]
+    ])("refuses to move money when the server has not authorized Stripe Connect: %s", async (_case, policy) => {
+      // The client does not get to pick the payout rail. This gate landed with
+      // the unified provider work and had no test of its own, which meant the
+      // screen could have been silently reverted to submitting unconditionally
+      // and every other payout test would still have passed.
+      mockPaymentInstruction.mockResolvedValue(policy);
+      const view = await renderScreen();
+
+      await act(async () => {
+        fireEvent.press(view.getByText("Request payout"));
+      });
+      await act(async () => {
+        fireEvent.press(view.getByText("Continue"));
+      });
+      await act(async () => {
+        fireEvent.press(view.getByRole("button", { name: "Confirm payout" }));
+      });
+
+      expect(mockRequestPayout).not.toHaveBeenCalled();
+      // And the seller is told, rather than left looking at a button that did
+      // nothing — a silent no-op is how a stuck payout becomes a support ticket.
+      //
+      // The sentence is the generic one, not the specific "could not authorize
+      // the payout provider" the screen throws: `payoutErrorKey` reads a
+      // `PulseApiError.code`, and this failure is a plain `Error`, so it lands
+      // in `errGeneric`. That is worth knowing rather than papering over — the
+      // seller is correctly stopped and correctly told something failed, but
+      // the reason is not carried to them, and "please try again" is advice
+      // that cannot work while the server is selecting a different provider.
+      await waitFor(() => expect(view.getByText(/Couldn't request the payout/i)).toBeTruthy());
+      // The confirm step stays open so the retry is one press, not a restart.
+      expect(view.getByRole("button", { name: "Confirm payout" })).toBeTruthy();
     });
 
     it("refuses an amount above the available balance before any network call", async () => {
