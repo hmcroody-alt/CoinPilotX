@@ -613,10 +613,105 @@ def test_selection_deterministic():
 
 
 # --- standalone runner ------------------------------------------------------
+# --- ads-intelligence measurement hook (Stage 1: observe, never influence) ---
+#
+# These live here rather than in the ads_intelligence suite because the property
+# under test is about THIS module: that switching measurement on records the
+# opportunity, and that nothing about measurement — including it failing outright
+# — can change what delivery returns.
+
+_MEASURE_FLAG = "BUSINESS_OS_ADS_INTELLIGENCE_MEASUREMENT"
+
+
+def test_measurement_off_records_nothing():
+    """Default posture: no decision id, no rows, delivery untouched."""
+    os.environ.pop(_MEASURE_FLAG, None)
+    os.environ.pop("BUSINESS_OS_ADS_INTELLIGENCE", None)
+    _ready_feed()
+
+    from services.business_os.ads_intelligence.schema import ensure_schema
+    ensure_schema()
+    conn = db.connect()
+    try:
+        before = conn.execute(
+            "SELECT COUNT(*) FROM ads_intel_delivery_decisions").fetchone()[0]
+    finally:
+        conn.close()
+
+    res = deliv.request_placement(9301, "feed", request={"country": "us"})
+    _assert(res.get("sponsored"), ("delivery must still work", res))
+    _assert("decision_id" not in res,
+            ("no decision id may be exposed while measurement is off", res))
+
+    conn = db.connect()
+    try:
+        after = conn.execute(
+            "SELECT COUNT(*) FROM ads_intel_delivery_decisions").fetchone()[0]
+    finally:
+        conn.close()
+    _assert(before == after, f"measurement wrote {after - before} rows while off")
+
+
+def test_measurement_on_records_the_decision():
+    os.environ[_MEASURE_FLAG] = "on"
+    try:
+        _ready_feed()
+        res = deliv.request_placement(9302, "feed", request={"country": "us"})
+        _assert(res.get("sponsored"), ("delivery must still work", res))
+        decision_id = res.get("decision_id")
+        _assert(decision_id, ("a filled opportunity must be recorded", res))
+
+        from services.business_os.ads_intelligence import decisions as _dec
+        conn = db.connect()
+        try:
+            row = _dec.load_decision(conn, decision_id)
+        finally:
+            conn.close()
+        _assert(row is not None, "decision row missing")
+        _assert(row["filled"] == 1, row)
+        _assert(row["no_fill_reason"] is None, row)
+        _assert(row["placement_key"] == "feed", row)
+        _assert(row["campaign_id"] and row["creative_id"], row)
+        # Recorded pseudonymously: the raw viewer id must not appear.
+        _assert(str(row["subject_ref"]) != "9302",
+                "raw viewer id reached the decision log")
+    finally:
+        os.environ.pop(_MEASURE_FLAG, None)
+
+
+def test_measurement_failure_cannot_break_delivery():
+    """The Stage 1 promise, tested by actually breaking the recorder.
+
+    If measurement can take delivery down, no amount of care at the call site
+    makes it safe to enable in production.
+    """
+    os.environ[_MEASURE_FLAG] = "on"
+    from services.business_os.ads_intelligence import decisions as _dec
+    original = _dec.record_decision
+
+    def _explode(**_kwargs):
+        raise RuntimeError("measurement is down")
+
+    _dec.record_decision = _explode
+    try:
+        _ready_feed()
+        res = deliv.request_placement(9303, "feed", request={"country": "us"})
+        _assert(res.get("sponsored"),
+                ("delivery must survive a failing recorder", res))
+        _assert("decision_id" not in res,
+                ("a failed recording must not fabricate an id", res))
+    finally:
+        _dec.record_decision = original
+        os.environ.pop(_MEASURE_FLAG, None)
+
+
 def _run_standalone():
     setup_module()
     tests = [
         test_flag_off_dark,
+        test_measurement_off_records_nothing,
+        test_measurement_on_records_the_decision,
+        test_measurement_failure_cannot_break_delivery,
         test_request_returns_sponsored_payload,
         test_payload_hides_internal_fields,
         test_reels_placement_served,
