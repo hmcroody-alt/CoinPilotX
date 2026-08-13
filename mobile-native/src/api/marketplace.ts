@@ -221,17 +221,30 @@ export type MarketplaceSellerOrder = {
   currency?: string;
   status?: string;
   created_at?: string;
+  commercial_economics?: MarketplaceOrderEconomics | null;
 };
+
+export type MarketplaceOrderEconomics = {
+  merchandise_net_minor?: number; seller_shipping_credit_minor?: number;
+  gross_platform_fee_minor?: number; fee_reversed_minor?: number;
+  seller_reversed_minor?: number; net_seller_earnings_minor?: number;
+  fee_rate_bps?: number; fee_policy_version?: string; payout_state?: string;
+  blocker_code?: string | null; protection_ends_at?: string | null;
+};
+
+export type MarketplaceCommercialSummary = { seller_liability_by_state?: Record<string, number> };
 
 export type MarketplaceSellerOrdersResponse = {
   ok?: boolean;
   orders?: MarketplaceSellerOrder[];
+  commercial_summary?: MarketplaceCommercialSummary;
   message?: string;
 };
 
 export type SellerStoreSnapshot = {
   listings: MarketplaceListing[];
   orders: MarketplaceSellerOrder[];
+  commercial_summary?: MarketplaceCommercialSummary;
   cached_at?: string;
 };
 
@@ -280,6 +293,7 @@ export async function loadSellerStoreSnapshot() {
   const snapshot: SellerStoreSnapshot = {
     listings: sellerListings.status === "fulfilled" ? sellerListings.value.items || [] : [],
     orders: orders.status === "fulfilled" ? orders.value.orders || [] : [],
+    commercial_summary: orders.status === "fulfilled" ? orders.value.commercial_summary : undefined,
     cached_at: new Date().toISOString()
   };
   await cacheSellerStore(snapshot).catch(() => undefined);
@@ -371,6 +385,14 @@ export async function connectMarketplacePayout() {
     body: JSON.stringify({ seller_type: "merchant" })
   });
   return result;
+}
+
+export async function getMarketplaceCommercialTerms() {
+  return pulseApi<any>("/api/pulse/marketplace/commercial/terms");
+}
+
+export async function acceptMarketplaceCommercialTerms() {
+  return pulseApi<any>("/api/pulse/marketplace/commercial/terms", { method: "POST", body: JSON.stringify({}) });
 }
 
 export async function listMarketplaceSellerOrders() {
@@ -544,6 +566,7 @@ function normalizeSellerStoreSnapshot(snapshot: SellerStoreSnapshot): SellerStor
       currency: String(order.currency || "USD"),
       status: String(order.status || "pending")
     })),
+    commercial_summary: snapshot?.commercial_summary,
     cached_at: snapshot?.cached_at || ""
   };
 }

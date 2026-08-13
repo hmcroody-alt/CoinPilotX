@@ -50355,6 +50355,11 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
                 return api_error(files_error, 400)
         listing_metadata_update = marketplace_listing_types_service.dump_metadata(cleaned_metadata)
     review = revenue_safety_engine.marketplace_listing_review({"title": title, "description": description, "category": category})
+    from services import marketplace_goods_policy
+    goods_decision = marketplace_goods_policy.evaluate({
+        "title": title, "description": description, "category": category,
+        "subcategory": payload.get("subcategory") or existing.get("subcategory"),
+    })
     changed_fields = {name for name, value in {
         "title": title, "short_description": short_description, "description": description,
         "category": category, "price_label": price,
@@ -50364,6 +50369,8 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
     old_status = str(existing.get("status") or "draft").lower()
     old_approval = str(existing.get("approval_status") or "draft").lower()
     material_change = marketplace_listing_lifecycle.requires_rereview(changed_fields)
+    if goods_decision["decision"] != "ALLOWED":
+        material_change = True
     if old_status in marketplace_listing_lifecycle.PUBLIC_STATUSES and old_approval == "approved" and material_change:
         next_status, next_approval = "pending_review", "pending_review"
     else:
@@ -50411,7 +50418,8 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
         status=item.get("status") or next_status,
         approval_status=item.get("approval_status") or review.get("status"),
         title=item.get("title") or title,
-        extra={"review_status": review.get("status"), "risk_score": int(review.get("risk_score") or 0)},
+        extra={"review_status": review.get("status"), "risk_score": int(review.get("risk_score") or 0),
+               "goods_policy": goods_decision},
     )
     conn.commit()
     conn.close()
@@ -85864,8 +85872,7 @@ def api_payments_list_seller_orders():
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    if ios_native_app_request():
-        return ios_paid_digital_unavailable_response(api=True)
+    native_marketplace_only = ios_native_app_request()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute(
         """
@@ -85876,7 +85883,7 @@ def api_payments_list_seller_orders():
         """,
         (int(user["user_id"]),),
     )
-    creator_orders = [dict(row) for row in cur.fetchall()]
+    creator_orders = [] if native_marketplace_only else [dict(row) for row in cur.fetchall()]
     cur.execute(
         """
         SELECT * FROM seller_transactions
@@ -85887,8 +85894,53 @@ def api_payments_list_seller_orders():
         (int(user["user_id"]),),
     )
     seller_orders = [dict(row) for row in cur.fetchall()]
+    try:
+        from services import marketplace_commercial_operations as commercial_ops
+        commercial_ops.ensure_schema(conn)
+        enriched = []
+        for order in seller_orders:
+            settlement = commercial_ops._row(cur.execute(
+                "SELECT * FROM marketplace_commercial_settlements WHERE seller_transaction_id=?",
+                (int(order.get("id") or 0),)).fetchone())
+            enriched.append({**order, "commercial_economics": settlement})
+        seller_orders = enriched
+        summary = commercial_ops.economics(user["user_id"])
+    except Exception:
+        summary = {"seller_liability_by_state": {}}
     conn.close()
-    return jsonify({"ok": True, "orders": creator_orders + seller_orders})
+    return jsonify({"ok": True, "orders": creator_orders + seller_orders,
+                    "commercial_summary": summary})
+
+
+@webhook_app.route("/api/pulse/marketplace/commercial/terms", methods=["GET", "POST"])
+def api_pulse_marketplace_commercial_terms():
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    from services import marketplace_commercial_operations as commercial_ops
+    if request.method == "POST":
+        accepted = commercial_ops.accept_terms(user["user_id"], source="native" if ios_native_app_request() else "web")
+        return jsonify({"ok": True, "acceptance": accepted})
+    return jsonify({"ok": True, "terms": commercial_ops.terms(user["user_id"])})
+
+
+@webhook_app.route("/admin/business-os/marketplace/economics", methods=["GET"])
+def admin_business_os_marketplace_economics():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    from services import marketplace_commercial_operations as commercial_ops
+    return jsonify({"ok": True, "economics": commercial_ops.economics(),
+                    "readiness": commercial_ops.readiness()})
+
+
+@webhook_app.route("/admin/business-os/marketplace/reconcile", methods=["POST"])
+def admin_business_os_marketplace_reconcile():
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    from services import marketplace_commercial_operations as commercial_ops
+    return jsonify({"ok": True, "reconciliation": commercial_ops.reconcile()})
 
 
 # --- the seller money hub, read-only ----------------------------------------
@@ -97518,6 +97570,9 @@ def stripe_webhook():
                     "INSERT INTO seller_payouts (user_id, seller_type, amount_cents, currency, status, provider, provider_payout_id, failure_reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'stripe', ?, ?, ?, ?)",
                     (account.get("user_id"), account.get("seller_type"), int(obj.get("amount") or 0), (obj.get("currency") or "usd").upper(), "paid" if event_type == "payout.paid" else "failed", obj.get("id") or "", obj.get("failure_message") or "", now, now),
                 )
+            from services import marketplace_payout_scheduler
+            marketplace_payout_scheduler.apply_provider_event(
+                obj.get("id") or "", paid=event_type == "payout.paid", event_id=event_id)
         else:
             # A refunded or disputed advertiser wallet top-up has to debit the
             # wallet, otherwise the advertiser keeps spending money Stripe has
