@@ -51,7 +51,7 @@ from datetime import datetime, timedelta, timezone
 
 from services import db
 
-from . import privacy, taxonomy
+from . import invalid_traffic, privacy, taxonomy
 from .schema import ensure_schema, new_id, utc_now_iso
 
 # How far out of step with the server an event's own timestamp may be.
@@ -263,6 +263,17 @@ def assess_quality(payload: dict, *, event_name: str) -> dict:
 # Ingest
 # --------------------------------------------------------------------------- #
 
+def _merge_notes(*parts) -> str | None:
+    """Join note fragments without letting one finding erase another.
+
+    Quality and validity are separate judgements about the same row and both
+    are worth keeping: "viewability contract not met" plus "acted 40ms after
+    the impression" describes a broken client, while either alone is ambiguous.
+    """
+    kept = [str(p).strip() for p in parts if p and str(p).strip()]
+    return " | ".join(kept) or None
+
+
 def _insert_event(conn, payload: dict, validation: dict, *,
                   batch_key: str | None, ingest_source: str) -> str | None:
     """Insert one validated event. Returns the id, or None when it is a dupe.
@@ -275,6 +286,19 @@ def _insert_event(conn, payload: dict, validation: dict, *,
     quality = assess_quality(payload, event_name=name)
     occurred = validation["occurred_at"]
     now_iso = utc_now_iso()
+
+    # Screen for invalid traffic before the row exists rather than only in the
+    # later sweep. The sweep is the safety net, not the control: an event that
+    # is stored valid and billable is visible to the billing path in the
+    # interval before the sweep runs, and that interval is exactly when a
+    # click-farm is at its most productive. Screening is advisory in one
+    # direction only — like `assess_quality`, it can withhold billability and
+    # can never grant it.
+    verdict = invalid_traffic.screen(conn, {**payload, "event_name": name},
+                                     now=validation.get("occurred_at"))
+    validity = verdict.get("validity") or "valid"
+    invalid_reason = verdict.get("reason")
+    billable = bool(quality["billable"]) and validity == "valid"
 
     subject = payload.get("subject_ref")
     if subject is None and payload.get("user_id") is not None:
@@ -327,11 +351,11 @@ def _insert_event(conn, payload: dict, validation: dict, *,
                 _as_int(payload.get("duration_ms")),
                 _as_int(payload.get("value_cents")),
                 payload.get("currency"),
-                "valid",
-                None,
-                1 if quality["billable"] else 0,
+                validity,
+                invalid_reason,
+                1 if billable else 0,
                 quality["quality_status"],
-                quality["quality_notes"],
+                _merge_notes(quality["quality_notes"], verdict.get("detail")),
                 taxonomy.EVENT_SCHEMA_VERSION,
                 taxonomy.PROCESSING_VERSION,
                 ingest_source,
