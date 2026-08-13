@@ -162,7 +162,7 @@ def test_order_lifecycle_and_settlement():
 
     orders_mod.fulfill_order(oid, SELLER, tracking_ref="T")
     orders_mod.complete_order(oid, BUYER, context=_ctx())
-    # settlement: escrow drains exactly, fee 10% to revenue, net to seller payable
+    # Existing seller economics remain unchanged until the proposed policy is activated.
     assert ledger.get_balance(orders_mod.escrow_account(oid)) == 0
     assert ledger.get_balance(orders_mod.seller_payable_account(SELLER)) == 3600
     assert ledger.get_balance(orders_mod.PLATFORM_REVENUE_ACCOUNT) == 400

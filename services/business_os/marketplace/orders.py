@@ -43,6 +43,7 @@ from typing import Any, Optional
 from services import db
 from services.business_os.marketplace import service as _svc
 from services.business_os.marketplace.service import MarketplaceError
+from services.business_os.marketplace import policy as _policy
 from services.business_os.ledger import ledger as _ledger
 
 try:
@@ -51,8 +52,9 @@ except Exception:  # pragma: no cover
     _notify = None
 
 
-# --- default platform fee (server-authoritative, versionable later) ---------
-DEFAULT_FEE_BPS = 1000  # 10.00% marketplace take rate
+# Existing commercial behavior remains authoritative until the gated V1 policy
+# is activated. This avoids silently changing live seller economics.
+DEFAULT_FEE_BPS = 1000
 
 
 ORDER_STATUSES = {"created", "paid", "fulfilled", "completed", "cancelled", "refunded"}
@@ -209,20 +211,45 @@ def create_order(buyer_user_id: Any, product_id: Any, *, quantity: int = 1,
         if inv is not None and inv < quantity:
             raise MarketplaceError("Not enough inventory.", 409, "insufficient_inventory")
         unit = int(product["price_cents"])
-        subtotal = unit * quantity
-        fee_bps = DEFAULT_FEE_BPS
+        proposed_active = _policy.fee_policy_active()
+        commercial = _policy.quote(
+            unit_price_cents=unit, quantity=quantity,
+            currency=product.get("currency", "usd"),
+            activate_proposed_policy=proposed_active,
+        )
+        subtotal = commercial.merchandise_net_cents
+        fee_bps = commercial.platform_fee_bps if proposed_active else DEFAULT_FEE_BPS
         fee, net = _fee_split(subtotal, fee_bps)
+        snapshot = commercial.as_dict()
+        if not proposed_active:
+            snapshot.update({
+                "fee_policy_version": "MARKETPLACE_LEGACY_10_PERCENT",
+                "platform_fee_bps": fee_bps,
+                "platform_fee_cents": fee,
+                "seller_earnings_cents": net,
+            })
         oid = "mkto_" + uuid.uuid4().hex
         now = _now_iso()
         conn.execute(
             "INSERT INTO business_os_mkt_orders "
             "(order_id, buyer_user_id, seller_user_id, status, currency, subtotal_cents, "
             "total_cents, platform_fee_bps, platform_fee_cents, seller_net_cents, "
-            "refunded_cents, fulfillment_type, created_at, updated_at) "
-            "VALUES (?, ?, ?, 'created', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+            "refunded_cents, fulfillment_type, merchandise_gross_cents, seller_discount_cents, "
+            "merchandise_net_cents, shipping_cents, tax_cents, buyer_service_fee_cents, "
+            "seller_shipping_credit_cents, fee_policy_version, fee_base, return_policy_version, "
+            "listing_policy_version, payout_policy_version, payout_status, policy_snapshot_json, "
+            "created_at, updated_at) "
+            "VALUES (?, ?, ?, 'created', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_order', ?, ?, ?)",
             (oid, _svc._sid(buyer_user_id), product["seller_user_id"],
              product.get("currency", "usd"), subtotal, subtotal, fee_bps, fee, net,
-             product.get("fulfillment_type", "physical"), now, now))
+             product.get("fulfillment_type", "physical"), commercial.merchandise_gross_cents,
+             commercial.seller_discount_cents, commercial.merchandise_net_cents,
+             commercial.shipping_cents, commercial.tax_cents,
+             commercial.buyer_service_fee_cents, commercial.seller_shipping_credit_cents,
+             snapshot["fee_policy_version"], commercial.fee_base,
+             commercial.return_policy_version, commercial.listing_policy_version,
+             commercial.payout_policy_version,
+             json.dumps(snapshot, sort_keys=True), now, now))
         conn.execute(
             "INSERT INTO business_os_mkt_order_items "
             "(order_id, product_id, title, unit_price_cents, quantity, line_total_cents, "
