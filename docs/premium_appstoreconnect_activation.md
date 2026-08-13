@@ -69,3 +69,91 @@ these are present in production (names per `iap_apple.py`):
 Until steps 1–2 are done, Premium purchase will fail at StoreKit with "product
 not found" — the app code is correct; the products simply don't exist yet in
 App Store Connect. **No code change is required to activate Premium.**
+
+---
+
+## Ready-to-paste field values (en-US)
+
+Copy is authored to be accurate to the entitlements seeded in
+`schema.py` (`premium.profile.customization`, `premium.media.higher_quality`,
+`premium.undx.advanced`). Trim any field Apple flags for length — Apple enforces
+per-field character limits (display name ~30 chars, description ~45).
+
+### Subscription group
+- Reference name: **PulseSoc Premium**
+- (One group; monthly and annual are two billing options at the **same** level.)
+
+### com.pulsesoc.premium.monthly
+- Reference name: `PulseSoc Premium — Monthly`
+- Duration: **1 month**
+- Price: **$9.99** (select Apple's official price point for $9.99, all storefronts)
+- Subscription level: **Level 1** (same level as annual)
+- Display name: `PulseSoc Premium`
+- Description: `Unlock Premium: profile customization, higher-quality media, and advanced AI.`
+
+### com.pulsesoc.premium.annual
+- Reference name: `PulseSoc Premium — Annual`
+- Duration: **1 year**
+- Price: **$99.99** (select Apple's official price point for $99.99, all storefronts)
+- Subscription level: **Level 1** (same level as monthly)
+- Display name: `PulseSoc Premium`
+- Description: `A year of Premium: profile customization, higher-quality media, and advanced AI.`
+
+> Annual "savings" wording: $9.99 × 12 = $119.88 vs $99.99 → ~17% / ~$19.89 saved.
+> Only surface this if the product spec/UI already calls for it; do not invent a
+> discount claim.
+
+### Availability
+All storefronts (global), matching the app's availability. Do not silently limit
+to the United States.
+
+### Tax category
+Use the app's existing default digital-goods / software tax category. No custom
+tax treatment.
+
+### Free trial (optional)
+Configure as an **Introductory Offer** on the group: Free, 7 days, new
+subscribers. Do not create a separate "trial" product.
+
+### App Review information (both products)
+Review note (paste):
+
+```
+PulseSoc Premium is an auto-renewable subscription that unlocks premium
+account features: profile customization, higher-quality media uploads, and
+advanced UNDX AI. Monthly and annual are the same entitlement level, differing
+only in billing period. Purchases are verified server-side via signed StoreKit 2
+transactions (App Store Server API + Server Notifications V2); the app sets
+appAccountToken to the user id so the entitlement binds to the correct account.
+To test: sign in with the provided sandbox account, open Premium, and purchase
+either option — premium features unlock immediately on verification.
+```
+
+- Review screenshot: a real capture of the in-app **PulseSoc Premium** purchase
+  surface showing the plan(s), price, and subscribe CTA. **OWNER-SIDE BLOCKER**
+  if not available — do not fabricate a mockup.
+
+## Click-by-click runbook (App Store Connect)
+
+1. App Store Connect → **Apps → PulseSoc → Subscriptions** (or Monetization →
+   Subscriptions).
+2. Under **Subscription Groups**, create/confirm group reference name
+   **PulseSoc Premium**.
+3. **Create Subscription** → reference name `PulseSoc Premium — Monthly`,
+   product ID `com.pulsesoc.premium.monthly` → duration **1 Month**.
+4. Set **Subscription Price** → $9.99 (all countries/regions).
+5. **Localization (English U.S.)** → display name `PulseSoc Premium`,
+   description as above.
+6. **App Review Information** → paste review note; attach the Premium screenshot.
+7. Repeat 3–6 for `com.pulsesoc.premium.annual` (duration **1 Year**, $99.99).
+8. Confirm both show the **same** subscription level in the group.
+9. Availability → all storefronts.
+10. Status will read *Ready to Submit* / *Prepare for Submission*; these are
+    typically submitted **with the next app version**. Do **not** submit the app
+    version without explicit owner authorization.
+
+## Prerequisites that only the account owner can satisfy
+- Signed-in App Store Connect access (Apple ID + 2FA). An agent cannot log in.
+- **Paid Applications Agreement** active, with banking + tax set — required
+  before any in-app purchase can be created.
+- A real Premium purchase-surface screenshot for App Review.
