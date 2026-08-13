@@ -22154,7 +22154,43 @@ def api_business_os_ads_intel_campaign_delivery(campaign_id):
         return denied
     from services.business_os.ads_intelligence import api as _aiapi
     return _bo_ad_reply(_aiapi.campaign_delivery_diagnosis(
-        owner_user_id=user.get("user_id"), campaign_id=campaign_id))
+        owner_user_id=user.get("user_id"), campaign_id=campaign_id,
+        creative_id=(request.args.get("creative_id") or "").strip() or None))
+
+
+@webhook_app.route("/api/business-os/ads-intel/why/<decision_id>", methods=["GET"])
+def api_business_os_ads_intel_why_this_ad(decision_id):
+    """"Why am I seeing this ad?" — answered from the recorded decision.
+
+    The subject is derived from the authenticated session inside the controller,
+    so this route cannot be used to read somebody else's explanation: a decision
+    belonging to another viewer returns exactly the same 404 as one that was
+    never issued.
+    """
+    if not _business_os_ads_intel_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.ads_intelligence import api as _aiapi
+    return _bo_ad_reply(_aiapi.explain_ad(
+        viewer_user_id=user.get("user_id"), decision_id=decision_id))
+
+
+@webhook_app.route("/api/business-os/ads-intel/my-interests", methods=["GET"])
+def api_business_os_ads_intel_my_interests():
+    """The ad categories the system associates with the caller, for the caller.
+
+    Categories only, never the scores, and never anybody else's — the subject is
+    the authenticated session and there is no parameter that changes it.
+    """
+    if not _business_os_ads_intel_enabled():
+        return jsonify({"ok": False, "error": "Not found."}), 404
+    user, denied = pulse_ads_api_user_required()
+    if denied:
+        return denied
+    from services.business_os.ads_intelligence import api as _aiapi
+    return _bo_ad_reply(_aiapi.my_ad_interests(viewer_user_id=user.get("user_id")))
 
 
 @webhook_app.route("/admin/business-os/ads-intel/delivery-health", methods=["GET"])

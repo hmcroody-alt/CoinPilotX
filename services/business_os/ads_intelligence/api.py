@@ -30,7 +30,11 @@ from typing import Any, Optional
 from services import db
 
 from . import decisions as _dec
+from . import diagnostics as _diag
 from . import events as _events
+from . import privacy as _privacy
+from . import recommendations as _recs
+from . import transparency as _transparency
 from . import is_enabled, measurement_enabled
 
 _DARK = (404, {"ok": False, "error": "Not found."})
@@ -121,13 +125,18 @@ def delivery_health(*, placement_key: Optional[str] = None,
     return 200, {"ok": True, "report": report}
 
 
-def campaign_delivery_diagnosis(*, owner_user_id: Any, campaign_id: Any) -> tuple:
+def campaign_delivery_diagnosis(*, owner_user_id: Any, campaign_id: Any,
+                                creative_id: Any = None) -> tuple:
     """``GET /api/business-os/ads-intel/campaigns/<id>/delivery`` — advertiser.
 
-    Why this specific campaign is or is not delivering. Ownership is verified
+    Why this specific campaign is or is not delivering, with the findings ranked
+    by severity and the proposals derived from them. Ownership is verified
     against the canonical advertising tables — this module does not keep its own
     idea of who owns a campaign, because a second ownership model is exactly how
     two systems end up disagreeing about who may read what.
+
+    ``creative_id`` is optional and only widens the diagnosis to include creative
+    fatigue; it is not used for access control, which is campaign-scoped.
     """
     if not measurement_enabled():
         return _DARK
@@ -157,17 +166,85 @@ def campaign_delivery_diagnosis(*, owner_user_id: Any, campaign_id: Any) -> tupl
             "WHERE campaign_id = ?", (campaign_id,)).fetchone()
         served = int((row or [0, 0])[1] or 0)
 
-        # Opportunities this campaign WON. Opportunities it merely competed in
-        # are not attributable to it from this table, and inventing a number
-        # here would be worse than reporting none.
+        # The autonomy level is fixed at LEVEL_RECOMMEND here and is not a
+        # parameter. If a caller could raise it, the HTTP surface would become a
+        # way to widen what automation may do — and this endpoint only ever
+        # reports, so nothing it returns is acted on regardless.
+        result = _recs.for_campaign(
+            conn, campaign_id, creative_id=creative_id,
+            autonomy_level=_recs.LEVEL_RECOMMEND)
+        diagnosis = result.get("diagnosis") or {}
+
+        # `served` is opportunities this campaign WON. Opportunities it merely
+        # competed in are not attributable to it from this table, and inventing
+        # a number here would be worse than reporting none.
         return 200, {"ok": True, "campaign_id": campaign_id,
                      "served": served,
-                     "delivering": served > 0}
+                     "delivering": served > 0,
+                     "summary": _diag.summary_sentence(diagnosis),
+                     "findings": diagnosis.get("findings") or [],
+                     "recommendations": result.get("recommendations") or [],
+                     "primary": result.get("primary"),
+                     "degraded": bool(diagnosis.get("degraded"))}
     finally:
         try:
             conn.close()
         except Exception:
             pass
+
+
+def explain_ad(*, viewer_user_id: Any, decision_id: Any) -> tuple:
+    """``GET /api/business-os/ads-intel/why/<decision_id>`` — the viewer's own.
+
+    The subject is derived from the session here, so a caller can only ever ask
+    why *they* saw an ad. Asking about somebody else's decision is not refused
+    with a distinct error — it returns the same ``found: False`` as an id that
+    was never issued, because a distinguishable refusal confirms that the id is
+    real and therefore that some specific person was shown that ad.
+    """
+    if not measurement_enabled():
+        return _DARK
+    subject = _privacy.subject_ref(viewer_user_id)
+    if not subject:
+        return _DARK
+
+    conn = db.connect()
+    try:
+        result = _transparency.explain_delivery(
+            conn, decision_id, subject_ref=subject)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    if not result.get("found"):
+        return 404, {"ok": False, "error": "Not found."}
+    return 200, {"ok": True, "explanation": result}
+
+
+def my_ad_interests(*, viewer_user_id: Any) -> tuple:
+    """``GET /api/business-os/ads-intel/my-interests`` — shown to the subject.
+
+    What the ad system associates with the caller, for the caller. Categories
+    only: the raw affinity scores are deliberately not exposed, because "why
+    0.62" has no answer a person can act on while the category is exactly what
+    the controls returned alongside it operate on.
+    """
+    if not measurement_enabled():
+        return _DARK
+    subject = _privacy.subject_ref(viewer_user_id)
+    if not subject:
+        return _DARK
+
+    conn = db.connect()
+    try:
+        disclosure = _transparency.interest_disclosure(conn, subject)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    return 200, {"ok": True, "disclosure": disclosure}
 
 
 def status() -> tuple:

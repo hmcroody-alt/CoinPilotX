@@ -284,6 +284,101 @@ def test_campaign_diagnosis_rejects_an_empty_id():
         owner_user_id=_VIEWER, campaign_id="")[0] == 404)
 
 
+# --------------------------------------------------------------------------- #
+# The viewer-facing surfaces
+# --------------------------------------------------------------------------- #
+
+def _seed_decision(subject_ref, decision_id="dec-why-1"):
+    conn = db.connect()
+    try:
+        conn.execute(
+            "DELETE FROM ads_intel_delivery_decisions WHERE decision_id = ?",
+            (decision_id,))
+        conn.execute(
+            "INSERT INTO ads_intel_delivery_decisions (decision_id, "
+            "opportunity_id, occurred_at, subject_ref, placement_key, filled, "
+            "campaign_id, creative_id, score, score_breakdown_json, "
+            "ranking_mode, exploration, created_at) "
+            "VALUES (?, ?, ?, ?, 'feed', 1, 'camp-api', 'cre-api', 0.5, ?, "
+            "'ranked_v1', 0, ?)",
+            (decision_id, f"opp-{decision_id}", _now(), subject_ref,
+             '{"context": 0.8, "affinity": 0.2}', _now()))
+        conn.commit()
+    finally:
+        conn.close()
+    return decision_id
+
+
+def test_a_viewer_can_read_why_they_saw_an_ad():
+    """The whole point of the surface: a real answer, from the real decision."""
+    subject = privacy.subject_ref(_VIEWER)
+    decision_id = _seed_decision(subject)
+    status, body = api.explain_ad(viewer_user_id=_VIEWER,
+                                  decision_id=decision_id)
+    _assert(status == 200, (status, body))
+    _assert(body["explanation"]["reasons"], body)
+    _assert(body["explanation"]["controls"], body)
+
+
+def test_one_viewer_cannot_read_another_viewers_explanation():
+    """The single most important property of this endpoint.
+
+    A 404 here must be indistinguishable from the 404 for an id that was never
+    issued, because a distinct "not yours" confirms the id is real and therefore
+    that some specific person was shown that ad.
+    """
+    decision_id = _seed_decision(privacy.subject_ref(_VIEWER))
+    somebody_else = 909090
+    theirs = api.explain_ad(viewer_user_id=somebody_else,
+                            decision_id=decision_id)
+    never_issued = api.explain_ad(viewer_user_id=somebody_else,
+                                  decision_id="dec-does-not-exist")
+    _assert(theirs[0] == 404, theirs)
+    _assert(theirs == never_issued,
+            f"another viewer's decision is distinguishable from a missing "
+            f"one: {theirs} vs {never_issued}")
+
+
+def test_the_explanation_endpoint_takes_no_subject_from_the_caller():
+    """There is no parameter that lets a caller name whose ads to explain."""
+    import inspect
+    params = set(inspect.signature(api.explain_ad).parameters)
+    _assert(params == {"viewer_user_id", "decision_id"},
+            f"explain_ad grew a parameter: {sorted(params)}")
+
+
+def test_the_interest_disclosure_is_scoped_to_the_caller():
+    import inspect
+    params = set(inspect.signature(api.my_ad_interests).parameters)
+    _assert(params == {"viewer_user_id"},
+            f"my_ad_interests grew a parameter: {sorted(params)}")
+    status, body = api.my_ad_interests(viewer_user_id=_VIEWER)
+    _assert(status == 200, (status, body))
+    _assert("categories" in body["disclosure"], body)
+
+
+def test_the_caller_cannot_raise_the_autonomy_level_over_http():
+    """Autonomy is a server-side decision, not a request parameter.
+
+    If this endpoint took a level, the HTTP surface would become a way to widen
+    what automation may do to a campaign.
+    """
+    import inspect
+    params = set(inspect.signature(api.campaign_delivery_diagnosis).parameters)
+    _assert("autonomy_level" not in params,
+            "the diagnosis endpoint accepts an autonomy level from the caller")
+
+
+def test_the_viewer_surfaces_are_dark_when_measurement_is_off():
+    os.environ.pop(_FLAG, None)
+    try:
+        _assert(api.explain_ad(viewer_user_id=_VIEWER,
+                               decision_id="dec-why-1")[0] == 404)
+        _assert(api.my_ad_interests(viewer_user_id=_VIEWER)[0] == 404)
+    finally:
+        os.environ[_FLAG] = "on"
+
+
 def _main():
     setup_module()
     tests = [(n, o) for n, o in sorted(globals().items())
