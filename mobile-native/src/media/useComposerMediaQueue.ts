@@ -72,13 +72,14 @@ export function useComposerMediaQueue(defaultOptions: NativeMediaUploadOptions) 
 
   const uploadItem = useCallback(async (item: ComposerMediaItem, overrideOptions: Partial<NativeMediaUploadOptions> = {}) => {
     if (item.result && uploadResultMediaId(item.result)) return item.result;
-    const validation = validateNativeMedia(item.asset);
+    const options = { ...defaultOptions, ...overrideOptions };
+    const validation = validateNativeMedia(item.asset, options.contextType);
     if (validation) {
       updateItem(item.id, { error: validation, progress: { stage: "failed", percent: 0, message: validation } });
       throw new Error(validation);
     }
     updateItem(item.id, { error: "", progress: { stage: "validating", percent: 1, message: "Preparing media." } });
-    const task = uploadNativeMedia(item.asset, { ...defaultOptions, ...overrideOptions }, (progress) => updateItem(item.id, { progress }));
+    const task = uploadNativeMedia(item.asset, options, (progress) => updateItem(item.id, { progress }));
     controllers.current.set(item.id, task.controller);
     try {
       const uploaded = await task.promise;

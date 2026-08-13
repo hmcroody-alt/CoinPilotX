@@ -68,7 +68,8 @@ export function useNativeMediaUpload(defaultOptions: NativeMediaUploadOptions) {
       setError("Choose media before uploading.");
       return null;
     }
-    const validation = validateNativeMedia(overrideAsset);
+    const options = { ...defaultOptions, ...overrideOptions };
+    const validation = validateNativeMedia(overrideAsset, options.contextType);
     if (validation) {
       setError(validation);
       setProgress({ stage: "failed", percent: 0, message: validation });
@@ -76,7 +77,6 @@ export function useNativeMediaUpload(defaultOptions: NativeMediaUploadOptions) {
     }
     setError("");
     setUploading(true);
-    const options = { ...defaultOptions, ...overrideOptions };
     const uploadTask = uploadNativeMedia(overrideAsset, options, setProgress);
     controllerRef.current = uploadTask.controller;
     try {
