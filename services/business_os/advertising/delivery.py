@@ -64,9 +64,13 @@ def _advertiser_identity(conn, advertiser_uid: Any) -> dict:
     canonical users table defensively; never exposes private/account internals."""
     ident = {"advertiser_ref": _c.sid(advertiser_uid), "display_name": None,
              "username": None}
+    # The canonical users table is keyed by `user_id` (bot.init_db), NOT `id`.
+    # This previously selected on `id`, which raises UndefinedColumn on
+    # PostgreSQL — swallowed by the except below, so every served ad rendered a
+    # blank "Sponsored by" line in production instead of failing loudly.
     try:
         row = _svc._row_to_dict(conn.execute(
-            "SELECT * FROM users WHERE id = ?", (advertiser_uid,)).fetchone())
+            "SELECT * FROM users WHERE user_id = ?", (advertiser_uid,)).fetchone())
     except Exception:
         row = None
     if row:

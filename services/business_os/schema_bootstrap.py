@@ -65,6 +65,12 @@ _ENSURES = (
     ("creator_commerce", "services.business_os.creator_commerce.schema", "ensure_schema"),
     ("merchant_automation", "services.business_os.merchant_automation.schema", "ensure_schema"),
     ("undx_actions", "services.business_os.undx_actions.schema", "ensure_schema"),
+    # Measurement/decision layer sitting over the existing ads platforms. It
+    # adds no advertiser/campaign/wallet surface of its own — see
+    # services/business_os/ads_intelligence/schema.py. Structural only: the
+    # tables are inert until an ads-intelligence surface is actually used.
+    ("ads_intelligence", "services.business_os.ads_intelligence.schema",
+     "ensure_schema"),
 )
 
 _lock = threading.Lock()

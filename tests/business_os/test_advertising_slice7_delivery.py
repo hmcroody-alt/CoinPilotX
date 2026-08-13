@@ -64,14 +64,18 @@ def setup_module(module=None):
             "(id INTEGER PRIMARY KEY, owner_user_id TEXT, media_type TEXT, "
             "processing_status TEXT)")
         conn.execute(
+            # Keyed by user_id to match bot.init_db; this suite asserts the
+            # advertiser identity on the served payload, so the production
+            # column name is what makes that assertion real.
             "CREATE TABLE IF NOT EXISTS users "
-            "(id INTEGER PRIMARY KEY, display_name TEXT, username TEXT)")
+            "(user_id INTEGER PRIMARY KEY, display_name TEXT, username TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS pulse_posts (id INTEGER PRIMARY KEY)")
         conn.execute("CREATE TABLE IF NOT EXISTS pulse_reels (id INTEGER PRIMARY KEY)")
         conn.execute(
             "CREATE TABLE IF NOT EXISTS marketplace_listings (id INTEGER PRIMARY KEY)")
         conn.execute(
-            "INSERT OR IGNORE INTO users (id, display_name, username) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO users (user_id, display_name, username) "
+            "VALUES (?, ?, ?)",
             (_DEST_USER, "Dest Profile", "dest"))
         conn.commit()
     finally:
@@ -89,7 +93,8 @@ def _new_owner():
     conn = db.connect()
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO users (id, display_name, username) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO users (user_id, display_name, username) "
+            "VALUES (?, ?, ?)",
             (uid, f"Advertiser {uid}", f"adv{uid}"))
         conn.commit()
     finally:
@@ -236,7 +241,7 @@ def test_flag_off_dark():
 
 # 2 -- happy path: eligible creative -> sponsored feed payload -------------
 def test_request_returns_sponsored_payload():
-    h = _ready_feed()
+    _ready_feed()
     res = deliv.request_placement(7001, "feed", request={"country": "us"})
     _assert(res["placement"] == "feed", res)
     sp = res.get("sponsored")
@@ -248,13 +253,27 @@ def test_request_returns_sponsored_payload():
     _assert(sp["destination"]["type"] == "profile", sp)
     _assert(sp["destination"]["ref"] == str(_DEST_USER), sp)
     _assert(sp["disclosure"]["kind"] == "paid_advertisement", sp)
-    # a delivery row was actually persisted, bound to the approved creative
+    # A delivery row was actually persisted, bound to an APPROVED creative.
+    #
+    # This deliberately does not assert the row names `h["crid"]` specifically.
+    # These suites share one database, so any other module that has already run
+    # may have left its own approved, active, feed-eligible campaign behind, and
+    # the rotation is then free to select it — which is correct behaviour, not a
+    # bug. `test_no_creative_substitution` covers the identity invariant that
+    # actually matters (the click echoes exactly the creative bound to this
+    # delivery id) and is written the same pollution-tolerant way.
     conn = db.connect()
     try:
         row = deliv.load_delivery_row(conn, sp["delivery_id"])
+        _assert(row is not None, ("no delivery row persisted", sp))
+        creative = _svc._row_to_dict(conn.execute(
+            "SELECT * FROM business_os_ad_creatives WHERE creative_id = ?",
+            (row["creative_id"],)).fetchone())
     finally:
         conn.close()
-    _assert(row is not None and row["creative_id"] == h["crid"], row)
+    _assert(creative is not None, ("delivery bound to unknown creative", row))
+    _assert(creative["status"] == "approved",
+            ("delivery bound to a non-approved creative", creative))
     _assert(row["status"] == "active", row)
 
 

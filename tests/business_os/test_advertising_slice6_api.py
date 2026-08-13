@@ -63,12 +63,18 @@ def setup_module(module=None):
             "CREATE TABLE IF NOT EXISTS pulse_media_assets "
             "(id INTEGER PRIMARY KEY, owner_user_id TEXT, media_type TEXT, "
             "processing_status TEXT)")
-        conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY)")
+        # `users` is keyed by user_id in bot.init_db, not id. Seeding an `id`
+        # column invented a shape production does not have: it hid the delivery
+        # bug where the advertiser identity lookup selected on `users.id`, and
+        # because these are CREATE IF NOT EXISTS against a shared test database
+        # it also collided with every other suite's `users` table whenever the
+        # full run ordered this file first.
+        conn.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY)")
         conn.execute("CREATE TABLE IF NOT EXISTS pulse_posts (id INTEGER PRIMARY KEY)")
         conn.execute("CREATE TABLE IF NOT EXISTS pulse_reels (id INTEGER PRIMARY KEY)")
         conn.execute(
             "CREATE TABLE IF NOT EXISTS marketplace_listings (id INTEGER PRIMARY KEY)")
-        conn.execute("INSERT OR IGNORE INTO users (id) VALUES (?)", (_DEST_USER,))
+        conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (_DEST_USER,))
         conn.commit()
     finally:
         conn.close()
