@@ -13,6 +13,11 @@ from services.sentinel import store
 EDGE_TYPES = (
     "used_device", "used_ip", "owns_account", "funded_by", "shares_device",
     "admin_of", "reported", "related_incident",
+    # Mission 3 identity edges (Stage 21). Relational, not a graph DB; a
+    # shares_device edge is a FACT, never by itself an accusation — shared
+    # devices are commonly family/business/support (Stage 11).
+    "used_session", "session_on_device", "session_on_network",
+    "recovery_for_user", "auth_from_network", "admin_session",
 )
 
 

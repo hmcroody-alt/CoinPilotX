@@ -202,6 +202,61 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         value REAL NOT NULL,
         recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
     )""",
+
+    # --- Mission 3: identity risk observations -----------------------------
+    # Append-only risk observations per subject (session/user/device/network/
+    # admin). Each row is a point-in-time assessment with an explicit expiry:
+    # stale high risk must never remain active (Stage 16). Dimensions, reasons
+    # and contradicting evidence are stored structurally — a risk score
+    # without reasons is invalid (Stage 15/18 invariants).
+    """CREATE TABLE IF NOT EXISTS sentinel_identity_risk (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject_ref TEXT NOT NULL,
+        trust_state TEXT NOT NULL,
+        risk_score REAL NOT NULL,
+        dimensions_json TEXT NOT NULL DEFAULT '{}',
+        reasons_json TEXT NOT NULL DEFAULT '[]',
+        contradicting_json TEXT NOT NULL DEFAULT '[]',
+        evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+        source_trust TEXT NOT NULL DEFAULT 'DERIVED',
+        confidence REAL NOT NULL DEFAULT 0.0,
+        observed_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        deployment_sha TEXT NOT NULL,
+        policy_version TEXT NOT NULL
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_idrisk_subject ON sentinel_identity_risk(subject_ref, id)",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_idrisk_expiry ON sentinel_identity_risk(expires_at)",
+
+    # Mission 3: explicit, versioned, time-bounded detection exclusions
+    # (Stage 27). There are no silent code exceptions — every exclusion is a
+    # row with an owner-visible reason, an author, and a mandatory expiry.
+    """CREATE TABLE IF NOT EXISTS sentinel_detection_exclusions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id TEXT NOT NULL,
+        subject_ref TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        expires_at TEXT NOT NULL,
+        policy_version TEXT NOT NULL,
+        UNIQUE(rule_id, subject_ref)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_exclusions_rule ON sentinel_detection_exclusions(rule_id, expires_at)",
+
+    # Mission 3: sequence-engine dedupe/cooldown ledger (Stage 6). One row per
+    # (sequence_id, subject) firing; cooldown_until prevents alert storms.
+    """CREATE TABLE IF NOT EXISTS sentinel_sequence_firings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sequence_id TEXT NOT NULL,
+        subject_ref TEXT NOT NULL,
+        fired_at TEXT NOT NULL DEFAULT (datetime('now')),
+        cooldown_until TEXT NOT NULL,
+        completeness TEXT NOT NULL DEFAULT 'FULL',
+        matched_event_ids_json TEXT NOT NULL DEFAULT '[]',
+        UNIQUE(sequence_id, subject_ref, fired_at)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_seqfire_subject ON sentinel_sequence_firings(sequence_id, subject_ref, cooldown_until)",
 )
 
 

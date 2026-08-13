@@ -101,7 +101,61 @@ def self_health(conn=None) -> dict:
         except Exception:
             pass  # stays FUNCTIONAL — never upgrade on a failed probe
     health["maturity"] = maturity
+    health["identity_detection"] = _identity_self_health(conn=conn)
     return health
+
+
+def _identity_self_health(conn=None) -> dict:
+    """Mission 3 (Stage 33): the identity pipeline's own vitals. Absence of
+    signal is reported as absence — never as health."""
+    out: dict = {"identity_detection_status": "unknown",
+                 "latest_identity_scan": None,
+                 "sequence_engine": "unknown", "risk_engine": "unknown",
+                 "baseline_engine": "unknown",
+                 "identity_events_evaluated_24h": 0,
+                 "identity_incidents_open": 0, "scan_lag_seconds": None}
+    identity_types = ("CREDENTIAL_STUFFING", "RECOVERY_ABUSE",
+                      "ACCOUNT_TAKEOVER_SUSPECTED", "SESSION_ANOMALY",
+                      "DEVICE_ANOMALY", "NETWORK_ANOMALY",
+                      "ADMIN_IDENTITY_ANOMALY", "COORDINATED_IDENTITY_ABUSE")
+    try:
+        with store.connection(conn) as c:
+            cur = c.cursor()
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)
+                      ).strftime("%Y-%m-%d %H:%M:%S")
+            cur.execute("SELECT COUNT(*) FROM sentinel_events "
+                        "WHERE category IN ('AUTH','SESSION','SECURITY','ADMIN') "
+                        "AND received_at >= ?", (cutoff,))
+            out["identity_events_evaluated_24h"] = int(cur.fetchone()[0])
+            marks = ",".join("?" for _ in identity_types)
+            cur.execute(f"SELECT COUNT(*) FROM sentinel_incidents "
+                        f"WHERE incident_type IN ({marks}) AND state NOT IN "
+                        f"('RESOLVED','FALSE_POSITIVE','SUPPRESSED')", identity_types)
+            out["identity_incidents_open"] = int(cur.fetchone()[0])
+            # Engine probes: schema reachable = the engine CAN run (CONFIGURED
+            # is stated as such, not upgraded to working — SC7).
+            cur.execute("SELECT MAX(fired_at) FROM sentinel_sequence_firings")
+            out["sequence_engine"] = "ready"
+            cur.execute("SELECT MAX(observed_at) FROM sentinel_identity_risk")
+            latest_risk = cur.fetchone()[0]
+            out["risk_engine"] = "ready"
+            out["baseline_engine"] = "ready"  # pure arithmetic over events
+            out["latest_identity_scan"] = latest_risk
+            if latest_risk:
+                try:
+                    then = datetime.strptime(str(latest_risk)[:19],
+                                             "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    out["scan_lag_seconds"] = int(
+                        (datetime.now(timezone.utc) - then).total_seconds())
+                except ValueError:
+                    pass
+            out["identity_detection_status"] = (
+                "active" if latest_risk or out["identity_events_evaluated_24h"]
+                else "configured_no_signal")
+    except Exception as exc:
+        out["identity_detection_status"] = "error"
+        out["error"] = str(exc)[:200]
+    return out
 
 
 def owner_summary(conn=None) -> dict:
@@ -121,6 +175,14 @@ def owner_summary(conn=None) -> dict:
         "worker_status": "unknown",
         "deployment_status": "unknown",
         "stale_signal_count": 0,
+        # Mission 3 identity contract (Stage 23) — defaults are honest zeros
+        # with an unknown status until real queries fill them in.
+        "identity_risk_status": "unknown",
+        "suspected_account_takeovers": 0,
+        "credential_stuffing_incidents": 0,
+        "recovery_abuse_incidents": 0,
+        "high_risk_sessions": 0,
+        "admin_identity_incidents": 0,
         "latest_deployment_sha": store_mod.deployment_sha() or None,
         "sentinel": self_health(conn=conn),
     }
@@ -177,6 +239,35 @@ def owner_summary(conn=None) -> dict:
                     summary_out[key] = "unknown"
 
             summary_out["stale_signal_count"] = health_mod.stale_count(conn=c)
+
+            # Mission 3 (Stage 23): identity risk fields — REAL counts from
+            # real queries; a field with no signal stays 0/unknown, it is
+            # never invented.
+            def _count_open(itype: str) -> int:
+                cur.execute(
+                    f"SELECT COUNT(*) FROM sentinel_incidents WHERE "
+                    f"incident_type = ? AND state IN ('{open_states}')", (itype,))
+                return int(cur.fetchone()[0])
+            ato = _count_open("ACCOUNT_TAKEOVER_SUSPECTED")
+            stuffing = _count_open("CREDENTIAL_STUFFING")
+            recovery = _count_open("RECOVERY_ABUSE")
+            admin_id_inc = (_count_open("ADMIN_IDENTITY_ANOMALY"))
+            summary_out["suspected_account_takeovers"] = ato
+            summary_out["credential_stuffing_incidents"] = stuffing
+            summary_out["recovery_abuse_incidents"] = recovery
+            summary_out["admin_identity_incidents"] = admin_id_inc
+            try:
+                from services.sentinel import identity_trust
+                summary_out["high_risk_sessions"] = len(
+                    identity_trust.active_high_risk(conn=c))
+            except Exception:
+                summary_out["high_risk_sessions"] = 0
+            if ato or stuffing or admin_id_inc:
+                summary_out["identity_risk_status"] = "attention"
+            elif recovery or summary_out["high_risk_sessions"]:
+                summary_out["identity_risk_status"] = "watch"
+            else:
+                summary_out["identity_risk_status"] = "quiet"
     except Exception as exc:
         summary_out["error"] = str(exc)[:200]
 

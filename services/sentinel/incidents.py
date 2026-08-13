@@ -30,6 +30,11 @@ INCIDENT_TYPES = (
     "SECURITY_INTRUSION", "ACCOUNT_TAKEOVER", "ABUSE", "DATA_EXPOSURE",
     "FINANCIAL_DISCREPANCY", "PROVIDER_OUTAGE", "INVARIANT_VIOLATION",
     "AI_SAFETY", "OPERATIONAL_DEGRADATION", "COMPLIANCE",
+    # Mission 3 identity incident types. Detection ≠ guilt: each of these
+    # names a *suspicion* backed by evidence refs, never a verdict.
+    "CREDENTIAL_STUFFING", "RECOVERY_ABUSE", "ACCOUNT_TAKEOVER_SUSPECTED",
+    "SESSION_ANOMALY", "DEVICE_ANOMALY", "NETWORK_ANOMALY",
+    "ADMIN_IDENTITY_ANOMALY", "COORDINATED_IDENTITY_ABUSE",
 )
 
 # Canonical states (Mission 2).

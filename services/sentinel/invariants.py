@@ -198,6 +198,122 @@ def _inv_no_secrets_in_sentinel(cur) -> InvariantResult:
                            "no secret-like values in sentinel storage")
 
 
+# ---------------------------------------------------------------------------
+# Mission 3 identity invariants (Stage 32)
+# ---------------------------------------------------------------------------
+
+def _inv_invalidated_session_not_trusted(cur) -> InvariantResult:
+    """A session the platform revoked must never carry a live TRUSTED
+    assessment — trust in a dead session is a contradiction."""
+    n = _scalar(cur, """
+        SELECT COUNT(*) FROM sentinel_identity_risk r
+        JOIN mobile_security_sessions s
+          ON r.subject_ref = 'session:' || s.id
+        WHERE s.status = 'revoked' AND r.trust_state = 'TRUSTED'
+          AND r.expires_at > datetime('now')
+          AND r.id = (SELECT MAX(id) FROM sentinel_identity_risk
+                      WHERE subject_ref = r.subject_ref)""")
+    if n is None:
+        return InvariantResult("INV_INVALIDATED_SESSION_NOT_TRUSTED", STATUS_SKIPPED,
+                               "session or identity-risk table unavailable")
+    if n > 0:
+        return InvariantResult("INV_INVALIDATED_SESSION_NOT_TRUSTED", STATUS_VIOLATED,
+                               f"{int(n)} revoked session(s) with live TRUSTED assessment")
+    return InvariantResult("INV_INVALIDATED_SESSION_NOT_TRUSTED", STATUS_OK,
+                           "no revoked session holds live trust")
+
+
+def _inv_high_risk_has_evidence(cur) -> InvariantResult:
+    """HIGH_RISK without evidence references is an accusation without proof —
+    structurally invalid (Stage 17/32)."""
+    n = _scalar(cur,
+                "SELECT COUNT(*) FROM sentinel_identity_risk "
+                "WHERE trust_state = 'HIGH_RISK' "
+                "AND (evidence_refs_json IS NULL OR evidence_refs_json IN ('', '[]'))")
+    if n is None:
+        return InvariantResult("INV_HIGH_RISK_HAS_EVIDENCE", STATUS_SKIPPED,
+                               "identity-risk table unavailable")
+    if n > 0:
+        return InvariantResult("INV_HIGH_RISK_HAS_EVIDENCE", STATUS_VIOLATED,
+                               f"{int(n)} HIGH_RISK observation(s) without evidence refs")
+    return InvariantResult("INV_HIGH_RISK_HAS_EVIDENCE", STATUS_OK,
+                           "every HIGH_RISK observation carries evidence")
+
+
+def _inv_risk_confidence_ceiling(cur) -> InvariantResult:
+    """A stored risk observation may never claim more confidence than its
+    source-trust ceiling allows (SC4 applied to our own storage)."""
+    n = _scalar(cur, """
+        SELECT COUNT(*) FROM sentinel_identity_risk WHERE confidence >
+          CASE source_trust
+            WHEN 'AUTHORITATIVE' THEN 1.0 WHEN 'MEASURED' THEN 1.0
+            WHEN 'DERIVED' THEN 0.8 WHEN 'CONFIGURED' THEN 0.4
+            WHEN 'STALE' THEN 0.3 WHEN 'SIMULATED' THEN 0.2
+            ELSE 0.1 END + 1e-9""")
+    if n is None:
+        return InvariantResult("INV_RISK_CONFIDENCE_CEILING", STATUS_SKIPPED,
+                               "identity-risk table unavailable")
+    if n > 0:
+        return InvariantResult("INV_RISK_CONFIDENCE_CEILING", STATUS_VIOLATED,
+                               f"{int(n)} risk observation(s) exceed their trust ceiling")
+    return InvariantResult("INV_RISK_CONFIDENCE_CEILING", STATUS_OK,
+                           "all risk confidence within source-trust ceilings")
+
+
+def _inv_expired_risk_inactive(cur) -> InvariantResult:
+    """Expired high risk must not be served as active. Proves the read path's
+    freshness contract against storage: every subject whose newest observation
+    is expired must not appear in the active_high_risk set (Stage 16)."""
+    try:
+        from services.sentinel import identity_trust
+        cur.execute("SELECT 1 FROM sentinel_identity_risk LIMIT 1")
+    except Exception:
+        return InvariantResult("INV_EXPIRED_RISK_INACTIVE", STATUS_SKIPPED,
+                               "identity-risk table unavailable")
+    active = identity_trust.active_high_risk(conn=cur.connection)
+    stale = [a for a in active
+             if str(a.get("expires_at", "")) <= _now_text()]
+    if stale:
+        return InvariantResult("INV_EXPIRED_RISK_INACTIVE", STATUS_VIOLATED,
+                               f"{len(stale)} expired observation(s) served as active risk")
+    return InvariantResult("INV_EXPIRED_RISK_INACTIVE", STATUS_OK,
+                           "no expired risk is active")
+
+
+def _now_text() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _inv_identity_incident_evidence_preserved(cur) -> InvariantResult:
+    """Every identity incident must have its opening preserved in the
+    append-only evidence chain — admin-impacting detections are auditable
+    forever (Stage 32)."""
+    try:
+        cur.execute(
+            "SELECT incident_key FROM sentinel_incidents WHERE incident_type IN "
+            "('CREDENTIAL_STUFFING','RECOVERY_ABUSE','ACCOUNT_TAKEOVER_SUSPECTED',"
+            "'SESSION_ANOMALY','DEVICE_ANOMALY','NETWORK_ANOMALY',"
+            "'ADMIN_IDENTITY_ANOMALY','COORDINATED_IDENTITY_ABUSE') LIMIT 200")
+        keys = [str(r[0]) for r in cur.fetchall()]
+    except Exception:
+        return InvariantResult("INV_IDENTITY_EVIDENCE_PRESERVED", STATUS_SKIPPED,
+                               "incident table unavailable")
+    missing = 0
+    for key in keys:
+        found = _scalar(cur,
+                        "SELECT COUNT(*) FROM sentinel_evidence "
+                        "WHERE kind = 'incident_opened' AND body_json LIKE ?",
+                        (f'%"{key}"%',))
+        if found is not None and found == 0:
+            missing += 1
+    if missing:
+        return InvariantResult("INV_IDENTITY_EVIDENCE_PRESERVED", STATUS_VIOLATED,
+                               f"{missing} identity incident(s) missing evidence records")
+    return InvariantResult("INV_IDENTITY_EVIDENCE_PRESERVED", STATUS_OK,
+                           f"{len(keys)} identity incident(s) fully evidenced")
+
+
 # invariant_id → (check_fn, event category, incident type). Financial checks
 # stay LEDGER/INVARIANT_VIOLATION (existing contract); privacy checks are
 # PRIVACY/DATA_EXPOSURE so the owner summary can separate the domains.
@@ -212,6 +328,17 @@ INVARIANTS: dict[str, tuple[Callable, str, str]] = {
     "INV_NO_PULSE_ID_IN_SENTINEL": (_inv_no_pulse_id_in_sentinel, "PRIVACY", "DATA_EXPOSURE"),
     "INV_NO_SECRETS_IN_SENTINEL": (_inv_no_secrets_in_sentinel, "PRIVACY", "DATA_EXPOSURE"),
     "INV_EVIDENCE_CHAIN": (_inv_evidence_chain_intact, "SENTINEL_SELF", "INVARIANT_VIOLATION"),
+    # Mission 3 identity invariants (Stage 32).
+    "INV_INVALIDATED_SESSION_NOT_TRUSTED": (
+        _inv_invalidated_session_not_trusted, "SECURITY", "INVARIANT_VIOLATION"),
+    "INV_HIGH_RISK_HAS_EVIDENCE": (
+        _inv_high_risk_has_evidence, "SECURITY", "INVARIANT_VIOLATION"),
+    "INV_RISK_CONFIDENCE_CEILING": (
+        _inv_risk_confidence_ceiling, "SECURITY", "INVARIANT_VIOLATION"),
+    "INV_EXPIRED_RISK_INACTIVE": (
+        _inv_expired_risk_inactive, "SECURITY", "INVARIANT_VIOLATION"),
+    "INV_IDENTITY_EVIDENCE_PRESERVED": (
+        _inv_identity_incident_evidence_preserved, "SECURITY", "INVARIANT_VIOLATION"),
 }
 
 

@@ -19,7 +19,8 @@ from services.sentinel.identity import UNDX_MODEL
 
 # Explicit allowlist of what UNDX may read. Anything not listed does not exist
 # as far as UNDX is concerned (SC11, SC15).
-READ_SURFACES = ("recent_events", "open_incidents", "provider_health")
+READ_SURFACES = ("recent_events", "open_incidents", "provider_health",
+                 "identity_context")
 
 _UNDX_REDACTION_CEILING = Level.INTERNAL
 
@@ -29,7 +30,7 @@ def _redact_rows(rows: list[dict]) -> list[dict]:
 
 
 def read(surface: str, *, category: str | None = None, limit: int = 50,
-         conn=None) -> dict:
+         subject: str | None = None, conn=None) -> dict:
     """Structured read. Unknown surfaces fail closed."""
     limit = max(1, min(int(limit), 200))
     if surface == "recent_events":
@@ -38,11 +39,66 @@ def read(surface: str, *, category: str | None = None, limit: int = 50,
         rows = incidents.list_open(conn=conn, limit=limit)
     elif surface == "provider_health":
         rows = providers.health_table(conn=conn)
+    elif surface == "identity_context":
+        return identity_context(subject, limit=limit, conn=conn)
     else:
         return {"ok": False, "error": f"unknown surface {surface!r} (SC15)",
                 "surfaces": READ_SURFACES}
     return {"ok": True, "surface": surface, "rows": _redact_rows(rows),
             "authority_note": "ADVISORY READ — model output is never authority (SC2)"}
+
+
+def identity_context(subject: str | None, *, limit: int = 50, conn=None) -> dict:
+    """Mission 3 (Stage 24): the identity-analyst context for one subject.
+
+    Read-only and redacted like every other surface. Deliberately includes
+    CONTRADICTING evidence alongside the risk reasons (Stage 18) — a model
+    reasoning about identity must see what argues AGAINST the hypothesis,
+    not only what supports it. Exposes no mutation, no raw tokens, no raw
+    network identifiers (refs are already hashed at ingest)."""
+    subject = str(subject or "").strip()
+    if not subject:
+        return {"ok": False, "error": "identity_context requires subject= (SC15)"}
+    from services.sentinel import graph, identity_trust, store
+
+    limit = max(1, min(int(limit), 200))
+    with store.connection(conn) as c:
+        cur = c.cursor()
+        # Security-relevant timeline for the subject (bounded).
+        cur.execute(
+            "SELECT event_id, category, event_type, severity, occurred_at, "
+            "source_trust, confidence, device_ref, network_ref "
+            "FROM sentinel_events WHERE subject_id = ? AND category IN "
+            "('AUTH','SESSION','SECURITY','ADMIN') ORDER BY id DESC LIMIT ?",
+            (subject.partition(":")[2] or subject, limit))
+        timeline = [{"event_id": r[0], "category": r[1], "event_type": r[2],
+                     "severity": r[3], "occurred_at": r[4], "source_trust": r[5],
+                     "confidence": r[6], "device_ref": r[7], "network_ref": r[8]}
+                    for r in cur.fetchall()]
+        risk = identity_trust.latest(subject, conn=c)
+        try:
+            etype, eid = subject.split(":", 1)
+            edges = graph.neighbors(etype, eid, limit=50, conn=c)
+        except ValueError:
+            edges = []
+    payload = {
+        "subject": subject,
+        "timeline": timeline,
+        "session_trust": risk,
+        "risk_reasons": (risk or {}).get("reasons", []),
+        "contradicting_evidence": (risk or {}).get("contradicting", []),
+        "relationships": edges,
+        "signal_quality_note": (
+            "device identity is CLIENT_REPORTED (salted hash of a "
+            "client-generated id + user agent) — forgeable, not fingerprinting; "
+            "network refs are internal hashed observations, no external "
+            "reputation data"),
+    }
+    return {"ok": True, "surface": "identity_context",
+            "rows": _redact_rows([payload]),
+            "authority_note": "ADVISORY READ — model output is never authority "
+                              "(SC2); expected response shape is the "
+                              "submit_hypothesis contract"}
 
 
 def submit_analysis(subject_type: str, subject_id: str, summary: str,

@@ -51,6 +51,23 @@ _FORBIDDEN_SUBSTRINGS = (
 # Identifiers that are internal-only (never in public payloads / vendor exports).
 _INTERNAL_ID_FIELDS = ("pulse_id", "user_id", "internal_user_id", "email", "phone")
 
+# Operational security metadata (Mission 3, Stage 24): fields that classify at
+# INTERNAL so the UNDX advisory surface can actually reason about identity —
+# a fully redacted context would hide contradicting evidence, which Stage 18
+# forbids. Nothing here is a secret, a raw identifier, or user content:
+# hashed refs, closed-vocabulary states, timestamps, and Sentinel's own
+# deterministic explanations.
+_OPERATIONAL_METADATA_FIELDS = frozenset({
+    "event_id", "category", "event_type", "severity", "occurred_at",
+    "received_at", "observed_at", "expires_at", "expired", "source",
+    "source_trust", "confidence", "subject", "subject_ref", "session_ref",
+    "device_ref", "network_ref", "trust_state", "risk_score", "reasons",
+    "risk_reasons", "contradicting", "contradicting_evidence",
+    "evidence_refs", "signal_quality_note", "note",
+    "credential_risk", "recovery_risk", "session_risk", "device_risk",
+    "network_risk", "admin_risk", "behavioral_risk",
+})
+
 REDACTED = "[REDACTED:sentinel]"
 
 
@@ -60,6 +77,8 @@ def classify_field(field_name: str, category: str | None = None) -> Level:
         return Level.HIGHLY_RESTRICTED
     if name in _INTERNAL_ID_FIELDS:
         return Level.SENSITIVE
+    if name in _OPERATIONAL_METADATA_FIELDS:
+        return Level.INTERNAL
     if category:
         return CATEGORY_LEVELS.get(category, DEFAULT_LEVEL)
     return DEFAULT_LEVEL

@@ -26,6 +26,11 @@ ENTITY_TYPES = (
     "user", "admin", "seller", "advertiser",
     "service", "worker", "provider", "webhook",
     "device", "session", "network",
+    # Mission 3 identity entities. "ip" and "network" ids are HASHED network
+    # refs (never raw addresses); auth_attempt / recovery_attempt reference
+    # observed identity events, not credentials — no raw tokens ever become
+    # entity ids (Stage 2, SC9).
+    "ip", "asn", "auth_attempt", "recovery_attempt",
     "order", "payment", "payout", "refund", "settlement",
     "campaign", "wallet",
     "deployment", "route", "job", "incident", "event",
