@@ -8,8 +8,24 @@ import {
   clampLiveMixLevel,
   liveMixLevelToAgoraVolume,
   normalizeLiveMusicTrack,
+  withLiveMixer,
   type LiveMusicMixingTrack
 } from "./liveMusicMixing";
+import {
+  IDLE_LIVE_DUCK_STATE,
+  liveMicPublishVolume,
+  liveMusicPublishVolume,
+  liveMusicStartPositionMs,
+  stepLiveDuck,
+  type LiveDuckState
+} from "./liveCreatorMusic";
+import {
+  DEFAULT_CREATOR_MIXER_SETTINGS,
+  normalizeCreatorMixerSettings,
+  withMicLevel,
+  withMusicLevel,
+  type CreatorMixerSettings
+} from "../audio/creatorMixer";
 
 const initial = {
   provider: "agora" as const, supported: true, connecting: false, connected: false, reconnecting: false,
@@ -27,6 +43,17 @@ export function useAgoraLiveBroadcastRoom() {
   const refreshRef = useRef<(() => Promise<LiveRtcCredentials | null>) | null>(null);
   const credentialsRef = useRef<LiveRtcCredentials | null>(null);
   const renewalRef = useRef<Promise<void> | null>(null);
+  /**
+   * The live mixer, ducking envelope and "is music actually playing" flag are
+   * refs rather than state because the Agora event handler is registered once at
+   * join time and closes over whatever it captured then. Reading them from state
+   * would give the volume-indication callback a permanently stale mixer, and
+   * re-registering the handler on every fader move would tear down and rebuild
+   * the event bridge mid-broadcast.
+   */
+  const mixerRef = useRef<CreatorMixerSettings>(DEFAULT_LIVE_MUSIC_MIXING_STATE.mixer);
+  const duckRef = useRef<LiveDuckState>(IDLE_LIVE_DUCK_STATE);
+  const musicPlayingRef = useRef(false);
   const [state, setState] = useState(initial);
 
   const renewToken = useCallback(() => {
@@ -51,6 +78,7 @@ export function useAgoraLiveBroadcastRoom() {
     if (credentials) emitAgoraLiveEvent({ name: "leave", liveId: credentials.broadcastId, uid: credentials.uid, reason });
     if (engine) { engine.stopAudioMixing?.(); if (handlerRef.current) engine.unregisterEventHandler(handlerRef.current); engine.leaveChannel(); engine.release(); }
     handlerRef.current = null; credentialsRef.current = null; refreshRef.current = null;
+    musicPlayingRef.current = false; duckRef.current = IDLE_LIVE_DUCK_STATE;
     setState((s) => ({ ...initial, supported: s.supported, disconnectReason: reason, diagnosticCode: reason }));
   }, []);
 
@@ -142,8 +170,51 @@ export function useAgoraLiveBroadcastRoom() {
         onNetworkQuality: (_c, uid, txQuality, rxQuality) => emitAgoraLiveEvent({ name: "network_quality", liveId: credentials.broadcastId, uid, txQuality, rxQuality }, true),
         onRtcStats: (_c, stats) => emitAgoraLiveEvent({ name: "rtc_stats", liveId: credentials.broadcastId, uid: credentials.uid, audioBitrateKbps: stats.txAudioKBitRate, videoBitrateKbps: stats.txVideoKBitRate, latencyMs: stats.lastmileDelay }, true),
         onLocalAudioStats: (_c, stats) => emitAgoraLiveEvent({ name: "local_audio_stats", liveId: credentials.broadcastId, uid: credentials.uid, audioBitrateKbps: stats.sentBitrate, packetLossPercent: stats.txPacketLossRate }, true),
+        /**
+         * The ducking sidechain.
+         *
+         * Agora has no sidechain compressor, so the only way to make the music
+         * step back for the host's voice is to ride the publish volume from the
+         * activity meter. That is acceptable *here* and would not be anywhere
+         * else: this fires a few times a second, not per audio sample, and each
+         * step is a handful of arithmetic operations against a one-pole smoother.
+         * The actual audio mixing still happens inside the SDK on its own thread.
+         *
+         * It is also gated on music actually playing. Left running it would push
+         * volumes at an engine with nothing to apply them to, and — worse — would
+         * keep an envelope warm across tracks so the first second of the next one
+         * came up already ducked.
+         */
+        onAudioVolumeIndication: (_connection, speakers, _speakerNumber, _totalVolume) => {
+          if (!musicPlayingRef.current) return;
+          const settings = mixerRef.current;
+          // uid 0 is this device. A remote speaker's level must never move the
+          // host's music: the host is not talking, and the viewer would hear the
+          // bed dip every time a co-host did.
+          const local = (speakers || []).find((speaker) => Number(speaker?.uid ?? -1) === 0);
+          const step = stepLiveDuck(
+            settings,
+            { volume: Number(local?.volume || 0), vad: Number(local?.vad || 0) },
+            duckRef.current,
+            Date.now()
+          );
+          duckRef.current = step.state;
+          if (step.publishVolume === null) return;
+          engineRef.current?.adjustAudioMixingPublishVolume(step.publishVolume);
+          // Playout follows publish so the host monitors what the room hears.
+          // A host mixing against a different balance than the one going out is
+          // the reason "it sounded fine on my phone" happens.
+          engineRef.current?.adjustAudioMixingPlayoutVolume(step.publishVolume);
+          setState((s) => (Math.abs(s.liveMusic.duckGainDb - step.state.gainDb) < 0.25 ? s : { ...s, liveMusic: { ...s.liveMusic, duckGainDb: step.state.gainDb } }));
+        },
         onAudioMixingStateChanged: (mixingState, reason) => {
           emitAgoraLiveEvent({ name: "audio_mixing_state", liveId: credentials.broadcastId, uid: credentials.uid, code: mixingState, reason: String(reason) });
+          // The SDK is authoritative on whether music is running, including for
+          // the transitions nobody asked for — a track that ends on its own, or a
+          // file that fails to open. The sidechain follows it rather than the
+          // intent expressed at the call site.
+          musicPlayingRef.current = mixingState === agora.AudioMixingStateType.AudioMixingStatePlaying;
+          if (!musicPlayingRef.current) duckRef.current = IDLE_LIVE_DUCK_STATE;
           setState((s) => {
             if (mixingState === agora.AudioMixingStateType.AudioMixingStatePlaying) {
               return { ...s, liveMusic: { ...s.liveMusic, status: "playing", error: "" } };
@@ -152,7 +223,7 @@ export function useAgoraLiveBroadcastRoom() {
               return { ...s, liveMusic: { ...s.liveMusic, status: "paused", error: "" } };
             }
             if (mixingState === agora.AudioMixingStateType.AudioMixingStateStopped) {
-              return { ...s, liveMusic: { ...s.liveMusic, status: "idle", track: null, error: "" } };
+              return { ...s, liveMusic: { ...s.liveMusic, status: "idle", track: null, startOffsetSeconds: 0, duckGainDb: 0, error: "" } };
             }
             if (mixingState === agora.AudioMixingStateType.AudioMixingStateFailed) {
               return { ...s, liveMusic: { ...s.liveMusic, status: "error", error: `PulseSoc Music could not start (${reason}).` } };
@@ -182,55 +253,113 @@ export function useAgoraLiveBroadcastRoom() {
   const setRemoteAudioEnabled = useCallback(async (enabled: boolean) => { engine().muteAllRemoteAudioStreams(!enabled); setState(s => ({...s,remoteAudioEnabled:enabled})); }, []);
   const switchCamera = useCallback(async () => { engine().switchCamera(); }, []);
   const showAudioRoutePicker = useCallback(async () => { throw new Error("Use the iOS system audio-route control for Agora Live."); }, []);
-  const startLiveMusicMixing = useCallback(async (input: LiveMusicMixingTrack) => {
+  /**
+   * Push the whole mixer at the engine at once.
+   *
+   * Both faders are written together on every change because they describe one
+   * balance, not two independent numbers, and because applying them from a
+   * single source removes the window where the music has moved and the mic has
+   * not. Missing an engine — music adjusted before the broadcast connects — is
+   * not an error here: the settings are held and applied at `startAudioMixing`.
+   */
+  const applyMixerToEngine = useCallback((settings: CreatorMixerSettings) => {
+    mixerRef.current = settings;
+    const rtcEngine = engineRef.current;
+    if (!rtcEngine) return;
+    const musicVolume = liveMusicPublishVolume(settings, duckRef.current.gainDb);
+    rtcEngine.adjustAudioMixingPublishVolume(musicVolume);
+    rtcEngine.adjustAudioMixingPlayoutVolume(musicVolume);
+    rtcEngine.adjustRecordingSignalVolume(liveMicPublishVolume(settings));
+    duckRef.current = { ...duckRef.current, publishedVolume: musicVolume };
+  }, []);
+
+  const setLiveMusicMixer = useCallback(async (input: CreatorMixerSettings) => {
+    const settings = normalizeCreatorMixerSettings(input);
+    applyMixerToEngine(settings);
+    setState((s) => ({ ...s, liveMusic: { ...withLiveMixer(s.liveMusic, settings), error: "" } }));
+  }, [applyMixerToEngine]);
+
+  const startLiveMusicMixing = useCallback(async (input: LiveMusicMixingTrack, options: { startOffsetSeconds?: number; mixer?: CreatorMixerSettings } = {}) => {
     const track = normalizeLiveMusicTrack(input);
     if (!track) throw new Error("Choose an approved PulseSoc Music track with playable audio.");
     const rtcEngine = engine();
     const current = credentialsRef.current;
     if (!current?.canPublish) throw new Error("Only the Live host or approved co-host can publish music.");
-    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, status: "loading", track, error: "" } }));
-    const startResult = rtcEngine.startAudioMixing(track.audioUrl, false, -1, 0);
+    const settings = options.mixer ? normalizeCreatorMixerSettings(options.mixer) : mixerRef.current;
+    const startOffsetSeconds = Math.max(0, Number(options.startOffsetSeconds || 0));
+    mixerRef.current = settings;
+    // A fresh envelope per track. Carrying the previous one over would open the
+    // new track already ducked if the host happened to be mid-sentence.
+    duckRef.current = IDLE_LIVE_DUCK_STATE;
+    musicPlayingRef.current = false;
+    setState((s) => ({ ...s, liveMusic: { ...withLiveMixer(s.liveMusic, settings), status: "loading", track, startOffsetSeconds, duckGainDb: 0, error: "" } }));
+    // `loopback: false` is what makes this a broadcast rather than a private
+    // monitor — false means the mixed music goes into the published stream, not
+    // only out of the local speaker. Getting this backwards is precisely the
+    // "host hears music, viewers hear silence" bug.
+    const startResult = rtcEngine.startAudioMixing(track.audioUrl, false, -1, liveMusicStartPositionMs(startOffsetSeconds));
     if (startResult < 0) {
       setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, status: "error", track, error: `PulseSoc Music could not start (${startResult}).` } }));
       throw new Error(`PulseSoc Music could not start (${startResult}).`);
     }
-    const musicVolume = liveMixLevelToAgoraVolume(state.liveMusic.musicVolume);
-    rtcEngine.adjustAudioMixingPublishVolume(musicVolume);
-    rtcEngine.adjustAudioMixingPlayoutVolume(musicVolume);
-    rtcEngine.adjustRecordingSignalVolume(liveMixLevelToAgoraVolume(state.liveMusic.micVolume, 100));
+    applyMixerToEngine(settings);
+    // ~5 Hz with VAD reporting on. Fast enough for a duck that lands inside the
+    // first syllable, slow enough that the callback is not a load on the bridge.
+    rtcEngine.enableAudioVolumeIndication?.(200, 3, true);
+    musicPlayingRef.current = true;
     emitAgoraLiveEvent({ name: "audio_mixing_started", liveId: current.broadcastId, uid: current.uid, reason: track.id });
     setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, status: "playing", track, error: "" } }));
-  }, [state.liveMusic.micVolume, state.liveMusic.musicVolume]);
+  }, [applyMixerToEngine]);
+
   const pauseLiveMusicMixing = useCallback(async () => {
     const result = engine().pauseAudioMixing();
     if (result < 0) throw new Error(`PulseSoc Music could not pause (${result}).`);
-    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, status: "paused", error: "" } }));
+    musicPlayingRef.current = false;
+    duckRef.current = IDLE_LIVE_DUCK_STATE;
+    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, status: "paused", duckGainDb: 0, error: "" } }));
   }, []);
   const resumeLiveMusicMixing = useCallback(async () => {
     const result = engine().resumeAudioMixing();
     if (result < 0) throw new Error(`PulseSoc Music could not resume (${result}).`);
+    musicPlayingRef.current = true;
     setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, status: "playing", error: "" } }));
   }, []);
   const stopLiveMusicMixing = useCallback(async () => {
-    const result = engine().stopAudioMixing();
-    if (result < 0) throw new Error(`PulseSoc Music could not stop (${result}).`);
-    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, status: "idle", track: null, error: "" } }));
-  }, []);
-  const setLiveMusicVolume = useCallback(async (level: number) => {
-    const next = clampLiveMixLevel(level);
-    const volume = liveMixLevelToAgoraVolume(next);
     const rtcEngine = engine();
-    const publishResult = rtcEngine.adjustAudioMixingPublishVolume(volume);
-    const playoutResult = rtcEngine.adjustAudioMixingPlayoutVolume(volume);
-    if (publishResult < 0 || playoutResult < 0) throw new Error("PulseSoc Music level could not be updated.");
-    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, musicVolume: next, error: "" } }));
+    const result = rtcEngine.stopAudioMixing();
+    if (result < 0) throw new Error(`PulseSoc Music could not stop (${result}).`);
+    musicPlayingRef.current = false;
+    duckRef.current = IDLE_LIVE_DUCK_STATE;
+    // Hand the microphone back at the level the mixer says, unducked. Leaving the
+    // recording gain wherever the last mix put it would make the host quieter for
+    // the rest of the broadcast, long after the music that justified it stopped.
+    rtcEngine.adjustRecordingSignalVolume(liveMicPublishVolume(mixerRef.current));
+    // The indication callback exists for ducking. Nothing else in Live reads it,
+    // so it is switched off rather than left running for the rest of the stream.
+    rtcEngine.enableAudioVolumeIndication?.(0, 3, false);
+    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, status: "idle", track: null, startOffsetSeconds: 0, duckGainDb: 0, error: "" } }));
   }, []);
+
+  /**
+   * Re-cue the running track without restarting it.
+   *
+   * `setAudioMixingPosition` is why the start-point control can stay live during
+   * a broadcast. Restarting the mix to move the cue would drop the music out of
+   * the published stream for as long as the file takes to reopen, which viewers
+   * hear as a stutter.
+   */
+  const setLiveMusicPosition = useCallback(async (seconds: number) => {
+    const result = engine().setAudioMixingPosition(liveMusicStartPositionMs(seconds));
+    if (result < 0) throw new Error("PulseSoc Music could not move to that start point.");
+    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, startOffsetSeconds: Math.max(0, seconds), error: "" } }));
+  }, []);
+
+  const setLiveMusicVolume = useCallback(async (level: number) => {
+    await setLiveMusicMixer(withMusicLevel(mixerRef.current, clampLiveMixLevel(level)));
+  }, [setLiveMusicMixer]);
   const setLiveMicVolume = useCallback(async (level: number) => {
-    const next = clampLiveMixLevel(level);
-    const result = engine().adjustRecordingSignalVolume(liveMixLevelToAgoraVolume(next, 100));
-    if (result < 0) throw new Error("Microphone level could not be updated.");
-    setState((s) => ({ ...s, liveMusic: { ...s.liveMusic, micVolume: next, error: "" } }));
-  }, []);
+    await setLiveMusicMixer(withMicLevel(mixerRef.current, clampLiveMixLevel(level)));
+  }, [setLiveMusicMixer]);
   useEffect(() => () => { disconnect("unmounted").catch(() => undefined); }, [disconnect]);
-  return { ...state, lifecycle: null, connect, disconnect, startBroadcast: connect, stopBroadcast: disconnect, joinAsViewer: connect, leaveViewer: disconnect, setMicrophoneEnabled, setCameraEnabled, setSpeakerEnabled, setRemoteAudioEnabled, showAudioRoutePicker, recheckAudio: async () => undefined, switchCamera, startLiveMusicMixing, pauseLiveMusicMixing, resumeLiveMusicMixing, stopLiveMusicMixing, setLiveMusicVolume, setLiveMicVolume, getLastConnectError: () => state.error, getAudioTrace: () => [] };
+  return { ...state, lifecycle: null, connect, disconnect, startBroadcast: connect, stopBroadcast: disconnect, joinAsViewer: connect, leaveViewer: disconnect, setMicrophoneEnabled, setCameraEnabled, setSpeakerEnabled, setRemoteAudioEnabled, showAudioRoutePicker, recheckAudio: async () => undefined, switchCamera, startLiveMusicMixing, pauseLiveMusicMixing, resumeLiveMusicMixing, stopLiveMusicMixing, setLiveMusicVolume, setLiveMicVolume, setLiveMusicMixer, setLiveMusicPosition, getLastConnectError: () => state.error, getAudioTrace: () => [] };
 }

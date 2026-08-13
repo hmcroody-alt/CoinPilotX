@@ -19,8 +19,27 @@ describe("live music mixing", () => {
       title: "Orbit Signal",
       artist: "PulseSoc Music",
       audioUrl: "https://cdn.example.com/orbit.m4a",
-      coverArtUrl: "https://cdn.example.com/orbit.jpg"
+      coverArtUrl: "https://cdn.example.com/orbit.jpg",
+      artistUserId: 0,
+      durationSeconds: 0
     });
+  });
+
+  it("carries the rights reference and duration into the Live mixer", () => {
+    // A Live take has to be creditable from the same data a recorded one is.
+    // Dropping these here would leave the broadcast holding a caption — a title
+    // and an artist name — with nothing to re-resolve the licence from, and it
+    // would leave the start-point control with no track length to scrub within.
+    const track = normalizeLiveMusicTrack({
+      id: "track-7",
+      title: "Orbit Signal",
+      artist: "Ava Lang",
+      audioUrl: "https://cdn.example.com/orbit.m4a",
+      durationSeconds: 214,
+      licenseLabel: "pulsesoc_commercial_v2",
+      artistUserId: 5501
+    });
+    expect(track).toMatchObject({ durationSeconds: 214, licenseLabel: "pulsesoc_commercial_v2", artistUserId: 5501 });
   });
 
   it("rejects tracks that cannot be mixed into the broadcast", () => {

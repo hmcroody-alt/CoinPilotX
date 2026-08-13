@@ -942,3 +942,202 @@ Also noted and **not** done: `npx expo install` reported that
 was left alone rather than changed blind during a deploy. It should be added
 before the next `expo prebuild`, or prebuild will produce a project missing the
 Stripe plugin's native configuration.
+
+---
+
+# Addendum — Creator Music Mixer: music into recorded video and into Live (2026-08-12)
+
+Change: give creators a music bed for camera-recorded video and for Live
+broadcasts, mixed through one shared mixer model, with the music reaching the
+output as a clean digital source rather than a speaker-to-microphone
+re-recording.
+Required label: `audio-critical-change`
+
+## Why the change is required
+
+Creators had no way to put a PulseSoc Music track under their own video or under
+a Live broadcast. The only thing a creator could physically do was play the
+track out of the phone speaker and let the microphone pick it up. That is the
+failure mode this change exists to make impossible: an acoustic re-recording is
+room-smeared, comb-filtered by the phone's own enclosure, ducked by the mic's
+AGC, and legally uncreditable because nothing in the file records which track it
+was.
+
+The two output paths need different mechanisms for the same reason — neither may
+route music through a microphone:
+
+- **Recorded video.** The phone records picture and microphone only. The
+  attribution (`music_*` fields: track id, artist, rights reference, start
+  offset, duration) rides the existing multipart upload, and the **server**
+  re-fetches the catalogue master and mixes with ffmpeg. This replaces the plain
+  transcode rather than adding a stage, so the video is still encoded exactly
+  once.
+- **Live.** Agora's own `startAudioMixing` injects the track into the publish
+  path inside the SDK. The host's microphone and the music are mixed by the SDK
+  and sent to remote viewers. This is deliberately not a local preview: a
+  local-only bed would be audible to the host and to nobody else, which is the
+  second way this feature classically ships broken.
+
+## Which feature required it
+
+Camera studio video capture (the `MUSIC` control in `Photo | Video | Live`) and
+Live host broadcast music. No call, video-call, or Messenger-calling path is
+involved.
+
+## Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/live/useLiveBroadcastRoom.ts` | livestream_audio_adapter | Type surface only. `LiveBroadcastRoom` gains `setLiveMusicMixer` and `setLiveMusicPosition`, and `startLiveMusicMixing` gains a `{ startOffsetSeconds, mixer }` options argument. The file's runtime body is still the single-line delegation to `useAgoraLiveBroadcastRoom()`; no audio call, session configuration, ownership decision, or publication path is expressed in it. |
+| `mobile-native/src/screens/LiveHostSessionScreen.tsx` | livestream_audio_adapter | Replaces the screen's own second music catalogue and second level UI with the shared `CreatorMusicSheet` and `CreatorMixerSettings`. Net −36 lines. Adds `applyLiveSelection`, which starts the mix for a new track and adjusts in place for the running one. Removes the dead `LiveLevelControl` component and 15 dead styles. No `AVAudioSession` call, no `Audio.setAudioModeAsync`, no microphone track, no publication path. |
+
+**Not protected, and stated so it is not mistaken for a silent edit:**
+`mobile-native/src/live/useAgoraLiveBroadcastRoom.ts` carries the actual engine
+calls for this change and is **not** in `config/realtime-audio-protected-paths.json`.
+The manifest's `import_boundary` rule covers only `core/*` and `live-audio/*`
+modules. The Agora adapter is therefore unconstrained by the gate, which is a
+gap in the manifest rather than a licence — the changes to it are described
+below and held by tests to the same standard as if it were protected.
+
+## What the Agora adapter does now
+
+`startAudioMixing(url, loopback=false, cycle=-1, startPos)` with
+`loopback=false`, so the track goes to remote viewers and not only to the host's
+own ear. `setAudioMixingPosition` moves the cue point without restarting the
+mix, which is what lets the host scrub mid-broadcast. `adjustAudioMixingPublishVolume`,
+`adjustAudioMixingPlayoutVolume` and `adjustRecordingSignalVolume` carry the two
+faders. `enableAudioVolumeIndication(200, 3, true)` is switched on only while
+music is playing and back off (`0`) when it stops.
+
+### Ducking, and the one hazard that makes it hard
+
+Agora exposes no sidechain compressor, so ducking is implemented by riding
+`adjustAudioMixingPublishVolume` from the ~5 Hz `onAudioVolumeIndication`
+callback through a one-pole envelope with separate attack and release constants.
+
+The hazard: **Agora's local level meter reflects the whole publish path,
+including the music that was just mixed into it.** Ducking on level alone would
+make the music duck itself, and it would never release — the thing holding the
+meter up is the thing being turned down. The defence is that
+`liveMicActivityFrom` counts a sample only when the SDK tagged it `vad === 1`.
+A loud meter with no voice flag is the track playing, not the host talking.
+
+The failure direction is chosen deliberately: if a platform never reports VAD,
+ducking simply never engages and the creator hears their own fader position.
+The alternative failure — a bed that collapses and stays collapsed — is worse
+and is not recoverable by the host mid-broadcast.
+
+Only `uid === 0` (this device) is read; a remote speaker's level must never move
+the host's music. The envelope integrates per elapsed millisecond, not per
+callback, so a phone under load that reports the meter late does not duck
+deeper. An unchanged integer is not re-sent across the bridge.
+
+### The preview is disabled on Live, on purpose
+
+`CreatorMusicSheet` gained `allowPreview?: boolean`. On the camera path the
+preview plays through `expo-av` out of the phone speaker, which is fine because
+nothing is recording yet. On Live the microphone is open, so that same preview
+would be captured acoustically and go out to viewers as a muddy re-recording
+layered under the real mix — precisely what this change exists to prevent. Live
+passes `allowPreview={false}` and auditions through `onSelectionPreview`, which
+pushes the track into the SDK's own mixer instead.
+
+## Expected behavior change
+
+A creator can attach a track to a recorded video and to a Live broadcast, set
+music and mic levels, choose a start point, and pick a preset. Live levels and
+cue point can be changed mid-broadcast without restarting the mix. Call,
+video-call, and Messenger-calling audio is unchanged in every respect; no file
+under `src/calls/`, `src/core/`, or `src/live-audio/` was modified.
+
+Creators who attach no music see no behavioural change at all: every new path is
+entered only when a selection exists.
+
+## Regression risk
+
+The Live risk is that the ducking callback runs for the length of a broadcast on
+a thread that must not be busy. It is a handful of arithmetic operations and an
+early return when nothing changed; all realtime mixing stays inside the SDK, and
+nothing new runs on the JS thread when no music is playing (`musicPlayingRef`
+gates the handler, and is set from the SDK's own `onAudioMixingStateChanged`
+rather than from optimistic local state).
+
+The camera risk is that attribution attaches to the wrong asset. A photo
+carrying `music_*` would be marked `music_mix_status='pending'` and wait forever
+to be mixed into a file with no audio track — invisible in the app, a slow leak
+in the backlog query. `creatorMusicAttributionFieldsForAsset` gates on the
+asset's own media type at the publish call site, and the same function is used in
+the upload hook's default options so a retry (which passes no overrides) still
+carries the soundtrack. Two places make that decision; only one of them may be
+forgotten, which is why it is one exported function and not two inline checks.
+
+No new npm dependency was added — the level slider is a hand-rolled
+`PanResponder` specifically to avoid tripping `dependency_watch`. No seventh
+`Audio.setAudioModeAsync` call site was added; `CreatorMusicSheet` uses
+`Audio.Sound` without touching audio mode and coordinates through the existing
+`claimMediaPlayback`/`releaseMediaPlayback`, so `expo_av_global_audio_mode`
+remains frozen at six paths.
+
+## Tests run
+
+- `npx tsc --noEmit`: clean, no diagnostics.
+- `npm run i18n:validate`: passed, 11 locales.
+- `npm run test:realtime-audio-critical`: 11 suites / 191 tests passed.
+- `npm run test:realtime-audio`: 18 suites / 310 tests passed.
+- `npm run test:realtime-audio-architecture` (native): 1 suite / 22 tests passed.
+- Agora token + provider contract: 13 tests passed.
+- New `src/live/__tests__/liveCreatorMusic.test.ts`: 22 tests. Pins the VAD gate,
+  the 0..255 normalisation, that the squared taper is not applied twice, that the
+  duck trim folds in as amplitude, frame-rate independence, that release is
+  slower than attack, that `music_focus` ducks shallower than `voice_focus`, that
+  a disabled ducking setting releases rather than snaps, and — the one that
+  matters most — that a loud meter with no voice flag never ducks the music.
+- `src/live` jest overall: 13 suites / 139 tests passed.
+- `src/audio` jest: 3 suites / 76 tests passed.
+- Backend `tests/protection/test_creator_music_mix.py` (new): 56 tests passed.
+- Backend `tests/protection/test_realtime_audio_architecture.py`: 17 of 19
+  passed. **2 failed**, and they are the same two stale LiveKit-era assertions
+  already recorded in the previous addendum — they require
+  `src/calls/useNativeCallRoom.ts` to import `../core/realtimePublisherMedia` and
+  to call `registerGlobals`. That file is untouched by this change and both fail
+  identically at HEAD. Not claimed as passing.
+- Full `npm run verify`: **204 of 207 suites, 3573 of 3578 tests passed.** The 3
+  failing suites (`PulseBackground`, `CommerceSeparation`,
+  `MarketplaceBuyerExperience`, 5 tests) were re-confirmed pre-existing for this
+  change by checking HEAD out into a separate `git worktree` with no working-tree
+  changes and running the same three suites there, where they fail identically.
+  None touches audio, music, camera, or Live code.
+- `git diff --check`: clean.
+
+## Validation NOT performed
+
+Three gaps, stated rather than glossed:
+
+1. **The ffmpeg filtergraph has never been executed by a real ffmpeg.** No ffmpeg
+   binary exists in this environment. The graph — gain staging, high-pass on the
+   voice, the duck sidechain, the limiter and safe ceiling — has been validated
+   structurally by `test_creator_music_mix.py` and by reading, not by rendering a
+   file and listening to it. Railway's nixpacks image provides ffmpeg, so this
+   resolves on deploy, but until a mixed video has actually been rendered and
+   heard, the recorded-video half of this feature is unproven end to end.
+2. **Two-device Live audible QA has not been run.** Live must not be declared
+   passing from the host's own phone: the host hears the SDK's local playout,
+   which proves nothing about what was published. The bar is PHONE A hosts with
+   music playing, PHONE B joins as a viewer and hears both the host's voice and
+   the music, the host moves both faders and the viewer hears the change, the
+   host scrubs the start point and the viewer hears the cue move, and the host
+   speaks over the bed and the viewer hears the duck engage and release without
+   pumping.
+3. **No iOS Release build was cut for this change** and no device was updated.
+   The mission brief withholds authorization for both.
+
+## Rollback procedure
+
+Revert this commit. The music paths are additive and entered only when a
+selection exists, so reverting returns both camera and Live to their exact prior
+behaviour without a coordinated server change. `services/creator_music_mix.py`
+is new and unreferenced once `media_worker.py` is reverted; rows already carrying
+`music_mix_status='pending'` are the only residue and are inert — the worker that
+would consume them is gone with the revert. No Agora setting, `AVAudioSession`
+category, microphone publication path, ownership registry, native dependency, or
+backend feature flag needs rolling back, because none was changed.
