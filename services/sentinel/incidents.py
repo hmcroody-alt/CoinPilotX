@@ -35,6 +35,13 @@ INCIDENT_TYPES = (
     "CREDENTIAL_STUFFING", "RECOVERY_ABUSE", "ACCOUNT_TAKEOVER_SUSPECTED",
     "SESSION_ANOMALY", "DEVICE_ANOMALY", "NETWORK_ANOMALY",
     "ADMIN_IDENTITY_ANOMALY", "COORDINATED_IDENTITY_ABUSE",
+    # Mission 4 supply-chain / external-intelligence incident types. An
+    # external match is evidence about a component, not a verdict on the
+    # platform: applicability + internal corroboration set the priority.
+    "VULNERABLE_DEPENDENCY", "KNOWN_EXPLOITED_DEPENDENCY",
+    "CODE_SCANNING_FINDING", "SECRET_EXPOSURE_FINDING",
+    "ARTIFACT_PROVENANCE_MISSING", "ARTIFACT_PROVENANCE_INVALID",
+    "DEPENDENCY_INVENTORY_STALE", "SECURITY_PROVIDER_DEGRADED",
 )
 
 # Canonical states (Mission 2).

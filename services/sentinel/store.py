@@ -257,6 +257,183 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         UNIQUE(sequence_id, subject_ref, fired_at)
     )""",
     "CREATE INDEX IF NOT EXISTS idx_sentinel_seqfire_subject ON sentinel_sequence_firings(sequence_id, subject_ref, cooldown_until)",
+
+    # --- Mission 4: external intelligence (all additive) -------------------
+    # Provider registry: code-defined defaults are upserted here so health,
+    # last_success/last_failure and kill-switch state are queryable. A token
+    # being present is CONFIGURED, never FUNCTIONAL (SC7).
+    """CREATE TABLE IF NOT EXISTS sentinel_external_providers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider_id TEXT NOT NULL UNIQUE,
+        provider_name TEXT NOT NULL,
+        provider_type TEXT NOT NULL,
+        adapter_version TEXT NOT NULL DEFAULT '1',
+        capabilities_json TEXT NOT NULL DEFAULT '[]',
+        configured INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        environment TEXT NOT NULL DEFAULT '',
+        authentication_mode TEXT NOT NULL DEFAULT 'none',
+        data_regions_json TEXT NOT NULL DEFAULT '[]',
+        data_classes_allowed_json TEXT NOT NULL DEFAULT '[]',
+        request_budget_json TEXT NOT NULL DEFAULT '{}',
+        rate_limit_policy_json TEXT NOT NULL DEFAULT '{}',
+        timeout_policy_json TEXT NOT NULL DEFAULT '{}',
+        retry_policy_json TEXT NOT NULL DEFAULT '{}',
+        circuit_breaker_policy_json TEXT NOT NULL DEFAULT '{}',
+        cache_policy_json TEXT NOT NULL DEFAULT '{}',
+        retention_policy_json TEXT NOT NULL DEFAULT '{}',
+        privacy_policy_version TEXT NOT NULL DEFAULT '',
+        deletion_capability TEXT NOT NULL DEFAULT 'unknown',
+        last_success_at TEXT,
+        last_failure_at TEXT,
+        health_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+        kill_switch TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_extprov_type ON sentinel_external_providers(provider_type)",
+
+    # Normalized external observations (SentinelExternalObservationV1).
+    # Doubles as the enrichment cache: cache key is
+    # provider_id + capability + indicator_type + indicator_digest.
+    """CREATE TABLE IF NOT EXISTS sentinel_external_observations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        observation_id TEXT NOT NULL UNIQUE,
+        provider_id TEXT NOT NULL,
+        provider_capability TEXT NOT NULL,
+        provider_event_id TEXT NOT NULL DEFAULT '',
+        indicator_type TEXT NOT NULL,
+        indicator_ref TEXT NOT NULL,
+        indicator_digest TEXT NOT NULL,
+        finding_type TEXT NOT NULL,
+        verdict TEXT NOT NULL,
+        severity TEXT NOT NULL DEFAULT 'info',
+        confidence REAL NOT NULL DEFAULT 0.0,
+        provider_score TEXT NOT NULL DEFAULT '',
+        provider_labels_json TEXT NOT NULL DEFAULT '[]',
+        provider_reasons_json TEXT NOT NULL DEFAULT '[]',
+        first_seen_at TEXT,
+        last_seen_at TEXT,
+        fetched_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        provider_modified_at TEXT,
+        catalog_version TEXT NOT NULL DEFAULT '',
+        source_trust TEXT NOT NULL,
+        data_classification TEXT NOT NULL DEFAULT 'CONFIDENTIAL',
+        sharing_policy_version TEXT NOT NULL DEFAULT '',
+        request_evidence_id TEXT NOT NULL DEFAULT '',
+        response_digest TEXT NOT NULL DEFAULT '',
+        raw_response_reference TEXT NOT NULL DEFAULT '',
+        related_cve_ids_json TEXT NOT NULL DEFAULT '[]',
+        related_package_refs_json TEXT NOT NULL DEFAULT '[]',
+        related_repository_refs_json TEXT NOT NULL DEFAULT '[]',
+        related_deployment_shas_json TEXT NOT NULL DEFAULT '[]',
+        contradicting_observation_ids_json TEXT NOT NULL DEFAULT '[]',
+        negative_result INTEGER NOT NULL DEFAULT 0,
+        metadata_json TEXT NOT NULL DEFAULT '{}'
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_extobs_cache ON sentinel_external_observations(provider_id, provider_capability, indicator_type, indicator_digest)",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_extobs_indicator ON sentinel_external_observations(indicator_type, indicator_digest)",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_extobs_finding ON sentinel_external_observations(finding_type)",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_extobs_fetched ON sentinel_external_observations(fetched_at)",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_extobs_expires ON sentinel_external_observations(expires_at)",
+
+    # Enrichment request ledger: budget accounting + single-flight lease.
+    """CREATE TABLE IF NOT EXISTS sentinel_enrichment_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        request_id TEXT NOT NULL UNIQUE,
+        provider_id TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        indicator_type TEXT NOT NULL,
+        indicator_digest TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+        completed_at TEXT,
+        lease_until TEXT,
+        policy_version TEXT NOT NULL DEFAULT '',
+        incident_ref TEXT NOT NULL DEFAULT ''
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_enrichreq_budget ON sentinel_enrichment_requests(provider_id, requested_at)",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_enrichreq_flight ON sentinel_enrichment_requests(provider_id, capability, indicator_type, indicator_digest, status)",
+
+    # Read-only dependency inventory parsed from real manifests (Stage 14).
+    """CREATE TABLE IF NOT EXISTS sentinel_dependency_inventory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repository TEXT NOT NULL,
+        manifest TEXT NOT NULL,
+        ecosystem TEXT NOT NULL,
+        package TEXT NOT NULL,
+        version TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT 'runtime',
+        direct INTEGER,
+        service TEXT NOT NULL DEFAULT '',
+        source_sha TEXT NOT NULL DEFAULT '',
+        observed_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(repository, manifest, ecosystem, package, version)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_depinv_pkg ON sentinel_dependency_inventory(ecosystem, package, version)",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_depinv_repo ON sentinel_dependency_inventory(repository, source_sha)",
+
+    # Vulnerability findings joined to inventory + applicability (Stage 15/16).
+    """CREATE TABLE IF NOT EXISTS sentinel_vulnerability_findings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        finding_id TEXT NOT NULL UNIQUE,
+        vulnerability_id TEXT NOT NULL,
+        aliases_json TEXT NOT NULL DEFAULT '[]',
+        ecosystem TEXT NOT NULL DEFAULT '',
+        package TEXT NOT NULL DEFAULT '',
+        affected_version TEXT NOT NULL DEFAULT '',
+        fixed_version TEXT NOT NULL DEFAULT '',
+        repository TEXT NOT NULL DEFAULT '',
+        severity TEXT NOT NULL DEFAULT 'unknown',
+        known_exploited INTEGER NOT NULL DEFAULT 0,
+        applicability TEXT NOT NULL DEFAULT 'UNKNOWN',
+        deployment_sha TEXT NOT NULL DEFAULT '',
+        scope TEXT NOT NULL DEFAULT 'runtime',
+        priority TEXT NOT NULL DEFAULT '',
+        triage_reasons_json TEXT NOT NULL DEFAULT '[]',
+        observation_ids_json TEXT NOT NULL DEFAULT '[]',
+        incident_key TEXT NOT NULL DEFAULT '',
+        first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_vulnfind_vuln ON sentinel_vulnerability_findings(vulnerability_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_vulnfind_pkg ON sentinel_vulnerability_findings(ecosystem, package)",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_vulnfind_sha ON sentinel_vulnerability_findings(deployment_sha)",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_vulnfind_inc ON sentinel_vulnerability_findings(incident_key)",
+
+    # Persisted circuit-breaker state per provider capability (Stage 8).
+    """CREATE TABLE IF NOT EXISTS sentinel_provider_circuits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider_id TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'closed',
+        failures INTEGER NOT NULL DEFAULT 0,
+        opened_at REAL NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(provider_id, capability)
+    )""",
+
+    # Append-only audit of every external data share (Stage 25). No secrets,
+    # no raw indicators above INTERNAL — digests only.
+    """CREATE TABLE IF NOT EXISTS sentinel_external_data_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        audit_id TEXT NOT NULL UNIQUE,
+        provider_id TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        indicator_type TEXT NOT NULL,
+        indicator_digest TEXT NOT NULL,
+        data_classes_sent_json TEXT NOT NULL DEFAULT '[]',
+        stripped_fields_json TEXT NOT NULL DEFAULT '[]',
+        policy_version TEXT NOT NULL,
+        requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+        response_status TEXT NOT NULL DEFAULT '',
+        retention_class TEXT NOT NULL DEFAULT '',
+        incident_ref TEXT NOT NULL DEFAULT ''
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_extaudit_prov ON sentinel_external_data_audit(provider_id, requested_at)",
 )
 
 

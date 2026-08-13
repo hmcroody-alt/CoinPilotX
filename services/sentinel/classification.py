@@ -66,6 +66,19 @@ _OPERATIONAL_METADATA_FIELDS = frozenset({
     "evidence_refs", "signal_quality_note", "note",
     "credential_risk", "recovery_risk", "session_risk", "device_risk",
     "network_risk", "admin_risk", "behavioral_risk",
+    # Mission 4 (Stage 29): external-intelligence vocabulary. Closed-set
+    # verdicts, digests, external indicator refs (CVEs, packages, hashes —
+    # threat indicators, not user data), and Sentinel's own deterministic
+    # explanations. No secrets, no internal identifiers, no user content.
+    "provider_id", "provider_capability", "capability", "observation_id",
+    "indicator_type", "indicator_ref", "indicator_digest", "finding_type",
+    "verdict", "provider_labels", "provider_reasons", "negative_result",
+    "staleness_note", "fetched_at", "disagreement", "providers",
+    "external_score", "external_score_capped", "internal_corroboration_score",
+    "risk_band", "enforcement", "authority_note", "finding_id",
+    "vulnerability_id", "aliases", "package", "affected_version",
+    "fixed_version", "ecosystem", "applicability", "priority",
+    "known_exploited", "incident_key", "triage_reasons", "catalog_version",
 })
 
 REDACTED = "[REDACTED:sentinel]"

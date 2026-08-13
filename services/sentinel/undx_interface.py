@@ -20,7 +20,7 @@ from services.sentinel.identity import UNDX_MODEL
 # Explicit allowlist of what UNDX may read. Anything not listed does not exist
 # as far as UNDX is concerned (SC11, SC15).
 READ_SURFACES = ("recent_events", "open_incidents", "provider_health",
-                 "identity_context")
+                 "identity_context", "external_threat_context")
 
 _UNDX_REDACTION_CEILING = Level.INTERNAL
 
@@ -41,6 +41,8 @@ def read(surface: str, *, category: str | None = None, limit: int = 50,
         rows = providers.health_table(conn=conn)
     elif surface == "identity_context":
         return identity_context(subject, limit=limit, conn=conn)
+    elif surface == "external_threat_context":
+        return external_threat_context(subject, limit=limit, conn=conn)
     else:
         return {"ok": False, "error": f"unknown surface {surface!r} (SC15)",
                 "surfaces": READ_SURFACES}
@@ -99,6 +101,64 @@ def identity_context(subject: str | None, *, limit: int = 50, conn=None) -> dict
             "authority_note": "ADVISORY READ — model output is never authority "
                               "(SC2); expected response shape is the "
                               "submit_hypothesis contract"}
+
+
+def external_threat_context(subject: str | None, *, limit: int = 50,
+                            conn=None) -> dict:
+    """Mission 4 (Stage 29): read-only external-intelligence context for one
+    indicator, ``subject`` = "INDICATOR_TYPE:ref" (e.g. "CVE:CVE-2026-1234",
+    "PACKAGE_VERSION:PyPI:flask:2.0.0").
+
+    UNDX gets: per-provider verdicts side by side (disagreement preserved),
+    fused risk with reasons, and related supply-chain findings. UNDX may NOT:
+    dismiss or modify findings, upgrade dependencies, block indicators,
+    revoke sessions, hold funds, upload files, or call providers — none of
+    those operations exist on this surface, and analyses it submits back are
+    ADVISORY (SC2)."""
+    subject = str(subject or "").strip()
+    itype, _, ref = subject.partition(":")
+    from services.sentinel import external_fusion, external_observations, store
+
+    if itype not in external_observations.INDICATOR_TYPES or not ref:
+        return {"ok": False,
+                "error": "external_threat_context requires subject="
+                         "'INDICATOR_TYPE:ref' with a known indicator type (SC15)",
+                "indicator_types": external_observations.INDICATOR_TYPES}
+    limit = max(1, min(int(limit), 200))
+    observations = external_observations.for_indicator(itype, ref, limit=limit,
+                                                      conn=conn)
+    fused = external_fusion.fuse(itype, ref, conn=conn)
+    findings = []
+    with store.connection(conn) as c:
+        cur = c.cursor()
+        parts = ref.split(":")
+        package = parts[1] if len(parts) == 3 else ref  # "eco:pkg:ver" → pkg
+        cur.execute(
+            "SELECT finding_id, vulnerability_id, package, affected_version, "
+            "applicability, priority, known_exploited, incident_key "
+            "FROM sentinel_vulnerability_findings "
+            "WHERE vulnerability_id = ? OR package = ? ORDER BY id DESC LIMIT ?",
+            (ref, package, limit))
+        findings = [{"finding_id": r[0], "vulnerability_id": r[1],
+                     "package": r[2], "affected_version": r[3],
+                     "applicability": r[4], "priority": r[5],
+                     "known_exploited": bool(r[6]), "incident_key": r[7]}
+                    for r in cur.fetchall()]
+    payload = {
+        "subject": subject,
+        "observations": observations,
+        "fusion": fused,
+        "related_findings": findings,
+        "signal_quality_note": (
+            "external verdicts are evidence about an indicator, not verdicts "
+            "on users or the platform; expired rows are already degraded to "
+            "UNKNOWN; disagreement is preserved verbatim"),
+    }
+    return {"ok": True, "surface": "external_threat_context",
+            "rows": _redact_rows([payload]),
+            "authority_note": "ADVISORY READ — UNDX cannot dismiss, upgrade, "
+                              "block, revoke, hold, upload, or call providers "
+                              "from this surface (SC2/SC10, Stage 29)"}
 
 
 def submit_analysis(subject_type: str, subject_id: str, summary: str,
