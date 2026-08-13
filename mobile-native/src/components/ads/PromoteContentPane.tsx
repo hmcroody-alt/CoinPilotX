@@ -1,18 +1,13 @@
 /**
- * Promote your content — the Post Ads home.
+ * Promote your content — the Post Ads home (mobile-first refinement).
  *
  * This is the real, single-page post-promotion surface that replaced the "Post
- * ads isn't switched on yet" placeholder and the sample-data rails. It is built
- * from three server-authoritative pieces, top to bottom:
- *
- *   1. a hero that explains what promoting does (no fake numbers, no metrics);
- *   2. "Choose something to promote" — up to three of the signed-in owner's
- *      already-published Posts / Reels / finalized Live replays from
- *      `GET /api/promotions/content`, each stamped with a server-decided
- *      eligibility verdict; "See all" expands the full paginated list; and
- *   3. once something is picked, an inline "Campaign setup" (Goal / Audience /
- *      Budget / Duration / Placement) plus a truthful "Campaign summary", and a
- *      single "Continue" that hands off to the review + submit wizard.
+ * ads isn't switched on yet" placeholder and the sample-data rails. The feature
+ * shape is unchanged from the approved design; this pass refines it for the
+ * phone: a compact two-part hero, a responsive horizontal card carousel for
+ * picking content, campaign-setup rows that open focused bottom-sheet editors
+ * instead of stacking inline, a truthful summary, and a sticky Continue that
+ * clears the safe area.
  *
  * Everything shown is real:
  *   • eligibility is the server's verdict — Select is offered only when the
@@ -21,8 +16,8 @@
  *     object; nothing is duplicated or reposted.
  *   • Goal options and their enabled flags come from
  *     `GET /api/promotions/eligibility`. Audience and Placement are "Automatic"
- *     because that is what the server stores — they are shown read-only, never
- *     as a picker that fabricates choices the engine doesn't offer.
+ *     because that is what the server stores — shown read-only, never as a
+ *     picker that fabricates choices the engine doesn't offer.
  *   • there is NO "Estimated results" block: no approved forecasting provider is
  *     configured, so the summary states that plainly instead of inventing reach.
  *   • budget spends from the ONE shared Ad Wallet — there is no Post-Ads balance.
@@ -34,17 +29,19 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { ReactElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ReactElement, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  View
+  View,
+  useWindowDimensions
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -78,8 +75,11 @@ import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../../navigation/BottomNavVisibili
 import { adsLight } from "../../theme/adsLight";
 
 const PAGE_SIZE = 12;
-const PREVIEW_COUNT = 3;
+const PREVIEW_COUNT = 6;
 const DURATION_PRESETS = [3, 7, 14, 30];
+const CARD_GAP = 10;
+const GUTTER = adsLight.space.gutter;
+const SKELETON_KEYS = ["s1", "s2", "s3"];
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
   post: "Post",
@@ -108,7 +108,7 @@ const STATUS_PILL: Record<string, { label: string; tone: "info" | "warning" | "m
   NOT_ELIGIBLE: { label: "Not eligible", tone: "muted" }
 };
 
-type SetupRow = "goal" | "budget" | "duration";
+type SetupSheet = "goal" | "budget" | "duration";
 
 type PromoteNavParams = {
   mode: "promote";
@@ -127,6 +127,12 @@ function contentTypeLabel(type: string): string {
   return CONTENT_TYPE_LABELS[type] || "Content";
 }
 
+function contentTypeIcon(type: string): keyof typeof Ionicons.glyphMap {
+  if (type === "reel") return "film-outline";
+  if (type === "live_replay") return "radio-outline";
+  return "image-outline";
+}
+
 function durationLabel(seconds: number | null): string {
   if (!seconds || seconds <= 0) return "";
   const total = Math.round(seconds);
@@ -143,6 +149,7 @@ function formatUsd(cents: number): string {
 export function PromoteContentPane({ visible, accountId, navigation }: Props) {
   const fmt = useFormatters();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const draft = usePromotionDraft();
 
   const [items, setItems] = useState<PromotableContentItem[]>([]);
@@ -159,13 +166,25 @@ export function PromoteContentPane({ visible, accountId, navigation }: Props) {
   const [eligibilityLoading, setEligibilityLoading] = useState(false);
   const [eligibilityError, setEligibilityError] = useState<string>("");
 
-  const [expandedRow, setExpandedRow] = useState<SetupRow | null>(null);
+  const [activeSheet, setActiveSheet] = useState<SetupSheet | null>(null);
   const [attempted, setAttempted] = useState(false);
 
   const requestToken = useRef(0);
   const hydratedRef = useRef(false);
 
   const selected = draft.content;
+
+  /**
+   * Responsive card width. On a wide iPhone three compact cards fit across; on a
+   * narrow one the same width yields a peek-and-scroll carousel. No hardcoded
+   * widths — everything flexes from the live viewport.
+   */
+  const cardW = useMemo(() => {
+    const available = width - GUTTER * 2 - CARD_GAP * 2;
+    return Math.round(Math.max(120, Math.min(168, available / 3)));
+  }, [width]);
+  const thumbH = Math.round(cardW * 0.72);
+  const snap = cardW + CARD_GAP;
 
   /* ------------------------------------------------------------------ *
    * Content list
@@ -299,14 +318,14 @@ export function PromoteContentPane({ visible, accountId, navigation }: Props) {
     };
     updatePromotionDraft((current) => withSelectedContent(current, selection));
     void persistPromotionDraft();
-    setExpandedRow("goal");
     setAttempted(false);
+    setActiveSheet("goal");
   }, []);
 
   const clearSelection = useCallback(() => {
     updatePromotionDraft(() => createPromotionDraft());
     void persistPromotionDraft();
-    setExpandedRow(null);
+    setActiveSheet(null);
     setAttempted(false);
     setEligibility(null);
   }, []);
@@ -314,6 +333,7 @@ export function PromoteContentPane({ visible, accountId, navigation }: Props) {
   const chooseGoal = useCallback((goal: string) => {
     updatePromotionDraft({ goal });
     void persistPromotionDraft();
+    setActiveSheet(null);
   }, []);
 
   const setBudgetType = useCallback((budgetType: "total" | "daily") => {
@@ -333,18 +353,19 @@ export function PromoteContentPane({ visible, accountId, navigation }: Props) {
     void persistPromotionDraft();
   }, []);
 
-  const toggleRow = useCallback((row: SetupRow) => {
-    setExpandedRow((prev) => (prev === row ? null : row));
+  const closeSheet = useCallback(() => {
+    void persistPromotionDraft();
+    setActiveSheet(null);
   }, []);
 
   const onContinue = useCallback(() => {
     if (!canContinue) {
       setAttempted(true);
-      // Open the first unresolved setup row so the fix is one tap away.
+      // Open the editor for the first unresolved input so the fix is one tap away.
       const first = reviewIssues[0]?.field;
-      if (first === "goal") setExpandedRow("goal");
-      else if (first === "budget") setExpandedRow("budget");
-      else if (first === "duration" || first === "startDate" || first === "endDate") setExpandedRow("duration");
+      if (first === "goal") setActiveSheet("goal");
+      else if (first === "budget") setActiveSheet("budget");
+      else if (first === "duration" || first === "startDate" || first === "endDate") setActiveSheet("duration");
       return;
     }
     updatePromotionDraft({ step: "review" });
@@ -361,55 +382,46 @@ export function PromoteContentPane({ visible, accountId, navigation }: Props) {
    * ------------------------------------------------------------------ */
   const promotable = useMemo(() => items.filter((i) => i.promotable), [items]);
   const previewItems = seeAll ? items : promotable.slice(0, PREVIEW_COUNT);
+  const showSeeAll = items.length > previewItems.length || (seeAll && promotable.length < items.length);
 
   const renderContentCard = (item: PromotableContentItem): ReactElement => {
     const pill = item.promotable ? null : STATUS_PILL[item.eligibility] || STATUS_PILL.NOT_ELIGIBLE;
     const duration = durationLabel(item.durationSeconds);
-    const published = item.createdAt ? fmt.relative(item.createdAt) : "";
     const isSelected = selected?.contentType === item.contentType && selected?.contentId === item.contentId;
     return (
       <View
         key={`${item.contentType}:${item.contentId}`}
-        style={[styles.card, isSelected && styles.cardSelected]}
+        style={[styles.card, { width: cardW }, isSelected && styles.cardSelected]}
       >
-        <View style={styles.thumbWrap}>
+        <View style={[styles.thumbWrap, { height: thumbH }]}>
           {item.thumbnailUrl ? (
             <Image source={{ uri: item.thumbnailUrl }} style={styles.thumb} resizeMode="cover" />
           ) : (
             <View style={[styles.thumb, styles.thumbFallback]}>
-              <Text style={styles.thumbFallbackText}>{contentTypeLabel(item.contentType).charAt(0)}</Text>
+              <Ionicons name={contentTypeIcon(item.contentType)} size={26} color={adsLight.post.base} />
             </View>
           )}
+          <View style={[styles.typeBadge, typeBadgeStyle(item.contentType)]}>
+            <Text style={[styles.typeBadgeText, typeBadgeTextStyle(item.contentType)]}>
+              {contentTypeLabel(item.contentType)}
+            </Text>
+          </View>
           {duration ? (
             <View style={styles.durationChip}>
               <Text style={styles.durationText}>{duration}</Text>
             </View>
           ) : null}
+          {pill ? (
+            <View style={[styles.statusPill, pillToneStyle(pill.tone)]}>
+              <Text style={[styles.statusPillText, pillToneTextStyle(pill.tone)]}>{pill.label}</Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.cardBody}>
-          <View style={styles.cardHeaderRow}>
-            <View style={[styles.typeBadge, typeBadgeStyle(item.contentType)]}>
-              <Text style={[styles.typeBadgeText, typeBadgeTextStyle(item.contentType)]}>
-                {contentTypeLabel(item.contentType)}
-              </Text>
-            </View>
-            {pill ? (
-              <View style={[styles.statusPill, pillToneStyle(pill.tone)]}>
-                <Text style={[styles.statusPillText, pillToneTextStyle(pill.tone)]}>{pill.label}</Text>
-              </View>
-            ) : null}
-          </View>
-
           <Text style={styles.cardTitle} numberOfLines={2}>
-            {item.title}
+            {item.title || contentTypeLabel(item.contentType)}
           </Text>
-          {item.snippet ? (
-            <Text style={styles.cardSnippet} numberOfLines={2}>
-              {item.snippet}
-            </Text>
-          ) : null}
-          {published ? <Text style={styles.cardMeta}>{published}</Text> : null}
 
           {item.promotable ? (
             <Pressable
@@ -420,13 +432,13 @@ export function PromoteContentPane({ visible, accountId, navigation }: Props) {
               accessibilityLabel={
                 isSelected
                   ? `Selected ${contentTypeLabel(item.contentType).toLowerCase()}`
-                  : `Select ${contentTypeLabel(item.contentType).toLowerCase()}`
+                  : `Select ${contentTypeLabel(item.contentType).toLowerCase()} to promote`
               }
               hitSlop={6}
             >
               {isSelected ? (
                 <>
-                  <Ionicons name="checkmark" size={15} color={adsLight.post.onViolet} />
+                  <Ionicons name="checkmark" size={14} color={adsLight.post.onViolet} />
                   <Text style={styles.selectBtnActiveText}>Selected</Text>
                 </>
               ) : (
@@ -434,302 +446,145 @@ export function PromoteContentPane({ visible, accountId, navigation }: Props) {
               )}
             </Pressable>
           ) : (
-            <Text style={styles.ineligibleReason}>{item.eligibilityReason}</Text>
+            <Text style={styles.ineligibleReason} numberOfLines={2}>
+              {item.eligibilityReason}
+            </Text>
           )}
         </View>
       </View>
     );
   };
 
+  const renderSkeletonCard = (key: string): ReactElement => (
+    <View key={key} style={[styles.card, { width: cardW }]}>
+      <View style={[styles.thumbWrap, { height: thumbH, backgroundColor: adsLight.bg.skeleton }]} />
+      <View style={styles.cardBody}>
+        <View style={[styles.skelLine, { width: "88%" }]} />
+        <View style={[styles.skelLine, { width: "55%" }]} />
+        <View style={[styles.skelBtn]} />
+      </View>
+    </View>
+  );
+
   const renderPicker = (): ReactElement => {
     if (loading && !refreshing) {
       return (
-        <View style={styles.centered}>
-          <ActivityIndicator color={adsLight.post.base} />
-        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.carousel}
+          scrollEnabled={false}
+        >
+          {SKELETON_KEYS.map(renderSkeletonCard)}
+        </ScrollView>
       );
     }
     if (error) {
       return (
-        <View style={styles.centered}>
-          <Text style={styles.stateTitle}>Couldn't load your content</Text>
-          <Text style={styles.stateBody}>{error}</Text>
-          <Pressable onPress={onRefresh} style={styles.retryBtn} accessibilityRole="button" accessibilityLabel="Retry">
-            <Text style={styles.retryBtnText}>Try again</Text>
+        <View style={styles.stateCard}>
+          <Ionicons name="cloud-offline-outline" size={22} color={adsLight.text.muted} />
+          <Text style={styles.stateBody}>Couldn't load your content.</Text>
+          <Pressable onPress={onRefresh} style={styles.retryBtn} accessibilityRole="button" accessibilityLabel="Retry loading content">
+            <Ionicons name="refresh" size={15} color={adsLight.post.onViolet} />
+            <Text style={styles.retryBtnText}>Retry</Text>
           </Pressable>
         </View>
       );
     }
     if (!items.length) {
       return (
-        <View style={styles.centered}>
-          <Text style={styles.stateTitle}>Nothing to promote yet</Text>
-          <Text style={styles.stateBody}>
-            Post something, share a Reel, or finish a live stream — it'll show up here, ready to promote.
-          </Text>
+        <View style={styles.stateCard}>
+          <Ionicons name="sparkles-outline" size={22} color={adsLight.post.base} />
+          <Text style={styles.stateBody}>No content available to promote yet.</Text>
+          <Text style={styles.stateHint}>Post something or share a Reel — it'll show up here, ready to promote.</Text>
+        </View>
+      );
+    }
+    if (previewItems.length === 0) {
+      return (
+        <View style={styles.stateCard}>
+          <Text style={styles.stateBody}>None of your content can be promoted right now.</Text>
+          <Pressable onPress={() => setSeeAll(true)} accessibilityRole="button" accessibilityLabel="See all content" hitSlop={6}>
+            <Text style={styles.seeAll}>See all</Text>
+          </Pressable>
         </View>
       );
     }
     return (
-      <View style={styles.pickerList}>
-        {!seeAll && previewItems.length === 0 ? (
-          <Text style={styles.pickerNote}>
-            None of your content can be promoted right now. Tap “See all” to see why.
-          </Text>
-        ) : (
-          previewItems.map(renderContentCard)
-        )}
-        {seeAll && hasMore ? (
-          <Pressable
-            onPress={loadMore}
-            style={styles.loadMoreBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Load more content"
-            disabled={loadingMore}
-          >
-            {loadingMore ? (
-              <ActivityIndicator color={adsLight.post.base} />
-            ) : (
-              <Text style={styles.loadMoreText}>Load more</Text>
-            )}
-          </Pressable>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        decelerationRate="fast"
+        snapToInterval={snap}
+        snapToAlignment="start"
+        contentContainerStyle={styles.carousel}
+        onMomentumScrollEnd={(e) => {
+          if (!seeAll || !hasMore) return;
+          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+          if (contentOffset.x + layoutMeasurement.width >= contentSize.width - snap) void loadMore();
+        }}
+      >
+        {previewItems.map(renderContentCard)}
+        {seeAll && loadingMore ? (
+          <View style={[styles.card, styles.carouselSpinner, { width: cardW, height: thumbH + 90 }]}>
+            <ActivityIndicator color={adsLight.post.base} />
+          </View>
         ) : null}
-      </View>
+      </ScrollView>
     );
   };
 
   /* ------------------------------------------------------------------ *
-   * Campaign setup rows
+   * Campaign setup rows — compact; editable rows open a bottom sheet.
    * ------------------------------------------------------------------ */
   const goalIssue = attempted && !draft.goal;
-  const budgetIssue = attempted && parsePromotionBudgetCents(draft.budgetAmount) <= 0;
+  const budgetIssue = attempted && budgetCents <= 0;
 
-  const renderGoalRow = (): ReactElement => (
-    <View style={styles.setupRow}>
-      <Pressable
-        onPress={() => toggleRow("goal")}
-        style={styles.setupRowHead}
-        accessibilityRole="button"
-        accessibilityLabel="Goal"
-        accessibilityState={{ expanded: expandedRow === "goal" }}
-      >
+  const renderSetupRow = (
+    icon: keyof typeof Ionicons.glyphMap,
+    label: string,
+    value: string,
+    opts: { onPress?: () => void; issue?: boolean; locked?: boolean }
+  ): ReactElement => {
+    const body = (
+      <>
+        <View style={styles.setupIcon}>
+          <Ionicons name={icon} size={16} color={adsLight.post.base} />
+        </View>
         <View style={styles.setupRowLabelWrap}>
-          <Text style={styles.setupRowLabel}>Goal</Text>
-          <Text style={[styles.setupRowValue, goalIssue && styles.setupRowValueIssue]} numberOfLines={1}>
-            {selectedGoalLabel || (goalIssue ? "Pick a goal" : "Choose a goal")}
+          <Text style={styles.setupRowLabel}>{label}</Text>
+          <Text style={[styles.setupRowValue, opts.issue && styles.setupRowValueIssue]} numberOfLines={1}>
+            {value}
           </Text>
         </View>
-        <Ionicons
-          name={expandedRow === "goal" ? "chevron-up" : "chevron-down"}
-          size={18}
-          color={adsLight.text.muted}
-        />
-      </Pressable>
-      {expandedRow === "goal" ? (
-        <View style={styles.setupRowBody}>
-          {eligibilityLoading && !eligibility ? (
-            <ActivityIndicator color={adsLight.post.base} style={{ marginVertical: 8 }} />
-          ) : (
-            goalOptions.map((option) => {
-              const active = draft.goal === option.key;
-              return (
-                <Pressable
-                  key={option.key}
-                  onPress={() => option.enabled && chooseGoal(option.key)}
-                  disabled={!option.enabled}
-                  style={[styles.optionRow, active && styles.optionRowActive, !option.enabled && styles.optionRowDisabled]}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: active, disabled: !option.enabled }}
-                  accessibilityLabel={option.label}
-                >
-                  <View style={[styles.radio, active && styles.radioActive]}>
-                    {active ? <View style={styles.radioDot} /> : null}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.optionLabel, !option.enabled && styles.optionLabelDisabled]}>
-                      {option.label}
-                    </Text>
-                    {!option.enabled && option.reason ? (
-                      <Text style={styles.optionReason}>{option.reason}</Text>
-                    ) : null}
-                  </View>
-                </Pressable>
-              );
-            })
-          )}
-          {eligibilityError ? <Text style={styles.inlineError}>{eligibilityError}</Text> : null}
-        </View>
-      ) : null}
-    </View>
-  );
-
-  const renderAudienceRow = (): ReactElement => (
-    <View style={styles.setupRow}>
-      <View style={styles.setupRowHead}>
-        <View style={styles.setupRowLabelWrap}>
-          <Text style={styles.setupRowLabel}>Audience</Text>
-          <Text style={styles.setupRowValue}>Automatic</Text>
-        </View>
-        <View style={styles.lockPill}>
-          <Ionicons name="sparkles-outline" size={12} color={adsLight.post.base} />
-          <Text style={styles.lockPillText}>Optimized</Text>
-        </View>
+        {opts.locked ? (
+          <View style={styles.lockPill}>
+            <Ionicons name="sparkles-outline" size={11} color={adsLight.post.base} />
+            <Text style={styles.lockPillText}>Optimized</Text>
+          </View>
+        ) : (
+          <Ionicons name="chevron-forward" size={18} color={adsLight.text.muted} />
+        )}
+      </>
+    );
+    if (opts.onPress) {
+      return (
+        <Pressable
+          onPress={opts.onPress}
+          style={styles.setupRow}
+          accessibilityRole="button"
+          accessibilityLabel={`${label}, ${value}`}
+        >
+          {body}
+        </Pressable>
+      );
+    }
+    return (
+      <View style={styles.setupRow} accessibilityRole="text" accessibilityLabel={`${label}, ${value}`}>
+        {body}
       </View>
-      <Text style={styles.setupRowHint}>We reach the people most likely to respond. Manual targeting isn't available yet.</Text>
-    </View>
-  );
-
-  const renderBudgetRow = (): ReactElement => (
-    <View style={styles.setupRow}>
-      <Pressable
-        onPress={() => toggleRow("budget")}
-        style={styles.setupRowHead}
-        accessibilityRole="button"
-        accessibilityLabel="Budget"
-        accessibilityState={{ expanded: expandedRow === "budget" }}
-      >
-        <View style={styles.setupRowLabelWrap}>
-          <Text style={styles.setupRowLabel}>Budget</Text>
-          <Text style={[styles.setupRowValue, budgetIssue && styles.setupRowValueIssue]} numberOfLines={1}>
-            {budgetCents > 0
-              ? `${formatUsd(budgetCents)} ${draft.budgetType === "daily" ? "per day" : "total"}`
-              : budgetIssue
-              ? "Enter a budget"
-              : "Set a budget"}
-          </Text>
-        </View>
-        <Ionicons
-          name={expandedRow === "budget" ? "chevron-up" : "chevron-down"}
-          size={18}
-          color={adsLight.text.muted}
-        />
-      </Pressable>
-      {expandedRow === "budget" ? (
-        <View style={styles.setupRowBody}>
-          <View style={styles.segment}>
-            {(["total", "daily"] as const).map((type) => {
-              const active = draft.budgetType === type;
-              return (
-                <Pressable
-                  key={type}
-                  onPress={() => setBudgetType(type)}
-                  style={[styles.segmentBtn, active && styles.segmentBtnActive]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={type === "total" ? "Total budget" : "Daily budget"}
-                >
-                  <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
-                    {type === "total" ? "Total" : "Daily"}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <View style={styles.amountRow}>
-            <Text style={styles.amountPrefix}>$</Text>
-            <TextInput
-              value={draft.budgetAmount}
-              onChangeText={setBudgetAmount}
-              onBlur={() => void persistPromotionDraft()}
-              keyboardType="decimal-pad"
-              placeholder="0.00"
-              placeholderTextColor={adsLight.text.muted}
-              style={styles.amountInput}
-              accessibilityLabel="Budget amount in dollars"
-            />
-          </View>
-          <Text style={styles.setupRowHint}>
-            Between $5.00 and $5,000.00. Spend comes from your shared Ad Wallet.
-          </Text>
-        </View>
-      ) : null}
-    </View>
-  );
-
-  const renderDurationRow = (): ReactElement => (
-    <View style={styles.setupRow}>
-      <Pressable
-        onPress={() => toggleRow("duration")}
-        style={styles.setupRowHead}
-        accessibilityRole="button"
-        accessibilityLabel="Duration"
-        accessibilityState={{ expanded: expandedRow === "duration" }}
-      >
-        <View style={styles.setupRowLabelWrap}>
-          <Text style={styles.setupRowLabel}>Duration</Text>
-          <Text style={styles.setupRowValue}>
-            {draft.durationDays} {draft.durationDays === 1 ? "day" : "days"}
-          </Text>
-        </View>
-        <Ionicons
-          name={expandedRow === "duration" ? "chevron-up" : "chevron-down"}
-          size={18}
-          color={adsLight.text.muted}
-        />
-      </Pressable>
-      {expandedRow === "duration" ? (
-        <View style={styles.setupRowBody}>
-          <View style={styles.presetRow}>
-            {DURATION_PRESETS.map((days) => {
-              const active = draft.durationDays === days;
-              return (
-                <Pressable
-                  key={days}
-                  onPress={() => setDuration(days)}
-                  style={[styles.presetChip, active && styles.presetChipActive]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={`${days} days`}
-                >
-                  <Text style={[styles.presetText, active && styles.presetTextActive]}>{days}d</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <View style={styles.stepper}>
-            <Pressable
-              onPress={() => setDuration(draft.durationDays - 1)}
-              disabled={draft.durationDays <= PROMOTION_MIN_DURATION_DAYS}
-              style={[styles.stepBtn, draft.durationDays <= PROMOTION_MIN_DURATION_DAYS && styles.stepBtnDisabled]}
-              accessibilityRole="button"
-              accessibilityLabel="Decrease duration"
-            >
-              <Ionicons name="remove" size={18} color={adsLight.text.primary} />
-            </Pressable>
-            <Text style={styles.stepValue}>
-              {draft.durationDays} {draft.durationDays === 1 ? "day" : "days"}
-            </Text>
-            <Pressable
-              onPress={() => setDuration(draft.durationDays + 1)}
-              disabled={draft.durationDays >= PROMOTION_MAX_DURATION_DAYS}
-              style={[styles.stepBtn, draft.durationDays >= PROMOTION_MAX_DURATION_DAYS && styles.stepBtnDisabled]}
-              accessibilityRole="button"
-              accessibilityLabel="Increase duration"
-            >
-              <Ionicons name="add" size={18} color={adsLight.text.primary} />
-            </Pressable>
-          </View>
-          <Text style={styles.setupRowHint}>Between 1 and 30 days.</Text>
-        </View>
-      ) : null}
-    </View>
-  );
-
-  const renderPlacementRow = (): ReactElement => (
-    <View style={styles.setupRow}>
-      <View style={styles.setupRowHead}>
-        <View style={styles.setupRowLabelWrap}>
-          <Text style={styles.setupRowLabel}>Placement</Text>
-          <Text style={styles.setupRowValue}>Automatic</Text>
-        </View>
-        <View style={styles.lockPill}>
-          <Ionicons name="sparkles-outline" size={12} color={adsLight.post.base} />
-          <Text style={styles.lockPillText}>Optimized</Text>
-        </View>
-      </View>
-      <Text style={styles.setupRowHint}>Your promotion is placed where it's most likely to perform.</Text>
-    </View>
-  );
+    );
+  };
 
   /* ------------------------------------------------------------------ *
    * Campaign summary (truthful — no fabricated estimates)
@@ -750,41 +605,57 @@ export function PromoteContentPane({ visible, accountId, navigation }: Props) {
       ) : null}
       <SummaryLine label="Placement" value="Automatic" />
       <View style={styles.summaryNote}>
-        <Ionicons name="information-circle-outline" size={15} color={adsLight.text.muted} />
+        <Ionicons name="information-circle-outline" size={14} color={adsLight.text.muted} />
         <Text style={styles.summaryNoteText}>{forecastingMessage}</Text>
       </View>
     </View>
   );
 
   /* ------------------------------------------------------------------ *
-   * Frame
+   * Frame — one vertical scroll, sticky Continue outside it.
    * ------------------------------------------------------------------ */
+  const showFooter = !!selected;
+  const footerPad = Math.max(insets.bottom, 10);
+  const scrollBottomPad = (showFooter ? 88 : 12) + Math.max(insets.bottom, 12) + BOTTOM_NAV_CONTENT_CLEARANCE;
+
   return (
     <View style={[styles.root, !visible && styles.hidden]}>
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad(insets.bottom) }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollBottomPad }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={adsLight.post.base} />}
       >
-        {/* Hero */}
+        {/* Hero — two-part: copy on the left, lightweight art on the right. */}
         <View style={styles.hero}>
-          <Text style={styles.heroTitle}>Promote your content</Text>
-          <Text style={styles.heroSubtitle}>Turn your posts, reels, or live replays into ads in minutes.</Text>
-          <View style={styles.benefitRow}>
-            {BENEFITS.map((benefit) => (
-              <View key={benefit.label} style={styles.benefitChip}>
-                <Ionicons name={benefit.icon} size={14} color={adsLight.post.base} />
-                <Text style={styles.benefitText}>{benefit.label}</Text>
-              </View>
-            ))}
+          <View style={styles.heroCopy}>
+            <Text style={styles.heroTitle}>Promote your content</Text>
+            <Text style={styles.heroSubtitle}>Turn a post, reel, or live replay into an ad in minutes.</Text>
           </View>
+          <View style={styles.heroArt}>
+            <View style={styles.heroArtDisc}>
+              <Ionicons name="megaphone-outline" size={30} color={adsLight.post.base} />
+            </View>
+            <View style={styles.heroArtBadge}>
+              <Ionicons name="trending-up" size={14} color={adsLight.post.onViolet} />
+            </View>
+          </View>
+        </View>
+        <View style={styles.benefitRow}>
+          {BENEFITS.map((benefit) => (
+            <View key={benefit.label} style={styles.benefitItem}>
+              <Ionicons name={benefit.icon} size={14} color={adsLight.post.base} />
+              <Text style={styles.benefitText} numberOfLines={1}>
+                {benefit.label}
+              </Text>
+            </View>
+          ))}
         </View>
 
         {/* Picker */}
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>Choose something to promote</Text>
-          {items.length > PREVIEW_COUNT || (!seeAll && items.length > promotable.slice(0, PREVIEW_COUNT).length) ? (
+          {showSeeAll ? (
             <Pressable
               onPress={() => setSeeAll((v) => !v)}
               accessibilityRole="button"
@@ -801,8 +672,9 @@ export function PromoteContentPane({ visible, accountId, navigation }: Props) {
         {selected ? (
           <>
             <View style={styles.selectionBar}>
+              <Ionicons name={contentTypeIcon(selected.contentType)} size={15} color={adsLight.post.base} />
               <Text style={styles.selectionBarText} numberOfLines={1}>
-                Promoting: <Text style={styles.selectionBarStrong}>{selected.title || contentTypeLabel(selected.contentType)}</Text>
+                <Text style={styles.selectionBarStrong}>{selected.title || contentTypeLabel(selected.contentType)}</Text>
               </Text>
               <Pressable onPress={clearSelection} accessibilityRole="button" accessibilityLabel="Change content" hitSlop={6}>
                 <Text style={styles.changeLink}>Change</Text>
@@ -811,29 +683,194 @@ export function PromoteContentPane({ visible, accountId, navigation }: Props) {
 
             <Text style={styles.sectionTitle}>Campaign setup</Text>
             <View style={styles.setupGroup}>
-              {renderGoalRow()}
-              {renderAudienceRow()}
-              {renderBudgetRow()}
-              {renderDurationRow()}
-              {renderPlacementRow()}
+              {renderSetupRow("flag-outline", "Goal", selectedGoalLabel || (goalIssue ? "Pick a goal" : "Choose a goal"), {
+                onPress: () => setActiveSheet("goal"),
+                issue: goalIssue
+              })}
+              {renderSetupRow("people-outline", "Audience", "Automatic", { locked: true })}
+              {renderSetupRow(
+                "cash-outline",
+                "Budget",
+                budgetCents > 0
+                  ? `${formatUsd(budgetCents)} ${draft.budgetType === "daily" ? "per day" : "total"}`
+                  : budgetIssue
+                  ? "Enter a budget"
+                  : "Set a budget",
+                { onPress: () => setActiveSheet("budget"), issue: budgetIssue }
+              )}
+              {renderSetupRow(
+                "calendar-outline",
+                "Duration",
+                `${draft.durationDays} ${draft.durationDays === 1 ? "day" : "days"}`,
+                { onPress: () => setActiveSheet("duration") }
+              )}
+              {renderSetupRow("locate-outline", "Placement", "Automatic", { locked: true })}
             </View>
 
             {renderSummary()}
-
-            <Pressable
-              onPress={onContinue}
-              style={[styles.continueBtn, !canContinue && styles.continueBtnDisabled]}
-              accessibilityRole="button"
-              accessibilityLabel="Continue to review"
-              accessibilityState={{ disabled: !canContinue }}
-            >
-              <Text style={styles.continueText}>Continue</Text>
-            </Pressable>
-            <Text style={styles.continueHint}>Review and confirm your promotion.</Text>
           </>
         ) : null}
       </ScrollView>
+
+      {/* Sticky Continue — outside the scroll, clears the home indicator. */}
+      {showFooter ? (
+        <View style={[styles.footer, { paddingBottom: footerPad + 8 }]}>
+          <Pressable
+            onPress={onContinue}
+            style={[styles.continueBtn, !canContinue && styles.continueBtnDisabled]}
+            accessibilityRole="button"
+            accessibilityLabel="Continue to review and confirm your promotion"
+            accessibilityState={{ disabled: !canContinue }}
+          >
+            <Text style={styles.continueText}>Continue</Text>
+            <Ionicons name="arrow-forward" size={18} color={adsLight.post.onViolet} />
+          </Pressable>
+          <Text style={styles.continueHint}>Review and confirm your promotion.</Text>
+        </View>
+      ) : null}
+
+      {/* ---- Config bottom sheets ---- */}
+      <BottomSheet visible={activeSheet === "goal"} title="Goal" onClose={closeSheet}>
+        {eligibilityLoading && !eligibility ? (
+          <ActivityIndicator color={adsLight.post.base} style={{ marginVertical: 16 }} />
+        ) : (
+          goalOptions.map((option) => {
+            const active = draft.goal === option.key;
+            return (
+              <Pressable
+                key={option.key}
+                onPress={() => option.enabled && chooseGoal(option.key)}
+                disabled={!option.enabled}
+                style={[styles.optionRow, active && styles.optionRowActive, !option.enabled && styles.optionRowDisabled]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: active, disabled: !option.enabled }}
+                accessibilityLabel={option.label}
+              >
+                <View style={[styles.radio, active && styles.radioActive]}>{active ? <View style={styles.radioDot} /> : null}</View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.optionLabel, !option.enabled && styles.optionLabelDisabled]}>{option.label}</Text>
+                  {!option.enabled && option.reason ? <Text style={styles.optionReason}>{option.reason}</Text> : null}
+                </View>
+              </Pressable>
+            );
+          })
+        )}
+        {eligibilityError ? <Text style={styles.inlineError}>{eligibilityError}</Text> : null}
+      </BottomSheet>
+
+      <BottomSheet visible={activeSheet === "budget"} title="Budget" onClose={closeSheet} primaryLabel="Done">
+        <View style={styles.segment}>
+          {(["total", "daily"] as const).map((type) => {
+            const active = draft.budgetType === type;
+            return (
+              <Pressable
+                key={type}
+                onPress={() => setBudgetType(type)}
+                style={[styles.segmentBtn, active && styles.segmentBtnActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={type === "total" ? "Total budget" : "Daily budget"}
+              >
+                <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{type === "total" ? "Total" : "Daily"}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={styles.amountRow}>
+          <Text style={styles.amountPrefix}>$</Text>
+          <TextInput
+            value={draft.budgetAmount}
+            onChangeText={setBudgetAmount}
+            onBlur={() => void persistPromotionDraft()}
+            keyboardType="decimal-pad"
+            placeholder="0.00"
+            placeholderTextColor={adsLight.text.muted}
+            style={styles.amountInput}
+            accessibilityLabel="Budget amount in dollars"
+            autoFocus
+          />
+        </View>
+        <Text style={styles.sheetHint}>Between $5.00 and $5,000.00. Spend comes from your shared Ad Wallet.</Text>
+      </BottomSheet>
+
+      <BottomSheet visible={activeSheet === "duration"} title="Duration" onClose={closeSheet} primaryLabel="Done">
+        <View style={styles.presetRow}>
+          {DURATION_PRESETS.map((days) => {
+            const active = draft.durationDays === days;
+            return (
+              <Pressable
+                key={days}
+                onPress={() => setDuration(days)}
+                style={[styles.presetChip, active && styles.presetChipActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={`${days} days`}
+              >
+                <Text style={[styles.presetText, active && styles.presetTextActive]}>{days}d</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={styles.stepper}>
+          <Pressable
+            onPress={() => setDuration(draft.durationDays - 1)}
+            disabled={draft.durationDays <= PROMOTION_MIN_DURATION_DAYS}
+            style={[styles.stepBtn, draft.durationDays <= PROMOTION_MIN_DURATION_DAYS && styles.stepBtnDisabled]}
+            accessibilityRole="button"
+            accessibilityLabel="Decrease duration"
+          >
+            <Ionicons name="remove" size={20} color={adsLight.text.primary} />
+          </Pressable>
+          <Text style={styles.stepValue}>
+            {draft.durationDays} {draft.durationDays === 1 ? "day" : "days"}
+          </Text>
+          <Pressable
+            onPress={() => setDuration(draft.durationDays + 1)}
+            disabled={draft.durationDays >= PROMOTION_MAX_DURATION_DAYS}
+            style={[styles.stepBtn, draft.durationDays >= PROMOTION_MAX_DURATION_DAYS && styles.stepBtnDisabled]}
+            accessibilityRole="button"
+            accessibilityLabel="Increase duration"
+          >
+            <Ionicons name="add" size={20} color={adsLight.text.primary} />
+          </Pressable>
+        </View>
+        <Text style={styles.sheetHint}>Between 1 and 30 days.</Text>
+      </BottomSheet>
     </View>
+  );
+}
+
+/* -------------------------------------------------------------------- *
+ * Reusable bottom-sheet modal — one focused editor at a time.
+ * -------------------------------------------------------------------- */
+function BottomSheet({
+  visible,
+  title,
+  onClose,
+  primaryLabel,
+  children
+}: {
+  visible: boolean;
+  title: string;
+  onClose: () => void;
+  primaryLabel?: string;
+  children: ReactNode;
+}): ReactElement {
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.sheetBackdrop} onPress={onClose} accessibilityLabel="Close" accessibilityRole="button" />
+      <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 12) + 8 }]}>
+        <View style={styles.sheetGrabber} />
+        <View style={styles.sheetHead}>
+          <Text style={styles.sheetTitle}>{title}</Text>
+          <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel={primaryLabel || "Close"} hitSlop={8}>
+            <Text style={styles.sheetDone}>{primaryLabel || "Done"}</Text>
+          </Pressable>
+        </View>
+        <View style={styles.sheetBody}>{children}</View>
+      </View>
+    </Modal>
   );
 }
 
@@ -846,10 +883,6 @@ function SummaryLine({ label, value }: { label: string; value: string }): ReactE
       </Text>
     </View>
   );
-}
-
-function bottomPad(inset: number) {
-  return Math.max(inset, 12) + BOTTOM_NAV_CONTENT_CLEARANCE;
 }
 
 function typeBadgeStyle(type: string) {
@@ -885,47 +918,82 @@ const styles = StyleSheet.create({
     display: "none"
   },
   scrollContent: {
-    paddingHorizontal: adsLight.space.gutter,
-    paddingTop: 16,
-    gap: 16
+    paddingHorizontal: GUTTER,
+    paddingTop: 14,
+    gap: 14
   },
 
   /* Hero */
   hero: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
     backgroundColor: adsLight.bg.postSurface,
     borderRadius: adsLight.radius.card,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: adsLight.suggestion.border,
-    padding: 16,
-    gap: 6
+    padding: 16
+  },
+  heroCopy: {
+    flex: 1,
+    gap: 5
   },
   heroTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "800",
     color: adsLight.text.primary
   },
   heroSubtitle: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 18,
     color: adsLight.text.muted
+  },
+  heroArt: {
+    width: 64,
+    height: 64,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  heroArtDisc: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: adsLight.post.tint
+  },
+  heroArtBadge: {
+    position: "absolute",
+    right: 0,
+    bottom: 2,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: adsLight.post.base,
+    borderWidth: 2,
+    borderColor: adsLight.bg.postSurface
   },
   benefitRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: 8,
-    marginTop: 8
+    marginTop: -4
   },
-  benefitChip: {
+  benefitItem: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: adsLight.radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderRadius: adsLight.radius.control,
     backgroundColor: adsLight.post.tint
   },
   benefitText: {
-    fontSize: 12,
+    flexShrink: 1,
+    fontSize: 11,
     fontWeight: "700",
     color: adsLight.post.base
   },
@@ -947,17 +1015,13 @@ const styles = StyleSheet.create({
     color: adsLight.text.link
   },
 
-  /* Picker */
-  pickerList: {
-    gap: 12
-  },
-  pickerNote: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: adsLight.text.muted
+  /* Carousel + cards */
+  carousel: {
+    gap: CARD_GAP,
+    paddingRight: GUTTER,
+    paddingVertical: 2
   },
   card: {
-    flexDirection: "row",
     backgroundColor: adsLight.bg.card,
     borderRadius: adsLight.radius.card,
     borderWidth: StyleSheet.hairlineWidth,
@@ -968,24 +1032,34 @@ const styles = StyleSheet.create({
     borderColor: adsLight.post.base,
     borderWidth: 1.5
   },
+  carouselSpinner: {
+    alignItems: "center",
+    justifyContent: "center"
+  },
   thumbWrap: {
-    width: 96,
+    width: "100%",
     backgroundColor: adsLight.bg.skeleton
   },
   thumb: {
-    width: 96,
-    height: "100%",
-    minHeight: 96
+    width: "100%",
+    height: "100%"
   },
   thumbFallback: {
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: adsLight.bg.postSurface
   },
-  thumbFallbackText: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: adsLight.post.base
+  typeBadge: {
+    position: "absolute",
+    top: 6,
+    left: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: adsLight.radius.pill
+  },
+  typeBadgeText: {
+    fontSize: 10,
+    fontWeight: "800"
   },
   durationChip: {
     position: "absolute",
@@ -998,62 +1072,38 @@ const styles = StyleSheet.create({
   },
   durationText: {
     color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "700"
-  },
-  cardBody: {
-    flex: 1,
-    padding: 12,
-    gap: 4
-  },
-  cardHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8
-  },
-  typeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: adsLight.radius.pill
-  },
-  typeBadgeText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "700"
   },
   statusPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    position: "absolute",
+    bottom: 6,
+    left: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: adsLight.radius.pill
   },
   statusPillText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "700"
   },
+  cardBody: {
+    padding: 10,
+    gap: 8
+  },
   cardTitle: {
-    fontSize: 15,
+    fontSize: 13,
+    lineHeight: 17,
     fontWeight: "700",
     color: adsLight.text.primary,
-    marginTop: 2
-  },
-  cardSnippet: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: adsLight.text.muted
-  },
-  cardMeta: {
-    fontSize: 12,
-    color: adsLight.text.muted,
-    marginTop: 2
+    minHeight: 34
   },
   selectBtn: {
-    alignSelf: "flex-start",
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 4,
-    marginTop: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 9,
+    paddingVertical: 8,
     borderRadius: adsLight.radius.control,
     borderWidth: 1,
     borderColor: adsLight.post.base,
@@ -1064,42 +1114,77 @@ const styles = StyleSheet.create({
   },
   selectBtnText: {
     color: adsLight.post.base,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700"
   },
   selectBtnActiveText: {
     color: adsLight.post.onViolet,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700"
   },
   ineligibleReason: {
-    marginTop: 8,
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 11,
+    lineHeight: 15,
     color: adsLight.text.muted,
     fontStyle: "italic"
   },
-  loadMoreBtn: {
-    marginTop: 4,
-    paddingVertical: 12,
-    alignItems: "center",
+  skelLine: {
+    height: 11,
+    borderRadius: 4,
+    backgroundColor: adsLight.bg.skeleton
+  },
+  skelBtn: {
+    height: 32,
     borderRadius: adsLight.radius.control,
+    backgroundColor: adsLight.bg.skeleton,
+    marginTop: 2
+  },
+
+  /* States */
+  stateCard: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 26,
+    paddingHorizontal: 20,
+    borderRadius: adsLight.radius.card,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: adsLight.border.hairline,
     backgroundColor: adsLight.bg.card
   },
-  loadMoreText: {
+  stateBody: {
     fontSize: 14,
     fontWeight: "700",
-    color: adsLight.post.base
+    color: adsLight.text.primary,
+    textAlign: "center"
+  },
+  stateHint: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: adsLight.text.muted,
+    textAlign: "center"
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginTop: 4,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: adsLight.radius.control,
+    backgroundColor: adsLight.post.base
+  },
+  retryBtnText: {
+    color: adsLight.post.onViolet,
+    fontSize: 14,
+    fontWeight: "700"
   },
 
   /* Selection bar */
   selectionBar: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
+    gap: 8,
     backgroundColor: adsLight.post.tint,
     borderRadius: adsLight.radius.control,
     paddingHorizontal: 12,
@@ -1128,22 +1213,28 @@ const styles = StyleSheet.create({
     overflow: "hidden"
   },
   setupRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: adsLight.border.hairline,
     paddingHorizontal: 14,
-    paddingVertical: 12
+    paddingVertical: 13,
+    minHeight: adsLight.size.tapTarget
   },
-  setupRowHead: {
-    flexDirection: "row",
+  setupIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12
+    justifyContent: "center",
+    backgroundColor: adsLight.post.tint
   },
   setupRowLabelWrap: {
     flex: 1
   },
   setupRowLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     color: adsLight.text.muted
   },
@@ -1151,20 +1242,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: adsLight.text.primary,
-    marginTop: 2
+    marginTop: 1
   },
   setupRowValueIssue: {
     color: adsLight.status.error
-  },
-  setupRowHint: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: adsLight.text.muted,
-    marginTop: 6
-  },
-  setupRowBody: {
-    marginTop: 10,
-    gap: 8
   },
   lockPill: {
     flexDirection: "row",
@@ -1176,18 +1257,64 @@ const styles = StyleSheet.create({
     backgroundColor: adsLight.post.tint
   },
   lockPillText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "700",
     color: adsLight.post.base
+  },
+
+  /* Bottom sheet */
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)"
+  },
+  sheet: {
+    backgroundColor: adsLight.bg.card,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 18,
+    paddingTop: 8
+  },
+  sheetGrabber: {
+    alignSelf: "center",
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: adsLight.border.hairline,
+    marginBottom: 12
+  },
+  sheetHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12
+  },
+  sheetTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: adsLight.text.primary
+  },
+  sheetDone: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: adsLight.post.base
+  },
+  sheetBody: {
+    gap: 8
+  },
+  sheetHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: adsLight.text.muted,
+    marginTop: 4
   },
 
   /* Goal options */
   optionRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    gap: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
     borderRadius: adsLight.radius.control,
     backgroundColor: adsLight.bg.page
   },
@@ -1216,7 +1343,7 @@ const styles = StyleSheet.create({
     backgroundColor: adsLight.post.base
   },
   optionLabel: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "600",
     color: adsLight.text.primary
   },
@@ -1243,7 +1370,7 @@ const styles = StyleSheet.create({
   },
   segmentBtn: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 9,
     alignItems: "center",
     borderRadius: adsLight.radius.control - 2
   },
@@ -1265,18 +1392,19 @@ const styles = StyleSheet.create({
     borderColor: adsLight.border.hairline,
     borderRadius: adsLight.radius.control,
     paddingHorizontal: 12,
-    backgroundColor: adsLight.bg.page
+    backgroundColor: adsLight.bg.page,
+    marginTop: 4
   },
   amountPrefix: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "700",
     color: adsLight.text.primary,
     marginRight: 4
   },
   amountInput: {
     flex: 1,
-    paddingVertical: 10,
-    fontSize: 18,
+    paddingVertical: 12,
+    fontSize: 20,
     fontWeight: "700",
     color: adsLight.text.primary
   },
@@ -1287,8 +1415,9 @@ const styles = StyleSheet.create({
     gap: 8
   },
   presetChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 10,
     borderRadius: adsLight.radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: adsLight.border.hairline,
@@ -1315,11 +1444,12 @@ const styles = StyleSheet.create({
     borderRadius: adsLight.radius.control,
     paddingHorizontal: 8,
     paddingVertical: 6,
-    backgroundColor: adsLight.bg.page
+    backgroundColor: adsLight.bg.page,
+    marginTop: 4
   },
   stepBtn: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: adsLight.radius.control,
@@ -1329,7 +1459,7 @@ const styles = StyleSheet.create({
     opacity: 0.4
   },
   stepValue: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
     color: adsLight.text.primary
   },
@@ -1381,10 +1511,24 @@ const styles = StyleSheet.create({
     color: adsLight.text.muted
   },
 
-  /* Continue */
+  /* Sticky footer */
+  footer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: GUTTER,
+    paddingTop: 10,
+    backgroundColor: adsLight.bg.card,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: adsLight.border.hairline
+  },
   continueBtn: {
-    paddingVertical: 15,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 15,
     borderRadius: adsLight.radius.control,
     backgroundColor: adsLight.post.base
   },
@@ -1400,40 +1544,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: adsLight.text.muted,
     textAlign: "center",
-    marginTop: -8
-  },
-
-  /* States */
-  centered: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 32,
-    gap: 8
-  },
-  stateTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: adsLight.text.primary,
-    textAlign: "center"
-  },
-  stateBody: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: adsLight.text.muted,
-    textAlign: "center"
-  },
-  retryBtn: {
-    marginTop: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: adsLight.radius.control,
-    backgroundColor: adsLight.post.base
-  },
-  retryBtnText: {
-    color: adsLight.post.onViolet,
-    fontSize: 14,
-    fontWeight: "700"
+    marginTop: 6
   }
 });
 
