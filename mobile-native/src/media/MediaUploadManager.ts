@@ -37,6 +37,23 @@ const activeTasks = new Map<string, ManagedTask>();
 function keyFor(uploadId: string) { return `${STORAGE_PREFIX}${uploadId}`; }
 function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
+// Normalize a local media URI for `fetch()` without double-encoding or stripping an
+// existing scheme. AVFoundation/expo emit `file://…` already; a bare `/var/…` path gets a
+// `file://` prefix. `content://`, `ph://`, `http(s)://` are passed through untouched.
+function toFetchableUri(uri: string) {
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(uri) || uri.startsWith("content://") || uri.startsWith("ph://")) return uri;
+  return `file://${uri.startsWith("/") ? "" : "/"}${uri}`;
+}
+
+// Obtain a React Native native-backed Blob that streams from the filesystem. The blob is a
+// descriptor (blobId + offset + size) — the bytes stay in native memory and never enter JS,
+// so there is no ArrayBuffer/Uint8Array round-trip. `blob.slice()` returns a zero-copy view
+// over the same native data, which is what makes multipart part uploads memory-safe.
+async function nativeBlobFromUri(uri: string): Promise<Blob> {
+  const response = await fetch(toFetchableUri(uri));
+  return response.blob();
+}
+
 async function persist(state: PersistedUpload) {
   await AsyncStorage.setItem(keyFor(state.session.upload_id), JSON.stringify(state));
 }
@@ -160,6 +177,10 @@ export class MediaUploadManager {
       onProgress?.({ stage: "resuming", percent: Math.max(2, Math.round(([...uploadedByPart.values()].reduce((a, b) => a + b, 0) / actualSize) * 94)), message: `Upload interrupted. Retrying (${attempt}/${MAX_RETRIES})…` });
     };
     onProgress?.({ stage: "uploading", percent: 2, message: "Uploading media 0%." });
+    // Stream the finished (already-on-disk) media as a native-backed RN Blob. Created once
+    // and reused across retries and every multipart part, so the mix file is never re-read
+    // into JS memory. Only fetched when bytes still need to be sent.
+    const uploadBody = session.status !== "completed" ? await nativeBlobFromUri(asset.uri) : null;
     if (session.status !== "completed" && session.strategy === "single") {
       await withRetry(async () => {
         let uploadUrl = state.session.upload_url;
@@ -169,7 +190,7 @@ export class MediaUploadManager {
         }
         if (!uploadUrl) throw Object.assign(new Error("Upload authorization expired."), { status: 410 });
         try {
-          await uploadBlob(uploadUrl, file, asset.mimeType, (loaded) => { uploadedByPart.set(1, loaded); report("uploading", "Uploading media"); }, register);
+          await uploadBlob(uploadUrl, uploadBody as Blob, asset.mimeType, (loaded) => { uploadedByPart.set(1, loaded); report("uploading", "Uploading media"); }, register);
         } catch (error) {
           if ([401, 403, 410].includes(Number((error as { status?: number })?.status || 0))) state.session.upload_url = undefined;
           throw error;
@@ -188,7 +209,7 @@ export class MediaUploadManager {
           await withRetry(async () => {
             const signed = await pulseApi<{ parts: Array<{ part_number: number; upload_url: string }> }>(`/api/pulse/media/uploads/${session.upload_id}/parts/sign`, { method: "POST", body: JSON.stringify({ part_numbers: [number] }) });
             const part = signed.parts[0];
-            const result = await uploadBlob(part.upload_url, file.slice(start, end, asset.mimeType), asset.mimeType, (loaded) => { uploadedByPart.set(number, loaded); report("uploading", "Uploading media"); }, register);
+            const result = await uploadBlob(part.upload_url, (uploadBody as Blob).slice(start, end, asset.mimeType), asset.mimeType, (loaded) => { uploadedByPart.set(number, loaded); report("uploading", "Uploading media"); }, register);
             if (!result.etag) throw Object.assign(new Error("Storage did not return part integrity metadata."), { status: 502 });
             completed.set(number, result.etag); uploadedByPart.set(number, end - start);
             state.session.completed_parts = [...completed].map(([part_number, etag]) => ({ part_number, etag })); state.updatedAt = Date.now(); await persist(state);
