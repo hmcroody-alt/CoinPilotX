@@ -942,3 +942,165 @@ Also noted and **not** done: `npx expo install` reported that
 was left alone rather than changed blind during a deploy. It should be added
 before the next `expo prebuild`, or prebuild will produce a project missing the
 Stripe plugin's native configuration.
+
+---
+
+# Addendum — the audio protection suites were not being executed (2026-08-13)
+
+Change: repair the protection runner and the Agora-era audio test files so the
+suites that guard real-time audio actually run, and remove the seventh
+`Audio.setAudioModeAsync` call site.
+Base: `feaa3970` (`origin/main`)
+Required label: `audio-critical-change`
+
+## Why the change is required
+
+This addendum changes no audio runtime code. It changes the instruments, and it
+is filed because the instruments were reading zero.
+
+Three separate findings, each of which made a green result meaningless:
+
+**1. Six protection files never executed.** `tests/protection/_runner.py`
+discovers module-level `test_*` callables only in files that end with a
+`__main__` guard. The protection files added during the Agora migration —
+`test_agora_cloud_recording.py`, `test_agora_direct_live_contract.py`,
+`test_agora_mux_bridge.py`, `test_agora_replay_mux_contract.py`,
+`test_agora_token_generation.py`, `test_live_social_distribution.py` — had no
+guard. They were present in the directory, they were named in review, and they
+contributed zero checks to every suite run since they landed. This is the exact
+failure mode `_runner.py`'s own docstring was written about, reappearing in new
+files.
+
+**2. Adding the guard revealed the assertions had never been evaluated
+anywhere.** Several of those suites are pytest-style and take a `monkeypatch`
+argument. Called by the runner with no arguments they raised `TypeError`. So the
+first honest run of `test_agora_token_generation` and `test_agora_cloud_recording`
+— the files asserting who is granted a publish token and that no RTC token is
+smuggled into a cloud-recording payload — happened as part of this change, not
+when they were written. `_runner.py` now supplies the `setenv`/`delenv`/`setattr`
+subset those files use, and restores every mutation in a `finally`.
+
+**3. Two assertions in `test_realtime_audio_architecture.py` described an
+architecture that no longer exists.** `f93e7ce3 "chore(rtc): fire LiveKit"`
+removed LiveKit; these were left behind. One required
+`src/calls/useNativeCallRoom.ts` to import `../core/realtimePublisherMedia`, the
+other required it to call `registerGlobals`. The second is worse than stale — it
+directly contradicted `realtimeAudioArchitecture.test.ts:202`, which asserts
+LiveKit is *absent*. Two protection tests in the same repository demanded
+opposite things, so at least one had to be failing at all times, and a
+permanently-red check is a check nobody reads.
+
+Separately, `mobile-native/src/video/videoMusicMix.ts` called
+`Audio.setAudioModeAsync` directly, making seven call sites against an allowlist
+`config/realtime-audio-protected-paths.json` freezes at six.
+
+## Which feature required it
+
+None. This is protection-apparatus repair. No user-facing behavior is intended
+to change.
+
+## Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `tests/protection/test_realtime_audio_architecture.py` | critical_audio_tests | `test_calls_and_live_each_own_a_call_grade_publisher_coordinator` now checks both the legacy and the Agora adapter for calls (`useNativeCallRoom.ts`, `useAgoraCallRoom.ts`) and for live (`useLiveBroadcastRoom.ts`, `useAgoraLiveBroadcastRoom.ts`), asserting neither reaches into the other's engine modules. `test_livekit_sdk_never_configures_the_session_behind_the_coordinator` is renamed to `test_the_rtc_sdk_never_configures_the_session_behind_the_coordinator` and inverted: all four adapters must contain no `Audio.setAudioModeAsync(` and must not match `registerGlobals\|livekit`. |
+| `tests/protection/test_agora_token_generation.py` | critical_audio_tests | Adds `import sys` and the repo-root `sys.path` bootstrap so the file imports outside pytest. Its `unittest.main()` entry point is unchanged; no assertion was altered. |
+| `tests/protection/test_agora_direct_live_contract.py` | critical_audio_tests | Adds the `__main__` guard so the runner executes its 5 checks. No assertion was altered. |
+
+Files changed in this range that are **not** on a protected path, listed for
+completeness: `tests/protection/_runner.py`, `test_agora_cloud_recording.py`,
+`test_agora_mux_bridge.py`, `test_agora_replay_mux_contract.py`,
+`test_live_social_distribution.py`, `test_ios_build_version_contract.py`,
+`mobile-native/src/core/reelsAudioSession.ts`,
+`mobile-native/src/video/videoMusicMix.ts`,
+`mobile-native/ios/PulseSoc.xcodeproj/project.pbxproj`, `.env.example`.
+
+## The expo-av allowlist change, stated precisely
+
+`videoMusicMix.configureVideoMusicMonitoring` no longer calls
+`Audio.setAudioModeAsync` itself; it delegates to a new
+`configureVideoCaptureMonitoringSession` in `core/reelsAudioSession.ts`, which is
+already one of the six allowlisted files. **The mode object passed to
+`setAudioModeAsync` is byte-identical to what `videoMusicMix` passed before** —
+`allowsRecordingIOS: true`, `playsInSilentModeIOS: true`,
+`staysActiveInBackground: false`, `interruptionModeIOS: MixWithOthers`,
+`shouldDuckAndroid: false`, `playThroughEarpieceAndroid: false`. Nothing about
+when or how the session is mutated changed; only the file the mutation lives in.
+
+Call-site count after this change, verified by
+`grep -rlF "Audio.setAudioModeAsync(" mobile-native/src`: **six** —
+`calls/callSignalMedia.ts`, `core/pulseRadio.ts`, `core/reelsAudioSession.ts`,
+`core/voiceMessagePlayback.ts`, `screens/ChatScreen.tsx`, `screens/MusicScreen.tsx`.
+
+This is a real narrowing, not bookkeeping. The rule's remedy text says new media
+playback must route through an existing allowlisted file, and moving the call
+into `reelsAudioSession` puts a camera-capture session mutation where the audio
+reviewers already look, instead of in a video-mixing helper they have no reason
+to open.
+
+## Expected behavior change
+
+None. No AVAudioSession category, mode, or option value changed; no ownership
+arbitration, publication path, engine module, or feature flag was touched. No
+file under `src/calls/`, `src/core/` (other than the additive
+`reelsAudioSession` export), `src/live/`, or `src/live-audio/` was modified.
+
+## Regression risk
+
+The runtime risk is confined to one indirection in the video-capture monitoring
+path. If it were wrong, the symptom would be a music bed that does not duck or a
+capture that cannot record — visible immediately in Reels capture, and not on
+the call or livestream path at all.
+
+The larger and more honest risk is the opposite direction: these suites are now
+running for the first time. A check that has never executed is not known to be
+correct merely because it passes on its first run. `test_agora_token_generation`
+and `test_agora_cloud_recording` in particular should be treated as newly
+written, not as long-standing coverage.
+
+## Tests run
+
+- `npm run test:realtime-audio-critical`: 11 suites / 191 tests passed.
+- `npm run test:realtime-audio`: 18 suites / 310 tests passed.
+- `npm run test:realtime-audio-architecture` (native): 1 suite / 22 tests passed.
+- Backend `tests/protection/test_realtime_audio_architecture.py`: **19 tests OK**
+  — previously 17 of 19, with the 2 stale LiveKit assertions failing. Those two
+  are the ones rewritten above; this is the first green run of this file since
+  `f93e7ce3`.
+- Backend `pytest tests/protection/test_agora_token_generation.py
+  tests/protection/test_agora_rtc_provider_contract.py`: 13 passed.
+- Full protection suite (`scripts/protection/run_protection_suite.py`):
+  **208 checks across 19 suites, exit 0**, up from 198. The +10 is not new
+  assertions; it is the suites that previously executed nothing.
+- `npx tsc --noEmit`: clean, no diagnostics.
+- Native build verification: iOS Simulator and physical-device Release builds,
+  recorded below.
+
+`npx expo prebuild --platform ios --no-install` — named by the gate's own
+checklist — was **deliberately not run**. The iOS project is checked in and
+carries native customisations (`modules/pulse-now-playing/`, the WebRTC
+AVAudioSession patch, the Stripe header patch) that a regenerated project drops.
+A real `xcodebuild` against the checked-in project is stronger evidence than a
+prebuild anyway, so that is what was done instead. The gate checklist should be
+amended; it is currently asking for the one command this repository forbids.
+
+## Physical validation required
+
+**Not performed and not claimed.** Installing and launching a build is not
+audible proof. `docs/realtime_audio_live_test_matrix.md` Groups A and B — PHONE A
+speaks, PHONE B hears — remain owed, as they have been since the `src/live-audio/`
+addendum.
+
+This addendum adds no new physical requirement of its own, because it adds no new
+runtime behaviour. The one thing worth checking opportunistically during the next
+device session: record a Reel with a music bed and confirm the bed is still
+audible in the monitor and present in the export, which is the only path the
+`reelsAudioSession` indirection touches.
+
+## Rollback procedure
+
+Revert the four commits in this range. `reelsAudioSession.ts` loses one exported
+function and `videoMusicMix.ts` regains its direct `setAudioModeAsync` call —
+which puts the allowlist back at seven and re-breaks the gate, so the revert
+should be paired with reverting the rule bump or with a different remedy. No
+server flag, schema, or native dependency is involved.
