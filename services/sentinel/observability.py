@@ -102,7 +102,58 @@ def self_health(conn=None) -> dict:
             pass  # stays FUNCTIONAL — never upgrade on a failed probe
     health["maturity"] = maturity
     health["identity_detection"] = _identity_self_health(conn=conn)
+    health["external_intelligence"] = _external_self_health(conn=conn)
     return health
+
+
+def _external_self_health(conn=None) -> dict:
+    """Mission 4 (Stage 32): the external-intelligence pipeline's vitals.
+    A provider with no token is CONFIGURED=false — not FAILED. A provider
+    never called is 'unknown' — never HEALTHY."""
+    out: dict = {"external_intelligence_status": "unknown",
+                 "providers_configured": 0, "providers_functional": 0,
+                 "providers_degraded": 0, "latest_vulnerability_sync": None,
+                 "latest_kev_sync": None, "latest_github_security_sync": None,
+                 "enrichment_backlog": 0, "circuit_breakers_open": 0,
+                 "stale_external_observations": 0}
+    try:
+        from services.sentinel import external_observations, external_providers
+        rows = external_providers.registry_health(conn=conn)
+        out["providers_configured"] = sum(1 for r in rows if r.get("configured"))
+        out["providers_functional"] = sum(
+            1 for r in rows if r.get("health_status") == "FUNCTIONAL")
+        out["providers_degraded"] = sum(
+            1 for r in rows if r.get("health_status") in ("DEGRADED", "FAILED"))
+        with store.connection(conn) as c:
+            cur = c.cursor()
+            for provider, key in (("osv", "latest_vulnerability_sync"),
+                                  ("cisa_kev", "latest_kev_sync"),
+                                  ("github_security", "latest_github_security_sync")):
+                cur.execute("SELECT MAX(fetched_at) FROM "
+                            "sentinel_external_observations WHERE provider_id=?",
+                            (provider,))
+                out[key] = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM sentinel_enrichment_requests "
+                        "WHERE status='pending'")
+            out["enrichment_backlog"] = int(cur.fetchone()[0])
+        out["circuit_breakers_open"] = len(
+            external_providers.open_circuits(conn=conn))
+        out["stale_external_observations"] = external_observations.stale_count(
+            conn=conn)
+        if not external_providers.master_enabled():
+            out["external_intelligence_status"] = "disabled_by_kill_switch"
+        elif out["providers_degraded"]:
+            out["external_intelligence_status"] = "degraded"
+        elif out["providers_functional"]:
+            out["external_intelligence_status"] = "active"
+        elif out["providers_configured"]:
+            out["external_intelligence_status"] = "configured_never_proven"
+        else:
+            out["external_intelligence_status"] = "not_configured"
+    except Exception as exc:
+        out["external_intelligence_status"] = "error"
+        out["error"] = str(exc)[:200]
+    return out
 
 
 def _identity_self_health(conn=None) -> dict:
@@ -183,6 +234,17 @@ def owner_summary(conn=None) -> dict:
         "recovery_abuse_incidents": 0,
         "high_risk_sessions": 0,
         "admin_identity_incidents": 0,
+        # Mission 4 external-intelligence / supply-chain contract (Stage 28) —
+        # real counts from real queries; zero means zero.
+        "supply_chain_status": "unknown",
+        "known_exploited_dependencies": 0,
+        "deployed_vulnerabilities": 0,
+        "repository_only_vulnerabilities": 0,
+        "secret_scanning_findings": 0,
+        "code_scanning_findings": 0,
+        "external_threat_matches": 0,
+        "external_provider_degradations": 0,
+        "stale_external_intelligence": 0,
         "latest_deployment_sha": store_mod.deployment_sha() or None,
         "sentinel": self_health(conn=conn),
     }
@@ -268,6 +330,36 @@ def owner_summary(conn=None) -> dict:
                 summary_out["identity_risk_status"] = "watch"
             else:
                 summary_out["identity_risk_status"] = "quiet"
+
+            # Mission 4 (Stage 28): supply-chain + external-intelligence counts.
+            try:
+                from services.sentinel import external_observations, supply_chain
+                summary_out.update(supply_chain.summary_counts(conn=c))
+                summary_out["secret_scanning_findings"] = _count_open(
+                    "SECRET_EXPOSURE_FINDING")
+                summary_out["code_scanning_findings"] = _count_open(
+                    "CODE_SCANNING_FINDING")
+                cur.execute(
+                    "SELECT COUNT(*) FROM sentinel_external_observations "
+                    "WHERE verdict IN ('MALICIOUS','SUSPICIOUS') "
+                    "AND expires_at > datetime('now')")
+                summary_out["external_threat_matches"] = int(cur.fetchone()[0])
+                cur.execute(
+                    "SELECT COUNT(*) FROM sentinel_external_providers "
+                    "WHERE health_status IN ('DEGRADED','FAILED')")
+                summary_out["external_provider_degradations"] = int(
+                    cur.fetchone()[0])
+                summary_out["stale_external_intelligence"] = (
+                    external_observations.stale_count(conn=c))
+                if summary_out["known_exploited_dependencies"]:
+                    summary_out["supply_chain_status"] = "attention"
+                elif (summary_out["deployed_vulnerabilities"]
+                      or summary_out["secret_scanning_findings"]):
+                    summary_out["supply_chain_status"] = "watch"
+                else:
+                    summary_out["supply_chain_status"] = "quiet"
+            except Exception:
+                pass  # fields keep their honest unknown/zero defaults
     except Exception as exc:
         summary_out["error"] = str(exc)[:200]
 
