@@ -16,7 +16,15 @@ BATCH_SIZE = int(os.getenv("PULSE_WORKER_BATCH_SIZE", "12"))
 
 
 def main():
-    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+    # Railway workers have no HTTP surface, so stdout is their readiness and
+    # incident evidence. Force the root handler in case importing the web app
+    # configured logging first, and keep each line immediately visible.
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(message)s",
+        force=True,
+    )
+    logging.info("PULSE_WORKER_BOOT sha=%s", os.getenv("RAILWAY_GIT_COMMIT_SHA", "unknown")[:12])
     bot.init_db()
     logging.info(
         "PULSE_WORKER_START database_url=%s openai_key_present=%s media_provider=%s",
