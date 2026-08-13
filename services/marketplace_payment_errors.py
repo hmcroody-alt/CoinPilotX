@@ -25,6 +25,7 @@ the ``stripe`` package and stays trivially unit-testable.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 # Canonical, buyer-facing copy. Every message ends by reassuring the buyer that
@@ -54,6 +55,22 @@ _STRIPE_CLASS_MAP: dict[str, tuple[str, int, str]] = {
     "StripeError": ("PAYMENT_UNAVAILABLE", 502, _GENERIC_MESSAGE),
     "APIError": ("PAYMENT_UNAVAILABLE", 502, _GENERIC_MESSAGE),
 }
+
+
+def stripe_response_value(response: Any, name: str, default: Any = "") -> Any:
+    """Read one field from either Stripe's mapping or resource response.
+
+    Stripe 15 may return generated resource objects whose fields are exposed as
+    attributes but which deliberately do not implement ``dict.get``.  Checkout
+    used to call ``intent.get(...)`` after a successful live PaymentIntent
+    creation, turning that successful provider call into an application 500
+    whose exception text was only ``"get"``.  Keep that SDK-version boundary
+    here so Buy Now, cart, and accepted-offer checkout cannot drift again.
+    """
+    if isinstance(response, Mapping):
+        return response.get(name, default)
+    value = getattr(response, name, default)
+    return default if value is None else value
 
 
 def _safe_attr(exc: Any, name: str) -> str | None:

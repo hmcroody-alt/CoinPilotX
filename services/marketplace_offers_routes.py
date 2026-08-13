@@ -45,7 +45,7 @@ from services.marketplace_cart_routes import (
     release_inventory_reservation,
     stripe_shipping_checkout_params,
 )
-from services.marketplace_payment_errors import classify_provider_exception
+from services.marketplace_payment_errors import classify_provider_exception, stripe_response_value
 
 LOGGER = logging.getLogger(__name__)
 
@@ -585,14 +585,16 @@ def offer_checkout(offer_id: int):
                     **{k: v for k, v in payment_intent_data.items() if k != "metadata"},
                     idempotency_key=f"marketplace-offer-sheet:{buyer_id}:{tx_id}",
                 )
+                intent_id = stripe_response_value(intent, "id")
+                client_secret = stripe_response_value(intent, "client_secret")
                 cur.execute(
                     "UPDATE seller_transactions SET stripe_payment_intent_id=?, status='checkout_created', updated_at=? WHERE id=?",
-                    (intent.get("id"), now, tx_id),
+                    (intent_id, now, tx_id),
                 )
                 return _json({
                     "ok": True,
-                    "payment_intent_client_secret": intent.get("client_secret"),
-                    "payment_intent_id": intent.get("id"),
+                    "payment_intent_client_secret": client_secret,
+                    "payment_intent_id": intent_id,
                     "publishable_key": bot.STRIPE_PUBLISHABLE_KEY,
                     # The sheet header names the store, never the account holder.
                     "merchant_display_name": seller_identity.display_store_name(listing),

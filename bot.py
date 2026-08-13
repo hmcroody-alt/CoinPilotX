@@ -85048,20 +85048,22 @@ def api_pulse_payments_checkout():
                 **{k: v for k, v in payment_intent_data.items() if k != "metadata"},
                 idempotency_key=f"marketplace-buy-now-sheet:{int(buyer['user_id'])}:{idempotency_key or tx_id}",
             )
+            intent_id = marketplace_cart_service.stripe_response_value(intent, "id")
+            client_secret = marketplace_cart_service.stripe_response_value(intent, "client_secret")
             cur.execute("UPDATE seller_transactions SET stripe_payment_intent_id=?, status='checkout_created', updated_at=? WHERE id=?",
-                        (intent.get("id"), now, tx_id))
+                        (intent_id, now, tx_id))
             pulse_emit_payment_checkout_event(
                 cur,
-                {**tx_event, "status": "checkout_created", "stripe_payment_intent_id": intent.get("id") or ""},
+                {**tx_event, "status": "checkout_created", "stripe_payment_intent_id": intent_id or ""},
                 "checkout_created",
                 status="checkout_created",
                 actor_user_id=buyer["user_id"],
-                extra={"stripe_payment_intent_id": intent.get("id") or "", "payment_mode": "payment_sheet"},
+                extra={"stripe_payment_intent_id": intent_id or "", "payment_mode": "payment_sheet"},
             )
             response_payload = {
                 "ok": True,
-                "payment_intent_client_secret": intent.get("client_secret"),
-                "payment_intent_id": intent.get("id"),
+                "payment_intent_client_secret": client_secret,
+                "payment_intent_id": intent_id,
                 "publishable_key": STRIPE_PUBLISHABLE_KEY,
                 # The sheet header names the store, never the account holder.
                 "merchant_display_name": marketplace_seller_identity.display_store_name(item),
