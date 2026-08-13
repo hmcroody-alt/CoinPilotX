@@ -100,6 +100,85 @@ def metrics():
     return jsonify({"ok": True, "metrics": data})
 
 
+# --- Mission 4: external intelligence read APIs (Stage 27) ------------------
+# All read-only. No endpoint here can call a provider, dismiss a finding,
+# upgrade a dependency, or change enforcement — those are not HTTP verbs.
+
+
+@sentinel_bp.get("/threat-intelligence")
+def threat_intelligence():
+    """Fresh external threat matches (MALICIOUS/SUSPICIOUS observations),
+    disagreement preserved per provider."""
+    from services.sentinel import store as store_mod
+    limit_raw = request.args.get("limit", "100")
+    try:
+        limit = max(1, min(int(limit_raw), 500))
+    except ValueError:
+        limit = 100
+    with store_mod.connection(None) as c:
+        cur = c.cursor()
+        cur.execute(
+            "SELECT observation_id, provider_id, provider_capability, "
+            "indicator_type, indicator_digest, finding_type, verdict, severity, "
+            "confidence, source_trust, fetched_at, expires_at "
+            "FROM sentinel_external_observations "
+            "WHERE verdict IN ('MALICIOUS','SUSPICIOUS') "
+            "ORDER BY id DESC LIMIT ?", (limit,))
+        rows = [{"observation_id": r[0], "provider_id": r[1],
+                 "capability": r[2], "indicator_type": r[3],
+                 "indicator_digest": r[4], "finding_type": r[5],
+                 "verdict": r[6], "severity": r[7], "confidence": r[8],
+                 "source_trust": r[9], "fetched_at": r[10],
+                 "expires_at": r[11]} for r in cur.fetchall()]
+    return jsonify({"ok": True, "matches": rows,
+                    "note": "external verdicts are evidence, not enforcement"})
+
+
+@sentinel_bp.get("/vulnerabilities")
+def vulnerabilities():
+    from services.sentinel import supply_chain
+    priority = request.args.get("priority") or None
+    return jsonify({"ok": True,
+                    "findings": supply_chain.findings(priority=priority),
+                    "counts": supply_chain.summary_counts()})
+
+
+@sentinel_bp.get("/supply-chain")
+def supply_chain_view():
+    from services.sentinel import supply_chain
+    ecosystem = request.args.get("ecosystem") or None
+    return jsonify({"ok": True,
+                    "inventory": supply_chain.inventory(ecosystem=ecosystem),
+                    "inventory_staleness_days": supply_chain.inventory_staleness_days(),
+                    "counts": supply_chain.summary_counts()})
+
+
+@sentinel_bp.get("/providers/<provider_id>/health")
+def external_provider_health(provider_id: str):
+    from services.sentinel import external_providers
+    if provider_id not in external_providers.PROVIDERS:
+        return jsonify({"ok": False,
+                        "error": f"unknown provider {provider_id!r}"}), 404
+    row = external_providers.provider_row(provider_id)
+    if row is None:
+        external_providers.ensure_registered()
+        row = external_providers.provider_row(provider_id)
+    return jsonify({"ok": True, "provider": row,
+                    "circuits": [cb for cb in external_providers.open_circuits()
+                                 if cb.get("provider_id") == provider_id],
+                    "note": "CONFIGURED is not FUNCTIONAL; never called means "
+                            "unknown, not healthy (Stage 2/32)"})
+
+
+@sentinel_bp.get("/external-observations/<observation_id>")
+def external_observation(observation_id: str):
+    from services.sentinel import external_observations
+    row = external_observations.get(observation_id)
+    if not row:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    return jsonify({"ok": True, "observation": row})
+
+
 def init_sentinel(app=None) -> None:
     """Explicit opt-in wiring helper: ensures schema then registers the
     blueprint. Called by the owner, never automatically."""
