@@ -12,6 +12,11 @@
       "bundleIdentifier": "com.pulsesoc.app",
       "buildNumber": "15",
       "supportsTablet": false,
+      "entitlements": {
+        "com.apple.developer.in-app-payments": [
+          "merchant.com.pulsesoc.app"
+        ]
+      },
       "associatedDomains": [
         "applinks:pulsesoc.com"
       ],
@@ -60,6 +65,12 @@
     "plugins": [
       "./plugins/withLegacyIosFmtCompatibility",
       "./plugins/withDevelopmentIosIdentity",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.pulsesoc.app"
+        }
+      ],
       "expo-font",
       "expo-secure-store",
       "expo-notifications",

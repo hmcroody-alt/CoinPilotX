@@ -49,6 +49,11 @@ export type PaymentSheetBootstrap = {
   transactionIds: readonly number[];
 };
 
+/** Canonical Apple merchant identifier owned by the PulseSoc App ID. Keep this
+ * identical to the Expo Stripe plugin and the signed iOS entitlement. */
+export const APPLE_PAY_MERCHANT_ID = "merchant.com.pulsesoc.app";
+export const APPLE_PAY_MERCHANT_COUNTRY_CODE = "US";
+
 export type PaymentSheetOutcome =
   /** The sheet reported success. This is *not* financial authority — the order
    * is only paid once the webhook says so. The caller must still confirm. */
@@ -144,6 +149,13 @@ export async function presentPaymentSheet(
   if (!bootstrap.clientSecret) {
     return { result: "failed", message: "Payment could not be prepared. No card was charged.", code: "missing_client_secret" };
   }
+  if (bootstrap.applePayMerchantId && bootstrap.applePayMerchantId !== APPLE_PAY_MERCHANT_ID) {
+    return {
+      result: "failed",
+      message: "Apple Pay configuration could not be verified. You can still retry with card.",
+      code: "merchant_id_mismatch"
+    };
+  }
 
   // The key must be set before the sheet is initialised. With no StripeProvider
   // at app root, this is the only place it happens — and the server, not the
@@ -152,7 +164,7 @@ export async function presentPaymentSheet(
   if (bootstrap.publishableKey && typeof stripe.initStripe === "function") {
     await stripe.initStripe({
       publishableKey: bootstrap.publishableKey,
-      ...(bootstrap.applePayMerchantId ? { merchantIdentifier: bootstrap.applePayMerchantId } : {})
+      ...(bootstrap.applePayMerchantId ? { merchantIdentifier: APPLE_PAY_MERCHANT_ID } : {})
     });
   }
 
@@ -161,7 +173,10 @@ export async function presentPaymentSheet(
     paymentIntentClientSecret: bootstrap.clientSecret,
     // Card entry is always available. Apple Pay is additive.
     ...(bootstrap.applePayMerchantId
-      ? { applePay: { merchantCountryCode: "US" }, merchantIdentifier: bootstrap.applePayMerchantId }
+      ? {
+          applePay: { merchantCountryCode: APPLE_PAY_MERCHANT_COUNTRY_CODE },
+          merchantIdentifier: APPLE_PAY_MERCHANT_ID
+        }
       : {}),
     ...(options.collectAddress
       ? { billingDetailsCollectionConfiguration: { name: "always", address: "full" } }

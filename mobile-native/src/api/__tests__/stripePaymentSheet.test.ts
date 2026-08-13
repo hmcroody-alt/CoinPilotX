@@ -16,6 +16,7 @@
  */
 
 import {
+  APPLE_PAY_MERCHANT_ID,
   __setStripeSdkForTests,
   isPaymentSheetAvailable,
   presentPaymentSheet,
@@ -129,6 +130,26 @@ describe("publishable key wiring", () => {
     await presentPaymentSheet(bootstrap({ publishableKey: "pk_live_xyz" }));
     expect(calls.initStripe).toHaveLength(1);
     expect(calls.initStripe[0]).toMatchObject({ publishableKey: "pk_live_xyz" });
+  });
+
+  it("uses the canonical Apple Pay merchant id in Stripe init and PaymentSheet", async () => {
+    const { sdk, calls } = fakeSdk({ withInitStripe: true });
+    __setStripeSdkForTests(sdk as never);
+    await presentPaymentSheet(bootstrap({ applePayMerchantId: APPLE_PAY_MERCHANT_ID }));
+    expect(calls.initStripe[0]).toMatchObject({ merchantIdentifier: APPLE_PAY_MERCHANT_ID });
+    expect(calls.initPaymentSheet[0]).toMatchObject({
+      merchantIdentifier: APPLE_PAY_MERCHANT_ID,
+      applePay: { merchantCountryCode: "US" }
+    });
+  });
+
+  it("refuses a server merchant id that differs from the signed entitlement", async () => {
+    const { sdk, calls } = fakeSdk({ withInitStripe: true });
+    __setStripeSdkForTests(sdk as never);
+    const outcome = await presentPaymentSheet(bootstrap({ applePayMerchantId: "merchant.invalid" }));
+    expect(outcome).toMatchObject({ result: "failed", code: "merchant_id_mismatch" });
+    expect(calls.initStripe).toHaveLength(0);
+    expect(calls.initPaymentSheet).toHaveLength(0);
   });
 
   it("still initialises the sheet when the SDK has no initStripe (provider-only builds)", async () => {
