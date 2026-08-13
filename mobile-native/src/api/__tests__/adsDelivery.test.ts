@@ -129,6 +129,22 @@ describe("deliveryBlocker — the gates select_ads actually applies", () => {
     expect(state("unverified")).toBe("account_not_verified");
     expect(state("pending")).toBe("account_verification_pending");
     expect(state("rejected")).toBe("account_verification_rejected");
+    expect(state("changes_requested")).toBe("account_verification_changes_requested");
+  });
+
+  it("reads a changes-requested account as an open, clearable ask — not a dead-end rejection", () => {
+    const gate = deliveryBlocker(
+      portalWith({
+        accounts: [
+          { id: 7, role: "owner", status: "pending_verification", verification_status: "changes_requested" }
+        ]
+      }),
+      campaign()
+    );
+    expect(gate?.code).toBe("account_verification_changes_requested");
+    // A change request is something the advertiser answers and resubmits, so the
+    // banner offers the action rather than stating a wall.
+    expect(gate?.advertiserCanClear).toBe(true);
   });
 
   it("says a review in progress is not the reader's move, and an unverified account is", () => {

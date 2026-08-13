@@ -778,8 +778,11 @@ def list_ad_accounts(conn, owner_user_id) -> list[dict]:
 # Approval writes `status` as well as `verification_status`. They are two columns
 # describing one decision and letting them disagree is how you get an account
 # that is "verified" and still cannot serve.
-VERIFICATION_STATES = {"unverified", "pending", "verified", "rejected"}
-VERIFICATION_RESUBMIT_FROM = {"unverified", "rejected", ""}
+VERIFICATION_STATES = {"unverified", "pending", "verified", "rejected", "changes_requested"}
+# Both a rejection and a changes-requested decision hand the account back to the
+# advertiser to act on, so both are re-submittable; only 'verified' and 'pending'
+# are not (one is done, the other is already in the queue).
+VERIFICATION_RESUBMIT_FROM = {"unverified", "rejected", "changes_requested", ""}
 
 
 def account_verification_state(account: dict) -> str:
@@ -788,15 +791,54 @@ def account_verification_state(account: dict) -> str:
     Old rows predate this vocabulary and carry 'approved' from a hand-run script;
     they mean 'verified' and are read as such rather than being left in a state
     no branch below handles.
+
+    'changes_requested' is distinct from 'rejected': a rejection is a decision the
+    reviewer stands behind, while a changes request is an open ask the advertiser
+    is expected to answer and resubmit. 'needs_more_info' predates the split and
+    means the latter, so it is read as changes_requested rather than as a
+    rejection the advertiser can only re-guess at.
     """
     raw = clean_text(account.get("verification_status"), 40).lower()
     if raw in {"approved", "verified"}:
         return "verified"
     if raw in {"pending", "submitted", "in_review"}:
         return "pending"
-    if raw in {"rejected", "declined", "needs_more_info"}:
+    if raw in {"changes_requested", "needs_changes", "action_required", "needs_more_info"}:
+        return "changes_requested"
+    if raw in {"rejected", "declined"}:
         return "rejected"
     return "unverified"
+
+
+def _notify_account_owner(owner_user_id, account_id, event_type, title, body, dedupe_key=None) -> None:
+    """Push a verification update into the canonical PulseSoc notification system.
+
+    Best-effort by design: a verification decision is a database fact that must
+    commit whether or not a notification can be enqueued, so every failure here is
+    swallowed. The dedupe_key carries idempotency down into the notification
+    layer — enqueuing the same decision twice collapses to one notification.
+    """
+    try:
+        owner_id = safe_int(owner_user_id, minimum=1)
+        if owner_id <= 0:
+            return
+        from services import pulsesoc_notification_system as notifications
+        notifications.intake_event(
+            event_type,
+            recipient_user_id=owner_id,
+            source_type="pulse_ad_account",
+            source_id=str(safe_int(account_id) or ""),
+            title=title,
+            body=body,
+            deep_link="/pulse/ads",
+            category="verification",
+            channels=["in_app", "push"],
+            dedupe_key=dedupe_key,
+        )
+    except Exception:
+        # Notification transport is downstream of the decision and must never be
+        # able to fail it. The audit log already carries the durable record.
+        pass
 
 
 def submit_account_verification(conn, owner_user_id, account_id, payload: dict | None = None) -> dict:
@@ -807,6 +849,8 @@ def submit_account_verification(conn, owner_user_id, account_id, payload: dict |
     whose details are being asserted.
     """
     account = _owned_account(conn, owner_user_id, account_id)
+    if clean_text(account.get("status"), 40).lower() == "suspended":
+        raise PulseAdsError("This ad account is suspended. Contact support before requesting verification.", 409)
     state = account_verification_state(account)
     if state == "verified":
         raise PulseAdsError("This ad account is already verified.")
@@ -816,6 +860,7 @@ def submit_account_verification(conn, owner_user_id, account_id, payload: dict |
         raise PulseAdsError("Add your business name before requesting verification.")
     now = now_iso()
     note = clean_text((payload or {}).get("note"), 500)
+    resubmission = state in {"rejected", "changes_requested"}
     cur = conn.cursor()
     cur.execute(
         """
@@ -828,11 +873,20 @@ def submit_account_verification(conn, owner_user_id, account_id, payload: dict |
         (now, note, now, safe_int(account_id)),
     )
     audit_log(
-        conn, owner_user_id, "ad_account_verification_submitted", "pulse_ad_accounts", account_id,
+        conn, owner_user_id,
+        "ad_account_verification_resubmitted" if resubmission else "ad_account_verification_submitted",
+        "pulse_ad_accounts", account_id,
         before={"verification_status": account.get("verification_status")},
-        after={"verification_status": "pending"},
+        after={"verification_status": "pending", "resubmission": resubmission},
     )
     conn.commit()
+    _notify_account_owner(
+        owner_user_id, account_id,
+        "ad_verification_submitted",
+        "Verification submitted",
+        "We received your advertiser verification and it's now in review. We'll let you know when it's decided.",
+        dedupe_key=f"ad_verify_submitted:{safe_int(account_id)}:{now}",
+    )
     return {
         "ok": True,
         "account_id": safe_int(account_id),
@@ -858,6 +912,12 @@ def approve_account_verification(conn, admin_user_id, account_id, notes: str = "
         raise PulseAdsError("Ad account not found.", 404)
     if clean_text(account.get("status"), 40) == "suspended":
         raise PulseAdsError("This account is suspended. Lift the suspension before verifying it.", 409)
+    # Idempotent approve: a second click, a retried request, or a race between two
+    # reviewers must not re-audit or re-notify. An account already verified and
+    # active is the terminal state this function writes, so re-writing it is a
+    # no-op that returns the same shape rather than a duplicate event.
+    if account_verification_state(account) == "verified" and clean_text(account.get("status"), 40) == "active":
+        return {"ok": True, "account_id": safe_int(account_id), "status": "active", "verification_status": "verified", "deduped": True}
     now = now_iso()
     cur.execute(
         """
@@ -874,6 +934,13 @@ def approve_account_verification(conn, admin_user_id, account_id, notes: str = "
         after={"status": "active", "verification_status": "verified"},
     )
     conn.commit()
+    _notify_account_owner(
+        account.get("owner_user_id"), account_id,
+        "verification_approved",
+        "Advertiser account verified",
+        "Your advertiser account is verified. Approved campaigns can now deliver.",
+        dedupe_key=f"ad_verify_approved:{safe_int(account_id)}:{now}",
+    )
     return {"ok": True, "account_id": safe_int(account_id), "status": "active", "verification_status": "verified"}
 
 
@@ -907,6 +974,13 @@ def reject_account_verification(conn, admin_user_id, account_id, reason: str = "
         after={"status": "pending_verification", "verification_status": "rejected", "reason": reason},
     )
     conn.commit()
+    _notify_account_owner(
+        account.get("owner_user_id"), account_id,
+        "verification_rejected",
+        "Advertiser verification declined",
+        f"Your advertiser verification was declined: {reason} Update your business details and request verification again.",
+        dedupe_key=f"ad_verify_rejected:{safe_int(account_id)}:{now}",
+    )
     return {
         "ok": True,
         "account_id": safe_int(account_id),
@@ -916,25 +990,240 @@ def reject_account_verification(conn, admin_user_id, account_id, reason: str = "
     }
 
 
-def account_review_board(conn, limit=100) -> list[dict]:
-    """Accounts waiting on a verification decision, oldest request first.
+def request_account_changes(conn, admin_user_id, account_id, reason: str = "", user_note: str = "") -> dict:
+    """Admin hands verification back for the advertiser to fix, without rejecting.
 
-    Oldest first because this is a queue someone is sitting in, not a feed.
+    Distinct from rejection: the account is not turned away, it is asked a specific
+    question. `verification_status='changes_requested'` is a re-submittable state
+    (see VERIFICATION_RESUBMIT_FROM), and the advertiser-safe note is what the
+    owner sees and can act on. The internal reason is separated from the user note
+    so a reviewer can record context the advertiser should not read while still
+    telling the advertiser precisely what to change.
     """
+    reason = clean_text(reason, 500)
+    user_note = clean_text(user_note, 500) or reason
+    if not user_note:
+        raise PulseAdsError("Describe the change the advertiser needs to make so they can act on it.")
     cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_ad_accounts WHERE id=?", (safe_int(account_id),))
+    account = row_to_dict(cur.fetchone())
+    if not account:
+        raise PulseAdsError("Ad account not found.", 404)
+    now = now_iso()
     cur.execute(
         """
+        UPDATE pulse_ad_accounts
+        SET verification_status='changes_requested', status='pending_verification',
+            verification_reviewed_at=?, verification_reviewer_id=?, verification_reason=?, updated_at=?
+        WHERE id=?
+        """,
+        (now, safe_int(admin_user_id), user_note, now, safe_int(account_id)),
+    )
+    audit_log(
+        conn, admin_user_id, "ad_account_verification_changes_requested", "pulse_ad_accounts", account_id,
+        before={"status": account.get("status"), "verification_status": account.get("verification_status")},
+        after={"status": "pending_verification", "verification_status": "changes_requested",
+               "user_note": user_note, "internal_reason": reason},
+    )
+    conn.commit()
+    _notify_account_owner(
+        account.get("owner_user_id"), account_id,
+        "verification_needs_info",
+        "Advertiser verification needs changes",
+        f"We need a change before we can verify your advertiser account: {user_note} Update your details and resubmit.",
+        dedupe_key=f"ad_verify_changes:{safe_int(account_id)}:{now}",
+    )
+    return {
+        "ok": True,
+        "account_id": safe_int(account_id),
+        "status": "pending_verification",
+        "verification_status": "changes_requested",
+        "reason": user_note,
+    }
+
+
+def suspend_account(conn, admin_user_id, account_id, reason: str = "") -> dict:
+    """Admin suspends an advertiser account — a distinct state from unverified.
+
+    Suspension freezes the account regardless of verification: `status='suspended'`
+    is checked first by every gate, so a suspended account cannot serve even if it
+    was previously verified. `verification_status` is left intact so lifting the
+    suspension can restore the prior standing rather than forcing a re-review.
+    """
+    reason = clean_text(reason, 500)
+    if not reason:
+        raise PulseAdsError("A suspension reason is required.")
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_ad_accounts WHERE id=?", (safe_int(account_id),))
+    account = row_to_dict(cur.fetchone())
+    if not account:
+        raise PulseAdsError("Ad account not found.", 404)
+    if clean_text(account.get("status"), 40).lower() == "suspended":
+        return {"ok": True, "account_id": safe_int(account_id), "status": "suspended", "deduped": True}
+    now = now_iso()
+    cur.execute(
+        "UPDATE pulse_ad_accounts SET status='suspended', verification_reason=?, updated_at=? WHERE id=?",
+        (reason, now, safe_int(account_id)),
+    )
+    # A suspended account must stop delivering immediately, not at the next review.
+    cur.execute(
+        "UPDATE pulse_ad_campaigns SET status='paused', updated_at=? WHERE ad_account_id=? AND status='active'",
+        (now, safe_int(account_id)),
+    )
+    audit_log(
+        conn, admin_user_id, "ad_account_suspended", "pulse_ad_accounts", account_id,
+        before={"status": account.get("status")},
+        after={"status": "suspended", "reason": reason},
+    )
+    conn.commit()
+    _notify_account_owner(
+        account.get("owner_user_id"), account_id,
+        "account_restriction",
+        "Advertiser account suspended",
+        f"Your advertiser account has been suspended: {reason} Contact support for next steps.",
+        dedupe_key=f"ad_account_suspended:{safe_int(account_id)}:{now}",
+    )
+    return {"ok": True, "account_id": safe_int(account_id), "status": "suspended", "reason": reason}
+
+
+def restore_account(conn, admin_user_id, account_id, notes: str = "") -> dict:
+    """Admin lifts a suspension, returning the account to its verification standing.
+
+    A previously verified account comes back active; anything else returns to
+    pending_verification so it re-enters the normal path rather than silently
+    serving. Restoring is the deliberate inverse of suspend, so it is an explicit
+    action with its own audit event rather than a generic status edit.
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_ad_accounts WHERE id=?", (safe_int(account_id),))
+    account = row_to_dict(cur.fetchone())
+    if not account:
+        raise PulseAdsError("Ad account not found.", 404)
+    if clean_text(account.get("status"), 40).lower() != "suspended":
+        return {"ok": True, "account_id": safe_int(account_id), "status": clean_text(account.get("status"), 40), "deduped": True}
+    verified = account_verification_state(account) == "verified"
+    new_status = "active" if verified else "pending_verification"
+    now = now_iso()
+    cur.execute(
+        "UPDATE pulse_ad_accounts SET status=?, verification_reason=?, updated_at=? WHERE id=?",
+        (new_status, clean_text(notes, 500), now, safe_int(account_id)),
+    )
+    audit_log(
+        conn, admin_user_id, "ad_account_restored", "pulse_ad_accounts", account_id,
+        before={"status": account.get("status")},
+        after={"status": new_status, "notes": clean_text(notes, 300)},
+    )
+    conn.commit()
+    _notify_account_owner(
+        account.get("owner_user_id"), account_id,
+        "verification_approved" if verified else "verification_needs_info",
+        "Advertiser account restored",
+        "Your advertiser account suspension has been lifted."
+        + (" Approved campaigns can deliver again." if verified else " Complete verification to start delivering."),
+        dedupe_key=f"ad_account_restored:{safe_int(account_id)}:{now}",
+    )
+    return {"ok": True, "account_id": safe_int(account_id), "status": new_status}
+
+
+# The filter keys the admin verification queue exposes, each mapped to the raw
+# verification_status / status values that belong under it. 'suspended' is an
+# account-status fact rather than a verification value, so it is matched on status.
+VERIFICATION_FILTERS = {
+    "pending": ("verification", ("pending", "submitted", "in_review")),
+    "changes_requested": ("verification", ("changes_requested", "needs_changes", "action_required", "needs_more_info")),
+    "approved": ("verification", ("approved", "verified")),
+    "rejected": ("verification", ("rejected", "declined")),
+    "suspended": ("status", ("suspended",)),
+}
+
+
+def _verification_row(row) -> dict:
+    account = row_to_dict(row)
+    account["verification_state"] = account_verification_state(account)
+    return account
+
+
+def account_review_board(conn, limit=100, status_filter="pending", search="") -> list[dict]:
+    """Advertiser accounts for the verification queue, filtered and searchable.
+
+    Defaults to the pending queue, oldest request first, because that is the work
+    someone is sitting in waiting on. Other filters and search let a reviewer find
+    a specific account without leaving the queue. 'all' returns every account.
+    """
+    status_filter = clean_text(status_filter, 40).lower() or "pending"
+    search = clean_text(search, 120)
+    clauses = []
+    params: list = []
+    if status_filter in VERIFICATION_FILTERS:
+        column, values = VERIFICATION_FILTERS[status_filter]
+        placeholders = ",".join(["?"] * len(values))
+        if column == "status":
+            clauses.append(f"lower(COALESCE(status,'')) IN ({placeholders})")
+        else:
+            clauses.append(f"lower(COALESCE(verification_status,'')) IN ({placeholders})")
+        params.extend(values)
+    if search:
+        like = f"%{search.lower()}%"
+        clauses.append(
+            "(lower(COALESCE(business_name,'')) LIKE ? OR lower(COALESCE(business_email,'')) LIKE ?"
+            " OR CAST(id AS TEXT)=? OR CAST(owner_user_id AS TEXT)=?)"
+        )
+        params.extend([like, like, search, search])
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    params.append(safe_int(limit, 100, minimum=1, maximum=500))
+    cur = conn.cursor()
+    cur.execute(
+        f"""
         SELECT id, owner_user_id, business_name, business_type, business_email, business_website,
-               status, verification_status, verification_submitted_at, verification_reason,
-               created_at, updated_at
+               status, verification_status, verification_submitted_at, verification_reviewed_at,
+               verification_reason, created_at, updated_at
         FROM pulse_ad_accounts
-        WHERE lower(COALESCE(verification_status,'')) IN ('pending','submitted','in_review')
+        {where}
         ORDER BY COALESCE(verification_submitted_at, created_at) ASC, id ASC
         LIMIT ?
         """,
-        (safe_int(limit, 100, minimum=1, maximum=500),),
+        tuple(params),
     )
-    return [row_to_dict(row) for row in cur.fetchall()]
+    return [_verification_row(row) for row in cur.fetchall()]
+
+
+def verification_summary_counts(conn) -> dict:
+    """How many accounts sit under each verification filter, plus the oldest wait.
+
+    Feeds the admin dashboard card and the queue's filter badges: 'N pending,
+    oldest pending' is the whole point of the card, so it is computed here once
+    rather than by counting rows in the page.
+    """
+    cur = conn.cursor()
+    counts = {key: 0 for key in list(VERIFICATION_FILTERS.keys()) + ["unverified", "all"]}
+    cur.execute("SELECT status, verification_status FROM pulse_ad_accounts")
+    rows = cur.fetchall()
+    for row in rows:
+        account = row_to_dict(row)
+        counts["all"] += 1
+        if clean_text(account.get("status"), 40).lower() == "suspended":
+            counts["suspended"] += 1
+        state = account_verification_state(account)
+        if state == "pending":
+            counts["pending"] += 1
+        elif state == "changes_requested":
+            counts["changes_requested"] += 1
+        elif state == "verified":
+            counts["approved"] += 1
+        elif state == "rejected":
+            counts["rejected"] += 1
+        else:
+            counts["unverified"] += 1
+    cur.execute(
+        """
+        SELECT MIN(COALESCE(verification_submitted_at, created_at)) AS oldest
+        FROM pulse_ad_accounts
+        WHERE lower(COALESCE(verification_status,'')) IN ('pending','submitted','in_review')
+        """
+    )
+    oldest = row_to_dict(cur.fetchone()).get("oldest")
+    counts["oldest_pending"] = oldest or ""
+    return counts
 
 
 def create_campaign(conn, owner_user_id, payload: dict) -> dict:
@@ -1886,6 +2175,7 @@ def select_ads(conn, user_id=None, session_id="", context="home", device_type="d
           AND p.is_active=1
           AND c.status='active'
           AND a.status='active'
+          AND lower(COALESCE(a.verification_status,'')) IN ('verified','approved')
           AND cr.moderation_status='approved'
           AND cr.status='approved'
           AND (cr.creative_type NOT IN ('image','video','audio') OR cr.media_asset_id IS NOT NULL)
@@ -1948,9 +2238,11 @@ def _assert_served_creative(conn, creative_id, campaign_id, placement_key="") ->
         """
         SELECT cr.id AS creative_id, cr.campaign_id, cr.destination_url, cr.status, cr.moderation_status,
                cr.creative_type, c.status AS campaign_status, p.placement_key,
+               a.status AS account_status, a.verification_status AS account_verification_status,
                COALESCE(p.supported_creative_types, '') AS supported_creative_types
         FROM pulse_ad_creatives cr
         JOIN pulse_ad_campaigns c ON c.id=cr.campaign_id
+        JOIN pulse_ad_accounts a ON a.id=c.ad_account_id
         JOIN pulse_ad_campaign_placements cp ON cp.campaign_id=c.id
         JOIN pulse_ad_placements p ON p.id=cp.placement_id
         WHERE cr.id=? AND c.id=? AND (?='' OR p.placement_key=?)
@@ -1962,6 +2254,14 @@ def _assert_served_creative(conn, creative_id, campaign_id, placement_key="") ->
         raise PulseAdsError("Ad creative not found.", 404)
     if creative.get("status") != "approved" or creative.get("moderation_status") != "approved" or creative.get("campaign_status") != "active":
         raise PulseAdsError("Ad is not eligible for tracking.", 403)
+    # Account verification gates tracking independently of the campaign. A campaign
+    # can be approved while the account is still in review, but no impression or
+    # click may be recorded against an unverified (or suspended) account — the
+    # explicit fail-closed check the a.status coupling used to only imply.
+    if clean_text(creative.get("account_status"), 40).lower() == "suspended":
+        raise PulseAdsError("Ad account is suspended.", 403)
+    if account_verification_state({"verification_status": creative.get("account_verification_status")}) != "verified":
+        raise PulseAdsError("Ad account is not verified.", 403)
     if placement_key and not _compatible_creative(creative.get("creative_type"), creative.get("supported_creative_types")):
         raise PulseAdsError("Ad is not compatible with this placement.", 403)
     return creative

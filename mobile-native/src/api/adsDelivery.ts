@@ -130,6 +130,7 @@ export type DeliveryBlockerCode =
   | "account_suspended"
   | "account_verification_pending"
   | "account_verification_rejected"
+  | "account_verification_changes_requested"
   | "account_not_verified"
   | "account_not_active"
   | "no_creative"
@@ -177,6 +178,12 @@ const BLOCKERS: Record<DeliveryBlockerCode, Omit<DeliveryBlocker, "code">> = {
     title: "Account verification was declined",
     detail:
       "The decision says what to fix. Update your business details, then request verification again — a declined account can be resubmitted.",
+    advertiserCanClear: true
+  },
+  account_verification_changes_requested: {
+    title: "Verification needs a change before it's approved",
+    detail:
+      "The reviewer asked for something specific. Make the change they described, then resubmit — this isn't a rejection, it's an open request.",
     advertiserCanClear: true
   },
   account_not_verified: {
@@ -322,6 +329,8 @@ export function deliveryBlocker(
         return blocker("account_verification_pending");
       case "rejected":
         return blocker("account_verification_rejected");
+      case "changes_requested":
+        return blocker("account_verification_changes_requested");
       case "unverified":
         return blocker("account_not_verified");
       default:
@@ -364,7 +373,13 @@ function blocker(code: DeliveryBlockerCode): DeliveryBlocker {
   return { code, ...BLOCKERS[code] };
 }
 
-export type AccountVerificationState = "unverified" | "pending" | "verified" | "rejected";
+export type AccountVerificationState =
+  | "unverified"
+  | "pending"
+  | "verified"
+  | "rejected"
+  | "changes_requested"
+  | "suspended";
 
 /**
  * The account's verification state, read the way the server reads it.
@@ -379,11 +394,24 @@ export type AccountVerificationState = "unverified" | "pending" | "verified" | "
  */
 export function accountVerificationState(account: {
   verification_status?: unknown;
+  status?: unknown;
 }): AccountVerificationState {
+  // Suspension is an enforcement action recorded on `status`, not on
+  // `verification_status`, and it outranks whatever the verification column
+  // says: a suspended account cannot deliver even if it was previously
+  // verified. Mirrors `pulse_ads_service` treating `status='suspended'` as the
+  // dominant state.
+  if (String(account?.status || "").toLowerCase() === "suspended") return "suspended";
   const raw = String(account?.verification_status || "").toLowerCase();
   if (raw === "approved" || raw === "verified") return "verified";
   if (raw === "pending" || raw === "submitted" || raw === "in_review") return "pending";
-  if (raw === "rejected" || raw === "declined" || raw === "needs_more_info") return "rejected";
+  // Distinct from a rejection: a changes request is an open ask the advertiser is
+  // expected to answer and resubmit. `needs_more_info` predates the split and
+  // means the same thing, so it reads here rather than as a dead-end rejection —
+  // mirrors `pulse_ads_service.account_verification_state`.
+  if (raw === "changes_requested" || raw === "needs_changes" || raw === "action_required" || raw === "needs_more_info")
+    return "changes_requested";
+  if (raw === "rejected" || raw === "declined") return "rejected";
   return "unverified";
 }
 

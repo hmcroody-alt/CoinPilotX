@@ -1256,7 +1256,9 @@ def record_spend_event(conn, campaign_id, creative_id, placement_key, amount_cen
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT c.*, a.business_type FROM pulse_ad_campaigns c
+        SELECT c.*, a.business_type, a.status AS account_status,
+               a.verification_status AS account_verification_status
+        FROM pulse_ad_campaigns c
         JOIN pulse_ad_accounts a ON a.id=c.ad_account_id
         WHERE c.id=?
         """,
@@ -1267,6 +1269,16 @@ def record_spend_event(conn, campaign_id, creative_id, placement_key, amount_cen
         return {"ok": False, "skipped": "campaign_missing"}
     if clean_text(campaign.get("business_type"), 80) == "internal_promotion":
         return {"ok": True, "skipped": "internal_promotion"}
+    # No spend before verification. Account standing gates billing independently of
+    # the campaign's own status: an approved campaign on an unverified or suspended
+    # account must consume zero budget. This fails closed rather than trusting the
+    # a.status coupling that the serving path relies on.
+    if clean_text(campaign.get("account_status"), 40).lower() == "suspended":
+        return {"ok": False, "skipped": "account_suspended"}
+    if pulse_ads_service.account_verification_state(
+        {"verification_status": campaign.get("account_verification_status")}
+    ) != "verified":
+        return {"ok": False, "skipped": "account_not_verified"}
     # A spend without a caller-supplied idempotency key used to fall back to a
     # timestamp-derived key with second granularity — a retried delivery event
     # more than a second later minted a fresh key and charged the wallet twice

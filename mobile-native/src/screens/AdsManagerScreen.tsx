@@ -411,14 +411,15 @@ export function AdsManagerScreen({ route, navigation }: Props) {
   const verificationIsRequestable = useMemo(() => {
     if (!account) return false;
     const state = accountVerificationState(account);
-    return state === "unverified" || state === "rejected";
+    return state === "unverified" || state === "rejected" || state === "changes_requested";
   }, [account]);
 
   const emptyStateVerifyLabel = useMemo(() => {
     if (!model?.needsVerification || !verificationIsRequestable || !account) return null;
-    return accountVerificationState(account) === "rejected"
-      ? "Request review again"
-      : "Request verification";
+    const state = accountVerificationState(account);
+    if (state === "rejected") return "Request review again";
+    if (state === "changes_requested") return "Resubmit for review";
+    return "Request verification";
   }, [model?.needsVerification, verificationIsRequestable, account]);
 
   /**
@@ -448,10 +449,18 @@ export function AdsManagerScreen({ route, navigation }: Props) {
     switch (accountVerificationState(account || {})) {
       case "pending":
         return `${start} Delivery begins once your account review is decided — nothing is charged while you wait.`;
+      case "changes_requested":
+        return reason
+          ? `${start} The reviewer asked for a change before approval: ${reason} Update your business details, then resubmit for review.`
+          : `${start} The reviewer asked for a change before this account can be approved. Update your business details, then resubmit for review.`;
       case "rejected":
         return reason
           ? `${start} Your account review was declined: ${reason} Update your business details, then request review again.`
           : `${start} Your account review was declined, and no reason was recorded with the decision. Check your business details, then request review again.`;
+      case "suspended":
+        return reason
+          ? `${start} This ad account is suspended, so nothing can deliver: ${reason} Contact support to appeal.`
+          : `${start} This ad account is suspended, so nothing can deliver. Contact support to appeal.`;
       case "verified":
         return `${start} This account is verified but isn't marked active, so nothing can deliver yet. Contact support so it can be corrected.`;
       default:
