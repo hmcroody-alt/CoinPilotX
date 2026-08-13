@@ -245,6 +245,7 @@ from services import (
     marketplace_seller_identity as marketplace_seller_identity,
     media_service,
     media_storage,
+    media_upload_sessions,
     messenger_media_foundation,
     mux_live_service,
     agora_media_push_service,
@@ -94258,6 +94259,80 @@ def api_media_upload():
         context_id=request.form.get("context_id") or "",
     )
     log_product_event(user["user_id"], "media_upload", {"ok": result.get("ok"), "context_type": request.form.get("context_type") or "private_chat"})
+    return jsonify(result), status
+
+
+@webhook_app.route("/api/pulse/media/uploads", methods=["POST"])
+def api_pulse_media_upload_session_create():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401, error="login_required")
+    result, status = media_upload_sessions.create_session(user["user_id"], request.get_json(silent=True) or {})
+    return jsonify(result), status
+
+
+@webhook_app.route("/api/pulse/media/uploads/<upload_id>", methods=["GET"])
+def api_pulse_media_upload_session_status(upload_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401, error="login_required")
+    row = media_upload_sessions._row(upload_id, user["user_id"])
+    if not row:
+        return api_error("Upload session was not found.", 404, error="not_found")
+    return jsonify({"ok": True, **media_upload_sessions._public(row)})
+
+
+@webhook_app.route("/api/pulse/media/uploads/<upload_id>/parts/sign", methods=["POST"])
+def api_pulse_media_upload_parts_sign(upload_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401, error="login_required")
+    payload = request.get_json(silent=True) or {}
+    result, status = media_upload_sessions.sign_parts(user["user_id"], upload_id, payload.get("part_numbers") or [])
+    return jsonify(result), status
+
+
+@webhook_app.route("/api/pulse/media/uploads/<upload_id>/refresh", methods=["POST"])
+def api_pulse_media_upload_refresh(upload_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401, error="login_required")
+    result, status = media_upload_sessions.refresh_authorization(user["user_id"], upload_id)
+    return jsonify(result), status
+
+
+@webhook_app.route("/api/pulse/media/uploads/<upload_id>/complete", methods=["POST"])
+def api_pulse_media_upload_complete(upload_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401, error="login_required")
+    payload = request.get_json(silent=True) or {}
+    result, status = media_upload_sessions.complete_upload(user["user_id"], upload_id, payload.get("parts") or [])
+    return jsonify(result), status
+
+
+@webhook_app.route("/api/pulse/media/uploads/<upload_id>/finalize", methods=["POST"])
+def api_pulse_media_upload_finalize(upload_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401, error="login_required")
+    result, status = media_upload_sessions.finalize_upload(user["user_id"], upload_id)
+    return jsonify(result), status
+
+
+@webhook_app.route("/api/pulse/media/uploads/<upload_id>/abort", methods=["POST"])
+def api_pulse_media_upload_abort(upload_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401, error="login_required")
+    result, status = media_upload_sessions.abort_upload(user["user_id"], upload_id)
     return jsonify(result), status
 
 

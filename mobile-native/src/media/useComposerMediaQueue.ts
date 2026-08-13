@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   NativeMediaAsset,
   NativeMediaUploadOptions,
@@ -34,7 +34,8 @@ const selectedProgress = (asset: NativeMediaAsset): UploadProgress => ({
 export function useComposerMediaQueue(defaultOptions: NativeMediaUploadOptions) {
   const [items, setItems] = useState<ComposerMediaItem[]>([]);
   const controllers = useRef(new Map<string, UploadController>());
-  const uploading = useMemo(() => items.some((item) => ["validating", "uploading", "processing"].includes(item.progress.stage)), [items]);
+  const uploading = useMemo(() => items.some((item) => ["validating", "uploading", "waiting", "resuming", "finalizing", "processing"].includes(item.progress.stage)), [items]);
+  const autoStarted = useRef(new Set<string>());
 
   const addAssets = useCallback((assets: NativeMediaAsset[]) => {
     setItems((current) => {
@@ -120,6 +121,13 @@ export function useComposerMediaQueue(defaultOptions: NativeMediaUploadOptions) 
     return { results, mediaIds };
   }, [items, uploadItem]);
 
+  useEffect(() => {
+    items.filter((item) => item.progress.stage === "selected" && !autoStarted.current.has(item.id)).forEach((item) => {
+      autoStarted.current.add(item.id);
+      void uploadItem(item).catch(() => undefined);
+    });
+  }, [items, uploadItem]);
+
   const retry = useCallback(async (id: string) => {
     const item = items.find((candidate) => candidate.id === id);
     if (!item) return null;
@@ -135,6 +143,7 @@ export function useComposerMediaQueue(defaultOptions: NativeMediaUploadOptions) 
   const remove = useCallback((id: string) => {
     controllers.current.get(id)?.cancel();
     controllers.current.delete(id);
+    autoStarted.current.delete(id);
     setItems((current) => current.filter((item) => item.id !== id));
   }, []);
 
@@ -163,6 +172,7 @@ export function useComposerMediaQueue(defaultOptions: NativeMediaUploadOptions) 
   const reset = useCallback(() => {
     controllers.current.forEach((controller) => controller.cancel());
     controllers.current.clear();
+    autoStarted.current.clear();
     setItems([]);
   }, []);
 

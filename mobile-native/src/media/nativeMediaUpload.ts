@@ -4,7 +4,7 @@ import { PULSE_API_BASE_URL } from "../api/config";
 import { PulseMedia, mediaDisplayUrl, mediaKind } from "../api/feed";
 import { pulseApi } from "../api/pulseApi";
 import { getSessionCookie, setSessionCookie } from "../session/sessionStore";
-import { formatFileSize } from "../utils/format";
+import { mediaUploadManager } from "./MediaUploadManager";
 
 export type NativeMediaContext =
   | "pulse_status"
@@ -61,7 +61,7 @@ export type NativeMediaUploadResult = {
 };
 
 export type UploadProgress = {
-  stage: "idle" | "validating" | "permission_denied" | "selected" | "uploading" | "processing" | "ready" | "failed" | "cancelled";
+  stage: "idle" | "validating" | "permission_denied" | "selected" | "uploading" | "waiting" | "resuming" | "finalizing" | "processing" | "ready" | "failed" | "cancelled";
   percent: number;
   message: string;
 };
@@ -204,69 +204,44 @@ export function uploadNativeMedia(
   options: NativeMediaUploadOptions,
   onProgress?: (progress: UploadProgress) => void
 ): { promise: Promise<NativeMediaUploadResult>; controller: UploadController } {
+  const validation = validateNativeMedia(asset);
+  if (validation) return { promise: Promise.reject(new Error(validation)), controller: { cancel: () => undefined } };
+  // Product-specific endpoints may perform additional server-side attachment
+  // work. Keep those existing contracts intact until they explicitly adopt
+  // direct-upload finalization.
+  if (options.endpointPath && options.endpointPath !== "/api/pulse/media/upload") {
+    return uploadLegacyMedia(asset, options, onProgress);
+  }
+  const task = mediaUploadManager.upload(asset, options, onProgress);
+  return { promise: task.promise, controller: { cancel: task.cancel } };
+}
+
+function uploadLegacyMedia(asset: NativeMediaAsset, options: NativeMediaUploadOptions, onProgress?: (progress: UploadProgress) => void) {
   const xhr = new XMLHttpRequest();
-  const controller = {
-    cancel: () => xhr.abort()
-  };
   const promise = new Promise<NativeMediaUploadResult>((resolve, reject) => {
-    const validation = validateNativeMedia(asset);
-    if (validation) {
-      reject(new Error(validation));
-      return;
-    }
-    onProgress?.({ stage: "uploading", percent: 2, message: "Starting upload." });
     xhr.open("POST", nativeMediaUploadUrl(options.endpointPath));
-    getSessionCookie()
-      .then((cookie) => {
-        if (cookie) xhr.setRequestHeader("Cookie", cookie);
-      })
-      .finally(() => {
-        xhr.upload.onprogress = (event) => {
-          if (!event.lengthComputable) {
-            onProgress?.({ stage: "uploading", percent: 12, message: "Uploading media." });
-            return;
-          }
-          const percent = Math.max(4, Math.min(92, Math.round((event.loaded / event.total) * 92)));
-          onProgress?.({
-            stage: "uploading",
-            percent,
-            message: `Uploading media ${Math.round((event.loaded / event.total) * 100)}% (${formatFileSize(event.loaded)} of ${formatFileSize(event.total)}).`
-          });
-        };
-        xhr.onerror = () => reject(new Error("Upload failed. Check your connection and retry."));
-        xhr.onabort = () => reject(new Error("Upload cancelled."));
-        xhr.onload = () => {
-          const responseCookie = xhr.getResponseHeader("set-cookie");
-          if (responseCookie) setSessionCookie(responseCookie).catch(() => undefined);
-          const data = parseUploadResponse(xhr.responseText);
-          if (xhr.status < 200 || xhr.status >= 300 || data.ok === false) {
-            reject(new Error(data.message || "Upload failed."));
-            return;
-          }
-          onProgress?.({ stage: "processing", percent: 96, message: "Checking processing status." });
-          resolve(data);
-        };
-        const form = new FormData();
-        form.append("context_type", options.contextType);
-        form.append("context_id", options.contextId || "native-draft");
-        if (options.target) form.append("target", options.target);
-        if (options.mode) form.append("mode", options.mode);
-        if (options.filterName) form.append("filter_name", options.filterName);
-        if (options.effectKey) form.append("effect_key", options.effectKey);
-        if (options.compressionPolicy) form.append("compression_policy", options.compressionPolicy);
-        if (options.destination) form.append("destination", options.destination);
-        Object.entries(options.extraFields || {}).forEach(([key, value]) => {
-          if (value !== undefined && value !== null) form.append(key, String(value));
-        });
-        form.append("file", {
-          uri: asset.uri,
-          name: asset.name,
-          type: asset.mimeType
-        } as unknown as Blob);
-        xhr.send(form);
-      });
+    getSessionCookie().then((cookie) => { if (cookie) xhr.setRequestHeader("Cookie", cookie); }).finally(() => {
+      xhr.upload.onprogress = (event) => {
+        const ratio = event.lengthComputable && event.total ? event.loaded / event.total : 0;
+        onProgress?.({ stage: "uploading", percent: Math.max(2, Math.min(94, Math.round(ratio * 94))), message: event.lengthComputable ? `Uploading media ${Math.round(ratio * 100)}%.` : "Uploading media." });
+      };
+      xhr.onerror = () => reject(Object.assign(new Error("Upload transport was interrupted."), { category: "network", status: 0 }));
+      xhr.onabort = () => reject(new Error("Upload cancelled."));
+      xhr.onload = () => {
+        const responseCookie = xhr.getResponseHeader("set-cookie");
+        if (responseCookie) setSessionCookie(responseCookie).catch(() => undefined);
+        const data = parseUploadResponse(xhr.responseText);
+        if (xhr.status < 200 || xhr.status >= 300 || data.ok === false) reject(Object.assign(new Error(data.message || `Upload failed (${xhr.status}).`), { status: xhr.status, traceId: data.trace_id }));
+        else resolve(data);
+      };
+      const form = new FormData();
+      form.append("context_type", options.contextType); form.append("context_id", options.contextId || "native-draft");
+      Object.entries(options.extraFields || {}).forEach(([key, value]) => { if (value !== undefined && value !== null) form.append(key, String(value)); });
+      form.append("file", { uri: asset.uri, name: asset.name, type: asset.mimeType } as unknown as Blob);
+      xhr.send(form);
+    });
   });
-  return { promise, controller };
+  return { promise, controller: { cancel: () => xhr.abort() } };
 }
 
 export async function pollNativeMediaProcessing(mediaId: number, attempts = 8, delayMs = 1500, onProgress?: (progress: UploadProgress) => void) {
