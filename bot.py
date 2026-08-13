@@ -50082,6 +50082,86 @@ def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now=""):
          tx.get("created_at") or timestamp, timestamp, timestamp))
 
 
+def pulse_finalize_marketplace_settlement(tx, provider_payment_id=""):
+    """Create the idempotent post-payment seller and fee effects."""
+    tx = dict(tx or {})
+    if str(tx.get("item_type") or "") != "marketplace_product":
+        return None
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        payout = seller_payout_account(cur, tx.get("seller_user_id"), "merchant")
+        payout_ready = bool((payout or {}).get("connected_account_id") and
+                            (payout or {}).get("payouts_enabled") and
+                            (payout or {}).get("charges_enabled"))
+    finally:
+        conn.close()
+    from services import marketplace_settlement_service
+    return marketplace_settlement_service.settle_paid_transaction(
+        tx, payout_ready=payout_ready, provider_payment_id=provider_payment_id,
+        actor="stripe_webhook")
+
+
+def pulse_apply_marketplace_charge_refund(obj):
+    """Allocate Stripe's cumulative charge refund across its Marketplace rows.
+
+    Stripe does not provide commercial components. We consume the original
+    immutable settlement snapshot in merchandise, shipping, tax order and use
+    a cumulative provider key, so retries and alternate Stripe event types
+    cannot reverse the same money twice.
+    """
+    metadata = dict((obj or {}).get("metadata") or {})
+    tx_ids = [safe_int(v, 0) for v in str(metadata.get("seller_transaction_ids") or metadata.get("seller_transaction_id") or "").split(",")]
+    tx_ids = [v for v in tx_ids if v]
+    cumulative_refunded = int((obj or {}).get("amount_refunded") or 0)
+    if not tx_ids or cumulative_refunded <= 0:
+        return []
+    # ``amount_refunded`` is cumulative on a Charge. Subtract reversals already
+    # recorded for these rows or a $40 refund followed by a cumulative $60
+    # event would incorrectly reverse $100.
+    conn = db(); conn.row_factory = sqlite3.Row
+    try:
+        placeholders = ",".join(["?"] * len(tx_ids))
+        already_refunded = int(dict(conn.execute(
+            f"SELECT COALESCE(SUM(total_refund_minor),0) total FROM marketplace_commercial_refunds WHERE seller_transaction_id IN ({placeholders})",
+            tuple(tx_ids)).fetchone()).get("total") or 0)
+    except Exception:
+        already_refunded = 0
+    finally:
+        conn.close()
+    remaining = max(0, cumulative_refunded - already_refunded)
+    if remaining <= 0:
+        return []
+    provider_key = f"{(obj or {}).get('id') or 'charge'}:{cumulative_refunded}"
+    from services import marketplace_settlement_service
+    results = []
+    for tx_id in tx_ids:
+        snap = marketplace_settlement_service.get_settlement(tx_id)
+        if not snap or remaining <= 0:
+            continue
+        conn = db(); conn.row_factory = sqlite3.Row
+        try:
+            prior = dict(conn.execute("""SELECT COALESCE(SUM(merchandise_refund_minor),0) merchandise,
+                COALESCE(SUM(shipping_refund_minor),0) shipping, COALESCE(SUM(tax_refund_minor),0) tax,
+                COALESCE(SUM(other_refund_minor),0) other FROM marketplace_commercial_refunds
+                WHERE seller_transaction_id=?""", (tx_id,)).fetchone())
+        finally:
+            conn.close()
+        available_merch = max(0, int(snap["merchandise_net_minor"]) - int(prior["merchandise"]))
+        merchandise = min(remaining, available_merch); remaining -= merchandise
+        available_shipping = max(0, int(snap["shipping_minor"]) - int(prior["shipping"]))
+        shipping = min(remaining, available_shipping); remaining -= shipping
+        available_tax = max(0, int(snap["tax_minor"]) - int(prior["tax"]))
+        tax = min(remaining, available_tax); remaining -= tax
+        other_cap = max(0, int(snap["buyer_total_minor"]) - sum(int(prior[k]) for k in ("merchandise", "shipping", "tax", "other")) - merchandise - shipping - tax)
+        other = min(remaining, other_cap); remaining -= other
+        if merchandise + shipping + tax + other:
+            results.append(marketplace_settlement_service.apply_refund(
+                tx_id, provider_refund_id=f"{provider_key}:{tx_id}",
+                merchandise_refund_minor=merchandise, shipping_refund_minor=shipping,
+                tax_refund_minor=tax, other_refund_minor=other, actor="stripe_webhook"))
+    return results
+
+
 def pulse_emit_comms_safety_event(
     cur,
     user_id,
@@ -96800,7 +96880,7 @@ def stripe_webhook():
             conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
             from services import marketplace_cart_routes as marketplace_cart_service
             marketplace_cart_service._ensure_schema(cur)
-            affected_buyers = set(); affected_sellers = set()
+            affected_buyers = set(); affected_sellers = set(); paid_marketplace_txs = []
             for tx_id in tx_ids:
                 cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
                 tx = dict(cur.fetchone() or {})
@@ -96813,6 +96893,8 @@ def stripe_webhook():
                         (session_id, session.get("payment_intent") or "", now, tx_id))
                     marketplace_cart_service.capture_inventory_reservation(cur, tx_id, now=now)
                     pulse_upsert_marketplace_order(cur, tx, session.get("payment_intent") or "", now)
+                    if str(tx.get("status") or "") != "refunded":
+                        paid_marketplace_txs.append(tx)
                 else:
                     cur.execute("UPDATE seller_transactions SET status=?, updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')",
                                 (f"checkout_{payment_status or 'pending'}", now, tx_id))
@@ -96829,6 +96911,8 @@ def stripe_webhook():
                     if buyer_id:
                         notify_user(cur, buyer_id, "purchase", "Marketplace order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
             conn.commit(); conn.close()
+            for paid_tx in paid_marketplace_txs:
+                pulse_finalize_marketplace_settlement(paid_tx, session.get("payment_intent") or "")
             resolved_event_user_id = safe_int(metadata.get("buyer_user_id"), 0) or None
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
@@ -96876,6 +96960,8 @@ def stripe_webhook():
                 conn.commit()
                 resolved_event_user_id = int(tx.get("buyer_user_id") or 0) or None
             conn.close()
+            if tx and str(tx.get("status") or "") != "refunded" and payment_status in {"paid", "no_payment_required"}:
+                pulse_finalize_marketplace_settlement(tx, session.get("payment_intent") or "")
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
             return "OK", 200
@@ -97156,7 +97242,7 @@ def stripe_webhook():
             conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
             from services import marketplace_cart_routes as marketplace_cart_service
             marketplace_cart_service._ensure_schema(cur)
-            affected_buyers = set(); affected_sellers = set()
+            affected_buyers = set(); affected_sellers = set(); paid_marketplace_txs = []
             for tx_id in tx_ids:
                 cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
                 tx = dict(cur.fetchone() or {})
@@ -97170,6 +97256,8 @@ def stripe_webhook():
                     (intent_id, now, tx_id))
                 marketplace_cart_service.capture_inventory_reservation(cur, tx_id, now=now)
                 pulse_upsert_marketplace_order(cur, tx, intent_id, now)
+                if str(tx.get("status") or "") != "refunded":
+                    paid_marketplace_txs.append(tx)
                 pulse_emit_payment_checkout_event(
                     cur,
                     {**tx, "status": "paid", "stripe_payment_intent_id": intent_id},
@@ -97190,6 +97278,8 @@ def stripe_webhook():
                 if buyer_id:
                     notify_user(cur, buyer_id, "purchase", "Marketplace order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
             conn.commit(); conn.close()
+            for paid_tx in paid_marketplace_txs:
+                pulse_finalize_marketplace_settlement(paid_tx, intent_id)
             resolved_event_user_id = safe_int(metadata.get("buyer_user_id"), 0) or None
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
@@ -97203,7 +97293,7 @@ def stripe_webhook():
             marketplace_cart_service._ensure_schema(cur)
             cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
             tx = dict(cur.fetchone() or {})
-            if tx:
+            if tx and str(tx.get("status") or "") != "refunded":
                 # Conditional: a refund that already settled must not be undone
                 # by a duplicate delivery of the original success event.
                 cur.execute("UPDATE seller_transactions SET status='paid', stripe_payment_intent_id=?, updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')",
@@ -97227,6 +97317,8 @@ def stripe_webhook():
                 resolved_event_user_id = int(tx.get("buyer_user_id") or 0) or None
                 conn.commit()
             conn.close()
+            if tx:
+                pulse_finalize_marketplace_settlement(tx, intent_id)
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
             return "OK", 200
@@ -97489,6 +97581,8 @@ def stripe_webhook():
                         },
                     )
         conn.commit(); conn.close()
+        if event_type == "charge.refunded":
+            pulse_apply_marketplace_charge_refund(obj)
 
     record_stripe_event(event, "processed", resolved_event_user_id)
     creator_economy_service.update_webhook_event(event_id, "processed")
