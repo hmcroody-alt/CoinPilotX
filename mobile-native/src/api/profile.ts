@@ -30,7 +30,6 @@ export type PulseProfile = {
   user_id: number;
   id?: number | string;
   account_id?: number | string;
-  pulse_id?: string;
   email?: string;
   username?: string;
   display_name: string;
@@ -303,10 +302,9 @@ export function normalizeProfile(input: Partial<PulseProfile>): PulseProfile {
   const profile = input || {};
   const userId = Number(profile.user_id ?? profile.id ?? profile.account_id ?? 0);
   const display = profile.display_name || profile.full_name || profile.username || profile.public_player_id || "PulseSoc member";
-  return {
+  const normalized: PulseProfile = {
     ...profile,
     user_id: Number.isFinite(userId) && userId > 0 ? userId : 0,
-    pulse_id: String(profile.pulse_id || "").toUpperCase(),
     display_name: display,
     username: String(profile.username || "").replace(/^@/, ""),
     avatar_url: absoluteProfileUrl(profile.avatar_url || profile.avatar_thumbnail_url || ""),
@@ -329,6 +327,10 @@ export function normalizeProfile(input: Partial<PulseProfile>): PulseProfile {
     viewer_follows: Boolean(profile.viewer_follows),
     is_self: Boolean(profile.is_self)
   };
+  // Public profile payloads are defense-in-depth sanitized even if an older
+  // server accidentally includes an internal identifier.
+  delete (normalized as Record<string, unknown>).pulse_id;
+  return normalized;
 }
 
 function normalizeTheme(theme: PulseProfileTheme): PulseProfileTheme {

@@ -287,7 +287,6 @@ export type OwnerProfile = {
  * allowlist for the same reason.
  */
 export type PublicProfile = {
-  pulseId: string;
   handle: string;
   businessName: string;
   businessCategory: string;
@@ -611,7 +610,6 @@ export function normalizePublicProfile(value: unknown): PublicProfile {
   // that way: a spread would carry through whatever the server sent, and the whole
   // point of this type is that it cannot carry `legal_name` or `addresses`.
   const out: PublicProfile = {
-    pulseId: str(raw.pulse_id).toUpperCase(),
     handle: normalizeHandle(raw.handle),
     businessName: str(raw.business_name),
     businessCategory: str(raw.business_category),

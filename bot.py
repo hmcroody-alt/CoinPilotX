@@ -6043,7 +6043,6 @@ def pulse_mobile_user_payload(user):
     user = user or {}
     return {
         "user_id": int(user.get("user_id") or 0),
-        "pulse_id": user.get("pulse_id") or "",
         "email": user.get("email") or "",
         "username": user.get("username") or "",
         "display_name": user.get("display_name") or user.get("full_name") or user.get("username") or "PulseSoc member",
@@ -36537,7 +36536,7 @@ def api_messages_start():
     target_user_id = safe_int(payload.get("target_user_id") or payload.get("user_id"), 0)
     query = clean_html(payload.get("query") or payload.get("pulse_id") or payload.get("public_pulse_id") or payload.get("public_player_id") or payload.get("pilot_id") or payload.get("email") or payload.get("username") or "").strip()
     if not query and not target_user_id:
-        return jsonify({"ok": False, "message": "Search by username, display name, or Pulse ID."}), 400
+        return jsonify({"ok": False, "message": "Search by username or display name."}), 400
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -36576,7 +36575,7 @@ def api_chat_start():
     query = clean_html(payload.get("query") or payload.get("pulse_id") or payload.get("public_pulse_id") or payload.get("public_player_id") or payload.get("pilot_id") or payload.get("username") or "").strip()
     target_user_id = safe_int(payload.get("target_user_id") or payload.get("user_id"), 0)
     if not query and not target_user_id:
-        return jsonify({"ok": False, "message": "Search by username, display name, or Pulse ID."}), 400
+        return jsonify({"ok": False, "message": "Search by username or display name."}), 400
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     if not target_user_id:
         matches = pulse_search_users(cur, query, viewer_user_id=user["user_id"], limit=8, allow_email=bool(user.get("is_admin") or user.get("is_owner")))
@@ -38498,14 +38497,13 @@ def api_pulse_search():
                 "user_id": creator.get("user_id"),
                 "public_player_id": creator.get("public_player_id") or "",
                 "public_pulse_id": creator.get("public_pulse_id") or "",
-                "pulse_id": creator.get("pulse_id") or "",
                 "username": creator.get("username") or "",
                 "title": creator.get("display_name") or creator.get("username") or creator.get("public_pulse_id") or "PulseSoc creator",
                 "description": f"@{creator.get('username')}" if creator.get("username") else "Creator on PulseSoc",
                 "type": "creator",
                 "url": pulse_profile_canonical_path(creator.get("user_id"), cur),
                 "avatar_url": creator.get("avatar_url") or creator.get("avatar_thumbnail_url") or "",
-                "meta": f"Pulse ID • {creator.get('pulse_id')}" if creator.get("pulse_id") else "Creator",
+                "meta": "Creator",
             }
             for creator in safe_creators
         ]
@@ -43025,41 +43023,30 @@ def pulse_search_users(cur, query, viewer_user_id=0, limit=12, allow_email=False
         return []
     q = raw[1:] if raw.startswith("@") else raw
     q_lower = q.lower()
-    suffix = ""
-    if "-" in q_lower and q_lower.rsplit("-", 1)[-1].isdigit():
-        suffix = q_lower.rsplit("-", 1)[-1]
-    elif q_lower.isdigit():
-        suffix = q_lower[-4:]
     like = f"%{q_lower}%"
     params = [q_lower, q_lower, like, like, like, like]
     email_clause = ""
     if allow_email:
         email_clause = " OR lower(u.email)=lower(?) "
         params.append(q_lower)
-    suffix_clause = ""
-    if suffix:
-        suffix_clause = " OR CAST(ABS(u.user_id) AS TEXT) LIKE ? "
-        params.append(f"%{suffix}")
     params.append(int(limit or 12))
     cur.execute(
         f"""
-        SELECT u.user_id, u.pulse_id, u.display_name, u.full_name, u.username, u.email, u.avatar_url,
+        SELECT u.user_id, u.display_name, u.full_name, u.username, u.email, u.avatar_url,
                ap.public_player_id, ap.display_name AS arena_name
         FROM users u
         LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
-        WHERE upper(COALESCE(u.pulse_id,''))=upper(?)
-           OR lower(COALESCE(ap.public_player_id,''))=lower(?)
+        WHERE lower(COALESCE(ap.public_player_id,''))=lower(?)
            OR lower(COALESCE(u.username,''))=lower(?)
            OR lower(COALESCE(u.display_name,'')) LIKE ?
            OR lower(COALESCE(u.full_name,'')) LIKE ?
            OR lower(COALESCE(u.username,'')) LIKE ?
            OR lower(COALESCE(ap.display_name,'')) LIKE ?
            {email_clause}
-           {suffix_clause}
         ORDER BY CASE WHEN u.user_id=? THEN 1 ELSE 0 END, u.user_id DESC
         LIMIT ?
         """,
-        [q_lower] + params[:-1] + [int(viewer_user_id or 0), params[-1]],
+        params[:-1] + [int(viewer_user_id or 0), params[-1]],
     )
     users = []
     for row in cur.fetchall():
@@ -43071,7 +43058,6 @@ def pulse_search_users(cur, query, viewer_user_id=0, limit=12, allow_email=False
         users.append({
             "id": int(item.get("user_id") or 0),
             "user_id": int(item.get("user_id") or 0),
-            "pulse_id": ident.get("pulse_id") or item.get("pulse_id") or pulse_id_for_user(cur, item.get("user_id")),
             "display_name": ident.get("name") or item.get("display_name") or item.get("full_name") or item.get("username") or "PulseSoc user",
             "username": ident.get("username") or item.get("username") or "",
             "public_pulse_id": public_id,
@@ -76373,7 +76359,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         <aside class="pulse-dashboard-chat-list">
           <section class="pulse-dashboard-chat-section" data-panel="direct">
             <form class="pulse-dashboard-chat-search" data-chat-start-form>
-              <input name="query" type="text" placeholder="Search by username, display name, or Pulse ID" maxlength="160" autocomplete="off">
+              <input name="query" type="text" placeholder="Search by username or display name" maxlength="160" autocomplete="off">
               <button class="primary" type="submit">Start</button>
             </form>
             <p class="muted" data-chat-start-message></p>
@@ -77808,7 +77794,7 @@ def pulse_group_detail_page(group_slug):
     if groups_advanced:
         action_html = f"<button class='primary' data-join-group-id='{group_id}'>Join Group</button><button data-open-group-chat-id='{group_id}'>Open Group Chat</button><button data-invite-group-id='{group_id}'>Invite</button><button data-report-group-id='{group_id}'>Report</button><button data-leave-group-id='{group_id}'>Leave</button>"
     composer_html = f"<section class='card'><h2>Share With Group</h2><textarea id='groupPostBody' placeholder='Share an update, lesson, warning, question, photo, or video caption.'></textarea><label>Attach photo or video<input id='groupMediaFile' type='file' accept='image/*,video/*'></label><div class='group-composer-actions'><a class='button' href='/pulse/camera/photo?target=group&group={slug}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=group&group={slug}'>Record Video</a><button class='primary' id='groupPostBtn'>Post</button></div></section>" if groups_advanced else "<section class='card'><h2>Groups Stabilization</h2><p class='muted'>Advanced posting, media, invites, moderation, and chat controls are temporarily paused. Group browsing, creation, joining, and leaving remain available.</p></section>"
-    modal_html = f"<section class='group-report-modal' id='groupReportModal'><div class='group-report-sheet'><h2 id='groupReportTitle'>Report Post</h2><select id='groupReportReason'><option value='spam'>Spam</option><option value='harassment'>Harassment</option><option value='scam'>Scam</option><option value='impersonation'>Impersonation</option><option value='misleading financial claims'>Misleading financial claims</option><option value='nudity'>Nudity</option><option value='violence'>Violence</option><option value='misinformation'>Misinformation</option><option value='illegal'>Illegal</option><option value='other'>Other</option></select><textarea id='groupReportNotes' placeholder='Add context for moderators'></textarea><div class='actions'><button type='button' id='cancelGroupReport'>Cancel</button><button class='primary' type='button' id='submitGroupReport'>Submit Report</button></div></div></section><section class='group-report-modal' id='groupInviteModal'><div class='group-report-sheet'><h2>Invite to Group</h2><form id='groupInviteSearch'><input name='q' placeholder='Search by username, display name, or Pulse ID'><button class='primary'>Search</button></form><div class='messenger-search-results' id='groupInviteResults'></div><button type='button' id='copyGroupInvite'>Copy Invite Link</button><button type='button' id='cancelGroupInvite'>Close</button></div></section>" if groups_advanced else ""
+    modal_html = f"<section class='group-report-modal' id='groupReportModal'><div class='group-report-sheet'><h2 id='groupReportTitle'>Report Post</h2><select id='groupReportReason'><option value='spam'>Spam</option><option value='harassment'>Harassment</option><option value='scam'>Scam</option><option value='impersonation'>Impersonation</option><option value='misleading financial claims'>Misleading financial claims</option><option value='nudity'>Nudity</option><option value='violence'>Violence</option><option value='misinformation'>Misinformation</option><option value='illegal'>Illegal</option><option value='other'>Other</option></select><textarea id='groupReportNotes' placeholder='Add context for moderators'></textarea><div class='actions'><button type='button' id='cancelGroupReport'>Cancel</button><button class='primary' type='button' id='submitGroupReport'>Submit Report</button></div></div></section><section class='group-report-modal' id='groupInviteModal'><div class='group-report-sheet'><h2>Invite to Group</h2><form id='groupInviteSearch'><input name='q' placeholder='Search by username or display name'><button class='primary'>Search</button></form><div class='messenger-search-results' id='groupInviteResults'></div><button type='button' id='copyGroupInvite'>Copy Invite Link</button><button type='button' id='cancelGroupInvite'>Close</button></div></section>" if groups_advanced else ""
     post_empty = '<article class="card"><p>No group posts yet.</p></article>'
     main = f"{style}<section class='card' data-group-shell='{group_id}'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p class='group-meta-pills'><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'><span data-group-member-count>{members}</span> members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='group-community-actions'>{action_html}</div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section>{delete_group_html}{composer_html}<section>{post_html or post_empty}</section>{modal_html}"
     script = f"""
@@ -82798,7 +82784,7 @@ def api_pulse_message_start():
     ).strip()
     target_user_id = safe_int(payload.get("target_user_id") or payload.get("receiver_user_id") or payload.get("user_id"), 0)
     if not query and not target_user_id:
-        return jsonify({"ok": False, "message": "Search by username, display name, or Pulse ID."}), 400
+        return jsonify({"ok": False, "message": "Search by username or display name."}), 400
     conn = None
     try:
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
@@ -95625,7 +95611,6 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
     theme["modules"] = modules if isinstance(modules, list) else []
     payload = pulse_mobile_user_payload(account)
     payload.update({
-        "pulse_id": ident.get("pulse_id") or payload.get("pulse_id"),
         "display_name": ident.get("name") or ident.get("display_name") or payload.get("display_name"),
         "username": ident.get("username") or payload.get("username"),
         "public_player_id": ident.get("public_player_id") or payload.get("public_player_id"),
@@ -95678,7 +95663,6 @@ def api_pulse_identity(pulse_id):
         return api_error("Pulse ID not found.", 404)
     return jsonify({
         "ok": True,
-        "pulse_id": payload.get("pulse_id"),
         "canonical_profile_key": payload.get("canonical_profile_key"),
         "profile": payload,
     })

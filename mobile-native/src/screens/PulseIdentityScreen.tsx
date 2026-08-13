@@ -18,9 +18,7 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import QRCode from "react-native-qrcode-svg";
 import { getMyProfile, getPublicProfile, PulseProfile } from "../api/profile";
-import { PulseIdBadge } from "../components/PulseIdBadge";
 import { RootStackParamList } from "../navigation/types";
 import {
   destinationTitle,
@@ -93,7 +91,6 @@ export function PulseIdentityScreen({ navigation, route }: Props) {
     );
   }
 
-  const identityUrl = `https://pulsesoc.com/pulse/id/${encodeURIComponent(profile.pulse_id || "")}`;
   // Linked accounts are management entry points into the viewer's own Business
   // OS, store, wallet and creator tools. They are owner-only by definition — on
   // a visitor's screen they would be links into the wrong person's account.
@@ -109,18 +106,12 @@ export function PulseIdentityScreen({ navigation, route }: Props) {
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      <Text style={styles.kicker}>PERMANENT PULSESOC IDENTITY</Text>
+      <Text style={styles.kicker}>PULSESOC IDENTITY</Text>
       <Text style={styles.title}>{destinationTitle(context, "Pulse Identity")}</Text>
       <Text style={styles.name}>{profile.display_name}</Text>
       <Text style={styles.username}>{profile.username ? `@${profile.username}` : "Username not set"}</Text>
-      <PulseIdBadge pulseId={profile.pulse_id} />
-      <View style={styles.qr}>
-        <QRCode value={identityUrl} size={190} backgroundColor="#FFFFFF" color="#06101B" />
-      </View>
-      <Text style={styles.qrLabel}>QR Identity</Text>
       {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
       <View style={styles.panel}>
-        <Row label="Pulse ID" value={profile.pulse_id || "Provisioning"} />
         <Row label="Username" value={profile.username ? `@${profile.username}` : "Not set"} />
         <Row label="Display Name" value={profile.display_name} />
         <Row label="Verification" value={profile.verified_badge ? "Verified" : profile.verification_status || "Not verified"} />

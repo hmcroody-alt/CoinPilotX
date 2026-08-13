@@ -561,7 +561,6 @@ export function BusinessProfileScreen({ navigation }: Props) {
             businessName={businessName}
             verified={verified}
             handle={handle}
-            pulseId={owner.pulseId || profile?.pulse_id}
             category={categoryLabel}
             bio={fields.tagline?.trim() || fields.about?.trim() || profile?.bio?.trim() || ""}
             chips={chips}

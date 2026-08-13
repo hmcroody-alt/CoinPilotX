@@ -18,7 +18,6 @@ import { AccessibilityRole, Animated, Image, Pressable, StyleSheet, Text, TextIn
 import Svg, { Circle, Defs, Line, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
 import { logiNexus } from "../../theme/logiNexus";
 import { useBusinessLiveAmbient, useBusinessLiveMarquee, useBusinessLiveRing } from "../../theme/businessLiveMotion";
-import { PulseIdBadge } from "../PulseIdBadge";
 
 const palette = logiNexus.colors.businessLive;
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -310,7 +309,6 @@ export function BuyerPreviewCard({
   businessName,
   verified,
   handle,
-  pulseId,
   category,
   bio,
   chips,
@@ -322,7 +320,6 @@ export function BuyerPreviewCard({
   businessName: string;
   verified: boolean;
   handle: string;
-  pulseId?: string;
   category: string;
   bio: string;
   chips: BuyerPreviewChip[];
@@ -384,7 +381,6 @@ export function BuyerPreviewCard({
           {handle}
           {category ? ` · ${category}` : ""}
         </Text>
-        <PulseIdBadge pulseId={pulseId} compact />
         {bio ? <Text style={styles.bio}>{bio}</Text> : null}
 
         <View style={styles.chipRow}>

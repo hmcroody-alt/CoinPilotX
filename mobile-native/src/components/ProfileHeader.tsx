@@ -8,7 +8,6 @@ import { colors } from "../theme/colors";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { ContentTranslation } from "./ContentTranslation";
-import { PulseIdBadge } from "./PulseIdBadge";
 import { createThemedStyles } from "../theme/themedStyles";
 
 export const PROFILE_HERO_HEIGHT = 320;
@@ -222,8 +221,6 @@ export function ProfileHeader({
             {verified ? <Ionicons name="checkmark-circle" size={22} color={accent} style={styles.nameVerified} /> : null}
           </View>
           <Text style={styles.handle} numberOfLines={1}>{handle ? `@${handle}` : "PulseSoc identity"}</Text>
-          <PulseIdBadge pulseId={profile.pulse_id} />
-
           <View style={styles.badges}>
             {verified ? <Badge label="Verified" icon="shield-checkmark" accent={accent} /> : null}
             {premium ? <Badge label={tierLabel || "Premium"} icon="sparkles" accent={colors.economy} /> : null}

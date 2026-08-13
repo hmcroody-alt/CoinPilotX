@@ -31,7 +31,6 @@ import { SavableContentType, SaveTarget } from "../social/saveContract";
 import { useSavedState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
-import { PulseIdBadge } from "../components/PulseIdBadge";
 import { createThemedStyles } from "../theme/themedStyles";
 
 /**
@@ -291,7 +290,6 @@ function SearchResultCard({ item, onPress }: { item: PulseSearchResult; onPress:
       <View style={styles.cardBody}>
         <Text style={styles.cardTitle} numberOfLines={1}>{item.title || "PulseSoc result"}</Text>
         <Text style={styles.cardDescription} numberOfLines={2}>{item.description || item.meta || "PulseSoc"}</Text>
-        {isProfileResult(item) ? <PulseIdBadge pulseId={item.pulse_id} compact /> : null}
         <Text style={styles.cardMeta} numberOfLines={1}>{item.meta || item.type || "PulseSoc"}</Text>
       </View>
       {target ? <SearchSaveButton target={target} /> : <Text style={styles.cardType}>{item.type || "PulseSoc"}</Text>}
