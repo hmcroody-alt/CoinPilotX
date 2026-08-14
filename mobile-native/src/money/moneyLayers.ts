@@ -470,8 +470,10 @@ export const MONEY_LAYER_GAPS: MoneyLayerGap[] = [
       "keeps the two screens from disagreeing about the ad balance.",
     clientBehaviour:
       "The Activity layer covers the seller ledger and says so; ad funding and " +
-      "spend history are reached through the Ad Wallet layer, which reads the " +
-      "wallet's own transaction history."
+      "spend history are reached by handing off to Advertising, which already " +
+      "owns the wallet's own transaction history. There is deliberately no " +
+      "`MoneyLayerKind` for the ad wallet — a second reader of that balance is " +
+      "the thing this hand-off exists to avoid."
   },
   {
     field: "rewards credits inside the unified activity feed",
