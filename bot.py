@@ -104402,6 +104402,28 @@ def _init_db_impl():
         ("completed_at", "TEXT"),
     ], conn=conn)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_generated_media (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_post_id INTEGER NOT NULL,
+        media_id INTEGER,
+        generation_version TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        state TEXT NOT NULL,
+        provider TEXT,
+        model TEXT,
+        prompt_version TEXT,
+        generation_job_id INTEGER,
+        content_hash TEXT,
+        failure_reason TEXT,
+        generated_by_system INTEGER DEFAULT 1,
+        ai_generated_media INTEGER DEFAULT 1,
+        generated_at TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(source_post_id, generation_version)
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_post_attempts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,

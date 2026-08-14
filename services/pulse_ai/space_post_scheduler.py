@@ -8,6 +8,7 @@ from .space_ai_engine import generate_space_post, live_space_slugs
 from .space_prompt_builder import DEFAULT_FORMATS
 from .space_quality_guard import duplicate_risk
 from .space_topic_memory import get_space_memory, update_space_memory
+from .automated_image_pipeline import enqueue_for_post, plan_for_post
 
 ROTATION_INTERVAL_HOURS = 3
 ROTATION_SLOT = "rotation"
@@ -205,6 +206,9 @@ def recent_ai_posts(cur, space_slug, limit=10):
 
 def publish_space_ai_post(cur, space, slot, pulse_create_post=None, approve_only=False, rotation_meta=None):
     generated = generate_publishable_post(cur, space, slot)
+    image_plan = plan_for_post(generated)
+    generated.setdefault("metadata", {})["automated_image"] = image_plan
+    generated["metadata_json"] = json.dumps(generated["metadata"], ensure_ascii=True)
     if rotation_meta:
         metadata = generated.setdefault("metadata", {})
         metadata.update(rotation_meta)
@@ -230,8 +234,9 @@ def publish_space_ai_post(cur, space, slot, pulse_create_post=None, approve_only
             logging.warning("SPACE_AI_PULSE_POST_FAILED space=%s message=%s", space.get("slug"), result.get("message"))
             status = "queued"
     ai_post_id = _insert_ai_post(cur, generated, status=status, pulse_post_id=pulse_post_id)
+    image_job_id = enqueue_for_post(cur, pulse_post_id, image_plan) if pulse_post_id and status == "published" else 0
     update_space_memory(cur, generated["space_slug"], generated["topic"], generated["hook"], tags=generated.get("tags"))
-    return {"ok": status in {"published", "pending_approval", "queued"}, "ai_post_id": ai_post_id, "pulse_post_id": pulse_post_id, "status": status, "post": generated}
+    return {"ok": status in {"published", "pending_approval", "queued"}, "ai_post_id": ai_post_id, "pulse_post_id": pulse_post_id, "image_job_id": image_job_id, "status": status, "post": generated}
 
 
 def run_due_space_ai_posts(cur, spaces, pulse_create_post=None, force=False, limit=80):

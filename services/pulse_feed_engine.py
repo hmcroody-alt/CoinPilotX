@@ -2211,6 +2211,10 @@ def _process_job(cur, job):
         )
     elif job_type in {"generate_thumbnail", "process_video"}:
         cur.execute("UPDATE chat_media_uploads SET moderation_status=COALESCE(moderation_status,'approved') WHERE context_type='pulse' AND context_id=?", (str(target_id),))
+    elif job_type == "generate_insight_image":
+        from .pulse_ai.automated_image_pipeline import process_job as process_insight_image_job
+
+        process_insight_image_job(cur, job)
     elif job_type in {"notify_followers", "update_trending_topics"}:
         pass
     _complete_job(cur, job["id"], "done")
