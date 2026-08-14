@@ -1,14 +1,25 @@
+import { StyleSheet } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+
 /**
- * Authentication uses the same restrained atmosphere as the rest of PulseSoc —
- * which is now the single `PulseBackground` mounted at the app root, so there is
- * nothing left for this component to draw. It previously rendered its own
- * full-screen `GalacticAtmosphere`, whose opaque gradient sat directly on top of
- * the shared layer and hid it on the first screen anyone sees.
+ * Full-screen deep-blue backdrop for the auth screens (Login + Signup), matched
+ * to the canonical PulseSoc brand mark's own background so the transparent logo
+ * blends in with no visible image boundary. Colors are sampled directly from
+ * assets/brand/pulsesoc-logo-master.png: a soft #021058 glow fading into the
+ * #010730 navy field and a deeper #000520 base.
  *
- * The component is kept rather than deleted because Login and Signup both place
- * it deliberately in their paint order; removing it would leave the next reader
- * wondering whether the backdrop had been lost.
+ * This intentionally paints over the shared root `PulseBackground` — the first
+ * screen anyone sees is brand-navy, not the in-app atmosphere.
  */
 export function LoginBackground() {
-  return null;
+  return (
+    <LinearGradient
+      colors={["#021058", "#010730", "#000520"]}
+      locations={[0, 0.45, 1]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={StyleSheet.absoluteFill}
+      pointerEvents="none"
+    />
+  );
 }
