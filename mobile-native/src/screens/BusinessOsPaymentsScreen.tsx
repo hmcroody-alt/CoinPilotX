@@ -208,6 +208,10 @@ export function BusinessOsPaymentsScreen({
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [wallet, setWallet] = useState<AdWallet | null>(null);
+  /** The Ads authority's account id. It is routing context only; no balance is
+   *  ever inferred from it. A zero id lets the wallet screen resolve the
+   *  primary account itself and render its canonical no-account state. */
+  const [walletAccountId, setWalletAccountId] = useState(0);
   const [, setBilling] = useState<AdBilling | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -248,6 +252,11 @@ export function BusinessOsPaymentsScreen({
   const [withdrawBusy, setWithdrawBusy] = useState(false);
   const [withdrawNote, setWithdrawNote] = useState("");
   const payoutKey = useRef<string>("");
+
+  /** Coalesces pull-to-refresh with order/marketplace invalidations. Money reads
+   *  resolving out of order can otherwise replace a newer balance with an
+   *  older response. Child money layers enforce the same rule. */
+  const loadInFlight = useRef(false);
 
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled()
@@ -290,9 +299,12 @@ export function BusinessOsPaymentsScreen({
 
   const load = useCallback(
     async (mode: "initial" | "refresh") => {
+      if (loadInFlight.current) return;
+      loadInFlight.current = true;
       if (mode === "initial") setLoading(true);
       else setRefreshing(true);
 
+      try {
       const [moneyResult, activityResult, walletResult, connectResult, payoutsResult] =
         await Promise.allSettled([
           fetchMoneyOverview(),
@@ -345,10 +357,12 @@ export function BusinessOsPaymentsScreen({
 
       if (walletResult.status === "fulfilled" && walletResult.value) {
         setWallet(walletResult.value.wallet);
+        setWalletAccountId(walletResult.value.accountId);
         setBilling(walletResult.value.billing);
       } else {
         // Null, not zero. A zero ad balance would look like a measurement.
         setWallet(null);
+        setWalletAccountId(0);
         setBilling(null);
       }
 
@@ -375,8 +389,11 @@ export function BusinessOsPaymentsScreen({
       }
 
       setOfflineAsOf(stale);
-      setLoading(false);
-      setRefreshing(false);
+      } finally {
+        loadInFlight.current = false;
+        setLoading(false);
+        setRefreshing(false);
+      }
     },
     [applyPage]
   );
@@ -537,11 +554,13 @@ export function BusinessOsPaymentsScreen({
   const adSpendable = adWalletSpendableCents(wallet);
 
   const cards = useMemo(() => {
-    const list: Array<"processing" | "escrow" | "adwallet"> = ["processing"];
-    if (escrowCardIsLive() && overview?.escrow.supported) list.push("escrow");
-    if (wallet) list.push("adwallet");
+    // Ad wallet remains an entry point when its amount is unavailable. Hiding
+    // the tile on a failed read removes the route to the wallet's own retry and
+    // no-account states precisely when the seller needs them.
+    const list: Array<"processing" | "escrow" | "adwallet"> = ["processing", "adwallet"];
+    if (escrowCardIsLive() && overview?.escrow.supported) list.splice(1, 0, "escrow");
     return list;
-  }, [overview?.escrow.supported, wallet]);
+  }, [overview?.escrow.supported]);
 
   const cascade = usePaymentsBalanceCascade(cards.length, reducedMotion, !loading);
   const escrowIndicator = usePaymentsEscrowIndicator(
@@ -702,8 +721,14 @@ export function BusinessOsPaymentsScreen({
                   caption="Funds your campaigns"
                   accent={paymentsLight.balance.adWalletAccent}
                   entrance={entrance}
-                  onPress={() => navigation?.navigate("BusinessOsAdvertising")}
-                  hint="Opens Advertising"
+                  onPress={() =>
+                    navigation?.navigate("BusinessOsAdvertising", {
+                      title: "Ad wallet",
+                      mode: "wallet",
+                      accountId: walletAccountId || route?.params?.accountId
+                    })
+                  }
+                  hint="Opens Ad wallet and billing"
                 />
               );
             })}

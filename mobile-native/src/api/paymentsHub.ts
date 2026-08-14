@@ -433,7 +433,8 @@ export async function fetchAdWallet(): Promise<{
   const response = await listAdAccounts().catch(() => null);
   const accountId = Number(response?.accounts?.[0]?.id || 0);
   // No ad account is not an error and not a zero balance — it is the absence of
-  // an ad wallet, and the card is absent with it.
+  // a readable wallet amount. Payments renders an unavailable dash and keeps
+  // the canonical wallet route open so that screen can explain setup.
   if (!accountId) return null;
   const walletResponse = await getAdWallet(accountId).catch(() => null);
   const wallet = walletResponse?.wallet;

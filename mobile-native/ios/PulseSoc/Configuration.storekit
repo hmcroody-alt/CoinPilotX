@@ -1,0 +1,93 @@
+{
+  "identifier" : "E3B46A4D-A3DB-4FB4-9692-27395F646FDB",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_applicationInternalID" : "",
+    "_developerTeamID" : "",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 0,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+      { "current" : null, "enabled" : false, "name" : "Load Products" },
+      { "current" : null, "enabled" : false, "name" : "Purchase" },
+      { "current" : null, "enabled" : false, "name" : "Verification" },
+      { "current" : null, "enabled" : false, "name" : "App Store Sync" },
+      { "current" : null, "enabled" : false, "name" : "Subscription Status" },
+      { "current" : null, "enabled" : false, "name" : "App Transaction" },
+      { "current" : null, "enabled" : false, "name" : "Manage Subscriptions Sheet" },
+      { "current" : null, "enabled" : false, "name" : "Refund Request Sheet" },
+      { "current" : null, "enabled" : false, "name" : "Offer Code Redeem Sheet" }
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "666B6051-7B62-4B75-A634-1B8F1947877E",
+      "localizations" : [
+
+      ],
+      "name" : "PulseSoc Premium",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "9.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "CD0AE2DA-EAEA-4750-88F4-015935FCC756",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "PulseSoc Premium, billed monthly.",
+              "displayName" : "PulseSoc Premium (Monthly)",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.pulsesoc.premium.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "PulseSoc Premium Monthly",
+          "subscriptionGroupID" : "666B6051-7B62-4B75-A634-1B8F1947877E",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "99.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "096F9EB1-00D4-4640-B1D3-5B0B61B8E948",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "PulseSoc Premium, billed annually.",
+              "displayName" : "PulseSoc Premium (Annual)",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.pulsesoc.premium.annual",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "PulseSoc Premium Annual",
+          "subscriptionGroupID" : "666B6051-7B62-4B75-A634-1B8F1947877E",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

@@ -258,6 +258,73 @@ def apply_stripe_subscription(payload: Mapping[str, Any], *, subject_type: str =
 
 
 # ---------------------------------------------------------------------------
+# Cross-provider de-duplication support
+# ---------------------------------------------------------------------------
+# Maps the storage-layer ``provider`` column to the token the purchase-option
+# resolver speaks. StoreKit lands as ``apple_app_store``; the resolver calls the
+# same rail ``apple_iap``. Kept in one place so the two vocabularies cannot drift.
+_PROVIDER_TO_RAIL = {
+    "stripe": "stripe",
+    "apple_app_store": "apple_iap",
+    "google_play": "google_play",
+}
+
+#: Plan keys that confer Premium membership (mirrors premium.PREMIUM_PLAN_KEYS).
+_PREMIUM_PLAN_KEYS = frozenset({
+    "pulse_premium_monthly", "pulse_premium_annual", "pulse_premium_trial",
+    "pulse_premium_grandfathered", "pulse_business_monthly",
+})
+
+# A subscription still confers access while active, and while cancelled/past-due
+# but inside its paid period. This mirrors apply_stripe_subscription's rule so
+# "who is still paying" is answered the same way it is projected.
+_ACCESS_STATUSES = {"active", "trialing", "past_due"}
+
+
+def active_premium_provider(subject_id: Any, *, now_iso: Optional[str] = None,
+                            subject_type: str = "user", conn=None) -> Optional[str]:
+    """Return the resolver rail (``apple_iap``/``stripe``/``google_play``) of the
+    subject's CURRENTLY active Premium subscription, or ``None``.
+
+    This is the fact ``premium_purchase_options`` needs as
+    ``existing_active_provider`` to suppress a second, cross-provider purchase.
+    It reads the deduped provider-subscription landing zone; it does not decide
+    membership (``premium.resolve`` does) and it never writes.
+
+    A row counts as active when its status is in the access set, or when it has a
+    ``current_period_end`` still in the future (a cancellation inside its paid
+    window still blocks buying a second membership elsewhere).
+    """
+    now = now_iso or _now_iso()
+    owned = conn is None
+    if owned:
+        conn = db.connect()
+    try:
+        rows = conn.execute(
+            "SELECT provider, plan_key, status, current_period_end "
+            "FROM business_os_ent_provider_subs "
+            "WHERE subject_type = ? AND subject_id = ? "
+            "ORDER BY updated_at DESC",
+            (subject_type, str(subject_id)),
+        ).fetchall()
+    finally:
+        if owned:
+            conn.close()
+    for row in rows:
+        data = _svc._row_to_dict(row) or {}
+        if data.get("plan_key") not in _PREMIUM_PLAN_KEYS:
+            continue
+        status = str(data.get("status") or "").lower()
+        period_end = data.get("current_period_end")
+        still_paid = bool(period_end) and str(period_end) > now
+        if status in _ACCESS_STATUSES or still_paid:
+            rail = _PROVIDER_TO_RAIL.get(str(data.get("provider") or "").lower())
+            if rail:
+                return rail
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Apple App Store / Google Play
 # ---------------------------------------------------------------------------
 # The ``AppleAppStoreAdapter`` and ``GooglePlayAdapter`` stubs that used to live

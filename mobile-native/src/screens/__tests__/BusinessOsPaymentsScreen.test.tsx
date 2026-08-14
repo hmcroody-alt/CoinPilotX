@@ -12,13 +12,14 @@
  *      to prevent.
  *   3. Cached money appears on exactly one path — offline — and always carries
  *      the time it was true.
- *   4. A module with no backend behind it renders ABSENT, not disabled and not
- *      zeroed. A greyed-out "Pay out now" still tells the seller a payout is
- *      something they can nearly do.
+ *   4. A money value with no backend truth renders unavailable, never zeroed.
+ *      Modules with no capability stay absent, while a canonical destination
+ *      such as Ad Wallet remains reachable to explain setup or retry.
  *   5. A hold is never rendered as a loss.
  */
 import React from "react";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { RefreshControl } from "react-native";
 
 jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 })
@@ -281,10 +282,11 @@ describe("Payments money hub", () => {
     expect(view.getByText(/Money actions are paused until you reconnect/)).toBeTruthy();
   });
 
-  it("leaves the ad wallet card absent rather than showing a zero when it cannot be read", async () => {
+  it("keeps the ad wallet route available without asserting a zero when its balance cannot be read", async () => {
     mockAdWallet.mockResolvedValue(null);
     const view = await renderScreen();
-    expect(view.queryByText("Ad wallet")).toBeNull();
+    expect(view.getByText("Ad wallet")).toBeTruthy();
+    expect(view.getByText("—")).toBeTruthy();
     // Processing still renders — one failed card must not blank the others.
     expect(view.getByText("Processing")).toBeTruthy();
   });
@@ -293,6 +295,45 @@ describe("Payments money hub", () => {
     const view = await renderScreen();
     expect(view.getByText("Ad wallet")).toBeTruthy();
     expect(view.getByText("$25.00")).toBeTruthy();
+  });
+
+  it("opens the canonical Ads wallet layer with the resolved account", async () => {
+    const navigation = { navigate: jest.fn(), goBack: jest.fn() };
+    const view = render(<BusinessOsPaymentsScreen navigation={navigation} />);
+    await waitFor(() => expect(view.queryByLabelText("Loading your balances")).toBeNull());
+
+    fireEvent.press(view.getByText("Ad wallet"));
+    expect(navigation.navigate).toHaveBeenCalledWith("BusinessOsAdvertising", {
+      title: "Ad wallet",
+      mode: "wallet",
+      accountId: 7
+    });
+  });
+
+  it("coalesces a retry with an in-flight money refresh", async () => {
+    let release: ((value: ReturnType<typeof overview>) => void) | undefined;
+    mockOverview.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        release = resolve;
+      })
+    );
+    const view = render(<BusinessOsPaymentsScreen />);
+    await waitFor(() => expect(mockOverview).toHaveBeenCalledTimes(1));
+
+    // A second trigger while the initial request is unresolved must not start a
+    // second five-endpoint refresh whose older response can win the race.
+    await act(async () => {
+      view.UNSAFE_getByType(RefreshControl).props.onRefresh();
+    });
+    expect(mockOverview).toHaveBeenCalledTimes(1);
+
+    // This test is about request ownership, not the balance entrance motion.
+    // Unmount before resolving so React Native's native animation bridge is not
+    // asked to connect a test-renderer node while the suite is tearing down.
+    view.unmount();
+    await act(async () => {
+      release?.(overview());
+    });
   });
 
   it("puts 'no payout method' in front of the seller rather than a quiet row", async () => {

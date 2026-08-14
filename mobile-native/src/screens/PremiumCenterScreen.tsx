@@ -85,7 +85,7 @@ function benefitCatalogKey(serverKey: string): string {
   return key.startsWith("premium.") ? `premium:benefits.${key.slice("premium.".length)}` : `premium:benefits.${key}`;
 }
 
-export function PremiumCenterScreen({ route }: Props) {
+export function PremiumCenterScreen({ route, navigation }: Props) {
   const { authState } = useAuth();
   const { t } = useTranslation();
   const fmt = useFormatters();
@@ -322,7 +322,7 @@ export function PremiumCenterScreen({ route }: Props) {
         onRestore={onRestore}
       />
 
-      <CommandCenterSection experience={experience} held={Boolean(center?.membership.is_premium)} />
+      <CommandCenterSection experience={experience} held={Boolean(center?.membership.is_premium)} navigation={navigation} />
 
       <FreeCoreSection />
 
@@ -760,26 +760,73 @@ function ActionsSection({
 
 /** Headquarters modules that are planned but not yet built. */
 const COMMAND_MODULES = ["activity", "valueRecap", "usage", "achievements", "unlocked", "recommended"] as const;
-/** The other Premium spaces, each shipping in a later pass. */
-const COMMAND_SPACES = ["identity", "media", "undx", "creator", "founder", "storage", "support", "labs"] as const;
+
+/**
+ * A Premium space tile.
+ *
+ * `open` is the honesty switch: a space is `open` ONLY when tapping it lands on a
+ * real, already-shipped destination route. Everything else is `comingNext` and
+ * is deliberately not pressable — there is no screen behind it yet, so making it
+ * look tappable would be a lie. `founderOnly` tiles render for founders alone.
+ *
+ * The `go` navigator reuses routes that already exist in the app. Verified
+ * Identity opens the EXISTING verification flow with the identity track; it does
+ * not, and cannot, grant the verified check from here — that stays with review.
+ */
+type SpaceKey =
+  | "verified" | "identity" | "media" | "undx" | "creator" | "founder" | "storage" | "support" | "labs";
+
+type CommandSpace = {
+  key: SpaceKey;
+  icon: keyof typeof Ionicons.glyphMap;
+  open: boolean;
+  founderOnly?: boolean;
+  go?: (navigation: Props["navigation"]) => void;
+};
+
+const COMMAND_SPACES: readonly CommandSpace[] = [
+  // Open — each lands on a route that already ships in the app today.
+  { key: "verified", icon: "shield-checkmark-outline", open: true,
+    go: (nav) => nav.navigate("VerificationCenter", { track: "identity" }) },
+  { key: "undx", icon: "sparkles-outline", open: true,
+    go: (nav) => nav.navigate("UndxCapabilities") },
+  { key: "creator", icon: "color-wand-outline", open: true,
+    go: (nav) => nav.navigate("CreatorStudio") },
+  { key: "support", icon: "help-buoy-outline", open: true,
+    go: (nav) => nav.navigate("TrustSafetyHelp") },
+  // Coming next — no destination exists yet, so these are not pressable.
+  { key: "identity", icon: "person-circle-outline", open: false },
+  { key: "media", icon: "film-outline", open: false },
+  { key: "storage", icon: "cloud-upload-outline", open: false },
+  { key: "founder", icon: "diamond-outline", open: false, founderOnly: true },
+  { key: "labs", icon: "flask-outline", open: false },
+];
 
 /**
  * The member's Premium headquarters.
  *
- * Every row here is a roadmap entry, not a live capability. The screen already
- * renders what is genuinely on — status, plan, benefits, manage, restore — from
- * canonical server state above. This section exists so a paying member can see
- * where Premium is going without a single fabricated number, streak or metric:
- * each module and space carries a NEXT chip and nothing asserts activity that
- * the backend does not measure. When one of these ships, it stops being a row
- * here and becomes its own surface.
+ * Two kinds of thing live here. The `modules` block is a roadmap — planned
+ * headquarters widgets that carry a NEXT chip and nothing else, because the
+ * backend measures none of them yet. The `spaces` grid is a mix: tiles marked
+ * Open lead to real, shipped screens and are pressable; tiles marked Next have
+ * no destination and stay inert. Nothing here fabricates a number, streak or
+ * metric, and nothing tappable leads anywhere that does not already exist.
  *
  * Shown to members only. On the sales surface (`none`/`expired`) the plans are
  * the story; a roadmap of member-only rooms would just be noise before purchase.
  */
-function CommandCenterSection({ experience, held }: { experience: PremiumExperience; held: boolean }) {
+function CommandCenterSection({
+  experience,
+  held,
+  navigation
+}: {
+  experience: PremiumExperience;
+  held: boolean;
+  navigation: Props["navigation"];
+}) {
   const { t } = useTranslation();
   if (!held && experience !== "founder") return null;
+  const spaces = COMMAND_SPACES.filter((space) => !space.founderOnly || experience === "founder");
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{t("premium:commandCenter.heading")}</Text>
@@ -805,22 +852,60 @@ function CommandCenterSection({ experience, held }: { experience: PremiumExperie
       ))}
 
       <Text style={[styles.sectionTitle, styles.commandSubheading]}>{t("premium:commandCenter.spacesHeading")}</Text>
+      <Text style={styles.note}>{t("premium:commandCenter.spacesSubhead")}</Text>
       <View style={styles.spacesGrid}>
-        {COMMAND_SPACES.map((key) => (
-          <View key={key} style={styles.spaceTile}>
-            <Text style={styles.spaceTileText} numberOfLines={2}>
-              {t(`premium:commandCenter.spaces.${key}`)}
-            </Text>
-            <View style={styles.nextChip}>
-              <Text style={styles.nextChipText}>{t("premium:commandCenter.comingChip")}</Text>
-            </View>
-          </View>
+        {spaces.map((space) => (
+          <SpaceCard key={space.key} space={space} navigation={navigation} />
         ))}
       </View>
 
       <Text style={styles.note}>{t("premium:commandCenter.note")}</Text>
     </View>
   );
+}
+
+/**
+ * One space tile. Pressable only when the space is Open AND has a destination;
+ * otherwise a plain, inert card with a Next chip. The readiness chip text comes
+ * from the catalog (Open / Next), never from a hardcoded status here.
+ */
+function SpaceCard({ space, navigation }: { space: CommandSpace; navigation: Props["navigation"] }) {
+  const { t } = useTranslation();
+  const label = t(`premium:commandCenter.spaces.${space.key}.label`);
+  const hint = t(`premium:commandCenter.spaces.${space.key}.hint`);
+  const chipLabel = space.open
+    ? t("premium:commandCenter.readiness.active")
+    : t("premium:commandCenter.readiness.comingNext");
+
+  const body = (
+    <>
+      <View style={styles.spaceCardHead}>
+        <Ionicons name={space.icon} size={18} color={space.open ? premiumTheme.gold : colors.muted} />
+        <Text style={[styles.spaceCardTitle, !space.open && styles.benefitLabelIdle]} numberOfLines={1}>
+          {label}
+        </Text>
+        <View style={space.open ? styles.activeChip : styles.nextChip}>
+          <Text style={space.open ? styles.activeChipText : styles.nextChipText}>{chipLabel}</Text>
+        </View>
+      </View>
+      <Text style={styles.note} numberOfLines={3}>{hint}</Text>
+    </>
+  );
+
+  if (space.open && space.go) {
+    const go = space.go;
+    return (
+      <Pressable
+        style={({ pressed }) => [styles.spaceCard, styles.spaceCardOpen, pressed && styles.pressed]}
+        onPress={() => go(navigation)}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+      >
+        {body}
+      </Pressable>
+    );
+  }
+  return <View style={styles.spaceCard}>{body}</View>;
 }
 
 /**
@@ -956,19 +1041,26 @@ const styles = createThemedStyles(() => ({
   nextChipText: { color: premiumTheme.gold, fontSize: 10, fontWeight: "700", letterSpacing: 0.4, textTransform: "uppercase" },
   commandSubheading: { marginTop: 6 },
   spacesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  spaceTile: {
-    alignItems: "center",
+  spaceCard: {
     borderColor: colors.border,
     borderRadius: premiumTheme.radius.tile,
     borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    gap: 8,
-    justifyContent: "space-between",
+    flexBasis: "47%",
+    flexGrow: 1,
+    gap: 6,
     minWidth: "47%",
-    paddingHorizontal: 10,
-    paddingVertical: 10
+    padding: 12
   },
-  spaceTileText: { color: colors.text, flex: 1, fontSize: 12, fontWeight: "600" },
+  spaceCardOpen: { backgroundColor: premiumTheme.goldSoft, borderColor: premiumTheme.goldBorder },
+  spaceCardHead: { alignItems: "center", flexDirection: "row", gap: 8 },
+  spaceCardTitle: { color: colors.text, flex: 1, fontSize: 13, fontWeight: "700" },
+  activeChip: {
+    backgroundColor: premiumTheme.gold,
+    borderRadius: premiumTheme.radius.chip,
+    paddingHorizontal: 7,
+    paddingVertical: 1
+  },
+  activeChipText: { color: colors.background, fontSize: 10, fontWeight: "700", letterSpacing: 0.4, textTransform: "uppercase" },
   allowance: { gap: 4 },
   barTrack: { backgroundColor: colors.surfaceRaised, borderRadius: premiumTheme.radius.chip, height: 6, overflow: "hidden", width: "100%" },
   barFill: { borderRadius: premiumTheme.radius.chip, height: 6 },

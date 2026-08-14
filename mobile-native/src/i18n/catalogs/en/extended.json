@@ -2049,8 +2049,13 @@
     },
     "commandCenter": {
       "heading": "Your command center",
-      "subhead": "This is your Premium headquarters. New spaces switch on here as they ship.",
+      "subhead": "This is your Premium headquarters. Open a space that's ready, and watch new ones switch on here.",
       "comingChip": "NEXT",
+      "readiness": {
+        "active": "Open",
+        "beta": "Beta",
+        "comingNext": "Next"
+      },
       "modules": {
         "activity": {
           "label": "Activity summary",
@@ -2077,18 +2082,47 @@
           "hint": "Features worth trying next."
         }
       },
-      "spacesHeading": "More Premium spaces",
+      "spacesHeading": "Premium spaces",
+      "spacesSubhead": "Spaces marked Open are live now. The rest arrive in later passes.",
       "spaces": {
-        "identity": "Identity Studio",
-        "media": "Media Lab",
-        "undx": "UNDX Workspace",
-        "creator": "Creator Studio Pro",
-        "founder": "Founder Club",
-        "storage": "Storage & Upload Center",
-        "support": "Support Center",
-        "labs": "PulseSoc Labs"
+        "verified": {
+          "label": "Verified Identity",
+          "hint": "Start identity verification through the standard review. Premium opens the door; it does not grant the check or skip eligibility."
+        },
+        "identity": {
+          "label": "Identity Studio",
+          "hint": "Advanced profile and presence controls, gathering in one place."
+        },
+        "media": {
+          "label": "Media Lab",
+          "hint": "Higher-craft media tools, switching on once they are real end to end."
+        },
+        "undx": {
+          "label": "UNDX Workspace",
+          "hint": "Your UNDX capabilities and controls. Open now."
+        },
+        "creator": {
+          "label": "Creator Studio Pro",
+          "hint": "The creator toolkit for your posts and reach. Open now."
+        },
+        "founder": {
+          "label": "Founder Club",
+          "hint": "A room reserved for founding members."
+        },
+        "storage": {
+          "label": "Storage & Upload Center",
+          "hint": "Upload and storage tools appear here once real metering is in place."
+        },
+        "support": {
+          "label": "Support Center",
+          "hint": "Reach help and trust & safety. Open now, with no promised response window."
+        },
+        "labs": {
+          "label": "PulseSoc Labs",
+          "hint": "Early experiments you can opt into, arriving in a later pass."
+        }
       },
-      "note": "Nothing here is on yet, and nothing here is billed separately. Each space appears once it's ready."
+      "note": "Spaces marked Next are not on yet, and none of them is billed separately. Each one appears here once it is ready."
     },
     "free": {
       "heading": "Always free",
