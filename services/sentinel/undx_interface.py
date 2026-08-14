@@ -20,7 +20,8 @@ from services.sentinel.identity import UNDX_MODEL
 # Explicit allowlist of what UNDX may read. Anything not listed does not exist
 # as far as UNDX is concerned (SC11, SC15).
 READ_SURFACES = ("recent_events", "open_incidents", "provider_health",
-                 "identity_context", "external_threat_context")
+                 "identity_context", "external_threat_context",
+                 "financial_threat_context")
 
 _UNDX_REDACTION_CEILING = Level.INTERNAL
 
@@ -43,6 +44,8 @@ def read(surface: str, *, category: str | None = None, limit: int = 50,
         return identity_context(subject, limit=limit, conn=conn)
     elif surface == "external_threat_context":
         return external_threat_context(subject, limit=limit, conn=conn)
+    elif surface == "financial_threat_context":
+        return financial_threat_context(subject, limit=limit, conn=conn)
     else:
         return {"ok": False, "error": f"unknown surface {surface!r} (SC15)",
                 "surfaces": READ_SURFACES}
@@ -159,6 +162,57 @@ def external_threat_context(subject: str | None, *, limit: int = 50,
             "authority_note": "ADVISORY READ — UNDX cannot dismiss, upgrade, "
                               "block, revoke, hold, upload, or call providers "
                               "from this surface (SC2/SC10, Stage 29)"}
+
+
+# The financial analyst may-not list (Mission 5, Stage 33). Not prose — the
+# literal contract returned with every financial context read.
+FINANCIAL_MAY_NOT = (
+    "move_funds", "hold_funds", "reverse_transactions", "issue_refunds",
+    "issue_payouts", "cancel_payouts", "suspend_sellers", "ban_buyers",
+    "freeze_wallets", "modify_balances", "change_fees",
+    "alter_payment_routing", "confirm_fraud", "assign_guilt",
+)
+
+
+def financial_threat_context(subject: str | None, *, limit: int = 50,
+                             conn=None) -> dict:
+    """Mission 5 (Stage 32): read-only financial-analyst context for one
+    financial entity ref (e.g. "SELLER:42", "ORDER:ord_1").
+
+    UNDX gets: the reference-only transaction context, current decayed risk
+    (with reasons AND contradicting evidence), reconciliation statuses, and
+    exposure honesty notes. UNDX has ZERO money authority: every operation in
+    FINANCIAL_MAY_NOT is structurally absent from this surface, and analyses
+    submitted back are ADVISORY (SC2)."""
+    subject = str(subject or "").strip()
+    from services.sentinel import financial_context, financial_entities
+
+    if not subject or not financial_entities.is_valid_ref(subject):
+        return {"ok": False,
+                "error": "financial_threat_context requires subject="
+                         "'ENTITY_TYPE:ref' with a financial entity type (SC15)",
+                "entity_types": financial_entities.FINANCIAL_ENTITY_TYPES}
+    limit = max(1, min(int(limit), 200))
+    ctx = financial_context.build_context(subject, conn=conn, limit=limit)
+    payload = {
+        "subject": subject,
+        "context": ctx,
+        "risk_reasons": (ctx.get("risk") or {}).get("reasons", []),
+        "contradicting_evidence": (ctx.get("risk") or {}).get(
+            "contradicting_evidence", []),
+        "signal_quality_note": (
+            "ANOMALY != FRAUD and RISK != GUILT: scores decay and expire; "
+            "client-reported payment claims are questions, never authority; "
+            "external provider verdicts are capped evidence, never "
+            "canonical guilt"),
+        "may_not": list(FINANCIAL_MAY_NOT),
+    }
+    return {"ok": True, "surface": "financial_threat_context",
+            "rows": _redact_rows([payload]),
+            "authority_note": ("ADVISORY READ — UNDX has ZERO money authority: "
+                               "it cannot move, hold, reverse, refund, pay out, "
+                               "freeze, rebalance, re-fee, re-route, suspend, "
+                               "or ban from this surface (SC2/SC10, Stage 32)")}
 
 
 def submit_analysis(subject_type: str, subject_id: str, summary: str,

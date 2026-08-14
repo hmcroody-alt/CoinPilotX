@@ -79,6 +79,21 @@ _OPERATIONAL_METADATA_FIELDS = frozenset({
     "vulnerability_id", "aliases", "package", "affected_version",
     "fixed_version", "ecosystem", "applicability", "priority",
     "known_exploited", "incident_key", "triage_reasons", "catalog_version",
+    # Mission 5 (Stage 44): financial defense vocabulary. Closed-set states,
+    # amounts in cents (aggregated observations, not payment instruments —
+    # financial_entities.assert_payload_safe rejects card/bank fields at
+    # ingest), TYPE:id entity refs, and Sentinel's own deterministic
+    # explanations. RISK != GUILT notes and contradicting evidence must
+    # survive redaction (Stage 18).
+    "entity_role", "entity_type", "exposure_class", "reconciliation_status",
+    "invariant_id", "amount_cents", "currency", "delivery_count",
+    "provider_event_id", "scope", "completeness", "context_version",
+    "confirmed_cents", "potential_cents", "disputed_cents", "unknown_items",
+    "expected_cents", "observed_cents", "detail", "status", "dimensions",
+    "capped_by", "trust_grade", "source_class", "source_id",
+    "may_not", "event_kind", "signature_valid", "basis", "tolerance_cents",
+    "figures", "missing_optional_steps", "matched_event_ids",
+    "recorded_at", "built_at", "sequence_id", "correlation_keys",
 })
 
 REDACTED = "[REDACTED:sentinel]"

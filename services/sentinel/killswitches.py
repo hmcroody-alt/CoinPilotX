@@ -76,10 +76,62 @@ def runbook_enabled(runbook_name: str, domain: str) -> bool:
     return _truthy(_env(f"SENTINEL_RUNBOOK_{_norm(runbook_name)}_ENABLED"))
 
 
+# --- Mission 5: financial switches (Stage 49) --------------------------------
+# Detection switches default OFF: absence means no financial detection runs.
+# The automation switch is different in kind — see financial_automation_enabled.
+
+
+def financial_detection_enabled() -> bool:
+    """Master financial DETECTION gate (read-only analysis). DEFAULT OFF."""
+    if emergency_killed():
+        return False
+    return _truthy(_env("SENTINEL_FINANCIAL_DETECTION_ENABLED"))
+
+
+def _financial_subdomain(name: str) -> bool:
+    if not financial_detection_enabled():
+        return False
+    return _truthy(_env(name))
+
+
+def marketplace_risk_enabled() -> bool:
+    return _financial_subdomain("SENTINEL_MARKETPLACE_RISK_ENABLED")
+
+
+def payout_risk_enabled() -> bool:
+    return _financial_subdomain("SENTINEL_PAYOUT_RISK_ENABLED")
+
+
+def refund_risk_enabled() -> bool:
+    return _financial_subdomain("SENTINEL_REFUND_RISK_ENABLED")
+
+
+def ad_wallet_risk_enabled() -> bool:
+    return _financial_subdomain("SENTINEL_AD_WALLET_RISK_ENABLED")
+
+
+def financial_automation_enabled() -> bool:
+    """ALWAYS False. No financial automation exists in Mission 5 — Sentinel
+    has zero money-movement capability, so there is nothing this switch could
+    enable. The env var SENTINEL_FINANCIAL_AUTOMATION_ENABLED is reserved for
+    a future mission and deliberately ignored here: setting it changes
+    NOTHING (adversarial test proves this)."""
+    return False
+
+
 def switch_state() -> dict:
     """Snapshot for health/evidence — records which layer is blocking (SC12/SC13)."""
     return {
         "emergency_killed": emergency_killed(),
         "ingest_enabled": ingest_enabled(),
         "automation_enabled": automation_enabled(),
+        # Mission 5 financial switches (detection read-only; automation is
+        # hard-false — no financial automation capability exists).
+        "financial_detection_enabled": financial_detection_enabled(),
+        "marketplace_risk_enabled": marketplace_risk_enabled(),
+        "payout_risk_enabled": payout_risk_enabled(),
+        "refund_risk_enabled": refund_risk_enabled(),
+        "ad_wallet_risk_enabled": ad_wallet_risk_enabled(),
+        "financial_automation_enabled": financial_automation_enabled(),
+        "financial_automation_note": "hard-false: no money-movement capability exists",
     }

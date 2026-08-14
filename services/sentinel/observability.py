@@ -103,6 +103,7 @@ def self_health(conn=None) -> dict:
     health["maturity"] = maturity
     health["identity_detection"] = _identity_self_health(conn=conn)
     health["external_intelligence"] = _external_self_health(conn=conn)
+    health["financial_defense"] = _financial_self_health(conn=conn)
     return health
 
 
@@ -209,6 +210,74 @@ def _identity_self_health(conn=None) -> dict:
     return out
 
 
+_FINANCIAL_INCIDENT_TYPES = (
+    "FINANCIAL_ACCOUNT_TAKEOVER_SUSPECTED", "PAYMENT_ABUSE_SUSPECTED",
+    "REFUND_ABUSE_SUSPECTED", "PAYOUT_ABUSE_SUSPECTED",
+    "MARKETPLACE_ABUSE_SUSPECTED", "COORDINATED_FINANCIAL_ABUSE",
+    "AD_WALLET_INTEGRITY_ANOMALY", "ADVERTISING_FINANCIAL_ANOMALY",
+    "FINANCIAL_LEDGER_MISMATCH", "FINANCIAL_WEBHOOK_REPLAY",
+    "DUPLICATE_ECONOMIC_EFFECT_RISK", "FINANCIAL_PROVIDER_INCONSISTENCY")
+
+
+def _financial_self_health(conn=None) -> dict:
+    """Mission 5 (Stage 43): the financial-defense pipeline's own vitals.
+    Absence of signal is reported as absence, never as health, and a
+    disabled kill switch is reported as disabled, never as broken."""
+    out: dict = {"financial_detection_status": "unknown",
+                 "financial_events_24h": 0,
+                 "financial_incidents_open": 0,
+                 "reconciliation_mismatches": 0,
+                 "reconciliation_stale_or_unknown": 0,
+                 "active_high_risk_entities": 0,
+                 "mutation_lock_clean": None,
+                 "money_movement_capability": "NONE (structurally absent)"}
+    try:
+        with store.connection(conn) as c:
+            cur = c.cursor()
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)
+                      ).strftime("%Y-%m-%d %H:%M:%S")
+            cur.execute("SELECT COUNT(*) FROM sentinel_events "
+                        "WHERE category IN ('PAYMENT','LEDGER','SETTLEMENT',"
+                        "'PAYOUT','ADVERTISING') AND received_at >= ?",
+                        (cutoff,))
+            out["financial_events_24h"] = int(cur.fetchone()[0])
+            marks = ",".join("?" for _ in _FINANCIAL_INCIDENT_TYPES)
+            cur.execute(f"SELECT COUNT(*) FROM sentinel_incidents "
+                        f"WHERE incident_type IN ({marks}) AND state NOT IN "
+                        f"('RESOLVED','FALSE_POSITIVE','SUPPRESSED')",
+                        _FINANCIAL_INCIDENT_TYPES)
+            out["financial_incidents_open"] = int(cur.fetchone()[0])
+            cur.execute("SELECT status, COUNT(*) FROM "
+                        "sentinel_financial_reconciliations GROUP BY status")
+            for status, n in cur.fetchall():
+                if status == "MISMATCH":
+                    out["reconciliation_mismatches"] = int(n)
+                elif status in ("STALE", "UNKNOWN"):
+                    out["reconciliation_stale_or_unknown"] += int(n)
+            try:
+                from services.sentinel import financial_risk
+                out["active_high_risk_entities"] = len(
+                    financial_risk.active_high_risk(conn=c))
+            except Exception:
+                pass  # stays 0 — honest default
+        try:
+            from services.sentinel import financial_mutation_lock
+            out["mutation_lock_clean"] = bool(
+                financial_mutation_lock.verify_module_surface()["clean"])
+        except Exception:
+            out["mutation_lock_clean"] = None  # unknown, never assumed clean
+        if not killswitches.financial_detection_enabled():
+            out["financial_detection_status"] = "disabled_by_kill_switch"
+        elif out["financial_events_24h"] or out["financial_incidents_open"]:
+            out["financial_detection_status"] = "active"
+        else:
+            out["financial_detection_status"] = "enabled_no_signal"
+    except Exception as exc:
+        out["financial_detection_status"] = "error"
+        out["error"] = str(exc)[:200]
+    return out
+
+
 def owner_summary(conn=None) -> dict:
     """The owner-facing status contract (Mission 2, Stage 18): one call that
     answers 'is the platform okay and do I need to act'. Read-only, honest
@@ -245,6 +314,23 @@ def owner_summary(conn=None) -> dict:
         "external_threat_matches": 0,
         "external_provider_degradations": 0,
         "stale_external_intelligence": 0,
+        # Mission 5 financial contract (Stage 41) — honest zero/unknown
+        # defaults; real queries fill them in below. SUSPECTED != GUILTY.
+        "financial_risk_status": "unknown",
+        "financial_incidents_open": 0,
+        "suspected_financial_ato": 0,
+        "payment_abuse_suspected": 0,
+        "refund_abuse_suspected": 0,
+        "payout_abuse_suspected": 0,
+        "marketplace_abuse_suspected": 0,
+        "coordinated_abuse_suspected": 0,
+        "ledger_mismatch_findings": 0,
+        "ad_wallet_findings": 0,
+        "owner_financial_review_required": 0,
+        "estimated_potential_exposure": {"currency": "usd",
+                                         "potential_cents": 0,
+                                         "note": "POTENTIAL only — never "
+                                                 "reported as confirmed"},
         "latest_deployment_sha": store_mod.deployment_sha() or None,
         "sentinel": self_health(conn=conn),
     }
@@ -358,6 +444,60 @@ def owner_summary(conn=None) -> dict:
                     summary_out["supply_chain_status"] = "watch"
                 else:
                     summary_out["supply_chain_status"] = "quiet"
+            except Exception:
+                pass  # fields keep their honest unknown/zero defaults
+
+            # Mission 5 (Stage 41): financial fraud counts — REAL queries,
+            # honest defaults on failure, and no field ever conflates
+            # POTENTIAL exposure with CONFIRMED loss.
+            try:
+                fin_ato = _count_open("FINANCIAL_ACCOUNT_TAKEOVER_SUSPECTED")
+                pay_abuse = _count_open("PAYMENT_ABUSE_SUSPECTED")
+                ref_abuse = _count_open("REFUND_ABUSE_SUSPECTED")
+                po_abuse = _count_open("PAYOUT_ABUSE_SUSPECTED")
+                mkt_abuse = _count_open("MARKETPLACE_ABUSE_SUSPECTED")
+                coord = _count_open("COORDINATED_FINANCIAL_ABUSE")
+                ledger = (_count_open("FINANCIAL_LEDGER_MISMATCH")
+                          + _count_open("DUPLICATE_ECONOMIC_EFFECT_RISK")
+                          + _count_open("FINANCIAL_WEBHOOK_REPLAY")
+                          + _count_open("FINANCIAL_PROVIDER_INCONSISTENCY"))
+                ad_wallet = (_count_open("AD_WALLET_INTEGRITY_ANOMALY")
+                             + _count_open("ADVERTISING_FINANCIAL_ANOMALY"))
+                summary_out["suspected_financial_ato"] = fin_ato
+                summary_out["payment_abuse_suspected"] = pay_abuse
+                summary_out["refund_abuse_suspected"] = ref_abuse
+                summary_out["payout_abuse_suspected"] = po_abuse
+                summary_out["marketplace_abuse_suspected"] = mkt_abuse
+                summary_out["coordinated_abuse_suspected"] = coord
+                summary_out["ledger_mismatch_findings"] = ledger
+                summary_out["ad_wallet_findings"] = ad_wallet
+                fin_open = (fin_ato + pay_abuse + ref_abuse + po_abuse
+                            + mkt_abuse + coord + ledger + ad_wallet)
+                summary_out["financial_incidents_open"] = fin_open
+                marks = ",".join("?" for _ in _FINANCIAL_INCIDENT_TYPES)
+                cur.execute(
+                    f"SELECT COUNT(*) FROM sentinel_incidents WHERE "
+                    f"incident_type IN ({marks}) AND owner_action_required = 1 "
+                    f"AND state IN ('{open_states}')",
+                    _FINANCIAL_INCIDENT_TYPES)
+                summary_out["owner_financial_review_required"] = int(
+                    cur.fetchone()[0])
+                from services.sentinel import financial_exposure
+                exp = financial_exposure.totals(conn=c)
+                summary_out["estimated_potential_exposure"] = {
+                    "currency": "usd",
+                    "potential_cents": int(exp.get("potential_cents") or 0),
+                    "confirmed_cents": int(exp.get("confirmed_cents") or 0),
+                    "disputed_cents": int(exp.get("disputed_cents") or 0),
+                    "unknown_items": int(exp.get("unknown_items") or 0),
+                    "note": "classes kept apart — potential is never "
+                            "reported as confirmed"}
+                if fin_ato or coord or ledger:
+                    summary_out["financial_risk_status"] = "attention"
+                elif fin_open:
+                    summary_out["financial_risk_status"] = "watch"
+                else:
+                    summary_out["financial_risk_status"] = "quiet"
             except Exception:
                 pass  # fields keep their honest unknown/zero defaults
     except Exception as exc:
