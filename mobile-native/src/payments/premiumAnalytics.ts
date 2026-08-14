@@ -26,6 +26,12 @@
 export type PremiumAnalyticsEvent =
   | "premium_tile_impression"
   | "premium_tile_opened"
+  | "premium_status_load_started"
+  | "premium_status_load_success"
+  | "premium_status_load_failure"
+  | "premium_status_state_free"
+  | "premium_status_state_active"
+  | "premium_product_fetch_failure"
   | "premium_plan_viewed"
   | "premium_monthly_selected"
   | "premium_annual_selected"

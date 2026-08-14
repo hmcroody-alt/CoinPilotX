@@ -107,12 +107,23 @@ export function PremiumCenterScreen({ route }: Props) {
   const planViewed = useRef(false);
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
+    trackPremium("premium_status_load_started", { mode });
     setError("");
     if (mode === "initial") setLoading(true);
     if (mode === "refresh") setRefreshing(true);
     try {
-      setCenter(await getPremiumCenter());
+      const next = await getPremiumCenter();
+      setCenter(next);
+      const nextExperience = premiumExperience(next);
+      trackPremium("premium_status_load_success", { mode, state: nextExperience });
+      trackPremium(
+        nextExperience === "none" || nextExperience === "expired"
+          ? "premium_status_state_free"
+          : "premium_status_state_active",
+        { state: nextExperience }
+      );
     } catch (loadError) {
+      trackPremium("premium_status_load_failure", { mode });
       setError(loadError instanceof Error ? loadError.message : t("premium:loadError"));
     } finally {
       setLoading(false);
@@ -146,7 +157,10 @@ export function PremiumCenterScreen({ route }: Props) {
           });
         }
       })
-      .catch(() => { if (!cancelled) setOffers({ plans: [], annualSavingsPercent: null }); })
+      .catch(() => {
+        trackPremium("premium_product_fetch_failure");
+        if (!cancelled) setOffers({ plans: [], annualSavingsPercent: null });
+      })
       .finally(() => { if (!cancelled) setOffersLoading(false); });
     return () => { cancelled = true; };
   }, [sells, offers, offersLoading]);

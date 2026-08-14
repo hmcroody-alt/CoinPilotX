@@ -207,6 +207,18 @@ describe("transport", () => {
     await expect(getPremiumCenter()).resolves.toMatchObject({ membership: { is_premium: true } });
   });
 
+  it.each([401, 500])("preserves a %s membership transport failure for retry UX", async (status) => {
+    const failure = Object.assign(new Error("membership request failed"), { status });
+    mockPulseApi.mockRejectedValue(failure);
+    await expect(getPremiumCenter()).rejects.toBe(failure);
+  });
+
+  it("preserves an offline membership failure for retry UX", async () => {
+    const failure = new TypeError("Network request failed");
+    mockPulseApi.mockRejectedValue(failure);
+    await expect(getPremiumCenter()).rejects.toBe(failure);
+  });
+
   it("normalizes whatever the cache returns before anyone reads it", async () => {
     mockReadJsonCache.mockImplementation(async (_key: string, normalize: (value: unknown) => unknown) =>
       normalize({ membership: { mode: "active" } })

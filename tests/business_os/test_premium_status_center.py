@@ -78,6 +78,31 @@ def test_status_center_requires_a_user():
     assert body["ok"] is False
 
 
+def test_status_center_bootstraps_its_schema_before_first_canonical_read(monkeypatch):
+    """The /api/premium route must not depend on /api/business-os being opened."""
+    calls = []
+    monkeypatch.setattr(papi, "_schema_ready", False)
+    monkeypatch.setattr(papi._schema, "ensure_ready", lambda: calls.append("schema"))
+    monkeypatch.setattr(papi._prem, "resolve", lambda *_a, **_k: {
+        "is_premium": False,
+        "membership_mode": "none",
+        "source": "canonical_grant",
+        "account_hold": False,
+        "account_status": "active",
+    })
+    monkeypatch.setattr(papi, "_founder_facts", lambda _uid: {
+        "is_founder": False, "founder_number": 0, "price_cents": None})
+    monkeypatch.setattr(papi, "subscription_summary", lambda *_a, **_k: None)
+    monkeypatch.setattr(papi._rd, "all_features", lambda: [])
+    monkeypatch.setattr(papi._rd, "unenforced_features", lambda: [])
+
+    status, body = papi.status_center(9199)
+
+    assert status == 200 and body["membership"]["is_premium"] is False
+    assert body["membership"]["mode"] == "none"
+    assert calls == ["schema"]
+
+
 # PREM-017 -------------------------------------------------------------------
 def test_advertised_benefits_are_always_sellable():
     """The surface must not be able to advertise an unenforced capability."""
