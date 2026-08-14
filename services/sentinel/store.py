@@ -434,6 +434,65 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         incident_ref TEXT NOT NULL DEFAULT ''
     )""",
     "CREATE INDEX IF NOT EXISTS idx_sentinel_extaudit_prov ON sentinel_external_data_audit(provider_id, requested_at)",
+
+    # --- Mission 5: financial fraud + transaction integrity (all additive) --
+    # Append-only financial risk observations per entity (buyer/seller/
+    # advertiser/…). Mirrors sentinel_identity_risk deliberately: every row is
+    # a point-in-time assessment with a mandatory expiry — there is no
+    # permanent fraud label anywhere in this schema (Stage 7).
+    """CREATE TABLE IF NOT EXISTS sentinel_financial_risk (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject_ref TEXT NOT NULL,
+        entity_role TEXT NOT NULL,
+        trust_state TEXT NOT NULL,
+        risk_score REAL NOT NULL,
+        dimensions_json TEXT NOT NULL DEFAULT '{}',
+        reasons_json TEXT NOT NULL DEFAULT '[]',
+        contradicting_json TEXT NOT NULL DEFAULT '[]',
+        evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+        source_trust TEXT NOT NULL DEFAULT 'DERIVED',
+        confidence REAL NOT NULL DEFAULT 0.0,
+        observed_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        deployment_sha TEXT NOT NULL,
+        policy_version TEXT NOT NULL
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_finrisk_subject ON sentinel_financial_risk(subject_ref, id)",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_finrisk_expiry ON sentinel_financial_risk(expires_at)",
+
+    # Read-only reconciliation results (Stage 19). Sentinel compares sources
+    # and records the comparison — it NEVER writes a correcting entry.
+    """CREATE TABLE IF NOT EXISTS sentinel_financial_reconciliations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scope TEXT NOT NULL,
+        subject_ref TEXT NOT NULL,
+        status TEXT NOT NULL,
+        expected_cents INTEGER,
+        observed_cents INTEGER,
+        components_json TEXT NOT NULL DEFAULT '{}',
+        detail TEXT NOT NULL DEFAULT '',
+        observed_at TEXT NOT NULL,
+        recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+        deployment_sha TEXT NOT NULL DEFAULT '',
+        policy_version TEXT NOT NULL DEFAULT ''
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_finrecon_scope ON sentinel_financial_reconciliations(scope, subject_ref, id)",
+
+    # Exposure estimates per incident (Stage 20). Classes are kept apart in
+    # separate columns so 'potential' can never be summed into 'confirmed'.
+    """CREATE TABLE IF NOT EXISTS sentinel_financial_exposure (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        incident_key TEXT NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'usd',
+        confirmed_cents INTEGER NOT NULL DEFAULT 0,
+        potential_cents INTEGER NOT NULL DEFAULT 0,
+        disputed_cents INTEGER NOT NULL DEFAULT 0,
+        unknown_items INTEGER NOT NULL DEFAULT 0,
+        basis_json TEXT NOT NULL DEFAULT '[]',
+        recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+        policy_version TEXT NOT NULL DEFAULT ''
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_finexp_incident ON sentinel_financial_exposure(incident_key, id)",
 )
 
 
