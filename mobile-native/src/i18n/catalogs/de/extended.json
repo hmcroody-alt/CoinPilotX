@@ -2047,6 +2047,83 @@
       "heading": "Kommt mit deinem Tarif",
       "note": "Diese gehören zu deinem Tarif, sind aber noch nicht aktiviert. Nichts davon wird separat abgerechnet."
     },
+    "commandCenter": {
+      "heading": "Deine Kommandozentrale",
+      "subhead": "Das ist dein Premium-Hauptquartier. Öffne einen Bereich, der bereit ist, und sieh zu, wie hier neue dazukommen.",
+      "comingChip": "NÄCHSTES",
+      "readiness": {
+        "active": "Offen",
+        "beta": "Beta",
+        "comingNext": "Als Nächstes"
+      },
+      "modules": {
+        "activity": {
+          "label": "Aktivitätsübersicht",
+          "hint": "Ein Rückblick auf deine jüngste Premium-Aktivität."
+        },
+        "valueRecap": {
+          "label": "Monatlicher Wertrückblick",
+          "hint": "Was dir deine Mitgliedschaft diesen Monat gebracht hat."
+        },
+        "usage": {
+          "label": "Nutzungsübersicht",
+          "hint": "Deine gemessenen Werkzeuge, dort gezeigt, wo ein echtes Limit gilt."
+        },
+        "achievements": {
+          "label": "Erfolge",
+          "hint": "Meilensteine, die du als Mitglied erreichst."
+        },
+        "unlocked": {
+          "label": "Kürzlich freigeschaltet",
+          "hint": "Werkzeuge, die für dich aktiviert wurden."
+        },
+        "recommended": {
+          "label": "Für dich empfohlen",
+          "hint": "Funktionen, die sich als Nächstes lohnen."
+        }
+      },
+      "spacesHeading": "Premium-Bereiche",
+      "spacesSubhead": "Als Offen markierte Bereiche sind jetzt live. Die übrigen folgen später.",
+      "spaces": {
+        "verified": {
+          "label": "Verifizierte Identität",
+          "hint": "Starte die Identitätsprüfung über die normale Überprüfung. Premium öffnet die Tür; es vergibt das Häkchen nicht und übergeht keine Voraussetzungen."
+        },
+        "identity": {
+          "label": "Identitäts-Studio",
+          "hint": "Erweiterte Profil- und Präsenzsteuerung, an einem Ort gebündelt."
+        },
+        "media": {
+          "label": "Medienlabor",
+          "hint": "Hochwertigere Medienwerkzeuge, die aktiviert werden, sobald sie durchgängig funktionieren."
+        },
+        "undx": {
+          "label": "UNDX-Arbeitsbereich",
+          "hint": "Deine UNDX-Funktionen und -Steuerungen. Jetzt offen."
+        },
+        "creator": {
+          "label": "Creator Studio Pro",
+          "hint": "Das Creator-Toolkit für deine Beiträge und deine Reichweite. Jetzt offen."
+        },
+        "founder": {
+          "label": "Gründerclub",
+          "hint": "Ein Raum, der Gründungsmitgliedern vorbehalten ist."
+        },
+        "storage": {
+          "label": "Speicher- und Upload-Zentrum",
+          "hint": "Upload- und Speicherwerkzeuge erscheinen hier, sobald eine echte Messung vorhanden ist."
+        },
+        "support": {
+          "label": "Support-Center",
+          "hint": "Erreiche Hilfe sowie Trust & Safety. Jetzt offen, ohne zugesagte Antwortzeit."
+        },
+        "labs": {
+          "label": "PulseSoc Labs",
+          "hint": "Frühe Experimente, an denen du teilnehmen kannst — später verfügbar."
+        }
+      },
+      "note": "Bereiche mit der Markierung Als Nächstes sind noch nicht aktiv, und keiner wird separat abgerechnet. Jeder erscheint hier, sobald er bereit ist."
+    },
     "free": {
       "heading": "Immer kostenlos",
       "body": "Feed, Beiträge, Reels, Status, Nachrichten, Anrufe, Live-Video, Profil, Sicherheit und Kontowiederherstellung bleiben kostenlos. Premium ergänzt PulseSoc; es nimmt nie etwas weg."

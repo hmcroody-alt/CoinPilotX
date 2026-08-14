@@ -2043,6 +2043,83 @@
       "heading": "方案内即将开放",
       "note": "这些已包含在你的方案中，但尚未开启，不会单独收费。"
     },
+    "commandCenter": {
+      "heading": "你的指挥中心",
+      "subhead": "这里是你的 Premium 总部。打开已就绪的空间，并在此看到新空间陆续启用。",
+      "comingChip": "即将推出",
+      "readiness": {
+        "active": "已开放",
+        "beta": "测试版",
+        "comingNext": "即将推出"
+      },
+      "modules": {
+        "activity": {
+          "label": "活动摘要",
+          "hint": "你近期 Premium 活动的回顾。"
+        },
+        "valueRecap": {
+          "label": "每月价值回顾",
+          "hint": "本月会员资格为你带来的内容。"
+        },
+        "usage": {
+          "label": "使用概览",
+          "hint": "你的计量工具，仅在存在实际上限时显示。"
+        },
+        "achievements": {
+          "label": "成就",
+          "hint": "你作为会员达成的里程碑。"
+        },
+        "unlocked": {
+          "label": "最近解锁",
+          "hint": "已为你启用的工具。"
+        },
+        "recommended": {
+          "label": "为你推荐",
+          "hint": "接下来值得尝试的功能。"
+        }
+      },
+      "spacesHeading": "Premium 空间",
+      "spacesSubhead": "标记为“已开放”的空间现已上线，其余将在后续阶段推出。",
+      "spaces": {
+        "verified": {
+          "label": "已验证身份",
+          "hint": "通过标准审核开始身份验证。Premium 只是打开入口，并不会授予认证标识或跳过资格要求。"
+        },
+        "identity": {
+          "label": "身份工作室",
+          "hint": "进阶的个人资料与呈现设置，集中在一处。"
+        },
+        "media": {
+          "label": "媒体实验室",
+          "hint": "更精细的媒体工具，将在端到端可用后启用。"
+        },
+        "undx": {
+          "label": "UNDX 工作区",
+          "hint": "你的 UNDX 功能与控制项。现已开放。"
+        },
+        "creator": {
+          "label": "Creator Studio Pro",
+          "hint": "面向你的帖子与触达的创作者工具包。现已开放。"
+        },
+        "founder": {
+          "label": "创始人俱乐部",
+          "hint": "为创始会员保留的空间。"
+        },
+        "storage": {
+          "label": "存储与上传中心",
+          "hint": "在实际计量就绪后，上传与存储工具将显示在此。"
+        },
+        "support": {
+          "label": "支持中心",
+          "hint": "联系帮助与信任和安全团队。现已开放，但不承诺回复时限。"
+        },
+        "labs": {
+          "label": "PulseSoc Labs",
+          "hint": "你可以选择参与的早期实验，将在后续阶段推出。"
+        }
+      },
+      "note": "标记为“即将推出”的空间尚未启用，且均不单独收费。每个空间准备就绪后都会显示在此。"
+    },
     "free": {
       "heading": "始终免费",
       "body": "动态、发帖、Reels、状态、消息、通话、直播、个人主页、安全和账号找回始终免费。高级会员只做加法，不会拿走任何功能。"

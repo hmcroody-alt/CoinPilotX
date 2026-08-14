@@ -2044,6 +2044,83 @@
       "heading": "K ap vini nan plan ou",
       "note": "Yo fè pati plan ou men yo poko aktive. Anyen la a pa faktire apa."
     },
+    "commandCenter": {
+      "heading": "Sant kòmandman ou",
+      "subhead": "Sa a se katye jeneral Premium ou. Louvri yon espas ki pare, epi gade lòt nouvo yo limen isit la.",
+      "comingChip": "PWOCHEN",
+      "readiness": {
+        "active": "Louvri",
+        "beta": "Beta",
+        "comingNext": "Pwochen"
+      },
+      "modules": {
+        "activity": {
+          "label": "Rezime aktivite",
+          "hint": "Yon rezime aktivite Premium ou dènyèman."
+        },
+        "valueRecap": {
+          "label": "Rezime valè chak mwa",
+          "hint": "Sa abònman ou ba ou mwa sa a."
+        },
+        "usage": {
+          "label": "Apèsi itilizasyon",
+          "hint": "Zouti ou yo ki mezire, kote gen yon limit reyèl."
+        },
+        "achievements": {
+          "label": "Reyalizasyon",
+          "hint": "Etap ou rive kòm manm."
+        },
+        "unlocked": {
+          "label": "Debloke dènyèman",
+          "hint": "Zouti ki limen pou ou."
+        },
+        "recommended": {
+          "label": "Rekòmande pou ou",
+          "hint": "Fonksyon ki merite eseye apre."
+        }
+      },
+      "spacesHeading": "Espas Premium",
+      "spacesSubhead": "Espas ki make Louvri yo aktif kounye a. Rès la ap vini pita.",
+      "spaces": {
+        "verified": {
+          "label": "Idantite verifye",
+          "hint": "Kòmanse verifikasyon idantite atravè revizyon estanda a. Premium louvri pòt la; li pa bay mak la ni sote kondisyon yo."
+        },
+        "identity": {
+          "label": "Estidyo idantite",
+          "hint": "Kontwòl pwofil ak prezans avanse, rasanble yon sèl kote."
+        },
+        "media": {
+          "label": "Laboratwa medya",
+          "hint": "Zouti medya pi solid, k ap limen lè yo fonksyone nèt."
+        },
+        "undx": {
+          "label": "Espas travay UNDX",
+          "hint": "Kapasite ak kontwòl UNDX ou yo. Louvri kounye a."
+        },
+        "creator": {
+          "label": "Creator Studio Pro",
+          "hint": "Twous kreyatè a pou piblikasyon ak pòte ou. Louvri kounye a."
+        },
+        "founder": {
+          "label": "Klib fondatè",
+          "hint": "Yon sal rezève pou manm fondatè yo."
+        },
+        "storage": {
+          "label": "Sant depo ak voye",
+          "hint": "Zouti pou voye ak depo ap parèt isit la lè gen yon mezi reyèl."
+        },
+        "support": {
+          "label": "Sant sipò",
+          "hint": "Kontakte èd ak konfyans ak sekirite. Louvri kounye a, san pwomès sou delè repons."
+        },
+        "labs": {
+          "label": "PulseSoc Labs",
+          "hint": "Eksperyans bonè ou ka chwazi patisipe, k ap vini pita."
+        }
+      },
+      "note": "Espas ki make Pwochen poko limen, e okenn nan yo pa faktire apa. Chak ap parèt isit la lè li pare."
+    },
     "free": {
       "heading": "Toujou gratis",
       "body": "Fil ou, piblikasyon, reels, estati, mesaj, apèl, videyo an dirèk, pwofil, sekirite ak rekiperasyon kont rete gratis. Premium ajoute sou PulseSoc; li pa janm retire anyen."

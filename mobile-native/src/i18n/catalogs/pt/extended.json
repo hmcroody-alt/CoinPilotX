@@ -2047,6 +2047,83 @@
       "heading": "Em breve no seu plano",
       "note": "Fazem parte do seu plano, mas ainda não foram ativados. Nada aqui é cobrado à parte."
     },
+    "commandCenter": {
+      "heading": "Sua central de comando",
+      "subhead": "Este é o seu quartel-general Premium. Abra um espaço que já esteja pronto e veja novos serem ativados aqui.",
+      "comingChip": "PRÓXIMO",
+      "readiness": {
+        "active": "Aberto",
+        "beta": "Beta",
+        "comingNext": "Próximo"
+      },
+      "modules": {
+        "activity": {
+          "label": "Resumo de atividade",
+          "hint": "Uma retrospectiva da sua atividade Premium recente."
+        },
+        "valueRecap": {
+          "label": "Resumo de valor mensal",
+          "hint": "O que a sua assinatura lhe deu neste mês."
+        },
+        "usage": {
+          "label": "Visão geral de uso",
+          "hint": "Suas ferramentas medidas, exibidas onde há um limite real."
+        },
+        "achievements": {
+          "label": "Conquistas",
+          "hint": "Marcos que você alcança como membro."
+        },
+        "unlocked": {
+          "label": "Desbloqueado recentemente",
+          "hint": "Ferramentas que foram ativadas para você."
+        },
+        "recommended": {
+          "label": "Recomendado para você",
+          "hint": "Recursos que vale a pena experimentar em seguida."
+        }
+      },
+      "spacesHeading": "Espaços Premium",
+      "spacesSubhead": "Os espaços marcados como Aberto estão ativos agora. Os demais chegam em etapas posteriores.",
+      "spaces": {
+        "verified": {
+          "label": "Identidade verificada",
+          "hint": "Inicie a verificação de identidade pela análise padrão. O Premium abre a porta; ele não concede o selo nem dispensa os requisitos."
+        },
+        "identity": {
+          "label": "Estúdio de identidade",
+          "hint": "Controles avançados de perfil e presença, reunidos em um só lugar."
+        },
+        "media": {
+          "label": "Laboratório de mídia",
+          "hint": "Ferramentas de mídia mais elaboradas, ativadas quando funcionarem de ponta a ponta."
+        },
+        "undx": {
+          "label": "Espaço de trabalho UNDX",
+          "hint": "Seus recursos e controles do UNDX. Aberto agora."
+        },
+        "creator": {
+          "label": "Creator Studio Pro",
+          "hint": "O kit do criador para suas publicações e seu alcance. Aberto agora."
+        },
+        "founder": {
+          "label": "Clube dos fundadores",
+          "hint": "Uma sala reservada aos membros fundadores."
+        },
+        "storage": {
+          "label": "Central de armazenamento e envio",
+          "hint": "As ferramentas de envio e armazenamento aparecerão aqui quando houver medição real."
+        },
+        "support": {
+          "label": "Central de suporte",
+          "hint": "Fale com o suporte e com confiança e segurança. Aberto agora, sem prazo de resposta prometido."
+        },
+        "labs": {
+          "label": "PulseSoc Labs",
+          "hint": "Experimentos iniciais dos quais você pode participar, chegando em uma etapa posterior."
+        }
+      },
+      "note": "Os espaços marcados como Próximo ainda não estão ativos, e nenhum deles é cobrado separadamente. Cada um aparecerá aqui quando estiver pronto."
+    },
     "free": {
       "heading": "Sempre gratuito",
       "body": "Seu feed, publicações, reels, status, mensagens, chamadas, vídeo ao vivo, perfil, segurança e recuperação de conta continuam gratuitos. O Premium soma ao PulseSoc; nunca tira nada."
