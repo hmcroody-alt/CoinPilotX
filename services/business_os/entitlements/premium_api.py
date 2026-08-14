@@ -41,12 +41,28 @@ The honesty invariants this file is built to make structurally true
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any, Optional
 
 from services.business_os.entitlements import premium as _prem
 from services.business_os.entitlements import readiness as _rd
+from services.business_os.entitlements import schema as _schema
 
 _log = logging.getLogger("business_os.entitlements.premium_api")
+_schema_lock = threading.Lock()
+_schema_ready = False
+
+
+def _ensure_schema_once() -> None:
+    """Initialize the schema owned by the non-Business-OS Premium route."""
+    global _schema_ready
+    if _schema_ready:
+        return
+    with _schema_lock:
+        if _schema_ready:
+            return
+        _schema.ensure_ready()
+        _schema_ready = True
 
 #: Attached to every payload. Premium is a paid subscription; verification is
 #: identity evidence. Conflating them is what makes verification purchasable.
@@ -161,10 +177,12 @@ def status_center(user_id: Any, *, subject_type: str = "user",
     if not user_id:
         return (401, {"ok": False, "error": "Login required."})
 
+    _log.info("premium_status_load_started")
     try:
+        _ensure_schema_once()
         state = _prem.resolve(user_id, subject_type=subject_type, context=context)
     except Exception:  # noqa: BLE001
-        _log.exception("premium resolve failed for user=%s", user_id)
+        _log.exception("premium_status_load_failure")
         return (500, {"ok": False, "error": "Premium status is unavailable."})
 
     founder = _founder_facts(user_id)
@@ -197,6 +215,12 @@ def status_center(user_id: Any, *, subject_type: str = "user",
             "message": (f"Founder #{founder['founder_number']} — your original "
                         "price is locked for as long as the membership stays active."),
         })
+
+    _log.info("premium_status_load_success state=%s", state["membership_mode"])
+    if not held and state["membership_mode"] in {"none", "legacy_fallback", "legacy"}:
+        _log.info("premium_status_state_free")
+    elif held:
+        _log.info("premium_status_state_active mode=%s", state["membership_mode"])
 
     return (200, {
         "ok": True,
