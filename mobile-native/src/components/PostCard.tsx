@@ -9,6 +9,7 @@ import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackC
 import { AttachedMusicPolicy, resolvePostAudioPolicy } from "../core/attachedMusicAudioPolicy";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { canonicalMediaPlaybackUrl, refreshCanonicalMediaAccess } from "../media/mediaAccess";
+import { renderableMedia } from "../media/mediaContract";
 import { useSavedState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
@@ -344,7 +345,10 @@ export function PostCard({
         </View>
       ) : null}
 
-      {post.media?.length ? (
+      {/* Renderable, not merely present. A post can carry an attached media row
+          whose URL never materialized; that used to satisfy `post.media.length`
+          and reserve a full-bleed 4:5 box around nothing. */}
+      {renderableMedia(post.media).length ? (
         <View style={[styles.mediaBleed, mediaBleedStyle]}>
           <MediaStrip post={post} active={active} motionEnabled={motionEnabled} onReact={onReact} />
         </View>
@@ -692,11 +696,19 @@ function mediaPosterUrl(media: PulseMedia) {
 
 function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost; active: boolean; motionEnabled: boolean; onReact?: (post: PulsePost, reactionType: string) => void }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  // A URL that 404s or times out gets us right back to the empty rectangle the
+  // renderable-URL gate exists to prevent, so a load error collapses the strip
+  // too. Keyed by post id so recycled rows don't inherit a stale failure.
+  const [failedPostId, setFailedPostId] = useState<number | null>(null);
   const author = post.author || {};
   const likeMedia = onReact ? () => onReact(post, post.viewer_reaction || "love") : undefined;
+  const renderable = useMemo(
+    () => (failedPostId === post.id ? [] : renderableMedia(post.media)),
+    [failedPostId, post.id, post.media]
+  );
   const viewerItems = useMemo(
     () =>
-      (post.media || []).map((media) =>
+      renderableMedia(post.media).map((media) =>
         mediaViewerItemFromPulseMedia(media, {
           title: post.title || "PulseSoc post media",
           subtitle: post.body || "PulseSoc media",
@@ -711,8 +723,8 @@ function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost;
       ),
     [author, post, post.body, post.id, post.media, post.title]
   );
-  if (!post.media?.length) return null;
-  const items = post.media.slice(0, 4);
+  if (!renderable.length) return null;
+  const items = renderable.slice(0, 4);
   const gallery = items.length > 1;
 
   if (!gallery) {
@@ -755,7 +767,12 @@ function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost;
           accessibilityRole="button"
           accessibilityLabel={`Open media 1 for post ${post.id}`}
         >
-          <Image source={{ uri: url }} style={[styles.mediaSingleImage, { aspectRatio: aspect }]} resizeMode="cover" />
+          <Image
+            source={{ uri: url }}
+            style={[styles.mediaSingleImage, { aspectRatio: aspect }]}
+            resizeMode="cover"
+            onError={() => setFailedPostId(post.id)}
+          />
         </Pressable>
         <NativeMediaViewer
           visible={viewerIndex !== null}

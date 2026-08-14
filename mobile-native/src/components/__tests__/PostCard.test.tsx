@@ -76,6 +76,69 @@ describe("computeMediaBleedStyle", () => {
   });
 });
 
+describe("PostCard blank-media collapse", () => {
+  // Regression for the reported giant empty block on a PulseSoc Insight post.
+  // The card used to gate its media container on `post.media.length`, so an
+  // attachment whose URL never materialized counted as media and reserved a
+  // full-bleed 4:5 box around nothing. The gate is now renderability.
+  beforeEach(() => {
+    resetSavedStoreForTests();
+  });
+
+  it("renders no media container when the only attachment has no usable url", () => {
+    const { queryByTestId } = render(
+      <PostCard
+        post={basePost({
+          media: [{ id: 7, media_type: "image", media_url: "", valid_url: "", width: 0, height: 0 }]
+        })}
+      />
+    );
+    expect(queryByTestId("home-feed-media-42-0")).toBeNull();
+  });
+
+  it("still renders media when a usable url is present", () => {
+    const { getByTestId } = render(
+      <PostCard
+        post={basePost({
+          media: [
+            {
+              id: 8,
+              media_type: "image",
+              media_url: "https://cdn.example/insight.png",
+              valid_url: "https://cdn.example/insight.png",
+              width: 1024,
+              height: 1280
+            }
+          ]
+        })}
+      />
+    );
+    expect(getByTestId("home-feed-media-42-0")).toBeTruthy();
+  });
+
+  it("collapses the media region when the image fails to load", () => {
+    const { getByTestId, queryByTestId } = render(
+      <PostCard
+        post={basePost({
+          media: [
+            { id: 9, media_type: "image", media_url: "https://cdn.example/gone.png", width: 1024, height: 1280 }
+          ]
+        })}
+      />
+    );
+    const media = getByTestId("home-feed-media-42-0");
+    fireEvent(media.findByType("Image" as never), "error");
+    expect(queryByTestId("home-feed-media-42-0")).toBeNull();
+  });
+
+  it("keeps a whitespace-only url from counting as media", () => {
+    const { queryByTestId } = render(
+      <PostCard post={basePost({ media: [{ id: 10, media_type: "image", media_url: "   " }] })} />
+    );
+    expect(queryByTestId("home-feed-media-42-0")).toBeNull();
+  });
+});
+
 describe("PostCard save action", () => {
   // The card reads its saved state from a module-level store so that every copy
   // of the same post agrees. That store outlives a render by design, so it has

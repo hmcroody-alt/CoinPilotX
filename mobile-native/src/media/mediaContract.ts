@@ -93,6 +93,31 @@ export function isLikelyExpiringMediaUrl(value?: string) {
   }
 }
 
+/**
+ * The one question every renderer must ask before reserving layout space:
+ * is there actually a URL to draw?
+ *
+ * A media record can arrive fully-formed in shape and still be unrenderable —
+ * the feed serializer emits a canonical payload for every attached row, and a
+ * row whose upload never produced a URL comes back with every URL field blank
+ * and width/height at 0. Callers that gated on `media.length` treated that as
+ * "there is media here", reserved a 4:5 portrait box for it, and rendered an
+ * empty rectangle. Gate on this instead of on array length.
+ */
+export function hasRenderableMediaUrl(media: CanonicalMediaRecord | null | undefined) {
+  if (!media) return false;
+  const candidates = [
+    media.media_url, media.url, media.playback_url, media.hls_url,
+    media.mux_hls_url, media.cdn_url, media.valid_url, media.thumbnail_url, media.poster_url
+  ];
+  return candidates.some((value) => typeof value === "string" && value.trim().length > 0);
+}
+
+/** Drop records that cannot be drawn, preserving order of the rest. */
+export function renderableMedia<T extends CanonicalMediaRecord>(list: readonly T[] | null | undefined): T[] {
+  return (list || []).filter((media) => hasRenderableMediaUrl(media));
+}
+
 /** Cached metadata may keep stable public URLs, but never persists signed credentials. */
 export function mediaRecordForCache<T extends CanonicalMediaRecord>(media: T): T {
   const next = { ...media } as T;

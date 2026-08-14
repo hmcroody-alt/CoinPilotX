@@ -464,7 +464,21 @@ def _media_for_posts(post_ids):
             if post_id not in post_id_set:
                 continue
             resolved = media_service.resolve_media(item)
-            media.setdefault(post_id, []).append(_canonical_media_payload(item, resolved, index=len(media.get(post_id, []))))
+            payload = _canonical_media_payload(item, resolved, index=len(media.get(post_id, [])))
+            # Never hand a renderer a media object it cannot draw. The payload
+            # shape is always complete, so an attachment whose upload produced no
+            # URL still serializes as a full object with blank urls and 0x0
+            # dimensions -- which clients counted as "has media" and reserved a
+            # full-bleed box for. Omitting it is what makes the post text-only.
+            if not (payload.get("valid_url") or payload.get("media_url")):
+                logging.info(
+                    "pulse_media_invalid_omitted post_id=%s media_id=%s hydration_state=%s",
+                    post_id,
+                    payload.get("id"),
+                    payload.get("hydration_state"),
+                )
+                continue
+            media.setdefault(post_id, []).append(payload)
         return media
     except Exception as exc:
         logging.warning("PulseSoc media hydration skipped: %s", exc)

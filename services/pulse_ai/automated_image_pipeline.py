@@ -315,7 +315,13 @@ def _persist_media(cur, post_id: int, content: bytes, width: int, height: int) -
     if media_storage.provider() in {"r2", "s3"} and not storage.get("durable_uploaded"):
         raise ImagePipelineError("generated_image_storage_failed")
     now = datetime.utcnow().isoformat(timespec="seconds")
-    media_url = storage.get("media_url") or ""
+    media_url = (storage.get("media_url") or "").strip()
+    # Storage can report success and still hand back no URL. Attaching that row
+    # would flip the post to post_type='image' with nothing to render -- the
+    # exact blank block this pipeline must never produce. Fail into the bounded
+    # retry path instead, and let the post stay a clean text-only Insight.
+    if not media_url:
+        raise ImagePipelineError("generated_image_storage_url_missing")
     cur.execute(
         """INSERT INTO chat_media_uploads
         (uploader_user_id,context_type,context_id,original_filename,stored_filename,media_url,thumbnail_url,

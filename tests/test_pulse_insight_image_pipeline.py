@@ -184,6 +184,53 @@ def test_provider_timeout_is_safe_and_does_not_log_or_return_secret(monkeypatch)
     assert "super-secret" not in str(exc.value)
 
 
+def test_storage_success_without_a_url_never_attaches_an_unrenderable_row(monkeypatch):
+    """Storage can report success and still return no URL.
+
+    That is the blank-media defect at its source: the row was inserted, the post
+    was flipped to post_type='image', and the feed then had an attachment with
+    nothing to draw. The post must stay text-only instead.
+    """
+    conn = _db()
+    cur = conn.cursor()
+    monkeypatch.setattr(
+        pipeline.media_storage,
+        "save_public_file",
+        lambda upload, folder: {"provider": "local", "media_url": "  ", "storage_key": "k", "durable_uploaded": True},
+    )
+    monkeypatch.setattr(pipeline.media_storage, "provider", lambda: "local")
+    result = pipeline.process_job(cur, {"id": 3, "target_id": 1, "attempts": 1, "max_attempts": 2}, provider=Provider())
+    assert result["text_only"] is True
+    assert cur.execute("SELECT COUNT(*) FROM chat_media_uploads").fetchone()[0] == 0
+    assert cur.execute("SELECT post_type FROM pulse_posts WHERE id=1").fetchone()[0] == "text"
+    assert json.loads(cur.execute("SELECT media_ids_json FROM pulse_posts WHERE id=1").fetchone()[0]) == []
+
+
+def test_feed_omits_media_objects_that_have_no_usable_url():
+    """Regression for the owner-reported giant empty media block.
+
+    A post carrying an attachment whose URL never materialized must serialize
+    with NO media entry at all. Emitting a well-shaped object with blank urls is
+    what let clients count it as media and reserve a full-bleed box.
+    """
+    from services import pulse_feed_engine
+
+    blank = pulse_feed_engine._canonical_media_payload({"id": 5, "media_type": "image"}, {})
+    assert not blank["valid_url"] and not blank["media_url"]
+    assert blank["width"] == 0 and blank["height"] == 0
+    assert blank["hydration_state"] == "missing"
+
+    usable = pulse_feed_engine._canonical_media_payload(
+        {"id": 6, "media_type": "image"},
+        {"media_url": "https://cdn.example/insight.png", "width": 1024, "height": 1280},
+    )
+    assert usable["valid_url"] and usable["aspect_ratio"] == round(1024 / 1280, 4)
+
+    source = open("services/pulse_feed_engine.py", encoding="utf-8").read()
+    assert 'if not (payload.get("valid_url") or payload.get("media_url")):' in source
+    assert "pulse_media_invalid_omitted" in source
+
+
 def test_feed_renderer_contract_is_reused_without_generated_url_field():
     source = open("services/pulse_ai/automated_image_pipeline.py", encoding="utf-8").read()
     assert "media_ids_json" in source and "chat_media_uploads" in source
