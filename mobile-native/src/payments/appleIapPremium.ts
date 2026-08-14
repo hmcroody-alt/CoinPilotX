@@ -109,6 +109,8 @@ export type PremiumPlanOffer = {
 
 export type PremiumOffers = {
   plans: PremiumPlanOffer[];
+  status: "success" | "empty" | "failed" | "timeout" | "unavailable";
+  missingPlans: PremiumPlan[];
   /**
    * Whole-percent saving of annual over twelve months of monthly, or `null`.
    *
@@ -120,6 +122,18 @@ export type PremiumOffers = {
    */
   annualSavingsPercent: number | null;
 };
+
+export const PREMIUM_PRODUCT_FETCH_TIMEOUT_MS = 12_000;
+
+function timed<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("premium_product_fetch_timeout")), timeoutMs);
+    operation.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); }
+    );
+  });
+}
 
 /**
  * Ask the server which products exist, then ask Apple what they cost here.
@@ -136,11 +150,14 @@ export async function getPremiumOffers(
     adapter?: StoreKitAdapter | null;
     intent?: typeof createPaymentIntent;
     platform?: string;
+    timeoutMs?: number;
   } = {}
 ): Promise<PremiumOffers> {
   const intent = deps.intent ?? createPaymentIntent;
   const platform = deps.platform ?? Platform.OS;
-  const empty: PremiumOffers = { plans: [], annualSavingsPercent: null };
+  const unavailable = (status: PremiumOffers["status"]): PremiumOffers => ({
+    plans: [], annualSavingsPercent: null, status, missingPlans: ["monthly", "annual"]
+  });
 
   const wanted: PremiumPlan[] = ["monthly", "annual"];
   const catalog: Array<{ plan: PremiumPlan; productId: string }> = [];
@@ -155,16 +172,18 @@ export async function getPremiumOffers(
       // One unavailable plan must not hide the other.
     }
   }
-  if (!catalog.length) return empty;
+  if (!catalog.length) return unavailable("unavailable");
 
   const adapter = deps.adapter !== undefined ? deps.adapter : loadStoreKitAdapter();
-  if (!adapter?.getSubscriptions) return empty;
+  if (!adapter?.getSubscriptions) return unavailable("unavailable");
   let products: StoreKitProduct[];
   try {
-    await adapter.initConnection();
-    products = await adapter.getSubscriptions(catalog.map((entry) => entry.productId));
-  } catch {
-    return empty;
+    products = await timed((async () => {
+      await adapter.initConnection();
+      return adapter.getSubscriptions!(catalog.map((entry) => entry.productId));
+    })(), deps.timeoutMs ?? PREMIUM_PRODUCT_FETCH_TIMEOUT_MS);
+  } catch (error) {
+    return unavailable(String((error as Error)?.message || "").includes("timeout") ? "timeout" : "failed");
   }
 
   const plans = catalog
@@ -181,7 +200,13 @@ export async function getPremiumOffers(
     })
     .filter((offer): offer is PremiumPlanOffer => offer !== null);
 
-  return { plans, annualSavingsPercent: annualSavings(plans) };
+  const missingPlans = wanted.filter((wantedPlan) => !plans.some((offer) => offer.plan === wantedPlan));
+  return {
+    plans,
+    annualSavingsPercent: annualSavings(plans),
+    status: plans.length ? "success" : "empty",
+    missingPlans
+  };
 }
 
 /**

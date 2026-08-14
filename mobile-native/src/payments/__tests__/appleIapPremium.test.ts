@@ -180,7 +180,28 @@ describe("Premium plan catalog", () => {
     // Not a remembered price, not a placeholder: the screen renders
     // "temporarily unavailable" and the tile stays on the profile.
     await expect(getPremiumOffers({ platform: "ios", intent: intent as never, adapter: null }))
-      .resolves.toEqual({ plans: [], annualSavingsPercent: null });
+      .resolves.toEqual({
+        plans: [], annualSavingsPercent: null, status: "unavailable", missingPlans: ["monthly", "annual"]
+      });
+  });
+
+  it("maps an empty StoreKit response to a terminal empty state", async () => {
+    await expect(getPremiumOffers({ platform: "ios", intent: intent as never, adapter: catalogAdapter([]) }))
+      .resolves.toMatchObject({ plans: [], status: "empty", missingPlans: ["monthly", "annual"] });
+  });
+
+  it("maps a StoreKit rejection to a terminal retryable failure", async () => {
+    const adapter = catalogAdapter([]);
+    adapter.getSubscriptions = async () => { throw new Error("store unavailable"); };
+    await expect(getPremiumOffers({ platform: "ios", intent: intent as never, adapter }))
+      .resolves.toMatchObject({ plans: [], status: "failed" });
+  });
+
+  it("bounds a StoreKit request that never resolves", async () => {
+    const adapter = catalogAdapter([]);
+    adapter.getSubscriptions = () => new Promise(() => undefined);
+    await expect(getPremiumOffers({ platform: "ios", intent: intent as never, adapter, timeoutMs: 5 }))
+      .resolves.toMatchObject({ plans: [], status: "timeout" });
   });
 
   it("keeps one plan when the other is withdrawn", async () => {
@@ -195,7 +216,35 @@ describe("Premium plan catalog", () => {
       adapter: catalogAdapter([product("com.pulsesoc.premium.monthly", 9.99, "$9.99")])
     });
     expect(offers.plans).toHaveLength(1);
+    expect(offers.missingPlans).toEqual(["annual"]);
     expect(offers.annualSavingsPercent).toBeNull();
+  });
+
+  it("keeps annual when monthly is missing", async () => {
+    const annualOnly = jest.fn(async ({ plan }: { plan?: string }) =>
+      plan === "monthly"
+        ? { ok: false }
+        : { ok: true, provider: "apple_iap", flow: "storekit", appleProductId: "com.pulsesoc.premium.annual" }
+    );
+    const offers = await getPremiumOffers({
+      platform: "ios",
+      intent: annualOnly as never,
+      adapter: catalogAdapter([product("com.pulsesoc.premium.annual", 99.99, "$99.99")])
+    });
+    expect(offers.plans.map((offer) => offer.plan)).toEqual(["annual"]);
+    expect(offers.missingPlans).toEqual(["monthly"]);
+  });
+
+  it("can retry after a failed request and return localized products", async () => {
+    const failed = catalogAdapter([]);
+    failed.getSubscriptions = async () => { throw new Error("temporary"); };
+    await expect(getPremiumOffers({ platform: "ios", intent: intent as never, adapter: failed }))
+      .resolves.toMatchObject({ status: "failed" });
+    await expect(getPremiumOffers({
+      platform: "ios",
+      intent: intent as never,
+      adapter: catalogAdapter([product("com.pulsesoc.premium.monthly", 9.99, "$9.99")])
+    })).resolves.toMatchObject({ status: "success", plans: [{ displayPrice: "$9.99" }] });
   });
 
   it.each([

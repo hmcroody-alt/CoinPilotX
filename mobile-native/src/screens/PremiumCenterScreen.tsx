@@ -105,6 +105,8 @@ export function PremiumCenterScreen({ route }: Props) {
 
   /** `premium_plan_viewed` is a funnel step, not a render count. Fire it once. */
   const planViewed = useRef(false);
+  const offerRequest = useRef(0);
+  const offerRequestActive = useRef(false);
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
     trackPremium("premium_status_load_started", { mode });
@@ -139,31 +141,53 @@ export function PremiumCenterScreen({ route }: Props) {
   const experience: PremiumExperience = premiumExperience(center);
   // Only surfaces that can actually sell need Apple's catalog. A Founder or an
   // active member is not shown prices, so their screen never touches StoreKit.
-  const sells = experience === "none" || experience === "expired";
+  const sells = Boolean(center) && (experience === "none" || experience === "expired");
+
+  const loadOffers = useCallback(async () => {
+    if (offerRequestActive.current) return;
+    offerRequestActive.current = true;
+    const request = ++offerRequest.current;
+    setOffersLoading(true);
+    setOffers(null);
+    trackPremium("premium_product_fetch_started");
+    try {
+      const next = await getPremiumOffers();
+      if (request !== offerRequest.current) return;
+      setOffers(next);
+      if (next.status === "success") {
+        trackPremium("premium_product_fetch_success", { plans: next.plans.length });
+      } else if (next.status === "empty") {
+        trackPremium("premium_product_fetch_empty");
+      } else {
+        trackPremium("premium_product_fetch_failed", { reason: next.status });
+      }
+      next.missingPlans.forEach((missing) => {
+        trackPremium(missing === "monthly" ? "premium_product_missing_monthly" : "premium_product_missing_annual");
+      });
+      setPlan((current) => next.plans.some((offer) => offer.plan === current) ? current : (next.plans[0]?.plan || current));
+      if (next.plans.length && !planViewed.current) {
+        planViewed.current = true;
+        trackPremium("premium_plan_viewed", {
+          plans: next.plans.length,
+          savings_percent: next.annualSavingsPercent
+        });
+      }
+    } catch {
+      if (request === offerRequest.current) {
+        trackPremium("premium_product_fetch_failed", { reason: "unexpected" });
+        setOffers({ plans: [], annualSavingsPercent: null, status: "failed", missingPlans: ["monthly", "annual"] });
+      }
+    } finally {
+      if (request === offerRequest.current) {
+        offerRequestActive.current = false;
+        setOffersLoading(false);
+      }
+    }
+  }, []);
 
   useEffect(() => {
-    if (!sells || offers || offersLoading) return;
-    let cancelled = false;
-    setOffersLoading(true);
-    getPremiumOffers()
-      .then((next) => {
-        if (cancelled) return;
-        setOffers(next);
-        if (next.plans.length && !planViewed.current) {
-          planViewed.current = true;
-          trackPremium("premium_plan_viewed", {
-            plans: next.plans.length,
-            savings_percent: next.annualSavingsPercent
-          });
-        }
-      })
-      .catch(() => {
-        trackPremium("premium_product_fetch_failure");
-        if (!cancelled) setOffers({ plans: [], annualSavingsPercent: null });
-      })
-      .finally(() => { if (!cancelled) setOffersLoading(false); });
-    return () => { cancelled = true; };
-  }, [sells, offers, offersLoading]);
+    if (sells && !offers) void loadOffers();
+  }, [sells, offers, loadOffers]);
 
   const choosePlan = useCallback((next: PremiumPlan) => {
     setPlan(next);
@@ -280,6 +304,7 @@ export function PremiumCenterScreen({ route }: Props) {
           busy={busy === "purchasing"}
           disabled={Boolean(busy)}
           onPurchase={onPurchase}
+          onRetry={loadOffers}
           expired={experience === "expired"}
         />
       ) : (
@@ -386,7 +411,7 @@ function NoticesSection({ center }: { center: PremiumCenter | null }) {
  * -------------------------------------------------------------------------- */
 
 function PlansSection({
-  offers, loading, plan, onPlan, busy, disabled, onPurchase, expired
+  offers, loading, plan, onPlan, busy, disabled, onPurchase, onRetry, expired
 }: {
   offers: PremiumOffers | null;
   loading: boolean;
@@ -395,6 +420,7 @@ function PlansSection({
   busy: boolean;
   disabled: boolean;
   onPurchase: () => void;
+  onRetry: () => void;
   expired: boolean;
 }) {
   const { t } = useTranslation();
@@ -422,6 +448,9 @@ function PlansSection({
         <Text style={styles.sectionTitle}>{t("premium:plans.heading")}</Text>
         <Text style={styles.body}>{t("premium:plans.unavailable")}</Text>
         <Text style={styles.note}>{t("premium:plans.unavailableBody")}</Text>
+        <Pressable accessibilityRole="button" disabled={loading} style={styles.retry} onPress={onRetry}>
+          <Text style={styles.retryText}>{t("premium:retry")}</Text>
+        </Pressable>
       </View>
     );
   }
@@ -442,6 +471,8 @@ function PlansSection({
           />
         ))}
       </View>
+      {offers?.missingPlans.includes("monthly") ? <Text style={styles.note}>{t("premium:plans.missingMonthly", { defaultValue: "The monthly plan is temporarily unavailable." })}</Text> : null}
+      {offers?.missingPlans.includes("annual") ? <Text style={styles.note}>{t("premium:plans.missingAnnual", { defaultValue: "The annual plan is temporarily unavailable." })}</Text> : null}
 
       <Pressable
         accessibilityRole="button"
