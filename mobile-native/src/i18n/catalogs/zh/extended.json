@@ -1573,5 +1573,193 @@
       "privacyPolicy": "隐私政策",
       "licenses": "开源许可"
     }
+  },
+  "progress": {
+    "title": "进度",
+    "subtitle": "创始会员挑战",
+    "privateNote": "只有你能看到。",
+    "notVerification": "本计划不是身份验证。",
+    "loading": "正在加载你的进度…",
+    "loadError": "我们无法加载你的进度。",
+    "retry": "重试",
+    "tile": {
+      "start": "开始挑战",
+      "active": "已达标 {{current}}/{{target}}",
+      "review": "我们正在核对一份邀请",
+      "complete": "创始会员"
+    },
+    "overview": {
+      "heading": "你的挑战",
+      "qualified_other": "{{count}} 位达标好友",
+      "remaining": "还差 {{count}} 位",
+      "complete": "挑战完成",
+      "nextMilestone": "下一个：{{label}}",
+      "nextReward": "再邀 {{count}} 位即可获得下一笔 {{amount}}",
+      "foundingMember": "你已成为创始会员",
+      "keepGoing": "每满 {{target}} 位达标好友，就能再获得 {{amount}}。"
+    },
+    "breakdown": {
+      "invited": "已邀请",
+      "inProgress": "进行中",
+      "qualified": "已达标",
+      "inReview": "审核中",
+      "closed": "已结束"
+    },
+    "sections": {
+      "milestones": "里程碑",
+      "referrals": "我的邀请",
+      "invite": "邀请好友",
+      "rewards": "奖励与收益",
+      "missions": "任务",
+      "badge": "创始会员徽章",
+      "insights": "数据洞察",
+      "activity": "动态",
+      "howItWorks": "玩法说明",
+      "faq": "常见问题"
+    },
+    "milestones": {
+      "heading": "奖励阶梯",
+      "locked": "未解锁",
+      "inProgress": "进行中",
+      "completed": "已获得",
+      "earnedOn": "{{date}} 获得",
+      "threshold": "达到 {{count}} 位好友",
+      "oneTime": "仅一次",
+      "repeatable": "每 {{count}} 位重复一次"
+    },
+    "referrals": {
+      "heading": "我的邀请",
+      "tabAll": "全部",
+      "tabQualified": "已达标",
+      "tabPending": "进行中",
+      "tabReview": "审核中",
+      "empty": "还没有邀请记录",
+      "emptyBody": "分享你的链接就能开始。",
+      "counts": "计入你的挑战",
+      "doesNotCountYet": "暂时还没计入",
+      "anonymous": "一位新成员",
+      "detailHeading": "达标清单",
+      "openDetail": "查看还差什么"
+    },
+    "checklist": {
+      "signedUp": "通过你的链接注册",
+      "profile": "完善了个人资料",
+      "postingDay": "在另一天发布过内容",
+      "postingDayNeeded": "还需要在另一天再发一次",
+      "standing": "账号状态良好",
+      "checks": "安全与质量检查",
+      "done": "已完成",
+      "notYet": "还没有",
+      "reviewNote": "我们正在查看，你无需做任何事。",
+      "noSecurityDetail": "我们不会公开这些检查的细节。"
+    },
+    "invite": {
+      "heading": "邀请好友",
+      "body": "分享你的链接。好友加入并在两个不同的日子发布内容后，就会计入。",
+      "yourLink": "你的邀请链接",
+      "copy": "复制链接",
+      "copied": "已复制",
+      "share": "分享",
+      "unavailable": "你的邀请链接还没准备好。",
+      "fairness": "邀请你真正认识的人。质量比数量更重要。"
+    },
+    "rewards": {
+      "heading": "奖励与收益",
+      "earned": "已获得",
+      "pending": "待处理",
+      "available": "可使用",
+      "pendingNote": "待处理很正常。奖励在发放前会经过一次查看。",
+      "cycles_other": "已完成 {{count}} 轮",
+      "cycleLabel": "第 {{count}} 轮",
+      "historyEmpty": "还没有奖励",
+      "historyEmptyBody": "达到 {{target}} 位达标好友时，你的第一笔 {{amount}} 就会到账。",
+      "howYouEarn": "每 {{count}} 位达标好友，你就能获得 {{amount}}。",
+      "statusPending": "待处理",
+      "statusApproved": "已通过",
+      "statusDisbursed": "可使用",
+      "statusOnHold": "暂缓",
+      "statusDenied": "未发放"
+    },
+    "missions": {
+      "heading": "任务",
+      "trackCreator": "你的创作者之路",
+      "trackNewcomer": "新手上路",
+      "available": "可参与",
+      "inProgress": "进行中",
+      "complete": "已完成",
+      "progress": "{{current}}/{{target}}",
+      "notTracked": "进度需手动更新",
+      "empty": "暂时没有任务",
+      "hostFirstLive": "开启你的第一场直播",
+      "reach100Followers": "达到 100 位粉丝",
+      "buildCreatorPage": "打造你的创作者主页",
+      "startSelling": "上架你的第一件商品",
+      "growCommunity": "壮大你的社区",
+      "completeProfile": "完善个人资料",
+      "firstPost": "发布你的第一条内容",
+      "postAnotherDay": "换一天再发一条",
+      "followFive": "关注五个人",
+      "startOwnChallenge": "开启你自己的挑战"
+    },
+    "badge": {
+      "heading": "创始会员",
+      "lockedBody": "达到 {{target}} 位达标好友，即可获得永久的创始会员徽章。",
+      "earnedBody": "这枚徽章是永久的。谢谢你一起建设 PulseSoc。",
+      "liveUnlocked": "已解锁直播创作者",
+      "liveLocked": "直播创作者将在 {{target}} 位时解锁"
+    },
+    "insights": {
+      "heading": "数据洞察",
+      "conversion": "已达标的邀请",
+      "stillGoing": "仍在进行中",
+      "empty": "活动还不够多",
+      "emptyBody": "等几位好友加入后，这里就会显示洞察。"
+    },
+    "activity": {
+      "heading": "动态",
+      "empty": "这里还是空的",
+      "referralSignedUp": "{{name}} 通过你的链接加入了",
+      "referralQualified": "{{name}} 现在已计入你的挑战",
+      "milestoneEarned": "你达成了一个里程碑",
+      "rewardEarned": "你获得了一份奖励",
+      "genericEvent": "进度更新"
+    },
+    "howItWorks": {
+      "heading": "玩法说明",
+      "invite": "分享你的邀请链接",
+      "join": "好友通过链接加入",
+      "profile": "好友完善个人资料",
+      "postTwoDays": "好友在 {{count}} 个不同的日子发布内容",
+      "qualified": "这位好友计入你的挑战",
+      "fairness": "和你邀请的人住在一起、在同一个办公室、同一所学校或同一个网络，都完全没问题。我们排查的是自动化和重复账号，而不是家人和朋友。",
+      "serverNote": "你的计数由 PulseSoc 计算，而不是在你的手机上完成。"
+    },
+    "faq": {
+      "heading": "常见问题",
+      "howReferralsWork": "分享你的邀请链接。任何通过它加入的人都会成为你邀请的好友。",
+      "whatCounts": "好友完善个人资料、在两个不同的日子发布内容并且账号状态良好后，就会计入。",
+      "whyNotCountedYet": "多数情况是还没有在第二天发布内容。打开这位好友，就能看到还差什么。",
+      "whenDoIEarn": "达到 {{target}} 位达标好友时你会获得 {{amount}}，之后每满 {{target}} 位再获得一次。",
+      "canIEarnAgain": "可以。{{amount}} 奖励可以重复获得。徽章、直播创作者权限和早期支持者仅一次。",
+      "howToUnlockLive": "第 {{target}} 位达标好友出现时，直播创作者资格就会解锁。",
+      "canFamilyParticipate": "可以。家人、室友、同学和同事都能参与，用同一个网络也没问题。",
+      "underReview": "审核中表示我们正在自动核对。通常会自行完成，你无需做任何事。",
+      "howRewardsBecomeAvailable": "奖励会立即计入，并在发放前经过一次查看。",
+      "isThereALimit": "达标好友数量和重复奖励都没有上限。",
+      "whenDoesItEnd": "挑战在 {{target}} 位时结束，但你的旅程不会。之后还会有新的任务开启。",
+      "questions": {
+        "howReferralsWork": "邀请是怎么运作的？",
+        "whatCounts": "好友怎样才会计入？",
+        "whyNotCountedYet": "我邀请的好友为什么还没计入？",
+        "whenDoIEarn": "我什么时候能获得奖励？",
+        "canIEarnAgain": "奖励可以重复获得吗？",
+        "howToUnlockLive": "怎样解锁直播创作者？",
+        "canFamilyParticipate": "家人和朋友可以参与吗？",
+        "underReview": "“审核中”是什么意思？",
+        "howRewardsBecomeAvailable": "奖励什么时候可以发放？",
+        "isThereALimit": "有上限吗？",
+        "whenDoesItEnd": "挑战结束后会怎样？"
+      }
+    }
   }
 }

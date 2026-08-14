@@ -48,6 +48,39 @@ _USERS_COLUMNS = (
     ("created_at", "TEXT"),
     ("account_status", "TEXT DEFAULT 'active'"),
     ("access_enabled", "INTEGER DEFAULT 1"),
+    # Progress OS reads onboarding completion as the canonical definition of
+    # "real profile" and the referral code as the canonical invite handle. The
+    # default of 0 matters: a user inserted without naming this column is not
+    # onboarded, which is the conservative reading and keeps a referral from
+    # qualifying by accident in a suite that never mentions Progress OS.
+    ("onboarding_complete", "INTEGER DEFAULT 0"),
+    ("referral_code", "TEXT"),
+)
+
+
+# ``pulse_posts`` has the same problem for the same reason. Three advertising
+# suites declare it as a bare ``(id INTEGER PRIMARY KEY)`` stub because all they
+# need is for the table to exist; they never read a column from it. Those files
+# sort before ``test_progress_os.py``, so the stub won every directory run and
+# the posting-day tests died on ``no column named user_id`` while passing when
+# run alone.
+#
+# The shape below is the one production writes in ``services/pulse_feed_engine``
+# and the one Progress OS reads when it derives qualifying posting days. A stub
+# that only needs the table to exist is satisfied by it too, so canonicalising
+# here costs the advertising suites nothing.
+_PULSE_POSTS_COLUMNS = (
+    ("user_id", "INTEGER"),
+    ("created_at", "TEXT"),
+    ("deleted_at", "TEXT"),
+    ("moderation_status", "TEXT"),
+    ("post_type", "TEXT"),
+    ("repost_of_post_id", "INTEGER"),
+)
+
+_CANONICAL_TABLES = (
+    ("users", "user_id", _USERS_COLUMNS),
+    ("pulse_posts", "id", _PULSE_POSTS_COLUMNS),
 )
 
 
@@ -66,7 +99,7 @@ def _existing_columns(db, conn, table: str) -> set:
 
 @pytest.fixture(scope="session", autouse=True)
 def _canonical_users_table():
-    """Define ``users`` once, additively, before any module setup runs.
+    """Define the shared tables once, additively, before any module setup runs.
 
     Session-scoped so it is ordered ahead of the xunit-style ``setup_module``
     hooks these suites use (pytest sets higher-scoped fixtures up first).
@@ -80,18 +113,21 @@ def _canonical_users_table():
         yield
         return
     try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY)"
-        )
-        present = _existing_columns(db, conn, "users")
-        for name, sql_type in _USERS_COLUMNS:
-            if name in present:
-                continue
-            try:
-                conn.execute(f"ALTER TABLE users ADD COLUMN {name} {sql_type}")
-            except Exception:
-                # Another suite may have added it concurrently; harmless.
-                pass
+        for table, key, columns in _CANONICAL_TABLES:
+            conn.execute(
+                f"CREATE TABLE IF NOT EXISTS {table} ({key} INTEGER PRIMARY KEY)"
+            )
+            present = _existing_columns(db, conn, table)
+            for name, sql_type in columns:
+                if name in present:
+                    continue
+                try:
+                    conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}"
+                    )
+                except Exception:
+                    # Another suite may have added it concurrently; harmless.
+                    pass
         conn.commit()
     except Exception:
         pass

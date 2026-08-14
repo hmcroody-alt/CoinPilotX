@@ -30,7 +30,8 @@ export const CATALOG_NAMESPACES = [
   "messaging",
   "commerce",
   "discovery",
-  "settings"
+  "settings",
+  "progress"
 ] as const;
 
 export type CatalogNamespace = (typeof CATALOG_NAMESPACES)[number];
@@ -54,7 +55,9 @@ export const NAMESPACE_TIER: Readonly<Record<CatalogNamespace, CatalogTier>> = O
   messaging: "extended",
   commerce: "extended",
   discovery: "extended",
-  settings: "extended"
+  settings: "extended",
+  // Progress OS is reachable only from the profile, well after first frame.
+  progress: "extended"
 });
 
 /** Namespaces the provider warms before it renders children. */

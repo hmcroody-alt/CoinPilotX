@@ -12448,6 +12448,15 @@ def owner_update_user_status(user_id, status, reason, admin):
         cur.execute("UPDATE users SET account_status='active', access_enabled=1, login_enabled=1, restricted_reason='', suspended_reason='', updated_at=? WHERE user_id=?", (now, user_id))
     conn.commit()
     conn.close()
+    # Progress OS: standing is a qualification requirement, so a suspension or
+    # deletion must be able to take a referral back out of the qualified count
+    # — and a reinstatement must be able to put it back. Re-derives rather than
+    # applying a delta, so it is correct in both directions.
+    try:
+        from services.business_os.progress import bridge as progress_bridge
+        progress_bridge.on_account_status_changed(user_id)
+    except Exception as exc:
+        logging.info("Progress OS status hook failed: %s", exc)
     admin_user_action(admin, user_id, f"user_status_{status}", {"reason": reason})
     return {"ok": True, "user": backend_pro_status_payload(load_account_by_id(user_id) or {})}, 200
 
@@ -13336,6 +13345,17 @@ def record_referral_signup(new_user_id, referral_code):
         conn.commit()
         conn.close()
         log_product_event(new_user_id, "referral_signup", {"referral_code": referral_code, "referrer_user_id": referrer_user_id})
+        # Progress OS attribution. Pins this referred person to this referrer
+        # for the campaign; the DB refuses a second claim, so a replayed signup
+        # or a competing referrer cannot steal or duplicate the attribution.
+        # Attribution is not qualification — this signup is worth nothing until
+        # the person completes a profile and posts on two separate days.
+        try:
+            from services.business_os.progress import bridge as progress_bridge
+            progress_bridge.on_referral_signup(
+                referrer_user_id, new_user_id, referral_code=referral_code)
+        except Exception as exc:
+            logging.info("Progress OS attribution failed: %s", exc)
     except Exception as exc:
         logging.info("Referral signup tracking failed: %s", exc)
 
@@ -20746,6 +20766,289 @@ def admin_business_os_premium_health():
         return denied
     from services.business_os.entitlements import premium_api as _papi
     return jsonify(_papi.health())
+
+
+# =====================================================================
+# Progress OS — Founding Member Challenge + retention missions.
+#
+# Thin transport only. All decisions live in the framework-agnostic controller
+# (services/business_os/progress/progress_api.py), unit-tested without Flask.
+#
+# Every member route derives the subject from the authenticated session and
+# passes *only* that id to the controller. None of these routes accepts a
+# target-user parameter, so there is no request shape that expresses "show me
+# someone else's referral progress" — the privacy guarantee is a property of
+# the route table, not of a check somebody has to remember to write.
+#
+# The admin routes are owner-gated and every write demands an explicit reason,
+# which the controller enforces again. There is deliberately no generic
+# "set qualified" or "set progress" endpoint: named decisions only.
+# =====================================================================
+def _progress_reply(result):
+    status, body = result
+    return jsonify(body), status
+
+
+def _progress_viewer():
+    """The authenticated member, or None. The only source of subject identity."""
+    user = api_account_user()
+    if not user:
+        return None
+    return int(user.get("user_id") or 0) or None
+
+
+@webhook_app.route("/api/progress", methods=["GET"])
+@webhook_app.route("/api/pulse/progress", methods=["GET"])
+def api_progress_overview():
+    """Challenge headline, or the next mission once the challenge is done."""
+    init_db()
+    uid = _progress_viewer()
+    if not uid:
+        return jsonify({"ok": False, "error": "Login required."}), 401
+    from services.business_os.progress import progress_api as _prog
+    return _progress_reply(_prog.overview(uid))
+
+
+@webhook_app.route("/api/progress/tile", methods=["GET"])
+def api_progress_tile():
+    """Compact state for the Profile OS tile (owner only, by construction)."""
+    init_db()
+    uid = _progress_viewer()
+    if not uid:
+        return jsonify({"ok": False, "error": "Login required."}), 401
+    from services.business_os.progress import progress_api as _prog
+    return _progress_reply(_prog.tile(uid))
+
+
+@webhook_app.route("/api/progress/milestones", methods=["GET"])
+def api_progress_milestones():
+    init_db()
+    uid = _progress_viewer()
+    if not uid:
+        return jsonify({"ok": False, "error": "Login required."}), 401
+    from services.business_os.progress import progress_api as _prog
+    return _progress_reply(_prog.milestones(uid))
+
+
+@webhook_app.route("/api/progress/referrals", methods=["GET"])
+def api_progress_referrals():
+    init_db()
+    uid = _progress_viewer()
+    if not uid:
+        return jsonify({"ok": False, "error": "Login required."}), 401
+    from services.business_os.progress import progress_api as _prog
+    return _progress_reply(
+        _prog.referrals(uid, tab=(request.args.get("tab") or "all")))
+
+
+@webhook_app.route("/api/progress/referrals/<ref>", methods=["GET"])
+def api_progress_referral_detail(ref):
+    """One referral's qualification checklist.
+
+    ``ref`` is an opaque HMAC token that binds the viewer, so a token belonging
+    to another referrer cannot resolve here. No ownership check is written
+    because none can be forgotten.
+    """
+    init_db()
+    uid = _progress_viewer()
+    if not uid:
+        return jsonify({"ok": False, "error": "Login required."}), 401
+    from services.business_os.progress import progress_api as _prog
+    return _progress_reply(_prog.referral_detail(uid, ref))
+
+
+@webhook_app.route("/api/progress/rewards", methods=["GET"])
+def api_progress_rewards():
+    init_db()
+    uid = _progress_viewer()
+    if not uid:
+        return jsonify({"ok": False, "error": "Login required."}), 401
+    from services.business_os.progress import progress_api as _prog
+    return _progress_reply(_prog.rewards(uid))
+
+
+@webhook_app.route("/api/progress/missions", methods=["GET"])
+def api_progress_missions():
+    init_db()
+    uid = _progress_viewer()
+    if not uid:
+        return jsonify({"ok": False, "error": "Login required."}), 401
+    from services.business_os.progress import progress_api as _prog
+    return _progress_reply(_prog.missions(uid))
+
+
+@webhook_app.route("/api/progress/activity", methods=["GET"])
+def api_progress_activity():
+    init_db()
+    uid = _progress_viewer()
+    if not uid:
+        return jsonify({"ok": False, "error": "Login required."}), 401
+    from services.business_os.progress import progress_api as _prog
+    return _progress_reply(_prog.activity(uid))
+
+
+@webhook_app.route("/api/progress/invite", methods=["GET", "POST"])
+def api_progress_invite():
+    """The viewer's canonical referral link — reused, never a second code."""
+    init_db()
+    uid = _progress_viewer()
+    if not uid:
+        return jsonify({"ok": False, "error": "Login required."}), 401
+    from services.business_os.progress import progress_api as _prog
+    return _progress_reply(_prog.invite(uid))
+
+
+@webhook_app.route("/api/progress/how-it-works", methods=["GET"])
+def api_progress_how_it_works():
+    from services.business_os.progress import progress_api as _prog
+    return _progress_reply(_prog.how_it_works())
+
+
+@webhook_app.route("/api/progress/faq", methods=["GET"])
+def api_progress_faq():
+    from services.business_os.progress import progress_api as _prog
+    return _progress_reply(_prog.faq())
+
+
+# --- Progress OS admin (owner only; named decisions, reason required) --------
+def _progress_admin_payload():
+    body = request.get_json(silent=True) or {}
+    return (clean_html(str(body.get("reason") or ""))[:500], body)
+
+
+@webhook_app.route("/admin/business-os/progress/review-queue", methods=["GET"])
+def admin_progress_review_queue():
+    """Referrals awaiting a human decision, oldest first."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    from services.business_os.progress import admin_api as _padmin
+    return _progress_reply(_padmin.review_queue())
+
+
+@webhook_app.route("/admin/business-os/progress/referral/<int:referred_user_id>", methods=["GET"])
+def admin_progress_inspect_referral(referred_user_id):
+    """Full evidence for one referral: state, posting days, account, history."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    from services.business_os.progress import admin_api as _padmin
+    return _progress_reply(_padmin.inspect_referral(referred_user_id))
+
+
+@webhook_app.route("/admin/business-os/progress/referrer/<int:user_id>", methods=["GET"])
+def admin_progress_inspect_referrer(user_id):
+    """One referrer's counts, milestones and reward cycles."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    from services.business_os.progress import admin_api as _padmin
+    return _progress_reply(_padmin.inspect_referrer(user_id))
+
+
+@webhook_app.route("/admin/business-os/progress/referral/<int:referred_user_id>/approve", methods=["POST"])
+def admin_progress_approve_qualification(referred_user_id):
+    """Clear a review hold. Does NOT assert qualification — facts still decide."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    reason, _ = _progress_admin_payload()
+    from services.business_os.progress import admin_api as _padmin
+    result = _padmin.approve_qualification(
+        referred_user_id, actor=str(admin.get("id") or "owner"), reason=reason)
+    log_admin_audit(admin.get("id"), "progress_qualification_approved",
+                    "user", str(referred_user_id), {"reason": reason})
+    return _progress_reply(result)
+
+
+@webhook_app.route("/admin/business-os/progress/referral/<int:referred_user_id>/reject", methods=["POST"])
+def admin_progress_reject_qualification(referred_user_id):
+    """Record a confirmed abuse finding. Reversible via /restore."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    reason, _ = _progress_admin_payload()
+    from services.business_os.progress import admin_api as _padmin
+    result = _padmin.reject_qualification(
+        referred_user_id, actor=str(admin.get("id") or "owner"), reason=reason)
+    log_admin_audit(admin.get("id"), "progress_qualification_rejected",
+                    "user", str(referred_user_id), {"reason": reason})
+    return _progress_reply(result)
+
+
+@webhook_app.route("/admin/business-os/progress/referral/<int:referred_user_id>/restore", methods=["POST"])
+def admin_progress_restore_qualification(referred_user_id):
+    """Undo a rejection; the state machine re-derives from current facts."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    reason, _ = _progress_admin_payload()
+    from services.business_os.progress import admin_api as _padmin
+    result = _padmin.restore_qualification(
+        referred_user_id, actor=str(admin.get("id") or "owner"), reason=reason)
+    log_admin_audit(admin.get("id"), "progress_qualification_restored",
+                    "user", str(referred_user_id), {"reason": reason})
+    return _progress_reply(result)
+
+
+@webhook_app.route("/admin/business-os/progress/reward/<int:user_id>/<int:cycle_index>/hold", methods=["POST"])
+def admin_progress_hold_reward(user_id, cycle_index):
+    """Pause an earned reward. Cannot deny it — that lives in the rewards console."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    reason, _ = _progress_admin_payload()
+    from services.business_os.progress import admin_api as _padmin
+    result = _padmin.hold_reward(user_id, cycle_index,
+                                 actor=str(admin.get("id") or "owner"), reason=reason)
+    log_admin_audit(admin.get("id"), "progress_reward_held", "user", str(user_id),
+                    {"cycle_index": cycle_index, "reason": reason})
+    return _progress_reply(result)
+
+
+@webhook_app.route("/admin/business-os/progress/reward/<int:user_id>/<int:cycle_index>/release", methods=["POST"])
+def admin_progress_release_reward(user_id, cycle_index):
+    """Lift a hold back to pending. Releasing is not approving."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    reason, _ = _progress_admin_payload()
+    from services.business_os.progress import admin_api as _padmin
+    result = _padmin.release_reward(user_id, cycle_index,
+                                    actor=str(admin.get("id") or "owner"), reason=reason)
+    log_admin_audit(admin.get("id"), "progress_reward_released", "user", str(user_id),
+                    {"cycle_index": cycle_index, "reason": reason})
+    return _progress_reply(result)
+
+
+@webhook_app.route("/admin/business-os/progress/milestone/<int:user_id>/revoke", methods=["POST"])
+def admin_progress_revoke_milestone(user_id):
+    """Withdraw a fraudulently obtained achievement (soft revoke, keeps evidence)."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    reason, body = _progress_admin_payload()
+    milestone_key = clean_html(str(body.get("milestone_key") or ""))[:80]
+    from services.business_os.progress import admin_api as _padmin
+    result = _padmin.revoke_milestone(user_id, milestone_key,
+                                      actor=str(admin.get("id") or "owner"), reason=reason)
+    log_admin_audit(admin.get("id"), "progress_milestone_revoked", "user", str(user_id),
+                    {"milestone_key": milestone_key, "reason": reason})
+    return _progress_reply(result)
+
+
+@webhook_app.route("/admin/business-os/progress/reconcile", methods=["POST"])
+def admin_progress_reconcile():
+    """Bounded safety-net sweep for anything the event hooks missed."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    from services.business_os.progress import admin_api as _padmin
+    try:
+        limit = int((request.get_json(silent=True) or {}).get("limit") or 500)
+    except (TypeError, ValueError):
+        limit = 500
+    return jsonify(_padmin.reconcile(limit=limit))
 
 
 # =====================================================================
@@ -43488,29 +43791,48 @@ def pulse_person_public_payload(cur, user_id):
 
 
 def pulse_referral_status_for_user(cur, user_id):
+    """Referral standing, counted as *qualified* referrals — not signups.
+
+    Progress OS owns this number. Before it existed, ``completed`` counted rows
+    that ``record_referral_signup`` writes with ``counted=1`` at signup time,
+    and ``privilege_engine`` unlocks Live at ``referral_count >= 30`` — so
+    thirty empty accounts unlocked Live Creator. ``progress.bridge`` replaces
+    the count with referrals that actually qualified (profile + two separate
+    posting days + good standing) and grandfathers anyone who had already
+    earned access under the old rule into an explicit ``livestream_access``
+    row, so nobody loses something they already have.
+
+    ``invited`` is kept alongside so the UI can show both numbers and explain
+    the difference rather than looking like progress went backwards.
+    """
     user_id = int(user_id or 0)
     code = get_or_create_referral_code(user_id)
+    invited = 0
     try:
-        cur.execute("SELECT COUNT(*) AS total FROM referral_conversions WHERE inviter_user_id=? AND counted=1 AND COALESCE(fraud_flag,0)=0", (user_id,))
-        completed = int(dict(cur.fetchone() or {}).get("total") or 0)
+        from services.business_os.progress import bridge as progress_bridge
+        standing = progress_bridge.referral_status(cur, user_id)
+        completed = int(standing.get("completed") or 0)
+        invited = int(standing.get("invited") or 0)
+        required = int(standing.get("required") or 30)
     except Exception:
-        try:
-            cur.execute("SELECT COUNT(*) AS total FROM users WHERE referred_by=? AND user_id!=?", (code, user_id))
-            completed = int(dict(cur.fetchone() or {}).get("total") or 0)
-        except Exception:
-            completed = 0
+        # Fail closed on the count. Falling back to the signup count here would
+        # reopen the farm exactly when the program is least healthy; existing
+        # creators keep access through their livestream_access row below.
+        completed = 0
+        required = 30
     try:
         cur.execute("SELECT * FROM livestream_access WHERE user_id=? LIMIT 1", (user_id,))
         live = dict(cur.fetchone() or {})
     except Exception:
         live = {}
-    status = live.get("status") or ("eligible" if completed >= 30 else "progress" if completed else "locked")
+    status = live.get("status") or ("eligible" if completed >= required else "progress" if completed else "locked")
     return {
         "referral_code": code,
         "referral_link": f"https://pulsesoc.com/r/{code}",
         "completed": completed,
-        "required": 30,
-        "remaining": max(0, 30 - completed),
+        "invited": invited,
+        "required": required,
+        "remaining": max(0, required - completed),
         "livestream_status": status,
     }
 
@@ -97957,6 +98279,15 @@ def save_user_email(user_id, email):
     cur.execute("UPDATE users SET email=?, onboarding_complete=1 WHERE user_id=?", (email, user_id))
     conn.commit()
     conn.close()
+    # Progress OS: completing onboarding is one of the qualification steps, so
+    # re-derive this person's referral state. Reuses the canonical
+    # `onboarding_complete` definition rather than inventing a second notion of
+    # what a "real profile" is.
+    try:
+        from services.business_os.progress import bridge as progress_bridge
+        progress_bridge.on_profile_completed(user_id)
+    except Exception as exc:
+        logging.info("Progress OS profile hook failed: %s", exc)
     user = load_account_by_id(user_id)
     if user:
         sync_brevo_contact_safe({**user, "source": "telegram_email"}, entity_type="user", entity_id=user_id)

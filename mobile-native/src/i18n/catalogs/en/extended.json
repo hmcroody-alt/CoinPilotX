@@ -1574,5 +1574,195 @@
       "autoTranslate": "Translate automatically",
       "autoTranslateHint": "Shows a translation under posts written in a language that isn't on your list, without asking each time."
     }
+  },
+  "progress": {
+    "title": "Progress",
+    "subtitle": "Founding Member Challenge",
+    "privateNote": "Only you can see this.",
+    "notVerification": "This program is not identity verification.",
+    "loading": "Loading your progress…",
+    "loadError": "We couldn't load your progress.",
+    "retry": "Try again",
+    "tile": {
+      "start": "Start your challenge",
+      "active": "{{current}} of {{target}} qualified",
+      "review": "We're reviewing an invite",
+      "complete": "Founding Member"
+    },
+    "overview": {
+      "heading": "Your challenge",
+      "qualified_one": "{{count}} qualified referral",
+      "qualified_other": "{{count}} qualified referrals",
+      "remaining": "{{count}} to go",
+      "complete": "Challenge complete",
+      "nextMilestone": "Next: {{label}}",
+      "nextReward": "{{count}} more for your next {{amount}}",
+      "foundingMember": "You're a Founding Member",
+      "keepGoing": "Every {{target}} qualified referrals earns another {{amount}}."
+    },
+    "breakdown": {
+      "invited": "Invited",
+      "inProgress": "In progress",
+      "qualified": "Qualified",
+      "inReview": "In review",
+      "closed": "Closed"
+    },
+    "sections": {
+      "milestones": "Milestones",
+      "referrals": "Your referrals",
+      "invite": "Invite friends",
+      "rewards": "Rewards & earnings",
+      "missions": "Missions",
+      "badge": "Founding Member badge",
+      "insights": "Insights",
+      "activity": "Activity",
+      "howItWorks": "How it works",
+      "faq": "FAQ"
+    },
+    "milestones": {
+      "heading": "Reward ladder",
+      "locked": "Locked",
+      "inProgress": "In progress",
+      "completed": "Earned",
+      "earnedOn": "Earned {{date}}",
+      "threshold": "At {{count}} referrals",
+      "oneTime": "One time only",
+      "repeatable": "Repeats every {{count}}"
+    },
+    "referrals": {
+      "heading": "Your referrals",
+      "tabAll": "All",
+      "tabQualified": "Qualified",
+      "tabPending": "In progress",
+      "tabReview": "In review",
+      "empty": "No referrals yet",
+      "emptyBody": "Share your link to get started.",
+      "counts": "Counts toward your challenge",
+      "doesNotCountYet": "Doesn't count yet",
+      "anonymous": "A new member",
+      "detailHeading": "Qualification checklist",
+      "openDetail": "See what's left"
+    },
+    "checklist": {
+      "signedUp": "Signed up through your link",
+      "profile": "Completed their profile",
+      "postingDay": "Posted on a separate day",
+      "postingDayNeeded": "Needs another separate posting day",
+      "standing": "Good standing",
+      "checks": "Safety and quality checks",
+      "done": "Done",
+      "notYet": "Not yet",
+      "reviewNote": "We're taking a look. Nothing is needed from you.",
+      "noSecurityDetail": "We don't share the details of these checks."
+    },
+    "invite": {
+      "heading": "Invite friends",
+      "body": "Share your link. When a friend joins and posts on two separate days, they count.",
+      "yourLink": "Your invite link",
+      "copy": "Copy link",
+      "copied": "Copied",
+      "share": "Share",
+      "unavailable": "Your invite link isn't ready yet.",
+      "fairness": "Invite people you actually know. Quality matters more than volume."
+    },
+    "rewards": {
+      "heading": "Rewards & earnings",
+      "earned": "Earned",
+      "pending": "Pending",
+      "available": "Available",
+      "pendingNote": "Pending is normal. Rewards are reviewed before they're released.",
+      "cycles_one": "{{count}} cycle completed",
+      "cycles_other": "{{count}} cycles completed",
+      "cycleLabel": "Cycle {{count}}",
+      "historyEmpty": "No rewards yet",
+      "historyEmptyBody": "Your first {{amount}} arrives at {{target}} qualified referrals.",
+      "howYouEarn": "You earn {{amount}} for every {{count}} qualified referrals.",
+      "statusPending": "Pending",
+      "statusApproved": "Approved",
+      "statusDisbursed": "Available",
+      "statusOnHold": "On hold",
+      "statusDenied": "Not granted"
+    },
+    "missions": {
+      "heading": "Missions",
+      "trackCreator": "Your creator journey",
+      "trackNewcomer": "Getting started",
+      "available": "Available",
+      "inProgress": "In progress",
+      "complete": "Complete",
+      "progress": "{{current}} of {{target}}",
+      "notTracked": "Progress updates manually",
+      "empty": "No missions right now",
+      "hostFirstLive": "Host your first live",
+      "reach100Followers": "Reach 100 followers",
+      "buildCreatorPage": "Build your creator page",
+      "startSelling": "List your first item",
+      "growCommunity": "Grow your community",
+      "completeProfile": "Complete your profile",
+      "firstPost": "Share your first post",
+      "postAnotherDay": "Post on another day",
+      "followFive": "Follow five people",
+      "startOwnChallenge": "Start your own challenge"
+    },
+    "badge": {
+      "heading": "Founding Member",
+      "lockedBody": "Reach {{target}} qualified referrals to earn the permanent Founding Member badge.",
+      "earnedBody": "This badge is permanent. Thank you for helping build PulseSoc.",
+      "liveUnlocked": "Live Creator unlocked",
+      "liveLocked": "Live Creator unlocks at {{target}}"
+    },
+    "insights": {
+      "heading": "Insights",
+      "conversion": "Invites that qualified",
+      "stillGoing": "Still on their way",
+      "empty": "Not enough activity yet",
+      "emptyBody": "Insights appear once a few friends have joined."
+    },
+    "activity": {
+      "heading": "Activity",
+      "empty": "Nothing here yet",
+      "referralSignedUp": "{{name}} joined through your link",
+      "referralQualified": "{{name}} now counts toward your challenge",
+      "milestoneEarned": "You reached a milestone",
+      "rewardEarned": "You earned a reward",
+      "genericEvent": "Progress update"
+    },
+    "howItWorks": {
+      "heading": "How it works",
+      "invite": "Share your invite link",
+      "join": "A friend joins through it",
+      "profile": "They complete their profile",
+      "postTwoDays": "They post on {{count}} separate days",
+      "qualified": "They count toward your challenge",
+      "fairness": "Sharing a home, office, school or network with someone you invited is completely fine. We look for automated and duplicate accounts, not for families and friends.",
+      "serverNote": "Your count is calculated by PulseSoc, not on your phone."
+    },
+    "faq": {
+      "heading": "FAQ",
+      "howReferralsWork": "Share your invite link. Anyone who joins through it becomes one of your referrals.",
+      "whatCounts": "A referral counts once they've completed their profile, posted on two separate days and are in good standing.",
+      "whyNotCountedYet": "Most of the time they haven't posted on a second day yet. Open the referral to see exactly what's left.",
+      "whenDoIEarn": "You earn {{amount}} at {{target}} qualified referrals, and again for every {{target}} after that.",
+      "canIEarnAgain": "Yes. The {{amount}} reward repeats. The badge, Live Creator access and Early Supporter are one time only.",
+      "howToUnlockLive": "Live Creator eligibility unlocks with the {{target}}th qualified referral.",
+      "canFamilyParticipate": "Yes. Family, roommates, classmates and colleagues can all take part, including on the same network.",
+      "underReview": "A review means we're checking something automatically. It usually resolves on its own and you don't need to do anything.",
+      "howRewardsBecomeAvailable": "Rewards are earned right away and reviewed before they're released.",
+      "isThereALimit": "There's no cap on qualified referrals or on repeat rewards.",
+      "whenDoesItEnd": "The challenge ends at {{target}}, but your journey doesn't. New missions open up after that.",
+      "questions": {
+        "howReferralsWork": "How do referrals work?",
+        "whatCounts": "What makes a referral count?",
+        "whyNotCountedYet": "Why hasn't my referral counted yet?",
+        "whenDoIEarn": "When do I earn a reward?",
+        "canIEarnAgain": "Can I earn more than once?",
+        "howToUnlockLive": "How do I unlock Live Creator?",
+        "canFamilyParticipate": "Can my family and friends take part?",
+        "underReview": "What does “under review” mean?",
+        "howRewardsBecomeAvailable": "When do rewards become available?",
+        "isThereALimit": "Is there a limit?",
+        "whenDoesItEnd": "What happens after the challenge?"
+      }
+    }
   }
 }

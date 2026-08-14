@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { PulseProfile, profileWebUrl } from "../api/profile";
 import { colors } from "../theme/colors";
+import { progressTheme } from "../theme/progressTheme";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { ContentTranslation } from "./ContentTranslation";
@@ -27,9 +28,25 @@ export type ProfileModuleKey =
   | "marketplace"
   | "events"
   | "business"
-  | "memories";
+  | "memories"
+  | "progress";
 
-type ModuleDef = { key: ProfileModuleKey; label: string; icon: keyof typeof Ionicons.glyphMap };
+type ModuleDef = {
+  key: ProfileModuleKey;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  /**
+   * Fixed colour, overriding both `colors.accent` and the profile owner's
+   * chosen `theme.accent_color`.
+   *
+   * Only Progress uses this, and the exception is the point: every other tile
+   * is an ambient panel, while Progress is private to the owner and carries
+   * money. Inheriting the profile accent would make it one card among fourteen,
+   * and on a profile themed violet it would not even be distinguishable. See
+   * `theme/progressTheme.ts` for why violet and gold specifically.
+   */
+  accent?: string;
+};
 
 const MODULES: ModuleDef[] = [
   { key: "identity", label: "Pulse Identity", icon: "person-circle-outline" },
@@ -45,7 +62,8 @@ const MODULES: ModuleDef[] = [
   { key: "marketplace", label: "Marketplace", icon: "storefront-outline" },
   { key: "events", label: "Events", icon: "calendar-outline" },
   { key: "business", label: "Business", icon: "briefcase-outline" },
-  { key: "memories", label: "Memories", icon: "time-outline" }
+  { key: "memories", label: "Memories", icon: "time-outline" },
+  { key: "progress", label: "Progress", icon: "trending-up-outline", accent: progressTheme.violet }
 ];
 
 const MODULE_BY_KEY = MODULES.reduce<Record<ProfileModuleKey, ModuleDef>>((map, module) => {
@@ -292,7 +310,7 @@ export function ProfileHeader({
         </View>
         <View style={styles.moduleGrid} accessibilityLabel="Profile modules">
           {modules.map((module) => (
-            <Module key={module.key} def={module} accent={accent} onPress={() => { haptic(); onModulePress?.(module.key); }} />
+            <Module key={module.key} def={module} accent={module.accent || accent} onPress={() => { haptic(); onModulePress?.(module.key); }} />
           ))}
         </View>
       </View>

@@ -993,6 +993,16 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
         conn.close()
         raise
     conn.close()
+    # Progress OS: a post is the event that most often completes a Founding
+    # Member qualification, since the rule is two posts on two separate days.
+    # Runs after the commit and swallows its own failures — the challenge is a
+    # program layered on the product, and a bug in it must never cost someone
+    # their post. The reconciliation sweep repairs anything dropped here.
+    try:
+        from services.business_os.progress import bridge as progress_bridge
+        progress_bridge.on_post_created(user_id, post_id=post_id, created_at=now)
+    except Exception as exc:
+        logging.warning("Progress OS post hook failed post_id=%s user_id=%s error=%s", post_id, user_id, exc)
     try:
         media_service.attach_media_to_message(user_id, post_id, media_ids or [], context_type="pulse", context_id=str(post_id))
     except Exception as exc:
