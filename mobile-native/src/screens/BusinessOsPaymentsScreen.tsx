@@ -138,6 +138,7 @@ import {
 } from "../components/payments";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { useTranslation } from "../i18n";
+import type { MoneyLayerId } from "../money/moneyLayers";
 import { paymentsLight } from "../theme/paymentsLight";
 import {
   usePaymentsBalanceCascade,
@@ -150,6 +151,15 @@ const PAYOUTS_PAGE_SIZE = 10;
 
 /** New money-flow copy lives here; see AdsWalletScreen for the pattern. */
 const NS = "commerce:payments";
+
+/**
+ * Copy for the layers underneath this screen. It lives in its own namespace
+ * rather than being folded into `commerce:payments` because the hub and the
+ * layers are read in different places: this screen answers "how much", the
+ * layers answer "why, and what do I do about it". Keeping the two apart means
+ * a change to a layer's explanation can't silently reword a figure's label.
+ */
+const MONEY_NS = "commerce:money";
 
 /**
  * Colour for a payout status chip's tone. The tone is decided in
@@ -483,6 +493,40 @@ export function BusinessOsPaymentsScreen({
   }, [closeWithdraw, load, t, withdrawAmount]);
 
   const currency = overview?.currency || "USD";
+
+  /**
+   * Every figure on this screen now opens the layer that explains it.
+   *
+   * The hub used to carry five things a seller could look at, want an
+   * explanation for, and tap — the hero, Processing, a payout row, a ledger
+   * row, the section headings — and every one of those taps did nothing. A dead
+   * tap on a money figure is worse than a plainly inert one: the seller
+   * concludes the screen is broken and stops trusting the number above it.
+   *
+   * These are the only new destinations on this screen. Nothing that already
+   * went somewhere was re-pointed — the ad wallet card still opens Advertising,
+   * the payout card still opens Verification Center, Rewards still opens
+   * Rewards.
+   */
+  const openMoneyLayer = useCallback(
+    (layer: MoneyLayerId) => {
+      navigation?.navigate("MoneyLayer", { layer, currency });
+    },
+    [currency, navigation]
+  );
+  const openPayoutDetail = useCallback(
+    (payout: SellerPayout) => {
+      navigation?.navigate("MoneyDetail", { subject: "payout", payout });
+    },
+    [navigation]
+  );
+  const openEntryDetail = useCallback(
+    (entry: LedgerEntry) => {
+      navigation?.navigate("MoneyDetail", { subject: "entry", entry });
+    },
+    [navigation]
+  );
+
   const availableCents = overview?.available_cents ?? 0;
   /** Masked Stripe reference for the confirm step — the overview's own word
    *  when it carries one, else the connect status account id's last four. */
@@ -571,6 +615,10 @@ export function BusinessOsPaymentsScreen({
           asOfLabel={offlineAsOf}
           reducedMotion={reducedMotion}
           ready={!loading}
+          // The hero is the figure most likely to be questioned, so it is the
+          // one that had to stop being inert first. It opens the layer that
+          // says where the money is and whether it can leave.
+          onPress={() => openMoneyLayer("payout_overview")}
         />
       </LinearGradient>
 
@@ -613,6 +661,11 @@ export function BusinessOsPaymentsScreen({
                       overview?.processing_cents ?? null,
                       currency
                     )}, still yours, not yet released for payout`}
+                    // "Not yet released" is the caption a seller most wants a
+                    // reason for. The Processing layer gives the server's own
+                    // reason, derived from `release_path`.
+                    onPress={() => openMoneyLayer("processing")}
+                    hint={t(`${MONEY_NS}.a11y.openLayer`, { layer: t(`${MONEY_NS}.layer.processing`) })}
                   />
                 );
               }
@@ -837,9 +890,24 @@ export function BusinessOsPaymentsScreen({
             by `payoutStatusChip`. An unknown status renders its raw word. */}
         {!loading && payoutInitiationIsLive() ? (
           <View style={styles.payoutsSection}>
-            <Text style={styles.sectionHeading} accessibilityRole="header" allowFontScaling>
-              {t(`${NS}.payoutsTitle`)}
-            </Text>
+            <View style={styles.sectionHeadingRow}>
+              <Text style={styles.sectionHeading} accessibilityRole="header" allowFontScaling>
+                {t(`${NS}.payoutsTitle`)}
+              </Text>
+              <Pressable
+                onPress={() => openMoneyLayer("payout_history")}
+                accessibilityRole="button"
+                accessibilityLabel={t("common:actions.viewAll")}
+                accessibilityHint={t(`${MONEY_NS}.a11y.openLayer`, {
+                  layer: t(`${MONEY_NS}.layer.payoutHistory`)
+                })}
+                hitSlop={10}
+              >
+                <Text style={styles.sectionLink} allowFontScaling>
+                  {t("common:actions.viewAll")}
+                </Text>
+              </Pressable>
+            </View>
             {payoutsFailed ? (
               <Text style={styles.withdrawBody} allowFontScaling>
                 {t(`${NS}.payoutsUnavailable`)}
@@ -853,7 +921,21 @@ export function BusinessOsPaymentsScreen({
                     (payout.status === "failed" || payout.status === "returned") &&
                     Boolean(payout.failure_message);
                   return (
-                    <View key={payout.id} style={styles.payoutRow} accessible>
+                    // Was an inert `View`. A payout row carries a failure
+                    // message it can only truncate and a provider reference it
+                    // cannot show at all, so it was the row most in need of
+                    // somewhere to go.
+                    <Pressable
+                      key={payout.id}
+                      style={styles.payoutRow}
+                      accessible
+                      accessibilityRole="button"
+                      accessibilityLabel={`${formatMoney(payout.amount_cents, payout.currency)}, ${
+                        chip.key ? t(`${NS}.${chip.key}`) : payout.status
+                      }`}
+                      accessibilityHint={t(`${MONEY_NS}.a11y.openPayout`)}
+                      onPress={() => openPayoutDetail(payout)}
+                    >
                       <View style={styles.payoutRowTop}>
                         <Text style={styles.payoutAmount} allowFontScaling>
                           {formatMoney(payout.amount_cents, payout.currency)}
@@ -875,7 +957,7 @@ export function BusinessOsPaymentsScreen({
                           {payout.failure_message}
                         </Text>
                       ) : null}
-                    </View>
+                    </Pressable>
                   );
                 })}
                 {payoutsHasMore ? (
@@ -925,13 +1007,36 @@ export function BusinessOsPaymentsScreen({
 
         {!loading && !balanceError ? (
           <View style={styles.ledger}>
-            <Text style={styles.sectionHeading} accessibilityRole="header" allowFontScaling>
-              Activity
-            </Text>
+            <View style={styles.sectionHeadingRow}>
+              <Text style={styles.sectionHeading} accessibilityRole="header" allowFontScaling>
+                {t(`${MONEY_NS}.layer.activity`)}
+              </Text>
+              <Pressable
+                onPress={() => openMoneyLayer("activity")}
+                accessibilityRole="button"
+                accessibilityLabel={t("common:actions.viewAll")}
+                accessibilityHint={t(`${MONEY_NS}.a11y.openLayer`, {
+                  layer: t(`${MONEY_NS}.layer.activity`)
+                })}
+                hitSlop={10}
+              >
+                <Text style={styles.sectionLink} allowFontScaling>
+                  {t("common:actions.viewAll")}
+                </Text>
+              </Pressable>
+            </View>
             {entries.length ? (
               <>
                 {days.map((day) => (
-                  <LedgerDayGroup key={day.key} day={day} entranceFor={entranceFor} />
+                  // `onPressEntry` was already a supported prop and was never
+                  // passed, so every ledger row on this screen was inert. It
+                  // now opens the row's own detail.
+                  <LedgerDayGroup
+                    key={day.key}
+                    day={day}
+                    entranceFor={entranceFor}
+                    onPressEntry={openEntryDetail}
+                  />
                 ))}
                 {hasMore ? (
                   <Pressable
@@ -1196,6 +1301,22 @@ const styles = StyleSheet.create({
     color: paymentsLight.text.primary,
     fontSize: 16,
     fontWeight: "700",
+    marginBottom: 6,
+    paddingHorizontal: paymentsLight.space.gutter
+  },
+  /* The heading keeps its own gutter padding, so the row adds none of its own
+     and the link supplies the matching padding on the right. `flexShrink` is on
+     the heading and not the link: at large text sizes the title is the part
+     that can wrap, and "View all" losing a letter would make it unreadable. */
+  sectionHeadingRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  sectionLink: {
+    color: paymentsLight.text.link,
+    fontSize: 14,
+    fontWeight: "600",
     marginBottom: 6,
     paddingHorizontal: paymentsLight.space.gutter
   },

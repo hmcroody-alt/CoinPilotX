@@ -1212,6 +1212,122 @@
       "applied": "적용되었습니다.",
       "applyError": "이 추천을 적용하지 못했습니다.",
       "openCampaign": "캠페인 열기"
+    },
+    "money": {
+      "layer": {
+        "payoutOverview": "정산 개요",
+        "processing": "처리 중",
+        "moveMoney": "내 돈 옮기기",
+        "payoutHistory": "정산",
+        "activity": "활동"
+      },
+      "overview": {
+        "available": "사용 가능",
+        "availableNote": "정산할 수 있는 확정 수익입니다.",
+        "processing": "처리 중",
+        "lifetime": "누적 수익",
+        "destination": "{{destination}}(으)로 지급",
+        "noDestination": "아직 등록된 정산 계좌가 없습니다.",
+        "moreTitle": "더 보기",
+        "paidOutUnavailable": "누적 지급 총액은 하나의 수치로 제공되지 않아 표시하지 않습니다. 정산 목록이 전체 기록입니다."
+      },
+      "payout": {
+        "stageLabel": "정산 계정",
+        "enabled": "정산 켜짐",
+        "disabled": "정산 꺼짐",
+        "destinationLabel": "지급처",
+        "destinationNone": "결제 대행사의 참조번호만 저장하며, 계좌번호는 저장하지 않습니다.",
+        "codesLabel": "결제 대행사가 보고한 내용",
+        "stage": {
+          "unknown": "상태 알 수 없음",
+          "not_started": "설정 안 됨",
+          "in_progress": "진행 중",
+          "pending_verification": "확인 대기 중",
+          "blocked": "차단됨",
+          "ready": "준비됨"
+        },
+        "actionStart": "정산 설정하기",
+        "actionResume": "정산 설정 마치기",
+        "actionRetryStatus": "상태 다시 확인",
+        "actionManage": "정산 계정 관리",
+        "reasonReady": "정산 계정이 확인되어 정산을 받을 수 있습니다.",
+        "reasonUnknown": "지금은 정산 계정에 연결할 수 없어 준비 여부를 확인할 수 없습니다. 잠시 후 다시 확인해 주세요.",
+        "reasonNotStarted": "아직 정산 계정을 설정하지 않았습니다. 수익이 PulseSoc을 떠나려면 필요합니다.",
+        "reasonInProgress": "정산 설정을 시작했지만 마치지 않았습니다. 나머지 정보를 제출할 때까지 정산은 꺼진 상태로 유지됩니다.",
+        "reasonPendingVerification": "결제 대행사가 정보를 검토하고 있습니다. 요청이 올 때까지 하실 일은 없습니다.",
+        "reasonPastDue": "정산을 실행하기 전에 결제 대행사가 추가 정보를 요구합니다. 정산 계정을 열어 남은 항목을 확인하세요.",
+        "reasonUnderReview": "결제 대행사가 정산 계정을 검토 중입니다. 그동안 정산은 일시 중지됩니다.",
+        "reasonPaused": "이 계정의 정산이 일시 중지되었습니다. 필요한 조치는 고객지원에 문의하세요.",
+        "reasonRejected": "결제 대행사가 이 정산 계정을 거절했습니다. 대행사와 해결하기 전까지는 정산할 수 없습니다.",
+        "reasonActionRequired": "정산을 켜기 전에 결제 대행사가 회원님의 조치를 기다리고 있습니다.",
+        "reasonBlockedOther": "결제 대행사가 이 계정의 정산을 꺼두었습니다. 사유는 정산 계정에서 확인하세요."
+      },
+      "payouts": {
+        "empty": "아직 정산 내역이 없습니다",
+        "emptyNote": "수익이 확정되고 정산이 실행되면 하나하나 여기에 표시됩니다.",
+        "failureLabel": "실패한 이유",
+        "failureGeneric": "결제 대행사가 사유를 밝히지 않고 이 정산을 거절했습니다. 아래 참조번호를 고객지원에서 요청합니다.",
+        "noArrival": "입금일은 표시할 수 없습니다. 일정은 결제 대행사가 정하며 저희에게 알려주지 않습니다.",
+        "openActivity": "활동 열기",
+        "relatedTitle": "관련 수익",
+        "relatedNote": "정산은 항목별로 나뉘지 않아 이 정산에 포함된 정확한 수익을 나열할 수 없습니다. 활동에서 모든 이동 내역을 볼 수 있습니다."
+      },
+      "processing": {
+        "amountLabel": "처리 중",
+        "ordersTitle": "보류 중인 항목",
+        "empty": "보류 중인 항목 없음",
+        "emptyNote": "판매가 확정 전에 보류되면 사유와 함께 여기에 표시됩니다.",
+        "noWallet": "아직 판매자 잔액이 없어 처리 중인 항목이 없습니다.",
+        "nothingProcessing": "지금 처리 중인 항목이 없습니다. 확정된 금액은 이미 사용 가능합니다.",
+        "noReleasePath": "이 금액은 결제 대행사의 일정에 따라 확정됩니다. 따로 요청할 것은 없으며 자동으로 이동합니다.",
+        "awaitingRelease": "이 금액은 아직 확정 중입니다. 확정되면 사용 가능 잔액으로 이동합니다."
+      },
+      "activity": {
+        "scopeNote": "판매자 원장입니다. 판매, 정산, 환불, 보류가 기록됩니다. 광고 지출과 리워드는 별도 원장에서 관리되어 여기에 표시되지 않습니다.",
+        "emptyFeed": "아직 활동이 없습니다",
+        "emptyFeedNote": "판매, 정산, 환불, 보류가 발생하는 대로 여기에 표시됩니다.",
+        "emptyFilter": "이 필터와 일치하는 항목이 없습니다",
+        "filter": {
+          "all": "전체",
+          "income": "수익",
+          "payout": "정산됨",
+          "held": "보류",
+          "refund": "환불",
+          "spend": "수수료"
+        }
+      },
+      "kind": {
+        "income": "수익",
+        "spend": "수수료",
+        "escrow": "보류",
+        "payout": "정산",
+        "refund": "환불",
+        "other": "기타"
+      },
+      "detail": {
+        "title": "세부 정보",
+        "amount": "금액",
+        "status": "상태",
+        "created": "생성일",
+        "updated": "수정일",
+        "reference": "참조번호",
+        "currency": "통화",
+        "type": "유형",
+        "provider": "대행사",
+        "held": "보류된 금액은 아직 사용할 수 없지만 회원님의 돈입니다.",
+        "staleNote": "목록을 불러온 시점의 기록입니다. 최신 정보는 뒤로 가서 당겨 새로고침하세요.",
+        "missingTitle": "표시할 내용이 없습니다",
+        "missingBody": "열 기록을 받지 못했습니다. 뒤로 가서 해당 행을 다시 탭하세요."
+      },
+      "states": {
+        "errorTitle": "불러올 수 없습니다",
+        "errorBody": "돈은 안전합니다. 잔액 문제가 아니라 표시 문제입니다. 당겨서 새로고침한 뒤 다시 시도하세요."
+      },
+      "a11y": {
+        "openLayer": "{{layer}} 열기",
+        "openPayout": "정산 세부 정보 열기",
+        "openEntry": "활동 세부 정보 열기"
+      }
     }
   },
   "discovery": {

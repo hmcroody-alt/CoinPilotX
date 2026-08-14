@@ -64,6 +64,8 @@ import { MarketplaceCheckoutScreen } from "../screens/MarketplaceCheckoutScreen"
 import { MarketplaceProductScreen } from "../screens/MarketplaceProductScreen";
 import { MarketplaceScreen } from "../screens/MarketplaceScreen";
 import { MessengerScreen } from "../screens/MessengerScreen";
+import { MoneyDetailScreen } from "../screens/MoneyDetailScreen";
+import { MoneyLayerScreen } from "../screens/MoneyLayerScreen";
 import { MusicScreen } from "../screens/MusicScreen";
 import { NewChatScreen } from "../screens/NewChatScreen";
 import { NotificationCenterScreen } from "../screens/NotificationCenterScreen";
@@ -436,6 +438,20 @@ export function AppNavigator() {
           title: route.params?.title || t("common:screens.businessOsPayments"),
           headerShown: false
         })}
+      />
+      {/* The money layers under Payments. Both draw the dark vault header
+          themselves — the hub's navy header, expanded — so the stack header
+          stays hidden here for the same reason it does for Payments above:
+          two headers on one screen is the regression that fixed. */}
+      <Stack.Screen
+        name="MoneyLayer"
+        component={MoneyLayerScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="MoneyDetail"
+        component={MoneyDetailScreen}
+        options={{ headerShown: false }}
       />
       {/* Rewards draws its own header via AdsScreenShell, like the ads-family
           screens, so the stack header stays hidden. */}

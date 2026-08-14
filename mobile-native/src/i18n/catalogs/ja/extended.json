@@ -1204,6 +1204,122 @@
       "applied": "適用しました。",
       "applyError": "このおすすめを適用できませんでした。",
       "openCampaign": "キャンペーンを開く"
+    },
+    "money": {
+      "layer": {
+        "payoutOverview": "出金の概要",
+        "processing": "処理中",
+        "moveMoney": "お金を動かす",
+        "payoutHistory": "出金",
+        "activity": "アクティビティ"
+      },
+      "overview": {
+        "available": "利用可能",
+        "availableNote": "確定済みで出金できる収益です。",
+        "processing": "処理中",
+        "lifetime": "累計収益",
+        "destination": "{{destination}} に送金",
+        "noDestination": "出金先はまだ登録されていません。",
+        "moreTitle": "その他",
+        "paidOutUnavailable": "累計出金額は単一の数値として提供されないため表示していません。出金一覧が完全な記録です。"
+      },
+      "payout": {
+        "stageLabel": "出金アカウント",
+        "enabled": "出金オン",
+        "disabled": "出金オフ",
+        "destinationLabel": "出金先",
+        "destinationNone": "決済事業者の参照番号のみを保存しており、口座番号は保存しません。",
+        "codesLabel": "決済事業者からの報告",
+        "stage": {
+          "unknown": "状態不明",
+          "not_started": "未設定",
+          "in_progress": "設定中",
+          "pending_verification": "確認待ち",
+          "blocked": "ブロック中",
+          "ready": "準備完了"
+        },
+        "actionStart": "出金を設定する",
+        "actionResume": "出金設定を完了する",
+        "actionRetryStatus": "状態を再確認する",
+        "actionManage": "出金アカウントを管理する",
+        "reasonReady": "出金アカウントは確認済みで、出金を受け取れます。",
+        "reasonUnknown": "ただいま出金アカウントに接続できず、準備できているか確認できません。しばらくしてからもう一度お試しください。",
+        "reasonNotStarted": "出金アカウントがまだ設定されていません。収益を PulseSoc から送るには必要です。",
+        "reasonInProgress": "出金設定は開始済みですが未完了です。残りの情報を提出するまで出金はオフのままです。",
+        "reasonPendingVerification": "決済事業者が情報を審査中です。連絡があるまで、あなたが行うことはありません。",
+        "reasonPastDue": "出金を実行する前に、決済事業者がさらに情報を必要としています。出金アカウントを開いて未対応の項目をご確認ください。",
+        "reasonUnderReview": "決済事業者が出金アカウントを審査中です。その間、出金は一時停止されます。",
+        "reasonPaused": "このアカウントの出金は一時停止中です。必要な対応はサポートにお問い合わせください。",
+        "reasonRejected": "決済事業者がこの出金アカウントを拒否しました。事業者側で解決するまで出金はできません。",
+        "reasonActionRequired": "出金を有効にする前に、決済事業者があなたの対応を待っています。",
+        "reasonBlockedOther": "決済事業者がこのアカウントの出金を無効にしています。理由は出金アカウントでご確認ください。"
+      },
+      "payouts": {
+        "empty": "出金はまだありません",
+        "emptyNote": "収益が確定して出金が実行されると、そのすべてがここに表示されます。",
+        "failureLabel": "失敗した理由",
+        "failureGeneric": "決済事業者が理由を示さずにこの出金を拒否しました。下記の参照番号はサポートが確認するものです。",
+        "noArrival": "着金日は表示できません。スケジュールは決済事業者が決めており、当社には通知されません。",
+        "openActivity": "アクティビティを開く",
+        "relatedTitle": "関連する収益",
+        "relatedNote": "出金は明細化されていないため、この出金に含まれる正確な収益は一覧にできません。アクティビティにすべての動きが表示されます。"
+      },
+      "processing": {
+        "amountLabel": "処理中",
+        "ordersTitle": "保留中のもの",
+        "empty": "保留中のものはありません",
+        "emptyNote": "確定前に保留された売上は、理由とともにここに表示されます。",
+        "noWallet": "販売者残高がまだないため、処理中のものはありません。",
+        "nothingProcessing": "現在処理中のものはありません。確定済みのものはすべて利用可能です。",
+        "noReleasePath": "これらの資金は決済事業者のスケジュールで確定します。申請の必要はなく、自動的に移動します。",
+        "awaitingRelease": "これらの資金はまだ確定処理中です。完了すると利用可能残高に移ります。"
+      },
+      "activity": {
+        "scopeNote": "これは販売者の元帳です。売上・出金・返金・保留を記録します。広告費とリワードは別の元帳で管理され、ここには表示されません。",
+        "emptyFeed": "アクティビティはまだありません",
+        "emptyFeedNote": "売上・出金・返金・保留は発生するたびにここに表示されます。",
+        "emptyFilter": "このフィルターに一致するものはありません",
+        "filter": {
+          "all": "すべて",
+          "income": "獲得",
+          "payout": "出金済み",
+          "held": "保留中",
+          "refund": "返金",
+          "spend": "手数料"
+        }
+      },
+      "kind": {
+        "income": "収益",
+        "spend": "手数料",
+        "escrow": "保留中",
+        "payout": "出金",
+        "refund": "返金",
+        "other": "その他"
+      },
+      "detail": {
+        "title": "詳細",
+        "amount": "金額",
+        "status": "状態",
+        "created": "作成日",
+        "updated": "更新日",
+        "reference": "参照番号",
+        "currency": "通貨",
+        "type": "種類",
+        "provider": "事業者",
+        "held": "保留中の金額はまだ使えませんが、あなたのものです。",
+        "staleNote": "これは一覧を読み込んだ時点の記録です。最新の状態は戻って引っ張って更新してください。",
+        "missingTitle": "表示できるものがありません",
+        "missingBody": "開く記録を受け取れませんでした。戻ってもう一度その行をタップしてください。"
+      },
+      "states": {
+        "errorTitle": "読み込めませんでした",
+        "errorBody": "お金は安全です。これは表示の問題であり、残高の問題ではありません。引っ張って更新して再試行してください。"
+      },
+      "a11y": {
+        "openLayer": "{{layer}} を開きます",
+        "openPayout": "出金の詳細を開きます",
+        "openEntry": "アクティビティの詳細を開きます"
+      }
     }
   },
   "discovery": {

@@ -1212,6 +1212,122 @@
       "applied": "Aplike.",
       "applyError": "Nou pa t ka aplike rekòmandasyon sa a.",
       "openCampaign": "Ouvri kanpay la"
+    },
+    "money": {
+      "layer": {
+        "payoutOverview": "Rezime peman",
+        "processing": "Ap trete",
+        "moveMoney": "Deplase lajan ou",
+        "payoutHistory": "Peman",
+        "activity": "Aktivite"
+      },
+      "overview": {
+        "available": "Disponib",
+        "availableNote": "Kòb ou fin genyen ou kapab retire.",
+        "processing": "Ap trete",
+        "lifetime": "Total kòb ou fè",
+        "destination": "Peye nan {{destination}}",
+        "noDestination": "Poko gen yon kote pou voye peman an.",
+        "moreTitle": "Plis",
+        "paidOutUnavailable": "Nou pa montre yon total peman sou tout tan an, paske li pa rapòte kòm yon sèl chif. Lis peman yo se dosye konplè a."
+      },
+      "payout": {
+        "stageLabel": "Kont peman",
+        "enabled": "Peman aktive",
+        "disabled": "Peman dezaktive",
+        "destinationLabel": "Destinasyon",
+        "destinationNone": "Nou kenbe yon referans nan men konpayi peman an, pa janm nimewo kont ou.",
+        "codesLabel": "Sa konpayi peman an rapòte",
+        "stage": {
+          "unknown": "Estati enkoni",
+          "not_started": "Pa konfigire",
+          "in_progress": "Nan pwosesis",
+          "pending_verification": "Tann verifikasyon",
+          "blocked": "Bloke",
+          "ready": "Pare"
+        },
+        "actionStart": "Konfigire peman",
+        "actionResume": "Fini konfigirasyon peman an",
+        "actionRetryStatus": "Tcheke estati a ankò",
+        "actionManage": "Jere kont peman an",
+        "reasonReady": "Kont peman ou verifye epi li kapab resevwa peman.",
+        "reasonUnknown": "Nou pa t rive jwenn kont peman ou kounye a, donk nou pa ka di si li pare. Tcheke ankò nan yon moman.",
+        "reasonNotStarted": "Ou poko konfigire yon kont peman. Ou bezwen youn anvan kòb ou ka soti nan PulseSoc.",
+        "reasonInProgress": "Konfigirasyon peman ou te kòmanse men li pa fini. Peman rete dezaktive jiskaske ou voye rès enfòmasyon ou yo.",
+        "reasonPendingVerification": "Enfòmasyon ou yo anba revizyon nan men konpayi peman an. Ou pa bezwen fè anyen jiskaske yo mande.",
+        "reasonPastDue": "Konpayi peman an bezwen plis enfòmasyon anvan peman ka pati. Ouvri kont peman ou pou wè sa ki manke.",
+        "reasonUnderReview": "Konpayi peman an ap revize kont peman ou. Peman yo an poz pandan tan sa a.",
+        "reasonPaused": "Peman sou kont sa a an poz. Kontakte sipò pou konnen sa ki nesesè.",
+        "reasonRejected": "Konpayi peman an refize kont peman sa a. Peman pa ka pati jiskaske ou regle sa avèk yo.",
+        "reasonActionRequired": "Konpayi peman an ap tann yon bagay nan men ou anvan yo ka aktive peman yo.",
+        "reasonBlockedOther": "Konpayi peman an dezaktive peman sou kont sa a. Ouvri kont peman ou pou wè rezon an."
+      },
+      "payouts": {
+        "empty": "Poko gen peman",
+        "emptyNote": "Lè kòb la fin klè epi yon peman pati, chak grenn ap parèt isit la.",
+        "failureLabel": "Poukisa li echwe",
+        "failureGeneric": "Konpayi peman an refize peman sa a san li pa di poukisa. Referans anba a se sa sipò ap mande w.",
+        "noArrival": "Nou pa ka montre yon dat rive. Konpayi peman an fikse orè a epi li pa fè nou konnen.",
+        "openActivity": "Ouvri aktivite",
+        "relatedTitle": "Kòb ki gen rapò",
+        "relatedNote": "Peman yo pa detaye atik pa atik, donk nou pa ka bay lis kòb egzak ki ladan l. Aktivite montre tout sa ki deplase."
+      },
+      "processing": {
+        "amountLabel": "Ap trete",
+        "ordersTitle": "Sa k ap kenbe",
+        "empty": "Anyen pa kenbe",
+        "emptyNote": "Lè yon vant kenbe anvan li klè, li parèt isit la ak rezon an.",
+        "noWallet": "Ou poko gen yon balans vandè, donk pa gen anyen k ap trete.",
+        "nothingProcessing": "Pa gen anyen k ap trete kounye a. Tout sa ki klè deja disponib.",
+        "noReleasePath": "Kòb sa yo klè selon orè konpayi peman ou. Pa gen anyen pou mande; yo deplase pou kont yo.",
+        "awaitingRelease": "Kòb sa yo toujou ap klè. Lè yo fini, y ap antre nan balans disponib ou."
+      },
+      "activity": {
+        "scopeNote": "Sa a se rejis vandè ou: vant, peman, ranbousman ak kòb kenbe. Depans piblisite ak rekonpans gen pwòp rejis pa yo epi yo pa parèt isit la.",
+        "emptyFeed": "Poko gen aktivite",
+        "emptyFeedNote": "Vant, peman, ranbousman ak kòb kenbe ap parèt isit la lè yo rive.",
+        "emptyFilter": "Anyen pa koresponn ak filt sa a",
+        "filter": {
+          "all": "Tout",
+          "income": "Genyen",
+          "payout": "Peye",
+          "held": "Kenbe",
+          "refund": "Ranbousman",
+          "spend": "Frè"
+        }
+      },
+      "kind": {
+        "income": "Kòb ou fè",
+        "spend": "Frè",
+        "escrow": "Kenbe",
+        "payout": "Peman",
+        "refund": "Ranbousman",
+        "other": "Lòt"
+      },
+      "detail": {
+        "title": "Detay",
+        "amount": "Montan",
+        "status": "Estati",
+        "created": "Kreye",
+        "updated": "Mete ajou",
+        "reference": "Referans",
+        "currency": "Lajan",
+        "type": "Tip",
+        "provider": "Konpayi",
+        "held": "Montan yo kenbe poko ka depanse, men yo toujou pou ou.",
+        "staleNote": "Sa a montre dosye a jan li te ye lè lis la te chaje. Retounen epi rale pou aktyalize.",
+        "missingTitle": "Anyen pou montre",
+        "missingBody": "Nou pa resevwa okenn dosye pou ouvri. Retounen epi peze ranje a ankò."
+      },
+      "states": {
+        "errorTitle": "Nou pa t ka chaje sa a",
+        "errorBody": "Lajan ou an sekirite — se yon pwoblèm afichaj, pa yon pwoblèm balans. Rale pou aktyalize epi eseye ankò."
+      },
+      "a11y": {
+        "openLayer": "Ouvri {{layer}}",
+        "openPayout": "Ouvri detay peman an",
+        "openEntry": "Ouvri detay aktivite a"
+      }
     }
   },
   "discovery": {

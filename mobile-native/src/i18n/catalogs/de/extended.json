@@ -1212,6 +1212,122 @@
       "applied": "Angewendet.",
       "applyError": "Diese Empfehlung konnte nicht angewendet werden.",
       "openCampaign": "Kampagne öffnen"
+    },
+    "money": {
+      "layer": {
+        "payoutOverview": "Auszahlungsübersicht",
+        "processing": "In Bearbeitung",
+        "moveMoney": "Geld bewegen",
+        "payoutHistory": "Auszahlungen",
+        "activity": "Aktivität"
+      },
+      "overview": {
+        "available": "Verfügbar",
+        "availableNote": "Freigegebene Einnahmen, die du auszahlen kannst.",
+        "processing": "In Bearbeitung",
+        "lifetime": "Gesamteinnahmen",
+        "destination": "Ausgezahlt an {{destination}}",
+        "noDestination": "Noch kein Auszahlungsziel hinterlegt.",
+        "moreTitle": "Mehr",
+        "paidOutUnavailable": "Wir zeigen keine Gesamtsumme aller Auszahlungen, weil sie nicht als eine Zahl gemeldet wird. Die Auszahlungsliste ist der vollständige Nachweis."
+      },
+      "payout": {
+        "stageLabel": "Auszahlungskonto",
+        "enabled": "Auszahlungen aktiv",
+        "disabled": "Auszahlungen inaktiv",
+        "destinationLabel": "Ziel",
+        "destinationNone": "Wir speichern eine Referenz deines Zahlungsanbieters, niemals deine Kontonummer.",
+        "codesLabel": "Von deinem Anbieter gemeldet",
+        "stage": {
+          "unknown": "Status unbekannt",
+          "not_started": "Nicht eingerichtet",
+          "in_progress": "In Bearbeitung",
+          "pending_verification": "Prüfung ausstehend",
+          "blocked": "Blockiert",
+          "ready": "Bereit"
+        },
+        "actionStart": "Auszahlungen einrichten",
+        "actionResume": "Einrichtung der Auszahlungen abschließen",
+        "actionRetryStatus": "Status erneut prüfen",
+        "actionManage": "Auszahlungskonto verwalten",
+        "reasonReady": "Dein Auszahlungskonto ist verifiziert und kann Auszahlungen empfangen.",
+        "reasonUnknown": "Wir konnten dein Auszahlungskonto gerade nicht erreichen und können daher nicht sagen, ob es bereit ist. Versuche es gleich noch einmal.",
+        "reasonNotStarted": "Du hast noch kein Auszahlungskonto eingerichtet. Ohne eines können keine Einnahmen PulseSoc verlassen.",
+        "reasonInProgress": "Deine Auszahlungseinrichtung wurde begonnen, aber nicht abgeschlossen. Auszahlungen bleiben aus, bis die restlichen Angaben eingereicht sind.",
+        "reasonPendingVerification": "Deine Angaben werden von deinem Zahlungsanbieter geprüft. Von dir ist nichts nötig, bis er sich meldet.",
+        "reasonPastDue": "Dein Zahlungsanbieter braucht weitere Angaben, bevor Auszahlungen laufen können. Öffne dein Auszahlungskonto, um zu sehen, was offen ist.",
+        "reasonUnderReview": "Dein Auszahlungskonto wird von deinem Zahlungsanbieter geprüft. Auszahlungen pausieren solange.",
+        "reasonPaused": "Auszahlungen für dieses Konto sind pausiert. Wende dich an den Support, um zu erfahren, was nötig ist.",
+        "reasonRejected": "Dein Zahlungsanbieter hat dieses Auszahlungskonto abgelehnt. Auszahlungen sind nicht möglich, bis das mit ihm geklärt ist.",
+        "reasonActionRequired": "Dein Zahlungsanbieter wartet auf etwas von dir, bevor Auszahlungen aktiviert werden können.",
+        "reasonBlockedOther": "Dein Zahlungsanbieter hat Auszahlungen für dieses Konto deaktiviert. Öffne dein Auszahlungskonto, um den Grund zu sehen."
+      },
+      "payouts": {
+        "empty": "Noch keine Auszahlungen",
+        "emptyNote": "Sobald Einnahmen freigegeben sind und eine Auszahlung läuft, erscheint jede einzelne hier.",
+        "failureLabel": "Warum es fehlgeschlagen ist",
+        "failureGeneric": "Dein Zahlungsanbieter hat diese Auszahlung ohne Angabe von Gründen abgelehnt. Die Referenz unten fragt der Support ab.",
+        "noArrival": "Wir können kein Ankunftsdatum anzeigen. Dein Zahlungsanbieter legt den Zeitplan fest und meldet ihn nicht zurück.",
+        "openActivity": "Aktivität öffnen",
+        "relatedTitle": "Zugehörige Einnahmen",
+        "relatedNote": "Auszahlungen sind nicht nach Posten aufgeschlüsselt, deshalb können wir die genauen Einnahmen darin nicht auflisten. Die Aktivität zeigt alle Bewegungen."
+      },
+      "processing": {
+        "amountLabel": "In Bearbeitung",
+        "ordersTitle": "Was zurückgehalten wird",
+        "empty": "Nichts zurückgehalten",
+        "emptyNote": "Wenn ein Verkauf vor der Freigabe zurückgehalten wird, steht er hier mit dem Grund.",
+        "noWallet": "Du hast noch kein Verkäuferguthaben, deshalb ist nichts in Bearbeitung.",
+        "nothingProcessing": "Gerade ist nichts in Bearbeitung. Alles Freigegebene ist bereits verfügbar.",
+        "noReleasePath": "Diese Beträge werden nach dem Zeitplan deines Zahlungsanbieters freigegeben. Es gibt nichts zu beantragen; sie bewegen sich von selbst.",
+        "awaitingRelease": "Diese Beträge werden noch freigegeben. Danach gehen sie in dein verfügbares Guthaben über."
+      },
+      "activity": {
+        "scopeNote": "Das ist dein Verkäuferkonto: Verkäufe, Auszahlungen, Erstattungen und Rückhalte. Werbeausgaben und Prämien laufen über getrennte Bücher und erscheinen hier nicht.",
+        "emptyFeed": "Noch keine Aktivität",
+        "emptyFeedNote": "Verkäufe, Auszahlungen, Erstattungen und Rückhalte landen hier, sobald sie passieren.",
+        "emptyFilter": "Nichts passt zu diesem Filter",
+        "filter": {
+          "all": "Alle",
+          "income": "Verdient",
+          "payout": "Ausgezahlt",
+          "held": "Zurückgehalten",
+          "refund": "Erstattungen",
+          "spend": "Gebühren"
+        }
+      },
+      "kind": {
+        "income": "Einnahmen",
+        "spend": "Gebühr",
+        "escrow": "Zurückgehalten",
+        "payout": "Auszahlung",
+        "refund": "Erstattung",
+        "other": "Sonstiges"
+      },
+      "detail": {
+        "title": "Details",
+        "amount": "Betrag",
+        "status": "Status",
+        "created": "Erstellt",
+        "updated": "Aktualisiert",
+        "reference": "Referenz",
+        "currency": "Währung",
+        "type": "Typ",
+        "provider": "Anbieter",
+        "held": "Zurückgehaltene Beträge sind noch nicht verfügbar, gehören aber weiterhin dir.",
+        "staleNote": "Das zeigt den Eintrag so, wie er beim Laden der Liste war. Geh zurück und zieh zum Aktualisieren.",
+        "missingTitle": "Nichts anzuzeigen",
+        "missingBody": "Wir haben keinen Eintrag zum Öffnen erhalten. Geh zurück und tippe die Zeile erneut an."
+      },
+      "states": {
+        "errorTitle": "Das konnten wir nicht laden",
+        "errorBody": "Dein Geld ist sicher — das ist ein Anzeigeproblem, kein Guthabenproblem. Zieh zum Aktualisieren und versuch es erneut."
+      },
+      "a11y": {
+        "openLayer": "Öffnet {{layer}}",
+        "openPayout": "Öffnet die Auszahlungsdetails",
+        "openEntry": "Öffnet die Aktivitätsdetails"
+      }
     }
   },
   "discovery": {

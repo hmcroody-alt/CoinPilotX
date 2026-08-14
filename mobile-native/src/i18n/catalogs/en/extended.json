@@ -1212,6 +1212,122 @@
       "applied": "Applied.",
       "applyError": "Couldn't apply this recommendation.",
       "openCampaign": "Open campaign"
+    },
+    "money": {
+      "layer": {
+        "payoutOverview": "Payout overview",
+        "processing": "Processing",
+        "moveMoney": "Move your money",
+        "payoutHistory": "Payouts",
+        "activity": "Activity"
+      },
+      "overview": {
+        "available": "Available",
+        "availableNote": "Cleared earnings you can pay out.",
+        "processing": "Processing",
+        "lifetime": "Lifetime earnings",
+        "destination": "Paid to {{destination}}",
+        "noDestination": "No payout destination on file yet.",
+        "moreTitle": "More",
+        "paidOutUnavailable": "We don't show a lifetime paid-out total, because it isn't reported as one figure. The payout list is the full record."
+      },
+      "payout": {
+        "stageLabel": "Payout account",
+        "enabled": "Payouts on",
+        "disabled": "Payouts off",
+        "destinationLabel": "Destination",
+        "destinationNone": "We store a reference from your payment provider, never your account number.",
+        "codesLabel": "Reported by your provider",
+        "stage": {
+          "unknown": "Status unknown",
+          "not_started": "Not set up",
+          "in_progress": "In progress",
+          "pending_verification": "Pending verification",
+          "blocked": "Blocked",
+          "ready": "Ready"
+        },
+        "actionStart": "Set up payouts",
+        "actionResume": "Finish setting up payouts",
+        "actionRetryStatus": "Check status again",
+        "actionManage": "Manage payout account",
+        "reasonReady": "Your payout account is verified and can receive payouts.",
+        "reasonUnknown": "We couldn't reach your payout account just now, so we can't say whether it's ready. Check again in a moment.",
+        "reasonNotStarted": "You haven't set up a payout account yet. You need one before earnings can leave PulseSoc.",
+        "reasonInProgress": "Your payout setup was started but not finished. Payouts stay off until the rest of your details are submitted.",
+        "reasonPendingVerification": "Your details are with your payment provider for review. Nothing is needed from you until they ask.",
+        "reasonPastDue": "Your payment provider needs more information before payouts can run. Open your payout account to see what's outstanding.",
+        "reasonUnderReview": "Your payout account is under review by your payment provider. Payouts are paused while that runs.",
+        "reasonPaused": "Payouts on this account are paused. Contact support to find out what's needed.",
+        "reasonRejected": "Your payment provider declined this payout account. Payouts can't run until that's resolved with them.",
+        "reasonActionRequired": "Your payment provider is waiting on something from you before payouts can be switched on.",
+        "reasonBlockedOther": "Your payment provider has payouts switched off on this account. Open your payout account for the reason."
+      },
+      "payouts": {
+        "empty": "No payouts yet",
+        "emptyNote": "Once earnings clear and a payout runs, every one of them shows up here.",
+        "failureLabel": "Why it failed",
+        "failureGeneric": "Your payment provider rejected this payout without saying why. The reference below is what support will ask for.",
+        "noArrival": "We can't show an arrival date. Your payment provider sets the schedule and doesn't report it back to us.",
+        "openActivity": "Open activity",
+        "relatedTitle": "Related earnings",
+        "relatedNote": "Payouts aren't itemised, so we can't list the exact earnings inside this one. Activity shows everything that moved."
+      },
+      "processing": {
+        "amountLabel": "Processing",
+        "ordersTitle": "What's being held",
+        "empty": "Nothing on hold",
+        "emptyNote": "When a sale is held before it clears, it shows here with the reason.",
+        "noWallet": "You don't have a seller balance yet, so there's nothing processing.",
+        "nothingProcessing": "Nothing is processing right now. Everything that has cleared is already available.",
+        "noReleasePath": "These funds clear on your payment provider's schedule. There's nothing to request; they move on their own.",
+        "awaitingRelease": "These funds are still clearing. Once they do, they move into your available balance."
+      },
+      "activity": {
+        "scopeNote": "This is your seller ledger: sales, payouts, refunds and holds. Ad spend and rewards run on separate ledgers and aren't shown here.",
+        "emptyFeed": "No activity yet",
+        "emptyFeedNote": "Sales, payouts, refunds and holds all land here as they happen.",
+        "emptyFilter": "Nothing matches this filter",
+        "filter": {
+          "all": "All",
+          "income": "Earned",
+          "payout": "Paid out",
+          "held": "On hold",
+          "refund": "Refunds",
+          "spend": "Fees"
+        }
+      },
+      "kind": {
+        "income": "Earnings",
+        "spend": "Fee",
+        "escrow": "On hold",
+        "payout": "Payout",
+        "refund": "Refund",
+        "other": "Other"
+      },
+      "detail": {
+        "title": "Details",
+        "amount": "Amount",
+        "status": "Status",
+        "created": "Created",
+        "updated": "Updated",
+        "reference": "Reference",
+        "currency": "Currency",
+        "type": "Type",
+        "provider": "Provider",
+        "held": "Held amounts aren't spendable yet, but they're still yours.",
+        "staleNote": "This shows the record as it was when the list loaded. Go back and pull to refresh for the latest.",
+        "missingTitle": "Nothing to show",
+        "missingBody": "We didn't get a record to open. Go back and tap the row again."
+      },
+      "states": {
+        "errorTitle": "We couldn't load this",
+        "errorBody": "Your money is safe — this is a display problem, not a balance problem. Pull to refresh to try again."
+      },
+      "a11y": {
+        "openLayer": "Opens {{layer}}",
+        "openPayout": "Opens payout details",
+        "openEntry": "Opens activity details"
+      }
     }
   },
   "discovery": {

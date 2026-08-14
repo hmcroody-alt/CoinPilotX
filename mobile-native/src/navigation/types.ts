@@ -258,6 +258,35 @@ export type RootStackParamList = {
     | undefined;
   BusinessOsInsights: { title?: string } | undefined;
   BusinessOsPayments: { title?: string; accountId?: number } | undefined;
+  /**
+   * The money layers under the Payments hub — the screens a seller opens to
+   * interrogate a figure rather than to read it.
+   *
+   * One route with a `layer` param rather than five routes, because the five
+   * differ only in what they read and what they say; the header, the refresh,
+   * the offline handling and the error card are identical, and five copies of
+   * those drift. `layer` is validated by `isMoneyLayerId` on arrival, so a bad
+   * deep link lands on the payout overview rather than a blank screen.
+   */
+  MoneyLayer:
+    | {
+        layer?: "payout_overview" | "processing" | "move_money" | "payout_history" | "activity";
+        title?: string;
+        currency?: string;
+      }
+    | undefined;
+  /**
+   * One payout or one ledger row, in full.
+   *
+   * The record travels in the params rather than an id, because neither object
+   * has a fetch-one endpoint — both are only ever returned inside a page. See
+   * `MoneyDetailScreen`'s docstring for what that costs (no refresh on the
+   * detail screen) and why the alternative is worse.
+   */
+  MoneyDetail:
+    | { subject: "payout"; payout: import("../api/sellerPayouts").SellerPayout; title?: string }
+    | { subject: "entry"; entry: import("../api/paymentsHub").LedgerEntry; title?: string }
+    | undefined;
   /** Pulse Credits and cash rewards — reached from the Payments money hub. */
   Rewards: { title?: string } | undefined;
   /**

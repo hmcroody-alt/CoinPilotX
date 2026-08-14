@@ -1212,6 +1212,122 @@
       "applied": "Aplicada.",
       "applyError": "Não foi possível aplicar esta recomendação.",
       "openCampaign": "Abrir campanha"
+    },
+    "money": {
+      "layer": {
+        "payoutOverview": "Resumo de pagamentos",
+        "processing": "Em processamento",
+        "moveMoney": "Movimente seu dinheiro",
+        "payoutHistory": "Pagamentos",
+        "activity": "Atividade"
+      },
+      "overview": {
+        "available": "Disponível",
+        "availableNote": "Ganhos liberados que você pode sacar.",
+        "processing": "Em processamento",
+        "lifetime": "Ganhos totais",
+        "destination": "Pago para {{destination}}",
+        "noDestination": "Ainda não há um destino de pagamento cadastrado.",
+        "moreTitle": "Mais",
+        "paidOutUnavailable": "Não mostramos um total pago acumulado porque ele não é informado como um único valor. A lista de pagamentos é o registro completo."
+      },
+      "payout": {
+        "stageLabel": "Conta de pagamento",
+        "enabled": "Pagamentos ativos",
+        "disabled": "Pagamentos inativos",
+        "destinationLabel": "Destino",
+        "destinationNone": "Guardamos uma referência do seu provedor de pagamento, nunca o número da sua conta.",
+        "codesLabel": "Informado pelo seu provedor",
+        "stage": {
+          "unknown": "Status desconhecido",
+          "not_started": "Não configurado",
+          "in_progress": "Em andamento",
+          "pending_verification": "Verificação pendente",
+          "blocked": "Bloqueado",
+          "ready": "Pronto"
+        },
+        "actionStart": "Configurar pagamentos",
+        "actionResume": "Concluir a configuração de pagamentos",
+        "actionRetryStatus": "Verificar o status novamente",
+        "actionManage": "Gerenciar conta de pagamento",
+        "reasonReady": "Sua conta de pagamento está verificada e pode receber pagamentos.",
+        "reasonUnknown": "Não conseguimos consultar sua conta de pagamento agora, então não sabemos se ela está pronta. Tente novamente em instantes.",
+        "reasonNotStarted": "Você ainda não configurou uma conta de pagamento. Ela é necessária para que os ganhos saiam do PulseSoc.",
+        "reasonInProgress": "Sua configuração de pagamento foi iniciada mas não concluída. Os pagamentos ficam desativados até você enviar o restante dos dados.",
+        "reasonPendingVerification": "Seus dados estão em análise com o provedor de pagamento. Nada é necessário da sua parte até que peçam.",
+        "reasonPastDue": "Seu provedor de pagamento precisa de mais informações antes de executar pagamentos. Abra sua conta de pagamento para ver o que falta.",
+        "reasonUnderReview": "Sua conta de pagamento está em análise pelo provedor de pagamento. Os pagamentos ficam pausados durante esse período.",
+        "reasonPaused": "Os pagamentos desta conta estão pausados. Fale com o suporte para saber o que é preciso.",
+        "reasonRejected": "Seu provedor de pagamento recusou esta conta de pagamento. Os pagamentos não podem ser feitos até resolver isso com ele.",
+        "reasonActionRequired": "Seu provedor de pagamento está aguardando algo de você antes de ativar os pagamentos.",
+        "reasonBlockedOther": "Seu provedor de pagamento desativou os pagamentos nesta conta. Abra sua conta de pagamento para ver o motivo."
+      },
+      "payouts": {
+        "empty": "Ainda não há pagamentos",
+        "emptyNote": "Assim que os ganhos forem liberados e um pagamento for feito, todos aparecem aqui.",
+        "failureLabel": "Por que falhou",
+        "failureGeneric": "Seu provedor de pagamento recusou este pagamento sem informar o motivo. A referência abaixo é o que o suporte vai pedir.",
+        "noArrival": "Não podemos mostrar a data de chegada. Seu provedor de pagamento define o calendário e não nos informa.",
+        "openActivity": "Abrir atividade",
+        "relatedTitle": "Ganhos relacionados",
+        "relatedNote": "Os pagamentos não são detalhados por item, então não conseguimos listar os ganhos exatos dentro deste. A atividade mostra tudo o que se movimentou."
+      },
+      "processing": {
+        "amountLabel": "Em processamento",
+        "ordersTitle": "O que está retido",
+        "empty": "Nada retido",
+        "emptyNote": "Quando uma venda é retida antes de liberar, ela aparece aqui com o motivo.",
+        "noWallet": "Você ainda não tem saldo de vendedor, então não há nada em processamento.",
+        "nothingProcessing": "Nada está em processamento agora. Tudo o que foi liberado já está disponível.",
+        "noReleasePath": "Esses valores são liberados no calendário do seu provedor de pagamento. Não há nada a solicitar; eles se movem sozinhos.",
+        "awaitingRelease": "Esses valores ainda estão sendo liberados. Quando forem, entram no seu saldo disponível."
+      },
+      "activity": {
+        "scopeNote": "Este é o seu livro de vendedor: vendas, pagamentos, reembolsos e retenções. Gastos com anúncios e recompensas usam livros separados e não aparecem aqui.",
+        "emptyFeed": "Ainda não há atividade",
+        "emptyFeedNote": "Vendas, pagamentos, reembolsos e retenções aparecem aqui conforme acontecem.",
+        "emptyFilter": "Nada corresponde a este filtro",
+        "filter": {
+          "all": "Tudo",
+          "income": "Ganho",
+          "payout": "Pago",
+          "held": "Retido",
+          "refund": "Reembolsos",
+          "spend": "Taxas"
+        }
+      },
+      "kind": {
+        "income": "Ganhos",
+        "spend": "Taxa",
+        "escrow": "Retido",
+        "payout": "Pagamento",
+        "refund": "Reembolso",
+        "other": "Outro"
+      },
+      "detail": {
+        "title": "Detalhes",
+        "amount": "Valor",
+        "status": "Status",
+        "created": "Criado",
+        "updated": "Atualizado",
+        "reference": "Referência",
+        "currency": "Moeda",
+        "type": "Tipo",
+        "provider": "Provedor",
+        "held": "Valores retidos ainda não podem ser usados, mas continuam sendo seus.",
+        "staleNote": "Isto mostra o registro como estava quando a lista carregou. Volte e puxe para atualizar.",
+        "missingTitle": "Nada para mostrar",
+        "missingBody": "Não recebemos nenhum registro para abrir. Volte e toque na linha novamente."
+      },
+      "states": {
+        "errorTitle": "Não conseguimos carregar isto",
+        "errorBody": "Seu dinheiro está seguro — é um problema de exibição, não de saldo. Puxe para atualizar e tente de novo."
+      },
+      "a11y": {
+        "openLayer": "Abre {{layer}}",
+        "openPayout": "Abre os detalhes do pagamento",
+        "openEntry": "Abre os detalhes da atividade"
+      }
     }
   },
   "discovery": {
