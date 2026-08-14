@@ -35,7 +35,9 @@
 
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { Linking, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { connectMarketplacePayout } from "../api/marketplace";
+import { PulseApiError } from "../api/pulseApi";
 import {
   fetchLedgerPage,
   fetchMoneyOverview,
@@ -73,10 +75,13 @@ import {
   filterLedgerEntries,
   isMoneyLayerId,
   maskedPayoutReference,
+  payoutOnboardingFailure,
+  payoutOnboardingOutcome,
   payoutReadiness,
   processingExplainer,
   type ActivityFilterId,
-  type MoneyLayerId
+  type MoneyLayerId,
+  type PayoutOnboardingOutcome
 } from "../money/moneyLayers";
 import { RootStackParamList } from "../navigation/types";
 import { moneyTheme } from "../theme/moneyTheme";
@@ -91,6 +96,10 @@ const READS: Record<MoneyLayerId, { overview: boolean; connect: boolean; payouts
   processing: { overview: true, connect: false, payouts: false, ledger: true },
   move_money: { overview: true, connect: true, payouts: false, ledger: false },
   payout_history: { overview: false, connect: false, payouts: true, ledger: false },
+  // Onboarding reads connect only. It deliberately does not read the balance:
+  // a seller who cannot be paid yet is not helped by being shown the figure,
+  // and a failed balance read must not be able to hide the setup button.
+  payout_onboarding: { overview: false, connect: true, payouts: false, ledger: false },
   activity: { overview: false, connect: false, payouts: false, ledger: true }
 };
 
@@ -99,6 +108,7 @@ const LAYER_TITLE_KEY: Record<MoneyLayerId, string> = {
   processing: "layer.processing",
   move_money: "layer.moveMoney",
   payout_history: "layer.payoutHistory",
+  payout_onboarding: "layer.payoutOnboarding",
   activity: "layer.activity"
 };
 
@@ -311,6 +321,8 @@ function LayerBody(props: BodyProps) {
       return <MoveMoneyBody {...props} />;
     case "payout_history":
       return <PayoutHistoryBody {...props} />;
+    case "payout_onboarding":
+      return <PayoutOnboardingBody {...props} />;
     case "activity":
       return <ActivityBody {...props} />;
     case "payout_overview":
@@ -467,7 +479,7 @@ function ProcessingBody({ overview, entries, currency, onLayer, t, fmt }: BodyPr
  * "Check status again" makes the seller guess which of the three applies to
  * them, which is the decision this layer exists to have already made.
  */
-function MoveMoneyBody({ overview, connect, currency, onRetryStatus, navigation, t }: BodyProps) {
+function MoveMoneyBody({ overview, connect, currency, onLayer, onRetryStatus, t }: BodyProps) {
   const readiness = payoutReadiness(connect, overview);
   const destination = overview?.payout_method?.destination_masked || maskedConnectRef(connect) || "";
 
@@ -476,9 +488,11 @@ function MoveMoneyBody({ overview, connect, currency, onRetryStatus, navigation,
       onRetryStatus();
       return;
     }
-    // Setup, resume and manage all live in the Verification Center, which owns
-    // the Connect onboarding handoff. This layer does not open a second one.
-    navigation?.navigate?.("VerificationCenter", { track: "business" });
+    // Setup, resume and manage all open the onboarding layer, which owns the
+    // one Connect hand-off. This previously opened the Verification Center —
+    // that screen collects identity documents and never touches payouts, so
+    // "Set up payouts" led a seller to upload an ID and still have no account.
+    onLayer("payout_onboarding");
   };
 
   return (
@@ -537,6 +551,115 @@ function MoveMoneyBody({ overview, connect, currency, onRetryStatus, navigation,
           unavailable={!overview}
         />
       </MoneyCard>
+    </View>
+  );
+}
+
+/**
+ * Getting a payout account, honestly.
+ *
+ * The mission design for this layer showed a five-step native flow: an
+ * information form, a provider picker offering Bank/PayPal/Wise/Payoneer, and a
+ * verification step. None of it was built, because none of it is real:
+ *
+ *   • This platform is Stripe Connect Express and nothing else. `paypal`,
+ *     `wise` and `payoneer` appear nowhere in the backend, so a picker would be
+ *     three dead options next to one live one.
+ *   • The name, country, currency and bank details are collected by Stripe's
+ *     own hosted onboarding. A native form asking for them would be a form
+ *     whose values are dropped on submit, which is worse than no form.
+ *
+ * So this layer does the part that is genuinely ours — say why an account is
+ * needed, report where the seller stands, and hand off — and lets Stripe own
+ * the steps Stripe owns. `startOnboarding` is the whole flow, and every one of
+ * its five outcomes gets a sentence.
+ */
+function PayoutOnboardingBody({ connect, onRetryStatus, navigation, t }: BodyProps) {
+  const readiness = payoutReadiness(connect, null);
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<PayoutOnboardingOutcome | null>(null);
+
+  const startOnboarding = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    setOutcome(null);
+    try {
+      // `connectMarketplacePayout` is the canonical wrapper for
+      // POST /api/pulse/payouts/connect — the one route that mints a Connect
+      // account link. It is named for the screen that happened to need it
+      // first; a second wrapper for the same route is exactly the duplication
+      // this mission forbids, so this layer imports that one rather than
+      // adding a payouts-shaped alias beside it.
+      const result = await connectMarketplacePayout();
+      const next = payoutOnboardingOutcome(result);
+      setOutcome(next);
+      if (next.kind === "ready") {
+        await Linking.openURL(next.url).catch(() => undefined);
+      }
+    } catch (error) {
+      const status = error instanceof PulseApiError ? error.status : 0;
+      setOutcome(payoutOnboardingFailure(status, error instanceof Error ? error.message : ""));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy]);
+
+  return (
+    <View>
+      <MoneyCard accent={readiness.payoutsEnabled ? "green" : "gold"}>
+        <MoneyChip
+          label={t(`${NS}.payout.stage.${readiness.stage}`)}
+          tone={
+            readiness.stage === "ready"
+              ? "success"
+              : readiness.stage === "blocked"
+                ? "error"
+                : readiness.stage === "unknown"
+                  ? "neutral"
+                  : "progress"
+          }
+        />
+        <MoneyNote>{t(`${NS}.payout.${readiness.reasonKey}`)}</MoneyNote>
+      </MoneyCard>
+
+      <MoneySectionTitle>{t(`${NS}.onboarding.whyTitle`)}</MoneySectionTitle>
+      <MoneyCard>
+        <MoneyNote>{t(`${NS}.onboarding.whyBody`)}</MoneyNote>
+        {/* Named before the seller taps, not after they land on a Stripe page
+            and wonder who is asking for their bank details. */}
+        <MoneyNote>{t(`${NS}.onboarding.providerNote`)}</MoneyNote>
+      </MoneyCard>
+
+      <MoneySectionTitle>{t(`${NS}.onboarding.stepsTitle`)}</MoneySectionTitle>
+      <MoneyCard>
+        <MoneyListRow title={t(`${NS}.onboarding.step1`)} accessibilityLabel={t(`${NS}.onboarding.step1`)} />
+        <MoneyListRow title={t(`${NS}.onboarding.step2`)} accessibilityLabel={t(`${NS}.onboarding.step2`)} />
+        <MoneyListRow title={t(`${NS}.onboarding.step3`)} accessibilityLabel={t(`${NS}.onboarding.step3`)} />
+      </MoneyCard>
+
+      {outcome ? (
+        <MoneyCard accent={outcome.kind === "ready" ? "green" : "plain"}>
+          <MoneyNote>{t(`${NS}.onboarding.${outcome.messageKey}`)}</MoneyNote>
+          {/* The server's own sentence, when it sent one. Shown under ours
+              rather than instead of it: ours explains, theirs is specific. */}
+          {outcome.serverMessage ? <MoneyNote>{outcome.serverMessage}</MoneyNote> : null}
+          {outcome.kind === "needs_seller_approval" ? (
+            <MoneyAction
+              label={t(`${NS}.onboarding.openSeller`)}
+              onPress={() => navigation?.navigate?.("SellerStore", { mode: "apply" })}
+            />
+          ) : null}
+        </MoneyCard>
+      ) : null}
+
+      <View style={styles.trailingAction}>
+        <MoneyAction
+          label={t(`${NS}.onboarding.${busy ? "starting" : "start"}`)}
+          onPress={startOnboarding}
+          accent="gold"
+        />
+        <MoneyAction label={t(`${NS}.payout.actionRetryStatus`)} onPress={onRetryStatus} />
+      </View>
     </View>
   );
 }

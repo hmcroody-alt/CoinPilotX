@@ -52,6 +52,7 @@ export type MoneyLayerId =
   | "processing"
   | "move_money"
   | "payout_history"
+  | "payout_onboarding"
   | "activity";
 
 export const MONEY_LAYER_IDS: readonly MoneyLayerId[] = [
@@ -59,6 +60,7 @@ export const MONEY_LAYER_IDS: readonly MoneyLayerId[] = [
   "processing",
   "move_money",
   "payout_history",
+  "payout_onboarding",
   "activity"
 ] as const;
 
@@ -225,6 +227,89 @@ export function payoutReadiness(
     codes,
     payoutsEnabled: false
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * Payout onboarding — what the Connect hand-off actually answered.
+ * ------------------------------------------------------------------ */
+
+/**
+ * The five things `POST /api/pulse/payouts/connect` can mean.
+ *
+ * Read from the route itself (`bot.py`, `api_pulse_payouts_connect`) rather than
+ * guessed, because three of the five are success-shaped and would otherwise be
+ * reported to the seller as "done":
+ *
+ *   • a link → Stripe onboarding is ready and the seller should be sent to it
+ *   • `ok: true` with **no** link → the deployment has no `STRIPE_SECRET_KEY`,
+ *     so the profile row was saved and bank onboarding cannot open at all. The
+ *     route still answers 200. A screen that trusts the status code here tells
+ *     a seller their payouts are set up when no account exists.
+ *   • 403 → approved seller status is required *first*; the fix is the seller
+ *     application, not retrying this button
+ *   • 401 → signed out
+ *   • anything else → failed, and the server's own sentence is worth more than
+ *     ours
+ *
+ * Kept pure and separate from the screen so each of the five can be tested
+ * without a network, and so the success-shaped failures cannot quietly collapse
+ * into the happy path during a refactor.
+ */
+export type PayoutOnboardingOutcome = {
+  kind: "ready" | "not_configured" | "needs_seller_approval" | "signed_out" | "failed";
+  /** Present only on `ready`. Never logged, never rendered — only opened. */
+  url: string;
+  /** i18n suffix under `commerce:money.onboarding`. */
+  messageKey:
+    | "outcomeReady"
+    | "outcomeNotConfigured"
+    | "outcomeNeedsSeller"
+    | "outcomeSignedOut"
+    | "outcomeFailed";
+  /**
+   * The server's message, when it sent one worth showing. The layer prefers its
+   * own sentence and falls back to this, on the same reasoning the payout
+   * request flow uses: a specific server explanation beats a generic local one.
+   */
+  serverMessage: string;
+};
+
+export function payoutOnboardingOutcome(
+  response: { ok?: boolean; message?: string; onboarding_url?: string } | null | undefined
+): PayoutOnboardingOutcome {
+  const url = String(response?.onboarding_url || "").trim();
+  if (url) {
+    return { kind: "ready", url, messageKey: "outcomeReady", serverMessage: "" };
+  }
+  return {
+    kind: "not_configured",
+    url: "",
+    messageKey: "outcomeNotConfigured",
+    serverMessage: String(response?.message || "")
+  };
+}
+
+/**
+ * The same classification for the throwing path.
+ *
+ * Separate from the resolver above because a rejection carries a status and a
+ * resolution does not; folding them together would mean inventing a status for
+ * the success case.
+ */
+export function payoutOnboardingFailure(status: number, message?: string): PayoutOnboardingOutcome {
+  const serverMessage = String(message || "");
+  if (status === 403) {
+    return {
+      kind: "needs_seller_approval",
+      url: "",
+      messageKey: "outcomeNeedsSeller",
+      serverMessage
+    };
+  }
+  if (status === 401) {
+    return { kind: "signed_out", url: "", messageKey: "outcomeSignedOut", serverMessage };
+  }
+  return { kind: "failed", url: "", messageKey: "outcomeFailed", serverMessage };
 }
 
 /* ------------------------------------------------------------------ *

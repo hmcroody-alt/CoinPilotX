@@ -33,6 +33,8 @@ import {
   ACTIVITY_FILTERS,
   MONEY_LAYER_IDS,
   MONEY_LEDGER_KINDS,
+  payoutOnboardingFailure,
+  payoutOnboardingOutcome,
   payoutReadiness,
   processingExplainer,
   type ActivityFilterId,
@@ -156,13 +158,36 @@ describe("money layer destinations", () => {
     expect(hubSource).toContain("openPayoutDetail(payout)");
   });
 
+  /**
+   * A regression that shipped: every "Set up payouts" control on the hub opened
+   * the Verification Center. That screen collects identity documents and never
+   * touches payouts, so the one control whose entire job is to unblock getting
+   * paid could not unblock it — a seller uploaded an ID and still had no
+   * account for money to land in. Nothing failed: the route exists, the tap
+   * navigates, the screen renders. Only the destination was wrong, which is
+   * why this is pinned by name rather than left to a render test.
+   */
+  it("sends payout setup to the onboarding layer, not to identity verification", () => {
+    expect(hubSource).toContain('openMoneyLayer("payout_onboarding")');
+    expect(hubSource).not.toContain("VerificationCenter");
+    // The layer's own "set up" / "resume" / "manage" actions route the same way.
+    expect(layerSource).toContain('onLayer("payout_onboarding")');
+    expect(layerSource).not.toContain("VerificationCenter");
+  });
+
   it("gives every layer a title key that resolves", () => {
     MONEY_LAYER_IDS.forEach((layer: MoneyLayerId) => {
       expect(layerSource).toContain(`${layer}:`);
     });
-    ["payoutOverview", "processing", "moveMoney", "payoutHistory", "activity"].forEach((key) =>
-      expectSentence(`layer.${key}`)
-    );
+    // Derived from the id list rather than written out. The hand-listed version
+    // of this assertion stayed green when a sixth layer was added, because a
+    // list of five keys cannot notice a sixth one is missing — the title would
+    // have shipped as a raw `commerce:money.layer.payoutOnboarding` token in
+    // the header.
+    MONEY_LAYER_IDS.forEach((layer: MoneyLayerId) => {
+      const key = layer.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+      expectSentence(`layer.${key}`);
+    });
   });
 });
 
@@ -312,6 +337,37 @@ describe("money layer copy", () => {
     ];
     expect(new Set(keys).size).toBe(4);
     keys.forEach((key) => expectSentence(`processing.${key}`));
+  });
+
+  /**
+   * The onboarding layer is the only screen in this family that speaks about an
+   * outcome it did not read — it reports what happened to a request it just
+   * made. Three of the five outcomes come back success-shaped from the server
+   * (notably `ok: true` with no link, which is what an unconfigured Stripe key
+   * returns), so each one needs its own sentence. A missing key here would
+   * render a raw token at the exact moment a seller is asking "did that work?".
+   */
+  it("has a sentence for every onboarding outcome the resolvers can produce", () => {
+    const outcomes = [
+      payoutOnboardingOutcome({ ok: true, onboarding_url: "https://connect.stripe.com/setup/x" }),
+      payoutOnboardingOutcome({ ok: true, message: "Stripe is not configured." }),
+      payoutOnboardingOutcome(null),
+      payoutOnboardingFailure(403, "Approved seller status is required."),
+      payoutOnboardingFailure(401, ""),
+      payoutOnboardingFailure(500, "boom"),
+      payoutOnboardingFailure(0, "")
+    ];
+    // Five distinct kinds, each with its own message key — asserted so that
+    // collapsing two outcomes onto one sentence fails here.
+    expect(new Set(outcomes.map((o) => o.kind)).size).toBe(5);
+    expect(new Set(outcomes.map((o) => o.messageKey)).size).toBe(5);
+    outcomes.forEach((outcome) => expectSentence(`onboarding.${outcome.messageKey}`));
+  });
+
+  it("has the standing copy the onboarding layer renders before any request", () => {
+    ["whyTitle", "whyBody", "providerNote", "stepsTitle", "step1", "step2", "step3", "start", "starting", "openSeller"].forEach(
+      (key) => expectSentence(`onboarding.${key}`)
+    );
   });
 
   it("has both activity empty states and the scope note that bounds the feed", () => {

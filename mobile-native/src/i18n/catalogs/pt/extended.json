@@ -1219,7 +1219,8 @@
         "processing": "Em processamento",
         "moveMoney": "Movimente seu dinheiro",
         "payoutHistory": "Pagamentos",
-        "activity": "Atividade"
+        "activity": "Atividade",
+        "payoutOnboarding": "Configurar pagamentos"
       },
       "overview": {
         "available": "Disponível",
@@ -1327,6 +1328,23 @@
         "openLayer": "Abre {{layer}}",
         "openPayout": "Abre os detalhes do pagamento",
         "openEntry": "Abre os detalhes da atividade"
+      },
+      "onboarding": {
+        "whyTitle": "Por que você precisa disso",
+        "whyBody": "Seus ganhos ficam na PulseSoc até você ter uma conta de pagamento. Criar uma é o que permite que o dinheiro chegue ao seu banco.",
+        "providerNote": "Os pagamentos funcionam pela Stripe. Você concluirá as últimas etapas na página segura da Stripe e depois voltará aqui.",
+        "stepsTitle": "O que acontece agora",
+        "step1": "Você será levado para a Stripe",
+        "step2": "A Stripe pede seus dados e sua conta bancária",
+        "step3": "Você volta aqui e seu status é atualizado",
+        "start": "Configurar pagamentos",
+        "starting": "Abrindo a Stripe…",
+        "outcomeReady": "A Stripe está pronta. Conclua as etapas lá e verifique seu status novamente.",
+        "outcomeNotConfigured": "Seu perfil de pagamento foi salvo, mas a configuração bancária não pode abrir agora. Nada de errado do seu lado — volte em breve.",
+        "outcomeNeedsSeller": "Você precisa de uma conta de vendedor aprovada antes de configurar pagamentos.",
+        "outcomeSignedOut": "Entre novamente para configurar os pagamentos.",
+        "outcomeFailed": "Não foi possível iniciar a configuração de pagamentos. Tente novamente.",
+        "openSeller": "Solicitar para vender"
       }
     }
   },

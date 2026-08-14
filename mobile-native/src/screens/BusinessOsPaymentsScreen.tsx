@@ -725,10 +725,15 @@ export function BusinessOsPaymentsScreen({
 
         {!loading ? (
           <View style={styles.methodWrap}>
+            {/* Opens the payout onboarding layer, which owns the one Stripe
+                Connect hand-off. This used to open the Verification Center —
+                identity documents, not payouts — so "Set up payouts" ended
+                with a seller who had uploaded an ID and still had no account
+                to be paid into. */}
             <PayoutMethodCard
               state={methodState}
               method={overview?.payout_method || null}
-              onManage={() => navigation?.navigate("VerificationCenter")}
+              onManage={() => openMoneyLayer("payout_onboarding")}
             />
           </View>
         ) : null}
@@ -753,7 +758,7 @@ export function BusinessOsPaymentsScreen({
                   {t(`${NS}.${connect.connected ? "withdrawDisabledBody" : "withdrawNotConnectedBody"}`)}
                 </Text>
                 <Pressable
-                  onPress={() => navigation?.navigate("VerificationCenter")}
+                  onPress={() => openMoneyLayer("payout_onboarding")}
                   style={styles.withdrawSecondary}
                   accessibilityRole="button"
                   accessibilityLabel={t(`${NS}.withdrawSetupCta`)}

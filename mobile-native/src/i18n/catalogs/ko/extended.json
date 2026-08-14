@@ -1219,7 +1219,8 @@
         "processing": "처리 중",
         "moveMoney": "내 돈 옮기기",
         "payoutHistory": "정산",
-        "activity": "활동"
+        "activity": "활동",
+        "payoutOnboarding": "정산 설정"
       },
       "overview": {
         "available": "사용 가능",
@@ -1327,6 +1328,23 @@
         "openLayer": "{{layer}} 열기",
         "openPayout": "정산 세부 정보 열기",
         "openEntry": "활동 세부 정보 열기"
+      },
+      "onboarding": {
+        "whyTitle": "이 설정이 필요한 이유",
+        "whyBody": "정산 계정이 없으면 수익은 PulseSoc에 보관됩니다. 계정을 만들어야 돈이 은행으로 전달됩니다.",
+        "providerNote": "정산은 Stripe를 통해 진행됩니다. 마지막 단계는 Stripe의 보안 페이지에서 완료한 뒤 여기로 돌아옵니다.",
+        "stepsTitle": "다음 단계",
+        "step1": "Stripe로 이동합니다",
+        "step2": "Stripe에서 정보와 은행 계좌를 요청합니다",
+        "step3": "여기로 돌아오면 상태가 업데이트됩니다",
+        "start": "정산 설정",
+        "starting": "Stripe 여는 중…",
+        "outcomeReady": "Stripe가 준비되었습니다. 거기서 단계를 완료한 뒤 상태를 다시 확인하세요.",
+        "outcomeNotConfigured": "정산 프로필은 저장되었지만 지금은 은행 설정을 열 수 없습니다. 회원님 문제가 아닙니다 — 곧 다시 확인해 주세요.",
+        "outcomeNeedsSeller": "정산을 설정하려면 승인된 판매자 계정이 필요합니다.",
+        "outcomeSignedOut": "정산을 설정하려면 다시 로그인해 주세요.",
+        "outcomeFailed": "정산 설정을 시작하지 못했습니다. 다시 시도해 주세요.",
+        "openSeller": "판매 신청"
       }
     }
   },

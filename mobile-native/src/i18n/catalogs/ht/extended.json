@@ -1219,7 +1219,8 @@
         "processing": "Ap trete",
         "moveMoney": "Deplase lajan ou",
         "payoutHistory": "Peman",
-        "activity": "Aktivite"
+        "activity": "Aktivite",
+        "payoutOnboarding": "Konfigire peman"
       },
       "overview": {
         "available": "Disponib",
@@ -1327,6 +1328,23 @@
         "openLayer": "Ouvri {{layer}}",
         "openPayout": "Ouvri detay peman an",
         "openEntry": "Ouvri detay aktivite a"
+      },
+      "onboarding": {
+        "whyTitle": "Poukisa ou bezwen sa",
+        "whyBody": "Lajan ou fè rete nan PulseSoc jiskaske ou gen yon kont peman. Kreye youn se sa ki pèmèt lajan an rive labank ou.",
+        "providerNote": "Peman yo pase sou Stripe. W ap fini dènye etap yo sou paj sekirize Stripe la, epi w ap tounen isit la.",
+        "stepsTitle": "Sa k ap pase apre",
+        "step1": "N ap voye w sou Stripe",
+        "step2": "Stripe mande enfòmasyon ou ak kont labank ou",
+        "step3": "Ou tounen isit la epi estati w mete ajou",
+        "start": "Konfigire peman",
+        "starting": "N ap louvri Stripe…",
+        "outcomeReady": "Stripe pare pou ou. Fini etap yo la, epi tcheke estati w ankò.",
+        "outcomeNotConfigured": "Nou sove pwofil peman ou, men konfigirasyon labank pa ka louvri kounye a. Pa gen anyen ki mal bò kote w — tounen talè.",
+        "outcomeNeedsSeller": "Ou bezwen yon kont vandè apwouve anvan ou ka konfigire peman.",
+        "outcomeSignedOut": "Tanpri konekte ankò pou konfigire peman.",
+        "outcomeFailed": "Konfigirasyon peman an pa t ka kòmanse. Tanpri eseye ankò.",
+        "openSeller": "Aplike pou vann"
       }
     }
   },

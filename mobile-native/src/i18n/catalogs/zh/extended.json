@@ -1219,7 +1219,8 @@
         "processing": "处理中",
         "moveMoney": "转出你的资金",
         "payoutHistory": "提现",
-        "activity": "动态"
+        "activity": "动态",
+        "payoutOnboarding": "设置收款"
       },
       "overview": {
         "available": "可用",
@@ -1327,6 +1328,23 @@
         "openLayer": "打开{{layer}}",
         "openPayout": "打开提现详情",
         "openEntry": "打开动态详情"
+      },
+      "onboarding": {
+        "whyTitle": "为什么需要设置",
+        "whyBody": "在你拥有收款账户之前，收入会保留在 PulseSoc。完成设置后，钱才能到达你的银行。",
+        "providerNote": "收款通过 Stripe 处理。你将在 Stripe 的安全页面完成最后几步，然后返回这里。",
+        "stepsTitle": "接下来会发生什么",
+        "step1": "我们会带你前往 Stripe",
+        "step2": "Stripe 会询问你的信息和银行账户",
+        "step3": "你返回这里，状态随即更新",
+        "start": "设置收款",
+        "starting": "正在打开 Stripe…",
+        "outcomeReady": "Stripe 已准备就绪。在那里完成步骤后，再回来查看你的状态。",
+        "outcomeNotConfigured": "你的收款资料已保存，但目前无法打开银行设置。这不是你的问题——请稍后再来查看。",
+        "outcomeNeedsSeller": "在设置收款之前，你需要一个已批准的卖家账户。",
+        "outcomeSignedOut": "请重新登录以设置收款。",
+        "outcomeFailed": "无法开始设置收款。请重试。",
+        "openSeller": "申请成为卖家"
       }
     }
   },

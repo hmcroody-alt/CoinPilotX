@@ -1211,7 +1211,8 @@
         "processing": "処理中",
         "moveMoney": "お金を動かす",
         "payoutHistory": "出金",
-        "activity": "アクティビティ"
+        "activity": "アクティビティ",
+        "payoutOnboarding": "支払いを設定"
       },
       "overview": {
         "available": "利用可能",
@@ -1319,6 +1320,23 @@
         "openLayer": "{{layer}} を開きます",
         "openPayout": "出金の詳細を開きます",
         "openEntry": "アクティビティの詳細を開きます"
+      },
+      "onboarding": {
+        "whyTitle": "設定が必要な理由",
+        "whyBody": "支払い口座を登録するまで、収益は PulseSoc に保管されます。登録することで、お金が銀行に届くようになります。",
+        "providerNote": "支払いは Stripe を通じて行われます。最後の手順は Stripe の安全なページで完了し、その後ここに戻ります。",
+        "stepsTitle": "次に起きること",
+        "step1": "Stripe に移動します",
+        "step2": "Stripe が本人情報と銀行口座を確認します",
+        "step3": "ここに戻ると、ステータスが更新されます",
+        "start": "支払いを設定",
+        "starting": "Stripe を開いています…",
+        "outcomeReady": "Stripe の準備ができました。そこで手順を完了し、もう一度ステータスを確認してください。",
+        "outcomeNotConfigured": "支払いプロフィールは保存されましたが、銀行設定を今は開けません。あなた側の問題ではありません。しばらくしてからご確認ください。",
+        "outcomeNeedsSeller": "支払いを設定するには、承認済みの販売者アカウントが必要です。",
+        "outcomeSignedOut": "支払いを設定するには、もう一度サインインしてください。",
+        "outcomeFailed": "支払い設定を開始できませんでした。もう一度お試しください。",
+        "openSeller": "販売を申し込む"
       }
     }
   },

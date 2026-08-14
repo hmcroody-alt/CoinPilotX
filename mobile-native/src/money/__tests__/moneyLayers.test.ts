@@ -29,6 +29,8 @@ import {
   MONEY_LEDGER_KINDS,
   payoutFailure,
   payoutIsTerminal,
+  payoutOnboardingFailure,
+  payoutOnboardingOutcome,
   payoutReadiness,
   processingExplainer
 } from "../moneyLayers";
@@ -389,6 +391,99 @@ describe("payout detail helpers", () => {
     ["pending", "created", "in_transit", "", "something_new"].forEach((status) =>
       expect(payoutIsTerminal(status)).toBe(false)
     );
+  });
+});
+
+/* ---------------------------------------------------------------- *
+ * Payout onboarding outcomes
+ * ---------------------------------------------------------------- */
+
+/**
+ * The lie available here is the most expensive one on the screen: telling a
+ * seller their payouts are set up when no account exists.
+ *
+ * `POST /api/pulse/payouts/connect` answers 200 in two very different worlds. If
+ * `STRIPE_SECRET_KEY` is set it creates the connected account and returns a
+ * link. If it is not, it writes a profile row with `onboarding_status =
+ * 'stripe_not_configured'` and returns `ok: true` with no link at all — a
+ * success body for a setup that did not happen. Reading `ok`, or reading the
+ * status code, produces a screen that congratulates a seller who still cannot
+ * be paid. Only the presence of the link means anything.
+ */
+describe("payoutOnboardingOutcome", () => {
+  it("treats a link as the only evidence that setup can continue", () => {
+    const outcome = payoutOnboardingOutcome({
+      ok: true,
+      onboarding_url: "https://connect.stripe.com/setup/s/acct_1"
+    });
+    expect(outcome.kind).toBe("ready");
+    expect(outcome.url).toBe("https://connect.stripe.com/setup/s/acct_1");
+  });
+
+  it("does not call an ok-with-no-link a success", () => {
+    // The unconfigured-Stripe case: `ok` is true and the status is 200.
+    const outcome = payoutOnboardingOutcome({ ok: true, message: "Saved." });
+    expect(outcome.kind).toBe("not_configured");
+    expect(outcome.url).toBe("");
+  });
+
+  it("does not trust a blank or whitespace link", () => {
+    [
+      { ok: true, onboarding_url: "" },
+      { ok: true, onboarding_url: "   " },
+      null,
+      undefined
+    ].forEach((response) => {
+      const outcome = payoutOnboardingOutcome(response);
+      expect(outcome.kind).toBe("not_configured");
+      expect(outcome.url).toBe("");
+    });
+  });
+
+  it("carries the server's own sentence without becoming it", () => {
+    const outcome = payoutOnboardingOutcome({ ok: true, message: "Stripe is not configured." });
+    // Kept for display *underneath* our explanation, never as the explanation:
+    // a seller should not be handed backend vocabulary as the whole answer.
+    expect(outcome.serverMessage).toBe("Stripe is not configured.");
+    expect(outcome.messageKey).toBe("outcomeNotConfigured");
+  });
+});
+
+describe("payoutOnboardingFailure", () => {
+  it("separates the refusals a seller can act on differently", () => {
+    // 403 is the approved-seller gate, and it is the only refusal with a next
+    // step inside the app, so it must not collapse into the generic failure.
+    expect(payoutOnboardingFailure(403, "Approved seller status is required.").kind).toBe(
+      "needs_seller_approval"
+    );
+    expect(payoutOnboardingFailure(401, "").kind).toBe("signed_out");
+    expect(payoutOnboardingFailure(500, "boom").kind).toBe("failed");
+  });
+
+  it("falls back to a plain failure when there was no status at all", () => {
+    // A transport error carries status 0. That is a failure to ask, not a
+    // refusal, and must never be reported as "not configured" — which would
+    // tell a seller their account is missing when the request never landed.
+    const outcome = payoutOnboardingFailure(0, "Network request failed");
+    expect(outcome.kind).toBe("failed");
+    expect(outcome.url).toBe("");
+  });
+
+  it("never returns a link on any failure path", () => {
+    [401, 403, 404, 429, 500, 0].forEach((status) =>
+      expect(payoutOnboardingFailure(status, "x").url).toBe("")
+    );
+  });
+
+  it("gives each outcome its own message key", () => {
+    const keys = [
+      payoutOnboardingOutcome({ ok: true, onboarding_url: "https://x" }).messageKey,
+      payoutOnboardingOutcome({ ok: true }).messageKey,
+      payoutOnboardingFailure(403, "").messageKey,
+      payoutOnboardingFailure(401, "").messageKey,
+      payoutOnboardingFailure(500, "").messageKey
+    ];
+    expect(new Set(keys).size).toBe(5);
   });
 });
 

@@ -1219,7 +1219,8 @@
         "processing": "Processing",
         "moveMoney": "Move your money",
         "payoutHistory": "Payouts",
-        "activity": "Activity"
+        "activity": "Activity",
+        "payoutOnboarding": "Set up payouts"
       },
       "overview": {
         "available": "Available",
@@ -1327,6 +1328,23 @@
         "openLayer": "Opens {{layer}}",
         "openPayout": "Opens payout details",
         "openEntry": "Opens activity details"
+      },
+      "onboarding": {
+        "whyTitle": "Why you need this",
+        "whyBody": "Your earnings stay with PulseSoc until you have a payout account. Setting one up is what lets money reach your bank.",
+        "providerNote": "Payouts run on Stripe. You'll finish the last steps on Stripe's own secure page, then come back here.",
+        "stepsTitle": "What happens next",
+        "step1": "You'll be taken to Stripe",
+        "step2": "Stripe asks for your details and bank account",
+        "step3": "You come back here and your status updates",
+        "start": "Set up payouts",
+        "starting": "Opening Stripe…",
+        "outcomeReady": "Stripe is ready for you. Finish the steps there, then check your status again.",
+        "outcomeNotConfigured": "Your payout profile was saved, but bank setup can't open right now. Nothing is wrong on your side — check back soon.",
+        "outcomeNeedsSeller": "You'll need an approved seller account before you can set up payouts.",
+        "outcomeSignedOut": "Please sign in again to set up payouts.",
+        "outcomeFailed": "Payout setup couldn't start. Please try again.",
+        "openSeller": "Apply to sell"
       }
     }
   },

@@ -1219,7 +1219,8 @@
         "processing": "In Bearbeitung",
         "moveMoney": "Geld bewegen",
         "payoutHistory": "Auszahlungen",
-        "activity": "Aktivität"
+        "activity": "Aktivität",
+        "payoutOnboarding": "Auszahlungen einrichten"
       },
       "overview": {
         "available": "Verfügbar",
@@ -1327,6 +1328,23 @@
         "openLayer": "Öffnet {{layer}}",
         "openPayout": "Öffnet die Auszahlungsdetails",
         "openEntry": "Öffnet die Aktivitätsdetails"
+      },
+      "onboarding": {
+        "whyTitle": "Warum du das brauchst",
+        "whyBody": "Deine Einnahmen bleiben bei PulseSoc, bis du ein Auszahlungskonto hast. Erst damit erreicht das Geld deine Bank.",
+        "providerNote": "Auszahlungen laufen über Stripe. Die letzten Schritte erledigst du auf der sicheren Seite von Stripe und kommst dann hierher zurück.",
+        "stepsTitle": "Was als Nächstes passiert",
+        "step1": "Du wirst zu Stripe weitergeleitet",
+        "step2": "Stripe fragt nach deinen Daten und deinem Bankkonto",
+        "step3": "Du kommst zurück und dein Status wird aktualisiert",
+        "start": "Auszahlungen einrichten",
+        "starting": "Stripe wird geöffnet…",
+        "outcomeReady": "Stripe ist bereit. Schließe die Schritte dort ab und prüfe deinen Status erneut.",
+        "outcomeNotConfigured": "Dein Auszahlungsprofil wurde gespeichert, aber die Bankeinrichtung lässt sich gerade nicht öffnen. Es liegt nicht an dir — schau bald wieder vorbei.",
+        "outcomeNeedsSeller": "Du brauchst ein freigegebenes Verkäuferkonto, bevor du Auszahlungen einrichten kannst.",
+        "outcomeSignedOut": "Bitte melde dich erneut an, um Auszahlungen einzurichten.",
+        "outcomeFailed": "Die Einrichtung der Auszahlungen konnte nicht starten. Bitte versuche es erneut.",
+        "openSeller": "Als Verkäufer bewerben"
       }
     }
   },

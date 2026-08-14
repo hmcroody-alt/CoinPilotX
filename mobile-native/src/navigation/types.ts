@@ -270,7 +270,13 @@ export type RootStackParamList = {
    */
   MoneyLayer:
     | {
-        layer?: "payout_overview" | "processing" | "move_money" | "payout_history" | "activity";
+        layer?:
+          | "payout_overview"
+          | "processing"
+          | "move_money"
+          | "payout_history"
+          | "payout_onboarding"
+          | "activity";
         title?: string;
         currency?: string;
       }
