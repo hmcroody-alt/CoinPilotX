@@ -28,6 +28,20 @@ export type ProfileOsParams = {
   avatarUrl?: string;
 };
 
+/** The twelve layers of the Progress Center, in the order they are presented. */
+export type ProgressCenterSection =
+  | "overview"
+  | "milestones"
+  | "referrals"
+  | "invite"
+  | "rewards"
+  | "missions"
+  | "badge"
+  | "insights"
+  | "activity"
+  | "howItWorks"
+  | "faq";
+
 export type AuthStackParamList = {
   Login: undefined;
   Signup: undefined;
@@ -321,6 +335,21 @@ export type RootStackParamList = {
   TeacherProfileGateway: { teacherId?: string; title?: string } | undefined;
   TeacherDashboardGateway: { title?: string } | undefined;
   GrowthCenter: ({ contentType?: string; contentId?: number | string; title?: string } & ProfileOsParams) | undefined;
+  /**
+   * Founding Member Challenge and retention missions.
+   *
+   * Carries `ProfileOsParams` because it is reached from the Profile OS grid,
+   * but deliberately declares no subject parameter of its own: the screen always
+   * shows the signed-in member's own progress, and the server ignores a target
+   * user even if a caller invented one. `section` only chooses which layer of
+   * the Progress Center opens first; `ref` is the opaque, viewer-bound referral
+   * token, never a user id.
+   */
+  ProgressCenter: ({
+    section?: ProgressCenterSection;
+    ref?: string;
+    title?: string;
+  } & ProfileOsParams) | undefined;
   IntelligenceCenter: ({ alertId?: number; subsystem?: string; title?: string } & ProfileOsParams) | undefined;
   UndxActionCenter: { orgId?: string; actor?: string; productArea?: string; title?: string } | undefined;
   UndxCapabilities: { title?: string } | undefined;

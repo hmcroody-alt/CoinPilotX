@@ -54,6 +54,7 @@ import { GrowthCenterScreen } from "../screens/GrowthCenterScreen";
 import { GroupsScreen } from "../screens/GroupsScreen";
 import { HomeScreen } from "../screens/HomeScreen";
 import { IntelligenceCenterScreen } from "../screens/IntelligenceCenterScreen";
+import { ProgressCenterScreen } from "../screens/ProgressCenterScreen";
 import { EventsScreen } from "../screens/EventsScreen";
 import { LiveScreen } from "../screens/LiveScreen";
 import { LiveStudioScreen } from "../screens/LiveStudioScreen";
@@ -493,6 +494,7 @@ export function AppNavigator() {
       <Stack.Screen name="TeacherProfileGateway" component={CoursesLearningScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.teacher") })} />
       <Stack.Screen name="TeacherDashboardGateway" component={CoursesLearningScreen} options={{ title: t("common:screens.teacherDashboard") }} />
       <Stack.Screen name="GrowthCenter" component={GrowthCenterScreen} options={{ title: t("common:screens.growthCenter") }} />
+      <Stack.Screen name="ProgressCenter" component={ProgressCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.progressCenter") })} />
       <Stack.Screen name="IntelligenceCenter" component={IntelligenceCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.intelligence") })} />
       <Stack.Screen name="UndxActionCenter" component={UndxActionCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.undxActionCenter") })} />
       <Stack.Screen name="UndxCapabilities" component={UndxCapabilitiesScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.undxCapabilities") })} />

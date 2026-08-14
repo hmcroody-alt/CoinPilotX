@@ -164,6 +164,32 @@ const TILES: Record<ProfileModuleKey, TileDef> = {
     permission: "canViewPublicMemories",
     owner: (context) => ({ kind: "route", name: "Tabs", params: { screen: "Status" } }),
     visitor: null
+  },
+  progress: {
+    key: "progress",
+    noun: "Progress",
+    // No `title` override: unlike the tiles above, Progress has a localized
+    // header in `common:screens.progressCenter`, and an English literal here
+    // would win over it in all eleven languages.
+    owner: (context) => route("ProgressCenter", context),
+    /**
+     * `null` here is not a "not built yet" like the tiles above it — it is the
+     * feature's privacy requirement expressed in the one place tile visibility
+     * is decided.
+     *
+     * The Founding Member Challenge exposes how many people someone invited,
+     * which of them qualified, what they have earned and whether anything is
+     * under review. None of that may reach another member, and a visitor
+     * destination that "just shows less" would be one refactor away from
+     * leaking a count. So there is no visitor destination at all, and
+     * `visibleProfileOsTiles` drops the tile from the grid entirely rather than
+     * rendering something tappable that then refuses.
+     *
+     * The server agrees independently: no Progress route accepts a target user,
+     * so even a client that reached this screen for someone else would only
+     * ever be shown its own progress.
+     */
+    visitor: null
   }
 };
 
@@ -181,7 +207,10 @@ export const PROFILE_OS_TILE_ORDER: ProfileModuleKey[] = [
   "marketplace",
   "events",
   "business",
-  "memories"
+  "memories",
+  // Last in the grid, first thing a member is likely to open: the tile carries
+  // live state, so it is the only one whose label changes as they make progress.
+  "progress"
 ];
 
 export function tileNoun(key: ProfileModuleKey): string {
