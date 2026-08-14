@@ -139,6 +139,7 @@ export function PostCard({
   const commentCount = Number(post.comment_count || 0);
   const reactionTotal = Object.values(post.reaction_counts || {}).reduce((sum, count) => sum + Number(count || 0), 0);
   const creatorLabel = author.premium_verified || author.verified ? "Pulse Creator" : "";
+  const automated = author.automated === true || author.account_type === "PULSESOC_AUTOMATED";
   const viewerLiked = Boolean(post.viewer_reaction);
   /**
    * A repost is a wrapper row around an original, and both can be on screen at
@@ -213,6 +214,11 @@ export function PostCard({
                 <Text style={styles.authorName} numberOfLines={1}>
                   {displayName}
                 </Text>
+                {automated ? (
+                  <View accessibilityLabel="Automated PulseSoc account" style={styles.automatedPill}>
+                    <Text style={styles.automatedPillText}>AUTOMATED</Text>
+                  </View>
+                ) : null}
                 {/*
                   Verification and Premium are different claims and must not
                   share the checkmark. This used to render `checkmark-circle`
@@ -236,7 +242,7 @@ export function PostCard({
             </View>
           </Pressable>
           <View style={styles.headerActions}>
-            {onFollow ? (
+            {onFollow && !automated ? (
               <Pressable
                 testID={`home-feed-follow-${post.id}`}
                 accessibilityRole="button"
@@ -1068,6 +1074,20 @@ const styles = createThemedStyles(() => ({
     alignItems: "center",
     flexDirection: "row",
     gap: 7
+  },
+  automatedPill: {
+    backgroundColor: "rgba(244, 183, 64, 0.12)",
+    borderColor: "#f4b740",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2
+  },
+  automatedPillText: {
+    color: "#f4c96b",
+    fontSize: 8,
+    fontWeight: "900",
+    letterSpacing: 0.5
   },
   authorRow: {
     alignItems: "center",

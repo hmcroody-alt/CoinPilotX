@@ -187,6 +187,7 @@ export function ProfileHeader({
   const accent = profile.theme?.accent_color || colors.accent;
   const tierLabel = premium ? String(profile.premium_status || "premium").replace(/_/g, " ") : "";
   const online = String(profile.account_status || "active").toLowerCase() === "active";
+  const automated = profile.automated === true || profile.account_type === "PULSESOC_AUTOMATED";
 
   const pulse = useRef(new Animated.Value(0)).current;
   const float1 = useRef(new Animated.Value(0)).current;
@@ -277,11 +278,22 @@ export function ProfileHeader({
           </View>
           <Text style={styles.handle} numberOfLines={1}>{handle ? `@${handle}` : "PulseSoc identity"}</Text>
           <View style={styles.badges}>
+            {automated ? <Badge label="AUTOMATED" icon="hardware-chip-outline" accent={colors.economy} /> : null}
             {verified ? <Badge label="Verified" icon="shield-checkmark" accent={accent} /> : null}
             {premium ? <Badge label={tierLabel || "Premium"} icon="sparkles" accent={colors.economy} /> : null}
             {profile.profile_visibility === "private" ? <Badge label="Private" icon="lock-closed" accent={colors.muted} /> : null}
             <Badge label={online ? "Active now" : "Away"} icon="ellipse" accent={online ? colors.safety : colors.muted} />
           </View>
+
+          {automated ? (
+            <View accessibilityLabel="Automated PulseSoc account disclosure" style={styles.automationDisclosure}>
+              <Text style={styles.automationLabel}>{profile.system_account_label || "Official PulseSoc System Account"}</Text>
+              <Text style={styles.automationTitle}>AUTOMATED PULSESOC ACCOUNT</Text>
+              <Text style={styles.automationBody}>{profile.automation_disclosure || "This account is operated automatically by PulseSoc. It is not a human user."}</Text>
+              <Text style={styles.automationTrustTitle}>Transparency &amp; Trust</Text>
+              <Text style={styles.automationBody}>{profile.transparency_disclosure || "Automated posts remain subject to PulseSoc safety and quality controls."}</Text>
+            </View>
+          ) : null}
 
           {profile.bio ? (
             <ContentTranslation
@@ -318,6 +330,15 @@ export function ProfileHeader({
                 previewImageUrl: profile.avatar_url
               }).catch(() => undefined); }} />
             </>
+          ) : automated ? (
+            <Action label="Share" icon="share-outline" primary accent={accent} onPress={() => { haptic(); sharePulseObject({
+              kind: "profile",
+              url: profileWebUrl(shareTarget),
+              title: profile.display_name || "PulseSoc Insight",
+              description: profile.automation_disclosure || profile.bio,
+              author: profile.display_name,
+              previewImageUrl: profile.avatar_url
+            }).catch(() => undefined); }} />
           ) : (
             <>
               <Action label="Message" icon="chatbubble-ellipses-outline" primary accent={accent} onPress={() => { haptic(); onMessage?.(); }} />
@@ -466,6 +487,11 @@ const styles = createThemedStyles(() => ({
   badges: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
   badge: { alignItems: "center", borderRadius: 999, borderWidth: 1, flexDirection: "row", gap: 4, paddingHorizontal: 9, paddingVertical: 5 },
   badgeText: { fontSize: 11, fontWeight: "900", textTransform: "capitalize" },
+  automationDisclosure: { backgroundColor: "rgba(244, 183, 64, 0.08)", borderColor: "rgba(244, 183, 64, 0.45)", borderRadius: 14, borderWidth: 1, gap: 5, marginTop: 14, padding: 14 },
+  automationLabel: { color: "#f4c96b", fontSize: 13, fontWeight: "900" },
+  automationTitle: { color: colors.text, fontSize: 11, fontWeight: "900", letterSpacing: 0.6 },
+  automationTrustTitle: { color: colors.text, fontSize: 12, fontWeight: "900", marginTop: 6 },
+  automationBody: { color: colors.muted, fontSize: 13, lineHeight: 19 },
   bio: { color: colors.text, fontSize: 15, lineHeight: 22, marginTop: 12 },
   bioMuted: { color: colors.muted, fontSize: 15, lineHeight: 22, marginTop: 12 },
 

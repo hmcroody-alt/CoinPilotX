@@ -8,7 +8,6 @@ DEFAULT_FORMATS = [
     "community_question",
     "builder_lesson",
     "ai_summary",
-    "hot_take",
 ]
 
 SPACE_PERSONALITIES = {
@@ -98,4 +97,3 @@ def build_prompt_context(space, post_type, memory=None, schedule_slot="morning")
         "recent_topics": (memory or {}).get("recent_topics") or [],
         "avoid_phrases": (memory or {}).get("recent_hooks") or [],
     }
-

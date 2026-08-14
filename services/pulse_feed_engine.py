@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import embed_service, media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulsesoc_notification_system, user_context
+from .pulse_ai.content_policy import AUTOMATED_ACCOUNT_TYPE, sanitize_automated_text
 
 
 REACTIONS = {
@@ -62,9 +63,11 @@ FEED_ALIASES = {
 }
 POST_TYPE_ALIASES = {"scam_warning": "scam_report", "question": "poll", "roast": "roast_clip", "roast_battle": "roast_clip"}
 POST_TYPES = {"text", "image", "video", "gif", "poll", "replay", "scam_report", "arena_result", "roast_clip", "live"}
-MEMBER_000_PUBLIC_PLAYER_ID = "pulsesoc-member-000"
-MEMBER_000_DISPLAY_NAME = "PULSESOC MEMBER #000"
+MEMBER_000_PUBLIC_PLAYER_ID = "pulsesoc_insight"
+MEMBER_000_LEGACY_PUBLIC_PLAYER_ID = "pulsesoc-member-000"
+MEMBER_000_DISPLAY_NAME = "PulseSoc Insight"
 MEMBER_000_AVATAR_URL = "/static/brand/pulsesoc-member-000-avatar.png"
+MEMBER_000_SYSTEM_LABEL = "Official PulseSoc System Account"
 _MEMBER_000_PROFILE_READY = False
 
 
@@ -256,11 +259,11 @@ def _ensure_member_000_profile():
             """
             SELECT id, avatar_url
             FROM arena_profiles
-            WHERE user_id=0 OR public_player_id=?
+            WHERE user_id=0 OR public_player_id IN (?, ?)
             ORDER BY CASE WHEN public_player_id=? THEN 0 ELSE 1 END
             LIMIT 1
             """,
-            (MEMBER_000_PUBLIC_PLAYER_ID, MEMBER_000_PUBLIC_PLAYER_ID),
+            (MEMBER_000_PUBLIC_PLAYER_ID, MEMBER_000_LEGACY_PUBLIC_PLAYER_ID, MEMBER_000_PUBLIC_PLAYER_ID),
         )
         row = _row(cur.fetchone())
         if row:
@@ -276,7 +279,7 @@ def _ensure_member_000_profile():
                     MEMBER_000_PUBLIC_PLAYER_ID,
                     MEMBER_000_DISPLAY_NAME,
                     avatar_url,
-                    "Genesis Member",
+                    MEMBER_000_SYSTEM_LABEL,
                     now,
                     row.get("id"),
                 ),
@@ -294,7 +297,7 @@ def _ensure_member_000_profile():
                     MEMBER_000_PUBLIC_PLAYER_ID,
                     MEMBER_000_DISPLAY_NAME,
                     MEMBER_000_AVATAR_URL,
-                    "Genesis Member",
+                    MEMBER_000_SYSTEM_LABEL,
                     now,
                     now,
                 ),
@@ -310,14 +313,16 @@ def _public_author(row):
     item = dict(row or {})
     public_player_id = item.get("public_player_id") or item.get("author_public_player_id") or ""
     user_id = int(item.get("user_id") or 0)
-    is_member_000 = public_player_id == MEMBER_000_PUBLIC_PLAYER_ID or (
+    is_member_000 = public_player_id in {MEMBER_000_PUBLIC_PLAYER_ID, MEMBER_000_LEGACY_PUBLIC_PLAYER_ID} or (
         user_id <= 0
         and not (item.get("user_display_name") or item.get("display_name") or item.get("username") or public_player_id)
     )
     if is_member_000:
         _ensure_member_000_profile()
         public_player_id = MEMBER_000_PUBLIC_PLAYER_ID
+        item["username"] = MEMBER_000_PUBLIC_PLAYER_ID
     display = (
+        MEMBER_000_DISPLAY_NAME if is_member_000 else
         item.get("user_display_name")
         or item.get("display_name")
         or item.get("username")
@@ -326,7 +331,7 @@ def _public_author(row):
         # itself ("pulsesoc-member-000"), the slice produced "-000" and every
         # feed card read "PulseSoc Member #-000". Member-000 rows now short-
         # circuit to the canonical display name before the slice.
-        or (MEMBER_000_DISPLAY_NAME if is_member_000 else f"PulseSoc Member #{str(public_player_id or item.get('user_id') or '000').lstrip('-')[-4:].lstrip('-')}")
+        or f"PulseSoc Member #{str(public_player_id or item.get('user_id') or '000').lstrip('-')[-4:].lstrip('-')}"
     )
     avatar_url = item.get("user_avatar_url") or item.get("avatar_url") or item.get("arena_avatar_url") or ""
     if is_member_000 and not avatar_url:
@@ -358,7 +363,12 @@ def _public_author(row):
     premium_mark = premium_identity_engine.identity_mark(item, badge_keys)
     badge_key_set = {str(key) for key in badge_keys}
     label_set = {str(label).strip().lower() for label in badges}
-    if premium_identity_engine.is_owner(item) or {"owner", "founder"} & badge_key_set:
+    if is_member_000:
+        premium_mark = False
+        primary_label = MEMBER_000_SYSTEM_LABEL
+        badges = ["Automated"]
+        badge_keys = ["automated"]
+    elif premium_identity_engine.is_owner(item) or {"owner", "founder"} & badge_key_set:
         primary_label = "Founder · PulseSoc"
     elif {"creator", "verified", "partner_creator"} & badge_key_set or "creator" in label_set:
         primary_label = "Verified Creator"
@@ -376,6 +386,8 @@ def _public_author(row):
         "id": user_id if user_id > 0 else None,
         "user_id": user_id if user_id > 0 else None,
         "public_player_id": public_player_id or None,
+        "username": MEMBER_000_PUBLIC_PLAYER_ID if is_member_000 else (item.get("username") or None),
+        "handle": MEMBER_000_PUBLIC_PLAYER_ID if is_member_000 else (item.get("username") or None),
         "display_name": display[:80],
         "avatar_url": avatar_url,
         "profile_url": f"/pulse/id/{user_id}" if user_id > 0 else (f"/pulse/@{public_player_id}" if public_player_id else ""),
@@ -385,6 +397,9 @@ def _public_author(row):
         "badge_keys": badge_keys,
         "premium_verified": bool(premium_mark),
         "premium_mark": premium_mark,
+        "account_type": AUTOMATED_ACCOUNT_TYPE if is_member_000 else "PERSON",
+        "automated": bool(is_member_000),
+        "official_system_account": bool(is_member_000),
     }
 
 
@@ -625,6 +640,9 @@ def _public_post(
     if repost_original and repost_original.get("body") and repost_original.get("body") not in display_body:
         display_body = "\n\n".join(part for part in [display_body, repost_original.get("body")] if part)
     display_title = item.get("title") or (repost_original or {}).get("title") or ""
+    if author.get("automated"):
+        display_title = sanitize_automated_text(display_title)
+        display_body = sanitize_automated_text(display_body)
     display_music = music or (repost_original or {}).get("music") or None
     display_media = _media_with_attached_music(display_media, display_music)
     reaction_counts = reactions or {}
