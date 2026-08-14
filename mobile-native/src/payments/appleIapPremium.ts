@@ -153,6 +153,22 @@ export async function getPremiumOffers(
     timeoutMs?: number;
   } = {}
 ): Promise<PremiumOffers> {
+  const timeoutMs = deps.timeoutMs ?? PREMIUM_PRODUCT_FETCH_TIMEOUT_MS;
+  try {
+    return await timed(loadPremiumOffers(deps), timeoutMs);
+  } catch {
+    return { plans: [], annualSavingsPercent: null, status: "timeout", missingPlans: ["monthly", "annual"] };
+  }
+}
+
+async function loadPremiumOffers(
+  deps: {
+    adapter?: StoreKitAdapter | null;
+    intent?: typeof createPaymentIntent;
+    platform?: string;
+    timeoutMs?: number;
+  }
+): Promise<PremiumOffers> {
   const intent = deps.intent ?? createPaymentIntent;
   const platform = deps.platform ?? Platform.OS;
   const unavailable = (status: PremiumOffers["status"]): PremiumOffers => ({
@@ -178,12 +194,10 @@ export async function getPremiumOffers(
   if (!adapter?.getSubscriptions) return unavailable("unavailable");
   let products: StoreKitProduct[];
   try {
-    products = await timed((async () => {
-      await adapter.initConnection();
-      return adapter.getSubscriptions!(catalog.map((entry) => entry.productId));
-    })(), deps.timeoutMs ?? PREMIUM_PRODUCT_FETCH_TIMEOUT_MS);
+    await adapter.initConnection();
+    products = await adapter.getSubscriptions(catalog.map((entry) => entry.productId));
   } catch (error) {
-    return unavailable(String((error as Error)?.message || "").includes("timeout") ? "timeout" : "failed");
+    return unavailable("failed");
   }
 
   const plans = catalog

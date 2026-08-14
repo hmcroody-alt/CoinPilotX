@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from services import pulse_feed_engine
 from services.pulse_ai.content_policy import sanitize_automated_text
 from services.pulse_ai.space_ai_engine import generate_space_post
@@ -15,6 +17,8 @@ def test_system_actor_has_explicit_non_human_identity(monkeypatch):
     assert author["official_system_account"] is True
     assert author["primary_label"] == "Official PulseSoc System Account"
     assert not author["premium_verified"]
+    avatar = Path(__file__).resolve().parents[1] / author["avatar_url"].lstrip("/")
+    assert avatar.is_file()
 
 
 def test_retired_label_is_removed_from_schedule_and_guarded_case_insensitively():
@@ -33,3 +37,30 @@ def test_retired_label_is_removed_from_schedule_and_guarded_case_insensitively()
     )
     assert post["post_type"] == "quick_insight"
     assert "hot take" not in f"{post['title']} {post['body']}".lower()
+
+
+def test_legacy_system_actor_can_list_and_count_its_existing_posts(monkeypatch):
+    class Cursor:
+        def execute(self, _sql, _params=()):
+            return None
+
+        def fetchall(self):
+            return []
+
+        def fetchone(self):
+            return {"total": 3}
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(pulse_feed_engine.user_context, "connect", lambda: Connection())
+    monkeypatch.setattr(pulse_feed_engine, "_ensure_home_safety_tables", lambda _cur: None)
+    monkeypatch.setattr(pulse_feed_engine, "_media_for_posts", lambda _ids: {})
+    monkeypatch.setattr(pulse_feed_engine, "_music_for_posts", lambda _ids: {})
+
+    assert pulse_feed_engine.count_user_posts(0, viewer_user_id=9) == 3
+    assert pulse_feed_engine.list_user_posts(0, viewer_user_id=9)["ok"] is True

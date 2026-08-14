@@ -310,8 +310,8 @@ export function ProfileHeader({
         {/* Stats */}
         <View style={styles.stats} accessibilityLabel="Profile statistics">
           <Stat label="Posts" value={profile.post_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("posts"); }} />
-          <Stat label="Followers" value={profile.follower_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("followers"); }} />
-          <Stat label="Following" value={profile.following_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("following"); }} />
+          {!automated ? <Stat label="Followers" value={profile.follower_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("followers"); }} /> : null}
+          {!automated ? <Stat label="Following" value={profile.following_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("following"); }} /> : null}
           <Stat label="Media" value={profile.media_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("media"); }} />
         </View>
 

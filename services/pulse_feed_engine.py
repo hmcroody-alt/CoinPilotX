@@ -1302,7 +1302,7 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
 
 
 def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
-    if not user_id:
+    if user_id is None:
         return {"ok": False, "feed": "my_posts", "topic": "", "posts": [], "next_offset": 0, "has_more": False, "intelligence": safe_intelligence_panel("")}
     limit = max(1, min(int(limit or 20), 40))
     offset = max(0, int(offset or 0))
@@ -1384,7 +1384,7 @@ def count_user_posts(user_id, viewer_user_id=None, media_only=False):
     profiles show "1 Posts" and then render "No posts yet." Keep the count and
     listing on one contract.
     """
-    if not user_id:
+    if user_id is None:
         return 0
     viewer_is_owner = bool(viewer_user_id and int(viewer_user_id or 0) == int(user_id or 0))
     where = ["p.deleted_at IS NULL", "p.user_id=?"]

@@ -410,7 +410,7 @@ function NoticesSection({ center }: { center: PremiumCenter | null }) {
  * Plans (discovery / purchase)
  * -------------------------------------------------------------------------- */
 
-function PlansSection({
+export function PlansSection({
   offers, loading, plan, onPlan, busy, disabled, onPurchase, onRetry, expired
 }: {
   offers: PremiumOffers | null;

@@ -17,6 +17,12 @@ import {
 const REQUIRED_EVENTS: PremiumAnalyticsEvent[] = [
   "premium_tile_impression",
   "premium_tile_opened",
+  "premium_product_fetch_started",
+  "premium_product_fetch_success",
+  "premium_product_fetch_empty",
+  "premium_product_fetch_failed",
+  "premium_product_missing_monthly",
+  "premium_product_missing_annual",
   "premium_plan_viewed",
   "premium_monthly_selected",
   "premium_annual_selected",

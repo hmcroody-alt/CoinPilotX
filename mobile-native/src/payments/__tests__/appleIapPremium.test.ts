@@ -204,6 +204,12 @@ describe("Premium plan catalog", () => {
       .resolves.toMatchObject({ plans: [], status: "timeout" });
   });
 
+  it("bounds the complete catalog operation when the server intent never resolves", async () => {
+    const stalledIntent = jest.fn(() => new Promise(() => undefined));
+    await expect(getPremiumOffers({ platform: "ios", intent: stalledIntent as never, adapter: catalogAdapter([]), timeoutMs: 5 }))
+      .resolves.toMatchObject({ plans: [], status: "timeout" });
+  });
+
   it("keeps one plan when the other is withdrawn", async () => {
     const partial = jest.fn(async ({ plan }: { plan?: string }) =>
       plan === "annual"

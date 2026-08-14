@@ -96186,8 +96186,6 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
             "canonical_profile_key": pulse_feed_engine.MEMBER_000_PUBLIC_PLAYER_ID,
             "post_count": pulse_feed_engine.count_user_posts(0, viewer_user_id=viewer_user_id),
             "media_count": pulse_feed_engine.count_user_posts(0, viewer_user_id=viewer_user_id, media_only=True),
-            "follower_count": 0,
-            "following_count": 0,
             "viewer_follows": False,
             "is_self": False,
             "badges": ["Automated"],

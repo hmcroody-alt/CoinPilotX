@@ -98,5 +98,7 @@ describe("ProfileHeader (Profile V6)", () => {
     expect(getByText("Official PulseSoc System Account")).toBeTruthy();
     expect(queryByText("Message")).toBeNull();
     expect(queryByText("Call")).toBeNull();
+    expect(queryByText("Followers")).toBeNull();
+    expect(queryByText("Following")).toBeNull();
   });
 });

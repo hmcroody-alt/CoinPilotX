@@ -11,6 +11,7 @@ def compute_post_scores(post_type, text, trust_score=85, activity_score=75):
         "scam_alert": 13,
         "builder_lesson": 12,
         "thread_post": 11,
+        "hot_take": 10,
         "trend_explainer": 9,
         "quick_insight": 8,
         "ai_summary": 8,
