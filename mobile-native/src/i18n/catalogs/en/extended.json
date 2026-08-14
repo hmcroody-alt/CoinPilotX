@@ -2029,6 +2029,49 @@
       "heading": "Coming with your plan",
       "note": "These are part of your plan but aren't switched on yet. Nothing here is billed separately."
     },
+    "commandCenter": {
+      "heading": "Your command center",
+      "subhead": "This is your Premium headquarters. New spaces switch on here as they ship.",
+      "comingChip": "NEXT",
+      "modules": {
+        "activity": {
+          "label": "Activity summary",
+          "hint": "A recap of your recent Premium activity."
+        },
+        "valueRecap": {
+          "label": "Monthly value recap",
+          "hint": "What your membership gave you this month."
+        },
+        "usage": {
+          "label": "Usage overview",
+          "hint": "Your metered tools, shown where a real limit applies."
+        },
+        "achievements": {
+          "label": "Achievements",
+          "hint": "Milestones you reach as a member."
+        },
+        "unlocked": {
+          "label": "Recently unlocked",
+          "hint": "Tools that have switched on for you."
+        },
+        "recommended": {
+          "label": "Recommended for you",
+          "hint": "Features worth trying next."
+        }
+      },
+      "spacesHeading": "More Premium spaces",
+      "spaces": {
+        "identity": "Identity Studio",
+        "media": "Media Lab",
+        "undx": "UNDX Workspace",
+        "creator": "Creator Studio Pro",
+        "founder": "Founder Club",
+        "storage": "Storage & Upload Center",
+        "support": "Support Center",
+        "labs": "PulseSoc Labs"
+      },
+      "note": "Nothing here is on yet, and nothing here is billed separately. Each space appears once it's ready."
+    },
     "free": {
       "heading": "Always free",
       "body": "Your feed, posts, reels, status, messages, calls, live video, profile, security and account recovery stay free. Premium adds to PulseSoc; it never takes anything away."

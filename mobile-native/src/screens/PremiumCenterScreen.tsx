@@ -322,6 +322,8 @@ export function PremiumCenterScreen({ route }: Props) {
         onRestore={onRestore}
       />
 
+      <CommandCenterSection experience={experience} held={Boolean(center?.membership.is_premium)} />
+
       <FreeCoreSection />
 
       <Text style={styles.footnote}>
@@ -752,6 +754,75 @@ function ActionsSection({
   );
 }
 
+/* -------------------------------------------------------------------------- *
+ * Command Center (member headquarters)
+ * -------------------------------------------------------------------------- */
+
+/** Headquarters modules that are planned but not yet built. */
+const COMMAND_MODULES = ["activity", "valueRecap", "usage", "achievements", "unlocked", "recommended"] as const;
+/** The other Premium spaces, each shipping in a later pass. */
+const COMMAND_SPACES = ["identity", "media", "undx", "creator", "founder", "storage", "support", "labs"] as const;
+
+/**
+ * The member's Premium headquarters.
+ *
+ * Every row here is a roadmap entry, not a live capability. The screen already
+ * renders what is genuinely on — status, plan, benefits, manage, restore — from
+ * canonical server state above. This section exists so a paying member can see
+ * where Premium is going without a single fabricated number, streak or metric:
+ * each module and space carries a NEXT chip and nothing asserts activity that
+ * the backend does not measure. When one of these ships, it stops being a row
+ * here and becomes its own surface.
+ *
+ * Shown to members only. On the sales surface (`none`/`expired`) the plans are
+ * the story; a roadmap of member-only rooms would just be noise before purchase.
+ */
+function CommandCenterSection({ experience, held }: { experience: PremiumExperience; held: boolean }) {
+  const { t } = useTranslation();
+  if (!held && experience !== "founder") return null;
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{t("premium:commandCenter.heading")}</Text>
+      <Text style={styles.note}>{t("premium:commandCenter.subhead")}</Text>
+
+      {COMMAND_MODULES.map((key) => (
+        <View key={key} style={styles.benefitRow}>
+          <Ionicons name="sparkles-outline" size={18} color={colors.muted} />
+          <View style={styles.benefitBody}>
+            <View style={styles.benefitHead}>
+              <Text style={[styles.benefitLabel, styles.benefitLabelIdle]} numberOfLines={1}>
+                {t(`premium:commandCenter.modules.${key}.label`)}
+              </Text>
+              <View style={styles.nextChip}>
+                <Text style={styles.nextChipText}>{t("premium:commandCenter.comingChip")}</Text>
+              </View>
+            </View>
+            <Text style={styles.note} numberOfLines={2}>
+              {t(`premium:commandCenter.modules.${key}.hint`)}
+            </Text>
+          </View>
+        </View>
+      ))}
+
+      <Text style={[styles.sectionTitle, styles.commandSubheading]}>{t("premium:commandCenter.spacesHeading")}</Text>
+      <View style={styles.spacesGrid}>
+        {COMMAND_SPACES.map((key) => (
+          <View key={key} style={styles.spaceTile}>
+            <Text style={styles.spaceTileText} numberOfLines={2}>
+              {t(`premium:commandCenter.spaces.${key}`)}
+            </Text>
+            <View style={styles.nextChip}>
+              <Text style={styles.nextChipText}>{t("premium:commandCenter.comingChip")}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+
+      <Text style={styles.note}>{t("premium:commandCenter.note")}</Text>
+    </View>
+  );
+}
+
 /**
  * What Premium is not.
  *
@@ -874,6 +945,30 @@ const styles = createThemedStyles(() => ({
     paddingVertical: 1
   },
   betaChipText: { color: colors.muted, fontSize: 10, fontWeight: "700", letterSpacing: 0.4, textTransform: "uppercase" },
+  nextChip: {
+    backgroundColor: premiumTheme.goldSoft,
+    borderColor: premiumTheme.goldBorder,
+    borderRadius: premiumTheme.radius.chip,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 7,
+    paddingVertical: 1
+  },
+  nextChipText: { color: premiumTheme.gold, fontSize: 10, fontWeight: "700", letterSpacing: 0.4, textTransform: "uppercase" },
+  commandSubheading: { marginTop: 6 },
+  spacesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  spaceTile: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: premiumTheme.radius.tile,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "space-between",
+    minWidth: "47%",
+    paddingHorizontal: 10,
+    paddingVertical: 10
+  },
+  spaceTileText: { color: colors.text, flex: 1, fontSize: 12, fontWeight: "600" },
   allowance: { gap: 4 },
   barTrack: { backgroundColor: colors.surfaceRaised, borderRadius: premiumTheme.radius.chip, height: 6, overflow: "hidden", width: "100%" },
   barFill: { borderRadius: premiumTheme.radius.chip, height: 6 },
