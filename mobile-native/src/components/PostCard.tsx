@@ -128,6 +128,15 @@ export function PostCard({
   const [liveMuted, setLiveMuted] = useState(false);
   const [bodyExpanded, setBodyExpanded] = useState(Boolean(detail));
   const [bodyTruncated, setBodyTruncated] = useState(false);
+  // Lifted so a media load failure collapses the entire media region -- wrapper,
+  // bleed margin and all -- not just the inner strip. A null MediaStrip left the
+  // outer bleed View mounted, so the invariant "no drawable image => no reserved
+  // media height" was still violated by the wrapper's margin. Keyed to post.id so
+  // a recycled row never inherits a stale failure.
+  const [mediaFailed, setMediaFailed] = useState(false);
+  useEffect(() => {
+    setMediaFailed(false);
+  }, [post.id]);
   const likeScale = useRef(new Animated.Value(1)).current;
   const author = post.author || {};
   const displayName = author.display_name || author.name || post.author_name || "PulseSoc";
@@ -347,10 +356,18 @@ export function PostCard({
 
       {/* Renderable, not merely present. A post can carry an attached media row
           whose URL never materialized; that used to satisfy `post.media.length`
-          and reserve a full-bleed 4:5 box around nothing. */}
-      {renderableMedia(post.media).length ? (
+          and reserve a full-bleed 4:5 box around nothing. And once an image that
+          did have a URL 404s, `mediaFailed` drops the whole wrapper so not even
+          the bleed margin survives. */}
+      {renderableMedia(post.media).length && !mediaFailed ? (
         <View style={[styles.mediaBleed, mediaBleedStyle]}>
-          <MediaStrip post={post} active={active} motionEnabled={motionEnabled} onReact={onReact} />
+          <MediaStrip
+            post={post}
+            active={active}
+            motionEnabled={motionEnabled}
+            onReact={onReact}
+            onMediaError={() => setMediaFailed(true)}
+          />
         </View>
       ) : null}
 
@@ -694,7 +711,7 @@ function mediaPosterUrl(media: PulseMedia) {
   });
 }
 
-function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost; active: boolean; motionEnabled: boolean; onReact?: (post: PulsePost, reactionType: string) => void }) {
+function MediaStrip({ post, active, motionEnabled, onReact, onMediaError }: { post: PulsePost; active: boolean; motionEnabled: boolean; onReact?: (post: PulsePost, reactionType: string) => void; onMediaError?: () => void }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   // A URL that 404s or times out gets us right back to the empty rectangle the
   // renderable-URL gate exists to prevent, so a load error collapses the strip
@@ -755,6 +772,14 @@ function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost;
       );
     }
     const url = mediaDisplayUrl(media);
+    // Defense in depth against the blank rectangle: even though the gate above is
+    // now consistent with the resolver, never mount an <Image> around an empty
+    // URI. An empty-string source reserves its aspect box and may never fire
+    // onError, which is precisely the permanent blank the invariant forbids.
+    // Collapsing to null here is enough; notifying the parent from render would
+    // set state mid-render, and the consistent resolver makes this unreachable
+    // for any record the gate already admitted.
+    if (!url) return null;
     return (
       <View>
         <Pressable
@@ -771,7 +796,10 @@ function MediaStrip({ post, active, motionEnabled, onReact }: { post: PulsePost;
             source={{ uri: url }}
             style={[styles.mediaSingleImage, { aspectRatio: aspect }]}
             resizeMode="cover"
-            onError={() => setFailedPostId(post.id)}
+            onError={() => {
+              setFailedPostId(post.id);
+              onMediaError?.();
+            }}
           />
         </Pressable>
         <NativeMediaViewer

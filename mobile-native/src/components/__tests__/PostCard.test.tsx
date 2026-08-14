@@ -137,6 +137,48 @@ describe("PostCard blank-media collapse", () => {
     );
     expect(queryByTestId("home-feed-media-42-0")).toBeNull();
   });
+
+  it("renders media when the only usable url is a gate-honored field the resolver used to ignore", () => {
+    // The renderability gate accepts `valid_url`/`cdn_url`/`mux_hls_url`, but the
+    // display resolver used to read none of them -- so this record passed the
+    // gate, reserved its aspect box, and drew an <Image uri="">. The resolver now
+    // covers every gate field, so it draws a real image instead of a blank one.
+    const { getByTestId } = render(
+      <PostCard
+        post={basePost({
+          media: [
+            {
+              id: 11,
+              media_type: "image",
+              media_url: "",
+              valid_url: "https://cdn.example/valid-only.png",
+              width: 1024,
+              height: 1280
+            }
+          ]
+        })}
+      />
+    );
+    expect(getByTestId("home-feed-media-42-0")).toBeTruthy();
+  });
+
+  it("keeps the post text and actions readable after the image fails to load", () => {
+    // Collapsing the media must never take the post down with it: body and the
+    // shared action row stay mounted, and nothing throws.
+    const { getAllByText, getByTestId, queryByTestId } = render(
+      <PostCard
+        post={basePost({
+          body: "Insight still worth reading",
+          media: [{ id: 12, media_type: "image", media_url: "https://cdn.example/gone.png", width: 1024, height: 1280 }]
+        })}
+        onSave={jest.fn()}
+      />
+    );
+    fireEvent(getByTestId("home-feed-media-42-0").findByType("Image" as never), "error");
+    expect(queryByTestId("home-feed-media-42-0")).toBeNull();
+    expect(getAllByText("Insight still worth reading").length).toBeGreaterThan(0);
+    expect(getByTestId("home-feed-save-42")).toBeTruthy();
+  });
 });
 
 describe("PostCard save action", () => {
