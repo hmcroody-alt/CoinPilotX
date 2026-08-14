@@ -1764,5 +1764,158 @@
         "whenDoesItEnd": "Que se passe-t-il après le défi ?"
       }
     }
+  },
+  "premium": {
+    "loading": "Chargement de votre abonnement…",
+    "loadError": "Impossible de charger votre abonnement.",
+    "retry": "Réessayer",
+    "privateNote": "Vous seul pouvez voir ceci.",
+    "notVerification": "Premium est un abonnement. Ce n'est pas une vérification d'identité.",
+    "tile": {
+      "status": {
+        "active": "ACTIF",
+        "founder": "FONDATEUR",
+        "grace": "RENOUVELER"
+      },
+      "hint": "Ouvre vos offres et avantages Premium.",
+      "a11y": {
+        "none": "Premium. Voir les offres et avantages PulseSoc Premium.",
+        "active": "Premium. Abonnement actif. Gérez votre offre Premium.",
+        "founder": "Premium. Adhésion fondateur. Gérez vos avantages Premium.",
+        "grace": "Premium. Le renouvellement demande votre attention. Gérez votre offre Premium."
+      }
+    },
+    "header": {
+      "member": "Membre Premium",
+      "founder": "Membre fondateur",
+      "free": "PulseSoc Premium",
+      "founderNumber": "Fondateur n° {{number}}"
+    },
+    "status": {
+      "active": "Actif",
+      "founder": "À vie",
+      "grace": "Renouvellement en attente",
+      "hold": "Compte suspendu",
+      "expired": "Terminé",
+      "none": "Pas d'abonnement"
+    },
+    "blurb": {
+      "active": "Vos avantages Premium sont actifs.",
+      "founder": "Votre adhésion fondateur n'expire pas et n'est jamais facturée.",
+      "grace": "Vos avantages restent actifs pendant qu'Apple relance le renouvellement.",
+      "hold": "Vos avantages sont en pause jusqu'à la levée de la suspension de votre compte.",
+      "expired": "Votre abonnement a pris fin. Vous pouvez le relancer à tout moment.",
+      "none": "Soutenez PulseSoc et débloquez des outils en plus. L'application reste gratuite."
+    },
+    "notices": {
+      "account_hold": "Votre compte est suspendu, vos avantages Premium sont donc en pause.",
+      "founder": "Vous êtes membre fondateur. Rien à acheter, rien à renouveler."
+    },
+    "plans": {
+      "heading": "Choisissez votre offre",
+      "headingAgain": "Reprendre Premium",
+      "loading": "Chargement des offres…",
+      "monthly": "Mensuel",
+      "annual": "Annuel",
+      "per": {
+        "monthly": "par mois",
+        "annual": "par an"
+      },
+      "save": "Économisez {{percent}} %",
+      "unavailable": "Les offres ne sont pas disponibles pour le moment.",
+      "unavailableBody": "L'App Store n'a renvoyé aucun produit. Vérifiez votre connexion et réessayez : rien n'a été facturé.",
+      "terms": "Facturé via l'App Store. Votre abonnement se renouvelle automatiquement jusqu'à ce que vous l'annuliez dans les réglages d'abonnement Apple."
+    },
+    "purchase": {
+      "start": "Continuer",
+      "working": "En cours…",
+      "cancelled": "Achat annulé.",
+      "verified": "Vous êtes Premium. Bienvenue.",
+      "pending": "Votre achat est en cours de traitement. Premium s'activera dès qu'Apple l'aura confirmé.",
+      "unavailable": "Les achats ne sont pas disponibles sur cet appareil pour le moment."
+    },
+    "restore": {
+      "action": "Restaurer les achats",
+      "hint": "Recherche dans l'App Store un abonnement que vous avez déjà acheté.",
+      "working": "Restauration…",
+      "restored_one": "{{count}} achat restauré.",
+      "restored_other": "{{count}} achats restaurés.",
+      "empty": "Aucun achat à restaurer sur cet identifiant Apple.",
+      "failed": "Impossible de restaurer vos achats.",
+      "unavailable": "La restauration n'est pas disponible sur cet appareil."
+    },
+    "manage": {
+      "action": "Gérer l'abonnement",
+      "hint": "Ouvre les réglages de votre abonnement dans l'App Store.",
+      "note": "Les annulations et changements d'offre sont gérés par Apple.",
+      "failed": "Impossible d'ouvrir les réglages de votre abonnement."
+    },
+    "billing": {
+      "heading": "Votre abonnement",
+      "plan": "Offre",
+      "provider": "Facturé via",
+      "status": "Statut",
+      "renews": "Renouvellement",
+      "expires": "Fin",
+      "cancelPending": "Cet abonnement doit prendre fin et ne sera pas renouvelé.",
+      "none": "Nous n'avons pas d'informations de facturation pour cette adhésion.",
+      "founderNone": "Adhésion fondateur : aucune facturation, rien à renouveler."
+    },
+    "period": {
+      "monthly": "Mensuel",
+      "annual": "Annuel",
+      "trial": "Essai",
+      "grandfathered": "À vie",
+      "unknown": "—"
+    },
+    "provider": {
+      "apple_iap": "Apple",
+      "stripe": "Carte",
+      "unknown": "—"
+    },
+    "subStatus": {
+      "active": "Actif",
+      "trialing": "Essai",
+      "grace": "Renouvellement en attente",
+      "past_due": "Paiement échoué",
+      "canceled": "Se termine",
+      "cancelled": "Se termine",
+      "expired": "Terminé",
+      "revoked": "Révoqué",
+      "paused": "En pause",
+      "unknown": "—"
+    },
+    "benefits": {
+      "heading": "Ce qui est inclus",
+      "beta": "BÊTA",
+      "empty": "Vos avantages sont en cours de configuration. Revenez dans un instant.",
+      "allowance": "{{used}} sur {{limit}} utilisé",
+      "access": "Accès Premium",
+      "profile": {
+        "customization": "Personnalisation du profil"
+      },
+      "media": {
+        "higher_quality": "Médias de meilleure qualité"
+      },
+      "identity": {
+        "effects": "Effets d'identité"
+      },
+      "undx": {
+        "advanced": "UNDX avancé"
+      },
+      "creator_studio_pro": "Creator Studio Pro",
+      "founder_hub_access": "Accès au Founder Hub",
+      "premium_upload_limits": "Limites d'envoi plus élevées",
+      "priority_support": "Assistance prioritaire",
+      "early_access_features": "Accès anticipé aux nouveautés"
+    },
+    "notYet": {
+      "heading": "Bientôt inclus",
+      "note": "Ces éléments font partie de votre offre mais ne sont pas encore activés. Rien ici n'est facturé séparément."
+    },
+    "free": {
+      "heading": "Toujours gratuit",
+      "body": "Votre fil, vos publications, reels, statuts, messages, appels, vidéo en direct, profil, sécurité et récupération de compte restent gratuits. Premium ajoute à PulseSoc ; il n'enlève jamais rien."
+    }
   }
 }

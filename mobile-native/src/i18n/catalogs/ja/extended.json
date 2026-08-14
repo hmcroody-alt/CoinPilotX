@@ -1754,5 +1754,157 @@
         "whenDoesItEnd": "チャレンジのあとはどうなりますか？"
       }
     }
+  },
+  "premium": {
+    "loading": "メンバーシップを読み込んでいます…",
+    "loadError": "メンバーシップを読み込めませんでした。",
+    "retry": "再試行",
+    "privateNote": "これはあなただけに表示されます。",
+    "notVerification": "プレミアムはサブスクリプションです。本人確認ではありません。",
+    "tile": {
+      "status": {
+        "active": "有効",
+        "founder": "創設者",
+        "grace": "更新"
+      },
+      "hint": "プレミアムのプランと特典を開きます。",
+      "a11y": {
+        "none": "プレミアム。PulseSoc プレミアムのプランと特典を見る。",
+        "active": "プレミアム。サブスクリプション有効。プレミアムプランを管理する。",
+        "founder": "プレミアム。創設メンバー。プレミアム特典を管理する。",
+        "grace": "プレミアム。更新に対応が必要です。プレミアムプランを管理する。"
+      }
+    },
+    "header": {
+      "member": "プレミアムメンバー",
+      "founder": "創設メンバー",
+      "free": "PulseSoc プレミアム",
+      "founderNumber": "創設者 #{{number}}"
+    },
+    "status": {
+      "active": "有効",
+      "founder": "永久",
+      "grace": "更新待ち",
+      "hold": "アカウント保留中",
+      "expired": "終了",
+      "none": "未登録"
+    },
+    "blurb": {
+      "active": "プレミアム特典が有効です。",
+      "founder": "創設メンバーシップは期限切れにならず、請求もありません。",
+      "grace": "Apple が更新を再試行する間も特典は有効なままです。",
+      "hold": "アカウントの保留が解除されるまで特典は一時停止中です。",
+      "expired": "サブスクリプションは終了しました。いつでも再開できます。",
+      "none": "PulseSoc を応援して追加ツールを解放しましょう。アプリ本体は無料のままです。"
+    },
+    "notices": {
+      "account_hold": "アカウントが保留中のため、プレミアム特典は一時停止しています。",
+      "founder": "あなたは創設メンバーです。購入も更新も必要ありません。"
+    },
+    "plans": {
+      "heading": "プランを選択",
+      "headingAgain": "プレミアムを再開",
+      "loading": "プランを読み込んでいます…",
+      "monthly": "月額",
+      "annual": "年額",
+      "per": {
+        "monthly": "／月",
+        "annual": "／年"
+      },
+      "save": "{{percent}}％お得",
+      "unavailable": "現在プランを利用できません。",
+      "unavailableBody": "App Store から商品情報が返されませんでした。接続を確認して再試行してください。請求は発生していません。",
+      "terms": "App Store 経由で請求されます。Apple のサブスクリプション設定で解約するまで自動更新されます。"
+    },
+    "purchase": {
+      "start": "続ける",
+      "working": "処理中…",
+      "cancelled": "購入をキャンセルしました。",
+      "verified": "プレミアムになりました。ようこそ。",
+      "pending": "購入を処理中です。Apple の確認が取れ次第プレミアムが有効になります。",
+      "unavailable": "この端末では現在購入できません。"
+    },
+    "restore": {
+      "action": "購入を復元",
+      "hint": "購入済みのサブスクリプションを App Store で確認します。",
+      "working": "復元中…",
+      "restored_other": "{{count}} 件の購入を復元しました。",
+      "empty": "この Apple ID に復元できる購入はありません。",
+      "failed": "購入を復元できませんでした。",
+      "unavailable": "この端末では復元を利用できません。"
+    },
+    "manage": {
+      "action": "サブスクリプションを管理",
+      "hint": "App Store のサブスクリプション設定を開きます。",
+      "note": "解約とプラン変更は Apple が処理します。",
+      "failed": "サブスクリプション設定を開けませんでした。"
+    },
+    "billing": {
+      "heading": "サブスクリプション",
+      "plan": "プラン",
+      "provider": "請求元",
+      "status": "ステータス",
+      "renews": "更新日",
+      "expires": "終了日",
+      "cancelPending": "このサブスクリプションは終了予定で、更新されません。",
+      "none": "このメンバーシップの請求情報はありません。",
+      "founderNone": "創設メンバーシップ — 請求も更新もありません。"
+    },
+    "period": {
+      "monthly": "月額",
+      "annual": "年額",
+      "trial": "無料トライアル",
+      "grandfathered": "永久",
+      "unknown": "—"
+    },
+    "provider": {
+      "apple_iap": "Apple",
+      "stripe": "カード",
+      "unknown": "—"
+    },
+    "subStatus": {
+      "active": "有効",
+      "trialing": "トライアル中",
+      "grace": "更新待ち",
+      "past_due": "支払い失敗",
+      "canceled": "終了予定",
+      "cancelled": "終了予定",
+      "expired": "終了",
+      "revoked": "取り消し済み",
+      "paused": "一時停止中",
+      "unknown": "—"
+    },
+    "benefits": {
+      "heading": "含まれるもの",
+      "beta": "ベータ",
+      "empty": "特典を準備しています。しばらくしてからご確認ください。",
+      "allowance": "{{limit}} 中 {{used}} 使用",
+      "access": "プレミアムアクセス",
+      "profile": {
+        "customization": "プロフィールのカスタマイズ"
+      },
+      "media": {
+        "higher_quality": "高画質メディア"
+      },
+      "identity": {
+        "effects": "アイデンティティエフェクト"
+      },
+      "undx": {
+        "advanced": "UNDX アドバンス"
+      },
+      "creator_studio_pro": "Creator Studio Pro",
+      "founder_hub_access": "Founder Hub へのアクセス",
+      "premium_upload_limits": "アップロード上限の拡大",
+      "priority_support": "優先サポート",
+      "early_access_features": "新機能への先行アクセス"
+    },
+    "notYet": {
+      "heading": "プランに今後追加",
+      "note": "プランに含まれていますが、まだ有効になっていません。別途請求されることはありません。"
+    },
+    "free": {
+      "heading": "ずっと無料",
+      "body": "フィード、投稿、リール、ステータス、メッセージ、通話、ライブ配信、プロフィール、セキュリティ、アカウント復旧は無料のままです。プレミアムは PulseSoc に機能を足すもので、何かを取り上げることはありません。"
+    }
   }
 }

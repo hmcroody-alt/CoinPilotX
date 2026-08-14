@@ -48,7 +48,26 @@ export interface StoreKitAdapter {
   requestPurchase(sku: string, type?: "in-app" | "subs", appAccountToken?: string): Promise<StoreKitPurchase | null>;
   finishTransaction(purchase: StoreKitPurchase, isConsumable?: boolean): Promise<void>;
   getAvailablePurchases(): Promise<StoreKitPurchase[]>;
+  /**
+   * Fetch store metadata (crucially, the *localized* display price) for skus.
+   *
+   * Optional so that existing fakes in the ad-credit tests keep satisfying this
+   * interface. Callers must treat a missing method as "no products", never as a
+   * reason to fall back to a hardcoded price — App Review rejects a subscription
+   * screen that shows a price Apple did not supply, and a US dollar figure shown
+   * to a member billed in yen is simply false.
+   */
+  getSubscriptions?(skus: string[]): Promise<StoreKitProduct[]>;
 }
+
+/** Store-supplied product metadata. `displayPrice` is already formatted by Apple. */
+export type StoreKitProduct = {
+  id: string;
+  displayPrice: string;
+  price: number;
+  currency: string;
+  title: string;
+};
 
 let cachedAdapter: StoreKitAdapter | null | undefined;
 
@@ -84,6 +103,28 @@ export function loadStoreKitAdapter(): StoreKitAdapter | null {
         if (typeof iap.getAvailablePurchases !== "function") return [];
         const rows = await iap.getAvailablePurchases();
         return Array.isArray(rows) ? (rows as StoreKitPurchase[]) : [];
+      },
+      getSubscriptions: async (skus: string[]) => {
+        // expo-iap has moved this between `getSubscriptions` and `fetchProducts`
+        // across versions; try both before giving up, and normalise the field
+        // names Apple/expo have used for the formatted price.
+        const fetcher = typeof iap.getSubscriptions === "function"
+          ? (list: string[]) => iap.getSubscriptions({ skus: list })
+          : typeof iap.fetchProducts === "function"
+            ? (list: string[]) => iap.fetchProducts({ skus: list, type: "subs" })
+            : null;
+        if (!fetcher) return [];
+        const rows = await fetcher(skus);
+        const list = Array.isArray(rows) ? rows : [];
+        return list
+          .map((row: Record<string, unknown>) => ({
+            id: String(row?.id ?? row?.productId ?? ""),
+            displayPrice: String(row?.displayPrice ?? row?.localizedPrice ?? row?.price ?? ""),
+            price: Number(row?.price ?? row?.priceAmount ?? 0),
+            currency: String(row?.currency ?? row?.currencyCode ?? ""),
+            title: String(row?.title ?? row?.displayName ?? "")
+          }))
+          .filter((product: StoreKitProduct) => product.id && product.displayPrice);
       }
     };
   } catch {

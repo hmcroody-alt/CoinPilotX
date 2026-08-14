@@ -86,6 +86,78 @@ def _founder_facts(user_id: Any) -> dict:
     return facts
 
 
+#: Billing period implied by a plan key. Used for display only — the renewal
+#: date is always the authoritative one, because a plan key cannot tell you what
+#: Apple actually charged.
+_PLAN_PERIOD = {
+    "pulse_premium_monthly": "monthly",
+    "pulse_premium_annual": "annual",
+    "pulse_business_monthly": "monthly",
+    "pulse_premium_trial": "trial",
+    "pulse_premium_grandfathered": "grandfathered",
+}
+
+#: Columns the member may see. Deliberately an allowlist rather than "the row
+#: minus a few": ``business_os_ent_provider_subs`` also stores
+#: ``provider_subscription_id`` (a provider-side token) and ``raw_json`` (the
+#: decoded Apple transaction), and a SELECT * that later reached a client would
+#: leak both. Adding a column to the table must not silently publish it.
+_SUB_PUBLIC_COLUMNS = (
+    "provider", "plan_key", "status", "current_period_end", "cancel_at_period_end",
+)
+
+
+def subscription_summary(user_id: Any, *, subject_type: str = "user") -> Optional[dict]:
+    """Safe billing facts for the member's own subscription, or ``None``.
+
+    ``None`` is a real and common answer, not a failure: a Founder or an
+    admin-granted member has canonical Premium with no provider subscription
+    behind it at all. The Control Center renders that as a grandfathered plan
+    rather than as missing data.
+
+    Nothing identifying is returned. No subscription id, no transaction id, no
+    receipt, no raw provider payload, no internal row id — see
+    :data:`_SUB_PUBLIC_COLUMNS`.
+    """
+    try:
+        from services import db
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        conn = db.connect()
+        try:
+            cur = conn.execute(
+                f"SELECT {', '.join(_SUB_PUBLIC_COLUMNS)} "
+                "FROM business_os_ent_provider_subs "
+                "WHERE subject_type = ? AND subject_id = ? "
+                # Newest first: a member who resubscribed after lapsing has more
+                # than one row, and the current one is the only honest answer.
+                "ORDER BY updated_at DESC, id DESC LIMIT 1",
+                (subject_type, str(user_id)),
+            )
+            row = cur.fetchone()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - billing detail must never break the page
+        _log.exception("subscription lookup failed for user=%s", user_id)
+        return None
+    if row is None:
+        return None
+    try:
+        data = {k: row[k] for k in _SUB_PUBLIC_COLUMNS}
+    except (TypeError, IndexError, KeyError):
+        data = dict(zip(_SUB_PUBLIC_COLUMNS, tuple(row)))
+    plan_key = str(data.get("plan_key") or "")
+    return {
+        "provider": str(data.get("provider") or ""),
+        "plan_key": plan_key,
+        "billing_period": _PLAN_PERIOD.get(plan_key, ""),
+        "status": str(data.get("status") or ""),
+        "current_period_end": data.get("current_period_end") or None,
+        "cancel_at_period_end": bool(data.get("cancel_at_period_end")),
+    }
+
+
 def _allowance(user_id: Any, key: str, subject_type: str) -> Optional[dict]:
     """Real metered allowance for ``key``, or ``None`` when it isn't metered.
 
@@ -209,6 +281,7 @@ def status_center(user_id: Any, *, subject_type: str = "user",
             "account_status": state["account_status"],
         },
         "founder": founder,
+        "subscription": subscription_summary(user_id, subject_type=subject_type),
         "benefits": benefits,
         "not_yet": not_yet,
         "notices": notices,

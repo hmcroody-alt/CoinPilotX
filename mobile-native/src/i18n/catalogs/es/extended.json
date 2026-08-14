@@ -1764,5 +1764,158 @@
         "whenDoesItEnd": "¿Qué pasa después del reto?"
       }
     }
+  },
+  "premium": {
+    "loading": "Cargando tu membresía…",
+    "loadError": "No pudimos cargar tu membresía.",
+    "retry": "Reintentar",
+    "privateNote": "Solo tú puedes ver esto.",
+    "notVerification": "Premium es una suscripción. No es verificación de identidad.",
+    "tile": {
+      "status": {
+        "active": "ACTIVA",
+        "founder": "FUNDADOR",
+        "grace": "RENOVAR"
+      },
+      "hint": "Abre tus planes y beneficios Premium.",
+      "a11y": {
+        "none": "Premium. Ver los planes y beneficios de PulseSoc Premium.",
+        "active": "Premium. Suscripción activa. Gestiona tu plan Premium.",
+        "founder": "Premium. Membresía de fundador. Gestiona tus beneficios Premium.",
+        "grace": "Premium. La renovación necesita atención. Gestiona tu plan Premium."
+      }
+    },
+    "header": {
+      "member": "Miembro Premium",
+      "founder": "Miembro fundador",
+      "free": "PulseSoc Premium",
+      "founderNumber": "Fundador n.º {{number}}"
+    },
+    "status": {
+      "active": "Activa",
+      "founder": "De por vida",
+      "grace": "Renovación pendiente",
+      "hold": "Cuenta retenida",
+      "expired": "Finalizada",
+      "none": "Sin suscripción"
+    },
+    "blurb": {
+      "active": "Tus beneficios Premium están activos.",
+      "founder": "Tu membresía de fundador no caduca y nunca se cobra.",
+      "grace": "Tus beneficios siguen activos mientras Apple reintenta la renovación.",
+      "hold": "Tus beneficios están en pausa hasta que se resuelva la retención de tu cuenta.",
+      "expired": "Tu suscripción finalizó. Puedes reactivarla cuando quieras.",
+      "none": "Apoya a PulseSoc y desbloquea herramientas extra. La app principal sigue siendo gratis."
+    },
+    "notices": {
+      "account_hold": "Tu cuenta está retenida, así que los beneficios Premium están en pausa.",
+      "founder": "Eres miembro fundador. No hay nada que comprar ni que renovar."
+    },
+    "plans": {
+      "heading": "Elige tu plan",
+      "headingAgain": "Vuelve a activar Premium",
+      "loading": "Cargando planes…",
+      "monthly": "Mensual",
+      "annual": "Anual",
+      "per": {
+        "monthly": "al mes",
+        "annual": "al año"
+      },
+      "save": "Ahorra {{percent}} %",
+      "unavailable": "Los planes no están disponibles ahora mismo.",
+      "unavailableBody": "El App Store no devolvió ningún producto. Revisa tu conexión e inténtalo de nuevo: no se ha cobrado nada.",
+      "terms": "Se factura a través del App Store. Tu suscripción se renueva automáticamente hasta que la canceles en los ajustes de suscripciones de Apple."
+    },
+    "purchase": {
+      "start": "Continuar",
+      "working": "Procesando…",
+      "cancelled": "Compra cancelada.",
+      "verified": "Ya eres Premium. Bienvenido.",
+      "pending": "Tu compra se está procesando. Premium se activará en cuanto Apple lo confirme.",
+      "unavailable": "Las compras no están disponibles en este dispositivo ahora mismo."
+    },
+    "restore": {
+      "action": "Restaurar compras",
+      "hint": "Busca en el App Store una suscripción que ya hayas comprado.",
+      "working": "Restaurando…",
+      "restored_one": "Se restauró {{count}} compra.",
+      "restored_other": "Se restauraron {{count}} compras.",
+      "empty": "No hay compras que restaurar en este ID de Apple.",
+      "failed": "No pudimos restaurar tus compras.",
+      "unavailable": "Restaurar no está disponible en este dispositivo."
+    },
+    "manage": {
+      "action": "Gestionar suscripción",
+      "hint": "Abre los ajustes de tu suscripción en el App Store.",
+      "note": "Las cancelaciones y los cambios de plan los gestiona Apple.",
+      "failed": "No pudimos abrir los ajustes de tu suscripción."
+    },
+    "billing": {
+      "heading": "Tu suscripción",
+      "plan": "Plan",
+      "provider": "Se factura vía",
+      "status": "Estado",
+      "renews": "Se renueva",
+      "expires": "Finaliza",
+      "cancelPending": "Esta suscripción está programada para finalizar y no se renovará.",
+      "none": "No tenemos datos de facturación para esta membresía.",
+      "founderNone": "Membresía de fundador: sin facturación, nada que renovar."
+    },
+    "period": {
+      "monthly": "Mensual",
+      "annual": "Anual",
+      "trial": "Prueba",
+      "grandfathered": "De por vida",
+      "unknown": "—"
+    },
+    "provider": {
+      "apple_iap": "Apple",
+      "stripe": "Tarjeta",
+      "unknown": "—"
+    },
+    "subStatus": {
+      "active": "Activa",
+      "trialing": "Prueba",
+      "grace": "Renovación pendiente",
+      "past_due": "Pago fallido",
+      "canceled": "Finalizando",
+      "cancelled": "Finalizando",
+      "expired": "Finalizada",
+      "revoked": "Revocada",
+      "paused": "En pausa",
+      "unknown": "—"
+    },
+    "benefits": {
+      "heading": "Qué incluye",
+      "beta": "BETA",
+      "empty": "Tus beneficios aún se están configurando. Vuelve en un momento.",
+      "allowance": "{{used}} de {{limit}} usado",
+      "access": "Acceso Premium",
+      "profile": {
+        "customization": "Personalización del perfil"
+      },
+      "media": {
+        "higher_quality": "Multimedia de mayor calidad"
+      },
+      "identity": {
+        "effects": "Efectos de identidad"
+      },
+      "undx": {
+        "advanced": "UNDX avanzado"
+      },
+      "creator_studio_pro": "Creator Studio Pro",
+      "founder_hub_access": "Acceso al Founder Hub",
+      "premium_upload_limits": "Límites de subida más altos",
+      "priority_support": "Soporte prioritario",
+      "early_access_features": "Acceso anticipado a novedades"
+    },
+    "notYet": {
+      "heading": "Incluido próximamente",
+      "note": "Forman parte de tu plan, pero aún no están activados. Nada de esto se cobra aparte."
+    },
+    "free": {
+      "heading": "Siempre gratis",
+      "body": "Tu feed, publicaciones, reels, estados, mensajes, llamadas, vídeo en directo, perfil, seguridad y recuperación de cuenta siguen siendo gratis. Premium suma a PulseSoc; nunca quita nada."
+    }
   }
 }

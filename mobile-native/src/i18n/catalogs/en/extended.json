@@ -1764,5 +1764,158 @@
         "whenDoesItEnd": "What happens after the challenge?"
       }
     }
+  },
+  "premium": {
+    "loading": "Loading your membership…",
+    "loadError": "We couldn't load your membership.",
+    "retry": "Try again",
+    "privateNote": "Only you can see this.",
+    "notVerification": "Premium is a subscription. It is not identity verification.",
+    "tile": {
+      "status": {
+        "active": "ACTIVE",
+        "founder": "FOUNDER",
+        "grace": "RENEW"
+      },
+      "hint": "Opens your Premium plans and benefits.",
+      "a11y": {
+        "none": "Premium. View PulseSoc Premium plans and benefits.",
+        "active": "Premium. Active subscription. Manage your Premium plan.",
+        "founder": "Premium. Founder membership. Manage your Premium benefits.",
+        "grace": "Premium. Renewal needs attention. Manage your Premium plan."
+      }
+    },
+    "header": {
+      "member": "Premium Member",
+      "founder": "Founding Member",
+      "free": "PulseSoc Premium",
+      "founderNumber": "Founder #{{number}}"
+    },
+    "status": {
+      "active": "Active",
+      "founder": "Lifetime",
+      "grace": "Renewal pending",
+      "hold": "Account hold",
+      "expired": "Ended",
+      "none": "Not subscribed"
+    },
+    "blurb": {
+      "active": "Your Premium benefits are on.",
+      "founder": "Your founding membership doesn't expire and is never billed.",
+      "grace": "Your benefits stay on while Apple retries the renewal.",
+      "hold": "Your benefits are paused until the hold on your account is resolved.",
+      "expired": "Your subscription has ended. You can start it again any time.",
+      "none": "Support PulseSoc and unlock extra tools. The core app stays free."
+    },
+    "notices": {
+      "account_hold": "Your account is on hold, so Premium benefits are paused.",
+      "founder": "You're a Founding Member. There's nothing to buy and nothing to renew."
+    },
+    "plans": {
+      "heading": "Choose your plan",
+      "headingAgain": "Start Premium again",
+      "loading": "Loading plans…",
+      "monthly": "Monthly",
+      "annual": "Annual",
+      "per": {
+        "monthly": "per month",
+        "annual": "per year"
+      },
+      "save": "Save {{percent}}%",
+      "unavailable": "Plans aren't available right now.",
+      "unavailableBody": "The App Store didn't return any products. Check your connection and try again — nothing has been charged.",
+      "terms": "Billed through the App Store. Your subscription renews automatically until you cancel it in Apple's subscription settings."
+    },
+    "purchase": {
+      "start": "Continue",
+      "working": "Working…",
+      "cancelled": "Purchase cancelled.",
+      "verified": "You're Premium. Welcome in.",
+      "pending": "Your purchase is being processed. Premium unlocks as soon as Apple confirms it.",
+      "unavailable": "Purchases aren't available on this device right now."
+    },
+    "restore": {
+      "action": "Restore Purchases",
+      "hint": "Checks the App Store for a subscription you already bought.",
+      "working": "Restoring…",
+      "restored_one": "Restored {{count}} purchase.",
+      "restored_other": "Restored {{count}} purchases.",
+      "empty": "There are no purchases to restore on this Apple ID.",
+      "failed": "We couldn't restore your purchases.",
+      "unavailable": "Restore isn't available on this device."
+    },
+    "manage": {
+      "action": "Manage Subscription",
+      "hint": "Opens your subscription settings in the App Store.",
+      "note": "Cancellations and plan changes are handled by Apple.",
+      "failed": "We couldn't open your subscription settings."
+    },
+    "billing": {
+      "heading": "Your subscription",
+      "plan": "Plan",
+      "provider": "Billed through",
+      "status": "Status",
+      "renews": "Renews",
+      "expires": "Ends",
+      "cancelPending": "This subscription is set to end and will not renew.",
+      "none": "We don't have billing details for this membership.",
+      "founderNone": "Founding membership — no billing, nothing to renew."
+    },
+    "period": {
+      "monthly": "Monthly",
+      "annual": "Annual",
+      "trial": "Trial",
+      "grandfathered": "Lifetime",
+      "unknown": "—"
+    },
+    "provider": {
+      "apple_iap": "Apple",
+      "stripe": "Card",
+      "unknown": "—"
+    },
+    "subStatus": {
+      "active": "Active",
+      "trialing": "Trial",
+      "grace": "Renewal pending",
+      "past_due": "Payment failed",
+      "canceled": "Ending",
+      "cancelled": "Ending",
+      "expired": "Ended",
+      "revoked": "Revoked",
+      "paused": "Paused",
+      "unknown": "—"
+    },
+    "benefits": {
+      "heading": "What's included",
+      "beta": "BETA",
+      "empty": "Your benefits are still being set up. Check back shortly.",
+      "allowance": "{{used}} of {{limit}} used",
+      "access": "Premium access",
+      "profile": {
+        "customization": "Profile customization"
+      },
+      "media": {
+        "higher_quality": "Higher quality media"
+      },
+      "identity": {
+        "effects": "Identity effects"
+      },
+      "undx": {
+        "advanced": "Advanced UNDX"
+      },
+      "creator_studio_pro": "Creator Studio Pro",
+      "founder_hub_access": "Founder Hub access",
+      "premium_upload_limits": "Higher upload limits",
+      "priority_support": "Priority support",
+      "early_access_features": "Early access to new features"
+    },
+    "notYet": {
+      "heading": "Coming with your plan",
+      "note": "These are part of your plan but aren't switched on yet. Nothing here is billed separately."
+    },
+    "free": {
+      "heading": "Always free",
+      "body": "Your feed, posts, reels, status, messages, calls, live video, profile, security and account recovery stay free. Premium adds to PulseSoc; it never takes anything away."
+    }
   }
 }

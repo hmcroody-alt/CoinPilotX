@@ -1764,5 +1764,158 @@
         "whenDoesItEnd": "O que acontece depois do desafio?"
       }
     }
+  },
+  "premium": {
+    "loading": "Carregando sua assinatura…",
+    "loadError": "Não foi possível carregar sua assinatura.",
+    "retry": "Tentar de novo",
+    "privateNote": "Só você vê isto.",
+    "notVerification": "O Premium é uma assinatura. Não é verificação de identidade.",
+    "tile": {
+      "status": {
+        "active": "ATIVA",
+        "founder": "FUNDADOR",
+        "grace": "RENOVAR"
+      },
+      "hint": "Abre seus planos e benefícios Premium.",
+      "a11y": {
+        "none": "Premium. Ver os planos e benefícios do PulseSoc Premium.",
+        "active": "Premium. Assinatura ativa. Gerencie seu plano Premium.",
+        "founder": "Premium. Assinatura de fundador. Gerencie seus benefícios Premium.",
+        "grace": "Premium. A renovação precisa de atenção. Gerencie seu plano Premium."
+      }
+    },
+    "header": {
+      "member": "Membro Premium",
+      "founder": "Membro fundador",
+      "free": "PulseSoc Premium",
+      "founderNumber": "Fundador n.º {{number}}"
+    },
+    "status": {
+      "active": "Ativa",
+      "founder": "Vitalícia",
+      "grace": "Renovação pendente",
+      "hold": "Conta em espera",
+      "expired": "Encerrada",
+      "none": "Sem assinatura"
+    },
+    "blurb": {
+      "active": "Seus benefícios Premium estão ativos.",
+      "founder": "Sua assinatura de fundador não expira e nunca é cobrada.",
+      "grace": "Seus benefícios continuam ativos enquanto a Apple tenta renovar.",
+      "hold": "Seus benefícios estão pausados até que a espera na sua conta seja resolvida.",
+      "expired": "Sua assinatura terminou. Você pode reativá-la quando quiser.",
+      "none": "Apoie o PulseSoc e desbloqueie ferramentas extras. O app principal continua gratuito."
+    },
+    "notices": {
+      "account_hold": "Sua conta está em espera, então os benefícios Premium estão pausados.",
+      "founder": "Você é membro fundador. Não há nada para comprar nem renovar."
+    },
+    "plans": {
+      "heading": "Escolha seu plano",
+      "headingAgain": "Reative o Premium",
+      "loading": "Carregando planos…",
+      "monthly": "Mensal",
+      "annual": "Anual",
+      "per": {
+        "monthly": "por mês",
+        "annual": "por ano"
+      },
+      "save": "Economize {{percent}}%",
+      "unavailable": "Os planos não estão disponíveis agora.",
+      "unavailableBody": "A App Store não retornou nenhum produto. Verifique sua conexão e tente de novo: nada foi cobrado.",
+      "terms": "Cobrado pela App Store. Sua assinatura é renovada automaticamente até você cancelá-la nos ajustes de assinaturas da Apple."
+    },
+    "purchase": {
+      "start": "Continuar",
+      "working": "Processando…",
+      "cancelled": "Compra cancelada.",
+      "verified": "Você é Premium. Bem-vindo.",
+      "pending": "Sua compra está sendo processada. O Premium é liberado assim que a Apple confirmar.",
+      "unavailable": "As compras não estão disponíveis neste dispositivo agora."
+    },
+    "restore": {
+      "action": "Restaurar compras",
+      "hint": "Procura na App Store uma assinatura que você já comprou.",
+      "working": "Restaurando…",
+      "restored_one": "{{count}} compra restaurada.",
+      "restored_other": "{{count}} compras restauradas.",
+      "empty": "Não há compras para restaurar neste ID Apple.",
+      "failed": "Não foi possível restaurar suas compras.",
+      "unavailable": "Restaurar não está disponível neste dispositivo."
+    },
+    "manage": {
+      "action": "Gerenciar assinatura",
+      "hint": "Abre os ajustes da sua assinatura na App Store.",
+      "note": "Cancelamentos e mudanças de plano são feitos pela Apple.",
+      "failed": "Não foi possível abrir os ajustes da sua assinatura."
+    },
+    "billing": {
+      "heading": "Sua assinatura",
+      "plan": "Plano",
+      "provider": "Cobrado por",
+      "status": "Status",
+      "renews": "Renova em",
+      "expires": "Termina em",
+      "cancelPending": "Esta assinatura está marcada para terminar e não será renovada.",
+      "none": "Não temos dados de cobrança para esta assinatura.",
+      "founderNone": "Assinatura de fundador — sem cobrança, nada a renovar."
+    },
+    "period": {
+      "monthly": "Mensal",
+      "annual": "Anual",
+      "trial": "Teste",
+      "grandfathered": "Vitalícia",
+      "unknown": "—"
+    },
+    "provider": {
+      "apple_iap": "Apple",
+      "stripe": "Cartão",
+      "unknown": "—"
+    },
+    "subStatus": {
+      "active": "Ativa",
+      "trialing": "Teste",
+      "grace": "Renovação pendente",
+      "past_due": "Pagamento recusado",
+      "canceled": "Encerrando",
+      "cancelled": "Encerrando",
+      "expired": "Encerrada",
+      "revoked": "Revogada",
+      "paused": "Pausada",
+      "unknown": "—"
+    },
+    "benefits": {
+      "heading": "O que está incluído",
+      "beta": "BETA",
+      "empty": "Seus benefícios ainda estão sendo configurados. Volte em instantes.",
+      "allowance": "{{used}} de {{limit}} usado",
+      "access": "Acesso Premium",
+      "profile": {
+        "customization": "Personalização do perfil"
+      },
+      "media": {
+        "higher_quality": "Mídia com mais qualidade"
+      },
+      "identity": {
+        "effects": "Efeitos de identidade"
+      },
+      "undx": {
+        "advanced": "UNDX avançado"
+      },
+      "creator_studio_pro": "Creator Studio Pro",
+      "founder_hub_access": "Acesso ao Founder Hub",
+      "premium_upload_limits": "Limites de envio maiores",
+      "priority_support": "Suporte prioritário",
+      "early_access_features": "Acesso antecipado a novidades"
+    },
+    "notYet": {
+      "heading": "Em breve no seu plano",
+      "note": "Fazem parte do seu plano, mas ainda não foram ativados. Nada aqui é cobrado à parte."
+    },
+    "free": {
+      "heading": "Sempre gratuito",
+      "body": "Seu feed, publicações, reels, status, mensagens, chamadas, vídeo ao vivo, perfil, segurança e recuperação de conta continuam gratuitos. O Premium soma ao PulseSoc; nunca tira nada."
+    }
   }
 }

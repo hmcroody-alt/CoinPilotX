@@ -1764,5 +1764,158 @@
         "whenDoesItEnd": "Was passiert nach der Challenge?"
       }
     }
+  },
+  "premium": {
+    "loading": "Mitgliedschaft wird geladen …",
+    "loadError": "Deine Mitgliedschaft konnte nicht geladen werden.",
+    "retry": "Erneut versuchen",
+    "privateNote": "Das sieht nur du.",
+    "notVerification": "Premium ist ein Abo. Es ist keine Identitätsprüfung.",
+    "tile": {
+      "status": {
+        "active": "AKTIV",
+        "founder": "GRÜNDER",
+        "grace": "ERNEUERN"
+      },
+      "hint": "Öffnet deine Premium-Tarife und -Vorteile.",
+      "a11y": {
+        "none": "Premium. PulseSoc-Premium-Tarife und -Vorteile ansehen.",
+        "active": "Premium. Abo aktiv. Verwalte deinen Premium-Tarif.",
+        "founder": "Premium. Gründer-Mitgliedschaft. Verwalte deine Premium-Vorteile.",
+        "grace": "Premium. Die Verlängerung braucht Aufmerksamkeit. Verwalte deinen Premium-Tarif."
+      }
+    },
+    "header": {
+      "member": "Premium-Mitglied",
+      "founder": "Gründungsmitglied",
+      "free": "PulseSoc Premium",
+      "founderNumber": "Gründer Nr. {{number}}"
+    },
+    "status": {
+      "active": "Aktiv",
+      "founder": "Lebenslang",
+      "grace": "Verlängerung ausstehend",
+      "hold": "Konto gesperrt",
+      "expired": "Beendet",
+      "none": "Kein Abo"
+    },
+    "blurb": {
+      "active": "Deine Premium-Vorteile sind aktiv.",
+      "founder": "Deine Gründer-Mitgliedschaft läuft nie ab und wird nie abgerechnet.",
+      "grace": "Deine Vorteile bleiben aktiv, während Apple die Verlängerung erneut versucht.",
+      "hold": "Deine Vorteile pausieren, bis die Sperre deines Kontos aufgehoben ist.",
+      "expired": "Dein Abo ist beendet. Du kannst es jederzeit neu starten.",
+      "none": "Unterstütze PulseSoc und schalte zusätzliche Tools frei. Die App selbst bleibt kostenlos."
+    },
+    "notices": {
+      "account_hold": "Dein Konto ist gesperrt, deshalb pausieren die Premium-Vorteile.",
+      "founder": "Du bist Gründungsmitglied. Es gibt nichts zu kaufen und nichts zu verlängern."
+    },
+    "plans": {
+      "heading": "Wähle deinen Tarif",
+      "headingAgain": "Premium neu starten",
+      "loading": "Tarife werden geladen …",
+      "monthly": "Monatlich",
+      "annual": "Jährlich",
+      "per": {
+        "monthly": "pro Monat",
+        "annual": "pro Jahr"
+      },
+      "save": "{{percent}} % sparen",
+      "unavailable": "Tarife sind derzeit nicht verfügbar.",
+      "unavailableBody": "Der App Store hat keine Produkte zurückgegeben. Prüfe deine Verbindung und versuch es erneut – es wurde nichts abgebucht.",
+      "terms": "Abrechnung über den App Store. Dein Abo verlängert sich automatisch, bis du es in den Apple-Abo-Einstellungen kündigst."
+    },
+    "purchase": {
+      "start": "Weiter",
+      "working": "Wird bearbeitet …",
+      "cancelled": "Kauf abgebrochen.",
+      "verified": "Du bist Premium. Willkommen.",
+      "pending": "Dein Kauf wird bearbeitet. Premium wird freigeschaltet, sobald Apple bestätigt.",
+      "unavailable": "Käufe sind auf diesem Gerät derzeit nicht möglich."
+    },
+    "restore": {
+      "action": "Käufe wiederherstellen",
+      "hint": "Sucht im App Store nach einem Abo, das du bereits gekauft hast.",
+      "working": "Wird wiederhergestellt …",
+      "restored_one": "{{count}} Kauf wiederhergestellt.",
+      "restored_other": "{{count}} Käufe wiederhergestellt.",
+      "empty": "Für diese Apple-ID gibt es keine Käufe zum Wiederherstellen.",
+      "failed": "Deine Käufe konnten nicht wiederhergestellt werden.",
+      "unavailable": "Wiederherstellen ist auf diesem Gerät nicht verfügbar."
+    },
+    "manage": {
+      "action": "Abo verwalten",
+      "hint": "Öffnet deine Abo-Einstellungen im App Store.",
+      "note": "Kündigungen und Tarifwechsel werden von Apple abgewickelt.",
+      "failed": "Deine Abo-Einstellungen konnten nicht geöffnet werden."
+    },
+    "billing": {
+      "heading": "Dein Abo",
+      "plan": "Tarif",
+      "provider": "Abrechnung über",
+      "status": "Status",
+      "renews": "Verlängert sich am",
+      "expires": "Endet am",
+      "cancelPending": "Dieses Abo endet und wird nicht verlängert.",
+      "none": "Für diese Mitgliedschaft liegen keine Abrechnungsdaten vor.",
+      "founderNone": "Gründer-Mitgliedschaft – keine Abrechnung, nichts zu verlängern."
+    },
+    "period": {
+      "monthly": "Monatlich",
+      "annual": "Jährlich",
+      "trial": "Testphase",
+      "grandfathered": "Lebenslang",
+      "unknown": "—"
+    },
+    "provider": {
+      "apple_iap": "Apple",
+      "stripe": "Karte",
+      "unknown": "—"
+    },
+    "subStatus": {
+      "active": "Aktiv",
+      "trialing": "Testphase",
+      "grace": "Verlängerung ausstehend",
+      "past_due": "Zahlung fehlgeschlagen",
+      "canceled": "Läuft aus",
+      "cancelled": "Läuft aus",
+      "expired": "Beendet",
+      "revoked": "Widerrufen",
+      "paused": "Pausiert",
+      "unknown": "—"
+    },
+    "benefits": {
+      "heading": "Das ist enthalten",
+      "beta": "BETA",
+      "empty": "Deine Vorteile werden noch eingerichtet. Schau gleich noch mal vorbei.",
+      "allowance": "{{used}} von {{limit}} genutzt",
+      "access": "Premium-Zugang",
+      "profile": {
+        "customization": "Profilgestaltung"
+      },
+      "media": {
+        "higher_quality": "Medien in höherer Qualität"
+      },
+      "identity": {
+        "effects": "Identitätseffekte"
+      },
+      "undx": {
+        "advanced": "UNDX erweitert"
+      },
+      "creator_studio_pro": "Creator Studio Pro",
+      "founder_hub_access": "Zugang zum Founder Hub",
+      "premium_upload_limits": "Höhere Upload-Limits",
+      "priority_support": "Bevorzugter Support",
+      "early_access_features": "Früher Zugang zu Neuerungen"
+    },
+    "notYet": {
+      "heading": "Kommt mit deinem Tarif",
+      "note": "Diese gehören zu deinem Tarif, sind aber noch nicht aktiviert. Nichts davon wird separat abgerechnet."
+    },
+    "free": {
+      "heading": "Immer kostenlos",
+      "body": "Feed, Beiträge, Reels, Status, Nachrichten, Anrufe, Live-Video, Profil, Sicherheit und Kontowiederherstellung bleiben kostenlos. Premium ergänzt PulseSoc; es nimmt nie etwas weg."
+    }
   }
 }

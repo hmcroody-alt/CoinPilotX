@@ -13,6 +13,8 @@ import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/P
 import { ContentCover, ContentCoverKind } from "../components/covers/ContentCover";
 import { buildProfileContext, subjectName } from "../profile/profileContext";
 import { profileOsDestination, tileNoun, visibleProfileOsTiles } from "../profile/profileOsTiles";
+import { usePremiumTile } from "../profile/usePremiumTile";
+import { trackPremium } from "../payments/premiumAnalytics";
 import { useAuth } from "../session/auth";
 import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
@@ -79,6 +81,10 @@ export function ProfileScreen({ route, navigation }: Props) {
     [viewerUserId, profile, profileTarget]
   );
   const profileOsTiles = useMemo(() => visibleProfileOsTiles(profileContext), [profileContext]);
+  // Owner-only. The Premium tile is not on a visitor's grid, so nothing is
+  // fetched and no one else's screen pays for it.
+  const premiumTile = usePremiumTile(profileContext.isOwnProfile);
+  const moduleState = useMemo(() => (premiumTile ? { premium: premiumTile } : undefined), [premiumTile]);
 
   function postsLookupKey(nextProfile: PulseProfile | null, fallbackKey = profileKey) {
     if (!nextProfile) return fallbackKey;
@@ -264,6 +270,9 @@ export function ProfileScreen({ route, navigation }: Props) {
    */
   function handleModule(key: ProfileModuleKey) {
     const destination = profileOsDestination(key, profileContext);
+    // Funnel entry. Fired on the tap rather than on arrival so a tap that never
+    // reaches the screen still counts as an attempt to reach it.
+    if (key === "premium" && destination.kind === "route") trackPremium("premium_tile_opened");
     if (destination.kind === "tab") return setTab(destination.tab);
     if (destination.kind === "route") {
       // The route name is validated against RootStackParamList in the tile
@@ -418,6 +427,7 @@ export function ProfileScreen({ route, navigation }: Props) {
             onStatPress={handleStat}
             onModulePress={handleModule}
             moduleKeys={profileOsTiles}
+            moduleState={moduleState}
             moduleOwnerName={profileContext.isOwnProfile ? "" : subjectName(profileContext)}
           />
           <View style={styles.section}>

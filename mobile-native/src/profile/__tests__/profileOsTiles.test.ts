@@ -123,6 +123,38 @@ describe("visiting another profile", () => {
   });
 });
 
+/**
+ * The Premium tile is an account-management entry point, not a public status
+ * badge. Everything behind it — plan, renewal date, subscription status,
+ * billing provider, Founder number — belongs to one person, so the tile is
+ * absent from a visitor's grid rather than present-and-refusing.
+ */
+describe("premium tile", () => {
+  it("closes the grid", () => {
+    expect(PROFILE_OS_TILE_ORDER[PROFILE_OS_TILE_ORDER.length - 1]).toBe("premium");
+  });
+
+  it("opens the Premium route on your own profile", () => {
+    const destination = profileOsDestination("premium", roody);
+    expect(destination).toMatchObject({ kind: "route", name: "Premium" });
+    // No `title` override: the route has localized copy of its own, and an
+    // English literal here would win over it in all eleven languages.
+    expect((destination as { params: Record<string, unknown> }).params.title).toBeUndefined();
+  });
+
+  it("is hidden on someone else's profile", () => {
+    expect(profileOsDestination("premium", visiting()).kind).toBe("unsupported");
+    expect(visibleProfileOsTiles(visiting())).not.toContain("premium");
+  });
+
+  it("stays hidden even when the server grants every public permission", () => {
+    // There is no permission that unlocks it, because the answer is not
+    // "which viewers may see this" — it is "no viewer but the owner".
+    const generous = visiting({ ...ALL_PUBLIC, can_view_premium: true, can_view_billing: true });
+    expect(profileOsDestination("premium", generous).kind).toBe("unsupported");
+  });
+});
+
 describe("permission gating", () => {
   it("withholds a tile the server did not authorise", () => {
     const noBusiness = visiting({ ...ALL_PUBLIC, can_view_business: false });

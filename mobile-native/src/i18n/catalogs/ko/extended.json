@@ -1761,5 +1761,157 @@
         "whenDoesItEnd": "챌린지가 끝나면 어떻게 되나요?"
       }
     }
+  },
+  "premium": {
+    "loading": "멤버십을 불러오는 중…",
+    "loadError": "멤버십을 불러오지 못했습니다.",
+    "retry": "다시 시도",
+    "privateNote": "나만 볼 수 있습니다.",
+    "notVerification": "프리미엄은 구독입니다. 신원 인증이 아닙니다.",
+    "tile": {
+      "status": {
+        "active": "이용 중",
+        "founder": "창립자",
+        "grace": "갱신"
+      },
+      "hint": "프리미엄 요금제와 혜택을 엽니다.",
+      "a11y": {
+        "none": "프리미엄. PulseSoc 프리미엄 요금제와 혜택 보기.",
+        "active": "프리미엄. 구독 중. 프리미엄 요금제 관리하기.",
+        "founder": "프리미엄. 창립 멤버십. 프리미엄 혜택 관리하기.",
+        "grace": "프리미엄. 갱신에 확인이 필요합니다. 프리미엄 요금제 관리하기."
+      }
+    },
+    "header": {
+      "member": "프리미엄 멤버",
+      "founder": "창립 멤버",
+      "free": "PulseSoc 프리미엄",
+      "founderNumber": "창립자 #{{number}}"
+    },
+    "status": {
+      "active": "이용 중",
+      "founder": "평생",
+      "grace": "갱신 대기 중",
+      "hold": "계정 보류",
+      "expired": "종료됨",
+      "none": "구독 안 함"
+    },
+    "blurb": {
+      "active": "프리미엄 혜택이 켜져 있습니다.",
+      "founder": "창립 멤버십은 만료되지 않고 결제도 없습니다.",
+      "grace": "Apple이 갱신을 다시 시도하는 동안에도 혜택은 유지됩니다.",
+      "hold": "계정 보류가 해제될 때까지 혜택이 일시 중지됩니다.",
+      "expired": "구독이 종료되었습니다. 언제든지 다시 시작할 수 있습니다.",
+      "none": "PulseSoc을 후원하고 추가 도구를 사용해 보세요. 기본 앱은 계속 무료입니다."
+    },
+    "notices": {
+      "account_hold": "계정이 보류 상태여서 프리미엄 혜택이 일시 중지되었습니다.",
+      "founder": "창립 멤버입니다. 구매하거나 갱신할 것이 없습니다."
+    },
+    "plans": {
+      "heading": "요금제 선택",
+      "headingAgain": "프리미엄 다시 시작",
+      "loading": "요금제를 불러오는 중…",
+      "monthly": "월간",
+      "annual": "연간",
+      "per": {
+        "monthly": "월",
+        "annual": "연"
+      },
+      "save": "{{percent}}% 절약",
+      "unavailable": "지금은 요금제를 이용할 수 없습니다.",
+      "unavailableBody": "App Store에서 상품 정보를 받지 못했습니다. 연결을 확인한 뒤 다시 시도하세요. 결제된 금액은 없습니다.",
+      "terms": "App Store를 통해 결제됩니다. Apple 구독 설정에서 취소하기 전까지 자동으로 갱신됩니다."
+    },
+    "purchase": {
+      "start": "계속",
+      "working": "처리 중…",
+      "cancelled": "구매를 취소했습니다.",
+      "verified": "이제 프리미엄입니다. 환영합니다.",
+      "pending": "구매를 처리하고 있습니다. Apple이 확인하는 즉시 프리미엄이 열립니다.",
+      "unavailable": "이 기기에서는 지금 구매할 수 없습니다."
+    },
+    "restore": {
+      "action": "구매 복원",
+      "hint": "이미 구매한 구독이 있는지 App Store에서 확인합니다.",
+      "working": "복원 중…",
+      "restored_other": "구매 {{count}}건을 복원했습니다.",
+      "empty": "이 Apple ID에는 복원할 구매가 없습니다.",
+      "failed": "구매를 복원하지 못했습니다.",
+      "unavailable": "이 기기에서는 복원을 사용할 수 없습니다."
+    },
+    "manage": {
+      "action": "구독 관리",
+      "hint": "App Store의 구독 설정을 엽니다.",
+      "note": "해지와 요금제 변경은 Apple에서 처리합니다.",
+      "failed": "구독 설정을 열지 못했습니다."
+    },
+    "billing": {
+      "heading": "내 구독",
+      "plan": "요금제",
+      "provider": "결제 경로",
+      "status": "상태",
+      "renews": "갱신일",
+      "expires": "종료일",
+      "cancelPending": "이 구독은 종료 예정이며 갱신되지 않습니다.",
+      "none": "이 멤버십의 결제 정보가 없습니다.",
+      "founderNone": "창립 멤버십 — 결제도 갱신도 없습니다."
+    },
+    "period": {
+      "monthly": "월간",
+      "annual": "연간",
+      "trial": "체험",
+      "grandfathered": "평생",
+      "unknown": "—"
+    },
+    "provider": {
+      "apple_iap": "Apple",
+      "stripe": "카드",
+      "unknown": "—"
+    },
+    "subStatus": {
+      "active": "이용 중",
+      "trialing": "체험 중",
+      "grace": "갱신 대기 중",
+      "past_due": "결제 실패",
+      "canceled": "종료 예정",
+      "cancelled": "종료 예정",
+      "expired": "종료됨",
+      "revoked": "취소됨",
+      "paused": "일시 중지",
+      "unknown": "—"
+    },
+    "benefits": {
+      "heading": "포함 내용",
+      "beta": "베타",
+      "empty": "혜택을 준비하고 있습니다. 잠시 후 다시 확인해 주세요.",
+      "allowance": "{{limit}} 중 {{used}} 사용",
+      "access": "프리미엄 이용",
+      "profile": {
+        "customization": "프로필 꾸미기"
+      },
+      "media": {
+        "higher_quality": "더 높은 화질의 미디어"
+      },
+      "identity": {
+        "effects": "아이덴티티 효과"
+      },
+      "undx": {
+        "advanced": "고급 UNDX"
+      },
+      "creator_studio_pro": "Creator Studio Pro",
+      "founder_hub_access": "Founder Hub 이용",
+      "premium_upload_limits": "더 높은 업로드 한도",
+      "priority_support": "우선 지원",
+      "early_access_features": "새 기능 우선 이용"
+    },
+    "notYet": {
+      "heading": "곧 추가되는 혜택",
+      "note": "요금제에 포함되어 있지만 아직 켜지지 않았습니다. 별도로 청구되지 않습니다."
+    },
+    "free": {
+      "heading": "언제나 무료",
+      "body": "피드, 게시물, 릴스, 스테이터스, 메시지, 통화, 라이브 방송, 프로필, 보안, 계정 복구는 계속 무료입니다. 프리미엄은 PulseSoc에 더하는 것이지 무언가를 빼앗지 않습니다."
+    }
   }
 }

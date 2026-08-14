@@ -319,7 +319,14 @@ export type RootStackParamList = {
     title?: string;
   } | undefined;
   ProfileEdit: undefined;
-  Premium: undefined;
+  /**
+   * `undefined` is load-bearing: the deep link `/pulse/premium`, premium-lock
+   * notifications and the dashboard all push this route with no params at all,
+   * and `resolveRouteProfileContext` reads absent params as the *owner*. The
+   * Profile OS tile passes `ProfileOsParams` so the same screen can refuse on a
+   * visitor route.
+   */
+  Premium: ({ title?: string } & ProfileOsParams) | undefined;
   CreatorStudio: undefined;
   CreatorStudioAlias: undefined;
   ContentPlanner: { mode?: "planner" | "scheduler" | "drafts"; title?: string } | undefined;

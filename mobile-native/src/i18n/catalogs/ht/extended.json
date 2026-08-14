@@ -1762,5 +1762,157 @@
         "whenDoesItEnd": "Kisa k ap pase apre defi a?"
       }
     }
+  },
+  "premium": {
+    "loading": "N ap chaje abònman ou…",
+    "loadError": "Nou pa t kapab chaje abònman ou.",
+    "retry": "Eseye ankò",
+    "privateNote": "Se ou sèlman ki wè sa.",
+    "notVerification": "Premium se yon abònman. Se pa yon verifikasyon idantite.",
+    "tile": {
+      "status": {
+        "active": "AKTIF",
+        "founder": "FONDATÈ",
+        "grace": "RENOUVLE"
+      },
+      "hint": "Louvri plan ak avantaj Premium ou yo.",
+      "a11y": {
+        "none": "Premium. Gade plan ak avantaj PulseSoc Premium yo.",
+        "active": "Premium. Abònman aktif. Jere plan Premium ou.",
+        "founder": "Premium. Manm fondatè. Jere avantaj Premium ou yo.",
+        "grace": "Premium. Renouvèlman an bezwen atansyon ou. Jere plan Premium ou."
+      }
+    },
+    "header": {
+      "member": "Manm Premium",
+      "founder": "Manm fondatè",
+      "free": "PulseSoc Premium",
+      "founderNumber": "Fondatè nimewo {{number}}"
+    },
+    "status": {
+      "active": "Aktif",
+      "founder": "Pou tout tan",
+      "grace": "Renouvèlman ap tann",
+      "hold": "Kont sispann",
+      "expired": "Fini",
+      "none": "Pa gen abònman"
+    },
+    "blurb": {
+      "active": "Avantaj Premium ou yo aktif.",
+      "founder": "Manm fondatè ou pa janm ekspire e li pa janm faktire.",
+      "grace": "Avantaj ou yo rete aktif pandan Apple ap reeseye renouvèlman an.",
+      "hold": "Avantaj ou yo an poz jiskaske sispansyon kont ou an rezoud.",
+      "expired": "Abònman ou fini. Ou ka rekòmanse l nenpòt kilè.",
+      "none": "Sipòte PulseSoc epi debloke plis zouti. Aplikasyon prensipal la rete gratis."
+    },
+    "notices": {
+      "account_hold": "Kont ou sispann, kidonk avantaj Premium yo an poz.",
+      "founder": "Ou se yon manm fondatè. Pa gen anyen pou achte ni pou renouvle."
+    },
+    "plans": {
+      "heading": "Chwazi plan ou",
+      "headingAgain": "Rekòmanse Premium",
+      "loading": "N ap chaje plan yo…",
+      "monthly": "Chak mwa",
+      "annual": "Chak ane",
+      "per": {
+        "monthly": "pa mwa",
+        "annual": "pa ane"
+      },
+      "save": "Ekonomize {{percent}}%",
+      "unavailable": "Plan yo pa disponib kounye a.",
+      "unavailableBody": "App Store la pa voye okenn pwodwi. Tcheke koneksyon ou epi eseye ankò — nou pa faktire anyen.",
+      "terms": "Fakti pase nan App Store la. Abònman ou renouvle otomatikman jiskaske ou anile l nan paramèt abònman Apple yo."
+    },
+    "purchase": {
+      "start": "Kontinye",
+      "working": "N ap travay…",
+      "cancelled": "Acha anile.",
+      "verified": "Ou se Premium kounye a. Byenveni.",
+      "pending": "Acha ou an ap trete. Premium ap louvri kou Apple konfime l.",
+      "unavailable": "Acha pa disponib sou aparèy sa a kounye a."
+    },
+    "restore": {
+      "action": "Retabli acha yo",
+      "hint": "Chèche nan App Store la yon abònman ou te deja achte.",
+      "working": "N ap retabli…",
+      "restored_other": "Nou retabli {{count}} acha.",
+      "empty": "Pa gen acha pou retabli sou idantifyan Apple sa a.",
+      "failed": "Nou pa t kapab retabli acha ou yo.",
+      "unavailable": "Retabli pa disponib sou aparèy sa a."
+    },
+    "manage": {
+      "action": "Jere abònman",
+      "hint": "Louvri paramèt abònman ou nan App Store la.",
+      "note": "Se Apple ki jere anilasyon ak chanjman plan.",
+      "failed": "Nou pa t kapab louvri paramèt abònman ou."
+    },
+    "billing": {
+      "heading": "Abònman ou",
+      "plan": "Plan",
+      "provider": "Fakti pase nan",
+      "status": "Estati",
+      "renews": "Renouvle",
+      "expires": "Fini",
+      "cancelPending": "Abònman sa a pral fini e li p ap renouvle.",
+      "none": "Nou pa gen enfòmasyon fakti pou manm sa a.",
+      "founderNone": "Manm fondatè — pa gen fakti, pa gen anyen pou renouvle."
+    },
+    "period": {
+      "monthly": "Chak mwa",
+      "annual": "Chak ane",
+      "trial": "Esè",
+      "grandfathered": "Pou tout tan",
+      "unknown": "—"
+    },
+    "provider": {
+      "apple_iap": "Apple",
+      "stripe": "Kat",
+      "unknown": "—"
+    },
+    "subStatus": {
+      "active": "Aktif",
+      "trialing": "Esè",
+      "grace": "Renouvèlman ap tann",
+      "past_due": "Peman echwe",
+      "canceled": "Ap fini",
+      "cancelled": "Ap fini",
+      "expired": "Fini",
+      "revoked": "Retire",
+      "paused": "An poz",
+      "unknown": "—"
+    },
+    "benefits": {
+      "heading": "Sa ki enkli",
+      "beta": "BETA",
+      "empty": "Avantaj ou yo ap konfigire toujou. Tounen nan yon ti moman.",
+      "allowance": "{{used}} sou {{limit}} itilize",
+      "access": "Aksè Premium",
+      "profile": {
+        "customization": "Pèsonalizasyon pwofil"
+      },
+      "media": {
+        "higher_quality": "Medya ak pi bon kalite"
+      },
+      "identity": {
+        "effects": "Efè idantite"
+      },
+      "undx": {
+        "advanced": "UNDX avanse"
+      },
+      "creator_studio_pro": "Creator Studio Pro",
+      "founder_hub_access": "Aksè nan Founder Hub",
+      "premium_upload_limits": "Limit voye pi wo",
+      "priority_support": "Sipò prioritè",
+      "early_access_features": "Aksè bonè ak nouvo bagay"
+    },
+    "notYet": {
+      "heading": "K ap vini nan plan ou",
+      "note": "Yo fè pati plan ou men yo poko aktive. Anyen la a pa faktire apa."
+    },
+    "free": {
+      "heading": "Toujou gratis",
+      "body": "Fil ou, piblikasyon, reels, estati, mesaj, apèl, videyo an dirèk, pwofil, sekirite ak rekiperasyon kont rete gratis. Premium ajoute sou PulseSoc; li pa janm retire anyen."
+    }
   }
 }
