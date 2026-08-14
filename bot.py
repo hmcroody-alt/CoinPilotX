@@ -20679,6 +20679,76 @@ def admin_business_os_entitlement_explain():
 
 
 # =====================================================================
+# Premium Status Center + Admin Premium Control Center.
+#
+# Thin transport only: all decision logic lives in the framework-agnostic
+# controller (services/business_os/entitlements/premium_api.py), which is
+# unit-tested without Flask. These routes own auth and nothing else.
+#
+# The admin routes are READ-ONLY and deliberately not gated on
+# BUSINESS_OS_ENTITLEMENTS. Their whole purpose is to tell an operator whether
+# flipping that flag is safe, so they have to work while it is still off —
+# the same reasoning as the entitlements ``explain`` route above. Write actions
+# are NOT added here: manual grant/revoke already exists, audited, at
+# /admin/business-os/entitlements/{grant,revoke}. A second write path would be
+# exactly the duplication this migration exists to remove.
+# =====================================================================
+def _premium_center_reply(result):
+    status, body = result
+    return jsonify(body), status
+
+
+@webhook_app.route("/api/premium/status-center", methods=["GET"])
+@webhook_app.route("/api/pulse/premium/status-center", methods=["GET"])
+def api_premium_status_center():
+    """Honest member-facing premium status: what you have, and what it really is."""
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "error": "Login required."}), 401
+    from services.business_os.entitlements import premium_api as _papi
+    return _premium_center_reply(
+        _papi.status_center(int(user.get("user_id") or 0)))
+
+
+@webhook_app.route("/admin/business-os/premium/overview", methods=["GET"])
+def admin_business_os_premium_overview():
+    """Owner-only read: migration state, honesty gap, and founder cohort."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    try:
+        limit = int(request.args.get("parity_limit") or 200)
+    except ValueError:
+        limit = 200
+    from services.business_os.entitlements import premium_api as _papi
+    return _premium_center_reply(_papi.admin_overview(parity_limit=max(0, min(limit, 5000))))
+
+
+@webhook_app.route("/admin/business-os/premium/explain", methods=["GET"])
+def admin_business_os_premium_explain():
+    """Owner-only read: which authority believes what about one user."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    subject_id = (request.args.get("user_id") or request.args.get("subject_id") or "").strip()
+    if not subject_id:
+        return jsonify({"ok": False, "error": "user_id is required."}), 400
+    from services.business_os.entitlements import premium_api as _papi
+    return _premium_center_reply(_papi.admin_explain_user(subject_id))
+
+
+@webhook_app.route("/admin/business-os/premium/health", methods=["GET"])
+def admin_business_os_premium_health():
+    """Owner-only read: premium observability snapshot for dashboards/monitors."""
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    from services.business_os.entitlements import premium_api as _papi
+    return jsonify(_papi.health())
+
+
+# =====================================================================
 # Business OS — Advertising vertical, slice 2 (canonical HTTP surface).
 #
 # These routes are a NEW, clearly-separated canonical surface under
@@ -75825,25 +75895,66 @@ def admin_premium_command_page():
             message = "Security check failed."
         else:
             action = str(request.form.get("action") or "").strip()
-            target_user_id = int(request.form.get("user_id") or 0)
+            # Was int(...) directly on form input, so a non-numeric user id
+            # raised ValueError and returned a 500 instead of a message.
+            try:
+                target_user_id = int(str(request.form.get("user_id") or "0").strip() or 0)
+            except ValueError:
+                target_user_id = 0
+            # Every premium change here is a manual override of billing-derived
+            # state, so it requires a stated reason and lands in the admin audit
+            # trail. Previously these three actions mutated membership with NO
+            # audit record at all, which made an unexplained grant impossible to
+            # attribute after the fact.
+            reason = str(request.form.get("reason") or "").strip()
+            audit_action = ""
+            audit_meta = {}
+            if target_user_id and action in {"grant", "grant_founder", "revoke"} and not reason:
+                message = "A reason is required for manual premium changes."
+                action = ""
+            before_premium = None
+            if target_user_id and action:
+                try:
+                    before_premium = premium_entitlement_service.is_premium_user(target_user_id)
+                except Exception:  # noqa: BLE001 - never block the action on the probe
+                    logging.exception("premium before-state probe failed user=%s", target_user_id)
             conn = db(); cur = conn.cursor()
             if target_user_id and action == "grant":
                 grant_pulse_premium(cur, target_user_id, int(admin.get("id") or 0), "admin_manual")
                 message = f"Premium granted to user {target_user_id}."
+                audit_action = "premium_manual_grant"
             elif target_user_id and action == "grant_founder":
                 conn.close()
                 conn = None
                 result = premium_entitlement_service.grant_founder_membership(target_user_id, int(admin.get("id") or 0), "admin_founder_manual")
                 message = f"Founder Premium granted to user {target_user_id} as Founder #{int(result.get('founder_number') or 0)}."
+                audit_action = "premium_founder_grant"
+                audit_meta["founder_number"] = int(result.get("founder_number") or 0)
+                # The allocation gate refuses with {"ok": False, "error": reason}.
+                # A refusal is still an audited admin attempt, not a silent no-op.
+                if result.get("ok") is False:
+                    audit_meta["refused"] = result.get("error") or "refused"
+                    audit_action = "premium_founder_grant_refused"
+                    message = f"Founder grant refused: {result.get('error') or 'not allowed'}."
             elif target_user_id and action == "revoke":
                 conn.close()
                 conn = None
                 premium_entitlement_service.revoke_premium_access(target_user_id, int(admin.get("id") or 0), "admin_revoke")
                 message = f"Premium revoked for user {target_user_id}."
-            else:
+                audit_action = "premium_manual_revoke"
+            elif not message:
                 message = "Enter a valid user ID and action."
             if conn:
                 conn.commit(); conn.close()
+            if audit_action:
+                try:
+                    after_premium = premium_entitlement_service.is_premium_user(target_user_id)
+                except Exception:  # noqa: BLE001
+                    after_premium = None
+                audit_meta.update({"reason": reason, "before_premium": before_premium,
+                                   "after_premium": after_premium})
+                log_admin_audit(admin.get("id"), audit_action, "user",
+                                str(target_user_id), audit_meta)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT user_id, username, display_name, email, premium_status, lifetime_premium, premium_glow_manual_grant FROM users WHERE COALESCE(premium_status,'')='active' OR COALESCE(lifetime_premium,0)=1 OR COALESCE(premium_glow_manual_grant,0)=1 ORDER BY updated_at DESC LIMIT 40")
     users = [dict(row) for row in cur.fetchall()]
@@ -75873,7 +75984,7 @@ def admin_premium_command_page():
     body = f"""
     <section class='card'><h1>Premium Command</h1><p class='muted'>Capability registry, entitlement grants, feature flags, and safely scaffolded premium promises.</p>{f"<p>{clean_html(message)}</p>" if message else ""}</section>
     <section class='grid'><article class='card'><h2>Capabilities</h2><p class='metric'>{registry['total']}</p><p>{clean_html(json.dumps(registry['status_counts']))}</p></article><article class='card'><h2>Premium Users</h2><p class='metric'>{len(users)}</p><p>Manual and founder grants.</p></article><article class='card'><h2>Feature Flags</h2><p class='metric'>{len(flags)}</p><p>Safe visibility controls.</p></article></section>
-    <section class='card'><h2>Manual Grant / Revoke</h2><form method='post'><input type='hidden' name='csrf_token' value='{get_csrf_token()}'><p><input name='user_id' inputmode='numeric' placeholder='User ID'></p><p><select name='action'><option value='grant_founder'>Grant Founder Premium</option><option value='grant'>Grant Premium</option><option value='revoke'>Revoke Premium / Founder</option></select></p><button type='submit'>Apply</button></form><p class='muted'>Founder grants assign a unique Founder number and activate backend entitlements. Regular users cannot self-grant Founder access.</p></section>
+    <section class='card'><h2>Manual Grant / Revoke</h2><form method='post'><input type='hidden' name='csrf_token' value='{get_csrf_token()}'><p><input name='user_id' inputmode='numeric' placeholder='User ID'></p><p><select name='action'><option value='grant_founder'>Grant Founder Premium</option><option value='grant'>Grant Premium</option><option value='revoke'>Revoke Premium / Founder</option></select></p><p><input name='reason' placeholder='Reason (required)' required></p><button type='submit'>Apply</button></form><p class='muted'>Founder grants assign a unique Founder number and activate backend entitlements. Regular users cannot self-grant Founder access. Every manual change is recorded in the admin audit trail with the reason you enter.</p></section>
     <section class='card table-wrap'><h2>Founder Members</h2><table><tr><th>Founder #</th><th>User ID</th><th>Name</th><th>Tier</th><th>Locked Price</th><th>Status</th><th>Provider</th><th>Stripe Status</th><th>Canceling</th><th>Customer</th><th>Subscription</th><th>Price</th><th>Period / Activated</th></tr>{founder_rows}</table></section>
     <section class='grid'>{caps}</section>
     <section class='card table-wrap'><h2>Premium Users</h2><table><tr><th>User ID</th><th>Name</th><th>Status</th><th>Lifetime</th></tr>{user_rows}</table></section>

@@ -24,6 +24,27 @@ capability that is granted but unenforced is not sellable, no matter how good it
 sounds. ``tests/business_os/test_premium_canonical.py`` asserts that anything
 claiming ``PRODUCTION`` names the gate that enforces it, so a future edit cannot
 promote a promise to "production" without pointing at the code that delivers it.
+
+Relationship to ``services/premium_capability_engine``
+------------------------------------------------------
+Both modules describe "what Premium offers", so it is worth being precise about
+why both exist rather than letting them drift into a second split-brain.
+
+``premium_capability_engine`` is keyed by **product area** (Premium Identity,
+Creator AI, Elite Themes) and answers *"does the plumbing exist?"* — it tracks
+required tables, routes and services. It is what the admin console renders.
+
+This module is keyed by **entitlement key** (the thing a purchase actually
+grants) and answers a different, narrower question: *"is there a gate that reads
+this key, and may we therefore sell it?"* That question is what the audit found
+nobody was asking, which is how five keys ended up granted-but-unenforced.
+
+Where they overlap, THIS module wins for sales claims: a product area may be
+"active" in the capability engine because its tables and routes exist, while the
+entitlement that is supposed to gate it is read by nothing. ``sellable()`` is
+the authority on advertising, and ``premium_api.status_center`` derives its
+benefit list by filtering on it, so an over-optimistic capability entry cannot
+by itself put a promise in front of a user.
 """
 
 from __future__ import annotations

@@ -9,9 +9,16 @@ import os
 import sys
 import tempfile
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+# Bind the engine to a throwaway database BEFORE ``services.db`` is imported.
+# This must not be ``setdefault(..., "")``: an empty DATABASE_URL makes
+# services.db fall back to the local ``coinpilotx.db``, i.e. the developer's real
+# database, and these suites then create users and grants in it. See the warning
+# in ``tests/business_os/conftest.py`` — the first import wins and binds the
+# engine for the whole session.
+_TMP_DB = os.path.join(tempfile.mkdtemp(prefix="busos_premium_"), "test.db")
+os.environ["DATABASE_URL"] = "sqlite:///" + _TMP_DB
 
-os.environ.setdefault("DATABASE_URL", "")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from services import db  # noqa: E402
 from services.business_os.entitlements import premium as prem  # noqa: E402
@@ -23,10 +30,8 @@ KEY = prem.PREMIUM_ACCESS
 
 
 def setup_module():
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    os.environ["COINPILOTX_DB_PATH"] = path
-    db.reset_for_tests() if hasattr(db, "reset_for_tests") else None
+    # The database is already the throwaway bound at import time; this only
+    # creates the minimal ``users`` shape these tests read.
     conn = db.connect()
     conn.execute(
         "CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, "
