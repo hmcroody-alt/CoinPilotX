@@ -67,10 +67,17 @@ def identity_mark(row=None, badge_keys=None):
             "founder_number": founder_number,
         }
     if has_active_premium(row):
+        # A Premium subscription is NOT identity verification. The badge title
+        # used to read "Premium Verified", and the "check" variant rendered a ✓ —
+        # the same affordance platforms use to signal a verified identity. That
+        # tells a viewer this account's identity was confirmed when all that
+        # happened is someone paid. Verification is a separate, evidence-based
+        # status; conflating the two misleads viewers and devalues real
+        # verification. Title and symbol now describe the subscription only.
         mark_type = str(row.get("premium_mark_type") or "").lower()
         if mark_type == "check":
-            return {"type": "check", "badge_key": PREMIUM_CHECK, "symbol": "✓", "title": "Premium Verified"}
-        return {"type": "star", "badge_key": PREMIUM_STAR, "symbol": "✦", "title": "Premium Verified"}
+            return {"type": "check", "badge_key": PREMIUM_CHECK, "symbol": "✦", "title": "PulseSoc Premium"}
+        return {"type": "star", "badge_key": PREMIUM_STAR, "symbol": "✦", "title": "PulseSoc Premium"}
     return None
 
 

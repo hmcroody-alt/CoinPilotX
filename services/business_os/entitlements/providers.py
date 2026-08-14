@@ -258,55 +258,24 @@ def apply_stripe_subscription(payload: Mapping[str, Any], *, subject_type: str =
 
 
 # ---------------------------------------------------------------------------
-# Apple App Store adapter (interface only — verification NOT built)
+# Apple App Store / Google Play
 # ---------------------------------------------------------------------------
-class AppleAppStoreAdapter:
-    """Interface placeholder for Apple App Store Server API / receipt validation.
-
-    NONE of the verification is implemented. Every method raises
-    ``ProviderNotImplemented``. When Apple IAP is prioritized, implement:
-      * JWS signature verification of App Store Server Notifications v2,
-      * receipt/transaction lookup via the App Store Server API,
-      * mapping of product ids -> canonical plan_key,
-    then land results through ``upsert_provider_subscription`` +
-    ``service.sync_subscription_entitlements`` exactly like the Stripe adapter.
-    Until then we must not grant entitlements from Apple input.
-    """
-
-    provider = "apple_app_store"
-
-    def verify_notification(self, *_args, **_kwargs):
-        raise ProviderNotImplemented(
-            "Apple App Store notification verification is not implemented; "
-            "refusing to grant entitlements from unverified Apple input.")
-
-    def apply(self, *_args, **_kwargs):
-        raise ProviderNotImplemented(
-            "Apple App Store entitlement projection is not implemented.")
-
-
-# ---------------------------------------------------------------------------
-# Google Play adapter (interface only — verification NOT built)
-# ---------------------------------------------------------------------------
-class GooglePlayAdapter:
-    """Interface placeholder for Google Play Developer API / RTDN validation.
-
-    NONE of the verification is implemented. Every method raises
-    ``ProviderNotImplemented``. When Google IAP is prioritized, implement:
-      * Real-time developer notification (RTDN) handling,
-      * purchase/subscription verification via the Play Developer API,
-      * mapping of product/base-plan ids -> canonical plan_key,
-    then land results through the common helpers. Until then we must not grant
-    entitlements from Google input.
-    """
-
-    provider = "google_play"
-
-    def verify_notification(self, *_args, **_kwargs):
-        raise ProviderNotImplemented(
-            "Google Play RTDN verification is not implemented; refusing to grant "
-            "entitlements from unverified Google input.")
-
-    def apply(self, *_args, **_kwargs):
-        raise ProviderNotImplemented(
-            "Google Play entitlement projection is not implemented.")
+# The ``AppleAppStoreAdapter`` and ``GooglePlayAdapter`` stubs that used to live
+# here were REMOVED. Both were interface placeholders whose every method raised
+# ``ProviderNotImplemented``, written before store verification existed.
+#
+# Real, verifying implementations now live in sibling modules:
+#
+#   * ``iap_apple.py``  — StoreKit 2 / App Store Server Notifications v2 JWS
+#     verification (x5c chain validation, certificate fingerprint pinning,
+#     validity window, bundle id + appAccountToken binding, sandbox gating),
+#     landing through ``upsert_provider_subscription`` +
+#     ``service.sync_subscription_entitlements``.
+#   * ``iap_google.py`` — Google Play RTDN decoding and projection.
+#
+# Keeping the stubs alongside the real modules was a live hazard: two importable
+# classes named for the same providers, one of which silently refuses every
+# purchase. A caller that reached for the obvious-looking ``AppleAppStoreAdapter``
+# would have had all Apple entitlements rejected with an exception, while the
+# working path sat one module over. Deleting them makes the verifying
+# implementation the only thing you can import.

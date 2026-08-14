@@ -213,8 +213,17 @@ export function PostCard({
                 <Text style={styles.authorName} numberOfLines={1}>
                   {displayName}
                 </Text>
-                {author.verified || author.premium_verified ? (
+                {/*
+                  Verification and Premium are different claims and must not
+                  share the checkmark. This used to render `checkmark-circle`
+                  for `verified || premium_verified`, so a paid subscription
+                  looked identical to a verified identity. The checkmark is now
+                  reserved for actual verification; Premium gets its own star.
+                */}
+                {author.verified ? (
                   <Ionicons name="checkmark-circle" size={15} color={colors.accent} style={styles.verifiedMark} />
+                ) : author.premium_verified ? (
+                  <Ionicons name="star" size={13} color={colors.accent} style={styles.verifiedMark} />
                 ) : null}
               </View>
               <View style={styles.metaRow}>

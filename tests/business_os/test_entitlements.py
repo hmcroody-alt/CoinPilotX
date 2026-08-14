@@ -324,15 +324,27 @@ def test_stripe_adapter_unmapped_price_records_not_projects():
 
 
 # 26 ------------------------------------------------------------------------
-def test_apple_google_refuse_to_fabricate_success():
-    for Adapter in (prov.AppleAppStoreAdapter, prov.GooglePlayAdapter):
-        a = Adapter()
-        for meth in ("verify_notification", "apply"):
-            try:
-                getattr(a, meth)({"x": 1})
-            except prov.ProviderNotImplemented:
-                continue
-            raise AssertionError(f"{Adapter.__name__}.{meth} must raise ProviderNotImplemented")
+def test_dead_store_adapter_stubs_are_gone():
+    """The non-verifying Apple/Google adapter stubs must not come back.
+
+    They were placeholders whose every method raised ``ProviderNotImplemented``.
+    Real verifying implementations now live in ``iap_apple`` / ``iap_google``.
+    Re-adding a stub next to the working path would give callers an importable
+    class, named for the right provider, that rejects every real purchase.
+    """
+    for name in ("AppleAppStoreAdapter", "GooglePlayAdapter"):
+        assert not hasattr(prov, name), (
+            f"{name} was reintroduced in providers.py; use iap_apple/iap_google, "
+            "which actually verify store payloads before granting.")
+
+
+# 26b -----------------------------------------------------------------------
+def test_real_store_verification_modules_are_importable():
+    """The verifying replacements must exist and expose their entry points."""
+    from services.business_os.entitlements import iap_apple, iap_google
+    assert hasattr(iap_apple, "apply_verified_subscription_transaction")
+    assert hasattr(iap_apple, "verify_and_decode_jws")
+    assert hasattr(iap_google, "apply_rtdn")
 
 
 # --- standalone runner ------------------------------------------------------
@@ -364,7 +376,8 @@ def _run_standalone():
         test_facade_canonical_authoritative_with_fallback,
         test_stripe_adapter_maps_projects_idempotent,
         test_stripe_adapter_unmapped_price_records_not_projects,
-        test_apple_google_refuse_to_fabricate_success,
+        test_dead_store_adapter_stubs_are_gone,
+        test_real_store_verification_modules_are_importable,
     ]
     passed = 0
     for t in tests:

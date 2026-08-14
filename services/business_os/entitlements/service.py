@@ -593,9 +593,17 @@ def sync_subscription_entitlements(subject_id: Any, plan_key: str, *,
         if not catalog:
             raise EntitlementError(f"no catalog entries for plan {plan_key!r}")
 
-        grant_status = STATUS_ACTIVE if status == "active" else STATUS_ACTIVE
         # For active/canceled/past_due we still keep access until period_end; the
         # grant stays 'active' with expires_at=period_end so the clock decides.
+        # ``grandfathered`` is the one status that must survive the mapping: a
+        # grandfathered grant (Founders) never expires and must not be swept by
+        # renewal/expiry reconciliation, which keys off the 'active' phase.
+        # (This line previously read ``STATUS_ACTIVE if status == "active" else
+        # STATUS_ACTIVE`` — both branches identical — so grandfathered silently
+        # became a plain active grant.)
+        grant_status = (
+            STATUS_GRANDFATHERED if status == STATUS_GRANDFATHERED else STATUS_ACTIVE
+        )
         results = []
         for row in catalog:
             g = grant_entitlement(
