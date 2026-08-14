@@ -60,17 +60,27 @@ _SEED_PLANS = [
 # limit_value NULL => boolean capability; non-NULL => metered quota.
 _SEED_CATALOG = [
     # Premium — the first vertical slice lives here.
+    # ``premium.access`` is the umbrella MEMBERSHIP key: it answers "is this
+    # subject a paying Premium member?" and is what the legacy
+    # ``is_premium_user`` shim resolves through. Every plan that confers Premium
+    # membership must grant it, so membership is one canonical fact rather than
+    # something inferred by OR-ing capability keys together.
+    ("pulse_premium_monthly", "premium.access", None, None),
     ("pulse_premium_monthly", "premium.profile.customization", None, None),
     ("pulse_premium_monthly", "premium.media.higher_quality", None, None),
     ("pulse_premium_monthly", "premium.undx.advanced", None, None),
+    ("pulse_premium_annual", "premium.access", None, None),
     ("pulse_premium_annual", "premium.profile.customization", None, None),
     ("pulse_premium_annual", "premium.media.higher_quality", None, None),
     ("pulse_premium_annual", "premium.undx.advanced", None, None),
+    ("pulse_premium_trial", "premium.access", None, None),
     ("pulse_premium_trial", "premium.profile.customization", None, None),
+    ("pulse_premium_grandfathered", "premium.access", None, None),
     ("pulse_premium_grandfathered", "premium.profile.customization", None, None),
     ("pulse_premium_grandfathered", "premium.media.higher_quality", None, None),
     ("pulse_premium_grandfathered", "premium.undx.advanced", None, None),
-    # Business.
+    # Business — a Business subscription confers Premium membership too.
+    ("pulse_business_monthly", "premium.access", None, None),
     ("pulse_business_monthly", "premium.profile.customization", None, None),
     ("pulse_business_monthly", "business.team_members", 10, None),
     ("pulse_business_monthly", "business.analytics.advanced", None, None),

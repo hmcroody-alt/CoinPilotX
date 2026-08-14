@@ -1,13 +1,40 @@
-"""Single source of truth for Premium and Founder entitlements."""
+"""Founder identity + LEGACY premium tables, and a compatibility shim.
+
+.. warning::
+
+   This module is **no longer the premium authority**. The canonical premium
+   entitlement system is :mod:`services.business_os.entitlements`; see
+   ``entitlements/premium.py`` for the single resolver.
+
+What still legitimately lives here:
+
+* **Founder identity** — ``founder_memberships``, founder NUMBER allocation,
+  the founder wall, badges. The founder number is permanent and never reassigned,
+  so this table remains its owner.
+* **Legacy premium tables** — ``user_entitlements`` / ``premium_entitlements``
+  reads and writes, kept working for accounts that predate canonical grants.
+
+What is now a shim:
+
+* :func:`is_premium_user` delegates to the canonical resolver. It keeps no
+  policy of its own.
+
+The raw legacy readers survive as ``_is_premium_user_raw`` /
+``_is_founder_member_raw`` purely so the canonical parity check has an
+independent legacy answer to compare against. Do not gate features on them.
+"""
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime
 from typing import Any
 
 from services import db as db_service
+
+_log = logging.getLogger("services.premium_entitlement_service")
 
 FOUNDER_PRICE_CENTS = 499
 PREMIUM_VALUE_CENTS = 999
@@ -461,15 +488,39 @@ def grant_entitlement(user_id: int, key: str, source: str = "admin_grant", start
     now = _now()
     conn = db_service.connect()
     cur = conn.cursor()
+    # Idempotent on (user_id, entitlement_key). The sibling tables below already
+    # upsert; this one used a blind INSERT, so a repeated grant — a StoreKit
+    # "Restore Purchases" tap, a replayed webhook, a double-clicked admin button
+    # — appended a NEW row every time. Five restores produced five grants for the
+    # same entitlement. ``premium_entitlements`` has no unique constraint we can
+    # rely on across SQLite and Postgres, so this is an explicit
+    # select-then-update-or-insert rather than an ON CONFLICT clause.
     cur.execute(
-        """
-        INSERT INTO premium_entitlements
-        (user_id, entitlement_key, status, source, starts_at, ends_at, metadata_json, created_at, updated_at)
-        VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?)
-        """,
-        (int(user_id), key, source, starts_at or now, ends_at or "", json.dumps(metadata or {}, default=str), now, now),
+        "SELECT id FROM premium_entitlements WHERE user_id=? AND entitlement_key=? "
+        "ORDER BY id DESC LIMIT 1",
+        (int(user_id), key),
     )
-    entitlement_id = cur.lastrowid
+    existing = cur.fetchone()
+    if existing:
+        entitlement_id = int(dict(existing).get("id") or 0)
+        cur.execute(
+            """
+            UPDATE premium_entitlements
+            SET status='active', source=?, starts_at=?, ends_at=?, metadata_json=?, updated_at=?
+            WHERE id=?
+            """,
+            (source, starts_at or now, ends_at or "", json.dumps(metadata or {}, default=str), now, entitlement_id),
+        )
+    else:
+        cur.execute(
+            """
+            INSERT INTO premium_entitlements
+            (user_id, entitlement_key, status, source, starts_at, ends_at, metadata_json, created_at, updated_at)
+            VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?)
+            """,
+            (int(user_id), key, source, starts_at or now, ends_at or "", json.dumps(metadata or {}, default=str), now, now),
+        )
+        entitlement_id = cur.lastrowid
     cur.execute(
         """
         INSERT INTO user_entitlements
@@ -579,6 +630,23 @@ def grant_founder_membership(user_id: int, actor_id: int = 0, source: str = "adm
     cur = conn.cursor()
     cur.execute("SELECT founder_number, founder_tier FROM founder_memberships WHERE user_id=? LIMIT 1", (int(user_id),))
     existing = cur.fetchone()
+
+    # Allocation policy. Applies ONLY to brand-new founders: an existing founder
+    # being re-granted (reactivation, replayed webhook, admin repair) must never
+    # be refused, because refusing would strip a member who already holds a
+    # number. Sequential numbering is not a cap — it only guarantees uniqueness —
+    # so the cap is enforced here, explicitly, at the moment of issue.
+    if not existing:
+        try:
+            from services.business_os.entitlements import premium as _premium
+            allowed, deny_reason = _premium.founder_allocation_available()
+        except Exception:  # noqa: BLE001 — policy module absent => historic behaviour
+            allowed, deny_reason = True, ""
+        if not allowed:
+            conn.close()
+            return {"ok": False, "user_id": int(user_id), "error": deny_reason,
+                    "founder_number": 0}
+
     founder_number = int((dict(existing).get("founder_number") if existing else 0) or _next_founder_number(cur, user_id))
     founder_tier = (dict(existing).get("founder_tier") if existing else "") or founder_tier_for_number(founder_number)
     metadata = {"source": source, "actor_id": int(actor_id or 0), "founder_number": founder_number, "founder_tier": founder_tier}
@@ -674,7 +742,53 @@ def grant_founder_membership(user_id: int, actor_id: int = 0, source: str = "adm
     conn.close()
     for entitlement in FOUNDER_ENTITLEMENTS:
         grant_entitlement(user_id, entitlement, source=source, metadata=metadata)
+    _project_founder_to_canonical(user_id, founder_number, founder_tier, source)
     return {"ok": True, "user_id": int(user_id), "founder_number": founder_number, "founder_tier": founder_tier, "entitlements": list(FOUNDER_ENTITLEMENTS)}
+
+
+def _project_founder_to_canonical(user_id: int, founder_number: int,
+                                  founder_tier: str, source: str) -> None:
+    """Mirror a founder membership into the canonical entitlement system.
+
+    A Founder is three separate facts that were previously fused into one legacy
+    row, and keeping them distinct is what makes the migration safe:
+
+    1. **Identity** — the founder NUMBER and badge. Stays in
+       ``founder_memberships``; that table owns the number, which is permanent
+       and never reassigned to anyone else.
+    2. **Billing** — the grandfathered $4.99 locked price. Also stays in the
+       legacy subscription row; canonical does not re-price anyone.
+    3. **Entitlement** — actual Premium access. This is the part that becomes
+       canonical, granted on the existing ``pulse_premium_grandfathered`` plan
+       with status ``grandfathered`` so it never expires and is never swept up
+       by renewal/expiry reconciliation.
+
+    Best-effort and non-fatal: a founder must still be granted in the legacy
+    system even if canonical projection fails, since under the default flag mode
+    legacy is what actually gates access. The failure is logged, and the parity
+    report will show the account as ``backfill_grant`` so it is not lost.
+    """
+    try:
+        from services.business_os.entitlements import premium as _premium
+        from services.business_os.entitlements import schema as _schema
+        from services.business_os.entitlements import service as _ent
+    except Exception:  # noqa: BLE001
+        return
+    try:
+        _schema.ensure_ready()
+        # ``source_reference`` is the permanent founder number, so re-granting an
+        # existing founder updates the SAME canonical grant rather than stacking
+        # a second one. Provenance maps to the canonical vocabulary: a Stripe
+        # webhook-driven founder is 'stripe', a manual admin grant is 'admin'.
+        canonical_source = "stripe" if str(source).startswith("stripe") else "admin"
+        _ent.sync_subscription_entitlements(
+            int(user_id), _premium.FOUNDER_PLAN_KEY,
+            status="grandfathered", source=canonical_source,
+            source_reference=f"founder:{int(founder_number)}",
+            subject_type="user", actor=f"founder_grant:{source}",
+        )
+    except Exception:  # noqa: BLE001
+        _log.exception("canonical founder projection failed user=%s", user_id)
 
 
 def revoke_premium_access(user_id: int, actor_id: int = 0, reason: str = "admin_revoke") -> dict[str, Any]:
@@ -737,10 +851,21 @@ def get_user_entitlements(user_id: int) -> dict[str, bool]:
     return {key: has_entitlement(user_id, key) for key in keys}
 
 
-def is_premium_user(user_id: int) -> bool:
+def _is_premium_user_raw(user_id: int) -> bool:
+    """LEGACY premium truth, read straight from the legacy tables + user columns.
+
+    This is the pre-canonicalization implementation, preserved verbatim and made
+    private. It is retained for exactly one reason: the canonical resolver's
+    parity check needs a genuinely INDEPENDENT legacy answer to compare against.
+    If parity compared canonical to the public ``is_premium_user`` — which now
+    delegates to canonical — every user would report "in sync" and the
+    split-brain this migration exists to close would be invisible.
+
+    Do not call this to gate a feature. Call :func:`is_premium_user`.
+    """
     if has_entitlement(user_id, "premium_access"):
         return True
-    if is_founder_member(user_id):
+    if _is_founder_member_raw(user_id):
         return True
     conn = db_service.connect()
     cur = conn.cursor()
@@ -755,8 +880,38 @@ def is_premium_user(user_id: int) -> bool:
     )
 
 
-def is_founder_member(user_id: int) -> bool:
+def _is_founder_member_raw(user_id: int) -> bool:
+    """LEGACY founder truth from ``founder_memberships``. Private; see above."""
     return bool(founder_membership(user_id))
+
+
+def is_premium_user(user_id: int) -> bool:
+    """COMPATIBILITY SHIM — resolves through the canonical entitlement system.
+
+    ``services.business_os.entitlements`` is the single premium authority. This
+    function survives only so the ~30 existing call sites keep working; it adds
+    no policy of its own. Under ``BUSINESS_OS_ENTITLEMENTS=off`` the canonical
+    resolver returns the legacy answer, so behaviour is unchanged until the flag
+    is deliberately advanced.
+
+    Falls back to the raw legacy reader if the canonical package cannot be
+    imported, so a packaging problem degrades to the old behaviour rather than
+    locking every premium user out.
+    """
+    try:
+        from services.business_os.entitlements import premium as _premium
+    except Exception:  # noqa: BLE001
+        return _is_premium_user_raw(user_id)
+    return _premium.is_premium(user_id)
+
+
+def is_founder_member(user_id: int) -> bool:
+    """Founder membership. Founder identity remains recorded in
+    ``founder_memberships`` (that table owns the founder NUMBER, which is
+    permanent and never reassigned); the canonical system owns the resulting
+    premium ENTITLEMENT. The two answer different questions and both are needed.
+    """
+    return _is_founder_member_raw(user_id)
 
 
 # CamelCase aliases requested by product spec.

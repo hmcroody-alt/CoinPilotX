@@ -68,8 +68,15 @@ def _legacy_premium_customization(subject_id: Any) -> Optional[bool]:
     svc = _load_legacy()
     if svc is None:
         return None
+    # Deliberately the RAW legacy reader, not the public ``is_premium_user``.
+    # ``is_premium_user`` is now a shim that resolves through the canonical
+    # service; calling it here would make shadow mode compare canonical against
+    # itself, report perfect agreement, and hide every split-brain account the
+    # comparison exists to find. ``_is_premium_user_raw`` still reads the legacy
+    # tables directly. The getattr fallback keeps older checkouts working.
+    reader = getattr(svc, "_is_premium_user_raw", None) or svc.is_premium_user
     try:
-        return bool(svc.is_premium_user(int(subject_id)))
+        return bool(reader(int(subject_id)))
     except Exception:  # noqa: BLE001 — legacy must never break the facade
         _log.exception("legacy is_premium_user failed for subject=%s", subject_id)
         return None
