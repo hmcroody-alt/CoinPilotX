@@ -32,9 +32,11 @@ jest.mock("../../components/NativeMediaViewer", () => ({
 }));
 
 const mockSnapshot = jest.fn();
+const mockCommercialTerms = jest.fn();
 jest.mock("../../api/marketplace", () => ({
   ...jest.requireActual("../../api/marketplace"),
   loadSellerStoreSnapshot: (...args: unknown[]) => mockSnapshot(...args),
+  getMarketplaceCommercialTerms: (...args: unknown[]) => mockCommercialTerms(...args),
   loadCachedSellerStore: jest.fn().mockResolvedValue(null)
 }));
 
@@ -61,12 +63,14 @@ const ORDER = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockSnapshot.mockResolvedValue({ listings: [LISTING], orders: [ORDER] });
+  mockCommercialTerms.mockResolvedValue({ terms: { acceptance: null } });
 });
 
 async function renderMode(mode?: string) {
   const navigation = { navigate: jest.fn() };
   const view = render(<SellerStoreScreen route={{ params: { mode } as never }} navigation={navigation} />);
   await waitFor(() => expect(mockSnapshot).toHaveBeenCalled());
+  await waitFor(() => expect(mockCommercialTerms).toHaveBeenCalled());
   return { ...view, navigation };
 }
 

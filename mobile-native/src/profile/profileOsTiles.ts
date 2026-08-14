@@ -190,6 +190,31 @@ const TILES: Record<ProfileModuleKey, TileDef> = {
      * ever be shown its own progress.
      */
     visitor: null
+  },
+  premium: {
+    key: "premium",
+    noun: "Premium",
+    // No `title` override, for the same reason as Progress: the route already
+    // has localized copy in `common:screens.premium`.
+    owner: (context) => route("Premium", context),
+    /**
+     * Hidden from visitors, and this is a privacy requirement rather than a gap.
+     *
+     * The destination is an account-management surface: plan, renewal date,
+     * subscription status, billing provider, Founder number. None of that is
+     * anyone else's business, and the mission names it explicitly. A visitor
+     * variant that "just shows less" would be one refactor away from leaking a
+     * renewal date.
+     *
+     * This is also why the tile is not a status badge. Whether someone is
+     * Premium may well be public one day — through a badge system that is
+     * designed to be public. This entry point is not that system, and the
+     * distinction is enforced here by having no visitor destination at all.
+     *
+     * The server agrees independently: `/api/premium/status-center` is
+     * session-scoped and accepts no target user.
+     */
+    visitor: null
   }
 };
 
@@ -210,7 +235,11 @@ export const PROFILE_OS_TILE_ORDER: ProfileModuleKey[] = [
   "memories",
   // Last in the grid, first thing a member is likely to open: the tile carries
   // live state, so it is the only one whose label changes as they make progress.
-  "progress"
+  "progress",
+  // Final tile, closing the row Business / Memories / Progress / Premium. Also
+  // state-carrying: it shows ACTIVE, FOUNDER or a renewal problem, and nothing
+  // at all when there is no honest status to show yet.
+  "premium"
 ];
 
 export function tileNoun(key: ProfileModuleKey): string {

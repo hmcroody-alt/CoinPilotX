@@ -82,4 +82,23 @@ describe("ProfileHeader (Profile V6)", () => {
     expect(onCall).toHaveBeenCalled();
     expect(queryByText("Edit Profile")).toBeNull();
   });
+
+  it("discloses an automated system profile and omits human contact actions", () => {
+    const { getByText, getByLabelText, queryByText } = render(
+      <ProfileHeader profile={baseProfile({
+        display_name: "PulseSoc Insight",
+        username: "pulsesoc_insight",
+        automated: true,
+        account_type: "PULSESOC_AUTOMATED",
+        system_account_label: "Official PulseSoc System Account",
+        automation_disclosure: "This account is operated automatically by PulseSoc. It is not a human user."
+      })} owner={false} />
+    );
+    expect(getByLabelText("Automated PulseSoc account disclosure")).toBeTruthy();
+    expect(getByText("Official PulseSoc System Account")).toBeTruthy();
+    expect(queryByText("Message")).toBeNull();
+    expect(queryByText("Call")).toBeNull();
+    expect(queryByText("Followers")).toBeNull();
+    expect(queryByText("Following")).toBeNull();
+  });
 });

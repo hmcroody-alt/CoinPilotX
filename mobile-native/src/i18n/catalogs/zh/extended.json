@@ -1212,6 +1212,122 @@
       "applied": "已应用。",
       "applyError": "无法应用此建议。",
       "openCampaign": "打开广告系列"
+    },
+    "money": {
+      "layer": {
+        "payoutOverview": "提现概览",
+        "processing": "处理中",
+        "moveMoney": "转出你的资金",
+        "payoutHistory": "提现",
+        "activity": "动态"
+      },
+      "overview": {
+        "available": "可用",
+        "availableNote": "已结清、可以提现的收入。",
+        "processing": "处理中",
+        "lifetime": "累计收入",
+        "destination": "已支付至 {{destination}}",
+        "noDestination": "尚未登记提现账户。",
+        "moreTitle": "更多",
+        "paidOutUnavailable": "我们不显示累计提现总额，因为它不会作为单一数字返回。提现列表就是完整记录。"
+      },
+      "payout": {
+        "stageLabel": "提现账户",
+        "enabled": "提现已开启",
+        "disabled": "提现已关闭",
+        "destinationLabel": "收款方",
+        "destinationNone": "我们只保存支付服务商的参考编号，绝不保存你的账号。",
+        "codesLabel": "支付服务商反馈",
+        "stage": {
+          "unknown": "状态未知",
+          "not_started": "未设置",
+          "in_progress": "进行中",
+          "pending_verification": "待验证",
+          "blocked": "已阻止",
+          "ready": "已就绪"
+        },
+        "actionStart": "设置提现",
+        "actionResume": "完成提现设置",
+        "actionRetryStatus": "重新检查状态",
+        "actionManage": "管理提现账户",
+        "reasonReady": "你的提现账户已通过验证，可以接收提现。",
+        "reasonUnknown": "目前无法连接你的提现账户，因此无法确认是否就绪。请稍后再检查。",
+        "reasonNotStarted": "你还没有设置提现账户。收入要离开 PulseSoc 就需要它。",
+        "reasonInProgress": "提现设置已开始但未完成。在提交其余资料之前，提现将保持关闭。",
+        "reasonPendingVerification": "你的资料正在支付服务商处审核。在他们联系你之前无需操作。",
+        "reasonPastDue": "支付服务商需要更多资料才能执行提现。打开提现账户查看还缺什么。",
+        "reasonUnderReview": "支付服务商正在审核你的提现账户。审核期间提现暂停。",
+        "reasonPaused": "该账户的提现已暂停。请联系客服了解需要做什么。",
+        "reasonRejected": "支付服务商拒绝了这个提现账户。在与他们解决之前无法提现。",
+        "reasonActionRequired": "支付服务商正在等待你的操作，然后才能开启提现。",
+        "reasonBlockedOther": "支付服务商已关闭该账户的提现。打开提现账户查看原因。"
+      },
+      "payouts": {
+        "empty": "暂无提现记录",
+        "emptyNote": "收入结清并执行提现后，每一笔都会显示在这里。",
+        "failureLabel": "失败原因",
+        "failureGeneric": "支付服务商拒绝了这笔提现且未说明原因。下面的参考编号就是客服会索取的内容。",
+        "noArrival": "我们无法显示到账日期。时间表由支付服务商决定，且不会回传给我们。",
+        "openActivity": "打开动态",
+        "relatedTitle": "相关收入",
+        "relatedNote": "提现不按明细拆分，因此我们无法列出这笔提现中的具体收入。动态中可以看到所有资金变动。"
+      },
+      "processing": {
+        "amountLabel": "处理中",
+        "ordersTitle": "被暂扣的部分",
+        "empty": "没有暂扣",
+        "emptyNote": "当一笔销售在结清前被暂扣时，会连同原因显示在这里。",
+        "noWallet": "你还没有卖家余额，因此没有处理中的资金。",
+        "nothingProcessing": "目前没有处理中的资金。已结清的部分都已可用。",
+        "noReleasePath": "这些资金按支付服务商的时间表结清。无需申请，它们会自动转出。",
+        "awaitingRelease": "这些资金仍在结清中。完成后会转入你的可用余额。"
+      },
+      "activity": {
+        "scopeNote": "这是你的卖家账本：销售、提现、退款和暂扣。广告支出和奖励使用独立账本，不会显示在这里。",
+        "emptyFeed": "暂无动态",
+        "emptyFeedNote": "销售、提现、退款和暂扣发生时都会出现在这里。",
+        "emptyFilter": "没有符合此筛选的内容",
+        "filter": {
+          "all": "全部",
+          "income": "收入",
+          "payout": "已提现",
+          "held": "暂扣",
+          "refund": "退款",
+          "spend": "手续费"
+        }
+      },
+      "kind": {
+        "income": "收入",
+        "spend": "手续费",
+        "escrow": "暂扣",
+        "payout": "提现",
+        "refund": "退款",
+        "other": "其他"
+      },
+      "detail": {
+        "title": "详情",
+        "amount": "金额",
+        "status": "状态",
+        "created": "创建时间",
+        "updated": "更新时间",
+        "reference": "参考编号",
+        "currency": "货币",
+        "type": "类型",
+        "provider": "服务商",
+        "held": "暂扣的金额暂时不能使用，但仍然属于你。",
+        "staleNote": "这里显示的是列表加载时的记录。返回并下拉刷新可获取最新状态。",
+        "missingTitle": "没有可显示的内容",
+        "missingBody": "我们没有收到要打开的记录。请返回并再次点击该行。"
+      },
+      "states": {
+        "errorTitle": "无法加载",
+        "errorBody": "你的资金是安全的——这是显示问题，不是余额问题。下拉刷新后重试。"
+      },
+      "a11y": {
+        "openLayer": "打开{{layer}}",
+        "openPayout": "打开提现详情",
+        "openEntry": "打开动态详情"
+      }
     }
   },
   "discovery": {
@@ -1760,6 +1876,158 @@
         "isThereALimit": "有上限吗？",
         "whenDoesItEnd": "挑战结束后会怎样？"
       }
+    }
+  },
+  "premium": {
+    "loading": "正在加载你的会员信息…",
+    "loadError": "无法加载你的会员信息。",
+    "retry": "重试",
+    "privateNote": "只有你能看到。",
+    "notVerification": "高级会员是订阅服务，不是身份验证。",
+    "tile": {
+      "status": {
+        "active": "生效中",
+        "founder": "创始会员",
+        "grace": "待续订"
+      },
+      "hint": "打开你的高级会员方案与权益。",
+      "a11y": {
+        "none": "高级会员。查看 PulseSoc 高级会员方案与权益。",
+        "active": "高级会员。订阅生效中。管理你的高级会员方案。",
+        "founder": "高级会员。创始会员资格。管理你的高级会员权益。",
+        "grace": "高级会员。续订需要处理。管理你的高级会员方案。"
+      }
+    },
+    "header": {
+      "member": "高级会员",
+      "founder": "创始会员",
+      "free": "PulseSoc 高级会员",
+      "founderNumber": "创始会员 #{{number}}"
+    },
+    "status": {
+      "active": "生效中",
+      "founder": "永久",
+      "grace": "待续订",
+      "hold": "账号受限",
+      "expired": "已结束",
+      "none": "未订阅"
+    },
+    "blurb": {
+      "active": "你的高级会员权益已开启。",
+      "founder": "你的创始会员资格永不过期，也不会产生费用。",
+      "grace": "Apple 重新尝试续订期间，你的权益仍然有效。",
+      "hold": "在账号限制解除前，你的权益暂停使用。",
+      "expired": "你的订阅已结束。随时可以重新开通。",
+      "none": "支持 PulseSoc，解锁更多工具。核心功能始终免费。"
+    },
+    "notices": {
+      "account_hold": "你的账号受限，因此高级会员权益已暂停。",
+      "founder": "你是创始会员，无需购买，也无需续订。"
+    },
+    "plans": {
+      "heading": "选择方案",
+      "headingAgain": "重新开通高级会员",
+      "loading": "正在加载方案…",
+      "monthly": "按月",
+      "annual": "按年",
+      "per": {
+        "monthly": "每月",
+        "annual": "每年"
+      },
+      "save": "省 {{percent}}%",
+      "unavailable": "当前无法获取方案。",
+      "unavailableBody": "App Store 未返回任何商品。请检查网络后重试，尚未产生任何扣费。",
+      "terms": "通过 App Store 扣费。除非你在 Apple 的订阅设置中取消，否则订阅将自动续订。"
+    },
+    "purchase": {
+      "start": "继续",
+      "working": "处理中…",
+      "cancelled": "已取消购买。",
+      "verified": "你已是高级会员，欢迎加入。",
+      "pending": "购买正在处理中。Apple 确认后即可开通高级会员。",
+      "unavailable": "此设备当前无法购买。"
+    },
+    "restore": {
+      "action": "恢复购买",
+      "hint": "在 App Store 中查找你已购买的订阅。",
+      "working": "正在恢复…",
+      "restored_other": "已恢复 {{count}} 项购买。",
+      "empty": "此 Apple ID 没有可恢复的购买。",
+      "failed": "无法恢复你的购买。",
+      "unavailable": "此设备不支持恢复购买。"
+    },
+    "manage": {
+      "action": "管理订阅",
+      "hint": "打开 App Store 中的订阅设置。",
+      "note": "取消订阅和更改方案均由 Apple 处理。",
+      "failed": "无法打开你的订阅设置。"
+    },
+    "billing": {
+      "heading": "你的订阅",
+      "plan": "方案",
+      "provider": "扣费方式",
+      "status": "状态",
+      "renews": "续订日期",
+      "expires": "结束日期",
+      "cancelPending": "此订阅将结束，不会续订。",
+      "none": "我们没有此会员资格的扣费信息。",
+      "founderNone": "创始会员资格 — 无扣费，无需续订。"
+    },
+    "period": {
+      "monthly": "按月",
+      "annual": "按年",
+      "trial": "试用",
+      "grandfathered": "永久",
+      "unknown": "—"
+    },
+    "provider": {
+      "apple_iap": "Apple",
+      "stripe": "银行卡",
+      "unknown": "—"
+    },
+    "subStatus": {
+      "active": "生效中",
+      "trialing": "试用中",
+      "grace": "待续订",
+      "past_due": "扣费失败",
+      "canceled": "即将结束",
+      "cancelled": "即将结束",
+      "expired": "已结束",
+      "revoked": "已撤销",
+      "paused": "已暂停",
+      "unknown": "—"
+    },
+    "benefits": {
+      "heading": "包含内容",
+      "beta": "测试版",
+      "empty": "权益仍在配置中，请稍后再查看。",
+      "allowance": "已用 {{used}}／{{limit}}",
+      "access": "高级会员权限",
+      "profile": {
+        "customization": "个人主页自定义"
+      },
+      "media": {
+        "higher_quality": "更高画质媒体"
+      },
+      "identity": {
+        "effects": "身份特效"
+      },
+      "undx": {
+        "advanced": "UNDX 进阶功能"
+      },
+      "creator_studio_pro": "Creator Studio Pro",
+      "founder_hub_access": "Founder Hub 权限",
+      "premium_upload_limits": "更高上传额度",
+      "priority_support": "优先支持",
+      "early_access_features": "抢先体验新功能"
+    },
+    "notYet": {
+      "heading": "方案内即将开放",
+      "note": "这些已包含在你的方案中，但尚未开启，不会单独收费。"
+    },
+    "free": {
+      "heading": "始终免费",
+      "body": "动态、发帖、Reels、状态、消息、通话、直播、个人主页、安全和账号找回始终免费。高级会员只做加法，不会拿走任何功能。"
     }
   }
 }

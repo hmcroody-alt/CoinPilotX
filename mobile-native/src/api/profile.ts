@@ -59,6 +59,12 @@ export type PulseProfile = {
   theme?: PulseProfileTheme;
   viewer_follows?: boolean;
   is_self?: boolean;
+  account_type?: "PERSON" | "PULSESOC_AUTOMATED" | string;
+  automated?: boolean;
+  official_system_account?: boolean;
+  system_account_label?: string;
+  automation_disclosure?: string;
+  transparency_disclosure?: string;
   /**
    * Server-authored answer to what this viewer may see about this profile
    * owner, keyed snake_case as the API returns it. Profile OS destinations gate

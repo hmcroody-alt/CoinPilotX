@@ -1212,6 +1212,122 @@
       "applied": "적용되었습니다.",
       "applyError": "이 추천을 적용하지 못했습니다.",
       "openCampaign": "캠페인 열기"
+    },
+    "money": {
+      "layer": {
+        "payoutOverview": "정산 개요",
+        "processing": "처리 중",
+        "moveMoney": "내 돈 옮기기",
+        "payoutHistory": "정산",
+        "activity": "활동"
+      },
+      "overview": {
+        "available": "사용 가능",
+        "availableNote": "정산할 수 있는 확정 수익입니다.",
+        "processing": "처리 중",
+        "lifetime": "누적 수익",
+        "destination": "{{destination}}(으)로 지급",
+        "noDestination": "아직 등록된 정산 계좌가 없습니다.",
+        "moreTitle": "더 보기",
+        "paidOutUnavailable": "누적 지급 총액은 하나의 수치로 제공되지 않아 표시하지 않습니다. 정산 목록이 전체 기록입니다."
+      },
+      "payout": {
+        "stageLabel": "정산 계정",
+        "enabled": "정산 켜짐",
+        "disabled": "정산 꺼짐",
+        "destinationLabel": "지급처",
+        "destinationNone": "결제 대행사의 참조번호만 저장하며, 계좌번호는 저장하지 않습니다.",
+        "codesLabel": "결제 대행사가 보고한 내용",
+        "stage": {
+          "unknown": "상태 알 수 없음",
+          "not_started": "설정 안 됨",
+          "in_progress": "진행 중",
+          "pending_verification": "확인 대기 중",
+          "blocked": "차단됨",
+          "ready": "준비됨"
+        },
+        "actionStart": "정산 설정하기",
+        "actionResume": "정산 설정 마치기",
+        "actionRetryStatus": "상태 다시 확인",
+        "actionManage": "정산 계정 관리",
+        "reasonReady": "정산 계정이 확인되어 정산을 받을 수 있습니다.",
+        "reasonUnknown": "지금은 정산 계정에 연결할 수 없어 준비 여부를 확인할 수 없습니다. 잠시 후 다시 확인해 주세요.",
+        "reasonNotStarted": "아직 정산 계정을 설정하지 않았습니다. 수익이 PulseSoc을 떠나려면 필요합니다.",
+        "reasonInProgress": "정산 설정을 시작했지만 마치지 않았습니다. 나머지 정보를 제출할 때까지 정산은 꺼진 상태로 유지됩니다.",
+        "reasonPendingVerification": "결제 대행사가 정보를 검토하고 있습니다. 요청이 올 때까지 하실 일은 없습니다.",
+        "reasonPastDue": "정산을 실행하기 전에 결제 대행사가 추가 정보를 요구합니다. 정산 계정을 열어 남은 항목을 확인하세요.",
+        "reasonUnderReview": "결제 대행사가 정산 계정을 검토 중입니다. 그동안 정산은 일시 중지됩니다.",
+        "reasonPaused": "이 계정의 정산이 일시 중지되었습니다. 필요한 조치는 고객지원에 문의하세요.",
+        "reasonRejected": "결제 대행사가 이 정산 계정을 거절했습니다. 대행사와 해결하기 전까지는 정산할 수 없습니다.",
+        "reasonActionRequired": "정산을 켜기 전에 결제 대행사가 회원님의 조치를 기다리고 있습니다.",
+        "reasonBlockedOther": "결제 대행사가 이 계정의 정산을 꺼두었습니다. 사유는 정산 계정에서 확인하세요."
+      },
+      "payouts": {
+        "empty": "아직 정산 내역이 없습니다",
+        "emptyNote": "수익이 확정되고 정산이 실행되면 하나하나 여기에 표시됩니다.",
+        "failureLabel": "실패한 이유",
+        "failureGeneric": "결제 대행사가 사유를 밝히지 않고 이 정산을 거절했습니다. 아래 참조번호를 고객지원에서 요청합니다.",
+        "noArrival": "입금일은 표시할 수 없습니다. 일정은 결제 대행사가 정하며 저희에게 알려주지 않습니다.",
+        "openActivity": "활동 열기",
+        "relatedTitle": "관련 수익",
+        "relatedNote": "정산은 항목별로 나뉘지 않아 이 정산에 포함된 정확한 수익을 나열할 수 없습니다. 활동에서 모든 이동 내역을 볼 수 있습니다."
+      },
+      "processing": {
+        "amountLabel": "처리 중",
+        "ordersTitle": "보류 중인 항목",
+        "empty": "보류 중인 항목 없음",
+        "emptyNote": "판매가 확정 전에 보류되면 사유와 함께 여기에 표시됩니다.",
+        "noWallet": "아직 판매자 잔액이 없어 처리 중인 항목이 없습니다.",
+        "nothingProcessing": "지금 처리 중인 항목이 없습니다. 확정된 금액은 이미 사용 가능합니다.",
+        "noReleasePath": "이 금액은 결제 대행사의 일정에 따라 확정됩니다. 따로 요청할 것은 없으며 자동으로 이동합니다.",
+        "awaitingRelease": "이 금액은 아직 확정 중입니다. 확정되면 사용 가능 잔액으로 이동합니다."
+      },
+      "activity": {
+        "scopeNote": "판매자 원장입니다. 판매, 정산, 환불, 보류가 기록됩니다. 광고 지출과 리워드는 별도 원장에서 관리되어 여기에 표시되지 않습니다.",
+        "emptyFeed": "아직 활동이 없습니다",
+        "emptyFeedNote": "판매, 정산, 환불, 보류가 발생하는 대로 여기에 표시됩니다.",
+        "emptyFilter": "이 필터와 일치하는 항목이 없습니다",
+        "filter": {
+          "all": "전체",
+          "income": "수익",
+          "payout": "정산됨",
+          "held": "보류",
+          "refund": "환불",
+          "spend": "수수료"
+        }
+      },
+      "kind": {
+        "income": "수익",
+        "spend": "수수료",
+        "escrow": "보류",
+        "payout": "정산",
+        "refund": "환불",
+        "other": "기타"
+      },
+      "detail": {
+        "title": "세부 정보",
+        "amount": "금액",
+        "status": "상태",
+        "created": "생성일",
+        "updated": "수정일",
+        "reference": "참조번호",
+        "currency": "통화",
+        "type": "유형",
+        "provider": "대행사",
+        "held": "보류된 금액은 아직 사용할 수 없지만 회원님의 돈입니다.",
+        "staleNote": "목록을 불러온 시점의 기록입니다. 최신 정보는 뒤로 가서 당겨 새로고침하세요.",
+        "missingTitle": "표시할 내용이 없습니다",
+        "missingBody": "열 기록을 받지 못했습니다. 뒤로 가서 해당 행을 다시 탭하세요."
+      },
+      "states": {
+        "errorTitle": "불러올 수 없습니다",
+        "errorBody": "돈은 안전합니다. 잔액 문제가 아니라 표시 문제입니다. 당겨서 새로고침한 뒤 다시 시도하세요."
+      },
+      "a11y": {
+        "openLayer": "{{layer}} 열기",
+        "openPayout": "정산 세부 정보 열기",
+        "openEntry": "활동 세부 정보 열기"
+      }
     }
   },
   "discovery": {
@@ -1760,6 +1876,158 @@
         "isThereALimit": "한도가 있나요?",
         "whenDoesItEnd": "챌린지가 끝나면 어떻게 되나요?"
       }
+    }
+  },
+  "premium": {
+    "loading": "멤버십을 불러오는 중…",
+    "loadError": "멤버십을 불러오지 못했습니다.",
+    "retry": "다시 시도",
+    "privateNote": "나만 볼 수 있습니다.",
+    "notVerification": "프리미엄은 구독입니다. 신원 인증이 아닙니다.",
+    "tile": {
+      "status": {
+        "active": "이용 중",
+        "founder": "창립자",
+        "grace": "갱신"
+      },
+      "hint": "프리미엄 요금제와 혜택을 엽니다.",
+      "a11y": {
+        "none": "프리미엄. PulseSoc 프리미엄 요금제와 혜택 보기.",
+        "active": "프리미엄. 구독 중. 프리미엄 요금제 관리하기.",
+        "founder": "프리미엄. 창립 멤버십. 프리미엄 혜택 관리하기.",
+        "grace": "프리미엄. 갱신에 확인이 필요합니다. 프리미엄 요금제 관리하기."
+      }
+    },
+    "header": {
+      "member": "프리미엄 멤버",
+      "founder": "창립 멤버",
+      "free": "PulseSoc 프리미엄",
+      "founderNumber": "창립자 #{{number}}"
+    },
+    "status": {
+      "active": "이용 중",
+      "founder": "평생",
+      "grace": "갱신 대기 중",
+      "hold": "계정 보류",
+      "expired": "종료됨",
+      "none": "구독 안 함"
+    },
+    "blurb": {
+      "active": "프리미엄 혜택이 켜져 있습니다.",
+      "founder": "창립 멤버십은 만료되지 않고 결제도 없습니다.",
+      "grace": "Apple이 갱신을 다시 시도하는 동안에도 혜택은 유지됩니다.",
+      "hold": "계정 보류가 해제될 때까지 혜택이 일시 중지됩니다.",
+      "expired": "구독이 종료되었습니다. 언제든지 다시 시작할 수 있습니다.",
+      "none": "PulseSoc을 후원하고 추가 도구를 사용해 보세요. 기본 앱은 계속 무료입니다."
+    },
+    "notices": {
+      "account_hold": "계정이 보류 상태여서 프리미엄 혜택이 일시 중지되었습니다.",
+      "founder": "창립 멤버입니다. 구매하거나 갱신할 것이 없습니다."
+    },
+    "plans": {
+      "heading": "요금제 선택",
+      "headingAgain": "프리미엄 다시 시작",
+      "loading": "요금제를 불러오는 중…",
+      "monthly": "월간",
+      "annual": "연간",
+      "per": {
+        "monthly": "월",
+        "annual": "연"
+      },
+      "save": "{{percent}}% 절약",
+      "unavailable": "지금은 요금제를 이용할 수 없습니다.",
+      "unavailableBody": "App Store에서 상품 정보를 받지 못했습니다. 연결을 확인한 뒤 다시 시도하세요. 결제된 금액은 없습니다.",
+      "terms": "App Store를 통해 결제됩니다. Apple 구독 설정에서 취소하기 전까지 자동으로 갱신됩니다."
+    },
+    "purchase": {
+      "start": "계속",
+      "working": "처리 중…",
+      "cancelled": "구매를 취소했습니다.",
+      "verified": "이제 프리미엄입니다. 환영합니다.",
+      "pending": "구매를 처리하고 있습니다. Apple이 확인하는 즉시 프리미엄이 열립니다.",
+      "unavailable": "이 기기에서는 지금 구매할 수 없습니다."
+    },
+    "restore": {
+      "action": "구매 복원",
+      "hint": "이미 구매한 구독이 있는지 App Store에서 확인합니다.",
+      "working": "복원 중…",
+      "restored_other": "구매 {{count}}건을 복원했습니다.",
+      "empty": "이 Apple ID에는 복원할 구매가 없습니다.",
+      "failed": "구매를 복원하지 못했습니다.",
+      "unavailable": "이 기기에서는 복원을 사용할 수 없습니다."
+    },
+    "manage": {
+      "action": "구독 관리",
+      "hint": "App Store의 구독 설정을 엽니다.",
+      "note": "해지와 요금제 변경은 Apple에서 처리합니다.",
+      "failed": "구독 설정을 열지 못했습니다."
+    },
+    "billing": {
+      "heading": "내 구독",
+      "plan": "요금제",
+      "provider": "결제 경로",
+      "status": "상태",
+      "renews": "갱신일",
+      "expires": "종료일",
+      "cancelPending": "이 구독은 종료 예정이며 갱신되지 않습니다.",
+      "none": "이 멤버십의 결제 정보가 없습니다.",
+      "founderNone": "창립 멤버십 — 결제도 갱신도 없습니다."
+    },
+    "period": {
+      "monthly": "월간",
+      "annual": "연간",
+      "trial": "체험",
+      "grandfathered": "평생",
+      "unknown": "—"
+    },
+    "provider": {
+      "apple_iap": "Apple",
+      "stripe": "카드",
+      "unknown": "—"
+    },
+    "subStatus": {
+      "active": "이용 중",
+      "trialing": "체험 중",
+      "grace": "갱신 대기 중",
+      "past_due": "결제 실패",
+      "canceled": "종료 예정",
+      "cancelled": "종료 예정",
+      "expired": "종료됨",
+      "revoked": "취소됨",
+      "paused": "일시 중지",
+      "unknown": "—"
+    },
+    "benefits": {
+      "heading": "포함 내용",
+      "beta": "베타",
+      "empty": "혜택을 준비하고 있습니다. 잠시 후 다시 확인해 주세요.",
+      "allowance": "{{limit}} 중 {{used}} 사용",
+      "access": "프리미엄 이용",
+      "profile": {
+        "customization": "프로필 꾸미기"
+      },
+      "media": {
+        "higher_quality": "더 높은 화질의 미디어"
+      },
+      "identity": {
+        "effects": "아이덴티티 효과"
+      },
+      "undx": {
+        "advanced": "고급 UNDX"
+      },
+      "creator_studio_pro": "Creator Studio Pro",
+      "founder_hub_access": "Founder Hub 이용",
+      "premium_upload_limits": "더 높은 업로드 한도",
+      "priority_support": "우선 지원",
+      "early_access_features": "새 기능 우선 이용"
+    },
+    "notYet": {
+      "heading": "곧 추가되는 혜택",
+      "note": "요금제에 포함되어 있지만 아직 켜지지 않았습니다. 별도로 청구되지 않습니다."
+    },
+    "free": {
+      "heading": "언제나 무료",
+      "body": "피드, 게시물, 릴스, 스테이터스, 메시지, 통화, 라이브 방송, 프로필, 보안, 계정 복구는 계속 무료입니다. 프리미엄은 PulseSoc에 더하는 것이지 무언가를 빼앗지 않습니다."
     }
   }
 }

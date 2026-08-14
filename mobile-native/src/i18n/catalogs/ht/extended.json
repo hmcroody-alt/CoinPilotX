@@ -1212,6 +1212,122 @@
       "applied": "Aplike.",
       "applyError": "Nou pa t ka aplike rekòmandasyon sa a.",
       "openCampaign": "Ouvri kanpay la"
+    },
+    "money": {
+      "layer": {
+        "payoutOverview": "Rezime peman",
+        "processing": "Ap trete",
+        "moveMoney": "Deplase lajan ou",
+        "payoutHistory": "Peman",
+        "activity": "Aktivite"
+      },
+      "overview": {
+        "available": "Disponib",
+        "availableNote": "Kòb ou fin genyen ou kapab retire.",
+        "processing": "Ap trete",
+        "lifetime": "Total kòb ou fè",
+        "destination": "Peye nan {{destination}}",
+        "noDestination": "Poko gen yon kote pou voye peman an.",
+        "moreTitle": "Plis",
+        "paidOutUnavailable": "Nou pa montre yon total peman sou tout tan an, paske li pa rapòte kòm yon sèl chif. Lis peman yo se dosye konplè a."
+      },
+      "payout": {
+        "stageLabel": "Kont peman",
+        "enabled": "Peman aktive",
+        "disabled": "Peman dezaktive",
+        "destinationLabel": "Destinasyon",
+        "destinationNone": "Nou kenbe yon referans nan men konpayi peman an, pa janm nimewo kont ou.",
+        "codesLabel": "Sa konpayi peman an rapòte",
+        "stage": {
+          "unknown": "Estati enkoni",
+          "not_started": "Pa konfigire",
+          "in_progress": "Nan pwosesis",
+          "pending_verification": "Tann verifikasyon",
+          "blocked": "Bloke",
+          "ready": "Pare"
+        },
+        "actionStart": "Konfigire peman",
+        "actionResume": "Fini konfigirasyon peman an",
+        "actionRetryStatus": "Tcheke estati a ankò",
+        "actionManage": "Jere kont peman an",
+        "reasonReady": "Kont peman ou verifye epi li kapab resevwa peman.",
+        "reasonUnknown": "Nou pa t rive jwenn kont peman ou kounye a, donk nou pa ka di si li pare. Tcheke ankò nan yon moman.",
+        "reasonNotStarted": "Ou poko konfigire yon kont peman. Ou bezwen youn anvan kòb ou ka soti nan PulseSoc.",
+        "reasonInProgress": "Konfigirasyon peman ou te kòmanse men li pa fini. Peman rete dezaktive jiskaske ou voye rès enfòmasyon ou yo.",
+        "reasonPendingVerification": "Enfòmasyon ou yo anba revizyon nan men konpayi peman an. Ou pa bezwen fè anyen jiskaske yo mande.",
+        "reasonPastDue": "Konpayi peman an bezwen plis enfòmasyon anvan peman ka pati. Ouvri kont peman ou pou wè sa ki manke.",
+        "reasonUnderReview": "Konpayi peman an ap revize kont peman ou. Peman yo an poz pandan tan sa a.",
+        "reasonPaused": "Peman sou kont sa a an poz. Kontakte sipò pou konnen sa ki nesesè.",
+        "reasonRejected": "Konpayi peman an refize kont peman sa a. Peman pa ka pati jiskaske ou regle sa avèk yo.",
+        "reasonActionRequired": "Konpayi peman an ap tann yon bagay nan men ou anvan yo ka aktive peman yo.",
+        "reasonBlockedOther": "Konpayi peman an dezaktive peman sou kont sa a. Ouvri kont peman ou pou wè rezon an."
+      },
+      "payouts": {
+        "empty": "Poko gen peman",
+        "emptyNote": "Lè kòb la fin klè epi yon peman pati, chak grenn ap parèt isit la.",
+        "failureLabel": "Poukisa li echwe",
+        "failureGeneric": "Konpayi peman an refize peman sa a san li pa di poukisa. Referans anba a se sa sipò ap mande w.",
+        "noArrival": "Nou pa ka montre yon dat rive. Konpayi peman an fikse orè a epi li pa fè nou konnen.",
+        "openActivity": "Ouvri aktivite",
+        "relatedTitle": "Kòb ki gen rapò",
+        "relatedNote": "Peman yo pa detaye atik pa atik, donk nou pa ka bay lis kòb egzak ki ladan l. Aktivite montre tout sa ki deplase."
+      },
+      "processing": {
+        "amountLabel": "Ap trete",
+        "ordersTitle": "Sa k ap kenbe",
+        "empty": "Anyen pa kenbe",
+        "emptyNote": "Lè yon vant kenbe anvan li klè, li parèt isit la ak rezon an.",
+        "noWallet": "Ou poko gen yon balans vandè, donk pa gen anyen k ap trete.",
+        "nothingProcessing": "Pa gen anyen k ap trete kounye a. Tout sa ki klè deja disponib.",
+        "noReleasePath": "Kòb sa yo klè selon orè konpayi peman ou. Pa gen anyen pou mande; yo deplase pou kont yo.",
+        "awaitingRelease": "Kòb sa yo toujou ap klè. Lè yo fini, y ap antre nan balans disponib ou."
+      },
+      "activity": {
+        "scopeNote": "Sa a se rejis vandè ou: vant, peman, ranbousman ak kòb kenbe. Depans piblisite ak rekonpans gen pwòp rejis pa yo epi yo pa parèt isit la.",
+        "emptyFeed": "Poko gen aktivite",
+        "emptyFeedNote": "Vant, peman, ranbousman ak kòb kenbe ap parèt isit la lè yo rive.",
+        "emptyFilter": "Anyen pa koresponn ak filt sa a",
+        "filter": {
+          "all": "Tout",
+          "income": "Genyen",
+          "payout": "Peye",
+          "held": "Kenbe",
+          "refund": "Ranbousman",
+          "spend": "Frè"
+        }
+      },
+      "kind": {
+        "income": "Kòb ou fè",
+        "spend": "Frè",
+        "escrow": "Kenbe",
+        "payout": "Peman",
+        "refund": "Ranbousman",
+        "other": "Lòt"
+      },
+      "detail": {
+        "title": "Detay",
+        "amount": "Montan",
+        "status": "Estati",
+        "created": "Kreye",
+        "updated": "Mete ajou",
+        "reference": "Referans",
+        "currency": "Lajan",
+        "type": "Tip",
+        "provider": "Konpayi",
+        "held": "Montan yo kenbe poko ka depanse, men yo toujou pou ou.",
+        "staleNote": "Sa a montre dosye a jan li te ye lè lis la te chaje. Retounen epi rale pou aktyalize.",
+        "missingTitle": "Anyen pou montre",
+        "missingBody": "Nou pa resevwa okenn dosye pou ouvri. Retounen epi peze ranje a ankò."
+      },
+      "states": {
+        "errorTitle": "Nou pa t ka chaje sa a",
+        "errorBody": "Lajan ou an sekirite — se yon pwoblèm afichaj, pa yon pwoblèm balans. Rale pou aktyalize epi eseye ankò."
+      },
+      "a11y": {
+        "openLayer": "Ouvri {{layer}}",
+        "openPayout": "Ouvri detay peman an",
+        "openEntry": "Ouvri detay aktivite a"
+      }
     }
   },
   "discovery": {
@@ -1761,6 +1877,158 @@
         "isThereALimit": "Èske gen yon limit?",
         "whenDoesItEnd": "Kisa k ap pase apre defi a?"
       }
+    }
+  },
+  "premium": {
+    "loading": "N ap chaje abònman ou…",
+    "loadError": "Nou pa t kapab chaje abònman ou.",
+    "retry": "Eseye ankò",
+    "privateNote": "Se ou sèlman ki wè sa.",
+    "notVerification": "Premium se yon abònman. Se pa yon verifikasyon idantite.",
+    "tile": {
+      "status": {
+        "active": "AKTIF",
+        "founder": "FONDATÈ",
+        "grace": "RENOUVLE"
+      },
+      "hint": "Louvri plan ak avantaj Premium ou yo.",
+      "a11y": {
+        "none": "Premium. Gade plan ak avantaj PulseSoc Premium yo.",
+        "active": "Premium. Abònman aktif. Jere plan Premium ou.",
+        "founder": "Premium. Manm fondatè. Jere avantaj Premium ou yo.",
+        "grace": "Premium. Renouvèlman an bezwen atansyon ou. Jere plan Premium ou."
+      }
+    },
+    "header": {
+      "member": "Manm Premium",
+      "founder": "Manm fondatè",
+      "free": "PulseSoc Premium",
+      "founderNumber": "Fondatè nimewo {{number}}"
+    },
+    "status": {
+      "active": "Aktif",
+      "founder": "Pou tout tan",
+      "grace": "Renouvèlman ap tann",
+      "hold": "Kont sispann",
+      "expired": "Fini",
+      "none": "Pa gen abònman"
+    },
+    "blurb": {
+      "active": "Avantaj Premium ou yo aktif.",
+      "founder": "Manm fondatè ou pa janm ekspire e li pa janm faktire.",
+      "grace": "Avantaj ou yo rete aktif pandan Apple ap reeseye renouvèlman an.",
+      "hold": "Avantaj ou yo an poz jiskaske sispansyon kont ou an rezoud.",
+      "expired": "Abònman ou fini. Ou ka rekòmanse l nenpòt kilè.",
+      "none": "Sipòte PulseSoc epi debloke plis zouti. Aplikasyon prensipal la rete gratis."
+    },
+    "notices": {
+      "account_hold": "Kont ou sispann, kidonk avantaj Premium yo an poz.",
+      "founder": "Ou se yon manm fondatè. Pa gen anyen pou achte ni pou renouvle."
+    },
+    "plans": {
+      "heading": "Chwazi plan ou",
+      "headingAgain": "Rekòmanse Premium",
+      "loading": "N ap chaje plan yo…",
+      "monthly": "Chak mwa",
+      "annual": "Chak ane",
+      "per": {
+        "monthly": "pa mwa",
+        "annual": "pa ane"
+      },
+      "save": "Ekonomize {{percent}}%",
+      "unavailable": "Plan yo pa disponib kounye a.",
+      "unavailableBody": "App Store la pa voye okenn pwodwi. Tcheke koneksyon ou epi eseye ankò — nou pa faktire anyen.",
+      "terms": "Fakti pase nan App Store la. Abònman ou renouvle otomatikman jiskaske ou anile l nan paramèt abònman Apple yo."
+    },
+    "purchase": {
+      "start": "Kontinye",
+      "working": "N ap travay…",
+      "cancelled": "Acha anile.",
+      "verified": "Ou se Premium kounye a. Byenveni.",
+      "pending": "Acha ou an ap trete. Premium ap louvri kou Apple konfime l.",
+      "unavailable": "Acha pa disponib sou aparèy sa a kounye a."
+    },
+    "restore": {
+      "action": "Retabli acha yo",
+      "hint": "Chèche nan App Store la yon abònman ou te deja achte.",
+      "working": "N ap retabli…",
+      "restored_other": "Nou retabli {{count}} acha.",
+      "empty": "Pa gen acha pou retabli sou idantifyan Apple sa a.",
+      "failed": "Nou pa t kapab retabli acha ou yo.",
+      "unavailable": "Retabli pa disponib sou aparèy sa a."
+    },
+    "manage": {
+      "action": "Jere abònman",
+      "hint": "Louvri paramèt abònman ou nan App Store la.",
+      "note": "Se Apple ki jere anilasyon ak chanjman plan.",
+      "failed": "Nou pa t kapab louvri paramèt abònman ou."
+    },
+    "billing": {
+      "heading": "Abònman ou",
+      "plan": "Plan",
+      "provider": "Fakti pase nan",
+      "status": "Estati",
+      "renews": "Renouvle",
+      "expires": "Fini",
+      "cancelPending": "Abònman sa a pral fini e li p ap renouvle.",
+      "none": "Nou pa gen enfòmasyon fakti pou manm sa a.",
+      "founderNone": "Manm fondatè — pa gen fakti, pa gen anyen pou renouvle."
+    },
+    "period": {
+      "monthly": "Chak mwa",
+      "annual": "Chak ane",
+      "trial": "Esè",
+      "grandfathered": "Pou tout tan",
+      "unknown": "—"
+    },
+    "provider": {
+      "apple_iap": "Apple",
+      "stripe": "Kat",
+      "unknown": "—"
+    },
+    "subStatus": {
+      "active": "Aktif",
+      "trialing": "Esè",
+      "grace": "Renouvèlman ap tann",
+      "past_due": "Peman echwe",
+      "canceled": "Ap fini",
+      "cancelled": "Ap fini",
+      "expired": "Fini",
+      "revoked": "Retire",
+      "paused": "An poz",
+      "unknown": "—"
+    },
+    "benefits": {
+      "heading": "Sa ki enkli",
+      "beta": "BETA",
+      "empty": "Avantaj ou yo ap konfigire toujou. Tounen nan yon ti moman.",
+      "allowance": "{{used}} sou {{limit}} itilize",
+      "access": "Aksè Premium",
+      "profile": {
+        "customization": "Pèsonalizasyon pwofil"
+      },
+      "media": {
+        "higher_quality": "Medya ak pi bon kalite"
+      },
+      "identity": {
+        "effects": "Efè idantite"
+      },
+      "undx": {
+        "advanced": "UNDX avanse"
+      },
+      "creator_studio_pro": "Creator Studio Pro",
+      "founder_hub_access": "Aksè nan Founder Hub",
+      "premium_upload_limits": "Limit voye pi wo",
+      "priority_support": "Sipò prioritè",
+      "early_access_features": "Aksè bonè ak nouvo bagay"
+    },
+    "notYet": {
+      "heading": "K ap vini nan plan ou",
+      "note": "Yo fè pati plan ou men yo poko aktive. Anyen la a pa faktire apa."
+    },
+    "free": {
+      "heading": "Toujou gratis",
+      "body": "Fil ou, piblikasyon, reels, estati, mesaj, apèl, videyo an dirèk, pwofil, sekirite ak rekiperasyon kont rete gratis. Premium ajoute sou PulseSoc; li pa janm retire anyen."
     }
   }
 }

@@ -31,7 +31,8 @@ export const CATALOG_NAMESPACES = [
   "commerce",
   "discovery",
   "settings",
-  "progress"
+  "progress",
+  "premium"
 ] as const;
 
 export type CatalogNamespace = (typeof CATALOG_NAMESPACES)[number];
@@ -57,7 +58,10 @@ export const NAMESPACE_TIER: Readonly<Record<CatalogNamespace, CatalogTier>> = O
   discovery: "extended",
   settings: "extended",
   // Progress OS is reachable only from the profile, well after first frame.
-  progress: "extended"
+  progress: "extended",
+  // Same as Progress: one tile at the end of the profile grid, and the tile's
+  // own micro-status is the only part of it that renders before a tap.
+  premium: "extended"
 });
 
 /** Namespaces the provider warms before it renders children. */

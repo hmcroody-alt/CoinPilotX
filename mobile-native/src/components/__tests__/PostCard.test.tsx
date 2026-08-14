@@ -117,3 +117,14 @@ describe("PostCard save action", () => {
     expect(getByText("Saved")).toBeTruthy();
   });
 });
+
+describe("PostCard automated identity", () => {
+  it("labels the official automated author without presenting a follow action", () => {
+    const { getByText, getByLabelText, queryByTestId } = render(
+      <PostCard post={basePost({ author: { display_name: "PulseSoc Insight", username: "pulsesoc_insight", automated: true, account_type: "PULSESOC_AUTOMATED" } })} onFollow={jest.fn()} />
+    );
+    expect(getByText("AUTOMATED")).toBeTruthy();
+    expect(getByLabelText("Automated PulseSoc account")).toBeTruthy();
+    expect(queryByTestId("home-feed-follow-42")).toBeNull();
+  });
+});

@@ -64,6 +64,8 @@ import { MarketplaceCheckoutScreen } from "../screens/MarketplaceCheckoutScreen"
 import { MarketplaceProductScreen } from "../screens/MarketplaceProductScreen";
 import { MarketplaceScreen } from "../screens/MarketplaceScreen";
 import { MessengerScreen } from "../screens/MessengerScreen";
+import { MoneyDetailScreen } from "../screens/MoneyDetailScreen";
+import { MoneyLayerScreen } from "../screens/MoneyLayerScreen";
 import { MusicScreen } from "../screens/MusicScreen";
 import { NewChatScreen } from "../screens/NewChatScreen";
 import { NotificationCenterScreen } from "../screens/NotificationCenterScreen";
@@ -72,7 +74,7 @@ import { RegionTimeScreen } from "../screens/RegionTimeScreen";
 import { PulseQueueScreen } from "../screens/PulseQueueScreen";
 import { PostDetailScreen } from "../screens/PostDetailScreen";
 import { ProfilePostViewerScreen } from "../screens/ProfilePostViewerScreen";
-import { PremiumScreen } from "../screens/PremiumScreen";
+import { PremiumCenterScreen } from "../screens/PremiumCenterScreen";
 import { ProfileEditScreen } from "../screens/ProfileEditScreen";
 import { PulseShareScreen } from "../screens/PulseShareScreen";
 import { PulseAiScreen } from "../screens/PulseAiScreen";
@@ -437,6 +439,20 @@ export function AppNavigator() {
           headerShown: false
         })}
       />
+      {/* The money layers under Payments. Both draw the dark vault header
+          themselves — the hub's navy header, expanded — so the stack header
+          stays hidden here for the same reason it does for Payments above:
+          two headers on one screen is the regression that fixed. */}
+      <Stack.Screen
+        name="MoneyLayer"
+        component={MoneyLayerScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="MoneyDetail"
+        component={MoneyDetailScreen}
+        options={{ headerShown: false }}
+      />
       {/* Rewards draws its own header via AdsScreenShell, like the ads-family
           screens, so the stack header stays hidden. */}
       <Stack.Screen name="Rewards" component={RewardsScreen} options={{ headerShown: false }} />
@@ -478,7 +494,14 @@ export function AppNavigator() {
       <Stack.Screen name="ProfileDetail" component={ProfileScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.profile") })} />
       <Stack.Screen name="PulseIdentity" component={PulseIdentityScreen} options={{ title: t("common:screens.pulseIdentity") }} />
       <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} options={{ title: t("common:screens.editProfile") }} />
-      <Stack.Screen name="Premium" component={PremiumScreen} options={{ title: t("common:screens.premium") }} />
+      {/*
+        One Premium route, not two. Every existing entry point — the
+        `/pulse/premium` deep link, premium-lock notifications, dashboard
+        routing and the Intelligence Center — already lands here, so replacing
+        the component upgrades all of them at once. A second route would have
+        left those callers on the old sales-only page.
+      */}
+      <Stack.Screen name="Premium" component={PremiumCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.premium") })} />
       <Stack.Screen name="CreatorStudio" component={CreatorStudioScreen} options={{ title: t("common:screens.creatorStudio") }} />
       <Stack.Screen name="CreatorStudioAlias" component={CreatorStudioScreen} options={{ title: t("common:screens.creatorStudio") }} />
       <Stack.Screen name="ContentPlanner" component={ContentPlannerScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.contentPlanner") })} />

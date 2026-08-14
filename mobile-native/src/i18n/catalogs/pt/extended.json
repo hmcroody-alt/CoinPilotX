@@ -1212,6 +1212,122 @@
       "applied": "Aplicada.",
       "applyError": "Não foi possível aplicar esta recomendação.",
       "openCampaign": "Abrir campanha"
+    },
+    "money": {
+      "layer": {
+        "payoutOverview": "Resumo de pagamentos",
+        "processing": "Em processamento",
+        "moveMoney": "Movimente seu dinheiro",
+        "payoutHistory": "Pagamentos",
+        "activity": "Atividade"
+      },
+      "overview": {
+        "available": "Disponível",
+        "availableNote": "Ganhos liberados que você pode sacar.",
+        "processing": "Em processamento",
+        "lifetime": "Ganhos totais",
+        "destination": "Pago para {{destination}}",
+        "noDestination": "Ainda não há um destino de pagamento cadastrado.",
+        "moreTitle": "Mais",
+        "paidOutUnavailable": "Não mostramos um total pago acumulado porque ele não é informado como um único valor. A lista de pagamentos é o registro completo."
+      },
+      "payout": {
+        "stageLabel": "Conta de pagamento",
+        "enabled": "Pagamentos ativos",
+        "disabled": "Pagamentos inativos",
+        "destinationLabel": "Destino",
+        "destinationNone": "Guardamos uma referência do seu provedor de pagamento, nunca o número da sua conta.",
+        "codesLabel": "Informado pelo seu provedor",
+        "stage": {
+          "unknown": "Status desconhecido",
+          "not_started": "Não configurado",
+          "in_progress": "Em andamento",
+          "pending_verification": "Verificação pendente",
+          "blocked": "Bloqueado",
+          "ready": "Pronto"
+        },
+        "actionStart": "Configurar pagamentos",
+        "actionResume": "Concluir a configuração de pagamentos",
+        "actionRetryStatus": "Verificar o status novamente",
+        "actionManage": "Gerenciar conta de pagamento",
+        "reasonReady": "Sua conta de pagamento está verificada e pode receber pagamentos.",
+        "reasonUnknown": "Não conseguimos consultar sua conta de pagamento agora, então não sabemos se ela está pronta. Tente novamente em instantes.",
+        "reasonNotStarted": "Você ainda não configurou uma conta de pagamento. Ela é necessária para que os ganhos saiam do PulseSoc.",
+        "reasonInProgress": "Sua configuração de pagamento foi iniciada mas não concluída. Os pagamentos ficam desativados até você enviar o restante dos dados.",
+        "reasonPendingVerification": "Seus dados estão em análise com o provedor de pagamento. Nada é necessário da sua parte até que peçam.",
+        "reasonPastDue": "Seu provedor de pagamento precisa de mais informações antes de executar pagamentos. Abra sua conta de pagamento para ver o que falta.",
+        "reasonUnderReview": "Sua conta de pagamento está em análise pelo provedor de pagamento. Os pagamentos ficam pausados durante esse período.",
+        "reasonPaused": "Os pagamentos desta conta estão pausados. Fale com o suporte para saber o que é preciso.",
+        "reasonRejected": "Seu provedor de pagamento recusou esta conta de pagamento. Os pagamentos não podem ser feitos até resolver isso com ele.",
+        "reasonActionRequired": "Seu provedor de pagamento está aguardando algo de você antes de ativar os pagamentos.",
+        "reasonBlockedOther": "Seu provedor de pagamento desativou os pagamentos nesta conta. Abra sua conta de pagamento para ver o motivo."
+      },
+      "payouts": {
+        "empty": "Ainda não há pagamentos",
+        "emptyNote": "Assim que os ganhos forem liberados e um pagamento for feito, todos aparecem aqui.",
+        "failureLabel": "Por que falhou",
+        "failureGeneric": "Seu provedor de pagamento recusou este pagamento sem informar o motivo. A referência abaixo é o que o suporte vai pedir.",
+        "noArrival": "Não podemos mostrar a data de chegada. Seu provedor de pagamento define o calendário e não nos informa.",
+        "openActivity": "Abrir atividade",
+        "relatedTitle": "Ganhos relacionados",
+        "relatedNote": "Os pagamentos não são detalhados por item, então não conseguimos listar os ganhos exatos dentro deste. A atividade mostra tudo o que se movimentou."
+      },
+      "processing": {
+        "amountLabel": "Em processamento",
+        "ordersTitle": "O que está retido",
+        "empty": "Nada retido",
+        "emptyNote": "Quando uma venda é retida antes de liberar, ela aparece aqui com o motivo.",
+        "noWallet": "Você ainda não tem saldo de vendedor, então não há nada em processamento.",
+        "nothingProcessing": "Nada está em processamento agora. Tudo o que foi liberado já está disponível.",
+        "noReleasePath": "Esses valores são liberados no calendário do seu provedor de pagamento. Não há nada a solicitar; eles se movem sozinhos.",
+        "awaitingRelease": "Esses valores ainda estão sendo liberados. Quando forem, entram no seu saldo disponível."
+      },
+      "activity": {
+        "scopeNote": "Este é o seu livro de vendedor: vendas, pagamentos, reembolsos e retenções. Gastos com anúncios e recompensas usam livros separados e não aparecem aqui.",
+        "emptyFeed": "Ainda não há atividade",
+        "emptyFeedNote": "Vendas, pagamentos, reembolsos e retenções aparecem aqui conforme acontecem.",
+        "emptyFilter": "Nada corresponde a este filtro",
+        "filter": {
+          "all": "Tudo",
+          "income": "Ganho",
+          "payout": "Pago",
+          "held": "Retido",
+          "refund": "Reembolsos",
+          "spend": "Taxas"
+        }
+      },
+      "kind": {
+        "income": "Ganhos",
+        "spend": "Taxa",
+        "escrow": "Retido",
+        "payout": "Pagamento",
+        "refund": "Reembolso",
+        "other": "Outro"
+      },
+      "detail": {
+        "title": "Detalhes",
+        "amount": "Valor",
+        "status": "Status",
+        "created": "Criado",
+        "updated": "Atualizado",
+        "reference": "Referência",
+        "currency": "Moeda",
+        "type": "Tipo",
+        "provider": "Provedor",
+        "held": "Valores retidos ainda não podem ser usados, mas continuam sendo seus.",
+        "staleNote": "Isto mostra o registro como estava quando a lista carregou. Volte e puxe para atualizar.",
+        "missingTitle": "Nada para mostrar",
+        "missingBody": "Não recebemos nenhum registro para abrir. Volte e toque na linha novamente."
+      },
+      "states": {
+        "errorTitle": "Não conseguimos carregar isto",
+        "errorBody": "Seu dinheiro está seguro — é um problema de exibição, não de saldo. Puxe para atualizar e tente de novo."
+      },
+      "a11y": {
+        "openLayer": "Abre {{layer}}",
+        "openPayout": "Abre os detalhes do pagamento",
+        "openEntry": "Abre os detalhes da atividade"
+      }
     }
   },
   "discovery": {
@@ -1763,6 +1879,159 @@
         "isThereALimit": "Existe algum limite?",
         "whenDoesItEnd": "O que acontece depois do desafio?"
       }
+    }
+  },
+  "premium": {
+    "loading": "Carregando sua assinatura…",
+    "loadError": "Não foi possível carregar sua assinatura.",
+    "retry": "Tentar de novo",
+    "privateNote": "Só você vê isto.",
+    "notVerification": "O Premium é uma assinatura. Não é verificação de identidade.",
+    "tile": {
+      "status": {
+        "active": "ATIVA",
+        "founder": "FUNDADOR",
+        "grace": "RENOVAR"
+      },
+      "hint": "Abre seus planos e benefícios Premium.",
+      "a11y": {
+        "none": "Premium. Ver os planos e benefícios do PulseSoc Premium.",
+        "active": "Premium. Assinatura ativa. Gerencie seu plano Premium.",
+        "founder": "Premium. Assinatura de fundador. Gerencie seus benefícios Premium.",
+        "grace": "Premium. A renovação precisa de atenção. Gerencie seu plano Premium."
+      }
+    },
+    "header": {
+      "member": "Membro Premium",
+      "founder": "Membro fundador",
+      "free": "PulseSoc Premium",
+      "founderNumber": "Fundador n.º {{number}}"
+    },
+    "status": {
+      "active": "Ativa",
+      "founder": "Vitalícia",
+      "grace": "Renovação pendente",
+      "hold": "Conta em espera",
+      "expired": "Encerrada",
+      "none": "Sem assinatura"
+    },
+    "blurb": {
+      "active": "Seus benefícios Premium estão ativos.",
+      "founder": "Sua assinatura de fundador não expira e nunca é cobrada.",
+      "grace": "Seus benefícios continuam ativos enquanto a Apple tenta renovar.",
+      "hold": "Seus benefícios estão pausados até que a espera na sua conta seja resolvida.",
+      "expired": "Sua assinatura terminou. Você pode reativá-la quando quiser.",
+      "none": "Apoie o PulseSoc e desbloqueie ferramentas extras. O app principal continua gratuito."
+    },
+    "notices": {
+      "account_hold": "Sua conta está em espera, então os benefícios Premium estão pausados.",
+      "founder": "Você é membro fundador. Não há nada para comprar nem renovar."
+    },
+    "plans": {
+      "heading": "Escolha seu plano",
+      "headingAgain": "Reative o Premium",
+      "loading": "Carregando planos…",
+      "monthly": "Mensal",
+      "annual": "Anual",
+      "per": {
+        "monthly": "por mês",
+        "annual": "por ano"
+      },
+      "save": "Economize {{percent}}%",
+      "unavailable": "Os planos não estão disponíveis agora.",
+      "unavailableBody": "A App Store não retornou nenhum produto. Verifique sua conexão e tente de novo: nada foi cobrado.",
+      "terms": "Cobrado pela App Store. Sua assinatura é renovada automaticamente até você cancelá-la nos ajustes de assinaturas da Apple."
+    },
+    "purchase": {
+      "start": "Continuar",
+      "working": "Processando…",
+      "cancelled": "Compra cancelada.",
+      "verified": "Você é Premium. Bem-vindo.",
+      "pending": "Sua compra está sendo processada. O Premium é liberado assim que a Apple confirmar.",
+      "unavailable": "As compras não estão disponíveis neste dispositivo agora."
+    },
+    "restore": {
+      "action": "Restaurar compras",
+      "hint": "Procura na App Store uma assinatura que você já comprou.",
+      "working": "Restaurando…",
+      "restored_one": "{{count}} compra restaurada.",
+      "restored_other": "{{count}} compras restauradas.",
+      "empty": "Não há compras para restaurar neste ID Apple.",
+      "failed": "Não foi possível restaurar suas compras.",
+      "unavailable": "Restaurar não está disponível neste dispositivo."
+    },
+    "manage": {
+      "action": "Gerenciar assinatura",
+      "hint": "Abre os ajustes da sua assinatura na App Store.",
+      "note": "Cancelamentos e mudanças de plano são feitos pela Apple.",
+      "failed": "Não foi possível abrir os ajustes da sua assinatura."
+    },
+    "billing": {
+      "heading": "Sua assinatura",
+      "plan": "Plano",
+      "provider": "Cobrado por",
+      "status": "Status",
+      "renews": "Renova em",
+      "expires": "Termina em",
+      "cancelPending": "Esta assinatura está marcada para terminar e não será renovada.",
+      "none": "Não temos dados de cobrança para esta assinatura.",
+      "founderNone": "Assinatura de fundador — sem cobrança, nada a renovar."
+    },
+    "period": {
+      "monthly": "Mensal",
+      "annual": "Anual",
+      "trial": "Teste",
+      "grandfathered": "Vitalícia",
+      "unknown": "—"
+    },
+    "provider": {
+      "apple_iap": "Apple",
+      "stripe": "Cartão",
+      "unknown": "—"
+    },
+    "subStatus": {
+      "active": "Ativa",
+      "trialing": "Teste",
+      "grace": "Renovação pendente",
+      "past_due": "Pagamento recusado",
+      "canceled": "Encerrando",
+      "cancelled": "Encerrando",
+      "expired": "Encerrada",
+      "revoked": "Revogada",
+      "paused": "Pausada",
+      "unknown": "—"
+    },
+    "benefits": {
+      "heading": "O que está incluído",
+      "beta": "BETA",
+      "empty": "Seus benefícios ainda estão sendo configurados. Volte em instantes.",
+      "allowance": "{{used}} de {{limit}} usado",
+      "access": "Acesso Premium",
+      "profile": {
+        "customization": "Personalização do perfil"
+      },
+      "media": {
+        "higher_quality": "Mídia com mais qualidade"
+      },
+      "identity": {
+        "effects": "Efeitos de identidade"
+      },
+      "undx": {
+        "advanced": "UNDX avançado"
+      },
+      "creator_studio_pro": "Creator Studio Pro",
+      "founder_hub_access": "Acesso ao Founder Hub",
+      "premium_upload_limits": "Limites de envio maiores",
+      "priority_support": "Suporte prioritário",
+      "early_access_features": "Acesso antecipado a novidades"
+    },
+    "notYet": {
+      "heading": "Em breve no seu plano",
+      "note": "Fazem parte do seu plano, mas ainda não foram ativados. Nada aqui é cobrado à parte."
+    },
+    "free": {
+      "heading": "Sempre gratuito",
+      "body": "Seu feed, publicações, reels, status, mensagens, chamadas, vídeo ao vivo, perfil, segurança e recuperação de conta continuam gratuitos. O Premium soma ao PulseSoc; nunca tira nada."
     }
   }
 }

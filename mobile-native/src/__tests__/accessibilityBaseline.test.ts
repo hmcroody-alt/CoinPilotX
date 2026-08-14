@@ -37,7 +37,7 @@ const GUARDED_FILES = [
   "screens/GroupsScreen.tsx",
   "screens/CameraStudioScreen.tsx",
   "screens/HomeScreen.tsx",
-  "screens/PremiumScreen.tsx",
+  "screens/PremiumCenterScreen.tsx",
   "screens/UserDashboardScreen.tsx",
   "screens/ProfileEditScreen.tsx",
   "screens/NotificationCenterScreen.tsx",

@@ -92,6 +92,7 @@ def test_status_center_bootstraps_its_schema_before_first_canonical_read(monkeyp
     })
     monkeypatch.setattr(papi, "_founder_facts", lambda _uid: {
         "is_founder": False, "founder_number": 0, "price_cents": None})
+    monkeypatch.setattr(papi, "subscription_summary", lambda *_a, **_k: None)
     monkeypatch.setattr(papi._rd, "all_features", lambda: [])
     monkeypatch.setattr(papi._rd, "unenforced_features", lambda: [])
 
@@ -275,6 +276,99 @@ def test_health_reports_checks_when_healthy():
     assert isinstance(out["checks"], list) and out["checks"]
     for c in out["checks"]:
         assert set(c) == {"name", "ok", "detail"}
+
+
+# PREM-028..031 -- safe billing facts ----------------------------------------
+#
+# ``business_os_ent_provider_subs`` stores two things a member must never see:
+# ``provider_subscription_id`` (Apple's original transaction id, which is a
+# stable cross-app identifier) and ``raw_json`` (the decoded transaction). The
+# Control Center shows a plan, a provider, a status and a renewal date, and the
+# tests below are the reason a future ``SELECT *`` cannot quietly publish the
+# rest of the row.
+def _mksub(uid, **cols):
+    conn = db.connect()
+    row = {
+        "provider": "apple_iap",
+        "provider_subscription_id": f"200000{uid}",
+        "subject_type": "user",
+        "subject_id": str(uid),
+        "plan_key": "pulse_premium_annual",
+        "status": "active",
+        "current_period_end": "2027-01-01T00:00:00Z",
+        "cancel_at_period_end": 0,
+        "raw_json": '{"transactionId": "200000%s", "receipt": "SECRET"}' % uid,
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+    }
+    row.update(cols)
+    conn.execute(
+        "INSERT INTO business_os_ent_provider_subs (%s) VALUES (%s)"
+        % (", ".join(row), ", ".join("?" for _ in row)),
+        tuple(row.values()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_subscription_summary_returns_only_safe_columns():
+    _mkuser(9130)
+    _mksub(9130)
+    summary = papi.subscription_summary(9130)
+    assert set(summary) == {
+        "provider", "plan_key", "billing_period", "status",
+        "current_period_end", "cancel_at_period_end",
+    }
+    assert summary["billing_period"] == "annual"
+
+
+def test_subscription_summary_never_leaks_the_provider_token_or_receipt():
+    _mkuser(9131)
+    _mksub(9131, provider_subscription_id="1000000999888777",
+           raw_json='{"receipt": "LEAK", "originalTransactionId": "1000000999888777"}')
+    summary = papi.subscription_summary(9131)
+    blob = " ".join(_strings(summary))
+    assert "1000000999888777" not in blob
+    assert "LEAK" not in blob
+    assert "receipt" not in blob.lower()
+
+
+def test_status_center_carries_the_same_safe_subscription():
+    """The screen reads this through ``status_center``, so assert it there too."""
+    os.environ["BUSINESS_OS_ENTITLEMENTS"] = "canonical"
+    _mkuser(9132)
+    svc.grant_entitlement(9132, KEY, source="admin", source_reference="sc9132")
+    _mksub(9132, provider_subscription_id="3000009132", raw_json='{"receipt": "LEAK9132"}')
+    _, body = papi.status_center(9132)
+    blob = " ".join(_strings(body))
+    assert "3000009132" not in blob
+    assert "LEAK9132" not in blob
+    assert body["subscription"]["provider"] == "apple_iap"
+    os.environ["BUSINESS_OS_ENTITLEMENTS"] = "off"
+
+
+def test_a_granted_member_with_no_provider_row_is_not_an_error():
+    """``None`` is a real answer: founders and admin grants have no billing.
+
+    The entitlement is real and the billing row is absent, which is exactly the
+    founder/grandfathered shape. The Control Center has to render that as "no
+    billing on file" rather than treating the missing row as a failed read.
+    """
+    _mkuser(9133)
+    svc.grant_entitlement(9133, KEY, source="admin", source_reference="sc9133")
+    assert papi.subscription_summary(9133) is None
+
+
+def test_the_newest_subscription_wins_after_resubscribing():
+    """A member who lapsed and came back has two rows; only one is current."""
+    _mkuser(9134)
+    _mksub(9134, provider_subscription_id="4000009134a", plan_key="pulse_premium_monthly",
+           status="expired", updated_at="2026-01-01T00:00:00Z")
+    _mksub(9134, provider_subscription_id="4000009134b", plan_key="pulse_premium_annual",
+           status="active", updated_at="2026-06-01T00:00:00Z")
+    summary = papi.subscription_summary(9134)
+    assert summary["status"] == "active"
+    assert summary["billing_period"] == "annual"
 
 
 def _run_standalone():

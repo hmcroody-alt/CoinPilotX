@@ -30,6 +30,9 @@ export type PulseAuthor = {
   verified?: boolean;
   premium?: boolean;
   premium_verified?: boolean;
+  account_type?: "PERSON" | "PULSESOC_AUTOMATED" | string;
+  automated?: boolean;
+  official_system_account?: boolean;
 };
 
 export type PulseMedia = CanonicalMediaRecord;

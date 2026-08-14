@@ -1212,6 +1212,122 @@
       "applied": "Appliquée.",
       "applyError": "Impossible d'appliquer cette recommandation.",
       "openCampaign": "Ouvrir la campagne"
+    },
+    "money": {
+      "layer": {
+        "payoutOverview": "Aperçu des virements",
+        "processing": "En cours",
+        "moveMoney": "Transférer votre argent",
+        "payoutHistory": "Virements",
+        "activity": "Activité"
+      },
+      "overview": {
+        "available": "Disponible",
+        "availableNote": "Revenus validés que vous pouvez virer.",
+        "processing": "En cours",
+        "lifetime": "Revenus cumulés",
+        "destination": "Versé sur {{destination}}",
+        "noDestination": "Aucune destination de virement enregistrée pour l'instant.",
+        "moreTitle": "Plus",
+        "paidOutUnavailable": "Nous n'affichons pas de total versé sur la durée, car il n'est pas communiqué comme un seul chiffre. La liste des virements est l'historique complet."
+      },
+      "payout": {
+        "stageLabel": "Compte de virement",
+        "enabled": "Virements activés",
+        "disabled": "Virements désactivés",
+        "destinationLabel": "Destination",
+        "destinationNone": "Nous conservons une référence de votre prestataire de paiement, jamais votre numéro de compte.",
+        "codesLabel": "Signalé par votre prestataire",
+        "stage": {
+          "unknown": "Statut inconnu",
+          "not_started": "Non configuré",
+          "in_progress": "En cours",
+          "pending_verification": "Vérification en attente",
+          "blocked": "Bloqué",
+          "ready": "Prêt"
+        },
+        "actionStart": "Configurer les virements",
+        "actionResume": "Terminer la configuration des virements",
+        "actionRetryStatus": "Vérifier le statut à nouveau",
+        "actionManage": "Gérer le compte de virement",
+        "reasonReady": "Votre compte de virement est vérifié et peut recevoir des virements.",
+        "reasonUnknown": "Nous n'avons pas pu joindre votre compte de virement à l'instant, donc nous ne pouvons pas dire s'il est prêt. Réessayez dans un moment.",
+        "reasonNotStarted": "Vous n'avez pas encore configuré de compte de virement. Il en faut un pour que vos revenus puissent quitter PulseSoc.",
+        "reasonInProgress": "Votre configuration de virement a été commencée mais pas terminée. Les virements restent désactivés tant que le reste de vos informations n'est pas envoyé.",
+        "reasonPendingVerification": "Vos informations sont en cours d'examen chez votre prestataire de paiement. Rien à faire de votre côté tant qu'il ne demande rien.",
+        "reasonPastDue": "Votre prestataire de paiement a besoin de plus d'informations avant de pouvoir effectuer des virements. Ouvrez votre compte de virement pour voir ce qui manque.",
+        "reasonUnderReview": "Votre compte de virement est en cours d'examen par votre prestataire de paiement. Les virements sont suspendus pendant ce temps.",
+        "reasonPaused": "Les virements sur ce compte sont suspendus. Contactez l'assistance pour savoir ce qui est nécessaire.",
+        "reasonRejected": "Votre prestataire de paiement a refusé ce compte de virement. Aucun virement n'est possible tant que ce n'est pas réglé avec lui.",
+        "reasonActionRequired": "Votre prestataire de paiement attend quelque chose de votre part avant d'activer les virements.",
+        "reasonBlockedOther": "Votre prestataire de paiement a désactivé les virements sur ce compte. Ouvrez votre compte de virement pour en connaître la raison."
+      },
+      "payouts": {
+        "empty": "Aucun virement pour l'instant",
+        "emptyNote": "Dès que des revenus sont validés et qu'un virement part, il apparaît ici.",
+        "failureLabel": "Pourquoi cela a échoué",
+        "failureGeneric": "Votre prestataire de paiement a rejeté ce virement sans en donner la raison. La référence ci-dessous est celle que l'assistance vous demandera.",
+        "noArrival": "Nous ne pouvons pas afficher de date d'arrivée. Votre prestataire de paiement fixe le calendrier et ne nous le communique pas.",
+        "openActivity": "Ouvrir l'activité",
+        "relatedTitle": "Revenus associés",
+        "relatedNote": "Les virements ne sont pas détaillés, nous ne pouvons donc pas lister les revenus exacts qu'il contient. L'activité montre tous les mouvements."
+      },
+      "processing": {
+        "amountLabel": "En cours",
+        "ordersTitle": "Ce qui est retenu",
+        "empty": "Rien de retenu",
+        "emptyNote": "Quand une vente est retenue avant validation, elle apparaît ici avec le motif.",
+        "noWallet": "Vous n'avez pas encore de solde vendeur, donc rien n'est en cours.",
+        "nothingProcessing": "Rien n'est en cours pour l'instant. Tout ce qui est validé est déjà disponible.",
+        "noReleasePath": "Ces fonds sont validés selon le calendrier de votre prestataire de paiement. Il n'y a rien à demander : ils partent d'eux-mêmes.",
+        "awaitingRelease": "Ces fonds sont encore en cours de validation. Une fois validés, ils passeront sur votre solde disponible."
+      },
+      "activity": {
+        "scopeNote": "Voici votre registre vendeur : ventes, virements, remboursements et retenues. Les dépenses publicitaires et les récompenses ont leurs propres registres et n'apparaissent pas ici.",
+        "emptyFeed": "Aucune activité pour l'instant",
+        "emptyFeedNote": "Ventes, virements, remboursements et retenues arrivent ici au fil de l'eau.",
+        "emptyFilter": "Rien ne correspond à ce filtre",
+        "filter": {
+          "all": "Tout",
+          "income": "Gagné",
+          "payout": "Versé",
+          "held": "Retenu",
+          "refund": "Remboursements",
+          "spend": "Frais"
+        }
+      },
+      "kind": {
+        "income": "Revenus",
+        "spend": "Frais",
+        "escrow": "Retenu",
+        "payout": "Virement",
+        "refund": "Remboursement",
+        "other": "Autre"
+      },
+      "detail": {
+        "title": "Détails",
+        "amount": "Montant",
+        "status": "Statut",
+        "created": "Créé",
+        "updated": "Mis à jour",
+        "reference": "Référence",
+        "currency": "Devise",
+        "type": "Type",
+        "provider": "Prestataire",
+        "held": "Les montants retenus ne sont pas encore utilisables, mais ils vous appartiennent.",
+        "staleNote": "Ceci montre l'enregistrement tel qu'il était au chargement de la liste. Revenez en arrière et tirez pour actualiser.",
+        "missingTitle": "Rien à afficher",
+        "missingBody": "Nous n'avons reçu aucun enregistrement à ouvrir. Revenez en arrière et touchez à nouveau la ligne."
+      },
+      "states": {
+        "errorTitle": "Impossible de charger cette page",
+        "errorBody": "Votre argent est en sécurité : c'est un problème d'affichage, pas de solde. Tirez pour actualiser et réessayer."
+      },
+      "a11y": {
+        "openLayer": "Ouvre {{layer}}",
+        "openPayout": "Ouvre les détails du virement",
+        "openEntry": "Ouvre les détails de l'activité"
+      }
     }
   },
   "discovery": {
@@ -1763,6 +1879,159 @@
         "isThereALimit": "Y a-t-il une limite ?",
         "whenDoesItEnd": "Que se passe-t-il après le défi ?"
       }
+    }
+  },
+  "premium": {
+    "loading": "Chargement de votre abonnement…",
+    "loadError": "Impossible de charger votre abonnement.",
+    "retry": "Réessayer",
+    "privateNote": "Vous seul pouvez voir ceci.",
+    "notVerification": "Premium est un abonnement. Ce n'est pas une vérification d'identité.",
+    "tile": {
+      "status": {
+        "active": "ACTIF",
+        "founder": "FONDATEUR",
+        "grace": "RENOUVELER"
+      },
+      "hint": "Ouvre vos offres et avantages Premium.",
+      "a11y": {
+        "none": "Premium. Voir les offres et avantages PulseSoc Premium.",
+        "active": "Premium. Abonnement actif. Gérez votre offre Premium.",
+        "founder": "Premium. Adhésion fondateur. Gérez vos avantages Premium.",
+        "grace": "Premium. Le renouvellement demande votre attention. Gérez votre offre Premium."
+      }
+    },
+    "header": {
+      "member": "Membre Premium",
+      "founder": "Membre fondateur",
+      "free": "PulseSoc Premium",
+      "founderNumber": "Fondateur n° {{number}}"
+    },
+    "status": {
+      "active": "Actif",
+      "founder": "À vie",
+      "grace": "Renouvellement en attente",
+      "hold": "Compte suspendu",
+      "expired": "Terminé",
+      "none": "Pas d'abonnement"
+    },
+    "blurb": {
+      "active": "Vos avantages Premium sont actifs.",
+      "founder": "Votre adhésion fondateur n'expire pas et n'est jamais facturée.",
+      "grace": "Vos avantages restent actifs pendant qu'Apple relance le renouvellement.",
+      "hold": "Vos avantages sont en pause jusqu'à la levée de la suspension de votre compte.",
+      "expired": "Votre abonnement a pris fin. Vous pouvez le relancer à tout moment.",
+      "none": "Soutenez PulseSoc et débloquez des outils en plus. L'application reste gratuite."
+    },
+    "notices": {
+      "account_hold": "Votre compte est suspendu, vos avantages Premium sont donc en pause.",
+      "founder": "Vous êtes membre fondateur. Rien à acheter, rien à renouveler."
+    },
+    "plans": {
+      "heading": "Choisissez votre offre",
+      "headingAgain": "Reprendre Premium",
+      "loading": "Chargement des offres…",
+      "monthly": "Mensuel",
+      "annual": "Annuel",
+      "per": {
+        "monthly": "par mois",
+        "annual": "par an"
+      },
+      "save": "Économisez {{percent}} %",
+      "unavailable": "Les offres ne sont pas disponibles pour le moment.",
+      "unavailableBody": "L'App Store n'a renvoyé aucun produit. Vérifiez votre connexion et réessayez : rien n'a été facturé.",
+      "terms": "Facturé via l'App Store. Votre abonnement se renouvelle automatiquement jusqu'à ce que vous l'annuliez dans les réglages d'abonnement Apple."
+    },
+    "purchase": {
+      "start": "Continuer",
+      "working": "En cours…",
+      "cancelled": "Achat annulé.",
+      "verified": "Vous êtes Premium. Bienvenue.",
+      "pending": "Votre achat est en cours de traitement. Premium s'activera dès qu'Apple l'aura confirmé.",
+      "unavailable": "Les achats ne sont pas disponibles sur cet appareil pour le moment."
+    },
+    "restore": {
+      "action": "Restaurer les achats",
+      "hint": "Recherche dans l'App Store un abonnement que vous avez déjà acheté.",
+      "working": "Restauration…",
+      "restored_one": "{{count}} achat restauré.",
+      "restored_other": "{{count}} achats restaurés.",
+      "empty": "Aucun achat à restaurer sur cet identifiant Apple.",
+      "failed": "Impossible de restaurer vos achats.",
+      "unavailable": "La restauration n'est pas disponible sur cet appareil."
+    },
+    "manage": {
+      "action": "Gérer l'abonnement",
+      "hint": "Ouvre les réglages de votre abonnement dans l'App Store.",
+      "note": "Les annulations et changements d'offre sont gérés par Apple.",
+      "failed": "Impossible d'ouvrir les réglages de votre abonnement."
+    },
+    "billing": {
+      "heading": "Votre abonnement",
+      "plan": "Offre",
+      "provider": "Facturé via",
+      "status": "Statut",
+      "renews": "Renouvellement",
+      "expires": "Fin",
+      "cancelPending": "Cet abonnement doit prendre fin et ne sera pas renouvelé.",
+      "none": "Nous n'avons pas d'informations de facturation pour cette adhésion.",
+      "founderNone": "Adhésion fondateur : aucune facturation, rien à renouveler."
+    },
+    "period": {
+      "monthly": "Mensuel",
+      "annual": "Annuel",
+      "trial": "Essai",
+      "grandfathered": "À vie",
+      "unknown": "—"
+    },
+    "provider": {
+      "apple_iap": "Apple",
+      "stripe": "Carte",
+      "unknown": "—"
+    },
+    "subStatus": {
+      "active": "Actif",
+      "trialing": "Essai",
+      "grace": "Renouvellement en attente",
+      "past_due": "Paiement échoué",
+      "canceled": "Se termine",
+      "cancelled": "Se termine",
+      "expired": "Terminé",
+      "revoked": "Révoqué",
+      "paused": "En pause",
+      "unknown": "—"
+    },
+    "benefits": {
+      "heading": "Ce qui est inclus",
+      "beta": "BÊTA",
+      "empty": "Vos avantages sont en cours de configuration. Revenez dans un instant.",
+      "allowance": "{{used}} sur {{limit}} utilisé",
+      "access": "Accès Premium",
+      "profile": {
+        "customization": "Personnalisation du profil"
+      },
+      "media": {
+        "higher_quality": "Médias de meilleure qualité"
+      },
+      "identity": {
+        "effects": "Effets d'identité"
+      },
+      "undx": {
+        "advanced": "UNDX avancé"
+      },
+      "creator_studio_pro": "Creator Studio Pro",
+      "founder_hub_access": "Accès au Founder Hub",
+      "premium_upload_limits": "Limites d'envoi plus élevées",
+      "priority_support": "Assistance prioritaire",
+      "early_access_features": "Accès anticipé aux nouveautés"
+    },
+    "notYet": {
+      "heading": "Bientôt inclus",
+      "note": "Ces éléments font partie de votre offre mais ne sont pas encore activés. Rien ici n'est facturé séparément."
+    },
+    "free": {
+      "heading": "Toujours gratuit",
+      "body": "Votre fil, vos publications, reels, statuts, messages, appels, vidéo en direct, profil, sécurité et récupération de compte restent gratuits. Premium ajoute à PulseSoc ; il n'enlève jamais rien."
     }
   }
 }

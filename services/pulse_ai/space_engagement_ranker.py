@@ -45,4 +45,3 @@ def summarize_engagement(row=None):
         "saves": saves,
         "read_time_seconds": read_time,
     }
-

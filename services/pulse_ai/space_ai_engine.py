@@ -11,6 +11,7 @@ import json
 
 from .space_engagement_ranker import compute_post_scores
 from .space_prompt_builder import DEFAULT_FORMATS, build_prompt_context
+from .content_policy import normalize_automated_post_type, sanitize_automated_text
 from .space_quality_guard import MIN_QUALITY_SCORE, passes_quality
 
 LIVE_SPACE_SLUGS = {
@@ -349,15 +350,15 @@ def diversity_score(candidate, recent_posts=None):
 
 
 def generate_space_post(space, post_type=None, memory=None, schedule_slot="morning", attempt=0):
-    post_type = post_type or DEFAULT_FORMATS[attempt % len(DEFAULT_FORMATS)]
+    post_type = normalize_automated_post_type(post_type or DEFAULT_FORMATS[attempt % len(DEFAULT_FORMATS)])
     context = build_prompt_context(space, post_type, memory=memory, schedule_slot=schedule_slot)
     seed = _seed(context["space_slug"], post_type, schedule_slot, memory=memory) + attempt
     topics = [topic for topic in context.get("topics", []) if topic not in set(context.get("recent_topics", [])[:4])] or context.get("topics", [])
     topic = _choice(topics, seed, attempt) or context["category"]
     hooks = [hook for hook in context.get("hooks", []) if hook not in set(context.get("avoid_phrases", [])[:4])] or context.get("hooks", [])
-    hook = _choice(hooks, seed, attempt) or f"{context['space_name']} intelligence drop:"
+    hook = sanitize_automated_text(_choice(hooks, seed, attempt) or f"{context['space_name']} intelligence drop:")
     structure = _structure_name(seed, attempt)
-    body = _body_for_type(context, topic, hook, seed, attempt)
+    body = sanitize_automated_text(_body_for_type(context, topic, hook, seed, attempt))
     tags = _tags(context, topic, post_type)
     quality_ok, quality = passes_quality(body, tags=tags, minimum=MIN_QUALITY_SCORE)
     scores = compute_post_scores(post_type, body, trust_score=space.get("trust_score"), activity_score=space.get("energy_score"))
@@ -377,7 +378,7 @@ def generate_space_post(space, post_type=None, memory=None, schedule_slot="morni
     return {
         "ok": quality_ok,
         "space_slug": context["space_slug"],
-        "title": f"{context['space_name']} · {post_type.replace('_', ' ').title()}",
+        "title": sanitize_automated_text(f"{context['space_name']} · {post_type.replace('_', ' ').title()}"),
         "body": body,
         "post_type": post_type,
         "tags": tags,

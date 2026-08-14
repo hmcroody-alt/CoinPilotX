@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { PulseProfile, profileWebUrl } from "../api/profile";
 import { colors } from "../theme/colors";
+import { premiumTheme } from "../theme/premiumTheme";
 import { progressTheme } from "../theme/progressTheme";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { sharePulseObject } from "../sharing/nativeShare";
@@ -29,7 +30,8 @@ export type ProfileModuleKey =
   | "events"
   | "business"
   | "memories"
-  | "progress";
+  | "progress"
+  | "premium";
 
 type ModuleDef = {
   key: ProfileModuleKey;
@@ -39,13 +41,39 @@ type ModuleDef = {
    * Fixed colour, overriding both `colors.accent` and the profile owner's
    * chosen `theme.accent_color`.
    *
-   * Only Progress uses this, and the exception is the point: every other tile
-   * is an ambient panel, while Progress is private to the owner and carries
-   * money. Inheriting the profile accent would make it one card among fourteen,
-   * and on a profile themed violet it would not even be distinguishable. See
-   * `theme/progressTheme.ts` for why violet and gold specifically.
+   * Only Progress and Premium use this, and the exception is the point: every
+   * other tile is an ambient panel, while these two are private to the owner
+   * and carry money. Inheriting the profile accent would make them one card
+   * among fifteen, and on a profile themed violet Progress would not even be
+   * distinguishable. See `theme/progressTheme.ts` and `theme/premiumTheme.ts`.
    */
   accent?: string;
+  /**
+   * Soft halo behind the icon. Premium only.
+   *
+   * A shadow rather than a brighter fill, and a static one rather than an
+   * animation: the tile has to read as the premium entry point without becoming
+   * the brightest thing on a dark profile, and a pulsing tile would be both
+   * cheap and a reduced-motion violation.
+   */
+  glow?: string;
+};
+
+/**
+ * Live state a tile can carry, supplied by the screen that knows it.
+ *
+ * `status` is a short micro-label under the tile name. `undefined` means "say
+ * nothing", which is deliberately different from an empty string: on a cold
+ * start the Premium tile must render with no status word rather than asserting
+ * a wrong one, so a paying member never watches their membership appear to
+ * vanish and come back.
+ */
+export type ProfileModuleState = {
+  status?: string;
+  /** Replaces the tile's accent for this state — amber for a billing problem. */
+  tint?: string;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 };
 
 const MODULES: ModuleDef[] = [
@@ -63,7 +91,10 @@ const MODULES: ModuleDef[] = [
   { key: "events", label: "Events", icon: "calendar-outline" },
   { key: "business", label: "Business", icon: "briefcase-outline" },
   { key: "memories", label: "Memories", icon: "time-outline" },
-  { key: "progress", label: "Progress", icon: "trending-up-outline", accent: progressTheme.violet }
+  { key: "progress", label: "Progress", icon: "trending-up-outline", accent: progressTheme.violet },
+  // Diamond, not a crown: a crown reads as rank over other members, which is
+  // exactly what this tile must not imply. Premium is an account, not a status.
+  { key: "premium", label: "Premium", icon: "diamond-outline", accent: premiumTheme.gold, glow: premiumTheme.glow }
 ];
 
 const MODULE_BY_KEY = MODULES.reduce<Record<ProfileModuleKey, ModuleDef>>((map, module) => {
@@ -103,6 +134,11 @@ type ProfileHeaderProps = {
    */
   moduleKeys?: ProfileModuleKey[];
   /**
+   * Per-tile live state. Only tiles the screen has an answer for appear here;
+   * everything else renders exactly as before.
+   */
+  moduleState?: Partial<Record<ProfileModuleKey, ProfileModuleState>>;
+  /**
    * First name of the profile owner when someone else is viewing, used to label
    * the grid ("Maria's Profile OS"). Empty on your own profile.
    */
@@ -140,6 +176,7 @@ export function ProfileHeader({
   onStatPress,
   onModulePress,
   moduleKeys,
+  moduleState,
   moduleOwnerName
 }: ProfileHeaderProps) {
   const modules = moduleKeys ? moduleKeys.map((key) => MODULE_BY_KEY[key]).filter(Boolean) : MODULES;
@@ -150,6 +187,7 @@ export function ProfileHeader({
   const accent = profile.theme?.accent_color || colors.accent;
   const tierLabel = premium ? String(profile.premium_status || "premium").replace(/_/g, " ") : "";
   const online = String(profile.account_status || "active").toLowerCase() === "active";
+  const automated = profile.automated === true || profile.account_type === "PULSESOC_AUTOMATED";
 
   const pulse = useRef(new Animated.Value(0)).current;
   const float1 = useRef(new Animated.Value(0)).current;
@@ -240,11 +278,22 @@ export function ProfileHeader({
           </View>
           <Text style={styles.handle} numberOfLines={1}>{handle ? `@${handle}` : "PulseSoc identity"}</Text>
           <View style={styles.badges}>
+            {automated ? <Badge label="AUTOMATED" icon="hardware-chip-outline" accent={colors.economy} /> : null}
             {verified ? <Badge label="Verified" icon="shield-checkmark" accent={accent} /> : null}
             {premium ? <Badge label={tierLabel || "Premium"} icon="sparkles" accent={colors.economy} /> : null}
             {profile.profile_visibility === "private" ? <Badge label="Private" icon="lock-closed" accent={colors.muted} /> : null}
             <Badge label={online ? "Active now" : "Away"} icon="ellipse" accent={online ? colors.safety : colors.muted} />
           </View>
+
+          {automated ? (
+            <View accessibilityLabel="Automated PulseSoc account disclosure" style={styles.automationDisclosure}>
+              <Text style={styles.automationLabel}>{profile.system_account_label || "Official PulseSoc System Account"}</Text>
+              <Text style={styles.automationTitle}>AUTOMATED PULSESOC ACCOUNT</Text>
+              <Text style={styles.automationBody}>{profile.automation_disclosure || "This account is operated automatically by PulseSoc. It is not a human user."}</Text>
+              <Text style={styles.automationTrustTitle}>Transparency &amp; Trust</Text>
+              <Text style={styles.automationBody}>{profile.transparency_disclosure || "Automated posts remain subject to PulseSoc safety and quality controls."}</Text>
+            </View>
+          ) : null}
 
           {profile.bio ? (
             <ContentTranslation
@@ -261,8 +310,8 @@ export function ProfileHeader({
         {/* Stats */}
         <View style={styles.stats} accessibilityLabel="Profile statistics">
           <Stat label="Posts" value={profile.post_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("posts"); }} />
-          <Stat label="Followers" value={profile.follower_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("followers"); }} />
-          <Stat label="Following" value={profile.following_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("following"); }} />
+          {!automated ? <Stat label="Followers" value={profile.follower_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("followers"); }} /> : null}
+          {!automated ? <Stat label="Following" value={profile.following_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("following"); }} /> : null}
           <Stat label="Media" value={profile.media_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("media"); }} />
         </View>
 
@@ -281,6 +330,15 @@ export function ProfileHeader({
                 previewImageUrl: profile.avatar_url
               }).catch(() => undefined); }} />
             </>
+          ) : automated ? (
+            <Action label="Share" icon="share-outline" primary accent={accent} onPress={() => { haptic(); sharePulseObject({
+              kind: "profile",
+              url: profileWebUrl(shareTarget),
+              title: profile.display_name || "PulseSoc Insight",
+              description: profile.automation_disclosure || profile.bio,
+              author: profile.display_name,
+              previewImageUrl: profile.avatar_url
+            }).catch(() => undefined); }} />
           ) : (
             <>
               <Action label="Message" icon="chatbubble-ellipses-outline" primary accent={accent} onPress={() => { haptic(); onMessage?.(); }} />
@@ -310,7 +368,13 @@ export function ProfileHeader({
         </View>
         <View style={styles.moduleGrid} accessibilityLabel="Profile modules">
           {modules.map((module) => (
-            <Module key={module.key} def={module} accent={module.accent || accent} onPress={() => { haptic(); onModulePress?.(module.key); }} />
+            <Module
+              key={module.key}
+              def={module}
+              accent={moduleState?.[module.key]?.tint || module.accent || accent}
+              state={moduleState?.[module.key]}
+              onPress={() => { haptic(); onModulePress?.(module.key); }}
+            />
           ))}
         </View>
       </View>
@@ -352,13 +416,32 @@ function Action({ label, icon, primary, selected, disabled, accent, onPress }: {
   );
 }
 
-function Module({ def, accent, onPress }: { def: ModuleDef; accent: string; onPress?: () => void }) {
+function Module({ def, accent, state, onPress }: { def: ModuleDef; accent: string; state?: ProfileModuleState; onPress?: () => void }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={def.label} style={({ pressed }) => [styles.module, pressed && styles.pressed]} onPress={onPress}>
-      <View style={[styles.moduleIcon, { borderColor: `${accent}55`, backgroundColor: `${accent}12` }]}>
+    <Pressable
+      accessibilityRole="button"
+      // A tile that carries state must announce the state, not just the noun.
+      // "Premium" alone tells a VoiceOver user nothing about whether they are
+      // subscribed, which is the entire question the tile exists to answer.
+      accessibilityLabel={state?.accessibilityLabel || def.label}
+      accessibilityHint={state?.accessibilityHint}
+      style={({ pressed }) => [styles.module, pressed && styles.pressed]}
+      onPress={onPress}
+    >
+      <View
+        style={[
+          styles.moduleIcon,
+          { borderColor: `${accent}55`, backgroundColor: `${accent}12` },
+          def.glow ? [styles.moduleGlow, { shadowColor: def.glow }] : null
+        ]}
+      >
         <Ionicons name={def.icon} size={22} color={accent} />
       </View>
       <Text style={styles.moduleLabel} numberOfLines={1}>{def.label}</Text>
+      {/* Absent, not empty: no badge says nothing, a wrong word says something. */}
+      {state?.status ? (
+        <Text style={[styles.moduleStatus, { color: accent }]} numberOfLines={1}>{state.status}</Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -404,6 +487,11 @@ const styles = createThemedStyles(() => ({
   badges: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
   badge: { alignItems: "center", borderRadius: 999, borderWidth: 1, flexDirection: "row", gap: 4, paddingHorizontal: 9, paddingVertical: 5 },
   badgeText: { fontSize: 11, fontWeight: "900", textTransform: "capitalize" },
+  automationDisclosure: { backgroundColor: "rgba(244, 183, 64, 0.08)", borderColor: "rgba(244, 183, 64, 0.45)", borderRadius: 14, borderWidth: 1, gap: 5, marginTop: 14, padding: 14 },
+  automationLabel: { color: "#f4c96b", fontSize: 13, fontWeight: "900" },
+  automationTitle: { color: colors.text, fontSize: 11, fontWeight: "900", letterSpacing: 0.6 },
+  automationTrustTitle: { color: colors.text, fontSize: 12, fontWeight: "900", marginTop: 6 },
+  automationBody: { color: colors.muted, fontSize: 13, lineHeight: 19 },
   bio: { color: colors.text, fontSize: 15, lineHeight: 22, marginTop: 12 },
   bioMuted: { color: colors.muted, fontSize: 15, lineHeight: 22, marginTop: 12 },
 
@@ -426,6 +514,10 @@ const styles = createThemedStyles(() => ({
   module: { alignItems: "center", gap: 7, marginBottom: 18, width: "25%" },
   moduleIcon: { alignItems: "center", borderRadius: 20, borderWidth: 1, height: 58, justifyContent: "center", width: 58 },
   moduleLabel: { color: colors.muted, fontSize: 11, fontWeight: "800" },
+  moduleStatus: { fontSize: 9, fontWeight: "900", letterSpacing: 0.5, marginTop: -3 },
+  // Elevation 0 on Android on purpose: the Material shadow is a drop shadow, so
+  // it would render as a grey smear under the tile rather than a gold halo.
+  moduleGlow: { elevation: 0, shadowOffset: { height: 0, width: 0 }, shadowOpacity: 0.55, shadowRadius: 10 },
 
   disabled: { opacity: 0.55 },
   pressed: { opacity: 0.7 }

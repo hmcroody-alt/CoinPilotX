@@ -1204,6 +1204,122 @@
       "applied": "適用しました。",
       "applyError": "このおすすめを適用できませんでした。",
       "openCampaign": "キャンペーンを開く"
+    },
+    "money": {
+      "layer": {
+        "payoutOverview": "出金の概要",
+        "processing": "処理中",
+        "moveMoney": "お金を動かす",
+        "payoutHistory": "出金",
+        "activity": "アクティビティ"
+      },
+      "overview": {
+        "available": "利用可能",
+        "availableNote": "確定済みで出金できる収益です。",
+        "processing": "処理中",
+        "lifetime": "累計収益",
+        "destination": "{{destination}} に送金",
+        "noDestination": "出金先はまだ登録されていません。",
+        "moreTitle": "その他",
+        "paidOutUnavailable": "累計出金額は単一の数値として提供されないため表示していません。出金一覧が完全な記録です。"
+      },
+      "payout": {
+        "stageLabel": "出金アカウント",
+        "enabled": "出金オン",
+        "disabled": "出金オフ",
+        "destinationLabel": "出金先",
+        "destinationNone": "決済事業者の参照番号のみを保存しており、口座番号は保存しません。",
+        "codesLabel": "決済事業者からの報告",
+        "stage": {
+          "unknown": "状態不明",
+          "not_started": "未設定",
+          "in_progress": "設定中",
+          "pending_verification": "確認待ち",
+          "blocked": "ブロック中",
+          "ready": "準備完了"
+        },
+        "actionStart": "出金を設定する",
+        "actionResume": "出金設定を完了する",
+        "actionRetryStatus": "状態を再確認する",
+        "actionManage": "出金アカウントを管理する",
+        "reasonReady": "出金アカウントは確認済みで、出金を受け取れます。",
+        "reasonUnknown": "ただいま出金アカウントに接続できず、準備できているか確認できません。しばらくしてからもう一度お試しください。",
+        "reasonNotStarted": "出金アカウントがまだ設定されていません。収益を PulseSoc から送るには必要です。",
+        "reasonInProgress": "出金設定は開始済みですが未完了です。残りの情報を提出するまで出金はオフのままです。",
+        "reasonPendingVerification": "決済事業者が情報を審査中です。連絡があるまで、あなたが行うことはありません。",
+        "reasonPastDue": "出金を実行する前に、決済事業者がさらに情報を必要としています。出金アカウントを開いて未対応の項目をご確認ください。",
+        "reasonUnderReview": "決済事業者が出金アカウントを審査中です。その間、出金は一時停止されます。",
+        "reasonPaused": "このアカウントの出金は一時停止中です。必要な対応はサポートにお問い合わせください。",
+        "reasonRejected": "決済事業者がこの出金アカウントを拒否しました。事業者側で解決するまで出金はできません。",
+        "reasonActionRequired": "出金を有効にする前に、決済事業者があなたの対応を待っています。",
+        "reasonBlockedOther": "決済事業者がこのアカウントの出金を無効にしています。理由は出金アカウントでご確認ください。"
+      },
+      "payouts": {
+        "empty": "出金はまだありません",
+        "emptyNote": "収益が確定して出金が実行されると、そのすべてがここに表示されます。",
+        "failureLabel": "失敗した理由",
+        "failureGeneric": "決済事業者が理由を示さずにこの出金を拒否しました。下記の参照番号はサポートが確認するものです。",
+        "noArrival": "着金日は表示できません。スケジュールは決済事業者が決めており、当社には通知されません。",
+        "openActivity": "アクティビティを開く",
+        "relatedTitle": "関連する収益",
+        "relatedNote": "出金は明細化されていないため、この出金に含まれる正確な収益は一覧にできません。アクティビティにすべての動きが表示されます。"
+      },
+      "processing": {
+        "amountLabel": "処理中",
+        "ordersTitle": "保留中のもの",
+        "empty": "保留中のものはありません",
+        "emptyNote": "確定前に保留された売上は、理由とともにここに表示されます。",
+        "noWallet": "販売者残高がまだないため、処理中のものはありません。",
+        "nothingProcessing": "現在処理中のものはありません。確定済みのものはすべて利用可能です。",
+        "noReleasePath": "これらの資金は決済事業者のスケジュールで確定します。申請の必要はなく、自動的に移動します。",
+        "awaitingRelease": "これらの資金はまだ確定処理中です。完了すると利用可能残高に移ります。"
+      },
+      "activity": {
+        "scopeNote": "これは販売者の元帳です。売上・出金・返金・保留を記録します。広告費とリワードは別の元帳で管理され、ここには表示されません。",
+        "emptyFeed": "アクティビティはまだありません",
+        "emptyFeedNote": "売上・出金・返金・保留は発生するたびにここに表示されます。",
+        "emptyFilter": "このフィルターに一致するものはありません",
+        "filter": {
+          "all": "すべて",
+          "income": "獲得",
+          "payout": "出金済み",
+          "held": "保留中",
+          "refund": "返金",
+          "spend": "手数料"
+        }
+      },
+      "kind": {
+        "income": "収益",
+        "spend": "手数料",
+        "escrow": "保留中",
+        "payout": "出金",
+        "refund": "返金",
+        "other": "その他"
+      },
+      "detail": {
+        "title": "詳細",
+        "amount": "金額",
+        "status": "状態",
+        "created": "作成日",
+        "updated": "更新日",
+        "reference": "参照番号",
+        "currency": "通貨",
+        "type": "種類",
+        "provider": "事業者",
+        "held": "保留中の金額はまだ使えませんが、あなたのものです。",
+        "staleNote": "これは一覧を読み込んだ時点の記録です。最新の状態は戻って引っ張って更新してください。",
+        "missingTitle": "表示できるものがありません",
+        "missingBody": "開く記録を受け取れませんでした。戻ってもう一度その行をタップしてください。"
+      },
+      "states": {
+        "errorTitle": "読み込めませんでした",
+        "errorBody": "お金は安全です。これは表示の問題であり、残高の問題ではありません。引っ張って更新して再試行してください。"
+      },
+      "a11y": {
+        "openLayer": "{{layer}} を開きます",
+        "openPayout": "出金の詳細を開きます",
+        "openEntry": "アクティビティの詳細を開きます"
+      }
     }
   },
   "discovery": {
@@ -1753,6 +1869,158 @@
         "isThereALimit": "上限はありますか？",
         "whenDoesItEnd": "チャレンジのあとはどうなりますか？"
       }
+    }
+  },
+  "premium": {
+    "loading": "メンバーシップを読み込んでいます…",
+    "loadError": "メンバーシップを読み込めませんでした。",
+    "retry": "再試行",
+    "privateNote": "これはあなただけに表示されます。",
+    "notVerification": "プレミアムはサブスクリプションです。本人確認ではありません。",
+    "tile": {
+      "status": {
+        "active": "有効",
+        "founder": "創設者",
+        "grace": "更新"
+      },
+      "hint": "プレミアムのプランと特典を開きます。",
+      "a11y": {
+        "none": "プレミアム。PulseSoc プレミアムのプランと特典を見る。",
+        "active": "プレミアム。サブスクリプション有効。プレミアムプランを管理する。",
+        "founder": "プレミアム。創設メンバー。プレミアム特典を管理する。",
+        "grace": "プレミアム。更新に対応が必要です。プレミアムプランを管理する。"
+      }
+    },
+    "header": {
+      "member": "プレミアムメンバー",
+      "founder": "創設メンバー",
+      "free": "PulseSoc プレミアム",
+      "founderNumber": "創設者 #{{number}}"
+    },
+    "status": {
+      "active": "有効",
+      "founder": "永久",
+      "grace": "更新待ち",
+      "hold": "アカウント保留中",
+      "expired": "終了",
+      "none": "未登録"
+    },
+    "blurb": {
+      "active": "プレミアム特典が有効です。",
+      "founder": "創設メンバーシップは期限切れにならず、請求もありません。",
+      "grace": "Apple が更新を再試行する間も特典は有効なままです。",
+      "hold": "アカウントの保留が解除されるまで特典は一時停止中です。",
+      "expired": "サブスクリプションは終了しました。いつでも再開できます。",
+      "none": "PulseSoc を応援して追加ツールを解放しましょう。アプリ本体は無料のままです。"
+    },
+    "notices": {
+      "account_hold": "アカウントが保留中のため、プレミアム特典は一時停止しています。",
+      "founder": "あなたは創設メンバーです。購入も更新も必要ありません。"
+    },
+    "plans": {
+      "heading": "プランを選択",
+      "headingAgain": "プレミアムを再開",
+      "loading": "プランを読み込んでいます…",
+      "monthly": "月額",
+      "annual": "年額",
+      "per": {
+        "monthly": "／月",
+        "annual": "／年"
+      },
+      "save": "{{percent}}％お得",
+      "unavailable": "現在プランを利用できません。",
+      "unavailableBody": "App Store から商品情報が返されませんでした。接続を確認して再試行してください。請求は発生していません。",
+      "terms": "App Store 経由で請求されます。Apple のサブスクリプション設定で解約するまで自動更新されます。"
+    },
+    "purchase": {
+      "start": "続ける",
+      "working": "処理中…",
+      "cancelled": "購入をキャンセルしました。",
+      "verified": "プレミアムになりました。ようこそ。",
+      "pending": "購入を処理中です。Apple の確認が取れ次第プレミアムが有効になります。",
+      "unavailable": "この端末では現在購入できません。"
+    },
+    "restore": {
+      "action": "購入を復元",
+      "hint": "購入済みのサブスクリプションを App Store で確認します。",
+      "working": "復元中…",
+      "restored_other": "{{count}} 件の購入を復元しました。",
+      "empty": "この Apple ID に復元できる購入はありません。",
+      "failed": "購入を復元できませんでした。",
+      "unavailable": "この端末では復元を利用できません。"
+    },
+    "manage": {
+      "action": "サブスクリプションを管理",
+      "hint": "App Store のサブスクリプション設定を開きます。",
+      "note": "解約とプラン変更は Apple が処理します。",
+      "failed": "サブスクリプション設定を開けませんでした。"
+    },
+    "billing": {
+      "heading": "サブスクリプション",
+      "plan": "プラン",
+      "provider": "請求元",
+      "status": "ステータス",
+      "renews": "更新日",
+      "expires": "終了日",
+      "cancelPending": "このサブスクリプションは終了予定で、更新されません。",
+      "none": "このメンバーシップの請求情報はありません。",
+      "founderNone": "創設メンバーシップ — 請求も更新もありません。"
+    },
+    "period": {
+      "monthly": "月額",
+      "annual": "年額",
+      "trial": "無料トライアル",
+      "grandfathered": "永久",
+      "unknown": "—"
+    },
+    "provider": {
+      "apple_iap": "Apple",
+      "stripe": "カード",
+      "unknown": "—"
+    },
+    "subStatus": {
+      "active": "有効",
+      "trialing": "トライアル中",
+      "grace": "更新待ち",
+      "past_due": "支払い失敗",
+      "canceled": "終了予定",
+      "cancelled": "終了予定",
+      "expired": "終了",
+      "revoked": "取り消し済み",
+      "paused": "一時停止中",
+      "unknown": "—"
+    },
+    "benefits": {
+      "heading": "含まれるもの",
+      "beta": "ベータ",
+      "empty": "特典を準備しています。しばらくしてからご確認ください。",
+      "allowance": "{{limit}} 中 {{used}} 使用",
+      "access": "プレミアムアクセス",
+      "profile": {
+        "customization": "プロフィールのカスタマイズ"
+      },
+      "media": {
+        "higher_quality": "高画質メディア"
+      },
+      "identity": {
+        "effects": "アイデンティティエフェクト"
+      },
+      "undx": {
+        "advanced": "UNDX アドバンス"
+      },
+      "creator_studio_pro": "Creator Studio Pro",
+      "founder_hub_access": "Founder Hub へのアクセス",
+      "premium_upload_limits": "アップロード上限の拡大",
+      "priority_support": "優先サポート",
+      "early_access_features": "新機能への先行アクセス"
+    },
+    "notYet": {
+      "heading": "プランに今後追加",
+      "note": "プランに含まれていますが、まだ有効になっていません。別途請求されることはありません。"
+    },
+    "free": {
+      "heading": "ずっと無料",
+      "body": "フィード、投稿、リール、ステータス、メッセージ、通話、ライブ配信、プロフィール、セキュリティ、アカウント復旧は無料のままです。プレミアムは PulseSoc に機能を足すもので、何かを取り上げることはありません。"
     }
   }
 }
