@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
 import { profileTargetFromAuthor } from "./profileTarget";
-import { CanonicalMediaRecord, mediaRecordForCache } from "../media/mediaContract";
+import { CanonicalMediaRecord, hasRenderableImage, hasRenderableMediaUrl, mediaRecordForCache } from "../media/mediaContract";
 import { buildCommentTree } from "../social/commentTree";
 import { observeSavedState } from "../social/savedStore";
 
@@ -632,6 +632,20 @@ export function mediaKind(media: PulseMedia) {
   if (type.includes("image") || /\.(jpg|jpeg|png|webp|gif)(\?|$)/.test(url)) return "image";
   if (type.includes("video") || /\.(mp4|mov|m3u8|webm)(\?|$)/.test(url)) return "video";
   return "file";
+}
+
+/**
+ * Renderability for a feed post's media, kind-aware. Still images must clear the
+ * strict `hasRenderableImage` gate (drawable URL, server-available, real
+ * dimensions) so a failed/skipped Insight image -- which the serializer still
+ * hands back with a populated `media_url` and zeroed dimensions -- never reserves
+ * a media box. Video/live keep the URL gate: a clip legitimately renders from a
+ * poster while its playback asset is still processing and carries no image dims.
+ */
+export function feedRenderableMedia(list: readonly PulseMedia[] | null | undefined): PulseMedia[] {
+  return (list || []).filter((media) =>
+    mediaKind(media) === "image" ? hasRenderableImage(media) : hasRenderableMediaUrl(media)
+  );
 }
 
 function normalizeAuthor(item: PulsePost): PulseAuthor {

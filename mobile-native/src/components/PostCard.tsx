@@ -3,13 +3,12 @@ import { ActivityIndicator, Alert, Animated, Image, Pressable, StyleSheet, Text,
 import { Audio, ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
-import { mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl, savablePostId } from "../api/feed";
+import { feedRenderableMedia, mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl, savablePostId } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { AttachedMusicPolicy, resolvePostAudioPolicy } from "../core/attachedMusicAudioPolicy";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { canonicalMediaPlaybackUrl, refreshCanonicalMediaAccess } from "../media/mediaAccess";
-import { renderableMedia } from "../media/mediaContract";
 import { useSavedState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { colors } from "../theme/colors";
@@ -359,7 +358,7 @@ export function PostCard({
           and reserve a full-bleed 4:5 box around nothing. And once an image that
           did have a URL 404s, `mediaFailed` drops the whole wrapper so not even
           the bleed margin survives. */}
-      {renderableMedia(post.media).length && !mediaFailed ? (
+      {feedRenderableMedia(post.media).length && !mediaFailed ? (
         <View style={[styles.mediaBleed, mediaBleedStyle]}>
           <MediaStrip
             post={post}
@@ -720,12 +719,12 @@ function MediaStrip({ post, active, motionEnabled, onReact, onMediaError }: { po
   const author = post.author || {};
   const likeMedia = onReact ? () => onReact(post, post.viewer_reaction || "love") : undefined;
   const renderable = useMemo(
-    () => (failedPostId === post.id ? [] : renderableMedia(post.media)),
+    () => (failedPostId === post.id ? [] : feedRenderableMedia(post.media)),
     [failedPostId, post.id, post.media]
   );
   const viewerItems = useMemo(
     () =>
-      renderableMedia(post.media).map((media) =>
+      feedRenderableMedia(post.media).map((media) =>
         mediaViewerItemFromPulseMedia(media, {
           title: post.title || "PulseSoc post media",
           subtitle: post.body || "PulseSoc media",

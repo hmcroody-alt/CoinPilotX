@@ -1,4 +1,4 @@
-import { hasRenderableMediaUrl, renderableMedia } from "../mediaContract";
+import { hasRenderableImage, hasRenderableMediaUrl, renderableMedia } from "../mediaContract";
 
 // The feed serializer emits a fully-shaped media object for every attached row.
 // A row whose upload never produced a URL therefore arrives looking like media
@@ -50,6 +50,46 @@ describe("hasRenderableMediaUrl", () => {
     expect(
       hasRenderableMediaUrl({ media_type: "video", media_url: "", poster_url: "https://cdn.example/p.jpg" })
     ).toBe(true);
+  });
+});
+
+describe("hasRenderableImage", () => {
+  const good = { media_url: "https://cdn.example/a.png", valid_url: "https://cdn.example/a.png", width: 1024, height: 1280 };
+
+  it("accepts an available image with real dimensions", () => {
+    expect(hasRenderableImage(good)).toBe(true);
+  });
+
+  it("accepts an image sized by aspect_ratio alone", () => {
+    expect(hasRenderableImage({ media_url: "https://cdn.example/a.png", aspect_ratio: 0.8 })).toBe(true);
+  });
+
+  it("rejects the serializer's failed-image signature: url present, unavailable, zero dims", () => {
+    // media_url is populated unconditionally by the serializer; valid_url is
+    // blanked and is_available flips false when the source never materialized.
+    expect(
+      hasRenderableImage({
+        media_url: "https://cdn.example/failed.png",
+        valid_url: "",
+        is_available: false,
+        width: 0,
+        height: 0
+      })
+    ).toBe(false);
+  });
+
+  it("rejects a url-bearing image with zero dimensions and no aspect ratio", () => {
+    expect(hasRenderableImage({ media_url: "https://cdn.example/a.png", width: 0, height: 0 })).toBe(false);
+  });
+
+  it("rejects when there is no drawable url at all", () => {
+    expect(hasRenderableImage({ media_url: "", width: 1024, height: 1280 })).toBe(false);
+    expect(hasRenderableImage(null)).toBe(false);
+    expect(hasRenderableImage(undefined)).toBe(false);
+  });
+
+  it("treats an explicit is_available:false as unrenderable even with dimensions", () => {
+    expect(hasRenderableImage({ ...good, is_available: false })).toBe(false);
   });
 });
 

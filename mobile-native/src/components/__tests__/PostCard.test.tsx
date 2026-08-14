@@ -138,6 +138,46 @@ describe("PostCard blank-media collapse", () => {
     expect(queryByTestId("home-feed-media-42-0")).toBeNull();
   });
 
+  it("renders no media for the serializer's failed-image signature, without waiting on onError", () => {
+    // This is the owner screenshot: an automated Insight post whose image never
+    // generated. The feed serializer still hands back a populated `media_url`
+    // (source path, unconditional) but blanks `valid_url`, marks the row
+    // `is_available: false`, and zeroes the dimensions. The URL gate alone would
+    // mount an <Image> around the broken source and only collapse after a load
+    // error. The image gate refuses to mount it at all -- no box, no flash.
+    const { queryByTestId, getAllByText } = render(
+      <PostCard
+        post={basePost({
+          body: "Automated insight, image failed",
+          media: [
+            {
+              id: 13,
+              media_type: "image",
+              media_url: "https://cdn.example/insight-13.png",
+              valid_url: "",
+              is_available: false,
+              width: 0,
+              height: 0
+            }
+          ]
+        })}
+      />
+    );
+    expect(queryByTestId("home-feed-media-42-0")).toBeNull();
+    expect(getAllByText("Automated insight, image failed").length).toBeGreaterThan(0);
+  });
+
+  it("renders no media for an image carrying a url but zero dimensions and no aspect", () => {
+    const { queryByTestId } = render(
+      <PostCard
+        post={basePost({
+          media: [{ id: 14, media_type: "image", media_url: "https://cdn.example/nodims.png", width: 0, height: 0 }]
+        })}
+      />
+    );
+    expect(queryByTestId("home-feed-media-42-0")).toBeNull();
+  });
+
   it("renders media when the only usable url is a gate-honored field the resolver used to ignore", () => {
     // The renderability gate accepts `valid_url`/`cdn_url`/`mux_hls_url`, but the
     // display resolver used to read none of them -- so this record passed the
