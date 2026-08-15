@@ -103807,6 +103807,14 @@ def _init_db_impl():
         ("sentiment", "TEXT"),
         ("risk_score", "INTEGER DEFAULT 0"),
         ("engagement_score", "REAL DEFAULT 0"),
+        # Engagement counters incremented by the reel view/share routes and read
+        # back by the post serializer. Neither was in the CREATE TABLE nor in
+        # this list, so production Postgres 500'd with UndefinedColumn on every
+        # POST /api/pulse/reels/<id>/view and .../share. Reads survived only
+        # because the serializer defaults a missing key to 0 -- the writes had
+        # nowhere to land, so both counters were permanently stuck at zero.
+        ("view_count", "INTEGER DEFAULT 0"),
+        ("share_count", "INTEGER DEFAULT 0"),
         ("pinned_at", "TEXT"),
         ("pinned_by", "INTEGER"),
         ("repost_of_post_id", "INTEGER"),
