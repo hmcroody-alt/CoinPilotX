@@ -32,6 +32,7 @@ from services import presence_service as ps
 
 cur = cursor()
 harness.bootstrap_users(cur, 8)
+ps.reset_schema_cache()
 ps.ensure_schema(cur, conn())
 
 ALICE, BOB, CARL, DANA = 1, 2, 3, 4
