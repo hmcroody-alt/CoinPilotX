@@ -9,7 +9,6 @@ import { isMotionAvailable } from "../../spatial/motion/motionAvailability";
 import { MotionOnboarding } from "../../spatial/motion/MotionOnboarding";
 import { hydrateMotionSettings, updateMotionSettings, useMotionSettings } from "../../spatial/motion/motionSettings";
 import type { MotionMode, MotionSensitivity } from "../../spatial/motion/motionStateMachine";
-import type { MotionScope } from "../../spatial/motion/motionSettings";
 
 /** The OS screen reader is named differently per platform; using the wrong name reads as a bug. */
 const SCREEN_READER_NAME = Platform.select({ ios: "VoiceOver", android: "TalkBack", default: "Screen reader" });
@@ -191,6 +190,12 @@ export function AccessibilitySettingsScreen() {
  * settings store that `useTiltNavigation` reads; nothing touches sensors
  * directly. Enabling a motion mode for the first time routes through the
  * onboarding flow — motion never activates from a bare toggle.
+ *
+ * Reels is the only destination these settings govern. An earlier build let the
+ * user choose between Feed, Reels or both; Home Feed motion was withdrawn as a
+ * product decision, so the choice no longer exists and the copy names Reels
+ * explicitly rather than saying "pages". Devices still holding a scope value
+ * are migrated on read — see `LegacyMotionScope` in motionSettings.
  */
 function SpatialMotionSection() {
   const settings = useMotionSettings();
@@ -214,7 +219,7 @@ function SpatialMotionSection() {
     <>
       <SettingsSection
         title="Spatial Motion"
-        description="Optional phone-tilt navigation for the Feed and Reels. Swiping always works — tilt is never required."
+        description="Optional phone-tilt navigation for Reels. Swiping always works — tilt is never required."
         footnote={
           sensorAvailable === false
             ? "This device did not report a motion sensor, so tilt and parallax are unavailable here. Your choices are saved for devices that support them."
@@ -253,13 +258,13 @@ function SpatialMotionSection() {
                 {
                   value: "parallax",
                   label: "Swipe + Parallax",
-                  description: "Tilt adds a subtle depth preview. Pages never turn from tilt.",
+                  description: "Tilt adds a subtle depth preview. Reels never change from tilt.",
                   icon: "layers-outline"
                 },
                 {
                   value: "tilt",
                   label: "Swipe + Tilt",
-                  description: "A sustained tilt turns the page, with a haptic tick.",
+                  description: "A sustained tilt moves to the next Reel, with a haptic tick.",
                   icon: "sync-outline"
                 }
               ]}
@@ -275,21 +280,10 @@ function SpatialMotionSection() {
                 { value: "high", label: "High sensitivity", description: "Smaller, quicker tilt commits." }
               ]}
             />
-            <SettingsSelect<MotionScope>
-              testID="spatial-motion-scope"
-              value={settings.scope}
-              disabled={!motionOn}
-              onChange={(next) => void updateMotionSettings({ scope: next })}
-              options={[
-                { value: "both", label: "Feed and Reels", description: "Tilt works on both surfaces." },
-                { value: "feed", label: "Feed only", description: "Reels stays touch-only." },
-                { value: "reels", label: "Reels only", description: "The Feed stays touch-only." }
-              ]}
-            />
             <SettingsSwitch
               testID="spatial-motion-haptics"
               title="Tilt haptics"
-              subtitle="A small tick confirms each tilt page-turn."
+              subtitle="A small tick confirms each tilt move between Reels."
               icon="phone-portrait-outline"
               value={settings.hapticsEnabled}
               disabled={!motionOn}

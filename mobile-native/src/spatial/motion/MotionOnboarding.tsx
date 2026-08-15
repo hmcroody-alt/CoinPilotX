@@ -23,6 +23,10 @@ import { updateMotionSettings, useMotionSettings } from "./motionSettings";
  *
  * Also serves as the replayable tutorial from Settings → Accessibility →
  * Spatial Motion ("Replay tutorial").
+ *
+ * Every screen names Reels. Motion applies to Reels and nowhere else — Home
+ * Feed motion was tested and then withdrawn — so the copy must not leave the
+ * reader expecting tilt to do something on the Feed and wondering what broke.
  */
 
 type Step = "intro" | "privacy" | "mode" | "calibrate";
@@ -95,7 +99,7 @@ export function MotionOnboarding({ visible, onClose }: { visible: boolean; onClo
           <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
             {step === "intro" ? (
               <>
-                <Text style={styles.title}>Navigate with a tilt</Text>
+                <Text style={styles.title}>Move through Reels with a tilt</Text>
                 <Animated.View
                   style={[
                     styles.demoCard,
@@ -112,9 +116,9 @@ export function MotionOnboarding({ visible, onClose }: { visible: boolean; onClo
                   <Ionicons name="phone-portrait-outline" size={34} color={colors.accent} />
                 </Animated.View>
                 <Text style={styles.paragraph}>
-                  A slight tilt previews the next page with a touch of depth. Hold a firmer tilt briefly and the page
-                  turns, with a small haptic tick. Swiping always works exactly as before — tilt is an extra, never a
-                  requirement.
+                  In Reels, a slight tilt previews the next reel with a touch of depth. Hold a firmer tilt briefly and
+                  it moves, with a small haptic tick. Swiping always works exactly as before — tilt is an extra, never a
+                  requirement, and it does nothing anywhere else in PulseSoc.
                 </Text>
                 <Text style={styles.paragraph}>
                   Touch always wins: the moment your finger is on the screen, tilt stands down. It also pauses while you
@@ -130,8 +134,8 @@ export function MotionOnboarding({ visible, onClose }: { visible: boolean; onClo
                   <Ionicons name="lock-closed-outline" size={34} color={colors.accent} />
                 </View>
                 <Text style={styles.paragraph}>
-                  Motion data is processed entirely on this device, in memory, only while a tilt-enabled screen is open.
-                  Raw sensor readings are never stored and never leave your phone.
+                  Motion data is processed entirely on this device, in memory, and only while Reels is open. The
+                  sensor is not running anywhere else. Raw readings are never stored and never leave your phone.
                 </Text>
                 <Text style={styles.paragraph}>
                   Only your preferences are saved: the mode you pick, sensitivity, and your calibrated holding angle.
@@ -152,7 +156,7 @@ export function MotionOnboarding({ visible, onClose }: { visible: boolean; onClo
                 />
                 <ModeOption
                   title="Swipe + Parallax"
-                  subtitle="Tilt adds a subtle depth preview. Pages never turn from tilt."
+                  subtitle="Tilt adds a subtle depth preview. Reels never change from tilt."
                   icon="layers-outline"
                   selected={chosenMode === "parallax"}
                   testID="motion-onboarding-mode-parallax"
@@ -160,7 +164,7 @@ export function MotionOnboarding({ visible, onClose }: { visible: boolean; onClo
                 />
                 <ModeOption
                   title="Swipe + Tilt"
-                  subtitle="A sustained tilt turns the page, with a haptic tick. Swipe still always works."
+                  subtitle="A sustained tilt moves to the next reel, with a haptic tick. Swipe still always works."
                   icon="sync-outline"
                   selected={chosenMode === "tilt"}
                   testID="motion-onboarding-mode-tilt"
@@ -187,7 +191,7 @@ export function MotionOnboarding({ visible, onClose }: { visible: boolean; onClo
                 ) : (
                   <>
                     <Text style={styles.paragraph}>
-                      Hold your phone the way you naturally do. The first moments on the feed capture that angle as your
+                      Hold your phone the way you naturally do. The first moments in Reels capture that angle as your
                       neutral position, so "no tilt" means your comfortable grip — not perfectly upright.
                     </Text>
                     <Text style={styles.paragraph}>

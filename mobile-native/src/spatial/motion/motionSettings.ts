@@ -13,13 +13,36 @@ import type { MotionMode, MotionSensitivity } from "./motionStateMachine";
  *
  * Privacy: only these high-level preferences are stored. Raw sensor data is
  * processed in memory and never persisted or transmitted (mission §20).
+ *
+ * There is no longer a scope preference. Reels is the only surface that runs
+ * motion, so "where does tilt apply" is not a question the user is asked. See
+ * {@link LegacyMotionScope} for what happens to values already on disk.
  */
-export type MotionScope = "feed" | "reels" | "both";
+
+/**
+ * The `scope` values written by builds that offered Home Feed motion.
+ *
+ * Retained only to READ old records. Home Feed motion shipped to testers and was
+ * then withdrawn as a product decision, so a real device can hold any of these.
+ * Migration rules, applied in {@link sanitize} on every read:
+ *
+ *   - `"feed"` — the user opted into motion on the Feed *and nowhere else*.
+ *     Carrying that consent over to Reels would turn tilt on somewhere they
+ *     never agreed to, so their mode drops to `swipe-only`. Re-enabling is one
+ *     tap in Settings; an unexpected page-turn is not undoable in the same way.
+ *   - `"reels"` / `"both"` — Reels motion was already wanted. Mode is kept.
+ *   - anything else, including absent — no opinion on record, mode is kept.
+ *
+ * `onboarded` survives every branch, so nobody is re-prompted for a decision
+ * they already made. The migration needs no version marker to stay idempotent:
+ * the first write after a read persists an object with no `scope` key, and a
+ * record without `scope` takes the no-op branch from then on.
+ */
+export type LegacyMotionScope = "feed" | "reels" | "both";
 
 export interface MotionSettings {
   mode: MotionMode;
   sensitivity: MotionSensitivity;
-  scope: MotionScope;
   hapticsEnabled: boolean;
   /** Calibrated neutral roll baseline, radians. Null = not calibrated yet. */
   neutralBaselineRad: number | null;
@@ -30,7 +53,6 @@ export interface MotionSettings {
 export const DEFAULT_MOTION_SETTINGS: MotionSettings = {
   mode: "swipe-only",
   sensitivity: "medium",
-  scope: "both",
   hapticsEnabled: true,
   neutralBaselineRad: null,
   onboarded: false
@@ -48,12 +70,14 @@ function emit() {
 
 function sanitize(raw: unknown): MotionSettings {
   if (!raw || typeof raw !== "object") return DEFAULT_MOTION_SETTINGS;
-  const value = raw as Partial<MotionSettings>;
+  const value = raw as Partial<MotionSettings> & { scope?: unknown };
+  const mode: MotionMode =
+    value.mode === "tilt" || value.mode === "parallax" ? value.mode : "swipe-only";
   return {
-    mode: value.mode === "tilt" || value.mode === "parallax" ? value.mode : "swipe-only",
+    // Feed-only consent does not transfer to Reels — see LegacyMotionScope.
+    mode: value.scope === "feed" ? "swipe-only" : mode,
     sensitivity:
       value.sensitivity === "low" || value.sensitivity === "high" ? value.sensitivity : "medium",
-    scope: value.scope === "feed" || value.scope === "reels" ? value.scope : "both",
     hapticsEnabled: value.hapticsEnabled !== false,
     neutralBaselineRad:
       typeof value.neutralBaselineRad === "number" && Number.isFinite(value.neutralBaselineRad)
