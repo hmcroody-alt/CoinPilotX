@@ -1,6 +1,6 @@
 # PULSESOC SECURITY VENDOR CONSOLIDATION REPORT
 
-**Assessment date:** 2026-08-14  
+**Assessment date:** 2026-08-14
 **Scope:** authenticated Cloudflare account and `coinpilotx.app`; Sentinel is
 prepared but external intelligence remains fail-closed and disabled by default.
 
