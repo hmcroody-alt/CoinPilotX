@@ -85,7 +85,49 @@ def test_second_call_is_latched_and_still_works():
     _assert(not result.get("filled"), "unexpected fill on an empty database")
 
 
+def test_ensure_runs_on_its_own_connection_so_the_ddl_commits():
+    """The bootstrap must let ensure_schema OWN its connection.
+
+    `schema.ensure_schema` commits only `if owned` -- i.e. only when it opened
+    the connection itself -- because callers are invited to compose it into a
+    larger transaction. Hand it the caller's connection and the CREATE TABLEs
+    execute but are never committed. On PostgreSQL DDL is transactional, and the
+    ordinary no-placement path returns without committing and then closes, so
+    every table is rolled back and the next request starts from nothing again.
+
+    SQLite cannot express this failure: it autocommits DDL, so the behavioural
+    test above passes whether or not the commit happens. That is exactly how the
+    first version of this fix shipped green and stayed a no-op in production --
+    made worse by the latch, which recorded success and stopped any retry.
+
+    So assert the mechanism rather than the outcome: ensure_schema is called
+    with no caller connection.
+    """
+    seen = []
+    original = deliv._svc.ensure_schema
+
+    def _spy(conn=None):
+        seen.append(conn)
+        return original(conn)
+
+    deliv._svc.ensure_schema = _spy
+    deliv._SCHEMA_READY = False
+    try:
+        deliv.request_placement(
+            viewer_user_id=4244, placement="feed", request={"request_id": "boot-3"})
+    finally:
+        deliv._svc.ensure_schema = original
+        deliv._SCHEMA_READY = True
+
+    _assert(seen, "ensure_schema was never called; the bootstrap did not run")
+    _assert(seen[0] is None,
+            "ensure_schema was handed a caller connection (%r), so it skips its "
+            "commit and the DDL is rolled back when that connection closes on "
+            "PostgreSQL" % (seen[0],))
+
+
 if __name__ == "__main__":
     test_delivery_bootstraps_its_own_schema()
     test_second_call_is_latched_and_still_works()
+    test_ensure_runs_on_its_own_connection_so_the_ddl_commits()
     print("OK ad delivery schema bootstrap")

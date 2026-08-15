@@ -58,15 +58,24 @@ SPONSORED_LABEL = "Sponsored"
 # subsystem's own schema at its own entry point removes the dependency on which
 # URL happened to be requested first. Idempotent (CREATE TABLE IF NOT EXISTS)
 # and latched, so this costs one guarded call per process, not per request.
+#
+# It must run on its OWN connection. ``schema.ensure_schema`` commits only when
+# it owns the connection ("so callers can compose it into a larger transaction"),
+# so handing it the caller's conn creates the DDL without committing it. On
+# PostgreSQL DDL is transactional, and the common no-placement path returns
+# without committing and then closes -- silently rolling every CREATE TABLE
+# back. SQLite autocommits DDL and hides this completely, so the local test goes
+# green while production stays empty. Passing None is what makes the tables
+# durable; the extra short-lived connection is paid once per process.
 _SCHEMA_READY = False
 
 
-def _ensure_schema_once(conn) -> None:
+def _ensure_schema_once() -> None:
     global _SCHEMA_READY
     if _SCHEMA_READY:
         return
     try:
-        _svc.ensure_schema(conn)
+        _svc.ensure_schema()
         _SCHEMA_READY = True
     except Exception:
         # Never convert a schema hiccup into a failed ad request: leave the latch
@@ -254,11 +263,14 @@ def request_placement(viewer_user_id: Any, placement: Any, *,
         rid = request.get("request_id")
         request_ref = str(rid)[:120] if rid not in (None, "") else None
 
+    # Before the connection is opened, so no transaction snapshot can predate
+    # the DDL and fail to see the tables it just committed.
+    _ensure_schema_once()
+
     owned = conn is None
     if owned:
         conn = db.connect()
     try:
-        _ensure_schema_once(conn)
         if _request_rate_exceeded(conn, subject):
             raise AdvertisingError(
                 "Too many delivery requests.", 429, "rate_limited")
