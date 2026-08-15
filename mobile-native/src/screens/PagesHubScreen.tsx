@@ -29,6 +29,16 @@ import { createThemedStyles } from "../theme/themedStyles";
 type Props = NativeStackScreenProps<RootStackParamList, "PagesHub">;
 
 /**
+ * Page types whose management continues into Business OS. A Presence answers
+ * WHO the identity is; Business OS is HOW it operates — this hub links the
+ * two, it never embeds Business OS features here.
+ */
+const BUSINESS_TYPES = new Set([
+  "BUSINESS", "BRAND", "STORE", "RESTAURANT", "PROFESSIONAL_SERVICE",
+  "LOCAL_BUSINESS", "NONPROFIT", "ORGANIZATION", "MEDIA", "VENUE", "EDUCATION"
+]);
+
+/**
  * Page OS hub — every page the signed-in user belongs to, with management for
  * the selected one. Management surfaces route into the EXISTING canonical
  * systems (Advertising, Marketplace manager, Payments); this screen links,
@@ -157,12 +167,12 @@ export function PagesHubScreen({ route, navigation }: Props) {
         style={styles.createButton}
         onPress={() => navigation.navigate("PageCreate")}
       >
-        <Text style={styles.createButtonText}>+ Create a Page</Text>
+        <Text style={styles.createButtonText}>+ Create a Presence</Text>
       </Pressable>
 
       {!pages.length ? (
         <Text style={styles.empty}>
-          You don't manage any pages yet. Create one for your artist project, business or
+          You don't manage any presences yet. Create one for your artist project, business or
           organization — your personal account stays exactly as it is.
         </Text>
       ) : null}
@@ -209,6 +219,15 @@ export function PagesHubScreen({ route, navigation }: Props) {
             >
               <Text style={styles.actionText}>View public page</Text>
             </Pressable>
+            {manage && BUSINESS_TYPES.has(selected.page_type) ? (
+              <Pressable
+                accessibilityRole="button"
+                style={styles.action}
+                onPress={() => navigation.navigate("BusinessOs", { title: selected.name })}
+              >
+                <Text style={styles.actionText}>Open Business OS</Text>
+              </Pressable>
+            ) : null}
             {capabilities.has("manage_ads") ? (
               <Pressable
                 accessibilityRole="button"

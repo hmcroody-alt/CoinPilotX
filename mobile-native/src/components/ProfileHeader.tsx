@@ -6,6 +6,7 @@ import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from "reac
 import { PulseProfile, profileWebUrl } from "../api/profile";
 import { colors } from "../theme/colors";
 import { premiumTheme } from "../theme/premiumTheme";
+import { presenceTheme } from "../theme/presenceTheme";
 import { progressTheme } from "../theme/progressTheme";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { sharePulseObject } from "../sharing/nativeShare";
@@ -29,6 +30,7 @@ export type ProfileModuleKey =
   | "marketplace"
   | "events"
   | "business"
+  | "presence"
   | "memories"
   | "progress"
   | "premium";
@@ -90,6 +92,10 @@ const MODULES: ModuleDef[] = [
   { key: "marketplace", label: "Marketplace", icon: "storefront-outline" },
   { key: "events", label: "Events", icon: "calendar-outline" },
   { key: "business", label: "Business", icon: "briefcase-outline" },
+  // Fixed brand teal + static glow, like Progress/Premium survive the accent
+  // override: Presence is the door to the member's professional identities and
+  // must stay legible on any profile theme. Id-card icon: identity, not rank.
+  { key: "presence", label: "Presence", icon: "id-card-outline", accent: presenceTheme.teal, glow: presenceTheme.glow },
   { key: "memories", label: "Memories", icon: "time-outline" },
   { key: "progress", label: "Progress", icon: "trending-up-outline", accent: progressTheme.violet },
   // Diamond, not a crown: a crown reads as rank over other members, which is

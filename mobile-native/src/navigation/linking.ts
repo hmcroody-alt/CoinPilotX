@@ -242,6 +242,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
       },
       // Page OS. Order matters: the static create/hub paths must be declared
       // before the ":handle" catch-all so "create" never resolves as a handle.
+      Presence: "pulse/presence",
       PageCreate: "pulse/pages/create",
       PagesHub: "pulse/pages",
       Page: {

@@ -351,10 +351,19 @@ export type RootStackParamList = {
    * (`/pulse/pages/@handle`) and in-app navigation share one destination.
    */
   Page: { handle?: string; pageId?: number; title?: string } | undefined;
-  /** Page creation flow: type → name → handle → details → owner confirmation. */
-  PageCreate: undefined;
+  /**
+   * Page creation flow: identity → details → review. `flavor` presets the
+   * wizard for the Presence entry points (artist vs business categories);
+   * without it the generic 16-type grid is offered.
+   */
+  PageCreate: { flavor?: "artist" | "business" } | undefined;
   /** My pages + role-gated management, linking into existing canonical systems. */
   PagesHub: { focusPageId?: number } | undefined;
+  /**
+   * Presence Home — the Profile OS entry to the member's professional
+   * identities (artist / business), all backed by the canonical Page OS.
+   */
+  Presence: undefined;
   ProfileDetail: {
     profileKey?: string;
     userId?: number;

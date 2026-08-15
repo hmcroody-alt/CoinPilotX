@@ -32,10 +32,10 @@ beforeAll(async () => {
 describe("navigator header titles", () => {
   it("finds the title options it is meant to be checking", () => {
     // A refactor that changed the `options={{ title: ... }}` shape would make
-    // every assertion below vacuously pass. 106 stack screens (incl. the three
-    // Page OS routes) + 14 tabs, plus the `title` param the header passes when
-    // opening the activity inbox.
-    expect(TITLE_OPTIONS.length).toBe(123);
+    // every assertion below vacuously pass. 107 stack screens (incl. the three
+    // Page OS routes and the Presence hub) + 14 tabs, plus the `title` param
+    // the header passes when opening the activity inbox.
+    expect(TITLE_OPTIONS.length).toBe(124);
   });
 
   it("has no hardcoded string literal titles", () => {

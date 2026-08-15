@@ -158,6 +158,21 @@ const TILES: Record<ProfileModuleKey, TileDef> = {
     // than any Business OS control.
     visitor: (context) => route("BusinessBuyerPreview", context, { sellerUserId: numericId(context.profileOwnerId) })
   },
+  presence: {
+    key: "presence",
+    noun: "Presence",
+    // Presence Home: create and manage the member's professional identities
+    // (artist / business / organization — the canonical Page OS underneath).
+    owner: () => ({ kind: "route", name: "Presence" }),
+    /**
+     * Hidden from visitors by design, not by gap. The surface behind this tile
+     * is a management console: every Presence the signed-in member is
+     * authorized on, with edit/status/team controls. A visitor discovers
+     * someone's public identities through their public pages
+     * (`pulse/pages/:handle`), never through another member's manager.
+     */
+    visitor: null
+  },
   memories: {
     key: "memories",
     noun: "Memories",
@@ -232,6 +247,9 @@ export const PROFILE_OS_TILE_ORDER: ProfileModuleKey[] = [
   "marketplace",
   "events",
   "business",
+  // Directly after Business: the two tiles answer adjacent questions — "how do
+  // I operate my business" and "who am I publicly". Fixed teal, own glow.
+  "presence",
   "memories",
   // Last in the grid, first thing a member is likely to open: the tile carries
   // live state, so it is the only one whose label changes as they make progress.

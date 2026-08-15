@@ -194,7 +194,8 @@
       "verificationCenter": "Centre de vérification",
       "page": "Page",
       "createPage": "Créer une page",
-      "yourPages": "Vos pages"
+      "yourPages": "Vos pages",
+      "presence": "Présence"
     },
     "navSubtitles": {
       "missionControl": "Centre de pilotage",

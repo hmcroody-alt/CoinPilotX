@@ -194,7 +194,8 @@
       "verificationCenter": "인증 센터",
       "page": "페이지",
       "createPage": "페이지 만들기",
-      "yourPages": "내 페이지"
+      "yourPages": "내 페이지",
+      "presence": "프레즌스"
     },
     "navSubtitles": {
       "missionControl": "관제 센터",

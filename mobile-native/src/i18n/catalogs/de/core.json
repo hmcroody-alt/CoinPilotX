@@ -194,7 +194,8 @@
       "verificationCenter": "Verifizierungscenter",
       "page": "Seite",
       "createPage": "Seite erstellen",
-      "yourPages": "Deine Seiten"
+      "yourPages": "Deine Seiten",
+      "presence": "Präsenz"
     },
     "navSubtitles": {
       "missionControl": "Einsatzzentrale",
