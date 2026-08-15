@@ -1,6 +1,8 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   FlatList,
   Image,
   Pressable,
@@ -8,15 +10,21 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View
 } from "react-native";
 import {
+  createGroup,
+  createRoom,
+  deleteGroup,
+  deleteRoom,
   getGroupDetail,
   joinGroup,
   joinRoom,
   leaveGroup,
   listGroups,
   listRooms,
+  manageRoom,
   loadCachedGroupDetail,
   loadCachedGroups,
   openGroupChat,
@@ -29,6 +37,7 @@ import {
   PulseRoomParticipant,
   reportGroup
 } from "../api/groups";
+import { CommunityCreateIntent, takeCommunityCreateIntent } from "../community/communityCreateIntent";
 import { PulseCommandAction, PulseCommandHeader, PulseCommandPanel, PulseCommandSearch } from "../components/PulseCommand";
 import { LogiNexusStatePanel } from "../components/Screen";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
@@ -82,6 +91,7 @@ export function GroupsScreen({ route, navigation }: Props) {
   const [offline, setOffline] = useState(false);
   const [busyKey, setBusyKey] = useState("");
   const [error, setError] = useState("");
+  const [createKind, setCreateKind] = useState<CommunityCreateIntent | null>(null);
 
   async function load(mode: "initial" | "refresh" | "more" | "search" = "initial", nextQuery = query) {
     if (mode === "more" && (!hasMore || loadingMore)) return;
@@ -138,6 +148,11 @@ export function GroupsScreen({ route, navigation }: Props) {
     const timer = setTimeout(() => load("search", query).catch(() => undefined), 320);
     return () => clearTimeout(timer);
   }, [query]);
+
+  useFocusEffect(useCallback(() => {
+    const intent = takeCommunityCreateIntent();
+    if (intent) setCreateKind(intent);
+  }, []));
 
   const categories = useMemo(() => Array.from(new Set(groups.map((group) => group.category || "Community"))).slice(0, 8), [groups]);
 
@@ -205,6 +220,28 @@ export function GroupsScreen({ route, navigation }: Props) {
     }
   }
 
+  function confirmDeleteGroup(group: PulseGroup) {
+    Alert.alert("Delete group?", "This archives its community conversation and removes it from active discovery.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => {
+        setBusyKey(`delete-${group.slug}`);
+        deleteGroup(group.slug).then(() => { setSelected(null); return load("refresh"); }).catch((cause) => setError(cause instanceof Error ? cause.message : "Group could not be deleted.")).finally(() => setBusyKey(""));
+      } }
+    ]);
+  }
+
+  async function handleRoomLifecycle(room: PulseRoom, action: "archive" | "delete") {
+    setBusyKey(`${action}-${room.id}`);
+    try {
+      if (action === "delete") await deleteRoom(room.room_id || room.id);
+      else await manageRoom(room.room_id || room.id, "archive");
+      setSelectedRoom(null);
+      await refreshRooms();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Room could not be updated.");
+    } finally { setBusyKey(""); }
+  }
+
   function openRoomDetail(room: PulseRoom) {
     setSelectedRoom(room);
   }
@@ -250,6 +287,10 @@ export function GroupsScreen({ route, navigation }: Props) {
               actions={navigation ? <PulseCommandAction compact label="Safety" tone="safety" onPress={() => navigation.navigate("SafetyHub", { section: "reports", title: "Safety Hub" })} /> : null}
             />
             <PulseCommandSearch value={query} onChangeText={setQuery} placeholder="Search communities and rooms" />
+            <View style={styles.actionRow}>
+              <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => setCreateKind("group")}><Text style={styles.primaryText}>Create Group</Text></Pressable>
+              <Pressable accessibilityRole="button" style={styles.smallButton} onPress={() => setCreateKind("room")}><Text style={styles.smallButtonText}>Start Room</Text></Pressable>
+            </View>
             {categories.length ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                 {categories.map((category) => (
@@ -299,6 +340,7 @@ export function GroupsScreen({ route, navigation }: Props) {
           onJoin={handleJoin}
           onChat={handleOpenChat}
           onReport={handleReport}
+          onDelete={confirmDeleteGroup}
         />
       ) : null}
       {selectedRoom ? (
@@ -308,8 +350,75 @@ export function GroupsScreen({ route, navigation }: Props) {
           onClose={() => setSelectedRoom(null)}
           onOpen={handleOpenRoom}
           onReport={(room) => setError(`Reporting for ${roomDisplayTitle(room)} is not available in the app yet. You can report it on the PulseSoc website.`)}
+          onLifecycle={handleRoomLifecycle}
         />
       ) : null}
+      {createKind ? (
+        <CommunityCreateSheet
+          kind={createKind}
+          onClose={() => setCreateKind(null)}
+          onCreated={async (result) => {
+            setCreateKind(null);
+            await load("refresh");
+            if (result.conversationId && navigation) navigation.navigate("Chat", { conversationId: result.conversationId, title: result.title });
+          }}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function CommunityCreateSheet({ kind, onClose, onCreated }: {
+  kind: CommunityCreateIntent;
+  onClose: () => void;
+  onCreated: (result: { conversationId?: number; title: string }) => Promise<void>;
+}) {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [privacy, setPrivacy] = useState<"public" | "private">("public");
+  const [inviteIds, setInviteIds] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const label = kind === "group" ? "Create Group" : "Start Room";
+
+  async function submit() {
+    if (title.trim().length < 2) { setError(`Add a ${kind} name.`); return; }
+    const inviteeUserIds = inviteIds.split(",").map((value) => Number(value.trim())).filter((value) => Number.isInteger(value) && value > 0);
+    setBusy(true); setError("");
+    try {
+      if (kind === "group") {
+        await createGroup({ name: title.trim(), description: description.trim(), privacy, inviteeUserIds });
+        await onCreated({ title: title.trim() });
+      } else {
+        const result = await createRoom({ title: title.trim(), description: description.trim(), privacy, inviteeUserIds });
+        await onCreated({ conversationId: Number(result.conversation_id || 0) || undefined, title: title.trim() });
+      }
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : `${label} failed.`);
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <View style={styles.detailOverlay}>
+      <View style={styles.createSheet}>
+        <View style={styles.detailHeader}>
+          <View style={styles.detailTitleWrap}><Text style={styles.title}>{label}</Text><Text style={styles.subtitle}>Simple, text-based PulseSoc community space.</Text></View>
+          <Pressable accessibilityRole="button" style={styles.smallButton} onPress={onClose}><Text style={styles.smallButtonText}>Close</Text></Pressable>
+        </View>
+        <ScrollView contentContainerStyle={styles.detailContent} keyboardShouldPersistTaps="handled">
+          <Text style={styles.inputLabel}>{kind === "group" ? "Group name" : "Room title"}</Text>
+          <TextInput accessibilityLabel={kind === "group" ? "Group name" : "Room title"} value={title} onChangeText={setTitle} placeholder={kind === "group" ? "Name your group" : "Name your room"} placeholderTextColor={colors.muted} style={styles.input} maxLength={140} />
+          <Text style={styles.inputLabel}>Description</Text>
+          <TextInput accessibilityLabel="Description" value={description} onChangeText={setDescription} placeholder="What is this community for?" placeholderTextColor={colors.muted} style={[styles.input, styles.multilineInput]} multiline maxLength={500} />
+          <Text style={styles.inputLabel}>Privacy</Text>
+          <View style={styles.actionRow}>{(["public", "private"] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: privacy === value }} style={[styles.sectionChip, privacy === value && styles.sectionChipActive]} onPress={() => setPrivacy(value)}><Text style={[styles.sectionChipText, privacy === value && styles.sectionChipTextActive]}>{value === "public" ? "Public" : "Private"}</Text></Pressable>)}</View>
+          <Text style={styles.inputLabel}>Optional invite Pulse IDs</Text>
+          <TextInput accessibilityLabel="Optional invite Pulse IDs" value={inviteIds} onChangeText={setInviteIds} placeholder="Numeric IDs, separated by commas" placeholderTextColor={colors.muted} style={styles.input} keyboardType="numbers-and-punctuation" />
+          <Text style={styles.helperText}>Invites are server-authorized. Private rooms are visible only to invited participants.</Text>
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} disabled={busy} style={styles.primaryButton} onPress={() => submit()}><Text style={styles.primaryText}>{busy ? "Working…" : label}</Text></Pressable>
+        </ScrollView>
+      </View>
     </View>
   );
 }
@@ -370,13 +479,14 @@ function RoomCard({ room, busy, onOpen }: { room: PulseRoom; busy?: boolean; onO
   );
 }
 
-function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport }: {
+function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport, onDelete }: {
   group: PulseGroup;
   busyKey: string;
   onClose: () => void;
   onJoin: (group: PulseGroup) => void;
   onChat: (group: PulseGroup) => void;
   onReport: (group: PulseGroup) => void;
+  onDelete: (group: PulseGroup) => void;
 }) {
   const sections: GroupDetailSection[] = ["overview", "members", "invitations", "media", "files", "links", "settings"];
   const [section, setSection] = useState<GroupDetailSection>("overview");
@@ -420,7 +530,7 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport }: {
               <Text style={styles.smallButtonText}>Report</Text>
             </Pressable> : null}
           </View>
-          <GroupDetailSectionView group={group} section={section} />
+          <GroupDetailSectionView group={group} section={section} onDelete={onDelete} />
         </ScrollView>
       </View>
     </View>
@@ -441,14 +551,14 @@ function groupDetailSectionLabel(section: GroupDetailSection) {
   }[section];
 }
 
-function GroupDetailSectionView({ group, section }: { group: PulseGroup; section: GroupDetailSection }) {
+function GroupDetailSectionView({ group, section, onDelete }: { group: PulseGroup; section: GroupDetailSection; onDelete: (group: PulseGroup) => void }) {
   if (section === "overview") return <GroupOverview group={group} />;
   if (section === "members") return <GroupMembers group={group} />;
   if (section === "invitations") return <GroupInvitations group={group} />;
   if (section === "media") return <GroupAssets title="Media" assets={group.media || []} emptyTitle="No indexed group media" emptyBody="Photos and videos shared in this group appear here, including anything attached to group posts." />;
   if (section === "files") return <GroupAssets title="Files" assets={group.files || []} emptyTitle="No group files yet" emptyBody="Files shared in chat are not listed here. This app does not read private chat history to build a file list." />;
   if (section === "links") return <GroupAssets title="Links" assets={group.links || []} emptyTitle="No shared links yet" emptyBody="Link indexing is not exposed to native yet. Links will appear here when the server provides a safe group link index." />;
-  return <GroupSettings group={group} />;
+  return <GroupSettings group={group} onDelete={onDelete} />;
 }
 
 function GroupOverview({ group }: { group: PulseGroup }) {
@@ -571,7 +681,7 @@ function GroupAssetCard({ asset }: { asset: PulseGroupAsset }) {
   );
 }
 
-function GroupSettings({ group }: { group: PulseGroup }) {
+function GroupSettings({ group, onDelete }: { group: PulseGroup; onDelete: (group: PulseGroup) => void }) {
   const actions = groupActionRules(group);
   return (
     <View>
@@ -589,16 +699,18 @@ function GroupSettings({ group }: { group: PulseGroup }) {
         </View>
       ))}
       {!group.can_manage ? <BoundaryPanel title="Admin settings gated" body="Editing the group, managing members, and deleting it are shown only to owners, admins, and moderators." /> : null}
+      {group.viewer_role === "owner" ? <Pressable accessibilityRole="button" style={[styles.smallButton, styles.dangerButton]} onPress={() => onDelete(group)}><Text style={styles.smallButtonText}>Delete Group</Text></Pressable> : null}
     </View>
   );
 }
 
-function RoomDetail({ room, busyKey, onClose, onOpen, onReport }: {
+function RoomDetail({ room, busyKey, onClose, onOpen, onReport, onLifecycle }: {
   room: PulseRoom;
   busyKey: string;
   onClose: () => void;
   onOpen: (room: PulseRoom) => void;
   onReport: (room: PulseRoom) => void;
+  onLifecycle: (room: PulseRoom, action: "archive" | "delete") => void;
 }) {
   const [section, setSection] = useState<RoomDetailSection>("overview");
   const sections: RoomDetailSection[] = ["overview", "participants", "activity", "provider"];
@@ -636,6 +748,8 @@ function RoomDetail({ room, busyKey, onClose, onOpen, onReport }: {
             <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyKey) }} style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onReport(room)}>
               <Text style={styles.smallButtonText}>Report</Text>
             </Pressable>
+            {room.can_manage ? <Pressable accessibilityRole="button" style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onLifecycle(room, "archive")}><Text style={styles.smallButtonText}>End Room</Text></Pressable> : null}
+            {room.current_user_role === "owner" ? <Pressable accessibilityRole="button" style={[styles.smallButton, styles.dangerButton]} disabled={Boolean(busyKey)} onPress={() => Alert.alert("Delete room?", "This permanently removes the room from active community discovery.", [{ text: "Cancel", style: "cancel" }, { text: "Delete", style: "destructive", onPress: () => onLifecycle(room, "delete") }])}><Text style={styles.smallButtonText}>Delete</Text></Pressable> : null}
           </View>
           <RoomDetailSectionView room={room} section={section} />
         </ScrollView>
@@ -895,6 +1009,18 @@ const styles = createThemedStyles(() => ({
     padding: 16,
     paddingBottom: 0
   },
+  dangerButton: {
+    borderColor: colors.danger
+  },
+  createSheet: {
+    alignSelf: "center",
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.panel,
+    borderWidth: 1,
+    maxHeight: "88%",
+    width: "92%"
+  },
   cover: {
     backgroundColor: colors.surfaceRaised,
     borderRadius: 8,
@@ -979,6 +1105,35 @@ const styles = createThemedStyles(() => ({
     color: colors.text,
     fontSize: 11,
     fontWeight: "900"
+  },
+  input: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: 1,
+    color: colors.text,
+    fontSize: 15,
+    marginTop: 6,
+    minHeight: 48,
+    paddingHorizontal: 12,
+    paddingVertical: 10
+  },
+  inputLabel: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
+    marginTop: 14
+  },
+  helperText: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 12,
+    marginTop: 8
+  },
+  multilineInput: {
+    minHeight: 92,
+    textAlignVertical: "top"
   },
   inlineDanger: {
     borderColor: "rgba(255,107,122,0.34)"

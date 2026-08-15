@@ -83892,7 +83892,7 @@ def pulse_comm_pulse_conversations(cur, user_id, include_types, trace_id="", lim
 
 
 def pulse_comm_rooms(cur, user_id):
-    return [
+    rooms = [
         {
             **room,
             "id": str(room.get("conversation_id") or room.get("room_id") or room.get("id") or ""),
@@ -83904,6 +83904,62 @@ def pulse_comm_rooms(cur, user_id):
         }
         for room in pulse_ensure_default_rooms(cur, user_id)
     ]
+    cur.execute(
+        """
+        SELECT c.*, p.role AS current_user_role,
+               COALESCE(p.unread_count, 0) AS unread_count
+        FROM pulse_conversations c
+        LEFT JOIN pulse_conversation_participants p
+          ON p.conversation_id=c.id AND p.user_id=? AND COALESCE(p.left_at,'')=''
+        WHERE c.conversation_type='room'
+          AND COALESCE(c.status,'active')='active'
+          AND COALESCE(c.deleted_at,'')=''
+          AND (COALESCE(c.is_public,0)=1 OR p.user_id IS NOT NULL)
+          AND COALESCE(c.linked_space_id,'') LIKE 'community-room-%'
+        ORDER BY COALESCE(c.last_activity_at,c.updated_at,c.created_at) DESC
+        LIMIT 80
+        """,
+        (int(user_id),),
+    )
+    for row in cur.fetchall():
+        room = dict(row)
+        conversation_id = int(room.get("id") or 0)
+        rooms.append({
+            "id": str(conversation_id),
+            "room_id": str(conversation_id),
+            "conversation_id": conversation_id if room.get("current_user_role") else None,
+            "conversation_type": "room",
+            "source": "pulse",
+            "name": room.get("title") or "PulseSoc Room",
+            "title": room.get("title") or "PulseSoc Room",
+            "description": room.get("description") or "",
+            "privacy": room.get("privacy") or ("public" if room.get("is_public") else "private"),
+            "room_type": "community",
+            "status": room.get("status") or "active",
+            "online_count": int(room.get("member_count") or 0),
+            "member_count": int(room.get("member_count") or 0),
+            "unread_count": int(room.get("unread_count") or 0),
+            "current_user_role": room.get("current_user_role") or "",
+            "can_manage": str(room.get("current_user_role") or "").lower() in {"owner", "admin", "moderator"},
+            "capabilities": {"voice": False, "video": False, "files": False, "undx": False},
+        })
+    return rooms
+
+
+def pulse_community_room(cur, room_id):
+    cur.execute(
+        "SELECT * FROM pulse_conversations WHERE id=? AND conversation_type='room' AND COALESCE(linked_space_id,'') LIKE 'community-room-%' AND COALESCE(deleted_at,'')='' LIMIT 1",
+        (safe_int(room_id, 0),),
+    )
+    return dict(cur.fetchone() or {})
+
+
+def pulse_community_room_role(cur, room_id, user_id):
+    cur.execute(
+        "SELECT role FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? AND COALESCE(left_at,'')='' LIMIT 1",
+        (safe_int(room_id, 0), safe_int(user_id, 0)),
+    )
+    return str(dict(cur.fetchone() or {}).get("role") or "").lower()
 
 
 def pulse_comm_conversation_access(cur, user_id, conversation_id):
@@ -84091,7 +84147,7 @@ def api_pulse_communications_conversations():
         return pulse_comm_error("Communications could not load.", 500, trace_id)
 
 
-@webhook_app.route("/api/pulse/communications/rooms", methods=["GET"])
+@webhook_app.route("/api/pulse/communications/rooms", methods=["GET", "POST"])
 def api_pulse_communications_rooms():
     init_db()
     user = api_account_user()
@@ -84101,12 +84157,125 @@ def api_pulse_communications_rooms():
     try:
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         ensure_pulse_messenger_schema(cur, conn)
+        if request.method == "POST":
+            payload = request.get_json(silent=True) or {}
+            title = clean_html(payload.get("title") or payload.get("name") or "")[:140]
+            description = clean_html(payload.get("description") or "")[:500]
+            privacy = clean_html(payload.get("privacy") or "public").lower()
+            if len(title) < 2:
+                conn.close()
+                return pulse_comm_error("Add a room title.", 400, trace_id)
+            if privacy not in {"public", "private"}:
+                conn.close()
+                return pulse_comm_error("Choose public or private.", 400, trace_id)
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            cutoff = (datetime.utcnow() - timedelta(hours=1)).isoformat(timespec="seconds")
+            cur.execute("SELECT COUNT(*) AS total FROM pulse_conversations WHERE conversation_type='room' AND owner_user_id=? AND created_at>=?", (user["user_id"], cutoff))
+            if int(dict(cur.fetchone() or {}).get("total") or 0) >= 5:
+                conn.close()
+                return pulse_comm_error("Room creation limit reached. Try again later.", 429, trace_id)
+            cur.execute("SELECT id FROM pulse_conversations WHERE conversation_type='room' AND owner_user_id=? AND title=? AND created_at>=? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT 1", (user["user_id"], title, (datetime.utcnow() - timedelta(seconds=30)).isoformat(timespec="seconds")))
+            duplicate = dict(cur.fetchone() or {})
+            if duplicate:
+                conversation_id = int(duplicate.get("id") or 0)
+            else:
+                cur.execute(
+                    """INSERT INTO pulse_conversations
+                    (conversation_type, linked_space_id, title, description, owner_user_id, created_by_user_id, privacy, is_public, participant_limit, member_count, status, created_at, updated_at, last_activity_at)
+                    VALUES ('room', ?, ?, ?, ?, ?, ?, ?, 250, 1, 'active', ?, ?, ?)""",
+                    (f"community-room-{secrets.token_hex(8)}", title, description, user["user_id"], user["user_id"], privacy, 1 if privacy == "public" else 0, now, now, now),
+                )
+                conversation_id = int(cur.lastrowid)
+                cur.execute("INSERT INTO pulse_conversation_participants (conversation_id,user_id,role,muted,archived,joined_at,created_at) VALUES (?,?,'owner',0,0,?,?)", (conversation_id, user["user_id"], now, now))
+                invitees = payload.get("invitee_user_ids") or payload.get("participant_ids") or []
+                if isinstance(invitees, list):
+                    for invitee_id in sorted({safe_int(value, 0) for value in invitees if safe_int(value, 0)})[:25]:
+                        if invitee_id != int(user["user_id"]):
+                            cur.execute("INSERT OR IGNORE INTO pulse_conversation_participants (conversation_id,user_id,role,muted,archived,joined_at,created_at) VALUES (?,?,'member',0,0,?,?)", (conversation_id, invitee_id, now, now))
+                cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
+                member_count = int(dict(cur.fetchone() or {}).get("total") or 1)
+                cur.execute("UPDATE pulse_conversations SET member_count=? WHERE id=?", (member_count, conversation_id))
+            conn.commit(); conn.close()
+            pulse_emit_event("community_room_created", {"conversation_id": conversation_id, "privacy": privacy}, user["user_id"], conversation_id)
+            return jsonify({"ok": True, "room_id": str(conversation_id), "conversation_id": conversation_id, "message": "Room started.", "next_url": f"/pulse/messages/{conversation_id}", "trace_id": trace_id})
         rooms = pulse_comm_rooms(cur, user["user_id"])
         conn.commit(); conn.close()
         return jsonify({"ok": True, "items": rooms, "rooms": rooms, "trace_id": trace_id, "features": pulse_comm_features()})
     except Exception as exc:
         logging.exception("PULSE_COMM_ROOMS_FAILED trace_id=%s user_id=%s", trace_id, user.get("user_id"))
         return pulse_comm_error("Rooms could not load.", 500, trace_id)
+
+
+@webhook_app.route("/api/pulse/communications/rooms/<int:room_id>/join", methods=["POST"])
+def api_pulse_community_room_join(room_id):
+    init_db(); user = api_account_user()
+    if not user:
+        return pulse_comm_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor(); ensure_pulse_messenger_schema(cur, conn)
+    room = pulse_community_room(cur, room_id)
+    if not room or str(room.get("status") or "active") != "active":
+        conn.close(); return pulse_comm_error("Room not found.", 404)
+    role = pulse_community_room_role(cur, room_id, user["user_id"])
+    if not role and not int(room.get("is_public") or 0):
+        conn.close(); return pulse_comm_error("This private room requires an invitation.", 403)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    if role:
+        cur.execute("UPDATE pulse_conversation_participants SET left_at=NULL WHERE conversation_id=? AND user_id=?", (room_id, user["user_id"]))
+    else:
+        cur.execute("INSERT INTO pulse_conversation_participants (conversation_id,user_id,role,muted,archived,joined_at,created_at) VALUES (?,?,'member',0,0,?,?)", (room_id, user["user_id"], now, now))
+    cur.execute("UPDATE pulse_conversations SET member_count=(SELECT COUNT(*) FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''), updated_at=? WHERE id=?", (room_id, now, room_id))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "conversation_id": room_id, "message": "Room joined.", "next_url": f"/pulse/messages/{room_id}"})
+
+
+@webhook_app.route("/api/pulse/communications/rooms/<int:room_id>", methods=["PATCH", "DELETE"])
+def api_pulse_community_room_manage(room_id):
+    init_db(); user = api_account_user()
+    if not user:
+        return pulse_comm_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor(); ensure_pulse_messenger_schema(cur, conn)
+    room = pulse_community_room(cur, room_id); role = pulse_community_room_role(cur, room_id, user["user_id"])
+    if not room:
+        conn.close(); return pulse_comm_error("Room not found.", 404)
+    if role not in {"owner", "admin", "moderator"} and not pulse_group_user_is_admin(user):
+        conn.close(); return pulse_comm_error("You do not have permission.", 403)
+    payload = request.get_json(silent=True) or {}; now = datetime.utcnow().isoformat(timespec="seconds")
+    if request.method == "DELETE":
+        if role != "owner" and not pulse_group_user_is_admin(user):
+            conn.close(); return pulse_comm_error("Only the room owner can delete this room.", 403)
+        cur.execute("UPDATE pulse_conversations SET status='deleted', deleted_at=?, updated_at=? WHERE id=?", (now, now, room_id))
+        action = "deleted"
+    else:
+        action = clean_html(payload.get("action") or "update").lower()
+        if action in {"end", "archive", "suspend"}:
+            next_status = "suspended" if action == "suspend" else "archived"
+            cur.execute("UPDATE pulse_conversations SET status=?, updated_at=? WHERE id=?", (next_status, now, room_id))
+        else:
+            title = clean_html(payload.get("title") or room.get("title") or "")[:140]
+            description = clean_html(payload.get("description") or room.get("description") or "")[:500]
+            privacy = clean_html(payload.get("privacy") or room.get("privacy") or "public").lower()
+            if privacy not in {"public", "private"}: privacy = "public"
+            cur.execute("UPDATE pulse_conversations SET title=?,description=?,privacy=?,is_public=?,updated_at=? WHERE id=?", (title, description, privacy, 1 if privacy == "public" else 0, now, room_id))
+    conn.commit(); conn.close()
+    if pulse_group_user_is_admin(user):
+        log_admin_audit(0, f"community.room.{action}", "room", str(room_id), {"role": role})
+    pulse_emit_event("community_room_managed", {"conversation_id": room_id, "action": action}, user["user_id"], room_id)
+    return jsonify({"ok": True, "room_id": str(room_id), "action": action, "message": "Room updated."})
+
+
+@webhook_app.route("/api/pulse/communications/rooms/<int:room_id>/leave", methods=["POST"])
+def api_pulse_community_room_leave(room_id):
+    init_db(); user = api_account_user()
+    if not user: return pulse_comm_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor(); ensure_pulse_messenger_schema(cur, conn)
+    role = pulse_community_room_role(cur, room_id, user["user_id"])
+    if not role: conn.close(); return pulse_comm_error("You are not in this room.", 400)
+    if role == "owner": conn.close(); return pulse_comm_error("Room owners must archive or delete the room instead of leaving it ownerless.", 400)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("UPDATE pulse_conversation_participants SET left_at=? WHERE conversation_id=? AND user_id=?", (now, room_id, user["user_id"]))
+    cur.execute("UPDATE pulse_conversations SET member_count=(SELECT COUNT(*) FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''),updated_at=? WHERE id=?", (room_id, now, room_id))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "left": True, "message": "Left room."})
 
 
 @webhook_app.route("/api/pulse/communications/groups", methods=["GET"])
@@ -87826,9 +87995,19 @@ def api_pulse_group_create():
         return api_error("Name the group before creating it.", 400, trace_id)
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:80] or f"group-{int(time.time())}"
     now = datetime.utcnow().isoformat(timespec="seconds")
-    conn = db(); cur = conn.cursor()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     payload_summary = json.dumps({"name": name, "category": category, "group_type": group_type, "has_description": bool(description), "tags": tags[:120]}, default=str)[:1000]
     try:
+        cutoff = (datetime.utcnow() - timedelta(hours=1)).isoformat(timespec="seconds")
+        cur.execute("SELECT COUNT(*) AS total FROM pulse_group_creation_attempts WHERE user_id=? AND status='success' AND created_at>=?", (user["user_id"], cutoff))
+        if int(dict(cur.fetchone() or {}).get("total") or 0) >= 5:
+            conn.close()
+            return api_error("Group creation limit reached. Try again later.", 429, trace_id)
+        cur.execute("SELECT id, slug FROM pulse_groups WHERE owner_user_id=? AND name=? AND created_at>=? AND COALESCE(status,'active')='active' ORDER BY id DESC LIMIT 1", (user["user_id"], name, (datetime.utcnow() - timedelta(seconds=30)).isoformat(timespec="seconds")))
+        duplicate = dict(cur.fetchone() or {})
+        if duplicate:
+            conn.close()
+            return jsonify({"ok": True, "group_id": int(duplicate.get("id") or 0), "slug": duplicate.get("slug"), "duplicate": True, "message": "Group already created."})
         final_slug = slug
         for suffix in range(0, 25):
             candidate = slug if suffix == 0 else f"{slug}-{suffix + 1}"
@@ -87899,6 +88078,17 @@ def pulse_group_join_common(user, group_id=0, group_slug=""):
     group_type = str(group.get("group_type") or "public").lower()
     now = datetime.utcnow().isoformat(timespec="seconds")
     if group_type in {"private", "invite-only", "invite_only"} and int(group.get("owner_user_id") or 0) != int(user["user_id"]):
+        cur.execute("SELECT id FROM pulse_group_invites WHERE group_id=? AND invited_user_id=? AND status='pending' ORDER BY id DESC LIMIT 1", (group_id, user["user_id"]))
+        invitation = dict(cur.fetchone() or {})
+        if invitation:
+            cur.execute("UPDATE pulse_group_invites SET status='accepted' WHERE id=?", (int(invitation.get("id") or 0),))
+            cur.execute("INSERT OR IGNORE INTO pulse_group_members (group_id, user_id, role, created_at) VALUES (?, ?, 'member', ?)", (group_id, user["user_id"], now))
+            cur.execute("UPDATE pulse_groups SET member_count=(SELECT COUNT(*) FROM pulse_group_members WHERE group_id=?) WHERE id=?", (group_id, group_id))
+            cur.execute("SELECT COUNT(*) AS total FROM pulse_group_members WHERE group_id=?", (group_id,))
+            member_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+            conn.commit(); conn.close()
+            pulse_emit_event("group_invite_accepted", {"group_id": group_id, "user_id": user["user_id"]}, user["user_id"], group_id)
+            return jsonify({"ok": True, "joined": True, "member_count": member_count, "message": "Invitation accepted."})
         cur.execute(
             "INSERT INTO pulse_group_invites (group_id, inviter_user_id, invited_user_id, status, created_at) VALUES (?, ?, ?, 'requested', ?)",
             (group_id, user["user_id"], user["user_id"], now),
@@ -87965,8 +88155,6 @@ def api_pulse_group_chat_open(group_id):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    if not GROUPS_ADVANCED_MODE:
-        return groups_advanced_disabled_response()
     trace_id = secrets.token_hex(6)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
@@ -88016,8 +88204,6 @@ def api_pulse_group_invite_link(group_id):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    if not GROUPS_ADVANCED_MODE:
-        return groups_advanced_disabled_response()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT slug FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
     group = dict(cur.fetchone() or {})
@@ -88049,21 +88235,29 @@ def api_pulse_group_invite(group_id):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    if not GROUPS_ADVANCED_MODE:
-        return groups_advanced_disabled_response()
     payload = request.get_json(silent=True) or {}
     invitee_user_id = safe_int(payload.get("invitee_user_id") or payload.get("user_id"), 0)
     public_id = clean_html(payload.get("public_pulse_id") or payload.get("public_player_id") or "")[:120]
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     if not invitee_user_id and public_id:
         invitee_user_id = pulse_user_id_from_public(cur, public_id) or 0
-    cur.execute("SELECT id FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
-    if not cur.fetchone():
+    cur.execute("SELECT * FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
+    group = dict(cur.fetchone() or {})
+    if not group:
         conn.close()
         return api_error("Group not found.", 404)
+    cur.execute("SELECT role FROM pulse_group_members WHERE group_id=? AND user_id=? LIMIT 1", (group_id, user["user_id"]))
+    role = str(dict(cur.fetchone() or {}).get("role") or "").lower()
+    if not pulse_group_can_manage_group(group, user, role):
+        conn.close()
+        return api_error("You do not have permission to invite members.", 403)
     if not invitee_user_id:
         conn.close()
         return api_error("Choose a PulseSoc user to invite.", 400)
+    cur.execute("SELECT id FROM pulse_group_invites WHERE group_id=? AND invited_user_id=? AND status='pending' LIMIT 1", (group_id, invitee_user_id))
+    if cur.fetchone():
+        conn.close()
+        return jsonify({"ok": True, "message": "Invitation already pending.", "duplicate": True})
     cur.execute(
         "INSERT INTO pulse_group_invites (group_id, inviter_user_id, invited_user_id, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
         (group_id, user["user_id"], invitee_user_id, datetime.utcnow().isoformat(timespec="seconds")),
@@ -88094,8 +88288,6 @@ def api_pulse_group_report_id(group_id):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    if not GROUPS_ADVANCED_MODE:
-        return groups_advanced_disabled_response()
     payload = request.get_json(silent=True) or {}
     return pulse_group_report_common(user, group_id=group_id, reason=payload.get("reason") or "Needs review", notes=payload.get("notes") or "")
 
@@ -88106,8 +88298,6 @@ def api_pulse_group_report_slug(group_slug):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    if not GROUPS_ADVANCED_MODE:
-        return groups_advanced_disabled_response()
     payload = request.get_json(silent=True) or {}
     return pulse_group_report_common(user, group_slug=group_slug, reason=payload.get("reason") or "Needs review", notes=payload.get("notes") or "")
 
@@ -88119,8 +88309,6 @@ def api_pulse_group_update(group_slug=None, group_id=0):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    if not GROUPS_ADVANCED_MODE:
-        return groups_advanced_disabled_response()
     trace_id = secrets.token_hex(6)
     payload = request.get_json(silent=True) or {}
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
@@ -88165,8 +88353,6 @@ def api_pulse_group_member_role(group_slug=None, group_id=0):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    if not GROUPS_ADVANCED_MODE:
-        return groups_advanced_disabled_response()
     trace_id = secrets.token_hex(6)
     payload = request.get_json(silent=True) or {}
     target_user_id = safe_int(payload.get("user_id") or payload.get("target_user_id"), 0)
@@ -88207,8 +88393,6 @@ def api_pulse_group_ban_member(group_slug=None, group_id=0):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    if not GROUPS_ADVANCED_MODE:
-        return groups_advanced_disabled_response()
     trace_id = secrets.token_hex(6)
     payload = request.get_json(silent=True) or {}
     target_user_id = safe_int(payload.get("user_id") or payload.get("target_user_id"), 0)
@@ -88247,8 +88431,6 @@ def api_pulse_group_unban_member(group_slug=None, group_id=0):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    if not GROUPS_ADVANCED_MODE:
-        return groups_advanced_disabled_response()
     trace_id = secrets.token_hex(6)
     payload = request.get_json(silent=True) or {}
     target_user_id = safe_int(payload.get("user_id") or payload.get("target_user_id"), 0)
@@ -88281,8 +88463,6 @@ def api_pulse_group_delete_id(group_id):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    if not GROUPS_ADVANCED_MODE:
-        return groups_advanced_disabled_response()
     trace_id = secrets.token_hex(6)
     payload = request.get_json(silent=True) or {}
     reason = clean_html(payload.get("reason") or "owner_delete")[:240]
@@ -88299,7 +88479,9 @@ def api_pulse_group_delete_id(group_id):
             conn.close()
             return api_error("You do not have permission to delete this group.", 403, trace_id)
         now = datetime.utcnow().isoformat(timespec="seconds")
-        deleted, media_urls = pulse_group_hard_delete_group(cur, group_id)
+        cur.execute("UPDATE pulse_groups SET status='deleted', updated_at=? WHERE id=?", (now, group_id))
+        cur.execute("UPDATE pulse_conversations SET status='archived', deleted_at=?, updated_at=? WHERE group_id=? OR linked_group_id=?", (now, now, group_id, group_id))
+        deleted, media_urls = {"group": 1, "soft_deleted": True}, []
         cur.execute(
             "INSERT INTO pulse_group_action_logs (group_id, post_id, user_id, action, status, trace_id, message, created_at) VALUES (?, 0, ?, 'delete_group', 'success', ?, ?, ?)",
             (group_id, user["user_id"], trace_id, json.dumps({"reason": reason, "deleted": deleted}, default=str)[:1000], now),

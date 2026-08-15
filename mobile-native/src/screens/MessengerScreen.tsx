@@ -18,6 +18,7 @@ import { PulseApiError } from "../api/pulseApi";
 import { PulseCommandAvatar, PulseCommandPanel, PulseCommandSegmentRail } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
+import { setCommunityCreateIntent } from "../community/communityCreateIntent";
 import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
@@ -207,8 +208,8 @@ export function MessengerScreen() {
             </ScrollView>
             <PulseCommandPanel style={styles.quickActions}>
               <QuickAction icon="＋" title="New Chat" subtitle="Direct message" accent="chat" primary onPress={() => openNewChat()} />
-              <QuickAction icon="◎" title="Create Group" subtitle="Invite members" accent="group" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
-              <QuickAction icon="◉" title="Start Room" subtitle="Public or private" accent="room" onPress={() => navigation.navigate("Tabs", { screen: "Groups" })} />
+              <QuickAction icon="◎" title="Create Group" subtitle="Invite members" accent="group" onPress={() => { setCommunityCreateIntent("group"); navigation.navigate("Tabs", { screen: "Groups" }); }} />
+              <QuickAction icon="◉" title="Start Room" subtitle="Public or private" accent="room" onPress={() => { setCommunityCreateIntent("room"); navigation.navigate("Tabs", { screen: "Groups" }); }} />
             </PulseCommandPanel>
             {error && conversations.length ? <Text accessibilityLiveRegion="polite" style={styles.error}>Showing cached conversations while Messenger reconnects.</Text> : null}
             <Text style={styles.sectionLabel} testID="messenger-recent-heading">Recent conversations</Text>

@@ -124,6 +124,8 @@ export type PulseRoom = {
   privacy?: string;
   host_name?: string;
   current_user_role?: string;
+  can_manage?: boolean;
+  status?: string;
   participants?: PulseRoomParticipant[];
   activity?: PulseGroupAsset[];
 };
@@ -175,6 +177,49 @@ export async function joinGroup(slug: string) {
   );
 }
 
+export async function createGroup(input: { name: string; description?: string; privacy: "public" | "private"; inviteeUserIds?: number[] }) {
+  const result = await pulseApi<{ ok?: boolean; group_id?: number; slug?: string; message?: string }>("/api/pulse/groups/create", {
+    method: "POST",
+    body: JSON.stringify({ name: input.name, description: input.description || "", group_type: input.privacy, category: "Community" })
+  });
+  if (result.slug && input.inviteeUserIds?.length) {
+    await Promise.all(input.inviteeUserIds.map((userId) => inviteGroupMember(result.slug!, userId)));
+  }
+  return result;
+}
+
+export async function updateGroup(slug: string, input: { name?: string; description?: string; privacy?: "public" | "private" }) {
+  return pulseApi<{ ok?: boolean; message?: string }>(`/api/pulse/groups/${encodeURIComponent(slug)}/update`, {
+    method: "PATCH",
+    body: JSON.stringify({ ...input, group_type: input.privacy })
+  });
+}
+
+export async function inviteGroupMember(slug: string, userId: number) {
+  return pulseApi<{ ok?: boolean; message?: string }>(`/api/pulse/groups/${encodeURIComponent(slug)}/invite`, {
+    method: "POST",
+    body: JSON.stringify({ invitee_user_id: userId })
+  });
+}
+
+export async function setGroupMemberRole(slug: string, userId: number, role: "admin" | "moderator" | "member") {
+  return pulseApi<{ ok?: boolean; message?: string }>(`/api/pulse/groups/${encodeURIComponent(slug)}/members/role`, {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId, role })
+  });
+}
+
+export async function removeGroupMember(slug: string, userId: number) {
+  return pulseApi<{ ok?: boolean; message?: string }>(`/api/pulse/groups/${encodeURIComponent(slug)}/ban`, {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId, reason: "removed_by_group_manager" })
+  });
+}
+
+export async function deleteGroup(slug: string) {
+  return pulseApi<{ ok?: boolean; message?: string }>(`/api/pulse/groups/${encodeURIComponent(slug)}/delete`, { method: "POST", body: JSON.stringify({ reason: "owner_delete" }) });
+}
+
 export async function leaveGroup(slug: string) {
   return pulseApi<{ ok?: boolean; left?: boolean; member_count?: number; message?: string }>(`/api/pulse/groups/${encodeURIComponent(slug)}/leave`, {
     method: "POST",
@@ -201,11 +246,39 @@ export async function listRooms() {
   return normalizeRooms(data.rooms || data.items || []);
 }
 
+export async function createRoom(input: { title: string; description?: string; privacy: "public" | "private"; inviteeUserIds?: number[] }) {
+  return pulseApi<{ ok?: boolean; room_id?: string; conversation_id?: number; message?: string }>("/api/pulse/communications/rooms", {
+    method: "POST",
+    body: JSON.stringify({ title: input.title, description: input.description || "", privacy: input.privacy, invitee_user_ids: input.inviteeUserIds || [] })
+  });
+}
+
 export async function joinRoom(roomId: string) {
+  if (/^\d+$/.test(roomId)) {
+    return pulseApi<{ ok?: boolean; conversation_id?: number; next_url?: string; message?: string }>(
+      `/api/pulse/communications/rooms/${encodeURIComponent(roomId)}/join`,
+      { method: "POST", body: JSON.stringify({}) }
+    );
+  }
   return pulseApi<{ ok?: boolean; conversation_id?: number; next_url?: string; message?: string }>(
     `/api/pulse/messages/rooms/${encodeURIComponent(roomId)}/join`,
     { method: "POST", body: JSON.stringify({}) }
   );
+}
+
+export async function manageRoom(roomId: string, action: "update" | "end" | "archive", input: { title?: string; description?: string; privacy?: "public" | "private" } = {}) {
+  return pulseApi<{ ok?: boolean; message?: string }>(`/api/pulse/communications/rooms/${encodeURIComponent(roomId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action, ...input })
+  });
+}
+
+export async function leaveRoom(roomId: string) {
+  return pulseApi<{ ok?: boolean; left?: boolean; message?: string }>(`/api/pulse/communications/rooms/${encodeURIComponent(roomId)}/leave`, { method: "POST", body: JSON.stringify({}) });
+}
+
+export async function deleteRoom(roomId: string) {
+  return pulseApi<{ ok?: boolean; message?: string }>(`/api/pulse/communications/rooms/${encodeURIComponent(roomId)}`, { method: "DELETE" });
 }
 
 export async function loadCachedGroups() {
