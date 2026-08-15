@@ -1186,3 +1186,13 @@ Remove the `expo-sensors` line from `package.json` (and its lockfile subtree
 once installed) and revert `74a32e2c`. Behavioral rollback needs no revert at
 all: every spatial flag defaults OFF, and motion additionally requires user
 onboarding — see `docs/spatial-console-rollback.md`.
+
+### Correction (2026-08-15): expo-sensors pin aligned to SDK 54 manifest
+
+`expo/bundledNativeModules.json` for the installed SDK 54 expects
+`expo-sensors: ~15.0.8`; the original declaration line said `~15.0.7`. The pin
+in `mobile-native/package.json` is corrected to `~15.0.8` in this change. Both
+ranges resolve inside 15.0.x; no other dependency line changed; the lockfile
+remains not-yet-updated because the sandbox registry block persists (verified
+again 2026-08-15: `403 blocked-by-allowlist`). Everything else in the addendum
+above stands unchanged.
