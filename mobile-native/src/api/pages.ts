@@ -64,6 +64,9 @@ export type PulsePage = {
   verified: boolean;
   followers_count: number;
   posts_count: number;
+  videos_count?: number;
+  /** Marketplace seller behind the shop/merch/menu tab; 0 when unlinked. */
+  shop_seller_id?: number;
   /** Server-decided tab set for this page type. Render ONLY these. */
   tabs: string[];
   /** Which optional modules have real backing data. The server hides unbacked
@@ -259,15 +262,19 @@ export async function togglePageFollow(pageId: number) {
   );
 }
 
-export async function listPagePosts(pageId: number, params: { limit?: number; offset?: number } = {}) {
+export async function listPagePosts(
+  pageId: number,
+  params: { limit?: number; offset?: number; kind?: "videos" } = {}
+) {
   const limit = params.limit || 20;
   const offset = params.offset || 0;
+  const kind = params.kind ? `&kind=${params.kind}` : "";
   const data = await pulseApi<{
     ok: boolean;
     posts: PulsePost[];
     has_more?: boolean;
     next_offset?: number;
-  }>(`/api/pages/${pageId}/posts?limit=${limit}&offset=${offset}`);
+  }>(`/api/pages/${pageId}/posts?limit=${limit}&offset=${offset}${kind}`);
   return {
     posts: (data.posts || []).map((post) => normalizePost(post)),
     has_more: Boolean(data.has_more),

@@ -476,6 +476,61 @@ class ModuleAvailabilityTests(unittest.TestCase):
             self.assertIn(tab, pulsesoc_pages.TYPE_TABS["ARTIST"])
         self.assertNotIn("shop", view["modules"])  # a business tab, not an artist one
 
+    def test_a_store_link_exposes_the_seller_the_shop_tab_reads(self):
+        # Without this the merch tab has nowhere to point but the global
+        # marketplace, which is not this presence's inventory.
+        self.assertEqual(self._view()["shop_seller_id"], 0)
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", "42")
+        view = self._view()
+        self.assertEqual(view["shop_seller_id"], 42)
+        self.assertIn("merch", view["tabs"])
+
+    def test_events_stays_hidden_even_when_linked(self):
+        # The canonical events backend lists only for a caller holding a
+        # manager role on the business, so a public events tab would 403 for
+        # every visitor. Better no tab than a guaranteed dead one.
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "event", "5")
+        view = self._view()
+        self.assertNotIn("events", view["tabs"])
+        self.assertFalse(view["modules"]["events"])
+
+    def test_the_videos_tab_appears_once_the_presence_has_a_video_post(self):
+        view = self._view()
+        self.assertNotIn("videos", view["tabs"])
+        self.assertEqual(view["videos_count"], 0)
+
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO pulse_posts (user_id, post_type, body, page_id, created_at) "
+            "VALUES (?, 'video', 'clip', ?, '2026-01-01')", (OWNER, self.page_id))
+        cur.execute(
+            "INSERT INTO pulse_posts (user_id, post_type, body, page_id, created_at) "
+            "VALUES (?, 'text', 'note', ?, '2026-01-01')", (OWNER, self.page_id))
+        self.conn.commit()
+
+        view = self._view()
+        self.assertIn("videos", view["tabs"])
+        self.assertTrue(view["modules"]["videos"])
+        self.assertEqual(view["videos_count"], 1, "a text post is not a video")
+        self.assertEqual(view["posts_count"], 2)
+
+    def test_the_videos_listing_returns_only_video_posts(self):
+        cur = self.conn.cursor()
+        for post_type in ("video", "replay", "text"):
+            cur.execute(
+                "INSERT INTO pulse_posts (user_id, post_type, body, page_id, created_at) "
+                "VALUES (?, ?, ?, ?, '2026-01-01')",
+                (OWNER, post_type, post_type, self.page_id))
+        self.conn.commit()
+
+        every = pulsesoc_pages.list_page_posts(self.conn, self.page_id)
+        only_videos = pulsesoc_pages.list_page_posts(
+            self.conn, self.page_id, post_types=pulsesoc_pages.VIDEO_POST_TYPES)
+        # get_post is not reachable here, so compare the paging counts the
+        # query itself produced rather than serialized bodies.
+        self.assertEqual(every["next_offset"], 3)
+        self.assertEqual(only_videos["next_offset"], 2)
+
 
 class MusicModuleTests(unittest.TestCase):
     """The presence points at the canonical catalogue; it never invents a discography."""

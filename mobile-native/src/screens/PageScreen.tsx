@@ -21,6 +21,7 @@ import {
   PulsePage,
   togglePageFollow
 } from "../api/pages";
+import { searchMarketplace, type MarketplaceListing } from "../api/marketplace";
 import { PULSE_API_BASE_URL } from "../api/config";
 import type { PulsePost } from "../api/feed";
 import { RootStackParamList } from "../navigation/types";
@@ -28,6 +29,54 @@ import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Page">;
+
+type ModuleState = "idle" | "loading" | "ready" | "error";
+
+/**
+ * One tab's worth of lazily-loaded data, isolated from every other tab: a
+ * module that fails leaves the rest of the presence usable.
+ *
+ * `key` identifies what is being loaded (presence id + retry count). The ref
+ * holds it, not state — an effect that depended on the state it sets would
+ * cancel its own in-flight request on the loading re-render and hang forever.
+ */
+function useLazyModule<T>(active: boolean, key: string, empty: T, load: () => Promise<T>) {
+  const [value, setValue] = useState<{ state: ModuleState; data: T }>({ state: "idle", data: empty });
+  const [attempt, setAttempt] = useState(0);
+  const fetched = useRef("");
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  const emptyRef = useRef(empty);
+
+  useEffect(() => {
+    if (!active || !key) return;
+    const token = `${key}:${attempt}`;
+    if (fetched.current === token) return;
+    fetched.current = token;
+    let cancelled = false;
+    setValue({ state: "loading", data: emptyRef.current });
+    loadRef
+      .current()
+      .then((data) => {
+        if (!cancelled) setValue({ state: "ready", data });
+      })
+      .catch(() => {
+        if (!cancelled) setValue({ state: "error", data: emptyRef.current });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, key, attempt]);
+
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  return { state: value.state, data: value.data, retry };
+}
+
+// Stable identities: a fresh [] each render would reset every module.
+const EMPTY_TRACKS: PageTrack[] = [];
+const EMPTY_LISTINGS: MarketplaceListing[] = [];
+const EMPTY_POSTS: PulsePost[] = [];
+const SHOP_TABS = ["shop", "merch", "menu"];
 
 /**
  * The public page surface — one component for every page type. The tab set is
@@ -47,12 +96,21 @@ export function PageScreen({ route, navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [error, setError] = useState("");
-  const [music, setMusic] = useState<{ state: "idle" | "loading" | "ready" | "error"; tracks: PageTrack[] }>({
-    state: "idle",
-    tracks: []
-  });
-  const [musicAttempt, setMusicAttempt] = useState(0);
-  const musicFetched = useRef("");
+
+  const pageKey = page ? String(page.id) : "";
+  const sellerId = Number(page?.shop_seller_id || 0);
+  const music = useLazyModule<PageTrack[]>(tab === "music", pageKey, EMPTY_TRACKS, () =>
+    listPageMusic(Number(pageKey)).then((result) => result.tracks)
+  );
+  const shop = useLazyModule<MarketplaceListing[]>(
+    SHOP_TABS.includes(tab) && sellerId > 0,
+    `${pageKey}:${sellerId}`,
+    EMPTY_LISTINGS,
+    () => searchMarketplace({ sellerUserId: sellerId, limit: 24 }).then((result) => result.items)
+  );
+  const videos = useLazyModule<PulsePost[]>(tab === "videos", pageKey, EMPTY_POSTS, () =>
+    listPagePosts(Number(pageKey), { limit: 24, kind: "videos" }).then((result) => result.posts)
+  );
 
   const load = useCallback(async () => {
     setError("");
@@ -77,29 +135,6 @@ export function PageScreen({ route, navigation }: Props) {
   useEffect(() => {
     load();
   }, [load]);
-
-  // Modules load when their tab is opened, and independently: if music fails
-  // the rest of the presence stays usable. The ref, not the module state,
-  // decides whether a fetch already ran — depending on the state the effect
-  // itself sets would make the effect cancel its own request.
-  useEffect(() => {
-    if (tab !== "music" || !page) return;
-    const key = `${page.id}:${musicAttempt}`;
-    if (musicFetched.current === key) return;
-    musicFetched.current = key;
-    let cancelled = false;
-    setMusic({ state: "loading", tracks: [] });
-    listPageMusic(page.id)
-      .then((result) => {
-        if (!cancelled) setMusic({ state: "ready", tracks: result.tracks });
-      })
-      .catch(() => {
-        if (!cancelled) setMusic({ state: "error", tracks: [] });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tab, page, musicAttempt]);
 
   async function onFollow() {
     if (!page || followBusy) return;
@@ -234,25 +269,14 @@ export function PageScreen({ route, navigation }: Props) {
         return <ActivityIndicator color={colors.accent} style={styles.moduleSpinner} />;
       }
       if (music.state === "error") {
-        return (
-          <View style={styles.aboutCard}>
-            <Text style={styles.empty}>We couldn&apos;t load this section.</Text>
-            <Pressable
-              accessibilityRole="button"
-              style={styles.linkCard}
-              onPress={() => setMusicAttempt((attempt) => attempt + 1)}
-            >
-              <Text style={styles.linkCardText}>Try Again</Text>
-            </Pressable>
-          </View>
-        );
+        return moduleFailure(music.retry);
       }
-      if (!music.tracks.length) {
+      if (!music.data.length) {
         return <Text style={styles.empty}>No music yet.</Text>;
       }
       return (
         <View>
-          {music.tracks.map((track) => (
+          {music.data.map((track) => (
             <Pressable
               key={track.id}
               accessibilityRole="button"
@@ -277,31 +301,95 @@ export function PageScreen({ route, navigation }: Props) {
         </View>
       );
     }
-    if (tab === "merch" || tab === "shop" || tab === "menu") {
+    if (SHOP_TABS.includes(tab)) {
+      if (shop.state === "loading") {
+        return <ActivityIndicator color={colors.accent} style={styles.moduleSpinner} />;
+      }
+      if (shop.state === "error") {
+        return moduleFailure(shop.retry);
+      }
+      if (!shop.data.length) {
+        return <Text style={styles.empty}>Nothing for sale yet.</Text>;
+      }
       return (
-        <Pressable
-          accessibilityRole="button"
-          style={styles.linkCard}
-          onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}
-        >
-          <Text style={styles.linkCardText}>Browse in Marketplace</Text>
-        </Pressable>
+        <View>
+          {shop.data.map((listing) => (
+            <Pressable
+              key={String(listing.listing_id || listing.id)}
+              accessibilityRole="button"
+              style={styles.trackRow}
+              onPress={() =>
+                navigation.navigate("MarketplaceDetail", {
+                  listingId: Number(listing.listing_id || listing.id),
+                  title: listing.title
+                })
+              }
+            >
+              {listing.cover_image_url || listing.image_url ? (
+                <Image
+                  source={{ uri: listing.cover_image_url || listing.image_url }}
+                  style={styles.trackArt}
+                />
+              ) : (
+                <View style={[styles.trackArt, styles.trackArtEmpty]} />
+              )}
+              <View style={styles.trackMeta}>
+                <Text style={styles.trackTitle} numberOfLines={1}>
+                  {listing.title || ""}
+                </Text>
+                {listing.price_label ? (
+                  <Text style={styles.trackSub} numberOfLines={1}>
+                    {listing.price_label}
+                  </Text>
+                ) : null}
+              </View>
+            </Pressable>
+          ))}
+        </View>
       );
     }
-    if (tab === "events") {
+    if (tab === "videos") {
+      if (videos.state === "loading") {
+        return <ActivityIndicator color={colors.accent} style={styles.moduleSpinner} />;
+      }
+      if (videos.state === "error") {
+        return moduleFailure(videos.retry);
+      }
+      if (!videos.data.length) {
+        return <Text style={styles.empty}>No videos yet.</Text>;
+      }
       return (
-        <Pressable
-          accessibilityRole="button"
-          style={styles.linkCard}
-          onPress={() => navigation.navigate("Events", { title: page.name })}
-        >
-          <Text style={styles.linkCardText}>See events</Text>
-        </Pressable>
+        <View>
+          {videos.data.map((post) => (
+            <Pressable
+              key={String(post.id || post.post_id)}
+              accessibilityRole="button"
+              style={styles.postCard}
+              onPress={() => navigation.navigate("PostDetail", { postId: Number(post.id || post.post_id) })}
+            >
+              <Text style={styles.postTitle} numberOfLines={2}>
+                {post.title || post.body || post.text || ""}
+              </Text>
+              {post.created_at ? <Text style={styles.postMeta}>{post.created_at}</Text> : null}
+            </Pressable>
+          ))}
+        </View>
       );
     }
-    // services / reviews / videos / menu — no canonical source wired yet:
-    // honest empty state, never fabricated content.
+    // services / reviews — no canonical source wired yet: honest empty state,
+    // never fabricated content.
     return <Text style={styles.empty}>Nothing here yet.</Text>;
+  }
+
+  function moduleFailure(retry: () => void) {
+    return (
+      <View style={styles.aboutCard}>
+        <Text style={styles.empty}>We couldn&apos;t load this section.</Text>
+        <Pressable accessibilityRole="button" style={styles.linkCard} onPress={retry}>
+          <Text style={styles.linkCardText}>Try Again</Text>
+        </Pressable>
+      </View>
+    );
   }
 
   const showPosts = tab === "posts" || tab === "home";

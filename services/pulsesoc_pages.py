@@ -96,8 +96,17 @@ TAB_LINK_SOURCE = {
     "shop": "store",
     "merch": "store",
     "menu": "store",
-    "events": "event",
 }
+# `events` is deliberately absent. The `event` link type exists and can be set,
+# but the canonical events backend (services/business_os/events) lists only for
+# a caller holding a manager role on the business — there is no public read. A
+# tab that 403s for every visitor is worse than no tab, so events stays hidden
+# until a public listing exists.
+
+# Post types the videos module counts as a video. Same set pulse_feed_engine
+# uses for its video surfaces; the tab reads the page's own posts, so it needs
+# no link.
+VIDEO_POST_TYPES = ("video", "replay", "roast_clip")
 
 HANDLE_RE = re.compile(r"^[A-Za-z0-9_.-]{3,40}$")
 RESERVED_HANDLES = {
@@ -394,26 +403,40 @@ def _counts(conn: Any, page_id: int) -> dict:
     cur.execute("SELECT COUNT(*) AS c FROM pulse_page_follows WHERE page_id=?", (int(page_id),))
     followers = _int(_row(cur.fetchone()).get("c"))
     posts = 0
+    videos = 0
     try:
         cur.execute("SELECT COUNT(*) AS c FROM pulse_posts WHERE page_id=? AND deleted_at IS NULL", (int(page_id),))
         posts = _int(_row(cur.fetchone()).get("c"))
+        marks = ",".join("?" for _ in VIDEO_POST_TYPES)
+        cur.execute(
+            f"SELECT COUNT(*) AS c FROM pulse_posts WHERE page_id=? AND deleted_at IS NULL "
+            f"AND post_type IN ({marks})",
+            (int(page_id), *VIDEO_POST_TYPES),
+        )
+        videos = _int(_row(cur.fetchone()).get("c"))
     except Exception:
         pass  # page_id column not present yet on a legacy DB
-    return {"followers": followers, "posts": posts}
+    return {"followers": followers, "posts": posts, "videos": videos}
 
 
-def module_availability(conn: Any, page: dict, posts_count: int = 0) -> dict:
+def module_availability(conn: Any, page: dict, counts: dict | None = None,
+                        links: list[dict] | None = None) -> dict:
     """Which optional modules actually have something behind them.
 
-    One cheap query over the links table; the modules themselves stay lazy.
+    Reads nothing the caller already holds: `public_view` has both the counts
+    and the links by the time it asks. The modules themselves stay lazy.
     """
-    linked = {row.get("link_type") for row in list_links(conn, page["id"])}
+    counts = _counts(conn, page["id"]) if counts is None else counts
+    rows = list_links(conn, page["id"]) if links is None else links
+    linked = {row.get("link_type") for row in rows}
     available = {}
     for tab in TYPE_TABS.get(page.get("page_type") or "OTHER", TYPE_TABS["OTHER"]):
         if tab in ALWAYS_TABS:
             available[tab] = True
         elif tab in TAB_LINK_SOURCE:
             available[tab] = TAB_LINK_SOURCE[tab] in linked
+        elif tab == "videos":
+            available[tab] = counts.get("videos", 0) > 0
         else:
             available[tab] = False
     if "posts" in available:
@@ -444,7 +467,10 @@ def public_view(conn: Any, page: dict, viewer_user_id: int | None = None) -> dic
         hours = json.loads(page.get("hours_json") or "{}")
     except Exception:
         hours = {}
-    availability = module_availability(conn, page, counts["posts"])
+    links = list_links(conn, page["id"])
+    availability = module_availability(conn, page, counts, links)
+    shop_seller_id = next(
+        (_int(row.get("ref_id")) for row in links if row.get("link_type") == "store"), 0)
     return {
         "id": int(page["id"]),
         "page_type": page.get("page_type"),
@@ -465,8 +491,10 @@ def public_view(conn: Any, page: dict, viewer_user_id: int | None = None) -> dic
         "verified": (page.get("verification_status") or "") == "verified",
         "followers_count": counts["followers"],
         "posts_count": counts["posts"],
+        "videos_count": counts["videos"],
         "tabs": _visible_tabs(page, availability, bool(viewer_role)),
         "modules": availability,
+        "shop_seller_id": shop_seller_id,
         "created_at": page.get("created_at"),
         "viewer": {"role": viewer_role, "following": following},
     }
@@ -945,17 +973,24 @@ def create_page_post(conn: Any, user_id: int, page_id: int, payload: dict) -> di
 
 
 def list_page_posts(conn: Any, page_id: int, viewer_user_id: int | None = None,
-                    limit: int = 20, offset: int = 0) -> dict:
+                    limit: int = 20, offset: int = 0,
+                    post_types: tuple[str, ...] | None = None) -> dict:
     page = _load_page(conn, page_id)
     limit = max(1, min(_int(limit, 20), 40))
     offset = max(0, _int(offset, 0))
+    type_sql = ""
+    type_params: tuple = ()
+    if post_types:
+        type_sql = " AND post_type IN (%s)" % ",".join("?" for _ in post_types)
+        type_params = tuple(post_types)
     cur = conn.cursor()
     try:
         cur.execute(
             "SELECT id FROM pulse_posts WHERE page_id=? AND deleted_at IS NULL "
             "AND COALESCE(visibility,'public')='public' AND COALESCE(moderation_status,'approved')!='blocked' "
-            "ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (int(page["id"]), limit + 1, offset),
+            + type_sql +
+            " ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (int(page["id"]), *type_params, limit + 1, offset),
         )
         ids = [int(_row(r)["id"]) for r in cur.fetchall()]
     except Exception:

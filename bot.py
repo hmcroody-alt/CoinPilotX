@@ -17620,6 +17620,8 @@ def api_pulsesoc_page_posts(page_id):
                 viewer_user_id=user["user_id"] if user else None,
                 limit=request.args.get("limit") or 20,
                 offset=request.args.get("offset") or 0,
+                post_types=(pulsesoc_pages.VIDEO_POST_TYPES
+                            if (request.args.get("kind") or "") == "videos" else None),
             ),
         })
     except Exception as exc:

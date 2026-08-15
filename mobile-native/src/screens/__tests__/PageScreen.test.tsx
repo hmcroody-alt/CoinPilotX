@@ -24,6 +24,11 @@ jest.mock("../../api/pages", () => ({
   listPageMusic: (...args: unknown[]) => mockListMusic(...args)
 }));
 
+const mockSearchMarketplace = jest.fn();
+jest.mock("../../api/marketplace", () => ({
+  searchMarketplace: (...args: unknown[]) => mockSearchMarketplace(...args)
+}));
+
 import { PageScreen } from "../PageScreen";
 
 const nav = () => ({ navigate: jest.fn(), setOptions: jest.fn() });
@@ -72,6 +77,7 @@ beforeEach(() => {
   mockGetPage.mockResolvedValue(page());
   mockListPosts.mockResolvedValue({ posts: [], has_more: false, next_offset: 0 });
   mockListMusic.mockResolvedValue({ artist: "Night Signal", tracks: [], linked: true });
+  mockSearchMarketplace.mockResolvedValue({ items: [] });
 });
 
 describe("presence tabs are server-decided", () => {
@@ -139,5 +145,42 @@ describe("modules load lazily and fail independently", () => {
     });
     fireEvent.press(view.getByText("Try Again"));
     await waitFor(() => expect(view.queryByText("Signal")).toBeTruthy());
+  });
+});
+
+describe("shop and videos show the presence's own inventory, not a global list", () => {
+  it("lists the linked seller's listings instead of sending the visitor to Marketplace", async () => {
+    mockGetPage.mockResolvedValue(
+      page({ tabs: ["posts", "merch", "about"], modules: { merch: true }, shop_seller_id: 42 })
+    );
+    mockSearchMarketplace.mockResolvedValue({
+      items: [{ id: 5, listing_id: 5, title: "Tour Hoodie", price_label: "$40" }]
+    });
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("Merch")).toBeTruthy());
+    fireEvent.press(view.getByText("Merch"));
+    await waitFor(() =>
+      expect(mockSearchMarketplace).toHaveBeenCalledWith({ sellerUserId: 42, limit: 24 })
+    );
+    await waitFor(() => expect(view.queryByText("Tour Hoodie")).toBeTruthy());
+    expect(navigation.navigate).not.toHaveBeenCalledWith("Tabs", { screen: "Marketplace" });
+  });
+
+  it("asks the server for this presence's video posts only", async () => {
+    mockGetPage.mockResolvedValue(
+      page({ tabs: ["posts", "videos", "about"], modules: { videos: true } })
+    );
+    mockListPosts.mockResolvedValue({
+      posts: [{ id: 91, title: "Live at the Vault", post_type: "video" }],
+      has_more: false,
+      next_offset: 1
+    });
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Videos")).toBeTruthy());
+    fireEvent.press(view.getByText("Videos"));
+    await waitFor(() =>
+      expect(mockListPosts).toHaveBeenCalledWith(7, { limit: 24, kind: "videos" })
+    );
+    await waitFor(() => expect(view.queryByText("Live at the Vault")).toBeTruthy());
   });
 });
