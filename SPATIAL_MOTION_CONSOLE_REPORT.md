@@ -1,8 +1,9 @@
 # PulseSoc — Hybrid Spatial Motion Console: Final Engineering Report
 
-Date: 2026-08-14
+Date: 2026-08-14 (Mission 2 checkpoint appended 2026-08-15)
 Branch: `feature/spatial-console` (base `codex/insight-image-pipeline` @ `6e67e408`)
-Commits: `74a32e2c` (implementation) + `a8e7f57e` (audio-gate declaration)
+Commits: `74a32e2c` (implementation) → `a8e7f57e` (audio-gate declaration) →
+`5f551bc6` (this report) → `3a425d9f` (expo-sensors pin aligned to SDK 54)
 
 ## What was built
 
@@ -114,3 +115,77 @@ The `expo-av` allowlist count is unchanged.
 4. `EXPO_PUBLIC_TILT_NAVIGATION=1` last, after tilt-feel QA on real hardware.
 
 Rollback at any step is unsetting the respective var.
+
+---
+
+# Mission 2 checkpoint — Native Completion, Device QA + Rollback Proof
+
+## Status: HARD BLOCKER at the device boundary (§21 protocol)
+
+Every stage runnable in this sandbox is complete. The remaining stages require
+(a) npm registry access, (b) an iOS/Android build toolchain, and (c) a physical
+iPhone — none of which exist here. Per §21, this checkpoint documents exactly
+what is done, what is blocked, and the single next action.
+
+### Completed in Mission 2 (all at HEAD `3a425d9f`)
+
+| Stage | Outcome |
+|---|---|
+| 1. Dependency completion | Pin corrected `~15.0.7` → `~15.0.8` (matches `expo/bundledNativeModules.json` for SDK 54), committed with a same-change declaration addendum. `npm install` itself is registry-blocked (HTTP 403 `blocked-by-allowlist`) — see next action. |
+| 2. Honest gate rerun | `realtime_audio_change_gate.py` vs both `6e67e408` and `origin/main`: **Declaration accepted**. Fired only on the `package.json` dependency watch; zero audio-path edits. |
+| 3. Complete quality gates | `tsc --noEmit` clean · i18n 11 locales OK · full jest in 5 deterministic non-overlapping chunks = **221/221 suites, 3,764 tests passing** (count verified against `npx jest --listTests`) · audio suites 191 + 310 + 22 + 19 passing. |
+| 4. Agora token test | **Not passed locally — not claimed.** `agora_token_builder` + pytest are pip-blocked (403). Unittest fallback: 10/13 pass; the 3 failures are exactly the missing package (503 `agora_token_builder_missing`). Zero backend diff on this branch. CI covers it: `.github/workflows/realtime-audio.yml` → `pip install -r requirements.txt` (which pins `agora-token-builder==1.0.0`, line 19) → protection suite. Must be green in CI post-push. |
+| 13 (partial). Push | **Network-blocked from sandbox**: SSH proxy refuses `github.com:22` (Forbidden), HTTPS CONNECT returns 403. Commits exist in your working repo on disk; push from your machine. |
+
+Protection suite: green except two documented environmental/unrelated items —
+the Agora token test (missing pip package, above) and
+`test_environment_contract` (5 env vars read by your untracked
+`services/sentinel/runtime.py`, unrelated to this branch, left untouched).
+
+### Blocked stages (5–12, 14–16): device/toolchain-only
+
+No claims are made for any of these. Simulator results, if you gather any,
+do not count as device evidence per mission rules.
+
+### §21 deliverables
+
+**Build artifact required:** an EAS development build for physical iPhone —
+`npm run build:ios:development` (profile `development`, bundle id
+`com.pulsesoc.nativeapp.dev`) from `mobile-native/`, *after* `npm install`
+succeeds.
+
+**Install instructions:**
+
+1. On a networked machine: `cd mobile-native && npm install`. The lockfile
+   diff must show **only** the `expo-sensors` subtree — anything else, stop
+   and investigate. Commit as `chore(mobile): lock expo-sensors dependency`.
+2. `git push origin feature/spatial-console`; confirm the realtime-audio and
+   protection workflows go green (this closes the Agora token requirement).
+3. `npm run build:ios:development`, install the build on the iPhone via the
+   EAS QR/link, sign into the dev client.
+4. Flags via env at build/start time only — never edit defaults in code.
+
+**Device test matrix** (run in this order; each row's flags are cumulative):
+
+| # | Flags on | Verify |
+|---|---|---|
+| 1 | *(none)* | Legacy regression: vertical feed/reels, composer jump, nav scroll behavior, Messages layout — byte-identical to production behavior. Live/calls/radio audio unaffected. |
+| 2 | `SPATIAL_CONSOLE` + sub-flags | Touch layer: horizontal pager (all post types, actions), nav hide ~220ms/reveal ~180ms after settle, Create Console (+→×, 6 modes in order, Go Live warning → `LiveStudio` only), Messages vertical inbox untouched. |
+| 3 | + `SPATIAL_MOTION` | Onboarding is the only path to enabling motion; "Keep swipe only" works; settings sanitizer holds; **no sensor activity before consent** (check via Xcode energy/log). Motion permission prompts correct. |
+| 4 | + `TILT_PARALLAX` | Parallax preview on slight tilt (transform/opacity only), dead zone honored, no page commits. |
+| 5 | + `TILT_NAVIGATION` | Sustained tilt commits one page + haptic tick via the same settled-index path as swipe; return-to-neutral required; cooldown honored; touch always cancels tilt. |
+| 6 | all on | Suspension: Messages, Create Console, keyboard up, overlays, backgrounding, VoiceOver, Reduce Motion, device flat, unstable motion (walking/vehicle). Each must fully suspend tilt. |
+| 7 | all on | Physical conditions: lying down, in-hand walking, tabletop; sensitivity low/med/high; recalibration. Tune only via the existing tuning constants — no new code paths. |
+| 8 | all on | Performance/battery: JS FPS during paging, sensor duty cycle, battery drain vs flag-off baseline over an identical 15-min session. |
+| 9 | Layered rollback proof: from all-on, unset one flag per step in reverse order (tilt-nav → parallax → motion → each console sub-flag → master) and verify each layer alone reverts exactly its feature, ending byte-identical to row 1. |
+
+**Current flag configuration:** all nine `EXPO_PUBLIC_*` flags default **OFF**
+in code and no production environment sets any of them. Motion additionally
+requires per-user onboarding consent even when flags are on.
+
+**Remaining device-only acceptance criteria:** every row above, plus CI green
+on the pushed branch (Agora token test included).
+
+**Exact next action:** on a networked machine, run `cd mobile-native && npm
+install`, verify the lockfile diff is expo-sensors-only, commit, and `git push
+origin feature/spatial-console`. Everything else follows from that.
