@@ -33,6 +33,8 @@ import {
 } from "./refreshCoordinator";
 import { AppTabParamList } from "./types";
 import { createThemedStyles } from "../theme/themedStyles";
+import { immersiveNavigatorEnabled, spatialCreateEnabled } from "../spatial/flags";
+import { toggleCreateConsole, useCreateConsoleOpen } from "../spatial/createConsoleStore";
 
 export type GlobalNavigationBadges = {
   activity?: number;
@@ -215,6 +217,7 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
   const lastCreateTapRef = useRef(0);
   const [shellHeight, setShellHeight] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
+  const createConsoleOpen = useCreateConsoleOpen();
 
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => undefined);
@@ -223,8 +226,11 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
   }, []);
 
   useEffect(() => {
+    // Immersive navigator (flag-gated): calmer ~220ms hide, snappier ~180ms
+    // reveal. Legacy timings are byte-identical when the flag is off.
+    const immersive = immersiveNavigatorEnabled();
     Animated.timing(hiddenProgress, {
-      duration: reduceMotion ? 0 : hidden ? 180 : 210,
+      duration: reduceMotion ? 0 : hidden ? (immersive ? 220 : 180) : immersive ? 180 : 210,
       toValue: hidden ? 1 : 0,
       useNativeDriver: true
     }).start();
@@ -308,6 +314,12 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
                   const now = Date.now();
                   if (now - lastCreateTapRef.current <= 600) return;
                   lastCreateTapRef.current = now;
+                  if (spatialCreateEnabled()) {
+                    // Spatial console: the plus becomes × while open; a second
+                    // tap (or the ×) closes it. Legacy composer jump when off.
+                    toggleCreateConsole();
+                    return;
+                  }
                   navigation.navigate("Home", { openComposer: true });
                   return;
                 }
@@ -339,7 +351,11 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
               }}
             >
               <View style={[styles.bottomSymbol, item.name === "Create" && styles.bottomCreateSymbol, active && styles.bottomSymbolActive]}>
-                <Ionicons name={item.icon} size={item.name === "Create" ? 34 : 26} style={[styles.bottomSymbolText, active && styles.bottomSymbolTextActive]} />
+                <Ionicons
+                  name={item.name === "Create" && createConsoleOpen ? "close" : item.icon}
+                  size={item.name === "Create" ? 34 : 26}
+                  style={[styles.bottomSymbolText, active && styles.bottomSymbolTextActive]}
+                />
                 {badge ? (
                   <View style={styles.bottomBadge}>
                     <Text style={styles.bottomBadgeText}>{formatBadge(badge)}</Text>

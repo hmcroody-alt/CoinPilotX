@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Battery from "expo-battery";
 import { RouteProp, useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Easing, FlatList, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, ViewToken, useWindowDimensions } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Easing, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, ViewToken, useWindowDimensions } from "react-native";
 import {
   addPostComment,
   deletePost,
@@ -48,6 +48,11 @@ import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { createThemedStyles } from "../theme/themedStyles";
+import { spatialHomeFeedEnabled } from "../spatial/flags";
+import { SpatialPager, SpatialPagerController } from "../spatial/SpatialPager";
+import { useImmersiveNavigator } from "../spatial/useImmersiveNavigator";
+import { ImmersiveRevealStrip } from "../spatial/ImmersiveRevealStrip";
+import { useTiltNavigation } from "../spatial/motion/useTiltNavigation";
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -79,6 +84,9 @@ const FEED_TABS: FeedTab[] = [
 ];
 
 const FEED_SELECTION_KEY = "pulsesoc.native.home.feed.selection.v1";
+
+/** Stable empty array: the outer list carries no rows in spatial mode. */
+const EMPTY_FEED_ROWS: HomeFeedRow[] = [];
 
 const HOME_COMMAND_ITEMS = [
   { label: "Home", route: "/pulse", icon: "⌂", active: true },
@@ -163,6 +171,18 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     });
   }).current;
   const selectionRestoredRef = useRef(false);
+  // ---- Spatial Console (flag-gated; every line below is inert when OFF) ----
+  const spatialFeed = spatialHomeFeedEnabled();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const [spatialIndexByFeed, setSpatialIndexByFeed] = useState<Record<string, number>>({});
+  const [spatialResetNonce, setSpatialResetNonce] = useState(0);
+  const [newSignalsAvailable, setNewSignalsAvailable] = useState(false);
+  const spatialIndex = spatialIndexByFeed[selectedFeed] || 0;
+  const spatialIndexRef = useRef(0);
+  spatialIndexRef.current = spatialIndex;
+  const immersive = useImmersiveNavigator(isFocused && spatialFeed);
+  const spatialPageHeight = Math.max(420, Math.round(windowHeight * 0.72));
+  // -------------------------------------------------------------------------
   const activeTab = useMemo(() => FEED_TABS.find((tab) => tab.key === selectedFeed) || FEED_TABS[0], [selectedFeed]);
   const activeLivePost = useMemo(
     () => posts.find((post) => post.id === activePostId && Number(post.live?.live_session_id || 0) > 0),
@@ -203,6 +223,52 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     () => injectAds(posts, availableAds, { interval: 5, leadIn: 3 }),
     [posts, availableAds]
   );
+
+  // ---- Spatial Motion (flag + consent gated; inert when OFF) --------------
+  // Tilt navigation shares the pager's settled-index pipeline: a commit calls
+  // commitToIndex, the pager settles, onIndexSettled fires — identical to a
+  // swipe. Tilt is only live while the pager itself is in the viewport (the
+  // outer list scrolled down past Pulse Network / Status / composer), so the
+  // upper Home structure is a tilt-free zone per mission §12.
+  const spatialPagerController = useRef<SpatialPagerController | null>(null);
+  const spatialPagerY = useRef(0);
+  const [spatialPagerInView, setSpatialPagerInView] = useState(false);
+  const tilt = useTiltNavigation({
+    surface: "feed",
+    enabled: spatialFeed && isFocused && spatialPagerInView && feedRows.length > 0,
+    suspended: drawerOpen,
+    currentIndex: spatialIndex,
+    pageCount: feedRows.length,
+    onCommit: (nextIndex) => spatialPagerController.current?.commitToIndex(nextIndex)
+  });
+  const tiltParallaxStyle = useMemo(
+    () => ({
+      transform: [
+        {
+          // Tilt right previews the next (right-hand) page: content eases left.
+          translateX: tilt.previewProgress.interpolate({
+            inputRange: [-1, 0, 1],
+            outputRange: [12, 0, -12],
+            extrapolate: "clamp"
+          })
+        }
+      ]
+    }),
+    [tilt.previewProgress]
+  );
+  const handleOuterFeedScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      bottomNavScroll.onScroll(event);
+      if (!spatialFeed) return;
+      const { contentOffset, layoutMeasurement } = event.nativeEvent;
+      // The pager lives in the list footer at spatialPagerY (content coords).
+      // Tilt is eligible only once a meaningful slice of it is on screen.
+      const visible = contentOffset.y + layoutMeasurement.height > spatialPagerY.current + 160;
+      setSpatialPagerInView((prev) => (prev === visible ? prev : visible));
+    },
+    [bottomNavScroll, spatialFeed]
+  );
+  // -------------------------------------------------------------------------
 
   const handleHideAd = useCallback((ad: SponsoredAd) => {
     setHiddenAdKeys((current) => {
@@ -305,27 +371,63 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     }
   }, [route.params?.openComposer]);
 
+  /**
+   * Background feed invalidations. In the spatial feed, a background update
+   * must never yank the pager out from under the user: if they have swiped
+   * away from the first post, we surface a restrained "New Signals" action
+   * and apply only on their tap. At rest on page 0 (or in the legacy feed)
+   * the refresh applies as before.
+   */
+  const backgroundRefresh = useCallback(() => {
+    if (spatialFeed && spatialIndexRef.current > 0) {
+      setNewSignalsAvailable(true);
+      return;
+    }
+    load("refresh").catch(() => undefined);
+  }, [load, spatialFeed]);
+
   useEffect(() => {
-    const stopActivity = registerSyncInvalidation("activity", () => load("refresh").catch(() => undefined));
-    const stopNotifications = registerSyncInvalidation("notifications", () => load("refresh").catch(() => undefined));
-    const stopMarketplace = registerSyncInvalidation("marketplace", () => load("refresh").catch(() => undefined));
+    const stopActivity = registerSyncInvalidation("activity", backgroundRefresh);
+    const stopNotifications = registerSyncInvalidation("notifications", backgroundRefresh);
+    const stopMarketplace = registerSyncInvalidation("marketplace", backgroundRefresh);
     return () => {
       stopActivity();
       stopNotifications();
       stopMarketplace();
     };
-  }, [load]);
+  }, [backgroundRefresh]);
+
+  /** Media lifecycle: in the spatial feed only the settled page is active. */
+  useEffect(() => {
+    if (!spatialFeed) return;
+    const row = feedRows[Math.min(spatialIndex, Math.max(0, feedRows.length - 1))];
+    setActivePostId(row && row.type === "post" ? row.post.id : null);
+    setViewableAdKeys(row && row.type === "ad" ? new Set([row.key]) : new Set());
+  }, [spatialFeed, feedRows, spatialIndex]);
+
+  const resetSpatialPosition = useCallback(() => {
+    if (!spatialFeed) return;
+    setSpatialIndexByFeed((current) => (current[selectedFeed] ? { ...current, [selectedFeed]: 0 } : current));
+    setSpatialResetNonce((nonce) => nonce + 1);
+    setNewSignalsAvailable(false);
+  }, [selectedFeed, spatialFeed]);
 
   useEffect(() => registerRefreshDestination("home", {
-    scrollToTop: () => listRef.current?.scrollToOffset({ offset: 0, animated: true }),
+    scrollToTop: () => {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      // Home re-tap is explicit user intent: snap the spatial feed back to the
+      // first signal without blanking what is on screen.
+      resetSpatialPosition();
+    },
     refresh: async () => {
       loadStatuses().catch(() => undefined);
+      resetSpatialPosition();
       await load("refresh");
       AccessibilityInfo.announceForAccessibility?.("Home refreshed");
     },
     isRefreshing: () => refreshingRef.current,
     canRefresh: () => isAuthenticated
-  }), [isAuthenticated, load, loadStatuses]);
+  }), [isAuthenticated, load, loadStatuses, resetSpatialPosition]);
 
   const updatePost = useCallback((postId: number, next: Partial<PulsePost>) => {
     setPosts((current) => current.map((post) => (post.id === postId ? { ...post, ...next } : post)));
@@ -575,10 +677,17 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     hasMoreRef.current = false;
     loadingMoreRef.current = false;
     setLoading(true);
+    // Each category keeps its own spatial position; snap the pager to the
+    // incoming category's remembered index.
+    if (spatialFeed) {
+      setSpatialResetNonce((nonce) => nonce + 1);
+      setNewSignalsAvailable(false);
+    }
   }
 
   function refreshHome() {
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    resetSpatialPosition();
     loadStatuses().catch(() => undefined);
     load("refresh").catch(() => undefined);
     loadAds().catch(() => undefined);
@@ -588,6 +697,69 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     setDrawerOpen(false);
     openNativeRoute(navigation, routePath);
   }
+
+  /**
+   * Renders one feed row (post or ad). Shared verbatim between the legacy
+   * vertical list and the spatial pager so every post type, action and ad
+   * behavior is identical in both modes.
+   */
+  const renderFeedRow = (row: HomeFeedRow) => {
+    if (row.type === "ad") {
+      return (
+        <SponsoredAdCard
+          ad={row.ad}
+          isViewable={viewableAdKeys.has(row.key)}
+          edgeInset={12}
+          navigation={navigation}
+          onHide={handleHideAd}
+        />
+      );
+    }
+    const item = row.post;
+    return (
+      <PostCard
+        post={item}
+        busy={guard.isItemBusy(item.id)}
+        active={activePostId === item.id}
+        motionEnabled={ambientMotionEnabled}
+        onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
+        onOpenLive={(post) => {
+          const liveId = Number(post.live?.live_session_id || 0);
+          if (liveId > 0) navigation.navigate("LiveDetail", { liveId, title: post.title || "PulseSoc Live" });
+        }}
+        onReact={handleReact}
+        onSave={handleSave}
+        onRepost={handleRepost}
+        onPromote={(post) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: post.id, title: "Promote Post" })}
+        onShare={handleShare}
+        onComment={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Comments" })}
+        onSubmitComment={handleInlineComment}
+        onReport={(post) =>
+          navigation.navigate("SafetyHub", {
+            title: "Report",
+            section: "reports",
+            reportType: "post",
+            reportTarget: String(post.id)
+          })
+        }
+        onHide={handleHide}
+        onBlock={(post) =>
+          navigation.navigate("SafetyHub", {
+            title: "Blocked Users",
+            section: "blocks",
+            blockTarget: post.author?.public_player_id || post.author_public_player_id || post.author?.username || post.author_username || ""
+          })
+        }
+        onMute={handleMute}
+        onFollow={handleFollow}
+        onDelete={isContentOwner(item, currentUserId) ? handleDelete : undefined}
+        onAuthorPress={(post) => {
+          const params = profileNavigationParams(profileTargetFromPost(post), post.author?.display_name || "Profile");
+          if (params) navigation.navigate("ProfileDetail", params);
+        }}
+      />
+    );
+  };
 
   return (
     <View style={styles.root}>
@@ -624,7 +796,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         ref={listRef}
         style={styles.list}
         contentContainerStyle={[styles.content, { paddingBottom: bottomContentPadding }]}
-        data={feedRows}
+        data={spatialFeed ? EMPTY_FEED_ROWS : feedRows}
         keyExtractor={(row) => row.key}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => refreshHome()} />}
         ListHeaderComponent={
@@ -688,80 +860,82 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             onOpenPreview={(token) => navigation.navigate("ContentPreview", { token })}
           />
         }
+        ListFooterComponent={
+          spatialFeed ? (
+            <>
+              {newSignalsAvailable ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="New Signals available. Tap to load."
+                  style={styles.newSignalsPill}
+                  onPress={refreshHome}
+                >
+                  <Text style={styles.newSignalsText}>New Signals available</Text>
+                </Pressable>
+              ) : null}
+              {feedRows.length > 0 ? (
+                <Animated.View
+                  style={tiltParallaxStyle}
+                  onLayout={(event) => {
+                    spatialPagerY.current = event.nativeEvent.layout.y;
+                  }}
+                >
+                <SpatialPager
+                  testID="spatial-home-feed"
+                  accessibilityLabel={`${activeTab.label} feed, swipe horizontally between signals`}
+                  data={feedRows}
+                  keyExtractor={(row) => row.key}
+                  pageWidth={windowWidth}
+                  pageHeight={spatialPageHeight}
+                  index={spatialIndex}
+                  resetNonce={spatialResetNonce}
+                  controllerRef={spatialPagerController}
+                  onDragStart={tilt.notifyTouchStart}
+                  onIndexSettled={(nextIndex) => {
+                    setSpatialIndexByFeed((current) =>
+                      current[selectedFeed] === nextIndex ? current : { ...current, [selectedFeed]: nextIndex }
+                    );
+                    immersive.notifySwipeSettled();
+                    tilt.notifyTouchEnd();
+                  }}
+                  onEndReached={() => load("more").catch(() => undefined)}
+                  renderPage={(row) => (
+                    <ScrollView
+                      style={styles.spatialPageScroll}
+                      showsVerticalScrollIndicator={false}
+                      nestedScrollEnabled
+                    >
+                      {renderFeedRow(row)}
+                    </ScrollView>
+                  )}
+                />
+                </Animated.View>
+              ) : null}
+            </>
+          ) : loadingMore ? (
+            <ActivityIndicator style={styles.footer} color={colors.accent} />
+          ) : null
+        }
         ListEmptyComponent={
-          <LogiNexusEmptyState
-            title={loading ? "Opening the PulseSoc network" : error ? "Connection interrupted" : `${activeTab.label} is quiet`}
-            body={loading ? "Loading your canonical feed…" : error || `No signals matched ${activeTab.label}. Pull to refresh or switch filters.`}
-            tone={error ? "warning" : "default"}
-          />
+          spatialFeed && feedRows.length > 0 ? null : (
+            <LogiNexusEmptyState
+              title={loading ? "Opening the PulseSoc network" : error ? "Connection interrupted" : `${activeTab.label} is quiet`}
+              body={loading ? "Loading your canonical feed…" : error || `No signals matched ${activeTab.label}. Pull to refresh or switch filters.`}
+              tone={error ? "warning" : "default"}
+            />
+          )
         }
         viewabilityConfig={feedViewabilityConfig}
         onViewableItemsChanged={onFeedViewableItemsChanged}
-        renderItem={({ item: row }) => {
-          if (row.type === "ad") {
-            return (
-              <SponsoredAdCard
-                ad={row.ad}
-                isViewable={viewableAdKeys.has(row.key)}
-                edgeInset={12}
-                navigation={navigation}
-                onHide={handleHideAd}
-              />
-            );
-          }
-          const item = row.post;
-          return (
-            <PostCard
-              post={item}
-              busy={guard.isItemBusy(item.id)}
-              active={activePostId === item.id}
-              motionEnabled={ambientMotionEnabled}
-              onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
-              onOpenLive={(post) => {
-                const liveId = Number(post.live?.live_session_id || 0);
-                if (liveId > 0) navigation.navigate("LiveDetail", { liveId, title: post.title || "PulseSoc Live" });
-              }}
-              onReact={handleReact}
-              onSave={handleSave}
-              onRepost={handleRepost}
-              onPromote={(post) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: post.id, title: "Promote Post" })}
-              onShare={handleShare}
-              onComment={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Comments" })}
-              onSubmitComment={handleInlineComment}
-              onReport={(post) =>
-                navigation.navigate("SafetyHub", {
-                  title: "Report",
-                  section: "reports",
-                  reportType: "post",
-                  reportTarget: String(post.id)
-                })
-              }
-              onHide={handleHide}
-              onBlock={(post) =>
-                navigation.navigate("SafetyHub", {
-                  title: "Blocked Users",
-                  section: "blocks",
-                  blockTarget: post.author?.public_player_id || post.author_public_player_id || post.author?.username || post.author_username || ""
-                })
-              }
-              onMute={handleMute}
-              onFollow={handleFollow}
-              onDelete={isContentOwner(item, currentUserId) ? handleDelete : undefined}
-              onAuthorPress={(post) => {
-                const params = profileNavigationParams(profileTargetFromPost(post), post.author?.display_name || "Profile");
-                if (params) navigation.navigate("ProfileDetail", params);
-              }}
-            />
-          );
-        }}
+        renderItem={({ item: row }) => renderFeedRow(row)}
         onEndReached={() => load("more").catch(() => undefined)}
         onEndReachedThreshold={0.35}
-        ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.footer} color={colors.accent} /> : null}
-        onScroll={bottomNavScroll.onScroll}
+        onScroll={handleOuterFeedScroll}
         onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
       />
       <MasterNavigationDrawer visible={drawerOpen} onClose={() => setDrawerOpen(false)} onOpenRoute={openHomeRoute} />
+      <ImmersiveRevealStrip visible={spatialFeed && immersive.hidden} onReveal={immersive.reveal} />
     </View>
   );
 }
@@ -1352,6 +1526,27 @@ const styles = createThemedStyles(() => ({
     flexShrink: 1,
     fontSize: 12,
     fontWeight: "700"
+  },
+  newSignalsPill: {
+    alignItems: "center",
+    alignSelf: "center",
+    backgroundColor: colors.glassStrong,
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
+    marginBottom: 8,
+    marginTop: 2,
+    paddingHorizontal: 16,
+    paddingVertical: 8
+  },
+  newSignalsText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.4
+  },
+  spatialPageScroll: {
+    flex: 1
   },
   addStatusCard: {
     alignItems: "center",

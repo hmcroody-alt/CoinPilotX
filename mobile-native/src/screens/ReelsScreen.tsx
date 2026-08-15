@@ -1,4 +1,5 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useIsFocused } from "@react-navigation/native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
@@ -69,6 +70,8 @@ import { formatShortTime } from "../utils/format";
 import { useAuth } from "../session/auth";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { createThemedStyles } from "../theme/themedStyles";
+import { spatialReelsEnabled } from "../spatial/flags";
+import { useTiltNavigation } from "../spatial/motion/useTiltNavigation";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Reels"> | NativeStackScreenProps<RootStackParamList, "ReelDetail">;
 
@@ -123,6 +126,7 @@ export function ReelsScreen({ route, navigation }: Props) {
   const [appActive, setAppActive] = useState(AppState.currentState === "active");
   const [shareOpen, setShareOpen] = useState(false);
   const [viewportHeight, setViewportHeight] = useState(Dimensions.get("window").height);
+  const [viewportWidth, setViewportWidth] = useState(Dimensions.get("window").width);
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 72 });
   const qaStateApplied = useRef(false);
   const loadVersion = useRef(0);
@@ -131,6 +135,26 @@ export function ReelsScreen({ route, navigation }: Props) {
   // Guards against overlapping reselect-refreshes so a rapid burst of
   // double-taps cannot launch multiple concurrent feed refreshes.
   const reselectingRef = useRef(false);
+
+  // ---- Spatial Console (flag-gated; inert when OFF) -----------------------
+  // Only the central player's paging axis changes: header lane rail, create
+  // button, and bottom nav are untouched (mission §16). Tilt shares the same
+  // index pipeline as swipe and is suspended while any overlay is open.
+  const spatialReels = spatialReelsEnabled();
+  const isFocused = useIsFocused();
+  const overlayOpen = Boolean(shareOpen || commentReel || reactionReel || musicReel || moreReel);
+  const tilt = useTiltNavigation({
+    surface: "reels",
+    enabled: spatialReels && isFocused && appActive && reels.length > 0,
+    suspended: overlayOpen,
+    currentIndex: activeIndex < 0 ? 0 : activeIndex,
+    pageCount: reels.length,
+    onCommit: (nextIndex) => {
+      listRef.current?.scrollToOffset({ offset: nextIndex * viewportWidth, animated: true });
+      setActiveIndex(nextIndex);
+    }
+  });
+  // -------------------------------------------------------------------------
 
   async function load(mode: "initial" | "refresh" | "more" = "initial") {
     if (mode === "initial" && QA_REELS_STATE && QA_RECOVERY_STATES.has(QA_REELS_STATE as ConnectionState)) {
@@ -637,20 +661,16 @@ export function ReelsScreen({ route, navigation }: Props) {
     if (liveId) navigation.navigate("LiveDetail", { liveId, title: reel.title || "PulseSoc Live" });
   }
 
-  return (
-    <View style={styles.root} onLayout={(event) => setViewportHeight(event.nativeEvent.layout.height)}>
-      <GalaxyField />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.laneRailContent} style={[styles.laneRail, { top: insets.top + 6 }]} accessibilityRole="tablist">
-        {REEL_LANES.map((item) => <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: lane === item.key }} style={[styles.laneButton, lane === item.key && styles.laneButtonActive]} onPress={() => setLane(item.key)}><Text style={[styles.laneText, lane === item.key && styles.laneTextActive]}>{item.label}</Text></Pressable>)}
-      </ScrollView>
-      <Pressable accessibilityRole="button" accessibilityLabel="Create Reel" style={[styles.createButton, { top: insets.top + 6 }]} onPress={() => navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true, composerMode: "reel" } })}><Text style={styles.createText}>＋</Text></Pressable>
-      {offline && reels.length ? <View style={[styles.statusPill, { top: insets.top + 52 }]}><Text style={styles.statusPillText}>Saved Reels · {connectionState === "connecting" ? "refreshing" : cacheAge(cachedAt)}</Text></View> : null}
+  // The central player list, extracted so spatial mode can wrap it in a
+  // parallax container without duplicating props. Legacy renders it as-is.
+  const reelsList = (
       <FlatList
         ref={listRef}
         data={reels}
         keyExtractor={(item) => String(item.id)}
+        horizontal={spatialReels}
         renderItem={({ item, index }) => (
-          <View style={[styles.page, { height: viewportHeight }]}>
+          <View style={[styles.page, { height: viewportHeight }, spatialReels ? { width: viewportWidth } : null]}>
             <ReelPlayerCard
               reel={item}
               active={index === activeIndex && appActive && !shareOpen && !commentReel && !reactionReel && !musicReel && !moreReel}
@@ -683,16 +703,27 @@ export function ReelsScreen({ route, navigation }: Props) {
         )}
         pagingEnabled
         showsVerticalScrollIndicator={false}
-        snapToInterval={viewportHeight}
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={spatialReels ? viewportWidth : viewportHeight}
         decelerationRate="fast"
         onScroll={bottomNavScroll.onScroll}
-        onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
+        onScrollBeginDrag={() => {
+          tilt.notifyTouchStart();
+          bottomNavScroll.onScrollBeginDrag();
+        }}
+        onMomentumScrollEnd={() => tilt.notifyTouchEnd()}
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
         viewabilityConfig={viewabilityConfig.current}
         onViewableItemsChanged={onViewableItemsChanged.current}
         onEndReached={() => load("more").catch(() => undefined)}
         onEndReachedThreshold={0.5}
-        refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
+        refreshControl={
+          // RefreshControl is vertical-only; in spatial (horizontal) mode the
+          // bottom-tab double-tap refresh path covers reloads instead.
+          spatialReels ? undefined : (
+            <RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />
+          )
+        }
         ListEmptyComponent={<ReelsRecovery state={connectionState} loading={loading} onRetry={() => load("refresh").catch(() => undefined)} onAuthenticate={() => requestReauthentication("/pulse/reels")} onExplore={(nextLane) => setLane(nextLane)} />}
         ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.footer} color={colors.accent} /> : null}
         initialNumToRender={2}
@@ -700,6 +731,45 @@ export function ReelsScreen({ route, navigation }: Props) {
         windowSize={3}
         removeClippedSubviews
       />
+  );
+
+  return (
+    <View
+      style={styles.root}
+      onLayout={(event) => {
+        setViewportHeight(event.nativeEvent.layout.height);
+        setViewportWidth(event.nativeEvent.layout.width);
+      }}
+    >
+      <GalaxyField />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.laneRailContent} style={[styles.laneRail, { top: insets.top + 6 }]} accessibilityRole="tablist">
+        {REEL_LANES.map((item) => <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: lane === item.key }} style={[styles.laneButton, lane === item.key && styles.laneButtonActive]} onPress={() => setLane(item.key)}><Text style={[styles.laneText, lane === item.key && styles.laneTextActive]}>{item.label}</Text></Pressable>)}
+      </ScrollView>
+      <Pressable accessibilityRole="button" accessibilityLabel="Create Reel" style={[styles.createButton, { top: insets.top + 6 }]} onPress={() => navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true, composerMode: "reel" } })}><Text style={styles.createText}>＋</Text></Pressable>
+      {offline && reels.length ? <View style={[styles.statusPill, { top: insets.top + 52 }]}><Text style={styles.statusPillText}>Saved Reels · {connectionState === "connecting" ? "refreshing" : cacheAge(cachedAt)}</Text></View> : null}
+      {spatialReels ? (
+        <Animated.View
+          style={[
+            styles.spatialListWrap,
+            {
+              transform: [
+                {
+                  // Tilt right previews the next reel: content eases left.
+                  translateX: tilt.previewProgress.interpolate({
+                    inputRange: [-1, 0, 1],
+                    outputRange: [12, 0, -12],
+                    extrapolate: "clamp"
+                  })
+                }
+              ]
+            }
+          ]}
+        >
+          {reelsList}
+        </Animated.View>
+      ) : (
+        reelsList
+      )}
       <CommentsModal
         visible={Boolean(commentReel)}
         reel={commentReel}
@@ -1163,6 +1233,9 @@ const styles = createThemedStyles(() => ({
   replyToggle: { color: colors.accent, fontSize: 11, fontWeight: "800", marginTop: 8 },
   root: {
     backgroundColor: "#02050b",
+    flex: 1
+  },
+  spatialListWrap: {
     flex: 1
   },
   skeletonAction: { backgroundColor: "rgba(97,234,246,0.12)", borderRadius: 16, height: 32, width: 32 },
