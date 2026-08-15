@@ -17,6 +17,7 @@ import {
   __resetMotionSettingsForTests,
   getMotionSettings,
   hydrateMotionSettings,
+  resetMotionSettings,
   updateMotionSettings
 } from "../motionSettings";
 
@@ -150,5 +151,67 @@ describe("legacy motion scope migration", () => {
   it("survives a non-string scope without throwing", async () => {
     const settings = await storedAs({ mode: "tilt", scope: { feed: true }, onboarded: true });
     expect(settings.mode).toBe("tilt");
+  });
+});
+
+/**
+ * "Reset Reels motion settings" (mission §8).
+ *
+ * Distinct from "Replay tutorial", which re-shows the explainer and keeps the
+ * user's choices. Reset is the user-facing counterpart to the motion rollback
+ * flag: it returns the device to the pre-consent state, which is the only state
+ * in which the sensor provably cannot subscribe at all.
+ */
+describe("reset Reels motion settings", () => {
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+    __resetMotionSettingsForTests();
+  });
+
+  it("returns every preference to its factory value, including onboarding", async () => {
+    await updateMotionSettings({
+      mode: "tilt",
+      sensitivity: "high",
+      hapticsEnabled: false,
+      neutralBaselineRad: 0.42,
+      onboarded: true
+    });
+
+    const after = await resetMotionSettings();
+
+    expect(after).toEqual(DEFAULT_MOTION_SETTINGS);
+    // onboarded: false is the point, not a side effect — it is what makes the
+    // sensor ineligible, so a reset device cannot be running motion.
+    expect(after.onboarded).toBe(false);
+    expect(after.mode).toBe("swipe-only");
+    expect(getMotionSettings()).toEqual(DEFAULT_MOTION_SETTINGS);
+  });
+
+  it("removes the record rather than overwriting it with defaults", async () => {
+    await updateMotionSettings({ mode: "parallax", onboarded: true });
+    await resetMotionSettings();
+
+    // A reset device is byte-identical to one that never ran a motion build.
+    expect(await AsyncStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it("does not resurrect the old settings on the next hydrate", async () => {
+    await updateMotionSettings({ mode: "tilt", onboarded: true, neutralBaselineRad: 0.42 });
+    await resetMotionSettings();
+
+    __resetMotionSettingsForTests();
+    const rehydrated = await hydrateMotionSettings();
+
+    expect(rehydrated).toEqual(DEFAULT_MOTION_SETTINGS);
+  });
+
+  it("still resets in memory when storage refuses the delete", async () => {
+    await updateMotionSettings({ mode: "tilt", onboarded: true });
+    const removeItem = jest.spyOn(AsyncStorage, "removeItem").mockRejectedValueOnce(new Error("disk full"));
+
+    await expect(resetMotionSettings()).resolves.toEqual(DEFAULT_MOTION_SETTINGS);
+    expect(getMotionSettings().mode).toBe("swipe-only");
+
+    removeItem.mockRestore();
   });
 });
