@@ -191,7 +191,10 @@
       "trustSafety": "भरोसा और सुरक्षा",
       "undxActionCenter": "UNDX एक्शन सेंटर",
       "undxCapabilities": "UNDX क्षमताएं",
-      "verificationCenter": "वेरिफ़िकेशन सेंटर"
+      "verificationCenter": "वेरिफ़िकेशन सेंटर",
+      "page": "पेज",
+      "createPage": "पेज बनाएँ",
+      "yourPages": "आपके पेज"
     },
     "navSubtitles": {
       "missionControl": "मिशन कंट्रोल",

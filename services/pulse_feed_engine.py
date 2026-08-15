@@ -309,8 +309,65 @@ def _ensure_member_000_profile():
         logging.getLogger(__name__).exception("member_000_profile_seed_failed")
 
 
+def _page_author(page_id):
+    """Attribution for a page-authored post (Page OS). Same shape as a user
+    author so every existing consumer keeps working; the extra `page` object
+    and `account_type: "PAGE"` are how clients know to render the page badge.
+    Any failure falls back to user attribution — a broken page row must never
+    hide a post."""
+    try:
+        conn = user_context.connect()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, name, handle, avatar_url, page_type, verification_status "
+            "FROM pulse_pages WHERE id=? LIMIT 1",
+            (int(page_id),),
+        )
+        page = _row(cur.fetchone())
+        conn.close()
+    except Exception:
+        return None
+    if not page:
+        return None
+    handle = page.get("handle") or ""
+    page_type = str(page.get("page_type") or "PAGE")
+    verified = (page.get("verification_status") or "") == "verified"
+    label = page_type.replace("_", " ").title()
+    return {
+        "id": None,
+        "user_id": None,
+        "public_player_id": handle or None,
+        "username": handle or None,
+        "handle": handle or None,
+        "display_name": str(page.get("name") or handle or "Page")[:80],
+        "avatar_url": page.get("avatar_url") or "",
+        "profile_url": f"/pulse/pages/@{handle}" if handle else "",
+        "rank": label,
+        "primary_label": label,
+        "badges": [label] + (["Verified"] if verified else []),
+        "badge_keys": ["page"] + (["verified"] if verified else []),
+        "premium_verified": verified,
+        "premium_mark": verified,
+        "account_type": "PAGE",
+        "automated": False,
+        "official_system_account": False,
+        "page": {
+            "id": int(page.get("id") or 0),
+            "name": page.get("name"),
+            "handle": handle,
+            "page_type": page_type,
+            "verified": verified,
+        },
+    }
+
+
 def _public_author(row):
     item = dict(row or {})
+    page_id = int(item.get("page_id") or 0)
+    if page_id > 0:
+        page_author = _page_author(page_id)
+        if page_author:
+            return page_author
     public_player_id = item.get("public_player_id") or item.get("author_public_player_id") or ""
     user_id = int(item.get("user_id") or 0)
     is_member_000 = public_player_id in {MEMBER_000_PUBLIC_PLAYER_ID, MEMBER_000_LEGACY_PUBLIC_PLAYER_ID} or (
@@ -958,7 +1015,7 @@ def enqueue_post_jobs(post_id, post_type="text", has_media=False):
         enqueue_job(job_type, "post", post_id)
 
 
-def create_post(user_id, body="", post_type="text", title="", tags=None, visibility="public", media_ids=None, enqueue_background=True):
+def create_post(user_id, body="", post_type="text", title="", tags=None, visibility="public", media_ids=None, enqueue_background=True, page_id=None):
     post_type = POST_TYPE_ALIASES.get((post_type or "").strip().lower(), (post_type or "text").strip().lower())
     if post_type not in POST_TYPES:
         return {"ok": False, "message": "Post type not supported.", "status": "rejected", "post_type": post_type}
@@ -996,8 +1053,8 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
             """
             INSERT INTO pulse_posts
             (user_id, public_player_id, post_type, body, media_ids_json, title, tags_json, visibility,
-             moderation_status, ai_summary, ai_tags_json, sentiment, risk_score, engagement_score, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             moderation_status, ai_summary, ai_tags_json, sentiment, risk_score, engagement_score, page_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(user_id),
@@ -1014,6 +1071,7 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
                 moderation.get("sentiment") or "neutral",
                 int(moderation.get("risk_score") or 0),
                 0,
+                int(page_id) if page_id else None,
                 now,
                 now,
             ),

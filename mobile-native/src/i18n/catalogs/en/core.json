@@ -191,7 +191,10 @@
       "trustSafety": "Trust & Safety",
       "undxActionCenter": "UNDX Action Center",
       "undxCapabilities": "UNDX Capabilities",
-      "verificationCenter": "Verification Center"
+      "verificationCenter": "Verification Center",
+      "page": "Page",
+      "createPage": "Create Page",
+      "yourPages": "Your Pages"
     },
     "navSubtitles": {
       "missionControl": "Mission Control",

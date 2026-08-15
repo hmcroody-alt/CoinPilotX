@@ -191,7 +191,10 @@
       "trustSafety": "Konfyans ak pwoteksyon",
       "undxActionCenter": "Sant aksyon UNDX",
       "undxCapabilities": "Kapasite UNDX",
-      "verificationCenter": "Sant verifikasyon"
+      "verificationCenter": "Sant verifikasyon",
+      "page": "Paj",
+      "createPage": "Kreye yon paj",
+      "yourPages": "Paj ou yo"
     },
     "navSubtitles": {
       "missionControl": "Sant kontwòl",

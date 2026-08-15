@@ -74,6 +74,9 @@ import { RegionTimeScreen } from "../screens/RegionTimeScreen";
 import { PulseQueueScreen } from "../screens/PulseQueueScreen";
 import { PostDetailScreen } from "../screens/PostDetailScreen";
 import { ProfilePostViewerScreen } from "../screens/ProfilePostViewerScreen";
+import { PageCreateScreen } from "../screens/PageCreateScreen";
+import { PageScreen } from "../screens/PageScreen";
+import { PagesHubScreen } from "../screens/PagesHubScreen";
 import { PremiumCenterScreen } from "../screens/PremiumCenterScreen";
 import { ProfileEditScreen } from "../screens/ProfileEditScreen";
 import { PulseShareScreen } from "../screens/PulseShareScreen";
@@ -492,6 +495,9 @@ export function AppNavigator() {
       <Stack.Screen name="LiveScheduleGateway" component={EventsScreen} options={{ title: t("common:screens.scheduleLive") }} />
       <Stack.Screen name="LiveEventCreateGateway" component={EventsScreen} options={{ title: t("common:screens.createLiveEvent") }} />
       <Stack.Screen name="ProfileDetail" component={ProfileScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.profile") })} />
+      <Stack.Screen name="Page" component={PageScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.page") })} />
+      <Stack.Screen name="PageCreate" component={PageCreateScreen} options={{ title: t("common:screens.createPage") }} />
+      <Stack.Screen name="PagesHub" component={PagesHubScreen} options={{ title: t("common:screens.yourPages") }} />
       <Stack.Screen name="PulseIdentity" component={PulseIdentityScreen} options={{ title: t("common:screens.pulseIdentity") }} />
       <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} options={{ title: t("common:screens.editProfile") }} />
       {/*

@@ -35,6 +35,10 @@ ENTITY_TYPES = (
     "campaign", "wallet",
     "deployment", "route", "job", "incident", "event",
     "undx_agent", "runbook",
+    # Page OS entities: a page is owned by a user and links to canonical
+    # subsystems (seller store, ad account). Sentinel observes these
+    # relationships; it never acts on pages.
+    "page",
 )
 
 

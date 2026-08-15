@@ -191,7 +191,10 @@
       "trustSafety": "신뢰 및 안전",
       "undxActionCenter": "UNDX 액션 센터",
       "undxCapabilities": "UNDX 기능",
-      "verificationCenter": "인증 센터"
+      "verificationCenter": "인증 센터",
+      "page": "페이지",
+      "createPage": "페이지 만들기",
+      "yourPages": "내 페이지"
     },
     "navSubtitles": {
       "missionControl": "관제 센터",

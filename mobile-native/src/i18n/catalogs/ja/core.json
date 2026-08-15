@@ -191,7 +191,10 @@
       "trustSafety": "信頼と安全",
       "undxActionCenter": "UNDXアクションセンター",
       "undxCapabilities": "UNDXの機能",
-      "verificationCenter": "認証センター"
+      "verificationCenter": "認証センター",
+      "page": "ページ",
+      "createPage": "ページを作成",
+      "yourPages": "あなたのページ"
     },
     "navSubtitles": {
       "missionControl": "管制センター",

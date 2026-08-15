@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { createPost, PulsePost } from "../api/feed";
+import { createPagePost, listPageIdentities, PageIdentity } from "../api/pages";
 import { uploadResultMediaId } from "../media/nativeMediaUpload";
 import { MediaUploadPreview } from "../media/MediaUploadPreview";
 import { useNativeMediaUpload } from "../media/useNativeMediaUpload";
@@ -27,7 +28,26 @@ export function FeedComposer({ visible, onClose, onCreated }: Props) {
   const [visibility, setVisibility] = useState<(typeof visibilityOptions)[number]["value"]>("public");
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState("");
+  // Identity switching (Page OS): every identity the user can post as —
+  // personal plus pages where their role allows content creation. The server
+  // re-checks the role on publish; this list is a convenience, not authority.
+  const [identities, setIdentities] = useState<PageIdentity[]>([]);
+  const [postingAs, setPostingAs] = useState<PageIdentity | null>(null);
   const canPublish = Boolean(body.trim() || title.trim() || mediaUpload.asset);
+
+  useEffect(() => {
+    if (!visible) return;
+    listPageIdentities()
+      .then((result) => {
+        setIdentities([result.personal, ...result.pages]);
+        setPostingAs((current) => current || result.personal);
+      })
+      .catch(() => {
+        // Pages unavailable → personal-only composer, unchanged behavior.
+        setIdentities([]);
+        setPostingAs(null);
+      });
+  }, [visible]);
 
   async function publish() {
     if (!canPublish || publishing) {
@@ -46,6 +66,22 @@ export function FeedComposer({ visible, onClose, onCreated }: Props) {
       }
       const hasVideo = mediaUpload.asset?.mediaType === "video";
       const postType = hasVideo ? "video" : mediaIds.length ? "image" : "text";
+      if (postingAs && postingAs.kind === "page") {
+        // Page post: same canonical content system, page attribution resolved
+        // server-side. The role check happens on the server.
+        const pageResult = await createPagePost(postingAs.id, {
+          body: body.trim(),
+          title: title.trim(),
+          post_type: postType,
+          visibility,
+          media_ids: mediaIds
+        });
+        if (!pageResult.ok) throw new Error(pageResult.message || "Page post could not publish.");
+        resetComposer();
+        onCreated(undefined);
+        onClose();
+        return;
+      }
       const result = await createPost({
         body: body.trim(),
         title: title.trim(),
@@ -89,6 +125,31 @@ export function FeedComposer({ visible, onClose, onCreated }: Props) {
         </View>
 
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {identities.length > 1 ? (
+            <View>
+              <Text style={styles.postingAsLabel}>
+                Posting as {postingAs?.kind === "page" ? postingAs.name : `${postingAs?.name || "yourself"} (personal)`}
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.identityRow}>
+                {identities.map((identity) => {
+                  const active = postingAs?.kind === identity.kind && postingAs?.id === identity.id;
+                  return (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      key={`${identity.kind}-${identity.id}`}
+                      style={[styles.identityChip, active && styles.identityChipActive]}
+                      onPress={() => setPostingAs(identity)}
+                    >
+                      <Text style={[styles.identityChipText, active && styles.identityChipTextActive]}>
+                        {identity.kind === "page" ? identity.name : `${identity.name} (personal)`}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          ) : null}
           <TextInput
             style={styles.titleInput}
             value={title}
@@ -200,9 +261,37 @@ const styles = createThemedStyles(() => ({
     fontSize: 17,
     fontWeight: "900"
   },
+  identityChip: {
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7
+  },
+  identityChipActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent
+  },
+  identityChipText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  identityChipTextActive: {
+    color: colors.background
+  },
+  identityRow: {
+    gap: 8,
+    paddingTop: 8
+  },
   mediaActions: {
     flexDirection: "row",
     gap: 10
+  },
+  postingAsLabel: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "900"
   },
   publishButton: {
     alignItems: "center",

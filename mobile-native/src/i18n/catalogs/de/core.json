@@ -191,7 +191,10 @@
       "trustSafety": "Vertrauen & Sicherheit",
       "undxActionCenter": "UNDX-Aktionszentrale",
       "undxCapabilities": "UNDX-Fähigkeiten",
-      "verificationCenter": "Verifizierungscenter"
+      "verificationCenter": "Verifizierungscenter",
+      "page": "Seite",
+      "createPage": "Seite erstellen",
+      "yourPages": "Deine Seiten"
     },
     "navSubtitles": {
       "missionControl": "Einsatzzentrale",

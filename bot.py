@@ -290,6 +290,7 @@ from services import (
     pulse_ads_reporting,
     pulse_ads_insights,
     pulsesoc_growth_engine,
+    pulsesoc_pages,
     pulsesoc_promotions,
     pulsesoc_communications_engine as call_engine,
     pulse_identity_engine,
@@ -17356,6 +17357,308 @@ def api_pulsesoc_reel_promotion_transition(reel_id, promotion_id, action):
         return jsonify({"ok": True, "promotion": pulsesoc_promotions.transition(conn, user["user_id"], promotion_id, action)})
     except Exception as exc:
         return pulse_promotion_error_response(exc)
+    finally:
+        conn.close()
+
+
+def pulse_pages_error_response(exc):
+    if isinstance(exc, pulsesoc_pages.PageError):
+        return jsonify({"ok": False, "message": str(exc)}), int(exc.status_code or 400)
+    logging.exception("PULSESOC_PAGES_API_FAILED error=%s", exc)
+    return jsonify({"ok": False, "message": "Page request could not be completed."}), 500
+
+
+def pulse_pages_conn():
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+@webhook_app.route("/api/pages", methods=["GET", "POST"])
+def api_pulsesoc_pages():
+    init_db()
+    user = api_account_user()
+    conn = pulse_pages_conn()
+    try:
+        if request.method == "POST":
+            if not user:
+                return api_error("Login required.", 401)
+            page = pulsesoc_pages.create_page(conn, user["user_id"], request.get_json(silent=True) or {})
+            return jsonify({"ok": True, "page": page, "message": "Page created."})
+        query = request.args.get("q") or ""
+        if query:
+            return jsonify({"ok": True, "pages": pulsesoc_pages.search_pages(conn, query, request.args.get("limit") or 20)})
+        if not user:
+            return api_error("Login required.", 401)
+        return jsonify({"ok": True, "pages": pulsesoc_pages.list_my_pages(conn, user["user_id"])})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/identities", methods=["GET"])
+def api_pulsesoc_page_identities():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        return jsonify({"ok": True, **pulsesoc_pages.list_identities(conn, user["user_id"])})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/handle-check", methods=["GET"])
+def api_pulsesoc_page_handle_check():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        pulsesoc_pages.ensure_tables(conn)
+        return jsonify({"ok": True, **pulsesoc_pages.check_handle(conn, request.args.get("handle"))})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/invites/accept", methods=["POST"])
+def api_pulsesoc_page_invite_accept():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        payload = request.get_json(silent=True) or {}
+        return jsonify({"ok": True, "membership": pulsesoc_pages.accept_invite(conn, user["user_id"], payload.get("token"))})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/by-handle/<handle>", methods=["GET"])
+def api_pulsesoc_page_by_handle(handle):
+    init_db()
+    user = api_account_user()
+    conn = pulse_pages_conn()
+    try:
+        pulsesoc_pages.ensure_tables(conn)
+        page = pulsesoc_pages._load_page(conn, handle)
+        if page.get("status") in ("UNPUBLISHED", "DEACTIVATED"):
+            viewer_role = pulsesoc_pages.role_for(conn, user["user_id"], page["id"]) if user else None
+            if not viewer_role:
+                return api_error("Page not found.", 404)
+        return jsonify({"ok": True, "page": pulsesoc_pages.public_view(conn, page, viewer_user_id=user["user_id"] if user else None)})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>", methods=["GET", "PATCH"])
+def api_pulsesoc_page_detail(page_id):
+    init_db()
+    user = api_account_user()
+    conn = pulse_pages_conn()
+    try:
+        pulsesoc_pages.ensure_tables(conn)
+        if request.method == "PATCH":
+            if not user:
+                return api_error("Login required.", 401)
+            return jsonify({"ok": True, "page": pulsesoc_pages.update_page(conn, user["user_id"], page_id, request.get_json(silent=True) or {})})
+        page = pulsesoc_pages._load_page(conn, page_id)
+        if page.get("status") in ("UNPUBLISHED", "DEACTIVATED"):
+            viewer_role = pulsesoc_pages.role_for(conn, user["user_id"], page["id"]) if user else None
+            if not viewer_role:
+                return api_error("Page not found.", 404)
+        return jsonify({"ok": True, "page": pulsesoc_pages.public_view(conn, page, viewer_user_id=user["user_id"] if user else None)})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/manage", methods=["GET"])
+def api_pulsesoc_page_manage(page_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        pulsesoc_pages.ensure_tables(conn)
+        return jsonify({"ok": True, "page": pulsesoc_pages.manage_view(conn, user["user_id"], page_id)})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/status", methods=["POST"])
+def api_pulsesoc_page_status(page_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        payload = request.get_json(silent=True) or {}
+        return jsonify({"ok": True, "page": pulsesoc_pages.set_status(conn, user["user_id"], page_id, payload.get("status"))})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/verification", methods=["POST"])
+def api_pulsesoc_page_verification(page_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        return jsonify({"ok": True, **pulsesoc_pages.request_verification(conn, user["user_id"], page_id, request.get_json(silent=True) or {})})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/members", methods=["GET", "POST"])
+def api_pulsesoc_page_members(page_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        if request.method == "POST":
+            invite = pulsesoc_pages.invite_member(conn, user["user_id"], page_id, request.get_json(silent=True) or {})
+            return jsonify({"ok": True, "invite": invite, "message": "Invite sent."})
+        return jsonify({"ok": True, "members": pulsesoc_pages.list_members(conn, user["user_id"], page_id)})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/members/<int:member_user_id>", methods=["PATCH", "DELETE"])
+def api_pulsesoc_page_member_detail(page_id, member_user_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        if request.method == "DELETE":
+            return jsonify({"ok": True, **pulsesoc_pages.remove_member(conn, user["user_id"], page_id, member_user_id)})
+        payload = request.get_json(silent=True) or {}
+        return jsonify({"ok": True, "member": pulsesoc_pages.change_role(conn, user["user_id"], page_id, member_user_id, payload.get("role"))})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/transfer", methods=["POST"])
+def api_pulsesoc_page_transfer(page_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        payload = request.get_json(silent=True) or {}
+        result = pulsesoc_pages.transfer_ownership(conn, user["user_id"], page_id, payload.get("new_owner_user_id"), payload.get("confirm"))
+        return jsonify({"ok": True, **result, "message": "Ownership transferred."})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/follow", methods=["POST"])
+def api_pulsesoc_page_follow(page_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        return jsonify({"ok": True, **pulsesoc_pages.toggle_follow(conn, user["user_id"], page_id)})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/posts", methods=["GET", "POST"])
+def api_pulsesoc_page_posts(page_id):
+    init_db()
+    user = api_account_user()
+    conn = pulse_pages_conn()
+    try:
+        if request.method == "POST":
+            if not user:
+                return api_error("Login required.", 401)
+            result = pulsesoc_pages.create_page_post(conn, user["user_id"], page_id, request.get_json(silent=True) or {})
+            status_code = 200 if result.get("ok") else 400
+            return jsonify(result), status_code
+        return jsonify({
+            "ok": True,
+            **pulsesoc_pages.list_page_posts(
+                conn, page_id,
+                viewer_user_id=user["user_id"] if user else None,
+                limit=request.args.get("limit") or 20,
+                offset=request.args.get("offset") or 0,
+            ),
+        })
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/links", methods=["GET", "POST"])
+def api_pulsesoc_page_links(page_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        if request.method == "POST":
+            payload = request.get_json(silent=True) or {}
+            return jsonify({"ok": True, "link": pulsesoc_pages.set_link(conn, user["user_id"], page_id, payload.get("link_type"), payload.get("ref_id"))})
+        pulsesoc_pages.require_permission(conn, user["user_id"], page_id, "view_analytics")
+        return jsonify({"ok": True, "links": pulsesoc_pages.list_links(conn, page_id, request.args.get("type"))})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/undx-context", methods=["GET"])
+def api_pulsesoc_page_undx_context(page_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        pulsesoc_pages.ensure_tables(conn)
+        return jsonify({"ok": True, "context": pulsesoc_pages.undx_page_context(conn, user["user_id"], page_id)})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
     finally:
         conn.close()
 
@@ -103818,6 +104121,9 @@ def _init_db_impl():
         ("replay_url", "TEXT"),
         ("status", "TEXT DEFAULT 'published'"),
         ("edited_at", "TEXT"),
+        # Page OS: a post authored as a page carries the page id; attribution
+        # is resolved at serialization time. Personal posts keep NULL.
+        ("page_id", "INTEGER"),
         ("created_at", "TEXT"),
         ("updated_at", "TEXT"),
         ("deleted_at", "TEXT"),

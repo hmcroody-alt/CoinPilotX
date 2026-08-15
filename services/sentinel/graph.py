@@ -18,6 +18,9 @@ EDGE_TYPES = (
     # devices are commonly family/business/support (Stage 11).
     "used_session", "session_on_device", "session_on_network",
     "recovery_for_user", "auth_from_network", "admin_session",
+    # Page OS edges (observational): user→page ownership and page→canonical
+    # subsystem links. Facts for correlation, never grounds for auto-action.
+    "owns_page",
 )
 
 

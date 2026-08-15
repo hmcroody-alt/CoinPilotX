@@ -344,6 +344,17 @@ export type RootStackParamList = {
   EventDetail: { eventId: number; title?: string };
   LiveScheduleGateway: { title?: string } | undefined;
   LiveEventCreateGateway: { title?: string } | undefined;
+  /**
+   * Page OS — the canonical public page surface. One route for every page
+   * type (artist, business, organization, …); the tab set is server-decided.
+   * `handle` or `pageId` identifies the page; both accepted so deep links
+   * (`/pulse/pages/@handle`) and in-app navigation share one destination.
+   */
+  Page: { handle?: string; pageId?: number; title?: string } | undefined;
+  /** Page creation flow: type → name → handle → details → owner confirmation. */
+  PageCreate: undefined;
+  /** My pages + role-gated management, linking into existing canonical systems. */
+  PagesHub: { focusPageId?: number } | undefined;
   ProfileDetail: {
     profileKey?: string;
     userId?: number;

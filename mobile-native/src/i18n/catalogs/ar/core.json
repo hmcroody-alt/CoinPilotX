@@ -191,7 +191,10 @@
       "trustSafety": "الثقة والأمان",
       "undxActionCenter": "مركز إجراءات UNDX",
       "undxCapabilities": "قدرات UNDX",
-      "verificationCenter": "مركز التوثيق"
+      "verificationCenter": "مركز التوثيق",
+      "page": "صفحة",
+      "createPage": "إنشاء صفحة",
+      "yourPages": "صفحاتك"
     },
     "navSubtitles": {
       "missionControl": "مركز القيادة",
