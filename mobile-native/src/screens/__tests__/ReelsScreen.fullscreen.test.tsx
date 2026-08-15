@@ -169,29 +169,66 @@ function cardFor(id: number) {
   return [...mockCardProps].reverse().find((props) => props.reel?.id === id);
 }
 
+/** A horizontal scroll event carrying the one measurement the rule reads. */
+const scrollEvent = (x: number) => ({ nativeEvent: { contentOffset: { x, y: 0 } } });
+
+/** Where the pager is resting, so each helper can swipe *from* somewhere real. */
+let pagerOffsetX = 0;
+
 /**
- * Drive a complete finger swipe: drag begins, drag ends, momentum carries the
- * pager to `toIndex`. This is the exact callback order RN emits, and the order
- * is the point — the source of a settle is decided by whether a drag was seen.
+ * Drive a complete finger swipe: drag begins, the finger lifts partway, and
+ * momentum carries the pager to `toIndex`. This is the exact callback order RN
+ * emits, and the order is the point — visibility resolves on the lift, and the
+ * source of a gesture is decided by whether a drag was seen at all.
  */
 async function swipeTo(list: any, toIndex: number) {
+  const from = pagerOffsetX;
+  const to = toIndex * PAGE;
   await act(async () => {
-    list.props.onScrollBeginDrag();
-    list.props.onScrollEndDrag();
+    list.props.onScrollBeginDrag(scrollEvent(from));
+    // The finger releases most of the way across; the fling finishes the page.
+    list.props.onScrollEndDrag(scrollEvent(from + (to - from) * 0.6));
     list.props.onMomentumScrollBegin();
-    list.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: toIndex * PAGE, y: 0 } } });
+    list.props.onMomentumScrollEnd(scrollEvent(to));
+  });
+  pagerOffsetX = to;
+}
+
+/**
+ * A swipe right the pager cannot act on: at the leading edge it rubber-bands
+ * and settles back on the reel it started from. On a device this is the very
+ * first thing a user tries, and it is what the index-derived rule got wrong.
+ */
+async function swipeRightAgainstTheEdge(list: any, distance = 120) {
+  const from = pagerOffsetX;
+  await act(async () => {
+    list.props.onScrollBeginDrag(scrollEvent(from));
+    list.props.onScrollEndDrag(scrollEvent(from - distance));
+    list.props.onMomentumScrollBegin();
+    list.props.onMomentumScrollEnd(scrollEvent(from));
+  });
+}
+
+/** A drag that travels and returns under the finger: the user changed their mind. */
+async function cancelledDrag(list: any) {
+  const from = pagerOffsetX;
+  await act(async () => {
+    list.props.onScrollBeginDrag(scrollEvent(from));
+    list.props.onScrollEndDrag(scrollEvent(from));
   });
 }
 
 /** A tilt commit or any other programmatic scroll: momentum with no drag. */
 async function settleWithoutTouch(list: any, toIndex: number) {
   await act(async () => {
-    list.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: toIndex * PAGE, y: 0 } } });
+    list.props.onMomentumScrollEnd(scrollEvent(toIndex * PAGE));
   });
+  pagerOffsetX = toIndex * PAGE;
 }
 
 beforeEach(() => {
   mockCardProps.length = 0;
+  pagerOffsetX = 0;
   jest.clearAllMocks();
   __clearSpatialFlagOverrides();
   mockCached.mockResolvedValue({ reels: [], cachedAt: 0 });
@@ -321,15 +358,60 @@ describe("directional navigator visibility", () => {
     expect(mockShowBottomNav).not.toHaveBeenCalled();
   });
 
-  it("leaves navigation alone when a swipe springs back to the same reel", async () => {
-    // The mission's named edge case: first reel, swipe right, travel, spring
-    // back. Direction alone must not hide anything — no page was committed.
+  it("hides on a right swipe at the first reel, which cannot change the page", async () => {
+    // The device failure this rule was rewritten for. The pager is at offset 0,
+    // so a right swipe rubber-bands back to the reel it started from. Reading
+    // direction from the settled *index* made that "no transition" and left the
+    // dock up — for the single most likely way anyone tries the gesture.
     enableSpatial();
     const { list } = await renderScreen();
     mockShowBottomNav.mockClear();
     mockSetBottomNavHidden.mockClear();
 
-    await swipeTo(list, 0);
+    await swipeRightAgainstTheEdge(list);
+
+    expect(mockSetBottomNavHidden).toHaveBeenCalledWith(true);
+    expect(mockShowBottomNav).not.toHaveBeenCalled();
+  });
+
+  it("hides on every repeat of that swipe", async () => {
+    // "Repeated right swipes reliably hide the navigator": each gesture is its
+    // own decision, so nothing accumulates and nothing gets stuck.
+    enableSpatial();
+    const { list } = await renderScreen();
+    mockSetBottomNavHidden.mockClear();
+
+    await swipeRightAgainstTheEdge(list);
+    await swipeRightAgainstTheEdge(list);
+    await swipeRightAgainstTheEdge(list);
+
+    expect(mockSetBottomNavHidden.mock.calls).toEqual([[true], [true], [true]]);
+  });
+
+  it("hides the moment the finger lifts, without waiting for the fling to land", async () => {
+    // A hide that arrives a fling later is unattributable: users read it as the
+    // app acting on its own rather than as a response to what they just did.
+    enableSpatial();
+    const { list } = await renderScreen();
+    mockSetBottomNavHidden.mockClear();
+
+    await act(async () => {
+      list.props.onScrollBeginDrag(scrollEvent(2 * PAGE));
+      list.props.onScrollEndDrag(scrollEvent(2 * PAGE - 140));
+    });
+
+    expect(mockSetBottomNavHidden).toHaveBeenCalledWith(true);
+  });
+
+  it("leaves navigation alone for a drag that travels and comes back", async () => {
+    // A cancelled gesture, and the same shape as a tap the pager saw as a
+    // one-pixel drag. Net travel below the commit threshold decides nothing.
+    enableSpatial();
+    const { list } = await renderScreen();
+    mockShowBottomNav.mockClear();
+    mockSetBottomNavHidden.mockClear();
+
+    await cancelledDrag(list);
 
     expect(mockSetBottomNavHidden).not.toHaveBeenCalled();
     expect(mockShowBottomNav).not.toHaveBeenCalled();
@@ -352,36 +434,34 @@ describe("directional navigator visibility", () => {
     expect(mockShowBottomNav).not.toHaveBeenCalled();
   });
 
-  it("keeps the gesture's origin when viewability flips mid-drag", async () => {
+  it("ignores viewability flipping mid-drag", async () => {
     // Viewability answers "what is on screen enough to play", and it flips as
-    // soon as the incoming reel crosses ~72% — *before* the finger lifts. If the
-    // origin were read at release it would already equal the destination, and
-    // every swipe would settle as "no transition" while looking fine on screen.
+    // soon as the incoming reel crosses ~72% — *before* the finger lifts. It
+    // used to be the origin of the direction, which meant the answer depended on
+    // a callback the user cannot see and does not control. The gesture's own
+    // offsets are now the only input, so this cannot skew the decision.
     enableSpatial();
     const { list } = await renderScreen();
     await swipeTo(list, 2);
-    await act(async () =>
-      list.props.onViewableItemsChanged({ viewableItems: [{ isViewable: true, index: 2, item: REELS[2] }] })
-    );
     mockSetBottomNavHidden.mockClear();
     mockShowBottomNav.mockClear();
 
     await act(async () => {
-      list.props.onScrollBeginDrag();
+      list.props.onScrollBeginDrag(scrollEvent(2 * PAGE));
       // The incoming reel wins viewability while the finger is still down.
       list.props.onViewableItemsChanged({ viewableItems: [{ isViewable: true, index: 1, item: REELS[1] }] });
-      list.props.onScrollEndDrag();
+      list.props.onScrollEndDrag(scrollEvent(2 * PAGE - 140));
       list.props.onMomentumScrollBegin();
-      list.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: PAGE, y: 0 } } });
+      list.props.onMomentumScrollEnd(scrollEvent(PAGE));
     });
 
     expect(mockSetBottomNavHidden).toHaveBeenCalledWith(true);
     expect(mockShowBottomNav).not.toHaveBeenCalled();
   });
 
-  it("recovers a usable origin when nothing is viewable", async () => {
-    // Viewability reports -1 on an emptied refresh or a teardown. Collapsing
-    // that to reel 0 would make the next backward swipe look like a forward one.
+  it("still decides correctly when nothing is viewable at all", async () => {
+    // Viewability reports nothing on an emptied refresh or a teardown. The rule
+    // never consults it, so a right swipe still hides.
     enableSpatial();
     const { list } = await renderScreen();
     await swipeTo(list, 2);
@@ -439,8 +519,8 @@ describe("touch takeover", () => {
     mockNotifyTouchEnd.mockClear();
 
     await act(async () => {
-      list.props.onScrollBeginDrag();
-      list.props.onScrollEndDrag();
+      list.props.onScrollBeginDrag(scrollEvent(0));
+      list.props.onScrollEndDrag(scrollEvent(0));
     });
     expect(mockNotifyTouchStart).toHaveBeenCalled();
     expect(mockNotifyTouchEnd).not.toHaveBeenCalled();
@@ -458,22 +538,23 @@ describe("touch takeover", () => {
     mockNotifyTouchEnd.mockClear();
 
     await act(async () => {
-      list.props.onScrollBeginDrag();
-      list.props.onScrollEndDrag();
+      list.props.onScrollBeginDrag(scrollEvent(0));
+      list.props.onScrollEndDrag(scrollEvent(PAGE * 0.6));
       list.props.onMomentumScrollBegin();
       jest.advanceTimersByTime(DRAG_ABANDON_GRACE_MS * 4);
     });
 
-    // Momentum cancelled the timer, so the swipe is still claimed as a touch —
-    // otherwise the settle below would be misread as motion and change nothing.
+    // Momentum cancelled the timer, so motion stays suspended for the whole
+    // fling rather than being handed back mid-flight.
     expect(mockNotifyTouchEnd).not.toHaveBeenCalled();
+    // Visibility, by contrast, resolved on the lift and did not wait for it.
+    expect(mockShowBottomNav).toHaveBeenCalled();
 
     await act(async () => {
-      list.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: PAGE, y: 0 } } });
+      list.props.onMomentumScrollEnd(scrollEvent(PAGE));
     });
 
     expect(mockNotifyTouchEnd).toHaveBeenCalled();
-    expect(mockShowBottomNav).toHaveBeenCalled();
   });
 
   it("expires an abandoned drag claim so the next tilt commit is not read as a swipe", async () => {
@@ -481,8 +562,8 @@ describe("touch takeover", () => {
     const { list } = await renderScreen();
 
     await act(async () => {
-      list.props.onScrollBeginDrag();
-      list.props.onScrollEndDrag();
+      list.props.onScrollBeginDrag(scrollEvent(0));
+      list.props.onScrollEndDrag(scrollEvent(0));
       jest.advanceTimersByTime(DRAG_ABANDON_GRACE_MS);
     });
     mockSetBottomNavHidden.mockClear();
@@ -490,7 +571,7 @@ describe("touch takeover", () => {
 
     // A tilt commit arriving after the abandoned drag must still count as motion.
     await act(async () => {
-      list.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 0, y: 0 } } });
+      list.props.onMomentumScrollEnd(scrollEvent(0));
     });
 
     expect(mockSetBottomNavHidden).not.toHaveBeenCalled();
@@ -520,7 +601,8 @@ describe("legacy Reels regression", () => {
     mockSetBottomNavHidden.mockClear();
 
     await act(async () => {
-      list.props.onScrollBeginDrag();
+      list.props.onScrollBeginDrag({ nativeEvent: { contentOffset: { x: 0, y: 0 } } });
+      list.props.onScrollEndDrag({ nativeEvent: { contentOffset: { x: 0, y: PAGE } } });
       list.props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: 0, y: PAGE } } });
     });
 

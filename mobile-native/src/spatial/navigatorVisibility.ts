@@ -5,65 +5,92 @@
  *
  * The product contract is not "hide the dock while browsing". It is a table of
  * causes, and the interesting half of that table is the causes that must change
- * *nothing*: a gesture that failed its threshold, a tilt commit, a rotation, a
- * data refresh, an auto-advance, a tap that a child control claimed. Those are
- * the cases nobody writes a test for when the rule lives inline as a call to
- * `notifySwipeSettled()` at the bottom of a scroll handler — which is exactly
- * how the previous implementation hid the dock on tilt commits, because a tilt
- * commit animates `scrollToOffset` and momentum-end cannot tell the two apart.
+ * *nothing*: a tap the pager saw as a one-pixel drag, a tilt commit, a rotation,
+ * a data refresh, an auto-advance. Those are the cases nobody writes a test for
+ * when the rule lives inline at the bottom of a scroll handler — which is
+ * exactly how an earlier implementation hid the dock on tilt commits, because a
+ * tilt commit animates `scrollToOffset` and momentum-end cannot tell the two
+ * apart.
  *
  * Separating the decision from the plumbing means the plumbing only has to
- * answer two observable questions — what produced this settle, and which index
- * did it start and end on — and the rule itself is unit-testable without a
- * renderer, a scroll view, or a sensor.
+ * answer two observable questions — what produced this gesture, and how far the
+ * content travelled under the finger — and the rule itself is unit-testable
+ * without a renderer, a scroll view, or a sensor.
  *
  * ## The rule
  *
- * Only a successfully committed *touch* swipe may change navigator visibility.
+ *   swipe right (content follows the finger rightward) → hide
+ *   swipe left                                          → reveal
+ *   travel below the commit threshold (tap, jitter,
+ *     out-and-back)                                     → unchanged
+ *   anything not driven by a finger                     → unchanged
  *
- *   swipe left  → next reel     (index increases) → reveal
- *   swipe right → previous reel (index decreases) → hide
- *   no index change (threshold not met, edge of list) → unchanged
- *   anything not driven by a finger                   → unchanged
+ * ## Why direction comes from the gesture and not from the page index
  *
- * The direction mapping reads backwards until you hold a phone: swiping *right*
- * drags content rightward, which brings the *earlier* reel onto the screen. So
- * "swipe right = previous = hide" and "swipe left = next = reveal".
+ * This rule used to compare the page index the gesture started on with the one
+ * the pager settled on. That is a defensible model and it is wrong on a device,
+ * for one reason: **the first reel**. A user who opens Reels and swipes right —
+ * the single most likely way anyone tries this feature — is already at offset 0.
+ * The list rubber-bands and settles back on the reel it started from, the index
+ * comparison reads "no transition", and the dock does not move. Repeated right
+ * swipes did nothing at all, which is indistinguishable from the feature never
+ * having shipped.
+ *
+ * Index-derived direction had two further failure modes that are invisible in a
+ * JS test and unavoidable on glass: it could not resolve until the momentum
+ * phase ended (so the dock lagged the finger by the length of a fling), and it
+ * silently collapsed to "unchanged" whenever the viewport width was not yet
+ * measured, because `settledPageIndex` answers 0 for an unmeasured page size.
+ *
+ * Reading the finger instead removes all three. A completed swipe has a
+ * direction whether or not it changed the page, it is known the instant the
+ * finger lifts, and it needs no notion of page size.
  */
 
 /**
- * What produced a settled page transition.
+ * What produced a horizontal gesture.
  *
- * `"touch"` is the only value that may change visibility, and it is asserted
- * rather than inferred: the caller sets it from a drag having actually begun,
- * because a programmatic `scrollToOffset` produces a byte-identical
- * momentum-end event to a finger swipe.
+ * `"touch"` is the only value that may change visibility, and it is asserted by
+ * the caller rather than inferred: a programmatic `scrollToOffset` — which is
+ * how a tilt commit navigates — produces scroll events indistinguishable from a
+ * finger's, but never an `onScrollBeginDrag`.
  */
-export type PageSettleSource = "touch" | "motion";
+export type SwipeSource = "touch" | "motion";
 
-/** What a settle should do to the bottom navigator. */
+/** What a gesture should do to the bottom navigator. */
 export type NavigatorIntent = "hide" | "reveal" | "unchanged";
 
-export interface PageSettle {
-  source: PageSettleSource;
-  /** Index the gesture started from — NOT the index before the last frame. */
-  fromIndex: number;
-  /** Index the pager came to rest on. */
-  toIndex: number;
+export interface HorizontalSwipe {
+  source: SwipeSource;
+  /** Content offset when the finger went down. */
+  startOffsetX: number;
+  /** Content offset when the finger lifted — before any momentum. */
+  endOffsetX: number;
 }
+
+/**
+ * How far the content must travel under the finger before the gesture counts as
+ * a direction rather than as noise.
+ *
+ * Sized against the pan slop a scroll view needs before it claims the touch at
+ * all (~10pt), doubled so that a tap that wobbles, or a press on a reel control
+ * that drags a little, cannot toggle navigation. It is deliberately far below a
+ * page: committing a *page* is not the bar, and making it the bar is the defect
+ * this threshold replaced.
+ */
+export const SWIPE_COMMIT_THRESHOLD_PX = 24;
 
 /**
  * Which page a horizontal pager has come to rest on.
  *
  * Rounds rather than truncates: a settled scroll offset is routinely a fraction
  * of a point off the exact multiple (RN reports device-pixel-rounded values, and
- * `snapToInterval` lands within a pixel rather than on it). Truncating turns a
- * settled page 3 at offset 1124.67 into page 2, which reads as a backwards
- * transition and would *hide* the dock on a forward swipe.
+ * `snapToInterval` lands within a pixel rather than on it).
  *
  * A non-positive `pageSize` means the viewport has not been measured yet; the
- * only safe answer is index 0, which classifies as "unchanged" and therefore
- * cannot move the dock on a layout pass.
+ * only safe answer is index 0. Note that no visibility decision reads this any
+ * more — it exists for playback/index bookkeeping, where being wrong costs a
+ * frame rather than a stuck dock.
  */
 export function settledPageIndex(offset: number, pageSize: number): number {
   if (!Number.isFinite(offset) || !Number.isFinite(pageSize) || pageSize <= 0) return 0;
@@ -73,16 +100,16 @@ export function settledPageIndex(offset: number, pageSize: number): number {
 /**
  * The single decision point for navigator visibility.
  *
- * Everything the table calls a non-toggle resolves here to `"unchanged"`,
- * including the edge case the mission calls out by name: a user on the first
- * reel who swipes right, travels, and springs back has committed no transition,
- * so the dock must stay exactly as it was rather than hiding on the strength of
- * the gesture's direction alone.
+ * Sign convention, which reads backwards until you hold a phone: dragging the
+ * finger *right* pulls the earlier reel onto the screen, so the content offset
+ * *decreases*. Hence negative travel = swipe right = hide.
  */
-export function navigatorIntentForSettle({ source, fromIndex, toIndex }: PageSettle): NavigatorIntent {
+export function navigatorIntentForSwipe({ source, startOffsetX, endOffsetX }: HorizontalSwipe): NavigatorIntent {
   if (source !== "touch") return "unchanged";
-  if (!Number.isFinite(fromIndex) || !Number.isFinite(toIndex)) return "unchanged";
-  if (toIndex > fromIndex) return "reveal";
-  if (toIndex < fromIndex) return "hide";
-  return "unchanged";
+  if (!Number.isFinite(startOffsetX) || !Number.isFinite(endOffsetX)) return "unchanged";
+  const travel = endOffsetX - startOffsetX;
+  // An out-and-back drag lands here too: the finger moved, the content did not,
+  // and the user cancelled whatever they were starting.
+  if (Math.abs(travel) < SWIPE_COMMIT_THRESHOLD_PX) return "unchanged";
+  return travel > 0 ? "reveal" : "hide";
 }

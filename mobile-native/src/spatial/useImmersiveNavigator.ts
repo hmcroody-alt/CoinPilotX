@@ -2,17 +2,17 @@ import { useCallback, useEffect, useState } from "react";
 import { AccessibilityInfo } from "react-native";
 import { useBottomNavVisibility } from "../navigation/BottomNavVisibility";
 import { immersiveNavigatorEnabled } from "./flags";
-import { navigatorIntentForSettle, type PageSettle } from "./navigatorVisibility";
+import { navigatorIntentForSwipe, type HorizontalSwipe } from "./navigatorVisibility";
 
 /**
  * Directional navigator visibility for the Reels player.
  *
- * The dock's visibility is a function of the direction of a *committed touch*
- * page transition, and of nothing else: swiping back (toward the previous reel)
- * hides it, swiping forward reveals it, and everything else leaves it alone.
- * The decision table lives in `navigatorVisibility.ts`; this hook is the
- * plumbing around it — flag gating, the accessibility override, and the reveals
- * that are not a function of any gesture.
+ * The dock's visibility is a function of the direction of a *completed finger
+ * swipe*, and of nothing else: swiping right hides it, swiping left reveals it,
+ * and everything else leaves it alone. The decision table lives in
+ * `navigatorVisibility.ts`; this hook is the plumbing around it — flag gating,
+ * the accessibility override, and the reveals that are not a function of any
+ * gesture.
  *
  * This replaced a count-and-delay model (hide ~1.2s after the first settled
  * swipe, in any direction). Two things were wrong with it. It could not tell a
@@ -20,8 +20,13 @@ import { navigatorIntentForSettle, type PageSettle } from "./navigatorVisibility
  * navigation chrome — which §5 forbids outright. And a hide that lands a second
  * after the gesture that caused it is unattributable: users read it as the app
  * doing something on its own rather than as a response to what they just did.
- * Acting on the settle itself makes the cause legible and makes the reverse
+ * Acting on the gesture itself makes the cause legible and makes the reverse
  * gesture an obvious undo.
+ *
+ * The model in between the two — direction inferred from the page index the
+ * pager settled on — failed on the first reel, where a right swipe rubber-bands
+ * back to the page it started on and so committed no transition to read a
+ * direction from. See `navigatorVisibility.ts`.
  *
  * Two asymmetries are deliberate, and both exist so nobody gets stranded behind
  * an invisible dock:
@@ -57,11 +62,15 @@ export function useImmersiveNavigator(surfaceFocused: boolean) {
     showBottomNav();
   }, [showBottomNav]);
 
-  /** Call when the pager has settled on a page. */
-  const notifyPageSettled = useCallback(
-    (settle: PageSettle) => {
+  /**
+   * Call the moment a finger lifts off the pager, with the offsets the drag
+   * started and ended on. Deliberately *not* the settle: waiting for momentum to
+   * finish is what made the dock lag the gesture that asked for it.
+   */
+  const notifySwipe = useCallback(
+    (swipe: HorizontalSwipe) => {
       if (!immersiveNavigatorEnabled()) return;
-      const intent = navigatorIntentForSettle(settle);
+      const intent = navigatorIntentForSwipe(swipe);
       if (intent === "unchanged") return;
       if (intent === "reveal") {
         showBottomNav();
@@ -86,5 +95,5 @@ export function useImmersiveNavigator(surfaceFocused: boolean) {
     if (screenReaderActive) reveal();
   }, [screenReaderActive, reveal]);
 
-  return { notifyPageSettled, reveal, hidden };
+  return { notifySwipe, reveal, hidden };
 }

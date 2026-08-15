@@ -192,6 +192,16 @@ export function ReelsScreen({ route, navigation }: Props) {
    * happened to have written.
    */
   const dragOriginRef = useRef<number | null>(null);
+  /**
+   * Content offset when the current finger-drag started, or null when no drag is
+   * in flight.
+   *
+   * This is what the visibility rule reads. It is captured in
+   * `onScrollBeginDrag`, which a programmatic `scrollToOffset` never fires, so
+   * "a finger did this" and "which way it went" come from the same measurement
+   * rather than from two guesses that can disagree.
+   */
+  const dragStartOffsetRef = useRef<number | null>(null);
   /** Cancels the abandoned-drag cleanup once real momentum begins. */
   const dragSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
@@ -826,27 +836,42 @@ export function ReelsScreen({ route, navigation }: Props) {
         decelerationRate="fast"
         onScroll={bottomNavScroll.onScroll}
         disableIntervalMomentum={spatialReels}
-        onScrollBeginDrag={() => {
+        onScrollBeginDrag={(event) => {
           tilt.notifyTouchStart();
-          // Marks this transition as finger-driven for the visibility rule, and
-          // records where the gesture began so a spring-back to the same reel
-          // reads as "no transition" rather than as a direction.
+          // Marks this transition as finger-driven, and records the offset the
+          // gesture began at — the only thing the visibility rule reads, and the
+          // one measurement a programmatic scroll can never fake.
           if (spatialReels) {
             clearDragSettleTimer();
             dragOriginRef.current = settledIndexRef.current;
+            dragStartOffsetRef.current = event.nativeEvent.contentOffset.x;
           }
           bottomNavScroll.onScrollBeginDrag();
         }}
-        onScrollEndDrag={() => {
+        onScrollEndDrag={(event) => {
           // Legacy vertical paging never had this handler and does not need it:
           // with spatial Reels off the tilt machine is disabled, so there is no
           // suspension to escape. Returning here keeps that path byte-identical.
           if (!spatialReels) return;
+          // Navigator visibility resolves HERE, on the lift, and not on the
+          // settle. Two reasons, and the mission names both: the dock has to
+          // move with the gesture rather than a fling-length later, and a right
+          // swipe on the first reel — which rubber-bands back to the page it
+          // started on — has a direction even though it commits no transition.
+          const startOffsetX = dragStartOffsetRef.current;
+          dragStartOffsetRef.current = null;
+          if (startOffsetX !== null) {
+            immersive.notifySwipe({
+              source: "touch",
+              startOffsetX,
+              endOffsetX: event.nativeEvent.contentOffset.x
+            });
+          }
           // A drag released at rest produces no momentum phase, and therefore no
           // `onMomentumScrollEnd`. Two things were relying on that event and had
           // no other exit:
           //
-          //   - the touch marker below, which would survive and mis-attribute
+          //   - the drag marker below, which would survive and mis-attribute
           //     the *next* programmatic scroll — a tilt commit — as a swipe;
           //   - `tilt.notifyTouchEnd()`, without which the motion machine stays
           //     `touchActive` and is suspended for the rest of the session. That
@@ -870,15 +895,12 @@ export function ReelsScreen({ route, navigation }: Props) {
           tilt.notifyTouchEnd();
           if (!spatialReels) return;
           clearDragSettleTimer();
-          const fromIndex = dragOriginRef.current;
           dragOriginRef.current = null;
-          const toIndex = settledPageIndex(event.nativeEvent.contentOffset.x, viewportWidth);
-          settledIndexRef.current = toIndex;
-          immersive.notifyPageSettled({
-            source: fromIndex === null ? "motion" : "touch",
-            fromIndex: fromIndex ?? toIndex,
-            toIndex
-          });
+          dragStartOffsetRef.current = null;
+          // Index bookkeeping only. Visibility was decided when the finger
+          // lifted; a tilt commit lands here too, and it must not be able to
+          // move navigation chrome by any path (§5).
+          settledIndexRef.current = settledPageIndex(event.nativeEvent.contentOffset.x, viewportWidth);
         }}
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
         viewabilityConfig={viewabilityConfig.current}

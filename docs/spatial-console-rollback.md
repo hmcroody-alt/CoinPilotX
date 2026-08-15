@@ -121,36 +121,44 @@ phone. Each row is pinned by an `addListener`/`remove` call-count assertion in
 
 Reels is a full-bleed pager: one reel per viewport, edge to edge, header and
 bottom navigator overlaying the media rather than shrinking it. The navigator's
-visibility is a function of the **direction of a committed touch page
-transition** and of nothing else.
+visibility is a function of the **direction of the finger on a completed touch
+gesture** and of nothing else.
 
 | Event | Navigator |
 |---|---|
-| Committed swipe to the **previous** reel (finger drags right) | hides |
-| Committed swipe to the **next** reel (finger drags left) | reveals |
-| Swipe that fails the threshold and springs back | unchanged |
-| Swipe at the first reel that cannot move | unchanged — no transition committed |
+| Swipe **right** (finger drags right, content offset falls) | hides |
+| Swipe **left** | reveals |
+| Swipe right at the first reel, which rubber-bands back | **hides** — the gesture had a direction whether or not the pager could act on it |
+| Drag that travels and returns under the finger | unchanged — cancelled |
+| Travel below the 24pt commit threshold (a tap the pager saw as a drag) | unchanged |
 | Single tap on unclaimed media | reveals (recovery) |
 | **Tilt commit** | unchanged — motion moves reels, never chrome |
 | Entering Reels, returning from a child sheet, foregrounding, unmount | reveals |
 | Rotation, layout recalc, data refresh, auto-advance | unchanged |
 
 The decision table itself is a pure function,
-`navigatorIntentForSettle()` in `mobile-native/src/spatial/navigatorVisibility.ts`,
+`navigatorIntentForSwipe()` in `mobile-native/src/spatial/navigatorVisibility.ts`,
 tested in isolation. `useImmersiveNavigator` adds the flag gate, the
 accessibility override and the gesture-independent reveals.
 
-Three implementation properties are worth knowing before changing any of it:
+Four implementation properties are worth knowing before changing any of it:
 
-- **Source attribution is asserted, not inferred.** `onMomentumScrollEnd` is
+- **Direction comes from the gesture, not from the page index.** An earlier
+  version compared the index the drag started on with the one the pager settled
+  on. It was wrong on a device for one reason: on the **first reel** — where
+  everyone tries this first — a right swipe rubber-bands back to the page it
+  started on, so there was no transition to read a direction from and the dock
+  never moved. That version also could not answer until momentum ended, and
+  collapsed to "unchanged" whenever the viewport width was still unmeasured.
+- **The decision lands on the lift, not on the settle.** `onScrollEndDrag`, not
+  `onMomentumScrollEnd`. A hide that arrives a fling after the gesture reads as
+  the app acting on its own rather than as a response to the user.
+- **Source attribution is asserted, not inferred.** Scroll events are
   byte-identical for a finger swipe and a tilt commit. `onScrollBeginDrag` fires
-  only for a real drag, so ReelsScreen records the origin index there; a settle
-  with no recorded origin is `"motion"` and cannot move the navigator.
-- **The settle offset is authoritative for the index**, not viewability.
-  Viewability answers "what is visible enough to play", flips mid-drag at 72%,
-  and reports `-1` when nothing qualifies. Reading it at release would report
-  the destination as the origin and swallow the transition; collapsing `-1` to
-  `0` would invert the direction of the next backward swipe.
+  only for a real drag, so ReelsScreen records the drag's starting offset there;
+  with no recorded drag there is no gesture and the navigator cannot move.
+  Viewability is never consulted — it answers "what is visible enough to play",
+  flips mid-drag at 72%, and reports `-1` when nothing qualifies.
 - **Hiding is flag-gated; revealing is not.** A recovery affordance that is
   itself feature-flagged is a way to strand somebody behind an invisible dock.
   A screen reader follows the same asymmetry: hides are dropped, reveals pass.
@@ -189,10 +197,11 @@ behavior and overlay readability are all things only a real screen shows.
 | 2 | Notch / Dynamic Island | Media runs behind it; no interactive control is under it |
 | 3 | Home indicator | Media runs behind it; controls clear it |
 | 4 | Swipe left (next reel) | Pager advances exactly one reel; navigator reveals |
-| 5 | Swipe right (previous reel) | Pager retreats exactly one reel; navigator hides |
+| 5 | Swipe right (previous reel) | Pager retreats exactly one reel; navigator hides **as the finger lifts**, not after the fling |
 | 6 | Fast flick | Advances exactly one reel — never two |
-| 7 | Half-swipe released | Springs back to the same reel; navigator unchanged |
-| 8 | Swipe right on the first reel | Nothing moves; navigator unchanged |
+| 7 | **Repeated right swipes on the first reel** | Pager does not move; navigator hides every time |
+| 8 | Right swipe, then left swipe | Hides, then restores — reliably, however many times it is repeated |
+| 8a | Drag out and back, release at the start | Navigator unchanged |
 | 9 | Navigator hide / reveal | Only the dock animates; the reel does not resize or reflow |
 | 10 | Tap on empty media area | Navigator reveals |
 | 11 | Tap a like/comment/share control | Action fires; navigator does not toggle |
