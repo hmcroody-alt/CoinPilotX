@@ -6,14 +6,15 @@
  * the legacy experience byte-for-byte, which is the rollback guarantee.
  *
  * Rollout is via `EXPO_PUBLIC_*` env vars (EAS build profiles or `.env`),
- * read at call time by `envFlagOn` — the same mechanism production already
- * uses for other gated features.
+ * inlined at bundle time and parsed at call time by `isFlagValueOn` — the same
+ * accepted-value rule the rest of the app uses. See `ENV_READERS` below for why
+ * the reads are written out one per flag instead of looked up by name.
  *
  * `spatialConsoleEnabled` is the master switch: every sub-flag requires it.
  * Turning off the master is total rollback; turning off a sub-flag rolls back
  * that surface alone. See docs/spatial-console-rollback.md.
  */
-import { envFlagOn } from "../core/envFlag";
+import { isFlagValueOn } from "../core/envFlag";
 
 type SpatialFlagName =
   | "spatialConsoleEnabled"
@@ -26,16 +27,37 @@ type SpatialFlagName =
   | "tiltNavigationEnabled"
   | "tiltParallaxEnabled";
 
-const ENV_VARS: Record<SpatialFlagName, string> = {
-  spatialConsoleEnabled: "EXPO_PUBLIC_SPATIAL_CONSOLE",
-  spatialHomeFeedEnabled: "EXPO_PUBLIC_SPATIAL_HOME_FEED",
-  spatialReelsEnabled: "EXPO_PUBLIC_SPATIAL_REELS",
-  spatialCreateEnabled: "EXPO_PUBLIC_SPATIAL_CREATE",
-  messagesVisualRefreshEnabled: "EXPO_PUBLIC_MESSAGES_VISUAL_REFRESH",
-  immersiveNavigatorEnabled: "EXPO_PUBLIC_IMMERSIVE_NAVIGATOR",
-  spatialMotionEnabled: "EXPO_PUBLIC_SPATIAL_MOTION",
-  tiltNavigationEnabled: "EXPO_PUBLIC_TILT_NAVIGATION",
-  tiltParallaxEnabled: "EXPO_PUBLIC_TILT_PARALLAX"
+/**
+ * Each flag's value, read through a STATIC `process.env` member expression.
+ *
+ * The static form is load-bearing, not style. `babel-preset-expo` replaces
+ * `process.env.EXPO_PUBLIC_X` with its build-time literal during the bundle
+ * transform; it cannot see through a computed `process.env[name]`. A release
+ * bundle has no populated `process.env` at runtime, so the computed lookup this
+ * map replaces resolved to `undefined` for every flag — meaning no spatial
+ * surface could be switched on in a release build no matter what the EAS
+ * profile, `.env` or shell exported.
+ *
+ * That failure was silent in exactly the way the rollback guarantee is designed
+ * to look: every flag read false, the legacy experience rendered, and nothing
+ * errored. It was confirmed by grepping a shipped bundle — names read
+ * statically elsewhere in the app are absent from it (inlined away), while
+ * these names survived as runtime keys that nothing ever resolved.
+ *
+ * Entries are thunks so the value is still read at call time rather than
+ * captured at module load, which is what lets a test toggle and re-ask without
+ * re-importing the module graph.
+ */
+const ENV_READERS: Record<SpatialFlagName, () => string | undefined> = {
+  spatialConsoleEnabled: () => process.env.EXPO_PUBLIC_SPATIAL_CONSOLE,
+  spatialHomeFeedEnabled: () => process.env.EXPO_PUBLIC_SPATIAL_HOME_FEED,
+  spatialReelsEnabled: () => process.env.EXPO_PUBLIC_SPATIAL_REELS,
+  spatialCreateEnabled: () => process.env.EXPO_PUBLIC_SPATIAL_CREATE,
+  messagesVisualRefreshEnabled: () => process.env.EXPO_PUBLIC_MESSAGES_VISUAL_REFRESH,
+  immersiveNavigatorEnabled: () => process.env.EXPO_PUBLIC_IMMERSIVE_NAVIGATOR,
+  spatialMotionEnabled: () => process.env.EXPO_PUBLIC_SPATIAL_MOTION,
+  tiltNavigationEnabled: () => process.env.EXPO_PUBLIC_TILT_NAVIGATION,
+  tiltParallaxEnabled: () => process.env.EXPO_PUBLIC_TILT_PARALLAX
 };
 
 /**
@@ -56,7 +78,7 @@ export function __clearSpatialFlagOverrides() {
 function flagOn(name: SpatialFlagName): boolean {
   const override = overrides.get(name);
   if (override !== undefined) return override;
-  return envFlagOn(ENV_VARS[name]);
+  return isFlagValueOn(ENV_READERS[name]());
 }
 
 /** Master switch. Off = entire spatial console rolled back to legacy. */
