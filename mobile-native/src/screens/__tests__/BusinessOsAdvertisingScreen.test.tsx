@@ -52,6 +52,24 @@ jest.mock("../../api/businessOs", () => ({
   loadCachedAdAnalytics: (...args: unknown[]) => mockCachedAnalytics(...args)
 }));
 
+/**
+ * The screen loads through `loadAdsMarketplace`, which tries the one-request
+ * portal first and only falls back to the five-call fan-out that every mock
+ * above describes. `getAdsPortal` was not mocked, so each render reached
+ * `pulseApi` and made a real HTTPS request to pulsesoc.com — the suite's result
+ * depended on how quickly the live site answered, which is why it passed alone
+ * and failed under load, and why it fails outright whenever the host is slow.
+ *
+ * Rejecting here is not a workaround for that flake; it is the state the rest
+ * of the file already assumes. Every `beforeEach` line configures a fan-out
+ * mock, so the portal path was never the one under test.
+ */
+const mockPortal = jest.fn();
+jest.mock("../../api/adsPortal", () => ({
+  ...jest.requireActual("../../api/adsPortal"),
+  getAdsPortal: () => mockPortal()
+}));
+
 import { BusinessOsAdvertisingScreen } from "../BusinessOsAdvertisingScreen";
 
 const ACCOUNT = { id: 7, business_name: "Roody Goods", status: "active", verified: true };
@@ -72,6 +90,7 @@ function campaign(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockPortal.mockRejectedValue(new Error("portal unavailable"));
   mockListAccounts.mockResolvedValue({ accounts: [ACCOUNT] });
   mockListCampaigns.mockResolvedValue({ campaigns: [] });
   mockCreateAccount.mockResolvedValue({ account: ACCOUNT });
@@ -90,9 +109,11 @@ beforeEach(() => {
 async function renderScreen() {
   const view = render(<BusinessOsAdvertisingScreen />);
   // The first paint waits on a fan-out (accounts, campaigns, analytics, wallet,
-  // billing). Under a full parallel run that overruns waitFor's 1s default, so
-  // the suite failed on load rather than on behaviour.
-  await waitFor(() => expect(view.queryByText("Loading advertising…")).toBeNull(), { timeout: 10000 });
+  // billing), all of them mocked, so this resolves in a tick or two; the margin
+  // is for CPU contention under a full parallel run. It has to stay below Jest's
+  // 5s per-test budget — a longer wait here cannot make a test pass, it only
+  // converts a legible "still loading" failure into a bare timeout.
+  await waitFor(() => expect(view.queryByText("Loading advertising…")).toBeNull(), { timeout: 4000 });
   return view;
 }
 

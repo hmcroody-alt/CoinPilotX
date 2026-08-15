@@ -38,6 +38,15 @@ jest.mock("../../api/messenger", () => ({ openDirectConversation: jest.fn() }));
 jest.mock("../../navigation/BottomNavVisibility", () => ({ useBottomNavSurface: () => ({ contentPadding: {}, handlers: { onScroll: jest.fn(), onScrollBeginDrag: jest.fn(), scrollEventThrottle: 16 } }) }));
 jest.mock("../../session/auth", () => ({ useAuth: () => ({ authState: mockAuthState }) }));
 
+// The profile OS tiles ask the server what this account is entitled to. None of
+// the assertions below are about entitlement, so this file wants the cold-start
+// answer — "no answer yet" — stated on purpose rather than arrived at by letting
+// a real request to /api/premium/status-center fail.
+jest.mock("../../api/premiumCenter", () => ({
+  ...jest.requireActual("../../api/premiumCenter"),
+  getPremiumCenter: jest.fn(() => Promise.reject(new Error("premium status not loaded in this test")))
+}));
+
 const posts: PulsePost[] = [
   { id: 1, post_id: 1, body: "Text-only identity post" },
   { id: 2, post_id: 2, body: "Video", media: [{ media_type: "video", thumbnail_url: "https://cdn.example/video.jpg", duration_seconds: 62 }] },
