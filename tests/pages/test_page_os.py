@@ -440,5 +440,93 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(out["followers_count"], 0)
 
 
+class V2InsightsTests(unittest.TestCase):
+    """Presence V2: growth windows and completeness are measured, never
+    invented, and completion guidance never leaks into the public view."""
+
+    def setUp(self):
+        self.conn = make_conn()
+        self.page = create(self.conn)
+        self.page_id = self.page["id"]
+
+    def test_growth_windows_are_measured(self):
+        analytics = pulsesoc_pages.page_analytics(self.conn, OWNER, self.page_id)
+        self.assertEqual(analytics["followers_7d"], 0)
+        self.assertEqual(analytics["followers_30d"], 0)
+        self.assertEqual(analytics["posts_30d"], 0)
+        pulsesoc_pages.toggle_follow(self.conn, FRIEND, self.page_id)
+        analytics = pulsesoc_pages.page_analytics(self.conn, OWNER, self.page_id)
+        self.assertEqual(analytics["followers_7d"], 1)
+        self.assertEqual(analytics["followers_30d"], 1)
+
+    def test_old_follows_leave_the_window(self):
+        self.conn.execute(
+            "INSERT INTO pulse_page_follows (page_id, user_id, created_at) VALUES (?, ?, ?)",
+            (self.page_id, FRIEND, "2020-01-01T00:00:00+00:00"))
+        analytics = pulsesoc_pages.page_analytics(self.conn, OWNER, self.page_id)
+        self.assertEqual(analytics["followers"], 1)
+        self.assertEqual(analytics["followers_30d"], 0)
+
+    def test_insights_permission_gated(self):
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.page_analytics(self.conn, STRANGER, self.page_id)
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_completeness_derives_from_real_fields(self):
+        page = pulsesoc_pages._load_page(self.conn, self.page_id)
+        completeness = pulsesoc_pages.page_completeness(self.conn, page)
+        by_key = {i["key"]: i["done"] for i in completeness["items"]}
+        self.assertFalse(by_key["avatar"])
+        self.assertFalse(by_key["first_post"])
+        self.assertIn("genre", by_key)  # artist page
+        self.assertNotIn("hours", by_key)  # artist page has no hours item
+        pulsesoc_pages.update_page(self.conn, OWNER, self.page_id,
+                                   {"avatar_url": "https://cdn/x.png", "description": "Signal.",
+                                    "genre": "electronic", "website": "https://x"})
+        page = pulsesoc_pages._load_page(self.conn, self.page_id)
+        after = pulsesoc_pages.page_completeness(self.conn, page)
+        self.assertGreater(after["percent"], completeness["percent"])
+
+    def test_business_completeness_includes_hours_and_location(self):
+        biz = create(self.conn, page_type="RESTAURANT", name="Kay Manje", handle="kaymanje")
+        page = pulsesoc_pages._load_page(self.conn, biz["id"])
+        by_key = {i["key"]: i for i in pulsesoc_pages.page_completeness(self.conn, page)["items"]}
+        self.assertIn("hours", by_key)
+        self.assertIn("location", by_key)
+        self.assertNotIn("genre", by_key)
+
+    def test_completeness_never_public(self):
+        view = pulsesoc_pages.public_view(self.conn, pulsesoc_pages._load_page(self.conn, self.page_id))
+        self.assertNotIn("completeness", view)
+
+    def test_manage_view_carries_completeness(self):
+        view = pulsesoc_pages.manage_view(self.conn, OWNER, self.page_id)
+        self.assertIn("completeness", view)
+        self.assertIn("percent", view["completeness"])
+
+
+class V2SearchTests(unittest.TestCase):
+    """Presence discovery reuses search_pages; results stay typed and only
+    ACTIVE pages surface."""
+
+    def setUp(self):
+        self.conn = make_conn()
+
+    def test_search_returns_typed_public_views(self):
+        create(self.conn, name="Night Signal", handle="nightsignal")
+        create(self.conn, page_type="BUSINESS", name="Night Cafe", handle="nightcafe")
+        results = pulsesoc_pages.search_pages(self.conn, "night")
+        self.assertEqual(len(results), 2)
+        types = {r["page_type"] for r in results}
+        self.assertEqual(types, {"ARTIST", "BUSINESS"})
+        for r in results:
+            self.assertNotIn("owner_user_id", r)
+
+    def test_unpublished_pages_hidden_from_search(self):
+        page = create(self.conn, name="Hidden Signal", handle="hiddensignal")
+        pulsesoc_pages.set_status(self.conn, OWNER, page["id"], "UNPUBLISHED")
+        self.assertEqual(pulsesoc_pages.search_pages(self.conn, "hidden"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

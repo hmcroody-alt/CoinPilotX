@@ -98,6 +98,24 @@ export type PageMember = {
 
 export type PageLink = { link_type: string; ref_id: string; created_at?: string };
 
+/**
+ * Growth windows are measured server-side from real follow/post timestamps —
+ * never estimated. Completeness is derived from actual profile fields and is
+ * management-only: it never appears in a public payload.
+ */
+export type PageAnalytics = {
+  followers: number;
+  posts: number;
+  team_members: number;
+  followers_7d?: number;
+  followers_30d?: number;
+  posts_30d?: number;
+  note?: string;
+};
+
+export type PageCompletenessItem = { key: string; label: string; done: boolean };
+export type PageCompleteness = { percent: number; items: PageCompletenessItem[] };
+
 export type PageManageView = {
   page: PulsePage;
   role: PageRole;
@@ -106,7 +124,8 @@ export type PageManageView = {
   phone?: string;
   links: PageLink[];
   members?: PageMember[];
-  analytics?: { followers: number; posts: number; team_members: number; note?: string };
+  analytics?: PageAnalytics;
+  completeness?: PageCompleteness;
 };
 
 export type HandleCheck = { candidate: string; handle: string; available: boolean; reason: string };

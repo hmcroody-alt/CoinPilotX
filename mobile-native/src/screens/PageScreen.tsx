@@ -6,15 +6,16 @@ import {
   Image,
   Pressable,
   RefreshControl,
-  Share,
-  StyleSheet,
   Text,
+  TextInput,
   View
 } from "react-native";
 import {
+  createPagePost,
   getPage,
   getPageByHandle,
   listPagePosts,
+  PageRole,
   pageTypeLabel,
   PulsePage,
   togglePageFollow
@@ -22,29 +23,66 @@ import {
 import { PULSE_API_BASE_URL } from "../api/config";
 import type { PulsePost } from "../api/feed";
 import { RootStackParamList } from "../navigation/types";
+import { sharePulseObject } from "../sharing/nativeShare";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Page">;
 
+/** Types whose management continues into Business OS. */
+const BUSINESS_TYPES = new Set([
+  "BUSINESS", "BRAND", "STORE", "RESTAURANT", "PROFESSIONAL_SERVICE",
+  "LOCAL_BUSINESS", "NONPROFIT", "ORGANIZATION", "MEDIA", "VENUE", "EDUCATION"
+]);
+
+const ARTIST_TYPES = new Set(["ARTIST", "CREATOR", "PUBLIC_FIGURE", "SPORTS_TEAM"]);
+
 /**
- * The public page surface — one component for every page type. The tab set is
- * SERVER-decided per type (artist: posts/music/videos/events/merch/about;
- * business: home/services/shop/about; …) and rendered as delivered.
+ * Client-side mirror of the server permission matrix for create_content —
+ * used only to decide whether to SHOW the composer. The server enforces the
+ * real check on every mutation regardless of what the client renders.
+ */
+const POSTING_ROLES = new Set<PageRole>(["OWNER", "ADMIN", "MANAGER", "CONTENT_MANAGER"]);
+
+/**
+ * The public Presence surface — one component for every page type. The tab
+ * set is SERVER-decided per type and rendered as delivered.
  *
- * Real metrics only: follower and post counts come from the server's measured
- * counts. Tabs without a canonical data source render an honest empty state —
- * never invented numbers, never placeholder reviews.
+ * V2 load architecture: identity first, sections independently.
+ * The hero renders as soon as the lightweight public view arrives; the post
+ * feed loads separately with its own error state and retry, so a feed failure
+ * never blocks About or the rest of the Presence (failure isolation).
+ *
+ * Real metrics only: follower/post counts are the server's measured counts.
+ * Tabs without a canonical data source render an honest empty state — never
+ * invented numbers, never placeholder reviews. Team members see setup
+ * prompts where a real action exists; public visitors see quiet emptiness.
  */
 export function PageScreen({ route, navigation }: Props) {
   const params = route.params || {};
   const [page, setPage] = useState<PulsePage | null>(null);
   const [posts, setPosts] = useState<PulsePost[]>([]);
+  const [postsState, setPostsState] = useState<"loading" | "loaded" | "error">("loading");
   const [tab, setTab] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [error, setError] = useState("");
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishError, setPublishError] = useState("");
+
+  const loadPosts = useCallback(async (pageId: number) => {
+    setPostsState("loading");
+    try {
+      const feed = await listPagePosts(pageId, { limit: 20 });
+      setPosts(feed.posts);
+      setPostsState("loaded");
+    } catch {
+      setPostsState("error");
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setError("");
@@ -53,18 +91,19 @@ export function PageScreen({ route, navigation }: Props) {
         ? await getPage(params.pageId)
         : await getPageByHandle(params.handle || "");
       setPage(loaded);
+      setLoading(false);
       navigation.setOptions({ title: loaded.name });
       const defaultTab = loaded.tabs.includes("posts") ? "posts" : loaded.tabs[0] || "about";
       setTab((current) => (current && loaded.tabs.includes(current) ? current : defaultTab));
-      const feed = await listPagePosts(loaded.id, { limit: 20 });
-      setPosts(feed.posts);
+      // Sections load after identity so the hero is never blocked by the feed.
+      loadPosts(loaded.id);
     } catch {
-      setError("This page could not be loaded.");
-    } finally {
+      setError("This Presence isn't available.");
       setLoading(false);
+    } finally {
       setRefreshing(false);
     }
-  }, [params.pageId, params.handle, navigation]);
+  }, [params.pageId, params.handle, navigation, loadPosts]);
 
   useEffect(() => {
     load();
@@ -89,7 +128,33 @@ export function PageScreen({ route, navigation }: Props) {
 
   async function onShare() {
     if (!page) return;
-    await Share.share({ message: `${page.name} on PulseSoc — ${PULSE_API_BASE_URL}/pulse/pages/@${page.handle}` }).catch(() => undefined);
+    await sharePulseObject({
+      kind: BUSINESS_TYPES.has(page.page_type) ? "business" : "profile",
+      url: `${PULSE_API_BASE_URL}/pulse/pages/@${page.handle}`,
+      title: page.name,
+      description: page.description || pageTypeLabel(page.page_type),
+      previewImageUrl: page.avatar_url || undefined
+    }).catch(() => undefined);
+  }
+
+  async function onPublish() {
+    if (!page || publishBusy || !draft.trim()) return;
+    setPublishBusy(true);
+    setPublishError("");
+    try {
+      const result = await createPagePost(page.id, { body: draft.trim() });
+      if (!result.ok) {
+        setPublishError(result.message || "The post could not be published.");
+        return; // draft preserved
+      }
+      setDraft("");
+      setComposerOpen(false);
+      loadPosts(page.id);
+    } catch {
+      setPublishError("The post could not be published."); // draft preserved
+    } finally {
+      setPublishBusy(false);
+    }
   }
 
   if (loading) {
@@ -102,13 +167,17 @@ export function PageScreen({ route, navigation }: Props) {
   if (!page) {
     return (
       <View style={[styles.root, styles.center]}>
-        <Text style={styles.error}>{error || "Page not found."}</Text>
+        <Text style={styles.error}>{error || "This Presence isn't available."}</Text>
       </View>
     );
   }
 
   const following = Boolean(page.viewer?.following);
-  const isTeam = Boolean(page.viewer?.role);
+  const viewerRole = page.viewer?.role || null;
+  const isTeam = Boolean(viewerRole);
+  const canPost = viewerRole ? POSTING_ROLES.has(viewerRole) : false;
+  const isArtist = ARTIST_TYPES.has(page.page_type);
+  const isBusiness = BUSINESS_TYPES.has(page.page_type);
 
   const header = (
     <View>
@@ -123,11 +192,16 @@ export function PageScreen({ route, navigation }: Props) {
         )}
         <View style={styles.heroText}>
           <View style={styles.nameRow}>
-            <Text style={styles.name}>{page.name}</Text>
+            <Text style={styles.name} numberOfLines={2}>{page.name}</Text>
             {page.verified ? <Text style={styles.verified}>Verified</Text> : null}
+            {!page.verified && isTeam && page.verification_status === "pending" ? (
+              <Text style={styles.pending}>Verification pending</Text>
+            ) : null}
           </View>
           <Text style={styles.handle}>@{page.handle} · {pageTypeLabel(page.page_type)}</Text>
-          {page.category ? <Text style={styles.category}>{page.category}</Text> : null}
+          {page.category ? <Text style={styles.category} numberOfLines={1}>{page.category}</Text> : null}
+          {isArtist && page.genre ? <Text style={styles.category} numberOfLines={1}>{page.genre}</Text> : null}
+          {page.location ? <Text style={styles.category} numberOfLines={1}>{page.location}</Text> : null}
           <Text style={styles.counts}>
             {page.followers_count} followers · {page.posts_count} posts
           </Text>
@@ -137,6 +211,7 @@ export function PageScreen({ route, navigation }: Props) {
       <View style={styles.actions}>
         <Pressable
           accessibilityRole="button"
+          accessibilityLabel={following ? "Unfollow" : "Follow"}
           style={[styles.actionPrimary, following && styles.actionFollowing]}
           disabled={followBusy}
           onPress={onFollow}
@@ -145,7 +220,7 @@ export function PageScreen({ route, navigation }: Props) {
             {following ? "Following" : "Follow"}
           </Text>
         </Pressable>
-        <Pressable accessibilityRole="button" style={styles.actionSecondary} onPress={onShare}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Share" style={styles.actionSecondary} onPress={onShare}>
           <Text style={styles.actionSecondaryText}>Share</Text>
         </Pressable>
         {isTeam ? (
@@ -158,6 +233,58 @@ export function PageScreen({ route, navigation }: Props) {
           </Pressable>
         ) : null}
       </View>
+
+      {isTeam ? (
+        // Owner quick actions — every entry routes to a REAL destination.
+        // Never shown to public visitors.
+        <View style={styles.quickRow}>
+          {canPost ? (
+            <Pressable accessibilityRole="button" style={styles.quickAction} onPress={() => setComposerOpen((v) => !v)}>
+              <Text style={styles.quickActionText}>Post</Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            style={styles.quickAction}
+            onPress={() => navigation.navigate("PagesHub", { focusPageId: page.id })}
+          >
+            <Text style={styles.quickActionText}>Insights</Text>
+          </Pressable>
+          {isBusiness ? (
+            <Pressable
+              accessibilityRole="button"
+              style={styles.quickAction}
+              onPress={() => navigation.navigate("BusinessOs", { title: page.name })}
+            >
+              <Text style={styles.quickActionText}>Business OS</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+
+      {composerOpen && canPost ? (
+        <View style={styles.composer}>
+          <Text style={styles.composerLabel}>Posting as {page.name}</Text>
+          <TextInput
+            style={styles.composerInput}
+            multiline
+            placeholder="Share an update…"
+            placeholderTextColor={colors.muted}
+            value={draft}
+            onChangeText={setDraft}
+            editable={!publishBusy}
+          />
+          {publishError ? <Text style={styles.error}>{publishError}</Text> : null}
+          <Pressable
+            accessibilityRole="button"
+            style={[styles.actionPrimary, (!draft.trim() || publishBusy) && styles.actionDisabled]}
+            disabled={!draft.trim() || publishBusy}
+            onPress={onPublish}
+          >
+            <Text style={styles.actionPrimaryText}>{publishBusy ? "Publishing…" : "Publish"}</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <View style={styles.tabBar}>
         {page.tabs.map((tabKey) => (
@@ -179,12 +306,33 @@ export function PageScreen({ route, navigation }: Props) {
 
   function renderTabBody(page: PulsePage) {
     if (tab === "posts" || tab === "home") {
+      if (postsState === "loading") {
+        return <ActivityIndicator color={colors.accent} style={styles.sectionSpinner} />;
+      }
+      if (postsState === "error") {
+        return (
+          <View style={styles.sectionError}>
+            <Text style={styles.empty}>We couldn't load this section.</Text>
+            <Pressable accessibilityRole="button" style={styles.retry} onPress={() => loadPosts(page.id)}>
+              <Text style={styles.retryText}>Try again</Text>
+            </Pressable>
+          </View>
+        );
+      }
       if (!posts.length) {
-        return <Text style={styles.empty}>No posts yet.</Text>;
+        // Context-aware: managers get a real next step, visitors a quiet state.
+        return canPost ? (
+          <Pressable accessibilityRole="button" style={styles.linkCard} onPress={() => setComposerOpen(true)}>
+            <Text style={styles.linkCardText}>Publish your first post</Text>
+          </Pressable>
+        ) : (
+          <Text style={styles.empty}>No posts yet.</Text>
+        );
       }
       return null; // posts render in the FlatList below
     }
     if (tab === "about") {
+      const hasAbout = Boolean(page.description || page.website || page.email || page.location || page.genre);
       return (
         <View style={styles.aboutCard}>
           {page.description ? <Text style={styles.aboutText}>{page.description}</Text> : null}
@@ -192,8 +340,18 @@ export function PageScreen({ route, navigation }: Props) {
           {page.website ? <Text style={styles.aboutMeta}>Website: {page.website}</Text> : null}
           {page.email ? <Text style={styles.aboutMeta}>Contact: {page.email}</Text> : null}
           {page.location ? <Text style={styles.aboutMeta}>Location: {page.location}</Text> : null}
-          {!page.description && !page.website && !page.email && !page.location ? (
-            <Text style={styles.empty}>Nothing here yet.</Text>
+          {!hasAbout ? (
+            isTeam ? (
+              <Pressable
+                accessibilityRole="button"
+                style={styles.linkCard}
+                onPress={() => navigation.navigate("PagesHub", { focusPageId: page.id })}
+              >
+                <Text style={styles.linkCardText}>Add details from Manage</Text>
+              </Pressable>
+            ) : (
+              <Text style={styles.empty}>Nothing here yet.</Text>
+            )
           ) : null}
         </View>
       );
@@ -236,7 +394,7 @@ export function PageScreen({ route, navigation }: Props) {
     return <Text style={styles.empty}>Nothing here yet.</Text>;
   }
 
-  const showPosts = tab === "posts" || tab === "home";
+  const showPosts = (tab === "posts" || tab === "home") && postsState === "loaded";
 
   return (
     <FlatList
@@ -291,6 +449,9 @@ const styles = createThemedStyles(() => ({
     fontSize: 14,
     lineHeight: 21
   },
+  actionDisabled: {
+    opacity: 0.5
+  },
   actionFollowing: {
     backgroundColor: colors.surface,
     borderColor: colors.accent,
@@ -305,7 +466,7 @@ const styles = createThemedStyles(() => ({
     borderRadius: 8,
     flex: 1,
     justifyContent: "center",
-    minHeight: 40
+    minHeight: 44
   },
   actionPrimaryText: {
     color: colors.background,
@@ -317,7 +478,7 @@ const styles = createThemedStyles(() => ({
     borderRadius: 8,
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 40,
+    minHeight: 44,
     paddingHorizontal: 16
   },
   actionSecondaryText: {
@@ -354,6 +515,27 @@ const styles = createThemedStyles(() => ({
   center: {
     alignItems: "center",
     justifyContent: "center"
+  },
+  composer: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 10,
+    padding: 12
+  },
+  composerInput: {
+    color: colors.text,
+    fontSize: 14,
+    minHeight: 72,
+    textAlignVertical: "top"
+  },
+  composerLabel: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800"
   },
   counts: {
     color: colors.text,
@@ -396,6 +578,8 @@ const styles = createThemedStyles(() => ({
     borderRadius: 10,
     borderWidth: 1,
     margin: 16,
+    minHeight: 44,
+    justifyContent: "center",
     padding: 16
   },
   linkCardText: {
@@ -409,13 +593,25 @@ const styles = createThemedStyles(() => ({
   },
   name: {
     color: colors.text,
+    flexShrink: 1,
     fontSize: 20,
     fontWeight: "900"
   },
   nameRow: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8
+  },
+  pending: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: 6,
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "900",
+    overflow: "hidden",
+    paddingHorizontal: 6,
+    paddingVertical: 2
   },
   postBody: {
     color: colors.text,
@@ -441,9 +637,50 @@ const styles = createThemedStyles(() => ({
     fontSize: 15,
     fontWeight: "900"
   },
+  quickAction: {
+    borderColor: colors.accent,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 36,
+    justifyContent: "center",
+    paddingHorizontal: 12
+  },
+  quickActionText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  quickRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 10
+  },
+  retry: {
+    alignSelf: "center",
+    borderColor: colors.accent,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: 18
+  },
+  retryText: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "800"
+  },
   root: {
     backgroundColor: colors.background,
     flex: 1
+  },
+  sectionError: {
+    gap: 4,
+    paddingBottom: 12
+  },
+  sectionSpinner: {
+    padding: 24
   },
   tabActive: {
     borderBottomColor: colors.accent,

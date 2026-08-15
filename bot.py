@@ -39188,7 +39188,7 @@ def api_pulse_search():
     q = clean_html(request.args.get("q") or "").strip()[:120]
     limit = max(1, min(safe_int(request.args.get("limit"), 8), 20))
     trending = ["scam alerts", "AI builders", "creator economy", "wallet safety", "reels", "live rooms", "marketplace", "music"]
-    empty = {"posts": [], "creators": [], "videos": [], "reels": [], "statuses": [], "marketplace": [], "music": [], "groups": [], "rooms": [], "comments": []}
+    empty = {"posts": [], "creators": [], "pages": [], "videos": [], "reels": [], "statuses": [], "marketplace": [], "music": [], "groups": [], "rooms": [], "comments": []}
     if not q:
         return jsonify({"ok": True, "query": "", "results": empty, "trending": trending, "recent": [], "limit": limit})
 
@@ -39507,6 +39507,29 @@ def api_pulse_search():
         ]
     except Exception as exc:
         webhook_app.logger.warning("pulse.search.music failed q=%r: %s", q, exc)
+    # Presence discovery: Artist and Business Pages surface through the same
+    # unified search, clearly typed so a Page is never mistaken for a person.
+    # Reuses the canonical pulsesoc_pages search — no second index.
+    try:
+        artist_types = {"ARTIST", "CREATOR", "PUBLIC_FIGURE", "SPORTS_TEAM"}
+        results["pages"] = [
+            {
+                "id": p.get("id"),
+                "title": p.get("name") or "PulseSoc page",
+                "handle": p.get("handle") or "",
+                "description": (p.get("category") or p.get("description") or "")[:160],
+                "type": "artist" if (p.get("page_type") or "") in artist_types else "business",
+                "page_type": p.get("page_type") or "",
+                "url": f"/pulse/pages/@{p.get('handle')}",
+                "avatar_url": p.get("avatar_url") or "",
+                "verified": bool(p.get("verified")),
+                "meta": "Artist" if (p.get("page_type") or "") in artist_types else (p.get("category") or "Business"),
+            }
+            for p in pulsesoc_pages.search_pages(conn, q, limit=limit)
+        ]
+    except Exception as exc:
+        webhook_app.logger.warning("pulse.search.pages failed q=%r: %s", q, exc)
+        results["pages"] = []
     conn.close()
     total = sum(len(items) for items in results.values())
     return jsonify({"ok": True, "query": q, "results": results, "total": total, "trending": trending, "limit": limit})
