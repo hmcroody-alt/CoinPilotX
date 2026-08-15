@@ -60,7 +60,13 @@ export type AppTabParamList = {
   Saved: undefined;
   Groups: undefined;
   Live: undefined;
-  Reels: undefined;
+  // Params, unlike the root-stack registration of the same screen, because only
+  // the tab instance sits inside `BottomNavVisibilityProvider`. A suggested reel
+  // opened on the stack plays the right video with a dock that no longer
+  // responds to swipes, so exact-reel navigation targets the tab.
+  // `reelTransferNonce` separates two taps on the same reel; the reel payload
+  // itself rides in `discovery/reelTransfer`, not in navigation state.
+  Reels: { reelId?: number; title?: string; reelTransferNonce?: string } | undefined;
   Create: undefined;
   Status: { openCreator?: boolean; statusId?: number } | undefined;
   Messenger: undefined;
@@ -129,8 +135,8 @@ export type RootStackParamList = {
     owner: boolean;
     source: "PROFILE_GRID";
   };
-  Reels: { reelId?: number; title?: string } | undefined;
-  ReelDetail: { reelId: number; title?: string };
+  Reels: { reelId?: number; title?: string; reelTransferNonce?: string } | undefined;
+  ReelDetail: { reelId: number; title?: string; reelTransferNonce?: string };
   StatusDetail: { statusId: number; title?: string };
   MarketplaceDetail: { listingId?: number; sellerUserId?: number; title?: string } | undefined;
   /**

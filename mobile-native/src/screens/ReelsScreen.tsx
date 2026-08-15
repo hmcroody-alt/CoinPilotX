@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useIsFocused } from "@react-navigation/native";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -70,6 +70,7 @@ import { formatShortTime } from "../utils/format";
 import { useAuth } from "../session/auth";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { createThemedStyles } from "../theme/themedStyles";
+import { takeReelTransfer } from "../discovery/reelTransfer";
 import { spatialReelsEnabled } from "../spatial/flags";
 import { ImmersiveRevealStrip } from "../spatial/ImmersiveRevealStrip";
 import { settledPageIndex } from "../spatial/navigatorVisibility";
@@ -108,16 +109,45 @@ export function ReelsScreen({ route, navigation }: Props) {
   });
   const params = route.params || {};
   const initialReelId = "reelId" in params ? Number(params.reelId || 0) : 0;
-  const [reels, setReels] = useState<PulseReel[]>([]);
+  const reelTransferNonce = "reelTransferNonce" in params ? String(params.reelTransferNonce || "") : "";
+  /**
+   * The reel the caller handed over, taken exactly once.
+   *
+   * A lazy `useState` initialiser and not `useRef(takeReelTransfer(id))`: the
+   * argument to `useRef` is evaluated on *every* render and only the first
+   * result is kept, so that spelling would consume the slot repeatedly and the
+   * value would be discarded. Lazy initialisers run once.
+   *
+   * Seeding here rather than in an effect is what removes the flash. State that
+   * exists before the first commit is on screen in the first frame; an effect
+   * runs after one paint of whatever the cache had.
+   */
+  const [transferredReel] = useState<PulseReel | null>(() =>
+    initialReelId ? takeReelTransfer(initialReelId) : null
+  );
+  /**
+   * The seed, in a ref because `load` is a closure rebuilt every render and has
+   * to see what the *effect* just set, not what its own render captured.
+   *
+   * The lane is recorded alongside it. A handed-over reel belongs to the lane it
+   * was suggested from; pinning it to the top of Live after a lane switch would
+   * put a reel the user did not ask for somewhere they did not expect it.
+   */
+  const seedRef = useRef<{ reel: PulseReel; lane: ReelLane } | null>(
+    transferredReel ? { reel: transferredReel, lane: initialReelLane() } : null
+  );
+  const seedForLane = (forLane: ReelLane) =>
+    seedRef.current && seedRef.current.lane === forLane ? seedRef.current.reel : null;
+  const [reels, setReels] = useState<PulseReel[]>(() => (transferredReel ? [transferredReel] : []));
   const [activeIndex, setActiveIndex] = useState(0);
-  const [lane, setLane] = useState<ReelLane>(QA_REELS_STATE === "live" ? "live" : QA_REELS_STATE === "music" ? "music" : "for_you");
+  const [lane, setLane] = useState<ReelLane>(initialReelLane);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!transferredReel);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [connectionState, setConnectionState] = useState<ConnectionState>("loading");
+  const [connectionState, setConnectionState] = useState<ConnectionState>(transferredReel ? "ready" : "loading");
   const [retryCount, setRetryCount] = useState(0);
   const [cachedAt, setCachedAt] = useState(0);
   const [offline, setOffline] = useState(false);
@@ -259,15 +289,25 @@ export function ReelsScreen({ route, navigation }: Props) {
       return;
     }
     if (mode === "more" && (!hasMore || loadingMore)) return;
+    const seed = mode === "more" ? null : seedForLane(lane);
     const nextOffset = mode === "more" ? offset : 0;
     setOffline(false);
     const version = ++loadVersion.current;
     if (mode === "initial") {
-      setLoading(true);
-      setConnectionState("loading");
+      // With a handed-over reel there is nothing to show a placeholder for: it
+      // is already on screen. Re-entering "loading" here would replace it with a
+      // spinner for the length of the network call.
+      if (!seed) {
+        setLoading(true);
+        setConnectionState("loading");
+      }
       const snapshot = await loadCachedReelsSnapshot(lane);
       if (version !== loadVersion.current) return;
-      if (snapshot.reels.length) {
+      // The snapshot is whatever this lane held last time. Rendering it while a
+      // specific reel was requested is the flash the exact-transfer requirement
+      // is about: unless the requested reel happens to be in the cache, the
+      // first thing on screen is a reel the user did not tap.
+      if (snapshot.reels.length && !seed) {
         setReels(focusInitialReel(snapshot.reels, initialReelId));
         setCachedAt(snapshot.cachedAt);
         setOffline(true);
@@ -280,7 +320,9 @@ export function ReelsScreen({ route, navigation }: Props) {
     try {
       const data = await listReels({ lane, limit: PAGE_SIZE, offset: nextOffset, includeComments: false });
       if (version !== loadVersion.current) return;
-      const next = mode === "more" ? mergeReels(reels, data.reels || []) : focusInitialReel(data.reels || [], initialReelId);
+      const next = mode === "more"
+        ? mergeReels(reels, data.reels || [])
+        : seedFirst(focusInitialReel(data.reels || [], initialReelId), seed);
       setReels(next);
       setOffset(Number(data.next_offset || nextOffset + (data.reels?.length || 0)));
       setHasMore(Boolean(data.has_more));
@@ -297,10 +339,18 @@ export function ReelsScreen({ route, navigation }: Props) {
       if (version !== loadVersion.current) return;
       const snapshot = await loadCachedReelsSnapshot(lane);
       if (snapshot.reels.length && mode !== "more") {
-        setReels(focusInitialReel(snapshot.reels, initialReelId));
+        // Same rule as the pre-fetch snapshot above, and it matters more here:
+        // this is the offline path, so whatever is shown now is what the user
+        // keeps. The handed-over reel stays first.
+        setReels(seedFirst(focusInitialReel(snapshot.reels, initialReelId), seed));
         setCachedAt(snapshot.cachedAt);
         setOffline(true);
         setConnectionState("cached");
+      } else if (seed) {
+        // Nothing cached and the network failed, but a reel was handed over: it
+        // is already on screen and it is playable, so this is not an error
+        // state. Leave the single-reel list alone.
+        setConnectionState("ready");
       } else {
         setConnectionState(classifyConnectionState(loadError));
       }
@@ -313,12 +363,38 @@ export function ReelsScreen({ route, navigation }: Props) {
     }
   }
 
+  const appliedTransferNonce = useRef(reelTransferNonce);
+
+  /**
+   * Re-entry. The Reels tab is never unmounted, so the mount-time initialiser
+   * above runs once per app session and a second tap on a suggested reel would
+   * otherwise arrive with nowhere to put its payload. Keyed on the nonce rather
+   * than the id, so tapping the *same* reel twice still counts as a navigation.
+   *
+   * A layout effect and not a passive one: it commits before paint, which gives
+   * the re-entry case the same "no reel the user did not tap is ever on screen"
+   * guarantee as the cold mount, instead of one frame of the previous reel.
+   * It runs before the load effect below, which is what lets `load` read the
+   * seed this just wrote.
+   */
+  useLayoutEffect(() => {
+    if (!reelTransferNonce || reelTransferNonce === appliedTransferNonce.current) return;
+    appliedTransferNonce.current = reelTransferNonce;
+    const seed = initialReelId ? takeReelTransfer(initialReelId) : null;
+    if (!seed) return;
+    seedRef.current = { reel: seed, lane };
+    setReels([seed]);
+    setActiveIndex(0);
+    setLoading(false);
+    setConnectionState("ready");
+  }, [initialReelId, reelTransferNonce]);
+
   useEffect(() => {
     setActiveIndex(0);
     setOffset(0);
     setHasMore(false);
     load("initial").catch(() => undefined);
-  }, [initialReelId, lane]);
+  }, [initialReelId, lane, reelTransferNonce]);
 
   useEffect(() => registerSyncInvalidation("reels", () => {
     load("refresh").catch(() => undefined);
@@ -1184,6 +1260,31 @@ function MenuAction({ label, danger, onPress }: { label: string; danger?: boolea
 function mergeReels(current: PulseReel[], incoming: PulseReel[]) {
   const seen = new Set(current.map((item) => item.id));
   return [...current, ...incoming.filter((item) => !seen.has(item.id))];
+}
+
+function initialReelLane(): ReelLane {
+  return QA_REELS_STATE === "live" ? "live" : QA_REELS_STATE === "music" ? "music" : "for_you";
+}
+
+function reelIdOf(reel: PulseReel | null | undefined): number {
+  return Number(reel?.id || reel?.reel_id || 0);
+}
+
+/**
+ * Put the handed-over reel first, preferring the server's copy of it.
+ *
+ * `focusInitialReel` already hoists a requested id when the page happens to
+ * contain it. This covers the case it cannot: the reel is not on the page at
+ * all — different lane, ranked out, aged past the first page — and without the
+ * seed the player would open on whatever the feed returned instead. When the
+ * page *does* contain it, the fetched copy wins, because it has the current
+ * reaction and comment counts while the carried copy is as old as the tap.
+ */
+function seedFirst(reels: PulseReel[], seed: PulseReel | null) {
+  if (!seed) return reels;
+  const seedId = reelIdOf(seed);
+  const fresher = reels.find((item) => reelIdOf(item) === seedId);
+  return [fresher || seed, ...reels.filter((item) => reelIdOf(item) !== seedId)];
 }
 
 function focusInitialReel(reels: PulseReel[], reelId: number) {
