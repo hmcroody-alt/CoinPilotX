@@ -18,7 +18,26 @@
       "seeOriginal": "Voir l'original",
       "translatedFrom": "Traduit depuis le {{language}}",
       "hiddenPost": "Publication masquée",
-      "undo": "Annuler"
+      "undo": "Annuler",
+      "discovery": {
+        "reelsTitle": "Reels pour vous",
+        "peopleTitle": "Personnes que vous connaissez peut-être",
+        "statusesTitle": "Statuts à ne pas manquer",
+        "groupsTitle": "Groupes à rejoindre",
+        "seeAll": "Tout voir",
+        "hideSection": "Masquer {{section}}",
+        "addFriend": "Ajouter en ami",
+        "requestSent": "Demande envoyée",
+        "join": "Rejoindre",
+        "joined": "Membre",
+        "statusNew": "Nouveau",
+        "statusSeen": "Vu",
+        "unavailable": "Impossible de charger les suggestions",
+        "members_one": "{{count}} membre",
+        "members_other": "{{count}} membres",
+        "views_one": "{{count}} vue",
+        "views_other": "{{count}} vues"
+      }
     },
     "post": {
       "like": "J'aime",

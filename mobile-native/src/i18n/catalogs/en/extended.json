@@ -18,7 +18,26 @@
       "seeOriginal": "See original",
       "translatedFrom": "Translated from {{language}}",
       "hiddenPost": "Post hidden",
-      "undo": "Undo"
+      "undo": "Undo",
+      "discovery": {
+        "reelsTitle": "Reels for you",
+        "peopleTitle": "People you may know",
+        "statusesTitle": "Catch these Statuses",
+        "groupsTitle": "Groups to join",
+        "seeAll": "See all",
+        "hideSection": "Hide {{section}}",
+        "addFriend": "Add friend",
+        "requestSent": "Requested",
+        "join": "Join",
+        "joined": "Joined",
+        "statusNew": "New",
+        "statusSeen": "Seen",
+        "unavailable": "Suggestions couldn't load",
+        "members_one": "{{count}} member",
+        "members_other": "{{count}} members",
+        "views_one": "{{count}} view",
+        "views_other": "{{count}} views"
+      }
     },
     "post": {
       "like": "Like",

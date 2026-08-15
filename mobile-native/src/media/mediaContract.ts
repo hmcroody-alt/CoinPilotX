@@ -113,6 +113,34 @@ export function hasRenderableMediaUrl(media: CanonicalMediaRecord | null | undef
   return candidates.some((value) => typeof value === "string" && value.trim().length > 0);
 }
 
+/**
+ * The stricter gate for a still image in the feed.
+ *
+ * A media row can carry a URL and still be unrenderable *as an image*. The feed
+ * serializer sets `media_url` to the source path unconditionally -- even when the
+ * upload or the Insight image generation failed -- and only blanks `valid_url`
+ * (via `is_available === false`). A failed row therefore looks renderable to the
+ * URL gate (`media_url` is non-empty) while carrying `width: 0`, `height: 0` and
+ * no aspect ratio. Mounting an <Image> around it reserves a 4:5 box for a picture
+ * that never arrives, then leans on onError to clean up -- a visible flash of the
+ * exact blank rectangle the invariant forbids, and a permanent one if the broken
+ * URL 200s.
+ *
+ * An image is renderable only when it has a drawable URL, is not server-marked
+ * unavailable, and carries positive dimensions (or a positive aspect ratio) to
+ * size the box from. Height is never computed from zero/undefined dimensions:
+ * no dimensions means no container.
+ */
+export function hasRenderableImage(media: CanonicalMediaRecord | null | undefined) {
+  if (!media) return false;
+  if (media.is_available === false) return false;
+  if (!hasRenderableMediaUrl(media)) return false;
+  const width = Number(media.width || 0);
+  const height = Number(media.height || 0);
+  const aspect = Number(media.aspect_ratio || 0);
+  return (width > 0 && height > 0) || (Number.isFinite(aspect) && aspect > 0);
+}
+
 /** Drop records that cannot be drawn, preserving order of the rest. */
 export function renderableMedia<T extends CanonicalMediaRecord>(list: readonly T[] | null | undefined): T[] {
   return (list || []).filter((media) => hasRenderableMediaUrl(media));

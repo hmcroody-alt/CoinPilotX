@@ -50,7 +50,7 @@ jest.mock("../../api/marketplace", () => ({
 }));
 
 import { businessOsHubSections, businessOsNavigationArgs } from "../../api/businessOs";
-import { BusinessOsScreen } from "../BusinessOsScreen";
+import { BUSINESS_OS_LOAD_TIMEOUT_MS, BusinessOsScreen } from "../BusinessOsScreen";
 
 const EMPTY_ANALYTICS = {
   totals: { impressions: 0, viewable_impressions: 0, clicks: 0, hides: 0, reports: 0, spend_cents: 0, ctr: 0 },
@@ -151,6 +151,32 @@ describe("Business OS hub", () => {
     // The cached spend is what is shown — not a zero that would misreport the
     // account as having never spent anything.
     expect(view.getByLabelText("Ad spend: $5.00")).toBeTruthy();
+  });
+
+  it("leaves the loading state and uses cached data when live requests never settle", async () => {
+    jest.useFakeTimers();
+    mockListAdAccounts.mockReturnValue(new Promise(() => undefined));
+    mockGetAdAnalytics.mockReturnValue(new Promise(() => undefined));
+    mockSellerSnapshot.mockReturnValue(new Promise(() => undefined));
+    mockCachedAccounts.mockResolvedValue([{ id: 4, status: "active", verified: true }]);
+    mockCachedAnalytics.mockResolvedValue({
+      ...EMPTY_ANALYTICS,
+      totals: { ...EMPTY_ANALYTICS.totals, spend_cents: 500 }
+    });
+
+    const view = render(<BusinessOsScreen navigation={navigationSpy()} />);
+    expect(view.getByText("Loading your business…")).toBeTruthy();
+
+    await act(async () => {
+      jest.advanceTimersByTime(BUSINESS_OS_LOAD_TIMEOUT_MS);
+      await Promise.resolve();
+    });
+
+    expect(view.queryByText("Loading your business…")).toBeNull();
+    expect(view.getByText("Showing saved data")).toBeTruthy();
+    expect(view.getByText("PulseSoc took too long to load your business.")).toBeTruthy();
+    expect(view.getByLabelText("Ad spend: $5.00")).toBeTruthy();
+    jest.useRealTimers();
   });
 
   it("retries the live load when the offline panel's retry is pressed", async () => {

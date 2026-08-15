@@ -41,6 +41,51 @@ from . import delivery_common as _c
 SPONSORED_LABEL = "Sponsored"
 
 
+# --- first-touch schema guarantee -------------------------------------------
+# The Business OS schema bootstrap (services/business_os/schema_bootstrap.py) is
+# driven by a before_request hook that only fires for paths under
+# ``/api/business-os`` or ``/business-os``. Delivery, however, is entered from
+# the Pulse surface -- ``GET /api/pulse/ads/placements`` -- which never matches
+# that prefix. On a production database where nobody had loaded a Business OS
+# page in that worker's lifetime, the advertising tables were therefore never
+# created, and the very first thing request_placement does (the per-viewer rate
+# limit) SELECTed from a table that did not exist:
+#
+#   UndefinedTable: relation "business_os_ad_delivery_instances" does not exist
+#
+# The caller swallows it, so the ad request degrades to no-fill and the
+# server-authoritative frequency cap silently stops capping. Ensuring the
+# subsystem's own schema at its own entry point removes the dependency on which
+# URL happened to be requested first. Idempotent (CREATE TABLE IF NOT EXISTS)
+# and latched, so this costs one guarded call per process, not per request.
+#
+# It must run on its OWN connection. ``schema.ensure_schema`` commits only when
+# it owns the connection ("so callers can compose it into a larger transaction"),
+# so handing it the caller's conn creates the DDL without committing it. On
+# PostgreSQL DDL is transactional, and the common no-placement path returns
+# without committing and then closes -- silently rolling every CREATE TABLE
+# back. SQLite autocommits DDL and hides this completely, so the local test goes
+# green while production stays empty. Passing None is what makes the tables
+# durable; the extra short-lived connection is paid once per process.
+_SCHEMA_READY = False
+
+
+def _ensure_schema_once() -> None:
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+    try:
+        _svc.ensure_schema()
+        _SCHEMA_READY = True
+    except Exception:
+        # Never convert a schema hiccup into a failed ad request: leave the latch
+        # down so a later request retries, and let the original query surface its
+        # own error exactly as it does today.
+        import logging
+
+        logging.exception("AD_DELIVERY_SCHEMA_ENSURE_FAILED (non-fatal)")
+
+
 # --- passive measurement hook (ads intelligence, Stage 1) --------------------
 def _record_opportunity(placement, subject, ctx, result, winner, latency_ms,
                         *, forced_reason=None):
@@ -217,6 +262,10 @@ def request_placement(viewer_user_id: Any, placement: Any, *,
     if isinstance(request, dict):
         rid = request.get("request_id")
         request_ref = str(rid)[:120] if rid not in (None, "") else None
+
+    # Before the connection is opened, so no transaction snapshot can predate
+    # the DDL and fail to see the tables it just committed.
+    _ensure_schema_once()
 
     owned = conn is None
     if owned:

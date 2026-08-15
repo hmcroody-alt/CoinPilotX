@@ -14,7 +14,7 @@ jest.mock("../../core/perfTrace", () => ({ startSpan: jest.fn(() => ({ end: jest
 jest.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 jest.mock("../config", () => ({ PULSE_API_BASE_URL: "https://pulse.test" }));
 
-import { pulseApi } from "../pulseApi";
+import { PULSE_API_READ_TIMEOUT_MS, PulseApiError, pulseApi } from "../pulseApi";
 
 describe("pulseApi in-flight read coalescing", () => {
   beforeEach(() => {
@@ -36,6 +36,23 @@ describe("pulseApi in-flight read coalescing", () => {
 
     resolveFetch(new Response(JSON.stringify({ value: 7 }), { status: 200 }));
     await expect(Promise.all([first, second])).resolves.toEqual([{ value: 7 }, { value: 7 }]);
+  });
+
+  it("rejects a stalled canonical GET instead of leaving its screen loading forever", async () => {
+    jest.useFakeTimers();
+    global.fetch = jest.fn(() => new Promise<Response>(() => undefined)) as jest.Mock;
+
+    const request = pulseApi("/api/pulse/marketplace/seller/listings");
+    const assertion = expect(request).rejects.toMatchObject<Partial<PulseApiError>>({
+      status: 504,
+      code: "request_timeout"
+    });
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(PULSE_API_READ_TIMEOUT_MS);
+
+    await assertion;
+    jest.useRealTimers();
   });
 
   it("never combines writes", async () => {

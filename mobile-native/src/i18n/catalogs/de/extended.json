@@ -18,7 +18,26 @@
       "seeOriginal": "Original ansehen",
       "translatedFrom": "Übersetzt aus {{language}}",
       "hiddenPost": "Beitrag ausgeblendet",
-      "undo": "Rückgängig"
+      "undo": "Rückgängig",
+      "discovery": {
+        "reelsTitle": "Reels für dich",
+        "peopleTitle": "Personen, die du kennen könntest",
+        "statusesTitle": "Diese Status nicht verpassen",
+        "groupsTitle": "Gruppen zum Beitreten",
+        "seeAll": "Alle ansehen",
+        "hideSection": "{{section}} ausblenden",
+        "addFriend": "Freund hinzufügen",
+        "requestSent": "Angefragt",
+        "join": "Beitreten",
+        "joined": "Beigetreten",
+        "statusNew": "Neu",
+        "statusSeen": "Gesehen",
+        "unavailable": "Vorschläge konnten nicht geladen werden",
+        "members_one": "{{count}} Mitglied",
+        "members_other": "{{count}} Mitglieder",
+        "views_one": "{{count}} Aufruf",
+        "views_other": "{{count}} Aufrufe"
+      }
     },
     "post": {
       "like": "Gefällt mir",

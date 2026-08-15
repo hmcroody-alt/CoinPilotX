@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Battery from "expo-battery";
 import { RouteProp, useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Easing, FlatList, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, ViewToken, useWindowDimensions } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Easing, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, ViewToken, useWindowDimensions } from "react-native";
 import {
   addPostComment,
   deletePost,
@@ -33,7 +33,10 @@ import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { SponsoredAdCard } from "../components/SponsoredAdCard";
 import { fetchSponsoredAds, SponsoredAd } from "../api/ads";
-import { FeedRow, injectAds } from "../feed/injectAds";
+import { injectAds } from "../feed/injectAds";
+import { HomeRow, injectDiscoveryRows } from "../discovery/discoveryRows";
+import { DiscoveryRowView } from "../discovery/DiscoveryRowView";
+import { useHomeDiscovery } from "../discovery/useHomeDiscovery";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { getPulseRadioState, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
 import { useBottomNavContentPadding, useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
@@ -48,10 +51,20 @@ import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { createThemedStyles } from "../theme/themedStyles";
+import { spatialHomeFeedEnabled } from "../spatial/flags";
+import { SpatialPager } from "../spatial/SpatialPager";
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
 
-type HomeFeedRow = FeedRow<PulsePost>;
+/**
+ * Posts, ads and — once the discovery flags are on — suggestion rows.
+ *
+ * `HomeRow` is `FeedRow` plus one `discovery` member, so with every flag off
+ * this alias describes exactly the same set of rows it described before: the
+ * union widens, but `injectDiscoveryRows` returns its input unchanged and no
+ * value of the new shape is ever constructed.
+ */
+type HomeFeedRow = HomeRow<PulsePost>;
 
 type HomeScreenProps = {
   badges?: GlobalNavigationBadges;
@@ -79,6 +92,9 @@ const FEED_TABS: FeedTab[] = [
 ];
 
 const FEED_SELECTION_KEY = "pulsesoc.native.home.feed.selection.v1";
+
+/** Stable empty array: the outer list carries no rows in spatial mode. */
+const EMPTY_FEED_ROWS: HomeFeedRow[] = [];
 
 const HOME_COMMAND_ITEMS = [
   { label: "Home", route: "/pulse", icon: "⌂", active: true },
@@ -134,6 +150,13 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   // which is what makes a second tap a no-op rather than a second write.
   const guard = useSocialActionGuard();
   const [statusItems, setStatusItems] = useState<PulseStatus[]>([]);
+  /**
+   * Bumped on pull-to-refresh only. It re-fetches the discovery modules and
+   * doubles as the rotation offset, so a refresh both refreshes the suggestions
+   * and moves which kind sits at which scroll depth — §3's rotation without the
+   * re-shuffling that a random offset would cause on unrelated re-renders.
+   */
+  const [discoveryRefreshToken, setDiscoveryRefreshToken] = useState(0);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusOffline, setStatusOffline] = useState(false);
   const [statusError, setStatusError] = useState("");
@@ -163,6 +186,23 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     });
   }).current;
   const selectionRestoredRef = useRef(false);
+  // ---- Dormant spatial feed (flag-gated; OFF is the product decision) ------
+  // Spatial paging shipped on Home to testers and was withdrawn: Reels is the
+  // only motion-enabled browsing destination now. The pager below stays behind
+  // `spatialHomeFeedEnabled` — which is OFF and stays OFF — purely so the
+  // implementation remains recoverable, and it is a TOUCH-ONLY pager. Home has
+  // no tilt hook, no immersive navigator and no reveal strip: motion is absent
+  // from this screen by construction rather than by a flag reading false.
+  const spatialFeed = spatialHomeFeedEnabled();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const [spatialIndexByFeed, setSpatialIndexByFeed] = useState<Record<string, number>>({});
+  const [spatialResetNonce, setSpatialResetNonce] = useState(0);
+  const [newSignalsAvailable, setNewSignalsAvailable] = useState(false);
+  const spatialIndex = spatialIndexByFeed[selectedFeed] || 0;
+  const spatialIndexRef = useRef(0);
+  spatialIndexRef.current = spatialIndex;
+  const spatialPageHeight = Math.max(420, Math.round(windowHeight * 0.72));
+  // -------------------------------------------------------------------------
   const activeTab = useMemo(() => FEED_TABS.find((tab) => tab.key === selectedFeed) || FEED_TABS[0], [selectedFeed]);
   const activeLivePost = useMemo(
     () => posts.find((post) => post.id === activePostId && Number(post.live?.live_session_id || 0) > 0),
@@ -199,9 +239,42 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     [ads, hiddenAdKeys]
   );
 
+  /**
+   * Status ids already on Home's rail. §3: a suggestion the user can see two rows
+   * up is noise, so the rail's contents are subtracted from the Statuses module.
+   * Reels have no equivalent set — Home renders no reels — so none is passed.
+   */
+  const railStatusIds = useMemo(
+    () => new Set(statusItems.map((status) => Number(status.id)).filter((id) => id > 0)),
+    [statusItems]
+  );
+
+  const discovery = useHomeDiscovery({
+    navigation,
+    excludeStatusIds: railStatusIds,
+    // §13: no suggestions for a signed-out viewer.
+    enabled: isAuthenticated,
+    refreshToken: discoveryRefreshToken
+  });
+
+  /**
+   * Ads first, then suggestions threaded through the result.
+   *
+   * The order matters and is not interchangeable. `injectAds` owns the sponsored
+   * cadence Advertising specified; running it first and composing over its output
+   * means discovery can see where the ads landed and keep each ad with the post
+   * that earned it, while an ad slot is never displaced by a carousel. With the
+   * discovery flags off, `discovery.modules` is empty and `injectDiscoveryRows`
+   * returns the ad-injected array itself — so this line produces byte-identical
+   * rows to the previous `injectAds(...)` call, which is the §15 rollback path.
+   */
   const feedRows = useMemo<HomeFeedRow[]>(
-    () => injectAds(posts, availableAds, { interval: 5, leadIn: 3 }),
-    [posts, availableAds]
+    () =>
+      injectDiscoveryRows(injectAds(posts, availableAds, { interval: 5, leadIn: 3 }), discovery.modules, {
+        dismissed: discovery.dismissed,
+        rotationOffset: discovery.rotationOffset
+      }),
+    [posts, availableAds, discovery.modules, discovery.dismissed, discovery.rotationOffset]
   );
 
   const handleHideAd = useCallback((ad: SponsoredAd) => {
@@ -305,27 +378,67 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     }
   }, [route.params?.openComposer]);
 
+  /**
+   * Background feed invalidations. In the spatial feed, a background update
+   * must never yank the pager out from under the user: if they have swiped
+   * away from the first post, we surface a restrained "New Signals" action
+   * and apply only on their tap. At rest on page 0 (or in the legacy feed)
+   * the refresh applies as before.
+   */
+  const backgroundRefresh = useCallback(() => {
+    if (spatialFeed && spatialIndexRef.current > 0) {
+      setNewSignalsAvailable(true);
+      return;
+    }
+    load("refresh").catch(() => undefined);
+  }, [load, spatialFeed]);
+
   useEffect(() => {
-    const stopActivity = registerSyncInvalidation("activity", () => load("refresh").catch(() => undefined));
-    const stopNotifications = registerSyncInvalidation("notifications", () => load("refresh").catch(() => undefined));
-    const stopMarketplace = registerSyncInvalidation("marketplace", () => load("refresh").catch(() => undefined));
+    const stopActivity = registerSyncInvalidation("activity", backgroundRefresh);
+    const stopNotifications = registerSyncInvalidation("notifications", backgroundRefresh);
+    const stopMarketplace = registerSyncInvalidation("marketplace", backgroundRefresh);
     return () => {
       stopActivity();
       stopNotifications();
       stopMarketplace();
     };
-  }, [load]);
+  }, [backgroundRefresh]);
+
+  /** Media lifecycle: in the spatial feed only the settled page is active. */
+  useEffect(() => {
+    if (!spatialFeed) return;
+    const row = feedRows[Math.min(spatialIndex, Math.max(0, feedRows.length - 1))];
+    setActivePostId(row && row.type === "post" ? row.post.id : null);
+    setViewableAdKeys(row && row.type === "ad" ? new Set([row.key]) : new Set());
+  }, [spatialFeed, feedRows, spatialIndex]);
+
+  const resetSpatialPosition = useCallback(() => {
+    if (!spatialFeed) return;
+    setSpatialIndexByFeed((current) => (current[selectedFeed] ? { ...current, [selectedFeed]: 0 } : current));
+    setSpatialResetNonce((nonce) => nonce + 1);
+    setNewSignalsAvailable(false);
+  }, [selectedFeed, spatialFeed]);
 
   useEffect(() => registerRefreshDestination("home", {
-    scrollToTop: () => listRef.current?.scrollToOffset({ offset: 0, animated: true }),
+    scrollToTop: () => {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      // Home re-tap is explicit user intent: snap the spatial feed back to the
+      // first signal without blanking what is on screen.
+      resetSpatialPosition();
+    },
     refresh: async () => {
       loadStatuses().catch(() => undefined);
+      resetSpatialPosition();
+      // Same bump as pull-to-refresh: a refresh is a refresh whichever gesture
+      // asked for it, and leaving this out would make the tab re-tap the one
+      // path that reloads the feed but leaves stale suggestions behind it.
+      setDiscoveryRefreshToken((token) => token + 1);
       await load("refresh");
       AccessibilityInfo.announceForAccessibility?.("Home refreshed");
     },
     isRefreshing: () => refreshingRef.current,
     canRefresh: () => isAuthenticated
-  }), [isAuthenticated, load, loadStatuses]);
+  }), [isAuthenticated, load, loadStatuses, resetSpatialPosition]);
 
   const updatePost = useCallback((postId: number, next: Partial<PulsePost>) => {
     setPosts((current) => current.map((post) => (post.id === postId ? { ...post, ...next } : post)));
@@ -575,19 +688,102 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     hasMoreRef.current = false;
     loadingMoreRef.current = false;
     setLoading(true);
+    // Each category keeps its own spatial position; snap the pager to the
+    // incoming category's remembered index.
+    if (spatialFeed) {
+      setSpatialResetNonce((nonce) => nonce + 1);
+      setNewSignalsAvailable(false);
+    }
   }
 
   function refreshHome() {
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    resetSpatialPosition();
     loadStatuses().catch(() => undefined);
     load("refresh").catch(() => undefined);
     loadAds().catch(() => undefined);
+    setDiscoveryRefreshToken((token) => token + 1);
   }
 
   function openHomeRoute(routePath: string) {
     setDrawerOpen(false);
     openNativeRoute(navigation, routePath);
   }
+
+  /**
+   * Renders one feed row (post, ad, or suggestion). Shared verbatim between the
+   * legacy vertical list and the spatial pager so every post type, action and ad
+   * behavior is identical in both modes.
+   */
+  const renderFeedRow = (row: HomeFeedRow) => {
+    if (row.type === "discovery") {
+      return (
+        <DiscoveryRowView
+          module={row.module}
+          slot={row.slot}
+          {...discovery.actions}
+          onSeeAll={discovery.seeAllFor(row.module.kind)}
+          pendingFriendKeys={discovery.pendingFriendKeys}
+          joinedGroupSlugs={discovery.joinedGroupSlugs}
+        />
+      );
+    }
+    if (row.type === "ad") {
+      return (
+        <SponsoredAdCard
+          ad={row.ad}
+          isViewable={viewableAdKeys.has(row.key)}
+          edgeInset={12}
+          navigation={navigation}
+          onHide={handleHideAd}
+        />
+      );
+    }
+    const item = row.post;
+    return (
+      <PostCard
+        post={item}
+        busy={guard.isItemBusy(item.id)}
+        active={activePostId === item.id}
+        motionEnabled={ambientMotionEnabled}
+        onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
+        onOpenLive={(post) => {
+          const liveId = Number(post.live?.live_session_id || 0);
+          if (liveId > 0) navigation.navigate("LiveDetail", { liveId, title: post.title || "PulseSoc Live" });
+        }}
+        onReact={handleReact}
+        onSave={handleSave}
+        onRepost={handleRepost}
+        onPromote={(post) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: post.id, title: "Promote Post" })}
+        onShare={handleShare}
+        onComment={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Comments" })}
+        onSubmitComment={handleInlineComment}
+        onReport={(post) =>
+          navigation.navigate("SafetyHub", {
+            title: "Report",
+            section: "reports",
+            reportType: "post",
+            reportTarget: String(post.id)
+          })
+        }
+        onHide={handleHide}
+        onBlock={(post) =>
+          navigation.navigate("SafetyHub", {
+            title: "Blocked Users",
+            section: "blocks",
+            blockTarget: post.author?.public_player_id || post.author_public_player_id || post.author?.username || post.author_username || ""
+          })
+        }
+        onMute={handleMute}
+        onFollow={handleFollow}
+        onDelete={isContentOwner(item, currentUserId) ? handleDelete : undefined}
+        onAuthorPress={(post) => {
+          const params = profileNavigationParams(profileTargetFromPost(post), post.author?.display_name || "Profile");
+          if (params) navigation.navigate("ProfileDetail", params);
+        }}
+      />
+    );
+  };
 
   return (
     <View style={styles.root}>
@@ -624,7 +820,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         ref={listRef}
         style={styles.list}
         contentContainerStyle={[styles.content, { paddingBottom: bottomContentPadding }]}
-        data={feedRows}
+        data={spatialFeed ? EMPTY_FEED_ROWS : feedRows}
         keyExtractor={(row) => row.key}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => refreshHome()} />}
         ListHeaderComponent={
@@ -688,75 +884,65 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             onOpenPreview={(token) => navigation.navigate("ContentPreview", { token })}
           />
         }
+        ListFooterComponent={
+          spatialFeed ? (
+            <>
+              {newSignalsAvailable ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="New Signals available. Tap to load."
+                  style={styles.newSignalsPill}
+                  onPress={refreshHome}
+                >
+                  <Text style={styles.newSignalsText}>New Signals available</Text>
+                </Pressable>
+              ) : null}
+              {feedRows.length > 0 ? (
+                <SpatialPager
+                  testID="spatial-home-feed"
+                  accessibilityLabel={`${activeTab.label} feed, swipe horizontally between signals`}
+                  data={feedRows}
+                  keyExtractor={(row) => row.key}
+                  pageWidth={windowWidth}
+                  pageHeight={spatialPageHeight}
+                  index={spatialIndex}
+                  resetNonce={spatialResetNonce}
+                  onIndexSettled={(nextIndex) => {
+                    setSpatialIndexByFeed((current) =>
+                      current[selectedFeed] === nextIndex ? current : { ...current, [selectedFeed]: nextIndex }
+                    );
+                  }}
+                  onEndReached={() => load("more").catch(() => undefined)}
+                  renderPage={(row) => (
+                    <ScrollView
+                      style={styles.spatialPageScroll}
+                      showsVerticalScrollIndicator={false}
+                      nestedScrollEnabled
+                    >
+                      {renderFeedRow(row)}
+                    </ScrollView>
+                  )}
+                />
+              ) : null}
+            </>
+          ) : loadingMore ? (
+            <ActivityIndicator style={styles.footer} color={colors.accent} />
+          ) : null
+        }
         ListEmptyComponent={
-          <LogiNexusEmptyState
-            title={loading ? "Opening the PulseSoc network" : error ? "Connection interrupted" : `${activeTab.label} is quiet`}
-            body={loading ? "Loading your canonical feed…" : error || `No signals matched ${activeTab.label}. Pull to refresh or switch filters.`}
-            tone={error ? "warning" : "default"}
-          />
+          spatialFeed && feedRows.length > 0 ? null : (
+            <LogiNexusEmptyState
+              title={loading ? "Opening the PulseSoc network" : error ? "Connection interrupted" : `${activeTab.label} is quiet`}
+              body={loading ? "Loading your canonical feed…" : error || `No signals matched ${activeTab.label}. Pull to refresh or switch filters.`}
+              tone={error ? "warning" : "default"}
+            />
+          )
         }
         viewabilityConfig={feedViewabilityConfig}
         onViewableItemsChanged={onFeedViewableItemsChanged}
-        renderItem={({ item: row }) => {
-          if (row.type === "ad") {
-            return (
-              <SponsoredAdCard
-                ad={row.ad}
-                isViewable={viewableAdKeys.has(row.key)}
-                edgeInset={12}
-                navigation={navigation}
-                onHide={handleHideAd}
-              />
-            );
-          }
-          const item = row.post;
-          return (
-            <PostCard
-              post={item}
-              busy={guard.isItemBusy(item.id)}
-              active={activePostId === item.id}
-              motionEnabled={ambientMotionEnabled}
-              onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
-              onOpenLive={(post) => {
-                const liveId = Number(post.live?.live_session_id || 0);
-                if (liveId > 0) navigation.navigate("LiveDetail", { liveId, title: post.title || "PulseSoc Live" });
-              }}
-              onReact={handleReact}
-              onSave={handleSave}
-              onRepost={handleRepost}
-              onPromote={(post) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: post.id, title: "Promote Post" })}
-              onShare={handleShare}
-              onComment={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Comments" })}
-              onSubmitComment={handleInlineComment}
-              onReport={(post) =>
-                navigation.navigate("SafetyHub", {
-                  title: "Report",
-                  section: "reports",
-                  reportType: "post",
-                  reportTarget: String(post.id)
-                })
-              }
-              onHide={handleHide}
-              onBlock={(post) =>
-                navigation.navigate("SafetyHub", {
-                  title: "Blocked Users",
-                  section: "blocks",
-                  blockTarget: post.author?.public_player_id || post.author_public_player_id || post.author?.username || post.author_username || ""
-                })
-              }
-              onMute={handleMute}
-              onFollow={handleFollow}
-              onDelete={isContentOwner(item, currentUserId) ? handleDelete : undefined}
-              onAuthorPress={(post) => {
-                const params = profileNavigationParams(profileTargetFromPost(post), post.author?.display_name || "Profile");
-                if (params) navigation.navigate("ProfileDetail", params);
-              }}
-            />
-          );
-        }}
+        renderItem={({ item: row }) => renderFeedRow(row)}
         onEndReached={() => load("more").catch(() => undefined)}
         onEndReachedThreshold={0.35}
-        ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.footer} color={colors.accent} /> : null}
         onScroll={bottomNavScroll.onScroll}
         onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
@@ -1352,6 +1538,27 @@ const styles = createThemedStyles(() => ({
     flexShrink: 1,
     fontSize: 12,
     fontWeight: "700"
+  },
+  newSignalsPill: {
+    alignItems: "center",
+    alignSelf: "center",
+    backgroundColor: colors.glassStrong,
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.large,
+    borderWidth: 1,
+    marginBottom: 8,
+    marginTop: 2,
+    paddingHorizontal: 16,
+    paddingVertical: 8
+  },
+  newSignalsText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.4
+  },
+  spatialPageScroll: {
+    flex: 1
   },
   addStatusCard: {
     alignItems: "center",

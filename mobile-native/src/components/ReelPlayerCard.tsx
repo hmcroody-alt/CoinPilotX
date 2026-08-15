@@ -1,4 +1,5 @@
 import { Audio, ResizeMode, Video } from "expo-av";
+import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { PulseReel, reelIsPlayable, reelPosterUrl, reelVideoUrl, reelWebUrl } from "../api/reels";
@@ -22,7 +23,36 @@ type ReelPlayerCardProps = {
   active: boolean;
   muted: boolean;
   offline?: boolean;
+  /**
+   * Render the reel edge-to-edge instead of as an inset, rounded card.
+   *
+   * The legacy Reels player floats the media inside a bordered card with fixed
+   * 112/96/8pt margins. The spatial player fills the viewport, and the header
+   * and bottom navigator overlay the media rather than bracketing it. Both
+   * layouts ship: this is the flag boundary between them, so turning spatial
+   * Reels off restores the card without a second code path to keep in sync.
+   */
+  fullBleed?: boolean;
+  /** Full-bleed only: where the creator row starts, clear of the header. */
   contentTop?: number;
+  /**
+   * Full-bleed only: where the caption sits, clear of where the navigator
+   * *lives* — not of where it currently is.
+   *
+   * Deriving this from the dock's actual visibility would resize the reel's
+   * content every time the dock hid or revealed, which is the layout jump the
+   * mission forbids. It is a constant so a hide/reveal moves the navigator and
+   * nothing else.
+   */
+  contentBottom?: number;
+  /** Full-bleed only: bottom safe-area inset, for non-interactive chrome. */
+  safeBottom?: number;
+  /**
+   * Full-bleed only: a confirmed single tap the media surface received and no
+   * child control claimed. The product already maps that tap to mute; this is
+   * additive, and it is the recovery path that brings a hidden navigator back.
+   */
+  onSurfaceTap?: () => void;
   busy?: boolean;
   onToggleMuted: () => void;
   onReact: (reel: PulseReel, reactionType?: string) => void;
@@ -47,7 +77,11 @@ export function ReelPlayerCard({
   active,
   muted,
   offline = false,
+  fullBleed = false,
   contentTop = 68,
+  contentBottom = 132,
+  safeBottom = 0,
+  onSurfaceTap,
   busy,
   onToggleMuted,
   onReact,
@@ -186,7 +220,14 @@ export function ReelPlayerCard({
   }, [active, muted, ownsPlayback, drivesPlayback]);
 
   const { onPress: handleTap } = useTapMuteLike({
-    onToggleMuted,
+    // A confirmed single tap keeps its existing product meaning (mute) and, in
+    // full-bleed mode, additionally recovers a hidden navigator. It is deliberately
+    // wired to the *confirmed* single tap rather than to the raw press, so the
+    // first half of a double-tap-to-like does not flash the navigation.
+    onToggleMuted: () => {
+      onToggleMuted();
+      onSurfaceTap?.();
+    },
     onLike: () => onReact(reel, "like"),
     onSingleTapFeedback: () => muteGlyphRef.current?.trigger(!muted),
     onLikeFeedback: (x, y) => likeBurstRef.current?.trigger(x, y)
@@ -213,7 +254,7 @@ export function ReelPlayerCard({
   }
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, fullBleed && styles.cardFullBleed]}>
       {poster ? <Image source={{ uri: poster }} style={styles.poster} resizeMode="cover" blurRadius={active ? 0 : 3} /> : null}
       {kind === "photo" ? (
         <ReelPhotoSurface reel={reel} />
@@ -260,11 +301,31 @@ export function ReelPlayerCard({
       )}
       {isVideoKind && contentState === "playable" ? <Pressable accessibilityRole="button" accessibilityLabel={muted ? "Reel muted. Tap to unmute, double tap to like." : "Reel sound on. Tap to mute, double tap to like."} style={styles.tapLayer} onPress={handleTap} onLongPress={() => onOpenReactions(reel)} /> : null}
       <View style={styles.scrim} pointerEvents="none" />
+      {fullBleed ? (
+        // Contrast protection, not decoration. Full-bleed media puts white
+        // caption text and the creator row directly over whatever the video
+        // happens to be showing, and a bright reel makes both unreadable. Two
+        // neutral black gradients — no brand color, no permanent opaque panel —
+        // darken only the bands the overlays occupy and fade to nothing across
+        // the middle of the frame, so the media itself is never covered.
+        <>
+          <LinearGradient
+            colors={["rgba(0,0,0,0.58)", "rgba(0,0,0,0.22)", "rgba(0,0,0,0)"]}
+            style={[styles.topScrim, { height: contentTop + 108 }]}
+            pointerEvents="none"
+          />
+          <LinearGradient
+            colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.34)", "rgba(0,0,0,0.72)"]}
+            style={[styles.bottomScrim, { height: contentBottom + 220 }]}
+            pointerEvents="none"
+          />
+        </>
+      ) : null}
       {buffering || refreshingUrl ? <View style={styles.buffering}><View style={styles.bufferingCore}><ActivityIndicator color="#36f0cf" /><Text style={styles.bufferingText}>{refreshingUrl ? "Refreshing Reel" : "Tuning signal"}</Text></View></View> : null}
       <LikeBurst ref={likeBurstRef} />
       <MuteGlyphPulse ref={muteGlyphRef} />
 
-      <View style={styles.top}>
+      <View style={[styles.top, fullBleed ? { top: contentTop } : null]}>
         <Pressable style={styles.author} onPress={() => onAuthorPress(reel)}>
           {author.avatar_url ? <Image source={{ uri: author.avatar_url }} style={styles.avatar} /> : <View style={styles.avatarFallback} />}
           <View style={styles.authorCopy}>
@@ -275,9 +336,9 @@ export function ReelPlayerCard({
         {isLive ? <View style={styles.followButton}><Text style={styles.followText}>LIVE</Text></View> : <Pressable style={[styles.followButton, reel.viewer_follows_author && styles.followButtonActive]} disabled={busy} onPress={() => onFollowCreator(reel)}><Text style={styles.followText}>{reel.viewer_follows_author ? "Following" : "Follow"}</Text></Pressable>}
       </View>
 
-      {isLive ? <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>LIVE · {reel.live?.viewer_count || reel.view_count || 0}</Text></View> : null}
+      {isLive ? <View style={[styles.liveBadge, fullBleed ? { top: contentTop + 58 } : null]}><View style={styles.liveDot} /><Text style={styles.liveText}>LIVE · {reel.live?.viewer_count || reel.view_count || 0}</Text></View> : null}
 
-      <View style={styles.actions}>
+      <View style={[styles.actions, fullBleed ? { bottom: contentBottom + 56 } : null]}>
         <Action icon={reactionIcon(reel.viewer_reaction)} label={reel.viewer_reaction ? "Liked" : "Like"} value={reel.reactions_count || reel.reaction_counts?.like || reel.reaction_counts?.fire || 0} active={Boolean(reel.viewer_reaction)} disabled={reel.reactions_disabled} onPress={() => onReact(reel, reel.viewer_reaction || "like")} onLongPress={() => onOpenReactions(reel)} />
         <Action icon="◌" label="Comment" value={reel.comments_count || 0} onPress={() => onOpenComments(reel)} />
         <Action icon="➤" label="Share" value={reel.share_count || 0} onPress={() => onShare(reel)} />
@@ -292,7 +353,7 @@ export function ReelPlayerCard({
         <Action icon="•••" label="More" onPress={() => onOpenMore(reel)} />
       </View>
 
-      <View style={styles.caption}>
+      <View style={[styles.caption, fullBleed ? { bottom: contentBottom } : null]}>
         <Text style={styles.title} numberOfLines={1}>{author.username ? `@${author.username}` : reel.title || "PulseSoc Reel"}</Text>
         {reel.caption || reel.body ? (
           <ContentTranslation
@@ -309,7 +370,9 @@ export function ReelPlayerCard({
         </View>
       </View>
 
-      <View style={styles.progressTrack}>
+      {/* Non-interactive, so it may sit on the safe-area line rather than above
+          it — but not *under* the home indicator, where it would be invisible. */}
+      <View style={[styles.progressTrack, fullBleed ? { bottom: safeBottom } : null]}>
         <View style={[styles.progressBar, { width: `${Math.round(progress * 100)}%` }]} />
       </View>
     </View>
@@ -473,6 +536,19 @@ const styles = createThemedStyles(() => ({
     marginTop: 112,
     overflow: "hidden"
   },
+  /**
+   * Edge-to-edge. Every inset is zeroed rather than omitted, and the border is
+   * removed rather than made transparent: a 1pt transparent border still
+   * reserves a pixel, which is exactly the kind of hairline gap at the screen
+   * edge that only shows up on a device.
+   */
+  cardFullBleed: {
+    borderRadius: 0,
+    borderWidth: 0,
+    marginBottom: 0,
+    marginHorizontal: 0,
+    marginTop: 0
+  },
   fallback: {
     alignItems: "center",
     backgroundColor: "rgba(3,12,24,0.84)",
@@ -552,6 +628,20 @@ const styles = createThemedStyles(() => ({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.10)",
     zIndex: 1
+  },
+  topScrim: {
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 3
+  },
+  bottomScrim: {
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    zIndex: 3
   },
   sound: {
     color: "rgba(244,247,251,0.78)",

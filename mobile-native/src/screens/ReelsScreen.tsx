@@ -1,5 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useIsFocused } from "@react-navigation/native";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -23,7 +24,7 @@ import {
   ViewToken
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
+import { BOTTOM_NAV_CONTENT_CLEARANCE, useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { PULSESOC_QA_REELS_FIXTURES } from "../api/config";
 import { PulseComment } from "../api/feed";
 import { liveWebUrl } from "../api/live";
@@ -69,10 +70,24 @@ import { formatShortTime } from "../utils/format";
 import { useAuth } from "../session/auth";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { createThemedStyles } from "../theme/themedStyles";
+import { takeReelTransfer } from "../discovery/reelTransfer";
+import { spatialReelsEnabled } from "../spatial/flags";
+import { ImmersiveRevealStrip } from "../spatial/ImmersiveRevealStrip";
+import { settledPageIndex } from "../spatial/navigatorVisibility";
+import { useImmersiveNavigator } from "../spatial/useImmersiveNavigator";
+import { useTiltNavigation } from "../spatial/motion/useTiltNavigation";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Reels"> | NativeStackScreenProps<RootStackParamList, "ReelDetail">;
 
 const PAGE_SIZE = 8;
+/**
+ * How long a released drag may stay claimed as "finger-driven" before the claim
+ * expires. Only reached when the release produced no momentum at all — a slow
+ * drag let go at rest — which by definition changed no page. Long enough that a
+ * real momentum phase always starts first, short enough that the next tilt
+ * commit cannot inherit the claim.
+ */
+const DRAG_ABANDON_GRACE_MS = 120;
 const QA_REELS_STATE = PULSESOC_QA_REELS_FIXTURES ? String(process.env.EXPO_PUBLIC_PULSESOC_QA_REELS_STATE || "").trim().toLowerCase() : "";
 type ReelLane = "for_you" | "following" | "trending" | "music" | "live";
 const REEL_LANES: Array<{ key: ReelLane; label: string }> = [{ key: "for_you", label: "For You" }, { key: "following", label: "Following" }, { key: "trending", label: "Trending" }, { key: "music", label: "Music" }, { key: "live", label: "Live" }];
@@ -83,19 +98,56 @@ const QA_RECOVERY_STATES = new Set<ConnectionState>(["loading", "connecting", "o
 export function ReelsScreen({ route, navigation }: Props) {
   const { authState, requestReauthentication } = useAuth();
   const insets = useSafeAreaInsets();
-  const bottomNavScroll = useBottomNavScrollVisibility({ topRevealY: 40, minimumScrollableDistance: 40 });
+  // Scroll-driven dock hiding reads vertical deltas, which a horizontal pager
+  // never produces. Opting out in spatial mode makes that explicit rather than
+  // relying on the numbers happening to come out inert, and hands the dock to
+  // the immersive navigator below. Its reveal-on-focus effect still runs.
+  const bottomNavScroll = useBottomNavScrollVisibility({
+    enabled: !spatialReelsEnabled(),
+    topRevealY: 40,
+    minimumScrollableDistance: 40
+  });
   const params = route.params || {};
   const initialReelId = "reelId" in params ? Number(params.reelId || 0) : 0;
-  const [reels, setReels] = useState<PulseReel[]>([]);
+  const reelTransferNonce = "reelTransferNonce" in params ? String(params.reelTransferNonce || "") : "";
+  /**
+   * The reel the caller handed over, taken exactly once.
+   *
+   * A lazy `useState` initialiser and not `useRef(takeReelTransfer(id))`: the
+   * argument to `useRef` is evaluated on *every* render and only the first
+   * result is kept, so that spelling would consume the slot repeatedly and the
+   * value would be discarded. Lazy initialisers run once.
+   *
+   * Seeding here rather than in an effect is what removes the flash. State that
+   * exists before the first commit is on screen in the first frame; an effect
+   * runs after one paint of whatever the cache had.
+   */
+  const [transferredReel] = useState<PulseReel | null>(() =>
+    initialReelId ? takeReelTransfer(initialReelId) : null
+  );
+  /**
+   * The seed, in a ref because `load` is a closure rebuilt every render and has
+   * to see what the *effect* just set, not what its own render captured.
+   *
+   * The lane is recorded alongside it. A handed-over reel belongs to the lane it
+   * was suggested from; pinning it to the top of Live after a lane switch would
+   * put a reel the user did not ask for somewhere they did not expect it.
+   */
+  const seedRef = useRef<{ reel: PulseReel; lane: ReelLane } | null>(
+    transferredReel ? { reel: transferredReel, lane: initialReelLane() } : null
+  );
+  const seedForLane = (forLane: ReelLane) =>
+    seedRef.current && seedRef.current.lane === forLane ? seedRef.current.reel : null;
+  const [reels, setReels] = useState<PulseReel[]>(() => (transferredReel ? [transferredReel] : []));
   const [activeIndex, setActiveIndex] = useState(0);
-  const [lane, setLane] = useState<ReelLane>(QA_REELS_STATE === "live" ? "live" : QA_REELS_STATE === "music" ? "music" : "for_you");
+  const [lane, setLane] = useState<ReelLane>(initialReelLane);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!transferredReel);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [connectionState, setConnectionState] = useState<ConnectionState>("loading");
+  const [connectionState, setConnectionState] = useState<ConnectionState>(transferredReel ? "ready" : "loading");
   const [retryCount, setRetryCount] = useState(0);
   const [cachedAt, setCachedAt] = useState(0);
   const [offline, setOffline] = useState(false);
@@ -123,6 +175,7 @@ export function ReelsScreen({ route, navigation }: Props) {
   const [appActive, setAppActive] = useState(AppState.currentState === "active");
   const [shareOpen, setShareOpen] = useState(false);
   const [viewportHeight, setViewportHeight] = useState(Dimensions.get("window").height);
+  const [viewportWidth, setViewportWidth] = useState(Dimensions.get("window").width);
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 72 });
   const qaStateApplied = useRef(false);
   const loadVersion = useRef(0);
@@ -132,6 +185,102 @@ export function ReelsScreen({ route, navigation }: Props) {
   // double-taps cannot launch multiple concurrent feed refreshes.
   const reselectingRef = useRef(false);
 
+  // ---- Spatial Console (flag-gated; inert when OFF) -----------------------
+  // Only the central player's paging axis changes: header lane rail, create
+  // button, and bottom nav are untouched (mission §16). Tilt shares the same
+  // index pipeline as swipe and is suspended while any overlay is open.
+  const spatialReels = spatialReelsEnabled();
+  const isFocused = useIsFocused();
+  const overlayOpen = Boolean(shareOpen || commentReel || reactionReel || musicReel || moreReel);
+  // Reels is the only surface allowed to hide the dock immersively. Passing
+  // `!overlayOpen` as the focus signal is what keeps the dock on screen while
+  // comments, sharing or a reel menu is up: the hook treats a child surface
+  // opening exactly like losing focus, and reveals without waiting for a gesture.
+  const immersive = useImmersiveNavigator(spatialReels && isFocused && !overlayOpen);
+  /**
+   * Where reel overlays park, measured from the bottom of the *viewport*.
+   *
+   * Constant with respect to dock visibility on purpose. The dock's resting
+   * height is known from `bottomNavMetrics`, so parking the caption and the
+   * action rail above that position keeps them clear of navigation whether it is
+   * on screen or not — and, more importantly, means a hide or reveal moves the
+   * navigator alone. Deriving this from `immersive.hidden` would relayout every
+   * reel on every transition, which is both the layout jump the mission forbids
+   * and a guaranteed frame drop on the one gesture that has to feel free.
+   */
+  const reelContentBottom = Math.max(insets.bottom, 12) + BOTTOM_NAV_CONTENT_CLEARANCE;
+  /**
+   * The page index a finger-drag started from, or null when no drag is in
+   * flight — which is also how "this settle was not a finger" is decided.
+   *
+   * `onMomentumScrollEnd` cannot tell a swipe from a tilt commit: the commit
+   * animates `scrollToOffset` and produces the same event. A drag, however,
+   * always announces itself with `onScrollBeginDrag` first, and a programmatic
+   * scroll never does. Capturing the index at that moment gives both halves of
+   * what the visibility rule needs — the source, and the index the gesture
+   * actually started from rather than whatever the last viewability callback
+   * happened to have written.
+   */
+  const dragOriginRef = useRef<number | null>(null);
+  /**
+   * Content offset when the current finger-drag started, or null when no drag is
+   * in flight.
+   *
+   * This is what the visibility rule reads. It is captured in
+   * `onScrollBeginDrag`, which a programmatic `scrollToOffset` never fires, so
+   * "a finger did this" and "which way it went" come from the same measurement
+   * rather than from two guesses that can disagree.
+   */
+  const dragStartOffsetRef = useRef<number | null>(null);
+  /** Cancels the abandoned-drag cleanup once real momentum begins. */
+  const dragSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * The reel the pager is currently resting on.
+   *
+   * Deliberately not just `activeIndex`. That value is written by viewability,
+   * which answers a different question — "what is on screen enough to play" — and
+   * answers it on its own schedule:
+   *
+   *   - it flips mid-drag once the incoming reel crosses the visibility
+   *     threshold, so reading it at release would report the destination as the
+   *     origin and swallow the transition entirely;
+   *   - it reports -1 when nothing is viewable (an emptied refresh, a teardown),
+   *     and collapsing that to 0 would make the next backward swipe from reel 5
+   *     look like a forward swipe from 0, hiding the navigator instead of
+   *     revealing it.
+   *
+   * So: the settle offset is authoritative, and the sync below fills in every
+   * deliberate jump — lane change, scroll-to-top, restored reel, tilt commit —
+   * while a finger is off the glass.
+   */
+  const settledIndexRef = useRef(0);
+  if (dragOriginRef.current === null && activeIndex >= 0) settledIndexRef.current = activeIndex;
+
+  const clearDragSettleTimer = useCallback(() => {
+    if (dragSettleTimerRef.current) {
+      clearTimeout(dragSettleTimerRef.current);
+      dragSettleTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearDragSettleTimer, [clearDragSettleTimer]);
+
+  const tilt = useTiltNavigation({
+    surface: "reels",
+    enabled: spatialReels && isFocused && appActive && reels.length > 0,
+    suspended: overlayOpen,
+    currentIndex: activeIndex < 0 ? 0 : activeIndex,
+    pageCount: reels.length,
+    onCommit: (nextIndex) => {
+      // Deliberately does NOT touch `dragOriginRef`. The resulting momentum-end
+      // therefore reports source "motion", and the navigator does not move —
+      // tilting changes reels and nothing else.
+      listRef.current?.scrollToOffset({ offset: nextIndex * viewportWidth, animated: true });
+      setActiveIndex(nextIndex);
+    }
+  });
+  // -------------------------------------------------------------------------
+
   async function load(mode: "initial" | "refresh" | "more" = "initial") {
     if (mode === "initial" && QA_REELS_STATE && QA_RECOVERY_STATES.has(QA_REELS_STATE as ConnectionState)) {
       setReels([]);
@@ -140,15 +289,25 @@ export function ReelsScreen({ route, navigation }: Props) {
       return;
     }
     if (mode === "more" && (!hasMore || loadingMore)) return;
+    const seed = mode === "more" ? null : seedForLane(lane);
     const nextOffset = mode === "more" ? offset : 0;
     setOffline(false);
     const version = ++loadVersion.current;
     if (mode === "initial") {
-      setLoading(true);
-      setConnectionState("loading");
+      // With a handed-over reel there is nothing to show a placeholder for: it
+      // is already on screen. Re-entering "loading" here would replace it with a
+      // spinner for the length of the network call.
+      if (!seed) {
+        setLoading(true);
+        setConnectionState("loading");
+      }
       const snapshot = await loadCachedReelsSnapshot(lane);
       if (version !== loadVersion.current) return;
-      if (snapshot.reels.length) {
+      // The snapshot is whatever this lane held last time. Rendering it while a
+      // specific reel was requested is the flash the exact-transfer requirement
+      // is about: unless the requested reel happens to be in the cache, the
+      // first thing on screen is a reel the user did not tap.
+      if (snapshot.reels.length && !seed) {
         setReels(focusInitialReel(snapshot.reels, initialReelId));
         setCachedAt(snapshot.cachedAt);
         setOffline(true);
@@ -161,7 +320,9 @@ export function ReelsScreen({ route, navigation }: Props) {
     try {
       const data = await listReels({ lane, limit: PAGE_SIZE, offset: nextOffset, includeComments: false });
       if (version !== loadVersion.current) return;
-      const next = mode === "more" ? mergeReels(reels, data.reels || []) : focusInitialReel(data.reels || [], initialReelId);
+      const next = mode === "more"
+        ? mergeReels(reels, data.reels || [])
+        : seedFirst(focusInitialReel(data.reels || [], initialReelId), seed);
       setReels(next);
       setOffset(Number(data.next_offset || nextOffset + (data.reels?.length || 0)));
       setHasMore(Boolean(data.has_more));
@@ -178,10 +339,18 @@ export function ReelsScreen({ route, navigation }: Props) {
       if (version !== loadVersion.current) return;
       const snapshot = await loadCachedReelsSnapshot(lane);
       if (snapshot.reels.length && mode !== "more") {
-        setReels(focusInitialReel(snapshot.reels, initialReelId));
+        // Same rule as the pre-fetch snapshot above, and it matters more here:
+        // this is the offline path, so whatever is shown now is what the user
+        // keeps. The handed-over reel stays first.
+        setReels(seedFirst(focusInitialReel(snapshot.reels, initialReelId), seed));
         setCachedAt(snapshot.cachedAt);
         setOffline(true);
         setConnectionState("cached");
+      } else if (seed) {
+        // Nothing cached and the network failed, but a reel was handed over: it
+        // is already on screen and it is playable, so this is not an error
+        // state. Leave the single-reel list alone.
+        setConnectionState("ready");
       } else {
         setConnectionState(classifyConnectionState(loadError));
       }
@@ -194,12 +363,38 @@ export function ReelsScreen({ route, navigation }: Props) {
     }
   }
 
+  const appliedTransferNonce = useRef(reelTransferNonce);
+
+  /**
+   * Re-entry. The Reels tab is never unmounted, so the mount-time initialiser
+   * above runs once per app session and a second tap on a suggested reel would
+   * otherwise arrive with nowhere to put its payload. Keyed on the nonce rather
+   * than the id, so tapping the *same* reel twice still counts as a navigation.
+   *
+   * A layout effect and not a passive one: it commits before paint, which gives
+   * the re-entry case the same "no reel the user did not tap is ever on screen"
+   * guarantee as the cold mount, instead of one frame of the previous reel.
+   * It runs before the load effect below, which is what lets `load` read the
+   * seed this just wrote.
+   */
+  useLayoutEffect(() => {
+    if (!reelTransferNonce || reelTransferNonce === appliedTransferNonce.current) return;
+    appliedTransferNonce.current = reelTransferNonce;
+    const seed = initialReelId ? takeReelTransfer(initialReelId) : null;
+    if (!seed) return;
+    seedRef.current = { reel: seed, lane };
+    setReels([seed]);
+    setActiveIndex(0);
+    setLoading(false);
+    setConnectionState("ready");
+  }, [initialReelId, reelTransferNonce]);
+
   useEffect(() => {
     setActiveIndex(0);
     setOffset(0);
     setHasMore(false);
     load("initial").catch(() => undefined);
-  }, [initialReelId, lane]);
+  }, [initialReelId, lane, reelTransferNonce]);
 
   useEffect(() => registerSyncInvalidation("reels", () => {
     load("refresh").catch(() => undefined);
@@ -271,12 +466,30 @@ export function ReelsScreen({ route, navigation }: Props) {
     }
   }, [reels]);
 
+  // `spatialReels` is read from a build-time flag, so it cannot change while this
+  // screen is mounted — capturing the first render's value in this once-created
+  // callback is safe, and each mount builds a fresh one.
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const visible = viewableItems.find((token) => token.isViewable);
     const next = visible?.index;
     const item = visible?.item as PulseReel | undefined;
+    if (typeof next !== "number") {
+      // Nothing clears 72% visibility. Vertically that means the list really is
+      // empty, and dropping ownership is right. Horizontally it is mostly a
+      // transient: mid-swipe both reels sit near half a viewport, so for a frame
+      // or two neither is viewable. Releasing playback there paused the reel the
+      // user was leaving and left the one they were arriving at black until the
+      // snap finished. So the spatial pager holds ownership until something
+      // else claims it — which keeps exactly one owner at rest, and makes that
+      // owner the reel the pager settled on rather than whatever happened to be
+      // measured mid-gesture.
+      if (spatialReels) return;
+      activeReelId.current = 0;
+      setActiveIndex(-1);
+      return;
+    }
     activeReelId.current = item?.id || 0;
-    setActiveIndex(typeof next === "number" ? next : -1);
+    setActiveIndex(next);
   });
 
   useEffect(() => {
@@ -637,26 +850,26 @@ export function ReelsScreen({ route, navigation }: Props) {
     if (liveId) navigation.navigate("LiveDetail", { liveId, title: reel.title || "PulseSoc Live" });
   }
 
-  return (
-    <View style={styles.root} onLayout={(event) => setViewportHeight(event.nativeEvent.layout.height)}>
-      <GalaxyField />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.laneRailContent} style={[styles.laneRail, { top: insets.top + 6 }]} accessibilityRole="tablist">
-        {REEL_LANES.map((item) => <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: lane === item.key }} style={[styles.laneButton, lane === item.key && styles.laneButtonActive]} onPress={() => setLane(item.key)}><Text style={[styles.laneText, lane === item.key && styles.laneTextActive]}>{item.label}</Text></Pressable>)}
-      </ScrollView>
-      <Pressable accessibilityRole="button" accessibilityLabel="Create Reel" style={[styles.createButton, { top: insets.top + 6 }]} onPress={() => navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true, composerMode: "reel" } })}><Text style={styles.createText}>＋</Text></Pressable>
-      {offline && reels.length ? <View style={[styles.statusPill, { top: insets.top + 52 }]}><Text style={styles.statusPillText}>Saved Reels · {connectionState === "connecting" ? "refreshing" : cacheAge(cachedAt)}</Text></View> : null}
+  // The central player list, extracted so spatial mode can wrap it in a
+  // parallax container without duplicating props. Legacy renders it as-is.
+  const reelsList = (
       <FlatList
         ref={listRef}
         data={reels}
         keyExtractor={(item) => String(item.id)}
+        horizontal={spatialReels}
         renderItem={({ item, index }) => (
-          <View style={[styles.page, { height: viewportHeight }]}>
+          <View style={[styles.page, { height: viewportHeight }, spatialReels ? { width: viewportWidth } : null]}>
             <ReelPlayerCard
               reel={item}
               active={index === activeIndex && appActive && !shareOpen && !commentReel && !reactionReel && !musicReel && !moreReel}
               muted={muted}
               offline={offline}
+              fullBleed={spatialReels}
               contentTop={insets.top + 56}
+              contentBottom={reelContentBottom}
+              safeBottom={insets.bottom}
+              onSurfaceTap={spatialReels ? immersive.reveal : undefined}
               busy={guard.isItemBusy(item.id)}
               onToggleMuted={() => setMuted((current) => !current)}
               onReact={handleReact}
@@ -682,17 +895,101 @@ export function ReelsScreen({ route, navigation }: Props) {
           </View>
         )}
         pagingEnabled
+        // Every spatial page is exactly one viewport wide, so the list never has
+        // to measure to know where a reel starts. Handing it the arithmetic is
+        // what makes the index stable across harmless layout passes and makes a
+        // tilt commit's `scrollToOffset` land on the same offset the snap would
+        // have chosen. Deliberately spatial-only: the legacy vertical path is
+        // unchanged, including its measurement behavior.
+        getItemLayout={
+          spatialReels
+            ? (_data, index) => ({ length: viewportWidth, offset: viewportWidth * index, index })
+            : undefined
+        }
         showsVerticalScrollIndicator={false}
-        snapToInterval={viewportHeight}
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={spatialReels ? viewportWidth : viewportHeight}
         decelerationRate="fast"
         onScroll={bottomNavScroll.onScroll}
-        onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
+        disableIntervalMomentum={spatialReels}
+        onScrollBeginDrag={(event) => {
+          tilt.notifyTouchStart();
+          // Marks this transition as finger-driven, and records the offset the
+          // gesture began at — the only thing the visibility rule reads, and the
+          // one measurement a programmatic scroll can never fake.
+          if (spatialReels) {
+            clearDragSettleTimer();
+            dragOriginRef.current = settledIndexRef.current;
+            dragStartOffsetRef.current = event.nativeEvent.contentOffset.x;
+          }
+          bottomNavScroll.onScrollBeginDrag();
+        }}
+        onScrollEndDrag={(event) => {
+          // Legacy vertical paging never had this handler and does not need it:
+          // with spatial Reels off the tilt machine is disabled, so there is no
+          // suspension to escape. Returning here keeps that path byte-identical.
+          if (!spatialReels) return;
+          // Navigator visibility resolves HERE, on the lift, and not on the
+          // settle. Two reasons, and the mission names both: the dock has to
+          // move with the gesture rather than a fling-length later, and a right
+          // swipe on the first reel — which rubber-bands back to the page it
+          // started on — has a direction even though it commits no transition.
+          const startOffsetX = dragStartOffsetRef.current;
+          dragStartOffsetRef.current = null;
+          if (startOffsetX !== null) {
+            immersive.notifySwipe({
+              source: "touch",
+              startOffsetX,
+              endOffsetX: event.nativeEvent.contentOffset.x
+            });
+          }
+          // A drag released at rest produces no momentum phase, and therefore no
+          // `onMomentumScrollEnd`. Two things were relying on that event and had
+          // no other exit:
+          //
+          //   - the drag marker below, which would survive and mis-attribute
+          //     the *next* programmatic scroll — a tilt commit — as a swipe;
+          //   - `tilt.notifyTouchEnd()`, without which the motion machine stays
+          //     `touchActive` and is suspended for the rest of the session. That
+          //     is the permanent-suspension failure mode, and it needed only a
+          //     short drag that snapped back to reproduce.
+          //
+          // Both are resolved on a short grace timer that momentum cancels if it
+          // does start. No page changed, so visibility is untouched either way.
+          clearDragSettleTimer();
+          dragSettleTimerRef.current = setTimeout(() => {
+            dragSettleTimerRef.current = null;
+            dragOriginRef.current = null;
+            // Safe to call through this render's closure: `notifyTouchEnd` is a
+            // stable callback that reads the machine out of a ref, so it always
+            // reaches the live instance rather than a snapshot of one.
+            tilt.notifyTouchEnd();
+          }, DRAG_ABANDON_GRACE_MS);
+        }}
+        onMomentumScrollBegin={clearDragSettleTimer}
+        onMomentumScrollEnd={(event) => {
+          tilt.notifyTouchEnd();
+          if (!spatialReels) return;
+          clearDragSettleTimer();
+          dragOriginRef.current = null;
+          dragStartOffsetRef.current = null;
+          // Index bookkeeping only. Visibility was decided when the finger
+          // lifted; a tilt commit lands here too, and it must not be able to
+          // move navigation chrome by any path (§5).
+          settledIndexRef.current = settledPageIndex(event.nativeEvent.contentOffset.x, viewportWidth);
+        }}
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
         viewabilityConfig={viewabilityConfig.current}
         onViewableItemsChanged={onViewableItemsChanged.current}
         onEndReached={() => load("more").catch(() => undefined)}
         onEndReachedThreshold={0.5}
-        refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
+        refreshControl={
+          // RefreshControl is vertical-only; in spatial (horizontal) mode the
+          // bottom-tab double-tap refresh path covers reloads instead.
+          spatialReels ? undefined : (
+            <RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />
+          )
+        }
         ListEmptyComponent={<ReelsRecovery state={connectionState} loading={loading} onRetry={() => load("refresh").catch(() => undefined)} onAuthenticate={() => requestReauthentication("/pulse/reels")} onExplore={(nextLane) => setLane(nextLane)} />}
         ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.footer} color={colors.accent} /> : null}
         initialNumToRender={2}
@@ -700,6 +997,45 @@ export function ReelsScreen({ route, navigation }: Props) {
         windowSize={3}
         removeClippedSubviews
       />
+  );
+
+  return (
+    <View
+      style={styles.root}
+      onLayout={(event) => {
+        setViewportHeight(event.nativeEvent.layout.height);
+        setViewportWidth(event.nativeEvent.layout.width);
+      }}
+    >
+      <GalaxyField />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.laneRailContent} style={[styles.laneRail, { top: insets.top + 6 }]} accessibilityRole="tablist">
+        {REEL_LANES.map((item) => <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: lane === item.key }} style={[styles.laneButton, lane === item.key && styles.laneButtonActive]} onPress={() => setLane(item.key)}><Text style={[styles.laneText, lane === item.key && styles.laneTextActive]}>{item.label}</Text></Pressable>)}
+      </ScrollView>
+      <Pressable accessibilityRole="button" accessibilityLabel="Create Reel" style={[styles.createButton, { top: insets.top + 6 }]} onPress={() => navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true, composerMode: "reel" } })}><Text style={styles.createText}>＋</Text></Pressable>
+      {offline && reels.length ? <View style={[styles.statusPill, { top: insets.top + 52 }]}><Text style={styles.statusPillText}>Saved Reels · {connectionState === "connecting" ? "refreshing" : cacheAge(cachedAt)}</Text></View> : null}
+      {spatialReels ? (
+        <Animated.View
+          style={[
+            styles.spatialListWrap,
+            {
+              transform: [
+                {
+                  // Tilt right previews the next reel: content eases left.
+                  translateX: tilt.previewProgress.interpolate({
+                    inputRange: [-1, 0, 1],
+                    outputRange: [12, 0, -12],
+                    extrapolate: "clamp"
+                  })
+                }
+              ]
+            }
+          ]}
+        >
+          {reelsList}
+        </Animated.View>
+      ) : (
+        reelsList
+      )}
       <CommentsModal
         visible={Boolean(commentReel)}
         reel={commentReel}
@@ -734,6 +1070,7 @@ export function ReelsScreen({ route, navigation }: Props) {
       <ReactionPicker reel={reactionReel} onSelect={(reaction) => { if (reactionReel) handleReact(reactionReel, reaction).catch(() => undefined); setReactionReel(null); }} onClose={() => setReactionReel(null)} />
       <MusicDetail reel={musicReel} onClose={() => setMusicReel(null)} />
       <ReelMoreMenu reel={moreReel} onClose={() => setMoreReel(null)} onRepost={(reel) => { setMoreReel(null); handleRepost(reel).catch(() => undefined); }} onLess={(reel) => { setMoreReel(null); handleNotInterested(reel).catch(() => undefined); }} onReport={(reel) => { setMoreReel(null); handleReport(reel).catch(() => undefined); }} onPromote={(reel) => { setMoreReel(null); navigation.navigate("GrowthCenter", { contentType: "reel", contentId: reel.id, title: "Promote Reel" }); }} onDelete={(reel) => { setMoreReel(null); confirmDeleteReel(reel); }} />
+      <ImmersiveRevealStrip visible={spatialReels && immersive.hidden} onReveal={immersive.reveal} />
     </View>
   );
 }
@@ -923,6 +1260,31 @@ function MenuAction({ label, danger, onPress }: { label: string; danger?: boolea
 function mergeReels(current: PulseReel[], incoming: PulseReel[]) {
   const seen = new Set(current.map((item) => item.id));
   return [...current, ...incoming.filter((item) => !seen.has(item.id))];
+}
+
+function initialReelLane(): ReelLane {
+  return QA_REELS_STATE === "live" ? "live" : QA_REELS_STATE === "music" ? "music" : "for_you";
+}
+
+function reelIdOf(reel: PulseReel | null | undefined): number {
+  return Number(reel?.id || reel?.reel_id || 0);
+}
+
+/**
+ * Put the handed-over reel first, preferring the server's copy of it.
+ *
+ * `focusInitialReel` already hoists a requested id when the page happens to
+ * contain it. This covers the case it cannot: the reel is not on the page at
+ * all — different lane, ranked out, aged past the first page — and without the
+ * seed the player would open on whatever the feed returned instead. When the
+ * page *does* contain it, the fetched copy wins, because it has the current
+ * reaction and comment counts while the carried copy is as old as the tap.
+ */
+function seedFirst(reels: PulseReel[], seed: PulseReel | null) {
+  if (!seed) return reels;
+  const seedId = reelIdOf(seed);
+  const fresher = reels.find((item) => reelIdOf(item) === seedId);
+  return [fresher || seed, ...reels.filter((item) => reelIdOf(item) !== seedId)];
 }
 
 function focusInitialReel(reels: PulseReel[], reelId: number) {
@@ -1163,6 +1525,9 @@ const styles = createThemedStyles(() => ({
   replyToggle: { color: colors.accent, fontSize: 11, fontWeight: "800", marginTop: 8 },
   root: {
     backgroundColor: "#02050b",
+    flex: 1
+  },
+  spatialListWrap: {
     flex: 1
   },
   skeletonAction: { backgroundColor: "rgba(97,234,246,0.12)", borderRadius: 16, height: 32, width: 32 },

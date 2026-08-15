@@ -51,9 +51,23 @@ jest.mock("../../core/eventSync", () => ({
 }));
 // Must resolve, not return undefined: the screen calls `.catch()` on it directly.
 jest.mock("../../core/reelsAudioSession", () => ({ configureReelsAudioSession: jest.fn().mockResolvedValue(undefined) }));
+// The screen calls useIsFocused (tilt focus gating) but is rendered here
+// without a NavigationContainer, which would otherwise throw.
+jest.mock("@react-navigation/native", () => ({
+  ...jest.requireActual("@react-navigation/native"),
+  useIsFocused: () => true
+}));
 jest.mock("../../navigation/reelsReselect", () => ({ registerReelsReselectHandler: jest.fn(() => () => undefined) }));
 jest.mock("../../navigation/BottomNavVisibility", () => ({
-  useBottomNavScrollVisibility: () => ({ onScroll: jest.fn(), onScrollBeginDrag: jest.fn(), scrollEventThrottle: 16 })
+  useBottomNavScrollVisibility: () => ({ onScroll: jest.fn(), onScrollBeginDrag: jest.fn(), scrollEventThrottle: 16 }),
+  // useImmersiveNavigator reads this even while the spatial flags are off.
+  useBottomNavVisibility: () => ({
+    hidden: false,
+    docked: true,
+    miniPlayerVisible: false,
+    setBottomNavHidden: jest.fn(),
+    showBottomNav: jest.fn()
+  })
 }));
 jest.mock("../../api/profileTarget", () => ({
   profileNavigationParams: jest.fn(() => null),
@@ -111,6 +125,7 @@ const mockSaveApi = jest.fn();
 import { PulseApiError } from "../../api/pulseApi";
 import { peekSaveState, resetSavedStoreForTests } from "../../social/savedStore";
 import { resetSaveActionsForTests } from "../../social/useSaveAction";
+import { __clearSpatialFlagOverrides, __setSpatialFlagOverride } from "../../spatial/flags";
 import { ReelsScreen } from "../ReelsScreen";
 
 const REEL_ID = 88;
@@ -193,7 +208,18 @@ beforeEach(() => {
 });
 
 describe("ReelsScreen visibility playback", () => {
+  // Vertical-list playback semantics: an empty viewability report means nothing
+  // is on screen, so everything stops. The horizontal pager deliberately reads
+  // an empty report differently — it keeps the settled reel playing — so this
+  // suite asks for the rollback explicitly now that the pager is the default.
+  afterEach(() => {
+    __clearSpatialFlagOverrides();
+  });
+
   it("deactivates every Reel when none is visible and ignores non-viewable tokens", async () => {
+    __setSpatialFlagOverride("spatialConsoleEnabled", false);
+    __setSpatialFlagOverride("spatialReelsEnabled", false);
+    __setSpatialFlagOverride("immersiveNavigatorEnabled", false);
     Object.defineProperty(require("react-native").AppState, "currentState", { configurable: true, value: "active" });
     const first = reel({ id: 88, reel_id: 88 });
     const second = reel({ id: 89, reel_id: 89 });

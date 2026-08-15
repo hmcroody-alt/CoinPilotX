@@ -18,7 +18,24 @@
       "seeOriginal": "원문 보기",
       "translatedFrom": "{{language}}에서 번역됨",
       "hiddenPost": "게시물을 숨겼어요",
-      "undo": "실행 취소"
+      "undo": "실행 취소",
+      "discovery": {
+        "reelsTitle": "추천 릴스",
+        "peopleTitle": "알 수도 있는 사람",
+        "statusesTitle": "놓치면 아쉬운 스테이터스",
+        "groupsTitle": "가입할 만한 그룹",
+        "seeAll": "모두 보기",
+        "hideSection": "{{section}} 숨기기",
+        "addFriend": "친구 추가",
+        "requestSent": "요청함",
+        "join": "가입",
+        "joined": "가입함",
+        "statusNew": "새 소식",
+        "statusSeen": "확인함",
+        "unavailable": "추천을 불러오지 못했어요",
+        "members_other": "멤버 {{count}}명",
+        "views_other": "조회 {{count}}회"
+      }
     },
     "post": {
       "like": "좋아요",
