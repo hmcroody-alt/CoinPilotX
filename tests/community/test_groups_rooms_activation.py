@@ -54,3 +54,10 @@ def test_group_core_management_is_not_hidden_behind_advanced_content_flag():
         next_route = BOT.find("@webhook_app.route", start + 10)
         source = BOT[start:next_route if next_route > start else None]
         assert "GROUPS_ADVANCED_MODE" not in source
+
+
+def test_admin_can_find_and_lifecycle_manage_groups_and_rooms_with_audit():
+    assert 'route("/api/admin/community", methods=["GET"])' in BOT
+    assert 'route("/api/admin/community/<kind>/<int:target_id>", methods=["POST"])' in BOT
+    assert 'require_admin_api("pulse.moderate")' in BOT
+    assert 'log_admin_audit(admin.get("id"), f"community.{kind}.{action}"' in BOT

@@ -220,6 +220,10 @@ export async function deleteGroup(slug: string) {
   return pulseApi<{ ok?: boolean; message?: string }>(`/api/pulse/groups/${encodeURIComponent(slug)}/delete`, { method: "POST", body: JSON.stringify({ reason: "owner_delete" }) });
 }
 
+export async function archiveGroup(slug: string) {
+  return pulseApi<{ ok?: boolean; message?: string }>(`/api/pulse/groups/${encodeURIComponent(slug)}/archive`, { method: "POST", body: JSON.stringify({}) });
+}
+
 export async function leaveGroup(slug: string) {
   return pulseApi<{ ok?: boolean; left?: boolean; member_count?: number; message?: string }>(`/api/pulse/groups/${encodeURIComponent(slug)}/leave`, {
     method: "POST",

@@ -14,6 +14,7 @@ import {
   View
 } from "react-native";
 import {
+  archiveGroup,
   createGroup,
   createRoom,
   deleteGroup,
@@ -230,6 +231,13 @@ export function GroupsScreen({ route, navigation }: Props) {
     ]);
   }
 
+  async function handleArchiveGroup(group: PulseGroup) {
+    setBusyKey(`archive-${group.slug}`);
+    try { await archiveGroup(group.slug); setSelected(null); await load("refresh"); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Group could not be archived."); }
+    finally { setBusyKey(""); }
+  }
+
   async function handleRoomLifecycle(room: PulseRoom, action: "archive" | "delete") {
     setBusyKey(`${action}-${room.id}`);
     try {
@@ -341,6 +349,7 @@ export function GroupsScreen({ route, navigation }: Props) {
           onChat={handleOpenChat}
           onReport={handleReport}
           onDelete={confirmDeleteGroup}
+          onArchive={handleArchiveGroup}
         />
       ) : null}
       {selectedRoom ? (
@@ -479,7 +488,7 @@ function RoomCard({ room, busy, onOpen }: { room: PulseRoom; busy?: boolean; onO
   );
 }
 
-function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport, onDelete }: {
+function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport, onDelete, onArchive }: {
   group: PulseGroup;
   busyKey: string;
   onClose: () => void;
@@ -487,6 +496,7 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport, onDele
   onChat: (group: PulseGroup) => void;
   onReport: (group: PulseGroup) => void;
   onDelete: (group: PulseGroup) => void;
+  onArchive: (group: PulseGroup) => void;
 }) {
   const sections: GroupDetailSection[] = ["overview", "members", "invitations", "media", "files", "links", "settings"];
   const [section, setSection] = useState<GroupDetailSection>("overview");
@@ -530,7 +540,7 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport, onDele
               <Text style={styles.smallButtonText}>Report</Text>
             </Pressable> : null}
           </View>
-          <GroupDetailSectionView group={group} section={section} onDelete={onDelete} />
+          <GroupDetailSectionView group={group} section={section} onDelete={onDelete} onArchive={onArchive} />
         </ScrollView>
       </View>
     </View>
@@ -551,14 +561,14 @@ function groupDetailSectionLabel(section: GroupDetailSection) {
   }[section];
 }
 
-function GroupDetailSectionView({ group, section, onDelete }: { group: PulseGroup; section: GroupDetailSection; onDelete: (group: PulseGroup) => void }) {
+function GroupDetailSectionView({ group, section, onDelete, onArchive }: { group: PulseGroup; section: GroupDetailSection; onDelete: (group: PulseGroup) => void; onArchive: (group: PulseGroup) => void }) {
   if (section === "overview") return <GroupOverview group={group} />;
   if (section === "members") return <GroupMembers group={group} />;
   if (section === "invitations") return <GroupInvitations group={group} />;
   if (section === "media") return <GroupAssets title="Media" assets={group.media || []} emptyTitle="No indexed group media" emptyBody="Photos and videos shared in this group appear here, including anything attached to group posts." />;
   if (section === "files") return <GroupAssets title="Files" assets={group.files || []} emptyTitle="No group files yet" emptyBody="Files shared in chat are not listed here. This app does not read private chat history to build a file list." />;
   if (section === "links") return <GroupAssets title="Links" assets={group.links || []} emptyTitle="No shared links yet" emptyBody="Link indexing is not exposed to native yet. Links will appear here when the server provides a safe group link index." />;
-  return <GroupSettings group={group} onDelete={onDelete} />;
+  return <GroupSettings group={group} onDelete={onDelete} onArchive={onArchive} />;
 }
 
 function GroupOverview({ group }: { group: PulseGroup }) {
@@ -681,7 +691,7 @@ function GroupAssetCard({ asset }: { asset: PulseGroupAsset }) {
   );
 }
 
-function GroupSettings({ group, onDelete }: { group: PulseGroup; onDelete: (group: PulseGroup) => void }) {
+function GroupSettings({ group, onDelete, onArchive }: { group: PulseGroup; onDelete: (group: PulseGroup) => void; onArchive: (group: PulseGroup) => void }) {
   const actions = groupActionRules(group);
   return (
     <View>
@@ -699,7 +709,7 @@ function GroupSettings({ group, onDelete }: { group: PulseGroup; onDelete: (grou
         </View>
       ))}
       {!group.can_manage ? <BoundaryPanel title="Admin settings gated" body="Editing the group, managing members, and deleting it are shown only to owners, admins, and moderators." /> : null}
-      {group.viewer_role === "owner" ? <Pressable accessibilityRole="button" style={[styles.smallButton, styles.dangerButton]} onPress={() => onDelete(group)}><Text style={styles.smallButtonText}>Delete Group</Text></Pressable> : null}
+      {group.viewer_role === "owner" ? <View style={styles.actionRow}><Pressable accessibilityRole="button" style={styles.smallButton} onPress={() => onArchive(group)}><Text style={styles.smallButtonText}>Archive Group</Text></Pressable><Pressable accessibilityRole="button" style={[styles.smallButton, styles.dangerButton]} onPress={() => onDelete(group)}><Text style={styles.smallButtonText}>Delete Group</Text></Pressable></View> : null}
     </View>
   );
 }

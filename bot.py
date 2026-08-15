@@ -88505,6 +88505,27 @@ def api_pulse_group_delete_id(group_id):
         return api_error("Group could not be deleted. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
 
 
+@webhook_app.route("/api/pulse/groups/<group_slug>/archive", methods=["POST"])
+def api_pulse_group_archive(group_slug):
+    init_db(); user = api_account_user()
+    if not user: return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_groups WHERE slug=? OR id=? LIMIT 1", (clean_html(group_slug), safe_int(group_slug, 0)))
+    group = dict(cur.fetchone() or {})
+    if not group: conn.close(); return api_error("Group not found.", 404)
+    group_id = int(group.get("id") or 0)
+    cur.execute("SELECT role FROM pulse_group_members WHERE group_id=? AND user_id=? LIMIT 1", (group_id, user["user_id"]))
+    role = str(dict(cur.fetchone() or {}).get("role") or "").lower()
+    if role != "owner" and not pulse_group_user_is_admin(user): conn.close(); return api_error("Only the group owner can archive this group.", 403)
+    now = datetime.utcnow().isoformat(timespec="seconds"); trace_id = secrets.token_hex(6)
+    cur.execute("UPDATE pulse_groups SET status='archived',updated_at=? WHERE id=?", (now, group_id))
+    cur.execute("UPDATE pulse_conversations SET status='archived',updated_at=? WHERE group_id=? OR linked_group_id=?", (now, group_id, group_id))
+    cur.execute("INSERT INTO pulse_group_action_logs (group_id,post_id,user_id,action,status,trace_id,message,created_at) VALUES (?,0,?,'archive_group','success',?,'{}',?)", (group_id, user["user_id"], trace_id, now))
+    conn.commit(); conn.close()
+    pulse_emit_event("group_archived", {"group_id": group_id}, user["user_id"], group_id)
+    return jsonify({"ok": True, "group_id": group_id, "message": "Group archived."})
+
+
 @webhook_app.route("/api/pulse/groups/<group_slug>/delete", methods=["POST"])
 def api_pulse_group_delete_slug(group_slug):
     init_db()
@@ -91031,6 +91052,47 @@ def admin_groups_health_page():
     <p><a class='button' href='/pulse/groups'>Open Groups</a> <a class='button' href='/admin/group-chat-health'>Group Chat Health</a> <a class='button' href='/admin/system-audit'>System Audit</a></p>
     """
     return admin_page_html("Groups Health", body, admin)
+
+
+@webhook_app.route("/api/admin/community", methods=["GET"])
+def api_admin_community_index():
+    admin, denied = require_admin_api("pulse.moderate")
+    if denied: return denied
+    kind = clean_html(request.args.get("type") or "all").lower(); query = clean_html(request.args.get("q") or "")[:120]
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor(); ensure_pulse_messenger_schema(cur, conn)
+    groups = []; rooms = []
+    if kind in {"all", "group", "groups"}:
+        cur.execute("SELECT id,slug,name,description,group_type,status,owner_user_id,member_count,created_at,updated_at FROM pulse_groups WHERE (?='' OR lower(name) LIKE lower(?)) ORDER BY id DESC LIMIT 100", (query, f"%{query}%"))
+        groups = [dict(row) for row in cur.fetchall()]
+    if kind in {"all", "room", "rooms"}:
+        cur.execute("SELECT id,title,description,privacy,status,owner_user_id,member_count,created_at,updated_at FROM pulse_conversations WHERE conversation_type='room' AND COALESCE(linked_space_id,'') LIKE 'community-room-%' AND (?='' OR lower(title) LIKE lower(?)) ORDER BY id DESC LIMIT 100", (query, f"%{query}%"))
+        rooms = [dict(row) for row in cur.fetchall()]
+    conn.close(); log_admin_audit(admin.get("id"), "community.index.view", "community", kind, {"query": query, "groups": len(groups), "rooms": len(rooms)})
+    return jsonify({"ok": True, "groups": groups, "rooms": rooms})
+
+
+@webhook_app.route("/api/admin/community/<kind>/<int:target_id>", methods=["POST"])
+def api_admin_community_action(kind, target_id):
+    admin, denied = require_admin_api("pulse.moderate")
+    if denied: return denied
+    payload = request.get_json(silent=True) or {}; action = clean_html(payload.get("action") or "").lower()
+    if kind not in {"group", "room"} or action not in {"suspend", "archive", "delete"}:
+        return jsonify({"ok": False, "message": "Choose a valid community action."}), 400
+    now = datetime.utcnow().isoformat(timespec="seconds"); status = "deleted" if action == "delete" else "suspended" if action == "suspend" else "archived"
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor(); ensure_pulse_messenger_schema(cur, conn)
+    if kind == "group":
+        cur.execute("SELECT id FROM pulse_groups WHERE id=? LIMIT 1", (target_id,))
+        if not cur.fetchone(): conn.close(); return jsonify({"ok": False, "message": "Group not found."}), 404
+        cur.execute("UPDATE pulse_groups SET status=?,updated_at=? WHERE id=?", (status, now, target_id))
+        cur.execute("UPDATE pulse_conversations SET status=?,deleted_at=CASE WHEN ?='deleted' THEN ? ELSE deleted_at END,updated_at=? WHERE group_id=? OR linked_group_id=?", (status, status, now, now, target_id, target_id))
+        cur.execute("INSERT INTO pulse_group_action_logs (group_id,post_id,user_id,action,status,trace_id,message,created_at) VALUES (?,0,0,?,'success',?,?,?)", (target_id, f"admin_{action}_group", secrets.token_hex(6), json.dumps({"admin_id": admin.get("id")})[:1000], now))
+    else:
+        cur.execute("SELECT id FROM pulse_conversations WHERE id=? AND conversation_type='room' LIMIT 1", (target_id,))
+        if not cur.fetchone(): conn.close(); return jsonify({"ok": False, "message": "Room not found."}), 404
+        cur.execute("UPDATE pulse_conversations SET status=?,deleted_at=CASE WHEN ?='deleted' THEN ? ELSE deleted_at END,updated_at=? WHERE id=?", (status, status, now, now, target_id))
+    conn.commit(); conn.close()
+    log_admin_audit(admin.get("id"), f"community.{kind}.{action}", kind, str(target_id), {"status": status})
+    return jsonify({"ok": True, "kind": kind, "id": target_id, "status": status})
 
 
 @webhook_app.route("/admin/group-chat-health", methods=["GET"])
