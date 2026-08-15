@@ -28,7 +28,7 @@ from services.sentinel.providers import CircuitBreaker
 PROVIDER_TYPES = (
     "THREAT_INTELLIGENCE", "VULNERABILITY_DATABASE", "SOURCE_CONTROL_SECURITY",
     "DEVICE_INTELLIGENCE", "NETWORK_INTELLIGENCE", "FILE_URL_REPUTATION",
-    "ARTIFACT_PROVENANCE",
+    "ARTIFACT_PROVENANCE", "OBSERVABILITY", "PAYMENT_RISK",
 )
 
 PROVIDER_STATUSES = (
@@ -219,6 +219,30 @@ PROVIDERS: dict[str, ProviderSpec] = {p.provider_id: p for p in (
         credential_envs=("SENTINEL_CLOUDFLARE_INTEL_TOKEN",),
         requires_credentials=True,
         budget=RequestBudget(5, 50, 200, cost_category="paid"),
+        deletion_capability="vendor_ticket"),
+    ProviderSpec(
+        provider_id="sentry", provider_name="Sentry",
+        provider_type="OBSERVABILITY",
+        capabilities=("issue_evidence", "release_correlation",
+                      "performance_evidence"),
+        source_trust="COMMERCIAL_INTELLIGENCE",
+        kill_switch="SENTINEL_SENTRY_ENABLED",
+        authentication_mode="api_key",
+        credential_envs=("SENTRY_AUTH_TOKEN",),
+        requires_credentials=True,
+        budget=RequestBudget(5, 100, 500, cache_ttl_minutes=30),
+        deletion_capability="vendor_api"),
+    ProviderSpec(
+        provider_id="stripe_radar", provider_name="Stripe Radar",
+        provider_type="PAYMENT_RISK",
+        capabilities=("payment_risk_evidence", "dispute_evidence",
+                      "refund_evidence", "verified_webhook_evidence"),
+        source_trust="COMMERCIAL_INTELLIGENCE",
+        kill_switch="SENTINEL_STRIPE_ENABLED",
+        authentication_mode="api_key",
+        credential_envs=("STRIPE_SECRET_KEY",),
+        requires_credentials=True,
+        budget=RequestBudget(10, 200, 1000, cache_ttl_minutes=15),
         deletion_capability="vendor_ticket"),
     ProviderSpec(
         provider_id="virustotal", provider_name="VirusTotal",

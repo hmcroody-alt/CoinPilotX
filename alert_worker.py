@@ -15,6 +15,7 @@ import signal
 import time
 
 from services import alert_engine, auto_signals_service
+from services.sentinel import runtime as sentinel_runtime
 
 
 RUNNING = True
@@ -43,14 +44,16 @@ def main():
         try:
             auto_result = auto_signals_service.process_enabled_users(limit=200)
             result = alert_engine.evaluate_all_active_alerts(limit=limit, worker_name="alert_worker")
+            sentinel_results = sentinel_runtime.run_scheduled_ingestion()
             logging.info(
-                "Alert worker cycle auto_users=%s auto_rules=%s checked=%s triggered=%s errors=%s latency_ms=%s",
+                "Alert worker cycle auto_users=%s auto_rules=%s checked=%s triggered=%s errors=%s latency_ms=%s sentinel_runs=%s",
                 auto_result.get("checked_users"),
                 auto_result.get("maintained_rules"),
                 result.get("checked_count"),
                 result.get("triggered_count"),
                 result.get("error_count"),
                 result.get("latency_ms"),
+                len(sentinel_results),
             )
         except Exception as exc:
             logging.exception("Alert worker cycle failed: %s", exc)
