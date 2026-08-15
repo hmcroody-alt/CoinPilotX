@@ -91,7 +91,7 @@ def get_state(user_id: Any, conn=None) -> Optional[dict]:
     try:
         ensure_schema(conn)
         row = conn.execute(
-            "SELECT rowid AS id, * FROM connect_account_state WHERE user_id = ?",
+            "SELECT * FROM connect_account_state WHERE user_id = ?",
             (str(user_id),),
         ).fetchone()
         if own:
@@ -109,7 +109,7 @@ def get_state_by_account(connected_account_id: str, conn=None) -> Optional[dict]
     try:
         ensure_schema(conn)
         row = conn.execute(
-            "SELECT rowid AS id, * FROM connect_account_state"
+            "SELECT * FROM connect_account_state"
             " WHERE connected_account_id = ?",
             (str(connected_account_id),),
         ).fetchone()
@@ -127,8 +127,10 @@ def _upsert(conn, *, user_id: str, connected_account_id: str,
             disabled_reason: str) -> dict:
     now = _utc_now_iso()
     requirements_json = json.dumps(dict(requirements or {}), default=str)
+    # Identity only. `user_id` is NOT NULL UNIQUE, so it addresses exactly one
+    # row and is the portable stand-in for `rowid`, which Postgres does not have.
     existing = conn.execute(
-        "SELECT rowid AS id, * FROM connect_account_state"
+        "SELECT user_id FROM connect_account_state"
         " WHERE user_id = ? OR connected_account_id = ?",
         (user_id, connected_account_id),
     ).fetchone()
@@ -153,14 +155,14 @@ def _upsert(conn, *, user_id: str, connected_account_id: str,
                    charges_enabled = ?, details_submitted = ?,
                    requirements_json = ?, disabled_reason = ?,
                    last_synced_at = ?, updated_at = ?
-             WHERE rowid = ?
+             WHERE user_id = ?
             """,
             (connected_account_id, int(payouts_enabled), int(charges_enabled),
              int(details_submitted), requirements_json, disabled_reason,
-             now, now, existing["id"]),
+             now, now, existing["user_id"]),
         )
     row = conn.execute(
-        "SELECT rowid AS id, * FROM connect_account_state WHERE user_id = ?",
+        "SELECT * FROM connect_account_state WHERE user_id = ?",
         (user_id,),
     ).fetchone()
     return _serialize(_row_to_dict(row))
