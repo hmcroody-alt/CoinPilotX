@@ -2,7 +2,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ASSISTANT_PRESENCE,
@@ -33,6 +33,7 @@ import {
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { createThemedStyles } from "../theme/themedStyles";
+import { messagesVisualRefreshEnabled } from "../spatial/flags";
 
 type ConversationFilter = "all" | "direct" | "groups" | "rooms" | "ai" | "unread";
 const FILTER_KEY = "pulsesoc.native.messenger.filter";
@@ -68,6 +69,13 @@ export function MessengerScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  // ---- Messages visual refresh (flag-gated; inert when OFF) ---------------
+  // Approved refinements only (mission §17): screen title, inbox search,
+  // unread clarity, floating compose. The inbox stays vertical and every
+  // conversation behavior is untouched. Tilt is never wired to this screen.
+  const visualRefresh = messagesVisualRefreshEnabled();
+  const [searchQuery, setSearchQuery] = useState("");
+  // -------------------------------------------------------------------------
 
   const openNewChat = useCallback((initialQuery = "") => {
     navigation.navigate("NewChat", initialQuery ? { initialQuery } : undefined);
@@ -142,10 +150,14 @@ export function MessengerScreen() {
     () => withDefaultUndxAiConversation(conversations),
     [conversations]
   );
-  const filteredConversations = useMemo(
-    () => conversationsWithUndxAi.filter((item) => conversationMatchesFilter(item, selectedFilter)),
-    [conversationsWithUndxAi, selectedFilter]
-  );
+  const filteredConversations = useMemo(() => {
+    const byFilter = conversationsWithUndxAi.filter((item) => conversationMatchesFilter(item, selectedFilter));
+    const query = visualRefresh ? searchQuery.trim().toLowerCase() : "";
+    if (!query) return byFilter;
+    return byFilter.filter((item) =>
+      `${conversationDisplayTitle(item)} ${conversationPreview(item)}`.toLowerCase().includes(query)
+    );
+  }, [conversationsWithUndxAi, selectedFilter, visualRefresh, searchQuery]);
   const activeConversations = useMemo(
     () => conversationsWithUndxAi.filter((item) => isActivePresence(item.presence) || isAssistantPresence(item.presence) || item.typing).slice(0, 8),
     [conversationsWithUndxAi]
@@ -189,6 +201,31 @@ export function MessengerScreen() {
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={styles.headerStack}>
+            {visualRefresh ? (
+              <>
+                <Text accessibilityRole="header" style={styles.screenTitle} testID="messenger-refresh-title">Messages</Text>
+                <View style={styles.searchShell}>
+                  <Text style={styles.searchIcon}>⌕</Text>
+                  <TextInput
+                    testID="messenger-search-input"
+                    accessibilityLabel="Search conversations"
+                    style={styles.searchInput}
+                    placeholder="Search conversations"
+                    placeholderTextColor={colors.muted}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                  />
+                  {searchQuery ? (
+                    <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setSearchQuery("")}>
+                      <Text style={styles.searchClear}>✕</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </>
+            ) : null}
             <PulseCommandSegmentRail items={filters} selected={selectedFilter} onSelect={(key) => setSelectedFilter(key as ConversationFilter)} />
             <ScrollView horizontal style={styles.presenceRailShell} contentContainerStyle={styles.presenceRail} showsHorizontalScrollIndicator={false} accessibilityLabel="Active PulseSoc conversations" testID="messenger-active-rail">
               <Pressable accessibilityRole="button" accessibilityLabel="Start a new direct conversation" style={styles.presenceItem} onPress={() => openNewChat()}>
@@ -222,6 +259,21 @@ export function MessengerScreen() {
         renderItem={({ item }) => <ConversationRow item={item} navigation={navigation} />}
         {...dock.handlers}
       />
+      {visualRefresh ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Compose new message"
+          testID="messenger-compose-fab"
+          style={({ pressed }) => [
+            styles.composeFab,
+            { bottom: insets.bottom + 86 },
+            pressed && styles.composeFabPressed
+          ]}
+          onPress={() => openNewChat()}
+        >
+          <Text style={styles.composeFabText}>✎</Text>
+        </Pressable>
+      ) : null}
     </LogiNexusScreenShell>
   );
 }
@@ -277,6 +329,9 @@ function ConversationRow({ item, navigation }: { item: MessengerConversation; na
   const active = isActivePresence(item.presence) || isAssistantPresence(item.presence);
   const title = conversationDisplayTitle(item);
   const opensUndxAi = item.conversation_id === PULSE_AI_CONVERSATION_ID;
+  // Unread clarity (visual refresh only): the preview line brightens so an
+  // unread thread reads at a glance without changing row layout or behavior.
+  const unread = messagesVisualRefreshEnabled() && Number(item.unread_count || 0) > 0;
   return (
     <Pressable
       style={({ pressed }) => [styles.row, item.pinned && styles.pinnedRow, pressed && styles.rowPressed]}
@@ -298,7 +353,7 @@ function ConversationRow({ item, navigation }: { item: MessengerConversation; na
           <Text style={styles.title} numberOfLines={1}>{title}</Text>
           <Text style={styles.time}>{conversationTime(item)}</Text>
         </View>
-        <Text style={styles.muted} numberOfLines={1}>{conversationPreview(item)}</Text>
+        <Text style={[styles.muted, unread && styles.unreadPreview]} numberOfLines={1}>{conversationPreview(item)}</Text>
         <View style={styles.rowSignals}>
           {conversationSignalBadges(item).map((badge) => <Text key={badge} style={styles.signalPill}>{badge}</Text>)}
         </View>
@@ -398,5 +453,15 @@ const styles = createThemedStyles(() => ({
   skeletonRow: { alignItems: "center", backgroundColor: "rgba(9,20,36,0.72)", borderColor: "rgba(105,218,240,0.1)", borderRadius: 13, borderWidth: 1, flexDirection: "row", gap: 9, minHeight: 64, padding: 9 },
   error: { color: colors.warning, fontSize: 12 },
   retryButton: { alignSelf: "center", backgroundColor: colors.signalDim, borderColor: colors.accent, borderRadius: 10, borderWidth: 1, marginTop: 8, paddingHorizontal: 14, paddingVertical: 9 },
-  retryText: { color: colors.accent, fontSize: 12, fontWeight: "900" }
+  retryText: { color: colors.accent, fontSize: 12, fontWeight: "900" },
+  // ---- Messages visual refresh (only rendered when the flag is ON) --------
+  screenTitle: { color: colors.text, fontSize: 22, fontWeight: "900", letterSpacing: 0.3 },
+  searchShell: { alignItems: "center", backgroundColor: "rgba(11,24,34,0.78)", borderColor: "rgba(97,216,255,0.18)", borderRadius: 13, borderWidth: 1, flexDirection: "row", gap: 8, minHeight: 40, paddingHorizontal: 12 },
+  searchIcon: { color: colors.muted, fontSize: 15, fontWeight: "800" },
+  searchInput: { color: colors.text, flex: 1, fontSize: 13, paddingVertical: 8 },
+  searchClear: { color: colors.muted, fontSize: 13, fontWeight: "900", padding: 4 },
+  unreadPreview: { color: colors.text, fontWeight: "700" },
+  composeFab: { alignItems: "center", backgroundColor: "rgba(77,228,196,0.92)", borderColor: "rgba(132,255,228,0.96)", borderRadius: 27, borderWidth: 1, height: 54, justifyContent: "center", position: "absolute", right: 16, shadowColor: colors.accent, shadowOpacity: 0.34, shadowRadius: 12, width: 54 },
+  composeFabPressed: { backgroundColor: "rgba(77,228,196,0.78)" },
+  composeFabText: { color: "#061410", fontSize: 20, fontWeight: "900" }
 }));

@@ -1104,3 +1104,95 @@ function and `videoMusicMix.ts` regains its direct `setAudioModeAsync` call —
 which puts the allowlist back at seven and re-breaks the gate, so the revert
 should be paired with reverting the rule bump or with a different remedy. No
 server flag, schema, or native dependency is involved.
+
+# Addendum — Spatial Motion Console: `expo-sensors` dependency declaration (2026-08-14)
+
+Change: `feature/spatial-console` @ `74a32e2c` (base `6e67e408`).
+Required label: `audio-critical-change` (triggered by dependency watch only).
+
+## Why the change is required
+
+The Hybrid Spatial Motion Console adds optional phone-tilt navigation for the
+Feed and Reels. Reading device orientation requires `expo-sensors`
+(DeviceMotion). The gate fires because `mobile-native/package.json` is on the
+dependency watch list — a manifest change, not an audio-path change.
+
+## Which feature required it
+
+Spatial Motion (tilt/parallax navigation), mission §, flag-gated behind
+`EXPO_PUBLIC_SPATIAL_MOTION` and consent-gated behind onboarding. Sensors are
+loaded via a safe dynamic require and never touched until the user opts in.
+
+## Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/package.json` | dependency watch | One line added: `"expo-sensors": "~15.0.7"`. No version changed on any existing dependency. `react-native-agora` stays `4.6.2`, `expo-av` stays `~16.0.8`, `expo` stays `~54.0.36`, `react-native` stays `^0.81.5`. No patch, Podfile, app.json, or eas.json change. |
+
+`expo-sensors` contains no audio code: it wraps CoreMotion / SensorManager
+(accelerometer, gyroscope, magnetometer, barometer, pedometer, DeviceMotion).
+It does not link AVFoundation audio, does not touch `AVAudioSession`, and adds
+no microphone entitlement. `package-lock.json` was NOT updated in this change
+because the sandbox has no npm registry access (403); `npm install` must be run
+on a networked machine before the next build, and the lockfile diff at that
+point must show only the expo-sensors subtree.
+
+## Expected behavior change
+
+None to audio. Calls, livestream, Pulse Radio, and Reels audio paths are
+untouched — no audio-session call sites, no LiveKit/Agora surface, no new
+publication path, no new audio singleton. The `expo-av` allowlist count is
+unchanged.
+
+## Regression risk
+
+Low and confined to build-time: the risk of adding a dependency is a lockfile
+refresh disturbing transitive pins. Mitigated by adding only a tilde-pinned
+package and by the rule that the upcoming `npm install` diff must be reviewed
+to show only the expo-sensors subtree.
+
+## Tests run
+
+In-sandbox on 2026-08-14, all against `74a32e2c`:
+
+- `npm run test:realtime-audio-critical` — 11 suites, 191 tests, pass
+- `npm run test:realtime-audio` — 18 suites, 310 tests, pass
+- `npm run test:realtime-audio-architecture` — 1 suite, 22 tests, pass
+- `python3 -m unittest tests.protection.test_realtime_audio_architecture` — 19 tests, OK
+- TypeScript compilation — `npx tsc --noEmit`, clean
+- Full jest run — 221 suites, 3,764 tests, pass
+- Backend token tests: **pytest is not installed in this sandbox and the
+  package registry is blocked.** `python3 -m unittest
+  tests.protection.test_agora_token_generation
+  tests.protection.test_agora_rtc_provider_contract` ran 13 tests: 10 passed,
+  3 failed — all three fail because the `agora_token_builder` pip package is
+  absent in the sandbox (`_generate_agora_token` returns its 503
+  `agora_token_builder_missing` error). The diff contains zero backend
+  changes (`git diff 6e67e408..HEAD -- . ':!mobile-native' ':!docs'` is
+  empty), so these are environmental, not regressions. They must be re-run
+  green in CI, which has the package.
+- Native build verification: not run in this sandbox (no macOS toolchain);
+  owed to CI/EAS as with prior addenda.
+
+## Physical validation required
+
+No new audio behavior is introduced, so this addendum adds no new audible
+requirement. The standing Groups A/B live-audio matrix debt from earlier
+addenda remains owed and is unaffected by this change.
+
+## Rollback procedure
+
+Remove the `expo-sensors` line from `package.json` (and its lockfile subtree
+once installed) and revert `74a32e2c`. Behavioral rollback needs no revert at
+all: every spatial flag defaults OFF, and motion additionally requires user
+onboarding — see `docs/spatial-console-rollback.md`.
+
+### Correction (2026-08-15): expo-sensors pin aligned to SDK 54 manifest
+
+`expo/bundledNativeModules.json` for the installed SDK 54 expects
+`expo-sensors: ~15.0.8`; the original declaration line said `~15.0.7`. The pin
+in `mobile-native/package.json` is corrected to `~15.0.8` in this change. Both
+ranges resolve inside 15.0.x; no other dependency line changed; the lockfile
+remains not-yet-updated because the sandbox registry block persists (verified
+again 2026-08-15: `403 blocked-by-allowlist`). Everything else in the addendum
+above stands unchanged.

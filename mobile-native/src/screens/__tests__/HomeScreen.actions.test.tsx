@@ -59,7 +59,15 @@ jest.mock("../../core/pulseRadio", () => ({
 jest.mock("../../navigation/BottomNavVisibility", () => ({
   BOTTOM_NAV_CONTENT_CLEARANCE: 0,
   useBottomNavContentPadding: () => 0,
-  useBottomNavScrollVisibility: () => ({ onScroll: jest.fn(), onScrollBeginDrag: jest.fn(), scrollEventThrottle: 16 })
+  useBottomNavScrollVisibility: () => ({ onScroll: jest.fn(), onScrollBeginDrag: jest.fn(), scrollEventThrottle: 16 }),
+  // useImmersiveNavigator reads this even while the spatial flags are off.
+  useBottomNavVisibility: () => ({
+    hidden: false,
+    docked: true,
+    miniPlayerVisible: false,
+    setBottomNavHidden: jest.fn(),
+    showBottomNav: jest.fn()
+  })
 }));
 jest.mock("../../navigation/homeReselect", () => ({ registerHomeReselectHandler: jest.fn(() => () => undefined) }));
 jest.mock("../../api/profileTarget", () => ({ profileNavigationParams: jest.fn(() => null) }));

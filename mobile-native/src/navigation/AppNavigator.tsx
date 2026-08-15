@@ -109,6 +109,7 @@ import { VerificationCenterScreen } from "../screens/VerificationCenterScreen";
 import { UserDashboardScreen } from "../screens/UserDashboardScreen";
 import { ChatScreen } from "../screens/ChatScreen";
 import { BottomNavVisibilityProvider } from "./BottomNavVisibility";
+import { SpatialCreateConsole } from "../spatial/SpatialCreateConsole";
 import { useAuth } from "../session/auth";
 import { useTranslation } from "../i18n";
 import { GlobalNavigationBadges, GlobalNavigationIdentity, LogiNexusBottomNavigation, LogiNexusGlobalHeader } from "./GlobalNavigation";
@@ -179,7 +180,18 @@ function TabNavigator({
       <Tabs.Navigator
         initialRouteName="Home"
         sceneContainerStyle={TRANSPARENT_SCENE}
-        tabBar={(props) => <LogiNexusBottomNavigation {...props} badges={badges} />}
+        tabBar={(props) => (
+          <>
+            {/* Spatial Create Console (flag-gated, renders null while closed).
+                Mounted inside the tabBar slot ON PURPOSE: the tab bar element
+                is rendered after the scenes, so this fragment stacks the
+                console above the dimmed scenes while the bottom navigation —
+                the later sibling — stays visible and tappable on top of it,
+                exactly as mission §17 requires (+ has morphed to ×). */}
+            <SpatialCreateConsole navigation={props.navigation} />
+            <LogiNexusBottomNavigation {...props} badges={badges} />
+          </>
+        )}
         screenOptions={({ navigation, route }) => ({
           header: ({ options }) => (
             <LogiNexusGlobalHeader

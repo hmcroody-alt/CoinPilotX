@@ -51,9 +51,23 @@ jest.mock("../../core/eventSync", () => ({
 }));
 // Must resolve, not return undefined: the screen calls `.catch()` on it directly.
 jest.mock("../../core/reelsAudioSession", () => ({ configureReelsAudioSession: jest.fn().mockResolvedValue(undefined) }));
+// The screen calls useIsFocused (tilt focus gating) but is rendered here
+// without a NavigationContainer, which would otherwise throw.
+jest.mock("@react-navigation/native", () => ({
+  ...jest.requireActual("@react-navigation/native"),
+  useIsFocused: () => true
+}));
 jest.mock("../../navigation/reelsReselect", () => ({ registerReelsReselectHandler: jest.fn(() => () => undefined) }));
 jest.mock("../../navigation/BottomNavVisibility", () => ({
-  useBottomNavScrollVisibility: () => ({ onScroll: jest.fn(), onScrollBeginDrag: jest.fn(), scrollEventThrottle: 16 })
+  useBottomNavScrollVisibility: () => ({ onScroll: jest.fn(), onScrollBeginDrag: jest.fn(), scrollEventThrottle: 16 }),
+  // useImmersiveNavigator reads this even while the spatial flags are off.
+  useBottomNavVisibility: () => ({
+    hidden: false,
+    docked: true,
+    miniPlayerVisible: false,
+    setBottomNavHidden: jest.fn(),
+    showBottomNav: jest.fn()
+  })
 }));
 jest.mock("../../api/profileTarget", () => ({
   profileNavigationParams: jest.fn(() => null),
