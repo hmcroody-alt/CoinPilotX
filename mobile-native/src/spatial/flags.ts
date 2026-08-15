@@ -2,19 +2,40 @@
  * Spatial Console feature flags.
  *
  * Every spatial-console behavior in the app is gated through this module and
- * nothing else. All flags default OFF: with no env vars set, the app renders
- * the legacy experience byte-for-byte, which is the rollback guarantee.
+ * nothing else.
  *
- * Rollout is via `EXPO_PUBLIC_*` env vars (EAS build profiles or `.env`),
- * inlined at bundle time and parsed at call time by `isFlagValueOn` — the same
- * accepted-value rule the rest of the app uses. See `FLAG_READERS` below for why
- * the reads are written out one per flag instead of looked up by name.
+ * Flags are read from `EXPO_PUBLIC_*` env vars (EAS build profiles or `.env`),
+ * inlined at bundle time and parsed at call time by the shared readers in
+ * `core/envFlag` — the same accepted-value rule the rest of the app uses. See
+ * `FLAG_READERS` below for why the reads are written out one per flag instead
+ * of looked up by name.
  *
- * `spatialConsoleEnabled` is the master switch: every sub-flag requires it.
+ * ## Two defaults, on purpose
+ *
+ * A flag still rolling out defaults OFF (`isFlagValueOn`): unset means off, so
+ * a build that says nothing renders the legacy experience and the rollback
+ * guarantee holds by doing nothing.
+ *
+ * Three flags have finished rolling out and default ON
+ * (`isFlagValueOnUnlessDisabled`): `spatialConsoleEnabled`,
+ * `spatialReelsEnabled` and `immersiveNavigatorEnabled` — the Reels horizontal
+ * pager and its full-screen navigator. They were moved after being reported as
+ * repeatedly reverting: the code was never reverted, but every build whose
+ * operator did not hand-export the variables shipped with them off, and nothing
+ * reported that. `core/envFlag.isFlagValueOnUnlessDisabled` records the full
+ * account. Rollback is still a flag flip, never a revert — set the variable to
+ * `0`/`false`/`off`/`no`.
+ *
+ * Note what this does *not* turn on. `spatialConsoleEnabled` is the master and
+ * now defaults on, but every other sub-flag still defaults OFF and is ANDed with
+ * it, so the home feed keeps its existing vertical layout, create keeps the
+ * composer jump, and no motion sensor is subscribed. The defaults are pinned in
+ * `__tests__/flagDefaults.test.ts` so a change of posture has to be deliberate.
+ *
  * Turning off the master is total rollback; turning off a sub-flag rolls back
  * that surface alone. See docs/spatial-console-rollback.md.
  */
-import { isFlagValueOn } from "../core/envFlag";
+import { isFlagValueOn, isFlagValueOnUnlessDisabled } from "../core/envFlag";
 
 type SpatialFlagName =
   | "spatialConsoleEnabled"
@@ -54,12 +75,12 @@ type SpatialFlagName =
  * in one place and this module only decides *which* literal to read.
  */
 const FLAG_READERS: Record<SpatialFlagName, () => boolean> = {
-  spatialConsoleEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_SPATIAL_CONSOLE),
+  spatialConsoleEnabled: () => isFlagValueOnUnlessDisabled(process.env.EXPO_PUBLIC_SPATIAL_CONSOLE),
   spatialHomeFeedEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_SPATIAL_HOME_FEED),
-  spatialReelsEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_SPATIAL_REELS),
+  spatialReelsEnabled: () => isFlagValueOnUnlessDisabled(process.env.EXPO_PUBLIC_SPATIAL_REELS),
   spatialCreateEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_SPATIAL_CREATE),
   messagesVisualRefreshEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_MESSAGES_VISUAL_REFRESH),
-  immersiveNavigatorEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_IMMERSIVE_NAVIGATOR),
+  immersiveNavigatorEnabled: () => isFlagValueOnUnlessDisabled(process.env.EXPO_PUBLIC_IMMERSIVE_NAVIGATOR),
   spatialMotionEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_SPATIAL_MOTION),
   tiltNavigationEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_TILT_NAVIGATION),
   tiltParallaxEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_TILT_PARALLAX)

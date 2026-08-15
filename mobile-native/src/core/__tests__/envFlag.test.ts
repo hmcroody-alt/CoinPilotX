@@ -24,7 +24,13 @@
  * app without being added to this table fails the completeness check that
  * follows it, which reads the source rather than trusting the list.
  */
-import { TRUTHY_FLAG_VALUES, envFlagOn, isFlagValueOn } from "../envFlag";
+import {
+  FALSY_FLAG_VALUES,
+  TRUTHY_FLAG_VALUES,
+  envFlagOn,
+  isFlagValueOn,
+  isFlagValueOnUnlessDisabled
+} from "../envFlag";
 import {
   messagesAwayModeEnabled,
   messagesMockChipsEnabled,
@@ -127,6 +133,47 @@ describe("the accepted truthy set", () => {
     expect(isFlagValueOn(null)).toBe(false);
     delete process.env.EXPO_PUBLIC_NOTHING_SETS_THIS;
     expect(envFlagOn("EXPO_PUBLIC_NOTHING_SETS_THIS")).toBe(false);
+  });
+});
+
+describe("a flag that has finished rolling out reads the other way round", () => {
+  it("is exactly these four spellings of off", () => {
+    expect([...FALSY_FLAG_VALUES]).toEqual(["0", "false", "off", "no"]);
+  });
+
+  it("stays on when nobody says anything", () => {
+    // The whole point: a build that forgets to set the variable keeps the
+    // shipped behaviour instead of silently dropping it.
+    expect(isFlagValueOnUnlessDisabled(undefined)).toBe(true);
+    expect(isFlagValueOnUnlessDisabled(null)).toBe(true);
+    expect(isFlagValueOnUnlessDisabled("")).toBe(true);
+    expect(isFlagValueOnUnlessDisabled("   ")).toBe(true);
+  });
+
+  it("turns off only for an explicit off, case- and whitespace-insensitively", () => {
+    for (const value of FALSY_FLAG_VALUES) {
+      expect(isFlagValueOnUnlessDisabled(value)).toBe(false);
+      expect(isFlagValueOnUnlessDisabled(value.toUpperCase())).toBe(false);
+      expect(isFlagValueOnUnlessDisabled(`  ${value}  `)).toBe(false);
+      expect(isFlagValueOnUnlessDisabled(`\t${value}\n`)).toBe(false);
+    }
+  });
+
+  it("keeps the feature on for a value nobody recognises", () => {
+    // A typo in a rollback must not read as a rollback. Disabling a shipped
+    // feature should require spelling "off" correctly.
+    for (const value of ["flase", "nope", "disabled", "OFFF", "2", "-1"]) {
+      expect(isFlagValueOnUnlessDisabled(value)).toBe(true);
+    }
+  });
+
+  it("agrees with the default-off reader on every truthy spelling", () => {
+    // The two readers differ only in what silence means, never in what an
+    // explicit "on" means.
+    for (const value of TRUTHY_FLAG_VALUES) {
+      expect(isFlagValueOn(value)).toBe(true);
+      expect(isFlagValueOnUnlessDisabled(value)).toBe(true);
+    }
   });
 });
 
@@ -298,7 +345,11 @@ describe("nothing reads a boolean flag on its own terms any more", () => {
             // key is a literal, so a flag that must survive a release bundle has
             // no other way to be read. envFlagOn's computed lookup is fine in
             // development and dead on device.
-            if (/isFlagValueOn\(\s*process\.env\./.test(line)) continue;
+            // `isFlagValueOnUnlessDisabled` is the same rule with the default
+            // inverted, for a flag that has finished rolling out. It is listed
+            // explicitly rather than matched by prefix so that adding a third
+            // reader stays a deliberate edit to this line.
+            if (/(?:isFlagValueOn|isFlagValueOnUnlessDisabled)\(\s*process\.env\./.test(line)) continue;
             offenders.push(`${rel}:${index + 1} reads ${match[1]} directly`);
           }
           // `process.env[SOME_FLAG]` — the indexed form the old parsers used.

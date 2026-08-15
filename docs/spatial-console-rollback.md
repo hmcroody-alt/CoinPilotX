@@ -57,21 +57,45 @@ Pinned by the `legacy motion scope migration` block in
 ## Rollback model
 
 All spatial behavior is gated in `mobile-native/src/spatial/flags.ts` via
-`EXPO_PUBLIC_*` env vars. **Every flag defaults OFF** — an unset var means the
-legacy code path runs unchanged. No legacy code was deleted; no data
-migrations were introduced.
+`EXPO_PUBLIC_*` env vars. No legacy code was deleted; no data migrations were
+introduced.
 
-| Flag | Env var | Rolls back |
-|---|---|---|
-| `spatialConsoleEnabled` (master) | `EXPO_PUBLIC_SPATIAL_CONSOLE` | Everything below (total rollback) |
-| `spatialHomeFeedEnabled` | `EXPO_PUBLIC_SPATIAL_HOME_FEED` | Dormant touch-only Home pager → legacy vertical feed. **OFF is the product decision, not a rollout stage.** |
-| `spatialReelsEnabled` | `EXPO_PUBLIC_SPATIAL_REELS` | Reels horizontal paging → legacy vertical paging. Also stops the motion sensor: motion exists to move this pager. |
-| `spatialCreateEnabled` | `EXPO_PUBLIC_SPATIAL_CREATE` | Create console → legacy composer jump |
-| `messagesVisualRefreshEnabled` | `EXPO_PUBLIC_MESSAGES_VISUAL_REFRESH` | Messenger refinements → legacy layout |
-| `immersiveNavigatorEnabled` | `EXPO_PUBLIC_IMMERSIVE_NAVIGATOR` | Nav auto-hide **on the Reels route only** → legacy scroll-responsive behavior. Has no effect on any other tab. |
-| `spatialMotionEnabled` (motion master) | `EXPO_PUBLIC_SPATIAL_MOTION` | All motion features: settings section, onboarding, sensors |
-| `tiltNavigationEnabled` | `EXPO_PUBLIC_TILT_NAVIGATION` | Tilt page-commits in Reels → parallax/swipe only |
-| `tiltParallaxEnabled` | `EXPO_PUBLIC_TILT_PARALLAX` | Tilt parallax preview in Reels → swipe only |
+Flags have one of two default postures, listed per row below.
+
+- **Default OFF** (`isFlagValueOn`) — still rolling out. An unset var means the
+  legacy path runs, so rollback is achieved by doing nothing.
+- **Default ON** (`isFlagValueOnUnlessDisabled`) — finished rolling out. An
+  unset var means the shipped behavior runs; rollback requires setting the var
+  to `0`, `false`, `off` or `no`.
+
+The three Reels flags moved to default ON after the horizontal pager and
+full-screen navigator were reported as repeatedly reverting. They had not been
+reverted. The code was present and correct in every build that shipped without
+them; what varied was whether the operator running the build happened to export
+the variables. No EAS profile set them, no `.env` existed, and the repo
+`.gitignore` excludes `.env` and `.env.*`, so there was nowhere committed for
+them to live. The build was green and the suite was green each time. Defaulting
+these three ON removes the only thing that was actually varying.
+
+`mobile-native/src/spatial/__tests__/flagDefaults.test.ts` pins every posture in
+the table below with the environment cleared, so a change of default is a
+deliberate edit to that file rather than a silent consequence of a build recipe.
+
+| Flag | Env var | Default | Rolls back |
+|---|---|---|---|
+| `spatialConsoleEnabled` (master) | `EXPO_PUBLIC_SPATIAL_CONSOLE` | **ON** | Everything below (total rollback) |
+| `spatialHomeFeedEnabled` | `EXPO_PUBLIC_SPATIAL_HOME_FEED` | OFF | Dormant touch-only Home pager → legacy vertical feed. **OFF is the product decision, not a rollout stage.** |
+| `spatialReelsEnabled` | `EXPO_PUBLIC_SPATIAL_REELS` | **ON** | Reels horizontal paging → legacy vertical paging. Also stops the motion sensor: motion exists to move this pager. |
+| `spatialCreateEnabled` | `EXPO_PUBLIC_SPATIAL_CREATE` | OFF | Create console → legacy composer jump |
+| `messagesVisualRefreshEnabled` | `EXPO_PUBLIC_MESSAGES_VISUAL_REFRESH` | OFF | Messenger refinements → legacy layout |
+| `immersiveNavigatorEnabled` | `EXPO_PUBLIC_IMMERSIVE_NAVIGATOR` | **ON** | Nav auto-hide **on the Reels route only** → legacy scroll-responsive behavior. Has no effect on any other tab. |
+| `spatialMotionEnabled` (motion master) | `EXPO_PUBLIC_SPATIAL_MOTION` | OFF | All motion features: settings section, onboarding, sensors |
+| `tiltNavigationEnabled` | `EXPO_PUBLIC_TILT_NAVIGATION` | OFF | Tilt page-commits in Reels → parallax/swipe only |
+| `tiltParallaxEnabled` | `EXPO_PUBLIC_TILT_PARALLAX` | OFF | Tilt parallax preview in Reels → swipe only |
+
+Note what the ON master does **not** turn on: every other sub-flag is still
+default OFF and is ANDed with the master, so Home keeps its existing vertical
+feed, Create keeps the composer jump, and no motion sensor is subscribed.
 
 Sub-flags require the master (`spatialHomeFeedEnabled() = master && sub`).
 Motion flags are doubly layered: `spatialMotionEnabled()` requires
@@ -175,12 +199,17 @@ hide or reveal moves only the dock — the media never resizes or reflows.
 
 ### Four rollback levels
 
+Levels 1, 3 and 4 act on default-ON flags, so the command is to **set** the
+variable to `0` — unsetting it now leaves the feature on, which is the whole
+point of the default change. Level 2 acts on default-OFF flags, where unset is
+already the rolled-back state.
+
 | Level | Command | Result |
 |---|---|---|
-| 1 — Immediate | unset `EXPO_PUBLIC_IMMERSIVE_NAVIGATOR` | Full-screen Reels and horizontal paging stay; the navigator is permanently visible. The smallest possible retreat if only the hide/reveal behavior is wrong. |
-| 2 — Motion | unset `EXPO_PUBLIC_TILT_NAVIGATION` and `EXPO_PUBLIC_TILT_PARALLAX` (or `EXPO_PUBLIC_SPATIAL_MOTION` for all of it) | Touch paging and full-screen layout keep working; no sensor subscribes anywhere. |
-| 3 — Spatial Reels | unset `EXPO_PUBLIC_SPATIAL_REELS` | Reels returns to legacy vertical paging with the framed card. Implies level 2 — motion exists to move this pager. |
-| 4 — Full | unset `EXPO_PUBLIC_SPATIAL_CONSOLE` | Entire spatial console off; every surface renders the legacy experience. |
+| 1 — Immediate | set `EXPO_PUBLIC_IMMERSIVE_NAVIGATOR=0` | Full-screen Reels and horizontal paging stay; the navigator is permanently visible. The smallest possible retreat if only the hide/reveal behavior is wrong. |
+| 2 — Motion | leave `EXPO_PUBLIC_TILT_NAVIGATION` and `EXPO_PUBLIC_TILT_PARALLAX` unset (or `EXPO_PUBLIC_SPATIAL_MOTION` for all of it) | Touch paging and full-screen layout keep working; no sensor subscribes anywhere. This is the default state. |
+| 3 — Spatial Reels | set `EXPO_PUBLIC_SPATIAL_REELS=0` | Reels returns to legacy vertical paging with the framed card. Implies level 2 — motion exists to move this pager. |
+| 4 — Full | set `EXPO_PUBLIC_SPATIAL_CONSOLE=0` | Entire spatial console off; every surface renders the legacy experience. |
 
 Levels are independent in the sense that any one can be applied without the
 others, but they nest downward: 4 implies 3 implies 2, and 3 implies 1.

@@ -125,6 +125,7 @@ const mockSaveApi = jest.fn();
 import { PulseApiError } from "../../api/pulseApi";
 import { peekSaveState, resetSavedStoreForTests } from "../../social/savedStore";
 import { resetSaveActionsForTests } from "../../social/useSaveAction";
+import { __clearSpatialFlagOverrides, __setSpatialFlagOverride } from "../../spatial/flags";
 import { ReelsScreen } from "../ReelsScreen";
 
 const REEL_ID = 88;
@@ -207,7 +208,18 @@ beforeEach(() => {
 });
 
 describe("ReelsScreen visibility playback", () => {
+  // Vertical-list playback semantics: an empty viewability report means nothing
+  // is on screen, so everything stops. The horizontal pager deliberately reads
+  // an empty report differently — it keeps the settled reel playing — so this
+  // suite asks for the rollback explicitly now that the pager is the default.
+  afterEach(() => {
+    __clearSpatialFlagOverrides();
+  });
+
   it("deactivates every Reel when none is visible and ignores non-viewable tokens", async () => {
+    __setSpatialFlagOverride("spatialConsoleEnabled", false);
+    __setSpatialFlagOverride("spatialReelsEnabled", false);
+    __setSpatialFlagOverride("immersiveNavigatorEnabled", false);
     Object.defineProperty(require("react-native").AppState, "currentState", { configurable: true, value: "active" });
     const first = reel({ id: 88, reel_id: 88 });
     const second = reel({ id: 89, reel_id: 89 });

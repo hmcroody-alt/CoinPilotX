@@ -153,6 +153,21 @@ function enableSpatial() {
   __setSpatialFlagOverride("immersiveNavigatorEnabled", true);
 }
 
+/**
+ * The pre-spatial vertical screen, reached by an explicit rollback.
+ *
+ * These three flags now default ON — they finished rolling out, and leaving
+ * them default-OFF was what let builds ship without Reels paging at all (see
+ * spatial/__tests__/flagDefaults.test.ts). So a legacy-path test can no longer
+ * get there by saying nothing; it has to ask for the rollback, exactly as an
+ * operator would.
+ */
+function disableSpatial() {
+  __setSpatialFlagOverride("spatialConsoleEnabled", false);
+  __setSpatialFlagOverride("spatialReelsEnabled", false);
+  __setSpatialFlagOverride("immersiveNavigatorEnabled", false);
+}
+
 async function renderScreen() {
   mockList.mockResolvedValue({ ok: true, reels: REELS, has_more: false, next_offset: 3 });
   const navigation = { navigate: jest.fn(), goBack: jest.fn(), addListener: jest.fn(() => () => undefined) };
@@ -327,6 +342,7 @@ describe("pager configuration", () => {
   it("still releases playback on the legacy path when the list has nothing viewable", async () => {
     // Vertically an empty viewability report means the list really is empty, and
     // the legacy screen's behavior there is not ours to change.
+    disableSpatial();
     const { list } = await renderScreen();
 
     await act(async () => list.props.onViewableItemsChanged({ viewableItems: [] }));

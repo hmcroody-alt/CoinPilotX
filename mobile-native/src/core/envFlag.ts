@@ -54,6 +54,16 @@
 export const TRUTHY_FLAG_VALUES = ["1", "true", "on", "yes"] as const;
 
 /**
+ * Every spelling of "off", for the default-on reader below.
+ *
+ * Deliberately the mirror of {@link TRUTHY_FLAG_VALUES} rather than "anything
+ * not truthy": a default-on flag must only be disabled by somebody who meant
+ * to disable it, so a typo (`EXPO_PUBLIC_SPATIAL_REELS=flase`) leaves the
+ * feature on rather than silently killing it.
+ */
+export const FALSY_FLAG_VALUES = ["0", "false", "off", "no"] as const;
+
+/**
  * Whether a raw value means "on".
  *
  * Takes the value rather than the name so a caller holding a string from
@@ -62,6 +72,45 @@ export const TRUTHY_FLAG_VALUES = ["1", "true", "on", "yes"] as const;
 export function isFlagValueOn(value: string | undefined | null): boolean {
   const raw = String(value ?? "").trim().toLowerCase();
   return (TRUTHY_FLAG_VALUES as readonly string[]).includes(raw);
+}
+
+/**
+ * Whether a raw value means "on", for a flag whose default is ON.
+ *
+ * ## Why a second reader exists
+ *
+ * {@link isFlagValueOn} answers "did somebody switch this on", and unset means
+ * off. That is right for a feature being rolled out, and wrong for one that has
+ * already shipped and is expected to stay on, because it makes *staying on* the
+ * thing that requires effort. Every build path has to remember to set the
+ * variable; the first one that forgets ships the feature switched off, and the
+ * build still succeeds, the tests still pass, and nothing anywhere says why the
+ * behaviour vanished.
+ *
+ * That is not hypothetical here. The Reels horizontal pager and its full-screen
+ * navigator were reported as repeatedly reverting. They had not been reverted —
+ * the code was present and correct in every build that shipped without them.
+ * What differed was whether `EXPO_PUBLIC_SPATIAL_CONSOLE` and friends happened
+ * to be exported by whoever ran the build. No EAS profile set them, no `.env`
+ * existed, and the repo's `.gitignore` excludes `.env` and `.env.*`, so there
+ * was no committed place for them to live: the feature was on only for a build
+ * whose operator typed the variables by hand, and off for every other build.
+ * A shipped feature cannot depend on that.
+ *
+ * So a flag that has finished rolling out moves to this reader and its default
+ * inverts. Rollback stays a flag flip and never a revert — set the variable to
+ * any of {@link FALSY_FLAG_VALUES} — but the flip is now required to turn the
+ * feature *off*, which is the direction that should cost somebody an action.
+ *
+ * ## The rule
+ *
+ * Trim, lowercase, and compare against {@link FALSY_FLAG_VALUES}: a match is
+ * off. Unset, empty, and every other value — including an unrecognised one — is
+ * on. See {@link FALSY_FLAG_VALUES} for why a typo resolves to on.
+ */
+export function isFlagValueOnUnlessDisabled(value: string | undefined | null): boolean {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return !(FALSY_FLAG_VALUES as readonly string[]).includes(raw);
 }
 
 /**

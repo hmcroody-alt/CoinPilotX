@@ -17,19 +17,23 @@ afterEach(() => {
 });
 
 describe("spatial flags", () => {
-  it("all default OFF so legacy is untouched (rollback guarantee)", () => {
-    expect(spatialConsoleEnabled()).toBe(false);
+  it("everything still rolling out defaults OFF so legacy is untouched", () => {
+    // The three shipped Reels flags default ON and are pinned separately in
+    // flagDefaults.test.ts. Everything else keeps the rollback-by-doing-nothing
+    // posture: unset means off.
     expect(spatialHomeFeedEnabled()).toBe(false);
-    expect(spatialReelsEnabled()).toBe(false);
     expect(spatialCreateEnabled()).toBe(false);
     expect(messagesVisualRefreshEnabled()).toBe(false);
-    expect(immersiveNavigatorEnabled()).toBe(false);
     expect(spatialMotionEnabled()).toBe(false);
     expect(tiltNavigationEnabled()).toBe(false);
     expect(tiltParallaxEnabled()).toBe(false);
   });
 
   it("sub-flags stay OFF without the master switch", () => {
+    // The master is set explicitly rather than left to its default: this test is
+    // about the AND with the master, so it must not change meaning the next time
+    // a flag's default posture moves.
+    __setSpatialFlagOverride("spatialConsoleEnabled", false);
     __setSpatialFlagOverride("spatialHomeFeedEnabled", true);
     __setSpatialFlagOverride("spatialReelsEnabled", true);
     __setSpatialFlagOverride("spatialCreateEnabled", true);
@@ -46,8 +50,10 @@ describe("spatial flags", () => {
     __setSpatialFlagOverride("spatialConsoleEnabled", true);
     __setSpatialFlagOverride("spatialHomeFeedEnabled", true);
     expect(spatialHomeFeedEnabled()).toBe(true);
-    expect(spatialReelsEnabled()).toBe(false);
+    // Surfaces that are still rolling out stay off even with the master on.
     expect(spatialCreateEnabled()).toBe(false);
+    expect(messagesVisualRefreshEnabled()).toBe(false);
+    expect(spatialMotionEnabled()).toBe(false);
   });
 
   it("turning the master off rolls everything back at once", () => {
