@@ -112,9 +112,12 @@ export function messagesVisualRefreshEnabled(): boolean {
 }
 
 /**
- * Directional bottom-nav visibility on the Reels route: a committed swipe back
- * hides it, a committed swipe forward reveals it, a tap recovers it. Off means
- * the full-screen pager keeps working with navigation permanently visible.
+ * Directional bottom-nav visibility on the Reels route: a committed swipe left
+ * hides it, a committed swipe right reveals it, a tap recovers it. Off means
+ * the full-screen pager keeps working with navigation permanently visible —
+ * and note that off gates *hiding* only, so `reveal()` still works, because a
+ * recovery affordance that is itself flagged can strand a user behind an
+ * invisible dock. See `spatial/navigatorVisibility.ts` for the direction rule.
  */
 export function immersiveNavigatorEnabled(): boolean {
   return spatialConsoleEnabled() && flagOn("immersiveNavigatorEnabled");
