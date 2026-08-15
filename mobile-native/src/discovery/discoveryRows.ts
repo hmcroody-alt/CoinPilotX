@@ -29,6 +29,7 @@
  * the call site (`discovery/flags.ts`), because a module the operator turned off
  * should never even be built, let alone placed and then filtered.
  */
+import type { PulseReel } from "../api/reels";
 import type { FeedRow } from "../feed/injectAds";
 
 export type DiscoveryModuleKind =
@@ -55,18 +56,45 @@ export type ReelSuggestion = {
   posterUrl?: string | null;
   authorName?: string | null;
   viewCount?: number | null;
+  /**
+   * The reel exactly as the API returned it, carried for the transfer slot.
+   *
+   * Not render data — nothing below the card reads it. It exists because
+   * `reelTransfer.ts` stages a whole `PulseReel` so the player can render the
+   * tapped reel on its first frame instead of showing whatever the feed returns
+   * while it looks for the right one. The row was built from a `listReels`
+   * response, so the reel is already in hand; dropping it here would mean
+   * re-fetching something we already had. `import type` keeps this a
+   * compile-time reference, so this module still pulls in no API code.
+   */
+  source?: PulseReel;
 };
 
-/** A person or creator. `userId` is the destination; `username` is for display and deep links. */
+/**
+ * A person or creator.
+ *
+ * The destination is `profileKey`, not a user id. That is not a preference — it
+ * is what the server can address: `/api/pulse/friends` builds people through
+ * `pulse_person_public_payload`, which returns `username`, `public_player_id`,
+ * `display_name` and `avatar_url` and **no `user_id`**. A `userId: number` field
+ * here would be `undefined` for every card the real endpoint produces, so every
+ * tap would resolve to nothing. `profileKey` is what `resolveProfileTarget` and
+ * the `ProfileDetail` route already accept.
+ *
+ * `rank` is the server's own identity label. Fields the payload does not
+ * contain — mutual-connection counts, follower counts — are absent rather than
+ * optional-and-always-undefined, so a card cannot render a relevance reason the
+ * backend never supplied.
+ */
 export type PersonSuggestion = {
-  userId: number;
+  profileKey: string;
   username: string;
   displayName: string;
   avatarUrl?: string | null;
-  /** Present only when the server supplied it. Never computed client-side. */
-  mutualCount?: number | null;
-  followerCount?: number | null;
-  isFollowing?: boolean;
+  publicPlayerId?: string | null;
+  /** Server-computed identity label ("Creator", "Member"). Never derived client-side. */
+  rank?: string | null;
+  verified?: boolean;
 };
 
 export type StatusSuggestion = {

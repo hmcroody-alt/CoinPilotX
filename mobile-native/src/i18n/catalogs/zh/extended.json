@@ -18,7 +18,24 @@
       "seeOriginal": "查看原文",
       "translatedFrom": "由{{language}}翻译",
       "hiddenPost": "已隐藏该帖子",
-      "undo": "撤销"
+      "undo": "撤销",
+      "discovery": {
+        "reelsTitle": "为你推荐的短视频",
+        "peopleTitle": "你可能认识的人",
+        "statusesTitle": "别错过这些动态",
+        "groupsTitle": "值得加入的群组",
+        "seeAll": "查看全部",
+        "hideSection": "隐藏{{section}}",
+        "addFriend": "加为好友",
+        "requestSent": "已申请",
+        "join": "加入",
+        "joined": "已加入",
+        "statusNew": "新",
+        "statusSeen": "已看",
+        "unavailable": "无法加载推荐内容",
+        "members_other": "{{count}} 位成员",
+        "views_other": "{{count}} 次观看"
+      }
     },
     "post": {
       "like": "赞",

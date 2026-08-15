@@ -50,7 +50,7 @@ function peopleModule(count = 5): DiscoveryModule {
     kind: "people",
     titleKey: "home:discovery.people",
     items: Array.from({ length: count }, (_, i) => ({
-      userId: i + 1,
+      profileKey: `user${i + 1}`,
       username: `user${i + 1}`,
       displayName: `User ${i + 1}`
     }))

@@ -18,7 +18,24 @@
       "seeOriginal": "原文を見る",
       "translatedFrom": "{{language}}から翻訳",
       "hiddenPost": "投稿を非表示にしました",
-      "undo": "元に戻す"
+      "undo": "元に戻す",
+      "discovery": {
+        "reelsTitle": "おすすめのリール",
+        "peopleTitle": "知り合いかも",
+        "statusesTitle": "見逃せないステータス",
+        "groupsTitle": "参加できるグループ",
+        "seeAll": "すべて見る",
+        "hideSection": "{{section}}を非表示",
+        "addFriend": "友達に追加",
+        "requestSent": "リクエスト済み",
+        "join": "参加",
+        "joined": "参加中",
+        "statusNew": "新着",
+        "statusSeen": "既読",
+        "unavailable": "おすすめを読み込めませんでした",
+        "members_other": "メンバー{{count}}人",
+        "views_other": "{{count}}回視聴"
+      }
     },
     "post": {
       "like": "いいね",
