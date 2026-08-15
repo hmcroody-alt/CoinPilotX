@@ -117,6 +117,100 @@ phone. Each row is pinned by an `addListener`/`remove` call-count assertion in
 | sensor availability | the device reports no sensor, or motion permission is denied — swipe keeps working, state reports `unavailable` |
 | unmount | the screen is torn down |
 
+## Full-screen Reels and directional navigator visibility
+
+Reels is a full-bleed pager: one reel per viewport, edge to edge, header and
+bottom navigator overlaying the media rather than shrinking it. The navigator's
+visibility is a function of the **direction of a committed touch page
+transition** and of nothing else.
+
+| Event | Navigator |
+|---|---|
+| Committed swipe to the **previous** reel (finger drags right) | hides |
+| Committed swipe to the **next** reel (finger drags left) | reveals |
+| Swipe that fails the threshold and springs back | unchanged |
+| Swipe at the first reel that cannot move | unchanged — no transition committed |
+| Single tap on unclaimed media | reveals (recovery) |
+| **Tilt commit** | unchanged — motion moves reels, never chrome |
+| Entering Reels, returning from a child sheet, foregrounding, unmount | reveals |
+| Rotation, layout recalc, data refresh, auto-advance | unchanged |
+
+The decision table itself is a pure function,
+`navigatorIntentForSettle()` in `mobile-native/src/spatial/navigatorVisibility.ts`,
+tested in isolation. `useImmersiveNavigator` adds the flag gate, the
+accessibility override and the gesture-independent reveals.
+
+Three implementation properties are worth knowing before changing any of it:
+
+- **Source attribution is asserted, not inferred.** `onMomentumScrollEnd` is
+  byte-identical for a finger swipe and a tilt commit. `onScrollBeginDrag` fires
+  only for a real drag, so ReelsScreen records the origin index there; a settle
+  with no recorded origin is `"motion"` and cannot move the navigator.
+- **The settle offset is authoritative for the index**, not viewability.
+  Viewability answers "what is visible enough to play", flips mid-drag at 72%,
+  and reports `-1` when nothing qualifies. Reading it at release would report
+  the destination as the origin and swallow the transition; collapsing `-1` to
+  `0` would invert the direction of the next backward swipe.
+- **Hiding is flag-gated; revealing is not.** A recovery affordance that is
+  itself feature-flagged is a way to strand somebody behind an invisible dock.
+  A screen reader follows the same asymmetry: hides are dropped, reveals pass.
+
+Layout does not depend on navigator state. The reel's overlay inset derives from
+the `BOTTOM_NAV_CONTENT_CLEARANCE` constant, never from `immersive.hidden`, so a
+hide or reveal moves only the dock — the media never resizes or reflows.
+
+### Four rollback levels
+
+| Level | Command | Result |
+|---|---|---|
+| 1 — Immediate | unset `EXPO_PUBLIC_IMMERSIVE_NAVIGATOR` | Full-screen Reels and horizontal paging stay; the navigator is permanently visible. The smallest possible retreat if only the hide/reveal behavior is wrong. |
+| 2 — Motion | unset `EXPO_PUBLIC_TILT_NAVIGATION` and `EXPO_PUBLIC_TILT_PARALLAX` (or `EXPO_PUBLIC_SPATIAL_MOTION` for all of it) | Touch paging and full-screen layout keep working; no sensor subscribes anywhere. |
+| 3 — Spatial Reels | unset `EXPO_PUBLIC_SPATIAL_REELS` | Reels returns to legacy vertical paging with the framed card. Implies level 2 — motion exists to move this pager. |
+| 4 — Full | unset `EXPO_PUBLIC_SPATIAL_CONSOLE` | Entire spatial console off; every surface renders the legacy experience. |
+
+Levels are independent in the sense that any one can be applied without the
+others, but they nest downward: 4 implies 3 implies 2, and 3 implies 1.
+
+A user-facing counterpart to level 2 exists in Settings → Accessibility →
+**Reset Reels motion settings**. It returns the device to the pre-consent state
+by removing the stored record rather than overwriting it with defaults, which is
+the only state in which the sensor provably cannot subscribe at all. Distinct
+from *Replay tutorial*, which re-shows the explainer and keeps the user's
+choices.
+
+## Physical-device QA matrix
+
+Static checks do not replace device QA here — the pager, the safe-area
+behavior and overlay readability are all things only a real screen shows.
+
+| # | Check | Expected |
+|---|---|---|
+| 1 | Reel at rest | Fills the entire viewport, edge to edge, no card frame, no gaps |
+| 2 | Notch / Dynamic Island | Media runs behind it; no interactive control is under it |
+| 3 | Home indicator | Media runs behind it; controls clear it |
+| 4 | Swipe left (next reel) | Pager advances exactly one reel; navigator reveals |
+| 5 | Swipe right (previous reel) | Pager retreats exactly one reel; navigator hides |
+| 6 | Fast flick | Advances exactly one reel — never two |
+| 7 | Half-swipe released | Springs back to the same reel; navigator unchanged |
+| 8 | Swipe right on the first reel | Nothing moves; navigator unchanged |
+| 9 | Navigator hide / reveal | Only the dock animates; the reel does not resize or reflow |
+| 10 | Tap on empty media area | Navigator reveals |
+| 11 | Tap a like/comment/share control | Action fires; navigator does not toggle |
+| 12 | Expand a long caption | Caption expands; no page change |
+| 13 | Tap the creator avatar | Opens the profile; no page change |
+| 14 | Open comments, then dismiss | Navigator visible throughout |
+| 15 | Tilt commit (motion enabled) | Reel changes; navigator does not move |
+| 16 | Drag and release without momentum, then tilt | Tilt still commits — the motion machine is not stuck suspended |
+| 17 | Background and foreground the app | Navigator visible; exactly one reel playing |
+| 18 | Rotate the device | Index preserved; navigator unchanged |
+| 19 | **Bright reel and dark reel** | Header, caption and action icons readable over both |
+| 20 | VoiceOver on | Navigator never hides; reveals immediately if it was hidden |
+
+Only one reel owns playback at rest, and it is the reel the pager settled on.
+Mid-swipe, when neither reel clears the viewability threshold, the outgoing reel
+keeps ownership until the incoming one claims it — otherwise the arriving reel
+renders black until the snap finishes.
+
 ## Locked color baseline (`mobile-native/src/theme/colors.ts`)
 
 No new colors are introduced anywhere in the spatial console. Baseline pinned
