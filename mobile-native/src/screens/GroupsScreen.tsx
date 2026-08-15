@@ -26,6 +26,7 @@ import {
   listGroups,
   listRooms,
   manageRoom,
+  removeGroupMember,
   loadCachedGroupDetail,
   loadCachedGroups,
   openGroupChat,
@@ -36,7 +37,8 @@ import {
   PulseGroupPost,
   PulseRoom,
   PulseRoomParticipant,
-  reportGroup
+  reportGroup,
+  setGroupMemberRole
 } from "../api/groups";
 import { CommunityCreateIntent, takeCommunityCreateIntent } from "../community/communityCreateIntent";
 import { PulseCommandAction, PulseCommandHeader, PulseCommandPanel, PulseCommandSearch } from "../components/PulseCommand";
@@ -238,6 +240,22 @@ export function GroupsScreen({ route, navigation }: Props) {
     finally { setBusyKey(""); }
   }
 
+  async function handleGroupMemberAction(group: PulseGroup, member: PulseGroupMember, action: "promote" | "demote" | "removeMember") {
+    if (!member.user_id) return;
+    const execute = async () => {
+      setBusyKey(`member-${member.user_id}`);
+      try {
+        if (action === "removeMember") await removeGroupMember(group.slug, member.user_id!);
+        else await setGroupMemberRole(group.slug, member.user_id!, action === "promote" ? "moderator" : "member");
+        const detail = await getGroupDetail(group.slug);
+        if (detail.group) setSelected(detail.group);
+      } catch (cause) { setError(cause instanceof Error ? cause.message : "Member action failed."); }
+      finally { setBusyKey(""); }
+    };
+    if (action === "removeMember") Alert.alert("Remove member?", `${member.display_name} will lose access to this group.`, [{ text: "Cancel", style: "cancel" }, { text: "Remove", style: "destructive", onPress: () => execute() }]);
+    else await execute();
+  }
+
   async function handleRoomLifecycle(room: PulseRoom, action: "archive" | "delete") {
     setBusyKey(`${action}-${room.id}`);
     try {
@@ -350,6 +368,7 @@ export function GroupsScreen({ route, navigation }: Props) {
           onReport={handleReport}
           onDelete={confirmDeleteGroup}
           onArchive={handleArchiveGroup}
+          onMemberAction={handleGroupMemberAction}
         />
       ) : null}
       {selectedRoom ? (
@@ -488,7 +507,7 @@ function RoomCard({ room, busy, onOpen }: { room: PulseRoom; busy?: boolean; onO
   );
 }
 
-function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport, onDelete, onArchive }: {
+function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport, onDelete, onArchive, onMemberAction }: {
   group: PulseGroup;
   busyKey: string;
   onClose: () => void;
@@ -497,6 +516,7 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport, onDele
   onReport: (group: PulseGroup) => void;
   onDelete: (group: PulseGroup) => void;
   onArchive: (group: PulseGroup) => void;
+  onMemberAction: (group: PulseGroup, member: PulseGroupMember, action: "promote" | "demote" | "removeMember") => void;
 }) {
   const sections: GroupDetailSection[] = ["overview", "members", "invitations", "media", "files", "links", "settings"];
   const [section, setSection] = useState<GroupDetailSection>("overview");
@@ -540,7 +560,7 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport, onDele
               <Text style={styles.smallButtonText}>Report</Text>
             </Pressable> : null}
           </View>
-          <GroupDetailSectionView group={group} section={section} onDelete={onDelete} onArchive={onArchive} />
+          <GroupDetailSectionView group={group} section={section} onDelete={onDelete} onArchive={onArchive} onMemberAction={onMemberAction} />
         </ScrollView>
       </View>
     </View>
@@ -561,9 +581,9 @@ function groupDetailSectionLabel(section: GroupDetailSection) {
   }[section];
 }
 
-function GroupDetailSectionView({ group, section, onDelete, onArchive }: { group: PulseGroup; section: GroupDetailSection; onDelete: (group: PulseGroup) => void; onArchive: (group: PulseGroup) => void }) {
+function GroupDetailSectionView({ group, section, onDelete, onArchive, onMemberAction }: { group: PulseGroup; section: GroupDetailSection; onDelete: (group: PulseGroup) => void; onArchive: (group: PulseGroup) => void; onMemberAction: (group: PulseGroup, member: PulseGroupMember, action: "promote" | "demote" | "removeMember") => void }) {
   if (section === "overview") return <GroupOverview group={group} />;
-  if (section === "members") return <GroupMembers group={group} />;
+  if (section === "members") return <GroupMembers group={group} onMemberAction={onMemberAction} />;
   if (section === "invitations") return <GroupInvitations group={group} />;
   if (section === "media") return <GroupAssets title="Media" assets={group.media || []} emptyTitle="No indexed group media" emptyBody="Photos and videos shared in this group appear here, including anything attached to group posts." />;
   if (section === "files") return <GroupAssets title="Files" assets={group.files || []} emptyTitle="No group files yet" emptyBody="Files shared in chat are not listed here. This app does not read private chat history to build a file list." />;
@@ -597,12 +617,12 @@ function GroupOverview({ group }: { group: PulseGroup }) {
   );
 }
 
-function GroupMembers({ group }: { group: PulseGroup }) {
+function GroupMembers({ group, onMemberAction }: { group: PulseGroup; onMemberAction: (group: PulseGroup, member: PulseGroupMember, action: "promote" | "demote" | "removeMember") => void }) {
   const members = group.members || [];
   return (
     <View>
       <Text style={styles.sectionTitle}>Members and Roles</Text>
-      {members.length ? members.map((member) => <GroupMemberRow key={member.id} group={group} member={member} />) : (
+      {members.length ? members.map((member) => <GroupMemberRow key={member.id} group={group} member={member} onMemberAction={onMemberAction} />) : (
         <BoundaryPanel
           title="Member roster boundary"
           body={`The server currently exposes your role (${groupRoleLabel(group)}) and total member count, but not the full native member roster. Native will render role actions here when the member list contract is available.`}
@@ -612,8 +632,8 @@ function GroupMembers({ group }: { group: PulseGroup }) {
   );
 }
 
-function GroupMemberRow({ group, member }: { group: PulseGroup; member: PulseGroupMember }) {
-  const actions = groupMemberActionRules(group, member).filter((action) => action.available).slice(0, 3);
+function GroupMemberRow({ group, member, onMemberAction }: { group: PulseGroup; member: PulseGroupMember; onMemberAction: (group: PulseGroup, member: PulseGroupMember, action: "promote" | "demote" | "removeMember") => void }) {
+  const actions = groupMemberActionRules(group, member).filter((action) => action.available && ["promote", "demote", "removeMember"].includes(action.key));
   return (
     <View style={styles.memberRow} accessibilityLabel={groupMemberAccessibilityLabel(member)}>
       <Avatar name={member.display_name} uri={member.avatar_url} />
@@ -622,7 +642,7 @@ function GroupMemberRow({ group, member }: { group: PulseGroup; member: PulseGro
         <Text style={styles.cardText} numberOfLines={1}>{member.username ? `@${member.username} · ` : ""}{groupMemberRoleLabel(member.role)}{member.presence ? ` · ${member.presence}` : ""}</Text>
         <View style={styles.actionRow}>
           {actions.map((action) => (
-            <Pressable key={action.key} accessibilityRole="button" accessibilityLabel={action.accessibilityLabel} style={[styles.inlineAction, action.tone === "danger" && styles.inlineDanger]}>
+            <Pressable key={action.key} accessibilityRole="button" accessibilityLabel={action.accessibilityLabel} style={[styles.inlineAction, action.tone === "danger" && styles.inlineDanger]} onPress={() => onMemberAction(group, member, action.key as "promote" | "demote" | "removeMember")}>
               <Text style={styles.inlineActionText}>{action.label}</Text>
             </Pressable>
           ))}
