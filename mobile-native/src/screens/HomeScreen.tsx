@@ -33,7 +33,10 @@ import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { SponsoredAdCard } from "../components/SponsoredAdCard";
 import { fetchSponsoredAds, SponsoredAd } from "../api/ads";
-import { FeedRow, injectAds } from "../feed/injectAds";
+import { injectAds } from "../feed/injectAds";
+import { HomeRow, injectDiscoveryRows } from "../discovery/discoveryRows";
+import { DiscoveryRowView } from "../discovery/DiscoveryRowView";
+import { useHomeDiscovery } from "../discovery/useHomeDiscovery";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { getPulseRadioState, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
 import { useBottomNavContentPadding, useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
@@ -53,7 +56,15 @@ import { SpatialPager } from "../spatial/SpatialPager";
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
 
-type HomeFeedRow = FeedRow<PulsePost>;
+/**
+ * Posts, ads and — once the discovery flags are on — suggestion rows.
+ *
+ * `HomeRow` is `FeedRow` plus one `discovery` member, so with every flag off
+ * this alias describes exactly the same set of rows it described before: the
+ * union widens, but `injectDiscoveryRows` returns its input unchanged and no
+ * value of the new shape is ever constructed.
+ */
+type HomeFeedRow = HomeRow<PulsePost>;
 
 type HomeScreenProps = {
   badges?: GlobalNavigationBadges;
@@ -139,6 +150,13 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   // which is what makes a second tap a no-op rather than a second write.
   const guard = useSocialActionGuard();
   const [statusItems, setStatusItems] = useState<PulseStatus[]>([]);
+  /**
+   * Bumped on pull-to-refresh only. It re-fetches the discovery modules and
+   * doubles as the rotation offset, so a refresh both refreshes the suggestions
+   * and moves which kind sits at which scroll depth — §3's rotation without the
+   * re-shuffling that a random offset would cause on unrelated re-renders.
+   */
+  const [discoveryRefreshToken, setDiscoveryRefreshToken] = useState(0);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusOffline, setStatusOffline] = useState(false);
   const [statusError, setStatusError] = useState("");
@@ -221,9 +239,42 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     [ads, hiddenAdKeys]
   );
 
+  /**
+   * Status ids already on Home's rail. §3: a suggestion the user can see two rows
+   * up is noise, so the rail's contents are subtracted from the Statuses module.
+   * Reels have no equivalent set — Home renders no reels — so none is passed.
+   */
+  const railStatusIds = useMemo(
+    () => new Set(statusItems.map((status) => Number(status.id)).filter((id) => id > 0)),
+    [statusItems]
+  );
+
+  const discovery = useHomeDiscovery({
+    navigation,
+    excludeStatusIds: railStatusIds,
+    // §13: no suggestions for a signed-out viewer.
+    enabled: isAuthenticated,
+    refreshToken: discoveryRefreshToken
+  });
+
+  /**
+   * Ads first, then suggestions threaded through the result.
+   *
+   * The order matters and is not interchangeable. `injectAds` owns the sponsored
+   * cadence Advertising specified; running it first and composing over its output
+   * means discovery can see where the ads landed and keep each ad with the post
+   * that earned it, while an ad slot is never displaced by a carousel. With the
+   * discovery flags off, `discovery.modules` is empty and `injectDiscoveryRows`
+   * returns the ad-injected array itself — so this line produces byte-identical
+   * rows to the previous `injectAds(...)` call, which is the §15 rollback path.
+   */
   const feedRows = useMemo<HomeFeedRow[]>(
-    () => injectAds(posts, availableAds, { interval: 5, leadIn: 3 }),
-    [posts, availableAds]
+    () =>
+      injectDiscoveryRows(injectAds(posts, availableAds, { interval: 5, leadIn: 3 }), discovery.modules, {
+        dismissed: discovery.dismissed,
+        rotationOffset: discovery.rotationOffset
+      }),
+    [posts, availableAds, discovery.modules, discovery.dismissed, discovery.rotationOffset]
   );
 
   const handleHideAd = useCallback((ad: SponsoredAd) => {
@@ -378,6 +429,10 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     refresh: async () => {
       loadStatuses().catch(() => undefined);
       resetSpatialPosition();
+      // Same bump as pull-to-refresh: a refresh is a refresh whichever gesture
+      // asked for it, and leaving this out would make the tab re-tap the one
+      // path that reloads the feed but leaves stale suggestions behind it.
+      setDiscoveryRefreshToken((token) => token + 1);
       await load("refresh");
       AccessibilityInfo.announceForAccessibility?.("Home refreshed");
     },
@@ -647,6 +702,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     loadStatuses().catch(() => undefined);
     load("refresh").catch(() => undefined);
     loadAds().catch(() => undefined);
+    setDiscoveryRefreshToken((token) => token + 1);
   }
 
   function openHomeRoute(routePath: string) {
@@ -655,11 +711,23 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   }
 
   /**
-   * Renders one feed row (post or ad). Shared verbatim between the legacy
-   * vertical list and the spatial pager so every post type, action and ad
+   * Renders one feed row (post, ad, or suggestion). Shared verbatim between the
+   * legacy vertical list and the spatial pager so every post type, action and ad
    * behavior is identical in both modes.
    */
   const renderFeedRow = (row: HomeFeedRow) => {
+    if (row.type === "discovery") {
+      return (
+        <DiscoveryRowView
+          module={row.module}
+          slot={row.slot}
+          {...discovery.actions}
+          onSeeAll={discovery.seeAllFor(row.module.kind)}
+          pendingFriendKeys={discovery.pendingFriendKeys}
+          joinedGroupSlugs={discovery.joinedGroupSlugs}
+        />
+      );
+    }
     if (row.type === "ad") {
       return (
         <SponsoredAdCard
