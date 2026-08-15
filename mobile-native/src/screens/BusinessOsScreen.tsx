@@ -29,6 +29,27 @@ type Props = {
   route?: { params?: RootStackParamList["BusinessOs"] };
 };
 
+export const BUSINESS_OS_LOAD_TIMEOUT_MS = 12_000;
+
+function withBusinessOsDeadline<T>(operation: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("PulseSoc took too long to load your business.")),
+      BUSINESS_OS_LOAD_TIMEOUT_MS
+    );
+    operation.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
+}
+
 /**
  * Business OS — the single entry point for running a business on PulseSoc.
  *
@@ -54,9 +75,9 @@ export function BusinessOsScreen({ navigation, route }: Props) {
     setMessage("");
     setOffline(false);
     const [adAccounts, adAnalytics, storeSnapshot] = await Promise.allSettled([
-      listAdAccounts(),
-      getAdAnalytics(),
-      loadSellerStoreSnapshot()
+      withBusinessOsDeadline(listAdAccounts()),
+      withBusinessOsDeadline(getAdAnalytics()),
+      withBusinessOsDeadline(loadSellerStoreSnapshot())
     ]);
 
     if (adAccounts.status === "fulfilled") {
