@@ -24,7 +24,7 @@ import {
   ViewToken
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
+import { BOTTOM_NAV_CONTENT_CLEARANCE, useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { PULSESOC_QA_REELS_FIXTURES } from "../api/config";
 import { PulseComment } from "../api/feed";
 import { liveWebUrl } from "../api/live";
@@ -158,6 +158,18 @@ export function ReelsScreen({ route, navigation }: Props) {
   // comments, sharing or a reel menu is up: the hook treats a child surface
   // opening exactly like losing focus, reveals, and restarts its swipe count.
   const immersive = useImmersiveNavigator(spatialReels && isFocused && !overlayOpen);
+  /**
+   * Where reel overlays park, measured from the bottom of the *viewport*.
+   *
+   * Constant with respect to dock visibility on purpose. The dock's resting
+   * height is known from `bottomNavMetrics`, so parking the caption and the
+   * action rail above that position keeps them clear of navigation whether it is
+   * on screen or not — and, more importantly, means a hide or reveal moves the
+   * navigator alone. Deriving this from `immersive.hidden` would relayout every
+   * reel on every transition, which is both the layout jump the mission forbids
+   * and a guaranteed frame drop on the one gesture that has to feel free.
+   */
+  const reelContentBottom = Math.max(insets.bottom, 12) + BOTTOM_NAV_CONTENT_CLEARANCE;
   const tilt = useTiltNavigation({
     surface: "reels",
     enabled: spatialReels && isFocused && appActive && reels.length > 0,
@@ -310,12 +322,30 @@ export function ReelsScreen({ route, navigation }: Props) {
     }
   }, [reels]);
 
+  // `spatialReels` is read from a build-time flag, so it cannot change while this
+  // screen is mounted — capturing the first render's value in this once-created
+  // callback is safe, and each mount builds a fresh one.
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const visible = viewableItems.find((token) => token.isViewable);
     const next = visible?.index;
     const item = visible?.item as PulseReel | undefined;
+    if (typeof next !== "number") {
+      // Nothing clears 72% visibility. Vertically that means the list really is
+      // empty, and dropping ownership is right. Horizontally it is mostly a
+      // transient: mid-swipe both reels sit near half a viewport, so for a frame
+      // or two neither is viewable. Releasing playback there paused the reel the
+      // user was leaving and left the one they were arriving at black until the
+      // snap finished. So the spatial pager holds ownership until something
+      // else claims it — which keeps exactly one owner at rest, and makes that
+      // owner the reel the pager settled on rather than whatever happened to be
+      // measured mid-gesture.
+      if (spatialReels) return;
+      activeReelId.current = 0;
+      setActiveIndex(-1);
+      return;
+    }
     activeReelId.current = item?.id || 0;
-    setActiveIndex(typeof next === "number" ? next : -1);
+    setActiveIndex(next);
   });
 
   useEffect(() => {
@@ -691,7 +721,10 @@ export function ReelsScreen({ route, navigation }: Props) {
               active={index === activeIndex && appActive && !shareOpen && !commentReel && !reactionReel && !musicReel && !moreReel}
               muted={muted}
               offline={offline}
+              fullBleed={spatialReels}
               contentTop={insets.top + 56}
+              contentBottom={reelContentBottom}
+              safeBottom={insets.bottom}
               busy={guard.isItemBusy(item.id)}
               onToggleMuted={() => setMuted((current) => !current)}
               onReact={handleReact}
@@ -717,11 +750,23 @@ export function ReelsScreen({ route, navigation }: Props) {
           </View>
         )}
         pagingEnabled
+        // Every spatial page is exactly one viewport wide, so the list never has
+        // to measure to know where a reel starts. Handing it the arithmetic is
+        // what makes the index stable across harmless layout passes and makes a
+        // tilt commit's `scrollToOffset` land on the same offset the snap would
+        // have chosen. Deliberately spatial-only: the legacy vertical path is
+        // unchanged, including its measurement behavior.
+        getItemLayout={
+          spatialReels
+            ? (_data, index) => ({ length: viewportWidth, offset: viewportWidth * index, index })
+            : undefined
+        }
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
         snapToInterval={spatialReels ? viewportWidth : viewportHeight}
         decelerationRate="fast"
         onScroll={bottomNavScroll.onScroll}
+        disableIntervalMomentum={spatialReels}
         onScrollBeginDrag={() => {
           tilt.notifyTouchStart();
           bottomNavScroll.onScrollBeginDrag();
