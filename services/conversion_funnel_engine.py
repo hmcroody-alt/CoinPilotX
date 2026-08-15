@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timedelta
 
 from . import db as db_service
+from .schema_guard import run_once_per_process
 
 
 FUNNEL_STEPS = {
@@ -38,25 +39,30 @@ def normalize_funnel(event_name: str) -> str:
     return FUNNEL_STEPS.get((event_name or "").strip(), "general")
 
 
+@run_once_per_process
+def ensure_schema(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS conversion_funnel_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            session_id TEXT,
+            funnel_name TEXT,
+            step_name TEXT,
+            source_path TEXT,
+            metadata_json TEXT,
+            created_at TEXT
+        )
+        """
+    )
+
+
 def track_step(user_id=0, session_id="", event_name="", source_path="", metadata=None):
     """Persist a lightweight funnel step without blocking the product flow."""
     try:
         conn = db_service.connect()
         cur = conn.cursor()
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS conversion_funnel_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                session_id TEXT,
-                funnel_name TEXT,
-                step_name TEXT,
-                source_path TEXT,
-                metadata_json TEXT,
-                created_at TEXT
-            )
-            """
-        )
+        ensure_schema(cur)
         cur.execute(
             """
             INSERT INTO conversion_funnel_events

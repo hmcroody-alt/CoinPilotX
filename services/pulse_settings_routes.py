@@ -51,6 +51,8 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request
 
+from services.schema_guard import run_once_per_process
+
 LOGGER = logging.getLogger(__name__)
 
 settings_blueprint = Blueprint("pulse_mobile_settings", __name__)
@@ -141,6 +143,7 @@ def _row(value) -> dict:
 # Schema
 # --------------------------------------------------------------------------
 
+@run_once_per_process
 def ensure_settings_schema(cur) -> None:
     """Tables this blueprint owns.
 

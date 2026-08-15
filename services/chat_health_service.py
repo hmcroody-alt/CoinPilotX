@@ -8,6 +8,8 @@ import logging
 import secrets
 import time
 
+from .schema_guard import run_once_per_process
+
 
 def _now() -> str:
     return datetime.utcnow().isoformat(timespec="seconds")
@@ -29,22 +31,27 @@ def safe_count(cur, sql: str, params=()) -> int:
         return 0
 
 
+@run_once_per_process
+def ensure_trace_schema(cur) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pulse_chat_health_traces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trace_id TEXT,
+            user_id INTEGER,
+            endpoint TEXT,
+            status TEXT,
+            details_json TEXT,
+            created_at TEXT
+        )
+        """
+    )
+
+
 def record_trace(cur, user_id: int, endpoint: str, status: str, trace: str, details=None) -> None:
     """Persist a lightweight diagnostic trace when the optional table exists."""
     try:
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS pulse_chat_health_traces (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                trace_id TEXT,
-                user_id INTEGER,
-                endpoint TEXT,
-                status TEXT,
-                details_json TEXT,
-                created_at TEXT
-            )
-            """
-        )
+        ensure_trace_schema(cur)
         cur.execute(
             """
             INSERT INTO pulse_chat_health_traces

@@ -16,6 +16,7 @@ from typing import Any
 
 from services import db as db_service
 from services import pulse_ads_service
+from services.schema_guard import run_once_per_process
 
 
 GROWTH_MODULES = (
@@ -121,6 +122,7 @@ def _public_id(prefix: str, user_id: int) -> str:
     return f"{prefix}_{digest}"
 
 
+@run_once_per_process
 def ensure_schema(conn: Any | None = None) -> None:
     own_conn = conn is None
     conn = conn or db_service.connect()

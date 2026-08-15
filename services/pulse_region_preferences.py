@@ -9,6 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from services import db
+from services.schema_guard import run_once_per_process
 
 
 LOCALE_PATTERN = re.compile(r"^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
@@ -33,6 +34,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+@run_once_per_process
 def ensure_schema(conn=None) -> None:
     owned = conn is None
     if owned:

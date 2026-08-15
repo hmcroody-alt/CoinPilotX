@@ -22,6 +22,7 @@ import requests
 
 from services import db as db_service
 from services import email_service, push_service, sms_service
+from services.schema_guard import run_once_per_process
 
 
 PRIORITY_LEVELS = {"urgent", "high", "normal", "low"}
@@ -267,6 +268,7 @@ def _add_column_if_missing(cur: Any, table: str, column: str, definition: str) -
         cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
+@run_once_per_process
 def ensure_schema(conn: Any | None = None) -> None:
     owns_conn = conn is None
     if conn is None:

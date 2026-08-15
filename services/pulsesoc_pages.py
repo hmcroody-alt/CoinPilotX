@@ -30,6 +30,8 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from services.schema_guard import run_once_per_process
+
 PAGE_TYPES = (
     "ARTIST", "CREATOR", "PUBLIC_FIGURE", "BUSINESS", "BRAND", "STORE",
     "RESTAURANT", "PROFESSIONAL_SERVICE", "LOCAL_BUSINESS", "NONPROFIT",
@@ -127,6 +129,7 @@ def _int(value: Any, default: int = 0) -> int:
 # Schema (additive only)
 # ---------------------------------------------------------------------------
 
+@run_once_per_process
 def ensure_tables(conn: Any) -> None:
     cur = conn.cursor()
     cur.execute(

@@ -33,6 +33,7 @@ from datetime import datetime
 from typing import Any
 
 from services import db as db_service
+from services.schema_guard import run_once_per_process
 
 _log = logging.getLogger("services.premium_entitlement_service")
 
@@ -100,6 +101,7 @@ def _now() -> str:
     return datetime.utcnow().isoformat(timespec="seconds")
 
 
+@run_once_per_process
 def ensure_founder_schema() -> None:
     """Create Founder membership tables and seed plan metadata."""
     now = _now()
