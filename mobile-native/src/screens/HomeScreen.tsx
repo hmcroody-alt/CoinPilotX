@@ -49,10 +49,7 @@ import { logiNexus } from "../theme/logiNexus";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { createThemedStyles } from "../theme/themedStyles";
 import { spatialHomeFeedEnabled } from "../spatial/flags";
-import { SpatialPager, SpatialPagerController } from "../spatial/SpatialPager";
-import { useImmersiveNavigator } from "../spatial/useImmersiveNavigator";
-import { ImmersiveRevealStrip } from "../spatial/ImmersiveRevealStrip";
-import { useTiltNavigation } from "../spatial/motion/useTiltNavigation";
+import { SpatialPager } from "../spatial/SpatialPager";
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -171,7 +168,13 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     });
   }).current;
   const selectionRestoredRef = useRef(false);
-  // ---- Spatial Console (flag-gated; every line below is inert when OFF) ----
+  // ---- Dormant spatial feed (flag-gated; OFF is the product decision) ------
+  // Spatial paging shipped on Home to testers and was withdrawn: Reels is the
+  // only motion-enabled browsing destination now. The pager below stays behind
+  // `spatialHomeFeedEnabled` — which is OFF and stays OFF — purely so the
+  // implementation remains recoverable, and it is a TOUCH-ONLY pager. Home has
+  // no tilt hook, no immersive navigator and no reveal strip: motion is absent
+  // from this screen by construction rather than by a flag reading false.
   const spatialFeed = spatialHomeFeedEnabled();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [spatialIndexByFeed, setSpatialIndexByFeed] = useState<Record<string, number>>({});
@@ -180,7 +183,6 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const spatialIndex = spatialIndexByFeed[selectedFeed] || 0;
   const spatialIndexRef = useRef(0);
   spatialIndexRef.current = spatialIndex;
-  const immersive = useImmersiveNavigator(isFocused && spatialFeed);
   const spatialPageHeight = Math.max(420, Math.round(windowHeight * 0.72));
   // -------------------------------------------------------------------------
   const activeTab = useMemo(() => FEED_TABS.find((tab) => tab.key === selectedFeed) || FEED_TABS[0], [selectedFeed]);
@@ -223,52 +225,6 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     () => injectAds(posts, availableAds, { interval: 5, leadIn: 3 }),
     [posts, availableAds]
   );
-
-  // ---- Spatial Motion (flag + consent gated; inert when OFF) --------------
-  // Tilt navigation shares the pager's settled-index pipeline: a commit calls
-  // commitToIndex, the pager settles, onIndexSettled fires — identical to a
-  // swipe. Tilt is only live while the pager itself is in the viewport (the
-  // outer list scrolled down past Pulse Network / Status / composer), so the
-  // upper Home structure is a tilt-free zone per mission §12.
-  const spatialPagerController = useRef<SpatialPagerController | null>(null);
-  const spatialPagerY = useRef(0);
-  const [spatialPagerInView, setSpatialPagerInView] = useState(false);
-  const tilt = useTiltNavigation({
-    surface: "feed",
-    enabled: spatialFeed && isFocused && spatialPagerInView && feedRows.length > 0,
-    suspended: drawerOpen,
-    currentIndex: spatialIndex,
-    pageCount: feedRows.length,
-    onCommit: (nextIndex) => spatialPagerController.current?.commitToIndex(nextIndex)
-  });
-  const tiltParallaxStyle = useMemo(
-    () => ({
-      transform: [
-        {
-          // Tilt right previews the next (right-hand) page: content eases left.
-          translateX: tilt.previewProgress.interpolate({
-            inputRange: [-1, 0, 1],
-            outputRange: [12, 0, -12],
-            extrapolate: "clamp"
-          })
-        }
-      ]
-    }),
-    [tilt.previewProgress]
-  );
-  const handleOuterFeedScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      bottomNavScroll.onScroll(event);
-      if (!spatialFeed) return;
-      const { contentOffset, layoutMeasurement } = event.nativeEvent;
-      // The pager lives in the list footer at spatialPagerY (content coords).
-      // Tilt is eligible only once a meaningful slice of it is on screen.
-      const visible = contentOffset.y + layoutMeasurement.height > spatialPagerY.current + 160;
-      setSpatialPagerInView((prev) => (prev === visible ? prev : visible));
-    },
-    [bottomNavScroll, spatialFeed]
-  );
-  // -------------------------------------------------------------------------
 
   const handleHideAd = useCallback((ad: SponsoredAd) => {
     setHiddenAdKeys((current) => {
@@ -874,12 +830,6 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
                 </Pressable>
               ) : null}
               {feedRows.length > 0 ? (
-                <Animated.View
-                  style={tiltParallaxStyle}
-                  onLayout={(event) => {
-                    spatialPagerY.current = event.nativeEvent.layout.y;
-                  }}
-                >
                 <SpatialPager
                   testID="spatial-home-feed"
                   accessibilityLabel={`${activeTab.label} feed, swipe horizontally between signals`}
@@ -889,14 +839,10 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
                   pageHeight={spatialPageHeight}
                   index={spatialIndex}
                   resetNonce={spatialResetNonce}
-                  controllerRef={spatialPagerController}
-                  onDragStart={tilt.notifyTouchStart}
                   onIndexSettled={(nextIndex) => {
                     setSpatialIndexByFeed((current) =>
                       current[selectedFeed] === nextIndex ? current : { ...current, [selectedFeed]: nextIndex }
                     );
-                    immersive.notifySwipeSettled();
-                    tilt.notifyTouchEnd();
                   }}
                   onEndReached={() => load("more").catch(() => undefined)}
                   renderPage={(row) => (
@@ -909,7 +855,6 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
                     </ScrollView>
                   )}
                 />
-                </Animated.View>
               ) : null}
             </>
           ) : loadingMore ? (
@@ -930,12 +875,11 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         renderItem={({ item: row }) => renderFeedRow(row)}
         onEndReached={() => load("more").catch(() => undefined)}
         onEndReachedThreshold={0.35}
-        onScroll={handleOuterFeedScroll}
+        onScroll={bottomNavScroll.onScroll}
         onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
       />
       <MasterNavigationDrawer visible={drawerOpen} onClose={() => setDrawerOpen(false)} onOpenRoute={openHomeRoute} />
-      <ImmersiveRevealStrip visible={spatialFeed && immersive.hidden} onReveal={immersive.reveal} />
     </View>
   );
 }
