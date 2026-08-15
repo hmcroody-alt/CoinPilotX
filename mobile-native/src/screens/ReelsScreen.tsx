@@ -71,6 +71,8 @@ import { useAuth } from "../session/auth";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { createThemedStyles } from "../theme/themedStyles";
 import { spatialReelsEnabled } from "../spatial/flags";
+import { ImmersiveRevealStrip } from "../spatial/ImmersiveRevealStrip";
+import { useImmersiveNavigator } from "../spatial/useImmersiveNavigator";
 import { useTiltNavigation } from "../spatial/motion/useTiltNavigation";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Reels"> | NativeStackScreenProps<RootStackParamList, "ReelDetail">;
@@ -86,7 +88,15 @@ const QA_RECOVERY_STATES = new Set<ConnectionState>(["loading", "connecting", "o
 export function ReelsScreen({ route, navigation }: Props) {
   const { authState, requestReauthentication } = useAuth();
   const insets = useSafeAreaInsets();
-  const bottomNavScroll = useBottomNavScrollVisibility({ topRevealY: 40, minimumScrollableDistance: 40 });
+  // Scroll-driven dock hiding reads vertical deltas, which a horizontal pager
+  // never produces. Opting out in spatial mode makes that explicit rather than
+  // relying on the numbers happening to come out inert, and hands the dock to
+  // the immersive navigator below. Its reveal-on-focus effect still runs.
+  const bottomNavScroll = useBottomNavScrollVisibility({
+    enabled: !spatialReelsEnabled(),
+    topRevealY: 40,
+    minimumScrollableDistance: 40
+  });
   const params = route.params || {};
   const initialReelId = "reelId" in params ? Number(params.reelId || 0) : 0;
   const [reels, setReels] = useState<PulseReel[]>([]);
@@ -143,6 +153,11 @@ export function ReelsScreen({ route, navigation }: Props) {
   const spatialReels = spatialReelsEnabled();
   const isFocused = useIsFocused();
   const overlayOpen = Boolean(shareOpen || commentReel || reactionReel || musicReel || moreReel);
+  // Reels is the only surface allowed to hide the dock immersively. Passing
+  // `!overlayOpen` as the focus signal is what keeps the dock on screen while
+  // comments, sharing or a reel menu is up: the hook treats a child surface
+  // opening exactly like losing focus, reveals, and restarts its swipe count.
+  const immersive = useImmersiveNavigator(spatialReels && isFocused && !overlayOpen);
   const tilt = useTiltNavigation({
     surface: "reels",
     enabled: spatialReels && isFocused && appActive && reels.length > 0,
@@ -711,7 +726,13 @@ export function ReelsScreen({ route, navigation }: Props) {
           tilt.notifyTouchStart();
           bottomNavScroll.onScrollBeginDrag();
         }}
-        onMomentumScrollEnd={() => tilt.notifyTouchEnd()}
+        onMomentumScrollEnd={() => {
+          // Fires for a finger swipe and for a tilt commit alike (the commit
+          // animates scrollToOffset), so the dock hides only once a reel has
+          // actually snapped into place — never mid-gesture, never on preview.
+          tilt.notifyTouchEnd();
+          immersive.notifySwipeSettled();
+        }}
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
         viewabilityConfig={viewabilityConfig.current}
         onViewableItemsChanged={onViewableItemsChanged.current}
@@ -804,6 +825,7 @@ export function ReelsScreen({ route, navigation }: Props) {
       <ReactionPicker reel={reactionReel} onSelect={(reaction) => { if (reactionReel) handleReact(reactionReel, reaction).catch(() => undefined); setReactionReel(null); }} onClose={() => setReactionReel(null)} />
       <MusicDetail reel={musicReel} onClose={() => setMusicReel(null)} />
       <ReelMoreMenu reel={moreReel} onClose={() => setMoreReel(null)} onRepost={(reel) => { setMoreReel(null); handleRepost(reel).catch(() => undefined); }} onLess={(reel) => { setMoreReel(null); handleNotInterested(reel).catch(() => undefined); }} onReport={(reel) => { setMoreReel(null); handleReport(reel).catch(() => undefined); }} onPromote={(reel) => { setMoreReel(null); navigation.navigate("GrowthCenter", { contentType: "reel", contentId: reel.id, title: "Promote Reel" }); }} onDelete={(reel) => { setMoreReel(null); confirmDeleteReel(reel); }} />
+      <ImmersiveRevealStrip visible={spatialReels && immersive.hidden} onReveal={immersive.reveal} />
     </View>
   );
 }

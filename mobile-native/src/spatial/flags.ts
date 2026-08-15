@@ -7,7 +7,7 @@
  *
  * Rollout is via `EXPO_PUBLIC_*` env vars (EAS build profiles or `.env`),
  * inlined at bundle time and parsed at call time by `isFlagValueOn` — the same
- * accepted-value rule the rest of the app uses. See `ENV_READERS` below for why
+ * accepted-value rule the rest of the app uses. See `FLAG_READERS` below for why
  * the reads are written out one per flag instead of looked up by name.
  *
  * `spatialConsoleEnabled` is the master switch: every sub-flag requires it.
@@ -47,17 +47,22 @@ type SpatialFlagName =
  * Entries are thunks so the value is still read at call time rather than
  * captured at module load, which is what lets a test toggle and re-ask without
  * re-importing the module graph.
+ *
+ * Each thunk hands its raw value straight to `isFlagValueOn` on the same line.
+ * That is the shape the architecture guard in `core/__tests__/envFlag.test.ts`
+ * recognises as "static spelling, shared rule" — the accepted-value logic lives
+ * in one place and this module only decides *which* literal to read.
  */
-const ENV_READERS: Record<SpatialFlagName, () => string | undefined> = {
-  spatialConsoleEnabled: () => process.env.EXPO_PUBLIC_SPATIAL_CONSOLE,
-  spatialHomeFeedEnabled: () => process.env.EXPO_PUBLIC_SPATIAL_HOME_FEED,
-  spatialReelsEnabled: () => process.env.EXPO_PUBLIC_SPATIAL_REELS,
-  spatialCreateEnabled: () => process.env.EXPO_PUBLIC_SPATIAL_CREATE,
-  messagesVisualRefreshEnabled: () => process.env.EXPO_PUBLIC_MESSAGES_VISUAL_REFRESH,
-  immersiveNavigatorEnabled: () => process.env.EXPO_PUBLIC_IMMERSIVE_NAVIGATOR,
-  spatialMotionEnabled: () => process.env.EXPO_PUBLIC_SPATIAL_MOTION,
-  tiltNavigationEnabled: () => process.env.EXPO_PUBLIC_TILT_NAVIGATION,
-  tiltParallaxEnabled: () => process.env.EXPO_PUBLIC_TILT_PARALLAX
+const FLAG_READERS: Record<SpatialFlagName, () => boolean> = {
+  spatialConsoleEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_SPATIAL_CONSOLE),
+  spatialHomeFeedEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_SPATIAL_HOME_FEED),
+  spatialReelsEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_SPATIAL_REELS),
+  spatialCreateEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_SPATIAL_CREATE),
+  messagesVisualRefreshEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_MESSAGES_VISUAL_REFRESH),
+  immersiveNavigatorEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_IMMERSIVE_NAVIGATOR),
+  spatialMotionEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_SPATIAL_MOTION),
+  tiltNavigationEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_TILT_NAVIGATION),
+  tiltParallaxEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_TILT_PARALLAX)
 };
 
 /**
@@ -78,7 +83,7 @@ export function __clearSpatialFlagOverrides() {
 function flagOn(name: SpatialFlagName): boolean {
   const override = overrides.get(name);
   if (override !== undefined) return override;
-  return isFlagValueOn(ENV_READERS[name]());
+  return FLAG_READERS[name]();
 }
 
 /** Master switch. Off = entire spatial console rolled back to legacy. */

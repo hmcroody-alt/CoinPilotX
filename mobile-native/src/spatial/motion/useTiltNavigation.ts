@@ -2,7 +2,12 @@ import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, AppState, Keyboard } from "react-native";
 
-import { spatialMotionEnabled, tiltNavigationEnabled, tiltParallaxEnabled } from "../flags";
+import {
+  spatialMotionEnabled,
+  spatialReelsEnabled,
+  tiltNavigationEnabled,
+  tiltParallaxEnabled
+} from "../flags";
 import { isCreateConsoleOpen, useCreateConsoleOpen } from "../createConsoleStore";
 import { useTheme } from "../../theme/ThemeContext";
 import { getDeviceMotionModule, isMotionAvailable } from "./motionAvailability";
@@ -17,7 +22,7 @@ import {
   type MotionState,
   type TiltDirection
 } from "./motionStateMachine";
-import { getMotionSettings, hydrateMotionSettings, updateMotionSettings, useMotionSettings, type MotionScope } from "./motionSettings";
+import { getMotionSettings, hydrateMotionSettings, updateMotionSettings, useMotionSettings } from "./motionSettings";
 
 const SENSOR_INTERVAL_MS = 80;
 /** Low-pass smoothing factor (higher = snappier, noisier). */
@@ -27,8 +32,17 @@ const CALIBRATION_SAMPLES = 12;
 const GRAVITY = 9.81;
 
 export interface TiltNavigationOptions {
-  /** Which surface this hook serves; matched against the user's scope pref. */
-  surface: Extract<MotionScope, "feed" | "reels">;
+  /**
+   * The surface this hook serves. Typed as the literal `"reels"` on purpose.
+   *
+   * Reels is the only motion-enabled destination in the product, and this is
+   * where that decision is enforced at compile time: mounting this hook from
+   * Home, Messages, Create or anywhere else is a type error, not a runtime
+   * behavior that has to be caught by review or by a device sitting in
+   * somebody's hand. The parameter is otherwise unused — it exists to be
+   * impossible to satisfy from the wrong screen.
+   */
+  surface: "reels";
   /** Surface is focused and its spatial pager is on screen. */
   enabled: boolean;
   /** Screen-level suspension (drawer open, composer open, comments sheet…). */
@@ -55,17 +69,20 @@ export interface TiltNavigation {
 }
 
 /**
- * Phone-tilt navigation for a spatial pager surface.
+ * Phone-tilt navigation for the Reels player.
  *
- * Subscribes to DeviceMotion ONLY when every gate passes: feature flags,
- * user consent (onboarded + mode ≠ swipe-only), scope, screen focus, screen
- * reader off, app foregrounded, keyboard closed, create console closed.
- * All raw sensor data stays in local variables — nothing is persisted or
- * transmitted (mission §20). Everything else is delegated to the pure state
- * machine so behavior stays deterministic and unit-tested.
+ * Subscribes to DeviceMotion ONLY when every gate passes: feature flags
+ * (including `spatialReelsEnabled`, so motion cannot outlive spatial Reels),
+ * user consent (onboarded + mode ≠ swipe-only), screen focus, screen reader
+ * off, app foregrounded, keyboard closed, create console closed. All raw sensor
+ * data stays in local variables — nothing is persisted or transmitted (mission
+ * §20). Everything else is delegated to the pure state machine so behavior
+ * stays deterministic and unit-tested.
+ *
+ * Home Feed once mounted this hook too. It no longer does, and the `surface`
+ * option is typed so it cannot again.
  */
 export function useTiltNavigation({
-  surface,
   enabled,
   suspended = false,
   currentIndex,
@@ -77,7 +94,19 @@ export function useTiltNavigation({
   const { reduceMotion } = useTheme();
   const [state, setState] = useState<MotionState>("disabled");
   const [screenReaderOn, setScreenReaderOn] = useState(false);
-  const [appActive, setAppActive] = useState(AppState.currentState === "active");
+  // `AppState.currentState` is not always populated at the moment a component
+  // mounts — it can read null/undefined before the native module has reported
+  // in. Seeding `false` from that would be wrong in the direction that fails
+  // silently: motion would never start for a user who opened the app and went
+  // straight to Reels, and would only appear after their first background/
+  // foreground round trip. A component cannot mount while the app is in the
+  // background, so "not yet known" is treated as active; the listener below
+  // corrects it the instant the app actually leaves the foreground.
+  const [appActive, setAppActive] = useState(
+    AppState.currentState === undefined || AppState.currentState === null
+      ? true
+      : AppState.currentState === "active"
+  );
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [sensorAvailable, setSensorAvailable] = useState<boolean | null>(null);
 
@@ -93,14 +122,19 @@ export function useTiltNavigation({
   const onCommitRef = useRef(onCommit);
   onCommitRef.current = onCommit;
 
-  const scopeAllowed = settings.scope === "both" || settings.scope === surface;
   const parallaxOnly = settings.mode === "parallax";
+  // `spatialReelsEnabled()` is part of the gate, not just the caller's concern:
+  // motion exists to move the Reels pager, so turning spatial Reels off must
+  // also stop the sensor rather than leave it feeding a pager that is no longer
+  // horizontal. It transitively requires the console master.
   const flagsOn =
-    spatialMotionEnabled() && (parallaxOnly ? tiltParallaxEnabled() : tiltNavigationEnabled());
+    spatialReelsEnabled() &&
+    spatialMotionEnabled() &&
+    (parallaxOnly ? tiltParallaxEnabled() : tiltNavigationEnabled());
   const consented = settings.onboarded && settings.mode !== "swipe-only";
   // Reduce Motion disables the entire motion layer, matching mission §19.
   const shouldListen =
-    flagsOn && consented && scopeAllowed && enabled && appActive && !screenReaderOn && !reduceMotion;
+    flagsOn && consented && enabled && appActive && !screenReaderOn && !reduceMotion;
 
   useEffect(() => {
     hydrateMotionSettings();

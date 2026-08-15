@@ -226,15 +226,21 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
   }, []);
 
   useEffect(() => {
-    // Immersive navigator (flag-gated): calmer ~220ms hide, snappier ~180ms
-    // reveal. Legacy timings are byte-identical when the flag is off.
-    const immersive = immersiveNavigatorEnabled();
+    // Immersive navigator: calmer ~220ms hide, snappier ~180ms reveal.
+    //
+    // Scoped to the Reels route, not to the flag alone. Reels is the only
+    // surface that hides the dock immersively, so the restored Home Feed must
+    // keep the legacy timings even in a build where the flag is on — otherwise
+    // enabling immersive Reels would quietly retime the dock on every other
+    // tab. Off-Reels these numbers stay byte-identical to legacy regardless of
+    // what the flag says.
+    const immersive = activeRoute === "Reels" && immersiveNavigatorEnabled();
     Animated.timing(hiddenProgress, {
       duration: reduceMotion ? 0 : hidden ? (immersive ? 220 : 180) : immersive ? 180 : 210,
       toValue: hidden ? 1 : 0,
       useNativeDriver: true
     }).start();
-  }, [hidden, hiddenProgress, reduceMotion]);
+  }, [activeRoute, hidden, hiddenProgress, reduceMotion]);
 
   useEffect(() => {
     cancelRefreshTapWindow();

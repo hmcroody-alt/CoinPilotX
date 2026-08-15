@@ -7,13 +7,20 @@ import { immersiveNavigatorEnabled } from "./flags";
 export const IMMERSIVE_SETTLE_DELAY_MS = 1200;
 
 /**
- * Immersive navigator behavior for spatial surfaces.
+ * Immersive navigator behavior for the Reels player.
  *
- * The dock stays visible until the FIRST completed horizontal swipe settles;
- * ~1.2s later it hides. It reveals again on any of: an explicit reveal call
- * (safe-area tap / upward edge gesture / child surface closing), the screen
- * regaining focus, or a screen reader being active (in which case it never
- * hides at all). All behavior is inert unless `immersiveNavigatorEnabled()`.
+ * The dock stays visible until the FIRST completed horizontal transition
+ * settles; ~1.2s later it hides. It reveals again on any of: an explicit reveal
+ * call (safe-area tap / upward edge gesture / child surface closing), the
+ * surface regaining focus, or a screen reader being active (in which case it
+ * never hides at all). All behavior is inert unless `immersiveNavigatorEnabled()`.
+ *
+ * Reels is the only caller. Home Feed mounted this hook while spatial paging
+ * was being tested there; that was withdrawn, and the restored Feed uses the
+ * legacy scroll-driven dock behavior with nothing from this module. Callers
+ * pass `false` for `surfaceFocused` while a child sheet is open, which reveals
+ * the dock and restarts the count — that is how comments, sharing and the reel
+ * menu keep navigation on screen.
  */
 export function useImmersiveNavigator(surfaceFocused: boolean) {
   const { setBottomNavHidden, showBottomNav, hidden } = useBottomNavVisibility();
