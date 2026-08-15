@@ -116,6 +116,34 @@ export async function updateMotionSettings(patch: Partial<MotionSettings>): Prom
   return settings;
 }
 
+/**
+ * Return every Reels motion preference to its factory value (mission §8).
+ *
+ * Distinct from "Replay tutorial", which re-shows the explainer while leaving
+ * the user's choices alone. Reset goes all the way back to the pre-consent
+ * state — `onboarded: false`, `mode: "swipe-only"`, no stored holding angle —
+ * which is also the state in which the sensor provably cannot subscribe. That
+ * makes this the user-facing counterpart to the motion rollback flag: someone
+ * whose device is behaving oddly can take motion out of the picture entirely
+ * without waiting for a build.
+ *
+ * The storage key is removed rather than overwritten with defaults, so a reset
+ * device is byte-identical to one that never ran a motion build.
+ */
+export async function resetMotionSettings(): Promise<MotionSettings> {
+  settings = DEFAULT_MOTION_SETTINGS;
+  // Stays true: the in-memory value is now authoritative, and re-reading a key
+  // we just deleted could only resurrect defaults we already hold.
+  hydrated = true;
+  emit();
+  try {
+    await AsyncStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Same contract as updateMotionSettings: the in-memory reset still applies.
+  }
+  return settings;
+}
+
 export function useMotionSettings(): MotionSettings {
   return useSyncExternalStore(
     (listener) => {

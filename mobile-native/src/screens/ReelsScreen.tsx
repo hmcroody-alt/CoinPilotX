@@ -79,6 +79,14 @@ import { useTiltNavigation } from "../spatial/motion/useTiltNavigation";
 type Props = NativeStackScreenProps<RootStackParamList, "Reels"> | NativeStackScreenProps<RootStackParamList, "ReelDetail">;
 
 const PAGE_SIZE = 8;
+/**
+ * How long a released drag may stay claimed as "finger-driven" before the claim
+ * expires. Only reached when the release produced no momentum at all — a slow
+ * drag let go at rest — which by definition changed no page. Long enough that a
+ * real momentum phase always starts first, short enough that the next tilt
+ * commit cannot inherit the claim.
+ */
+const DRAG_ABANDON_GRACE_MS = 120;
 const QA_REELS_STATE = PULSESOC_QA_REELS_FIXTURES ? String(process.env.EXPO_PUBLIC_PULSESOC_QA_REELS_STATE || "").trim().toLowerCase() : "";
 type ReelLane = "for_you" | "following" | "trending" | "music" | "live";
 const REEL_LANES: Array<{ key: ReelLane; label: string }> = [{ key: "for_you", label: "For You" }, { key: "following", label: "Following" }, { key: "trending", label: "Trending" }, { key: "music", label: "Music" }, { key: "live", label: "Live" }];
@@ -184,6 +192,8 @@ export function ReelsScreen({ route, navigation }: Props) {
    * happened to have written.
    */
   const dragOriginRef = useRef<number | null>(null);
+  /** Cancels the abandoned-drag cleanup once real momentum begins. */
+  const dragSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
    * The reel the pager is currently resting on.
    *
@@ -205,6 +215,16 @@ export function ReelsScreen({ route, navigation }: Props) {
    */
   const settledIndexRef = useRef(0);
   if (dragOriginRef.current === null && activeIndex >= 0) settledIndexRef.current = activeIndex;
+
+  const clearDragSettleTimer = useCallback(() => {
+    if (dragSettleTimerRef.current) {
+      clearTimeout(dragSettleTimerRef.current);
+      dragSettleTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearDragSettleTimer, [clearDragSettleTimer]);
+
   const tilt = useTiltNavigation({
     surface: "reels",
     enabled: spatialReels && isFocused && appActive && reels.length > 0,
@@ -811,12 +831,45 @@ export function ReelsScreen({ route, navigation }: Props) {
           // Marks this transition as finger-driven for the visibility rule, and
           // records where the gesture began so a spring-back to the same reel
           // reads as "no transition" rather than as a direction.
-          if (spatialReels) dragOriginRef.current = settledIndexRef.current;
+          if (spatialReels) {
+            clearDragSettleTimer();
+            dragOriginRef.current = settledIndexRef.current;
+          }
           bottomNavScroll.onScrollBeginDrag();
         }}
+        onScrollEndDrag={() => {
+          // Legacy vertical paging never had this handler and does not need it:
+          // with spatial Reels off the tilt machine is disabled, so there is no
+          // suspension to escape. Returning here keeps that path byte-identical.
+          if (!spatialReels) return;
+          // A drag released at rest produces no momentum phase, and therefore no
+          // `onMomentumScrollEnd`. Two things were relying on that event and had
+          // no other exit:
+          //
+          //   - the touch marker below, which would survive and mis-attribute
+          //     the *next* programmatic scroll — a tilt commit — as a swipe;
+          //   - `tilt.notifyTouchEnd()`, without which the motion machine stays
+          //     `touchActive` and is suspended for the rest of the session. That
+          //     is the permanent-suspension failure mode, and it needed only a
+          //     short drag that snapped back to reproduce.
+          //
+          // Both are resolved on a short grace timer that momentum cancels if it
+          // does start. No page changed, so visibility is untouched either way.
+          clearDragSettleTimer();
+          dragSettleTimerRef.current = setTimeout(() => {
+            dragSettleTimerRef.current = null;
+            dragOriginRef.current = null;
+            // Safe to call through this render's closure: `notifyTouchEnd` is a
+            // stable callback that reads the machine out of a ref, so it always
+            // reaches the live instance rather than a snapshot of one.
+            tilt.notifyTouchEnd();
+          }, DRAG_ABANDON_GRACE_MS);
+        }}
+        onMomentumScrollBegin={clearDragSettleTimer}
         onMomentumScrollEnd={(event) => {
           tilt.notifyTouchEnd();
           if (!spatialReels) return;
+          clearDragSettleTimer();
           const fromIndex = dragOriginRef.current;
           dragOriginRef.current = null;
           const toIndex = settledPageIndex(event.nativeEvent.contentOffset.x, viewportWidth);

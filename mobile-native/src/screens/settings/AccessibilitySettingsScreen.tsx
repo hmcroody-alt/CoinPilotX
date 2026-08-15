@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { AccessibilityInfo, Platform } from "react-native";
 import { SettingsHeader, SettingsSection, SettingsShell } from "../../settings/components/SettingsShell";
-import { SettingsBadge, SettingsButton, SettingsRow, SettingsSelect, SettingsSwitch } from "../../settings/components/SettingsControls";
+import { SettingsBadge, SettingsButton, SettingsRow, SettingsSelect, SettingsSwitch, confirm } from "../../settings/components/SettingsControls";
 import { usePreferenceGroup } from "../../settings/store";
 import { useTheme } from "../../theme/ThemeContext";
 import { spatialMotionEnabled } from "../../spatial/flags";
 import { isMotionAvailable } from "../../spatial/motion/motionAvailability";
 import { MotionOnboarding } from "../../spatial/motion/MotionOnboarding";
-import { hydrateMotionSettings, updateMotionSettings, useMotionSettings } from "../../spatial/motion/motionSettings";
+import { hydrateMotionSettings, resetMotionSettings, updateMotionSettings, useMotionSettings } from "../../spatial/motion/motionSettings";
 import type { MotionMode, MotionSensitivity } from "../../spatial/motion/motionStateMachine";
 
 /** The OS screen reader is named differently per platform; using the wrong name reads as a bug. */
@@ -310,6 +310,32 @@ function SpatialMotionSection() {
               variant="secondary"
               icon="play-circle-outline"
               onPress={() => setTutorialOpen(true)}
+            />
+            {/*
+              Distinct from Replay tutorial: that re-shows the explainer and
+              keeps your choices, this discards them. Returning `onboarded` to
+              false is the point rather than a side effect — it is the only
+              state in which the sensor cannot subscribe at all, so this is the
+              user-side equivalent of the motion rollback flag.
+            */}
+            <SettingsButton
+              testID="spatial-motion-reset"
+              label="Reset Reels motion settings"
+              variant="destructive"
+              icon="refresh-outline"
+              onPress={() => {
+                void (async () => {
+                  const ok = await confirm({
+                    title: "Reset Reels motion settings?",
+                    message:
+                      "Tilt and parallax turn off, sensitivity and haptics return to their defaults, and your calibrated holding angle is discarded. Swiping between Reels is unaffected. You can set motion up again at any time.",
+                    confirmLabel: "Reset",
+                    destructive: true
+                  });
+                  if (!ok) return;
+                  await resetMotionSettings();
+                })();
+              }}
             />
           </>
         )}
