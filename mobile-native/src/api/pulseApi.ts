@@ -51,6 +51,30 @@ export type RefreshResult = "refreshed" | "invalid" | "temporary" | "unavailable
 let refreshPromise: Promise<RefreshResult> | null = null;
 let sessionInvalidationHandler: ((event: SessionInvalidation) => void) | null = null;
 const inFlightReads = new Map<string, Promise<unknown>>();
+export const PULSE_API_READ_TIMEOUT_MS = 15_000;
+const PULSE_API_REFRESH_TIMEOUT_MS = 12_000;
+
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+  // A caller-supplied signal owns cancellation semantics. The shared deadline is
+  // for ordinary native requests that would otherwise remain pending forever.
+  if (options.signal) return fetch(url, options);
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<Response>((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new PulseApiError("PulseSoc took too long to respond. Try again.", 504, "request_timeout"));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([
+      fetch(url, { ...options, signal: controller.signal }),
+      deadline
+    ]);
+  } finally {
+    clearTimeout(timeout!);
+  }
+}
 
 export function registerSessionInvalidationHandler(handler: ((event: SessionInvalidation) => void) | null) {
   sessionInvalidationHandler = handler;
@@ -116,12 +140,16 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
 
   let response: Response;
   try {
-    response = await fetch(`${PULSE_API_BASE_URL}${path}`, {
+    const requestOptions = {
       ...options,
       headers,
       credentials: "include"
-    });
-  } catch {
+    } as RequestInit;
+    response = String(options.method || "GET").toUpperCase() === "GET"
+      ? await fetchWithTimeout(`${PULSE_API_BASE_URL}${path}`, requestOptions, PULSE_API_READ_TIMEOUT_MS)
+      : await fetch(`${PULSE_API_BASE_URL}${path}`, requestOptions);
+  } catch (error) {
+    if (error instanceof PulseApiError) throw error;
     throw new PulseApiError("PulseSoc could not be reached. Check your connection and try again.", 503, "request_unreachable");
   }
 
@@ -179,12 +207,12 @@ async function performNativeSessionRefresh(cookie: string): Promise<RefreshResul
     if (!envelope?.refreshToken && !cookie) return "unavailable";
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (Platform.OS !== "web") headers.Cookie = cookie;
-    const response = await fetch(`${PULSE_API_BASE_URL}/api/mobile/auth/refresh`, {
+    const response = await fetchWithTimeout(`${PULSE_API_BASE_URL}/api/mobile/auth/refresh`, {
       method: "POST",
       headers,
       credentials: "include",
       body: JSON.stringify({ refresh_token: envelope?.refreshToken || undefined, source: "native_automatic_refresh" })
-    });
+    }, PULSE_API_REFRESH_TIMEOUT_MS);
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
         await clearNativeSessionCredentials();
