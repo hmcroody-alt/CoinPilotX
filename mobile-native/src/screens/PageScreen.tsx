@@ -1,5 +1,5 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -14,7 +14,9 @@ import {
 import {
   getPage,
   getPageByHandle,
+  listPageMusic,
   listPagePosts,
+  PageTrack,
   pageTypeLabel,
   PulsePage,
   togglePageFollow
@@ -45,6 +47,12 @@ export function PageScreen({ route, navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [error, setError] = useState("");
+  const [music, setMusic] = useState<{ state: "idle" | "loading" | "ready" | "error"; tracks: PageTrack[] }>({
+    state: "idle",
+    tracks: []
+  });
+  const [musicAttempt, setMusicAttempt] = useState(0);
+  const musicFetched = useRef("");
 
   const load = useCallback(async () => {
     setError("");
@@ -69,6 +77,29 @@ export function PageScreen({ route, navigation }: Props) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Modules load when their tab is opened, and independently: if music fails
+  // the rest of the presence stays usable. The ref, not the module state,
+  // decides whether a fetch already ran — depending on the state the effect
+  // itself sets would make the effect cancel its own request.
+  useEffect(() => {
+    if (tab !== "music" || !page) return;
+    const key = `${page.id}:${musicAttempt}`;
+    if (musicFetched.current === key) return;
+    musicFetched.current = key;
+    let cancelled = false;
+    setMusic({ state: "loading", tracks: [] });
+    listPageMusic(page.id)
+      .then((result) => {
+        if (!cancelled) setMusic({ state: "ready", tracks: result.tracks });
+      })
+      .catch(() => {
+        if (!cancelled) setMusic({ state: "error", tracks: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, page, musicAttempt]);
 
   async function onFollow() {
     if (!page || followBusy) return;
@@ -199,17 +230,54 @@ export function PageScreen({ route, navigation }: Props) {
       );
     }
     if (tab === "music") {
+      if (music.state === "loading") {
+        return <ActivityIndicator color={colors.accent} style={styles.moduleSpinner} />;
+      }
+      if (music.state === "error") {
+        return (
+          <View style={styles.aboutCard}>
+            <Text style={styles.empty}>We couldn&apos;t load this section.</Text>
+            <Pressable
+              accessibilityRole="button"
+              style={styles.linkCard}
+              onPress={() => setMusicAttempt((attempt) => attempt + 1)}
+            >
+              <Text style={styles.linkCardText}>Try Again</Text>
+            </Pressable>
+          </View>
+        );
+      }
+      if (!music.tracks.length) {
+        return <Text style={styles.empty}>No music yet.</Text>;
+      }
       return (
-        <Pressable
-          accessibilityRole="button"
-          style={styles.linkCard}
-          onPress={() => navigation.navigate("Music", { artist: undefined, title: page.name })}
-        >
-          <Text style={styles.linkCardText}>Listen in PulseSoc Music</Text>
-        </Pressable>
+        <View>
+          {music.tracks.map((track) => (
+            <Pressable
+              key={track.id}
+              accessibilityRole="button"
+              style={styles.trackRow}
+              onPress={() => navigation.navigate("Music", { trackId: track.id, title: track.title })}
+            >
+              {track.cover_art_url ? (
+                <Image source={{ uri: track.cover_art_url }} style={styles.trackArt} />
+              ) : (
+                <View style={[styles.trackArt, styles.trackArtEmpty]} />
+              )}
+              <View style={styles.trackMeta}>
+                <Text style={styles.trackTitle} numberOfLines={1}>
+                  {track.title}
+                </Text>
+                <Text style={styles.trackSub} numberOfLines={1}>
+                  {track.genre || track.artist}
+                </Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
       );
     }
-    if (tab === "merch" || tab === "shop") {
+    if (tab === "merch" || tab === "shop" || tab === "menu") {
       return (
         <Pressable
           accessibilityRole="button"
@@ -402,6 +470,37 @@ const styles = createThemedStyles(() => ({
     color: colors.accent,
     fontSize: 14,
     fontWeight: "900"
+  },
+  moduleSpinner: {
+    padding: 24
+  },
+  trackRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10
+  },
+  trackArt: {
+    borderRadius: 8,
+    height: 48,
+    width: 48
+  },
+  trackArtEmpty: {
+    backgroundColor: colors.surface
+  },
+  trackMeta: {
+    flex: 1
+  },
+  trackTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700"
+  },
+  trackSub: {
+    color: colors.muted,
+    fontSize: 12,
+    marginTop: 2
   },
   heroText: {
     flex: 1,

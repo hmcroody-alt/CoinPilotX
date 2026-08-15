@@ -7,6 +7,7 @@ const RECENT_SEARCHES_KEY = "pulsesoc.native.search.recent";
 export type PulseSearchGroupKey =
   | "posts"
   | "creators"
+  | "presences"
   | "videos"
   | "reels"
   | "statuses"
@@ -18,6 +19,11 @@ export type PulseSearchGroupKey =
 
 export type PulseSearchResult = {
   id?: number | string;
+  /** Presence rows carry their entity type so an artist or business is never
+   * read as a personal account. */
+  presence_type?: string;
+  handle?: string;
+  verified?: boolean;
   user_id?: number | string;
   profile_id?: number | string;
   public_player_id?: string;
@@ -46,6 +52,7 @@ export type PulseSearchResponse = {
 export const SEARCH_GROUPS: Array<{ key: PulseSearchGroupKey; label: string }> = [
   { key: "posts", label: "Posts" },
   { key: "creators", label: "People" },
+  { key: "presences", label: "Artists & Businesses" },
   { key: "videos", label: "Videos" },
   { key: "reels", label: "Reels" },
   { key: "statuses", label: "Status" },
@@ -161,6 +168,7 @@ function emptyResults(): PulseSearchResults {
   return {
     posts: [],
     creators: [],
+    presences: [],
     videos: [],
     reels: [],
     statuses: [],

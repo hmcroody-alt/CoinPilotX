@@ -82,7 +82,22 @@ PERMISSIONS = {
     "transfer_ownership": {"OWNER"},
 }
 
-LINK_TYPES = ("store", "ad_account", "community", "event")
+LINK_TYPES = ("store", "ad_account", "community", "event", "music_artist", "business_os")
+
+# Tabs that always render: they are backed by the page row itself, so they can
+# never be empty in a way the viewer would read as broken.
+ALWAYS_TABS = {"home", "posts", "about"}
+
+# Optional tab -> the link_type that gives it real content. A tab with no link
+# and no rows is hidden from the public and kept (as a setup prompt) for the
+# team, because an empty module reads as a dead button.
+TAB_LINK_SOURCE = {
+    "music": "music_artist",
+    "shop": "store",
+    "merch": "store",
+    "menu": "store",
+    "events": "event",
+}
 
 HANDLE_RE = re.compile(r"^[A-Za-z0-9_.-]{3,40}$")
 RESERVED_HANDLES = {
@@ -387,6 +402,32 @@ def _counts(conn: Any, page_id: int) -> dict:
     return {"followers": followers, "posts": posts}
 
 
+def module_availability(conn: Any, page: dict, posts_count: int = 0) -> dict:
+    """Which optional modules actually have something behind them.
+
+    One cheap query over the links table; the modules themselves stay lazy.
+    """
+    linked = {row.get("link_type") for row in list_links(conn, page["id"])}
+    available = {}
+    for tab in TYPE_TABS.get(page.get("page_type") or "OTHER", TYPE_TABS["OTHER"]):
+        if tab in ALWAYS_TABS:
+            available[tab] = True
+        elif tab in TAB_LINK_SOURCE:
+            available[tab] = TAB_LINK_SOURCE[tab] in linked
+        else:
+            available[tab] = False
+    if "posts" in available:
+        available["posts"] = True
+    return available
+
+
+def _visible_tabs(page: dict, availability: dict, is_team: bool) -> list[str]:
+    ceiling = TYPE_TABS.get(page.get("page_type") or "OTHER", TYPE_TABS["OTHER"])
+    if is_team:
+        return list(ceiling)
+    return [tab for tab in ceiling if availability.get(tab)]
+
+
 def public_view(conn: Any, page: dict, viewer_user_id: int | None = None) -> dict:
     """Public shape. Management, billing, member emails, audit and Sentinel
     context are never present here."""
@@ -403,6 +444,7 @@ def public_view(conn: Any, page: dict, viewer_user_id: int | None = None) -> dic
         hours = json.loads(page.get("hours_json") or "{}")
     except Exception:
         hours = {}
+    availability = module_availability(conn, page, counts["posts"])
     return {
         "id": int(page["id"]),
         "page_type": page.get("page_type"),
@@ -423,7 +465,8 @@ def public_view(conn: Any, page: dict, viewer_user_id: int | None = None) -> dic
         "verified": (page.get("verification_status") or "") == "verified",
         "followers_count": counts["followers"],
         "posts_count": counts["posts"],
-        "tabs": TYPE_TABS.get(page.get("page_type") or "OTHER", TYPE_TABS["OTHER"]),
+        "tabs": _visible_tabs(page, availability, bool(viewer_role)),
+        "modules": availability,
         "created_at": page.get("created_at"),
         "viewer": {"role": viewer_role, "following": following},
     }
@@ -932,19 +975,89 @@ def list_page_posts(conn: Any, page_id: int, viewer_user_id: int | None = None,
 
 
 # ---------------------------------------------------------------------------
+# Lazy modules: resolved from the canonical systems, never mirrored here
+# ---------------------------------------------------------------------------
+
+def page_music(conn: Any, page_id: int, limit: int = 24) -> dict:
+    """Tracks for an artist presence, straight from the canonical catalogue.
+
+    The presence stores only a pointer (the `music_artist` link); the records
+    stay in music_service. With no link there is no catalogue identity to read,
+    so the module is empty rather than guessing from the page name.
+    """
+    ensure_tables(conn)
+    page = _load_page(conn, page_id)
+    links = [row.get("ref_id") for row in list_links(conn, page["id"], "music_artist")]
+    artist = _text(links[0], 120) if links else ""
+    if not artist:
+        return {"page_id": int(page["id"]), "artist": "", "tracks": [], "linked": False}
+    tracks = []
+    try:
+        from services import music_service
+        wanted = artist.casefold()
+        tracks = [
+            t for t in music_service.search_tracks(artist, limit=max(1, min(_int(limit, 24), 50)))
+            if str(t.get("artist") or "").casefold() == wanted
+        ]
+    except Exception as exc:
+        logging.warning("PAGE_MUSIC_FAILED page_id=%s error=%s", page_id, exc)
+        raise PageError("We couldn't load this section.", 503)
+    return {"page_id": int(page["id"]), "artist": artist, "tracks": tracks, "linked": True}
+
+
+def admin_overview(conn: Any, page_id: int) -> dict:
+    """Read-only inspection for platform admins.
+
+    Authorisation belongs to the caller (the existing admin gate); this only
+    assembles what an admin is allowed to see, and takes no action.
+    """
+    ensure_tables(conn)
+    page = _load_page(conn, page_id)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT user_id, role, status, created_at FROM pulse_page_members "
+        "WHERE page_id=? ORDER BY created_at", (int(page["id"]),))
+    members = [_row(r) for r in cur.fetchall()]
+    cur.execute(
+        "SELECT actor_user_id, action, created_at FROM pulse_page_audit "
+        "WHERE page_id=? ORDER BY id DESC LIMIT 20", (int(page["id"]),))
+    recent_audit = [_row(r) for r in cur.fetchall()]
+    counts = _counts(conn, page["id"])
+    return {
+        "id": int(page["id"]),
+        "page_type": page.get("page_type"),
+        "name": page.get("name"),
+        "handle": page.get("handle"),
+        "status": page.get("status"),
+        "verification_status": page.get("verification_status"),
+        "owner_user_id": int(page.get("owner_user_id") or 0),
+        "created_at": page.get("created_at"),
+        "followers": counts["followers"],
+        "posts": counts["posts"],
+        "members": members,
+        "links": list_links(conn, page["id"]),
+        "recent_audit": recent_audit,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Search + analytics (real numbers only)
 # ---------------------------------------------------------------------------
 
-def search_pages(conn: Any, query: Any, limit: int = 20) -> list[dict]:
+def search_pages(conn: Any, query: Any, limit: int = 20, include_inactive: bool = False) -> list[dict]:
+    """Public search sees ACTIVE pages only. `include_inactive` exists for the
+    admin console, whose whole job is to find a paused or deactivated page."""
     ensure_tables(conn)
     q = _text(query, 80)
     if not q:
         return []
     like = f"%{q}%"
+    where = "(name LIKE ? OR handle LIKE ? OR category LIKE ?)"
+    if not include_inactive:
+        where = "status='ACTIVE' AND " + where
     cur = conn.cursor()
     cur.execute(
-        "SELECT * FROM pulse_pages WHERE status='ACTIVE' AND (name LIKE ? OR handle LIKE ? OR category LIKE ?) "
-        "ORDER BY created_at DESC LIMIT ?",
+        f"SELECT * FROM pulse_pages WHERE {where} ORDER BY created_at DESC LIMIT ?",
         (like, like, like, max(1, min(_int(limit, 20), 50))),
     )
     return [public_view(conn, _row(r)) for r in cur.fetchall()]

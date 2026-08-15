@@ -66,6 +66,9 @@ export type PulsePage = {
   posts_count: number;
   /** Server-decided tab set for this page type. Render ONLY these. */
   tabs: string[];
+  /** Which optional modules have real backing data. The server hides unbacked
+   * tabs from the public and keeps them for the team as setup prompts. */
+  modules?: Record<string, boolean>;
   created_at?: string;
   viewer?: { role: PageRole | null; following: boolean };
   /** Present only on "my pages" rows. */
@@ -269,6 +272,35 @@ export async function listPagePosts(pageId: number, params: { limit?: number; of
     posts: (data.posts || []).map((post) => normalizePost(post)),
     has_more: Boolean(data.has_more),
     next_offset: Number(data.next_offset ?? offset + (data.posts || []).length)
+  };
+}
+
+export type PageTrack = {
+  id: string;
+  title: string;
+  artist: string;
+  genre?: string;
+  cover_art_url?: string;
+  audio_url?: string;
+  duration_seconds?: number;
+};
+
+/**
+ * Tracks for an artist presence, read lazily when the Music tab opens. The
+ * records live in the canonical music catalogue; the presence only stores a
+ * pointer, so an unlinked presence returns an empty list rather than a guess.
+ */
+export async function listPageMusic(pageId: number, limit = 24) {
+  const data = await pulseApi<{
+    ok: boolean;
+    artist?: string;
+    tracks?: PageTrack[];
+    linked?: boolean;
+  }>(`/api/pages/${pageId}/music?limit=${limit}`);
+  return {
+    artist: data.artist || "",
+    tracks: data.tracks || [],
+    linked: Boolean(data.linked)
   };
 }
 

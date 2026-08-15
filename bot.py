@@ -17647,6 +17647,53 @@ def api_pulsesoc_page_links(page_id):
         conn.close()
 
 
+@webhook_app.route("/api/admin/pages", methods=["GET"])
+def api_admin_pages_search():
+    admin, denied = require_admin_api("users.view")
+    if denied:
+        return denied
+    init_db()
+    conn = pulse_pages_conn()
+    try:
+        pages = pulsesoc_pages.search_pages(
+            conn, request.args.get("q") or "", limit=request.args.get("limit") or 20, include_inactive=True)
+        log_admin_audit(admin.get("id"), "admin_api_pages_searched", "page", "", {"count": len(pages)})
+        return jsonify({"ok": True, "pages": pages})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/admin/pages/<int:page_id>", methods=["GET"])
+def api_admin_page_detail(page_id):
+    admin, denied = require_admin_api("users.view")
+    if denied:
+        return denied
+    init_db()
+    conn = pulse_pages_conn()
+    try:
+        overview = pulsesoc_pages.admin_overview(conn, page_id)
+        log_admin_audit(admin.get("id"), "admin_api_page_inspected", "page", str(page_id), {})
+        return jsonify({"ok": True, "page": overview})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/music", methods=["GET"])
+def api_pulsesoc_page_music(page_id):
+    init_db()
+    conn = pulse_pages_conn()
+    try:
+        return jsonify({"ok": True, **pulsesoc_pages.page_music(conn, page_id, request.args.get("limit") or 24)})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
 @webhook_app.route("/api/pages/<int:page_id>/undx-context", methods=["GET"])
 def api_pulsesoc_page_undx_context(page_id):
     init_db()
@@ -39188,7 +39235,7 @@ def api_pulse_search():
     q = clean_html(request.args.get("q") or "").strip()[:120]
     limit = max(1, min(safe_int(request.args.get("limit"), 8), 20))
     trending = ["scam alerts", "AI builders", "creator economy", "wallet safety", "reels", "live rooms", "marketplace", "music"]
-    empty = {"posts": [], "creators": [], "videos": [], "reels": [], "statuses": [], "marketplace": [], "music": [], "groups": [], "rooms": [], "comments": []}
+    empty = {"posts": [], "creators": [], "presences": [], "videos": [], "reels": [], "statuses": [], "marketplace": [], "music": [], "groups": [], "rooms": [], "comments": []}
     if not q:
         return jsonify({"ok": True, "query": "", "results": empty, "trending": trending, "recent": [], "limit": limit})
 
@@ -39507,6 +39554,25 @@ def api_pulse_search():
         ]
     except Exception as exc:
         webhook_app.logger.warning("pulse.search.music failed q=%r: %s", q, exc)
+    try:
+        # Presences are entities, not people: the type label is what stops a
+        # visitor reading an artist or business as a personal account.
+        for page in pulsesoc_pages.search_pages(conn, q, limit=limit):
+            label = (page.get("category") or "").strip() or (page.get("page_type") or "").replace("_", " ").title()
+            results["presences"].append({
+                "id": page.get("id"),
+                "title": page.get("name") or page.get("handle"),
+                "description": (page.get("description") or label)[:180],
+                "type": "presence",
+                "presence_type": page.get("page_type"),
+                "handle": page.get("handle"),
+                "avatar_url": page.get("avatar_url") or "",
+                "verified": bool(page.get("verified")),
+                "url": f"/pulse/pages/{page.get('handle')}",
+                "meta": label or "Presence",
+            })
+    except Exception as exc:
+        webhook_app.logger.warning("pulse.search.presences failed q=%r: %s", q, exc)
     conn.close()
     total = sum(len(items) for items in results.values())
     return jsonify({"ok": True, "query": q, "results": results, "total": total, "trending": trending, "limit": limit})

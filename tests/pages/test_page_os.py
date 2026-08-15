@@ -440,5 +440,194 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(out["followers_count"], 0)
 
 
+class ModuleAvailabilityTests(unittest.TestCase):
+    """A tab only reaches the public once something real backs it."""
+
+    def setUp(self):
+        self.conn = make_conn()
+        self.page_id = create(self.conn)["id"]
+
+    def _view(self, viewer=None):
+        return pulsesoc_pages.public_view(
+            self.conn, pulsesoc_pages._load_page(self.conn, self.page_id), viewer_user_id=viewer)
+
+    def test_unlinked_presence_hides_optional_tabs_from_the_public(self):
+        view = self._view()
+        self.assertEqual(view["tabs"], ["posts", "about"])
+        self.assertFalse(view["modules"]["music"])
+        self.assertTrue(view["modules"]["about"])
+
+    def test_team_still_sees_the_full_ceiling_as_setup_prompts(self):
+        view = self._view(OWNER)
+        self.assertEqual(view["tabs"], pulsesoc_pages.TYPE_TABS["ARTIST"])
+        self.assertFalse(view["modules"]["music"])
+
+    def test_linking_a_module_reveals_its_tab(self):
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "music_artist", "Night Signal")
+        view = self._view()
+        self.assertIn("music", view["tabs"])
+        self.assertTrue(view["modules"]["music"])
+        self.assertNotIn("merch", view["tabs"])
+
+    def test_tabs_never_exceed_the_type_ceiling(self):
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", "9")
+        view = self._view(OWNER)
+        for tab in view["tabs"]:
+            self.assertIn(tab, pulsesoc_pages.TYPE_TABS["ARTIST"])
+        self.assertNotIn("shop", view["modules"])  # a business tab, not an artist one
+
+
+class MusicModuleTests(unittest.TestCase):
+    """The presence points at the canonical catalogue; it never invents a discography."""
+
+    def setUp(self):
+        self.conn = make_conn()
+        self.page_id = create(self.conn)["id"]
+        self._saved = sys.modules.get("services.music_service")
+
+    def tearDown(self):
+        if self._saved is None:
+            sys.modules.pop("services.music_service", None)
+        else:
+            sys.modules["services.music_service"] = self._saved
+
+    def _stub_catalogue(self, search_tracks):
+        module = types.ModuleType("services.music_service")
+        module.search_tracks = search_tracks
+        sys.modules["services.music_service"] = module
+
+    def test_unlinked_presence_returns_empty_without_touching_the_catalogue(self):
+        def explode(*_a, **_kw):
+            raise AssertionError("catalogue must not be queried for an unlinked presence")
+
+        self._stub_catalogue(explode)
+        out = pulsesoc_pages.page_music(self.conn, self.page_id)
+        self.assertFalse(out["linked"])
+        self.assertEqual(out["tracks"], [])
+
+    def test_linked_presence_returns_only_that_artists_tracks(self):
+        tracks = [
+            {"id": "1", "title": "Signal", "artist": "Night Signal"},
+            {"id": "2", "title": "Borrowed", "artist": "Someone Else"},
+        ]
+        self._stub_catalogue(lambda query="", limit=12, **kw: list(tracks))
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "music_artist", "night signal")
+        out = pulsesoc_pages.page_music(self.conn, self.page_id)
+        self.assertTrue(out["linked"])
+        self.assertEqual([t["title"] for t in out["tracks"]], ["Signal"])
+
+    def test_catalogue_failure_is_an_honest_error_not_a_silent_empty(self):
+        def boom(*_a, **_kw):
+            raise RuntimeError("catalogue down")
+
+        self._stub_catalogue(boom)
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "music_artist", "Night Signal")
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.page_music(self.conn, self.page_id)
+        self.assertEqual(ctx.exception.status_code, 503)
+
+
+class AdminInspectionTests(unittest.TestCase):
+    """Admins can inspect a presence. Inspection is read-only by construction."""
+
+    def setUp(self):
+        self.conn = make_conn()
+        self.page_id = create(self.conn)["id"]
+
+    def test_overview_reports_team_links_and_audit(self):
+        invite = pulsesoc_pages.invite_member(
+            self.conn, OWNER, self.page_id, {"user_id": FRIEND, "role": "ADMIN"})
+        pulsesoc_pages.accept_invite(self.conn, FRIEND, invite["invite_token"])
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", "7")
+        out = pulsesoc_pages.admin_overview(self.conn, self.page_id)
+        self.assertEqual(out["owner_user_id"], OWNER)
+        self.assertIn(FRIEND, [m["user_id"] for m in out["members"]])
+        self.assertEqual([link["ref_id"] for link in out["links"]], ["7"])
+        self.assertTrue(out["recent_audit"])
+
+    def test_overview_takes_no_action(self):
+        before = dict(self.conn.execute(
+            "SELECT * FROM pulse_pages WHERE id=?", (self.page_id,)).fetchone())
+        audit_before = self.conn.execute(
+            "SELECT COUNT(*) AS c FROM pulse_page_audit WHERE page_id=?", (self.page_id,)).fetchone()["c"]
+        pulsesoc_pages.admin_overview(self.conn, self.page_id)
+        after = dict(self.conn.execute(
+            "SELECT * FROM pulse_pages WHERE id=?", (self.page_id,)).fetchone())
+        audit_after = self.conn.execute(
+            "SELECT COUNT(*) AS c FROM pulse_page_audit WHERE page_id=?", (self.page_id,)).fetchone()["c"]
+        self.assertEqual(before, after)
+        self.assertEqual(audit_before, audit_after)
+
+    def test_missing_page_is_a_page_error(self):
+        with self.assertRaises(PageError):
+            pulsesoc_pages.admin_overview(self.conn, 999999)
+
+
+class CrossPresenceIsolationTests(unittest.TestCase):
+    """Authority is scoped to one presence. Owning A grants nothing over B."""
+
+    def setUp(self):
+        self.conn = make_conn()
+        self.mine = create(self.conn, OWNER)["id"]
+        self.theirs = create(self.conn, STRANGER, name="Other Signal", handle="othersignal")["id"]
+
+    def test_owner_of_one_presence_cannot_edit_another(self):
+        with self.assertRaises(PageError):
+            pulsesoc_pages.update_page(self.conn, OWNER, self.theirs, {"name": "Seized"})
+
+    def test_owner_of_one_presence_cannot_post_as_another(self):
+        with self.assertRaises(PageError):
+            pulsesoc_pages.create_page_post(self.conn, OWNER, self.theirs, {"body": "hello"})
+
+    def test_owner_of_one_presence_cannot_link_or_invite_on_another(self):
+        with self.assertRaises(PageError):
+            pulsesoc_pages.set_link(self.conn, OWNER, self.theirs, "store", "1")
+        with self.assertRaises(PageError):
+            pulsesoc_pages.invite_member(self.conn, OWNER, self.theirs, {"user_id": FRIEND, "role": "ADMIN"})
+
+    def test_owner_of_one_presence_cannot_read_anothers_management_data(self):
+        with self.assertRaises(PageError):
+            pulsesoc_pages.manage_view(self.conn, OWNER, self.theirs)
+        with self.assertRaises(PageError):
+            pulsesoc_pages.list_members(self.conn, OWNER, self.theirs)
+
+    def test_role_change_cannot_escalate_to_owner(self):
+        invite = pulsesoc_pages.invite_member(
+            self.conn, OWNER, self.mine, {"user_id": FRIEND, "role": "ADMIN"})
+        pulsesoc_pages.accept_invite(self.conn, FRIEND, invite["invite_token"])
+        with self.assertRaises(PageError):
+            pulsesoc_pages.change_role(self.conn, OWNER, self.mine, FRIEND, "OWNER")
+        with self.assertRaises(PageError):
+            pulsesoc_pages.change_role(self.conn, FRIEND, self.mine, FRIEND, "OWNER")
+        self.assertEqual(pulsesoc_pages.role_for(self.conn, FRIEND, self.mine), "ADMIN")
+
+
+class PresenceSearchTests(unittest.TestCase):
+    def setUp(self):
+        self.conn = make_conn()
+        self.page_id = create(self.conn)["id"]
+
+    def test_public_search_finds_active_presences_by_name_and_handle(self):
+        self.assertEqual([p["id"] for p in pulsesoc_pages.search_pages(self.conn, "night")], [self.page_id])
+        self.assertEqual([p["id"] for p in pulsesoc_pages.search_pages(self.conn, "nightsig")], [self.page_id])
+
+    def test_public_search_excludes_deactivated_presences(self):
+        pulsesoc_pages.set_status(self.conn, OWNER, self.page_id, "DEACTIVATED")
+        self.assertEqual(pulsesoc_pages.search_pages(self.conn, "night"), [])
+
+    def test_admin_scope_finds_deactivated_presences(self):
+        pulsesoc_pages.set_status(self.conn, OWNER, self.page_id, "DEACTIVATED")
+        found = pulsesoc_pages.search_pages(self.conn, "night", include_inactive=True)
+        self.assertEqual([p["id"] for p in found], [self.page_id])
+
+    def test_search_rows_carry_no_private_management_data(self):
+        row = pulsesoc_pages.search_pages(self.conn, "night")[0]
+        for private in ("phone", "owner_user_id", "members", "links"):
+            self.assertNotIn(private, row)
+
+    def test_empty_query_returns_nothing(self):
+        self.assertEqual(pulsesoc_pages.search_pages(self.conn, "   "), [])
+
+
 if __name__ == "__main__":
     unittest.main()

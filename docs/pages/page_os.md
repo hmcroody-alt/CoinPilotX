@@ -1,5 +1,10 @@
 # Page OS — Canonical Architecture
 
+**Naming:** the product surface is called **Presence** (a user's Artist or Business
+identity). The code, tables and routes are named `page`/`pages`. They are the same
+system — there is no second implementation behind the product name, and adding one
+would break the invariant this document exists to protect.
+
 One canonical Page system serves all 16 page types. There are no per-type backends,
 tables, or route families: an Artist page and a Restaurant page are the same entity
 with different `page_type` and different server-decided tabs.
@@ -52,6 +57,9 @@ DEACTIVATED pages 404 for non-members on public endpoints.
 ## Hard rules
 
 - Real metrics only — no fabricated followers, reviews, or analytics.
-- Tabs render only with real backing data; empty states are honest.
+- Tabs render only with real backing data; empty states are honest. See
+  [page_modules.md](page_modules.md).
+- Discovery and admin inspection reuse the canonical search and admin gates. See
+  [page_search_and_admin.md](page_search_and_admin.md).
 - Additive migrations only; verification is never auto-granted; ownership transfer
   requires the typed confirm phrase and is audited.

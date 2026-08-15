@@ -158,6 +158,16 @@ export function SearchScreen({ route, navigation }: Props) {
   }
 
   async function openResult(item: PulseSearchResult) {
+    // A presence is an entity, not a person: route it to its own surface so it
+    // is never resolved against the personal-profile navigator.
+    if (item.type === "presence" && navigation) {
+      navigation.navigate("Page", {
+        pageId: typeof item.id === "number" ? item.id : Number(item.id) || undefined,
+        handle: item.handle,
+        title: item.title
+      });
+      return;
+    }
     const profileTarget = isProfileResult(item) ? resolveProfileTarget({ ...item, source: "search" }) : null;
     const params = profileNavigationParams(profileTarget, item.title || "Profile");
     if (params && navigation) {
