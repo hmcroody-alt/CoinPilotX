@@ -195,15 +195,18 @@ async function swipeTo(list: any, toIndex: number) {
 }
 
 /**
- * A swipe right the pager cannot act on: at the leading edge it rubber-bands
- * and settles back on the reel it started from. On a device this is the very
- * first thing a user tries, and it is what the index-derived rule got wrong.
+ * A swipe the pager cannot act on: at either edge it rubber-bands and settles
+ * back on the reel it started from, so the page is unchanged but the gesture had
+ * a direction. This is the shape the index-derived rule got wrong, and it is the
+ * shape a user hits without trying — the first reel and the last are where they
+ * spend the start and end of every session.
  */
-async function swipeRightAgainstTheEdge(list: any, distance = 120) {
+async function swipeAgainstTheEdge(list: any, direction: "left" | "right", distance = 120) {
   const from = pagerOffsetX;
+  const lifted = direction === "left" ? from + distance : from - distance;
   await act(async () => {
     list.props.onScrollBeginDrag(scrollEvent(from));
-    list.props.onScrollEndDrag(scrollEvent(from - distance));
+    list.props.onScrollEndDrag(scrollEvent(lifted));
     list.props.onMomentumScrollBegin();
     list.props.onMomentumScrollEnd(scrollEvent(from));
   });
@@ -261,8 +264,8 @@ describe("full-screen viewport", () => {
     const { list } = await renderScreen();
     const before = cardFor(1).contentBottom;
 
-    await swipeTo(list, 1); // reveal
-    await swipeTo(list, 0); // hide
+    await swipeTo(list, 1); // hide
+    await swipeTo(list, 0); // reveal
 
     // Same number, after both transitions: the dock moves alone. Deriving this
     // from the hidden flag would relayout every reel mid-gesture, which is both
@@ -333,9 +336,22 @@ describe("pager configuration", () => {
 });
 
 describe("directional navigator visibility", () => {
-  it("reveals navigation on a committed swipe to the next reel", async () => {
+  it("hides navigation on a committed swipe to the next reel", async () => {
     enableSpatial();
     const { list } = await renderScreen();
+    mockShowBottomNav.mockClear();
+    mockSetBottomNavHidden.mockClear();
+
+    await swipeTo(list, 1);
+
+    expect(mockSetBottomNavHidden).toHaveBeenCalledWith(true);
+    expect(mockShowBottomNav).not.toHaveBeenCalled();
+  });
+
+  it("reveals navigation on a committed swipe back to the previous reel", async () => {
+    enableSpatial();
+    const { list } = await renderScreen();
+    await swipeTo(list, 2);
     mockShowBottomNav.mockClear();
     mockSetBottomNavHidden.mockClear();
 
@@ -345,47 +361,52 @@ describe("directional navigator visibility", () => {
     expect(mockSetBottomNavHidden).not.toHaveBeenCalled();
   });
 
-  it("hides navigation on a committed swipe back to the previous reel", async () => {
+  it("hides on a left swipe at the last reel, which cannot change the page", async () => {
+    // The device failure this rule was rewritten for, at the edge it now lands
+    // on. The pager is on the final loaded reel, so a forward swipe rubber-bands
+    // back to where it started. Reading direction from the settled *index* made
+    // that "no transition" and left the dock up.
     enableSpatial();
     const { list } = await renderScreen();
     await swipeTo(list, 2);
     mockShowBottomNav.mockClear();
     mockSetBottomNavHidden.mockClear();
 
-    await swipeTo(list, 1);
-
-    expect(mockSetBottomNavHidden).toHaveBeenCalledWith(true);
-    expect(mockShowBottomNav).not.toHaveBeenCalled();
-  });
-
-  it("hides on a right swipe at the first reel, which cannot change the page", async () => {
-    // The device failure this rule was rewritten for. The pager is at offset 0,
-    // so a right swipe rubber-bands back to the reel it started from. Reading
-    // direction from the settled *index* made that "no transition" and left the
-    // dock up — for the single most likely way anyone tries the gesture.
-    enableSpatial();
-    const { list } = await renderScreen();
-    mockShowBottomNav.mockClear();
-    mockSetBottomNavHidden.mockClear();
-
-    await swipeRightAgainstTheEdge(list);
+    await swipeAgainstTheEdge(list, "left");
 
     expect(mockSetBottomNavHidden).toHaveBeenCalledWith(true);
     expect(mockShowBottomNav).not.toHaveBeenCalled();
   });
 
   it("hides on every repeat of that swipe", async () => {
-    // "Repeated right swipes reliably hide the navigator": each gesture is its
-    // own decision, so nothing accumulates and nothing gets stuck.
+    // "Repeated swipes reliably hide the navigator": each gesture is its own
+    // decision, so nothing accumulates and nothing gets stuck.
     enableSpatial();
     const { list } = await renderScreen();
+    await swipeTo(list, 2);
     mockSetBottomNavHidden.mockClear();
 
-    await swipeRightAgainstTheEdge(list);
-    await swipeRightAgainstTheEdge(list);
-    await swipeRightAgainstTheEdge(list);
+    await swipeAgainstTheEdge(list, "left");
+    await swipeAgainstTheEdge(list, "left");
+    await swipeAgainstTheEdge(list, "left");
 
     expect(mockSetBottomNavHidden.mock.calls).toEqual([[true], [true], [true]]);
+  });
+
+  it("reveals on every repeat of a right swipe at the first reel", async () => {
+    // The recovery direction at the edge where recovery matters: offset 0, so
+    // the gesture cannot change the page. If this ever stops reaching the dock,
+    // a user who hid it has no gesture left that brings it back.
+    enableSpatial();
+    const { list } = await renderScreen();
+    mockShowBottomNav.mockClear();
+    mockSetBottomNavHidden.mockClear();
+
+    await swipeAgainstTheEdge(list, "right");
+    await swipeAgainstTheEdge(list, "right");
+
+    expect(mockShowBottomNav).toHaveBeenCalledTimes(2);
+    expect(mockSetBottomNavHidden).not.toHaveBeenCalled();
   });
 
   it("hides the moment the finger lifts, without waiting for the fling to land", async () => {
@@ -396,8 +417,8 @@ describe("directional navigator visibility", () => {
     mockSetBottomNavHidden.mockClear();
 
     await act(async () => {
-      list.props.onScrollBeginDrag(scrollEvent(2 * PAGE));
-      list.props.onScrollEndDrag(scrollEvent(2 * PAGE - 140));
+      list.props.onScrollBeginDrag(scrollEvent(PAGE));
+      list.props.onScrollEndDrag(scrollEvent(PAGE + 140));
     });
 
     expect(mockSetBottomNavHidden).toHaveBeenCalledWith(true);
@@ -442,17 +463,17 @@ describe("directional navigator visibility", () => {
     // offsets are now the only input, so this cannot skew the decision.
     enableSpatial();
     const { list } = await renderScreen();
-    await swipeTo(list, 2);
+    await swipeTo(list, 1);
     mockSetBottomNavHidden.mockClear();
     mockShowBottomNav.mockClear();
 
     await act(async () => {
-      list.props.onScrollBeginDrag(scrollEvent(2 * PAGE));
+      list.props.onScrollBeginDrag(scrollEvent(PAGE));
       // The incoming reel wins viewability while the finger is still down.
-      list.props.onViewableItemsChanged({ viewableItems: [{ isViewable: true, index: 1, item: REELS[1] }] });
-      list.props.onScrollEndDrag(scrollEvent(2 * PAGE - 140));
+      list.props.onViewableItemsChanged({ viewableItems: [{ isViewable: true, index: 2, item: REELS[2] }] });
+      list.props.onScrollEndDrag(scrollEvent(PAGE + 140));
       list.props.onMomentumScrollBegin();
-      list.props.onMomentumScrollEnd(scrollEvent(PAGE));
+      list.props.onMomentumScrollEnd(scrollEvent(2 * PAGE));
     });
 
     expect(mockSetBottomNavHidden).toHaveBeenCalledWith(true);
@@ -461,15 +482,15 @@ describe("directional navigator visibility", () => {
 
   it("still decides correctly when nothing is viewable at all", async () => {
     // Viewability reports nothing on an emptied refresh or a teardown. The rule
-    // never consults it, so a right swipe still hides.
+    // never consults it, so a left swipe still hides.
     enableSpatial();
     const { list } = await renderScreen();
-    await swipeTo(list, 2);
+    await swipeTo(list, 1);
     await act(async () => list.props.onViewableItemsChanged({ viewableItems: [] }));
     mockSetBottomNavHidden.mockClear();
     mockShowBottomNav.mockClear();
 
-    await swipeTo(list, 1);
+    await swipeTo(list, 2);
 
     expect(mockSetBottomNavHidden).toHaveBeenCalledWith(true);
     expect(mockShowBottomNav).not.toHaveBeenCalled();
@@ -478,8 +499,7 @@ describe("directional navigator visibility", () => {
   it("reveals navigation when the user taps unclaimed media", async () => {
     enableSpatial();
     const { list } = await renderScreen();
-    await swipeTo(list, 1);
-    await swipeTo(list, 0); // hidden
+    await swipeTo(list, 1); // hidden
     mockShowBottomNav.mockClear();
 
     await act(async () => cardFor(1).onSurfaceTap());

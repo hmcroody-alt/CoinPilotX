@@ -19,22 +19,31 @@
  *
  * ## The rule
  *
- *   swipe right (content follows the finger rightward) → hide
- *   swipe left                                          → reveal
+ *   swipe left (the finger travels leftward, pulling the
+ *     next reel in)                                     → hide
+ *   swipe right                                         → reveal
  *   travel below the commit threshold (tap, jitter,
  *     out-and-back)                                     → unchanged
  *   anything not driven by a finger                     → unchanged
+ *
+ * Hiding on the *forward* gesture is what makes this feel like an immersive
+ * pager rather than a toggle: moving on to the next reel clears the chrome, and
+ * backing up brings it back. It is also the more forgiving half to get right,
+ * because a leftward swipe moves the list for real at every position except the
+ * very last reel, where it rubber-bands — and a rubber-band still travels
+ * leftward, so the hide lands anyway.
  *
  * ## Why direction comes from the gesture and not from the page index
  *
  * This rule used to compare the page index the gesture started on with the one
  * the pager settled on. That is a defensible model and it is wrong on a device,
- * for one reason: **the first reel**. A user who opens Reels and swipes right —
- * the single most likely way anyone tries this feature — is already at offset 0.
- * The list rubber-bands and settles back on the reel it started from, the index
- * comparison reads "no transition", and the dock does not move. Repeated right
- * swipes did nothing at all, which is indistinguishable from the feature never
- * having shipped.
+ * because a gesture that does not change the page still has a direction. The
+ * clearest case is an edge: at the first reel a rightward swipe is already at
+ * offset 0, so the list rubber-bands and settles back where it started, the
+ * index comparison reads "no transition", and the dock does not move — no matter
+ * how many times the user repeats it. That is indistinguishable from the feature
+ * never having shipped, and under the current mapping it would strand a user who
+ * cannot get the dock *back*.
  *
  * Index-derived direction had two further failure modes that are invisible in a
  * JS test and unavoidable on glass: it could not resolve until the momentum
@@ -101,8 +110,9 @@ export function settledPageIndex(offset: number, pageSize: number): number {
  * The single decision point for navigator visibility.
  *
  * Sign convention, which reads backwards until you hold a phone: dragging the
- * finger *right* pulls the earlier reel onto the screen, so the content offset
- * *decreases*. Hence negative travel = swipe right = hide.
+ * finger *left* pushes the current reel off and pulls the next one on, so the
+ * content offset *increases*. Hence positive travel = swipe left = hide, and
+ * negative travel = swipe right = reveal.
  */
 export function navigatorIntentForSwipe({ source, startOffsetX, endOffsetX }: HorizontalSwipe): NavigatorIntent {
   if (source !== "touch") return "unchanged";
@@ -111,5 +121,5 @@ export function navigatorIntentForSwipe({ source, startOffsetX, endOffsetX }: Ho
   // An out-and-back drag lands here too: the finger moved, the content did not,
   // and the user cancelled whatever they were starting.
   if (Math.abs(travel) < SWIPE_COMMIT_THRESHOLD_PX) return "unchanged";
-  return travel > 0 ? "reveal" : "hide";
+  return travel > 0 ? "hide" : "reveal";
 }

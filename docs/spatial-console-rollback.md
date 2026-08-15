@@ -126,9 +126,9 @@ gesture** and of nothing else.
 
 | Event | Navigator |
 |---|---|
-| Swipe **right** (finger drags right, content offset falls) | hides |
-| Swipe **left** | reveals |
-| Swipe right at the first reel, which rubber-bands back | **hides** — the gesture had a direction whether or not the pager could act on it |
+| Swipe **left** (finger drags left onto the next reel, content offset rises) | hides |
+| Swipe **right** | reveals |
+| Swipe left at the last reel, or right at the first, which rubber-bands back | **still decides** — the gesture had a direction whether or not the pager could act on it |
 | Drag that travels and returns under the finger | unchanged — cancelled |
 | Travel below the 24pt commit threshold (a tap the pager saw as a drag) | unchanged |
 | Single tap on unclaimed media | reveals (recovery) |
@@ -145,11 +145,17 @@ Four implementation properties are worth knowing before changing any of it:
 
 - **Direction comes from the gesture, not from the page index.** An earlier
   version compared the index the drag started on with the one the pager settled
-  on. It was wrong on a device for one reason: on the **first reel** — where
-  everyone tries this first — a right swipe rubber-bands back to the page it
-  started on, so there was no transition to read a direction from and the dock
-  never moved. That version also could not answer until momentum ended, and
-  collapsed to "unchanged" whenever the viewport width was still unmeasured.
+  on. It was wrong on a device because a gesture that cannot move the pager still
+  has a direction: at either **edge** the list rubber-bands and settles back on
+  the reel it started from, so there was no transition to read and the dock never
+  moved. Under the current mapping that strands a user two ways — no hide on the
+  last reel, and, worse, no way to get the dock *back* from the first. That
+  version also could not answer until momentum ended, and collapsed to
+  "unchanged" whenever the viewport width was still unmeasured.
+- **Reveal depends on the leading-edge bounce.** At offset 0 a rightward drag
+  only reports negative travel because the list rubber-bands. Setting
+  `bounces={false}` on the pager would make that gesture report zero travel and
+  silently remove the recovery gesture; it is deliberately left at the default.
 - **The decision lands on the lift, not on the settle.** `onScrollEndDrag`, not
   `onMomentumScrollEnd`. A hide that arrives a fling after the gesture reads as
   the app acting on its own rather than as a response to the user.
@@ -196,11 +202,12 @@ behavior and overlay readability are all things only a real screen shows.
 | 1 | Reel at rest | Fills the entire viewport, edge to edge, no card frame, no gaps |
 | 2 | Notch / Dynamic Island | Media runs behind it; no interactive control is under it |
 | 3 | Home indicator | Media runs behind it; controls clear it |
-| 4 | Swipe left (next reel) | Pager advances exactly one reel; navigator reveals |
-| 5 | Swipe right (previous reel) | Pager retreats exactly one reel; navigator hides **as the finger lifts**, not after the fling |
+| 4 | Swipe left (next reel) | Pager advances exactly one reel; navigator hides **as the finger lifts**, not after the fling |
+| 5 | Swipe right (previous reel) | Pager retreats exactly one reel; navigator reveals |
 | 6 | Fast flick | Advances exactly one reel — never two |
-| 7 | **Repeated right swipes on the first reel** | Pager does not move; navigator hides every time |
-| 8 | Right swipe, then left swipe | Hides, then restores — reliably, however many times it is repeated |
+| 7 | **Repeated left swipes on the last loaded reel** | Pager does not move; navigator hides every time |
+| 7a | **Repeated right swipes on the first reel** | Pager does not move; navigator reveals every time — this is the recovery gesture |
+| 8 | Left swipe, then right swipe | Hides, then restores — reliably, however many times it is repeated |
 | 8a | Drag out and back, release at the start | Navigator unchanged |
 | 9 | Navigator hide / reveal | Only the dock animates; the reel does not resize or reflow |
 | 10 | Tap on empty media area | Navigator reveals |

@@ -42,8 +42,10 @@ function NavigatorProbe() {
 
 const dockState = () => screen.getByText(/^(un)?docked:/).props.children;
 
-const right = (): HorizontalSwipe => ({ source: "touch", startOffsetX: 0, endOffsetX: -120 });
+/** Swipe left — the finger travels leftward, so the content offset rises. Hides. */
 const left = (): HorizontalSwipe => ({ source: "touch", startOffsetX: 0, endOffsetX: 120 });
+/** Swipe right — the content offset falls, over-scrolling past the leading edge. Reveals. */
+const right = (): HorizontalSwipe => ({ source: "touch", startOffsetX: 0, endOffsetX: -120 });
 
 async function swipe(gesture: HorizontalSwipe) {
   await act(async () => notifySwipe(gesture));
@@ -69,39 +71,41 @@ describe("Reels drives the real bottom navigator", () => {
     return utils;
   }
 
-  it("hides the dock the probe can see, on a right swipe", async () => {
+  it("hides the dock the probe can see, on a left swipe", async () => {
     await mountUnderProvider();
     expect(dockState()).toBe("docked:visible");
 
-    await swipe(right());
+    await swipe(left());
 
     expect(dockState()).toBe("docked:hidden");
   });
 
-  it("restores it on a left swipe", async () => {
+  it("restores it on a right swipe", async () => {
     await mountUnderProvider();
-    await swipe(right());
-
     await swipe(left());
+
+    await swipe(right());
 
     expect(dockState()).toBe("docked:visible");
   });
 
-  it("survives repeated right swipes without getting stuck", async () => {
+  it("survives repeated swipes without getting stuck", async () => {
     // The acceptance criterion, stated as state rather than as call counts:
     // however many times the gesture repeats, the dock ends up where the last
-    // gesture asked for it.
+    // gesture asked for it. Both `right()` and `left()` here start from offset
+    // 0, so neither can change the page — every one of these is the edge case.
     await mountUnderProvider();
 
-    await swipe(right());
-    await swipe(right());
-    await swipe(right());
+    await swipe(left());
+    await swipe(left());
+    await swipe(left());
     expect(dockState()).toBe("docked:hidden");
 
-    await swipe(left());
+    await swipe(right());
+    await swipe(right());
     expect(dockState()).toBe("docked:visible");
 
-    await swipe(right());
+    await swipe(left());
     expect(dockState()).toBe("docked:hidden");
   });
 
@@ -111,7 +115,7 @@ describe("Reels drives the real bottom navigator", () => {
     await swipe({ source: "touch", startOffsetX: 400, endOffsetX: 400 });
     expect(dockState()).toBe("docked:visible");
 
-    await swipe(right());
+    await swipe(left());
     await swipe({ source: "motion", startOffsetX: 0, endOffsetX: 375 });
     expect(dockState()).toBe("docked:hidden");
   });
@@ -130,7 +134,7 @@ describe("Reels drives the real bottom navigator", () => {
     );
     await act(async () => undefined);
 
-    await swipe(right());
+    await swipe(left());
 
     expect(dockState()).toBe("undocked:visible");
   });
