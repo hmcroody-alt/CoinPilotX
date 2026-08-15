@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import embed_service, media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulsesoc_notification_system, user_context
 from .pulse_ai.content_policy import AUTOMATED_ACCOUNT_TYPE, sanitize_automated_text
+from .schema_guard import run_once_per_process
 
 
 REACTIONS = {
@@ -808,6 +809,7 @@ def _viewer_post_state(cur, rows, viewer_user_id=None):
     return {"saved": saved, "reposted": reposted, "following": following}
 
 
+@run_once_per_process
 def _ensure_home_safety_tables(cur):
     cur.execute(
         """

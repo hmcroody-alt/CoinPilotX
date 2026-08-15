@@ -37,6 +37,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, Optional
 
 from services import db
+from services.schema_guard import run_once_per_process
 from services.business_os.ledger import ledger
 from services.business_os.payments import incidents
 
@@ -142,8 +143,9 @@ def _rollback(conn) -> None:
         pass
 
 
+@run_once_per_process
 def ensure_schema(conn=None) -> None:
-    """Create the reward tables if absent. Idempotent; safe at startup."""
+    """Create the reward tables if absent. Runs once per worker process."""
     owned = conn is None
     if owned:
         conn = db.connect()

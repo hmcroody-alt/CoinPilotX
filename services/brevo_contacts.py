@@ -6,6 +6,7 @@ from datetime import datetime
 import requests
 
 from .user_context import connect
+from .schema_guard import run_once_per_process
 
 BREVO_BASE_URL = "https://api.brevo.com/v3"
 DEFAULT_FOLDER_NAME = "CoinPlotXAI Inc."
@@ -84,6 +85,7 @@ def _safe_record(record):
     }
 
 
+@run_once_per_process
 def ensure_sync_table():
     conn = connect()
     cur = conn.cursor()

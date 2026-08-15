@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from services import db as db_service
+from services.schema_guard import run_once_per_process
 
 
 VERIFICATION_STATUSES = {
@@ -260,6 +261,7 @@ def _ensure_columns(cur: Any, table: str, columns: tuple[tuple[str, str], ...]) 
         _add_column(cur, table, name, definition)
 
 
+@run_once_per_process
 def ensure_schema(conn: Any) -> None:
     cur = conn.cursor()
     cur.execute(

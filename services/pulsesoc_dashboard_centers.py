@@ -13,6 +13,7 @@ from typing import Any
 
 from services import db as db_service
 from services import premium_identity_engine
+from services.schema_guard import run_once_per_process
 
 
 VERIFICATION_TRACKS = (
@@ -156,6 +157,7 @@ def _json(value: Any) -> str:
         return "{}"
 
 
+@run_once_per_process
 def ensure_tables(conn: Any) -> None:
     cur = conn.cursor()
     cur.execute(

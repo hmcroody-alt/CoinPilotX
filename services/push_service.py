@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 import requests
 
 from . import user_context
+from .schema_guard import run_once_per_process
 
 PUSH_PROCESSOR_LOCK = threading.Lock()
 VOLATILE_DEDUPE_KEYS = {
@@ -85,6 +86,7 @@ def _env_enabled(name, default=True):
     return str(value).strip().lower() not in {"0", "false", "off", "no"}
 
 
+@run_once_per_process
 def _ensure_user_device_tokens(cur):
     cur.execute(
         """
@@ -110,6 +112,7 @@ def _ensure_user_device_tokens(cur):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_device_tokens_device ON user_device_tokens(device_id)")
 
 
+@run_once_per_process
 def _ensure_expo_push_tickets(cur):
     cur.execute(
         """
@@ -133,6 +136,7 @@ def _ensure_expo_push_tickets(cur):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_expo_push_tickets_user ON expo_push_tickets(user_id, created_at)")
 
 
+@run_once_per_process
 def _ensure_push_delivery_jobs(cur):
     cur.execute(
         """
