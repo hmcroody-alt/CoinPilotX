@@ -111,7 +111,11 @@ export function messagesVisualRefreshEnabled(): boolean {
   return spatialConsoleEnabled() && flagOn("messagesVisualRefreshEnabled");
 }
 
-/** Bottom-nav auto-hide after the first settled horizontal swipe. */
+/**
+ * Directional bottom-nav visibility on the Reels route: a committed swipe back
+ * hides it, a committed swipe forward reveals it, a tap recovers it. Off means
+ * the full-screen pager keeps working with navigation permanently visible.
+ */
 export function immersiveNavigatorEnabled(): boolean {
   return spatialConsoleEnabled() && flagOn("immersiveNavigatorEnabled");
 }

@@ -72,6 +72,7 @@ import { sharePulseObject } from "../sharing/nativeShare";
 import { createThemedStyles } from "../theme/themedStyles";
 import { spatialReelsEnabled } from "../spatial/flags";
 import { ImmersiveRevealStrip } from "../spatial/ImmersiveRevealStrip";
+import { settledPageIndex } from "../spatial/navigatorVisibility";
 import { useImmersiveNavigator } from "../spatial/useImmersiveNavigator";
 import { useTiltNavigation } from "../spatial/motion/useTiltNavigation";
 
@@ -156,7 +157,7 @@ export function ReelsScreen({ route, navigation }: Props) {
   // Reels is the only surface allowed to hide the dock immersively. Passing
   // `!overlayOpen` as the focus signal is what keeps the dock on screen while
   // comments, sharing or a reel menu is up: the hook treats a child surface
-  // opening exactly like losing focus, reveals, and restarts its swipe count.
+  // opening exactly like losing focus, and reveals without waiting for a gesture.
   const immersive = useImmersiveNavigator(spatialReels && isFocused && !overlayOpen);
   /**
    * Where reel overlays park, measured from the bottom of the *viewport*.
@@ -170,6 +171,40 @@ export function ReelsScreen({ route, navigation }: Props) {
    * and a guaranteed frame drop on the one gesture that has to feel free.
    */
   const reelContentBottom = Math.max(insets.bottom, 12) + BOTTOM_NAV_CONTENT_CLEARANCE;
+  /**
+   * The page index a finger-drag started from, or null when no drag is in
+   * flight — which is also how "this settle was not a finger" is decided.
+   *
+   * `onMomentumScrollEnd` cannot tell a swipe from a tilt commit: the commit
+   * animates `scrollToOffset` and produces the same event. A drag, however,
+   * always announces itself with `onScrollBeginDrag` first, and a programmatic
+   * scroll never does. Capturing the index at that moment gives both halves of
+   * what the visibility rule needs — the source, and the index the gesture
+   * actually started from rather than whatever the last viewability callback
+   * happened to have written.
+   */
+  const dragOriginRef = useRef<number | null>(null);
+  /**
+   * The reel the pager is currently resting on.
+   *
+   * Deliberately not just `activeIndex`. That value is written by viewability,
+   * which answers a different question — "what is on screen enough to play" — and
+   * answers it on its own schedule:
+   *
+   *   - it flips mid-drag once the incoming reel crosses the visibility
+   *     threshold, so reading it at release would report the destination as the
+   *     origin and swallow the transition entirely;
+   *   - it reports -1 when nothing is viewable (an emptied refresh, a teardown),
+   *     and collapsing that to 0 would make the next backward swipe from reel 5
+   *     look like a forward swipe from 0, hiding the navigator instead of
+   *     revealing it.
+   *
+   * So: the settle offset is authoritative, and the sync below fills in every
+   * deliberate jump — lane change, scroll-to-top, restored reel, tilt commit —
+   * while a finger is off the glass.
+   */
+  const settledIndexRef = useRef(0);
+  if (dragOriginRef.current === null && activeIndex >= 0) settledIndexRef.current = activeIndex;
   const tilt = useTiltNavigation({
     surface: "reels",
     enabled: spatialReels && isFocused && appActive && reels.length > 0,
@@ -177,6 +212,9 @@ export function ReelsScreen({ route, navigation }: Props) {
     currentIndex: activeIndex < 0 ? 0 : activeIndex,
     pageCount: reels.length,
     onCommit: (nextIndex) => {
+      // Deliberately does NOT touch `dragOriginRef`. The resulting momentum-end
+      // therefore reports source "motion", and the navigator does not move —
+      // tilting changes reels and nothing else.
       listRef.current?.scrollToOffset({ offset: nextIndex * viewportWidth, animated: true });
       setActiveIndex(nextIndex);
     }
@@ -725,6 +763,7 @@ export function ReelsScreen({ route, navigation }: Props) {
               contentTop={insets.top + 56}
               contentBottom={reelContentBottom}
               safeBottom={insets.bottom}
+              onSurfaceTap={spatialReels ? immersive.reveal : undefined}
               busy={guard.isItemBusy(item.id)}
               onToggleMuted={() => setMuted((current) => !current)}
               onReact={handleReact}
@@ -769,14 +808,24 @@ export function ReelsScreen({ route, navigation }: Props) {
         disableIntervalMomentum={spatialReels}
         onScrollBeginDrag={() => {
           tilt.notifyTouchStart();
+          // Marks this transition as finger-driven for the visibility rule, and
+          // records where the gesture began so a spring-back to the same reel
+          // reads as "no transition" rather than as a direction.
+          if (spatialReels) dragOriginRef.current = settledIndexRef.current;
           bottomNavScroll.onScrollBeginDrag();
         }}
-        onMomentumScrollEnd={() => {
-          // Fires for a finger swipe and for a tilt commit alike (the commit
-          // animates scrollToOffset), so the dock hides only once a reel has
-          // actually snapped into place — never mid-gesture, never on preview.
+        onMomentumScrollEnd={(event) => {
           tilt.notifyTouchEnd();
-          immersive.notifySwipeSettled();
+          if (!spatialReels) return;
+          const fromIndex = dragOriginRef.current;
+          dragOriginRef.current = null;
+          const toIndex = settledPageIndex(event.nativeEvent.contentOffset.x, viewportWidth);
+          settledIndexRef.current = toIndex;
+          immersive.notifyPageSettled({
+            source: fromIndex === null ? "motion" : "touch",
+            fromIndex: fromIndex ?? toIndex,
+            toIndex
+          });
         }}
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
         viewabilityConfig={viewabilityConfig.current}
