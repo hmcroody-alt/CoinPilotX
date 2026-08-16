@@ -4,7 +4,81 @@
 
   ],
   "products" : [
-
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "926780FD-910E-41A0-A52C-9FF1F1BDB437",
+      "localizations" : [
+        {
+          "description" : "$4.99 of PulseSoc ad credit.",
+          "displayName" : "Ad Credits $4.99",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.pulsesoc.adcredits.tier1",
+      "referenceName" : "Ad Credits Tier 1",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "4E93BA24-05D2-4B72-9B53-1320213574CE",
+      "localizations" : [
+        {
+          "description" : "$9.99 of PulseSoc ad credit.",
+          "displayName" : "Ad Credits $9.99",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.pulsesoc.adcredits.tier2",
+      "referenceName" : "Ad Credits Tier 2",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "24.99",
+      "familyShareable" : false,
+      "internalID" : "32135697-4443-4676-9EBB-4CF11A188DFD",
+      "localizations" : [
+        {
+          "description" : "$24.99 of PulseSoc ad credit.",
+          "displayName" : "Ad Credits $24.99",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.pulsesoc.adcredits.tier3",
+      "referenceName" : "Ad Credits Tier 3",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "49.99",
+      "familyShareable" : false,
+      "internalID" : "7F329671-1F22-4E43-A7D5-E466CEAAB053",
+      "localizations" : [
+        {
+          "description" : "$49.99 of PulseSoc ad credit.",
+          "displayName" : "Ad Credits $49.99",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.pulsesoc.adcredits.tier4",
+      "referenceName" : "Ad Credits Tier 4",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "99.99",
+      "familyShareable" : false,
+      "internalID" : "4AEAEE06-D224-4778-89C9-F5DAA17507AD",
+      "localizations" : [
+        {
+          "description" : "$99.99 of PulseSoc ad credit.",
+          "displayName" : "Ad Credits $99.99",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.pulsesoc.adcredits.tier5",
+      "referenceName" : "Ad Credits Tier 5",
+      "type" : "Consumable"
+    }
   ],
   "settings" : {
     "_applicationInternalID" : "",
