@@ -100,14 +100,10 @@ _INDEXES = (
 
 
 def _columns(conn, table: str) -> set:
-    rows = conn.execute("PRAGMA table_info(%s)" % table).fetchall()
-    out = set()
-    for r in rows:
-        try:
-            out.add(r["name"])
-        except (TypeError, KeyError, IndexError):
-            out.add(r[1])
-    return out
+    # Cross-engine introspection. The SQLite-only form raised on the PostgreSQL
+    # production runs, aborting this whole ensure_schema before the business_id
+    # column and the indexes below were ever applied.
+    return db.get_table_columns(conn, table)
 
 
 def _add_col_if_missing(conn, table: str, col: str, decl: str) -> None:

@@ -14,6 +14,7 @@ PRAGMA) rather than the round trip.
     python3 -m unittest tests.business_os_finance.test_db_introspection -v
 """
 
+import ast
 import os
 import sqlite3
 import sys
@@ -161,6 +162,7 @@ class AdsServicesContainNoPragmaTest(unittest.TestCase):
         "services/pulse_ad_payments.py",
         "services/pulse_ads_adsets.py",
         "services/pulse_advertiser_portal.py",
+        "services/business_os/messages/schema.py",
     )
 
     def test_zero_pragma_occurrences(self):
@@ -184,6 +186,58 @@ class AdsServicesContainNoPragmaTest(unittest.TestCase):
                 source,
                 msg=f"{rel_path} should introspect via services.db.get_table_columns",
             )
+
+
+class BootstrapEnsureSchemaPortabilityTest(unittest.TestCase):
+    """Every module `schema_bootstrap` runs at boot must introspect portably.
+
+    The list is read from `_ENSURES` rather than hardcoded, so a newly
+    registered subsystem is covered the day it is added. A PRAGMA is allowed
+    only inside a function that also picks the engine — the SQLite arm of a
+    branch is fine; an unconditional PRAGMA is the production bug.
+    """
+
+    GUARD_TOKENS = (
+        "IS_POSTGRES",
+        "is_postgres",
+        "ENGINE_NAME",
+        "information_schema",
+        "get_table_columns",
+    )
+
+    def _module_source(self, dotted):
+        base = os.path.join(REPO_ROOT, *dotted.split("."))
+        for candidate in (base + ".py", os.path.join(base, "__init__.py")):
+            if os.path.isfile(candidate):
+                with open(candidate, "r", encoding="utf-8") as handle:
+                    return candidate, handle.read()
+        return None, None
+
+    def test_every_bootstrapped_ensure_schema_is_engine_portable(self):
+        from services.business_os import schema_bootstrap
+
+        checked = 0
+        for label, dotted, _attr in schema_bootstrap._ENSURES:
+            path, source = self._module_source(dotted)
+            self.assertIsNotNone(path, msg=f"{label}: cannot locate module {dotted}")
+            checked += 1
+            if "PRAGMA" not in source.upper():
+                continue
+            tree = ast.parse(source)
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                body = ast.get_source_segment(source, node) or ""
+                if "PRAGMA" not in body.upper():
+                    continue
+                self.assertTrue(
+                    any(token in body for token in self.GUARD_TOKENS),
+                    msg=(
+                        f"{path}:{node.lineno} {node.name}() sends PRAGMA with no "
+                        "engine branch — raises on the PostgreSQL production runs"
+                    ),
+                )
+        self.assertGreater(checked, 20, "bootstrap ensure list looks truncated")
 
 
 if __name__ == "__main__":
