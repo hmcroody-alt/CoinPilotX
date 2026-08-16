@@ -111229,6 +111229,14 @@ def _init_db_impl():
         "CREATE INDEX IF NOT EXISTS idx_pulse_reactions_post ON pulse_reactions(post_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_reactions_user_post ON pulse_reactions(user_id, post_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_follows_follower ON pulse_follows(follower_user_id)",
+        # The mirror of the index above. `follower_user_id` was indexed but
+        # `followed_user_id` was not, so every "how many followers" COUNT and
+        # every follower-list read scanned the whole table — including the
+        # native profile payload, which is one of the hottest mobile routes.
+        # `created_at` is carried as the second column because the follower-list
+        # readers order by it, so this one index serves the equality filter and
+        # the sort; the plain COUNT still uses the leftmost prefix.
+        "CREATE INDEX IF NOT EXISTS idx_pulse_follows_followed_created ON pulse_follows(followed_user_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_reports_status ON pulse_reports(status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_views_post ON pulse_post_views(post_id, viewed_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_jobs_status_run ON pulse_jobs(status, run_after)",

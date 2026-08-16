@@ -115,14 +115,38 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
   if (cookie && Platform.OS !== "web") headers.set("Cookie", cookie);
 
   let response: Response;
+  const timeout = requestTimeout(options);
   try {
     response = await fetch(`${PULSE_API_BASE_URL}${path}`, {
       ...options,
       headers,
-      credentials: "include"
+      credentials: "include",
+      signal: timeout.signal
     });
-  } catch {
-    throw new PulseApiError("PulseSoc could not be reached. Check your connection and try again.", 503, "request_unreachable");
+  } catch (fetchError) {
+    // A silently stalled socket is indistinguishable from a slow one to the
+    // user: both render as a spinner that never resolves. Report the timeout as
+    // the same reachability failure every caller already handles, so screens
+    // fall back to cache and offer retry instead of hanging forever.
+    //
+    // Only the budget expiring counts as a timeout. An `AbortError` on its own
+    // does not: we forward the caller's `signal` into our controller, so a
+    // screen teardown or a superseded search query also surfaces as one. Reading
+    // the name here told a user who had just navigated away that PulseSoc "took
+    // too long to respond", and reclassified every caller cancellation. The
+    // expiry flag is set synchronously in the timer before it aborts, so it is
+    // the reliable discriminator, and caller cancellation keeps the exact
+    // classification it had before the budget existed.
+    const timedOut = timeout.timedOut();
+    throw new PulseApiError(
+      timedOut
+        ? "PulseSoc took too long to respond. Check your connection and try again."
+        : "PulseSoc could not be reached. Check your connection and try again.",
+      503,
+      timedOut ? "request_timeout" : "request_unreachable"
+    );
+  } finally {
+    timeout.clear();
   }
 
   const responseCookie = response.headers.get("set-cookie");
@@ -154,6 +178,47 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
   }
 
   return data as T;
+}
+
+/** Ordinary JSON call. Generous enough to survive a slow cellular handshake. */
+const REQUEST_TIMEOUT_MS = 20000;
+/**
+ * Uploads are bounded too, but on a budget that reflects the payload: a short
+ * timeout here would cancel a legitimate video upload on a slow connection,
+ * which is a data-loss bug wearing a performance costume.
+ */
+const UPLOAD_TIMEOUT_MS = 180000;
+
+/**
+ * Bounds a request so a stalled socket cannot hold a screen in a permanent
+ * loading state. A caller-supplied `signal` still wins — its abort is forwarded
+ * — so explicit cancellation (screen teardown, superseded search query) keeps
+ * working and is not replaced by this budget.
+ */
+function requestTimeout(options: RequestInit) {
+  const controller = new AbortController();
+  const budget = options.body instanceof FormData ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+  let expired = false;
+  const timer = setTimeout(() => {
+    expired = true;
+    controller.abort();
+  }, budget);
+
+  const caller = options.signal;
+  const forwardAbort = () => controller.abort();
+  if (caller) {
+    if (caller.aborted) controller.abort();
+    else caller.addEventListener?.("abort", forwardAbort);
+  }
+
+  return {
+    signal: controller.signal,
+    timedOut: () => expired,
+    clear: () => {
+      clearTimeout(timer);
+      caller?.removeEventListener?.("abort", forwardAbort);
+    }
+  };
 }
 
 function shouldRefresh(path: string) {
