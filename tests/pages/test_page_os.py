@@ -528,5 +528,132 @@ class V2SearchTests(unittest.TestCase):
         self.assertEqual(pulsesoc_pages.search_pages(self.conn, "hidden"), [])
 
 
+class _NoLastrowidCursor:
+    """Mimics the production Postgres Compat cursor for unregistered tables:
+    the INSERT succeeds but ``lastrowid`` is None. This is exactly the shape
+    that broke Artist Presence creation in production while SQLite kept every
+    test green."""
+
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def execute(self, sql, params=()):
+        self._cursor.execute(sql, params)
+        return self
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    @property
+    def lastrowid(self):
+        return None
+
+
+class _NoLastrowidConn:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def cursor(self):
+        return _NoLastrowidCursor(self._conn.cursor())
+
+    def execute(self, sql, params=()):
+        return self._conn.execute(sql, params)
+
+    def commit(self):
+        return self._conn.commit()
+
+
+class CreationProductionRegressionTests(unittest.TestCase):
+    """The 'Page request could not be completed.' defect and its guards."""
+
+    def setUp(self):
+        self.conn = make_conn()
+
+    def test_page_tables_registered_for_postgres_returning(self):
+        # Root cause: on Postgres, CompatCursor only appends RETURNING id for
+        # tables in AUTO_PK_TABLES. Absent registration, lastrowid is None and
+        # create_page raised TypeError -> 500 on every create.
+        from services import db as services_db
+        for table in ("pulse_pages", "pulse_page_members", "pulse_page_audit",
+                      "pulse_page_follows", "pulse_page_links"):
+            self.assertEqual(services_db.AUTO_PK_TABLES.get(table), "id", table)
+
+    def test_create_survives_missing_lastrowid(self):
+        # Belt and braces: even with a cursor that never yields lastrowid
+        # (an unregistered table on Postgres), creation recovers the id via
+        # the unique handle and completes fully.
+        page = pulsesoc_pages.create_page(
+            _NoLastrowidConn(self.conn), OWNER,
+            {"page_type": "ARTIST", "name": "Big P", "handle": "BigP", "confirm_owner": True},
+        )
+        self.assertGreater(int(page["id"]), 0)
+        self.assertEqual(page["handle"], "BigP")
+        role = pulsesoc_pages.role_for(self.conn, OWNER, page["id"])
+        self.assertEqual(role, "OWNER")
+
+    def test_handle_race_answers_conflict_not_500(self):
+        # A duplicate INSERT that slips past check_handle (double-tap race)
+        # must come back as a 409 PageError, never an opaque server failure.
+        create(self.conn, handle="bigp")
+        with self.assertRaises(PageError) as caught:
+            # Bypass check_handle's early answer by racing directly: monkeypatch
+            # check_handle to report available, forcing the unique index to decide.
+            original = pulsesoc_pages.check_handle
+            pulsesoc_pages.check_handle = lambda conn, cand, exclude_page_id=None: {
+                "candidate": "bigp", "handle": "bigp", "available": True, "reason": "Available."
+            }
+            try:
+                pulsesoc_pages.create_page(
+                    self.conn, FRIEND,
+                    {"page_type": "ARTIST", "name": "Big P Two", "handle": "bigp", "confirm_owner": True},
+                )
+            finally:
+                pulsesoc_pages.check_handle = original
+        self.assertEqual(int(caught.exception.status_code), 409)
+        self.assertIn("already in use", str(caught.exception))
+
+    def test_normal_handle_conflict_is_specific(self):
+        create(self.conn, handle="bigp")
+        with self.assertRaises(PageError) as caught:
+            create(self.conn, user_id=FRIEND, name="Other BigP", handle="@BigP")
+        self.assertEqual(int(caught.exception.status_code), 409)
+        self.assertNotIn("could not be completed", str(caught.exception))
+
+    def test_unauthenticated_owner_spoof_impossible(self):
+        # The route derives user_id from the session; the service never reads
+        # owner identity from the payload. A client-supplied owner_user_id is
+        # inert data.
+        page = create(self.conn, owner_user_id=999999, user_id=OWNER)
+        raw = self.conn.execute(
+            "SELECT owner_user_id FROM pulse_pages WHERE id=?", (page["id"],)
+        ).fetchone()
+        self.assertEqual(int(raw["owner_user_id"]), OWNER)
+
+    def test_failed_create_leaves_no_orphan(self):
+        # Force a failure after the page + membership inserts but before the
+        # commit (audit stage); the uncommitted transaction must not leak a
+        # page into later reads. (ensure_tables would recreate a dropped table,
+        # so the injection point is the audit write.)
+        conn = make_conn()
+        original = pulsesoc_pages._audit
+        pulsesoc_pages._audit = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("audit down"))
+        try:
+            with self.assertRaises(RuntimeError):
+                pulsesoc_pages.create_page(
+                    conn, OWNER,
+                    {"page_type": "ARTIST", "name": "Ghost", "handle": "ghostpage", "confirm_owner": True},
+                )
+        finally:
+            pulsesoc_pages._audit = original
+        conn.rollback()
+        row = conn.execute("SELECT id FROM pulse_pages WHERE lower(handle)='ghostpage'").fetchone()
+        self.assertIsNone(row)
+        member = conn.execute("SELECT id FROM pulse_page_members").fetchall()
+        self.assertEqual(member, [])
+
+
 if __name__ == "__main__":
     unittest.main()

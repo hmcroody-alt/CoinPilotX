@@ -144,18 +144,27 @@ export function PageCreateScreen({ navigation, route }: Props) {
         navigation.replace("Page", { handle: page.handle, title: page.name });
       }
     } catch (submitError) {
-      setError(
-        submitError instanceof PulseApiError
-          ? submitError.message
-          : "Your presence could not be created. Please try again."
-      );
+      // Map to actionable copy without ever exposing raw backend internals.
+      // 4xx messages are the server's own safe contract (e.g. "That handle is
+      // already in use."); 5xx and unknown failures get retryable copy.
+      if (submitError instanceof PulseApiError) {
+        if (submitError.status === 401) {
+          setError("Please sign in again.");
+        } else if (submitError.status >= 500 || !submitError.message) {
+          setError("We couldn't create your Presence right now. Try again.");
+        } else {
+          setError(submitError.message);
+        }
+      } else {
+        setError("We couldn't create your Presence right now. Try again.");
+      }
     } finally {
       setSubmitting(false);
     }
   }
 
   const heading =
-    flavor === "artist" ? "Artist Presence" : flavor === "business" ? "Business Presence" : "New Page";
+    flavor === "artist" ? "Artist Presence" : flavor === "business" ? "Business Presence" : "New Presence";
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -378,7 +387,7 @@ export function PageCreateScreen({ navigation, route }: Props) {
               <ActivityIndicator color={colors.background} />
             ) : (
               <Text style={styles.submitText}>
-                {flavor === "artist" ? "Create Artist Presence" : flavor === "business" ? "Create Business Presence" : "Create Page"}
+                {flavor === "artist" ? "Create Artist Presence" : flavor === "business" ? "Create Business Presence" : "Create Presence"}
               </Text>
             )}
           </Pressable>

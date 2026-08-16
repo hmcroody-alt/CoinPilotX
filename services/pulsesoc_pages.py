@@ -442,27 +442,45 @@ def create_page(conn: Any, user_id: int, payload: dict) -> dict:
         raise PageError("Confirm that you will be the owner of this page.")
     now = _now()
     cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO pulse_pages
-        (owner_user_id, page_type, category, subcategory, name, handle, avatar_url, cover_url,
-         description, genre, email, phone, website, location, hours_json, status,
-         verification_status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'unverified', ?, ?)
-        """,
-        (
-            int(user_id), page_type,
-            _text(payload.get("category"), 80), _text(payload.get("subcategory"), 80),
-            name, handle_check["candidate"],
-            _text(payload.get("avatar_url"), 500), _text(payload.get("cover_url"), 500),
-            _text(payload.get("description"), 1000), _text(payload.get("genre"), 80),
-            _text(payload.get("email"), 200), _text(payload.get("phone"), 40),
-            _text(payload.get("website"), 300), _text(payload.get("location"), 240),
-            json.dumps(payload.get("hours") or {}, default=str)[:2000],
-            now, now,
-        ),
-    )
-    page_id = int(cur.lastrowid)
+    try:
+        cur.execute(
+            """
+            INSERT INTO pulse_pages
+            (owner_user_id, page_type, category, subcategory, name, handle, avatar_url, cover_url,
+             description, genre, email, phone, website, location, hours_json, status,
+             verification_status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'unverified', ?, ?)
+            """,
+            (
+                int(user_id), page_type,
+                _text(payload.get("category"), 80), _text(payload.get("subcategory"), 80),
+                name, handle_check["candidate"],
+                _text(payload.get("avatar_url"), 500), _text(payload.get("cover_url"), 500),
+                _text(payload.get("description"), 1000), _text(payload.get("genre"), 80),
+                _text(payload.get("email"), 200), _text(payload.get("phone"), 40),
+                _text(payload.get("website"), 300), _text(payload.get("location"), 240),
+                json.dumps(payload.get("hours") or {}, default=str)[:2000],
+                now, now,
+            ),
+        )
+    except Exception as exc:
+        # A double-tap or a concurrent create can pass check_handle and still
+        # lose the race at the unique handle index. That is a normal conflict,
+        # not a server failure — answer it like one.
+        if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+            raise PageError("That handle is already in use.", 409)
+        raise
+    # Never trust `lastrowid` alone: on Postgres it is only populated when the
+    # table is registered in services.db.AUTO_PK_TABLES (which pulse_pages now
+    # is). If it is ever None/0 again, recover the id through the unique handle
+    # index instead of crashing the whole creation with `int(None)`.
+    page_id = int(cur.lastrowid or 0)
+    if not page_id:
+        cur.execute("SELECT id FROM pulse_pages WHERE lower(handle) = ?", (handle_check["candidate"].lower(),))
+        row = cur.fetchone()
+        if not row:
+            raise PageError("Your presence could not be created. Please try again.", 500)
+        page_id = int(row["id"])
     cur.execute(
         "INSERT INTO pulse_page_members (page_id, user_id, role, status, created_at, updated_at) "
         "VALUES (?, ?, 'OWNER', 'active', ?, ?)",
