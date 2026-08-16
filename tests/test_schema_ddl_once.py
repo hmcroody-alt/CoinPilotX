@@ -222,20 +222,98 @@ class PushDeliveryDdlTest(_HotPathTest):
             "production, and this path runs on the caller's open transaction")
 
 
+class TransactionalDdlConnection:
+    """A connection that treats DDL the way PostgreSQL does, not the way SQLite does.
+
+    `CREATE TABLE` is only visible to anyone else once the transaction commits;
+    closing without committing throws it away. SQLite autocommits DDL, so a test
+    written against SQLite cannot see the difference — which is exactly why the
+    production failure this models was invisible in the local suite.
+    """
+
+    def __init__(self, catalogue):
+        self.catalogue = catalogue
+        self.pending = []
+        self.committed = False
+        self.closed = False
+
+    def cursor(self):
+        return self
+
+    def execute(self, sql, params=()):
+        statement = " ".join(str(sql).split())
+        if statement.upper().startswith("CREATE TABLE"):
+            self.pending.append(statement.split()[5].strip("("))
+
+    def commit(self):
+        self.catalogue.update(self.pending)
+        self.pending = []
+        self.committed = True
+
+    def close(self):
+        # Uncommitted DDL dies here. This is the whole bug.
+        self.pending = []
+        self.closed = True
+
+
 class FeedDdlTest(_HotPathTest):
     """/api/pulse/feed and /api/pulse/profile/me — the highest-QPS surfaces."""
 
     def test_repeat_calls_issue_no_further_ddl(self):
         from services import pulse_feed_engine
 
-        pulse_feed_engine._ensure_home_safety_tables(self.cur)
-        self.assertTrue(self.cur.ddl)
-        self.cur.ddl.clear()
+        pulse_feed_engine._ensure_home_safety_tables(self.conn)
+        self.assertTrue(self.conn.ddl)
+        for c in self.conn.cursors:
+            c.ddl.clear()
 
         for _ in range(50):
-            pulse_feed_engine._ensure_home_safety_tables(self.cur)
+            pulse_feed_engine._ensure_home_safety_tables(self.conn)
 
-        self.assertEqual(self.cur.ddl, [], "a feed load must not issue DDL")
+        self.assertEqual(self.conn.ddl, [], "a feed load must not issue DDL")
+
+    def test_the_tables_survive_a_caller_that_only_reads(self):
+        """The regression: an empty feed that was really a crash.
+
+        `list_feed` reads and closes; it has no reason to commit. So the DDL had
+        to commit itself, or PostgreSQL discarded it — and because
+        `@run_once_per_process` had already recorded success, the retry never
+        came. Every feed query for the rest of that worker's life then failed on
+
+            UndefinedTable: relation "pulse_post_hides" does not exist
+
+        which `/api/pulse/feed` catches and returns as `posts: []`. To the user
+        that reads as "nobody has posted", not as an outage.
+        """
+        from services import pulse_feed_engine
+
+        catalogue = set()
+        conn = TransactionalDdlConnection(catalogue)
+        pulse_feed_engine._ensure_home_safety_tables(conn)
+        conn.close()
+
+        self.assertEqual(
+            {"pulse_post_hides", "pulse_user_mutes"}, catalogue,
+            "the safety tables must be committed by the DDL itself; a read-only "
+            "caller never will, and the guard means there is no second chance")
+
+    def test_a_later_request_finds_the_tables_the_guard_refuses_to_recreate(self):
+        """What the next request through the same worker actually sees.
+
+        The guard is a promise that the tables already exist. This is that
+        promise being kept across connections rather than within one.
+        """
+        from services import pulse_feed_engine
+
+        catalogue = set()
+        first = TransactionalDdlConnection(catalogue)
+        pulse_feed_engine._ensure_home_safety_tables(first)
+        first.close()
+
+        second = TransactionalDdlConnection(catalogue)
+        pulse_feed_engine._ensure_home_safety_tables(second)
+        self.assertEqual(second.pending, [], "the guard should have suppressed the DDL")
+        self.assertIn("pulse_post_hides", catalogue)
 
 
 class ChatHealthDdlTest(_HotPathTest):

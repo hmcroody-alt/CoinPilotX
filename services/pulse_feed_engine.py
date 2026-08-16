@@ -867,7 +867,35 @@ def _viewer_post_state(cur, rows, viewer_user_id=None):
 
 
 @run_once_per_process
-def _ensure_home_safety_tables(cur):
+def _ensure_home_safety_tables(conn):
+    """Create the Home safety tables, and commit them.
+
+    The commit is the entire point of this function's shape, so it takes the
+    connection rather than a cursor.
+
+    Three of the five callers (`list_feed`, `list_user_posts`, `count_user_posts`)
+    only read, so they close without ever committing. PostgreSQL DDL is
+    transactional: a `CREATE TABLE IF NOT EXISTS` on a connection that never
+    commits is discarded when the connection closes. `@run_once_per_process` has
+    meanwhile recorded success, so the retry never comes, and every feed query
+    for the rest of that worker's life dies on
+
+        UndefinedTable: relation "pulse_post_hides" does not exist
+
+    from the `NOT EXISTS` clauses below that filter hidden posts and muted
+    authors. `/api/pulse/feed` catches that and reports it to the client as an
+    empty feed, so the outage presents as "nobody has posted anything" rather
+    than as an error. SQLite autocommits DDL, which is why none of this is
+    reproducible locally.
+
+    Caching a DDL call is only sound if the DDL is durable — this is what makes
+    the guard's promise true. Committing here also releases the CREATE's
+    ShareLock immediately instead of holding it until the request commits, which
+    is the lock contention the guard was added for in the first place. Every
+    caller runs this as the first statement on a freshly opened connection, so
+    the commit commits nothing but the DDL itself.
+    """
+    cur = conn.cursor()
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS pulse_post_hides (
@@ -895,6 +923,7 @@ def _ensure_home_safety_tables(cur):
         )
         """
     )
+    conn.commit()
 
 
 def _repost_originals(cur, rows, viewer_user_id=None):
@@ -1290,8 +1319,8 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         token = f"%{topic.strip('#').lower()}%"
         params.extend([token, token])
     conn = user_context.connect()
+    _ensure_home_safety_tables(conn)
     cur = conn.cursor()
-    _ensure_home_safety_tables(cur)
     if profile_public_player_id:
         profile_lookup = str(profile_public_player_id or "").strip().lstrip("@")[:160]
         profile_user_id = _resolve_profile_lookup_user_id(cur, profile_lookup)
@@ -1394,8 +1423,8 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
             where.append("NOT EXISTS (SELECT 1 FROM pulse_user_mutes pum WHERE pum.user_id=? AND pum.muted_user_id=p.user_id AND (pum.muted_until IS NULL OR pum.muted_until='' OR pum.muted_until>?))")
             params.extend([int(viewer_user_id), _now()])
     conn = user_context.connect()
+    _ensure_home_safety_tables(conn)
     cur = conn.cursor()
-    _ensure_home_safety_tables(cur)
     cur.execute(
         f"""
         SELECT p.*, u.username, u.email, u.full_name, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
@@ -1476,8 +1505,8 @@ def count_user_posts(user_id, viewer_user_id=None, media_only=False):
     if media_only:
         where.append("COALESCE(p.media_ids_json,'') NOT IN ('', '[]')")
     conn = user_context.connect()
+    _ensure_home_safety_tables(conn)
     cur = conn.cursor()
-    _ensure_home_safety_tables(cur)
     cur.execute(f"SELECT COUNT(*) AS total FROM pulse_posts p WHERE {' AND '.join(where)}", tuple(params))
     row = cur.fetchone()
     conn.close()
@@ -1493,8 +1522,8 @@ def hide_post(user_id, post_id, reason="Hidden from Home"):
     if not user_id or not post_id:
         return {"ok": False, "message": "Valid user and post are required."}, 400
     conn = user_context.connect()
+    _ensure_home_safety_tables(conn)
     cur = conn.cursor()
-    _ensure_home_safety_tables(cur)
     cur.execute("SELECT user_id FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (post_id,))
     post = _row(cur.fetchone()) or {}
     if not post:
@@ -1587,8 +1616,8 @@ def mute_user(user_id, muted_user_id, reason="Muted from Home", muted_until=""):
     if user_id == muted_user_id:
         return {"ok": False, "message": "You cannot mute yourself."}, 400
     conn = user_context.connect()
+    _ensure_home_safety_tables(conn)
     cur = conn.cursor()
-    _ensure_home_safety_tables(cur)
     cur.execute("SELECT user_id FROM users WHERE user_id=? LIMIT 1", (muted_user_id,))
     if not cur.fetchone():
         conn.close()

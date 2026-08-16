@@ -79067,17 +79067,22 @@ def api_pulse_feed():
             result["intelligence"]["status_activity"] = pulse_status_discovery_signal(user["user_id"])
     except Exception as exc:
         logging.exception("PULSE_FEED_FAILED user_id=%s feed=%s error=%s", user["user_id"], feed, exc)
-        result = {
-            "ok": True,
+        # Deliberately an error, not `ok: True` with an empty list. This handler
+        # used to answer every crash with "PulseSoc is warming up. Create the
+        # first post." — which is a factual claim about the database, made at
+        # the exact moment we know least about it. A missing `pulse_post_hides`
+        # table took the feed down for entire worker processes and presented to
+        # users as a platform where nobody had ever posted; nothing alerted,
+        # because 200 OK with zero posts is what a quiet network looks like.
+        # The native client already handles a failure better than we can fake
+        # one: it falls back to the cached feed with an offline badge, or shows
+        # a retry. Both are true statements. An empty feed is not.
+        return jsonify({
+            "ok": False,
             "feed": pulse_feed_engine.normalize_feed(feed),
             "topic": request.args.get("topic") or "",
-            "posts": [],
-            "next_offset": 0,
-            "has_more": False,
-            "message": "PulseSoc is warming up. Create the first post.",
-            "intelligence": pulse_feed_engine.safe_intelligence_panel(request.args.get("topic") or ""),
-        }
-        result["intelligence"]["status_activity"] = {"active_statuses": 0, "unseen_statuses": 0, "live_creators": 0, "engagement_signal": 0, "ranking_weight": "fallback"}
+            "message": "We couldn't load the feed. Pull to refresh.",
+        }), 503
     _bo_ad_attach_sponsored(user["user_id"], "feed", result)
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
