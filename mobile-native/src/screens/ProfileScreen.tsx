@@ -24,6 +24,7 @@ import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { RootStackParamList } from "../navigation/types";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { colors } from "../theme/colors";
+import { profileNeon } from "../theme/profileNeon";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { createThemedStyles } from "../theme/themedStyles";
 
@@ -372,12 +373,12 @@ export function ProfileScreen({ route, navigation }: Props) {
     });
   }
 
+  // A skeleton rather than a centred spinner: the profile shell is the same
+  // shape for every member, so it can be drawn immediately and the identity
+  // fills in underneath. A spinner would hold a full-screen blank for the whole
+  // round trip and then jump straight to a dense screen.
   if (loading && !profile) {
-    return (
-      <LogiNexusScreenShell>
-        <LogiNexusStatePanel state="loading" title="Loading profile" body="Resolving identity, trust, and creator signals." loading />
-      </LogiNexusScreenShell>
-    );
+    return <ProfileSkeleton />;
   }
 
   if (!profile) {
@@ -506,6 +507,37 @@ export function ProfilePostGridTile({ post, onPress }: { post: PulsePost; onPres
   );
 }
 
+/**
+ * Identity-shaped placeholder shown while the profile round trip is in flight.
+ *
+ * Deliberately static. A shimmer here would be an animation running during the
+ * most contended moment of the screen's life — the initial fetch plus the first
+ * layout — and reduced-motion users would have to be excluded from it anyway.
+ */
+function ProfileSkeleton() {
+  return (
+    <View
+      style={styles.root}
+      accessibilityRole="progressbar"
+      accessibilityLabel="Loading profile"
+      testID="profile-skeleton"
+    >
+      <GalacticAtmosphere variant="profile" />
+      <View style={styles.skeletonBody}>
+        <View style={styles.skeletonAvatar} />
+        <View style={styles.skeletonName} />
+        <View style={styles.skeletonHandle} />
+        <View style={styles.skeletonStats} />
+        <View style={styles.skeletonActions}>
+          <View style={styles.skeletonAction} />
+          <View style={styles.skeletonAction} />
+          <View style={styles.skeletonAction} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function TabButton({ label, value, active, onPress }: { label: string; value: TabKey; active: TabKey; onPress: (value: TabKey) => void }) {
   return (
     <Pressable style={[styles.tab, active === value ? styles.tabActive : undefined]} onPress={() => onPress(value)}>
@@ -543,6 +575,13 @@ function AboutPanel({ profile, owner, onVerification, onSafety, onSellerStore }:
 
 const styles = createThemedStyles(() => ({
   root: { backgroundColor: "transparent", flex: 1 },
+  skeletonBody: { paddingHorizontal: 18, paddingTop: 96 },
+  skeletonAvatar: { backgroundColor: profileNeon.panelRaised, borderColor: profileNeon.border, borderRadius: 56, borderWidth: 1, height: 112, width: 112 },
+  skeletonName: { backgroundColor: profileNeon.panelRaised, borderRadius: 8, height: 26, marginTop: 16, width: "58%" },
+  skeletonHandle: { backgroundColor: profileNeon.panel, borderRadius: 6, height: 14, marginTop: 10, width: "36%" },
+  skeletonStats: { backgroundColor: profileNeon.panel, borderColor: profileNeon.border, borderRadius: profileNeon.radius.panel, borderWidth: 1, height: 74, marginTop: 22 },
+  skeletonActions: { flexDirection: "row", gap: 8, marginTop: 16 },
+  skeletonAction: { backgroundColor: profileNeon.panel, borderColor: profileNeon.border, borderRadius: profileNeon.radius.action, borderWidth: 1, flex: 1, height: 48 },
   actionMessage: {
     backgroundColor: colors.signalSoft,
     borderColor: colors.border,

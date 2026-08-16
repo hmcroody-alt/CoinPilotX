@@ -83,6 +83,45 @@ describe("ProfileHeader (Profile V6)", () => {
     expect(queryByText("Edit Profile")).toBeNull();
   });
 
+  // `publicKey` is the route lookup key, and resolveProfileTarget sets
+  // `profileKey = userId ? String(userId) : …`. So on any profile opened from a
+  // feed author or share link the key IS the internal user id, and the handle
+  // fallback chain used to print it as "@1234567" on profiles with no username.
+  describe("public handle never exposes the private user id", () => {
+    it("drops a numeric route key instead of rendering it as a handle", () => {
+      const { queryByText, getByText } = render(
+        <ProfileHeader
+          profile={baseProfile({ username: undefined, public_player_id: undefined, user_id: 1234567 })}
+          owner={false}
+          publicKey="1234567"
+        />
+      );
+      expect(queryByText("@1234567")).toBeNull();
+      expect(queryByText("1234567")).toBeNull();
+      // Falls through to the neutral label rather than leaving a bare "@".
+      expect(getByText("PulseSoc identity")).toBeTruthy();
+    });
+
+    it("still prefers the public username over a numeric route key", () => {
+      const { getByText, queryByText } = render(
+        <ProfileHeader profile={baseProfile({ user_id: 1234567 })} owner={false} publicKey="1234567" />
+      );
+      expect(getByText("@ada")).toBeTruthy();
+      expect(queryByText("@1234567")).toBeNull();
+    });
+
+    it("keeps using a non-numeric route key, which is a public handle", () => {
+      const { getByText } = render(
+        <ProfileHeader
+          profile={baseProfile({ username: undefined, public_player_id: undefined })}
+          owner={false}
+          publicKey="ada-pulse"
+        />
+      );
+      expect(getByText("@ada-pulse")).toBeTruthy();
+    });
+  });
+
   it("discloses an automated system profile and omits human contact actions", () => {
     const { getByText, getByLabelText, queryByText } = render(
       <ProfileHeader profile={baseProfile({
