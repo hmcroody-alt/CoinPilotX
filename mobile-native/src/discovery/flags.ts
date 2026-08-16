@@ -2,11 +2,40 @@
  * Home discovery suggestion flags.
  *
  * Home is the app's most-used surface, so every part of the discovery feed is
- * gated here and nowhere else. All flags default OFF: with no env vars set,
- * `homeDiscoveryEnabled()` is false, the placement engine is never called, and
- * Home renders exactly the rows `injectAds` produced before this feature
- * existed. That is the rollback guarantee, and it is a flag flip rather than a
- * revert — no commit has to come out to get the old Home back.
+ * gated here and nowhere else.
+ *
+ * ## The five that finished rolling out default ON
+ *
+ * The master switch and the four modules that have a real source — reels,
+ * people, statuses, groups — read through {@link isFlagValueOnUnlessDisabled},
+ * so an unset variable means *on* and turning the feature off costs somebody a
+ * deliberate `=0`.
+ *
+ * They did not start that way, and the reason they moved is worth keeping.
+ * These five shipped default-OFF and were verified on device by exporting the
+ * variables by hand at build time. Nothing in the repo sets them: no EAS profile
+ * in `eas.json`, no `.env` (`.gitignore` excludes `.env` and `.env.*`, so there
+ * is nowhere committed for them to live). So the feature was on for exactly one
+ * build — the one whose operator typed the exports — and off for every build
+ * made afterwards by anyone, including the very next one. The suggestion rows
+ * were duly reported as having "come undone" when a later rebuild, made for an
+ * unrelated fix, simply did not carry the exports.
+ *
+ * That is the same incident `spatial/flags.ts` documents for the Reels pager,
+ * one file over and one week apart. A feature that is finished cannot depend on
+ * a shell variable that has no committed home. Rollback is still a flag flip and
+ * never a revert; the flip just now runs in the direction that should cost an
+ * action.
+ *
+ * ## The three that stay OFF stay OFF
+ *
+ * Creators, topics and sponsored keep {@link isFlagValueOn} and its default-off
+ * behaviour, because they are not finished rather than not enabled: creators has
+ * no ranked endpoint distinct from People, topics has no mobile destination to
+ * open, and sponsored would be a second ad surface alongside `injectAds` with no
+ * shared frequency cap. `sources.ts` builds no adapter for any of them, so each
+ * would render an empty row even if it were switched on. Defaulting them on
+ * would be defaulting on three features that do not exist.
  *
  * This is a separate module from `spatial/flags.ts` on purpose. The spatial
  * console master switch turns off a *visual redesign*; discovery suggestions are
@@ -20,7 +49,7 @@
  * reads `undefined` for every flag on device while working perfectly in jest —
  * the exact failure documented at length in `spatial/flags.ts`.
  */
-import { isFlagValueOn } from "../core/envFlag";
+import { isFlagValueOn, isFlagValueOnUnlessDisabled } from "../core/envFlag";
 
 type DiscoveryFlagName =
   | "homeDiscoveryEnabled"
@@ -32,13 +61,20 @@ type DiscoveryFlagName =
   | "discoveryTopicsEnabled"
   | "discoverySponsoredEnabled";
 
-/** Each flag's value, read through a STATIC `process.env` member expression. */
+/**
+ * Each flag's value, read through a STATIC `process.env` member expression.
+ *
+ * Shipped modules use `isFlagValueOnUnlessDisabled` (unset = on, `=0` to roll
+ * back); unfinished ones use `isFlagValueOn` (unset = off). Which reader a line
+ * uses *is* the ship state — there is no separate defaults table to fall out of
+ * sync with this one.
+ */
 const FLAG_READERS: Record<DiscoveryFlagName, () => boolean> = {
-  homeDiscoveryEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_HOME_DISCOVERY),
-  discoveryReelsEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_HOME_DISCOVERY_REELS),
-  discoveryPeopleEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_HOME_DISCOVERY_PEOPLE),
-  discoveryStatusesEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_HOME_DISCOVERY_STATUSES),
-  discoveryGroupsEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_HOME_DISCOVERY_GROUPS),
+  homeDiscoveryEnabled: () => isFlagValueOnUnlessDisabled(process.env.EXPO_PUBLIC_HOME_DISCOVERY),
+  discoveryReelsEnabled: () => isFlagValueOnUnlessDisabled(process.env.EXPO_PUBLIC_HOME_DISCOVERY_REELS),
+  discoveryPeopleEnabled: () => isFlagValueOnUnlessDisabled(process.env.EXPO_PUBLIC_HOME_DISCOVERY_PEOPLE),
+  discoveryStatusesEnabled: () => isFlagValueOnUnlessDisabled(process.env.EXPO_PUBLIC_HOME_DISCOVERY_STATUSES),
+  discoveryGroupsEnabled: () => isFlagValueOnUnlessDisabled(process.env.EXPO_PUBLIC_HOME_DISCOVERY_GROUPS),
   discoveryCreatorsEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_HOME_DISCOVERY_CREATORS),
   discoveryTopicsEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_HOME_DISCOVERY_TOPICS),
   discoverySponsoredEnabled: () => isFlagValueOn(process.env.EXPO_PUBLIC_HOME_DISCOVERY_SPONSORED)
