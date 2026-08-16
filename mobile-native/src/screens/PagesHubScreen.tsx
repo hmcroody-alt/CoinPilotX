@@ -260,10 +260,39 @@ export function PagesHubScreen({ route, navigation }: Props) {
           {manage?.analytics ? (
             <View style={styles.analyticsCard}>
               <Text style={styles.sectionTitle}>Measured analytics</Text>
-              <Text style={styles.cardMeta}>Followers: {manage.analytics.followers}</Text>
-              <Text style={styles.cardMeta}>Posts: {manage.analytics.posts}</Text>
+              <Text style={styles.cardMeta}>
+                Followers: {manage.analytics.followers}
+                {typeof manage.analytics.followers_7d === "number"
+                  ? ` (+${manage.analytics.followers_7d} this week, +${manage.analytics.followers_30d ?? 0} this month)`
+                  : ""}
+              </Text>
+              <Text style={styles.cardMeta}>
+                Posts: {manage.analytics.posts}
+                {typeof manage.analytics.posts_30d === "number" ? ` (+${manage.analytics.posts_30d} this month)` : ""}
+              </Text>
               <Text style={styles.cardMeta}>Team members: {manage.analytics.team_members}</Text>
               {manage.analytics.note ? <Text style={styles.note}>{manage.analytics.note}</Text> : null}
+            </View>
+          ) : null}
+
+          {manage?.completeness ? (
+            <View style={styles.analyticsCard}>
+              <Text style={styles.sectionTitle}>Profile completeness — {manage.completeness.percent}%</Text>
+              <View style={styles.meterTrack}>
+                <View
+                  style={[styles.meterFill, { width: `${Math.min(100, Math.max(0, manage.completeness.percent))}%` }]}
+                />
+              </View>
+              {manage.completeness.items
+                .filter((item) => !item.done)
+                .map((item) => (
+                  <Text key={item.key} style={styles.cardMeta}>
+                    ○ {item.label}
+                  </Text>
+                ))}
+              {manage.completeness.percent >= 100 ? (
+                <Text style={styles.note}>All set — nothing left to add.</Text>
+              ) : null}
             </View>
           ) : null}
 
@@ -395,6 +424,18 @@ const styles = createThemedStyles(() => ({
     lineHeight: 21,
     marginTop: 16,
     textAlign: "center"
+  },
+  meterFill: {
+    backgroundColor: colors.accent,
+    borderRadius: 3,
+    height: 6
+  },
+  meterTrack: {
+    backgroundColor: colors.border,
+    borderRadius: 3,
+    height: 6,
+    marginVertical: 6,
+    overflow: "hidden"
   },
   note: {
     color: colors.muted,

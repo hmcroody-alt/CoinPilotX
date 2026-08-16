@@ -24,6 +24,7 @@ import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { RootStackParamList } from "../navigation/types";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { colors } from "../theme/colors";
+import { profileNeon } from "../theme/profileNeon";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { createThemedStyles } from "../theme/themedStyles";
 
@@ -62,6 +63,11 @@ export function ProfileScreen({ route, navigation }: Props) {
   const [actionMessage, setActionMessage] = useState("");
   const [followBusy, setFollowBusy] = useState(false);
   const refreshingRef = useRef(false);
+  // Every load now has concurrent parts (a cache read racing a network read, a
+  // grid request racing the profile request), so a load that has been
+  // superseded — the user tapped through to another profile — must be able to
+  // recognise itself as stale and drop its results on the floor.
+  const loadSequence = useRef(0);
   // Replaces a `busyPostId` scalar. A scalar can mark at most one card, so acting
   // on one post greyed out every other card's buttons, and the handlers guarded
   // themselves by reading state that React had not committed yet. The guard locks
@@ -103,6 +109,45 @@ export function ProfileScreen({ route, navigation }: Props) {
     };
   }
 
+  /**
+   * The grid only needs a lookup key, and for most entry points that key is
+   * already known before the profile request answers: the owner's own id from
+   * the auth store, or the numeric id the route was resolved with. Where it is
+   * known, the grid request is issued alongside the profile request instead of
+   * after it, which takes a full round trip off the critical path. Where it is
+   * not — a bare username or player-id deep link — we still wait for the
+   * canonical profile, because guessing a key would fetch the wrong grid.
+   */
+  function eagerPostTarget(): ReturnType<typeof profilePostTarget> | null {
+    if (owner) {
+      if (viewerUserId <= 0) return null;
+      return { userId: viewerUserId, profileKey: String(viewerUserId), publicPlayerId: undefined, username: undefined };
+    }
+    const routeUserId = Number(profileTarget?.userId || 0);
+    if (routeUserId <= 0) return null;
+    return {
+      userId: routeUserId,
+      profileKey: String(routeUserId),
+      publicPlayerId: profileTarget?.publicPlayerId,
+      username: profileTarget?.username
+    };
+  }
+
+  /**
+   * Never rejects. The grid is raced against the profile request, so a rejected
+   * promise sitting unawaited while the profile resolves would surface as an
+   * unhandled rejection. A content outage is reported as `null` and handled by
+   * the caller exactly as the old inner try/catch did.
+   */
+  async function loadProfilePosts(target: ReturnType<typeof profilePostTarget>) {
+    if (!target.profileKey) return { posts: [] as PulsePost[], next_offset: 0, has_more: false };
+    try {
+      return await listPublicProfilePosts(target, { limit: 20, offset: 0 });
+    } catch {
+      return null;
+    }
+  }
+
   async function load(mode: "initial" | "refresh" = "initial") {
     setErrorState(null);
     setOffline(false);
@@ -113,6 +158,31 @@ export function ProfileScreen({ route, navigation }: Props) {
       refreshingRef.current = true;
       setRefreshing(true);
     }
+    // Claimed only after the duplicate-refresh guard above. Taking the sequence
+    // first would let a rejected second pull bump the counter and orphan the
+    // refresh already in flight: that load would then see itself as stale, drop
+    // its results, and skip clearing its own spinner.
+    const sequence = ++loadSequence.current;
+    const isCurrent = () => sequence === loadSequence.current;
+
+    // Stale-while-revalidate. The cached copy is painted only while the
+    // canonical request is still in flight and only if nothing newer has
+    // rendered: it shortens the blank-shell window, it never becomes authority.
+    // `settled` is what stops a slow disk read from overwriting a response that
+    // has already landed.
+    let settled = false;
+    const cachedSeed = mode === "initial"
+      ? loadCachedProfile(owner ? "me" : profileTarget || profileKey).catch(() => null)
+      : null;
+    cachedSeed?.then((cached) => {
+      if (!cached || settled || !isCurrent()) return;
+      setProfile(cached);
+      setLoading(false);
+    });
+
+    const eager = eagerPostTarget();
+    const eagerPosts = eager ? loadProfilePosts(eager) : null;
+
     try {
       let canonicalProfile: PulseProfile;
       if (owner) {
@@ -120,22 +190,33 @@ export function ProfileScreen({ route, navigation }: Props) {
       } else {
         canonicalProfile = await getPublicProfile(profileTarget);
       }
+      settled = true;
+      if (!isCurrent()) return;
       setProfile(canonicalProfile);
-      try {
-        const target = profilePostTarget(canonicalProfile);
-        const feed = target.profileKey ? await listPublicProfilePosts(target, { limit: 20, offset: 0 }) : { posts: [] as PulsePost[], next_offset: 0, has_more: false };
+      const canonicalTarget = profilePostTarget(canonicalProfile);
+      // If the eager key disagrees with the server's canonical identity, the
+      // grid we raced for belongs to a different lookup. Refetch rather than
+      // render someone else's posts; the wasted request cannot reject.
+      const feed = eager && eagerPosts && eager.profileKey === canonicalTarget.profileKey
+        ? await eagerPosts
+        : await loadProfilePosts(canonicalTarget);
+      if (!isCurrent()) return;
+      if (feed) {
         setPosts(feed.posts || []);
         setNextOffset(Number(feed.next_offset || feed.posts?.length || 0));
         setHasMore(Boolean(feed.has_more));
-      } catch {
+      } else {
         // Profile identity/About data is already canonical. Preserve it and
         // any previously loaded grid while reporting the narrower content
         // outage truthfully; an unavailable query is not an empty profile.
         setContentUnavailable(true);
       }
     } catch (loadError) {
+      settled = true;
+      if (!isCurrent()) return;
       const mappedError = profileErrorState(loadError);
-      const cached = await loadCachedProfile(owner ? "me" : profileTarget || profileKey);
+      const cached = await (cachedSeed || loadCachedProfile(owner ? "me" : profileTarget || profileKey));
+      if (!isCurrent()) return;
       if (cached) {
         setProfile(cached);
         setOffline(Boolean(mappedError.offline || mappedError.retryable));
@@ -147,8 +228,13 @@ export function ProfileScreen({ route, navigation }: Props) {
         setErrorState(mappedError);
       }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      // A superseded load must not clear the spinner belonging to the load that
+      // replaced it. `refreshingRef` is released unconditionally: it is a mutual
+      // exclusion flag, and leaving it set would wedge pull-to-refresh.
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+      }
       if (mode === "refresh") refreshingRef.current = false;
     }
   }
@@ -372,12 +458,12 @@ export function ProfileScreen({ route, navigation }: Props) {
     });
   }
 
+  // A skeleton rather than a centred spinner: the profile shell is the same
+  // shape for every member, so it can be drawn immediately and the identity
+  // fills in underneath. A spinner would hold a full-screen blank for the whole
+  // round trip and then jump straight to a dense screen.
   if (loading && !profile) {
-    return (
-      <LogiNexusScreenShell>
-        <LogiNexusStatePanel state="loading" title="Loading profile" body="Resolving identity, trust, and creator signals." loading />
-      </LogiNexusScreenShell>
-    );
+    return <ProfileSkeleton />;
   }
 
   if (!profile) {
@@ -506,6 +592,37 @@ export function ProfilePostGridTile({ post, onPress }: { post: PulsePost; onPres
   );
 }
 
+/**
+ * Identity-shaped placeholder shown while the profile round trip is in flight.
+ *
+ * Deliberately static. A shimmer here would be an animation running during the
+ * most contended moment of the screen's life — the initial fetch plus the first
+ * layout — and reduced-motion users would have to be excluded from it anyway.
+ */
+function ProfileSkeleton() {
+  return (
+    <View
+      style={styles.root}
+      accessibilityRole="progressbar"
+      accessibilityLabel="Loading profile"
+      testID="profile-skeleton"
+    >
+      <GalacticAtmosphere variant="profile" />
+      <View style={styles.skeletonBody}>
+        <View style={styles.skeletonAvatar} />
+        <View style={styles.skeletonName} />
+        <View style={styles.skeletonHandle} />
+        <View style={styles.skeletonStats} />
+        <View style={styles.skeletonActions}>
+          <View style={styles.skeletonAction} />
+          <View style={styles.skeletonAction} />
+          <View style={styles.skeletonAction} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function TabButton({ label, value, active, onPress }: { label: string; value: TabKey; active: TabKey; onPress: (value: TabKey) => void }) {
   return (
     <Pressable style={[styles.tab, active === value ? styles.tabActive : undefined]} onPress={() => onPress(value)}>
@@ -543,6 +660,13 @@ function AboutPanel({ profile, owner, onVerification, onSafety, onSellerStore }:
 
 const styles = createThemedStyles(() => ({
   root: { backgroundColor: "transparent", flex: 1 },
+  skeletonBody: { paddingHorizontal: 18, paddingTop: 96 },
+  skeletonAvatar: { backgroundColor: profileNeon.panelRaised, borderColor: profileNeon.border, borderRadius: 56, borderWidth: 1, height: 112, width: 112 },
+  skeletonName: { backgroundColor: profileNeon.panelRaised, borderRadius: 8, height: 26, marginTop: 16, width: "58%" },
+  skeletonHandle: { backgroundColor: profileNeon.panel, borderRadius: 6, height: 14, marginTop: 10, width: "36%" },
+  skeletonStats: { backgroundColor: profileNeon.panel, borderColor: profileNeon.border, borderRadius: profileNeon.radius.panel, borderWidth: 1, height: 74, marginTop: 22 },
+  skeletonActions: { flexDirection: "row", gap: 8, marginTop: 16 },
+  skeletonAction: { backgroundColor: profileNeon.panel, borderColor: profileNeon.border, borderRadius: profileNeon.radius.action, borderWidth: 1, flex: 1, height: 48 },
   actionMessage: {
     backgroundColor: colors.signalSoft,
     borderColor: colors.border,

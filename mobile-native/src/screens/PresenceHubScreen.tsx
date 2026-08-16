@@ -153,8 +153,16 @@ export function PresenceHubScreen({ navigation }: Props) {
                 <View style={styles.presenceMetaBlock}>
                   <Text style={styles.presenceName}>{page.name}</Text>
                   <Text style={styles.presenceMeta}>
-                    {pageTypeLabel(page.page_type)} · {page.status === "ACTIVE" ? "Public" : page.status}
+                    {pageTypeLabel(page.page_type)} · {page.followers_count === 1 ? "1 follower" : `${page.followers_count} followers`}
                   </Text>
+                  {/* Badges reflect real server state only: status straight from the
+                      row, Verified only when the server granted it. No inferred flags. */}
+                  <View style={styles.badgeRow}>
+                    <Text style={[styles.badge, page.status === "ACTIVE" ? styles.badgePublic : styles.badgeDraft]}>
+                      {page.status === "ACTIVE" ? "Public" : page.status.charAt(0) + page.status.slice(1).toLowerCase()}
+                    </Text>
+                    {page.verified ? <Text style={[styles.badge, styles.badgeVerified]}>✓ Verified</Text> : null}
+                  </View>
                 </View>
               </View>
               <View style={styles.presenceActions}>
@@ -207,6 +215,31 @@ export function PresenceHubScreen({ navigation }: Props) {
 }
 
 const styles = createThemedStyles(() => ({
+  badge: {
+    borderRadius: 6,
+    fontSize: 10,
+    fontWeight: "800",
+    overflow: "hidden",
+    paddingHorizontal: 6,
+    paddingVertical: 2
+  },
+  badgeDraft: {
+    backgroundColor: colors.border,
+    color: colors.muted
+  },
+  badgePublic: {
+    backgroundColor: presenceTheme.tealSoft,
+    color: presenceTheme.teal
+  },
+  badgeRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 4
+  },
+  badgeVerified: {
+    backgroundColor: presenceTheme.tealSoft,
+    color: presenceTheme.teal
+  },
   center: {
     alignItems: "center",
     gap: 12,

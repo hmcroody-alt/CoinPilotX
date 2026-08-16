@@ -338,6 +338,18 @@ AUTO_PK_TABLES = {
     "pulse_ad_wallet_events": "id",
     "pulse_ad_refunds": "id",
     "pulse_ad_invoices": "id",
+    # Page OS / Presence. Same lastrowid-on-Postgres defect as the saved-content
+    # trio above: absent from this list, the INSERT into pulse_pages got no
+    # RETURNING id, `cur.lastrowid` stayed None, and `create_page` died on
+    # `int(None)` — every "Create Artist/Business Presence" tap answered 500
+    # ("Page request could not be completed.") in production while SQLite tests
+    # stayed green. `create_page` now also re-SELECTs by handle as a fallback,
+    # but these tables' surrogate keys are read back and belong here.
+    "pulse_pages": "id",
+    "pulse_page_members": "id",
+    "pulse_page_audit": "id",
+    "pulse_page_follows": "id",
+    "pulse_page_links": "id",
     "enterprise_leads": "id",
     "admin_tasks": "id",
     "ai_recommendations": "id",

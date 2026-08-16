@@ -14,7 +14,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSyncExternalStore } from "react";
-import { readJsonCache, writeJsonCache } from "../core/cache";
+import { invalidateJsonCache, readJsonCache, writeJsonCache } from "../core/cache";
 import {
   CampaignDraft,
   campaignDraftHasContent,
@@ -109,6 +109,9 @@ export async function clearCampaignDraft(): Promise<CampaignDraft> {
   }
   snapshot = createCampaignDraft();
   emit();
+  // The draft is read back through `readJsonCache`, which now serves a memory
+  // tier. Clearing only the disk copy would let a discarded draft reappear.
+  invalidateJsonCache(DRAFT_CACHE_KEY);
   await AsyncStorage.removeItem(DRAFT_CACHE_KEY).catch(() => undefined);
   return snapshot;
 }

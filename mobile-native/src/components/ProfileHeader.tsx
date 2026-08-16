@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { PulseProfile, profileWebUrl } from "../api/profile";
 import { colors } from "../theme/colors";
+import { profileNeon } from "../theme/profileNeon";
 import { premiumTheme } from "../theme/premiumTheme";
 import { presenceTheme } from "../theme/presenceTheme";
 import { progressTheme } from "../theme/progressTheme";
@@ -187,10 +188,21 @@ export function ProfileHeader({
 }: ProfileHeaderProps) {
   const modules = moduleKeys ? moduleKeys.map((key) => MODULE_BY_KEY[key]).filter(Boolean) : MODULES;
   const modulesTitle = moduleOwnerName ? `${possessiveName(moduleOwnerName)} Profile OS` : "Profile OS";
-  const handle = profile.username || profile.public_player_id || publicKey || "";
+  // Public identifiers only. `publicKey` is the route's lookup key, and
+  // `resolveProfileTarget` sets `profileKey = userId ? String(userId) : …`, so
+  // it is the internal numeric user id whenever the profile was opened from a
+  // feed author, search result or share link carrying a user_id. Rendering it
+  // raw printed "@1234567" — a private database id — on any profile that has
+  // no username yet. `username` and `public_player_id` are public handles; a
+  // bare number is not, so it is dropped rather than displayed.
+  const publicHandleKey = /^\d+$/.test(String(publicKey || "").trim()) ? "" : publicKey || "";
+  const handle = profile.username || profile.public_player_id || publicHandleKey || "";
   const premium = ["active", "premium", "founder", "lifetime"].includes(String(profile.premium_status || "").toLowerCase());
   const verified = Boolean(profile.verified_badge || profile.verification_status === "verified");
-  const accent = profile.theme?.accent_color || colors.accent;
+  // Blue is the default identity colour of the profile surface; a profile
+  // owner's chosen accent still overrides it, so customised profiles are
+  // untouched. See theme/profileNeon.ts for why this is not a global change.
+  const accent = profile.theme?.accent_color || profileNeon.electric;
   const tierLabel = premium ? String(profile.premium_status || "premium").replace(/_/g, " ") : "";
   const online = String(profile.account_status || "active").toLowerCase() === "active";
   const automated = profile.automated === true || profile.account_type === "PULSESOC_AUTOMATED";
@@ -240,6 +252,19 @@ export function ProfileHeader({
 
   const shareTarget = owner ? profile.public_player_id || profile.username : publicKey;
 
+  // Built here rather than inline so the automated-account omissions stay a
+  // single decision, and so the divider logic can key off real position.
+  const statEntries: { key: ProfileStatKey; label: string; icon: keyof typeof Ionicons.glyphMap; value: number }[] = [
+    { key: "posts", label: "Posts", icon: "grid-outline", value: profile.post_count || 0 },
+    ...(!automated
+      ? ([
+          { key: "followers", label: "Followers", icon: "people-outline", value: profile.follower_count || 0 },
+          { key: "following", label: "Following", icon: "person-add-outline", value: profile.following_count || 0 }
+        ] as const)
+      : []),
+    { key: "media", label: "Media", icon: "images-outline", value: profile.media_count || 0 }
+  ];
+
   return (
     <View style={styles.root} testID="profile-v6-header">
       {/* Immersive energy field */}
@@ -248,7 +273,23 @@ export function ProfileHeader({
           {profile.cover_url ? <Image source={{ uri: profile.cover_url }} style={styles.coverImage} resizeMode="cover" /> : null}
           <LinearGradient colors={[`${accent}33`, "#050910f2", colors.background]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={StyleSheet.absoluteFill} />
           <Animated.View style={[styles.nebula, { backgroundColor: `${accent}2e`, transform: [{ translateX: float1X }, { translateY: float1Y }] }]} />
-          <Animated.View style={[styles.nebulaTwo, { backgroundColor: `${colors.intelligence}26`, transform: [{ translateY: float2Y }] }]} />
+          <Animated.View style={[styles.nebulaTwo, { backgroundColor: `${profileNeon.violet}22`, transform: [{ translateY: float2Y }] }]} />
+          {/* Planetary curve. A single oversized circle clipped by the hero's
+              own overflow:hidden — no SVG, no image payload, one static view.
+              The border is the lit limb; the fill is barely there so the name
+              above it never loses contrast. */}
+          <View style={[styles.horizon, { borderColor: profileNeon.borderStrong, backgroundColor: profileNeon.fillSoft }]} pointerEvents="none" />
+          <LinearGradient
+            colors={profileNeon.horizon}
+            start={{ x: 0.5, y: 1 }}
+            end={{ x: 0.5, y: 0 }}
+            style={styles.horizonGlow}
+            pointerEvents="none"
+          />
+          {/* Light trails: two hairlines converging on the horizon. Static, so
+              they cost one layout each and nothing per frame. */}
+          <View style={[styles.trail, styles.trailLeft, { backgroundColor: profileNeon.hairline }]} pointerEvents="none" />
+          <View style={[styles.trail, styles.trailRight, { backgroundColor: profileNeon.hairline }]} pointerEvents="none" />
           <Animated.View style={[styles.pulseWave, { borderColor: `${accent}55`, opacity: waveOpacity, transform: [{ scale: waveScale }] }]} />
           <View style={styles.grain} />
         </Animated.View>
@@ -259,6 +300,10 @@ export function ProfileHeader({
       <View style={styles.body}>
         <View style={styles.avatarWrap}>
           <Animated.View style={[styles.ringOuter, { borderColor: `${accent}55`, opacity: auraOpacity, transform: [{ scale: ringScale }] }]} />
+          {/* Static orbit ring between the breathing aura and the lit ring. It
+              is what makes the avatar read as engineered rather than merely
+              glowing, and being static it survives reduced motion unchanged. */}
+          <View style={[styles.ringOrbit, { borderColor: profileNeon.border, borderTopColor: profileNeon.cyan }]} pointerEvents="none" />
           <Animated.View style={[styles.ringGlow, { shadowColor: accent, borderColor: accent, opacity: reducedMotion ? 0.9 : auraOpacity, transform: [{ scale: auraScale }] }]} />
           <Animated.View style={{ transform: [{ scale: avatarScale }, { translateY: avatarLift }] }}>
             {profile.avatar_url ? (
@@ -313,12 +358,31 @@ export function ProfileHeader({
           )}
         </Animated.View>
 
-        {/* Stats */}
+        {/* Stats. Same four counts from the same canonical fields — the panel
+            around them is what changed, not the numbers. An automated account
+            still hides follower/following, exactly as before. */}
         <View style={styles.stats} accessibilityLabel="Profile statistics">
-          <Stat label="Posts" value={profile.post_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("posts"); }} />
-          {!automated ? <Stat label="Followers" value={profile.follower_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("followers"); }} /> : null}
-          {!automated ? <Stat label="Following" value={profile.following_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("following"); }} /> : null}
-          <Stat label="Media" value={profile.media_count || 0} accent={accent} onPress={() => { haptic(); onStatPress?.("media"); }} />
+          <LinearGradient
+            colors={[profileNeon.borderStrong, "transparent"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.statsRail}
+            pointerEvents="none"
+          />
+          <View style={styles.statsRow}>
+            {statEntries.map((entry, index) => (
+              <View key={entry.key} style={styles.statCell}>
+                {index > 0 ? <View style={[styles.statDivider, { backgroundColor: profileNeon.hairline }]} /> : null}
+                <Stat
+                  label={entry.label}
+                  icon={entry.icon}
+                  value={entry.value}
+                  accent={accent}
+                  onPress={() => { haptic(); onStatPress?.(entry.key); }}
+                />
+              </View>
+            ))}
+          </View>
         </View>
 
         {/* Actions */}
@@ -397,25 +461,59 @@ function Badge({ label, icon, accent }: { label: string; icon: keyof typeof Ioni
   );
 }
 
-function Stat({ label, value, accent, onPress }: { label: string; value: number; accent: string; onPress?: () => void }) {
+function Stat({ label, value, icon, accent, onPress }: { label: string; value: number; icon: keyof typeof Ionicons.glyphMap; accent: string; onPress?: () => void }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${formatCount(value)} ${label}`} style={({ pressed }) => [styles.stat, pressed && styles.pressed]} onPress={onPress}>
-      <Text style={[styles.statValue, { color: accent }]}>{formatCount(value)}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+    <Pressable
+      accessibilityRole="button"
+      // The exact count, not the abbreviation: "1.2K Followers" is a rounding
+      // read aloud, and the icon carries no meaning for a screen reader.
+      accessibilityLabel={`${value.toLocaleString()} ${label}`}
+      style={({ pressed }) => [styles.stat, pressed && styles.pressed]}
+      onPress={onPress}
+    >
+      <Ionicons name={icon} size={13} color={profileNeon.cyan} style={styles.statIcon} />
+      <Text style={[styles.statValue, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{formatCount(value)}</Text>
+      <Text style={[styles.statLabel, { color: accent }]} numberOfLines={1}>{label}</Text>
     </Pressable>
   );
 }
 
 function Action({ label, icon, primary, selected, disabled, accent, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; primary?: boolean; selected?: boolean; disabled?: boolean; accent?: string; onPress?: () => void }) {
-  const tint = primary ? colors.background : selected ? colors.accentStrong : colors.text;
+  // Primary keeps dark-on-blue; secondary is text-on-glass with a neon edge.
+  // Selected ("Following") stays cyan so the follow state is legible without
+  // relying on the fill alone.
+  const tint = primary ? colors.background : selected ? profileNeon.cyan : colors.text;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected: Boolean(selected), disabled: Boolean(disabled) }}
+      accessibilityLabel={label}
       disabled={disabled}
-      style={({ pressed }) => [styles.action, primary && { backgroundColor: accent || colors.accent, borderColor: accent || colors.accent }, selected && styles.actionSelected, disabled && styles.disabled, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.action,
+        primary ? styles.actionPrimary : styles.actionSecondary,
+        selected && styles.actionSelected,
+        disabled && styles.disabled,
+        pressed && styles.pressed
+      ]}
       onPress={onPress}
     >
+      {/* Gradient only on the primary action. A themed profile overrides it with
+          a flat accent fill, since a two-stop ramp cannot be derived from one
+          arbitrary colour without guessing at a second. */}
+      {primary ? (
+        accent && accent !== profileNeon.electric ? (
+          <View style={[StyleSheet.absoluteFill, styles.actionFill, { backgroundColor: accent }]} pointerEvents="none" />
+        ) : (
+          <LinearGradient
+            colors={profileNeon.primaryAction}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[StyleSheet.absoluteFill, styles.actionFill]}
+            pointerEvents="none"
+          />
+        )
+      ) : null}
       <Ionicons name={icon} size={16} color={tint} />
       <Text style={[styles.actionText, { color: tint }]} numberOfLines={1}>{disabled ? "Working…" : label}</Text>
     </Pressable>
@@ -475,10 +573,21 @@ const styles = createThemedStyles(() => ({
   nebulaTwo: { borderRadius: 160, height: 220, left: -70, position: "absolute", top: 40, width: 220 },
   pulseWave: { borderRadius: 200, borderWidth: 1.5, height: 320, left: "50%", marginLeft: -160, marginTop: -160, position: "absolute", top: "50%", width: 320 },
   grain: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(5,9,16,0.12)" },
+  // Oversized circle: only the top arc falls inside the hero, so it reads as a
+  // planet limb. Width is fixed rather than a percentage because a percentage
+  // border-radius is not reliable across RN platforms.
+  horizon: { borderRadius: 480, borderWidth: 1, height: 960, left: "50%", marginLeft: -480, position: "absolute", top: 196, width: 960 },
+  horizonGlow: { bottom: 0, height: 132, left: 0, position: "absolute", right: 0 },
+  trail: { position: "absolute", width: 1 },
+  trailLeft: { height: 150, left: "22%", top: 40, transform: [{ rotate: "14deg" }] },
+  trailRight: { height: 120, right: "18%", top: 62, transform: [{ rotate: "-11deg" }] },
 
   body: { marginTop: -96, paddingHorizontal: 18 },
   avatarWrap: { alignItems: "center", justifyContent: "center", height: 128, width: 128 },
   ringOuter: { borderRadius: 72, borderWidth: 1, height: 144, position: "absolute", width: 144 },
+  // One lit segment (borderTopColor) on an otherwise dim ring — the cheapest
+  // way to imply rotation without animating anything.
+  ringOrbit: { borderRadius: 69, borderWidth: 1, height: 138, position: "absolute", transform: [{ rotate: "-38deg" }], width: 138 },
   ringGlow: { borderRadius: 66, borderWidth: 2, height: 132, position: "absolute", shadowOpacity: 0.9, shadowRadius: 22, width: 132 },
   avatar: { backgroundColor: colors.surfaceRaised, borderRadius: 56, borderWidth: 3, height: 112, width: 112 },
   avatarFallback: { alignItems: "center", backgroundColor: colors.surfaceRaised, borderRadius: 56, borderWidth: 3, height: 112, justifyContent: "center", width: 112 },
@@ -501,14 +610,27 @@ const styles = createThemedStyles(() => ({
   bio: { color: colors.text, fontSize: 15, lineHeight: 22, marginTop: 12 },
   bioMuted: { color: colors.muted, fontSize: 15, lineHeight: 22, marginTop: 12 },
 
-  stats: { backgroundColor: colors.glass, borderColor: colors.border, borderRadius: 18, borderWidth: 1, flexDirection: "row", marginTop: 18, overflow: "hidden" },
-  stat: { alignItems: "center", borderRightColor: colors.border, borderRightWidth: StyleSheet.hairlineWidth, flex: 1, justifyContent: "center", minHeight: 66, paddingVertical: 10 },
-  statValue: { fontSize: 20, fontWeight: "900" },
-  statLabel: { color: colors.muted, fontSize: 11, marginTop: 4 },
+  stats: { backgroundColor: profileNeon.panel, borderColor: profileNeon.border, borderRadius: profileNeon.radius.panel, borderWidth: 1, marginTop: 18, overflow: "hidden" },
+  // Lit top edge of the panel, fading left to right.
+  statsRail: { height: 2, left: 0, position: "absolute", right: 0, top: 0 },
+  statsRow: { flexDirection: "row" },
+  statCell: { flex: 1, flexDirection: "row" },
+  // Inset at both ends so the rule floats inside the panel. `marginVertical`,
+  // not top/bottom: the divider is a relative-positioned flex child, so Yoga
+  // reads those as offsets, applies only `top`, and pushes a full-height line
+  // past the bottom edge.
+  statDivider: { marginVertical: 14, width: StyleSheet.hairlineWidth },
+  stat: { alignItems: "center", flex: 1, justifyContent: "center", minHeight: 74, paddingHorizontal: 4, paddingVertical: 12 },
+  statIcon: { marginBottom: 3, opacity: 0.85 },
+  statValue: { fontSize: 21, fontWeight: "900", letterSpacing: 0.2 },
+  statLabel: { fontSize: 10, fontWeight: "800", letterSpacing: 0.7, marginTop: 3, textTransform: "uppercase" },
 
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 16 },
-  action: { alignItems: "center", borderColor: colors.border, borderRadius: 14, borderWidth: 1, flexDirection: "row", flexGrow: 1, gap: 6, justifyContent: "center", minHeight: 48, minWidth: 92, paddingHorizontal: 12 },
-  actionSelected: { backgroundColor: colors.signalSoft, borderColor: colors.accentStrong },
+  action: { alignItems: "center", borderRadius: profileNeon.radius.action, borderWidth: 1, flexDirection: "row", flexGrow: 1, gap: 6, justifyContent: "center", minHeight: 48, minWidth: 92, overflow: "hidden", paddingHorizontal: 12 },
+  actionPrimary: { borderColor: profileNeon.borderStrong },
+  actionFill: { borderRadius: profileNeon.radius.action },
+  actionSecondary: { backgroundColor: profileNeon.panel, borderColor: profileNeon.border },
+  actionSelected: { backgroundColor: profileNeon.fillMedium, borderColor: profileNeon.cyan },
   actionText: { fontSize: 13, fontWeight: "900" },
 
   modulesHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginTop: 26 },

@@ -17365,7 +17365,10 @@ def pulse_pages_error_response(exc):
     if isinstance(exc, pulsesoc_pages.PageError):
         return jsonify({"ok": False, "message": str(exc)}), int(exc.status_code or 400)
     logging.exception("PULSESOC_PAGES_API_FAILED error=%s", exc)
-    return jsonify({"ok": False, "message": "Page request could not be completed."}), 500
+    # Last-resort fallback only: expected failures (handle conflicts, validation,
+    # permissions) arrive as PageError above with specific safe copy. Never leak
+    # exception text to the client.
+    return jsonify({"ok": False, "message": "We couldn't complete that request right now. Try again."}), 500
 
 
 def pulse_pages_conn():
@@ -111284,6 +111287,14 @@ def _init_db_impl():
         "CREATE INDEX IF NOT EXISTS idx_pulse_reactions_post ON pulse_reactions(post_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_reactions_user_post ON pulse_reactions(user_id, post_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_follows_follower ON pulse_follows(follower_user_id)",
+        # The mirror of the index above. `follower_user_id` was indexed but
+        # `followed_user_id` was not, so every "how many followers" COUNT and
+        # every follower-list read scanned the whole table — including the
+        # native profile payload, which is one of the hottest mobile routes.
+        # `created_at` is carried as the second column because the follower-list
+        # readers order by it, so this one index serves the equality filter and
+        # the sort; the plain COUNT still uses the leftmost prefix.
+        "CREATE INDEX IF NOT EXISTS idx_pulse_follows_followed_created ON pulse_follows(followed_user_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_reports_status ON pulse_reports(status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_views_post ON pulse_post_views(post_id, viewed_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_jobs_status_run ON pulse_jobs(status, run_after)",

@@ -89,8 +89,16 @@ describe("Profile posts grid", () => {
     const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
 
     await waitFor(() => expect(screen.getByTestId("profile-grid-tile-1")).toBeTruthy());
+    // The owner grid is now requested in parallel with the profile, so its
+    // target is built from the auth store before the payload lands and carries
+    // no player id or handle yet. That is not a weaker lookup: once `userId` is
+    // set, `listPublicProfilePosts` derives both `lookupKey` and
+    // `fallbackLookupKey` from it alone (api/profile.ts:237-243) and ignores the
+    // other two fields, so the request issued is identical. What this test
+    // actually protects — that a count-only payload still resolves to the
+    // authenticated id 7 rather than 0 — is unchanged and still asserted.
     expect(mockListFeed).toHaveBeenCalledWith(
-      { userId: 7, profileKey: "7", publicPlayerId: "PLS-000001", username: "roodycherie" },
+      expect.objectContaining({ userId: 7, profileKey: "7" }),
       { limit: 20, offset: 0 }
     );
     expect(screen.queryByText(/No posts yet/)).toBeNull();
@@ -104,7 +112,12 @@ describe("Profile posts grid", () => {
     await waitFor(() => expect(screen.getByText(/Profile content temporarily unavailable/)).toBeTruthy());
     expect(screen.queryByText("Showing saved profile")).toBeNull();
     expect(screen.queryByText(/No posts yet/)).toBeNull();
-    expect(mockLoadCachedProfile).not.toHaveBeenCalled();
+    // The cache IS read now — once, concurrently, to shorten the blank-shell
+    // window — but it must not win against a canonical profile that arrived.
+    // "Showing saved profile" being absent above is what proves it did not win;
+    // this pins the remaining half, that the read happens exactly once and the
+    // error path does not go back to disk a second time.
+    expect(mockLoadCachedProfile).toHaveBeenCalledTimes(1);
   });
 
   it("retries canonical profile content in place and replaces the unavailable state", async () => {

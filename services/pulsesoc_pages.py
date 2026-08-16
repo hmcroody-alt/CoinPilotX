@@ -516,27 +516,45 @@ def create_page(conn: Any, user_id: int, payload: dict) -> dict:
         raise PageError("Confirm that you will be the owner of this page.")
     now = _now()
     cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO pulse_pages
-        (owner_user_id, page_type, category, subcategory, name, handle, avatar_url, cover_url,
-         description, genre, email, phone, website, location, hours_json, status,
-         verification_status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'unverified', ?, ?)
-        """,
-        (
-            int(user_id), page_type,
-            _text(payload.get("category"), 80), _text(payload.get("subcategory"), 80),
-            name, handle_check["candidate"],
-            _text(payload.get("avatar_url"), 500), _text(payload.get("cover_url"), 500),
-            _text(payload.get("description"), 1000), _text(payload.get("genre"), 80),
-            _text(payload.get("email"), 200), _text(payload.get("phone"), 40),
-            _text(payload.get("website"), 300), _text(payload.get("location"), 240),
-            json.dumps(payload.get("hours") or {}, default=str)[:2000],
-            now, now,
-        ),
-    )
-    page_id = int(cur.lastrowid)
+    try:
+        cur.execute(
+            """
+            INSERT INTO pulse_pages
+            (owner_user_id, page_type, category, subcategory, name, handle, avatar_url, cover_url,
+             description, genre, email, phone, website, location, hours_json, status,
+             verification_status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'unverified', ?, ?)
+            """,
+            (
+                int(user_id), page_type,
+                _text(payload.get("category"), 80), _text(payload.get("subcategory"), 80),
+                name, handle_check["candidate"],
+                _text(payload.get("avatar_url"), 500), _text(payload.get("cover_url"), 500),
+                _text(payload.get("description"), 1000), _text(payload.get("genre"), 80),
+                _text(payload.get("email"), 200), _text(payload.get("phone"), 40),
+                _text(payload.get("website"), 300), _text(payload.get("location"), 240),
+                json.dumps(payload.get("hours") or {}, default=str)[:2000],
+                now, now,
+            ),
+        )
+    except Exception as exc:
+        # A double-tap or a concurrent create can pass check_handle and still
+        # lose the race at the unique handle index. That is a normal conflict,
+        # not a server failure — answer it like one.
+        if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+            raise PageError("That handle is already in use.", 409)
+        raise
+    # Never trust `lastrowid` alone: on Postgres it is only populated when the
+    # table is registered in services.db.AUTO_PK_TABLES (which pulse_pages now
+    # is). If it is ever None/0 again, recover the id through the unique handle
+    # index instead of crashing the whole creation with `int(None)`.
+    page_id = int(cur.lastrowid or 0)
+    if not page_id:
+        cur.execute("SELECT id FROM pulse_pages WHERE lower(handle) = ?", (handle_check["candidate"].lower(),))
+        row = cur.fetchone()
+        if not row:
+            raise PageError("Your presence could not be created. Please try again.", 500)
+        page_id = int(row["id"])
     cur.execute(
         "INSERT INTO pulse_page_members (page_id, user_id, role, status, created_at, updated_at) "
         "VALUES (?, ?, 'OWNER', 'active', ?, ?)",
@@ -1098,9 +1116,22 @@ def search_pages(conn: Any, query: Any, limit: int = 20, include_inactive: bool 
     return [public_view(conn, _row(r)) for r in cur.fetchall()]
 
 
+def _count_since(cur: Any, sql: str, page_id: int, days: int) -> int:
+    """Count rows created inside the window. Timestamps are stored as ISO-8601
+    text, so a lexical >= comparison against a computed cutoff is portable
+    across SQLite and Postgres-with-text columns."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    try:
+        cur.execute(sql, (int(page_id), cutoff))
+        return _int(_row(cur.fetchone()).get("c"))
+    except Exception:
+        return 0
+
+
 def page_analytics(conn: Any, user_id: int, page_id: int) -> dict:
     """Only numbers with an authoritative source. Anything unmeasured is
-    absent, never invented."""
+    absent, never invented. Growth windows are measured directly from the
+    follow/post timestamps — no estimation."""
     page = _load_page(conn, page_id)
     require_permission(conn, user_id, page["id"], "view_analytics")
     counts = _counts(conn, page["id"])
@@ -1108,13 +1139,59 @@ def page_analytics(conn: Any, user_id: int, page_id: int) -> dict:
     cur.execute("SELECT COUNT(*) AS c FROM pulse_page_members WHERE page_id=? AND status='active'",
                 (int(page["id"]),))
     team = _int(_row(cur.fetchone()).get("c"))
+    followers_7d = _count_since(
+        cur, "SELECT COUNT(*) AS c FROM pulse_page_follows WHERE page_id=? AND created_at>=?", page["id"], 7)
+    followers_30d = _count_since(
+        cur, "SELECT COUNT(*) AS c FROM pulse_page_follows WHERE page_id=? AND created_at>=?", page["id"], 30)
+    posts_30d = _count_since(
+        cur, "SELECT COUNT(*) AS c FROM pulse_posts WHERE page_id=? AND deleted_at IS NULL AND created_at>=?",
+        page["id"], 30)
     return {
         "page_id": int(page["id"]),
         "followers": counts["followers"],
+        "followers_7d": followers_7d,
+        "followers_30d": followers_30d,
         "posts": counts["posts"],
+        "posts_30d": posts_30d,
         "team_members": team,
         "note": "Only measured metrics are reported. Reach and engagement appear once their sources are wired.",
     }
+
+
+# Completion guidance is management-only: the checklist derives strictly from
+# fields that actually exist on the page row plus the real post count. It is
+# never included in public_view — visitors never see setup warnings.
+_BUSINESS_COMPLETENESS_TYPES = {
+    "BUSINESS", "BRAND", "STORE", "RESTAURANT", "PROFESSIONAL_SERVICE",
+    "LOCAL_BUSINESS", "NONPROFIT", "ORGANIZATION", "MEDIA", "VENUE", "EDUCATION",
+}
+_ARTIST_COMPLETENESS_TYPES = {"ARTIST", "CREATOR", "PUBLIC_FIGURE", "SPORTS_TEAM"}
+
+
+def page_completeness(conn: Any, page: dict) -> dict:
+    counts = _counts(conn, page["id"])
+    page_type = page.get("page_type") or ""
+    hours = {}
+    try:
+        hours = json.loads(page.get("hours_json") or "{}")
+    except Exception:
+        hours = {}
+    items = [
+        {"key": "avatar", "label": "Add a profile image", "done": bool(page.get("avatar_url"))},
+        {"key": "cover", "label": "Add a cover image", "done": bool(page.get("cover_url"))},
+        {"key": "description", "label": "Write a description", "done": bool((page.get("description") or "").strip())},
+        {"key": "contact", "label": "Add a website or contact",
+         "done": bool(page.get("website") or page.get("email") or page.get("phone"))},
+        {"key": "first_post", "label": "Publish your first post", "done": counts["posts"] > 0},
+    ]
+    if page_type in _ARTIST_COMPLETENESS_TYPES:
+        items.insert(3, {"key": "genre", "label": "Add your genres", "done": bool((page.get("genre") or "").strip())})
+    if page_type in _BUSINESS_COMPLETENESS_TYPES:
+        items.insert(3, {"key": "category", "label": "Set your category", "done": bool((page.get("category") or "").strip())})
+        items.append({"key": "hours", "label": "Add business hours", "done": bool(hours)})
+        items.append({"key": "location", "label": "Add your location", "done": bool((page.get("location") or "").strip())})
+    done = sum(1 for i in items if i["done"])
+    return {"percent": int(round(100 * done / len(items))) if items else 0, "items": items}
 
 
 def manage_view(conn: Any, user_id: int, page_id: int) -> dict:
@@ -1129,5 +1206,6 @@ def manage_view(conn: Any, user_id: int, page_id: int) -> dict:
         "links": list_links(conn, page["id"]),
         "members": list_members(conn, user_id, page["id"]) if has_permission(role, "manage_members") else [],
         "analytics": page_analytics(conn, user_id, page["id"]),
+        "completeness": page_completeness(conn, page),
     })
     return view
