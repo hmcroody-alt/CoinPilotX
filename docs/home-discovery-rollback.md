@@ -5,7 +5,8 @@ Branch: `feature/spatial-console`. Commits `7e8e5e44` (engine, sources, view) an
 
 ## Rollback is a flag flip, never a revert
 
-All eight flags default OFF. With no env vars set:
+The five shipped flags default **ON**; the three unfinished ones default **OFF**.
+Rolling back means setting `EXPO_PUBLIC_HOME_DISCOVERY=0`, at which point:
 
 - `homeDiscoveryEnabled()` is `false`,
 - `loadDiscoveryModules()` returns `{ modules: [] }` without issuing a request,
@@ -13,6 +14,28 @@ All eight flags default OFF. With no env vars set:
   given** — identity, not deep equality,
 - so Home renders exactly the rows `injectAds` produced before this feature
   existed.
+
+### Why the defaults inverted
+
+This shipped with all eight flags defaulting OFF, and the §18 device build that
+proved the feature worked was made by exporting five of them by hand at the
+shell. Nothing in the repo exported them — no profile in `mobile-native/eas.json`
+sets any `EXPO_PUBLIC_HOME_DISCOVERY*` var, there is no `.env`, and `.gitignore`
+excludes `.env` and `.env.*`, so there was nowhere committed for them to live.
+
+The result was that the suggestion rows existed in exactly one build. The next
+build, made for an unrelated Reels fix and deliberately made with an empty
+environment, dropped them, and the rows were reported as having "come undone."
+Nothing had been reverted; the code was present and correct in a build that did
+not show it.
+
+That is the same failure `mobile-native/src/core/envFlag.ts` documents for the
+Reels pager and the immersive navigator, and the fix is the same: a feature that
+has finished rolling out reads through `isFlagValueOnUnlessDisabled`, so silence
+means on and turning it off costs somebody a deliberate `=0`. Rollback is still a
+flag flip and never a revert — the flip just runs in the direction that should
+cost an action. Pinned by `discovery/__tests__/flags.test.ts` → "a build that
+sets no discovery variables at all".
 
 The identity property is the one that matters and the one that is easy to break
 silently. `PostCard` and `SponsoredAdCard` are memoized on the row objects; a
@@ -27,21 +50,27 @@ composed.forEach((row, index) => expect(row).toBe(base[index]));
 
 ### The flags
 
-| Env var | Gate | Ships as |
-|---|---|---|
-| `EXPO_PUBLIC_HOME_DISCOVERY` | master | OFF |
-| `EXPO_PUBLIC_HOME_DISCOVERY_REELS` | Reels for you | OFF |
-| `EXPO_PUBLIC_HOME_DISCOVERY_PEOPLE` | People you may know | OFF |
-| `EXPO_PUBLIC_HOME_DISCOVERY_STATUSES` | Statuses | OFF |
-| `EXPO_PUBLIC_HOME_DISCOVERY_GROUPS` | Groups | OFF |
-| `EXPO_PUBLIC_HOME_DISCOVERY_CREATORS` | Creators to follow | OFF — no source |
-| `EXPO_PUBLIC_HOME_DISCOVERY_TOPICS` | Topics | OFF — no destination |
-| `EXPO_PUBLIC_HOME_DISCOVERY_SPONSORED` | Sponsored carousel | OFF — see below |
+| Env var | Gate | Default | To change it |
+|---|---|---|---|
+| `EXPO_PUBLIC_HOME_DISCOVERY` | master | **ON** | `=0` disables everything |
+| `EXPO_PUBLIC_HOME_DISCOVERY_REELS` | Reels for you | **ON** | `=0` |
+| `EXPO_PUBLIC_HOME_DISCOVERY_PEOPLE` | People you may know | **ON** | `=0` |
+| `EXPO_PUBLIC_HOME_DISCOVERY_STATUSES` | Statuses | **ON** | `=0` |
+| `EXPO_PUBLIC_HOME_DISCOVERY_GROUPS` | Groups | **ON** | `=0` |
+| `EXPO_PUBLIC_HOME_DISCOVERY_CREATORS` | Creators to follow | OFF — no source | needs an endpoint first |
+| `EXPO_PUBLIC_HOME_DISCOVERY_TOPICS` | Topics | OFF — no destination | needs a screen first |
+| `EXPO_PUBLIC_HOME_DISCOVERY_SPONSORED` | Sponsored carousel | OFF — see below | needs a frequency-cap review |
 
-Every module flag is ANDed with the master, so clearing
-`EXPO_PUBLIC_HOME_DISCOVERY` alone disables all seven regardless of their own
-values. Fail-closed: an unset or unparseable value is OFF, and a source that
-throws yields no module rather than a partial one.
+Which reader a line in `FLAG_READERS` uses *is* the default, so there is no
+separate table in the source to fall out of sync with this one:
+`isFlagValueOnUnlessDisabled` for the five, `isFlagValueOn` for the three.
+
+Every module flag is ANDed with the master, so setting
+`EXPO_PUBLIC_HOME_DISCOVERY=0` disables all seven regardless of their own values.
+Off is spelled `0`, `false`, `off` or `no`, case- and whitespace-insensitive;
+anything else — including a typo like `flase` — leaves a shipped flag on, so a
+misspelling in a build profile cannot silently delete the feature. A source that
+throws still yields no module rather than a partial one.
 
 The reads are written as one static `process.env.EXPO_PUBLIC_X` member
 expression per flag. That form is load-bearing. `babel-preset-expo` inlines
@@ -73,8 +102,9 @@ are inert even if their flags are set. Pinned by
 
 ## Rolling back
 
-1. Remove the `EXPO_PUBLIC_HOME_DISCOVERY*` vars from the EAS profile / Railway
-   env for the build in question.
+1. Set `EXPO_PUBLIC_HOME_DISCOVERY=0` in the EAS profile / Railway env for the
+   build in question. *Removing* the variable is no longer a rollback — unset
+   now means on, which is the whole point of the previous section.
 2. Rebuild. There is no server-side component to revert and no schema change.
 3. Verify: Home's rows are `injectAds` output, and `HomeScreen.discovery.test.ts`
    still passes — it asserts the composition order and the §1 preservation set
@@ -87,7 +117,12 @@ untouched-Home guarantees.
 
 ## Device QA build
 
-The build installed to P3r7or and to the iPhone 17 Pro Max simulator for §18 QA
-was made with five flags exported at build time (master, reels, people,
-statuses, groups). Creators, topics and sponsored were left off for the reasons
-above. The repo's shipped defaults were not modified to produce it.
+The first §18 QA build was made with five flags exported by hand at build time
+(master, reels, people, statuses, groups), without modifying the repo's shipped
+defaults. That is precisely what made the feature disappear from the next build;
+see "Why the defaults inverted" above.
+
+Builds after the default inversion need **no environment at all**. A plain
+`xcodebuild` with an empty environment now produces the shipped experience, which
+is the property being tested — if a QA build needs a variable exported to show a
+finished feature, the default is wrong, not the build.

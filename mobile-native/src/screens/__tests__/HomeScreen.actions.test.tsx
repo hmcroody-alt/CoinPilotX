@@ -109,6 +109,13 @@ jest.mock("../../api/feed", () => ({
 // the shared save contract, and stubbing the contract would let a broken
 // request body pass. Mocking `pulseApi` means these tests still see the exact
 // URL and payload the server would receive.
+//
+// The cost of intercepting the transport is that *every* request the screen
+// makes lands in this one mock, not just the save. Home's discovery rows fetch
+// reels, people and groups through the same function on mount, so the save is
+// not necessarily `mock.calls[0]`. The assertions below select by route through
+// `saveCalls()` instead of by index, which is what keeps them independent of how
+// many other things Home happens to load.
 jest.mock("../../api/pulseApi", () => ({
   ...jest.requireActual("../../api/pulseApi"),
   pulseApi: (...args: any[]) => mockSaveApi(...args)
@@ -120,9 +127,22 @@ jest.mock("../../api/status", () => ({
   loadCachedStatuses: jest.fn().mockResolvedValue(null)
 }));
 
+import { __clearDiscoveryFlagOverrides, __setDiscoveryFlagOverride } from "../../discovery/flags";
 import { peekSaveState, resetSavedStoreForTests } from "../../social/savedStore";
 import { resetSaveActionsForTests } from "../../social/useSaveAction";
 import { HomeScreen } from "../HomeScreen";
+
+/**
+ * The save calls, separated from everything else on the shared transport.
+ *
+ * Selecting by route rather than by index is the whole point: `mock.calls[0]`
+ * silently became a discovery request the day Home's suggestion rows started
+ * defaulting on, and the resulting failure pointed at the save code, which was
+ * fine. A route filter cannot drift that way.
+ */
+function saveCalls() {
+  return mockSaveApi.mock.calls.filter(([route]) => String(route).includes("/save"));
+}
 
 function post(id: number, overrides: Record<string, unknown> = {}) {
   return {
@@ -188,6 +208,16 @@ beforeEach(() => {
   resetSavedStoreForTests();
   resetSaveActionsForTests();
   mockCachedFeed.mockResolvedValue(null);
+  // This file is about Home's comment, follow, repost and save handlers. The
+  // suggestion rows ship on, but they contribute nothing here except four
+  // background fetches into the mocks above, so they are switched off
+  // explicitly. `discovery/__tests__/flags.test.ts` owns the default;
+  // `HomeScreen.discovery.test.ts` owns the composition.
+  __setDiscoveryFlagOverride("homeDiscoveryEnabled", false);
+});
+
+afterEach(() => {
+  __clearDiscoveryFlagOverrides();
 });
 
 describe("HomeScreen inline comment", () => {
@@ -495,7 +525,7 @@ describe("HomeScreen save", () => {
     await tap(() => card(1).onSave(post(1)));
 
     expect(mockSaveApi).toHaveBeenCalledWith("/api/pulse/posts/1/save", expect.objectContaining({ method: "POST" }));
-    expect(JSON.parse(mockSaveApi.mock.calls[0][1].body)).toEqual({ post_id: 1, saved: true });
+    expect(JSON.parse(saveCalls()[0][1].body)).toEqual({ post_id: 1, saved: true });
   });
 
   it("saves the original when the card is a repost, so both copies agree", async () => {
@@ -504,7 +534,7 @@ describe("HomeScreen save", () => {
 
     await tap(() => card(1).onSave(card(1).post));
 
-    expect(JSON.parse(mockSaveApi.mock.calls[0][1].body)).toMatchObject({ post_id: 41, saved: true });
+    expect(JSON.parse(saveCalls()[0][1].body)).toMatchObject({ post_id: 41, saved: true });
   });
 
   it("issues one request for a double tap, so a save cannot race an unsave", async () => {
@@ -518,7 +548,7 @@ describe("HomeScreen save", () => {
       first = onSave(post(1));
       onSave(post(1));
     });
-    expect(mockSaveApi).toHaveBeenCalledTimes(1);
+    expect(saveCalls()).toHaveLength(1);
 
     await tap(async () => {
       pending.resolve({ ok: true, saved: true });
