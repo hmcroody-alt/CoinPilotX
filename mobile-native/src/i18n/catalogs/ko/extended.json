@@ -207,7 +207,9 @@
       "cameraOn": "카메라 켬",
       "cameraOff": "카메라 끔",
       "switchCamera": "카메라 전환",
-      "speaker": "스피커"
+      "speaker": "스피커",
+      "returnToCall": "통화로 돌아가기",
+      "ongoingCall": "통화 중"
     }
   },
   "commerce": {
@@ -1440,6 +1442,11 @@
     }
   },
   "settings": {
+    "supportTicket": {
+      "sentTitle": "요청이 전송됨",
+      "sentWithReference": "참조 번호: {{reference}}. 확인 이메일이 {{email}}(으)로 발송됩니다. 대부분의 요청은 영업일 기준 1일 이내에 첫 답변을 받습니다.",
+      "sentBody": "요청을 접수했습니다. 확인 이메일이 {{email}}(으)로 발송됩니다. 대부분의 요청은 영업일 기준 1일 이내에 첫 답변을 받습니다."
+    },
     "root": {
       "title": "설정",
       "account": "계정",

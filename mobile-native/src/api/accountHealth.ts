@@ -87,6 +87,21 @@ export type AccountHealthActionResponse = {
   status?: string;
 };
 
+export type StrikeAppealResponse = {
+  ok?: boolean;
+  /** Human-quotable appeal reference. */
+  reference?: string;
+  status?: string;
+  message?: string;
+};
+
+export async function submitStrikeAppeal(strikeId: number, reason: string) {
+  return pulseApi<StrikeAppealResponse>(`/api/dashboard/account/strikes/${strikeId}/appeal`, {
+    method: "POST",
+    body: JSON.stringify({ reason })
+  });
+}
+
 export async function loadAccountHealthState() {
   const accountData = await pulseApi<{ ok?: boolean; account?: Record<string, unknown> }>("/api/dashboard/account/state");
   const account = accountData.account || {};
@@ -131,6 +146,9 @@ function normalizeAccountHealthState(account: Record<string, unknown>, tickets: 
   const healthStatus = String(health.status || metrics.status || "secure");
   const verificationStatus = String(verificationMetrics.status || verification.status || "not_started");
   const verificationRequestId = numberValue(verificationMetrics.request_id);
+  // Strike appeals need a concrete strike id; the backend exposes it (when
+  // available) as latest_strike_id / strike_id in account_health metrics.
+  const latestStrikeId = numberValue(metrics.latest_strike_id ?? metrics.strike_id);
   const recommendations = normalizeStringList([
     ...normalizeUnknownList(account.recommendations),
     ...normalizeUnknownList(health.recommendations)
@@ -170,7 +188,7 @@ function normalizeAccountHealthState(account: Record<string, unknown>, tickets: 
         detail: restrictions > 0 ? "Read what each restriction covers before you appeal it." : "No active restrictions returned by account health."
       }
     ],
-    appeals: normalizeAppeals(appealsAvailable, verificationStatus, verificationRequestId),
+    appeals: normalizeAppeals(appealsAvailable, verificationStatus, verificationRequestId, latestStrikeId),
     cases: normalizeCases(tickets),
     securityEvents,
     loadedAt: new Date().toISOString()
@@ -196,14 +214,16 @@ function normalizeAccountHealthStateFromCache(state: AccountHealthState): Accoun
   };
 }
 
-function normalizeAppeals(appealsAvailable: number, verificationStatus: string, verificationRequestId: number): AccountHealthAppealItem[] {
+function normalizeAppeals(appealsAvailable: number, verificationStatus: string, verificationRequestId: number, latestStrikeId = 0): AccountHealthAppealItem[] {
+  const strikeAppealSupported = appealsAvailable > 0 && latestStrikeId > 0;
   const items: AccountHealthAppealItem[] = [
     {
       key: "account_health",
       title: "Account health appeal",
       status: appealsAvailable > 0 ? "available" : "not needed",
       detail: appealsAvailable > 0 ? "Warnings, strikes, or restrictions may be appealable through the protected Account Health flow." : "You have no appeals open right now.",
-      supported: false
+      requestId: latestStrikeId || undefined,
+      supported: strikeAppealSupported
     }
   ];
   const verificationAppealable = ["rejected", "suspended", "needs_more_info"].includes(verificationStatus);

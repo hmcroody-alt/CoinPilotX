@@ -456,6 +456,68 @@ def _active_window(row: dict[str, Any]) -> bool:
     return True
 
 
+# --- canonical provider bridge (App Store / Play convergence) ----------------
+# Apple StoreKit verification (`services.business_os.entitlements.iap_apple`)
+# and the ASSN v2 webhook write ONLY to the canonical ``business_os_ent_grants``
+# store — there is no legacy dual-write like the Stripe path has. Under the
+# default ``BUSINESS_OS_ENTITLEMENTS=off`` flag, legacy is authoritative, so an
+# App Store purchase would grant an entitlement nothing reads and the buyer
+# would see no Premium. This bridge makes the LEGACY read path consult the
+# canonical store for PROVIDER-sourced premium grants, evaluated LIVE (expiry,
+# grace and revocation are re-checked on every read, never copied as a boolean),
+# so a refunded or lapsed Apple subscription loses Premium through the same
+# path that granted it.
+#
+# Deliberately scoped to provider sources: admin/promotion/trial canonical
+# grants keep their "flag off = zero behaviour change" semantics until the flag
+# is advanced (see tests/business_os/test_premium_canonical.py PREM-002/009).
+_CANONICAL_PREMIUM_KEY = "premium.access"
+_CANONICAL_PROVIDER_SOURCES = {"apple_app_store", "google_play"}
+# Legacy keys whose truth may be satisfied by a canonical provider grant. Only
+# the umbrella membership key is bridged; per-feature legacy keys stay legacy.
+_BRIDGED_LEGACY_KEYS = {"premium_access"}
+
+
+def _canonical_provider_premium(user_id: int) -> bool:
+    """Live canonical answer for provider (Apple/Google IAP) premium grants.
+
+    Returns True only when a grant from a provider source currently resolves to
+    allowed under canonical precedence (active / in grace / grandfathered). A
+    suspension on ANY grant for the key denies, mirroring canonical rule 1.
+    Best-effort: if the canonical package or table is unavailable this returns
+    False and legacy behaviour is unchanged.
+    """
+    try:
+        from services.business_os.entitlements import service as _canon
+    except Exception:  # noqa: BLE001 — canonical package absent
+        return False
+    try:
+        conn = db_service.connect()
+        try:
+            grants = _canon._fetch_grants(
+                conn, "user", _canon._sid(int(user_id or 0)), _CANONICAL_PREMIUM_KEY)
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 — table not created yet, engine hiccup
+        return False
+    if not grants:
+        return False
+    now = _canon._utc_now()
+    try:
+        if _canon._resolve(grants, now)["mode"] == "suspended":
+            return False
+        provider_grants = [
+            g for g in grants
+            if str(g.get("source") or "") in _CANONICAL_PROVIDER_SOURCES
+        ]
+        if not provider_grants:
+            return False
+        return bool(_canon._resolve(provider_grants, now)["allowed"])
+    except Exception:  # noqa: BLE001
+        _log.exception("canonical provider bridge failed user=%s", user_id)
+        return False
+
+
 def has_entitlement(user_id: int, key: str) -> bool:
     ensure_founder_schema()
     conn = db_service.connect()
@@ -482,7 +544,13 @@ def has_entitlement(user_id: int, key: str) -> bool:
         )
         row = cur.fetchone()
     conn.close()
-    return bool(row and _active_window(dict(row)))
+    if row and _active_window(dict(row)):
+        return True
+    # No live legacy row: consult the canonical store for provider-sourced
+    # grants (Apple/Google purchases write canonical-only). See bridge above.
+    if key in _BRIDGED_LEGACY_KEYS:
+        return _canonical_provider_premium(user_id)
+    return False
 
 
 def grant_entitlement(user_id: int, key: str, source: str = "admin_grant", starts_at: str = "", ends_at: str = "", metadata: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -864,6 +932,11 @@ def _is_premium_user_raw(user_id: int) -> bool:
     split-brain this migration exists to close would be invisible.
 
     Do not call this to gate a feature. Call :func:`is_premium_user`.
+
+    One deliberate exception to "independent": ``has_entitlement`` bridges the
+    umbrella ``premium_access`` key to canonical PROVIDER grants (Apple/Google
+    IAP), because those providers write canonical-only and must be effective
+    under the default flag. See ``_canonical_provider_premium``.
     """
     if has_entitlement(user_id, "premium_access"):
         return True

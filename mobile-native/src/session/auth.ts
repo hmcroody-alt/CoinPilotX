@@ -241,11 +241,22 @@ export async function finalizeConfirmedSignup(email: string, password: string): 
   return signIn(email, password);
 }
 
-export async function signOut(): Promise<AuthState> {
+export type SignOutOptions = {
+  /**
+   * Fully clear biometric enrollment and every stored credential instead of
+   * keeping a Face-ID-gated refresh token. Required when the account is going
+   * away (account deletion): keeping a live refresh token bound to Face ID for
+   * an account pending deletion would let a biometric unlock silently resume —
+   * and thereby cancel — the deletion.
+   */
+  clearBiometrics?: boolean;
+};
+
+export async function signOut(options: SignOutOptions = {}): Promise<AuthState> {
   await unregisterPushDevice({ preservePreferences: true, reason: "logout" }).catch(() => undefined);
   await clearUserScopedMediaState();
 
-  if (await shouldRetainBiometricLogin()) {
+  if (!options.clearBiometrics && (await shouldRetainBiometricLogin())) {
     // Ordinary sign-out for an enrolled device: keep a Face-ID-gated refresh
     // token so the user can return with Face ID. We intentionally do NOT call
     // the server logout here — that would revoke the token we just preserved.

@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Animated,
   AppState,
-  AppStateStatus,
   Image,
   Platform,
   Pressable,
@@ -17,31 +16,34 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   acceptCall,
   declineCall,
-  endCall,
-  getCallStatus,
-  markCallConnected,
   markRingSeen,
   openCallWebFallback,
   PulseCall,
   PulseCallParticipant,
   PulseCallType,
-  requestCallJoinToken,
   sendCallControl,
   startConversationCall,
   submitCallQuality
 } from "../api/calls";
 import { useNativeCallRoom } from "../calls/useNativeCallRoom";
+import {
+  adoptCallSnapshot,
+  beginCallSession,
+  clearCallSession,
+  ensureCallMediaConnected,
+  finalizeCallSession,
+  getCallSession,
+  handleCallScreenUnmount,
+  hangupCallSession,
+  refreshCallSessionStatus,
+  setCallScreenFocused,
+  useCallSession
+} from "../calls/callSessionStore";
 import { callHaptic, playCallCue, startCallTone, stopCallTone } from "../calls/callSignalMedia";
-import { endCallKitCall, markCallKitConnected } from "../calls/callKitBridge";
-import { isTerminalCallStatus, shouldConnectCallMedia, shouldPlayRingback, shouldPlayUnavailablePrompt, unavailableCallPrompt } from "../calls/callToneLifecycle";
-import { stopVoiceMessagePlayback } from "../core/voiceMessagePlayback";
+import { isTerminalCallStatus, shouldPlayRingback, shouldPlayUnavailablePrompt, unavailableCallPrompt } from "../calls/callToneLifecycle";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
-import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
-
-const STATUS_REFRESH_MS = 4200;
-const RINGING_STATUS_REFRESH_MS = 1100;
 
 type AgoraVideoViewProps = {
   canvas: { uid: number; sourceType?: number };
@@ -49,41 +51,66 @@ type AgoraVideoViewProps = {
   zOrderMediaOverlay?: boolean;
 };
 
+/**
+ * The Call screen is a CONSUMER of the module-scope call session
+ * (`calls/callSessionStore`), not its owner. Mounting attaches to the live
+ * session (or begins one); unmounting detaches without touching media, so a
+ * call survives in-app navigation and Minimize is simply "navigate away". The
+ * engine is released only by the store, on explicit hang-up/decline, a
+ * terminal backend status, or an authoritative failure.
+ */
 export function CallScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, "Call">) {
   const params = route.params || {};
   const initialCallId = params.callId ? String(params.callId) : "";
   const requestedType: PulseCallType = params.callType === "video" ? "video" : "audio";
-  const [callId, setCallId] = useState(initialCallId);
-  const [call, setCall] = useState<PulseCall | null>(null);
-  const [loading, setLoading] = useState(Boolean(initialCallId || params.conversationId));
+  const session = useCallSession();
+  const callId = session.callId || initialCallId;
+  const call = session.call;
+  const [loading, setLoading] = useState(() => Boolean(initialCallId || params.conversationId) && !getCallSession().call);
   const [actionBusy, setActionBusy] = useState("");
   const [error, setError] = useState("");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [AgoraVideoViewComponent, setAgoraVideoViewComponent] = useState<ComponentType<AgoraVideoViewProps> | null>(null);
   const autoStartRequested = useRef(false);
-  const joinRequested = useRef(false);
   const qualitySubmitted = useRef(false);
-  const connectedAtMs = useRef(0);
-  const everConnected = useRef(false);
-  const terminalCuePlayedFor = useRef("");
-  const appState = useRef<AppStateStatus>(AppState.currentState);
   const room = useNativeCallRoom();
   const insets = useSafeAreaInsets();
   const reducedMotion = useLogiNexusReducedMotion();
   const glow = useRef(new Animated.Value(0)).current;
+
+  // Attach to (or begin) the session. Detaching on unmount does NOT release
+  // the engine — see callSessionStore. It only clears already-dead sessions.
   useEffect(() => {
-    stopVoiceMessagePlayback("call_opened").catch(() => undefined);
-    claimMediaPlayback({ id: "native-call", kind: "call", pause: () => undefined }).catch(() => undefined);
-    return () => { releaseMediaPlayback("native-call").catch(() => undefined); };
+    beginCallSession({
+      callId: initialCallId,
+      conversationId: params.conversationId,
+      direction: params.direction,
+      callType: requestedType,
+      title: params.title
+    });
+    setCallScreenFocused(true);
+    return () => { handleCallScreenUnmount(); };
+    // Mount-only: session identity comes from the navigation params this
+    // instance was opened with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The minimized banner hides while this screen is focused.
+  useEffect(() => {
+    const offFocus = navigation.addListener("focus", () => setCallScreenFocused(true));
+    const offBlur = navigation.addListener("blur", () => setCallScreenFocused(false));
+    return () => { offFocus(); offBlur(); };
+  }, [navigation]);
+
+  const direction = params.direction || session.direction || undefined;
   const callType: PulseCallType = call?.call_type === "video" ? "video" : requestedType;
-  const incoming = params.direction === "incoming";
+  const incoming = direction === "incoming";
   const terminal = isTerminalCallStatus(call?.status);
   const connected = room.connected;
+  const everConnected = session.everConnected;
   const caller = useMemo(() => callParticipant(call, incoming), [call, incoming]);
-  const title = caller.display_name || caller.username || params.title || "Connecting participant";
+  const title = caller.display_name || caller.username || params.title || session.title || "Connecting participant";
 
   useEffect(() => {
     if (Platform.OS !== "web") {
@@ -105,33 +132,10 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
 
   const refresh = useCallback(async () => {
     if (!callId) return;
-    const next = await getCallStatus(callId);
-    setCall(next);
+    await refreshCallSessionStatus();
     setError("");
     setLoading(false);
   }, [callId]);
-
-  const connectProvider = useCallback(async (target: PulseCall, targetType: PulseCallType) => {
-    if (!target.call_id || joinRequested.current || room.connected || room.connecting) return;
-    joinRequested.current = true;
-    try {
-      const join = target.join?.token ? target.join : await requestCallJoinToken(target.call_id);
-      const joined = await room.connect(join, {
-        video: targetType === "video",
-        refreshCredentials: () => requestCallJoinToken(target.call_id)
-      });
-      if (!joined) throw new Error("The secure media room could not connect.");
-      connectedAtMs.current = Date.now();
-      await markCallConnected(target.call_id, {
-        native_state: "connected",
-        platform: Platform.OS,
-        media: targetType
-      }).catch(() => undefined);
-    } catch (joinError) {
-      joinRequested.current = false;
-      setError(friendlyCallError(joinError, "connect"));
-    }
-  }, [room.connect, room.connected, room.connecting]);
 
   const startCall = useCallback(async () => {
     if (!params.conversationId) return;
@@ -140,8 +144,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     callHaptic("place");
     try {
       const next = await startConversationCall(params.conversationId, requestedType);
-      setCall(next);
-      setCallId(next.call_id);
+      adoptCallSnapshot(next);
     } catch (startError) {
       setError(friendlyCallError(startError, "start"));
       playCallCue("disconnect").catch(() => undefined);
@@ -149,7 +152,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setLoading(false);
       setActionBusy("");
     }
-  }, [connectProvider, params.conversationId, requestedType]);
+  }, [params.conversationId, requestedType]);
 
   useEffect(() => {
     if (!params.conversationId || params.direction !== "outgoing" || callId || autoStartRequested.current) return;
@@ -171,31 +174,19 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   }, [callId, refresh]);
 
   useEffect(() => {
-    if (!call || terminal) return;
-    if (shouldConnectCallMedia({ direction: params.direction, status: call.status })) {
-      connectProvider(call, callType).catch(() => undefined);
-    }
-  }, [call, callType, connectProvider, params.direction, terminal]);
-
-  useEffect(() => {
-    if (!terminal) return;
-    room.disconnect(`backend_${call?.status || "ended"}`).catch(() => undefined);
-  }, [call?.status, room.disconnect, terminal]);
-
-  useEffect(() => {
-    if (!connected) return undefined;
-    if (!connectedAtMs.current) connectedAtMs.current = Date.now();
-    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - connectedAtMs.current) / 1000)));
+    if (!connected || !session.connectedAtMs) return undefined;
+    const startedAt = session.connectedAtMs;
+    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
     update();
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
-  }, [connected]);
+  }, [connected, session.connectedAtMs]);
 
   // Ringback: outgoing caller only, strictly gated on backend signaling "ringing",
   // and never once the media room is connected or the call is terminal. The gate
   // itself lives in callToneLifecycle so it can be regression-tested in isolation.
   const ringbackActive = shouldPlayRingback({
-    direction: params.direction,
+    direction,
     mediaConnected: connected,
     status: call?.status
   });
@@ -207,52 +198,19 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     return undefined;
   }, [ringbackActive]);
 
-  // Connect cue on the connected transition; disconnect cue when a connected call ends.
-  useEffect(() => {
-    if (connected && !everConnected.current) {
-      everConnected.current = true;
-      stopCallTone().catch(() => undefined);
-      playCallCue("connect").catch(() => undefined);
-      if (callId) markCallKitConnected(callId);
-    }
-  }, [callId, connected]);
-
-  useEffect(() => {
-    if (!terminal || !callId) return;
-    if (terminalCuePlayedFor.current === callId) return;
-    terminalCuePlayedFor.current = callId;
-    stopCallTone().catch(() => undefined);
-    endCallKitCall(callId);
-    if (shouldPlayUnavailablePrompt({ direction: params.direction, everConnected: everConnected.current, status: call?.status })) {
-      setError(unavailableCallPrompt(call?.status));
-      playCallCue("disconnect").catch(() => undefined);
-    } else if (everConnected.current) {
-      playCallCue("disconnect").catch(() => undefined);
-    }
-  }, [call?.status, callId, params.direction, terminal]);
-
   useEffect(() => () => { stopCallTone().catch(() => undefined); }, []);
 
-  useEffect(() => {
-    if (!callId) return undefined;
-    const intervalMs = String(call?.status || "").toLowerCase() === "ringing" ? RINGING_STATUS_REFRESH_MS : STATUS_REFRESH_MS;
-    const timer = setInterval(() => {
-      if (appState.current === "active") refresh().catch(() => undefined);
-    }, intervalMs);
-    return () => clearInterval(timer);
-  }, [call?.status, callId, refresh]);
-
+  // Status polling, connect/disconnect cues, CallKit transitions and terminal
+  // teardown all live in callSessionStore now, so they keep running while the
+  // call is minimized. The screen only reports visibility to the backend.
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
-      const wasBackgrounded = appState.current.match(/inactive|background/);
-      appState.current = nextState;
       if (callId) {
         sendCallControl(callId, "visibility", { visible: nextState === "active", app_state: nextState }).catch(() => undefined);
       }
-      if (wasBackgrounded && nextState === "active") refresh().catch(() => undefined);
     });
     return () => subscription.remove();
-  }, [callId, refresh]);
+  }, [callId]);
 
   const reportQuality = useCallback(async (reason: string) => {
     if (!callId || qualitySubmitted.current) return;
@@ -277,14 +235,14 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     await stopCallTone();
     try {
       const next = await acceptCall(callId);
-      setCall(next);
-      await connectProvider(next, next.call_type === "video" ? "video" : requestedType);
+      adoptCallSnapshot(next);
+      await ensureCallMediaConnected();
     } catch (answerError) {
       setError(friendlyCallError(answerError, "answer"));
     } finally {
       setActionBusy("");
     }
-  }, [callId, connectProvider, requestedType]);
+  }, [callId]);
 
   const decline = useCallback(async () => {
     if (!callId) return navigation.goBack();
@@ -293,30 +251,28 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     await stopCallTone();
     try {
       await declineCall(callId);
-      await room.disconnect("declined");
+      finalizeCallSession("declined");
       navigation.goBack();
     } catch (declineError) {
       setError(friendlyCallError(declineError, "decline"));
     } finally {
       setActionBusy("");
     }
-  }, [callId, navigation, room.disconnect]);
+  }, [callId, navigation]);
 
   const hangup = useCallback(async () => {
     setActionBusy("end");
     callHaptic("end");
-    await stopCallTone();
     try {
       await reportQuality("native_hangup");
-      if (callId) await endCall(callId);
-      await room.disconnect("native_hangup");
+      await hangupCallSession("native_hangup");
       navigation.goBack();
     } catch (hangupError) {
       setError(friendlyCallError(hangupError, "end"));
     } finally {
       setActionBusy("");
     }
-  }, [callId, navigation, reportQuality, room.disconnect]);
+  }, [navigation, reportQuality]);
 
   const runMediaAction = useCallback(async (action: () => Promise<void>, backendAction: Parameters<typeof sendCallControl>[1], payload: Record<string, unknown> = {}) => {
     setError("");
@@ -328,12 +284,19 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
     }
   }, [callId]);
 
+  // Minimize = leave the screen with the session (and its media) fully alive.
+  // The store keeps polling and the minimized banner offers the way back.
   const minimize = useCallback(async () => {
     if (callId) await sendCallControl(callId, "minimize").catch(() => undefined);
     if (navigation.canGoBack()) navigation.goBack();
   }, [callId, navigation]);
 
-  const unavailablePrompt = shouldPlayUnavailablePrompt({ direction: params.direction, everConnected: everConnected.current, status: call?.status })
+  const done = useCallback(() => {
+    clearCallSession();
+    navigation.goBack();
+  }, [navigation]);
+
+  const unavailablePrompt = shouldPlayUnavailablePrompt({ direction, everConnected, status: call?.status })
     ? unavailableCallPrompt(call?.status)
     : "";
   const statusLabel = callStatusLabel(call, room.connectionState, room.reconnecting, incoming);
@@ -410,7 +373,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
           <Ionicons name="checkmark-circle-outline" size={58} color={colors.accent} />
           <Text style={styles.centerStateTitle}>Call {String(call?.status || "ended")}</Text>
           <Text style={styles.centerStateCopy}>{unavailablePrompt || `${formatDuration(elapsedSeconds)} · ${room.reconnectCount} reconnects`}</Text>
-          <Pressable style={styles.doneButton} onPress={() => navigation.goBack()}><Text style={styles.doneText}>Done</Text></Pressable>
+          <Pressable style={styles.doneButton} onPress={done}><Text style={styles.doneText}>Done</Text></Pressable>
         </View>
       ) : controlsVisible ? (
         <View style={[styles.controlDock, { paddingBottom: Math.max(insets.bottom + 16, 28) }]}>

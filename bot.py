@@ -1443,6 +1443,53 @@ def ads_landing_page():
     return render_ads_landing_page(request.path.strip("/"))
 
 
+def generate_support_ticket_reference():
+    """Public support ticket reference: PS-<year>-<8 uppercase hex>."""
+    return f"PS-{datetime.now().year}-{secrets.token_hex(4).upper()}"
+
+
+def send_support_ticket_confirmation_email(to_email, name, reference, issue_type, subject, user_id=0):
+    """Branded confirmation to the person who opened the ticket. Returns bool, never raises."""
+    try:
+        if not to_email or not is_valid_email(to_email):
+            return False
+        safe_name = clean_html(name or "") or "there"
+        safe_issue = clean_html(issue_type or "general support")
+        safe_subject = clean_html(subject or "Support request")
+        email_subject = f"We received your PulseSoc support request ({reference})"
+        text = (
+            f"Hi {safe_name},\n\n"
+            f"Thanks for contacting PulseSoc support. Your request has been received.\n\n"
+            f"Reference: {reference}\n"
+            f"Category: {safe_issue}\n"
+            f"Subject: {safe_subject}\n\n"
+            "Our team will get back to you as soon as possible. Keep this reference for any follow-up.\n\n"
+            "CoinPlotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.\n\n"
+            "Support: support@pulsesoc.com"
+        )
+        html = branded_email_html("We received your support request", f"""
+          <p>Hi {safe_name},</p>
+          <p>Thanks for contacting PulseSoc support. Your request has been received.</p>
+          <p><strong>Reference:</strong> {reference}<br>
+          <strong>Category:</strong> {safe_issue}<br>
+          <strong>Subject:</strong> {safe_subject}</p>
+          <p>Our team will get back to you as soon as possible. Keep this reference for any follow-up.</p>
+          <p>Support: <a href="mailto:support@pulsesoc.com" style="color:#6edff6">support@pulsesoc.com</a></p>
+        """)
+        return bool(send_platform_email(
+            to_email,
+            email_subject,
+            text,
+            html,
+            user_id or 0,
+            email_type="support_ticket_confirmation",
+            idempotency_key=f"support-confirm:{reference}",
+        ))
+    except Exception as exc:
+        logging.warning("SUPPORT_TICKET_CONFIRMATION_EMAIL_FAILED reference=%s error=%s", reference, exc.__class__.__name__)
+        return False
+
+
 @webhook_app.route("/help", methods=["GET", "POST"])
 @webhook_app.route("/pulse/help", methods=["GET", "POST"])
 @webhook_app.route("/support", methods=["GET", "POST"])
@@ -1478,13 +1525,14 @@ def support_page():
         conn = db()
         cur = conn.cursor()
         now = datetime.now().isoformat()
+        reference = generate_support_ticket_reference()
         cur.execute(
             """
             INSERT INTO support_tickets
-            (user_id, email, name, issue_type, subject, message, status, priority, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'open', 'normal', ?, ?)
+            (user_id, email, name, issue_type, subject, message, status, priority, reference, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'open', 'normal', ?, ?, ?)
             """,
-            (account_user_id() or 0, email, name, issue_type, subject, message, now, now),
+            (account_user_id() or 0, email, name, issue_type, subject, message, reference, now, now),
         )
         ticket_id = cur.lastrowid
         cur.execute(
@@ -1495,20 +1543,21 @@ def support_page():
         conn.close()
         send_channel_email(
             "support@pulsesoc.com",
-            f"PulseSoc Support Ticket: {subject}",
-            f"<p><strong>From:</strong> {clean_html(name)} &lt;{clean_html(email)}&gt;</p><p><strong>Issue:</strong> {clean_html(issue_type)}</p><p>{clean_html(message)}</p>",
-            f"From: {name} <{email}>\nIssue: {issue_type}\n\n{message}",
+            f"PulseSoc Support Ticket {reference}: {subject}",
+            f"<p><strong>Reference:</strong> {reference}</p><p><strong>From:</strong> {clean_html(name)} &lt;{clean_html(email)}&gt;</p><p><strong>Issue:</strong> {clean_html(issue_type)}</p><p>{clean_html(message)}</p>",
+            f"Reference: {reference}\nFrom: {name} <{email}>\nIssue: {issue_type}\n\n{message}",
             user_id=account_user_id() or 0,
             email_type="support_ticket",
             channel="support",
         )
-        log_product_event(account_user_id() or 0, "support_ticket_created", {"issue_type": issue_type, "ticket_id": ticket_id})
+        send_support_ticket_confirmation_email(email, name, reference, issue_type, subject, user_id=account_user_id() or 0)
+        log_product_event(account_user_id() or 0, "support_ticket_created", {"issue_type": issue_type, "ticket_id": ticket_id, "reference": reference})
         return render_template(
             "support.html",
             current_user=current_user,
             pulse_help=request.path.startswith("/pulse"),
             csrf_token=get_csrf_token(),
-            message=f"Support ticket #{ticket_id} opened. PulseSoc support received your request.",
+            message=f"Support ticket {reference} opened. PulseSoc support received your request. A confirmation email will be sent to {email}.",
         )
     return render_template("support.html", current_user=current_user, pulse_help=request.path.startswith("/pulse"), csrf_token=get_csrf_token())
 
@@ -1523,7 +1572,7 @@ def api_support_ticket():
         conn = db()
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-        cur.execute("SELECT id, issue_type, subject, status, priority, created_at, updated_at FROM support_tickets WHERE user_id=? ORDER BY id DESC LIMIT 100", (user["user_id"],))
+        cur.execute("SELECT id, reference, issue_type, subject, status, priority, created_at, updated_at FROM support_tickets WHERE user_id=? ORDER BY id DESC LIMIT 100", (user["user_id"],))
         tickets = [dict(row) for row in cur.fetchall()]
         conn.close()
         return jsonify({"ok": True, "tickets": tickets})
@@ -1538,13 +1587,14 @@ def api_support_ticket():
     conn = db()
     cur = conn.cursor()
     now = datetime.now().isoformat()
+    reference = generate_support_ticket_reference()
     cur.execute(
         """
         INSERT INTO support_tickets
-        (user_id, email, name, issue_type, subject, message, status, priority, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'open', 'normal', ?, ?)
+        (user_id, email, name, issue_type, subject, message, status, priority, reference, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'open', 'normal', ?, ?, ?)
         """,
-        ((user or {}).get("user_id") or 0, email, name, issue_type, subject, message, now, now),
+        ((user or {}).get("user_id") or 0, email, name, issue_type, subject, message, reference, now, now),
     )
     ticket_id = cur.lastrowid
     cur.execute(
@@ -1555,15 +1605,16 @@ def api_support_ticket():
     conn.close()
     send_channel_email(
         "support@pulsesoc.com",
-        f"PulseSoc Support Ticket: {subject}",
-        f"<p><strong>From:</strong> {clean_html(name)} &lt;{clean_html(email)}&gt;</p><p><strong>Issue:</strong> {clean_html(issue_type)}</p><p>{clean_html(message)}</p>",
-        f"From: {name} <{email}>\nIssue: {issue_type}\n\n{message}",
+        f"PulseSoc Support Ticket {reference}: {subject}",
+        f"<p><strong>Reference:</strong> {reference}</p><p><strong>From:</strong> {clean_html(name)} &lt;{clean_html(email)}&gt;</p><p><strong>Issue:</strong> {clean_html(issue_type)}</p><p>{clean_html(message)}</p>",
+        f"Reference: {reference}\nFrom: {name} <{email}>\nIssue: {issue_type}\n\n{message}",
         user_id=(user or {}).get("user_id") or 0,
         email_type="support_ticket",
         channel="support",
     )
-    log_product_event((user or {}).get("user_id") or 0, "support_ticket_created", {"issue_type": issue_type, "ticket_id": ticket_id})
-    return jsonify({"ok": True, "ticket_id": ticket_id, "message": "Support ticket opened."})
+    send_support_ticket_confirmation_email(email, name, reference, issue_type, subject, user_id=(user or {}).get("user_id") or 0)
+    log_product_event((user or {}).get("user_id") or 0, "support_ticket_created", {"issue_type": issue_type, "ticket_id": ticket_id, "reference": reference})
+    return jsonify({"ok": True, "ticket_id": ticket_id, "reference": reference, "message": f"Support ticket {reference} opened. A confirmation email will be sent to {email}."})
 
 
 @webhook_app.route("/security", methods=["GET"])
@@ -2560,6 +2611,8 @@ def basic_abuse_guard():
         "/signup": (8, 300),
         "/forgot-password": (6, 300),
         "/forgot-username": (6, 300),
+        "/api/mobile/auth/recover": (6, 300),
+        "/api/pulse/mobile/auth/recover": (6, 300),
         "/admin/login": (8, 300),
         "/create-checkout-session": (8, 300),
         "/api/create-checkout-session": (8, 300),
@@ -3303,15 +3356,26 @@ def read_local_presence(user_id):
         conn.close()
 
 
+from services.device_classification import classify_device, device_family_fingerprint
+
+
 def presence_device_label():
-    user_agent = (request.headers.get("User-Agent") or "").lower()
-    if "iphone" in user_agent or "ipad" in user_agent:
+    user_agent = request.headers.get("User-Agent") or ""
+    info = classify_device(user_agent, request.headers)
+    if info.get("is_native_app") or info.get("native_likely"):
+        return f"{info.get('platform') or 'mobile'}-app"
+    platform = info.get("platform") or ""
+    device_type = info.get("device_type") or "unknown"
+    if platform == "ios":
         return "ios-web"
-    if "android" in user_agent:
+    if platform == "android":
         return "android-web"
-    if "mobile" in user_agent:
+    if device_type in ("mobile", "tablet"):
         return "mobile-web"
-    return "desktop-web"
+    if device_type == "desktop":
+        return "desktop-web"
+    # Unknown/empty UA: do NOT claim desktop.
+    return "web"
 
 
 def should_record_presence_for_path(path):
@@ -4732,9 +4796,14 @@ def render_account_page(page, title, **context):
 
 
 def native_app_request_context():
-    user_agent = request.headers.get("User-Agent", "") if has_request_context() else ""
-    is_native = "PulseSocNativeApp/" in user_agent
-    platform = "ios" if is_native and ("(ios;" in user_agent.lower() or "iphone" in user_agent.lower() or "ipad" in user_agent.lower()) else "android" if is_native else ""
+    if not has_request_context():
+        return {"is_native": False, "platform": "", "is_ios": False}
+    user_agent = request.headers.get("User-Agent", "")
+    # Canonical classification: PulseSocNativeApp/ UA prefix OR the
+    # X-PulseSoc-Platform header (ios|android|ipad) mark a native-app request.
+    info = classify_device(user_agent, request.headers)
+    is_native = bool(info.get("is_native_app"))
+    platform = (info.get("platform") or "") if is_native else ""
     return {"is_native": is_native, "platform": platform, "is_ios": platform == "ios"}
 
 
@@ -5637,13 +5706,8 @@ def load_password_reset_record(cur, token):
         "SELECT id, user_id, expires_at, used_at, token_hash FROM password_reset_tokens WHERE token_hash=? ORDER BY id DESC LIMIT 1",
         (token_hash,),
     )
-    row = cur.fetchone()
-    if row:
-        return row
-    cur.execute(
-        "SELECT id, user_id, expires_at, used_at, token_hash FROM password_reset_tokens WHERE token=? ORDER BY id DESC LIMIT 1",
-        (token,),
-    )
+    # Tokens are stored HMAC-hashed only; there is intentionally no legacy
+    # plaintext-token fallback lookup here.
     return cur.fetchone()
 
 
@@ -10202,33 +10266,49 @@ def api_dashboard_account_verification_request():
         conn.close()
 
 
-@webhook_app.route("/api/dashboard/account/verification/appeal", methods=["POST"])
-def api_dashboard_account_verification_appeal():
+# NOTE (App Review item 9a): the duplicate POST /api/dashboard/account/verification/appeal
+# route that previously lived here (api_dashboard_account_verification_appeal, backed by
+# dashboard_account_command_center.appeal_verification_request) was dead code — Werkzeug
+# matches the first-registered rule, so api_dashboard_verification_appeal (registered
+# earlier in this module, backed by pulsesoc_dashboard_centers.submit_appeal) always won.
+# That surviving handler writes the verification_appeals ledger row, flips the
+# verification_requests status to 'appealed', and emits the safety push event.
+
+
+@webhook_app.route("/api/dashboard/account/strikes/<int:strike_id>/appeal", methods=["POST"])
+def api_dashboard_account_strike_appeal(strike_id):
     init_db()
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
     payload = request.get_json(silent=True) or {}
+    reason_text = str(payload.get("reason") or payload.get("reason_text") or "").strip()
     conn = db()
+    conn.row_factory = sqlite3.Row
     try:
-        result = dashboard_account_command_center.appeal_verification_request(conn, int(user["user_id"]), safe_int(payload.get("request_id"), 0), payload.get("appeal_note") or "")
+        result = dashboard_account_command_center.submit_strike_appeal(conn, int(user["user_id"]), int(strike_id), reason_text)
         cur = conn.cursor()
-        request_id = safe_int(payload.get("request_id"), 0)
         pulse_emit_comms_safety_event(
             cur,
             user["user_id"],
             "safety_appeal_submitted",
-            "verification_appeal",
-            request_id,
+            "strike_appeal",
+            int(strike_id),
             actor_user_id=user["user_id"],
-            target_url="/pulse/verification",
-            title="Appeal submitted",
-            body="Your verification appeal was submitted for review.",
+            target_url="/dashboard/account/health",
+            title="Strike appeal submitted",
+            body="Your account strike appeal was submitted for review.",
             category="safety",
-            extra={"request_id": request_id, "appeal_scope": "verification"},
+            extra={"strike_id": int(strike_id), "reference": result.get("reference") or "", "appeal_scope": "strike"},
         )
         conn.commit()
-        return jsonify({"ok": True, "message": "Verification appeal submitted.", **result})
+        return jsonify({"ok": True, "reference": result.get("reference"), "status": result.get("status") or "submitted"})
+    except LookupError as exc:
+        conn.rollback()
+        return api_error(str(exc), 404)
+    except PermissionError as exc:
+        conn.rollback()
+        return api_error(str(exc), 403)
     except ValueError as exc:
         conn.rollback()
         return api_error(str(exc), 400)
@@ -10554,6 +10634,66 @@ def admin_account_command_verification_decision(request_id):
         return admin_page_html("Verification Decision", f"<h1>Verification decision failed</h1><p>{clean_html(str(exc))}</p><p><a class='button' href='/admin/account-command'>Back</a></p>", admin), 400
     conn.close()
     return redirect("/admin/account-command")
+
+
+@webhook_app.route("/admin/api/strike-appeals", methods=["GET"])
+def admin_api_strike_appeals_list():
+    admin, denied = require_admin_api("users.view")
+    if denied:
+        return denied
+    init_db()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        appeals = dashboard_account_command_center.list_strike_appeals(conn, request.args.get("status") or "", safe_int(request.args.get("limit"), 100))
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "appeals": appeals, "count": len(appeals)})
+
+
+@webhook_app.route("/admin/api/strike-appeals/<int:appeal_id>/decide", methods=["POST"])
+def admin_api_strike_appeal_decide(appeal_id):
+    admin, denied = require_admin_api("users.manage")
+    if denied:
+        return denied
+    init_db()
+    payload = request.get_json(silent=True) or {}
+    decision = str(payload.get("decision") or request.form.get("decision") or "").strip().lower()
+    reason = str(payload.get("reason") or request.form.get("reason") or "").strip()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        result = dashboard_account_command_center.admin_decide_strike_appeal(conn, int(appeal_id), int(admin.get("id") or admin.get("user_id") or 0), decision, reason)
+        target_user_id = safe_int(result.get("user_id"), 0)
+        if target_user_id:
+            review_event = "safety_appeal_approved" if result.get("status") == "approved" else "safety_appeal_rejected"
+            pulse_emit_trust_safety_review_event(
+                conn.cursor(),
+                target_user_id,
+                review_event,
+                "strike_appeal",
+                int(appeal_id),
+                actor_user_id=admin.get("id") or admin.get("user_id") or 0,
+                status=str(result.get("status") or ""),
+                target_url="/dashboard/account/health",
+                title="Strike appeal decided",
+                body=f"Your account strike appeal was {result.get('status')}.",
+                extra={"appeal_id": int(appeal_id), "strike_id": result.get("strike_id"), "reference": result.get("reference") or "", "decision": result.get("status")},
+            )
+            conn.commit()
+    except LookupError as exc:
+        conn.close()
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        conn.close()
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    log_admin_audit(admin.get("id"), "strike_appeal_decision", "account_strike_appeal", str(appeal_id), {"decision": decision, "reason_provided": bool(reason)})
+    return jsonify({"ok": True, **{k: result[k] for k in ("appeal_id", "strike_id", "reference", "status") if k in result}})
 
 
 @webhook_app.route("/pulse/growth", methods=["GET"])
@@ -13034,12 +13174,11 @@ def client_ip_hash():
 
 def parse_device(user_agent):
     ua = (user_agent or "").lower()
-    if "ipad" in ua or "tablet" in ua:
-        device = "tablet"
-    elif "mobile" in ua or "iphone" in ua or "android" in ua:
-        device = "mobile"
-    else:
-        device = "desktop"
+    # Canonical classifier (services/device_classification.py). Emits the
+    # legacy analytics enum ("mobile"/"tablet"/"desktop") plus "unknown" —
+    # empty/unrecognized UAs are no longer misreported as desktop.
+    headers = request.headers if has_request_context() and (request.headers.get("User-Agent") or "") == (user_agent or "") else None
+    device = classify_device(user_agent, headers).get("device_type") or "unknown"
     if "edg/" in ua:
         browser = "Edge"
     elif "chrome" in ua and "safari" in ua:
@@ -13063,7 +13202,10 @@ def get_utm_payload(payload):
 
 def visitor_user_agent_meta(user_agent):
     ua_lower = (user_agent or "").lower()
-    device_type = "mobile" if any(token in ua_lower for token in ("mobile", "iphone", "android")) else "tablet" if "ipad" in ua_lower or "tablet" in ua_lower else "desktop"
+    # Canonical classifier; preserves "mobile"/"tablet"/"desktop" and adds
+    # "unknown" (previously an empty or app UA fell through to "desktop",
+    # which made login-security emails call the iOS app a desktop device).
+    device_type = classify_device(user_agent).get("device_type") or "unknown"
     browser = "Chrome" if "chrome" in ua_lower and "edg" not in ua_lower else "Safari" if "safari" in ua_lower and "chrome" not in ua_lower else "Firefox" if "firefox" in ua_lower else "Edge" if "edg" in ua_lower else "Other"
     os_name = "iOS" if "iphone" in ua_lower or "ipad" in ua_lower else "Android" if "android" in ua_lower else "macOS" if "mac os" in ua_lower or "macintosh" in ua_lower else "Windows" if "windows" in ua_lower else "Linux" if "linux" in ua_lower else "Other"
     is_bot = any(token in ua_lower for token in ("bot", "crawl", "spider", "slurp", "uptime", "monitor", "healthcheck", "headless", "preview", "facebookexternalhit", "twitterbot"))
@@ -13455,9 +13597,184 @@ def referral_link_api():
     })
 
 
+PULSESOC_APP_STORE_FALLBACK_URL = "https://apps.apple.com/us/app/pulsesoc/id6777591572"
+REFERRAL_DEFERRED_CLAIM_WINDOW_HOURS = 48
+
+
+def pulsesoc_app_store_url():
+    """App Store destination for iOS referral redirects.
+
+    Fixed env/constant only — never derived from request input, so the /r/
+    route cannot become an open redirect.
+    """
+    url = (os.getenv("PULSESOC_APP_STORE_URL") or "").strip()
+    if url.startswith("https://apps.apple.com/"):
+        return url
+    return PULSESOC_APP_STORE_FALLBACK_URL
+
+
+def referral_device_family_hash(user_agent=None, headers=None):
+    """Salted hash of the coarse device family (e.g. "ios-mobile").
+
+    Deliberately coarse: the App Store redirect arrives via Mobile Safari
+    while the deferred claim arrives via the native app's URLSession UA, so
+    an exact-UA hash would never match its own install.
+    """
+    if user_agent is None and has_request_context():
+        user_agent = request.headers.get("User-Agent", "")
+        headers = request.headers
+    family = device_family_fingerprint(user_agent or "", headers)
+    salt = os.getenv("ANALYTICS_SALT", "coinpilotxai-inc")
+    return hashlib.sha256(f"{salt}:ua-family:{family}".encode("utf-8")).hexdigest()
+
+
+def is_ios_user_agent(user_agent):
+    """Best-effort iOS detection for the referral redirect.
+
+    iPadOS defaults to a Macintosh (desktop) UA in Safari — those visitors
+    keep the web flow; this is a documented limitation.
+    """
+    ua = (user_agent or "").lower()
+    return any(token in ua for token in ("iphone", "ipad", "ipod"))
+
+
+def record_referral_deferred_claim(cur, code, ip_hash, ua_hash):
+    cur.execute(
+        """
+        INSERT INTO referral_deferred_claims (referral_code, ip_hash, ua_hash, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (code, ip_hash, ua_hash, datetime.now().isoformat()),
+    )
+
+
+def claim_deferred_referral(user_id, code="", ip_hash="", ua_hash=""):
+    """Attribute a mobile signup/login to a referral.
+
+    Explicit valid code wins; otherwise match the most recent unclaimed
+    deferred row (same ip_hash + device-family hash, <=48h old). Idempotent:
+    a second call for the same user is a no-op success. Runs the same
+    canonical attribution as web signup (record_referral_signup).
+    """
+    user_id = int(user_id or 0)
+    if not user_id:
+        return {"claimed": False}
+    now = datetime.now()
+    cutoff = (now - timedelta(hours=REFERRAL_DEFERRED_CLAIM_WINDOW_HOURS)).isoformat()
+    conn = db()
+    cur = conn.cursor()
+    try:
+        # Idempotency: this user already claimed a deferred referral.
+        cur.execute("SELECT id FROM referral_deferred_claims WHERE claimed_user_id=? LIMIT 1", (user_id,))
+        if cur.fetchone():
+            conn.close()
+            return {"claimed": True, "already_claimed": True}
+        # Idempotency: this user is already attributed (e.g. web signup path).
+        cur.execute("SELECT id FROM referral_conversions WHERE referred_user_id=? LIMIT 1", (user_id,))
+        if cur.fetchone():
+            conn.close()
+            return {"claimed": True, "already_claimed": True}
+        resolved_code = ""
+        matched_claim_id = None
+        if code:
+            cur.execute("SELECT user_id FROM users WHERE referral_code=? LIMIT 1", (code,))
+            row = cur.fetchone()
+            if row and int(row[0] or 0) != user_id:
+                resolved_code = code
+        if not resolved_code and ip_hash and ua_hash:
+            cur.execute(
+                """
+                SELECT id, referral_code FROM referral_deferred_claims
+                WHERE (claimed_user_id IS NULL OR claimed_user_id=0)
+                  AND ip_hash=? AND ua_hash=? AND created_at>=?
+                ORDER BY created_at DESC, id DESC LIMIT 1
+                """,
+                (ip_hash, ua_hash, cutoff),
+            )
+            row = cur.fetchone()
+            if row:
+                cur.execute("SELECT user_id FROM users WHERE referral_code=? LIMIT 1", (row[1],))
+                referrer_row = cur.fetchone()
+                if referrer_row and int(referrer_row[0] or 0) != user_id:
+                    matched_claim_id = row[0]
+                    resolved_code = row[1]
+        if not resolved_code:
+            conn.close()
+            return {"claimed": False}
+        claimed_at = now.isoformat()
+        if matched_claim_id:
+            cur.execute(
+                "UPDATE referral_deferred_claims SET claimed_at=?, claimed_user_id=? WHERE id=? AND (claimed_user_id IS NULL OR claimed_user_id=0)",
+                (claimed_at, user_id, matched_claim_id),
+            )
+        else:
+            # Explicit code: mark a matching pending row if one exists,
+            # otherwise insert a claimed row so the retry path stays a no-op.
+            cur.execute(
+                """
+                SELECT id FROM referral_deferred_claims
+                WHERE (claimed_user_id IS NULL OR claimed_user_id=0) AND referral_code=? AND created_at>=?
+                ORDER BY created_at DESC, id DESC LIMIT 1
+                """,
+                (resolved_code, cutoff),
+            )
+            pending = cur.fetchone()
+            if pending:
+                cur.execute(
+                    "UPDATE referral_deferred_claims SET claimed_at=?, claimed_user_id=? WHERE id=?",
+                    (claimed_at, user_id, pending[0]),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO referral_deferred_claims (referral_code, ip_hash, ua_hash, created_at, claimed_at, claimed_user_id)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (resolved_code, ip_hash or "", ua_hash or "", claimed_at, claimed_at, user_id),
+                )
+        # Mirror web signup: users.referred_by feeds evaluate_referral_reward.
+        cur.execute(
+            "UPDATE users SET referred_by=?, updated_at=? WHERE user_id=? AND (referred_by IS NULL OR referred_by='')",
+            (resolved_code, claimed_at, user_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        logging.info("Referral deferred claim failed: %s", exc)
+        return {"claimed": False}
+    # Canonical attribution — same path as web signup.
+    record_referral_signup(user_id, resolved_code)
+    return {"claimed": True}
+
+
+@webhook_app.route("/api/mobile/referral/claim", methods=["POST"])
+@webhook_app.route("/api/pulse/mobile/referral/claim", methods=["POST"])
+def api_mobile_referral_claim():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Authentication required.", 401, error="authentication_required")
+    payload = request.get_json(silent=True) or {}
+    code = clean_html(str(payload.get("code") or "").strip())[:80]
+    result = claim_deferred_referral(
+        int(user["user_id"]),
+        code=code,
+        ip_hash=client_ip_hash(),
+        ua_hash=referral_device_family_hash(),
+    )
+    # Never reveal referrer identity — claimed boolean only.
+    return jsonify({"ok": True, "claimed": bool(result.get("claimed"))})
+
+
 @webhook_app.route("/r/<referral_code>", methods=["GET"])
 def referral_redirect(referral_code):
     code = clean_html(referral_code)[:80]
+    user_agent = request.headers.get("User-Agent", "")
+    ios_visitor = is_ios_user_agent(user_agent)
     conn = db()
     cur = conn.cursor()
     cur.execute("SELECT user_id FROM users WHERE referral_code=? LIMIT 1", (code,))
@@ -13478,8 +13795,21 @@ def referral_redirect(referral_code):
             datetime.now().isoformat(),
         ),
     )
+    if ios_visitor and referrer_user_id:
+        # Deferred attribution for the App Store hop: the app calls
+        # POST /api/mobile/referral/claim after signup and we match on
+        # ip_hash + device-family hash within 48h.
+        try:
+            record_referral_deferred_claim(cur, code, client_ip_hash(), referral_device_family_hash(user_agent, request.headers))
+        except Exception as exc:
+            logging.info("Referral deferred claim write failed: %s", exc)
     conn.commit()
     conn.close()
+    if ios_visitor:
+        # Straight to the App Store listing (fixed destination, no landing
+        # page, no extra tap). Invalid codes still go to the store — just
+        # without a deferred-attribution row.
+        return redirect(pulsesoc_app_store_url(), code=302)
     return redirect(f"/?ref={quote(code)}&utm_source=referral&utm_medium=share&utm_campaign=user_referral", code=302)
 
 
@@ -13846,9 +14176,80 @@ def admin_verification_appeals_page():
         appeals = [dict(row) for row in cur.fetchall()]
     finally:
         conn.close()
-    rows = "".join(f"<tr><td>{int(row.get('id') or 0)}</td><td>{int(row.get('request_id') or 0)}</td><td>{int(row.get('user_id') or 0)}</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html((row.get('appeal_text') or '')[:160])}</td><td>{clean_html(row.get('created_at') or '')}</td></tr>" for row in appeals)
-    empty = "<tr><td colspan='6'>No appeals yet.</td></tr>"
-    return _verification_admin_shell("Verification Appeals", f"<section class='card'><table><thead><tr><th>ID</th><th>Request</th><th>User</th><th>Status</th><th>Appeal</th><th>Created</th></tr></thead><tbody>{rows or empty}</tbody></table></section>")
+    def _appeal_action_cell(row):
+        status = str(row.get("status") or "submitted").lower()
+        if status not in {"submitted", "under_review"}:
+            reviewed = f"by #{int(row.get('reviewed_by') or 0)} at {clean_html(row.get('reviewed_at') or '')}"
+            reason = clean_html((row.get("decision_reason") or "")[:120])
+            return f"<small>Decided {reviewed}</small>" + (f"<br><small>{reason}</small>" if reason else "")
+        appeal_id = int(row.get("id") or 0)
+        return (
+            f"<form method='post' action='/admin/verification/appeals/{appeal_id}/decide' style='display:flex;gap:4px;align-items:center'>"
+            "<select name='decision'><option value='approved'>Approve</option><option value='rejected'>Reject</option></select>"
+            "<input name='reason' placeholder='Public reason' maxlength='1000'>"
+            "<button>Decide</button></form>"
+        )
+
+    rows = "".join(f"<tr><td>{int(row.get('id') or 0)}</td><td>{int(row.get('request_id') or 0)}</td><td>{int(row.get('user_id') or 0)}</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html((row.get('appeal_text') or '')[:160])}</td><td>{clean_html(row.get('created_at') or '')}</td><td>{_appeal_action_cell(row)}</td></tr>" for row in appeals)
+    empty = "<tr><td colspan='7'>No appeals yet.</td></tr>"
+    return _verification_admin_shell("Verification Appeals", f"<section class='card'><table><thead><tr><th>ID</th><th>Request</th><th>User</th><th>Status</th><th>Appeal</th><th>Created</th><th>Actions</th></tr></thead><tbody>{rows or empty}</tbody></table></section>")
+
+
+@webhook_app.route("/admin/verification/appeals/<int:appeal_id>/decide", methods=["POST"])
+def admin_verification_appeal_decide(appeal_id):
+    init_db()
+    admin, failure = _verification_admin_or_redirect()
+    if failure:
+        return failure
+    decision = str(request.form.get("decision") or "").strip().lower()
+    reason = str(request.form.get("reason") or "").strip()[:1000]
+    if decision not in {"approved", "rejected"}:
+        return _verification_admin_shell("Verification Appeals", "<section class='card'><p>Choose approve or reject.</p><p><a class='button' href='/admin/verification/appeals'>Back</a></p></section>"), 400
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    try:
+        pulsesoc_dashboard_centers.ensure_tables(conn)
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM verification_appeals WHERE id=? LIMIT 1", (int(appeal_id),))
+        appeal = dict(cur.fetchone() or {})
+        if not appeal:
+            return _verification_admin_shell("Verification Appeals", "<section class='card'><p>Appeal not found.</p><p><a class='button' href='/admin/verification/appeals'>Back</a></p></section>"), 404
+        if str(appeal.get("status") or "submitted").lower() not in {"submitted", "under_review"}:
+            return _verification_admin_shell("Verification Appeals", "<section class='card'><p>This appeal was already decided.</p><p><a class='button' href='/admin/verification/appeals'>Back</a></p></section>"), 400
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        reviewer_id = safe_int(admin.get("id") or admin.get("user_id"), 0)
+        cur.execute(
+            "UPDATE verification_appeals SET status=?, reviewed_by=?, reviewed_at=?, decision_reason=? WHERE id=?",
+            (decision, reviewer_id, now, reason, int(appeal_id)),
+        )
+        request_id = safe_int(appeal.get("request_id"), 0)
+        if request_id:
+            try:
+                request_columns = {str(col).lower() for col in db_service.get_table_columns(cur, "verification_requests")}
+            except Exception:
+                request_columns = set()
+            if "appeal_status" in request_columns:
+                cur.execute("UPDATE verification_requests SET appeal_status=?, updated_at=? WHERE id=?", (decision, now, request_id))
+        target_user_id = safe_int(appeal.get("user_id"), 0)
+        if target_user_id:
+            pulse_emit_trust_safety_review_event(
+                cur,
+                target_user_id,
+                "safety_appeal_approved" if decision == "approved" else "safety_appeal_rejected",
+                "verification_appeal",
+                int(appeal_id),
+                actor_user_id=reviewer_id,
+                status=decision,
+                target_url="/pulse/verification",
+                title="Verification appeal decided",
+                body=f"Your verification appeal was {decision}.",
+                extra={"appeal_id": int(appeal_id), "request_id": request_id, "decision": decision, "source": "admin_verification_appeals"},
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    log_admin_audit(admin.get("id"), "verification_appeal_decision", "verification_appeal", str(appeal_id), {"decision": decision, "reason_provided": bool(reason)})
+    return redirect("/admin/verification/appeals")
 
 
 @webhook_app.route("/admin/verification/document/<int:doc_id>", methods=["GET"])
@@ -39245,6 +39646,8 @@ def api_pulse_search():
         return jsonify({"ok": True, "query": "", "results": empty, "trending": trending, "recent": [], "limit": limit})
 
     like = f"%{q}%"
+    from services.discovery_visibility import discovery_visible_sql
+    author_visible = discovery_visible_sql("u")
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -39260,20 +39663,22 @@ def api_pulse_search():
 
     add_results(
         "posts",
-        """
-        SELECT id, title, body, post_type, created_at
-        FROM pulse_posts
-        WHERE deleted_at IS NULL
-          AND COALESCE(status, 'published') NOT IN ('deleted', 'removed')
-          AND COALESCE(visibility, 'public') IN ('public', 'global', '')
+        f"""
+        SELECT po.id, po.title, po.body, po.post_type, po.created_at
+        FROM pulse_posts po
+        LEFT JOIN users u ON u.user_id = po.user_id
+        WHERE po.deleted_at IS NULL
+          AND COALESCE(po.status, 'published') NOT IN ('deleted', 'removed')
+          AND COALESCE(po.visibility, 'public') IN ('public', 'global', '')
+          AND (u.user_id IS NULL OR {author_visible})
           AND (
-            COALESCE(title, '') LIKE ?
-            OR COALESCE(body, '') LIKE ?
-            OR COALESCE(ai_tags_json, '') LIKE ?
-            OR COALESCE(tags_json, '') LIKE ?
-            OR COALESCE(post_type, '') LIKE ?
+            COALESCE(po.title, '') LIKE ?
+            OR COALESCE(po.body, '') LIKE ?
+            OR COALESCE(po.ai_tags_json, '') LIKE ?
+            OR COALESCE(po.tags_json, '') LIKE ?
+            OR COALESCE(po.post_type, '') LIKE ?
           )
-        ORDER BY id DESC
+        ORDER BY po.id DESC
         LIMIT ?
         """,
         (like, like, like, like, like, limit),
@@ -39288,14 +39693,16 @@ def api_pulse_search():
     )
     add_results(
         "comments",
-        """
+        f"""
         SELECT c.id, c.post_id, c.body, c.created_at, p.title AS post_title
         FROM pulse_comments c
         JOIN pulse_posts p ON p.id = c.post_id
+        LEFT JOIN users u ON u.user_id = c.user_id
         WHERE c.deleted_at IS NULL
           AND p.deleted_at IS NULL
           AND COALESCE(p.visibility, 'public') IN ('public', 'global', '')
           AND COALESCE(c.moderation_status, 'approved') NOT IN ('removed', 'deleted', 'blocked')
+          AND (u.user_id IS NULL OR {author_visible})
           AND COALESCE(c.body, '') LIKE ?
         ORDER BY c.id DESC
         LIMIT ?
@@ -39312,13 +39719,16 @@ def api_pulse_search():
     )
     add_results(
         "creators",
-        """
-        SELECT user_id, username, display_name, full_name, avatar_url
-        FROM users
-        WHERE COALESCE(username, '') LIKE ?
-           OR COALESCE(display_name, '') LIKE ?
-           OR COALESCE(full_name, '') LIKE ?
-        ORDER BY user_id DESC
+        f"""
+        SELECT u.user_id, u.username, u.display_name, u.full_name, u.avatar_url
+        FROM users u
+        WHERE {author_visible}
+          AND (
+            COALESCE(u.username, '') LIKE ?
+            OR COALESCE(u.display_name, '') LIKE ?
+            OR COALESCE(u.full_name, '') LIKE ?
+          )
+        ORDER BY u.user_id DESC
         LIMIT ?
         """,
         (like, like, like, limit),
@@ -39337,12 +39747,15 @@ def api_pulse_search():
     if not results["creators"]:
         add_results(
             "creators",
-            """
-            SELECT user_id, username, display_name
-            FROM users
-            WHERE COALESCE(username, '') LIKE ?
-               OR COALESCE(display_name, '') LIKE ?
-            ORDER BY user_id DESC
+            f"""
+            SELECT u.user_id, u.username, u.display_name
+            FROM users u
+            WHERE {author_visible}
+              AND (
+                COALESCE(u.username, '') LIKE ?
+                OR COALESCE(u.display_name, '') LIKE ?
+              )
+            ORDER BY u.user_id DESC
             LIMIT ?
             """,
             (like, like, limit),
@@ -43918,19 +44331,23 @@ def pulse_search_users(cur, query, viewer_user_id=0, limit=12, allow_email=False
         email_clause = " OR lower(u.email)=lower(?) "
         params.append(q_lower)
     params.append(int(limit or 12))
+    from services.discovery_visibility import discovery_visible_sql
     cur.execute(
         f"""
         SELECT u.user_id, u.display_name, u.full_name, u.username, u.email, u.avatar_url,
                ap.public_player_id, ap.display_name AS arena_name
         FROM users u
         LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
-        WHERE lower(COALESCE(ap.public_player_id,''))=lower(?)
-           OR lower(COALESCE(u.username,''))=lower(?)
-           OR lower(COALESCE(u.display_name,'')) LIKE ?
-           OR lower(COALESCE(u.full_name,'')) LIKE ?
-           OR lower(COALESCE(u.username,'')) LIKE ?
-           OR lower(COALESCE(ap.display_name,'')) LIKE ?
-           {email_clause}
+        WHERE {discovery_visible_sql("u")}
+          AND (
+            lower(COALESCE(ap.public_player_id,''))=lower(?)
+            OR lower(COALESCE(u.username,''))=lower(?)
+            OR lower(COALESCE(u.display_name,'')) LIKE ?
+            OR lower(COALESCE(u.full_name,'')) LIKE ?
+            OR lower(COALESCE(u.username,'')) LIKE ?
+            OR lower(COALESCE(ap.display_name,'')) LIKE ?
+            {email_clause}
+          )
         ORDER BY CASE WHEN u.user_id=? THEN 1 ELSE 0 END, u.user_id DESC
         LIMIT ?
         """,
@@ -44138,11 +44555,14 @@ def pulse_friend_graph(cur, user_id, limit=30):
         logging.warning("PULSE_FOLLOWS_GRAPH_QUERY_FAILED user_id=%s error=%s", user_id, exc)
     try:
         exclude = {user_id, *graph["friends"], *graph["following"]}
+        from services.discovery_visibility import discovery_visible_sql
         cur.execute(
-            """
+            f"""
             SELECT DISTINCT p.user_id
             FROM pulse_posts p
+            JOIN users u ON u.user_id = p.user_id
             WHERE p.user_id!=? AND p.deleted_at IS NULL
+              AND {discovery_visible_sql("u")}
             ORDER BY p.created_at DESC
             LIMIT 40
             """,
@@ -103390,6 +103810,7 @@ def _init_db_impl():
         ("telegram_username", "TEXT"),
         ("telegram_chat_id", "INTEGER"),
         ("account_status", "TEXT DEFAULT 'active'"),
+        ("hidden_from_discovery", "INTEGER DEFAULT 0"),
         ("access_enabled", "INTEGER DEFAULT 1"),
         ("login_enabled", "INTEGER DEFAULT 1"),
         ("email_verified", "INTEGER DEFAULT 0"),
@@ -109221,6 +109642,17 @@ def _init_db_impl():
     )
     """)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS referral_deferred_claims (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        referral_code TEXT,
+        ip_hash TEXT,
+        ua_hash TEXT,
+        created_at TEXT,
+        claimed_at TEXT,
+        claimed_user_id INTEGER
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS user_privilege_profiles (
         user_id INTEGER PRIMARY KEY,
         trust_score INTEGER DEFAULT 0,
@@ -111480,10 +111912,17 @@ def _init_db_impl():
         priority TEXT DEFAULT 'normal',
         assigned_to INTEGER,
         internal_notes TEXT,
+        reference TEXT,
         created_at TEXT,
         updated_at TEXT
     )
     """)
+    add_column_if_missing(cur, "support_tickets", "reference", "TEXT", conn)
+    try:
+        # NULL references (pre-migration rows) never collide in SQLite or Postgres.
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_support_tickets_reference ON support_tickets (reference)")
+    except Exception as exc:
+        logging.info("SUPPORT_TICKET_REFERENCE_INDEX_SKIPPED error=%s", exc)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS support_ticket_messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

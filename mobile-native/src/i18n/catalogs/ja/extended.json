@@ -207,7 +207,9 @@
       "cameraOn": "カメラオン",
       "cameraOff": "カメラオフ",
       "switchCamera": "カメラを切り替え",
-      "speaker": "スピーカー"
+      "speaker": "スピーカー",
+      "returnToCall": "通話に戻る",
+      "ongoingCall": "通話中"
     }
   },
   "commerce": {
@@ -1432,6 +1434,11 @@
     }
   },
   "settings": {
+    "supportTicket": {
+      "sentTitle": "送信しました",
+      "sentWithReference": "お問い合わせ番号: {{reference}}。確認メールを {{email}} にお送りします。ほとんどのお問い合わせには1営業日以内に最初の返信をお届けします。",
+      "sentBody": "お問い合わせを受け付けました。確認メールを {{email}} にお送りします。ほとんどのお問い合わせには1営業日以内に最初の返信をお届けします。"
+    },
     "root": {
       "title": "設定",
       "account": "アカウント",

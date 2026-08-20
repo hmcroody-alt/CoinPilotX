@@ -207,7 +207,9 @@
       "cameraOn": "Kamera louvri",
       "cameraOff": "Kamera fèmen",
       "switchCamera": "Chanje kamera",
-      "speaker": "Wo palè"
+      "speaker": "Wo palè",
+      "returnToCall": "Retounen nan apèl la",
+      "ongoingCall": "Apèl an kou"
     }
   },
   "commerce": {
@@ -1440,6 +1442,11 @@
     }
   },
   "settings": {
+    "supportTicket": {
+      "sentTitle": "Demann lan voye",
+      "sentWithReference": "Referans ou: {{reference}}. N ap voye yon imèl konfimasyon bay {{email}}. Pifò demann jwenn yon premye repons nan yon jou travay.",
+      "sentBody": "Nou resevwa demann ou an. N ap voye yon imèl konfimasyon bay {{email}}. Pifò demann jwenn yon premye repons nan yon jou travay."
+    },
     "root": {
       "title": "Paramèt",
       "account": "Kont",

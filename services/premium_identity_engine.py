@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 PREMIUM_STAR = "premium_verified_star"
@@ -28,13 +28,55 @@ def _future(value):
     return parsed > now
 
 
+# Grace window applied before a stale 'active' status is treated as lapsed.
+# Covers a briefly delayed or retried provider webhook without leaving premium
+# alive forever when the webhook never arrives.
+_STALE_EXPIRY_GRACE = timedelta(days=3)
+
+
+def _clearly_expired(value):
+    """True when an expiry timestamp is present and past by more than the
+    grace window. Missing/unparseable values return False (no opinion)."""
+    parsed = _parse_dt(value)
+    if not parsed:
+        return False
+    now = datetime.now(parsed.tzinfo) if parsed.tzinfo else datetime.now()
+    return parsed + _STALE_EXPIRY_GRACE < now
+
+
+def _owner_user_ids():
+    """Owner allowlist from ``PULSESOC_OWNER_USER_IDS`` (comma-separated user
+    ids). Read per call so an operator change takes effect without a restart.
+    Empty or unset means NOBODY holds owner identity."""
+    raw = os.getenv("PULSESOC_OWNER_USER_IDS", "") or ""
+    ids = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            ids.add(int(part))
+        except ValueError:
+            continue
+    return ids
+
+
 def is_owner(row):
+    """Owner identity by allowlisted user id ONLY.
+
+    The previous implementation also matched the account's DISPLAY NAME (and a
+    hardcoded email) against owner constants. Display names are user-editable:
+    any user could rename themselves to the owner's name and inherit permanent
+    premium plus every owner bypass (live-stream gates, feed labels, ...).
+    Identity must come from something the platform controls — the immutable
+    user id — allowlisted explicitly via env. Default (unset) grants nobody.
+    """
     row = row or {}
-    owner_email = os.getenv("OWNER_ADMIN_EMAIL", "coinpilotxai@gmail.com").strip().lower()
-    owner_name = os.getenv("OWNER_ADMIN_FULL_NAME", "Roody Cherie").strip().lower()
-    email = str(row.get("email") or "").strip().lower()
-    display = str(row.get("display_name") or row.get("full_name") or "").strip().lower()
-    return bool((owner_email and email == owner_email) or (owner_name and display == owner_name))
+    try:
+        user_id = int(row.get("user_id") or 0)
+    except (TypeError, ValueError):
+        user_id = 0
+    return bool(user_id and user_id in _owner_user_ids())
 
 
 def has_active_premium(row):
@@ -49,8 +91,14 @@ def has_active_premium(row):
     status = str(row.get("premium_status") or row.get("subscription_status") or "").lower()
     if status in {"expired", "canceled", "cancelled", "past_due", "unpaid", "inactive"}:
         return False
-    if _future(row.get("premium_expires_at") or row.get("pro_expires_at") or row.get("subscription_expires_at")):
+    expiry = row.get("premium_expires_at") or row.get("pro_expires_at") or row.get("subscription_expires_at")
+    if _future(expiry):
         return True
+    # Expiry cross-check: a status frozen at 'active' by a missed provider
+    # webhook must not keep premium alive once the recorded period end is
+    # clearly in the past (beyond the grace window).
+    if status in {"active", "trialing"} and _clearly_expired(expiry):
+        return False
     return status in {"active", "trialing"} and (bool(int(row.get("is_pro") or row.get("pro_active") or 0)) or plan in {"pro", "premium"})
 
 

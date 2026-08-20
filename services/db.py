@@ -465,6 +465,7 @@ AUTO_PK_TABLES = {
     "scam_shield_scans": "id",
     "wallet_risk_checks": "id",
     "referral_events": "id",
+    "referral_deferred_claims": "id",
     "subscriptions": "id",
     "usage_events": "id",
     "referral_rewards": "id",

@@ -1,4 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+
+# Grace window before a stale 'active' subscription status is treated as
+# lapsed. Covers a delayed/retried provider webhook; beyond it, a recorded
+# period end in the past wins over the frozen status column.
+_STALE_EXPIRY_GRACE = timedelta(days=3)
 
 
 def _parse_datetime(value):
@@ -26,6 +31,16 @@ def _future(value):
     return parsed > now
 
 
+def _clearly_expired(row):
+    """True when the row's recorded period end is past by more than the grace
+    window. No expiry recorded -> False (status remains authoritative)."""
+    expires_at = _parse_datetime(row.get("pro_expires_at") or row.get("subscription_expires_at"))
+    if not expires_at:
+        return False
+    now = datetime.now(expires_at.tzinfo) if expires_at.tzinfo else datetime.now()
+    return expires_at + _STALE_EXPIRY_GRACE < now
+
+
 def _trial_not_expired(row):
     return (
         _future(row.get("trial_end_date"))
@@ -44,6 +59,10 @@ def pro_access_type(row):
     status = (row.get("subscription_status") or "").lower()
     trial_status = (row.get("trial_status") or "").lower()
     if plan == "pro" and status == "active":
+        # Expiry cross-check: 'active' frozen by a missed webhook must not
+        # outlive a clearly-past period end (beyond the grace window).
+        if _clearly_expired(row):
+            return "none"
         return "paid"
     if trial_status == "active" and _future(row.get("trial_end_date")):
         return "trial"

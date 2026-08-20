@@ -209,7 +209,9 @@
       "cameraOn": "Cámara activada",
       "cameraOff": "Cámara desactivada",
       "switchCamera": "Cambiar de cámara",
-      "speaker": "Altavoz"
+      "speaker": "Altavoz",
+      "returnToCall": "Volver a la llamada",
+      "ongoingCall": "Llamada en curso"
     }
   },
   "commerce": {
@@ -1442,6 +1444,11 @@
     }
   },
   "settings": {
+    "supportTicket": {
+      "sentTitle": "Solicitud enviada",
+      "sentWithReference": "Tu referencia: {{reference}}. Se enviará un correo de confirmación a {{email}}. La mayoría de las solicitudes reciben una primera respuesta en un día laborable.",
+      "sentBody": "Hemos recibido tu solicitud. Se enviará un correo de confirmación a {{email}}. La mayoría de las solicitudes reciben una primera respuesta en un día laborable."
+    },
     "root": {
       "title": "Configuración",
       "account": "Cuenta",

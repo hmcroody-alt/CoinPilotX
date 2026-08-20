@@ -20,6 +20,7 @@ import { SettingsProviders } from "./src/settings/SettingsProviders";
 import { colors } from "./src/theme/colors";
 import { useTheme } from "./src/theme/ThemeContext";
 import { registerPushDevice, syncPushDeviceRegistration } from "./src/api/push";
+import { claimReferralAttributionOnce } from "./src/api/referral";
 import { startPresenceSession, stopPresenceSession } from "./src/api/presenceSession";
 import { registerSessionInvalidationHandler } from "./src/api/pulseApi";
 import { configurePerfTracing, perfNow, recordDuration, setPerfContext, startSpan } from "./src/core/perfTrace";
@@ -114,6 +115,10 @@ function AppRoot() {
   useEffect(() => {
     if (authState.status !== "signedIn") return;
     registerPushDevice().catch(() => undefined);
+    // Deferred referral attribution: runs at most once per install (guarded by
+    // a persisted flag inside), covering both a fresh signup and the first
+    // authenticated launch after install. Fire-and-forget — never blocks auth.
+    void claimReferralAttributionOnce();
     const appState = AppState.addEventListener("change", (state) => {
       if (state === "active") syncPushDeviceRegistration().catch(() => undefined);
     });

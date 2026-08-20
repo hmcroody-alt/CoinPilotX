@@ -168,7 +168,11 @@ export function DataPrivacySettingsScreen() {
     try {
       // The session is on its way out server-side; leaving the user inside a
       // half-live account is the one ending this flow must not have.
-      setAuthState(await signOut());
+      // `clearBiometrics` matters here: an ordinary sign-out keeps a Face-ID
+      // gated refresh token so the user can return with Face ID, but this
+      // account is pending deletion — a lingering biometric credential could
+      // silently resume (and thereby cancel) the deletion.
+      setAuthState(await signOut({ clearBiometrics: true }));
     } catch (error) {
       if (mounted.current) {
         setSigningOut(false);

@@ -24,6 +24,7 @@ import {
   type SupportTicket
 } from "../../api/support";
 import { APP_VERSION, PULSE_API_BASE_URL } from "../../api/config";
+import { useTranslation } from "../../i18n";
 import { useAuth } from "../../session/auth";
 import { useTheme } from "../../theme/ThemeContext";
 
@@ -254,6 +255,7 @@ const TICKET_STATUS_TONE: Record<string, "accent" | "warning" | "muted"> = {
 
 export function HelpSettingsScreen() {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { authState } = useAuth();
 
   const [query, setQuery] = useState("");
@@ -341,7 +343,7 @@ export function HelpSettingsScreen() {
       setSubmitting(true);
       setFormError(null);
       try {
-        await createSupportTicket({
+        const result = await createSupportTicket({
           name: authState.user?.display_name || authState.user?.full_name || undefined,
           email: trimmedEmail,
           issue_type: kind === "contact" ? "support" : "bug",
@@ -356,9 +358,15 @@ export function HelpSettingsScreen() {
         setMessage("");
         setProblem("");
         setOpenForm(null);
+        // Quote the server-issued reference (PS-YYYY-XXXXXXXX) when we have
+        // one, and stay honest either way: the confirmation email is sent by
+        // the backend, so it is promised rather than asserted as delivered.
+        const reference = typeof result.reference === "string" ? result.reference.trim() : "";
         Alert.alert(
-          "Sent",
-          `We've received your ${kind === "contact" ? "message" : "report"} and replied to ${trimmedEmail} with a ticket reference. Most requests get a first response within one working day.`
+          t("settings:supportTicket.sentTitle"),
+          reference
+            ? t("settings:supportTicket.sentWithReference", { reference, email: trimmedEmail })
+            : t("settings:supportTicket.sentBody", { email: trimmedEmail })
         );
         void loadTickets();
       } catch (caught) {
@@ -369,7 +377,7 @@ export function HelpSettingsScreen() {
         if (mounted.current) setSubmitting(false);
       }
     },
-    [authState.user, diagnostics, email, loadTickets, message, problem, subject, theme.reduceMotion]
+    [authState.user, diagnostics, email, loadTickets, message, problem, subject, t, theme.reduceMotion]
   );
 
   const openTickets = tickets.filter((ticket) => ticket.status !== "closed");

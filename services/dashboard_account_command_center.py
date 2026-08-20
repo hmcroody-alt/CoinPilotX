@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -364,6 +365,22 @@ def ensure_schema(conn: Any) -> None:
             expires_at TEXT,
             created_at TEXT,
             updated_at TEXT
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS account_strike_appeals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            strike_id INTEGER,
+            user_id INTEGER,
+            reason_text TEXT,
+            status TEXT DEFAULT 'submitted',
+            reference TEXT,
+            created_at TEXT,
+            reviewed_by INTEGER,
+            reviewed_at TEXT,
+            decision_reason TEXT
         )
         """
     )
@@ -884,9 +901,36 @@ def admin_decide_verification(conn: Any, request_id: int, reviewer_id: int, deci
         cur.execute("UPDATE users SET verified_badge=1, updated_at=? WHERE user_id=?", (now, int(row.get("user_id") or 0)))
     elif decision in {"rejected", "suspended"}:
         cur.execute("UPDATE users SET updated_at=? WHERE user_id=?", (now, int(row.get("user_id") or 0)))
+    # App Review item 9b: keep the verification_appeals ledger in sync — rows used
+    # to stay 'submitted' forever because only verification_requests was updated.
+    sync_verification_appeal_decision(conn, request_id=int(request_id), reviewer_id=int(reviewer_id or 0), decision=decision, reason=reason, commit=False)
     record_account_audit(conn, user_id=_safe_int(row.get("user_id"), 0), actor_user_id=reviewer_id, action=f"verification_{decision}", target_type="verification_request", target_id=str(request_id), details={"reason_public": bool(reason)})
     conn.commit()
     return {"ok": True, "request_id": int(request_id), "status": decision}
+
+
+def sync_verification_appeal_decision(conn: Any, *, request_id: int, reviewer_id: int, decision: str, reason: str = "", commit: bool = True) -> int:
+    """Write reviewed_by/reviewed_at/decision_reason onto open verification_appeals
+    ledger rows for ``request_id``. approved/rejected map 1:1; any other decision
+    moves the appeal to 'under_review'. Returns the number of rows updated."""
+    decision = str(decision or "").strip().lower()
+    appeal_status = decision if decision in {"approved", "rejected"} else "under_review"
+    cur = conn.cursor()
+    if not _table_exists(cur, "verification_appeals"):
+        return 0
+    now = _now()
+    cur.execute(
+        """
+        UPDATE verification_appeals
+        SET status=?, reviewed_by=?, reviewed_at=?, decision_reason=?
+        WHERE request_id=? AND COALESCE(status, 'submitted') IN ('submitted', 'under_review')
+        """,
+        (appeal_status, int(reviewer_id or 0), now, str(reason or "")[:1000], int(request_id)),
+    )
+    updated = _safe_int(getattr(cur, "rowcount", 0), 0)
+    if commit and updated:
+        conn.commit()
+    return updated
 
 
 def add_account_health_event(
@@ -932,6 +976,113 @@ def add_account_health_event(
     record_account_audit(conn, user_id=user_id, actor_user_id=actor_user_id, action=f"{table}_created", target_type=table, target_id=str(item_id), details={"severity": severity})
     conn.commit()
     return {"ok": True, "id": item_id}
+
+
+STRIKE_APPEAL_OPEN_STATUSES = ("submitted", "under_review")
+
+
+def _new_strike_appeal_reference() -> str:
+    return f"SA-{datetime.utcnow().year}-{secrets.token_hex(3)}"
+
+
+def submit_strike_appeal(conn: Any, user_id: int, strike_id: int, reason_text: str) -> dict[str, Any]:
+    """Owner submits an appeal for one of their account strikes.
+
+    Raises LookupError (strike not found), PermissionError (not the strike owner),
+    ValueError (bad input / duplicate open appeal).
+    """
+    ensure_schema(conn)
+    user_id = _safe_int(user_id, 0)
+    strike_id = _safe_int(strike_id, 0)
+    reason_text = str(reason_text or "").strip()[:3000]
+    if len(reason_text) < 8:
+        raise ValueError("Add a short appeal reason before submitting.")
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM account_strikes WHERE id=? LIMIT 1", (strike_id,))
+    strike = _row_dict(cur.fetchone())
+    if not strike:
+        raise LookupError("Strike not found.")
+    if _safe_int(strike.get("user_id"), 0) != user_id:
+        raise PermissionError("You can only appeal strikes on your own account.")
+    placeholders = ", ".join("?" for _ in STRIKE_APPEAL_OPEN_STATUSES)
+    cur.execute(
+        f"SELECT id, reference FROM account_strike_appeals WHERE strike_id=? AND COALESCE(status,'submitted') IN ({placeholders}) LIMIT 1",
+        (strike_id, *STRIKE_APPEAL_OPEN_STATUSES),
+    )
+    existing = _row_dict(cur.fetchone())
+    if existing:
+        raise ValueError("An appeal for this strike is already under review.")
+    now = _now()
+    reference = _new_strike_appeal_reference()
+    cur.execute(
+        """
+        INSERT INTO account_strike_appeals (strike_id, user_id, reason_text, status, reference, created_at)
+        VALUES (?, ?, ?, 'submitted', ?, ?)
+        """,
+        (strike_id, user_id, reason_text, reference, now),
+    )
+    appeal_id = _safe_int(getattr(cur, "lastrowid", 0), 0)
+    cur.execute("UPDATE account_strikes SET appeal_status='submitted', updated_at=? WHERE id=?", (now, strike_id))
+    record_account_audit(conn, user_id=user_id, actor_user_id=user_id, action="strike_appeal_submitted", target_type="account_strike_appeal", target_id=str(appeal_id), details={"strike_id": strike_id, "reference": reference})
+    conn.commit()
+    return {"ok": True, "appeal_id": appeal_id, "reference": reference, "status": "submitted", "strike_id": strike_id}
+
+
+def list_strike_appeals(conn: Any, status: str = "", limit: int = 100) -> list[dict[str, Any]]:
+    ensure_schema(conn)
+    cur = conn.cursor()
+    status = str(status or "").strip().lower()
+    limit = max(1, min(_safe_int(limit, 100), 500))
+    if status:
+        cur.execute("SELECT * FROM account_strike_appeals WHERE COALESCE(status,'submitted')=? ORDER BY id DESC LIMIT ?", (status, limit))
+    else:
+        cur.execute("SELECT * FROM account_strike_appeals ORDER BY id DESC LIMIT ?", (limit,))
+    return [_row_dict(row) for row in cur.fetchall()]
+
+
+def admin_decide_strike_appeal(conn: Any, appeal_id: int, reviewer_id: int, decision: str, reason: str = "") -> dict[str, Any]:
+    """Approve/reject a strike appeal; keeps account_strikes.appeal_status in sync
+    and revokes the strike when the appeal is approved."""
+    ensure_schema(conn)
+    decision = str(decision or "").strip().lower()
+    if decision not in {"approved", "rejected"}:
+        raise ValueError("Choose a valid strike appeal decision (approved or rejected).")
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM account_strike_appeals WHERE id=? LIMIT 1", (_safe_int(appeal_id, 0),))
+    appeal = _row_dict(cur.fetchone())
+    if not appeal:
+        raise LookupError("Strike appeal not found.")
+    if str(appeal.get("status") or "submitted") not in STRIKE_APPEAL_OPEN_STATUSES:
+        raise ValueError("This strike appeal was already decided.")
+    now = _now()
+    cur.execute(
+        "UPDATE account_strike_appeals SET status=?, reviewed_by=?, reviewed_at=?, decision_reason=? WHERE id=?",
+        (decision, _safe_int(reviewer_id, 0), now, str(reason or "")[:1000], _safe_int(appeal_id, 0)),
+    )
+    strike_id = _safe_int(appeal.get("strike_id"), 0)
+    if strike_id:
+        if decision == "approved":
+            cur.execute("UPDATE account_strikes SET appeal_status='approved', status='revoked', updated_at=? WHERE id=?", (now, strike_id))
+        else:
+            cur.execute("UPDATE account_strikes SET appeal_status='rejected', updated_at=? WHERE id=?", (now, strike_id))
+    record_account_audit(
+        conn,
+        user_id=_safe_int(appeal.get("user_id"), 0),
+        actor_user_id=_safe_int(reviewer_id, 0),
+        action=f"strike_appeal_{decision}",
+        target_type="account_strike_appeal",
+        target_id=str(_safe_int(appeal_id, 0)),
+        details={"strike_id": strike_id, "reason_public": bool(reason)},
+    )
+    conn.commit()
+    return {
+        "ok": True,
+        "appeal_id": _safe_int(appeal_id, 0),
+        "strike_id": strike_id,
+        "user_id": _safe_int(appeal.get("user_id"), 0),
+        "reference": appeal.get("reference") or "",
+        "status": decision,
+    }
 
 
 def _count(cur: Any, table: str, where: str, params: tuple[Any, ...]) -> int:

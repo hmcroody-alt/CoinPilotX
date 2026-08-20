@@ -1,4 +1,4 @@
-import { PULSE_API_BASE_URL } from "./config";
+import { APP_VERSION, PULSE_API_BASE_URL } from "./config";
 import {
   clearNativeSessionCredentials,
   getSessionCookie,
@@ -25,6 +25,25 @@ function perfRouteLabel(path: string): string {
     .map((segment) => (/^\d+$/.test(segment) || /^[0-9a-f]{16,}$/i.test(segment) ? ":id" : segment))
     .join("/")
     .slice(0, 120);
+}
+
+/**
+ * Native app identification, sent on every request so the backend can classify
+ * the client correctly. The backend keys native detection off the
+ * "PulseSocNativeApp/" User-Agent prefix; without it the default CFNetwork /
+ * OkHttp UA classifies the app as a desktop browser. `X-PulseSoc-Platform` is
+ * the belt-and-braces companion for any proxy or runtime that strips or
+ * refuses a User-Agent override. Web builds keep the real browser UA.
+ */
+const NATIVE_CLIENT_PLATFORM = Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : "";
+const NATIVE_CLIENT_USER_AGENT = NATIVE_CLIENT_PLATFORM
+  ? `PulseSocNativeApp/${APP_VERSION || "0"} (${NATIVE_CLIENT_PLATFORM}; Expo)`
+  : "";
+
+function applyNativeClientHeaders(headers: Headers) {
+  if (!NATIVE_CLIENT_PLATFORM) return;
+  headers.set("X-PulseSoc-Platform", NATIVE_CLIENT_PLATFORM);
+  if (!headers.has("User-Agent")) headers.set("User-Agent", NATIVE_CLIENT_USER_AGENT);
 }
 
 export class PulseApiError extends Error {
@@ -125,6 +144,7 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
   if (!(body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  applyNativeClientHeaders(headers);
 
   let [cookie, envelope] = await Promise.all([getSessionCookie(), getSessionEnvelope()]);
   if (allowRefresh && shouldRefresh(path) && envelope?.refreshToken && (!envelope.accessToken || envelope.accessTokenExpiresAt <= Date.now() + 5000)) {
@@ -293,6 +313,10 @@ async function performNativeSessionRefresh(cookie: string): Promise<RefreshResul
     const envelope = await getSessionEnvelope();
     if (!envelope?.refreshToken && !cookie) return "unavailable";
     const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (NATIVE_CLIENT_PLATFORM) {
+      headers["X-PulseSoc-Platform"] = NATIVE_CLIENT_PLATFORM;
+      headers["User-Agent"] = NATIVE_CLIENT_USER_AGENT;
+    }
     if (Platform.OS !== "web") headers.Cookie = cookie;
     const response = await fetchWithTimeout(`${PULSE_API_BASE_URL}/api/mobile/auth/refresh`, {
       method: "POST",

@@ -207,7 +207,9 @@
       "cameraOn": "开启摄像头",
       "cameraOff": "关闭摄像头",
       "switchCamera": "切换摄像头",
-      "speaker": "扬声器"
+      "speaker": "扬声器",
+      "returnToCall": "返回通话",
+      "ongoingCall": "通话中"
     }
   },
   "commerce": {
@@ -1440,6 +1442,11 @@
     }
   },
   "settings": {
+    "supportTicket": {
+      "sentTitle": "请求已发送",
+      "sentWithReference": "您的参考编号：{{reference}}。确认邮件将发送至 {{email}}。大多数请求会在一个工作日内收到首次回复。",
+      "sentBody": "我们已收到您的请求。确认邮件将发送至 {{email}}。大多数请求会在一个工作日内收到首次回复。"
+    },
     "root": {
       "title": "设置",
       "account": "账号",

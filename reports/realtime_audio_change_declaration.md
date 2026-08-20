@@ -5,6 +5,82 @@ Base: `c5e523d625166414573e618c1c043092794e7163`
 Baseline: `realtime-audio-stable-v1` (`fc25cd163b8802113df1b3b3d98cb7aab10891bb`)  
 Required label: `audio-critical-change`
 
+## App-review call-lifecycle addendum (2026-08-19)
+
+This addendum declares the protected-file changes in branch
+`codex/app-review-final-readiness` (App Review readiness item 2: a call must
+survive in-app navigation, and one party hanging up must end the call for both).
+
+### Why the change is required
+
+App Review item 2 failed audit: the Agora call engine was owned by the
+`useAgoraCallRoom` hook mounted inside `CallScreen`, so navigating away from the
+screen unmounted the hook and tore down the live call. Ownership had to move to
+a module-scoped store so the engine, status polling, cues, CallKit reporting,
+and wake lease survive navigation and are released only on explicit hangup, a
+terminal backend status, or a 404/410 poll miss.
+
+### Which feature required it
+
+App Review readiness item 2 (calls survive in-app navigation; remote hangup
+terminates promptly for both parties). No audio-quality, AVAudioSession,
+microphone-publication, or livestream change was made or authorized.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/screens/CallScreen.tsx` | protected call UI | Became a thin consumer of the new module-scoped `src/calls/callSessionStore.ts`. No AVAudioSession calls, no new audio track or publication path, no audio-mode changes. "Minimize" now only navigates; it does not release the engine. |
+| `mobile-native/src/calls/__tests__/useAgoraCallRoom.test.ts` | protected call tests | Updated to test the hook as a thin binding over the store; assertions that unmount tears down the engine were replaced with assertions that it does not. |
+
+Supporting non-protected files: `src/calls/callSessionStore.ts` (new, single
+owner of the engine lifecycle), `src/calls/useAgoraCallRoom.ts` (now a 38-line
+binding), `src/calls/MinimizedCallBanner.tsx` (new, return-to-call banner),
+`src/navigation/AppNavigator.tsx` (mounts the banner),
+`src/calls/__tests__/callSessionStore.test.ts` (new store tests). The
+one-audio-singleton rule is preserved: exactly one engine owner exists
+(the store), and the screen no longer creates or destroys it.
+
+### Expected behavior change
+
+Navigating away from `CallScreen` keeps the call alive and shows a minimized
+banner; returning re-binds the same session. `onUserOffline` and
+connection-failure events trigger an immediate deduped status re-fetch, so a
+remote hangup terminates the call for the local party promptly instead of
+waiting for the next poll tick. Audio capture, routing, session category, and
+livestream behavior are unchanged.
+
+### Regression risk
+
+Moderate and confined to call lifecycle: the risks are a leaked engine after
+hangup or a stale session on re-entry. Mitigated by release paths on explicit
+hangup, terminal statuses, and 404/410 poll misses, plus dedicated store tests.
+Livestream code paths are untouched (zero livestream/LiveKit lines in the diff).
+
+### Tests run
+
+- Call jest suites: 6 suites / 43 tests passed, including the new
+  `callSessionStore.test.ts` (5 tests) and the rewritten
+  `useAgoraCallRoom.test.ts`.
+- TypeScript compilation (`npx tsc --noEmit`): passed.
+- i18n catalog validation: passed; no new hardcoded strings introduced.
+- The full realtime-audio suites and a native build were NOT run in this
+  environment; they remain required release gates before merge (see below).
+
+### Physical validation required
+
+Two-device physical test before release: place a call, navigate away and back
+on each side (call must stay audible both ways), then hang up from one side and
+confirm the other side terminates within a poll cycle. CallKit lock-screen
+controls must still work. This declaration does not claim audible validation
+was performed.
+
+### Rollback procedure
+
+Revert the item-2 commit on `codex/app-review-final-readiness` (files listed
+above). No AVAudioSession, permission, native-dependency, backend-flag, or
+livestream rollback is required.
+
 ## Build 13 release-manifest addendum
 
 This addendum records the protected manifest change in the release range

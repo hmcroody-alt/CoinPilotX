@@ -51,6 +51,8 @@ export type SupportActionResponse = {
   message?: string;
   ticket_id?: number;
   report_id?: number;
+  /** Human-quotable ticket reference, format PS-YYYY-XXXXXXXX. */
+  reference?: string;
 };
 
 export async function listSupportTickets() {

@@ -13,6 +13,7 @@ from . import push_service
 from . import sms_service
 from . import db as db_service
 from . import pulsesoc_notification_system
+from .device_classification import classify_device
 
 
 def _now():
@@ -1526,7 +1527,7 @@ def save_pulse_device(user_id, subscription, user_agent=""):
     endpoint = (subscription or {}).get("endpoint") or ""
     provider = str((subscription or {}).get("provider") or "web_push")[:40]
     requested_device_type = str((subscription or {}).get("device_type") or "").lower()
-    ua_device_type = "mobile" if any(token in (user_agent or "").lower() for token in ["iphone", "android", "mobile"]) else "desktop"
+    ua_device_type = _ua_device_type(user_agent)
     device_type = requested_device_type if requested_device_type in {"mobile", "desktop", "native"} else ua_device_type
     conn = user_context.connect()
     cur = conn.cursor()
@@ -2181,9 +2182,28 @@ def send_user_alert(user_id, alert_type, title, body, data=None, channels=None):
     return result
 
 
+def _ua_device_type(user_agent):
+    """Canonical device type for push-device rows.
+
+    Delegates to services.device_classification and maps to this table's
+    legacy enum: native app -> "native", tablet collapses into "mobile"
+    (push behavior is identical), unknown stays "unknown" instead of the old
+    silent "desktop" default.
+    """
+    info = classify_device(user_agent)
+    if info.get("is_native_app"):
+        return "native"
+    device_type = info.get("device_type") or "unknown"
+    if device_type in ("mobile", "tablet"):
+        return "mobile"
+    if device_type == "desktop":
+        return "desktop"
+    return "unknown"
+
+
 def save_push_subscription(user_id, subscription, user_agent=""):
     ua = (user_agent or "").lower()
-    device_type = "mobile" if any(token in ua for token in ["iphone", "android", "mobile"]) else "desktop"
+    device_type = _ua_device_type(user_agent)
     browser = "Safari" if "safari" in ua and "chrome" not in ua else "Chrome" if "chrome" in ua else "Browser"
     return push_service.save_subscription(user_id, subscription, user_agent, device_type=device_type, browser=browser)
 

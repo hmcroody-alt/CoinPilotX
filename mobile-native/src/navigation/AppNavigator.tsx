@@ -11,6 +11,7 @@ import { AppState } from "react-native";
 // fails if this import comes back.
 import { getMyProfile, PulseProfile } from "../api/profile";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
+import { MinimizedCallBanner } from "../calls/MinimizedCallBanner";
 import { invalidateNativeSync, registerSyncInvalidation, startNativeEventSync } from "../core/eventSync";
 import {
   initUnreadCountSync,
@@ -597,6 +598,13 @@ export function AppNavigator() {
       <Stack.Screen name="DeveloperSettings" component={DeveloperSettingsScreen} options={{ title: t("common:screens.developerOptions") }} />
     </Stack.Navigator>
       <MasterNavigationDrawer visible={drawerOpen} identity={identity} onClose={() => setDrawerOpen(false)} onOpenRoute={openDrawerRoute} />
+      {/*
+        Global minimized-call pill. Lives at the navigator root — outside every
+        screen — because the call session it renders is module-scoped
+        (calls/callSessionStore) and survives navigation. It shows itself only
+        while a session is alive and the Call screen is not focused.
+      */}
+      <MinimizedCallBanner />
     </>
   );
 }

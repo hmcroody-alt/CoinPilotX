@@ -7,7 +7,8 @@ import {
   loadAccountHealthState,
   loadCachedAccountHealthState,
   openAccountHealthWebFallback,
-  submitAccountHealthVerificationAppeal
+  submitAccountHealthVerificationAppeal,
+  submitStrikeAppeal
 } from "../api/accountHealth";
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
@@ -82,8 +83,12 @@ export function AccountHealthAppealsScreen({ navigation }: Props) {
     setError("");
     setNotice("");
     try {
-      const result = await submitAccountHealthVerificationAppeal(selectedAppeal.requestId, appealNote.trim());
-      setNotice(result.message || "Appeal submitted.");
+      const result =
+        selectedAppeal.key === "account_health"
+          ? await submitStrikeAppeal(selectedAppeal.requestId, appealNote.trim())
+          : await submitAccountHealthVerificationAppeal(selectedAppeal.requestId, appealNote.trim());
+      const reference = "reference" in result && typeof result.reference === "string" ? result.reference.trim() : "";
+      setNotice(reference ? `${result.message || "Appeal submitted."} (${reference})` : result.message || "Appeal submitted.");
       setAppealNote("");
       await load("refresh");
     } catch (appealError) {

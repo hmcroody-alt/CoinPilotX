@@ -209,7 +209,9 @@
       "cameraOn": "Camera on",
       "cameraOff": "Camera off",
       "switchCamera": "Switch camera",
-      "speaker": "Speaker"
+      "speaker": "Speaker",
+      "returnToCall": "Return to call",
+      "ongoingCall": "Ongoing call"
     }
   },
   "commerce": {
@@ -1442,6 +1444,11 @@
     }
   },
   "settings": {
+    "supportTicket": {
+      "sentTitle": "Request sent",
+      "sentWithReference": "Your reference: {{reference}}. A confirmation email will be sent to {{email}}. Most requests get a first response within one working day.",
+      "sentBody": "We've received your request. A confirmation email will be sent to {{email}}. Most requests get a first response within one working day."
+    },
     "root": {
       "title": "Settings",
       "account": "Account",
