@@ -46009,7 +46009,7 @@ def pulse_reel_matches_lane(reel, lane, viewer_user_id=0, category=""):
     if lane == "ai_picks":
         return int(reel.get("reel_score") or 0) >= 55 or bool(reel.get("ai_tags"))
     if lane == "local":
-        return bool(str(reel.get("author_country") or reel.get("author_region") or "").strip())
+        return bool(str(reel.get("author_country") or "").strip())
     blob = reel_text_blob(reel)
     if lane == "educational":
         return any(token in blob for token in ["learn", "lesson", "teacher", "education", "tutorial", "safety", "scam", "course", "wallet", "cyber"])
@@ -46083,7 +46083,7 @@ def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0, l
         except Exception:
             author_followers = {}
         try:
-            cur.execute(f"SELECT user_id, country, state_region FROM users WHERE user_id IN ({placeholders})", ids)
+            cur.execute(f"SELECT user_id, country FROM users WHERE user_id IN ({placeholders})", ids)
             author_geo = {int(dict(row).get("user_id") or 0): dict(row) for row in cur.fetchall()}
         except Exception:
             author_geo = {}
@@ -46109,7 +46109,6 @@ def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0, l
         reel["author_follower_count"] = author_followers.get(author_id, 0)
         geo = author_geo.get(author_id, {})
         reel["author_country"] = geo.get("country") or ""
-        reel["author_region"] = geo.get("state_region") or ""
         reel["premium_mark"] = bool((post.get("author") or {}).get("premium_mark"))
         reel["human_time"] = smart_time_text(reel.get("created_at") or row.get("created_at") or "")
         reel["comments_disabled"] = bool(safe_int(row.get("comments_disabled"), 0))
