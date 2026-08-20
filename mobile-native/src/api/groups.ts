@@ -277,6 +277,13 @@ export async function manageRoom(roomId: string, action: "update" | "end" | "arc
   });
 }
 
+export async function setRoomMemberRole(roomId: string, userId: number, role: "admin" | "moderator" | "member") {
+  return pulseApi<{ ok?: boolean; user_id?: number; role?: string; message?: string }>(
+    `/api/pulse/communications/rooms/${encodeURIComponent(roomId)}/members/role`,
+    { method: "POST", body: JSON.stringify({ user_id: userId, role }) }
+  );
+}
+
 export async function leaveRoom(roomId: string) {
   return pulseApi<{ ok?: boolean; left?: boolean; message?: string }>(`/api/pulse/communications/rooms/${encodeURIComponent(roomId)}/leave`, { method: "POST", body: JSON.stringify({}) });
 }

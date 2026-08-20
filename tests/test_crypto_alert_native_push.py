@@ -21,6 +21,14 @@ from services import alert_engine, db, pulsesoc_notification_system as notificat
 
 
 def _setup_expo_registration(user_id=77):
+    # ``services.db`` resolves DATABASE_URL lazily on every connection, and
+    # pytest imports every selected module during collection, so by the time
+    # these tests actually run the environment points at whichever module was
+    # imported last. Re-asserting the path here keeps this file pointed at its
+    # own database instead of writing into a neighbouring test's — which is how
+    # it started tripping over the real ``push_subscriptions.endpoint`` UNIQUE
+    # constraint that the bare table created below does not have.
+    os.environ["DATABASE_URL"] = "sqlite:///" + _TMP_DB
     conn = db.connect()
     cur = conn.cursor()
     cur.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, email TEXT)")
@@ -38,6 +46,9 @@ def _setup_expo_registration(user_id=77):
         """
     )
     token = "ExponentPushToken[native-alert-test]"
+    # Both tests in this file register the same token, so the write has to be
+    # idempotent rather than relying on the loose local table definition above.
+    cur.execute("DELETE FROM push_subscriptions WHERE endpoint=?", (token,))
     cur.execute(
         "INSERT INTO push_subscriptions (user_id, endpoint, subscription_json) VALUES (?, ?, ?)",
         (user_id, token, '{"expo_push_token":"ExponentPushToken[native-alert-test]"}'),

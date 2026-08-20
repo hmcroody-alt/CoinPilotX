@@ -84774,6 +84774,66 @@ def api_pulse_community_room_leave(room_id):
     return jsonify({"ok": True, "left": True, "message": "Left room."})
 
 
+@webhook_app.route("/api/pulse/communications/rooms/<int:room_id>/members/role", methods=["POST"])
+def api_pulse_community_room_member_role(room_id):
+    """Promote or demote a room member between member / moderator / admin.
+
+    Without this the moderator tier was unreachable: ``api_pulse_community_room_manage``
+    accepts ``owner``/``admin``/``moderator``, but the only role ever written to
+    ``pulse_conversation_participants`` was ``owner`` (at creation, and on
+    ownership transfer when an owner leaves). Every room therefore had exactly
+    one person who could manage it, and the moderator branch was dead code.
+    Mirrors the group equivalent at ``/api/pulse/groups/<id>/members/role``.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return pulse_comm_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    target_user_id = safe_int(payload.get("user_id") or payload.get("target_user_id"), 0)
+    new_role = clean_html(payload.get("role") or "")[:40].lower()
+    if new_role not in {"admin", "moderator", "member"}:
+        return pulse_comm_error("Choose a valid room role.", 400)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        ensure_pulse_messenger_schema(cur, conn)
+        room = pulse_community_room(cur, room_id)
+        if not room or str(room.get("status") or "active") != "active":
+            conn.close()
+            return pulse_comm_error("Room not found.", 404)
+        # Only the owner (or a platform admin) may hand out moderation powers —
+        # a moderator must not be able to promote themselves to owner-equivalent.
+        if int(room.get("owner_user_id") or 0) != int(user["user_id"]) and not pulse_group_user_is_admin(user):
+            conn.close()
+            return pulse_comm_error("Only the room owner can change member roles.", 403)
+        if not target_user_id or target_user_id == int(room.get("owner_user_id") or 0):
+            conn.close()
+            return pulse_comm_error("Choose a valid non-owner member.", 400)
+        if not pulse_community_room_role(cur, room_id, target_user_id):
+            conn.close()
+            return pulse_comm_error("That person is not a member of this room.", 404)
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        cur.execute(
+            "UPDATE pulse_conversation_participants SET role=? WHERE conversation_id=? AND user_id=? AND COALESCE(left_at,'')=''",
+            (new_role, room_id, target_user_id),
+        )
+        cur.execute("UPDATE pulse_conversations SET updated_at=? WHERE id=?", (now, room_id))
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        conn.close()
+        logging.exception("PULSE_COMM_ROOM_ROLE_FAILED room_id=%s user_id=%s", room_id, user.get("user_id"))
+        return pulse_comm_error("Room role could not be updated.", 500)
+    conn.close()
+    if pulse_group_user_is_admin(user):
+        log_admin_audit(0, "community.room.member_role", "room", str(room_id), {"target_user_id": target_user_id, "role": new_role})
+    pulse_emit_event("community_room_member_role", {"conversation_id": room_id, "user_id": target_user_id, "role": new_role}, user["user_id"], room_id)
+    return jsonify({"ok": True, "message": "Member role updated.", "user_id": target_user_id, "role": new_role})
+
+
 @webhook_app.route("/api/pulse/communications/groups", methods=["GET"])
 def api_pulse_communications_groups():
     init_db()

@@ -187,6 +187,13 @@ def _ensure_alert_schema_impl(conn=None):
             ("trigger_seq", "INTEGER DEFAULT 0"),
             ("last_observed_value", "REAL"),
             ("state_changed_at", "TEXT"),
+            # Persistent-alert state. See `evaluate_alert_rule`: the value the
+            # user was last actually notified about (distinct from the value
+            # last *observed*), and the per-rule repeat policy measured against
+            # it.
+            ("last_notified_value", "REAL"),
+            ("repeat_mode", "TEXT DEFAULT 'progress'"),
+            ("repeat_step_percent", "REAL DEFAULT 0.25"),
         ],
     )
     cur.execute(
@@ -1078,6 +1085,110 @@ def condition_matches(condition, observed_value, threshold_value):
 STATE_ARMED = "armed"
 STATE_LATCHED = "latched"
 
+#: Repeat policy persisted on ``alert_rules.repeat_mode``.
+#:
+#: ``progress`` (the default) keeps a latched rule monitoring and re-notifies
+#: when the market moves materially *further* into the breached region.
+#: ``once`` is the strict edge-trigger of the original latch: one notification
+#: per crossing and nothing until the condition clears and re-crosses.
+REPEAT_MODE_PROGRESS = "progress"
+REPEAT_MODE_ONCE = "once"
+DEFAULT_REPEAT_MODE = os.getenv("ALERT_DEFAULT_REPEAT_MODE", REPEAT_MODE_PROGRESS).strip().lower()
+DEFAULT_REPEAT_STEP_PERCENT = float(os.getenv("ALERT_DEFAULT_REPEAT_STEP_PERCENT", "0.25"))
+
+
+def _repeat_is_further(condition, value, reference):
+    """Is ``value`` deeper into the breached region than ``reference``?
+
+    Only movement that worsens the breach counts. A rule for "BTC above
+    $61,000" that notified at $61,500 should speak again at $64,000, but drifting
+    back down to $61,100 is the market returning toward the threshold — the user
+    already knows they are above it, so that is not news.
+    """
+    condition = _normalize_condition(condition)
+    if condition in {"above", "moves_up_percent"}:
+        return value > reference
+    if condition in {"below", "moves_down_percent"}:
+        return value < reference
+    if condition == "volatility_above":
+        return abs(value) > abs(reference)
+    return False
+
+
+def alert_repeat_progressed(condition, value, last_notified, step_percent):
+    """Does ``value`` justify a repeat notification after ``last_notified``?
+
+    Two guards, both required. Direction (``_repeat_is_further``) stops the
+    alert from narrating a retreat back toward the threshold. Magnitude stops
+    quote noise: the move must be at least ``step_percent`` of the previously
+    notified value, so a tick from $61,500.00 to $61,500.40 is silent while a
+    climb to $64,000 is not.
+
+    ``step_percent`` is measured relative to ``last_notified`` because these are
+    prices spanning many orders of magnitude — 0.25% means the same thing for a
+    $0.42 altcoin and a $61,000 BTC, where a fixed dollar step would not.
+    """
+    if last_notified is None:
+        return False
+    try:
+        value = float(value)
+        last_notified = float(last_notified)
+        step_percent = float(step_percent)
+    except (TypeError, ValueError):
+        return False
+    if not _repeat_is_further(condition, value, last_notified):
+        return False
+    if step_percent <= 0:
+        # Any further movement qualifies; the cooldown remains the rate limit.
+        return True
+    magnitude = abs(value - last_notified)
+    scale = abs(last_notified)
+    if scale <= 0:
+        # Percentages are meaningless around zero (a percent-change rule can sit
+        # at exactly 0.00%), so fall back to comparing against the step directly.
+        return magnitude >= step_percent
+    return (magnitude / scale) * 100.0 >= step_percent
+
+
+def _claim_repeat(rule_id, observed_value, expected_seq):
+    """Atomically claim a repeat notification for an already-latched rule.
+
+    The same concurrency problem as ``_claim_crossing``: several workers may
+    evaluate one rule at once and each see the same qualifying progression. The
+    guard here is optimistic concurrency on ``trigger_seq`` — the caller passes
+    the sequence it read, and only the evaluator whose compare-and-set lands
+    first advances it and owns the notification.
+
+    ``trigger_seq`` is used rather than a NULL-safe compare on
+    ``last_notified_value`` deliberately: it is a plain integer, so the
+    predicate is identical on SQLite and PostgreSQL. (``IS`` vs
+    ``IS NOT DISTINCT FROM`` differs between the two engines, and this codebase
+    has already shipped one production outage from SQL that only ran on SQLite.)
+    """
+    ensure_alert_schema()
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE alert_rules
+            SET trigger_seq=COALESCE(trigger_seq, 0)+1,
+                last_notified_value=?,
+                last_observed_value=?,
+                state_changed_at=?,
+                updated_at=?
+            WHERE id=? AND COALESCE(trigger_seq, 0)=?
+            """,
+            (observed_value, observed_value, _now(), _now(), rule_id, int(expected_seq or 0)),
+        )
+        claimed = int(getattr(cur, "rowcount", 0) or 0) > 0
+        conn.commit()
+        if not claimed:
+            return None
+        return int(expected_seq or 0) + 1
+    finally:
+        conn.close()
+
 
 def _claim_crossing(rule_id, observed_value):
     """Atomically claim a false->true crossing for ``rule_id``.
@@ -1102,11 +1213,12 @@ def _claim_crossing(rule_id, observed_value):
             SET condition_state=?,
                 trigger_seq=COALESCE(trigger_seq, 0)+1,
                 last_observed_value=?,
+                last_notified_value=?,
                 state_changed_at=?,
                 updated_at=?
             WHERE id=? AND COALESCE(condition_state, '')<>?
             """,
-            (STATE_LATCHED, observed_value, _now(), _now(), rule_id, STATE_LATCHED),
+            (STATE_LATCHED, observed_value, observed_value, _now(), _now(), rule_id, STATE_LATCHED),
         )
         claimed = int(getattr(cur, "rowcount", 0) or 0) > 0
         conn.commit()
@@ -1115,6 +1227,25 @@ def _claim_crossing(rule_id, observed_value):
         cur.execute("SELECT trigger_seq FROM alert_rules WHERE id=? LIMIT 1", (rule_id,))
         row = cur.fetchone()
         return int((row[0] if row else 0) or 0)
+    finally:
+        conn.close()
+
+
+def _set_last_notified_value(rule_id, observed_value):
+    """Seed the repeat baseline without notifying.
+
+    Used for rules that were already latched before ``last_notified_value``
+    existed, so a schema migration never manifests as a surprise notification.
+    """
+    ensure_alert_schema()
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE alert_rules SET last_notified_value=?, last_observed_value=?, updated_at=? WHERE id=?",
+            (observed_value, observed_value, _now(), rule_id),
+        )
+        conn.commit()
     finally:
         conn.close()
 
@@ -1192,14 +1323,71 @@ def evaluate_alert_rule(rule):
         }
 
     if previous_state == STATE_LATCHED:
-        return {
-            "ok": True,
-            "triggered": False,
-            "latched": True,
-            "observed_value": value,
-            "state": STATE_LATCHED,
-            "message": "Condition still met from the already-notified crossing; no repeat notification sent.",
-        }
+        # Still inside the breached region. The rule stays active and keeps
+        # monitoring: a latched rule is not a finished rule. It speaks again
+        # only when the market has moved materially further in, and only once
+        # the cooldown has lapsed — that pair is what separates "the alert keeps
+        # working" from the stuck banner this latch was introduced to kill.
+        repeat_mode = str(rule.get("repeat_mode") or DEFAULT_REPEAT_MODE).strip().lower()
+        if repeat_mode == REPEAT_MODE_ONCE:
+            return {
+                "ok": True,
+                "triggered": False,
+                "latched": True,
+                "observed_value": value,
+                "state": STATE_LATCHED,
+                "message": "Condition still met from the already-notified crossing; this alert is set to notify once per crossing.",
+            }
+        step_percent = rule.get("repeat_step_percent")
+        if step_percent is None:
+            step_percent = DEFAULT_REPEAT_STEP_PERCENT
+        # Rules latched before this column existed have no notified value to
+        # measure against; adopt the current observation as the baseline so the
+        # next genuine move is judged against something real rather than firing
+        # immediately on migration.
+        last_notified = rule.get("last_notified_value")
+        if last_notified is None:
+            _set_last_notified_value(rule["id"], value)
+            return {
+                "ok": True,
+                "triggered": False,
+                "latched": True,
+                "observed_value": value,
+                "state": STATE_LATCHED,
+                "message": "Condition still met; repeat baseline recorded for this already-latched alert.",
+            }
+        if not alert_repeat_progressed(rule.get("condition"), value, last_notified, step_percent):
+            return {
+                "ok": True,
+                "triggered": False,
+                "latched": True,
+                "observed_value": value,
+                "state": STATE_LATCHED,
+                "message": "Condition still met, but the value has not moved materially further since the last notification.",
+            }
+        last_triggered = _parse_dt(rule.get("last_triggered_at"))
+        cooldown = int(rule.get("cooldown_seconds") or DEFAULT_COOLDOWN_SECONDS)
+        if last_triggered and _utcnow() - last_triggered < timedelta(seconds=cooldown):
+            return {
+                "ok": True,
+                "triggered": False,
+                "latched": True,
+                "cooldown": True,
+                "observed_value": value,
+                "state": STATE_LATCHED,
+                "message": f"Value moved further, skipped because alert is cooling down for {cooldown} seconds.",
+            }
+        repeat_seq = _claim_repeat(rule["id"], value, rule.get("trigger_seq"))
+        if repeat_seq is None:
+            return {
+                "ok": True,
+                "triggered": False,
+                "latched": True,
+                "observed_value": value,
+                "state": STATE_LATCHED,
+                "message": "Repeat already claimed by a concurrent evaluation; no duplicate notification sent.",
+            }
+        return trigger_alert(rule, value, trigger_seq=repeat_seq, repeat=True)
 
     if previous_state != STATE_ARMED:
         # First observation of this rule: record where the market sits without
@@ -1305,17 +1493,20 @@ def _create_event(rule, observed_value, status, message, trigger_seq=None):
     return event
 
 
-def trigger_alert(rule, observed_value, trigger_seq=None):
+def trigger_alert(rule, observed_value, trigger_seq=None, repeat=False):
     symbol = _normalize_symbol(rule.get("symbol"))
     condition = _normalize_condition(rule.get("condition"))
     threshold = rule.get("threshold_value")
     # "Value at crossing", not "live observed value": the notification describes a
     # single past event and is never refreshed with later prices, so wording that
-    # implies a live feed would be misleading.
+    # implies a live feed would be misleading. A repeat is a different event —
+    # the threshold was crossed earlier and the market has since moved further —
+    # so it is labelled as a continuing move rather than a fresh crossing.
+    moment = "Still moving" if repeat else "Value at crossing"
     if condition in {"above", "below"}:
-        message = f"{symbol} {_condition_label(condition)} {_format_money(threshold)}. Value at crossing: {_format_money(observed_value)}."
+        message = f"{symbol} {_condition_label(condition)} {_format_money(threshold)}. {moment}: {_format_money(observed_value)}."
     else:
-        message = f"{symbol} {_condition_label(condition)} {threshold}%. Value at crossing: {round(float(observed_value), 2)}%."
+        message = f"{symbol} {_condition_label(condition)} {threshold}%. {moment}: {round(float(observed_value), 2)}%."
     if trigger_seq is None:
         # Direct/manual invocation (tests, admin replays) still gets a stable key.
         trigger_seq = _claim_crossing(rule.get("id"), observed_value)

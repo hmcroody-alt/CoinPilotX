@@ -29,9 +29,41 @@ import bot  # noqa: E402
 REFERENCE_RE = re.compile(r"^PS-\d{4}-[0-9A-F]{8}$")
 
 
+def _use_module_database():
+    """Re-point the process at this module's temp database and guarantee schema.
+
+    ``services.db`` resolves ``DATABASE_URL`` lazily on every connection, and
+    pytest imports every selected module during collection *before* running any
+    test. A module collected after this one (``test_app_review_convergence``
+    sets its own path at import time) therefore leaves the environment pointing
+    at *its* database by the time these tests execute, so the request under test
+    opens a database where ``init_db`` never ran and fails with "no such table:
+    support_tickets".
+
+    Re-pointing alone is not enough: ``init_db`` short-circuits on the module
+    global ``INIT_DB_COMPLETED``, so once any other test module has built a
+    schema somewhere else our database stays empty and the failure just moves
+    to "no such table: password_reset_tokens". Clearing the flag and rebuilding
+    is idempotent (``CREATE TABLE IF NOT EXISTS`` throughout) and is what makes
+    this file order-independent rather than passing only in one particular
+    pytest argument order.
+    """
+    os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
+    bot.INIT_DB_COMPLETED = False
+    bot.init_db()
+
+
 class SupportTicketReferenceTest(unittest.TestCase):
+    def setUp(self):
+        _use_module_database()
+
     @classmethod
     def setUpClass(cls):
+        # Build the schema before probing for the table. Without this the probe
+        # runs against a database no one has initialised yet and the whole class
+        # silently skips -- which looks like a pass in CI while actually testing
+        # nothing about the support ticket reference.
+        _use_module_database()
         conn = sqlite3.connect(_DB_PATH)
         cur = conn.cursor()
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='support_tickets'")
@@ -140,6 +172,9 @@ class SupportTicketReferenceTest(unittest.TestCase):
 
 
 class PasswordResetHardeningTest(unittest.TestCase):
+    def setUp(self):
+        _use_module_database()
+
     @classmethod
     def setUpClass(cls):
         bot.webhook_app.config["TESTING"] = True
