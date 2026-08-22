@@ -330,7 +330,7 @@ export type RootStackParamList = {
    * unread total is the same number the header bells show.
    */
   BusinessOsActivity: { title?: string; filter?: "all" | "social" | "marketplace" | "orders" | "system" } | undefined;
-  SellerStore: { title?: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts" | "orders"; sellerId?: string } | undefined;
+  SellerStore: { title?: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts" | "orders"; sellerId?: string; listingId?: number } | undefined;
   BuyerOrders: { orderId?: number; source?: string; title?: string } | undefined;
   BuyerOrderDetail: { orderId: number; source?: string; title?: string };
   BuyerPurchases: { title?: string } | undefined;

@@ -130,6 +130,7 @@ print("Local env files loaded=", ",".join(LOCAL_ENV_FILES_LOADED) or "none", flu
 print("REDIS_URL present=", bool(os.environ.get("REDIS_URL")), flush=True)
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from email.message import EmailMessage
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
@@ -3920,15 +3921,50 @@ def save_teacher_private_document(user_id, file_storage, document_type):
     }
 
 
+PRICE_LABEL_UNPRICED = {"free", "request access", "paid later", "premium later"}
+MAX_PRICE_LABEL_CENTS = 99_999_999
+
+
 def parse_price_label_to_cents(value, default_currency="USD"):
     text = (value or "").strip()
-    if not text or text.lower() in {"free", "request access", "paid later", "premium later"}:
+    if not text or text.lower() in PRICE_LABEL_UNPRICED:
         return 0, default_currency
-    match = re.search(r"([A-Z]{3})?\s*\$?\s*([0-9]+(?:\.[0-9]{1,2})?)", text.upper())
+    # Thousands separators must be consumed here. Without this the digit run
+    # stops at the comma, so "$2,500.00" used to price at $2.00 at checkout
+    # while every buyer surface kept displaying the label in full.
+    match = re.search(r"([A-Z]{3})?\s*\$?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)", text.upper())
     if not match:
         return 0, default_currency
     currency = (match.group(1) or default_currency or "USD").upper()
-    return int(round(float(match.group(2)) * 100)), currency
+    digits = match.group(2).replace(",", "")
+    if text.lstrip().startswith("-"):
+        return 0, currency
+    cents = int(round(Decimal(digits) * 100))
+    return min(cents, MAX_PRICE_LABEL_CENTS), currency
+
+
+def marketplace_normalize_price_label(value, default_currency="USD"):
+    """Round-trip a seller-entered price label through the checkout parser.
+
+    Returns ``(label, cents, currency, error)``. The stored label is rebuilt
+    from the parsed minor units so the text the seller sees and the amount the
+    buyer is charged can never drift apart.
+    """
+    text = str(value or "").strip()
+    if not text or text.lower() in PRICE_LABEL_UNPRICED:
+        return (text or "Request access"), 0, (default_currency or "USD").upper(), ""
+    if text.lstrip().startswith("-"):
+        return "", 0, default_currency, "Enter a price of zero or more."
+    if not re.search(r"[0-9]", text):
+        return "", 0, default_currency, "Enter a price like 19.99, or use “Free”."
+    cents, currency = parse_price_label_to_cents(text, default_currency)
+    if cents <= 0:
+        return "", 0, currency, "Enter a price greater than zero, or use “Free”."
+    if cents >= MAX_PRICE_LABEL_CENTS:
+        return "", 0, currency, "That price is too high for checkout."
+    amount = f"{Decimal(cents) / 100:,.2f}"
+    label = f"${amount}" if currency == "USD" else f"{currency} {amount}"
+    return label, cents, currency, ""
 
 
 def notify_user(
@@ -51250,6 +51286,7 @@ def api_pulse_marketplace_seller_listings():
         SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
                l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
+               l.tags_json, l.refund_policy, l.estimated_delivery, l.seller_notes,
                COALESCE(ms.status,'missing') AS seller_status,
                {marketplace_seller_identity.store_name_select('ms')},
                COALESCE(u.username,'') AS seller_username
@@ -51276,6 +51313,7 @@ def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
         SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
                l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
+               l.tags_json, l.refund_policy, l.estimated_delivery, l.seller_notes,
                COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name,
                COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
@@ -51693,14 +51731,6 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
     if not user:
         return api_error("Login required.", 401)
     payload = request.get_json(silent=True) or {}
-    title = clean_html(payload.get("title") or "")[:140]
-    short_description = clean_html(payload.get("short_description") or "")[:260]
-    description = clean_html(payload.get("description") or "")[:1400]
-    category = clean_html(payload.get("category") or "Education")[:80]
-    price = clean_html(payload.get("price_label") or "Request access")[:80]
-    quantity = safe_int(payload.get("quantity"), 0)
-    if not title:
-        return api_error("Add a title before updating the listing.", 400)
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db()
     conn.row_factory = sqlite3.Row
@@ -51717,9 +51747,69 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
     if str(existing.get("status") or "").lower() in {"seller_deleted", "deleted", "removed"}:
         conn.close()
         return api_error("Deleted listings cannot be edited.", 400)
+
+    # PATCH semantics: a key the client never sent keeps its stored value. The
+    # route used to read every field with ``payload.get(...) or <default>``, so
+    # a partial save silently reset price to "Request access" (0 cents at
+    # checkout) and inventory to 0.
+    def patched(key, limit, fallback=""):
+        if key not in payload:
+            return str(existing.get(key) or fallback)[:limit]
+        return clean_html(payload.get(key) or "")[:limit]
+
+    title = patched("title", 140)
+    short_description = patched("short_description", 260)
+    description = patched("description", 1400)
+    category = patched("category", 80, "Education")
+    subcategory = patched("subcategory", 80)
+    refund_policy = patched("refund_policy", 800)
+    estimated_delivery = patched("estimated_delivery", 200)
+    seller_notes = patched("seller_notes", 1000)
+    if "tags" in payload:
+        tags_json = json.dumps(
+            [tag.strip() for tag in clean_html(payload.get("tags") or "").split(",") if tag.strip()][:16],
+            default=str,
+        )
+    else:
+        tags_json = str(existing.get("tags_json") or "[]")
+
+    currency = (patched("currency", 12, "USD") or "USD").upper()
+    previous_price_cents, _ = parse_price_label_to_cents(existing.get("price_label") or "", currency)
+    if "price_label" in payload:
+        price, price_cents, currency, price_error = marketplace_normalize_price_label(payload.get("price_label"), currency)
+        if price_error:
+            conn.close()
+            return api_error(price_error, 400)
+    else:
+        price = str(existing.get("price_label") or "Request access")[:80]
+        price_cents, currency = parse_price_label_to_cents(price, currency)
+
+    if "quantity" in payload:
+        raw_quantity = payload.get("quantity")
+        quantity = safe_int(raw_quantity, -1)
+        if quantity < 0 or str(raw_quantity).strip() in {"", "-"}:
+            conn.close()
+            return api_error("Inventory must be zero or a positive whole number.", 400)
+        cur.execute(
+            "SELECT COALESCE(SUM(quantity),0) FROM marketplace_inventory_reservations WHERE listing_id=? AND status='held'",
+            (int(listing_id),),
+        )
+        held = safe_int((cur.fetchone() or [0])[0], 0)
+        if quantity < held:
+            conn.close()
+            return api_error(
+                f"{held} unit(s) are reserved by buyers in checkout. Inventory cannot go below {held}.", 409
+            )
+    else:
+        quantity = safe_int(existing.get("quantity"), 0)
+
+    if not title:
+        conn.close()
+        return api_error("Add a title before updating the listing.", 400)
     if not description and str(existing.get("status") or "").lower() != "draft":
         conn.close()
         return api_error("Add a description before updating the listing.", 400)
+    media_changed = False
     media_ids = [safe_int(value, 0) for value in (payload.get("media_ids") or []) if safe_int(value, 0)]
     if media_ids:
         placeholders = ",".join(["?"] * len(media_ids))
@@ -51735,9 +51825,16 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
         cover = next((row for row in media_rows if int(row.get("is_cover") or 0)), media_rows[0])
         gallery = [row.get("media_url") for row in media_rows if (row.get("media_type") or "") in {"image", "gif"}]
         video = next((row.get("media_url") for row in media_rows if (row.get("media_type") or "") == "video"), "")
+        next_cover = clean_html(cover.get("media_url") or "")[:800]
+        next_gallery = json.dumps(gallery, default=str)[:1600]
+        next_video = clean_html(video or "")[:800]
+        media_changed = (
+            next_cover != str(existing.get("cover_image_url") or "")
+            or next_gallery != str(existing.get("gallery_json") or "")
+            or next_video != str(existing.get("video_url") or "")
+        )
         cur.execute("UPDATE marketplace_listings SET cover_image_url=?,gallery_json=?,video_url=? WHERE id=? AND seller_user_id=?",
-            (clean_html(cover.get("media_url") or "")[:800], json.dumps(gallery, default=str)[:1600],
-             clean_html(video or "")[:800], int(listing_id), int(user["user_id"])))
+            (next_cover, next_gallery, next_video, int(listing_id), int(user["user_id"])))
         for position, media_row in enumerate(media_rows):
             cur.execute("UPDATE marketplace_product_media SET product_id=?,position=? WHERE id=? AND merchant_id=?",
                 (int(listing_id), position, int(media_row.get("id") or 0), int(user["user_id"])))
@@ -51762,14 +51859,19 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
     from services import marketplace_goods_policy
     goods_decision = marketplace_goods_policy.evaluate({
         "title": title, "description": description, "category": category,
-        "subcategory": payload.get("subcategory") or existing.get("subcategory"),
+        "subcategory": subcategory,
     })
     changed_fields = {name for name, value in {
         "title": title, "short_description": short_description, "description": description,
-        "category": category, "price_label": price,
+        "category": category, "subcategory": subcategory, "price_label": price,
+        "currency": currency, "tags_json": tags_json, "refund_policy": refund_policy,
+        "estimated_delivery": estimated_delivery, "seller_notes": seller_notes,
+        "quantity": quantity,
     }.items() if str(existing.get(name) or "") != str(value or "")}
     if listing_metadata_update is not None and listing_metadata_update != str(existing.get("listing_metadata_json") or ""):
         changed_fields.add("listing_metadata_json")
+    if media_changed:
+        changed_fields.update({"cover_image_url", "gallery_json"})
     old_status = str(existing.get("status") or "draft").lower()
     old_approval = str(existing.get("approval_status") or "draft").lower()
     material_change = marketplace_listing_lifecycle.requires_rereview(changed_fields)
@@ -51782,7 +51884,9 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
     cur.execute(
         """
         UPDATE marketplace_listings
-        SET title=?, short_description=?, description=?, category=?, price_label=?, quantity=?,
+        SET title=?, short_description=?, description=?, category=?, subcategory=?, tags_json=?,
+            price_label=?, currency=?, quantity=?,
+            refund_policy=?, estimated_delivery=?, seller_notes=?,
             status=?, approval_status=?, safety_score=?, safety_flags_json=?,
             submitted_at=CASE WHEN ?='pending_review' THEN ? ELSE submitted_at END,
             published_at=CASE WHEN ?='pending_review' THEN NULL ELSE published_at END, updated_at=?
@@ -51793,8 +51897,14 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
             short_description,
             description,
             category,
+            subcategory,
+            tags_json,
             price,
+            currency,
             quantity,
+            refund_policy,
+            estimated_delivery,
+            seller_notes,
             next_status,
             next_approval,
             int(review["risk_score"]),
@@ -51823,7 +51933,10 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
         approval_status=item.get("approval_status") or review.get("status"),
         title=item.get("title") or title,
         extra={"review_status": review.get("status"), "risk_score": int(review.get("risk_score") or 0),
-               "goods_policy": goods_decision},
+               "goods_policy": goods_decision, "changed_fields": sorted(changed_fields),
+               **({"price_before": str(existing.get("price_label") or ""), "price_after": price,
+                   "price_before_minor": previous_price_cents, "price_after_minor": price_cents,
+                   "currency": currency} if "price_label" in changed_fields else {})},
     )
     conn.commit()
     conn.close()

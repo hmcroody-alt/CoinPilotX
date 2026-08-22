@@ -29,7 +29,9 @@ const PANELS_BY_MODE: Record<SellerStoreMode, SellerStorePanel[]> = {
   dashboard: ["hero", "listings", "inventory", "media"],
   apply: ["hero", "application", "trust"],
   profile: ["hero", "application", "trust"],
-  create: ["hero", "listings", "media"],
+  // `inventory` is the panel holding the listing editor, so a mode named
+  // Listings that omitted it could create a product but never change one.
+  create: ["hero", "listings", "inventory", "media"],
   payouts: ["hero", "orders", "trust"],
   orders: ["hero", "orders"]
 };

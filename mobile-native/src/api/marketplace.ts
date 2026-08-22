@@ -206,7 +206,11 @@ export type MarketplaceListingCreateResponse = MarketplaceActionResponse & {
   listing_id?: number;
 };
 
-export type MarketplaceListingUpdatePayload = Omit<MarketplaceListingCreatePayload, "submission_action">;
+/**
+ * The update route is a true PATCH: a key that is absent keeps its stored
+ * value, so a caller only sends what the seller actually changed.
+ */
+export type MarketplaceListingUpdatePayload = Partial<Omit<MarketplaceListingCreatePayload, "submission_action">>;
 
 export type MarketplaceListingMutationResponse = MarketplaceActionResponse & {
   listing?: MarketplaceListing;

@@ -203,11 +203,12 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
    * The listing editor is a panel inside `SellerStoreScreen`, and this screen
    * takes over `mode: "dashboard"` — so Edit routes to `mode: "create"`, which
    * renders the same `listings` panel with the same editor. The editor is not
-   * reimplemented here and is not orphaned by the swap.
+   * reimplemented here and is not orphaned by the swap. `listingId` is what
+   * makes it land on the row the seller tapped instead of an empty panel.
    */
   const openListing = useCallback(
     (row: StoreListingRowData) => {
-      navigation.navigate("SellerStore", { mode: "create", title: row.title });
+      navigation.navigate("SellerStore", { mode: "create", title: row.title, listingId: row.id });
     },
     [navigation]
   );

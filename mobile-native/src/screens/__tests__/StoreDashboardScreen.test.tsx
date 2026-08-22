@@ -415,10 +415,12 @@ describe("navigation", () => {
     });
 
     // `create` is the mode whose panel set contains the editor. Routing to
-    // `dashboard` — which this screen now occupies — would orphan it.
+    // `dashboard` — which this screen now occupies — would orphan it. The id
+    // is what lands the seller on that listing's editor instead of a blank one.
     expect(view.nav.navigate).toHaveBeenCalledWith("SellerStore", {
       mode: "create",
-      title: "Bright Coffee Beans"
+      title: "Bright Coffee Beans",
+      listingId: 1
     });
   });
 

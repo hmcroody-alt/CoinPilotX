@@ -20,7 +20,7 @@ import { mediaDisplayUrl } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
-import { registerSyncInvalidation } from "../core/eventSync";
+import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { SellerStorePanel, sellerStoreHeading, sellerStoreShowsPanel } from "../navigation/sellerStoreMode";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -47,6 +47,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   const [viewerIndex, setViewerIndex] = useState(0);
   const [editingListingId, setEditingListingId] = useState(0);
   const [editTitle, setEditTitle] = useState("");
+  const [editShortDescription, setEditShortDescription] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [editPriceLabel, setEditPriceLabel] = useState("");
@@ -127,6 +128,20 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     load().catch(() => undefined);
   }, [load]);
 
+  // Opened from a listing row elsewhere (the Store dashboard): land directly on
+  // that listing's editor with its current values, rather than on an empty panel
+  // the seller has to hunt through. Runs once per requested id, so a later
+  // refresh cannot yank the seller back out of a listing they navigated away to.
+  const requestedListingId = route?.params?.listingId || 0;
+  const openedListingId = useRef(0);
+  useEffect(() => {
+    if (!requestedListingId || openedListingId.current === requestedListingId) return;
+    const target = listings.find((item) => item.id === requestedListingId);
+    if (!target) return;
+    openedListingId.current = requestedListingId;
+    startListingEdit(target);
+  }, [requestedListingId, listings]);
+
   useEffect(() => {
     const refreshStore = () => {
       load().catch(() => undefined);
@@ -164,7 +179,8 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   function startListingEdit(listing: MarketplaceListing) {
     setEditingListingId(listing.id);
     setEditTitle(listing.title || "");
-    setEditDescription(listing.description || listing.short_description || "");
+    setEditShortDescription(listing.short_description || "");
+    setEditDescription(listing.description || "");
     setEditCategory(listing.category || "Education");
     setEditPriceLabel(listing.price_label || "Request access");
     setEditQuantity(String(listing.quantity || 0));
@@ -177,6 +193,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       setListings((current) => current.filter((item) => item.id !== listing.id));
       setEditingListingId(0);
       setEditTitle("");
+      setEditShortDescription("");
       setEditDescription("");
       setEditCategory("");
       setEditPriceLabel("");
@@ -194,6 +211,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     try {
       const result = await updateMarketplaceSellerListing(editingListingId, {
         title: editTitle.trim(),
+        short_description: editShortDescription.trim(),
         description: editDescription.trim(),
         category: editCategory.trim() || "Education",
         price_label: editPriceLabel.trim() || "Request access",
@@ -201,6 +219,10 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       });
       applyListingResponse(result.listing);
       setMessage(result.message || "Listing updated and sent through review.");
+      // The edited price/inventory is authoritative for every other surface
+      // holding this listing — the Store dashboard and the buyer-facing
+      // Marketplace tab both refetch off these channels.
+      await invalidateNativeSync(["seller_inventory", "marketplace"], "listing_edit_saved");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Listing could not be updated.");
     } finally {
@@ -358,6 +380,13 @@ export function SellerStoreScreen({ route, navigation }: Props) {
               <StatusPill listing={editingListing} />
             </View>
             <TextInput style={styles.input} value={editTitle} onChangeText={setEditTitle} placeholder="Title" placeholderTextColor={colors.muted} />
+            <TextInput
+              style={styles.input}
+              value={editShortDescription}
+              onChangeText={setEditShortDescription}
+              placeholder="Short description"
+              placeholderTextColor={colors.muted}
+            />
             <TextInput
               style={[styles.input, styles.textArea]}
               value={editDescription}
