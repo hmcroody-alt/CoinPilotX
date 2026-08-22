@@ -161,6 +161,21 @@ export async function getAccountSecurity() {
   return normalizeSecurity(data.security || {});
 }
 
+/**
+ * Ask the server to email a password-change link to the signed-in account.
+ *
+ * Deliberately takes no email argument. `getAccountSecurity` returns a masked
+ * address for display ("h***@gmail.com"); passing that back as the recovery
+ * identifier matched no user and silently sent nothing. The server resolves the
+ * real address from the session instead.
+ */
+export async function requestAccountPasswordChange() {
+  return pulseApi<{ ok?: boolean; email?: string; message?: string }>("/api/account/password/change-request", {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
 export async function getTrustedDevices() {
   const data = await pulseApi<{ ok?: boolean; devices?: TrustedDevice[] }>("/api/account/trusted-devices");
   return normalizeDevices(data.devices || []);

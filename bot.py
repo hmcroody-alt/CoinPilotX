@@ -2613,6 +2613,7 @@ def basic_abuse_guard():
         "/forgot-username": (6, 300),
         "/api/mobile/auth/recover": (6, 300),
         "/api/pulse/mobile/auth/recover": (6, 300),
+        "/api/account/password/change-request": (6, 300),
         "/admin/login": (8, 300),
         "/create-checkout-session": (8, 300),
         "/api/create-checkout-session": (8, 300),
@@ -5715,6 +5716,17 @@ def safe_password_reset_request(email, source="web"):
     """Create and queue a password reset without allowing provider failures to break the route."""
     email = normalize_email(clean_html(email or ""))
     result = {"ok": True, "generic_message": "If that email has an account, a password reset link will be sent.", "email": mask_email(email), "source": source}
+    # A masked address ("h***@gmail.com") passes is_valid_email and then matches
+    # no user, so the request used to end as a silent "no match" while the caller
+    # was told the link was on its way. Treat it as the input error it is.
+    if email and "***@" in email:
+        try:
+            log_auth_event("forgot_password_masked_email", email, status="invalid", details={"source": source, "db_engine": db_service.ENGINE_NAME})
+        except Exception:
+            logging.warning("PASSWORD_RESET_MASKED_EMAIL_LOG_FAILED source=%s", source)
+        logging.warning("PASSWORD_RESET_MASKED_EMAIL_REJECTED source=%s", source)
+        result["masked_input"] = True
+        return result
     if not email or not is_valid_email(email):
         try:
             log_auth_event("forgot_password_invalid_email", email, status="invalid", details={"source": source, "db_engine": db_service.ENGINE_NAME})
@@ -78599,6 +78611,36 @@ def api_account_security():
     if not user:
         return api_error("Login required.", 401)
     return jsonify({"ok": True, "security": account_security_payload(int(user["user_id"]))})
+
+
+@webhook_app.route("/api/account/password/change-request", methods=["POST"])
+def api_account_password_change_request():
+    """Email the signed-in account a password-change link.
+
+    The caller must not supply the address. ``/api/account/security`` returns a
+    deliberately MASKED email for display, and the native Security screen was
+    handing that masked string straight back as the recovery identifier:
+    ``h***@gmail.com`` parses as a valid address, matches no user, and the
+    request ended as a silent "no match" while the app said "Check your email".
+    The link was never sent and nothing surfaced the failure. Resolving the
+    address from the session removes the whole class of bug, and an
+    authenticated request has no reason to trust a client-supplied address
+    anyway.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    account = load_account_by_id(int(user["user_id"])) or {}
+    email = normalize_email(clean_html(account.get("email") or ""))
+    if not email or not is_valid_email(email):
+        return api_error("Add and verify an email address before changing your password.", 400, error="no_account_email")
+    safe_password_reset_request(email, source="account_security_screen")
+    return jsonify({
+        "ok": True,
+        "email": mask_email_address(email),
+        "message": "If an account exists, a password-change link will be sent.",
+    })
 
 
 @webhook_app.route("/api/account/verify-email", methods=["POST"])

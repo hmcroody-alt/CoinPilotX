@@ -13,8 +13,7 @@ import {
 import { usePreferenceGroup } from "../../settings/store";
 import { RootStackParamList } from "../../navigation/types";
 import { useAuth } from "../../session/auth";
-import { requestPasswordRecovery } from "../../api/auth";
-import { AccountSecurity, disableTwoFactor, enableTwoFactor, getAccountSecurity } from "../../api/account";
+import { AccountSecurity, disableTwoFactor, enableTwoFactor, getAccountSecurity, requestAccountPasswordChange } from "../../api/account";
 import {
   BiometricCapability,
   confirmAndEnableBiometricLogin,
@@ -182,8 +181,12 @@ export function SecuritySettingsScreen() {
     if (!ok) return;
     setPasswordBusy(true);
     try {
-      await requestPasswordRecovery(accountEmail);
-      Alert.alert("Check your email", `If an account exists for ${accountEmail}, a password-change link is on its way.`);
+      // No address is passed: `accountEmail` is masked for display ("h***@…"),
+      // and sending it as the recovery identifier matched no account, so the
+      // link was never sent while this screen still said "Check your email".
+      // The server resolves the real address from the session.
+      await requestAccountPasswordChange();
+      Alert.alert("Check your email", `A password-change link is on its way to ${accountEmail}.`);
     } catch (error) {
       Alert.alert("Couldn't send the link", error instanceof Error ? error.message : "Check your connection and try again.");
     } finally {

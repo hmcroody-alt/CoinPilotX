@@ -199,6 +199,46 @@ class PasswordResetHardeningTest(unittest.TestCase):
         self.assertEqual(statuses[5:], [429] * 3, f"6th+ request should be limited, got {statuses}")
         bot.RATE_LIMIT_BUCKETS.clear()
 
+    def test_masked_email_never_silently_no_ops(self):
+        """A masked address must be refused, not treated as "no such user".
+
+        The native Security screen showed the account's email masked
+        ("h***@gmail.com") and passed that same string back as the recovery
+        identifier. ``is_valid_email`` accepts it -- it is a syntactically fine
+        address -- so it sailed through validation, matched no user, and the
+        request ended in the enumeration-resistant "no match" branch. The user
+        was told "Check your email" and no email was ever sent.
+        """
+        self.assertTrue(bot.is_valid_email("h***@gmail.com"), "precondition: the mask parses as a valid address")
+        sent = []
+        real_send = bot.send_password_reset_email
+        bot.send_password_reset_email = lambda *a, **k: sent.append(a) or True
+        try:
+            result = bot.safe_password_reset_request("h***@gmail.com", source="unit_test")
+        finally:
+            bot.send_password_reset_email = real_send
+        self.assertTrue(result.get("masked_input"), "a masked address must be flagged, not silently dropped")
+        self.assertEqual(sent, [], "no reset email should be attempted for a masked address")
+
+    def test_authenticated_change_request_requires_login(self):
+        resp = self.client.post("/api/account/password/change-request", json={})
+        self.assertEqual(resp.status_code, 401)
+
+    def test_authenticated_change_request_ignores_client_supplied_email(self):
+        """The route must resolve the address from the session, not the body.
+
+        This is the fix for the masked-email bug: an authenticated caller has no
+        reason to be trusted with an address, so supplying one must not steer
+        where the link goes.
+        """
+        import inspect
+
+        source = inspect.getsource(bot.api_account_password_change_request)
+        self.assertIn("load_account_by_id", source)
+        self.assertNotIn("payload", source, "the route must not read an email out of the request body")
+        guard = inspect.getsource(bot.basic_abuse_guard)
+        self.assertIn('"/api/account/password/change-request"', guard)
+
     def test_plaintext_token_fallback_removed(self):
         plaintext = "legacy-plaintext-token-abc123"
         conn = bot.db()
