@@ -170,6 +170,159 @@ class SupportTicketReferenceTest(unittest.TestCase):
         finally:
             bot.send_platform_email = real
 
+    def test_web_confirmation_quotes_the_persisted_reference(self):
+        """The /support form must show the same reference it stored, not the row id."""
+        real_emails = bot.send_support_ticket_emails
+        bot.send_support_ticket_emails = lambda *a, **k: None
+        # Satisfy the real CSRF check rather than bypassing it: verify_csrf()
+        # compares the posted field against the session value, so seed both.
+        with self.client.session_transaction() as sess:
+            sess["csrf_token"] = "support-web-test-token"
+        try:
+            resp = self.client.post(
+                "/support",
+                data={
+                    "csrf_token": "support-web-test-token",
+                    "name": "Web Fixture",
+                    "email": "web-form@example.com",
+                    "issue_type": "general support",
+                    "subject": "Web reference test",
+                    "message": "Testing the web confirmation reference.",
+                },
+                follow_redirects=True,
+            )
+        finally:
+            bot.send_support_ticket_emails = real_emails
+        self.assertEqual(resp.status_code, 200)
+        page = resp.get_data(as_text=True)
+        conn = sqlite3.connect(_DB_PATH)
+        cur = conn.cursor()
+        cur.execute("SELECT reference FROM support_tickets WHERE email=? ORDER BY id DESC LIMIT 1", ("web-form@example.com",))
+        row = cur.fetchone()
+        conn.close()
+        self.assertIsNotNone(row, "web form did not persist a ticket")
+        reference = row[0]
+        self.assertRegex(reference, REFERENCE_RE)
+        # the page shows the stored reference ...
+        self.assertIn(reference, page)
+        # ... and does not promise delivery it cannot confirm
+        self.assertIn("will be sent", page)
+
+    def test_email_failure_does_not_lose_the_ticket(self):
+        """An exception from the email layer must not 500 an already-committed ticket.
+
+        The ticket is inserted and committed *before* either notification is
+        attempted. If a send helper raises, the row is already durable -- but an
+        unhandled exception would still hand the user a 500, so they never learn
+        the reference and file the whole thing again.
+        """
+        real_channel = bot.send_channel_email
+        real_confirm = bot.send_support_ticket_confirmation_email
+
+        def boom(*a, **k):
+            raise RuntimeError("brevo unreachable")
+
+        bot.send_channel_email = boom
+        bot.send_support_ticket_confirmation_email = boom
+        try:
+            resp = self.client.post(
+                "/api/support/ticket",
+                json={
+                    "email": "email-down@example.com",
+                    "name": "Outage Fixture",
+                    "issue_type": "billing",
+                    "subject": "Email outage",
+                    "message": "The provider is down but my ticket must survive.",
+                },
+            )
+        finally:
+            bot.send_channel_email = real_channel
+            bot.send_support_ticket_confirmation_email = real_confirm
+        self.assertEqual(resp.status_code, 200, "email outage must not fail the request")
+        data = resp.get_json()
+        self.assertTrue(data.get("ok"))
+        reference = data.get("reference")
+        self.assertRegex(reference, REFERENCE_RE)
+        conn = sqlite3.connect(_DB_PATH)
+        cur = conn.cursor()
+        cur.execute("SELECT reference FROM support_tickets WHERE id=?", (data["ticket_id"],))
+        row = cur.fetchone()
+        conn.close()
+        self.assertIsNotNone(row, "ticket was lost when the email layer failed")
+        self.assertEqual(row[0], reference)
+
+    def test_missing_user_email_never_breaks_the_send_path(self):
+        """No usable address: skip the user email, keep the ticket and the reference."""
+        sent = []
+        real_channel = bot.send_channel_email
+        real_platform = bot.send_platform_email
+        bot.send_channel_email = lambda *a, **k: sent.append(a) or True
+        bot.send_platform_email = lambda *a, **k: self.fail("must not email an invalid address")
+        try:
+            # No exception, and the internal notification still goes out.
+            bot.send_support_ticket_emails(
+                "PS-2026-DEADBEEF", "Nameless", "", "general support", "No address", "body", user_id=0
+            )
+        finally:
+            bot.send_channel_email = real_channel
+            bot.send_platform_email = real_platform
+        self.assertEqual(len(sent), 1)
+        self.assertIn("PS-2026-DEADBEEF", sent[0][1])
+
+    def test_reference_collision_is_retried_rather_than_lost(self):
+        """A duplicate reference must re-roll, not 500.
+
+        `reference` carries a UNIQUE index, so a collision is a failed INSERT.
+        Force one by pinning the generator to a value already in the table and
+        confirm the insert helper recovers with a fresh reference.
+        """
+        conn = sqlite3.connect(_DB_PATH)
+        cur = conn.cursor()
+        taken = "PS-2026-C0111DE0"
+        now = bot.datetime.now().isoformat()
+        cur.execute(
+            "INSERT INTO support_tickets (user_id, email, name, issue_type, subject, message, status, priority, reference, created_at, updated_at)"
+            " VALUES (0, 'taken@example.com', 'Taken', 'general support', 'Taken', 'Taken', 'open', 'normal', ?, ?, ?)",
+            (taken, now, now),
+        )
+        conn.commit()
+        conn.close()
+
+        real_generator = bot.generate_support_ticket_reference
+        calls = {"n": 0}
+
+        def colliding_then_unique():
+            calls["n"] += 1
+            # First call hands back a reference that is already taken.
+            return taken if calls["n"] == 1 else real_generator()
+
+        bot.generate_support_ticket_reference = colliding_then_unique
+        try:
+            live = bot.db()
+            live_cur = live.cursor()
+            ticket_id, reference = bot.insert_support_ticket_row(
+                live, live_cur, 0, "collide@example.com", "Collide",
+                "general support", "Collision", "Second ticket", now,
+            )
+            live.commit()
+            live.close()
+        finally:
+            bot.generate_support_ticket_reference = real_generator
+
+        self.assertGreater(calls["n"], 1, "generator was never re-rolled, so no collision occurred")
+        self.assertNotEqual(reference, taken)
+        self.assertRegex(reference, REFERENCE_RE)
+        conn = sqlite3.connect(_DB_PATH)
+        cur = conn.cursor()
+        cur.execute("SELECT reference FROM support_tickets WHERE id=?", (ticket_id,))
+        row = cur.fetchone()
+        cur.execute("SELECT COUNT(*) FROM support_tickets WHERE reference=?", (taken,))
+        taken_count = cur.fetchone()[0]
+        conn.close()
+        self.assertIsNotNone(row, "collision retry did not persist a ticket")
+        self.assertEqual(row[0], reference)
+        self.assertEqual(taken_count, 1, "the original reference must not be duplicated")
+
 
 class PasswordResetHardeningTest(unittest.TestCase):
     def setUp(self):
