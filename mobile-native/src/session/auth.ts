@@ -5,15 +5,14 @@ import { PulseApiError, recoverNativeSession } from "../api/pulseApi";
 import {
   clearActiveSessionKeepBiometric,
   clearNativeSessionCredentials,
-  getBiometricSession,
   getBiometricUserId,
   getCachedSessionUser,
   getSessionCookie,
   getSessionEnvelope,
   NativeSessionEnvelope,
-  setBiometricSession,
   setCachedSessionUser,
-  setSessionEnvelope
+  setSessionEnvelope,
+  writeBiometricCredential
 } from "./sessionStore";
 import { shouldRejectTemporaryQaUser } from "./qaTemporaryAccount";
 import { clearUserScopedMediaState } from "../media/mediaSessionCleanup";
@@ -275,16 +274,23 @@ async function shouldRetainBiometricLogin(): Promise<boolean> {
   if (!enabledUserId) return false;
   const envelope = await getSessionEnvelope();
   if (envelope?.refreshToken && envelope.userId === enabledUserId) {
-    await setBiometricSession({
+    // Re-store the token we are about to drop from the live envelope. If the
+    // keychain refuses, say so: the caller then falls through to a full clear,
+    // which is the honest outcome — better a password sign-in than a Face ID
+    // button backed by nothing.
+    return writeBiometricCredential({
       userId: enabledUserId,
       refreshToken: envelope.refreshToken,
       refreshTokenExpiresAt: envelope.refreshTokenExpiresAt
     });
-    return true;
   }
-  // Fall back to an already-stashed biometric token (e.g. session already expired).
-  const saved = await getBiometricSession();
-  return Boolean(saved?.refreshToken && saved.userId === enabledUserId);
+  // No live token to re-stash, so the already-stored credential is what Face ID
+  // will use. We check the enrollment marker rather than reading the credential
+  // itself: that read is biometrically gated, and a Face ID prompt in the middle
+  // of "Sign out" would be both baffling and cancellable. The marker is only
+  // ever written alongside a confirmed credential write, so it is a truthful
+  // stand-in here.
+  return true;
 }
 
 export async function signOutEverywhere(): Promise<AuthState> {

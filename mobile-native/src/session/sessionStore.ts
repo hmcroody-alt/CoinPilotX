@@ -6,14 +6,48 @@ import { PULSE_API_BASE_URL } from "../api/config";
 const COOKIE_KEY = "pulsesoc.native.session.cookie";
 const SESSION_ENVELOPE_KEY = "pulsesoc.native.session.envelope.v1";
 const CACHED_USER_KEY = "pulsesoc.native.session.user";
+/**
+ * Enrollment marker: which account, if any, has Face ID armed on this device.
+ *
+ * It is deliberately *not* protected by biometrics, because Settings and the
+ * sign-in screen have to be able to ask "is Face ID on?" without putting a Face
+ * ID sheet in front of the user. That is safe only because of an invariant the
+ * rest of this module maintains: the marker is written **after** a credential
+ * write has been confirmed, and removed **with** the credential. It therefore
+ * answers "does a credential exist", never "may this caller have the token" —
+ * no sign-in path consults it in place of the credential itself.
+ */
 export const BIOMETRIC_USER_KEY = "pulsesoc.native.session.biometric.userId";
+// v1 of the Face-ID refresh token: correct in every respect except that the
+// keychain handed it back to anyone who asked. Kept read-only so devices
+// enrolled before v2 migrate on their next unlock instead of being silently
+// un-enrolled and forced to set Face ID up again.
+const LEGACY_BIOMETRIC_SESSION_KEY = "pulsesoc.native.session.biometric.envelope.v1";
+// v2: the same refresh token, written with `requireAuthentication`, which makes
+// expo-secure-store attach a `.biometryCurrentSet` SecAccessControl to the
+// keychain item. That single flag is what makes Face ID here real rather than
+// decorative:
+//   * iOS — not our JavaScript — refuses to return the token without a live
+//     face match, so patching out the app's own prompt gains an attacker
+//     nothing; and
+//   * iOS discards the item outright when the enrolled biometric set changes,
+//     so adding a face to the device invalidates the saved sign-in for free.
 // A refresh token stashed here survives an ordinary "Sign out" so Face ID can
 // restore the session next time — but it is deliberately NOT the live envelope,
 // so cold-start auto-refresh cannot silently resume the session without Face ID.
-const BIOMETRIC_SESSION_KEY = "pulsesoc.native.session.biometric.envelope.v1";
+const BIOMETRIC_SESSION_KEY = "pulsesoc.native.session.biometric.envelope.v2";
 const KEYCHAIN_OPTIONS: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
   keychainService: __DEV__ ? "com.pulsesoc.nativeapp.dev.session" : "com.pulsesoc.app.session"
+};
+// The biometric credential does not share `KEYCHAIN_OPTIONS`. expo-secure-store
+// files authenticated and unauthenticated items under different keychain
+// services and documents that mixing the two on one service is unsupported, so
+// the protected credential gets a service of its own.
+const BIOMETRIC_KEYCHAIN_OPTIONS: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+  keychainService: __DEV__ ? "com.pulsesoc.nativeapp.dev.biometric" : "com.pulsesoc.app.biometric",
+  requireAuthentication: true
 };
 
 export type NativeSessionEnvelope = {
@@ -91,8 +125,20 @@ export type BiometricSession = {
   refreshTokenExpiresAt: number;
 };
 
-export async function getBiometricSession(): Promise<BiometricSession | null> {
-  const raw = await getSecureValue(BIOMETRIC_SESSION_KEY);
+/**
+ * Outcome of reading the biometric-protected credential.
+ *
+ * `denied` covers both "user cancelled" and "the face did not match". The
+ * difference only changes which message we show; it never changes whether the
+ * caller may continue. Collapsing them into one non-success branch means no
+ * code path can mistake a classification miss for a pass.
+ */
+export type BiometricCredentialRead =
+  | { status: "unlocked"; session: BiometricSession }
+  | { status: "missing" }
+  | { status: "denied"; cancelled: boolean };
+
+function parseBiometricSession(raw: string | null): BiometricSession | null {
   if (!raw) return null;
   try {
     const value = JSON.parse(raw) as Partial<BiometricSession>;
@@ -107,15 +153,104 @@ export async function getBiometricSession(): Promise<BiometricSession | null> {
   }
 }
 
-export async function setBiometricSession(session: BiometricSession | null) {
-  if (!session) return deleteSecureValue(BIOMETRIC_SESSION_KEY);
-  await setSecureValue(BIOMETRIC_SESSION_KEY, JSON.stringify(session));
+/** Keychain rejections that mean "the user backed out", not "the face was wrong". */
+function isCancelledKeychainError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /cancel/i.test(message);
+}
+
+/**
+ * Read the Face-ID-protected refresh token. **This call is itself the biometric
+ * gate**: the item carries a `.biometryCurrentSet` access control, so iOS puts
+ * up the authentication sheet and returns the token only on a match. There is
+ * no separate JavaScript check for an attacker to skip.
+ *
+ * A `missing` result is iOS saying either "never stored" or "invalidated
+ * because the enrolled biometrics changed" — indistinguishable through this
+ * API, and identical in consequence: there is no credential to sign in with.
+ */
+export async function readBiometricCredential(authenticationPrompt: string): Promise<BiometricCredentialRead> {
+  if (Platform.OS === "web") return { status: "missing" };
+  try {
+    const raw = await SecureStore.getItemAsync(BIOMETRIC_SESSION_KEY, {
+      ...BIOMETRIC_KEYCHAIN_OPTIONS,
+      authenticationPrompt
+    });
+    const session = parseBiometricSession(raw);
+    return session ? { status: "unlocked", session } : { status: "missing" };
+  } catch (error) {
+    return { status: "denied", cancelled: isCancelledKeychainError(error) };
+  }
+}
+
+/**
+ * Store the credential behind the access control, reporting whether it landed.
+ *
+ * Returns `false` rather than throwing or silently continuing, because the
+ * caller must not mark Face ID enabled for a credential that was never written.
+ */
+export async function writeBiometricCredential(session: BiometricSession): Promise<boolean> {
+  if (Platform.OS === "web") return false;
+  try {
+    // Delete-then-add, not a plain set. expo-secure-store's write path falls
+    // back to SecItemUpdate when the item already exists, and updating an
+    // access-controlled item makes iOS prompt — which would put a *second* Face
+    // ID sheet in front of the user immediately after the unlock that got us
+    // here. SecItemAdd on a fresh item never prompts.
+    await SecureStore.deleteItemAsync(BIOMETRIC_SESSION_KEY, BIOMETRIC_KEYCHAIN_OPTIONS).catch(() => undefined);
+    await SecureStore.setItemAsync(BIOMETRIC_SESSION_KEY, JSON.stringify(session), BIOMETRIC_KEYCHAIN_OPTIONS);
+  } catch {
+    return false;
+  }
+  // The unprotected v1 copy is a standing bypass if it survives: expo-secure-store
+  // searches unauthenticated items *first*, so leaving it behind would let every
+  // later read succeed with no prompt at all.
+  await deleteSecureValue(LEGACY_BIOMETRIC_SESSION_KEY);
+  return true;
+}
+
+export async function deleteBiometricCredential() {
+  if (Platform.OS === "web") {
+    await Promise.all([AsyncStorage.removeItem(BIOMETRIC_SESSION_KEY), AsyncStorage.removeItem(LEGACY_BIOMETRIC_SESSION_KEY)]);
+    return;
+  }
+  await SecureStore.deleteItemAsync(BIOMETRIC_SESSION_KEY, BIOMETRIC_KEYCHAIN_OPTIONS).catch(() => undefined);
+  await deleteSecureValue(LEGACY_BIOMETRIC_SESSION_KEY);
+}
+
+/**
+ * The pre-v2, unprotected credential. Reading it does not prompt, so it is only
+ * ever honoured after the caller has run a biometric prompt of its own — see
+ * the migration branch in `authenticateWithBiometrics`.
+ */
+export async function getLegacyBiometricSession(): Promise<BiometricSession | null> {
+  return parseBiometricSession(await getSecureValue(LEGACY_BIOMETRIC_SESSION_KEY));
 }
 
 export async function getBiometricUserId(): Promise<number | null> {
   const raw = await getSecureValue(BIOMETRIC_USER_KEY);
   const userId = Number(raw || 0);
   return userId > 0 ? userId : null;
+}
+
+/** Arm the enrollment marker, reporting failure so enrollment can be rolled back. */
+export async function setBiometricUserId(userId: number): Promise<boolean> {
+  if (!Number.isFinite(userId) || userId <= 0) return false;
+  if (Platform.OS === "web") {
+    await AsyncStorage.setItem(BIOMETRIC_USER_KEY, String(userId));
+    return true;
+  }
+  try {
+    await SecureStore.setItemAsync(BIOMETRIC_USER_KEY, String(userId), KEYCHAIN_OPTIONS);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function clearBiometricEnrollment() {
+  await deleteSecureValue(BIOMETRIC_USER_KEY);
+  await deleteBiometricCredential();
 }
 
 // Drops the active session (cookie + live envelope) but preserves the biometric
@@ -125,13 +260,17 @@ export async function clearActiveSessionKeepBiometric() {
   await Promise.all([setSessionCookie(""), setSessionEnvelope(null)]);
 }
 
+/**
+ * Remove every PulseSoc credential on this device, biometric included.
+ *
+ * This is the account-deletion / hard-signout path, so it must leave nothing
+ * behind that could resume the account: no cookie, no live refresh token, no
+ * Face-ID-protected refresh token, and no enrollment marker claiming Face ID is
+ * still armed. (It does not — and cannot — touch Apple's biometric template,
+ * which PulseSoc never has access to in the first place.)
+ */
 export async function clearNativeSessionCredentials() {
-  await Promise.all([
-    setSessionCookie(""),
-    setSessionEnvelope(null),
-    deleteSecureValue(BIOMETRIC_USER_KEY),
-    deleteSecureValue(BIOMETRIC_SESSION_KEY)
-  ]);
+  await Promise.all([setSessionCookie(""), setSessionEnvelope(null), clearBiometricEnrollment()]);
 }
 
 export async function getCachedSessionUser<T>() {
