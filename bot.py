@@ -87363,7 +87363,81 @@ def api_payments_order_verify(transaction_id):
     return jsonify({"ok": True, "order": order, "payment_status": safe_status, "fulfilled": safe_status == "paid"})
 
 
-def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
+def pulse_buyer_order_prefetch(cur, rows):
+    """Resolve every seller and listing a page of buyer orders refers to, in two queries.
+
+    `pulse_buyer_order_response` looks up the seller behind an order and, for
+    marketplace products, the listing. Called per row — which is how the list
+    endpoint calls it — that is one or two round trips *per order*, so a buyer
+    with 100 rows in each of the two order tables paid up to 400 sequential
+    queries to render one screen. The Orders tile is the surface the owner
+    reported as slowest, and this was the reason.
+
+    Returns `(sellers_by_id, listings_by_id)` to hand back to
+    `pulse_buyer_order_response`. Both are plain dicts, so a missing key falls
+    back to the same empty-dict behaviour `fetchone() or {}` produced before.
+    Distinct ids only: a buyer with 80 orders from one seller does one lookup,
+    not 80.
+    """
+    seller_ids = set()
+    listing_ids = set()
+    for row in rows:
+        raw = dict(row or {})
+        seller_user_id = safe_int(raw.get("seller_user_id"), 0)
+        if seller_user_id:
+            seller_ids.add(seller_user_id)
+        if str(raw.get("item_type") or "") in {"marketplace_product", "product"}:
+            numeric_item_id = safe_int(raw.get("item_id"), 0)
+            if numeric_item_id:
+                listing_ids.add(numeric_item_id)
+    sellers_by_id = {}
+    if seller_ids:
+        placeholders = ",".join(["?"] * len(seller_ids))
+        cur.execute(
+            f"""
+            SELECT u.user_id, u.username, u.avatar_url,
+                   COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name
+            FROM users u
+            LEFT JOIN marketplace_sellers ms ON ms.user_id=u.user_id
+            WHERE u.user_id IN ({placeholders})
+            """,
+            tuple(seller_ids),
+        )
+        for row in cur.fetchall():
+            record = dict(row)
+            sellers_by_id[safe_int(record.get("user_id"), 0)] = record
+    listings_by_id = {}
+    if listing_ids:
+        placeholders = ",".join(["?"] * len(listing_ids))
+        cur.execute(
+            f"""
+            SELECT l.id, l.title, l.seller_user_id, l.category, l.price_label, l.currency,
+                   l.cover_image_url, l.media_url AS image_url, l.cover_image_url AS thumbnail_url, l.video_url,
+                   l.product_type, l.listing_type, l.listing_metadata_json,
+                   COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name,
+                   u.username AS seller_username
+            FROM marketplace_listings l
+            LEFT JOIN users u ON u.user_id=l.seller_user_id
+            LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+            WHERE l.id IN ({placeholders})
+            """,
+            tuple(listing_ids),
+        )
+        for row in cur.fetchall():
+            record = dict(row)
+            listings_by_id[safe_int(record.get("id"), 0)] = record
+    return sellers_by_id, listings_by_id
+
+
+def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
+                               sellers_by_id=None, listings_by_id=None):
+    """Serialize one buyer order.
+
+    `sellers_by_id` / `listings_by_id` are optional prefetched maps from
+    `pulse_buyer_order_prefetch`. When they are None this queries per row
+    exactly as it always did — which is correct for the single-order detail
+    endpoint, where N is 1 and a batch would be two queries instead of one.
+    """
     raw = dict(order or {})
     tx_id = safe_int(raw.get("id"), 0)
     item_type = str(raw.get("item_type") or "order")
@@ -87381,7 +87455,9 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
         metadata = {}
     seller_user_id = safe_int(raw.get("seller_user_id"), 0)
     seller = {}
-    if seller_user_id:
+    if seller_user_id and sellers_by_id is not None:
+        seller = dict(sellers_by_id.get(seller_user_id) or {})
+    elif seller_user_id:
         # An order records who the buyer bought *from*, and that is the store.
         # The seller's personal `users.display_name` is not selected at all here
         # so it cannot reach a receipt or purchase-history row by accident; the
@@ -87398,7 +87474,9 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
         )
         seller = dict(cur.fetchone() or {})
     listing = {}
-    if numeric_item_id and item_type in {"marketplace_product", "product"}:
+    if numeric_item_id and item_type in {"marketplace_product", "product"} and listings_by_id is not None:
+        listing = dict(listings_by_id.get(numeric_item_id) or {})
+    elif numeric_item_id and item_type in {"marketplace_product", "product"}:
         cur.execute(
             """
             SELECT l.id, l.title, l.seller_user_id, l.category, l.price_label, l.currency,
@@ -87415,13 +87493,17 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions"):
             (numeric_item_id,),
         )
         listing = dict(cur.fetchone() or {})
-        if listing:
-            listing["listing_type"] = marketplace_listing_types_service.effective_listing_type(listing.get("listing_type"), listing.get("product_type"))
-            listing["listing_metadata"] = marketplace_listing_types_service.parse_metadata(listing.pop("listing_metadata_json", ""))
-            # `seller_name` is retained as an alias so older consumers keep
-            # rendering — but it now resolves to the store, never the owner.
-            listing["seller_store_name"] = marketplace_seller_identity.display_store_name(listing)
-            listing["seller_name"] = listing["seller_store_name"]
+    # Hoisted out of the query branch so the prefetched map and the per-row
+    # query produce byte-identical rows. `listing` is always a fresh dict copy,
+    # so the `pop` below cannot mutate a shared prefetched record even when the
+    # same listing backs several orders.
+    if listing:
+        listing["listing_type"] = marketplace_listing_types_service.effective_listing_type(listing.get("listing_type"), listing.get("product_type"))
+        listing["listing_metadata"] = marketplace_listing_types_service.parse_metadata(listing.pop("listing_metadata_json", ""))
+        # `seller_name` is retained as an alias so older consumers keep
+        # rendering — but it now resolves to the store, never the owner.
+        listing["seller_store_name"] = marketplace_seller_identity.display_store_name(listing)
+        listing["seller_name"] = listing["seller_store_name"]
     title = metadata.get("title") or listing.get("title") or item_type.replace("_", " ").title()
     amount_cents = safe_int(raw.get("amount_cents"), 0) or safe_int(raw.get("gross_amount_cents"), 0)
     currency = str(raw.get("currency") or listing.get("currency") or "USD").upper()
@@ -87547,7 +87629,15 @@ def api_pulse_buyer_orders():
         """,
         (int(user["user_id"]), limit),
     )
-    seller_orders = [pulse_buyer_order_response(cur, row, "seller_transactions") for row in cur.fetchall()]
+    # Materialise before serializing: the prefetch below reuses this cursor, so
+    # the rows have to be off it first.
+    seller_rows = cur.fetchall()
+    seller_sellers, seller_listings = pulse_buyer_order_prefetch(cur, seller_rows)
+    seller_orders = [
+        pulse_buyer_order_response(cur, row, "seller_transactions",
+                                   sellers_by_id=seller_sellers, listings_by_id=seller_listings)
+        for row in seller_rows
+    ]
     cur.execute(
         """
         SELECT * FROM creator_transactions
@@ -87557,7 +87647,13 @@ def api_pulse_buyer_orders():
         """,
         (int(user["user_id"]), limit),
     )
-    creator_orders = [pulse_buyer_order_response(cur, row, "creator_transactions") for row in cur.fetchall()]
+    creator_rows = cur.fetchall()
+    creator_sellers, creator_listings = pulse_buyer_order_prefetch(cur, creator_rows)
+    creator_orders = [
+        pulse_buyer_order_response(cur, row, "creator_transactions",
+                                   sellers_by_id=creator_sellers, listings_by_id=creator_listings)
+        for row in creator_rows
+    ]
     conn.close()
     orders = sorted(seller_orders + creator_orders, key=lambda item: (str(item.get("created_at") or ""), int(item.get("id") or 0)), reverse=True)[:limit]
     return jsonify({"ok": True, "orders": orders, "purchases": orders, "count": len(orders)})
@@ -87653,7 +87749,23 @@ def api_payments_list_seller_orders():
             {**order, "commercial_economics": settlements_by_txn.get(int(order.get("id") or 0))}
             for order in seller_orders
         ]
-        summary = commercial_ops.economics(user["user_id"])
+        # Send the client the one field it declares, not the whole ledger.
+        #
+        # `economics()` returns every settlement row for the seller under
+        # "orders" -- it has to, because `reconcile()` walks those rows to check
+        # each one against its snapshot. That is an authority path and stays as
+        # it is. But this is a *display* path: the client contract is
+        # `MarketplaceCommercialSummary = { seller_liability_by_state?: ... }`
+        # and its only reader is SellerStoreScreen, which shows the liability
+        # map. Everything else was serialized, sent over the wire, parsed, and
+        # dropped -- a payload that grew with the seller's lifetime order count
+        # on a screen whose content does not.
+        #
+        # The aggregate scalars are kept: they are O(1) in size and already
+        # computed, so withholding them would buy nothing and would break any
+        # future reader for no gain.
+        economics = commercial_ops.economics(user["user_id"])
+        summary = {key: value for key, value in economics.items() if key != "orders"}
     except Exception:
         summary = {"seller_liability_by_state": {}}
     conn.close()

@@ -258,6 +258,24 @@ export function BusinessOsPaymentsScreen({
    *  older response. Child money layers enforce the same rule. */
   const loadInFlight = useRef(false);
 
+  /**
+   * True once a *fresh* server read has answered this mount, whatever it said.
+   *
+   * The cache-first paint below means figures can be on screen before the
+   * network has spoken, so "we have pixels" no longer implies "we have
+   * authority". Anything that spends money reads this, not `loading`.
+   */
+  const [authoritative, setAuthoritative] = useState(false);
+
+  /**
+   * Set when the cache paints, cleared when the network answers. It exists to
+   * stop a slow disk read from overwriting a fast network response: the cache
+   * hydration is fire-and-forget and can land *after* `load` has already
+   * installed real figures, and repainting stale money over fresh money is the
+   * one ordering mistake this screen must not make.
+   */
+  const networkAnswered = useRef(false);
+
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled()
       .then(setReducedMotion)
@@ -315,6 +333,11 @@ export function BusinessOsPaymentsScreen({
         ]);
 
       let stale: string | null = null;
+
+      // Everything below is a fresh read. Claim authority before installing it
+      // so the cache hydration, which may still be in flight, stands down.
+      networkAnswered.current = true;
+      setAuthoritative(true);
 
       if (moneyResult.status === "fulfilled") {
         setOverview(moneyResult.value);
@@ -401,6 +424,62 @@ export function BusinessOsPaymentsScreen({
   useEffect(() => {
     load("initial").catch(() => undefined);
   }, [load]);
+
+  /**
+   * Paint from disk without waiting for the network.
+   *
+   * The screen used to hold a skeleton over the whole body until all five
+   * requests settled, then consult the cache only if one of them *failed*. So a
+   * seller who had opened Payments an hour ago, and whose figures were sitting
+   * on the device, still watched a spinner for a full round trip. The data was
+   * already there; the screen simply refused to look at it until the network
+   * had its turn.
+   *
+   * This runs alongside `load`, not before it — the network request is already
+   * in flight by the time this effect body executes, so hydrating costs no
+   * delay to the fresh read. Whichever answers first paints, and the guards
+   * below make sure that is never the wrong one:
+   *
+   *   - `networkAnswered` is checked *after* each await. A disk read that loses
+   *     the race to the network exits rather than repainting stale money.
+   *   - The clock rule is unchanged and non-negotiable: cached figures appear
+   *     only under an "as of" label, so a cache read with no usable timestamp
+   *     is discarded exactly as it is in `load`'s failure branch.
+   *   - `authoritative` stays false, so the withdraw affordance stays shut. The
+   *     seller can *read* their balance immediately; spending against it still
+   *     waits for the server, and the server revalidates again at submit.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    const hydrate = async () => {
+      const [cachedOverview, cachedActivity] = await Promise.all([
+        loadCachedOverview().catch(() => null),
+        loadCachedActivity().catch(() => null)
+      ]);
+      if (cancelled || networkAnswered.current) return;
+
+      const clock = cachedOverview ? formatClock(cachedOverview.cachedAt) : "";
+      let stale: string | null = null;
+      if (cachedOverview && clock) {
+        setOverview(cachedOverview.overview);
+        stale = clock;
+      }
+      if (cachedActivity) {
+        applyPage(cachedActivity.page, "replace");
+        stale = stale || formatClock(cachedActivity.cachedAt);
+      }
+      // Only drop the skeleton if something actually made it to screen. A miss
+      // on both caches leaves the screen exactly as it was.
+      if (stale) {
+        setOfflineAsOf(stale);
+        setLoading(false);
+      }
+    };
+    hydrate().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [applyPage]);
 
   useEffect(() => {
     const refresh = () => {
@@ -765,7 +844,12 @@ export function BusinessOsPaymentsScreen({
 
         {/* Withdraw is live; instant payout stays behind its off flag and
             contributes nothing here while it is off. See the module docstring. */}
-        {!loading && (payoutInitiationIsLive() || instantPayoutIsLive()) ? (
+        {/* `authoritative`, not `!loading`: since the cache can drop the skeleton
+            before the network answers, `!loading` no longer means the figures are
+            current, and this section is where money leaves the account. The
+            seller reads a cached balance instantly and withdraws against a
+            server-confirmed one a moment later. */}
+        {authoritative && (payoutInitiationIsLive() || instantPayoutIsLive()) ? (
           <View style={styles.payoutActions}>
             <Text style={styles.sectionHeading} accessibilityRole="header" allowFontScaling>
               {t(`${NS}.withdrawTitle`)}
@@ -918,7 +1002,9 @@ export function BusinessOsPaymentsScreen({
 
         {/* Payout history — every row is a server payout record, chips decided
             by `payoutStatusChip`. An unknown status renders its raw word. */}
-        {!loading && payoutInitiationIsLive() ? (
+        {/* Payout history is server records only — it has no cache behind it, so
+            it waits for the fresh read rather than showing an empty section. */}
+        {authoritative && payoutInitiationIsLive() ? (
           <View style={styles.payoutsSection}>
             <View style={styles.sectionHeadingRow}>
               <Text style={styles.sectionHeading} accessibilityRole="header" allowFontScaling>

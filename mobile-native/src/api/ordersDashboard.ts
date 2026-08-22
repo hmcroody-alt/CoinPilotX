@@ -41,8 +41,8 @@ import {
 } from "./orders";
 import {
   MarketplaceSellerOrder,
-  loadCachedSellerStore,
-  loadSellerStoreSnapshot
+  listMarketplaceSellerOrders,
+  loadCachedSellerStore
 } from "./marketplace";
 import { envFlagOn } from "../core/envFlag";
 
@@ -318,8 +318,16 @@ export async function loadBuyerOrdersModel(limit = 80): Promise<BuyerOrdersModel
 
 export async function loadSellerOrdersModel(): Promise<SellerOrdersModel> {
   try {
-    const snapshot = await loadSellerStoreSnapshot();
-    return { orders: (snapshot.orders || []).map(unifySellerOrder), offline: false };
+    // Asks for orders, not for the store.
+    //
+    // This used to call `loadSellerStoreSnapshot()`, which fetches the seller's
+    // orders *and* 80 full listing rows — description, gallery JSON and 20-odd
+    // other columns each — and then used only `.orders`. The Orders screen
+    // downloaded, parsed and normalised an entire storefront it never renders,
+    // on every open. One request, and a much smaller one, answers the question
+    // this screen actually asks.
+    const result = await listMarketplaceSellerOrders();
+    return { orders: (result.orders || []).map(unifySellerOrder), offline: false };
   } catch (error) {
     const cached = await loadCachedSellerStore().catch(() => null);
     return {

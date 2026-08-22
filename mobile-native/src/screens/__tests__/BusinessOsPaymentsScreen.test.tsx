@@ -282,6 +282,109 @@ describe("Payments money hub", () => {
     expect(view.getByText(/Money actions are paused until you reconnect/)).toBeTruthy();
   });
 
+  /**
+   * The cold-open path. These are the tests that would fail if the screen went
+   * back to holding a skeleton over the body until the network answered — which
+   * is what made Payments feel slow to open even when the figures were already
+   * on the device.
+   */
+  describe("cold open paints from cache before the network answers", () => {
+    /** A promise that never settles, standing in for a slow round trip. */
+    function pending<T>() {
+      return new Promise<T>(() => {});
+    }
+
+    it("shows the cached balance while the fresh read is still in flight", async () => {
+      mockOverview.mockReturnValue(pending());
+      mockLedger.mockReturnValue(pending());
+      mockAdWallet.mockReturnValue(pending());
+      mockConnectStatus.mockReturnValue(pending());
+      mockSellerPayouts.mockReturnValue(pending());
+      mockCachedOverview.mockResolvedValue({
+        overview: overview({ available_cents: 4200 }),
+        cachedAt: "2026-08-01T09:14:00Z"
+      });
+      mockCachedActivity.mockResolvedValue({ page: page([entry()]), cachedAt: "2026-08-01T09:14:00Z" });
+
+      const view = render(<BusinessOsPaymentsScreen />);
+
+      // The skeleton clears on the cache, not on the network — which is still
+      // hanging and will never resolve in this test.
+      await waitFor(() => expect(view.queryByLabelText("Loading your balances")).toBeNull());
+      expect(view.getByLabelText(/Available for payout, \$42\.00/)).toBeTruthy();
+      // And it is labelled as cached. An unlabelled cached figure is the one
+      // outcome worse than a spinner.
+      expect(view.getByText(/Offline — showing your last synced activity as of/)).toBeTruthy();
+    });
+
+    it("does not offer withdraw until a fresh read has landed", async () => {
+      mockOverview.mockReturnValue(pending());
+      mockLedger.mockReturnValue(pending());
+      mockAdWallet.mockReturnValue(pending());
+      mockConnectStatus.mockReturnValue(pending());
+      mockSellerPayouts.mockReturnValue(pending());
+      mockCachedOverview.mockResolvedValue({
+        overview: overview({ available_cents: 4200 }),
+        cachedAt: "2026-08-01T09:14:00Z"
+      });
+      mockCachedActivity.mockResolvedValue({ page: page([entry()]), cachedAt: "2026-08-01T09:14:00Z" });
+
+      const view = render(<BusinessOsPaymentsScreen />);
+      await waitFor(() => expect(view.queryByLabelText("Loading your balances")).toBeNull());
+
+      // The seller can read the balance. They cannot spend against it: a cached
+      // figure is a display, never an authority to move money.
+      expect(view.queryByText("Withdraw")).toBeNull();
+    });
+
+    it("keeps the skeleton when there is no cache to paint", async () => {
+      mockOverview.mockReturnValue(pending());
+      mockLedger.mockReturnValue(pending());
+      mockAdWallet.mockReturnValue(pending());
+      mockConnectStatus.mockReturnValue(pending());
+      mockSellerPayouts.mockReturnValue(pending());
+      // Defaults already resolve both caches to null; stated here because it is
+      // the whole point of the case.
+      mockCachedOverview.mockResolvedValue(null);
+      mockCachedActivity.mockResolvedValue(null);
+
+      const view = render(<BusinessOsPaymentsScreen />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(view.queryByLabelText("Loading your balances")).toBeTruthy();
+    });
+
+    it("lets the fresh read win even when the cache resolves after it", async () => {
+      // The disk read losing the race is the ordering bug this guards: a late
+      // cache must never repaint stale money over a balance the server just
+      // confirmed.
+      let releaseCache: (value: null) => void = () => {};
+      mockCachedOverview.mockReturnValue(
+        new Promise((resolve) => {
+          releaseCache = resolve as (value: null) => void;
+        })
+      );
+      mockCachedActivity.mockResolvedValue({
+        page: page([entry()]),
+        cachedAt: "2026-08-01T09:14:00Z"
+      });
+
+      const view = await renderScreen();
+      expect(view.getByLabelText(/Available for payout, \$42\.00/)).toBeTruthy();
+
+      await act(async () => {
+        releaseCache(null);
+        await Promise.resolve();
+      });
+
+      // Still the fresh figure, and no offline banner: the network answered, so
+      // the late cache stood down.
+      expect(view.getByLabelText(/Available for payout, \$42\.00/)).toBeTruthy();
+      expect(view.queryByText(/Offline — showing your last synced activity as of/)).toBeNull();
+    });
+  });
+
   it("keeps the ad wallet route available without asserting a zero when its balance cannot be read", async () => {
     mockAdWallet.mockResolvedValue(null);
     const view = await renderScreen();

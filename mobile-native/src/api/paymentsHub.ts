@@ -436,15 +436,24 @@ export async function fetchAdWallet(): Promise<{
   // a readable wallet amount. Payments renders an unavailable dash and keeps
   // the canonical wallet route open so that screen can explain setup.
   if (!accountId) return null;
-  const walletResponse = await getAdWallet(accountId).catch(() => null);
+  // Billing carries the funding gate, and the top-up control's visibility is not
+  // decidable from the wallet alone. A failed billing read yields null, which
+  // `adTopUpIsLive` treats as "not live" — the safe direction, since the cost of
+  // wrongly hiding top-up is an extra tap and the cost of wrongly showing it is
+  // a control that silently does nothing.
+  //
+  // Both requests need only `accountId`, which is already known here, so they go
+  // out together. They used to be awaited one after the other, which charged the
+  // Payments screen a third serial round trip for data that was never dependent.
+  // Billing is now also fetched in the rare case where the wallet read fails —
+  // one wasted request on a failure path, in exchange for a round trip saved on
+  // every successful load.
+  const [walletResponse, billingResponse] = await Promise.all([
+    getAdWallet(accountId).catch(() => null),
+    getAdBillingSummary(accountId).catch(() => null)
+  ]);
   const wallet = walletResponse?.wallet;
   if (!wallet) return null;
-  // Billing is fetched alongside because it carries the funding gate, and the
-  // top-up control's visibility is not decidable from the wallet alone. A failed
-  // billing read yields null, which `adTopUpIsLive` treats as "not live" — the
-  // safe direction, since the cost of wrongly hiding top-up is an extra tap and
-  // the cost of wrongly showing it is a control that silently does nothing.
-  const billingResponse = await getAdBillingSummary(accountId).catch(() => null);
   return { wallet, billing: billingResponse?.billing || null, accountId };
 }
 
