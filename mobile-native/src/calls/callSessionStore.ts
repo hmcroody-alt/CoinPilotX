@@ -46,6 +46,7 @@ import { stopVoiceMessagePlayback } from "../core/voiceMessagePlayback";
 import { playCallCue, stopCallTone } from "./callSignalMedia";
 import { endCallKitCall, markCallKitConnected } from "./callKitBridge";
 import { isTerminalCallStatus, shouldConnectCallMedia, shouldPlayUnavailablePrompt } from "./callToneLifecycle";
+import { CallSyncSource, traceCallSync } from "./callSyncTrace";
 
 export const CALL_STATUS_REFRESH_MS = 4200;
 export const CALL_RINGING_STATUS_REFRESH_MS = 1100;
@@ -128,6 +129,27 @@ let joinRequested = false;
 let refreshInFlight: Promise<PulseCall | null> | null = null;
 let terminalHandledFor = "";
 let mediaLeaseHeld = false;
+/** Epoch ms the current session opened; the zero point for acceptance latency. */
+let sessionOpenedAtMs = 0;
+
+/** Local role, derived from direction. Used only for telemetry. */
+function localRole(): "caller" | "callee" | "unknown" {
+  if (snapshot.direction === "outgoing") return "caller";
+  if (snapshot.direction === "incoming") return "callee";
+  return "unknown";
+}
+
+function traceStatus(prevStatus: string, nextStatus: string, source: CallSyncSource, detail?: string) {
+  traceCallSync({
+    callId: snapshot.callId,
+    role: localRole(),
+    prevStatus,
+    nextStatus,
+    source,
+    elapsedMs: sessionOpenedAtMs ? Date.now() - sessionOpenedAtMs : 0,
+    detail
+  });
+}
 
 function emit() {
   listeners.forEach((listener) => listener());
@@ -211,6 +233,7 @@ export function beginCallSession(init: CallSessionInit = {}) {
   };
   terminalHandledFor = "";
   joinRequested = false;
+  sessionOpenedAtMs = Date.now();
   emit();
   stopVoiceMessagePlayback("call_opened").catch(() => undefined);
   if (!mediaLeaseHeld) {
@@ -226,12 +249,16 @@ export function beginCallSession(init: CallSessionInit = {}) {
  * poll cadence, handles terminal statuses, and auto-connects media when the
  * signaling state says the media room should be live.
  */
-export function adoptCallSnapshot(call: PulseCall | null | undefined) {
+export function adoptCallSnapshot(call: PulseCall | null | undefined, source: CallSyncSource = "poll") {
   if (!call || !call.call_id) return;
   const callId = String(call.call_id);
   const nextType: PulseCallType = call.call_type === "video" ? "video" : snapshot.callType;
+  const prevStatus = String(snapshot.call?.status || "");
   setSnapshot({ call, callId, callType: nextType, conversationId: call.conversation_id ?? snapshot.conversationId });
   const status = String(call.status || "");
+  // Only real transitions are traced; a steady-state poll would otherwise emit
+  // one line per second for the entire call and bury the transition we care about.
+  if (status !== prevStatus) traceStatus(prevStatus, status, source);
   if (isTerminalCallStatus(status)) {
     handleTerminalStatus(status);
     return;
@@ -248,13 +275,13 @@ export function adoptCallSnapshot(call: PulseCall | null | undefined) {
  * knows the call — that is treated as terminal, never as a transient error, so
  * a ghost session cannot outlive its call record.
  */
-export function refreshCallSessionStatus(): Promise<PulseCall | null> {
+export function refreshCallSessionStatus(source: CallSyncSource = "poll"): Promise<PulseCall | null> {
   if (!snapshot.callId) return Promise.resolve(null);
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = (async () => {
     try {
       const next = await getCallStatus(snapshot.callId);
-      adoptCallSnapshot(next);
+      adoptCallSnapshot(next, source);
       return next;
     } catch (error) {
       const status = (error as { status?: number })?.status;
@@ -262,6 +289,12 @@ export function refreshCallSessionStatus(): Promise<PulseCall | null> {
         handleTerminalStatus("ended");
         return null;
       }
+      // The caller's ONLY acceptance signal is this poll: while ringing it is not
+      // in the media room, so no RTC event can tell it the callee answered. A
+      // silently dropped rejection here is therefore indistinguishable from "the
+      // callee never picked up", which is exactly how a stuck ringing caller used
+      // to present. Record the failure class so the stall is diagnosable.
+      traceStatus(String(snapshot.call?.status || ""), "", "poll_error", pollFailureClass(error));
       throw error;
     } finally {
       refreshInFlight = null;
@@ -270,8 +303,17 @@ export function refreshCallSessionStatus(): Promise<PulseCall | null> {
   return refreshInFlight;
 }
 
-function pollNow() {
-  refreshCallSessionStatus().catch(() => undefined);
+/** A coarse, non-identifying failure class. Never the server's message body. */
+function pollFailureClass(error: unknown): string {
+  const status = Number((error as { status?: number })?.status || 0);
+  if (status > 0) return `http_${status}`;
+  const name = String((error as { name?: string })?.name || "");
+  if (/abort/i.test(name)) return "aborted";
+  return "network";
+}
+
+function pollNow(source: CallSyncSource = "poll") {
+  refreshCallSessionStatus(source).catch(() => undefined);
 }
 
 function desiredPollMs() {
@@ -314,7 +356,7 @@ function ensureAppStateSubscription() {
   appStateSubscription = AppState.addEventListener("change", (nextState) => {
     const wasBackgrounded = /inactive|background/.test(appState);
     appState = nextState;
-    if (wasBackgrounded && nextState === "active" && snapshot.sessionActive) pollNow();
+    if (wasBackgrounded && nextState === "active" && snapshot.sessionActive) pollNow("app_foreground");
   });
 }
 
@@ -555,7 +597,7 @@ export async function connectCallMedia(
         if (connected) noteConnectedTransition();
         // Fast-path hint: a failed media link often means the far end is gone.
         // The backend stays authoritative — this only re-fetches status NOW.
-        if (failed) pollNow();
+        if (failed) pollNow("rtc_hint");
       },
       onUserJoined: (_connection, remoteUid) => {
         const remoteUids = addAgoraRemoteUid(snapshot.remoteUids, remoteUid);
@@ -579,7 +621,7 @@ export async function connectCallMedia(
         // Fast-path hint: the other participant left the media room. Re-fetch
         // the authoritative status immediately instead of waiting for a poll
         // tick, so a remote hang-up ends this side in sub-second time.
-        pollNow();
+        pollNow("rtc_hint");
       },
       onTokenPrivilegeWillExpire: () => {
         setSnapshot({ diagnosticCode: "AGORA_TOKEN_RENEWAL_REQUIRED", error: "Refreshing secure call access…" });

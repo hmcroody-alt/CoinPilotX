@@ -33,8 +33,16 @@ import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-_HANDLE, _DB_PATH = tempfile.mkstemp(suffix=".db", prefix="call_hangup_")
-os.close(_HANDLE)
+# Every schema bootstrap in the stack (bot.init_db, pulse_communications_v2's
+# _SCHEMA_READY) is memoized per process, so only the FIRST temp database a test
+# module opens ever gets its tables built. Two call-test modules each minting
+# their own database therefore cannot coexist in one pytest run — whichever is
+# collected second finds an empty file. They share one instead.
+_DB_PATH = os.environ.get("PULSESOC_CALL_TEST_DB", "")
+if not _DB_PATH:
+    _HANDLE, _DB_PATH = tempfile.mkstemp(suffix=".db", prefix="call_tests_")
+    os.close(_HANDLE)
+    os.environ["PULSESOC_CALL_TEST_DB"] = _DB_PATH
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
 
 from services import pulsesoc_communications_engine as engine  # noqa: E402
@@ -53,6 +61,7 @@ def _use_module_database():
     pytest imports every selected module during collection before running any
     test, so a module collected after this one leaves the environment pointing
     at *its* database by the time these tests execute.
+
     """
     os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
 

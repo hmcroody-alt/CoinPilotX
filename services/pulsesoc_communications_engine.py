@@ -1227,12 +1227,20 @@ def accept_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | Non
             "UPDATE communication_call_participants SET status='joined', joined_at=COALESCE(NULLIF(joined_at,''), ?), last_seen_at=?, device_info_json=?, updated_at=? WHERE call_id=? AND user_id=?",
             (now, now, _json_dumps((payload or {}).get("device_info") or {}), now, int(call["id"]), int(user_id)),
         )
-        transition = _transition(cur, call, "accepted", int(user_id), "accepted")
-        if not transition.get("ok"):
-            return transition
-        _event(cur, int(call["id"]), int(user_id), "accepted", {})
+        # Accepting is idempotent. Two accepts for the same call are normal, not
+        # an error: the CallKit answer handler and the in-app incoming-call sheet
+        # can both fire for one tap, and a retried request after a flaky response
+        # arrives at an already-accepted call. `connecting -> accepted` is not a
+        # legal transition, so re-running it returned an error the callee saw as a
+        # failure on a call that was in fact connecting normally. Re-issue the
+        # media token against the existing state instead of re-transitioning.
+        if str(call.get("status") or "") in {"created", "ringing"}:
+            transition = _transition(cur, call, "accepted", int(user_id), "accepted")
+            if not transition.get("ok"):
+                return transition
+            _event(cur, int(call["id"]), int(user_id), "accepted", {})
+            _emit_call_sync_event(cur, _get_call(cur, call_ref), "call_accepted", int(user_id), status="accepted")
         refreshed = _get_call(cur, call_ref)
-        _emit_call_sync_event(cur, refreshed, "call_accepted", int(user_id), status="accepted")
         token = _generate_rtc_token(
             "agora",
             refreshed.get("room_name") or "",
@@ -1241,6 +1249,12 @@ def accept_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | Non
             str(participant.get("role") or "member"),
         )
         if not token.get("ok"):
+            # Acceptance is a signaling fact and must outlive a media failure.
+            # Returning here without committing rolled the 'accepted' transition
+            # back, so the row stayed 'ringing' and the caller's status poll rang
+            # forever with no way to learn the callee had answered. Commit the
+            # accepted state, then report the token failure.
+            conn.commit()
             return token
         _transition(cur, refreshed, "connecting", int(user_id), "accepted_joining")
         conn.commit()
