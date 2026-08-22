@@ -50,7 +50,7 @@ jest.mock("../../api/marketplace", () => ({
 }));
 
 import { businessOsHubSections, businessOsNavigationArgs } from "../../api/businessOs";
-import { BUSINESS_OS_LOAD_TIMEOUT_MS, BusinessOsScreen } from "../BusinessOsScreen";
+import { BUSINESS_OS_LOAD_TIMEOUT_MS, BusinessOsScreen, resetBusinessOsFreshness } from "../BusinessOsScreen";
 
 const EMPTY_ANALYTICS = {
   totals: { impressions: 0, viewable_impressions: 0, clicks: 0, hides: 0, reports: 0, spend_cents: 0, ctr: 0 },
@@ -63,6 +63,11 @@ function navigationSpy() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // The freshness window lives at module scope so it can survive the unmount
+  // that navigating to a tile causes. That makes it leak between tests, where
+  // one test's successful load would satisfy the next test's window and skip
+  // the fetch it is trying to observe.
+  resetBusinessOsFreshness();
   mockListAdAccounts.mockResolvedValue({ accounts: [] });
   mockGetAdAnalytics.mockResolvedValue({ analytics: EMPTY_ANALYTICS });
   mockSellerSnapshot.mockResolvedValue({ listings: [], orders: [] });
@@ -73,7 +78,11 @@ beforeEach(() => {
 
 async function renderHub(navigation = navigationSpy()) {
   const view = render(<BusinessOsScreen navigation={navigation} />);
-  await waitFor(() => expect(view.queryByText("Loading your business…")).toBeNull());
+  // "Settled" is now the disappearance of the inline revalidation spinner. The
+  // hub no longer has a blocking "Loading your business…" panel to wait on —
+  // the shell and At a glance are on screen from the first frame, which is the
+  // property `BusinessOsScreen.perf.test.tsx` pins.
+  await waitFor(() => expect(view.queryByLabelText("Refreshing your business summary")).toBeNull());
   return { ...view, navigation };
 }
 
@@ -153,7 +162,7 @@ describe("Business OS hub", () => {
     expect(view.getByLabelText("Ad spend: $5.00")).toBeTruthy();
   });
 
-  it("leaves the loading state and uses cached data when live requests never settle", async () => {
+  it("shows cached data immediately and does not wait out the deadline to paint it", async () => {
     jest.useFakeTimers();
     mockListAdAccounts.mockReturnValue(new Promise(() => undefined));
     mockGetAdAnalytics.mockReturnValue(new Promise(() => undefined));
@@ -165,14 +174,23 @@ describe("Business OS hub", () => {
     });
 
     const view = render(<BusinessOsScreen navigation={navigationSpy()} />);
-    expect(view.getByText("Loading your business…")).toBeTruthy();
+
+    // The behavioural change this mission made. Previously the cached spend was
+    // unreachable until all three requests settled or the 12s deadline fired,
+    // so a seller on a bad connection stared at a spinner holding data the
+    // device already had. It is on screen before any timer is advanced now.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(view.getByLabelText("Ad spend: $5.00")).toBeTruthy();
+    expect(view.getByText("Last synced view — refreshing now.")).toBeTruthy();
 
     await act(async () => {
       jest.advanceTimersByTime(BUSINESS_OS_LOAD_TIMEOUT_MS);
       await Promise.resolve();
     });
 
-    expect(view.queryByText("Loading your business…")).toBeNull();
     expect(view.getByText("Showing saved data")).toBeTruthy();
     expect(view.getByText("PulseSoc took too long to load your business.")).toBeTruthy();
     expect(view.getByLabelText("Ad spend: $5.00")).toBeTruthy();

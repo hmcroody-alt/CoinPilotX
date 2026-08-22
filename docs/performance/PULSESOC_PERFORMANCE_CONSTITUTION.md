@@ -8,6 +8,11 @@ production: stale money, skipped checks, a spinner replaced by a lie.
 Every rule below is enforceable, and most are enforced by a test named in the
 rule. Where a rule is not yet enforced by a test, it says so.
 
+**Subordinate documents.** `BUSINESS_OS_PERFORMANCE_CONSTITUTION.md` adds four
+rules that apply only to the Business OS surface, where a launcher's tiles are
+themselves full screens and the money lives. It defers to this document wherever
+the two could be read as disagreeing.
+
 ---
 
 ## Rule 1 — Cache may be displayed. Cache is never authority.
@@ -24,7 +29,10 @@ response that has already landed. A slow disk read answering after the network
 is a *stale* read, and it loses.
 
 *Enforced by:* `src/screens/__tests__/ProfileScreen.perf.test.tsx` —
-"never lets a slow cache read overwrite a canonical response that already landed".
+"never lets a slow cache read overwrite a canonical response that already landed";
+`BusinessOsScreen.perf.test.tsx` — the test of the same name;
+`src/api/__tests__/sellerStoreSnapshotCache.test.ts` — the corollary for *writes*,
+that a failed load must not persist empties over a good cache.
 
 ## Rule 2 — A screen must not block on an optional dependency.
 

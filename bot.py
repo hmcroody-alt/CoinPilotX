@@ -87625,13 +87625,34 @@ def api_payments_list_seller_orders():
     try:
         from services import marketplace_commercial_operations as commercial_ops
         commercial_ops.ensure_schema(conn)
-        enriched = []
-        for order in seller_orders:
-            settlement = commercial_ops._row(cur.execute(
-                "SELECT * FROM marketplace_commercial_settlements WHERE seller_transaction_id=?",
-                (int(order.get("id") or 0),)).fetchone())
-            enriched.append({**order, "commercial_economics": settlement})
-        seller_orders = enriched
+        # One query for every settlement, then an in-memory join.
+        #
+        # This used to run `SELECT ... WHERE seller_transaction_id=?` inside the
+        # loop, so a seller with 100 orders paid 100 sequential round trips on
+        # every load. Business OS home calls this endpoint just to display an
+        # order count, which made the N+1 the single most expensive thing behind
+        # a number the user reads in one glance.
+        #
+        # `fetchone()` kept the LAST matching row per transaction id, so the dict
+        # build below assigns unconditionally rather than with `setdefault` --
+        # same row wins, including the degenerate case of duplicate settlements
+        # for one transaction. Orders with no settlement still get an explicit
+        # `None`, exactly as `_row(None)` returned before.
+        order_ids = [int(order.get("id") or 0) for order in seller_orders]
+        settlements_by_txn = {}
+        if order_ids:
+            placeholders = ",".join(["?"] * len(order_ids))
+            cur.execute(
+                f"SELECT * FROM marketplace_commercial_settlements WHERE seller_transaction_id IN ({placeholders})",
+                order_ids,
+            )
+            for row in cur.fetchall():
+                settlement = commercial_ops._row(row)
+                settlements_by_txn[int(settlement.get("seller_transaction_id") or 0)] = settlement
+        seller_orders = [
+            {**order, "commercial_economics": settlements_by_txn.get(int(order.get("id") or 0))}
+            for order in seller_orders
+        ]
         summary = commercial_ops.economics(user["user_id"])
     except Exception:
         summary = {"seller_liability_by_state": {}}

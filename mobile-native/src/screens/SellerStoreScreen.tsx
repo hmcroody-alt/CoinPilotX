@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   connectMarketplacePayout,
@@ -52,37 +52,85 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   const [editPriceLabel, setEditPriceLabel] = useState("");
   const [editQuantity, setEditQuantity] = useState("");
 
-  async function load() {
+  // True once a canonical store response has landed. Guards the cache read
+  // below so a slow AsyncStorage hop can never repaint over fresher data.
+  const storeIsCanonical = useRef(false);
+  const loadInFlight = useRef<Promise<void> | null>(null);
+
+  /**
+   * Paint whatever the device already holds. Display only: the listings and
+   * orders here are what the seller looks at, never what any write is checked
+   * against. Terms acceptance is deliberately absent — it is an entitlement,
+   * and an entitlement read from cache is an entitlement granted by a stale
+   * file.
+   */
+  const hydrateFromCache = useCallback(async () => {
+    if (storeIsCanonical.current) return false;
+    const cached = await loadCachedSellerStore().catch(() => null);
+    if (!cached || storeIsCanonical.current) return false;
+    setListings(cached.listings || []);
+    setOrders(cached.orders || []);
+    return true;
+  }, []);
+
+  const load = useCallback(() => {
+    // One marketplace write invalidates all three channels registered below in
+    // the same tick. Ungated, that is three concurrent copies of this load.
+    if (loadInFlight.current) return loadInFlight.current;
     setMessage("");
-    setOffline(false);
-    setLoading(true);
-    try {
-      const snapshot = await loadSellerStoreSnapshot();
-      setListings(snapshot.listings || []);
-      setOrders(snapshot.orders || []);
-      setLiability(snapshot.commercial_summary?.seller_liability_by_state || {});
-      const terms = await getMarketplaceCommercialTerms();
-      setTermsAccepted(Boolean(terms?.terms?.acceptance));
-    } catch (error) {
-      const cached = await loadCachedSellerStore();
-      if (cached) {
-        setListings(cached.listings || []);
-        setOrders(cached.orders || []);
-        setOffline(true);
+    const run = (async () => {
+      // The cache read runs alongside the network, not in front of it: awaiting
+      // it first would put a bridge hop between the tap and every request.
+      const hydration = hydrateFromCache().catch(() => false);
+
+      // `getMarketplaceCommercialTerms` is independent of the store snapshot.
+      // Serialising them cost a full round trip for no reason, and worse: the
+      // old code's catch belonged to both, so a terms hiccup discarded listings
+      // that had already arrived and replaced them with cache while claiming to
+      // be offline. They settle separately now, and neither can void the other.
+      const [snapshot, terms] = await Promise.allSettled([
+        loadSellerStoreSnapshot(),
+        getMarketplaceCommercialTerms()
+      ]);
+
+      if (snapshot.status === "fulfilled" && snapshot.value.live) {
+        storeIsCanonical.current = true;
+        setListings(snapshot.value.listings || []);
+        setOrders(snapshot.value.orders || []);
+        setLiability(snapshot.value.commercial_summary?.seller_liability_by_state || {});
+        setOffline(false);
       } else {
-        setMessage(error instanceof Error ? error.message : "Seller tools could not load.");
+        // Nothing authoritative arrived. Show saved data if there is any, and
+        // say so rather than rendering zeros as though the business were empty.
+        const painted = (await hydration) || (await hydrateFromCache().catch(() => false));
+        setOffline(true);
+        if (!painted) {
+          const error = snapshot.status === "rejected" ? snapshot.reason : null;
+          setMessage(error instanceof Error ? error.message : "Seller tools could not load.");
+        }
       }
-    } finally {
+
+      // Only a live answer moves an entitlement. A failed terms read leaves the
+      // previous value alone; it never grants acceptance the server did not.
+      if (terms.status === "fulfilled") setTermsAccepted(Boolean(terms.value?.terms?.acceptance));
+
+      await hydration;
+    })().finally(() => {
       setLoading(false);
-    }
-  }
+      loadInFlight.current = null;
+    });
+    loadInFlight.current = run;
+    return run;
+  }, [hydrateFromCache]);
 
   useEffect(() => {
     load().catch(() => undefined);
-  }, []);
+  }, [load]);
 
   useEffect(() => {
-    const refreshStore = () => load();
+    const refreshStore = () => {
+      load().catch(() => undefined);
+    };
     const unregisterSeller = registerSyncInvalidation("seller_inventory", refreshStore);
     const unregisterMarketplace = registerSyncInvalidation("marketplace", refreshStore);
     const unregisterOrders = registerSyncInvalidation("orders", refreshStore);
@@ -91,7 +139,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       unregisterMarketplace();
       unregisterOrders();
     };
-  }, []);
+  }, [load]);
 
   async function startPayoutConnect() {
     setBusy("payout");

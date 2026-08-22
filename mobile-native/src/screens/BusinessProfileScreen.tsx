@@ -163,52 +163,77 @@ export function BusinessProfileScreen({ navigation }: Props) {
 
   const dirty = Object.keys(draft).length > 0;
 
-  const load = useCallback(async () => {
+  const canonical = useRef({ profile: false, store: false });
+  const loadInFlight = useRef<Promise<void> | null>(null);
+
+  const load = useCallback(() => {
+    // Publishing a listing invalidates seller_inventory, marketplace and orders
+    // together, so the three handlers below fire in one tick. Ungated that is
+    // three concurrent copies of this three-request fan-out.
+    if (loadInFlight.current) return loadInFlight.current;
     setMessage("");
-    // Cache first for the two supporting sources; `loadOwnerProfile` does its own
-    // cache fallback and reports whether the copy it returned came from disk.
-    const [cachedProfile, cachedStore] = await Promise.all([
-      loadCachedProfile("me").catch(() => null),
-      loadCachedSellerStore().catch(() => null)
-    ]);
-    if (!mounted.current) return;
-    if (cachedProfile) setProfile(cachedProfile);
-    if (cachedStore) {
-      setListings(cachedStore.listings || []);
-      setOrders(cachedStore.orders || []);
-    }
 
-    // `allSettled`, not `all`: the Pulse profile and the store snapshot are
-    // supporting detail — an avatar and two counts. Either failing must not blank
-    // out an identity that loaded perfectly well.
-    const [freshOwner, freshProfile, freshStore] = await Promise.allSettled([
-      loadOwnerProfile(),
-      getMyProfile(),
-      loadSellerStoreSnapshot()
-    ]);
-    if (!mounted.current) return;
+    const run = (async () => {
+      // The network goes first. These two cache reads used to be awaited here,
+      // which put two AsyncStorage bridge hops in front of every request on the
+      // screen — a waterfall in the code whose job was to avoid one. They are
+      // started alongside the fan-out and applied only where nothing canonical
+      // has landed, so a slow disk read can never repaint over fresher data.
+      const fresh = Promise.allSettled([loadOwnerProfile(), getMyProfile(), loadSellerStoreSnapshot()]);
 
-    if (freshProfile.status === "fulfilled") setProfile(freshProfile.value);
-    if (freshStore.status === "fulfilled") {
-      setListings(freshStore.value.listings || []);
-      setOrders(freshStore.value.orders || []);
-    }
+      const hydration = Promise.all([
+        loadCachedProfile("me").catch(() => null),
+        loadCachedSellerStore().catch(() => null)
+      ])
+        .then(([cachedProfile, cachedStore]) => {
+          if (!mounted.current) return;
+          if (cachedProfile && !canonical.current.profile) setProfile(cachedProfile);
+          if (cachedStore && !canonical.current.store) {
+            setListings(cachedStore.listings || []);
+            setOrders(cachedStore.orders || []);
+          }
+        })
+        .catch(() => undefined);
 
-    if (freshOwner.status === "fulfilled" && freshOwner.value.state === "ready") {
-      setOwner(freshOwner.value.profile);
-      // Served from disk is said out loud. An identity screen showing a stale
-      // business name without saying so invites the seller to "fix" a change
-      // they already made.
-      setOffline(freshOwner.value.fromCache);
-    } else {
-      setOffline(false);
-      setMessage(
-        freshOwner.status === "fulfilled" && freshOwner.value.state === "failed"
-          ? freshOwner.value.failure.message
-          : "Business profile could not load."
-      );
-    }
-    setLoading(false);
+      // `allSettled`, not `all`: the Pulse profile and the store snapshot are
+      // supporting detail — an avatar and two counts. Either failing must not blank
+      // out an identity that loaded perfectly well.
+      const [freshOwner, freshProfile, freshStore] = await fresh;
+      if (!mounted.current) return;
+
+      if (freshProfile.status === "fulfilled") {
+        canonical.current.profile = true;
+        setProfile(freshProfile.value);
+      }
+      if (freshStore.status === "fulfilled" && freshStore.value.live) {
+        canonical.current.store = true;
+        setListings(freshStore.value.listings || []);
+        setOrders(freshStore.value.orders || []);
+      }
+
+      await hydration;
+      if (!mounted.current) return;
+
+      if (freshOwner.status === "fulfilled" && freshOwner.value.state === "ready") {
+        setOwner(freshOwner.value.profile);
+        // Served from disk is said out loud. An identity screen showing a stale
+        // business name without saying so invites the seller to "fix" a change
+        // they already made.
+        setOffline(freshOwner.value.fromCache);
+      } else {
+        setOffline(false);
+        setMessage(
+          freshOwner.status === "fulfilled" && freshOwner.value.state === "failed"
+            ? freshOwner.value.failure.message
+            : "Business profile could not load."
+        );
+      }
+    })().finally(() => {
+      if (mounted.current) setLoading(false);
+      loadInFlight.current = null;
+    });
+    loadInFlight.current = run;
+    return run;
   }, []);
 
   useEffect(() => {

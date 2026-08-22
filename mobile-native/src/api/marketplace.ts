@@ -246,6 +246,13 @@ export type SellerStoreSnapshot = {
   orders: MarketplaceSellerOrder[];
   commercial_summary?: MarketplaceCommercialSummary;
   cached_at?: string;
+  /**
+   * True only when both underlying requests answered. This snapshot resolves
+   * even when they fail — the empty arrays below are indistinguishable from a
+   * seller who genuinely has nothing — so callers that need to know whether
+   * they are holding an authoritative picture have to be told explicitly.
+   */
+  live?: boolean;
 };
 
 export async function searchMarketplace(params: { query?: string; limit?: number; sellerUserId?: number } = {}) {
@@ -290,13 +297,20 @@ export async function loadSellerStoreSnapshot() {
     listMarketplaceSellerListings({ limit: 80 }),
     listMarketplaceSellerOrders()
   ]);
+  const live = sellerListings.status === "fulfilled" && orders.status === "fulfilled";
   const snapshot: SellerStoreSnapshot = {
     listings: sellerListings.status === "fulfilled" ? sellerListings.value.items || [] : [],
     orders: orders.status === "fulfilled" ? orders.value.orders || [] : [],
     commercial_summary: orders.status === "fulfilled" ? orders.value.commercial_summary : undefined,
-    cached_at: new Date().toISOString()
+    cached_at: new Date().toISOString(),
+    live
   };
-  await cacheSellerStore(snapshot).catch(() => undefined);
+  // Only persist a snapshot both requests actually backed. A failed load
+  // produces empty arrays, and writing those replaced a good cache with a
+  // picture of a business that has no listings and no orders — the precise
+  // misreport the cache exists to prevent. The next offline open then showed
+  // the seller nothing and called it saved data.
+  if (live) await cacheSellerStore(snapshot).catch(() => undefined);
   return snapshot;
 }
 

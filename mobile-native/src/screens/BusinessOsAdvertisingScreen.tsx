@@ -142,6 +142,7 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
 
   const [model, setModel] = useState<AdsMarketplaceModel | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [mode, setMode] = useState<AdsMode>("marketplace");
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
@@ -154,13 +155,31 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
   const [budgetType, setBudgetType] = useState<AdBudgetType>("daily");
   const [budgetDollars, setBudgetDollars] = useState("");
 
+  /**
+   * `loading` means "there is nothing to show yet". It is not "a request is
+   * running" — those are different questions and conflating them is what made
+   * this screen flicker.
+   *
+   * Every mutation here ends with `await load()`, and the render gates used to
+   * read `!loading && model`. So pausing a campaign unmounted the campaign
+   * list, the account form and the new-campaign form, then remounted them a
+   * round trip later: the page visibly went away in response to the user
+   * touching a switch on it. `refreshing` now carries "a request is running"
+   * to a single inline indicator, and the gates key on `model` alone, so a
+   * refresh is additive to what is already on screen.
+   *
+   * Deliberately not deduplicated. A mutation's reload must observe the write
+   * that triggered it, and returning an in-flight promise started before that
+   * write would show the advertiser pre-mutation state.
+   */
   const load = useCallback(async () => {
-    setLoading(true);
+    setRefreshing(true);
     try {
       const next = await loadAdsMarketplace();
       setModel(next);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -329,7 +348,7 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
 
   // Null rather than a placeholder, same as the manager screen: the chip owns
   // the wording for a balance that has not arrived.
-  const walletProp = loading
+  const walletProp = loading && !model
     ? { balanceLabel: null, fundingLive: false, loading: true }
     : model?.wallet
     ? { balanceLabel: model.wallet.balanceLabel, fundingLive: model.wallet.fundingLive, loading: false }
@@ -424,7 +443,18 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
         </View>
       ) : null}
 
-      {!loading && model && !model.accounts.length ? (
+      {refreshing && model ? (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator
+            accessibilityLabel="Refreshing advertising"
+            color={adsLight.money.budget}
+            size="small"
+          />
+          <Text style={styles.muted}>Refreshing…</Text>
+        </View>
+      ) : null}
+
+      {model && !model.accounts.length ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Create your ad account</Text>
           <Text style={styles.muted}>
@@ -462,7 +492,7 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
         </View>
       ) : null}
 
-      {!loading && model && model.campaigns.length
+      {model && model.campaigns.length
         ? model.campaigns.map((campaign) => {
             // Two derivations, deliberately. `phase` is the lifecycle, and it is
             // what the switch keys on — whether a campaign is pausable is a
@@ -506,14 +536,14 @@ export function BusinessOsAdvertisingScreen({ navigation }: Props) {
           })
         : null}
 
-      {!loading && model && model.accounts.length && !model.campaigns.length ? (
+      {model && model.accounts.length && !model.campaigns.length ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>No campaigns yet</Text>
           <Text style={styles.muted}>Campaigns you create appear here with their delivery status and spend.</Text>
         </View>
       ) : null}
 
-      {!loading && model && model.primaryAccount ? (
+      {model && model.primaryAccount ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>New campaign</Text>
           <TextInput

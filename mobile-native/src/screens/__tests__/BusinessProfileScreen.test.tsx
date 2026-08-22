@@ -140,7 +140,7 @@ beforeEach(() => {
   mockSaveLink.mockImplementation(async () => ownerProfile());
   mockGetProfile.mockResolvedValue({ user_id: 7, username: "harbour", display_name: "Harbour", follower_count: 2400 });
   mockCachedProfile.mockResolvedValue(null);
-  mockStore.mockResolvedValue({ listings: [], orders: [] });
+  mockStore.mockResolvedValue({ listings: [], orders: [], live: true });
   mockCachedStore.mockResolvedValue(null);
 });
 
@@ -432,7 +432,12 @@ describe("Business Profile", () => {
         { id: 2, status: "paused", approval_status: "approved" },
         { id: 3, status: "active", approval_status: "pending" }
       ],
-      orders: []
+      orders: [],
+      // `live` marks a snapshot both underlying requests actually answered. The
+      // screen takes counts only from an authoritative response: a half-answered
+      // one substitutes empty arrays, and rendering those as "0 listings" is the
+      // misreport the flag exists to prevent.
+      live: true
     });
     const view = await renderScreen();
     expect(view.getByLabelText("Marketplace. 1 active")).toBeTruthy();

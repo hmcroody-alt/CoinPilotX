@@ -238,27 +238,47 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
    * Loading
    * ---------------------------------------------------------------- */
 
-  const load = useCallback(
-    async (kind: "initial" | "refresh" = "initial", nextQuery = query) => {
-      if (kind === "refresh") setRefreshing(true);
-      else setLoading(true);
+  // `query` is read through a ref so `load` can keep a stable identity. It used
+  // to close over `query` directly, which minted a new `load` on every
+  // keystroke — and the sync-invalidation effect below lists `load` as a
+  // dependency, so typing a six-character search term tore down and
+  // re-registered all three invalidation channels six times.
+  const queryRef = useRef(query);
+  queryRef.current = query;
+
+  const loadInFlight = useRef<{ query: string; run: Promise<void> } | null>(null);
+
+  const load = useCallback((kind: "initial" | "refresh" = "initial", nextQuery?: string) => {
+    const effective = nextQuery ?? queryRef.current;
+    // One marketplace write invalidates inventory, marketplace and orders, so
+    // all three handlers below fire in the same tick. Ungated that is three
+    // concurrent copies of a three-request load — nine requests for one event.
+    //
+    // Keyed on the query rather than a bare boolean: a search submit asks a
+    // different question, and answering it with an in-flight request for the
+    // previous term would show the user results they did not ask for.
+    const existing = loadInFlight.current;
+    if (existing && existing.query === effective) return existing.run;
+    if (kind === "refresh") setRefreshing(true);
+    else setLoading(true);
+    const run = (async () => {
       try {
-        setResult(await loadMarketplaceScreen({ query: nextQuery }));
+        setResult(await loadMarketplaceScreen({ query: effective }));
         setNow(Date.now());
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
-    },
-    [query]
-  );
+    })().finally(() => {
+      if (loadInFlight.current?.run === run) loadInFlight.current = null;
+    });
+    loadInFlight.current = { query: effective, run };
+    return run;
+  }, []);
 
   useEffect(() => {
     load("initial").catch(() => undefined);
-    // Deliberately not in the dependency list: this is the first load, and
-    // `load` changes identity whenever the search box changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
 
   useEffect(() => {
     loadLastMarketplaceMode()
