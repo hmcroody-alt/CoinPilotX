@@ -1315,7 +1315,14 @@ def end_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | None =
         _event(cur, int(call["id"]), int(user_id), "left", payload or {})
         cur.execute("SELECT COUNT(*) AS active FROM communication_call_participants WHERE call_id=? AND status IN ('joined','ringing')", (int(call["id"]),))
         active = int(_row(cur.fetchone()).get("active") or 0)
-        if active == 0 or int(call.get("created_by_user_id") or 0) == int(user_id):
+        # A call needs at least two people to still be a call. The old rule ended
+        # it only when *everyone* had left or when the creator hung up, so in a
+        # 1:1 call the callee pressing End left one active participant behind:
+        # the caller kept polling a still-"active" status, sat in a room with
+        # nobody in it, and had to press End Call themselves. Ending at fewer
+        # than two active participants makes hang-up automatically two-sided in
+        # both directions, and still lets a group call outlive one leaver.
+        if active < 2 or int(call.get("created_by_user_id") or 0) == int(user_id):
             _transition(cur, call, "ended", int(user_id), (payload or {}).get("reason") or "ended_by_participant")
         _emit_call_sync_event(cur, _get_call(cur, call_ref), "call_ended", int(user_id), status="ended", reason=(payload or {}).get("reason") or "ended_by_participant")
         conn.commit()
