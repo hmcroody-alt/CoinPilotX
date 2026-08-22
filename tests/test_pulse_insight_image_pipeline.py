@@ -68,17 +68,37 @@ class Provider:
         return {"bytes": self.content, "provider": "test-provider", "model": "test-model"}
 
 
+@pytest.fixture
+def images_enabled(monkeypatch):
+    """Re-enable the retired pipeline so its internals stay under test.
+
+    Automated images are off as a product rule, and every guard below asserts
+    that. But the generation code still ships, so the safety behaviour it
+    encodes -- reject an unrenderable row, never leak the API key -- has to keep
+    being exercised, or the day someone flips the constant back they inherit
+    untested code that silently regressed.
+    """
+    monkeypatch.setattr(pipeline, "AUTOMATED_IMAGES_ENABLED", True)
+
+
 @pytest.mark.parametrize(
-    "post,expected",
+    "post",
     [
-        ({"title": "Notice", "body": "Brief maintenance note."}, "TEXT_ONLY"),
-        ({"title": "Sports", "body": "A" * 120, "topic": "sports strategy", "space_slug": "sports"}, "IMAGE_RECOMMENDED"),
-        ({"title": "Scam warning", "body": "Verify links and protect your accounts. " * 4, "topic": "scam awareness"}, "IMAGE_REQUIRED"),
-        ({"title": "Emergency", "body": "Emergency safety notice " * 8}, "TEXT_ONLY"),
+        {"title": "Notice", "body": "Brief maintenance note."},
+        {"title": "Sports", "body": "A" * 120, "topic": "sports strategy", "space_slug": "sports"},
+        {"title": "Scam warning", "body": "Verify links and protect your accounts. " * 4, "topic": "scam awareness"},
+        {"title": "Emergency", "body": "Emergency safety notice " * 8},
     ],
 )
-def test_deterministic_image_decisions(post, expected):
-    assert pipeline.decide_image(post) == expected
+def test_every_automated_post_decides_text_only(post):
+    """Stage 12.1/12.12 -- the decision is text-only for every shape of post.
+
+    These are the exact inputs that previously returned IMAGE_RECOMMENDED and
+    IMAGE_REQUIRED, so the parametrization is the regression: it fails if the
+    heuristic ever starts recommending an image again.
+    """
+    assert pipeline.decide_image(post) == "TEXT_ONLY"
+    assert pipeline.plan_for_post(post)["visual_intent"] is None
 
 
 @pytest.mark.parametrize(
@@ -106,55 +126,62 @@ def test_prompt_is_contextual_safe_and_private(topic, category, style):
     assert "real person or public figure likeness" in prompt
 
 
-def test_enqueue_uses_existing_job_queue_and_skips_text_only():
+def test_no_image_job_is_ever_enqueued():
+    """Stage 12.2 -- no job row, so nothing exists to generate media later."""
     conn = _db()
     cur = conn.cursor()
     plan = pipeline.plan_for_post({"body": "A" * 120, "topic": "technology", "space_slug": "technology"})
-    job_id = pipeline.enqueue_for_post(cur, 1, plan)
-    assert job_id > 0
-    row = dict(cur.execute("SELECT * FROM pulse_jobs WHERE id=?", (job_id,)).fetchone())
-    assert row["job_type"] == pipeline.JOB_TYPE
-    assert row["max_attempts"] == 2
-    assert pipeline.enqueue_for_post(cur, 1, {"decision": "TEXT_ONLY"}) == 0
+    assert pipeline.enqueue_for_post(cur, 1, plan) == 0
+    # Also refuse a plan handed in by a caller that predates the rule -- the
+    # decision field is not the only thing standing between a post and an image.
+    assert pipeline.enqueue_for_post(cur, 1, {"decision": "IMAGE_REQUIRED"}) == 0
+    assert cur.execute("SELECT COUNT(*) FROM pulse_jobs").fetchone()[0] == 0
 
 
-def test_provider_success_storage_attachment_provenance_and_idempotency(monkeypatch):
+def test_a_job_queued_before_the_rule_changed_drains_to_text_only(monkeypatch):
+    """Stage 12.3/12.4 -- the provider is never called and nothing is attached.
+
+    Jobs enqueued before automated images were switched off are still sitting in
+    `pulse_jobs`. This is the case that would otherwise keep attaching images
+    after the feature was supposedly disabled, so it is asserted against a job
+    row that looks exactly like a real queued one.
+    """
     conn = _db()
     cur = conn.cursor()
-    monkeypatch.setattr(
-        pipeline.media_storage,
-        "save_public_file",
-        lambda upload, folder: {
-            "provider": "local", "media_url": "/static/uploads/pulse_media/insight.png",
-            "storage_key": "pulse_media/insight.png", "durable_uploaded": False,
-        },
-    )
-    monkeypatch.setattr(pipeline.media_storage, "provider", lambda: "local")
+
+    def explode(*_args, **_kwargs):
+        raise AssertionError("storage must not be touched for an automated post")
+
+    monkeypatch.setattr(pipeline.media_storage, "save_public_file", explode)
     provider = Provider()
-    job = {"id": 7, "target_id": 1, "attempts": 0, "max_attempts": 2}
-    result = pipeline.process_job(cur, job, provider=provider)
+    result = pipeline.process_job(cur, {"id": 7, "target_id": 1, "attempts": 0, "max_attempts": 2}, provider=provider)
     conn.commit()
-    assert result["ok"] and result["media_id"] > 0
+
+    assert result["ok"] and result["text_only"] is True
+    assert result["decision"] == "TEXT_ONLY"
+    assert provider.calls == 0
+    assert "media_id" not in result
     post = dict(cur.execute("SELECT * FROM pulse_posts WHERE id=1").fetchone())
-    assert post["post_type"] == "image"
-    assert json.loads(post["media_ids_json"]) == [result["media_id"]]
-    media = dict(cur.execute("SELECT * FROM chat_media_uploads WHERE id=?", (result["media_id"],)).fetchone())
-    assert media["context_type"] == "pulse" and media["context_id"] == "1"
-    assert media["width"] == 1024 and media["height"] == 1280
-    provenance = dict(cur.execute("SELECT * FROM pulse_generated_media").fetchone())
-    assert provenance["source_post_id"] == 1
-    assert provenance["generated_by_system"] == 1 and provenance["ai_generated_media"] == 1
-    assert provenance["provider"] == "test-provider" and provenance["model"] == "test-model"
-    assert provenance["prompt_version"] == pipeline.PROMPT_VERSION
-    assert provenance["generation_job_id"] == 7 and len(provenance["content_hash"]) == 64
-
-    duplicate = pipeline.process_job(cur, {**job, "id": 8}, provider=provider)
-    assert duplicate["duplicate"] is True
-    assert provider.calls == 1
-    assert cur.execute("SELECT COUNT(*) FROM chat_media_uploads").fetchone()[0] == 1
+    assert post["post_type"] == "text"
+    assert json.loads(post["media_ids_json"]) == []
+    assert cur.execute("SELECT COUNT(*) FROM chat_media_uploads").fetchone()[0] == 0
 
 
-def test_invalid_media_retries_then_falls_back_without_placeholder(monkeypatch):
+def test_the_disabled_guard_runs_before_any_provenance_bookkeeping():
+    """A retired job must not leave a `pulse_generated_media` row behind.
+
+    The guard sits ahead of `_ensure_tables`, so draining the queue writes
+    nothing at all -- not even a 'processing' row that a later reader would have
+    to interpret.
+    """
+    conn = _db()
+    cur = conn.cursor()
+    pipeline.process_job(cur, {"id": 9, "target_id": 1, "attempts": 0, "max_attempts": 2}, provider=Provider())
+    tables = [row[0] for row in cur.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+    assert "pulse_generated_media" not in tables
+
+
+def test_invalid_media_retries_then_falls_back_without_placeholder(images_enabled):
     conn = _db()
     cur = conn.cursor()
     provider = Provider(content=b"not an image")
@@ -167,7 +194,7 @@ def test_invalid_media_retries_then_falls_back_without_placeholder(monkeypatch):
     assert cur.execute("SELECT state FROM pulse_generated_media").fetchone()[0] == "failed"
 
 
-def test_storage_failure_is_bounded_and_text_post_survives(monkeypatch):
+def test_storage_failure_is_bounded_and_text_post_survives(monkeypatch, images_enabled):
     conn = _db()
     cur = conn.cursor()
     monkeypatch.setattr(pipeline.media_storage, "save_public_file", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("storage down")))
@@ -184,7 +211,7 @@ def test_provider_timeout_is_safe_and_does_not_log_or_return_secret(monkeypatch)
     assert "super-secret" not in str(exc.value)
 
 
-def test_storage_success_without_a_url_never_attaches_an_unrenderable_row(monkeypatch):
+def test_storage_success_without_a_url_never_attaches_an_unrenderable_row(monkeypatch, images_enabled):
     """Storage can report success and still return no URL.
 
     That is the blank-media defect at its source: the row was inserted, the post

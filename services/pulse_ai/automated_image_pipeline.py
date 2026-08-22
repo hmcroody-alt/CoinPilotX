@@ -32,6 +32,18 @@ from .content_policy import sanitize_automated_text
 PROMPT_VERSION = "insight-image-v1"
 JOB_TYPE = "generate_insight_image"
 DECISIONS = {"TEXT_ONLY", "IMAGE_RECOMMENDED", "IMAGE_REQUIRED", "IMAGE_SKIPPED"}
+
+# Product rule: PulseSoc Insight posts are text-only. Automated image
+# generation is off, and the switch is a module constant rather than an env var
+# so it cannot be turned back on by a misconfigured deploy.
+#
+# Enforced at three separate boundaries -- decide, enqueue, and process --
+# because they fail at different times. `decide_image` covers new posts,
+# `enqueue_for_post` is a backstop against any caller that supplies its own
+# plan, and the `process_job` guard drains jobs that were already sitting in
+# `pulse_jobs` when this shipped. Without that last one, every queued job would
+# still generate and attach an image after the feature was supposedly disabled.
+AUTOMATED_IMAGES_ENABLED = False
 VISUAL_CATEGORIES = {
     "sports": "dynamic editorial sports illustration",
     "creator": "modern creator economy editorial illustration",
@@ -91,6 +103,8 @@ def category_for_post(post: dict[str, Any]) -> str:
 
 def decide_image(post: dict[str, Any]) -> str:
     """Return a deterministic, externally observable image decision."""
+    if not AUTOMATED_IMAGES_ENABLED:
+        return "TEXT_ONLY"
     text = " ".join([str(post.get("title") or ""), str(post.get("body") or ""), str(post.get("topic") or "")]).strip()
     if not text or len(text) < 90 or SENSITIVE_TERMS.search(text):
         return "TEXT_ONLY"
@@ -258,6 +272,8 @@ def _ensure_tables(cur) -> None:
 
 
 def enqueue_for_post(cur, post_id: int, plan: dict[str, Any]) -> int:
+    if not AUTOMATED_IMAGES_ENABLED:
+        return 0
     if plan.get("decision") not in {"IMAGE_RECOMMENDED", "IMAGE_REQUIRED"}:
         return 0
     now = datetime.utcnow().isoformat(timespec="seconds")
@@ -342,6 +358,14 @@ def process_job(cur, job: dict[str, Any], provider: Any | None = None) -> dict[s
     job_id = int(job.get("id") or 0)
     attempt = int(job.get("attempts") or 0) + 1
     max_attempts = int(job.get("max_attempts") or 2)
+    if not AUTOMATED_IMAGES_ENABLED:
+        # Jobs enqueued before automated images were switched off are still
+        # sitting in `pulse_jobs`. Retire them here -- ahead of the provider
+        # call and ahead of any `pulse_generated_media` bookkeeping -- so the
+        # queue drains into text-only instead of attaching images to posts
+        # published after the rule changed.
+        logging.info("automated_image_disabled_text_only post_id=%s job_id=%s", post_id, job_id)
+        return {"ok": True, "decision": "TEXT_ONLY", "text_only": True, "reason": "automated_images_disabled"}
     _ensure_tables(cur)
     cur.execute("SELECT * FROM pulse_generated_media WHERE source_post_id=? AND generation_version=?", (post_id, PROMPT_VERSION))
     existing_row = cur.fetchone()

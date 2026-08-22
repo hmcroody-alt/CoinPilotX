@@ -1389,6 +1389,15 @@
         image.alt = item.alt_text || "PulseSoc post media";
         image.loading = "lazy";
         image.decoding = "async";
+        // A URL that 404s still leaves a full-width frame behind, and the frame
+        // paints #020817 -- which is the large black rectangle owners reported,
+        // not an empty container. Drop the frame, and the wrapper with it once
+        // the last frame goes, so the card collapses to text instead.
+        image.addEventListener("error", () => {
+          const parent = frame.parentElement;
+          frame.remove();
+          if (parent && !parent.childElementCount) parent.remove();
+        });
         frame.appendChild(image);
       }
       if (index === 0) renderPostMusicOverlay(frame, post, item);
