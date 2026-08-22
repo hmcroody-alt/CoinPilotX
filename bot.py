@@ -44616,15 +44616,35 @@ def pulse_friend_graph(cur, user_id, limit=30):
         logging.warning("PULSE_FOLLOWS_GRAPH_QUERY_FAILED user_id=%s error=%s", user_id, exc)
     try:
         exclude = {user_id, *graph["friends"], *graph["following"]}
+        # Grouped rather than `SELECT DISTINCT p.user_id ... ORDER BY p.created_at`,
+        # which PostgreSQL rejects outright:
+        #
+        #     InvalidColumnReference: for SELECT DISTINCT, ORDER BY expressions
+        #     must appear in select list
+        #
+        # SQLite accepts that form, so the fault was invisible in local runs and
+        # in tests while production answered every viewer with an empty
+        # `suggested` list — the `except` below turned a hard SQL error into a
+        # silent "nobody to suggest", which is exactly what Home's People module
+        # rendered as nothing at all. Grouping by author and ordering by the
+        # aggregate expresses the same intent (each author once, most recently
+        # active first) in a form both engines accept.
+        #
+        # The discovery predicate is a WHERE-clause fragment over `u` only, so it
+        # is applied before grouping and composes with the GROUP BY without
+        # needing to appear in the select list. Both fixes are load-bearing:
+        # dropping the grouping reintroduces the PostgreSQL failure, dropping the
+        # predicate resurfaces QA accounts in People You May Know.
         from services.discovery_visibility import discovery_visible_sql
         cur.execute(
             f"""
-            SELECT DISTINCT p.user_id
+            SELECT p.user_id AS user_id, MAX(p.created_at) AS last_post_at
             FROM pulse_posts p
             JOIN users u ON u.user_id = p.user_id
             WHERE p.user_id!=? AND p.deleted_at IS NULL
               AND {discovery_visible_sql("u")}
-            ORDER BY p.created_at DESC
+            GROUP BY p.user_id
+            ORDER BY last_post_at DESC
             LIMIT 40
             """,
             (user_id,),
