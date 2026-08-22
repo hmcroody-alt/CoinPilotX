@@ -100237,18 +100237,20 @@ def send_update_signup_email(lead):
 
 def send_password_reset_email(user, reset_link):
     trace_id = secrets.token_hex(8)
-    subject = "Reset your PulseSoc password"
+    subject = "PulseSoc — Change your password"
     text = (
         f"Hi {account_display_name(user)},\n\n"
-        "Use this secure link to reset your PulseSoc password. It expires in 1 hour:\n"
+        "Use this secure, single-use link to change your PulseSoc password. It expires in 1 hour:\n"
         f"{reset_link}\n\n"
+        "The link stops working after your password is changed.\n\n"
         "If you did not request this, ignore this email.\n\n"
         "Support: support@pulsesoc.com"
     )
-    html = branded_email_html("Reset your PulseSoc password", f"""
+    html = branded_email_html("Change your PulseSoc password", f"""
       <p>Hi {clean_html(account_display_name(user))},</p>
-      <p>Use this secure link to reset your password. It expires in 1 hour.</p>
-      <p><a href="{reset_link}" style="color:#36e58f">Reset password</a></p>
+      <p>Use this secure, single-use link to change your password. It expires in 1 hour.</p>
+      <p><a href="{reset_link}" style="color:#36e58f">Change password</a></p>
+      <p>The link stops working after your password is changed.</p>
       <p>If you did not request this, ignore this email.</p>
     """)
     return bool(send_platform_email(

@@ -15,7 +15,7 @@
 
 import React from "react";
 import { Alert } from "react-native";
-import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
 jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 })
@@ -41,7 +41,8 @@ jest.mock("../../../api/auth", () => ({ requestPasswordRecovery: jest.fn() }));
 jest.mock("../../../api/account", () => ({
   getAccountSecurity: jest.fn(),
   enableTwoFactor: jest.fn(),
-  disableTwoFactor: jest.fn()
+  disableTwoFactor: jest.fn(),
+  requestAccountPasswordChange: jest.fn()
 }));
 
 jest.mock("../../../session/biometricAuth", () => ({
@@ -89,7 +90,7 @@ jest.mock("../../../settings/store", () => ({
   })
 }));
 
-import { getAccountSecurity, enableTwoFactor, disableTwoFactor } from "../../../api/account";
+import { getAccountSecurity, enableTwoFactor, disableTwoFactor, requestAccountPasswordChange } from "../../../api/account";
 import {
   getBiometricCapability,
   isBiometricEnabledForCurrentSession,
@@ -105,12 +106,15 @@ const mockedDisable = disableBiometricLogin as jest.Mock;
 const mockedGetSecurity = getAccountSecurity as jest.Mock;
 const mockedEnable2fa = enableTwoFactor as jest.Mock;
 const mockedDisable2fa = disableTwoFactor as jest.Mock;
+const mockedPasswordChange = requestAccountPasswordChange as jest.Mock;
 
 /** Press the confirm (second) button of the most recent `confirm()` alert. */
 async function confirmLatestAlert(spy: jest.SpyInstance) {
   await waitFor(() => expect(spy).toHaveBeenCalled());
   const buttons = spy.mock.calls[spy.mock.calls.length - 1][2] as Array<{ onPress?: () => void }>;
-  await buttons[buttons.length - 1].onPress?.();
+  await act(async () => {
+    await buttons[buttons.length - 1].onPress?.();
+  });
 }
 
 describe("SecuritySettingsScreen", () => {
@@ -133,6 +137,53 @@ describe("SecuritySettingsScreen", () => {
   });
 
   afterEach(() => alertSpy.mockRestore());
+
+  describe("password change email", () => {
+    it("calls the authenticated account endpoint and reports accepted delivery honestly", async () => {
+      mockedCapability.mockResolvedValue({ available: true, kind: "faceId" });
+      mockedIsEnabled.mockResolvedValue(false);
+      mockedPasswordChange.mockResolvedValue({ ok: true, message: "A password-change link will be sent." });
+
+      const { findByTestId } = render(<SecuritySettingsScreen />);
+      fireEvent.press(await findByTestId("security-change-password"));
+      await confirmLatestAlert(alertSpy);
+
+      await waitFor(() => expect(mockedPasswordChange).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(alertSpy).toHaveBeenCalledWith("Check your email", expect.stringContaining("password-change link")));
+    });
+
+    it("blocks a second request while the first request is in flight", async () => {
+      mockedCapability.mockResolvedValue({ available: true, kind: "faceId" });
+      mockedIsEnabled.mockResolvedValue(false);
+      let resolveRequest: (value: { ok: boolean }) => void = () => undefined;
+      mockedPasswordChange.mockImplementation(() => new Promise((resolve) => { resolveRequest = resolve; }));
+
+      const { findByTestId } = render(<SecuritySettingsScreen />);
+      const row = await findByTestId("security-change-password");
+      fireEvent.press(row);
+      await confirmLatestAlert(alertSpy);
+      await waitFor(() => expect(mockedPasswordChange).toHaveBeenCalledTimes(1));
+      expect(row.props.accessibilityState.disabled).toBe(true);
+
+      fireEvent.press(row);
+      expect(mockedPasswordChange).toHaveBeenCalledTimes(1);
+      resolveRequest({ ok: true });
+      await waitFor(() => expect(row.props.accessibilityState.disabled).toBeFalsy());
+    });
+
+    it("shows a retryable error and does not claim success when the request fails", async () => {
+      mockedCapability.mockResolvedValue({ available: true, kind: "faceId" });
+      mockedIsEnabled.mockResolvedValue(false);
+      mockedPasswordChange.mockRejectedValue(new Error("Please wait a few minutes and try again."));
+
+      const { findByTestId } = render(<SecuritySettingsScreen />);
+      fireEvent.press(await findByTestId("security-change-password"));
+      await confirmLatestAlert(alertSpy);
+
+      await waitFor(() => expect(alertSpy).toHaveBeenCalledWith("Couldn't send the link", "Please wait a few minutes and try again."));
+      expect(alertSpy).not.toHaveBeenCalledWith("Check your email", expect.anything());
+    });
+  });
 
   describe("biometrics", () => {
     it("offers to enable Face ID when available and currently disabled", async () => {

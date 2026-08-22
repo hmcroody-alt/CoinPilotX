@@ -17,6 +17,10 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta
+from unittest.mock import patch
+
+from werkzeug.security import check_password_hash, generate_password_hash
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -391,6 +395,101 @@ class PasswordResetHardeningTest(unittest.TestCase):
         self.assertNotIn("payload", source, "the route must not read an email out of the request body")
         guard = inspect.getsource(bot.basic_abuse_guard)
         self.assertIn('"/api/account/password/change-request"', guard)
+
+    def test_authenticated_change_request_uses_signed_in_account_email(self):
+        sent_to = []
+        account = {"user_id": 731, "email": "owner-account@example.com"}
+        with patch.object(bot, "api_account_user", return_value={"user_id": 731}), \
+             patch.object(bot, "load_account_by_id", return_value=account), \
+             patch.object(bot, "safe_password_reset_request", side_effect=lambda email, source: sent_to.append((email, source)) or {"ok": True}):
+            response = self.client.post(
+                "/api/account/password/change-request",
+                json={"email": "attacker-controlled@example.com"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(sent_to, [("owner-account@example.com", "account_security_screen")])
+        self.assertNotIn("owner-account@example.com", response.get_data(as_text=True))
+
+    def test_password_reset_email_uses_pulsesoc_domain_and_single_use_wording(self):
+        calls = []
+        old_base = os.environ.get("PUBLIC_BASE_URL")
+        os.environ["PUBLIC_BASE_URL"] = "https://pulsesoc.com"
+        try:
+            reset_link = bot.public_url_for("reset_password_page", token="safe-token")
+            with patch.object(bot, "send_platform_email", side_effect=lambda *args, **kwargs: calls.append((args, kwargs)) or True):
+                self.assertTrue(bot.send_password_reset_email({"user_id": 4, "email": "person@example.com", "display_name": "Person"}, reset_link))
+        finally:
+            if old_base is None:
+                os.environ.pop("PUBLIC_BASE_URL", None)
+            else:
+                os.environ["PUBLIC_BASE_URL"] = old_base
+        self.assertEqual(len(calls), 1)
+        args, kwargs = calls[0]
+        self.assertEqual(args[0], "person@example.com")
+        self.assertTrue(args[1].startswith("PulseSoc"))
+        self.assertIn("https://pulsesoc.com/reset-password/safe-token", args[2])
+        self.assertIn("single-use", args[2])
+        self.assertIn("single-use", args[3])
+        self.assertEqual(kwargs.get("email_type"), "password_reset")
+
+    def test_provider_failure_persists_retryable_email_job(self):
+        with patch.object(bot.email_service_service, "send_email", return_value={"ok": False, "status_code": 503, "response": {}}):
+            sent = bot.send_password_reset_email(
+                {"user_id": 905, "email": "retry@example.com", "display_name": "Retry"},
+                "https://pulsesoc.com/reset-password/retry-safe-token",
+            )
+        self.assertFalse(sent)
+        conn = bot.db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT status, max_attempts FROM failed_email_queue WHERE user_id=? AND email_type='password_reset' ORDER BY id DESC LIMIT 1",
+            (905,),
+        )
+        row = cur.fetchone()
+        conn.close()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], "pending")
+        self.assertGreaterEqual(int(row[1]), 1)
+
+    def test_token_expiry_and_single_use_are_enforced_by_reset_endpoint(self):
+        user_id = 9911
+        email = "reset-once@example.com"
+        old_password = "OldPassword!23"
+        new_password = "NewPassword!45"
+        conn = bot.db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR REPLACE INTO users (user_id, username, display_name, email, password_hash, signup_time) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, "reset_once", "Reset Once", email, generate_password_hash(old_password), datetime.now().isoformat()),
+        )
+        valid_token = "valid-single-use-token"
+        expired_token = "expired-single-use-token"
+        bot.ensure_password_reset_token_columns(cur, conn)
+        cur.execute(
+            "INSERT INTO password_reset_tokens (user_id, token, token_hash, expires_at, created_at) VALUES (?, NULL, ?, ?, ?)",
+            (user_id, bot.password_reset_token_hash(valid_token), (datetime.now() + timedelta(hours=1)).isoformat(), datetime.now().isoformat()),
+        )
+        cur.execute(
+            "INSERT INTO password_reset_tokens (user_id, token, token_hash, expires_at, created_at) VALUES (?, NULL, ?, ?, ?)",
+            (user_id, bot.password_reset_token_hash(expired_token), (datetime.now() - timedelta(seconds=1)).isoformat(), datetime.now().isoformat()),
+        )
+        conn.commit()
+        conn.close()
+
+        with patch.object(bot, "send_password_changed_email", return_value=True), patch.object(bot, "notify_user", return_value=None):
+            expired = self.client.post("/api/mobile/auth/reset-password", json={"token": expired_token, "password": new_password})
+            first = self.client.post("/api/mobile/auth/reset-password", json={"token": valid_token, "password": new_password})
+            second = self.client.post("/api/mobile/auth/reset-password", json={"token": valid_token, "password": "AnotherPassword!67"})
+        self.assertEqual(expired.status_code, 400)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 400)
+        conn = bot.db()
+        cur = conn.cursor()
+        cur.execute("SELECT password_hash FROM users WHERE user_id=?", (user_id,))
+        stored_hash = cur.fetchone()[0]
+        conn.close()
+        self.assertTrue(check_password_hash(stored_hash, new_password))
+        self.assertFalse(check_password_hash(stored_hash, old_password))
 
     def test_plaintext_token_fallback_removed(self):
         plaintext = "legacy-plaintext-token-abc123"
