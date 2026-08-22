@@ -2647,26 +2647,31 @@ def search_people(user_id: int, query: str = "", filters: dict | None = None) ->
     filters = filters or {}
     limit = max(1, min(int(filters.get("limit") or 12), 25))
     like = f"%{query.lower()}%"
+    # "Start a chat" people search is a discovery surface: QA/test and deactivated
+    # accounts must not be reachable here. Use the one canonical predicate rather
+    # than the ad-hoc account_status!='deleted' check this query used to carry.
+    from services.discovery_visibility import discovery_visible_sql
+
     conn, cur = _open_db()
     try:
         cur.execute(
-            """
-            SELECT user_id, username, display_name, avatar_url,
-                   CASE WHEN LOWER(COALESCE(email,'')) LIKE ? THEN 1 ELSE 0 END AS matched_email
-            FROM users
-            WHERE user_id!=?
-              AND COALESCE(account_status,'active')!='deleted'
+            f"""
+            SELECT u.user_id, u.username, u.display_name, u.avatar_url,
+                   CASE WHEN LOWER(COALESCE(u.email,'')) LIKE ? THEN 1 ELSE 0 END AS matched_email
+            FROM users u
+            WHERE u.user_id!=?
+              AND {discovery_visible_sql("u")}
               AND (
-                LOWER(COALESCE(display_name,'')) LIKE ?
-                OR LOWER(COALESCE(username,'')) LIKE ?
-                OR LOWER(COALESCE(email,'')) LIKE ?
+                LOWER(COALESCE(u.display_name,'')) LIKE ?
+                OR LOWER(COALESCE(u.username,'')) LIKE ?
+                OR LOWER(COALESCE(u.email,'')) LIKE ?
               )
             ORDER BY
-              CASE WHEN LOWER(COALESCE(username,''))=? THEN 0
-                   WHEN LOWER(COALESCE(display_name,''))=? THEN 1
-                   WHEN LOWER(COALESCE(username,'')) LIKE ? THEN 2
+              CASE WHEN LOWER(COALESCE(u.username,''))=? THEN 0
+                   WHEN LOWER(COALESCE(u.display_name,''))=? THEN 1
+                   WHEN LOWER(COALESCE(u.username,'')) LIKE ? THEN 2
                    ELSE 3 END,
-              COALESCE(display_name, username, 'Pulse member') ASC
+              COALESCE(u.display_name, u.username, 'Pulse member') ASC
             LIMIT ?
             """,
             (like, int(user_id), like, like, like, query.lower(), query.lower(), f"{query.lower()}%", limit),

@@ -187,6 +187,7 @@ from services import (
     preview_service,
     cache_engine,
     chat_realtime_service,
+    pulse_chat_bridge,
     community_governance_engine,
     conversion_funnel_engine,
     ad_policy_engine,
@@ -38137,10 +38138,12 @@ def pulse_desktop_left_rail_html(is_admin=False, user=None):
 
 
 def pulse_status_active_rows(cur, viewer_user_id=0, limit=40):
+    from services.discovery_visibility import discovery_visible_sql
+
     now = datetime.utcnow().isoformat(timespec="seconds")
     viewer_user_id = int(viewer_user_id or 0)
     cur.execute(
-        """
+        f"""
         SELECT s.*, COALESCE(u.display_name,u.username,'PulseSoc member') AS author_name,
                COALESCE(u.avatar_url,'') AS author_avatar_url,
                CASE WHEN v.id IS NULL THEN 0 ELSE 1 END AS viewer_viewed,
@@ -38177,12 +38180,16 @@ def pulse_status_active_rows(cur, viewer_user_id=0, limit=40):
             OR s.user_id=?
             OR (COALESCE(s.visibility,'public')='followers' AND f.followed_user_id IS NOT NULL)
           )
+          -- The Status rail is a discovery surface: it puts other people's faces
+          -- on the home screen. QA/test and deactivated authors are excluded,
+          -- but the viewer always keeps their own Status.
+          AND (s.user_id=? OR {discovery_visible_sql('u')})
         ORDER BY s.created_at DESC
         LIMIT ?
         """,
         # The saved-state subquery sits in the SELECT list, so its placeholder is
         # bound first — ahead of the two join placeholders.
-        (viewer_user_id, viewer_user_id, viewer_user_id, now, viewer_user_id, int(limit or 40)),
+        (viewer_user_id, viewer_user_id, viewer_user_id, now, viewer_user_id, viewer_user_id, int(limit or 40)),
     )
     return [dict(row) for row in cur.fetchall()]
 
@@ -42821,6 +42828,9 @@ def ensure_pulse_messenger_schema(cur, conn=None):
         ("linked_group_id", "INTEGER"),
         ("linked_space_id", "TEXT"),
         ("linked_live_id", "INTEGER"),
+        # Pairs a Room/Group entity with the canonical v2 conversation that carries
+        # its messages. See services/pulse_chat_bridge.py.
+        ("comm_v2_conversation_id", "INTEGER DEFAULT 0"),
         ("title", "TEXT"),
         ("description", "TEXT"),
         ("avatar_url", "TEXT"),
@@ -51115,7 +51125,12 @@ def api_pulse_marketplace_search():
     query = clean_html(request.args.get("q") or "")[:120].strip().lower()
     limit = max(1, min(safe_int(request.args.get("limit"), 24), 40))
     seller_user_id = max(0, safe_int(request.args.get("seller_user_id"), 0))
-    where = [marketplace_listing_lifecycle.public_sql("l", "ms")]
+    # Marketplace search is a buyer-facing discovery surface, so listings owned by
+    # QA/test/deactivated accounts must not appear. The `u` alias is the LEFT JOIN
+    # on users below; the predicate is NULL-tolerant, so a listing whose seller row
+    # is missing is still returned.
+    from services.discovery_visibility import discovery_visible_sql
+    where = [marketplace_listing_lifecycle.public_sql("l", "ms"), discovery_visible_sql("u")]
     params = []
     if seller_user_id:
         where.append("l.seller_user_id=?")
@@ -84733,9 +84748,14 @@ def api_pulse_communications_rooms():
                 cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
                 member_count = int(dict(cur.fetchone() or {}).get("total") or 1)
                 cur.execute("UPDATE pulse_conversations SET member_count=? WHERE id=?", (member_count, conversation_id))
-            conn.commit(); conn.close()
-            pulse_emit_event("community_room_created", {"conversation_id": conversation_id, "privacy": privacy}, user["user_id"], conversation_id)
-            return jsonify({"ok": True, "room_id": str(conversation_id), "conversation_id": conversation_id, "message": "Room started.", "next_url": f"/pulse/messages/{conversation_id}", "trace_id": trace_id})
+            conn.commit()
+            # The room entity lives here, but every client reads the v2 message stack,
+            # so hand back the paired v2 conversation id for chat. room_id stays legacy —
+            # it is what join/leave/manage/role are keyed on.
+            chat_conversation_id = pulse_chat_bridge.sync_thread(cur, conn, conversation_id) or conversation_id
+            conn.close()
+            pulse_emit_event("community_room_created", {"conversation_id": chat_conversation_id, "privacy": privacy}, user["user_id"], conversation_id)
+            return jsonify({"ok": True, "room_id": str(conversation_id), "conversation_id": chat_conversation_id, "message": "Room started.", "next_url": f"/pulse/messages/{chat_conversation_id}", "trace_id": trace_id})
         rooms = pulse_comm_rooms(cur, user["user_id"])
         conn.commit(); conn.close()
         return jsonify({"ok": True, "items": rooms, "rooms": rooms, "trace_id": trace_id, "features": pulse_comm_features()})
@@ -84762,8 +84782,12 @@ def api_pulse_community_room_join(room_id):
     else:
         cur.execute("INSERT INTO pulse_conversation_participants (conversation_id,user_id,role,muted,archived,joined_at,created_at) VALUES (?,?,'member',0,0,?,?)", (room_id, user["user_id"], now, now))
     cur.execute("UPDATE pulse_conversations SET member_count=(SELECT COUNT(*) FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''), updated_at=? WHERE id=?", (room_id, now, room_id))
-    conn.commit(); conn.close()
-    return jsonify({"ok": True, "conversation_id": room_id, "message": "Room joined.", "next_url": f"/pulse/messages/{room_id}"})
+    conn.commit()
+    # Grant the joiner access to the paired v2 thread and return that id — the
+    # client navigates straight into chat with whatever comes back here.
+    chat_conversation_id = pulse_chat_bridge.sync_thread(cur, conn, room_id) or room_id
+    conn.close()
+    return jsonify({"ok": True, "room_id": str(room_id), "conversation_id": chat_conversation_id, "message": "Room joined.", "next_url": f"/pulse/messages/{chat_conversation_id}"})
 
 
 @webhook_app.route("/api/pulse/communications/rooms/<int:room_id>", methods=["PATCH", "DELETE"])
@@ -84794,7 +84818,11 @@ def api_pulse_community_room_manage(room_id):
             privacy = clean_html(payload.get("privacy") or room.get("privacy") or "public").lower()
             if privacy not in {"public", "private"}: privacy = "public"
             cur.execute("UPDATE pulse_conversations SET title=?,description=?,privacy=?,is_public=?,updated_at=? WHERE id=?", (title, description, privacy, 1 if privacy == "public" else 0, now, room_id))
-    conn.commit(); conn.close()
+    conn.commit()
+    # Archiving, suspending or deleting a room must close its chat thread too,
+    # otherwise members keep messaging a room that no longer exists to them.
+    pulse_chat_bridge.sync_thread(cur, conn, room_id)
+    conn.close()
     if pulse_group_user_is_admin(user):
         log_admin_audit(0, f"community.room.{action}", "room", str(room_id), {"role": role})
     pulse_emit_event("community_room_managed", {"conversation_id": room_id, "action": action}, user["user_id"], room_id)
@@ -84812,7 +84840,10 @@ def api_pulse_community_room_leave(room_id):
     now = datetime.utcnow().isoformat(timespec="seconds")
     cur.execute("UPDATE pulse_conversation_participants SET left_at=? WHERE conversation_id=? AND user_id=?", (now, room_id, user["user_id"]))
     cur.execute("UPDATE pulse_conversations SET member_count=(SELECT COUNT(*) FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''),updated_at=? WHERE id=?", (room_id, now, room_id))
-    conn.commit(); conn.close()
+    conn.commit()
+    # Revoke the leaver's access to the paired chat thread in the same breath.
+    pulse_chat_bridge.sync_thread(cur, conn, room_id)
+    conn.close()
     return jsonify({"ok": True, "left": True, "message": "Left room."})
 
 
@@ -84861,6 +84892,9 @@ def api_pulse_community_room_member_role(room_id):
         )
         cur.execute("UPDATE pulse_conversations SET updated_at=? WHERE id=?", (now, room_id))
         conn.commit()
+        # Carry the new role into the paired chat thread so moderation powers
+        # granted here actually apply where the messages live.
+        pulse_chat_bridge.sync_thread(cur, conn, room_id)
     except Exception:
         try:
             conn.rollback()
@@ -88770,11 +88804,20 @@ def api_pulse_group_chat_open(group_id):
             cur.execute("SELECT * FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
             group = dict(cur.fetchone() or {})
         result, status = pulse_get_or_create_group_conversation(cur, user["user_id"], group=group, title=f"{group.get('name') or 'PulseSoc Group'} Chat")
+        conversation_id = safe_int(result.get("conversation_id"), 0)
         if result.get("ok"):
             conn.commit()
-            pulse_emit_event("group_chat_created", {"conversation_id": result.get("conversation_id"), "group_id": group_id}, user["user_id"], group_id)
+            # Group membership is the source of truth; reconcile it into the paired
+            # v2 thread on every open so newly joined members gain chat access and
+            # departed members lose it. Clients navigate with the v2 id.
+            chat_conversation_id = pulse_chat_bridge.sync_thread(cur, conn, conversation_id) or conversation_id
+            if chat_conversation_id != conversation_id:
+                result["conversation_id"] = chat_conversation_id
+                result["next_url"] = f"/pulse/messages/{chat_conversation_id}"
+            result["group_conversation_id"] = conversation_id
+            pulse_emit_event("group_chat_created", {"conversation_id": chat_conversation_id, "group_id": group_id}, user["user_id"], group_id)
         conn.close()
-        return jsonify({"ok": True, "conversation_id": result.get("conversation_id"), "next_url": result.get("next_url"), "message": "Group chat opened."}), status
+        return jsonify({"ok": True, "conversation_id": result.get("conversation_id"), "group_conversation_id": result.get("group_conversation_id"), "next_url": result.get("next_url"), "message": "Group chat opened."}), status
     except Exception as exc:
         conn.rollback(); conn.close()
         logging.exception("PULSE_GROUP_CHAT_OPEN_FAILED trace_id=%s group_id=%s user_id=%s", trace_id, group_id, user.get("user_id"))
@@ -105708,6 +105751,9 @@ def _init_db_impl():
         ("linked_group_id", "INTEGER"),
         ("linked_space_id", "TEXT"),
         ("linked_live_id", "INTEGER"),
+        # Pairs a Room/Group entity with the canonical v2 conversation that carries
+        # its messages. See services/pulse_chat_bridge.py.
+        ("comm_v2_conversation_id", "INTEGER DEFAULT 0"),
         ("title", "TEXT"),
         ("description", "TEXT"),
         ("avatar_url", "TEXT"),

@@ -28,6 +28,17 @@ HIDDEN_ACCOUNT_STATUSES: tuple[str, ...] = (
     "disabled_qa",
 )
 
+#: The ``users`` columns the predicate reads, with the DDL needed to add one
+#: that is missing. Callers on hot paths (the feed) use this to self-heal the
+#: schema before querying, because a missing column is a hard SQL error rather
+#: than a degraded result. It lives here, next to the predicate that depends on
+#: it, so the two cannot drift apart — adding a third column to the predicate
+#: without adding it here would reintroduce exactly that outage.
+REQUIRED_USER_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("hidden_from_discovery", "INTEGER DEFAULT 0"),
+    ("account_status", "TEXT DEFAULT 'active'"),
+)
+
 _IDENTIFIER_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
 
 

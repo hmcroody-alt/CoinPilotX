@@ -10,7 +10,8 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import embed_service, media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulsesoc_notification_system, user_context
+from . import db, embed_service, media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulsesoc_notification_system, user_context
+from .discovery_visibility import REQUIRED_USER_COLUMNS, discovery_visible_sql
 from .pulse_ai.content_policy import AUTOMATED_ACCOUNT_TYPE, sanitize_automated_text
 from .schema_guard import run_once_per_process
 
@@ -923,6 +924,29 @@ def _ensure_home_safety_tables(conn):
         )
         """
     )
+    # The feed's discovery-visibility predicate reads users.hidden_from_discovery.
+    # That column is created by bot.init_db(), which every request path runs
+    # before reaching here — but this guard exists precisely because "the schema
+    # is always there by now" is the assumption that takes the feed down. A
+    # missing column is an OperationalError on the single hottest query in the
+    # app, which /api/pulse/feed reports to the client as an empty feed, so the
+    # outage would present as "nobody has posted anything".
+    #
+    # The column is checked before it is added rather than added inside a
+    # try/except: on PostgreSQL a duplicate-column ALTER aborts the surrounding
+    # transaction, so the swallow-the-error version would poison the connection
+    # and fail the commit below on every call — the common case, not the rare
+    # one. get_table_columns answers portably (PRAGMA on SQLite,
+    # information_schema on PostgreSQL).
+    try:
+        existing = db.get_table_columns(cur, "users")
+        for column, ddl in REQUIRED_USER_COLUMNS:
+            if column not in existing:
+                cur.execute(f"ALTER TABLE users ADD COLUMN {column} {ddl}")
+    except Exception:
+        # `users` may not exist yet on a bare connection. Not actionable here,
+        # and not worth failing the feed over.
+        logging.debug("PULSE_FEED_DISCOVERY_COLUMN_GUARD_SKIPPED", exc_info=True)
     conn.commit()
 
 
@@ -1275,6 +1299,15 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         # text > timestamptz operation produced by translating datetime('now').
         where.append("NOT EXISTS (SELECT 1 FROM pulse_user_mutes pum WHERE pum.user_id=? AND pum.muted_user_id=p.user_id AND (pum.muted_until IS NULL OR pum.muted_until='' OR pum.muted_until>?))")
         params.extend([int(viewer_user_id), _now()])
+    # QA/test and deactivated authors must not surface in any feed. `u` is the
+    # users join below, so this costs no extra join. The viewer is always exempt
+    # from the predicate: whatever their own account status is, they keep seeing
+    # their own posts (this same function backs the profile feed).
+    if viewer_user_id:
+        where.append(f"(p.user_id=? OR {discovery_visible_sql('u')})")
+        params.append(int(viewer_user_id))
+    else:
+        where.append(discovery_visible_sql("u"))
     if feed == "following" and viewer_user_id:
         where.append("p.user_id IN (SELECT followed_user_id FROM pulse_follows WHERE follower_user_id=?)")
         params.append(int(viewer_user_id))
