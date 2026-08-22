@@ -19,6 +19,37 @@ from services import content_translation as translation  # noqa: E402
 from services import db  # noqa: E402
 from services.translation_providers import GoogleAdvancedProvider, GoogleConfig, ProviderError  # noqa: E402
 
+try:  # Optional: this file is also meant to run standalone, without pytest.
+    import pytest  # noqa: E402
+except ImportError:  # pragma: no cover - standalone execution path
+    pytest = None
+
+if pytest is not None:
+
+    @pytest.fixture(autouse=True)
+    def _pin_database_to_this_modules_temp_db():
+        """Keep every test in this file on the temp database it created.
+
+        `DATABASE_URL` is set once at import time, which is enough when the file
+        runs alone but not under pytest: pytest imports every test module before
+        running any of them, so the last module to assign the variable wins and
+        these tests then execute against a sibling module's database. That is how
+        `CREATE TABLE pulse_groups` began failing with "table already exists" --
+        the table belonged to another module's fixture, not to this one.
+
+        `db.connect()` re-reads the variable on each call, so re-pinning it per
+        test makes the isolation real rather than import-order-dependent.
+        """
+        previous = os.environ.get("DATABASE_URL")
+        os.environ["DATABASE_URL"] = "sqlite:///" + _TMP_DB
+        try:
+            yield
+        finally:
+            if previous is None:
+                os.environ.pop("DATABASE_URL", None)
+            else:
+                os.environ["DATABASE_URL"] = previous
+
 
 def _provider(reply="Bonjour 👋 __PULSESOC_KEEP_0__ __PULSESOC_KEEP_1__", detected="fr"):
     calls = []
