@@ -280,6 +280,17 @@ function desiredPollMs() {
     : CALL_STATUS_REFRESH_MS;
 }
 
+/**
+ * Foreground test for the poll gate. Deliberately asks "not backgrounded"
+ * rather than "=== active": `AppState.currentState` is null/undefined until the
+ * first change event on some cold starts, and an `=== "active"` gate would then
+ * suppress every tick until the app was backgrounded and restored — an active
+ * call whose status silently stops updating.
+ */
+function appIsForegrounded() {
+  return !/inactive|background/.test(String(appState || ""));
+}
+
 function ensurePolling() {
   if (!snapshot.sessionActive || !snapshot.callId) return;
   const ms = desiredPollMs();
@@ -288,7 +299,7 @@ function ensurePolling() {
   currentPollMs = ms;
   pollTimer = setInterval(() => {
     // Same app-state gate the screen-scoped poll always had.
-    if (appState === "active") pollNow();
+    if (appIsForegrounded()) pollNow();
   }, ms);
 }
 
@@ -365,9 +376,18 @@ export async function hangupCallSession(reason = "native_hangup") {
  * backend; failure paths have nothing to tell it).
  */
 export function finalizeCallSession(reason: string) {
-  if (snapshot.callId) terminalHandledFor = snapshot.callId;
+  const callId = snapshot.callId;
+  if (callId && terminalHandledFor === callId) {
+    // Another path already tore this exact call down. Local hang-up and a
+    // terminal poll result routinely land in the same tick (the hang-up awaits
+    // the end endpoint while a poll is in flight); running cleanup twice fires
+    // a second endCallKitCall, which can end a *newer* CallKit call.
+    setSnapshot({ sessionActive: false });
+    return;
+  }
+  if (callId) terminalHandledFor = callId;
   stopCallTone().catch(() => undefined);
-  if (snapshot.callId) endCallKitCall(snapshot.callId);
+  if (callId) endCallKitCall(callId);
   disconnectCallMedia(reason).catch(() => undefined);
   teardownSessionPlumbing();
   setSnapshot({ sessionActive: false });

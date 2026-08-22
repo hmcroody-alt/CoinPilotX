@@ -70,6 +70,7 @@ import { endCall, getCallStatus } from "../../api/calls";
 import { releaseMediaPlayback } from "../../core/mediaPlaybackCoordinator";
 import { endCallKitCall } from "../callKitBridge";
 import {
+  CALL_STATUS_REFRESH_MS,
   __resetCallSessionForTests,
   beginCallSession,
   connectCallMedia,
@@ -85,10 +86,23 @@ const engineMock = agoraMock.__engine;
 
 const JOIN = { token: "token", app_id: "app", channel_name: "channel", uid: 7 };
 
+/** The handler the store registered on the live engine. */
+function engineHandler() {
+  const calls = engineMock.registerEventHandler.mock.calls;
+  return calls[calls.length - 1][0];
+}
+
 async function startLiveCall() {
   beginCallSession({ callId: "call-1", conversationId: 9, direction: "outgoing", callType: "audio", title: "Ada" });
   const joined = await connectCallMedia(JOIN);
   expect(joined).toBe(true);
+}
+
+/** Start a call and drive it all the way to the connected state. */
+async function startConnectedCall() {
+  await startLiveCall();
+  engineHandler().onJoinChannelSuccess({}, 0);
+  engineHandler().onUserJoined({}, 42);
 }
 
 describe("callSessionStore", () => {
@@ -102,6 +116,18 @@ describe("callSessionStore", () => {
     jest.clearAllMocks();
   });
 
+  it("connects the call: one engine, joined channel, connected session", async () => {
+    await startConnectedCall();
+    const agora = jest.requireMock("react-native-agora") as { createAgoraRtcEngine: jest.Mock };
+    expect(agora.createAgoraRtcEngine).toHaveBeenCalledTimes(1);
+    expect(engineMock.joinChannel).toHaveBeenCalledTimes(1);
+    const session = getCallSession();
+    expect(session.sessionActive).toBe(true);
+    expect(session.connected).toBe(true);
+    expect(session.everConnected).toBe(true);
+    expect(session.remoteUids).toEqual([42]);
+  });
+
   it("does NOT release the engine when the Call screen unmounts while the session is active", async () => {
     await startLiveCall();
     const { unmount } = renderHook(() => useAgoraCallRoom());
@@ -112,6 +138,63 @@ describe("callSessionStore", () => {
     expect(engineMock.release).not.toHaveBeenCalled();
     expect(getCallSession().sessionActive).toBe(true);
     expect(getCallSession().callScreenFocused).toBe(false);
+  });
+
+  it("keeps polling the backend after the user navigates away from the Call screen", async () => {
+    await startConnectedCall();
+    handleCallScreenUnmount();
+    (getCallStatus as jest.Mock).mockClear();
+    // Polling lives in the store, not the screen, so a tick still fires with
+    // no Call screen mounted anywhere in the tree.
+    jest.advanceTimersByTime(CALL_STATUS_REFRESH_MS + 50);
+    expect(getCallStatus).toHaveBeenCalledWith("call-1");
+    expect(getCallSession().sessionActive).toBe(true);
+  });
+
+  it("re-attaches to the same session on remount instead of building a second engine", async () => {
+    await startConnectedCall();
+    handleCallScreenUnmount();
+    const agora = jest.requireMock("react-native-agora") as { createAgoraRtcEngine: jest.Mock };
+    // Remounting the Call screen runs beginCallSession again with the same params.
+    beginCallSession({ callId: "call-1", conversationId: 9, direction: "outgoing", callType: "audio", title: "Ada" });
+    expect(agora.createAgoraRtcEngine).toHaveBeenCalledTimes(1);
+    expect(engineMock.joinChannel).toHaveBeenCalledTimes(1);
+    expect(engineMock.release).not.toHaveBeenCalled();
+    const session = getCallSession();
+    expect(session.callId).toBe("call-1");
+    expect(session.connected).toBe(true);
+    expect(session.everConnected).toBe(true);
+  });
+
+  it("keeps the call alive when the fast-path re-fetch says the backend call is still active", async () => {
+    await startConnectedCall();
+    (getCallStatus as jest.Mock).mockClear();
+    // A remote uid can drop for reasons other than a hang-up (subscriber
+    // renegotiation, a brief network blip). The hint must not end the call by
+    // itself — only the authoritative status may.
+    (getCallStatus as jest.Mock).mockResolvedValue({ call_id: "call-1", status: "active" });
+    engineHandler().onUserOffline({}, 42);
+    expect(getCallStatus).toHaveBeenCalledWith("call-1");
+    await refreshCallSessionStatus();
+    expect(engineMock.release).not.toHaveBeenCalled();
+    expect(getCallSession().sessionActive).toBe(true);
+  });
+
+  it("is idempotent under duplicate teardown from several directions at once", async () => {
+    await startConnectedCall();
+    (getCallStatus as jest.Mock).mockResolvedValue({ call_id: "call-1", status: "ended" });
+    // Banner hang-up, a terminal poll result and a media-failure fast path can
+    // all land within the same tick. Cleanup must run exactly once.
+    await Promise.all([
+      hangupCallSession("native_hangup"),
+      refreshCallSessionStatus(),
+      refreshCallSessionStatus()
+    ]);
+    await refreshCallSessionStatus();
+    expect(engineMock.release).toHaveBeenCalledTimes(1);
+    expect(releaseMediaPlayback).toHaveBeenCalledTimes(1);
+    expect(endCallKitCall).toHaveBeenCalledTimes(1);
+    expect(getCallSession().sessionActive).toBe(false);
   });
 
   it("releases the engine, CallKit and the media lease on a terminal backend status", async () => {
