@@ -209,7 +209,6 @@ function CardStill({
 }) {
   return (
     <DiscoveryPreviewMedia
-      previewKey=""
       videoUrl={null}
       posterUrl={uri}
       fallbackLabel={fallback}
@@ -283,7 +282,6 @@ const ReelCard = memo(function ReelCard({
       frameHeight={metrics.mediaHeight}
     >
       <DiscoveryPreviewMedia
-        previewKey={`reel:${reel.reelId}`}
         videoUrl={reel.previewVideoUrl}
         posterUrl={reel.posterUrl}
         fallbackLabel={title || String(reel.reelId)}

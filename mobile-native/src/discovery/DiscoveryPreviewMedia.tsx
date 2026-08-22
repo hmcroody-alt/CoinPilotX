@@ -23,10 +23,19 @@
  * Mounting a `Video` for every suggestion would have the feed opening a decoder
  * per card, which is exactly what §12 forbids. So the player appears on first
  * activation. It is then *kept* — paused — for as long as the card is rendered,
- * because unmounting it would discard the frame the preview froze on and drop
- * the card back to its poster, and §6 asks for the frame to be retained.
- * FlatList windowing bounds this: the player dies with the card when the user
- * scrolls the row away.
+ * because unmounting it would discard the frame playback stopped on and drop
+ * the card back to its poster. It is also what makes the loop cheap: one
+ * player instance serves every pass, so a card looping for a minute has created
+ * exactly one decoder, not twelve. FlatList windowing bounds this: the player
+ * dies with the card when the user scrolls the row away.
+ *
+ * ## The loop
+ *
+ * An active card plays its first five seconds and returns to zero, continuously,
+ * for as long as it stays the active card. The turnover is driven by the
+ * player's own position reports rather than by a timer, and the decision itself
+ * lives in `previewPlayback` — see there for why it is latched and why a timer
+ * is the wrong clock.
  *
  * ## Sound
  *
@@ -37,7 +46,7 @@
  * reason a call goes quiet. Arbitration against everything that *does* own audio
  * goes through the existing `mediaPlaybackCoordinator` claim below.
  */
-import { ResizeMode, Video } from "expo-av";
+import { AVPlaybackStatus, ResizeMode, Video } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
@@ -46,14 +55,13 @@ import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { createThemedStyles } from "../theme/themedStyles";
 import {
-  DISCOVERY_PREVIEW_DURATION_MS,
-  markPreviewCompleted,
-  shouldStartPreview
+  DISCOVERY_PREVIEW_PROGRESS_INTERVAL_MS,
+  PreviewLoopState,
+  advancePreviewLoop,
+  initialPreviewLoopState
 } from "./previewPlayback";
 
 export type DiscoveryPreviewMediaProps = {
-  /** Stable identity of this preview, for the replay memory. */
-  previewKey: string;
   /** Playable video for this card, when it has one. Absent for every non-video kind. */
   videoUrl?: string | null;
   posterUrl?: string | null;
@@ -69,7 +77,6 @@ export type DiscoveryPreviewMediaProps = {
 };
 
 export function DiscoveryPreviewMedia({
-  previewKey,
   videoUrl,
   posterUrl,
   fallbackLabel,
@@ -86,15 +93,22 @@ export function DiscoveryPreviewMedia({
   const ownerId = `discovery-preview:${useId()}`;
   const [engaged, setEngaged] = useState(false);
   const [playing, setPlaying] = useState(false);
-  // Latches on the first frame and never clears: §6 asks the card to hold the
-  // frame it stopped on, so fading the player back out when the preview ends
-  // would undo the thing the preview is for.
+  // Latches on the first frame and never clears. Fading the player back out
+  // when the card stops being active would drop it to its poster with a visible
+  // cross-fade every time the user swiped past — the card should settle on the
+  // frame it stopped at, not blink.
   const [revealed, setRevealed] = useState(false);
 
   const reportPlaying = useRef(onPlayingChange);
   reportPlaying.current = onPlayingChange;
 
+  // Read by the status callback, which must see the *current* value rather than
+  // the one captured when it was created — it is created once, on purpose.
+  const playingRef = useRef(false);
+  const loopRef = useRef<PreviewLoopState>(initialPreviewLoopState());
+
   const setPlayingState = useCallback((next: boolean) => {
+    playingRef.current = next;
     setPlaying(next);
     reportPlaying.current?.(next);
   }, []);
@@ -107,22 +121,45 @@ export function DiscoveryPreviewMedia({
    * this component knowing any of those exist.
    */
   const stop = useCallback(() => {
+    loopRef.current = initialPreviewLoopState();
     setPlayingState(false);
     videoRef.current?.pauseAsync?.().catch(() => undefined);
     releaseMediaPlayback(ownerId).catch(() => undefined);
   }, [ownerId, setPlayingState]);
 
+  /**
+   * The loop itself.
+   *
+   * Deliberately free of React state: this fires eight times a second, and a
+   * `setState` per tick would re-render the card — and therefore its siblings'
+   * shared parent — for the entire time a preview is on screen. The loop's
+   * whole state is one boolean in a ref, and the only React state the preview
+   * touches is the three transitions a human can see (engaged, revealed,
+   * playing), each of which happens at most once per activation.
+   */
+  const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
+    if (!status.isLoaded) return;
+    // A status arriving after we paused must not be able to restart anything.
+    if (!playingRef.current) return;
+
+    const { state, action } = advancePreviewLoop(loopRef.current, status.positionMillis);
+    loopRef.current = state;
+    if (action !== "rewind") return;
+
+    // Seek *and* resume in one call: a bare seek would leave the player's
+    // `shouldPlay` intact but has no obligation to still be playing after it,
+    // and "the loop stopped after the first pass" is the failure that would
+    // produce. The player instance is reused — this never remounts anything.
+    videoRef.current?.playFromPositionAsync?.(0).catch(() => undefined);
+  }, []);
+
   useEffect(() => {
     if (!videoUrl || !active) {
-      // Leaving view before the timer fires deliberately does NOT mark the
-      // preview complete, so the card gets another chance next time — §6.
       if (!active) stop();
       return undefined;
     }
-    if (!shouldStartPreview(previewKey)) return undefined;
 
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
 
     setEngaged(true);
     claimMediaPlayback({ id: ownerId, kind: "feed", pause: stop })
@@ -130,22 +167,18 @@ export function DiscoveryPreviewMedia({
         // Refused means something with a higher claim — a call, a live room — is
         // playing. The card simply stays on its poster.
         if (!granted || cancelled) return;
+        loopRef.current = initialPreviewLoopState();
         setRevealed(true);
         setPlayingState(true);
         videoRef.current?.playFromPositionAsync?.(0).catch(() => undefined);
-        timer = setTimeout(() => {
-          markPreviewCompleted(previewKey);
-          stop();
-        }, DISCOVERY_PREVIEW_DURATION_MS);
       })
       .catch(() => undefined);
 
     return () => {
       cancelled = true;
-      if (timer) clearTimeout(timer);
       stop();
     };
-  }, [active, ownerId, previewKey, stop, setPlayingState, videoUrl]);
+  }, [active, ownerId, stop, setPlayingState, videoUrl]);
 
   const frame = { width, height };
   const hasPoster = Boolean(posterUrl);
@@ -191,7 +224,14 @@ export function DiscoveryPreviewMedia({
             style={[StyleSheet.absoluteFill, revealed ? styles.videoVisible : styles.videoHidden]}
             resizeMode={ResizeMode.COVER}
             shouldPlay={playing}
-            isLooping={false}
+            // Covers the clip that is *shorter* than the loop window, which the
+            // position guard never sees: it ends before reaching five seconds,
+            // and the native wrap is seamless in a way a seek is not. For a
+            // longer clip this never comes into play — the guard turns it over
+            // at five seconds, far from the end.
+            isLooping
+            progressUpdateIntervalMillis={DISCOVERY_PREVIEW_PROGRESS_INTERVAL_MS}
+            onPlaybackStatusUpdate={onPlaybackStatusUpdate}
             // Not a prop, not a default: a feed preview has no sound, ever.
             isMuted
             useNativeControls={false}

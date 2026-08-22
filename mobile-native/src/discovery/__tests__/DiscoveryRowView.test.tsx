@@ -20,7 +20,6 @@ import { FlatList } from "react-native";
 import { DiscoveryRowView, DiscoveryRowActions } from "../DiscoveryRowView";
 import { resetDiscoveryImpressions, setDiscoveryAnalyticsSink } from "../analytics";
 import { discoveryCardMetrics } from "../discoveryCardMetrics";
-import { resetDiscoveryPreviewPlayback } from "../previewPlayback";
 import { resetMediaPlayback } from "../../core/mediaPlaybackCoordinator";
 import type { DiscoveryModule } from "../discoveryRows";
 
@@ -148,7 +147,6 @@ async function reportViewable(utils: ReturnType<typeof render>, indices: number[
 beforeEach(() => {
   resetDiscoveryImpressions();
   setDiscoveryAnalyticsSink(() => undefined);
-  resetDiscoveryPreviewPlayback();
   resetMediaPlayback();
 });
 

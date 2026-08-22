@@ -1,76 +1,101 @@
 /**
- * When a suggestion preview is allowed to play, and for how long.
+ * The preview loop: the first five seconds, repeating, for as long as the card
+ * is the active one.
  *
- * ## The 3.5 seconds
+ * ## Why a state machine and not `if (position >= 5000) seek(0)`
  *
- * A suggestion preview is a *sample*, not a viewing. It plays once, for about
- * three and a half seconds, and then holds on the frame it stopped at. It does
- * not loop, because a looping clip in a feed row competes with the post the user
- * is actually reading, and it does not run to completion, because a 60-second
- * reel playing out in a carousel is a Reels page nobody asked for.
+ * The naive form has a bug that only appears on a real device. A seek is not
+ * instantaneous: between issuing `playFromPositionAsync(0)` and the player
+ * actually reporting a position near zero, more status callbacks arrive, and
+ * every one of them still reads a position past the window. Each fires another
+ * seek. The visible result is a preview that judders at the loop point instead
+ * of wrapping cleanly — and it is worse on slower networks, which is exactly
+ * where nobody tests.
  *
- * ## Why replay needs a memory
+ * So the rewind is latched. One seek is issued per crossing, and no further
+ * seek is issued until the player confirms it came back inside the window. That
+ * confirmation is the only thing that clears the latch, which means a seek that
+ * silently fails leaves the latch set and the loop simply runs on to the end of
+ * the clip rather than machine-gunning seeks at the player.
  *
- * The obvious implementation — play whenever the card becomes the active one —
- * has a failure the simulator will never show you. Viewability is not a clean
- * boolean: a card sitting near the threshold flickers in and out as the user's
- * thumb rests on the feed, and every flicker would restart the clip from zero.
- * The visible result is a preview that stutters between its first two frames
- * forever, which reads as a broken video rather than as a scroll artifact.
+ * ## Why this is not a timer
  *
- * So a completed preview is remembered. Re-activating that card inside the
- * cooldown holds the frozen frame — the jitter case — and re-activating it after
- * the cooldown replays it, which is the "scrolled away and came back later" case
- * §6 asks to distinguish. A preview that was *interrupted* before finishing is
- * never recorded, so it always gets another chance.
+ * A `setInterval` that seeks every five seconds drifts against the actual
+ * playback clock — it keeps counting while the video is buffering, so a stalled
+ * clip gets rewound before it has shown five seconds of anything. Position is
+ * the only honest clock here, and the player already reports it.
  *
- * The memory is module-scope because the card that owns it is unmounted by
- * FlatList windowing precisely when the user scrolls away — component state
- * would be destroyed by the very gesture it is supposed to survive.
+ * ## Why there is no longer a replay memory
+ *
+ * A previous revision remembered completed previews and suppressed replays
+ * inside a cooldown, because a preview that played once and froze must not
+ * restart on viewability jitter. That reasoning does not survive the change to
+ * a continuous loop: the loop restarts from zero every five seconds anyway, so
+ * a jitter-induced restart is indistinguishable from an ordinary wrap. Keeping
+ * the memory would only mean a card the user deliberately scrolled back to
+ * refuses to play.
  */
-
-/** How long a preview plays before freezing. §4 asks for 3–4s; this is the middle. */
-export const DISCOVERY_PREVIEW_DURATION_MS = 3500;
 
 /**
- * How long a completed preview stays completed.
+ * The loop window. Playback never advances past this point; it returns to zero.
  *
- * Long enough to cover viewability jitter and a short scroll past and back;
- * short enough that a deliberate return to a card feels alive rather than dead.
+ * Looping the *first* five seconds specifically is also what makes the loop
+ * cheap: the segment is already in the player's buffer from the pass just
+ * finished, so the wrap is a seek into buffered data rather than a refetch.
  */
-export const DISCOVERY_PREVIEW_REPLAY_COOLDOWN_MS = 8000;
+export const DISCOVERY_PREVIEW_LOOP_WINDOW_MS = 5000;
 
 /**
- * Bound on the memory. A long feed session touches unboundedly many suggestions,
- * and a Map that only ever grows is a leak that takes an hour to become visible.
+ * How often the player reports its position.
+ *
+ * This is the loop's resolution, and therefore its worst-case overshoot: the
+ * rewind can only be issued on a callback, so playback may reach the window
+ * plus one interval before turning over. 125ms is under a typical four frames
+ * and is not perceptible as "played past five seconds"; the default (500ms)
+ * would be. It costs nothing extra, because the handler touches refs only and
+ * never sets React state — see `DiscoveryPreviewMedia`.
  */
-const MAX_TRACKED_PREVIEWS = 64;
+export const DISCOVERY_PREVIEW_PROGRESS_INTERVAL_MS = 125;
 
-const completedAt = new Map<string, number>();
+/** Whether a rewind has been issued and not yet confirmed by the player. */
+export type PreviewLoopState = { rewinding: boolean };
 
-/** True when this card should start (or restart) its preview right now. */
-export function shouldStartPreview(key: string, now: number = Date.now()): boolean {
-  if (!key) return false;
-  const completed = completedAt.get(key);
-  if (completed === undefined) return true;
-  if (now - completed < DISCOVERY_PREVIEW_REPLAY_COOLDOWN_MS) return false;
-  // The cooldown has expired: forget it, so this counts as a fresh first play.
-  completedAt.delete(key);
-  return true;
+/** What the caller should do with the player as a result of this position report. */
+export type PreviewLoopAction = "none" | "rewind";
+
+export function initialPreviewLoopState(): PreviewLoopState {
+  return { rewinding: false };
 }
 
-/** Record that this card played its full preview. Interrupted previews must not call this. */
-export function markPreviewCompleted(key: string, now: number = Date.now()): void {
-  if (!key) return;
-  if (completedAt.size >= MAX_TRACKED_PREVIEWS && !completedAt.has(key)) {
-    // Map preserves insertion order, so the first key is the oldest.
-    const oldest = completedAt.keys().next();
-    if (!oldest.done) completedAt.delete(oldest.value);
+/**
+ * Fold one position report into the loop.
+ *
+ * Pure, so the awkward cases — a report that arrives mid-seek, a clip shorter
+ * than the window, a position that goes backwards on its own — are testable
+ * without a player, a device, or a five-second wait.
+ */
+export function advancePreviewLoop(
+  state: PreviewLoopState,
+  positionMillis: number
+): { state: PreviewLoopState; action: PreviewLoopAction } {
+  // A player that has not reported a usable position yet says nothing about
+  // whether we have reached the window.
+  if (!Number.isFinite(positionMillis) || positionMillis < 0) {
+    return { state, action: "none" };
   }
-  completedAt.set(key, now);
-}
 
-/** Test seam, and the reset a fresh feed session performs on pull-to-refresh. */
-export function resetDiscoveryPreviewPlayback(): void {
-  completedAt.clear();
+  if (state.rewinding) {
+    // Still waiting for the seek to land. Only the player coming back inside
+    // the window clears the latch — nothing else can prove the seek took.
+    if (positionMillis < DISCOVERY_PREVIEW_LOOP_WINDOW_MS) {
+      return { state: { rewinding: false }, action: "none" };
+    }
+    return { state, action: "none" };
+  }
+
+  if (positionMillis >= DISCOVERY_PREVIEW_LOOP_WINDOW_MS) {
+    return { state: { rewinding: true }, action: "rewind" };
+  }
+
+  return { state, action: "none" };
 }
