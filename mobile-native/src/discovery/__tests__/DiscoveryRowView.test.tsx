@@ -15,9 +15,13 @@
  * buttons live inside the pressable card, so a tap on the button must not also
  * open the profile behind it.
  */
-import { fireEvent, render } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
+import { FlatList } from "react-native";
 import { DiscoveryRowView, DiscoveryRowActions } from "../DiscoveryRowView";
 import { resetDiscoveryImpressions, setDiscoveryAnalyticsSink } from "../analytics";
+import { discoveryCardMetrics } from "../discoveryCardMetrics";
+import { resetDiscoveryPreviewPlayback } from "../previewPlayback";
+import { resetMediaPlayback } from "../../core/mediaPlaybackCoordinator";
 import type { DiscoveryModule } from "../discoveryRows";
 
 // The shell renders translated headings and button labels; the catalog itself is
@@ -26,6 +30,24 @@ import type { DiscoveryModule } from "../discoveryRows";
 jest.mock("../../i18n/I18nContext", () => ({
   useTranslation: () => ({ t: (key: string) => key })
 }));
+
+// `expo-av` needs the ExponentAV native module at import time. The stand-in is a
+// real host element rather than `null` so the player's props — muted, playing —
+// stay assertable from the tree.
+jest.mock("expo-av", () => {
+  const ReactActual = require("react");
+  const { View } = require("react-native");
+  return {
+    ResizeMode: { COVER: "cover", CONTAIN: "contain" },
+    Video: ReactActual.forwardRef((props: Record<string, unknown>, ref: unknown) => {
+      ReactActual.useImperativeHandle(ref, () => ({
+        playFromPositionAsync: () => Promise.resolve(),
+        pauseAsync: () => Promise.resolve()
+      }));
+      return ReactActual.createElement(View, props);
+    })
+  };
+});
 
 function actions(): jest.Mocked<DiscoveryRowActions> {
   return {
@@ -86,9 +108,48 @@ function renderRow(module: DiscoveryModule, extra: Partial<React.ComponentProps<
   return { ...utils, handlers };
 }
 
+/** Reels that actually have something to play, for the autoplay assertions. */
+const playableReelsModule: DiscoveryModule = {
+  kind: "reels",
+  titleKey: "social:feed.discovery.reelsTitle",
+  items: [
+    { reelId: 11, title: "First", previewVideoUrl: "https://cdn.example/1.m3u8" },
+    { reelId: 22, title: "Second", previewVideoUrl: "https://cdn.example/2.m3u8" },
+    { reelId: 33, title: "Third", previewVideoUrl: "https://cdn.example/3.m3u8" }
+  ]
+};
+
+/** The carousel's own FlatList, so its layout contract can be read directly. */
+function carouselOf(utils: ReturnType<typeof render>) {
+  return utils.UNSAFE_getByType(FlatList).props as Record<string, never>;
+}
+
+/**
+ * Drive the carousel's viewability callback the way FlatList would.
+ *
+ * There is no layout pass in jest, so nothing ever becomes "viewable" on its
+ * own. Calling the handler directly is the honest substitute: it is the same
+ * function FlatList calls, with the same token shape.
+ */
+async function reportViewable(utils: ReturnType<typeof render>, indices: number[], items: unknown[]) {
+  const onViewableItemsChanged = carouselOf(utils).onViewableItemsChanged as unknown as (
+    info: { viewableItems: unknown[] }
+  ) => void;
+
+  await act(async () => {
+    onViewableItemsChanged({
+      viewableItems: indices.map((index) => ({ index, item: items[index], isViewable: true, key: String(index) }))
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 beforeEach(() => {
   resetDiscoveryImpressions();
   setDiscoveryAnalyticsSink(() => undefined);
+  resetDiscoveryPreviewPlayback();
+  resetMediaPlayback();
 });
 
 afterEach(() => {
@@ -211,6 +272,202 @@ describe("the module shell (§2)", () => {
     const { queryByTestId } = renderRow(topics);
 
     expect(queryByTestId("discovery-card-topics-astro")).toBeNull();
+  });
+});
+
+describe("§14.3 — the carousel snaps, and the next card peeks", () => {
+  it("snaps to exactly one card per swipe", () => {
+    const utils = renderRow(reelsModule);
+    const stride = discoveryCardMetrics(750, "reels").stride;
+
+    // jest's fake window is 750pt wide; what matters is that the snap interval
+    // and the layout stride are the *same* number, not what that number is.
+    expect(carouselOf(utils).snapToInterval).toBe(stride);
+  });
+
+  it("measures every card with the same stride it snaps to", () => {
+    // Two independent expressions for one number is how a carousel ends up
+    // snapping to a position no card starts at.
+    const utils = renderRow(reelsModule);
+    const props = carouselOf(utils);
+    const layout = (props.getItemLayout as unknown as (d: unknown, i: number) => { length: number; offset: number })(
+      null,
+      3
+    );
+
+    expect(layout.length).toBe(props.snapToInterval);
+    expect(layout.offset).toBe((props.snapToInterval as unknown as number) * 3);
+  });
+
+  it("aligns the settled card to the start, so the peek is a constant", () => {
+    const utils = renderRow(reelsModule);
+
+    expect(carouselOf(utils).snapToAlignment).toBe("start");
+  });
+
+  it("settles quickly and refuses to skate past several cards on a flick", () => {
+    const utils = renderRow(reelsModule);
+
+    expect(carouselOf(utils).decelerationRate).toBe("fast");
+    expect(carouselOf(utils).disableIntervalMomentum).toBe(true);
+  });
+
+  it("insets the carousel by less than the panel padding it replaced (§2)", () => {
+    const utils = renderRow(reelsModule);
+    const style = carouselOf(utils).contentContainerStyle as unknown as Record<string, number>[];
+    const flat = Object.assign({}, ...(Array.isArray(style) ? style.filter(Boolean) : [style]));
+
+    expect(flat.paddingHorizontal).toBeLessThan(16);
+  });
+
+  it("keeps the row itself full-bleed, with no horizontal margin or panel border", () => {
+    // The exact chrome §2 names: the old row was a bordered box inset from both
+    // screen edges, which is what made the media look like a widget.
+    const { getByTestId } = renderRow(reelsModule);
+    const style = getByTestId("discovery-row-reels").props.style;
+    const flat = Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean)) : style;
+
+    expect(flat.marginHorizontal).toBeUndefined();
+    expect(flat.borderWidth).toBeUndefined();
+    expect(flat.paddingHorizontal).toBeUndefined();
+  });
+});
+
+describe("§14.4, §14.5, §14.8 — one preview, on the primary visible card only", () => {
+  it("plays nothing until the carousel reports something visible", async () => {
+    const { queryByTestId } = renderRow(playableReelsModule, { isRowVisible: true });
+
+    expect(queryByTestId("discovery-card-reels-11-media-video")).toBeNull();
+  });
+
+  it("plays only the primary card, even when three are viewable", async () => {
+    // The requirement's sharpest edge: several cards clear the visibility
+    // threshold at once during a swipe, and exactly one of them may play.
+    const utils = renderRow(playableReelsModule, { isRowVisible: true });
+    await reportViewable(utils, [0, 1, 2], playableReelsModule.items);
+
+    expect(utils.getByTestId("discovery-card-reels-11-media-video")).toBeTruthy();
+    expect(utils.queryByTestId("discovery-card-reels-22-media-video")).toBeNull();
+    expect(utils.queryByTestId("discovery-card-reels-33-media-video")).toBeNull();
+  });
+
+  it("moves the preview to the new primary card as the user swipes", async () => {
+    const utils = renderRow(playableReelsModule, { isRowVisible: true });
+    await reportViewable(utils, [0, 1], playableReelsModule.items);
+    await reportViewable(utils, [1, 2], playableReelsModule.items);
+
+    // The first card keeps its player mounted — §6 retains the frozen frame —
+    // but the *new* card is the one that got a player of its own.
+    expect(utils.getByTestId("discovery-card-reels-22-media-video")).toBeTruthy();
+    expect(utils.queryByTestId("discovery-card-reels-33-media-video")).toBeNull();
+  });
+
+  it("uses the 60% threshold the requirement names", () => {
+    const utils = renderRow(reelsModule);
+
+    expect((carouselOf(utils).viewabilityConfig as unknown as Record<string, number>).itemVisiblePercentThreshold)
+      .toBeGreaterThanOrEqual(60);
+  });
+
+  it("plays nothing at all while the row is off screen in the vertical feed", async () => {
+    // §5's "no offscreen preload autoplay". A carousel that is mounted but three
+    // screens down reports its own cards as viewable — the horizontal list has
+    // no idea the row is not on screen — so the row must be gated too.
+    const utils = renderRow(playableReelsModule, { isRowVisible: false });
+    await reportViewable(utils, [0, 1, 2], playableReelsModule.items);
+
+    expect(utils.queryByTestId("discovery-card-reels-11-media-video")).toBeNull();
+  });
+
+  it("defaults to not visible, so a caller that forgets the prop stays silent", async () => {
+    const utils = renderRow(playableReelsModule);
+    await reportViewable(utils, [0], playableReelsModule.items);
+
+    expect(utils.queryByTestId("discovery-card-reels-11-media-video")).toBeNull();
+  });
+});
+
+describe("§14.11, §14.12 — the border reacts to which card is active", () => {
+  it("lights the primary card's border and leaves the others resting", async () => {
+    const utils = renderRow(reelsModule, { isRowVisible: true });
+    await reportViewable(utils, [0, 1, 2], reelsModule.items);
+
+    expect(utils.getByTestId("discovery-card-reels-11-frame-sweep")).toBeTruthy();
+    expect(utils.queryByTestId("discovery-card-reels-22-frame-sweep")).toBeNull();
+    expect(utils.queryByTestId("discovery-card-reels-33-frame-sweep")).toBeNull();
+  });
+
+  it("animates no border at all while the row is off screen", async () => {
+    // §8 forbids animating every card in a carousel; a row nobody can see
+    // animating any card is the same waste with none of the benefit.
+    const utils = renderRow(reelsModule, { isRowVisible: false });
+    await reportViewable(utils, [0, 1, 2], reelsModule.items);
+
+    expect(utils.queryByTestId("discovery-card-reels-11-frame-sweep")).toBeNull();
+  });
+
+  it("brightens a card while it is pressed (§8)", () => {
+    const { getByTestId, queryByTestId } = renderRow(reelsModule);
+
+    expect(queryByTestId("discovery-card-reels-22-frame-sweep")).toBeNull();
+
+    fireEvent(getByTestId("discovery-card-reels-22"), "pressIn");
+
+    expect(getByTestId("discovery-card-reels-22-frame-sweep")).toBeTruthy();
+  });
+
+  it("points an unseen status out even when it is not the focused card", async () => {
+    // §10: statuses carry their own "new" signal, which is worth more than
+    // carousel position. A seen one falls back to resting.
+    const module: DiscoveryModule = {
+      kind: "statuses",
+      titleKey: "social:feed.discovery.statusesTitle",
+      items: [
+        { statusId: 101, title: "One", seen: true },
+        { statusId: 202, title: "Two", seen: false }
+      ]
+    };
+    const utils = renderRow(module, { isRowVisible: true });
+
+    expect(utils.queryByTestId("discovery-card-statuses-101-frame-sweep")).toBeNull();
+    expect(utils.getByTestId("discovery-card-statuses-202-frame-sweep")).toBeTruthy();
+  });
+});
+
+describe("§14.13, §10 — non-video kinds never get a video container", () => {
+  it("gives a person a portrait, not an empty player", () => {
+    const { getByTestId, queryByTestId } = renderRow(peopleModule, { isRowVisible: true });
+
+    expect(getByTestId("discovery-card-people-nova-media-fallback")).toBeTruthy();
+    expect(queryByTestId("discovery-card-people-nova-media-video")).toBeNull();
+  });
+
+  it("gives a group with no cover a text-first card rather than a blank frame", () => {
+    const { getByTestId, queryByTestId } = renderRow(groupsModule);
+
+    expect(getByTestId("discovery-card-groups-astro-media-fallback")).toBeTruthy();
+    expect(queryByTestId("discovery-card-groups-astro-media-video")).toBeNull();
+  });
+
+  it("shows a cover image when the group has one", () => {
+    const module: DiscoveryModule = {
+      kind: "groups",
+      titleKey: "social:feed.discovery.groupsTitle",
+      items: [{ slug: "astro", name: "Astro", coverUrl: "https://cdn.example/astro.jpg" }]
+    };
+    const { getByTestId, queryByTestId } = renderRow(module);
+
+    expect(getByTestId("discovery-card-groups-astro-media-poster")).toBeTruthy();
+    expect(queryByTestId("discovery-card-groups-astro-media-fallback")).toBeNull();
+  });
+
+  it("never plays a reel that has no playable url yet", async () => {
+    // The adapter nulls `previewVideoUrl` while a reel transcodes. Being the
+    // primary card must not conjure a player for it.
+    const utils = renderRow(reelsModule, { isRowVisible: true });
+    await reportViewable(utils, [0], reelsModule.items);
+
+    expect(utils.queryByTestId("discovery-card-reels-11-media-video")).toBeNull();
   });
 });
 

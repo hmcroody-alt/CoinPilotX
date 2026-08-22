@@ -165,24 +165,28 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const [activePostId, setActivePostId] = useState<number | null>(null);
   const [ads, setAds] = useState<SponsoredAd[]>([]);
   const [hiddenAdKeys, setHiddenAdKeys] = useState<Set<string>>(() => new Set());
-  const [viewableAdKeys, setViewableAdKeys] = useState<Set<string>>(() => new Set());
+  // Keyed rows the vertical feed currently considers visible. Sponsored ads and
+  // discovery carousels both need this, and they need it to mean the same thing:
+  // a discovery row only autoplays a preview when its key is in here, which is
+  // what keeps a carousel three screens down from decoding video.
+  const [viewableRowKeys, setViewableRowKeys] = useState<Set<string>>(() => new Set());
   const feedViewabilityConfig = useRef({ itemVisiblePercentThreshold: 72 }).current;
   const onFeedViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     let nextActivePostId: number | null = null;
-    const nextViewableAdKeys = new Set<string>();
+    const nextViewableRowKeys = new Set<string>();
     for (const token of viewableItems) {
       if (!token.isViewable) continue;
       const row = token.item as HomeFeedRow | undefined;
       if (!row) continue;
       if (row.type === "post" && nextActivePostId == null) nextActivePostId = row.post.id;
-      if (row.type === "ad") nextViewableAdKeys.add(row.key);
+      if (row.type === "ad" || row.type === "discovery") nextViewableRowKeys.add(row.key);
     }
     setActivePostId(nextActivePostId);
-    setViewableAdKeys((current) => {
-      if (current.size === nextViewableAdKeys.size && [...current].every((key) => nextViewableAdKeys.has(key))) {
+    setViewableRowKeys((current) => {
+      if (current.size === nextViewableRowKeys.size && [...current].every((key) => nextViewableRowKeys.has(key))) {
         return current;
       }
-      return nextViewableAdKeys;
+      return nextViewableRowKeys;
     });
   }).current;
   const selectionRestoredRef = useRef(false);
@@ -409,7 +413,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     if (!spatialFeed) return;
     const row = feedRows[Math.min(spatialIndex, Math.max(0, feedRows.length - 1))];
     setActivePostId(row && row.type === "post" ? row.post.id : null);
-    setViewableAdKeys(row && row.type === "ad" ? new Set([row.key]) : new Set());
+    setViewableRowKeys(
+      row && (row.type === "ad" || row.type === "discovery") ? new Set([row.key]) : new Set()
+    );
   }, [spatialFeed, feedRows, spatialIndex]);
 
   const resetSpatialPosition = useCallback(() => {
@@ -725,6 +731,11 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
           onSeeAll={discovery.seeAllFor(row.module.kind)}
           pendingFriendKeys={discovery.pendingFriendKeys}
           joinedGroupSlugs={discovery.joinedGroupSlugs}
+          // Both conditions, because they fail in different ways: an unfocused
+          // Home is still "visible" to FlatList, so focus is what stops a preview
+          // when the user navigates away, and row viewability is what stops the
+          // eleven carousels that are mounted but off screen.
+          isRowVisible={isFocused && viewableRowKeys.has(row.key)}
         />
       );
     }
@@ -732,7 +743,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       return (
         <SponsoredAdCard
           ad={row.ad}
-          isViewable={viewableAdKeys.has(row.key)}
+          isViewable={viewableRowKeys.has(row.key)}
           edgeInset={12}
           navigation={navigation}
           onHide={handleHideAd}

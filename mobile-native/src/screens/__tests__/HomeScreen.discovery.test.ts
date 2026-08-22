@@ -95,6 +95,65 @@ describe("refresh and return (§3, §12)", () => {
   });
 });
 
+describe("preview visibility (§4, §5, §14.4, §14.7)", () => {
+  it("tells each discovery row whether it is actually on screen", () => {
+    // Without this the row's own horizontal carousel would happily report its
+    // cards as viewable while the row itself is three screens down — a FlatList
+    // has no idea where its parent is.
+    expect(homeSource).toContain("isRowVisible={isFocused && viewableRowKeys.has(row.key)}");
+  });
+
+  it("tracks discovery rows in the same viewable-key set ads already used", () => {
+    // One notion of "visible" for both, rather than a second mechanism that can
+    // drift from the first.
+    expect(homeSource).toContain('if (row.type === "ad" || row.type === "discovery") nextViewableRowKeys.add(row.key)');
+  });
+
+  it("gates previews on focus, so leaving the feed stops playback", () => {
+    // §4 requires playback stop when the user leaves the feed. Home is still
+    // mounted and still "visible" to FlatList at that moment; focus is the only
+    // thing that knows.
+    expect(homeSource).toContain("useIsFocused()");
+  });
+
+  it("still reads the same set for sponsored ad viewability", () => {
+    // The rename must not have quietly detached ads from their impression gate.
+    expect(homeSource).toContain("isViewable={viewableRowKeys.has(row.key)}");
+  });
+
+  it("keeps the vertical feed's own viewability handler immutable", () => {
+    // FlatList throws "Changing onViewableItemsChanged on the fly is not
+    // supported"; the handler stays a ref.
+    expect(homeSource).toMatch(/const onFeedViewableItemsChanged = useRef\(/);
+  });
+});
+
+describe("§14.15 — normal feed scrolling is untouched", () => {
+  it("still renders the feed through one FlatList with the same row branch order", () => {
+    expect(homeSource).toContain("renderFeedRow");
+    expect(homeSource).toContain('row.type === "ad"');
+  });
+
+  it("keeps the post-activity gate that governs video posts", () => {
+    // `activePostId` drives normal feed post media. Discovery previews are a
+    // separate mechanism and must not have been folded into it.
+    expect(homeSource).toContain("setActivePostId(nextActivePostId)");
+    expect(homeSource).toContain('row.type === "post" && nextActivePostId == null');
+  });
+
+  it("keeps the feed's own visibility threshold where it was", () => {
+    // Retuning this would change which post counts as active, which is a
+    // behavior change to normal feed video playback — out of scope.
+    expect(homeSource).toContain("itemVisiblePercentThreshold: 72");
+  });
+
+  it("does not add a second AppState or audio-mode listener for previews", () => {
+    // §4's hard line. Previews arbitrate through the existing playback
+    // coordinator, whose "feed" kind is already released on background.
+    expect(homeSource).not.toContain("Audio.setAudioModeAsync");
+  });
+});
+
 describe("what must not have changed (§1)", () => {
   it("keeps the Pulse Network hero, status rail and composer", () => {
     expect(homeSource).toContain("PulseNetworkHero");

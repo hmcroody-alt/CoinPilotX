@@ -28,15 +28,54 @@
  * `trackDiscoveryEvent`, which dedupes on `(event, kind, slot, target)`, because
  * FlatList unmounts and remounts rows freely while scrolling and a raw mount
  * hook would report one carousel as a dozen.
+ *
+ * ## Why the row is full-bleed and the cards are computed
+ *
+ * The row used to be a bordered panel with a 16pt margin, containing a carousel
+ * with another 16pt of padding, containing 148pt thumbnails. Thirty-two points
+ * of nothing before any content, and a card that was barely a third of the
+ * screen: the suggestion read as a widget *about* content rather than as the
+ * content. The panel is gone, the media now runs to within 12pt of the screen
+ * edge, and every dimension comes from `discoveryCardMetrics` so the card is a
+ * proportion of the device rather than a number that happened to look right on
+ * one simulator.
+ *
+ * ## The single active card
+ *
+ * Exactly one card in the row may be playing a preview, and it is the first one
+ * the carousel reports as viewable. That is decided here rather than in the
+ * card, because "which of my siblings is the primary one" is not a question a
+ * card can answer about itself — every card would answer yes. The row is also
+ * gated on `isRowVisible`, which Home computes from the *vertical* feed's own
+ * viewability and its focus state, so a carousel three screens down is not
+ * quietly decoding video, and leaving the feed stops playback without this
+ * component knowing what navigation is.
  */
 import { Ionicons } from "@expo/vector-icons";
-import { memo, useCallback, useEffect, useRef } from "react";
-import { ActivityIndicator, FlatList, Image, Pressable, Text, View, ViewToken } from "react-native";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  ViewToken,
+  useWindowDimensions
+} from "react-native";
 import { useTranslation } from "../i18n/I18nContext";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { createThemedStyles } from "../theme/themedStyles";
 import { trackDiscoveryEvent } from "./analytics";
+import { DiscoveryCardEnergy, DiscoveryCardFrame } from "./DiscoveryCardFrame";
+import { DiscoveryPreviewMedia } from "./DiscoveryPreviewMedia";
+import {
+  DISCOVERY_EDGE_INSET,
+  DiscoveryCardMetrics,
+  discoveryCardMetrics
+} from "./discoveryCardMetrics";
 import {
   DiscoveryModule,
   DiscoveryModuleKind,
@@ -46,10 +85,8 @@ import {
   StatusSuggestion
 } from "./discoveryRows";
 
-/** Fixed so `getItemLayout` can skip measurement — §16. */
-const CARD_WIDTH = 148;
-const CARD_GAP = logiNexus.spacing.md;
-const CARD_STRIDE = CARD_WIDTH + CARD_GAP;
+/** Corner radius of the media itself. The frame adds its ring outside this. */
+const CARD_RADIUS = logiNexus.radius.card;
 
 const MODULE_ICON: Record<DiscoveryModuleKind, keyof typeof Ionicons.glyphMap> = {
   reels: "play-circle",
@@ -88,43 +125,134 @@ export type DiscoveryRowViewProps = DiscoveryRowActions & {
   pendingFriendKeys?: ReadonlySet<string>;
   /** Group slugs joined this session, so the button reflects the tap immediately. */
   joinedGroupSlugs?: ReadonlySet<string>;
+  /**
+   * Whether this row is meaningfully on screen in the *vertical* feed.
+   *
+   * Defaults to false, which means a caller that forgets to wire it gets a
+   * silent, still row rather than a carousel autoplaying somewhere off screen.
+   * Wrong-but-quiet beats wrong-but-decoding-video.
+   */
+  isRowVisible?: boolean;
 };
 
 /* ------------------------------------------------------------------ *
  * Cards
  * ------------------------------------------------------------------ */
 
+/**
+ * The pressable card body, wrapped in its living border.
+ *
+ * `pressed` feeds the frame rather than dimming the whole card: at this size a
+ * global opacity change reads as the media glitching, whereas a brightened edge
+ * reads as the card acknowledging the touch — §8's "brief responsive highlight".
+ */
 function CardShell({
   onPress,
   accessibilityLabel,
   testID,
+  energy,
+  metrics,
+  frameHeight,
   children
 }: {
   onPress: () => void;
   accessibilityLabel: string;
   testID: string;
+  energy: DiscoveryCardEnergy;
+  metrics: DiscoveryCardMetrics;
+  frameHeight: number;
   children: React.ReactNode;
 }) {
+  const [pressed, setPressed] = useState(false);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       testID={testID}
-      style={styles.card}
+      style={{ width: metrics.cardWidth }}
       onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
     >
-      {children}
+      <DiscoveryCardFrame
+        testID={`${testID}-frame`}
+        energy={pressed && energy === "idle" ? "focused" : energy}
+        width={metrics.cardWidth}
+        height={frameHeight}
+        radius={CARD_RADIUS}
+      >
+        {children}
+      </DiscoveryCardFrame>
     </Pressable>
   );
 }
 
-/** A poster, or the first two letters of whatever the card is about. */
-function CardMedia({ uri, fallback, round }: { uri?: string | null; fallback: string; round?: boolean }) {
-  const shape = round ? styles.mediaRound : styles.mediaSquare;
-  if (uri) return <Image source={{ uri }} style={[styles.media, shape]} accessibilityIgnoresInvertColors />;
+/**
+ * A still, full-bleed image for the kinds that have no video.
+ *
+ * Same contract as `DiscoveryPreviewMedia`: `cover` so the media fills the card
+ * without letterboxing, and a text-first panel rather than an empty rectangle
+ * when there is nothing to show (§11).
+ */
+function CardStill({
+  uri,
+  fallback,
+  width,
+  height,
+  testID
+}: {
+  uri?: string | null;
+  fallback: string;
+  width: number;
+  height: number;
+  testID?: string;
+}) {
   return (
-    <View style={[styles.media, shape, styles.mediaEmpty]}>
-      <Text style={styles.mediaFallback}>{fallback.slice(0, 2).toUpperCase() || "PS"}</Text>
+    <DiscoveryPreviewMedia
+      previewKey=""
+      videoUrl={null}
+      posterUrl={uri}
+      fallbackLabel={fallback}
+      width={width}
+      height={height}
+      active={false}
+      testID={testID}
+    />
+  );
+}
+
+/**
+ * Title, metadata and any in-card action, laid *over* the bottom of the media.
+ *
+ * Under the media they would add height the media does not own, which is how the
+ * old row ended up with a 148pt thumbnail inside a much taller box. Over it, the
+ * card is exactly the media, and the scrim `DiscoveryPreviewMedia` already
+ * paints is what keeps the text legible.
+ */
+function CardCaption({
+  title,
+  meta,
+  children
+}: {
+  title: string;
+  meta?: string | null;
+  children?: React.ReactNode;
+}) {
+  if (!title && !meta && !children) return null;
+  return (
+    // `box-none` so the caption itself is inert but the action inside it is not.
+    <View style={styles.caption} pointerEvents="box-none">
+      {title ? (
+        <Text style={styles.captionTitle} numberOfLines={2}>
+          {title}
+        </Text>
+      ) : null}
+      {meta ? (
+        <Text style={styles.captionMeta} numberOfLines={1}>
+          {meta}
+        </Text>
+      ) : null}
+      {children}
     </View>
   );
 }
@@ -132,26 +260,47 @@ function CardMedia({ uri, fallback, round }: { uri?: string | null; fallback: st
 const ReelCard = memo(function ReelCard({
   reel,
   onPress,
-  formatViews
+  formatViews,
+  metrics,
+  active
 }: {
   reel: ReelSuggestion;
   onPress: () => void;
   formatViews: (count: number) => string;
+  metrics: DiscoveryCardMetrics;
+  active: boolean;
 }) {
+  const [playing, setPlaying] = useState(false);
+  const testID = `discovery-card-reels-${reel.reelId}`;
+  const title = reel.title || reel.authorName || "";
   return (
     <CardShell
       onPress={onPress}
-      accessibilityLabel={reel.title || reel.authorName || String(reel.reelId)}
-      testID={`discovery-card-reels-${reel.reelId}`}
+      accessibilityLabel={title || String(reel.reelId)}
+      testID={testID}
+      energy={playing ? "playing" : active ? "focused" : "idle"}
+      metrics={metrics}
+      frameHeight={metrics.mediaHeight}
     >
-      <CardMedia uri={reel.posterUrl} fallback={reel.title || reel.authorName || "PS"} />
-      <Text style={styles.cardTitle} numberOfLines={2}>
-        {reel.title || reel.authorName || ""}
-      </Text>
-      {typeof reel.viewCount === "number" ? (
-        <Text style={styles.cardMeta} numberOfLines={1}>
-          {formatViews(reel.viewCount)}
-        </Text>
+      <DiscoveryPreviewMedia
+        previewKey={`reel:${reel.reelId}`}
+        videoUrl={reel.previewVideoUrl}
+        posterUrl={reel.posterUrl}
+        fallbackLabel={title || String(reel.reelId)}
+        width={metrics.cardWidth}
+        height={metrics.mediaHeight}
+        active={active}
+        testID={`${testID}-media`}
+        onPlayingChange={setPlaying}
+      />
+      <CardCaption
+        title={title}
+        meta={typeof reel.viewCount === "number" ? formatViews(reel.viewCount) : null}
+      />
+      {playing ? (
+        <View style={styles.mutedBadge} pointerEvents="none" testID={`${testID}-muted-badge`}>
+          <Ionicons name="volume-mute" size={13} color={colors.text} />
+        </View>
       ) : null}
     </CardShell>
   );
@@ -163,7 +312,9 @@ const PersonCard = memo(function PersonCard({
   onPress,
   onAdd,
   addLabel,
-  pendingLabel
+  pendingLabel,
+  metrics,
+  active
 }: {
   person: PersonSuggestion;
   pending: boolean;
@@ -171,37 +322,46 @@ const PersonCard = memo(function PersonCard({
   onAdd: () => void;
   addLabel: string;
   pendingLabel: string;
+  metrics: DiscoveryCardMetrics;
+  active: boolean;
 }) {
+  const name = person.displayName || person.username;
+  const testID = `discovery-card-people-${person.profileKey}`;
   return (
     <CardShell
       onPress={onPress}
-      accessibilityLabel={person.displayName || person.username}
-      testID={`discovery-card-people-${person.profileKey}`}
+      accessibilityLabel={name}
+      testID={testID}
+      energy={active ? "focused" : "idle"}
+      metrics={metrics}
+      frameHeight={metrics.mediaHeight}
     >
-      <CardMedia uri={person.avatarUrl} fallback={person.displayName || person.username} round />
-      <Text style={styles.cardTitle} numberOfLines={1}>
-        {person.displayName || person.username}
-      </Text>
-      {person.rank ? (
-        <Text style={styles.cardMeta} numberOfLines={1}>
-          {person.rank}
-        </Text>
-      ) : null}
-      {/* A nested Pressable: RN does not bubble a handled press to the card, so
-          "Add friend" cannot also navigate — §11. */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${pending ? pendingLabel : addLabel}, ${person.displayName || person.username}`}
-        accessibilityState={{ disabled: pending }}
-        testID={`discovery-add-friend-${person.profileKey}`}
-        disabled={pending}
-        style={[styles.cardAction, pending && styles.cardActionMuted]}
-        onPress={onAdd}
-      >
-        <Text style={[styles.cardActionText, pending && styles.cardActionTextMuted]} numberOfLines={1}>
-          {pending ? pendingLabel : addLabel}
-        </Text>
-      </Pressable>
+      {/* A portrait, not a video frame (§10): people never get a player, so the
+          avatar simply fills the card the way a poster would. */}
+      <CardStill
+        uri={person.avatarUrl}
+        fallback={name}
+        width={metrics.cardWidth}
+        height={metrics.mediaHeight}
+        testID={`${testID}-media`}
+      />
+      <CardCaption title={name} meta={person.rank}>
+        {/* A nested Pressable: RN does not bubble a handled press to the card, so
+            "Add friend" cannot also navigate — §11. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${pending ? pendingLabel : addLabel}, ${name}`}
+          accessibilityState={{ disabled: pending }}
+          testID={`discovery-add-friend-${person.profileKey}`}
+          disabled={pending}
+          style={[styles.cardAction, pending && styles.cardActionMuted]}
+          onPress={onAdd}
+        >
+          <Text style={[styles.cardActionText, pending && styles.cardActionTextMuted]} numberOfLines={1}>
+            {pending ? pendingLabel : addLabel}
+          </Text>
+        </Pressable>
+      </CardCaption>
     </CardShell>
   );
 });
@@ -210,28 +370,38 @@ const StatusCard = memo(function StatusCard({
   status,
   onPress,
   newLabel,
-  seenLabel
+  seenLabel,
+  metrics,
+  active
 }: {
   status: StatusSuggestion;
   onPress: () => void;
   newLabel: string;
   seenLabel: string;
+  metrics: DiscoveryCardMetrics;
+  active: boolean;
 }) {
+  const title = status.authorName || status.title || String(status.statusId);
+  const testID = `discovery-card-statuses-${status.statusId}`;
   return (
     <CardShell
       onPress={onPress}
-      accessibilityLabel={status.authorName || status.title || String(status.statusId)}
-      testID={`discovery-card-statuses-${status.statusId}`}
+      accessibilityLabel={title}
+      testID={testID}
+      // An unseen status is worth pointing at even when it is not the card in
+      // focus, so it borrows the focused border rather than the idle one.
+      energy={active || !status.seen ? "focused" : "idle"}
+      metrics={metrics}
+      frameHeight={metrics.mediaHeight}
     >
-      <View style={!status.seen ? styles.statusRing : undefined}>
-        <CardMedia uri={status.previewUrl} fallback={status.authorName || status.title || "PS"} round />
-      </View>
-      <Text style={styles.cardTitle} numberOfLines={1}>
-        {status.authorName || status.title}
-      </Text>
-      <Text style={styles.cardMeta} numberOfLines={1}>
-        {status.seen ? seenLabel : newLabel}
-      </Text>
+      <CardStill
+        uri={status.previewUrl}
+        fallback={title}
+        width={metrics.cardWidth}
+        height={metrics.mediaHeight}
+        testID={`${testID}-media`}
+      />
+      <CardCaption title={title} meta={status.seen ? seenLabel : newLabel} />
     </CardShell>
   );
 });
@@ -243,7 +413,9 @@ const GroupCard = memo(function GroupCard({
   onJoin,
   joinLabel,
   joinedLabel,
-  formatMembers
+  formatMembers,
+  metrics,
+  active
 }: {
   group: GroupSuggestion;
   joined: boolean;
@@ -252,31 +424,44 @@ const GroupCard = memo(function GroupCard({
   joinLabel: string;
   joinedLabel: string;
   formatMembers: (count: number) => string;
+  metrics: DiscoveryCardMetrics;
+  active: boolean;
 }) {
+  const testID = `discovery-card-groups-${group.slug}`;
   return (
-    <CardShell onPress={onPress} accessibilityLabel={group.name} testID={`discovery-card-groups-${group.slug}`}>
-      <CardMedia uri={group.coverUrl} fallback={group.name} />
-      <Text style={styles.cardTitle} numberOfLines={2}>
-        {group.name}
-      </Text>
-      {typeof group.memberCount === "number" ? (
-        <Text style={styles.cardMeta} numberOfLines={1}>
-          {formatMembers(group.memberCount)}
-        </Text>
-      ) : null}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${joined ? joinedLabel : joinLabel}, ${group.name}`}
-        accessibilityState={{ disabled: joined }}
-        testID={`discovery-join-group-${group.slug}`}
-        disabled={joined}
-        style={[styles.cardAction, joined && styles.cardActionMuted]}
-        onPress={onJoin}
+    <CardShell
+      onPress={onPress}
+      accessibilityLabel={group.name}
+      testID={testID}
+      energy={active ? "focused" : "idle"}
+      metrics={metrics}
+      frameHeight={metrics.mediaHeight}
+    >
+      <CardStill
+        uri={group.coverUrl}
+        fallback={group.name}
+        width={metrics.cardWidth}
+        height={metrics.mediaHeight}
+        testID={`${testID}-media`}
+      />
+      <CardCaption
+        title={group.name}
+        meta={typeof group.memberCount === "number" ? formatMembers(group.memberCount) : null}
       >
-        <Text style={[styles.cardActionText, joined && styles.cardActionTextMuted]} numberOfLines={1}>
-          {joined ? joinedLabel : joinLabel}
-        </Text>
-      </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${joined ? joinedLabel : joinLabel}, ${group.name}`}
+          accessibilityState={{ disabled: joined }}
+          testID={`discovery-join-group-${group.slug}`}
+          disabled={joined}
+          style={[styles.cardAction, joined && styles.cardActionMuted]}
+          onPress={onJoin}
+        >
+          <Text style={[styles.cardActionText, joined && styles.cardActionTextMuted]} numberOfLines={1}>
+            {joined ? joinedLabel : joinLabel}
+          </Text>
+        </Pressable>
+      </CardCaption>
     </CardShell>
   );
 });
@@ -307,6 +492,7 @@ export function DiscoveryRowView({
   slot,
   pendingFriendKeys,
   joinedGroupSlugs,
+  isRowVisible = false,
   onOpenReel,
   onOpenStatus,
   onOpenGroup,
@@ -317,6 +503,8 @@ export function DiscoveryRowView({
   onDismiss
 }: DiscoveryRowViewProps) {
   const { t } = useTranslation();
+  const { width: screenWidth } = useWindowDimensions();
+  const metrics = useMemo(() => discoveryCardMetrics(screenWidth, module.kind), [module.kind, screenWidth]);
 
   useEffect(() => {
     trackDiscoveryEvent({ name: "module_impression", kind: module.kind, slot });
@@ -331,18 +519,34 @@ export function DiscoveryRowView({
   moduleRef.current = module;
   slotRef.current = slot;
 
+  /**
+   * The one card allowed to play. Null until the carousel reports something.
+   *
+   * §5's threshold lives in `viewabilityConfig` below and is deliberately the
+   * same 60% that already governs impressions: a card counted as seen and a card
+   * allowed to play should not be able to disagree about what "visible" means.
+   */
+  const [activeTarget, setActiveTarget] = useState<string | null>(null);
+
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    let primary: string | null = null;
     viewableItems.forEach((token) => {
       if (token.index === null || token.index === undefined) return;
+      const target = cardTarget(moduleRef.current, token.item);
+      // First viewable wins: the leftmost card is the one the snap point puts
+      // under the user's eye, and "first" is stable while "most visible" flips
+      // back and forth across the midpoint of a drag.
+      if (primary === null && token.isViewable !== false) primary = target;
       trackDiscoveryEvent({
         name: "card_impression",
         kind: moduleRef.current.kind,
         slot: slotRef.current,
-        target: cardTarget(moduleRef.current, token.item),
+        target,
         position: token.index
       });
     });
+    setActiveTarget(primary);
   }).current;
 
   const title = t(module.titleKey);
@@ -370,6 +574,10 @@ export function DiscoveryRowView({
   const renderItem = useCallback(
     ({ item, index }: { item: unknown; index: number }) => {
       const target = cardTarget(module, item);
+      // Both halves must be true: the horizontal carousel says this is its
+      // primary card, and Home says the row itself is on screen and focused.
+      // Either alone would let a card three screens down decide it is active.
+      const active = isRowVisible && activeTarget !== null && activeTarget === target;
       const tap = (name: "card_tap" | "reel_opened" | "status_opened") =>
         trackDiscoveryEvent({ name, kind: module.kind, slot, target, position: index });
 
@@ -380,6 +588,8 @@ export function DiscoveryRowView({
             <ReelCard
               reel={reel}
               formatViews={formatViews}
+              metrics={metrics}
+              active={active}
               onPress={() => {
                 tap("card_tap");
                 tap("reel_opened");
@@ -396,6 +606,8 @@ export function DiscoveryRowView({
             <PersonCard
               person={person}
               pending={pending}
+              metrics={metrics}
+              active={active}
               addLabel={t("social:feed.discovery.addFriend")}
               pendingLabel={t("social:feed.discovery.requestSent")}
               onPress={() => {
@@ -414,6 +626,8 @@ export function DiscoveryRowView({
           return (
             <StatusCard
               status={status}
+              metrics={metrics}
+              active={active}
               newLabel={t("social:feed.discovery.statusNew")}
               seenLabel={t("social:feed.discovery.statusSeen")}
               onPress={() => {
@@ -431,6 +645,8 @@ export function DiscoveryRowView({
             <GroupCard
               group={group}
               joined={joined}
+              metrics={metrics}
+              active={active}
               formatMembers={formatMembers}
               joinLabel={t("social:feed.discovery.join")}
               joinedLabel={t("social:feed.discovery.joined")}
@@ -453,9 +669,12 @@ export function DiscoveryRowView({
       }
     },
     [
+      activeTarget,
       formatMembers,
       formatViews,
+      isRowVisible,
       joinedGroupSlugs,
+      metrics,
       module,
       onAddFriend,
       onJoinGroup,
@@ -463,7 +682,6 @@ export function DiscoveryRowView({
       onOpenPerson,
       onOpenReel,
       onOpenStatus,
-
       pendingFriendKeys,
       slot,
       t
@@ -506,14 +724,37 @@ export function DiscoveryRowView({
         keyExtractor={(item) => `${module.kind}:${cardTarget(module, item)}`}
         renderItem={renderItem}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.carousel}
+        contentContainerStyle={[
+          styles.carousel,
+          // From metrics, not from the stylesheet: the inset is what leaves the
+          // next card peeking, and it is derived from the same numbers the cards
+          // are sized with. A stylesheet constant here would drift from them.
+          { paddingHorizontal: metrics.edgeInset, gap: metrics.gap }
+        ]}
         // §16: bounded work per frame, and no measurement pass — every card is
-        // exactly CARD_STRIDE wide.
-        initialNumToRender={4}
+        // exactly one stride wide. Three, not more: at this size the viewport
+        // holds one card and a peek, so three is the visible pair plus a card of
+        // runway. This bounds *layout*; the number of decoders is bounded
+        // separately and much harder, at exactly one, by `active`.
+        initialNumToRender={3}
         windowSize={3}
-        maxToRenderPerBatch={4}
+        maxToRenderPerBatch={3}
         removeClippedSubviews
-        getItemLayout={(_data, index) => ({ length: CARD_STRIDE, offset: CARD_STRIDE * index, index })}
+        getItemLayout={(_data, index) => ({
+          length: metrics.stride,
+          offset: metrics.stride * index,
+          index
+        })}
+        // §3: one card per swipe, landing with the next one peeking. `start`
+        // alignment keeps the settled card flush against the edge inset, which is
+        // what makes the peek a constant rather than something that drifts by a
+        // few points every card.
+        snapToInterval={metrics.stride}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        // Without this a fast flick carries past several cards and lands wherever
+        // momentum ran out, which reads as the carousel ignoring the gesture.
+        disableIntervalMomentum
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
         // §11: the vertical feed keeps the gesture unless the drag is clearly
@@ -539,7 +780,7 @@ export function DiscoveryRowSkeleton({ label }: { label?: string }) {
       <View style={styles.header}>
         <View style={styles.skeletonTitle} />
       </View>
-      <View style={styles.carousel}>
+      <View style={styles.skeletonBody}>
         <ActivityIndicator color={colors.accent} />
         {label ? <Text style={styles.skeletonLabel}>{label}</Text> : null}
       </View>
@@ -548,19 +789,20 @@ export function DiscoveryRowSkeleton({ label }: { label?: string }) {
 }
 
 const styles = createThemedStyles(() => ({
+  // No horizontal margin, no border, no background: §2. The row is a heading and
+  // a carousel, not a panel drawn around them — the surface behind the cards is
+  // the feed's own, so the only thing between the screen edge and the media is
+  // the carousel's edge inset.
   row: {
-    marginHorizontal: logiNexus.spacing.lg,
     marginBottom: logiNexus.spacing.lg,
-    paddingVertical: logiNexus.spacing.md,
-    borderRadius: logiNexus.radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface
+    paddingVertical: logiNexus.spacing.sm
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: logiNexus.spacing.lg,
+    // Matched to the carousel's edge inset so the title lines up with the left
+    // edge of the first card instead of hanging off it.
+    paddingHorizontal: DISCOVERY_EDGE_INSET,
     marginBottom: logiNexus.spacing.md,
     gap: logiNexus.spacing.sm
   },
@@ -568,32 +810,36 @@ const styles = createThemedStyles(() => ({
   headerTitle: { ...logiNexus.typography.home.sectionLabel, color: colors.text, flex: 1 },
   headerAction: { ...logiNexus.typography.home.buttonSecondary, color: colors.accent },
   headerDismiss: { paddingLeft: logiNexus.spacing.xs },
-  carousel: {
-    paddingHorizontal: logiNexus.spacing.lg,
-    gap: CARD_GAP,
-    alignItems: "flex-start"
+  // Padding and gap come from metrics at the call site; this holds only what
+  // does not depend on the device.
+  carousel: { alignItems: "flex-start" },
+  caption: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: logiNexus.spacing.md,
+    gap: 2
   },
-  card: { width: CARD_WIDTH },
-  media: { width: CARD_WIDTH, height: CARD_WIDTH, backgroundColor: colors.surfaceRaised },
-  mediaSquare: { borderRadius: logiNexus.radius.medium },
-  mediaRound: { borderRadius: logiNexus.radius.circular },
-  mediaEmpty: { alignItems: "center", justifyContent: "center" },
-  mediaFallback: { ...logiNexus.typography.title, color: colors.muted },
-  statusRing: {
+  captionTitle: { ...logiNexus.typography.home.cardMetric, color: colors.text },
+  captionMeta: { ...logiNexus.typography.home.cardMetadata, color: colors.muted },
+  // Sits over the media so the user can see the preview is silent by choice
+  // rather than by failure. Decorative: the sound can never be turned on.
+  mutedBadge: {
+    position: "absolute",
+    top: logiNexus.spacing.sm,
+    right: logiNexus.spacing.sm,
+    width: 24,
+    height: 24,
     borderRadius: logiNexus.radius.circular,
-    borderWidth: 2,
-    borderColor: colors.accent,
-    padding: 2
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(5, 9, 16, 0.55)"
   },
-  cardTitle: {
-    ...logiNexus.typography.home.cardMetric,
-    color: colors.text,
-    marginTop: logiNexus.spacing.sm
-  },
-  cardMeta: { ...logiNexus.typography.home.cardMetadata, color: colors.muted, marginTop: 2 },
   cardAction: {
     marginTop: logiNexus.spacing.sm,
     paddingVertical: logiNexus.spacing.sm,
+    paddingHorizontal: logiNexus.spacing.md,
     borderRadius: logiNexus.radius.capsule,
     backgroundColor: colors.signalDim,
     borderWidth: 1,
@@ -609,5 +855,6 @@ const styles = createThemedStyles(() => ({
     borderRadius: logiNexus.radius.small,
     backgroundColor: colors.surfaceRaised
   },
+  skeletonBody: { paddingHorizontal: DISCOVERY_EDGE_INSET, alignItems: "flex-start" },
   skeletonLabel: { ...logiNexus.typography.home.cardMetadata, color: colors.muted, marginTop: logiNexus.spacing.sm }
 }));

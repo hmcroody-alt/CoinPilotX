@@ -57,6 +57,16 @@ export type ReelSuggestion = {
   authorName?: string | null;
   viewCount?: number | null;
   /**
+   * Playable URL for the card's muted 3–4 second preview, or absent.
+   *
+   * Resolved by the adapter, not by the card, for the same reason `reelId` is:
+   * the view should not be able to invent a source. It is absent — rather than
+   * present-and-broken — whenever the reel is not playable yet (still
+   * transcoding, no media), which is what lets the card fall back to its poster
+   * without first mounting a player against a URL that will fail.
+   */
+  previewVideoUrl?: string | null;
+  /**
    * The reel exactly as the API returned it, carried for the transfer slot.
    *
    * Not render data — nothing below the card reads it. It exists because

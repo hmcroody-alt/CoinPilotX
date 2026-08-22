@@ -23,7 +23,7 @@
  *    source; both are honoured by absence, which is why there is no adapter for
  *    them below.
  */
-import { listReels } from "../api/reels";
+import { listReels, reelIsPlayable, reelVideoUrl } from "../api/reels";
 import { listStatuses } from "../api/status";
 import { listGroups } from "../api/groups";
 import { listSuggestedPeople } from "../api/friends";
@@ -104,6 +104,10 @@ async function buildReels(exclude?: ReadonlySet<number>): Promise<DiscoveryModul
       posterUrl: reel.poster_url || reel.media?.[0]?.thumbnail_url || null,
       authorName: reel.author?.display_name || reel.author?.name || reel.author?.username || null,
       viewCount: typeof reel.view_count === "number" ? reel.view_count : null,
+      // Resolved here so the card cannot mount a player against a reel that is
+      // still transcoding: `reelIsPlayable` is the same gate the Reels player
+      // uses, and a null result means the card shows its poster and nothing else.
+      previewVideoUrl: reelIsPlayable(reel) ? reelVideoUrl(reel) || null : null,
       // Carried, not re-fetched: the player seeds its first frame from this.
       source: reel
     });

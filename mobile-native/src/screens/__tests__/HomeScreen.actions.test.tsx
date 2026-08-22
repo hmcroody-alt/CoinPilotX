@@ -126,6 +126,15 @@ jest.mock("../../api/status", () => ({
   listStatuses: jest.fn().mockResolvedValue({ statuses: [] }),
   loadCachedStatuses: jest.fn().mockResolvedValue(null)
 }));
+// Home reaches `expo-av` transitively now, through the discovery row's preview
+// media, and `ExponentAV` is a native module that throws at require time. This
+// suite is about post actions — save, repost, follow, comment — so the mock is
+// deliberately inert: it makes the import resolve and nothing else. No preview
+// can start here regardless, because these tests never report a row viewable.
+jest.mock("expo-av", () => ({
+  ResizeMode: { COVER: "cover", CONTAIN: "contain" },
+  Video: require("react-native").View
+}));
 
 import { __clearDiscoveryFlagOverrides, __setDiscoveryFlagOverride } from "../../discovery/flags";
 import { peekSaveState, resetSavedStoreForTests } from "../../social/savedStore";

@@ -23,7 +23,14 @@ import { loadDiscoveryModules } from "../sources";
 import { __clearDiscoveryFlagOverrides, __setDiscoveryFlagOverride } from "../flags";
 import type { DiscoveryModule, DiscoveryModuleKind } from "../discoveryRows";
 
-jest.mock("../../api/reels", () => ({ listReels: jest.fn() }));
+// Only the network call is faked. `reelIsPlayable` and `reelVideoUrl` are pure
+// functions over a reel payload and are the same gate the Reels player uses —
+// stubbing them would let this suite pass while the adapter handed the card a
+// preview URL for a reel that is still transcoding.
+jest.mock("../../api/reels", () => ({
+  ...jest.requireActual("../../api/reels"),
+  listReels: jest.fn()
+}));
 jest.mock("../../api/status", () => ({ listStatuses: jest.fn() }));
 jest.mock("../../api/groups", () => ({ listGroups: jest.fn() }));
 jest.mock("../../api/friends", () => ({ listSuggestedPeople: jest.fn() }));
