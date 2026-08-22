@@ -193,7 +193,12 @@ def _ensure_alert_schema_impl(conn=None):
             # it.
             ("last_notified_value", "REAL"),
             ("repeat_mode", "TEXT DEFAULT 'progress'"),
-            ("repeat_step_percent", "REAL DEFAULT 0.25"),
+            # No column DEFAULT: NULL means "use DEFAULT_REPEAT_STEP_PERCENT".
+            # A column default would bake today's policy into every existing row
+            # at ALTER time, so changing the policy later would silently apply to
+            # new rules only. Nothing in the product writes this column, so a
+            # non-NULL value here is always an explicit operator override.
+            ("repeat_step_percent", "REAL"),
         ],
     )
     cur.execute(
@@ -269,9 +274,41 @@ def _ensure_alert_schema_impl(conn=None):
         """
     )
     conn.commit()
+    _retire_legacy_repeat_step_default(conn)
     if owns_connection:
         conn.close()
     return {"ok": True}
+
+
+def _retire_legacy_repeat_step_default(conn):
+    """Clear the short-lived ``repeat_step_percent DEFAULT 0.25``.
+
+    Environments that created the column while it still carried that default had
+    every row backfilled with a materiality floor no user ever chose and no UI or
+    API can set — the very gate that kept small qualifying moves silent. Resetting
+    those rows to NULL hands them back to ``DEFAULT_REPEAT_STEP_PERCENT``.
+
+    Idempotent, and narrow enough that any other value (a deliberate operator
+    override) survives untouched. Runs after the schema DDL has been committed
+    and rolls itself back on failure: on PostgreSQL a failed statement aborts the
+    surrounding transaction, so a swallowed error here would otherwise take every
+    later statement down with it.
+    """
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE alert_rules SET repeat_step_percent=NULL WHERE repeat_step_percent=0.25"
+        )
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logging.warning(
+            "alert_rules.repeat_step_percent legacy default could not be cleared.",
+            exc_info=True,
+        )
 
 
 def _normalize_symbol(symbol):
@@ -1094,7 +1131,28 @@ STATE_LATCHED = "latched"
 REPEAT_MODE_PROGRESS = "progress"
 REPEAT_MODE_ONCE = "once"
 DEFAULT_REPEAT_MODE = os.getenv("ALERT_DEFAULT_REPEAT_MODE", REPEAT_MODE_PROGRESS).strip().lower()
-DEFAULT_REPEAT_STEP_PERCENT = float(os.getenv("ALERT_DEFAULT_REPEAT_STEP_PERCENT", "0.25"))
+
+#: Minimum move, as a percent of the last notified value, before a latched rule
+#: speaks again. ``0`` (the default) means *any* strictly-further move is news.
+#:
+#: This was briefly 0.25, which reads as a sensible noise filter but is not what
+#: a price alert promises: at BTC ~$100,000 it silently demanded a ~$250 move, so
+#: a user watching a threshold got nothing for a $1, $10 or $100 climb. The
+#: anti-duplicate guarantee does not depend on this number — it comes from
+#: ``_repeat_is_further`` requiring the value to be *strictly* further than the
+#: one already notified, so re-observing an identical price is silent at any
+#: setting. Operators who want a noise floor back can set it per environment.
+DEFAULT_REPEAT_STEP_PERCENT = float(os.getenv("ALERT_DEFAULT_REPEAT_STEP_PERCENT", "0"))
+
+#: Floor between two *repeat* notifications on one latched rule, in seconds.
+#:
+#: Deliberately separate from the per-rule ``cooldown_seconds``. That column is
+#: user-facing and is set to 600-900s on live rules, where it means "do not
+#: re-notify me every time this threshold is re-crossed" — a rate limit on
+#: *crossings*. Reusing it for repeats made a 15-minute window swallow every
+#: qualifying move in between, which is the behaviour this default exists to
+#: avoid. ``0`` leaves the worker poll interval as the natural rate limit.
+DEFAULT_REPEAT_MIN_SECONDS = max(0, int(os.getenv("ALERT_REPEAT_MIN_SECONDS", "0")))
 
 
 def _repeat_is_further(condition, value, reference):
@@ -1118,15 +1176,16 @@ def _repeat_is_further(condition, value, reference):
 def alert_repeat_progressed(condition, value, last_notified, step_percent):
     """Does ``value`` justify a repeat notification after ``last_notified``?
 
-    Two guards, both required. Direction (``_repeat_is_further``) stops the
-    alert from narrating a retreat back toward the threshold. Magnitude stops
-    quote noise: the move must be at least ``step_percent`` of the previously
-    notified value, so a tick from $61,500.00 to $61,500.40 is silent while a
-    climb to $64,000 is not.
+    Direction (``_repeat_is_further``) is the guard that always applies: it stops
+    the alert from narrating a retreat back toward the threshold, and — because
+    it demands *strictly* further — it is also what makes re-observing an
+    already-notified value silent. That is the anti-duplicate rule.
 
-    ``step_percent`` is measured relative to ``last_notified`` because these are
-    prices spanning many orders of magnitude — 0.25% means the same thing for a
-    $0.42 altcoin and a $61,000 BTC, where a fixed dollar step would not.
+    ``step_percent`` is an optional noise floor on top, ``0`` by default, in
+    which case every strictly-further value qualifies. When set it is measured
+    relative to ``last_notified`` because these are prices spanning many orders
+    of magnitude, so a percentage means the same thing for a $0.42 altcoin and a
+    $61,000 BTC where a fixed dollar step would not.
     """
     if last_notified is None:
         return False
@@ -1139,7 +1198,8 @@ def alert_repeat_progressed(condition, value, last_notified, step_percent):
     if not _repeat_is_further(condition, value, last_notified):
         return False
     if step_percent <= 0:
-        # Any further movement qualifies; the cooldown remains the rate limit.
+        # No noise floor configured: any strictly-further value is a new
+        # observation and therefore news.
         return True
     magnitude = abs(value - last_notified)
     scale = abs(last_notified)
@@ -1285,11 +1345,17 @@ def evaluate_alert_rule(rule):
         observation, so creating "BTC above $61,000" while BTC already trades at
         $64,446 no longer produces an immediate, self-perpetuating alert.
       * ``armed`` + condition true  -> a real crossing: fire exactly once, latch.
-      * ``latched`` + condition true -> still in region: stay silent.
+      * ``latched`` + condition true -> still in region: notify again on every
+        value strictly further into the breach than the last notified one, and
+        stay silent on anything else (a repeat of the same observation, or a
+        retreat back toward the threshold).
       * condition false             -> re-arm, ready for the next crossing.
 
-    Cooldown is retained on top of the latch as a rate limit for rules that
-    oscillate rapidly across the threshold; it is no longer the only guard.
+    The per-rule ``cooldown_seconds`` rate limits *crossings*, not the repeats
+    above: it stops a rule that oscillates across its threshold from notifying on
+    every flap. Repeats are bounded by ``DEFAULT_REPEAT_MIN_SECONDS`` (0 by
+    default) because their duplicate protection is a value comparison, not a
+    timer.
     """
     if not rule:
         return {"ok": False, "triggered": False, "message": "Alert rule missing."}
@@ -1324,10 +1390,17 @@ def evaluate_alert_rule(rule):
 
     if previous_state == STATE_LATCHED:
         # Still inside the breached region. The rule stays active and keeps
-        # monitoring: a latched rule is not a finished rule. It speaks again
-        # only when the market has moved materially further in, and only once
-        # the cooldown has lapsed — that pair is what separates "the alert keeps
-        # working" from the stuck banner this latch was introduced to kill.
+        # monitoring: a latched rule is not a finished rule. It speaks again on
+        # every observation that is strictly further into the breach than the
+        # value the user was last notified about.
+        #
+        # "Strictly further than the last *notified* value" is the whole
+        # anti-duplicate mechanism, and it is a comparison rather than a timer:
+        # re-observing a price that has already been reported is silent no matter
+        # how often the worker polls or how many workers poll at once, while any
+        # genuinely new value is news. Rate limiting is deliberately not doing
+        # this job — a time window cannot tell a repeated observation apart from
+        # a real move, so it suppresses both.
         repeat_mode = str(rule.get("repeat_mode") or DEFAULT_REPEAT_MODE).strip().lower()
         if repeat_mode == REPEAT_MODE_ONCE:
             return {
@@ -1365,18 +1438,19 @@ def evaluate_alert_rule(rule):
                 "state": STATE_LATCHED,
                 "message": "Condition still met, but the value has not moved materially further since the last notification.",
             }
-        last_triggered = _parse_dt(rule.get("last_triggered_at"))
-        cooldown = int(rule.get("cooldown_seconds") or DEFAULT_COOLDOWN_SECONDS)
-        if last_triggered and _utcnow() - last_triggered < timedelta(seconds=cooldown):
-            return {
-                "ok": True,
-                "triggered": False,
-                "latched": True,
-                "cooldown": True,
-                "observed_value": value,
-                "state": STATE_LATCHED,
-                "message": f"Value moved further, skipped because alert is cooling down for {cooldown} seconds.",
-            }
+        repeat_min = DEFAULT_REPEAT_MIN_SECONDS
+        if repeat_min > 0:
+            last_triggered = _parse_dt(rule.get("last_triggered_at"))
+            if last_triggered and _utcnow() - last_triggered < timedelta(seconds=repeat_min):
+                return {
+                    "ok": True,
+                    "triggered": False,
+                    "latched": True,
+                    "cooldown": True,
+                    "observed_value": value,
+                    "state": STATE_LATCHED,
+                    "message": f"Value moved further, skipped because repeats are rate limited to one per {repeat_min} seconds.",
+                }
         repeat_seq = _claim_repeat(rule["id"], value, rule.get("trigger_seq"))
         if repeat_seq is None:
             return {

@@ -27,6 +27,7 @@ Run directly (no pytest required):
 
 from __future__ import annotations
 
+import functools
 import os
 import sys
 import tempfile
@@ -175,6 +176,30 @@ def rule_state(rule_id):
     return str(_load_rule(rule_id).get("condition_state") or "")
 
 
+def own_db(fn):
+    """Pin this file to its own database for the duration of one test.
+
+    `services.db` resolves DATABASE_URL lazily on every connection and
+    `ensure_alert_schema` memoises readiness in a process global, while pytest
+    imports every selected module during collection. So without this the module
+    imported last decides where *all* the alert test files read and write, and
+    the earlier ones find their tables missing. Clearing the readiness flag is
+    the other half: the flag is global but the database it refers to is not.
+    """
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        os.environ["DATABASE_URL"] = "sqlite:///" + _TMP_DB
+        alert_engine._ALERT_SCHEMA_READY = False
+        # Re-install this file's stubs too: they are module attributes on
+        # alert_engine, so the neighbouring alert test file overwrote them when
+        # pytest imported it.
+        alert_engine.current_observed_value = _fake_observed_value
+        alert_engine.dispatch_alert_event = _fake_dispatch
+        alert_engine.ensure_alert_schema()
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 FAILURES: list[str] = []
 
 
@@ -199,6 +224,7 @@ def check(condition, message):
 # Tests
 # --------------------------------------------------------------------------
 
+@own_db
 def test_first_observation_arms_without_firing():
     """A rule created while the market is already past the threshold must not
     fire. This is the exact shape of the reported defect: "BTC above $61,000"
@@ -215,6 +241,7 @@ def test_first_observation_arms_without_firing():
     check(len(DISPATCHED) == 0, "no notification dispatched on arming")
 
 
+@own_db
 def test_one_crossing_sends_exactly_one_notification():
     DISPATCHED.clear()
     rule_id = make_rule(condition="above", threshold=61000.0)
@@ -234,16 +261,20 @@ def test_one_crossing_sends_exactly_one_notification():
     )
 
 
+@own_db
 def test_flat_price_past_threshold_never_refires():
-    """The stuck-banner bug: sitting past the threshold is not news.
+    """The stuck-banner bug, for a rule with a materiality floor configured.
 
-    The guard is now about *materiality* rather than "never again". Observations
-    that hold the price flat, or nudge it by less than the repeat step, must
-    stay silent no matter how many cycles run or how long the cooldown has been
-    clear — that is what made the old banner feel like it never went away.
+    ``repeat_step_percent`` is opt-in noise suppression (the default is 0, i.e.
+    every strictly-further value notifies — see
+    ``test_every_further_move_notifies_by_default``). This test covers the
+    deployment that *does* set a floor: observations holding the price flat, or
+    nudging it by less than the step, must stay silent no matter how many cycles
+    run or how long the cooldown has been clear.
     """
     DISPATCHED.clear()
     rule_id = make_rule(condition="above", threshold=61000.0)
+    set_rule_columns(rule_id, repeat_step_percent=0.25)
     set_price(60000.0)
     observe(rule_id)
     set_price(61500.0)
@@ -251,7 +282,7 @@ def test_flat_price_past_threshold_never_refires():
     check(len(DISPATCHED) == 1, "baseline: one notification from the crossing")
 
     # 40 observations of noise around the notified value: ±0.05%, far under the
-    # 0.25% default step. Under the old level-triggered engine every one of
+    # configured 0.25% step. Under the old level-triggered engine every one of
     # these was a new push.
     for tick in range(40):
         set_price(61500.0 + (tick % 5) * 5.0)
@@ -264,15 +295,20 @@ def test_flat_price_past_threshold_never_refires():
     check(rule_state(rule_id) == alert_engine.STATE_LATCHED, "state stays latched")
 
 
+@own_db
 def test_material_further_move_refires_while_latched():
     """The persistent-alert requirement: a latched rule keeps working.
 
     "BTC above $61,000" that fired at $61,500 must speak again when BTC reaches
     $64,000. The alert is a standing request to be told about this threshold,
     not a one-shot that retires itself after the first notification.
+
+    Uses an explicit 0.25% step so the "immaterial move" leg below is meaningful;
+    with the shipped default of 0 every further value notifies instead.
     """
     DISPATCHED.clear()
     rule_id = make_rule(condition="above", threshold=61000.0)
+    set_rule_columns(rule_id, repeat_step_percent=0.25)
     set_price(60000.0)
     observe(rule_id)
     set_price(61500.0)
@@ -297,6 +333,62 @@ def test_material_further_move_refires_while_latched():
     check(len(DISPATCHED) == 3, "three notifications total")
 
 
+@own_db
+def test_every_further_move_notifies_by_default():
+    """The shipped default: no materiality floor, so small moves are still news.
+
+    A user who sets "BTC above $61,000" is asking to be told how this threshold
+    is developing. A $1 climb is a different fact from the one already reported,
+    so it notifies. The floor that used to suppress this
+    (``repeat_step_percent=0.25``) demanded a ~$150 move at these prices and is
+    now opt-in.
+    """
+    DISPATCHED.clear()
+    rule_id = make_rule(condition="above", threshold=61000.0)
+    set_price(60000.0)
+    observe(rule_id)
+    set_price(61500.0)
+    observe(rule_id)
+    check(len(DISPATCHED) == 1, "baseline: one notification from the crossing")
+
+    for price, expected in ((61501.0, 2), (61502.0, 3), (61503.0, 4), (61520.0, 5)):
+        set_price(price)
+        clear_cooldown(rule_id)
+        check(observe(rule_id)["triggered"], f"a further move to {price} notified")
+        check(len(DISPATCHED) == expected, f"{expected} notifications after {price}")
+
+    check(rule_state(rule_id) == alert_engine.STATE_LATCHED, "still latched, still monitoring")
+    check(
+        float(_load_rule(rule_id).get("last_notified_value") or 0) == 61520.0,
+        "the baseline tracks the most recently notified value",
+    )
+
+
+@own_db
+def test_repeated_identical_observation_never_duplicates():
+    """The anti-storm guarantee, and the reason it is a comparison not a timer.
+
+    The worker re-reads every active rule on a fixed interval, so a price that
+    simply does not move is observed over and over. Each of those is the same
+    fact already reported and must be silent — indefinitely, not merely until a
+    cooldown lapses.
+    """
+    DISPATCHED.clear()
+    rule_id = make_rule(condition="above", threshold=61000.0)
+    set_price(60000.0)
+    observe(rule_id)
+    set_price(61500.0)
+    observe(rule_id)
+    check(len(DISPATCHED) == 1, "baseline: one notification from the crossing")
+
+    for cycle in range(25):
+        clear_cooldown(rule_id)  # no time-based guard is doing this work
+        check(not observe(rule_id)["triggered"], f"identical observation {cycle} stayed silent")
+    check(len(DISPATCHED) == 1, "25 identical observations dispatched nothing")
+    check(triggered_event_count(rule_id) == 1, "still exactly one triggered event")
+
+
+@own_db
 def test_retreat_toward_threshold_does_not_refire():
     """Only movement deeper into the breach counts.
 
@@ -319,8 +411,16 @@ def test_retreat_toward_threshold_does_not_refire():
     check(len(DISPATCHED) == 1, "no notification from the retreat")
 
 
-def test_repeat_respects_cooldown():
-    """Cooldown remains the rate limit that bounds a fast-moving market."""
+@own_db
+def test_repeat_respects_configured_rate_limit():
+    """``ALERT_REPEAT_MIN_SECONDS`` still bounds a fast-moving market when set.
+
+    Repeats are rate limited by their own knob rather than by the per-rule
+    ``cooldown_seconds``. Those are different promises: ``cooldown_seconds`` is
+    user-facing and means "don't notify me on every threshold crossing", and
+    borrowing it for repeats made a 600-900s window swallow every qualifying move
+    in between. The knob ships at 0; this test proves it still works when raised.
+    """
     DISPATCHED.clear()
     rule_id = make_rule(condition="above", threshold=61000.0, cooldown=900)
     set_price(60000.0)
@@ -329,17 +429,47 @@ def test_repeat_respects_cooldown():
     observe(rule_id)
     check(len(DISPATCHED) == 1, "baseline: one notification from the crossing")
 
-    # Materially further, but the crossing just happened — cooldown holds it.
-    set_price(70000.0)
-    result = observe(rule_id)
-    check(not result["triggered"], "a material move inside the cooldown did not fire")
-    check(bool(result.get("cooldown")), "the response says why it was withheld")
-    check(len(DISPATCHED) == 1, "still one notification")
+    original = alert_engine.DEFAULT_REPEAT_MIN_SECONDS
+    alert_engine.DEFAULT_REPEAT_MIN_SECONDS = 900
+    try:
+        # Further, but the crossing just happened — the rate limit holds it.
+        set_price(70000.0)
+        result = observe(rule_id)
+        check(not result["triggered"], "a further move inside the rate limit did not fire")
+        check(bool(result.get("cooldown")), "the response says why it was withheld")
+        check(len(DISPATCHED) == 1, "still one notification")
 
-    clear_cooldown(rule_id)
-    check(observe(rule_id)["triggered"], "the same move fires once the cooldown lapses")
+        clear_cooldown(rule_id)
+        check(observe(rule_id)["triggered"], "the same move fires once the window lapses")
+    finally:
+        alert_engine.DEFAULT_REPEAT_MIN_SECONDS = original
 
 
+@own_db
+def test_user_cooldown_does_not_suppress_repeats():
+    """The regression that made alerts go quiet in production.
+
+    Live rules carry ``cooldown_seconds`` of 600-900. While repeats were gated on
+    that column, a user who asked to be told about a threshold got one
+    notification and then nothing for the next 10-15 minutes of qualifying
+    movement. The crossing cooldown must not reach into the repeat path.
+    """
+    DISPATCHED.clear()
+    rule_id = make_rule(condition="above", threshold=61000.0, cooldown=900)
+    set_price(60000.0)
+    observe(rule_id)
+    set_price(61500.0)
+    observe(rule_id)  # crossing; sets last_triggered_at to *now*
+    check(len(DISPATCHED) == 1, "baseline: one notification from the crossing")
+
+    # No clear_cooldown(): the 900s window is wide open, and these must still fire.
+    for price in (61501.0, 61502.0, 61510.0):
+        set_price(price)
+        check(observe(rule_id)["triggered"], f"{price} notified despite the 900s user cooldown")
+    check(len(DISPATCHED) == 4, "every qualifying move notified inside the cooldown window")
+
+
+@own_db
 def test_repeat_mode_once_keeps_strict_edge_trigger():
     """A rule can opt out of repeats and keep the original one-per-crossing
     behaviour, so the change is a new default rather than a removed option."""
@@ -359,6 +489,7 @@ def test_repeat_mode_once_keeps_strict_edge_trigger():
     check(len(DISPATCHED) == 1, "repeat_mode=once never re-notifies within a crossing")
 
 
+@own_db
 def test_paused_rule_stops_and_resumes_monitoring():
     """Pause / resume / delete are the user's controls over a standing alert."""
     DISPATCHED.clear()
@@ -387,6 +518,7 @@ def test_paused_rule_stops_and_resumes_monitoring():
     check(len(DISPATCHED) == 2, "delete stops monitoring permanently")
 
 
+@own_db
 def test_repeat_state_survives_a_worker_restart():
     """The repeat baseline lives in the database, not worker memory, so a
     restart mid-move cannot replay a notification the user already received."""
@@ -406,13 +538,16 @@ def test_repeat_state_survives_a_worker_restart():
         float(persisted.get("last_notified_value") or 0) == 64000.0,
         "the notified value is persisted for the next worker to read",
     )
-    # A fresh worker re-reads the row and sees the same immaterial delta.
-    set_price(64050.0)
+    # A fresh worker re-reads the row and observes the very same price again.
+    # Had the baseline lived in worker memory it would be gone, and this would
+    # replay a notification the user already received.
+    set_price(64000.0)
     clear_cooldown(rule_id)
     check(not observe(rule_id)["triggered"], "restart did not replay the repeat")
     check(len(DISPATCHED) == 2, "still two notifications after the restart")
 
 
+@own_db
 def test_clearing_threshold_rearms_and_next_crossing_fires():
     DISPATCHED.clear()
     rule_id = make_rule(condition="above", threshold=61000.0)
@@ -439,6 +574,7 @@ def test_clearing_threshold_rearms_and_next_crossing_fires():
     )
 
 
+@own_db
 def test_opposite_direction_rules_are_independent():
     DISPATCHED.clear()
     above_id = make_rule(condition="above", threshold=61000.0)
@@ -464,6 +600,7 @@ def test_opposite_direction_rules_are_independent():
     check(rule_state(below_id) == alert_engine.STATE_LATCHED, "'below' rule latched")
 
 
+@own_db
 def test_duplicate_worker_cycle_is_idempotent():
     """A duplicated worker, a retry, or a reconnect replaying the same cycle
     must not produce a second banner."""
@@ -486,6 +623,7 @@ def test_duplicate_worker_cycle_is_idempotent():
     check(triggered_event_count(rule_id) == 1, "a duplicated worker cycle recorded one event")
 
 
+@own_db
 def test_trigger_key_is_stable_not_time_bucketed():
     """The trigger key must identify the crossing, not the wall-clock window it
     happened to land in — that is what makes retries safely idempotent."""
@@ -506,6 +644,7 @@ def test_trigger_key_is_stable_not_time_bucketed():
     check(len(DISPATCHED) == 1, "replaying a recorded crossing dispatches nothing")
 
 
+@own_db
 def test_quote_failure_does_not_disturb_latch():
     """A provider blip must not re-arm a latched rule, or the next successful
     poll would fire a duplicate."""
@@ -521,11 +660,11 @@ def test_quote_failure_does_not_disturb_latch():
     observe(rule_id)
     check(rule_state(rule_id) == alert_engine.STATE_LATCHED, "quote failure leaves the latch intact")
 
-    # Recovering at essentially the notified price must not produce a second
-    # notification for the same crossing. (A recovery that lands materially
-    # higher is a real move and is covered by the repeat tests above; what is
-    # protected here is that the blip itself did not reset anything.)
-    set_price(61510.0)
+    # Recovering at the notified price must not produce a second notification for
+    # the same crossing. (A recovery that lands higher is a real move and is
+    # covered by the repeat tests above; what is protected here is that the blip
+    # itself did not reset anything.)
+    set_price(61500.0)
     clear_cooldown(rule_id)
     observe(rule_id)
     check(len(DISPATCHED) == 1, "recovery after a quote failure does not re-fire the same crossing")
@@ -537,8 +676,11 @@ TESTS = [
     test_one_crossing_sends_exactly_one_notification,
     test_flat_price_past_threshold_never_refires,
     test_material_further_move_refires_while_latched,
+    test_every_further_move_notifies_by_default,
+    test_repeated_identical_observation_never_duplicates,
     test_retreat_toward_threshold_does_not_refire,
-    test_repeat_respects_cooldown,
+    test_repeat_respects_configured_rate_limit,
+    test_user_cooldown_does_not_suppress_repeats,
     test_repeat_mode_once_keeps_strict_edge_trigger,
     test_paused_rule_stops_and_resumes_monitoring,
     test_repeat_state_survives_a_worker_restart,
