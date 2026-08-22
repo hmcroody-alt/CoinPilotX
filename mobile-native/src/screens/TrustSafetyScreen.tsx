@@ -102,7 +102,16 @@ export function TrustSafetyScreen({ navigation, route }: Props) {
         message: supportMessage.trim()
       });
       setSupportMessage("");
-      setNotice(result.message || `Support ticket #${result.ticket_id || ""} opened.`);
+      // Quote the public reference, never the internal row id: the reference is
+      // what both emails carry and what support staff can look up. Falling back
+      // to `#123` handed the user a number nobody can act on.
+      const reference = typeof result.reference === "string" ? result.reference.trim() : "";
+      setNotice(
+        result.message ||
+          (reference
+            ? `Support ticket ${reference} opened. A confirmation email will be sent.`
+            : "Support ticket opened. A confirmation email will be sent.")
+      );
       await load("refresh");
     } catch (supportError) {
       setError(supportError instanceof Error ? supportError.message : "Support ticket could not be opened.");

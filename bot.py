@@ -1449,6 +1449,74 @@ def generate_support_ticket_reference():
     return f"PS-{datetime.now().year}-{secrets.token_hex(4).upper()}"
 
 
+def insert_support_ticket_row(conn, cur, user_id, email, name, issue_type, subject, message, now, attempts=5):
+    """Insert one ticket, re-rolling the public reference if the unique index rejects it.
+
+    `reference` is the user's only handle on their request, so it carries a
+    UNIQUE index (`ux_support_tickets_reference`) — which makes a collision a
+    *failed INSERT*, not a duplicated row. 32 bits of `secrets` entropy makes
+    that vanishingly rare per ticket, but rare-per-ticket is not
+    never-across-every-ticket-forever, and unhandled it is the worst failure
+    available here: a 500 on the one form a user reaches for when everything
+    else has already gone wrong.
+
+    Returns (ticket_id, reference).
+    """
+    last_error = None
+    for _ in range(max(1, int(attempts or 1))):
+        reference = generate_support_ticket_reference()
+        try:
+            cur.execute(
+                """
+                INSERT INTO support_tickets
+                (user_id, email, name, issue_type, subject, message, status, priority, reference, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'open', 'normal', ?, ?, ?)
+                """,
+                (user_id, email, name, issue_type, subject, message, reference, now, now),
+            )
+            return int(cur.lastrowid or 0), reference
+        except Exception as exc:
+            last_error = exc
+            # A failed statement poisons the remainder of a Postgres transaction
+            # until something unwinds it. services/db.py already rolls back on
+            # our behalf, but do it explicitly so the retry is correct on either
+            # engine rather than dependent on that layer's current behaviour.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            logging.warning("SUPPORT_TICKET_INSERT_RETRY error=%s", exc.__class__.__name__)
+    raise last_error
+
+
+def send_support_ticket_emails(reference, name, email, issue_type, subject, message, user_id=0):
+    """Notify support and the submitter. Never raises — the ticket is already committed.
+
+    Both send helpers queue their own failures for retry, so ordinary delivery
+    trouble is already handled. What is not handled is an *exception* escaping
+    the email layer: it would 500 a request whose ticket is safely in the
+    database, so the user is told their request failed, never learns their
+    reference, and submits again — which is how one problem becomes three
+    tickets and the reference stops being a reliable handle for support staff.
+    """
+    try:
+        send_channel_email(
+            "support@pulsesoc.com",
+            f"PulseSoc Support Ticket {reference}: {subject}",
+            f"<p><strong>Reference:</strong> {reference}</p><p><strong>From:</strong> {clean_html(name)} &lt;{clean_html(email)}&gt;</p><p><strong>Issue:</strong> {clean_html(issue_type)}</p><p>{clean_html(message)}</p>",
+            f"Reference: {reference}\nFrom: {name} <{email}>\nIssue: {issue_type}\n\n{message}",
+            user_id=user_id or 0,
+            email_type="support_ticket",
+            channel="support",
+        )
+    except Exception as exc:
+        logging.warning("SUPPORT_TICKET_INTERNAL_EMAIL_FAILED reference=%s error=%s", reference, exc.__class__.__name__)
+    try:
+        send_support_ticket_confirmation_email(email, name, reference, issue_type, subject, user_id=user_id or 0)
+    except Exception as exc:
+        logging.warning("SUPPORT_TICKET_CONFIRMATION_EMAIL_FAILED reference=%s error=%s", reference, exc.__class__.__name__)
+
+
 def send_support_ticket_confirmation_email(to_email, name, reference, issue_type, subject, user_id=0):
     """Branded confirmation to the person who opened the ticket. Returns bool, never raises."""
     try:
@@ -1526,32 +1594,16 @@ def support_page():
         conn = db()
         cur = conn.cursor()
         now = datetime.now().isoformat()
-        reference = generate_support_ticket_reference()
-        cur.execute(
-            """
-            INSERT INTO support_tickets
-            (user_id, email, name, issue_type, subject, message, status, priority, reference, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'open', 'normal', ?, ?, ?)
-            """,
-            (account_user_id() or 0, email, name, issue_type, subject, message, reference, now, now),
+        ticket_id, reference = insert_support_ticket_row(
+            conn, cur, account_user_id() or 0, email, name, issue_type, subject, message, now
         )
-        ticket_id = cur.lastrowid
         cur.execute(
             "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_user_id, message, created_at) VALUES (?, 'user', ?, ?, ?)",
             (ticket_id, account_user_id() or 0, message, now),
         )
         conn.commit()
         conn.close()
-        send_channel_email(
-            "support@pulsesoc.com",
-            f"PulseSoc Support Ticket {reference}: {subject}",
-            f"<p><strong>Reference:</strong> {reference}</p><p><strong>From:</strong> {clean_html(name)} &lt;{clean_html(email)}&gt;</p><p><strong>Issue:</strong> {clean_html(issue_type)}</p><p>{clean_html(message)}</p>",
-            f"Reference: {reference}\nFrom: {name} <{email}>\nIssue: {issue_type}\n\n{message}",
-            user_id=account_user_id() or 0,
-            email_type="support_ticket",
-            channel="support",
-        )
-        send_support_ticket_confirmation_email(email, name, reference, issue_type, subject, user_id=account_user_id() or 0)
+        send_support_ticket_emails(reference, name, email, issue_type, subject, message, user_id=account_user_id() or 0)
         log_product_event(account_user_id() or 0, "support_ticket_created", {"issue_type": issue_type, "ticket_id": ticket_id, "reference": reference})
         return render_template(
             "support.html",
@@ -1588,32 +1640,16 @@ def api_support_ticket():
     conn = db()
     cur = conn.cursor()
     now = datetime.now().isoformat()
-    reference = generate_support_ticket_reference()
-    cur.execute(
-        """
-        INSERT INTO support_tickets
-        (user_id, email, name, issue_type, subject, message, status, priority, reference, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'open', 'normal', ?, ?, ?)
-        """,
-        ((user or {}).get("user_id") or 0, email, name, issue_type, subject, message, reference, now, now),
+    ticket_id, reference = insert_support_ticket_row(
+        conn, cur, (user or {}).get("user_id") or 0, email, name, issue_type, subject, message, now
     )
-    ticket_id = cur.lastrowid
     cur.execute(
         "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_user_id, message, created_at) VALUES (?, 'user', ?, ?, ?)",
         (ticket_id, (user or {}).get("user_id") or 0, message, now),
     )
     conn.commit()
     conn.close()
-    send_channel_email(
-        "support@pulsesoc.com",
-        f"PulseSoc Support Ticket {reference}: {subject}",
-        f"<p><strong>Reference:</strong> {reference}</p><p><strong>From:</strong> {clean_html(name)} &lt;{clean_html(email)}&gt;</p><p><strong>Issue:</strong> {clean_html(issue_type)}</p><p>{clean_html(message)}</p>",
-        f"Reference: {reference}\nFrom: {name} <{email}>\nIssue: {issue_type}\n\n{message}",
-        user_id=(user or {}).get("user_id") or 0,
-        email_type="support_ticket",
-        channel="support",
-    )
-    send_support_ticket_confirmation_email(email, name, reference, issue_type, subject, user_id=(user or {}).get("user_id") or 0)
+    send_support_ticket_emails(reference, name, email, issue_type, subject, message, user_id=(user or {}).get("user_id") or 0)
     log_product_event((user or {}).get("user_id") or 0, "support_ticket_created", {"issue_type": issue_type, "ticket_id": ticket_id, "reference": reference})
     return jsonify({"ok": True, "ticket_id": ticket_id, "reference": reference, "message": f"Support ticket {reference} opened. A confirmation email will be sent to {email}."})
 
@@ -27419,7 +27455,10 @@ def admin_support_page():
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT id, email, name, issue_type, subject, status, priority, created_at FROM support_tickets ORDER BY id DESC LIMIT 150")
+    # `reference` is what the user quotes and what both notification emails carry,
+    # so it has to be visible here or support staff cannot match an inbound
+    # "PS-2026-..." to a row.
+    cur.execute("SELECT id, reference, email, name, issue_type, subject, status, priority, created_at FROM support_tickets ORDER BY id DESC LIMIT 150")
     rows = [dict(row) for row in cur.fetchall()]
     conn.close()
     quick_reply = f"""
@@ -27435,7 +27474,7 @@ def admin_support_page():
       </form>
     </div>
     """
-    body = f"<h1>Support Center</h1>{quick_reply}<div class='card'>{admin_rows_table(rows, [('id','ID'),('email','Email'),('name','Name'),('issue_type','Type'),('subject','Subject'),('status','Status'),('priority','Priority'),('created_at','Created')])}</div>"
+    body = f"<h1>Support Center</h1>{quick_reply}<div class='card'>{admin_rows_table(rows, [('id','ID'),('reference','Reference'),('email','Email'),('name','Name'),('issue_type','Type'),('subject','Subject'),('status','Status'),('priority','Priority'),('created_at','Created')])}</div>"
     return admin_page_html("Support", body, admin)
 
 
