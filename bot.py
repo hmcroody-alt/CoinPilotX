@@ -87720,7 +87720,37 @@ def api_payments_list_seller_orders():
     seller_orders = [dict(row) for row in cur.fetchall()]
     try:
         from services import marketplace_commercial_operations as commercial_ops
-        commercial_ops.ensure_schema(conn)
+        # `ensure_schema(conn)` used to run here, and it was stalling this route.
+        #
+        # Called with an external connection it takes the `owned=False` branch,
+        # which issues five `CREATE TABLE IF NOT EXISTS` and deliberately does
+        # *not* commit -- the caller owns the transaction. This route never
+        # commits either; it ends at `conn.close()`. Postgres has transactional
+        # DDL, so those tables were rolled back every single time. The call could
+        # not have created anything, and in production it never did: all five
+        # tables are absent from the database today.
+        #
+        # It was worse than useless. It left this connection holding an
+        # uncommitted CREATE TABLE on those names, and `economics()` below opens
+        # a *second* connection and issues the same `CREATE TABLE IF NOT EXISTS`
+        # from its own `ensure_schema()`. The second connection blocks on the
+        # first one's catalog lock -- measured against production, it waits
+        # without ever giving up (a 4s statement_timeout cancelled it, stuck on
+        # pg_type_typname_nsp_index). Meanwhile this connection cannot release
+        # anything, because it is sitting in a synchronous call waiting for that
+        # second connection to return.
+        #
+        # Postgres cannot report it as a deadlock: only the second connection is
+        # waiting on a lock; this one is waiting on Python, which the lock graph
+        # cannot see. So the request simply hung until something upstream timed
+        # out, and `economics()` then failed into the `except` below -- which is
+        # why `commercial_summary` has always come back empty.
+        #
+        # `economics()` runs its own `ensure_schema()` on its own connection,
+        # where `owned=True` and it does commit, so removing this call loses no
+        # schema guarantee. The settlement query below reads
+        # `marketplace_commercial_settlements`, which belongs to
+        # `marketplace_settlement_service.ensure_schema()` and already exists.
         # One query for every settlement, then an in-memory join.
         #
         # This used to run `SELECT ... WHERE seller_transaction_id=?` inside the
