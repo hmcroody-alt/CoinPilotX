@@ -79,6 +79,7 @@ import { PostDetailScreen } from "../screens/PostDetailScreen";
 import { ProfilePostViewerScreen } from "../screens/ProfilePostViewerScreen";
 import { PageCreateScreen } from "../screens/PageCreateScreen";
 import { PageConnectionsScreen } from "../screens/PageConnectionsScreen";
+import { PageTeamScreen } from "../screens/PageTeamScreen";
 import { PageEditScreen } from "../screens/PageEditScreen";
 import { PageScreen } from "../screens/PageScreen";
 import { PagesHubScreen } from "../screens/PagesHubScreen";
@@ -516,6 +517,7 @@ export function AppNavigator() {
       <Stack.Screen name="Page" component={PageScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.page") })} />
       <Stack.Screen name="PageCreate" component={PageCreateScreen} options={{ title: t("common:screens.createPage") }} />
       <Stack.Screen name="PageConnections" component={PageConnectionsScreen} options={{ title: t("common:screens.pageConnections") }} />
+      <Stack.Screen name="PageTeam" component={PageTeamScreen} options={{ title: t("common:screens.pageTeam") }} />
       <Stack.Screen name="PageEdit" component={PageEditScreen} options={{ title: t("common:screens.editPage") }} />
       <Stack.Screen name="PagesHub" component={PagesHubScreen} options={{ title: t("common:screens.yourPages") }} />
       <Stack.Screen name="Presence" component={PresenceHubScreen} options={{ title: t("common:screens.presence") }} />
@@ -677,6 +679,7 @@ const PRESENCE_ROUTE_SUBTITLES: Record<string, string> = {
   PageCreate: "common:navSubtitles.presenceCreate",
   PageEdit: "common:navSubtitles.presenceEdit",
   PageConnections: "common:navSubtitles.presenceConnections",
+  PageTeam: "common:navSubtitles.presenceTeam",
   Page: "common:navSubtitles.presencePublic"
 };
 

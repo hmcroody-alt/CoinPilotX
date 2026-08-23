@@ -198,6 +198,7 @@
       "createPage": "إنشاء حضور",
       "editPage": "تعديل الصفحة",
       "pageConnections": "الاتصالات",
+      "pageTeam": "الفريق والصلاحيات",
       "yourPages": "صفحاتك",
       "presence": "الحضور"
     },
@@ -216,6 +217,7 @@
       "presenceCreate": "فنان أو نشاط تجاري أو مؤسسة",
       "presenceEdit": "الاسم والمعرّف والصور وجهة الاتصال",
       "presenceConnections": "بماذا يرتبط هذا الحضور",
+      "presenceTeam": "من يمكنه التصرف باسم هذا الحضور",
       "presencePublic": "صفحة حضور"
     },
     "identity": {

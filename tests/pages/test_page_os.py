@@ -280,6 +280,125 @@ class RoleTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 410)
 
 
+class TeamViewTests(unittest.TestCase):
+    """`team_view` is the only thing a team screen should have to ask.
+
+    Six member-management functions shipped with no native caller, so nothing
+    ever exercised the question a client actually has to answer: *may I do
+    this?* A client that answers it from the role name copies the permission
+    matrix into a second place and the two drift. These tests pin the answer to
+    the same table the mutating calls read, and pin the wire field names,
+    because a renamed field here is invisible — it degrades to a blank row, not
+    to an error.
+    """
+
+    def setUp(self):
+        self.conn = make_conn()
+        self.page = create(self.conn)
+        self.page_id = self.page["id"]
+
+    def invite_and_accept(self, user_id, role):
+        invite = pulsesoc_pages.invite_member(
+            self.conn, OWNER, self.page_id, {"user_id": user_id, "role": role})
+        pulsesoc_pages.accept_invite(self.conn, user_id, invite["invite_token"])
+
+    def _member(self, view, user_id):
+        for member in view["members"]:
+            if member["user_id"] == user_id:
+                return member
+        self.fail(f"user {user_id} not in the roster")
+
+    def test_a_member_is_named_not_numbered(self):
+        # The client renders `name`/`handle`. When the server sent those and
+        # the client read `display_name`/`username`, every row silently fell
+        # through to "Member 22" — a failure no test and no type check saw.
+        view = pulsesoc_pages.team_view(self.conn, OWNER, self.page_id)
+        owner = self._member(view, OWNER)
+        self.assertEqual(owner["name"], "Roody")
+        self.assertEqual(owner["handle"], "roody")
+
+    def test_owner_may_manage_and_transfer(self):
+        view = pulsesoc_pages.team_view(self.conn, OWNER, self.page_id)
+        self.assertTrue(view["can_manage_members"])
+        self.assertTrue(view["can_transfer_ownership"])
+
+    def test_admin_may_manage_members_but_not_transfer(self):
+        self.invite_and_accept(FRIEND, "ADMIN")
+        view = pulsesoc_pages.team_view(self.conn, FRIEND, self.page_id)
+        self.assertTrue(view["can_manage_members"])
+        self.assertFalse(view["can_transfer_ownership"])
+
+    def test_analyst_sees_the_team_but_is_offered_nothing(self):
+        self.invite_and_accept(FRIEND, "ANALYST")
+        view = pulsesoc_pages.team_view(self.conn, FRIEND, self.page_id)
+        self.assertTrue(view["members"])
+        self.assertFalse(view["can_manage_members"])
+        self.assertFalse(any(m["can_change_role"] or m["can_remove"] for m in view["members"]))
+
+    def test_a_stranger_is_refused_the_roster_entirely(self):
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.team_view(self.conn, STRANGER, self.page_id)
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_the_owner_seat_is_never_offered_as_editable(self):
+        # change_role and remove_member both refuse an OWNER target with 403.
+        # Offering the control would be offering a call that cannot succeed.
+        view = pulsesoc_pages.team_view(self.conn, OWNER, self.page_id)
+        owner = self._member(view, OWNER)
+        self.assertTrue(owner["is_owner"])
+        self.assertFalse(owner["can_change_role"])
+        self.assertFalse(owner["can_remove"])
+
+    def test_ownership_is_only_offered_to_someone_who_already_accepted(self):
+        pulsesoc_pages.invite_member(
+            self.conn, OWNER, self.page_id, {"user_id": FRIEND, "role": "ADMIN"})
+        invited = self._member(pulsesoc_pages.team_view(self.conn, OWNER, self.page_id), FRIEND)
+        self.assertEqual(invited["status"], "invited")
+        self.assertFalse(invited["can_receive_ownership"])
+
+        pulsesoc_pages.accept_invite(
+            self.conn, FRIEND,
+            self.conn.execute("SELECT invite_token FROM pulse_page_members WHERE user_id=?",
+                              (FRIEND,)).fetchone()[0])
+        active = self._member(pulsesoc_pages.team_view(self.conn, OWNER, self.page_id), FRIEND)
+        self.assertTrue(active["can_receive_ownership"])
+
+    def test_you_are_marked_so_the_screen_can_say_so(self):
+        self.invite_and_accept(FRIEND, "ADMIN")
+        view = pulsesoc_pages.team_view(self.conn, FRIEND, self.page_id)
+        self.assertTrue(self._member(view, FRIEND)["is_you"])
+        self.assertFalse(self._member(view, OWNER)["is_you"])
+
+    def test_assignable_roles_come_from_the_server_and_exclude_owner(self):
+        # A client with its own copy of this list eventually offers a role the
+        # server rejects, or hides one it accepts.
+        view = pulsesoc_pages.team_view(self.conn, OWNER, self.page_id)
+        self.assertNotIn("OWNER", view["assignable_roles"])
+        self.assertEqual(set(view["assignable_roles"]), set(pulsesoc_pages.ASSIGNABLE_ROLES))
+
+    def test_the_confirmation_phrase_is_the_server_s_to_state(self):
+        view = pulsesoc_pages.team_view(self.conn, OWNER, self.page_id)
+        # Round-trip it: the phrase the screen would show is the phrase that works.
+        self.invite_and_accept(FRIEND, "ADMIN")
+        out = pulsesoc_pages.transfer_ownership(
+            self.conn, OWNER, self.page_id, FRIEND, view["transfer_confirm_phrase"])
+        self.assertEqual(out["owner_user_id"], FRIEND)
+
+    def test_every_offered_role_is_actually_assignable(self):
+        # Same guarantee as link_options: an offer that the mutating call
+        # refuses is worse than no offer at all.
+        self.invite_and_accept(FRIEND, "ANALYST")
+        for role in pulsesoc_pages.team_view(self.conn, OWNER, self.page_id)["assignable_roles"]:
+            pulsesoc_pages.change_role(self.conn, OWNER, self.page_id, FRIEND, role)
+            self.assertEqual(pulsesoc_pages.role_for(self.conn, FRIEND, self.page_id), role)
+
+    def test_a_removed_member_leaves_the_roster(self):
+        self.invite_and_accept(FRIEND, "MANAGER")
+        pulsesoc_pages.remove_member(self.conn, OWNER, self.page_id, FRIEND)
+        view = pulsesoc_pages.team_view(self.conn, OWNER, self.page_id)
+        self.assertNotIn(FRIEND, [m["user_id"] for m in view["members"]])
+
+
 class IdentityTests(unittest.TestCase):
     def setUp(self):
         self.conn = make_conn()

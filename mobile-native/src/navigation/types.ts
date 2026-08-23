@@ -384,6 +384,12 @@ export type RootStackParamList = {
    * "current page" to infer.
    */
   PageConnections: { pageId: number; title?: string };
+  /**
+   * Who can act for this presence. `pageId` is required because the screen
+   * asks the server what this caller may change about the team; the answer is
+   * per-page and per-role, so there is nothing to infer from a "current page".
+   */
+  PageTeam: { pageId: number; title?: string };
   /** My pages + role-gated management, linking into existing canonical systems. */
   PagesHub: { focusPageId?: number } | undefined;
   /**

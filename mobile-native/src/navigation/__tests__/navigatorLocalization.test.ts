@@ -32,10 +32,15 @@ beforeAll(async () => {
 describe("navigator header titles", () => {
   it("finds the title options it is meant to be checking", () => {
     // A refactor that changed the `options={{ title: ... }}` shape would make
-    // every assertion below vacuously pass. 110 stack screens (incl. the four
-    // Page OS routes, the Presence hub, and Watchlists + AssetDetail) + 14 tabs,
-    // plus the `title` param the header passes when opening the activity inbox.
-    expect(TITLE_OPTIONS.length).toBe(128);
+    // every assertion below vacuously pass, so the count is pinned exactly:
+    // too low means the regex stopped matching, too high means it started
+    // matching something that is not a header title.
+    //
+    // This is every `title:` in AppNavigator.tsx — not one per screen. Some
+    // screens take their title from `route.params.title`, and a few set none.
+    // Adding a screen with a title moves this by one; that is expected upkeep,
+    // and the number is the point of the check.
+    expect(TITLE_OPTIONS.length).toBe(129);
   });
 
   it("has no hardcoded string literal titles", () => {
@@ -123,6 +128,7 @@ describe("navigator chrome", () => {
       "PageConnections",
       "PageCreate",
       "PageEdit",
+      "PageTeam",
       "PagesHub",
       "Presence"
     ]);

@@ -18105,7 +18105,9 @@ def api_pulsesoc_page_members(page_id):
         if request.method == "POST":
             invite = pulsesoc_pages.invite_member(conn, user["user_id"], page_id, request.get_json(silent=True) or {})
             return jsonify({"ok": True, "invite": invite, "message": "Invite sent."})
-        return jsonify({"ok": True, "members": pulsesoc_pages.list_members(conn, user["user_id"], page_id)})
+        # `members` stays at the top level for existing callers; the rest of
+        # team_view tells the client what this caller may actually change.
+        return jsonify({"ok": True, **pulsesoc_pages.team_view(conn, user["user_id"], page_id)})
     except Exception as exc:
         return pulse_pages_error_response(exc)
     finally:

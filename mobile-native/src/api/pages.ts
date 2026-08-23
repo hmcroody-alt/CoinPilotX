@@ -123,6 +123,19 @@ export type PageMember = {
   can_receive_ownership?: boolean;
 };
 
+export type PageTeam = {
+  page_id: number;
+  role: PageRole;
+  owner_user_id: number;
+  can_manage_members: boolean;
+  can_transfer_ownership: boolean;
+  /** Server-supplied: OWNER is deliberately absent. Never hardcode this list. */
+  assignable_roles: PageRole[];
+  /** Server-supplied literal the owner must type to confirm a transfer. */
+  transfer_confirm_phrase: string;
+  members: PageMember[];
+};
+
 export type PageLink = { link_type: string; ref_id: string; created_at?: string };
 
 /**
@@ -319,6 +332,26 @@ export async function requestPageVerification(pageId: number) {
 export async function listPageMembers(pageId: number) {
   const data = await pulseApi<{ ok: boolean; members: PageMember[] }>(`/api/pages/${pageId}/members`);
   return data.members || [];
+}
+
+/**
+ * The roster plus what this caller may do to it, in one read.
+ *
+ * Same endpoint as `listPageMembers` — the server answers both questions at
+ * once so a screen never has to infer permission from a role name.
+ */
+export async function getPageTeam(pageId: number): Promise<PageTeam> {
+  const data = await pulseApi<{ ok: boolean } & PageTeam>(`/api/pages/${pageId}/members`);
+  return {
+    page_id: Number(data.page_id || pageId),
+    role: data.role,
+    owner_user_id: Number(data.owner_user_id || 0),
+    can_manage_members: Boolean(data.can_manage_members),
+    can_transfer_ownership: Boolean(data.can_transfer_ownership),
+    assignable_roles: data.assignable_roles || [],
+    transfer_confirm_phrase: data.transfer_confirm_phrase || "",
+    members: data.members || []
+  };
 }
 
 export async function invitePageMember(

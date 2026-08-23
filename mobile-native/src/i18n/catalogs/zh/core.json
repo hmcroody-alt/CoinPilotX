@@ -198,6 +198,7 @@
       "createPage": "创建公众形象",
       "editPage": "编辑主页",
       "pageConnections": "关联",
+      "pageTeam": "团队与权限",
       "yourPages": "你的页面",
       "presence": "公众形象"
     },
@@ -216,6 +217,7 @@
       "presenceCreate": "艺人、商家或组织",
       "presenceEdit": "名称、账号、图片和联系方式",
       "presenceConnections": "此主页已关联的内容",
+      "presenceTeam": "谁可以代表此主页操作",
       "presencePublic": "公众形象页面"
     },
     "identity": {

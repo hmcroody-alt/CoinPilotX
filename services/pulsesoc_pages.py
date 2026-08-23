@@ -738,6 +738,53 @@ def list_members(conn: Any, user_id: int, page_id: int) -> list[dict]:
     return out
 
 
+def team_view(conn: Any, user_id: int, page_id: int) -> dict:
+    """The roster plus what *this* caller may do to it.
+
+    `list_members` answers "who is on the team". It does not answer "may I
+    change any of this", and a client that infers the answer from the role
+    name re-implements the permission matrix in a second place, where it
+    drifts. Every flag below is derived from the same `PERMISSIONS` table the
+    mutating calls check, so a control the client renders is a call the server
+    will accept — and one it withholds is one that would have 403'd.
+
+    The per-member flags mirror `change_role` and `remove_member` exactly: the
+    owner's seat is untouchable here and moves only through
+    `transfer_ownership`. `assignable_roles` and `transfer_confirm_phrase` are
+    sent rather than hardcoded client-side for the same reason: they are
+    server facts, and a stale copy of either is a control that always fails.
+    """
+    page = _load_page(conn, page_id)
+    role = require_permission(conn, user_id, page["id"], "view_analytics")
+    can_manage = has_permission(role, "manage_members")
+    can_transfer = has_permission(role, "transfer_ownership")
+    members = []
+    for member in list_members(conn, user_id, page["id"]):
+        is_owner = member.get("role") == "OWNER"
+        is_you = _int(member.get("user_id"), 0) == _int(user_id, 0)
+        is_active = member.get("status") == "active"
+        members.append({
+            **member,
+            "is_owner": is_owner,
+            "is_you": is_you,
+            "can_change_role": bool(can_manage and not is_owner),
+            "can_remove": bool(can_manage and not is_owner),
+            # transfer_ownership refuses a target who is not already an active
+            # member, so an invited member is not yet a candidate.
+            "can_receive_ownership": bool(can_transfer and not is_owner and is_active),
+        })
+    return {
+        "page_id": int(page["id"]),
+        "role": role,
+        "owner_user_id": _int(page.get("owner_user_id"), 0),
+        "can_manage_members": can_manage,
+        "can_transfer_ownership": can_transfer,
+        "assignable_roles": list(ASSIGNABLE_ROLES),
+        "transfer_confirm_phrase": TRANSFER_CONFIRM_PHRASE,
+        "members": members,
+    }
+
+
 def invite_member(conn: Any, actor_user_id: int, page_id: int, payload: dict) -> dict:
     ensure_tables(conn)
     page = _load_page(conn, page_id)

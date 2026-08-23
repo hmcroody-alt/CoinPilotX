@@ -241,6 +241,18 @@ export function PagesHubScreen({ route, navigation }: Props) {
                 <Text style={styles.actionText}>Connections</Text>
               </Pressable>
             ) : null}
+            {/* Everyone who can load the manage view can see the roster; the
+                server decides per member whether anything is editable, so this
+                is not gated on manage_members. */}
+            {manage ? (
+              <Pressable
+                accessibilityRole="button"
+                style={styles.action}
+                onPress={() => navigation.navigate("PageTeam", { pageId: selected.id, title: selected.name })}
+              >
+                <Text style={styles.actionText}>Team &amp; access</Text>
+              </Pressable>
+            ) : null}
             {manage && BUSINESS_TYPES.has(selected.page_type) ? (
               <Pressable
                 accessibilityRole="button"
