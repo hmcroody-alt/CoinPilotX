@@ -121,6 +121,16 @@ _REGISTRY: tuple[Feature, ...] = (
             "premium.undx.credits below. Do not advertise a numeric allowance."
         ),
     ),
+    Feature(
+        "premium.crypto.advanced_alerts", "Advanced crypto alerts", BETA,
+        enforced_by="services.crypto_premium_gate.has_crypto_capability",
+        note="Conferred by the existing Premium plans; mapped in the facade's legacy readers.",
+    ),
+    Feature(
+        "premium.crypto.portfolio_intelligence", "Crypto portfolio intelligence", BETA,
+        enforced_by="services.crypto_premium_gate.has_crypto_capability",
+        note="Conferred by the existing Premium plans; mapped in the facade's legacy readers.",
+    ),
 
     # --- legacy entitlement keys that are GRANTED BUT NEVER READ -------------
     # Each of these is written to the entitlement tables on purchase and then

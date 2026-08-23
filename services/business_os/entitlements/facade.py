@@ -105,6 +105,13 @@ _LEGACY_READERS: dict[str, Callable[[Any], Optional[bool]]] = {
     "premium.identity.effects": _legacy_premium_customization,
     "premium.media.higher_quality": _legacy_has_entitlement("premium.media.higher_quality"),
     "premium.undx.advanced": _legacy_has_entitlement("premium.undx.advanced"),
+    # Crypto intelligence capabilities — same rationale as premium.identity.effects:
+    # these are conferred by the Premium plans themselves, and no per-key legacy
+    # rows exist, so legacy premium truthiness (which includes the canonical
+    # provider bridge for Apple/Google purchases) is the legacy analogue. While
+    # the flag is ``off`` an eligible Premium member still qualifies.
+    "premium.crypto.advanced_alerts": _legacy_premium_customization,
+    "premium.crypto.portfolio_intelligence": _legacy_premium_customization,
 }
 
 _legacy_module = None

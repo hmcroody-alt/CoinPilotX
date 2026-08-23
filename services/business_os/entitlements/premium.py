@@ -61,6 +61,12 @@ PREMIUM_CAPABILITIES = (
     "premium.profile.customization",
     "premium.media.higher_quality",
     "premium.undx.advanced",
+    # Crypto intelligence capabilities. Conferred by the existing Premium plans
+    # (monthly/annual/grandfathered) so Apple purchases of
+    # com.pulsesoc.premium.monthly / .annual inherit them with no new SKU.
+    # Gated through services.crypto_premium_gate.has_crypto_capability.
+    "premium.crypto.advanced_alerts",
+    "premium.crypto.portfolio_intelligence",
 )
 
 #: Plans that confer Premium membership, in the catalog's vocabulary.
