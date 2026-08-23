@@ -71,6 +71,8 @@ jest.mock("../../core/mediaPlaybackCoordinator", () => ({
 }));
 
 import { requestCallJoinToken } from "../../api/calls";
+import { stopCallTone } from "../callSignalMedia";
+import { markCallKitConnected } from "../callKitBridge";
 import { __resetCallSessionForTests, adoptCallSnapshot, beginCallSession, getCallSession } from "../callSessionStore";
 import { shouldPlayRingback } from "../callToneLifecycle";
 import { __resetCallSyncTraceForTests, readCallSyncTrace } from "../callSyncTrace";
@@ -108,6 +110,8 @@ describe("caller detects remote acceptance", () => {
     mockBackend.failWith = null;
     mockBackend.fetches.length = 0;
     (requestCallJoinToken as jest.Mock).mockClear();
+    (stopCallTone as jest.Mock).mockClear();
+    (markCallKitConnected as jest.Mock).mockClear();
   });
   afterEach(() => {
     jest.useRealTimers();
@@ -138,6 +142,20 @@ describe("caller detects remote acceptance", () => {
     await tickPoll();
 
     expect(ringbackPlaying()).toBe(false);
+    expect(stopCallTone).toHaveBeenCalledTimes(1);
+    expect(markCallKitConnected).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs signaling acceptance cleanup once when poll and media states repeat", async () => {
+    startOutgoingRingingCall();
+    mockBackend.status = "connecting";
+    await tickPoll();
+    await tickPoll();
+    mockBackend.status = "connected";
+    await tickPoll();
+
+    expect(stopCallTone).toHaveBeenCalledTimes(1);
+    expect(markCallKitConnected).toHaveBeenCalledTimes(1);
   });
 
   it("detects an acceptance that stops at 'accepted' because the media token failed", async () => {
@@ -155,7 +173,7 @@ describe("caller detects remote acceptance", () => {
     startOutgoingRingingCall();
     mockBackend.status = "connecting";
 
-    jest.advanceTimersByTime(1100);
+    jest.advanceTimersByTime(750);
     await flush();
 
     expect(getCallSession().call?.status).toBe("connecting");

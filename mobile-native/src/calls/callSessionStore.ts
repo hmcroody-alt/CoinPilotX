@@ -49,7 +49,7 @@ import { isTerminalCallStatus, shouldConnectCallMedia, shouldPlayUnavailableProm
 import { CallSyncSource, traceCallSync } from "./callSyncTrace";
 
 export const CALL_STATUS_REFRESH_MS = 4200;
-export const CALL_RINGING_STATUS_REFRESH_MS = 1100;
+export const CALL_RINGING_STATUS_REFRESH_MS = 700;
 
 /** Media-room state, exactly the shape `useAgoraCallRoom` always exposed. */
 const baseMediaState = {
@@ -128,6 +128,7 @@ let appState: AppStateStatus = AppState.currentState;
 let joinRequested = false;
 let refreshInFlight: Promise<PulseCall | null> | null = null;
 let terminalHandledFor = "";
+let remoteAcceptanceHandledFor = "";
 let mediaLeaseHeld = false;
 /** Epoch ms the current session opened; the zero point for acceptance latency. */
 let sessionOpenedAtMs = 0;
@@ -232,6 +233,7 @@ export function beginCallSession(init: CallSessionInit = {}) {
     callScreenFocused: snapshot.callScreenFocused
   };
   terminalHandledFor = "";
+  remoteAcceptanceHandledFor = "";
   joinRequested = false;
   sessionOpenedAtMs = Date.now();
   emit();
@@ -263,10 +265,27 @@ export function adoptCallSnapshot(call: PulseCall | null | undefined, source: Ca
     handleTerminalStatus(status);
     return;
   }
+  noteAuthoritativeRemoteAcceptance(status);
   ensurePolling();
   if (snapshot.sessionActive && shouldConnectCallMedia({ direction: snapshot.direction || undefined, status })) {
     ensureCallMediaConnected().catch(() => undefined);
   }
+}
+
+/**
+ * Acceptance is a signaling fact, not a media event. Stop the caller's
+ * unanswered ringback and advance its existing CallKit call as soon as the
+ * backend leaves ringing. Agora may still be connecting; it remains the same
+ * session and noteConnectedTransition owns the later media cue/timer.
+ */
+function noteAuthoritativeRemoteAcceptance(status: string) {
+  const normalized = String(status || "").toLowerCase();
+  if (snapshot.direction !== "outgoing" || !snapshot.callId) return;
+  if (!["accepted", "connecting", "connected", "active", "reconnecting"].includes(normalized)) return;
+  if (remoteAcceptanceHandledFor === snapshot.callId) return;
+  remoteAcceptanceHandledFor = snapshot.callId;
+  stopCallTone().catch(() => undefined);
+  markCallKitConnected(snapshot.callId);
 }
 
 /**
@@ -450,6 +469,7 @@ export function clearCallSession() {
   if (engine) disconnectCallMedia("session_cleared").catch(() => undefined);
   teardownSessionPlumbing();
   terminalHandledFor = "";
+  remoteAcceptanceHandledFor = "";
   snapshot = { ...initialSnapshot, supported: snapshot.supported, callScreenFocused: snapshot.callScreenFocused };
   emit();
 }
@@ -694,6 +714,7 @@ export function __resetCallSessionForTests() {
   joinRequested = false;
   refreshInFlight = null;
   terminalHandledFor = "";
+  remoteAcceptanceHandledFor = "";
   mediaLeaseHeld = false;
   appState = AppState.currentState;
   snapshot = { ...initialSnapshot };
