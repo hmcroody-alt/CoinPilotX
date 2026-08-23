@@ -122,6 +122,32 @@ _REGISTRY: tuple[Feature, ...] = (
         ),
     ),
 
+    Feature(
+        "premium.crypto.advanced_alerts", "Advanced crypto alerts", NEXT_WAVE,
+        note=(
+            "Entitlement key is registered and resolvable, but the alert engine "
+            "does not yet read it and the advanced conditions do not yet exist. "
+            "Promote to PRODUCTION in the change that adds the gate to "
+            "services.alert_engine, not before."
+        ),
+    ),
+    Feature(
+        "premium.crypto.portfolio", "Premium crypto portfolio", NEXT_WAVE,
+        note=(
+            "Entitlement key is registered. The portfolio backend exists but is "
+            "still gated by the legacy api_pro_required check and has no native "
+            "client. Promote when the gate reads this key."
+        ),
+    ),
+    Feature(
+        "premium.crypto.intelligence", "UNDX crypto intelligence", NEXT_WAVE,
+        note=(
+            "Entitlement key is registered. UNDX has no grounded crypto "
+            "portfolio/alert fact builder yet. Promote when one exists AND "
+            "reads this key. Never advertise trading or price prediction."
+        ),
+    ),
+
     # --- legacy entitlement keys that are GRANTED BUT NEVER READ -------------
     # Each of these is written to the entitlement tables on purchase and then
     # checked by nothing. They were verified unreferenced outside the legacy

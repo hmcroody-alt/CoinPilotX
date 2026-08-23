@@ -61,6 +61,15 @@ PREMIUM_CAPABILITIES = (
     "premium.profile.customization",
     "premium.media.higher_quality",
     "premium.undx.advanced",
+    # Crypto intelligence. These are capabilities of the EXISTING Premium
+    # membership, not a separate crypto product: no new plan, no new SKU. A
+    # capability added here is presented by the Status Center automatically
+    # (``premium_api._PRESENTED``), so it must also be registered in
+    # ``facade._LEGACY_READERS`` — otherwise the default ``off`` mode has no
+    # legacy opinion for the key and denies it to every paying member.
+    "premium.crypto.advanced_alerts",
+    "premium.crypto.portfolio",
+    "premium.crypto.intelligence",
 )
 
 #: Plans that confer Premium membership, in the catalog's vocabulary.

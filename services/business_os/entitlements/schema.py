@@ -69,19 +69,39 @@ _SEED_CATALOG = [
     ("pulse_premium_monthly", "premium.profile.customization", None, None),
     ("pulse_premium_monthly", "premium.media.higher_quality", None, None),
     ("pulse_premium_monthly", "premium.undx.advanced", None, None),
+    ("pulse_premium_monthly", "premium.crypto.advanced_alerts", None, None),
+    ("pulse_premium_monthly", "premium.crypto.portfolio", None, None),
+    ("pulse_premium_monthly", "premium.crypto.intelligence", None, None),
     ("pulse_premium_annual", "premium.access", None, None),
     ("pulse_premium_annual", "premium.profile.customization", None, None),
     ("pulse_premium_annual", "premium.media.higher_quality", None, None),
     ("pulse_premium_annual", "premium.undx.advanced", None, None),
+    ("pulse_premium_annual", "premium.crypto.advanced_alerts", None, None),
+    ("pulse_premium_annual", "premium.crypto.portfolio", None, None),
+    ("pulse_premium_annual", "premium.crypto.intelligence", None, None),
     ("pulse_premium_trial", "premium.access", None, None),
     ("pulse_premium_trial", "premium.profile.customization", None, None),
+    # Crypto intelligence follows MEMBERSHIP, so it is seeded on every plan that
+    # grants ``premium.access`` — including trial and business. The facade's
+    # legacy reader for these keys is premium truthiness, which is true for a
+    # trial member; omitting trial here would mean cutting over to canonical
+    # mode silently revoked a capability the member already had.
+    ("pulse_premium_trial", "premium.crypto.advanced_alerts", None, None),
+    ("pulse_premium_trial", "premium.crypto.portfolio", None, None),
+    ("pulse_premium_trial", "premium.crypto.intelligence", None, None),
     ("pulse_premium_grandfathered", "premium.access", None, None),
     ("pulse_premium_grandfathered", "premium.profile.customization", None, None),
     ("pulse_premium_grandfathered", "premium.media.higher_quality", None, None),
     ("pulse_premium_grandfathered", "premium.undx.advanced", None, None),
+    ("pulse_premium_grandfathered", "premium.crypto.advanced_alerts", None, None),
+    ("pulse_premium_grandfathered", "premium.crypto.portfolio", None, None),
+    ("pulse_premium_grandfathered", "premium.crypto.intelligence", None, None),
     # Business — a Business subscription confers Premium membership too.
     ("pulse_business_monthly", "premium.access", None, None),
     ("pulse_business_monthly", "premium.profile.customization", None, None),
+    ("pulse_business_monthly", "premium.crypto.advanced_alerts", None, None),
+    ("pulse_business_monthly", "premium.crypto.portfolio", None, None),
+    ("pulse_business_monthly", "premium.crypto.intelligence", None, None),
     ("pulse_business_monthly", "business.team_members", 10, None),
     ("pulse_business_monthly", "business.analytics.advanced", None, None),
     # Marketplace.
@@ -92,7 +112,9 @@ _SEED_CATALOG = [
     ("advertiser_standard", "advertising.analytics.advanced", None, None),
     # Creator.
     ("creator_pro_monthly", "premium.media.higher_quality", None, None),
-    # Crypto.
+    # Crypto. NOTE: ``crypto.alerts.advanced`` is read by no gate. The key the
+    # alert engine actually enforces is ``premium.crypto.advanced_alerts``
+    # above; do not wire a new gate to this lookalike.
     ("crypto_pro_monthly", "crypto.alerts.advanced", 50, "day"),
 ]
 
