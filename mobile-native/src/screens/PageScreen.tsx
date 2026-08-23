@@ -243,14 +243,81 @@ export function PageScreen({ route, navigation }: Props) {
     </View>
   );
 
+  function goManage() {
+    navigation.navigate("PagesHub", { focusPageId: page!.id });
+  }
+
+  function goConnections() {
+    navigation.navigate("PageConnections", { pageId: page!.id, title: page!.name });
+  }
+
+  function goEdit() {
+    navigation.navigate("PageEdit", { pageId: page!.id, title: page!.name });
+  }
+
+  /**
+   * An empty module, said differently depending on who is looking.
+   *
+   * A visitor is told what this page does not have and that is the end of it:
+   * there is nothing for them to do about it, and a call to action they cannot
+   * perform is noise dressed up as help.
+   *
+   * A team member gets the same sentence plus the one step that fills it,
+   * because they are the only person who can take it. "No music yet." with no
+   * route to adding music is how a page stays empty — the team sees the same
+   * dead end as a stranger and has to go hunting for the screen that fixes it.
+   *
+   * `isTeam` comes from the server's `viewer.role`, and the CTA leads to a
+   * screen that does its own per-role gating. It is not a permission check.
+   */
+  function emptyModule(
+    headline: string,
+    teamHint: string,
+    // Nullable, not just optional: some callers decide at runtime that there is
+    // no step left to offer (a shop is already connected, it simply has no
+    // listings yet) and `null` says that out loud where a bare `undefined`
+    // would read like an argument someone forgot.
+    action?: { label: string; go: () => void } | null
+  ) {
+    if (!isTeam) {
+      return <Text style={styles.empty}>{headline}</Text>;
+    }
+    return (
+      <View style={styles.aboutCard}>
+        <Text style={styles.empty}>{headline}</Text>
+        <Text style={styles.aboutMeta}>{teamHint}</Text>
+        {action ? (
+          <Pressable accessibilityRole="button" style={styles.linkCard} onPress={action.go}>
+            <Text style={styles.linkCardText}>{action.label}</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
+
   function renderTabBody(page: PulsePage) {
     if (tab === "posts" || tab === "home") {
       if (!posts.length) {
-        return <Text style={styles.empty}>No posts yet.</Text>;
+        return emptyModule(
+          "No posts yet.",
+          "Open Manage to write the first post as this presence.",
+          { label: "Open Manage", go: goManage }
+        );
       }
       return null; // posts render in the FlatList below
     }
     if (tab === "about") {
+      // `genre` is deliberately not part of this test. It is set by the page
+      // type rather than written by anyone, so a page whose only "about" is a
+      // genre has still had nothing said about it, and the team should be asked
+      // to write something.
+      if (!page.description && !page.website && !page.email && !page.location) {
+        return emptyModule(
+          "Nothing here yet.",
+          "A description, a link and a way to get in touch are what a visitor reads before deciding to follow.",
+          { label: "Edit details", go: goEdit }
+        );
+      }
       return (
         <View style={styles.aboutCard}>
           {page.description ? <Text style={styles.aboutText}>{page.description}</Text> : null}
@@ -258,9 +325,6 @@ export function PageScreen({ route, navigation }: Props) {
           {page.website ? <Text style={styles.aboutMeta}>Website: {page.website}</Text> : null}
           {page.email ? <Text style={styles.aboutMeta}>Contact: {page.email}</Text> : null}
           {page.location ? <Text style={styles.aboutMeta}>Location: {page.location}</Text> : null}
-          {!page.description && !page.website && !page.email && !page.location ? (
-            <Text style={styles.empty}>Nothing here yet.</Text>
-          ) : null}
         </View>
       );
     }
@@ -272,7 +336,11 @@ export function PageScreen({ route, navigation }: Props) {
         return moduleFailure(music.retry);
       }
       if (!music.data.length) {
-        return <Text style={styles.empty}>No music yet.</Text>;
+        return emptyModule(
+          "No music yet.",
+          "Tracks are uploaded to an artist profile. Connect the one these releases live under and they appear here.",
+          { label: "Connect an artist profile", go: goConnections }
+        );
       }
       return (
         <View>
@@ -309,18 +377,47 @@ export function PageScreen({ route, navigation }: Props) {
         return moduleFailure(shop.retry);
       }
       if (!shop.data.length) {
-        return <Text style={styles.empty}>Nothing for sale yet.</Text>;
+        return emptyModule(
+          "Nothing for sale yet.",
+          sellerId > 0
+            ? "Listings you publish in Marketplace appear here."
+            : "Connect the shop you already run and its listings appear here.",
+          // Connecting a shop is a Connections action, so it goes to
+          // Connections. Once one is connected there is nothing to offer here:
+          // the listings are created in Marketplace, which is where the seller
+          // already works, and a second door into it would be a second place to
+          // keep in sync.
+          sellerId > 0 ? null : { label: "Connect a shop", go: goConnections }
+        );
       }
       return (
         <View>
           {shop.data.map((listing) => (
             <Pressable
-              key={String(listing.listing_id || listing.id)}
+              /*
+                `listing.id` plainly, with no `|| listing.listing_id` fallback:
+                these rows come from `searchMarketplace`, which runs every item
+                through `normalizeMarketplaceListings` — that collapses the two
+                spellings into one number and drops anything that resolves to 0.
+                Re-deriving the id here would be a second, weaker copy of a rule
+                that already has one home.
+              */
+              key={String(listing.id)}
               accessibilityRole="button"
               style={styles.trackRow}
+              /*
+                Straight to the product page, carrying the listing this screen
+                already holds. This used to push `MarketplaceDetail`, which is
+                the *browse* grid: it only forwards to the product if the
+                listing happens to appear in an unfiltered 32-item search of the
+                entire marketplace, and otherwise silently drops the buyer into
+                the global marketplace. For a small artist's merch that is the
+                normal case, so tapping an item on a page reliably lost it.
+              */
               onPress={() =>
-                navigation.navigate("MarketplaceDetail", {
-                  listingId: Number(listing.listing_id || listing.id),
+                navigation.navigate("MarketplaceProduct", {
+                  listingId: listing.id,
+                  listing,
                   title: listing.title
                 })
               }
@@ -356,7 +453,11 @@ export function PageScreen({ route, navigation }: Props) {
         return moduleFailure(videos.retry);
       }
       if (!videos.data.length) {
-        return <Text style={styles.empty}>No videos yet.</Text>;
+        return emptyModule(
+          "No videos yet.",
+          "A post with a video attached shows up here. Open Manage to publish one as this presence.",
+          { label: "Open Manage", go: goManage }
+        );
       }
       return (
         <View>

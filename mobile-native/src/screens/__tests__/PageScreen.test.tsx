@@ -183,4 +183,155 @@ describe("shop and videos show the presence's own inventory, not a global list",
     );
     await waitFor(() => expect(view.queryByText("Live at the Vault")).toBeTruthy());
   });
+
+  it("opens the product itself, not a marketplace search that might not contain it", async () => {
+    mockGetPage.mockResolvedValue(
+      page({ tabs: ["posts", "merch", "about"], modules: { merch: true }, shop_seller_id: 42 })
+    );
+    const listing = { id: 5, listing_id: 5, title: "Tour Hoodie", price_label: "$40" };
+    mockSearchMarketplace.mockResolvedValue({ items: [listing] });
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("Merch")).toBeTruthy());
+    fireEvent.press(view.getByText("Merch"));
+    await waitFor(() => expect(view.queryByText("Tour Hoodie")).toBeTruthy());
+
+    fireEvent.press(view.getByText("Tour Hoodie"));
+    expect(navigation.navigate).toHaveBeenCalledWith("MarketplaceProduct", {
+      listingId: 5,
+      listing,
+      title: "Tour Hoodie"
+    });
+    // `MarketplaceDetail` is the browse grid. It forwards to the product only
+    // if the listing happens to be inside an unfiltered global search, so for a
+    // small seller it lands the buyer in the marketplace at large instead.
+    expect(navigation.navigate).not.toHaveBeenCalledWith(
+      "MarketplaceDetail",
+      expect.anything()
+    );
+  });
+});
+
+/**
+ * An empty module means two different things to two different people. To a
+ * visitor it is a fact about the page. To someone on the team it is a piece of
+ * unfinished work, and the screen knows which screen finishes it.
+ *
+ * These tests hold the line at both ends: a visitor is never shown a control
+ * they cannot use, and a team member is never shown a dead end.
+ */
+describe("empty modules read differently for the team than for a visitor", () => {
+  const team = { viewer: { role: "OWNER", following: false } };
+
+  it("tells a visitor what is missing and stops there", async () => {
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Music")).toBeTruthy());
+    fireEvent.press(view.getByText("Music"));
+    await waitFor(() => expect(view.queryByText("No music yet.")).toBeTruthy());
+    expect(view.queryByText("Connect an artist profile")).toBeNull();
+    expect(
+      view.queryByText(
+        "Tracks are uploaded to an artist profile. Connect the one these releases live under and they appear here."
+      )
+    ).toBeNull();
+  });
+
+  it("gives the team the same fact plus the step that fixes it", async () => {
+    mockGetPage.mockResolvedValue(page(team));
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("Music")).toBeTruthy());
+    fireEvent.press(view.getByText("Music"));
+    await waitFor(() => expect(view.queryByText("No music yet.")).toBeTruthy());
+
+    fireEvent.press(view.getByText("Connect an artist profile"));
+    expect(navigation.navigate).toHaveBeenCalledWith("PageConnections", {
+      pageId: 7,
+      title: "Night Signal"
+    });
+  });
+
+  it("offers the composer, not Connections, when the missing thing is a post", async () => {
+    mockGetPage.mockResolvedValue(page(team));
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("No posts yet.")).toBeTruthy());
+    fireEvent.press(view.getByText("Open Manage"));
+    expect(navigation.navigate).toHaveBeenCalledWith("PagesHub", { focusPageId: 7 });
+  });
+
+  it("sends an empty About to the editor rather than to Connections", async () => {
+    mockGetPage.mockResolvedValue(page(team));
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("About")).toBeTruthy());
+    fireEvent.press(view.getByText("About"));
+    await waitFor(() => expect(view.queryByText("Edit details")).toBeTruthy());
+    fireEvent.press(view.getByText("Edit details"));
+    expect(navigation.navigate).toHaveBeenCalledWith("PageEdit", {
+      pageId: 7,
+      title: "Night Signal"
+    });
+  });
+
+  it("does not call a page with details written on it empty", async () => {
+    mockGetPage.mockResolvedValue(page({ ...team, description: "Synth duo from Leeds." }));
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("About")).toBeTruthy());
+    fireEvent.press(view.getByText("About"));
+    await waitFor(() => expect(view.queryByText("Synth duo from Leeds.")).toBeTruthy());
+    expect(view.queryByText("Edit details")).toBeNull();
+  });
+
+  it("does not count a genre as something written about the page", async () => {
+    // `genre` comes from the page type, not from a person. A page whose only
+    // "about" is a genre has still had nothing said about it.
+    mockGetPage.mockResolvedValue(page({ ...team, genre: "Synthwave" }));
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("About")).toBeTruthy());
+    fireEvent.press(view.getByText("About"));
+    await waitFor(() => expect(view.queryByText("Nothing here yet.")).toBeTruthy());
+    expect(view.queryByText("Edit details")).toBeTruthy();
+  });
+
+  it("points an empty Videos tab at Manage, where a video post is written", async () => {
+    mockGetPage.mockResolvedValue(
+      page({ ...team, tabs: ["posts", "videos", "about"], modules: { videos: true } })
+    );
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("Videos")).toBeTruthy());
+    fireEvent.press(view.getByText("Videos"));
+    await waitFor(() => expect(view.queryByText("No videos yet.")).toBeTruthy());
+
+    fireEvent.press(view.getByText("Open Manage"));
+    expect(navigation.navigate).toHaveBeenCalledWith("PagesHub", { focusPageId: 7 });
+    expect(navigation.navigate).not.toHaveBeenCalledWith("PageConnections", expect.anything());
+  });
+
+  it("stops offering to connect a shop once one is connected", async () => {
+    mockGetPage.mockResolvedValue(
+      page({ ...team, tabs: ["posts", "merch", "about"], modules: { merch: true }, shop_seller_id: 42 })
+    );
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Merch")).toBeTruthy());
+    fireEvent.press(view.getByText("Merch"));
+    await waitFor(() => expect(view.queryByText("Nothing for sale yet.")).toBeTruthy());
+    // The shop exists and is simply empty. Listings are created in Marketplace,
+    // so there is no step to offer here.
+    expect(view.queryByText("Connect a shop")).toBeNull();
+    expect(view.queryByText("Listings you publish in Marketplace appear here.")).toBeTruthy();
+  });
+
+  it("offers to connect a shop when there is no seller behind the tab", async () => {
+    mockGetPage.mockResolvedValue(
+      page({ ...team, tabs: ["posts", "merch", "about"], modules: { merch: true } })
+    );
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("Merch")).toBeTruthy());
+    fireEvent.press(view.getByText("Merch"));
+    await waitFor(() => expect(view.queryByText("Connect a shop")).toBeTruthy());
+    expect(view.queryByText("Listings you publish in Marketplace appear here.")).toBeNull();
+
+    fireEvent.press(view.getByText("Connect a shop"));
+    expect(navigation.navigate).toHaveBeenCalledWith("PageConnections", {
+      pageId: 7,
+      title: "Night Signal"
+    });
+  });
 });
