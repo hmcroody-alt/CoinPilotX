@@ -87,7 +87,7 @@ export async function exportVideoMusicMix(
   settings: VideoMixSettings,
   startOffsetSeconds: number
 ) {
-  if (!isPulseVideoMixerSupported) throw new Error("Install a fresh native iOS build to mix music into video.");
+  if (!isPulseVideoMixerSupported) throw new Error("Update the app to mix music into video.");
   return mixVideoWithMusic({
     videoUri,
     musicUri: source.audioUrl,

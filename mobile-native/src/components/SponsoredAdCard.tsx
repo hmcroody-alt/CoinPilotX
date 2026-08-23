@@ -31,7 +31,7 @@ function openDestination(navigation: SponsoredAdCardProps["navigation"], url: st
     return;
   }
   if (/^https?:\/\//i.test(target)) {
-    Alert.alert("Sponsor destination recorded", "PulseSoc recorded this sponsored signal. External sponsor destinations stay inside native review boundaries until approved.");
+    Alert.alert("Sponsor destination recorded", "PulseSoc recorded your tap. This ad points to a site outside PulseSoc, and the app does not open those yet.");
   }
 }
 

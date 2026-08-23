@@ -101,7 +101,7 @@ export async function openPremiumHub() {
     ok: false,
     path: "/pulse/premium",
     status: "native_provider_boundary",
-    message: "Premium remains inside the native Premium Center for App Review."
+    message: "Premium is handled in the PulseSoc Premium Center in the app."
   };
 }
 
@@ -208,7 +208,7 @@ async function openPremiumUrl(url: string) {
     ok: false,
     target,
     status: "native_provider_boundary",
-    message: "Payment provider URL received; native App Store purchase handling must complete this flow before release."
+    message: "Payment link received. App Store purchasing in the app must complete this flow before release."
   };
 }
 

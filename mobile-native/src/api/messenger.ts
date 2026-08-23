@@ -958,7 +958,7 @@ export async function uploadMessengerMedia(input: {
   durationSeconds?: number;
 }) {
   if (input.conversationId === PULSE_AI_CONVERSATION_ID) {
-    throw new PulseApiError("UNDX supports text conversation in native chat right now. Remove the attachment and send a message.", 400, "pulse_ai_text_only");
+    throw new PulseApiError("UNDX can chat by text right now. Remove the attachment and send a message.", 400, "pulse_ai_text_only");
   }
   const mimeType = messengerFoundationMimeType(input.mimeType, input.name, input.voice);
   const mediaType = messengerFoundationMediaType(input.name, mimeType, input.voice);

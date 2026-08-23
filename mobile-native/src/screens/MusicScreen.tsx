@@ -382,7 +382,7 @@ export function MusicScreen({ route, navigation }: Props) {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={radio.status === "playing" ? "Pause PulseSoc Radio" : radio.userWantsPlayback && radio.interruptedBy ? "Keep PulseSoc Radio paused" : "Play PulseSoc Radio"}
-                accessibilityHint={radio.userWantsPlayback && radio.interruptedBy ? "Prevents PulseSoc Radio from resuming after active audio ends." : "PulseSoc Radio continues across native screens after playback starts."}
+                accessibilityHint={radio.userWantsPlayback && radio.interruptedBy ? "Prevents PulseSoc Radio from resuming after active audio ends." : "PulseSoc Radio keeps playing as you move around the app."}
                 style={styles.radioCard}
                 onPress={() => togglePulseRadio().catch((error) => setMessage(error instanceof Error ? error.message : "Pulse Radio could not start."))}
               >

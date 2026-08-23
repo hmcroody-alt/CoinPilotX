@@ -54,12 +54,12 @@ export type OpenSourceDependency = {
  */
 export const OPEN_SOURCE_DEPENDENCIES: OpenSourceDependency[] = [
   { name: "React", version: "19.1.0", license: "MIT", purpose: "UI runtime and component model." },
-  { name: "React Native", version: "0.81.5", license: "MIT", purpose: "Native rendering and platform bridge." },
-  { name: "Expo", version: "54.0.36", license: "MIT", purpose: "Native module suite, build tooling, and updates." },
+  { name: "React Native", version: "0.81.5", license: "MIT", purpose: "Draws the app's interface on your phone." },
+  { name: "Expo", version: "54.0.36", license: "MIT", purpose: "Device features, build tooling, and app updates." },
   { name: "React Navigation", version: "6.1.18", license: "MIT", purpose: "Stack and tab navigation." },
   { name: "@react-native-async-storage/async-storage", version: "2.2.0", license: "MIT", purpose: "On-device cache and preference snapshots." },
-  { name: "react-native-gesture-handler", version: "2.28.0", license: "MIT", purpose: "Native gesture recognition." },
-  { name: "react-native-screens", version: "4.16.0", license: "MIT", purpose: "Native screen containers for navigation." },
+  { name: "react-native-gesture-handler", version: "2.28.0", license: "MIT", purpose: "Recognises taps, swipes, and other gestures." },
+  { name: "react-native-screens", version: "4.16.0", license: "MIT", purpose: "Screen containers used when you move between screens." },
   { name: "react-native-safe-area-context", version: "5.6.2", license: "MIT", purpose: "Safe-area insets across notches and home bars." },
   { name: "react-native-svg", version: "15.12.1", license: "MIT", purpose: "Vector drawing." },
   { name: "react-native-qrcode-svg", version: "6.3.21", license: "MIT", purpose: "Profile and share QR codes." },

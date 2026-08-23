@@ -202,7 +202,7 @@ export function FeedComposer({ visible, onClose, onCreated }: Props) {
           />
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
-          <Text style={styles.fallbackNote}>Advanced composer options remain available in PulseSoc web until native parity is ready.</Text>
+          <Text style={styles.fallbackNote}>Some advanced posting options are only on the PulseSoc website for now.</Text>
         </ScrollView>
       </View>
     </Modal>

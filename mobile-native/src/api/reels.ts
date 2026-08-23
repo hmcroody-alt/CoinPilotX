@@ -345,14 +345,14 @@ export async function followReelCreator(reelId: number) {
   });
 }
 
-export async function reportReel(reelId: number, reason = "reported from native Reels") {
+export async function reportReel(reelId: number, reason = "reported from Reels in the app") {
   return pulseApi<{ ok?: boolean; report_id?: number; message?: string }>("/api/pulse/report", {
     method: "POST",
     body: JSON.stringify({ target_type: "reel", target_id: reelId, reason })
   });
 }
 
-export async function reportReelComment(commentId: number, reason = "reported from native Reels") {
+export async function reportReelComment(commentId: number, reason = "reported from Reels in the app") {
   return pulseApi<{ ok?: boolean; report_id?: number; message?: string }>("/api/pulse/report", {
     method: "POST",
     body: JSON.stringify({ target_type: "reel_comment", target_id: commentId, reason })

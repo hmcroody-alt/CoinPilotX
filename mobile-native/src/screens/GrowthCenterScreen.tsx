@@ -115,7 +115,7 @@ export function GrowthCenterScreen({ route, navigation }: Props) {
           <View style={styles.heroCopy}>
             <Text style={styles.eyebrow}>Growth score</Text>
             <Text style={styles.score}>{growth.growth_score || "Learning"}</Text>
-            <Text style={styles.muted}>Premium: {premiumStateLabel(premium)}. Growth eligibility, promotion readiness, targeting, and billing remain backend-controlled.</Text>
+            <Text style={styles.muted}>Premium: {premiumStateLabel(premium)}. PulseSoc decides growth eligibility, promotion readiness, targeting, and billing.</Text>
           </View>
           <View style={styles.statusPill}>
             <Text style={styles.statusPillText}>{account.status || "ready"}</Text>
@@ -152,7 +152,7 @@ export function GrowthCenterScreen({ route, navigation }: Props) {
             {audience.slice(0, 12).map((item) => <Text key={item} style={styles.chip}>{item.replace(/[_-]/g, " ")}</Text>)}
           </View>
         ) : (
-          <Text style={styles.muted}>Audience categories will appear when the Growth backend returns them.</Text>
+          <Text style={styles.muted}>Audience categories will appear once PulseSoc Growth has some to show.</Text>
         )}
       </Panel>
 
@@ -161,7 +161,7 @@ export function GrowthCenterScreen({ route, navigation }: Props) {
         {modules.length ? modules.slice(0, 8).map((item) => (
           <View key={item} style={styles.row}>
             <Text style={styles.rowTitle}>{item.replace(/[_-]/g, " ")}</Text>
-            <Text style={styles.muted}>Managed by PulseSoc Growth backend.</Text>
+            <Text style={styles.muted}>Managed by PulseSoc Growth.</Text>
           </View>
         )) : <Text style={styles.muted}>No growth modules returned yet.</Text>}
       </Panel>
@@ -176,7 +176,7 @@ export function GrowthCenterScreen({ route, navigation }: Props) {
 
       <Panel>
         <Text style={styles.sectionTitle}>Recommendations</Text>
-        {recommendations.length ? recommendations.map((item) => <Text key={item} style={styles.recommendation}>{item}</Text>) : <Text style={styles.muted}>Growth recommendations appear after the backend has enough account state.</Text>}
+        {recommendations.length ? recommendations.map((item) => <Text key={item} style={styles.recommendation}>{item}</Text>) : <Text style={styles.muted}>Growth recommendations appear once PulseSoc knows enough about your account.</Text>}
       </Panel>
 
       <Panel>

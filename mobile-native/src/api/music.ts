@@ -187,7 +187,7 @@ export async function recordPulseMusicEvent(trackId: string, eventType: "play" |
   });
 }
 
-export async function reportPulseMusic(trackId: string, reason = "rights concern", details = "Reported from native PulseSoc Music.") {
+export async function reportPulseMusic(trackId: string, reason = "rights concern", details = "Reported from PulseSoc Music in the app.") {
   return pulseApi<{ ok?: boolean; message?: string }>(`/api/pulse/music/${encodeURIComponent(trackId)}/report`, {
     method: "POST",
     body: JSON.stringify({ reason, details })

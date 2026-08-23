@@ -293,7 +293,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         <View style={styles.hero}>
           <Text style={styles.kicker}>Marketplace Command</Text>
           <Text style={styles.heroTitle}>Storefront readiness</Text>
-          <Text style={styles.heroCopy}>Seller approval, product review, payment, payout, trust, and fulfillment decisions remain server-authoritative.</Text>
+          <Text style={styles.heroCopy}>PulseSoc reviews and decides seller approval, product listings, payments, payouts, trust, and fulfillment.</Text>
         </View>
         <View style={styles.metricGrid}>
           <Metric label="Listings loaded" value={String(listings.length)} />
@@ -438,7 +438,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
                 <Text style={styles.dangerText}>{busy === `delete:${editingListing.id}` ? "Removing..." : "Remove"}</Text>
               </Pressable>
             </View>
-            <Text style={styles.meta}>Updates are saved server-side and re-enter marketplace review when content changes. Checkout, payouts, fulfillment, disputes, and provider actions stay inside native provider boundaries.</Text>
+            <Text style={styles.meta}>Your changes are saved to PulseSoc, and editing the content sends the listing back for marketplace review. Checkout, payouts, fulfillment, disputes, and payment partner actions are handled on the PulseSoc website, not here.</Text>
           </View>
         ) : null}
       </Panel>
@@ -447,7 +447,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       {shows("media") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Product media gallery</Text>
-        <Text style={styles.copy}>The gallery reuses marketplace media payloads and the shared native media viewer. Unsupported media falls back safely inside the viewer.</Text>
+        <Text style={styles.copy}>This gallery shows your marketplace photos and video in the shared media viewer. If a file cannot be shown, the viewer offers a way to open it from its source.</Text>
         <View style={styles.mediaGrid}>
           {mediaItems.slice(0, 8).map((item, index) => (
             <Pressable
@@ -522,7 +522,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
             <Text style={styles.secondaryText}>Premium</Text>
           </Pressable>
         </View>
-        <Text style={styles.copy}>Advanced tax forms, bank onboarding, disputes, refunds, fulfillment, and admin review stay on safe web/provider flows until native QA gates are ready.</Text>
+        <Text style={styles.copy}>Tax forms, bank setup, disputes, refunds, fulfillment, and PulseSoc review are handled on the PulseSoc website for now, not in the app.</Text>
       </Panel>
       ) : null}
 

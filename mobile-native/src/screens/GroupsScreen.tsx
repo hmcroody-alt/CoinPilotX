@@ -345,7 +345,7 @@ export function GroupsScreen({ route, navigation }: Props) {
               {!rooms.length ? (
                 <PulseCommandPanel style={styles.roomEmpty}>
                   <Text style={styles.roomTitle}>No room signals</Text>
-                  <Text style={styles.roomText}>Rooms appear here when the existing backend returns them.</Text>
+                  <Text style={styles.roomText}>Rooms you can join will appear here.</Text>
                 </PulseCommandPanel>
               ) : null}
             </ScrollView>
@@ -462,7 +462,7 @@ function CommunityCreateSheet({ kind, onClose, onCreated }: {
             <View style={styles.actionRow}>{(["public", "private"] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: privacy === value }} style={[styles.sectionChip, privacy === value && styles.sectionChipActive]} onPress={() => setPrivacy(value)}><Text style={[styles.sectionChipText, privacy === value && styles.sectionChipTextActive]}>{value === "public" ? "Public" : "Private"}</Text></Pressable>)}</View>
             <Text style={styles.inputLabel}>Optional invite Pulse IDs</Text>
             <TextInput accessibilityLabel="Optional invite Pulse IDs" value={inviteIds} onChangeText={setInviteIds} placeholder="Numeric IDs, separated by commas" placeholderTextColor={colors.muted} style={styles.input} keyboardType="numbers-and-punctuation" />
-            <Text style={styles.helperText}>Invites are server-authorized. Private rooms are visible only to invited participants.</Text>
+            <Text style={styles.helperText}>Only people you invite can join. Private rooms are visible only to invited participants.</Text>
             {error ? <Text style={styles.error}>{error}</Text> : null}
             <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} disabled={busy} style={styles.primaryButton} onPress={() => submit()}><Text style={styles.primaryText}>{busy ? "Working…" : label}</Text></Pressable>
           </ScrollView>
@@ -608,7 +608,7 @@ function GroupDetailSectionView({ group, section, onDelete, onArchive, onMemberA
   if (section === "invitations") return <GroupInvitations group={group} />;
   if (section === "media") return <GroupAssets title="Media" assets={group.media || []} emptyTitle="No indexed group media" emptyBody="Photos and videos shared in this group appear here, including anything attached to group posts." />;
   if (section === "files") return <GroupAssets title="Files" assets={group.files || []} emptyTitle="No group files yet" emptyBody="Files shared in chat are not listed here. This app does not read private chat history to build a file list." />;
-  if (section === "links") return <GroupAssets title="Links" assets={group.links || []} emptyTitle="No shared links yet" emptyBody="Link indexing is not exposed to native yet. Links will appear here when the server provides a safe group link index." />;
+  if (section === "links") return <GroupAssets title="Links" assets={group.links || []} emptyTitle="No shared links yet" emptyBody="Links shared in this group are not collected yet. When they are, you will find them listed here." />;
   return <GroupSettings group={group} onDelete={onDelete} onArchive={onArchive} />;
 }
 
@@ -633,7 +633,7 @@ function GroupOverview({ group }: { group: PulseGroup }) {
         <BoundaryPanel title="Rules unavailable" body="The current group contract did not return rules for this community." />
       )}
       <Text style={styles.sectionTitle}>Community Feed</Text>
-      {(group.posts || []).length ? group.posts?.map((post) => <GroupPostCard key={post.id} post={post} />) : <Text style={styles.emptyText}>Group posts will appear here when the existing backend returns them.</Text>}
+      {(group.posts || []).length ? group.posts?.map((post) => <GroupPostCard key={post.id} post={post} />) : <Text style={styles.emptyText}>Posts shared in this group will appear here.</Text>}
     </View>
   );
 }
@@ -646,7 +646,7 @@ function GroupMembers({ group, onMemberAction }: { group: PulseGroup; onMemberAc
       {members.length ? members.map((member) => <GroupMemberRow key={member.id} group={group} member={member} onMemberAction={onMemberAction} />) : (
         <BoundaryPanel
           title="Member roster boundary"
-          body={`The server currently exposes your role (${groupRoleLabel(group)}) and total member count, but not the full native member roster. Native will render role actions here when the member list contract is available.`}
+          body={`You can see your own role (${groupRoleLabel(group)}) and how many people are in this group. The full member list is not available yet, so role changes cannot be made here.`}
         />
       )}
     </View>
@@ -684,7 +684,7 @@ function GroupInvitations({ group }: { group: PulseGroup }) {
       )}
       <Text style={styles.sectionTitle}>Membership Requests</Text>
       {requests.length ? requests.map((invite) => <GroupInvitationRow key={invite.id} invitation={invite} request />) : (
-        <Text style={styles.emptyText}>No membership requests returned for native review.</Text>
+        <Text style={styles.emptyText}>No one is waiting to join right now.</Text>
       )}
     </View>
   );
@@ -845,7 +845,7 @@ function RoomParticipants({ room }: { room: PulseRoom }) {
     <View>
       <Text style={styles.sectionTitle}>Participants and Presence</Text>
       {participants.length ? participants.map((participant) => <RoomParticipantRow key={participant.id} participant={participant} />) : (
-        <BoundaryPanel title="Live presence boundary" body="The current room list exposes aggregate active counts. Native participant identity, roles, and provider connection state will render here when the server/provider returns a safe roster." />
+        <BoundaryPanel title="Live presence boundary" body="You can see how many people are active in this room. Who they are, their roles, and their connection status are not available yet." />
       )}
     </View>
   );
@@ -878,10 +878,10 @@ function RoomActivity({ room }: { room: PulseRoom }) {
 function RoomProviderBoundary({ room }: { room: PulseRoom }) {
   return (
     <View>
-      <Text style={styles.sectionTitle}>Provider Boundary</Text>
+      <Text style={styles.sectionTitle}>Live Media</Text>
       <BoundaryPanel
         title={roomProviderStateLabel(room)}
-        body={room.partial ? "This room depends on a provider state that cannot be proven in Simulator. Native can verify routing, layout, permissions, and fallback behavior here; microphone, camera, Bluetooth, and real multi-participant media remain physical-device QA." : "This room can open through the existing Pulse Command chat contract. Live media features remain provider and physical-device gated where applicable."}
+        body={room.partial ? "Live audio and video cannot run in the Simulator. You can still open this room and check how it looks and which permissions it asks for; the microphone, camera, Bluetooth, and calls with other people need a real device." : "This room can open through the existing Pulse Command chat contract. Live media features remain provider and physical-device gated where applicable."}
       />
       <View style={styles.metricGrid}>
         <Metric label="Provider" value={room.provider || "PulseSoc"} />

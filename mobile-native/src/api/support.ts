@@ -104,7 +104,7 @@ export async function blockPulseUser(input: { blockedUserId?: number; publicPlay
     body: JSON.stringify({
       blocked_user_id: input.blockedUserId || 0,
       public_player_id: input.publicPlayerId || "",
-      reason: input.reason || "Blocked from native Trust & Safety"
+      reason: input.reason || "Blocked from Trust & Safety in the PulseSoc app"
     })
   });
 }
@@ -115,7 +115,7 @@ export async function openSupportWebFallback(path = "/pulse/help") {
     ok: false,
     path: safePath,
     status: "native_provider_boundary",
-    message: "Support content remains inside native trust and safety surfaces for App Review."
+    message: "Help and safety information stays inside the app's Trust & Safety screens."
   };
 }
 

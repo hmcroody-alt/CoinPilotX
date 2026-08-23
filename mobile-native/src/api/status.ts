@@ -327,7 +327,7 @@ export function statusQaFixtures(): PulseStatus[] {
     ...options
   });
   return [
-    fixture(9101, "text", "The native Status constellation is live. Fast, calm, and unmistakably PulseSoc.", { can_manage: true, author: { id: 1, user_id: 1, display_name: "Your Status", username: "native_owner", avatar_url: "" }, view_count: 48, reaction_count: 12, reply_count: 5, share_count: 3 }),
+    fixture(9101, "text", "The Status constellation is live. Fast, calm, and unmistakably PulseSoc.", { can_manage: true, author: { id: 1, user_id: 1, display_name: "Your Status", username: "native_owner", avatar_url: "" }, view_count: 48, reaction_count: 12, reply_count: 5, share_count: 3 }),
     fixture(9102, "photo", "A luminous image Status with a long caption that remains readable across every iPhone width without hiding the viewer controls.", { media: [{ id: 8102, media_url: image, valid_url: image, media_type: "image" }], story_count: 3 }),
     fixture(9103, "video", "Video Status · original sound", { media: [{ id: 8103, media_url: video, valid_url: video, media_type: "video", thumbnail_url: image }], viewed: true, unseen_count: 0 }),
     fixture(9104, "music", "Creator-safe music Status", { music: { track_id: "qa-orbit", title: "Orbit Signal", artist: "PulseSoc Audio", mood: "galactic" } }),

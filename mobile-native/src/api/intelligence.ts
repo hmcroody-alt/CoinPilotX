@@ -107,7 +107,7 @@ export async function openIntelligenceWebFallback(path = "/dashboard/intelligenc
     ok: false,
     target,
     status: "native_provider_boundary",
-    message: "Intelligence operation remains inside native Intelligence Center until the protected contract is available."
+    message: "This part of the Intelligence Center is not available in the app yet. Continue on the PulseSoc website."
   };
 }
 

@@ -260,7 +260,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
       <Panel>
         <View style={styles.heroRow}>
           <View style={styles.heroCopy}>
-            <Text style={styles.eyebrow}>Native alerts</Text>
+            <Text style={styles.eyebrow}>Your alerts</Text>
             <Text style={styles.score}>{alerts.length}</Text>
             <Text style={styles.muted}>Create, edit, pause, resume, duplicate, test, and inspect alert history without duplicating alert engine logic.</Text>
           </View>
@@ -362,7 +362,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
             onTest={() => runAction(alert, "test")}
             pendingDelete={pendingDeleteId === alert.id}
           />
-        )) : <Text style={styles.muted}>No alerts returned yet. Create your first server-owned alert above.</Text>}
+        )) : <Text style={styles.muted}>You have no alerts yet. Create your first one above.</Text>}
       </Panel>
 
       {selectedAlert ? (
@@ -387,13 +387,13 @@ export function AlertManagementScreen({ route, navigation }: Props) {
             <Text style={styles.muted}>{event.message || `${event.condition || "alert"} at ${event.observed_value ?? "unknown"} against ${event.threshold_value ?? "target"}`}</Text>
             <Text style={styles.rowMeta}>{event.created_at || "No timestamp"}</Text>
           </View>
-        )) : <Text style={styles.muted}>No alert history returned yet. The backend will add events after a rule fires or a test delivery is recorded.</Text>}
+        )) : <Text style={styles.muted}>No alert history yet. Events appear here after an alert fires or you send a test.</Text>}
         {recentEvents.length > 12 ? <Text style={styles.rowMeta}>Showing the newest 12 of {recentEvents.length} alert history events.</Text> : null}
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Provider boundary</Text>
-        <Text style={styles.muted}>Provider administration, advanced Intelligence editing, collector management, and unsupported alert types stay server-managed by PulseSoc until native support is planned.</Text>
+        <Text style={styles.sectionTitle}>Managed by PulseSoc</Text>
+        <Text style={styles.muted}>Account administration, advanced Intelligence editing, data source management, and other alert types are handled on the PulseSoc website. They are not available in the app yet.</Text>
         <View style={styles.topActions}>
           <ActionButton label="Notifications" variant="secondary" onPress={() => navigation.navigate("NotificationCenter")} />
         </View>
@@ -452,7 +452,7 @@ function AlertCard({
       </View>
       {pendingDelete ? (
         <View style={styles.confirmBox}>
-          <Text style={styles.confirmText}>Delete this alert? This uses the existing PulseSoc alert delete endpoint and cannot be undone in the native client.</Text>
+          <Text style={styles.confirmText}>Delete this alert? It is removed from your PulseSoc account and this cannot be undone.</Text>
           <View style={styles.topActions}>
             <ActionButton label="Cancel" variant="secondary" disabled={busy} onPress={onCancelDelete} />
             <ActionButton label={busy ? "Deleting" : "Confirm delete"} variant="danger" disabled={busy} onPress={onConfirmDelete} />

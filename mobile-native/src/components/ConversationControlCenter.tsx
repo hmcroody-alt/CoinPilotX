@@ -404,7 +404,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
         }))
       }, null, 2);
       await Share.share({ title: "UNDX conversation export", message: payload });
-      setNotice("UNDX conversation export opened in the native share sheet.");
+      setNotice("UNDX conversation export opened in the share sheet.");
       return;
     }
     setSavingKey("export-chat");
@@ -412,7 +412,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
       const data = await exportConversationControlData(conversationId);
       const payload = JSON.stringify(data.export || {}, null, 2);
       await Share.share({ title: data.filename || `${title} export`, message: payload || "No export data returned." });
-      setNotice("Conversation export opened in the native share sheet.");
+      setNotice("Conversation export opened in the share sheet.");
     } catch (error) {
       setNotice(errorMessage(error, "Conversation export could not open."));
     } finally {
@@ -446,7 +446,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
 
   async function promptServerAction(action: "create-note" | "create-task") {
     const label = action === "create-note" ? "Conversation note" : "Conversation task";
-    const fallback = () => setNotice(`${label} needs text input; use the web control center if this device does not show the native prompt.`);
+    const fallback = () => setNotice(`${label} needs text input. If no text box appears on this device, use the web control center instead.`);
     const prompt = (Alert as unknown as { prompt?: (title: string, message?: string, callbackOrButtons?: ((text: string) => void) | Array<Record<string, unknown>>, type?: string, defaultValue?: string, keyboardType?: string) => void }).prompt;
     if (!prompt) return fallback();
     prompt(label, "Saved.", async (body: string) => {
@@ -482,13 +482,13 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
           return loadMembers();
         case "shared-media":
           if (assistantConversation) {
-            setNotice("UNDX native chat is text-first right now. Attachments are disabled until the assistant media contract is available.");
+            setNotice("UNDX chat is text-only right now. Attachments are not supported yet.");
             return;
           }
           return loadSharedMedia("all");
         case "shared-files":
           if (assistantConversation) {
-            setNotice("UNDX native chat is text-first right now. Files are disabled until the assistant media contract is available.");
+            setNotice("UNDX chat is text-only right now. Files are not supported yet.");
             return;
           }
           return loadSharedMedia("files");
@@ -592,7 +592,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
           return;
         case "verify-contact": {
           const member = (controlData?.members || []).find((item) => item.display_name && item.user_id);
-          setDetail({ title: "Verify Contact", subtitle: "Protected participant", lines: [member ? `${member.display_name} is a server-authorized participant in this conversation.` : "No direct peer was returned by the server for this conversation."] });
+          setDetail({ title: "Verify Contact", subtitle: "Protected participant", lines: [member ? `PulseSoc has confirmed ${member.display_name} as a participant in this conversation.` : "No direct peer was returned by the server for this conversation."] });
           return;
         }
         case "report-conversation":
@@ -728,7 +728,7 @@ function buildRows(input: {
       action("Search Chat", "⌕", "search-chat", "Search messages this account can access.", !can("search") ? unavailable("Search is not available for this conversation.") : undefined),
       action("Message Stats", "▥", "message-stats", `${stats.messages} server-visible message${stats.messages === 1 ? "" : "s"}`),
       action("Media Storage", "◉", "storage", `${formatFileSize(stats.storage_used_bytes)} known server attachment metadata`),
-      action("Export Chat", "⇧", "export-chat", "Exports only server-authorized, non-deleted messages.", !can("export_chat") ? unavailable("Export is not enabled for this conversation.") : undefined, "Export this conversation to the native share sheet?")
+      action("Export Chat", "⇧", "export-chat", "Exports only the messages you can see that have not been deleted.", !can("export_chat") ? unavailable("Export is not enabled for this conversation.") : undefined, "Export this conversation using the share sheet?")
     ],
     notifications: [
       setting("Mute Conversation", "🔕", "notifications", "mute_choice", "select", "Syncs to the production mute preference.", OPTIONS.mute_choice),
@@ -772,7 +772,7 @@ function buildRows(input: {
     ],
     security: [
       action("Encryption Status", "🛡", "security-status", stats.security_label),
-      action("Verify Contact", "◇", "verify-contact", isGroup ? "Direct-contact verification is available in one-to-one conversations." : "Verify the server-authorized direct participant.", isGroup ? unavailable("Verify Contact is direct-conversation only.") : undefined),
+      action("Verify Contact", "◇", "verify-contact", isGroup ? "Direct-contact verification is available in one-to-one conversations." : "Check who PulseSoc has confirmed on the other side of this chat.", isGroup ? unavailable("Verify Contact is direct-conversation only.") : undefined),
       action("Trusted Devices", "▣", "unavailable", "Open account security from the main Settings surface.", unavailable("Trusted Devices are managed in account security, not per conversation.")),
       action("Active Sessions", "◉", "unavailable", "Open account security from the main Settings surface.", unavailable("Active Sessions are managed in account security, not per conversation.")),
       action("Security Log", "▤", "unavailable", "Open account security from the main Settings surface.", unavailable("Security Log is managed in account security, not per conversation.")),

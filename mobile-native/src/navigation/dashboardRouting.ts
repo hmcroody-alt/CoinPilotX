@@ -238,7 +238,7 @@ export function classifyDashboardActionRoute(route: string): DashboardActionRout
     return {
       kind: "native_shell_route",
       label: "Native shell",
-      detail: "Opens the native dashboard module shell backed by the production module map.",
+      detail: "Opens this dashboard module in the app.",
       route: raw
     };
   }
@@ -254,7 +254,7 @@ export function classifyDashboardActionRoute(route: string): DashboardActionRout
     return {
       kind: "native_route",
       label: "Native",
-      detail: "Opens an existing native PulseSoc surface.",
+      detail: "Opens an existing PulseSoc screen in the app.",
       route: raw
     };
   }
@@ -262,14 +262,14 @@ export function classifyDashboardActionRoute(route: string): DashboardActionRout
     return {
       kind: "native_provider_boundary",
       label: "Native boundary",
-      detail: "Legacy dashboard URL is represented by the native module boundary.",
+      detail: "This older dashboard page opens as its in-app equivalent.",
       route: raw
     };
   }
   return {
     kind: "missing_invalid_route",
     label: "Invalid",
-    detail: "No native, shell, or provider-boundary destination is registered for this action.",
+    detail: "This action does not have a destination yet.",
     route: raw
   };
 }
@@ -283,7 +283,7 @@ export function openDashboardWebFallback(route: string) {
     ok: false,
     route: normalizeDashboardPath(route),
     status: "native_provider_boundary",
-    message: "This dashboard action is held inside the native app until its protected provider operation is available."
+    message: "This action stays in the app until its protected workflow is ready."
   };
 }
 

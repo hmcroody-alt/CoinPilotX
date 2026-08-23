@@ -25,7 +25,7 @@ export function DashboardActionAliasScreen({ navigation, route }: Props) {
     <View style={styles.center}>
       <ActivityIndicator color={colors.accent} />
       <Text style={styles.kicker}>Dashboard action mapped</Text>
-      <Text style={styles.body}>Opening the native dashboard destination for {targetRoute}.</Text>
+      <Text style={styles.body}>Opening {targetRoute}.</Text>
     </View>
   );
 }

@@ -406,7 +406,7 @@ export function profileErrorState(error: unknown): ProfileErrorState {
     if (error.status === 410) {
       return {
         title: "Account inactive",
-        body: "This PulseSoc account is deactivated or deleted and cannot be opened natively.",
+        body: "This PulseSoc account has been deactivated or deleted, so the profile cannot be opened.",
         status: error.status,
         retryable: false,
         offline: false,
@@ -426,7 +426,7 @@ export function profileErrorState(error: unknown): ProfileErrorState {
     if (error.status >= 500 || error.code === "request_unreachable") {
       return {
         title: error.code === "request_unreachable" ? "Connection issue" : "Profile service temporarily unavailable",
-        body: "The native profile route could not reach PulseSoc. Retry without losing your place.",
+        body: "The app could not reach PulseSoc. Try again without losing your place.",
         status: error.status,
         retryable: true,
         offline: error.code === "request_unreachable",
@@ -436,7 +436,7 @@ export function profileErrorState(error: unknown): ProfileErrorState {
   }
   return {
     title: "Profile could not load",
-    body: "PulseSoc could not load this profile through the native route. Retry the request.",
+    body: "PulseSoc could not load this profile. Try again.",
     retryable: true,
     offline: false,
     canOpenWebFallback: true

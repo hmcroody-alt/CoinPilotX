@@ -42,7 +42,7 @@ const DRAFT_KEY = "pulsesoc.native.home.composer.draft.v1";
 const PRIMARY_MODES: Array<{ key: ComposerMode; label: string; note: string }> = [
   { key: "post", label: "Feed", note: "Publish a PulseSoc feed signal." },
   { key: "status", label: "Status", note: "Create a 24-hour PulseSoc Status with the same media pipeline." },
-  { key: "reel", label: "Reel", note: "Attach one video or capture a native Reel." }
+  { key: "reel", label: "Reel", note: "Attach one video or record a Reel." }
 ];
 const SECONDARY_MODES: Array<{ key: ComposerMode; label: string; note: string; icon: string }> = [
   { key: "poll", label: "Poll", note: "Ask the PulseSoc community a question.", icon: "?" },
@@ -690,7 +690,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
         <ComposerAction label={musicTrack ? "Music ✓" : "Music"} icon="♪" selected={Boolean(musicTrack)} onPress={() => openMusicPicker().catch(() => undefined)} />
         <ComposerAction label="Feeling" icon="☺" onPress={() => {
           setError("Structured feelings are not supported by the production post contract yet.");
-          setNote("PulseSoc will not rewrite your post body or create native-only feeling metadata.");
+          setNote("PulseSoc will not change what you wrote or add a feeling for you.");
         }} />
         <ComposerAction testID="home-composer-camera" label="Camera" icon="◎" onPress={() => openCameraFromComposer(mode === "reel" ? "reel" : "photo").catch(() => undefined)} />
         <ComposerAction testID="home-composer-more" label={showTools ? "Less" : "More"} icon="…" selected={showTools} onPress={() => setShowTools((current) => !current)} />

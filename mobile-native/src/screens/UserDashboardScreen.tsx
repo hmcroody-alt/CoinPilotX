@@ -103,7 +103,7 @@ export function UserDashboardScreen() {
 
       {state?.warnings.length ? (
         <View style={styles.warningPanel}>
-          <Text style={styles.warningTitle}>Some modules use provider-owned operations</Text>
+          <Text style={styles.warningTitle}>Some modules could not load</Text>
           {state.warnings.map((warning) => (
             <Text key={warning} style={styles.warningText}>{warning}</Text>
           ))}
@@ -118,7 +118,7 @@ export function UserDashboardScreen() {
         </View>
       </Section>
 
-      <Section title="Quick Actions" subtitle="Jump directly into the native module that owns the workflow.">
+      <Section title="Quick Actions" subtitle="Jump directly to the module that handles the workflow.">
         <View style={styles.actionGrid}>
           {(state?.quickActions || []).map((card) => (
             <QuickAction key={`quick-${card.key}`} card={card} onPress={() => openModule(navigation, card.key)} />
@@ -174,7 +174,7 @@ export function UserDashboardScreen() {
         ) : (
           <View style={styles.emptyTimeline}>
             <Text style={styles.emptyTitle}>No recent activity yet</Text>
-            <Text style={styles.emptyText}>Messages, calls, orders, trust updates, alerts, and marketplace signals will appear here as the backend emits them.</Text>
+            <Text style={styles.emptyText}>Messages, calls, orders, trust updates, alerts, and marketplace updates will appear here as they happen.</Text>
           </View>
         )}
       </Section>
@@ -184,7 +184,7 @@ export function UserDashboardScreen() {
 
 function ModuleGroupSection({ group, onOpen }: { group: DashboardModuleGroup; onOpen: (module: DashboardModuleItem) => void }) {
   return (
-    <Section title={group.title} subtitle={`${group.modules.length} production dashboard modules represented in the native foundation.`}>
+    <Section title={group.title} subtitle={`${group.modules.length} dashboard modules you can open in the app.`}>
       <View style={styles.moduleGrid}>
         {group.modules.map((module) => (
           <DashboardModuleCard key={module.key} module={module} onPress={() => onOpen(module)} />

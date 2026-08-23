@@ -128,7 +128,7 @@ export async function openAccountHealthWebFallback(path = "/dashboard/account/he
     ok: false,
     path: safePath,
     status: "native_provider_boundary",
-    message: "Account health details remain in the native review boundary until the protected operation is available."
+    message: "Full account health details are on the PulseSoc website."
   };
 }
 

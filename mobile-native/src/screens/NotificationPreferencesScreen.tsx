@@ -90,11 +90,11 @@ export function NotificationPreferencesScreen() {
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>Notification Preferences</Text>
-        <Text style={styles.subtitle}>Native controls backed by existing PulseSoc notification settings.</Text>
+        <Text style={styles.subtitle}>These controls change the notification settings on your PulseSoc account.</Text>
       </View>
       <View style={styles.panel}>
         <Text style={styles.panelTitle}>Push device</Text>
-        <Text style={styles.muted}>Permission and token registration use the existing PulseSoc push subscription endpoint.</Text>
+        <Text style={styles.muted}>Allowing notifications registers this device with PulseSoc so it can send you push notifications.</Text>
         <Text style={styles.status}>{pushStatus}</Text>
         <Pressable style={styles.button} onPress={enablePush}>
           <Text style={styles.buttonText}>Enable push</Text>

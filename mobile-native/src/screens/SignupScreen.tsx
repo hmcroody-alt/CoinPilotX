@@ -220,7 +220,7 @@ export function SignupScreen() {
   const openLegal = useCallback((routeName: string) => {
     Alert.alert(
       routeName === TERMS_ROUTE ? "Terms of Service" : "Privacy Policy",
-      "PulseSoc keeps legal documents inside the native Settings and account surfaces after sign-in. Continue only if you agree to the current PulseSoc terms and privacy policy."
+      "You can read the full terms and privacy policy in Settings once you have signed in. Continue only if you agree to the current PulseSoc terms and privacy policy."
     );
   }, []);
 

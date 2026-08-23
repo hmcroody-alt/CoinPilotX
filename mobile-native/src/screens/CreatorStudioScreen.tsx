@@ -167,7 +167,7 @@ export function CreatorStudioScreen({ navigation }: Props) {
           <View style={styles.heroCopy}>
             <Text style={styles.eyebrow}>Creator readiness</Text>
             <Text style={styles.score}>{score || "Learning"}</Text>
-            <Text style={styles.muted}>Premium: {premiumStateLabel(premium)}. Eligibility and limits remain backend-controlled.</Text>
+            <Text style={styles.muted}>Premium: {premiumStateLabel(premium)}. PulseSoc sets your eligibility and limits.</Text>
           </View>
           <View style={styles.scoreBadge}>
             <Text style={styles.scoreBadgeText}>{state?.intelligence?.community_guideline_status || "Clear"}</Text>
@@ -201,7 +201,7 @@ export function CreatorStudioScreen({ navigation }: Props) {
 
       <Panel>
         <Text style={styles.sectionTitle}>Content planner</Text>
-        <Text style={styles.muted}>Drafts, scheduling, and content checklist rules use the existing Content Planner backend.</Text>
+        <Text style={styles.muted}>Drafts, scheduling, and your content checklist are kept in your PulseSoc Content Planner.</Text>
         <TextInput
           style={styles.input}
           value={aiText}
@@ -222,12 +222,12 @@ export function CreatorStudioScreen({ navigation }: Props) {
             <Action key={tool.key} label={busyTool === tool.key ? "Running..." : tool.label} onPress={() => runAi(tool.key)} />
           ))}
         </View>
-        {aiOutput ? <Text style={styles.aiOutput}>{aiOutput}</Text> : <Text style={styles.muted}>AI suggestions stay routed through existing PulseSoc creator AI APIs.</Text>}
+        {aiOutput ? <Text style={styles.aiOutput}>{aiOutput}</Text> : <Text style={styles.muted}>Suggestions are written by PulseSoc creator AI and appear here.</Text>}
       </Panel>
 
       <Panel>
         <Text style={styles.sectionTitle}>Recommended next actions</Text>
-        {recommendations.length ? recommendations.map((item) => <Text key={item} style={styles.recommendation}>{item}</Text>) : <Text style={styles.muted}>Recommendations appear after the backend has enough creator activity.</Text>}
+        {recommendations.length ? recommendations.map((item) => <Text key={item} style={styles.recommendation}>{item}</Text>) : <Text style={styles.muted}>Recommendations appear once PulseSoc has seen enough of your creator activity.</Text>}
       </Panel>
 
       <Panel>
