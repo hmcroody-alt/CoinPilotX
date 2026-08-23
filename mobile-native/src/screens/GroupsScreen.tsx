@@ -5,6 +5,8 @@ import {
   Alert,
   FlatList,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -13,6 +15,7 @@ import {
   TextInput,
   View
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   archiveGroup,
   createGroup,
@@ -43,7 +46,7 @@ import {
 import { CommunityCreateIntent, takeCommunityCreateIntent } from "../community/communityCreateIntent";
 import { PulseCommandAction, PulseCommandHeader, PulseCommandPanel, PulseCommandSearch } from "../components/PulseCommand";
 import { LogiNexusStatePanel } from "../components/Screen";
-import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
+import { useBottomNavSurface, useBottomNavVisibility } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
 import {
   groupAccessibilityLabel,
@@ -80,6 +83,7 @@ export function GroupsScreen({ route, navigation }: Props) {
   // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
   // reserves the matching clearance so the last row never sits under the dock.
   const dock = useBottomNavSurface();
+  const { setBottomNavHidden } = useBottomNavVisibility();
   const initialSlug = route?.params?.groupSlug || "";
   const [groups, setGroups] = useState<PulseGroup[]>([]);
   const [rooms, setRooms] = useState<PulseRoom[]>([]);
@@ -156,6 +160,12 @@ export function GroupsScreen({ route, navigation }: Props) {
     const intent = takeCommunityCreateIntent();
     if (intent) setCreateKind(intent);
   }, []));
+
+  useEffect(() => {
+    if (!createKind) return;
+    setBottomNavHidden(true);
+    return () => setBottomNavHidden(false);
+  }, [createKind, setBottomNavHidden]);
 
   const categories = useMemo(() => Array.from(new Set(groups.map((group) => group.category || "Community"))).slice(0, 8), [groups]);
 
@@ -401,6 +411,7 @@ function CommunityCreateSheet({ kind, onClose, onCreated }: {
   onClose: () => void;
   onCreated: (result: { conversationId?: number; title: string }) => Promise<void>;
 }) {
+  const insets = useSafeAreaInsets();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [privacy, setPrivacy] = useState<"public" | "private">("public");
@@ -428,25 +439,34 @@ function CommunityCreateSheet({ kind, onClose, onCreated }: {
 
   return (
     <View style={styles.detailOverlay}>
-      <View style={styles.createSheet}>
-        <View style={styles.detailHeader}>
-          <View style={styles.detailTitleWrap}><Text style={styles.title}>{label}</Text><Text style={styles.subtitle}>Simple, text-based PulseSoc community space.</Text></View>
-          <Pressable accessibilityRole="button" style={styles.smallButton} onPress={onClose}><Text style={styles.smallButtonText}>Close</Text></Pressable>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.createSheetKeyboardAvoider}
+      >
+        <View style={styles.createSheet}>
+          <View style={styles.detailHeader}>
+            <View style={styles.detailTitleWrap}><Text style={styles.title}>{label}</Text><Text style={styles.subtitle}>Simple, text-based PulseSoc community space.</Text></View>
+            <Pressable accessibilityRole="button" style={styles.smallButton} onPress={onClose}><Text style={styles.smallButtonText}>Close</Text></Pressable>
+          </View>
+          <ScrollView
+            contentContainerStyle={[styles.detailContent, { paddingBottom: Math.max(insets.bottom, 16) + 20 }]}
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.inputLabel}>{kind === "group" ? "Group name" : "Room title"}</Text>
+            <TextInput accessibilityLabel={kind === "group" ? "Group name" : "Room title"} value={title} onChangeText={setTitle} placeholder={kind === "group" ? "Name your group" : "Name your room"} placeholderTextColor={colors.muted} style={styles.input} maxLength={140} />
+            <Text style={styles.inputLabel}>Description</Text>
+            <TextInput accessibilityLabel="Description" value={description} onChangeText={setDescription} placeholder="What is this community for?" placeholderTextColor={colors.muted} style={[styles.input, styles.multilineInput]} multiline maxLength={500} />
+            <Text style={styles.inputLabel}>Privacy</Text>
+            <View style={styles.actionRow}>{(["public", "private"] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: privacy === value }} style={[styles.sectionChip, privacy === value && styles.sectionChipActive]} onPress={() => setPrivacy(value)}><Text style={[styles.sectionChipText, privacy === value && styles.sectionChipTextActive]}>{value === "public" ? "Public" : "Private"}</Text></Pressable>)}</View>
+            <Text style={styles.inputLabel}>Optional invite Pulse IDs</Text>
+            <TextInput accessibilityLabel="Optional invite Pulse IDs" value={inviteIds} onChangeText={setInviteIds} placeholder="Numeric IDs, separated by commas" placeholderTextColor={colors.muted} style={styles.input} keyboardType="numbers-and-punctuation" />
+            <Text style={styles.helperText}>Invites are server-authorized. Private rooms are visible only to invited participants.</Text>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} disabled={busy} style={styles.primaryButton} onPress={() => submit()}><Text style={styles.primaryText}>{busy ? "Working…" : label}</Text></Pressable>
+          </ScrollView>
         </View>
-        <ScrollView contentContainerStyle={styles.detailContent} keyboardShouldPersistTaps="handled">
-          <Text style={styles.inputLabel}>{kind === "group" ? "Group name" : "Room title"}</Text>
-          <TextInput accessibilityLabel={kind === "group" ? "Group name" : "Room title"} value={title} onChangeText={setTitle} placeholder={kind === "group" ? "Name your group" : "Name your room"} placeholderTextColor={colors.muted} style={styles.input} maxLength={140} />
-          <Text style={styles.inputLabel}>Description</Text>
-          <TextInput accessibilityLabel="Description" value={description} onChangeText={setDescription} placeholder="What is this community for?" placeholderTextColor={colors.muted} style={[styles.input, styles.multilineInput]} multiline maxLength={500} />
-          <Text style={styles.inputLabel}>Privacy</Text>
-          <View style={styles.actionRow}>{(["public", "private"] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: privacy === value }} style={[styles.sectionChip, privacy === value && styles.sectionChipActive]} onPress={() => setPrivacy(value)}><Text style={[styles.sectionChipText, privacy === value && styles.sectionChipTextActive]}>{value === "public" ? "Public" : "Private"}</Text></Pressable>)}</View>
-          <Text style={styles.inputLabel}>Optional invite Pulse IDs</Text>
-          <TextInput accessibilityLabel="Optional invite Pulse IDs" value={inviteIds} onChangeText={setInviteIds} placeholder="Numeric IDs, separated by commas" placeholderTextColor={colors.muted} style={styles.input} keyboardType="numbers-and-punctuation" />
-          <Text style={styles.helperText}>Invites are server-authorized. Private rooms are visible only to invited participants.</Text>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} disabled={busy} style={styles.primaryButton} onPress={() => submit()}><Text style={styles.primaryText}>{busy ? "Working…" : label}</Text></Pressable>
-        </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -1043,12 +1063,16 @@ const styles = createThemedStyles(() => ({
     borderColor: colors.danger
   },
   createSheet: {
-    alignSelf: "center",
     backgroundColor: colors.background,
     borderColor: colors.border,
     borderRadius: logiNexus.radius.panel,
     borderWidth: 1,
     maxHeight: "88%",
+    width: "100%"
+  },
+  createSheetKeyboardAvoider: {
+    alignSelf: "center",
+    justifyContent: "center",
     width: "92%"
   },
   cover: {
