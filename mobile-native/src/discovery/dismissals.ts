@@ -28,6 +28,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { DiscoveryModuleKind } from "./discoveryRows";
 
 const STORAGE_KEY = "pulse.discovery.dismissed.v1";
+const PEOPLE_STORAGE_KEY = "pulse.discovery.dismissedPeople.v1";
 
 /** How long a dismissal is honoured. */
 export const DISMISSAL_TTL_DAYS = 30;
@@ -38,14 +39,21 @@ type DismissalRecord = Partial<Record<DiscoveryModuleKind, number>>;
 let memory: DismissalRecord = {};
 let hydrated = false;
 
-function livingKinds(record: DismissalRecord, now: number): Set<DiscoveryModuleKind> {
-  const out = new Set<DiscoveryModuleKind>();
-  for (const [kind, at] of Object.entries(record)) {
+let peopleMemory: Record<string, number> = {};
+let peopleHydrated = false;
+
+function livingEntries(record: Record<string, number | undefined>, now: number): Set<string> {
+  const out = new Set<string>();
+  for (const [key, at] of Object.entries(record)) {
     if (typeof at !== "number" || !Number.isFinite(at)) continue;
     if (now - at >= TTL_MS) continue;
-    out.add(kind as DiscoveryModuleKind);
+    out.add(key);
   }
   return out;
+}
+
+function livingKinds(record: DismissalRecord, now: number): Set<DiscoveryModuleKind> {
+  return livingEntries(record, now) as Set<DiscoveryModuleKind>;
 }
 
 /**
@@ -79,8 +87,43 @@ export function dismissModule(
   return livingKinds(memory, now);
 }
 
+/**
+ * Suggestions the viewer removed one card at a time.
+ *
+ * Kept separate from the module record because they answer different questions —
+ * "I don't want this row" versus "not this person" — and because the person keys
+ * are unbounded where the kinds are a closed set. Same TTL: a removed suggestion
+ * that returns after a month is a fresh recommendation, not a bug, and the app
+ * still has no screen for undoing either decision.
+ */
+export async function loadDismissedPeople(now: number = Date.now()): Promise<Set<string>> {
+  if (!peopleHydrated) {
+    try {
+      const raw = await AsyncStorage.getItem(PEOPLE_STORAGE_KEY);
+      const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+      peopleMemory =
+        parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, number>) : {};
+    } catch {
+      peopleMemory = {};
+    }
+    peopleHydrated = true;
+  }
+  return livingEntries(peopleMemory, now);
+}
+
+/** Remove one suggestion. Returns the new set so the caller can re-render at once. */
+export function dismissPerson(profileKey: string, now: number = Date.now()): Set<string> {
+  if (!profileKey) return livingEntries(peopleMemory, now);
+  peopleMemory = { ...peopleMemory, [profileKey]: now };
+  peopleHydrated = true;
+  AsyncStorage.setItem(PEOPLE_STORAGE_KEY, JSON.stringify(peopleMemory)).catch(() => undefined);
+  return livingEntries(peopleMemory, now);
+}
+
 /** Test-only: forget everything, including the hydrated flag. */
 export function __resetDismissals() {
   memory = {};
   hydrated = false;
+  peopleMemory = {};
+  peopleHydrated = false;
 }

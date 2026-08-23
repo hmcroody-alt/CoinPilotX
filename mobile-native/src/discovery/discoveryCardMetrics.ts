@@ -54,15 +54,20 @@ const FALLBACK_SCREEN_WIDTH = 390;
  * what makes the card feel like content rather than a thumbnail. Groups are
  * represented by landscape cover art and would be letterboxed into a portrait
  * frame, which §2 explicitly forbids, so they get a landscape card. People are
- * portraits: still large (70% of the screen, the low end of the target band) but
- * never shaped like a video, because a profile in a video-shaped frame reads as
- * a clip that failed to load.
+ * portraits — never shaped like a video, because a profile in a video-shaped
+ * frame reads as a clip that failed to load.
+ *
+ * People sit at the top of the band rather than the bottom. At 0.7 the card was
+ * the narrowest of any kind while the peek was the widest: on a 390pt phone that
+ * is 273pt of card against 95pt of the next card, which does not read as a
+ * scroll cue so much as a row that failed to fill its own width. Matching groups
+ * at 0.82 spends that space on the portrait and leaves a peek of 48pt.
  */
 const SHAPE: Record<DiscoveryModuleKind, { widthRatio: number; aspect: number }> = {
   reels: { widthRatio: 0.78, aspect: 0.7 },
   statuses: { widthRatio: 0.78, aspect: 0.7 },
   groups: { widthRatio: 0.82, aspect: 1.45 },
-  people: { widthRatio: 0.7, aspect: 0.8 },
+  people: { widthRatio: 0.82, aspect: 0.8 },
   creators: { widthRatio: 0.7, aspect: 0.8 },
   topics: { widthRatio: 0.7, aspect: 0.8 },
   sponsored: { widthRatio: 0.7, aspect: 0.8 }

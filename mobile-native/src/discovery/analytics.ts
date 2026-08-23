@@ -34,6 +34,8 @@ export type DiscoveryEventName =
   | "card_tap"
   | "see_all_tap"
   | "module_dismissed"
+  /** One suggestion removed, as opposed to the whole row — they mean different things. */
+  | "card_dismissed"
   | "friend_request_sent"
   | "follow_tap"
   | "group_join_tap"

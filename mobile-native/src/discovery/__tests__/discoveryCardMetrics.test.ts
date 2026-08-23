@@ -103,6 +103,39 @@ describe("§14.1 — the card is a large proportion of the feed, on every device
 
     expect(person.mediaHeight / person.cardWidth).toBeLessThan(reel.mediaHeight / reel.cardWidth);
   });
+
+  it("does not make people the narrowest card on the row", () => {
+    // People used to sit at 0.7 while every other kind was 0.78 or above, which
+    // spent the difference on a peek wide enough to read as unused width rather
+    // than as a scroll cue.
+    for (const width of DEVICE_WIDTHS) {
+      const person = discoveryCardMetrics(width, "people");
+
+      for (const kind of MEDIA_KINDS) {
+        expect(person.cardWidth).toBeGreaterThanOrEqual(discoveryCardMetrics(width, kind).cardWidth);
+      }
+    }
+  });
+
+  it("keeps the people peek a cue rather than a gap", () => {
+    // Bounded on both sides: below MIN_PEEK it reads as a crop bug, and much
+    // above a third of the card it reads as the row failing to fill its width —
+    // which is the defect this ratio was raised to fix. Phones only: above the
+    // 460pt cap the leftover width belongs to the cap, not to the ratio, and the
+    // tablet band test above is what covers it.
+    for (const width of PHONE_WIDTHS) {
+      const metrics = discoveryCardMetrics(width, "people");
+
+      expect(metrics.peek).toBeGreaterThanOrEqual(DISCOVERY_MIN_PEEK);
+      expect(metrics.peek).toBeLessThan(metrics.cardWidth / 3);
+    }
+  });
+
+  it("still shows the next person on a tablet, where the cap binds", () => {
+    for (const width of WIDE_WIDTHS) {
+      expect(discoveryCardMetrics(width, "people").peek).toBeGreaterThanOrEqual(DISCOVERY_MIN_PEEK);
+    }
+  });
 });
 
 describe("§14.3 — the next card is always partially visible", () => {

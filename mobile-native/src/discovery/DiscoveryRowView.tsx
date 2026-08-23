@@ -105,6 +105,8 @@ export type DiscoveryRowActions = {
   onOpenGroup: (group: GroupSuggestion) => void;
   onOpenPerson: (person: PersonSuggestion) => void;
   onAddFriend: (person: PersonSuggestion) => void;
+  /** Removes one suggestion. The row itself stays — that is the header's control. */
+  onRemovePerson: (person: PersonSuggestion) => void;
   onJoinGroup: (group: GroupSuggestion) => void;
   /**
    * Omitted for modules with no "all of these" screen.
@@ -309,8 +311,10 @@ const PersonCard = memo(function PersonCard({
   pending,
   onPress,
   onAdd,
+  onRemove,
   addLabel,
   pendingLabel,
+  removeLabel,
   metrics,
   active
 }: {
@@ -318,8 +322,10 @@ const PersonCard = memo(function PersonCard({
   pending: boolean;
   onPress: () => void;
   onAdd: () => void;
+  onRemove: () => void;
   addLabel: string;
   pendingLabel: string;
+  removeLabel: string;
   metrics: DiscoveryCardMetrics;
   active: boolean;
 }) {
@@ -343,6 +349,21 @@ const PersonCard = memo(function PersonCard({
         height={metrics.mediaHeight}
         testID={`${testID}-media`}
       />
+      {/* Removing a suggestion lives in the corner rather than beside "Add" so the
+          two are not weighted equally: one is the point of the card and the other
+          is a correction. It also keeps the caption a single full-width action
+          instead of two half-width ones, which is what made the old row's buttons
+          feel cramped. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={removeLabel}
+        testID={`discovery-remove-person-${person.profileKey}`}
+        onPress={onRemove}
+        hitSlop={12}
+        style={styles.cardRemove}
+      >
+        <Ionicons name="close" size={15} color={colors.text} />
+      </Pressable>
       <CardCaption title={name} meta={person.rank}>
         {/* A nested Pressable: RN does not bubble a handled press to the card, so
             "Add friend" cannot also navigate — §11. */}
@@ -496,6 +517,7 @@ export function DiscoveryRowView({
   onOpenGroup,
   onOpenPerson,
   onAddFriend,
+  onRemovePerson,
   onJoinGroup,
   onSeeAll,
   onDismiss
@@ -608,6 +630,9 @@ export function DiscoveryRowView({
               active={active}
               addLabel={t("social:feed.discovery.addFriend")}
               pendingLabel={t("social:feed.discovery.requestSent")}
+              removeLabel={t("social:feed.discovery.removePerson", {
+                name: person.displayName || person.username
+              })}
               onPress={() => {
                 tap("card_tap");
                 onOpenPerson(person);
@@ -615,6 +640,10 @@ export function DiscoveryRowView({
               onAdd={() => {
                 trackDiscoveryEvent({ name: "friend_request_sent", kind: module.kind, slot, target, position: index });
                 onAddFriend(person);
+              }}
+              onRemove={() => {
+                trackDiscoveryEvent({ name: "card_dismissed", kind: module.kind, slot, target, position: index });
+                onRemovePerson(person);
               }}
             />
           );
@@ -680,6 +709,7 @@ export function DiscoveryRowView({
       onOpenPerson,
       onOpenReel,
       onOpenStatus,
+      onRemovePerson,
       pendingFriendKeys,
       slot,
       t
@@ -833,6 +863,19 @@ const styles = createThemedStyles(() => ({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(5, 9, 16, 0.55)"
+  },
+  // Same corner and the same scrim as the muted badge, a little larger because
+  // this one is a target rather than a label.
+  cardRemove: {
+    position: "absolute",
+    top: logiNexus.spacing.sm,
+    right: logiNexus.spacing.sm,
+    width: 28,
+    height: 28,
+    borderRadius: logiNexus.radius.circular,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(5, 9, 16, 0.62)"
   },
   cardAction: {
     marginTop: logiNexus.spacing.sm,

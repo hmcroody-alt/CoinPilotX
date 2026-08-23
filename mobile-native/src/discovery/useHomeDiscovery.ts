@@ -49,7 +49,7 @@ import type {
   ReelSuggestion,
   StatusSuggestion
 } from "./discoveryRows";
-import { dismissModule, loadDismissedModules } from "./dismissals";
+import { dismissModule, dismissPerson, loadDismissedModules, loadDismissedPeople } from "./dismissals";
 import { homeDiscoveryEnabled } from "./flags";
 import { stageReelTransfer } from "./reelTransfer";
 import { loadDiscoveryModules } from "./sources";
@@ -79,6 +79,7 @@ export function useHomeDiscovery({
 
   const [modules, setModules] = useState<DiscoveryModule[]>([]);
   const [dismissed, setDismissed] = useState<ReadonlySet<DiscoveryModuleKind>>(new Set());
+  const [dismissedPeople, setDismissedPeople] = useState<ReadonlySet<string>>(new Set());
   const [pendingFriendKeys, setPendingFriendKeys] = useState<ReadonlySet<string>>(new Set());
   const [joinedGroupSlugs, setJoinedGroupSlugs] = useState<ReadonlySet<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -96,6 +97,11 @@ export function useHomeDiscovery({
     loadDismissedModules()
       .then((set) => {
         if (!cancelled) setDismissed(set);
+      })
+      .catch(() => undefined);
+    loadDismissedPeople()
+      .then((set) => {
+        if (!cancelled) setDismissedPeople(set);
       })
       .catch(() => undefined);
     return () => {
@@ -151,6 +157,33 @@ export function useHomeDiscovery({
   const handleDismiss = useCallback((kind: DiscoveryModuleKind) => {
     setDismissed(dismissModule(kind));
   }, []);
+
+  const handleRemovePerson = useCallback((person: PersonSuggestion) => {
+    setDismissedPeople(dismissPerson(person.profileKey));
+  }, []);
+
+  /**
+   * Suggestions the viewer removed, taken out of the row without a refetch.
+   *
+   * Applied here rather than in `sources` because a removal must land on the next
+   * render: re-running the fetch would leave the card on screen until the network
+   * answered, and the graph would hand back the same person anyway — the server
+   * has no record of a client-side removal. Identity is preserved when nothing is
+   * dismissed so the common case does not rebuild the module array at all.
+   */
+  const visibleModules = useMemo(() => {
+    if (!dismissedPeople.size) return modules;
+    return modules
+      .map((module) => {
+        if (module.kind !== "people") return module;
+        const items = module.items.filter((person) => !dismissedPeople.has(person.profileKey));
+        if (items.length === module.items.length) return module;
+        return { ...module, items };
+      })
+      // A row whose every suggestion was removed is an empty carousel under a
+      // heading, so it goes away until the next load brings new people.
+      .filter((module) => module.kind !== "people" || module.items.length > 0);
+  }, [dismissedPeople, modules]);
 
   /**
    * Open the exact reel.
@@ -268,6 +301,7 @@ export function useHomeDiscovery({
       onOpenGroup: handleOpenGroup,
       onOpenPerson: handleOpenPerson,
       onAddFriend: handleAddFriend,
+      onRemovePerson: handleRemovePerson,
       onJoinGroup: handleJoinGroup,
       onDismiss: handleDismiss
     }),
@@ -278,13 +312,14 @@ export function useHomeDiscovery({
       handleOpenGroup,
       handleOpenPerson,
       handleOpenReel,
-      handleOpenStatus
+      handleOpenStatus,
+      handleRemovePerson
     ]
   );
 
   return {
     /** Empty whenever the feature is off — Home needs no flag check of its own. */
-    modules: active ? modules : [],
+    modules: active ? visibleModules : [],
     dismissed,
     rotationOffset,
     loading,

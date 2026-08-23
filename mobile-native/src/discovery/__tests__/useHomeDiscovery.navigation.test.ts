@@ -23,7 +23,9 @@ jest.mock("../sources", () => ({
 }));
 jest.mock("../dismissals", () => ({
   loadDismissedModules: jest.fn().mockResolvedValue(new Set()),
-  dismissModule: jest.fn((kind: string) => new Set([kind]))
+  dismissModule: jest.fn((kind: string) => new Set([kind])),
+  loadDismissedPeople: jest.fn().mockResolvedValue(new Set()),
+  dismissPerson: jest.fn((key: string) => new Set([key]))
 }));
 jest.mock("../../api/friends", () => ({ sendFriendRequest: jest.fn().mockResolvedValue({}) }));
 jest.mock("../../api/groups", () => ({ joinGroup: jest.fn().mockResolvedValue({}) }));

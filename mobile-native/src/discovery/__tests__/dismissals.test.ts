@@ -12,9 +12,17 @@
  * arithmetic instead of as timer choreography.
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { DISMISSAL_TTL_DAYS, __resetDismissals, dismissModule, loadDismissedModules } from "../dismissals";
+import {
+  DISMISSAL_TTL_DAYS,
+  __resetDismissals,
+  dismissModule,
+  dismissPerson,
+  loadDismissedModules,
+  loadDismissedPeople
+} from "../dismissals";
 
 const STORAGE_KEY = "pulse.discovery.dismissed.v1";
+const PEOPLE_STORAGE_KEY = "pulse.discovery.dismissedPeople.v1";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TTL_MS = DISMISSAL_TTL_DAYS * DAY_MS;
 const T0 = Date.parse("2026-06-01T12:00:00Z");
@@ -138,5 +146,83 @@ describe("writing", () => {
     dismissModule("reels", T0);
 
     await expect(loadDismissedModules(T0)).resolves.toEqual(new Set(["reels"]));
+  });
+});
+
+/**
+ * Removing one suggestion, as opposed to the whole row.
+ *
+ * The requirement the user actually feels is "the person I removed does not come
+ * back on the next scroll" — and the server has no record of a client-side
+ * removal, so it will keep offering the same person. That makes this store the
+ * only thing standing between a tap and the card reappearing.
+ */
+describe("removing one person", () => {
+  it("keeps a removal across a cold start", async () => {
+    dismissPerson("atlas", T0);
+    __resetDismissals();
+
+    await expect(loadDismissedPeople(T0 + DAY_MS)).resolves.toEqual(new Set(["atlas"]));
+  });
+
+  it("returns the new set synchronously so the card leaves on the next frame", () => {
+    expect(dismissPerson("atlas", T0)).toEqual(new Set(["atlas"]));
+  });
+
+  it("accumulates across people", () => {
+    dismissPerson("atlas", T0);
+
+    expect(dismissPerson("vega", T0)).toEqual(new Set(["atlas", "vega"]));
+  });
+
+  it("ignores an empty key rather than storing one", () => {
+    // A suggestion with no profile key is unaddressable anyway; storing `""`
+    // would make every later unaddressable card look already-removed.
+    expect(dismissPerson("", T0)).toEqual(new Set());
+  });
+
+  it("expires each person on their own clock", async () => {
+    dismissPerson("atlas", T0);
+    dismissPerson("vega", T0 + 10 * DAY_MS);
+    __resetDismissals();
+
+    await expect(loadDismissedPeople(T0 + TTL_MS + DAY_MS)).resolves.toEqual(new Set(["vega"]));
+  });
+
+  it("releases a person once the window has passed", async () => {
+    dismissPerson("atlas", T0);
+    __resetDismissals();
+
+    await expect(loadDismissedPeople(T0 + TTL_MS)).resolves.toEqual(new Set());
+  });
+
+  it("does not confuse a removed person with a dismissed row", async () => {
+    // Two stores, two questions. Removing every person in the row must not read
+    // as "the viewer dismissed People", or the row never comes back at all.
+    dismissPerson("atlas", T0);
+
+    expect(await loadDismissedModules(T0)).toEqual(new Set());
+    expect(await loadDismissedPeople(T0)).toEqual(new Set(["atlas"]));
+  });
+
+  it("persists to its own key in the background", async () => {
+    dismissPerson("atlas", T0);
+
+    await Promise.resolve();
+    expect(JSON.parse((await AsyncStorage.getItem(PEOPLE_STORAGE_KEY)) || "{}")).toEqual({ atlas: T0 });
+    expect(await AsyncStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it("does not throw when the write fails", async () => {
+    (AsyncStorage.setItem as jest.Mock).mockImplementationOnce(() => Promise.reject(new Error("disk full")));
+
+    expect(() => dismissPerson("atlas", T0)).not.toThrow();
+    await Promise.resolve();
+  });
+
+  it("treats a corrupt store as nothing removed", async () => {
+    await AsyncStorage.setItem(PEOPLE_STORAGE_KEY, "{not json");
+
+    await expect(loadDismissedPeople(T0)).resolves.toEqual(new Set());
   });
 });

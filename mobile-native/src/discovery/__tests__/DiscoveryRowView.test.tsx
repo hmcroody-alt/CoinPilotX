@@ -55,6 +55,7 @@ function actions(): jest.Mocked<DiscoveryRowActions> {
     onOpenGroup: jest.fn(),
     onOpenPerson: jest.fn(),
     onAddFriend: jest.fn(),
+    onRemovePerson: jest.fn(),
     onJoinGroup: jest.fn(),
     onSeeAll: jest.fn(),
     onDismiss: jest.fn()
@@ -224,6 +225,35 @@ describe("in-card actions (§5, §7, §11)", () => {
     expect(getByTestId("discovery-join-group-astro").props.accessibilityLabel).toContain(
       "social:feed.discovery.joined"
     );
+  });
+
+  it("removes the suggestion that was tapped, not the first in the row", () => {
+    // Same failure mode as the tap assertions above: a remove control wired to
+    // the wrong card silently deletes someone the user wanted to keep.
+    const { getByTestId, handlers } = renderRow(peopleModule);
+
+    fireEvent.press(getByTestId("discovery-remove-person-atlas"));
+
+    expect(handlers.onRemovePerson.mock.calls[0][0]).toMatchObject({ profileKey: "atlas" });
+  });
+
+  it("removes a suggestion without opening the profile or sending a request", () => {
+    const { getByTestId, handlers } = renderRow(peopleModule);
+
+    fireEvent.press(getByTestId("discovery-remove-person-nova"));
+
+    expect(handlers.onOpenPerson).not.toHaveBeenCalled();
+    expect(handlers.onAddFriend).not.toHaveBeenCalled();
+  });
+
+  it("keeps the row's own dismiss separate from removing one person", () => {
+    // The header X hides the whole module; the card X hides one suggestion.
+    // Wiring both to the same handler would make one annoyed tap remove the row.
+    const { getByTestId, handlers } = renderRow(peopleModule);
+
+    fireEvent.press(getByTestId("discovery-remove-person-vega"));
+
+    expect(handlers.onDismiss).not.toHaveBeenCalled();
   });
 });
 
