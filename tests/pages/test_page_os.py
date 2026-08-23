@@ -20,12 +20,15 @@ Covers the mission's hard rules:
   * no hard delete: DEACTIVATED keeps the row and its audit history.
 """
 
+import json
 import os
 import sqlite3
 import sys
 import types
 import unittest
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from unittest import mock
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, REPO_ROOT)
@@ -91,6 +94,16 @@ CREATE TABLE pulse_audio_tracks (
     approved_by_admin INTEGER DEFAULT 0,
     active INTEGER DEFAULT 1
 );
+-- Business OS keys on TEXT, both for the id and for the owner. That is the
+-- whole reason `_LINK_OWNER_SOURCES` needed a key kind, so the column types
+-- here are load-bearing: an INTEGER `business_id` would let the old integer
+-- reader pass and hide the bug this fixture exists to catch.
+CREATE TABLE business_os_business (
+    business_id TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    status TEXT DEFAULT 'active'
+);
 """
 
 # Resources the OWNER genuinely holds, and the matching ones a STRANGER holds.
@@ -104,6 +117,8 @@ OWNER_GROUP_ID = 3
 STRANGER_GROUP_ID = 31
 OWNER_ARTIST = "Night Signal"
 STRANGER_ARTIST = "Someone Else"
+OWNER_BUSINESS_ID = "biz_owner01"
+STRANGER_BUSINESS_ID = "biz_stranger01"
 
 
 def make_conn():
@@ -130,8 +145,28 @@ def make_conn():
                  "VALUES ('Track One', ?, ?, 'https://cdn/one.mp3', 1)", (OWNER_ARTIST, OWNER))
     conn.execute("INSERT INTO pulse_audio_tracks (title, artist, uploader_user_id, audio_url, approved_by_admin) "
                  "VALUES ('Other Track', ?, ?, 'https://cdn/two.mp3', 1)", (STRANGER_ARTIST, STRANGER))
+    # Owner ids go in as text, the way Business OS stores them (`_sid`).
+    conn.execute("INSERT INTO business_os_business (business_id, owner_user_id, display_name) "
+                 "VALUES (?, ?, 'Owner Venue')", (OWNER_BUSINESS_ID, str(OWNER)))
+    conn.execute("INSERT INTO business_os_business (business_id, owner_user_id, display_name) "
+                 "VALUES (?, ?, 'Stranger Venue')", (STRANGER_BUSINESS_ID, str(STRANGER)))
     pulsesoc_pages.ensure_tables(conn)
     return conn
+
+
+@contextmanager
+def events_switched(on):
+    """Pretend the Business OS events flag is on (or off) for this block.
+
+    Patched at `pulsesoc_pages.events_enabled` rather than through the
+    environment on purpose. The real function imports the events package, and
+    an import failure there is reported as "off" — so a test that set the env
+    var and never noticed the import had failed would pass while proving
+    nothing. `test_the_events_flag_is_read_from_the_events_domain` covers the
+    delegation itself; everything else states which world it is testing.
+    """
+    with mock.patch.object(pulsesoc_pages, "events_enabled", return_value=bool(on)):
+        yield
 
 
 def _now_iso():
@@ -744,10 +779,32 @@ class LinkOwnershipTests(unittest.TestCase):
         self.assertRefused("store", "not-an-id")
 
     def test_a_link_type_with_no_owner_resolver_is_refused(self):
-        # `business_os` is declared in LINK_TYPES and read by nothing. Until
-        # something can answer who a ref belongs to, storing one is storing a
-        # claim that cannot be checked later.
-        self.assertRefused("business_os", "anything")
+        # Every declared type now has a resolver, so the claim this test makes
+        # has to be made against a type that does not exist rather than one
+        # that is merely unfinished. `set_link` rejects it at the vocabulary
+        # check, before anything is stored.
+        self.assertRefused("telepathy", "anything")
+        for link_type in pulsesoc_pages.LINK_TYPES:
+            with self.subTest(link_type=link_type):
+                self.assertIn(link_type, pulsesoc_pages._LINK_OWNER_SOURCES,
+                              f"{link_type} can be offered but nothing can say whose it is")
+
+    def test_cannot_claim_a_strangers_business(self):
+        # The events tab reads through this link, so an unguarded one would
+        # publish another company's dates — and its ticket prices — under this
+        # presence.
+        self.assertRefused("business_os", STRANGER_BUSINESS_ID)
+
+    def test_a_text_business_id_is_matched_rather_than_coerced_to_a_sentinel(self):
+        # `biz_owner01` is not an integer. The int reader turned every business
+        # id into the -1 sentinel, so this refused the real owner and looked
+        # like a permission bug rather than a type bug.
+        link = pulsesoc_pages.set_link(
+            self.conn, OWNER, self.page_id, "business_os", OWNER_BUSINESS_ID)
+        self.assertEqual(link["ref_id"], OWNER_BUSINESS_ID)
+
+    def test_a_business_id_that_names_nothing_is_refused(self):
+        self.assertRefused("business_os", "biz_not_real")
 
     def test_the_owner_can_still_link_what_the_owner_holds(self):
         # The counterweight: a check that refuses everything is not a fix.
@@ -756,6 +813,7 @@ class LinkOwnershipTests(unittest.TestCase):
             ("ad_account", OWNER_ADVERTISER_ID),
             ("community", OWNER_GROUP_ID),
             ("music_artist", OWNER_ARTIST),
+            ("business_os", OWNER_BUSINESS_ID),
         ):
             with self.subTest(link_type=link_type):
                 link = pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, link_type, str(ref))
@@ -812,6 +870,42 @@ class LinkOwnershipTests(unittest.TestCase):
                 self.conn, STRANGER, self.page_id, "store", str(STRANGER_SELLER_ID))
 
 
+class _RecordingCursor:
+    def __init__(self, inner, log):
+        self._inner = inner
+        self._log = log
+
+    def execute(self, sql, params=()):
+        self._log.append((sql, list(params)))
+        return self._inner.execute(sql, params)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+class _RecordingConn:
+    """A connection that remembers what was bound to each cursor query.
+
+    Needed because one invariant here is invisible in its results. SQLite
+    applies the *column's* affinity to a bound parameter, so an integer
+    compared against a TEXT column is silently converted and matches;
+    PostgreSQL refuses `text = integer` and raises. A test that only looks at
+    the rows returned therefore passes under the dev engine whichever type the
+    code binds, and the production failure ships. The bound parameter is the
+    only place the difference is observable before deploy.
+    """
+
+    def __init__(self, inner, log):
+        self._inner = inner
+        self._log = log
+
+    def cursor(self):
+        return _RecordingCursor(self._inner.cursor(), self._log)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
 class LinkOptionsTests(unittest.TestCase):
     """`link_options` is what makes connecting a shop a choice rather than a
     request to type an internal id. It has to offer exactly what `set_link`
@@ -855,8 +949,15 @@ class LinkOptionsTests(unittest.TestCase):
         for link_type, entry in self.options().items():
             with self.subTest(link_type=link_type):
                 self.assertIn(link_type, pulsesoc_pages.LINK_TYPES)
+        # `event` was a declared type that could never be connected. It is gone
+        # rather than hidden: a presence connects to the business that runs its
+        # dates, not to each date.
         self.assertNotIn("event", self.options())
-        self.assertNotIn("business_os", self.options())
+        self.assertNotIn("event", pulsesoc_pages.LINK_TYPES)
+        # `business_os` used to be in the same state and is now real, so it is
+        # offered — with the owner's own business behind it and nobody else's.
+        refs = [option["ref_id"] for option in self.options()["business_os"]["options"]]
+        self.assertEqual(refs, [OWNER_BUSINESS_ID])
 
     def test_every_offered_ref_is_actually_acceptable(self):
         # The strongest form of the same claim: take the offer at its word and
@@ -891,6 +992,38 @@ class LinkOptionsTests(unittest.TestCase):
     def test_a_stranger_gets_no_inventory_at_all(self):
         with self.assertRaises(PageError):
             pulsesoc_pages.link_options(self.conn, STRANGER, self.page_id)
+
+    def test_owner_ids_are_bound_as_the_type_the_owning_column_actually_is(self):
+        """Every candidate query binds owner ids in its column's own type.
+
+        This asserts against the query rather than the answer, which is not the
+        usual shape and is deliberate. `business_os_business.owner_user_id` is
+        TEXT while every other owner column is INTEGER, and the ids arrive as
+        integers, so one of these queries has to convert. Under SQLite it does
+        not matter — the engine coerces either way and the rows come back — so
+        getting it wrong is not something the returned data can show. Under
+        PostgreSQL the mismatched comparison raises and the member is offered
+        nothing to connect. Reading the binding is what makes the two engines
+        answer the same question here.
+
+        Driven off `_LINK_CANDIDATE_SOURCES` rather than a written-out list, so
+        a source added later is covered by this the day it is added.
+        """
+        log = []
+        pulsesoc_pages.link_options(_RecordingConn(self.conn, log), OWNER, self.page_id)
+        expected = {"text": str, "int": int}
+        for link_type, source in pulsesoc_pages._LINK_CANDIDATE_SOURCES.items():
+            table, _ref, owner_column, _label, owner_kind, _extra = source
+            with self.subTest(link_type=link_type):
+                self.assertIn(owner_kind, expected)
+                bound = [params for sql, params in log
+                         if "FROM %s WHERE %s IN" % (table, owner_column) in sql]
+                # If this ever finds nothing, the assertion below cannot fail
+                # for the right reason — so the query must be found first.
+                self.assertEqual(len(bound), 1)
+                self.assertTrue(bound[0])
+                for value in bound[0]:
+                    self.assertIsInstance(value, expected[owner_kind])
 
     def test_a_missing_backing_table_offers_nothing_rather_than_failing(self):
         # Optional subsystems are registered in try/except and can be absent.
@@ -1084,26 +1217,56 @@ class ModuleAvailabilityTests(unittest.TestCase):
         self.assertEqual(view["shop_seller_id"], OWNER_SELLER_ID)
         self.assertIn("merch", view["tabs"])
 
-    def test_an_event_link_is_refused_rather_than_stored_unresolvable(self):
-        # The canonical events backend lists only for a caller holding a
-        # manager role on the business, so a public events tab would 403 for
-        # every visitor. Better no tab than a guaranteed dead one.
-        #
-        # `event` has no owner resolver, which means nothing can say whose
-        # event a ref names. Storing it anyway would leave a row that later
-        # code has to decide how to trust; refusing it keeps the question
-        # unanswered rather than answering it wrong.
+    def test_a_per_event_link_type_no_longer_exists_to_be_stored(self):
+        # `event` was declared and never resolvable. A presence connects to the
+        # business that runs its dates, which keeps answering as the calendar
+        # changes; a link per date would need re-doing every tour.
         with self.assertRaises(PageError) as ctx:
             pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "event", "5")
         self.assertEqual(ctx.exception.status_code, 400)
-        view = self._view()
-        self.assertNotIn("events", view["tabs"])
-        # Not "an events module that reports itself unavailable" — no events
-        # module at all. A module key that is always False is still a shape the
-        # client can be tempted to render a tab from, and `_visible_tabs` hands
-        # the team the whole type ceiling regardless of availability, so an
-        # always-False entry in TYPE_TABS was a tab the owner could still tap.
-        self.assertNotIn("events", view["modules"])
+        self.assertEqual(pulsesoc_pages.list_links(self.conn, self.page_id, "event"), [])
+
+    def test_the_events_tab_needs_a_business_behind_it(self):
+        with events_switched(True):
+            view = self._view()
+            self.assertNotIn("events", view["tabs"])
+            self.assertFalse(view["modules"]["events"])
+            pulsesoc_pages.set_link(
+                self.conn, OWNER, self.page_id, "business_os", OWNER_BUSINESS_ID)
+            view = self._view()
+            self.assertIn("events", view["tabs"])
+            self.assertTrue(view["modules"]["events"])
+
+    def test_the_events_tab_stays_shut_while_the_domain_is_switched_off(self):
+        # A connected business is not enough. With the flag off every events
+        # read raises 503, so promising a visitor the tab would promise a tab
+        # that cannot load.
+        pulsesoc_pages.set_link(
+            self.conn, OWNER, self.page_id, "business_os", OWNER_BUSINESS_ID)
+        with events_switched(False):
+            view = self._view()
+            self.assertNotIn("events", view["tabs"])
+            self.assertFalse(view["modules"]["events"])
+
+    def test_the_events_flag_is_read_from_the_events_domain(self):
+        # Not from an environment variable copied into this module. One place
+        # decides what the flag means and this asks it.
+        from services.business_os.events import service as events_service
+        with mock.patch.object(events_service, "is_enabled", return_value=True):
+            self.assertTrue(pulsesoc_pages.events_enabled())
+        with mock.patch.object(events_service, "is_enabled", return_value=False):
+            self.assertFalse(pulsesoc_pages.events_enabled())
+
+    def test_a_business_link_does_not_reach_the_public_view(self):
+        # The `store` link's id is published because the shop tab deep-links
+        # into Marketplace with it. Events need no such handle, so the business
+        # id stops at the server — a visitor who never receives it cannot walk
+        # it into the Business OS management endpoints.
+        pulsesoc_pages.set_link(
+            self.conn, OWNER, self.page_id, "business_os", OWNER_BUSINESS_ID)
+        with events_switched(True):
+            view = self._view()
+        self.assertNotIn(OWNER_BUSINESS_ID, json.dumps(view))
 
     def test_the_videos_tab_appears_once_the_presence_has_a_video_post(self):
         view = self._view()
@@ -1517,16 +1680,62 @@ class ManageSectionTests(unittest.TestCase):
         self.assertTrue(done["verification"]["ready"])
         self.assertEqual(done["verification"]["setup"], "")
 
-    def test_events_is_not_offered_while_there_is_nothing_behind_it(self):
-        # `event` links are refused outright because there is no public events
-        # read to point a tab at. A management section for it would be a
-        # promise the product cannot keep. This fails the day events land,
-        # which is the reminder to wire the section then.
-        for page_type in ("ARTIST", "VENUE", "NONPROFIT"):
+    def test_events_is_offered_to_the_types_that_put_dates_on(self):
+        for page_type in ("ARTIST", "VENUE", "NONPROFIT", "ORGANIZATION", "SPORTS_TEAM"):
             with self.subTest(page_type=page_type):
-                sections, _ = self.sections(
-                    page_type=page_type, handle=f"ev{page_type.lower()}", name=f"Ev {page_type}")
-                self.assertNotIn("events", sections)
+                with events_switched(True):
+                    sections, _ = self.sections(
+                        page_type=page_type, handle=f"ev{page_type.lower()}",
+                        name=f"Ev {page_type}")
+                self.assertIn("events", sections)
+                # Offered, and honest about being empty: nothing is connected
+                # yet, so it names the one thing missing rather than claiming
+                # to be finished.
+                self.assertFalse(sections["events"]["ready"])
+                self.assertIn("business", sections["events"]["setup"].lower())
+
+    def test_events_is_not_offered_to_a_type_that_does_not_put_dates_on(self):
+        # A section for a type that will never have it is permanent clutter.
+        with events_switched(True):
+            sections, _ = self.sections(
+                page_type="RESTAURANT", handle="ladate", name="La Date")
+        self.assertNotIn("events", sections)
+
+    def test_the_events_setup_line_names_the_reason_it_is_empty(self):
+        # Two different empty states with two different owners. Telling an
+        # owner to connect a business when the domain is switched off sends
+        # them to do work that will not help.
+        with events_switched(False):
+            off, _ = self.sections(page_type="VENUE", handle="evoff", name="Ev Off")
+        self.assertFalse(off["events"]["ready"])
+        self.assertIn("not switched on", off["events"]["setup"])
+
+    def test_events_reports_ready_once_a_business_is_connected(self):
+        with events_switched(True):
+            page = create(self.conn, page_type="VENUE", handle="evon", name="Ev On")
+            pulsesoc_pages.set_link(
+                self.conn, OWNER, page["id"], "business_os", OWNER_BUSINESS_ID)
+            sections = {s["key"]: s for s in
+                        pulsesoc_pages.manage_view(self.conn, OWNER, page["id"])["sections"]}
+        self.assertTrue(sections["events"]["ready"])
+        self.assertEqual(sections["events"]["setup"], "")
+
+    def test_operations_is_not_ready_until_a_business_is_named(self):
+        # It used to be added with `ready=True` and nothing behind it — a
+        # section reporting itself finished before anyone had said which
+        # business it meant.
+        page = create(self.conn, page_type="BUSINESS", handle="acmeops", name="Acme Ops")
+        sections = {s["key"]: s for s in
+                    pulsesoc_pages.manage_view(self.conn, OWNER, page["id"])["sections"]}
+        self.assertFalse(sections["business_os"]["ready"])
+        pulsesoc_pages.set_link(
+            self.conn, OWNER, page["id"], "business_os", OWNER_BUSINESS_ID)
+        sections = {s["key"]: s for s in
+                    pulsesoc_pages.manage_view(self.conn, OWNER, page["id"])["sections"]}
+        self.assertTrue(sections["business_os"]["ready"])
+        # And it is called what the person running it calls it, not what the
+        # subsystem is called in the repository.
+        self.assertEqual(sections["business_os"]["label"], "Operations")
 
     def test_audience_is_not_offered_while_followers_cannot_be_listed(self):
         # Followers are counted, not listable. The count is reported as an
@@ -1626,6 +1835,136 @@ class MusicModuleTests(unittest.TestCase):
         with self.assertRaises(PageError) as ctx:
             pulsesoc_pages.page_music(self.conn, self.page_id)
         self.assertEqual(ctx.exception.status_code, 503)
+
+
+class EventsModuleTests(unittest.TestCase):
+    """The presence points at the business that schedules its dates.
+
+    Everything about an event — who may see it, in what shape, how far ahead —
+    is decided in `services/business_os/events`. This module's whole job is to
+    resolve *which* business and to hand back what that domain returned, so
+    these tests are about the pointer and the empty states, not about events.
+    """
+
+    def setUp(self):
+        self.conn = make_conn()
+        self.page_id = create(self.conn, page_type="VENUE", handle="thehall",
+                              name="The Hall")["id"]
+
+    @contextmanager
+    def _events_domain(self, list_public_events):
+        """Stand in for the events domain, on the real module.
+
+        Not by swapping `sys.modules`: `page_events` does
+        `from services.business_os.events import service`, which reads the
+        attribute off the already-imported package and ignores a `sys.modules`
+        entry entirely. Patching the attribute is what the code under test
+        actually reaches, and it keeps the call signature honest — a stub with
+        the wrong parameters fails here rather than passing.
+        """
+        from services.business_os.events import service as events_service
+        with mock.patch.object(events_service, "list_public_events", list_public_events):
+            with events_switched(True):
+                yield
+
+    def _link(self):
+        pulsesoc_pages.set_link(
+            self.conn, OWNER, self.page_id, "business_os", OWNER_BUSINESS_ID)
+
+    def test_an_unlinked_presence_says_so_without_asking_the_events_domain(self):
+        def explode(*_a, **_kw):
+            raise AssertionError("events must not be queried for an unlinked presence")
+
+        with self._events_domain(explode):
+            out = pulsesoc_pages.page_events(self.conn, self.page_id)
+        self.assertTrue(out["enabled"])
+        self.assertFalse(out["linked"])
+        self.assertEqual(out["events"], [])
+
+    def test_a_switched_off_domain_is_reported_as_switched_off_not_as_empty(self):
+        # Two different problems with two different owners: an environment that
+        # does not serve events, and a presence nobody has connected. A single
+        # `available: false` would leave the owner's empty state guessing.
+        self._link()
+        with events_switched(False):
+            out = pulsesoc_pages.page_events(self.conn, self.page_id)
+        self.assertFalse(out["enabled"])
+        self.assertTrue(out["linked"])
+        self.assertEqual(out["events"], [])
+
+    def test_a_linked_presence_serves_what_the_events_domain_returned(self):
+        seen = {}
+
+        def listing(business_id, limit=12):
+            seen["business_id"] = business_id
+            seen["limit"] = limit
+            return [{"event_id": "evt_1", "title": "Opening night"}]
+
+        self._link()
+        with self._events_domain(listing):
+            out = pulsesoc_pages.page_events(self.conn, self.page_id)
+        self.assertEqual(seen["business_id"], OWNER_BUSINESS_ID)
+        self.assertEqual([e["title"] for e in out["events"]], ["Opening night"])
+        self.assertTrue(out["linked"] and out["enabled"])
+
+    def test_the_business_id_it_looked_up_by_is_not_handed_back(self):
+        # `store` publishes its seller id because the shop tab deep-links with
+        # it. Events need no such handle, so the internal key stops here rather
+        # than travelling to a client that could walk it into Business OS.
+        self._link()
+        with self._events_domain(lambda business_id, limit=12: []):
+            out = pulsesoc_pages.page_events(self.conn, self.page_id)
+        self.assertNotIn(OWNER_BUSINESS_ID, json.dumps(out))
+
+    def test_the_caller_cannot_ask_for_an_unbounded_page_of_events(self):
+        seen = {}
+
+        def listing(business_id, limit=12):
+            seen["limit"] = limit
+            return []
+
+        self._link()
+        with self._events_domain(listing):
+            pulsesoc_pages.page_events(self.conn, self.page_id, limit=5000)
+            self.assertEqual(seen["limit"], 50)
+            pulsesoc_pages.page_events(self.conn, self.page_id, limit="not a number")
+            self.assertEqual(seen["limit"], 12)
+
+    def test_a_failing_events_domain_is_an_honest_error_not_an_empty_calendar(self):
+        def boom(*_a, **_kw):
+            raise RuntimeError("events down")
+
+        self._link()
+        with self._events_domain(boom):
+            with self.assertRaises(PageError) as ctx:
+                pulsesoc_pages.page_events(self.conn, self.page_id)
+        self.assertEqual(ctx.exception.status_code, 503)
+
+    def test_an_unpublished_presence_serves_its_modules_to_nobody(self):
+        # The lifecycle invariant used to be enforced per-route, so it was
+        # enforced in the routes somebody remembered. `/music` was not one of
+        # them: an unpublished presence still served its catalogue.
+        self._link()
+        pulsesoc_pages.set_status(self.conn, OWNER, self.page_id, "UNPUBLISHED")
+        with self._events_domain(lambda business_id, limit=12: []):
+            with self.assertRaises(PageError) as ctx:
+                pulsesoc_pages.page_events(self.conn, self.page_id)
+            self.assertEqual(ctx.exception.status_code, 404)
+            with self.assertRaises(PageError) as ctx:
+                pulsesoc_pages.page_events(self.conn, self.page_id, viewer_user_id=STRANGER)
+            self.assertEqual(ctx.exception.status_code, 404)
+            # Its own team still sees it — that is how it gets published again.
+            self.assertEqual(
+                pulsesoc_pages.page_events(
+                    self.conn, self.page_id, viewer_user_id=OWNER)["linked"], True)
+
+    def test_the_music_module_is_hidden_for_an_unpublished_presence_too(self):
+        page_id = create(self.conn, handle="hiddenband", name="Hidden Band")["id"]
+        pulsesoc_pages.set_link(self.conn, OWNER, page_id, "music_artist", OWNER_ARTIST)
+        pulsesoc_pages.set_status(self.conn, OWNER, page_id, "UNPUBLISHED")
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.page_music(self.conn, page_id)
+        self.assertEqual(ctx.exception.status_code, 404)
 
 
 class AdminInspectionTests(unittest.TestCase):

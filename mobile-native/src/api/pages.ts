@@ -616,6 +616,60 @@ export async function listPageMusic(pageId: number, limit = 24) {
 }
 
 /**
+ * One upcoming date, in the shape a visitor is allowed to see it.
+ *
+ * Deliberately narrower than the record Business OS stores. There is no
+ * organiser id, no owning business id, no attendee list and no sales figure —
+ * a tier reports `sold_out` rather than how many are left, because "how well
+ * is this selling" is the organiser's business and not the audience's. The
+ * server builds this from an allowlist, so a column added to the events table
+ * later stays invisible here until somebody decides it is public.
+ */
+export type PageEventTier = {
+  ticket_type_id: string;
+  name: string;
+  price_cents: number;
+  sold_out: boolean;
+};
+
+export type PageEvent = {
+  event_id: string;
+  title: string;
+  description?: string;
+  venue?: string;
+  starts_at?: string;
+  ends_at?: string;
+  status?: string;
+  currency?: string;
+  ticket_types?: PageEventTier[];
+};
+
+/**
+ * Upcoming dates for a presence, read lazily when the Events tab opens.
+ *
+ * `enabled` and `linked` come back separately and mean different things.
+ * `enabled: false` is the events domain being switched off for this
+ * environment — nobody can fix that from the app, so the empty state must not
+ * ask them to. `linked: false` is this presence not having been pointed at the
+ * business that runs its dates, which the owner *can* fix and should be
+ * offered. Collapsing them into one "no events" would send half the owners who
+ * see it to do work that would not help.
+ */
+export async function listPageEvents(pageId: number, limit = 12) {
+  const data = await pulseApi<{
+    ok: boolean;
+    enabled?: boolean;
+    linked?: boolean;
+    events?: PageEvent[];
+  }>(`/api/pages/${pageId}/events?limit=${limit}`);
+  return {
+    enabled: Boolean(data.enabled),
+    linked: Boolean(data.linked),
+    events: data.events || []
+  };
+}
+
+/**
  * Publish a post AS the page. Goes through `/api/pages/:id/posts`, which runs
  * the role check server-side and then hands off to the ONE canonical content
  * system (`pulse_feed_engine.create_post` with `page_id`) — page posts land in

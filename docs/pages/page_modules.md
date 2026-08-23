@@ -33,14 +33,11 @@ directions of that invariant.
   `link_type` exists in `pulse_page_links` (`TAB_LINK_SOURCE`).
 - **Content-backed** — `videos`. Backed by the presence's own `pulse_posts` rows whose
   `post_type` is in `VIDEO_POST_TYPES`, so it needs no link.
+- **Link-and-flag-backed** — `events`. Needs the `business_os` link *and*
+  `events_enabled()`, because with `BUSINESS_OS_EVENTS` off the whole events domain
+  raises 503 and a linked business would otherwise raise a tab that cannot load.
 
-There is no fourth category. A tab with no rule is a bug, and raises.
-
-`events` is absent from every ceiling. The `event` link type is refused outright: it has
-no owner resolver, so nothing can say whose event a ref names, and
-`services/business_os/events` lists only for a caller holding a manager role on the
-business — there is no public read. A tab that 403s for every visitor is worse than no
-tab, so events returns only together with a visitor-safe listing.
+There is no fifth category. A tab with no rule is a bug, and raises.
 
 `services` is gone from BUSINESS, PROFESSIONAL_SERVICE and LOCAL_BUSINESS; those types
 get `shop`. Marketplace already carries `service` and `booking` listing types, so the
@@ -85,7 +82,7 @@ Modules load when their tab is opened, not with the page. The root payload stays
 light, and a module failure is contained: a music catalogue outage leaves the rest of
 the presence usable, shows "We couldn't load this section." and offers **Try Again**.
 
-`useLazyModule()` in `PageScreen.tsx` is that behaviour for all three modules. Its
+`useLazyModule()` in `PageScreen.tsx` is that behaviour for every lazy module. Its
 fetch guard is a ref keyed on `presence id + retry counter`, never the module's own
 state: an effect that depends on the state it sets cancels its own in-flight request on
 the first re-render and hangs on the spinner forever.
@@ -102,6 +99,53 @@ never a copy of the discography.
 - Catalogue failure → `PageError(503)`, surfaced as "We couldn't load this section."
   A failure is never converted into an empty discography, which is a different and
   false statement.
+
+## Events linkage
+
+A presence connects to **the business that runs its dates**, not to each date. The
+`event` link type is gone from `LINK_TYPES` entirely — it was declared and never
+resolvable, and even working it would have needed re-doing every tour date. The
+`business_os` link is the claim that can be checked (`business_os_business.owner_user_id`,
+the owner only — pointing a presence at a business is an identity claim, not an
+operational task) and it keeps answering as the calendar changes.
+
+`page_events()` reads that link and calls `events_service.list_public_events()`. Two
+things are new there and both are the point of the module:
+
+- **A stranger read exists.** `list_public_events` takes no actor, filters to
+  `status = 'published'` in SQL so an unpublished event is never *loaded*, drops events
+  that have already ended, and returns `_event_visitor()` rows.
+- **`_event_visitor` is a field allowlist**, not a blocklist. `event_id`, `title`,
+  `description`, `venue`, `starts_at`, `ends_at`, `status`, `currency`, plus ticket
+  tiers reduced to `ticket_type_id / name / price_cents / sold_out`. Organiser identity,
+  the owning business id, attendees and every sales count are absent. A column added to
+  `business_os_events` later is invisible to visitors until somebody decides it is
+  public — the safe direction for that mistake to fail in. `_event_manage()` is the
+  other half: the stored row, for a caller who holds a role on the business.
+
+`starts_at` / `ends_at` are unvalidated free text server-side, so no SQL date comparison
+can be trusted. "Has it ended" is decided in Python over a bounded 500-row window
+(`PUBLIC_EVENT_SCAN_CAP`), `ends_at` beats `starts_at` so a festival is still on on its
+second day, a zoneless timestamp reads as UTC, and anything unparseable counts as *not*
+ended and sorts last. `PageScreen` shows an unparseable date back exactly as it was
+typed, because "Late summer 2026" was meant to be read.
+
+`page_events()` returns `enabled` and `linked` as **separate** flags, and the client
+branches on both. They are different problems with different owners: `enabled: false` is
+the environment, which nobody fixes from the app, so the team is told so and offered
+nothing; `linked: false` is this presence, which the team can fix, so they get **Connect
+a business**. A single `available: false` would send half the people who saw it to do
+work that would not help. Neither flag is ever guessed — the client reads a missing one
+as `false`, so an older server cannot be mistaken for a working events domain.
+
+The `business_id` the link stores is deliberately **not** returned to the client. The
+shop tab publishes `shop_seller_id` only because it must deep-link into Marketplace;
+events need no such handle, so the internal key stops at the server and a caller who
+never receives it cannot walk it into the Business OS management endpoints.
+
+Event rows render as plain views, not pressables. This build has no event detail screen,
+and a row that lifts under the finger and then does nothing is exactly the defect this
+module exists to avoid.
 
 Adding a module means adding a link type and its `TAB_LINK_SOURCE` entry — not a new
 tab renderer that fabricates content.

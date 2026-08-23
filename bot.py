@@ -18306,9 +18306,34 @@ def api_admin_page_detail(page_id):
 @webhook_app.route("/api/pages/<int:page_id>/music", methods=["GET"])
 def api_pulsesoc_page_music(page_id):
     init_db()
+    user = api_account_user()
     conn = pulse_pages_conn()
     try:
-        return jsonify({"ok": True, **pulsesoc_pages.page_music(conn, page_id, request.args.get("limit") or 24)})
+        return jsonify({"ok": True, **pulsesoc_pages.page_music(
+            conn, page_id, request.args.get("limit") or 24,
+            viewer_user_id=user["user_id"] if user else None)})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/events", methods=["GET"])
+def api_pulsesoc_page_events(page_id):
+    """Upcoming dates for a presence. Public, and no login required.
+
+    Login is read but not demanded: a signed-in team member may see the page
+    while it is unpublished, and everyone else gets the same visitor
+    projection. Nothing here varies by who is asking beyond that — the events
+    themselves are the published ones either way.
+    """
+    init_db()
+    user = api_account_user()
+    conn = pulse_pages_conn()
+    try:
+        return jsonify({"ok": True, **pulsesoc_pages.page_events(
+            conn, page_id, request.args.get("limit") or 12,
+            viewer_user_id=user["user_id"] if user else None)})
     except Exception as exc:
         return pulse_pages_error_response(exc)
     finally:

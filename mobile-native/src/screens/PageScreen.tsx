@@ -14,8 +14,10 @@ import {
 import {
   getPage,
   getPageByHandle,
+  listPageEvents,
   listPageMusic,
   listPagePosts,
+  PageEvent,
   PageTrack,
   pageTypeLabel,
   PulsePage,
@@ -79,6 +81,60 @@ const EMPTY_POSTS: PulsePost[] = [];
 const SHOP_TABS = ["shop", "merch", "menu"];
 
 /**
+ * The events module carries its flags, not just its rows.
+ *
+ * Every other module here loads a list and an empty list means one thing. This
+ * one has three empties that read identically and need different sentences:
+ * the events domain is off for the whole environment, the presence has not
+ * been pointed at a business, or the business simply has no dates coming up.
+ * So the module's value is the server's whole answer rather than
+ * `result.events`, and the branch below decides which of the three it is.
+ */
+type PageEventsResult = { enabled: boolean; linked: boolean; events: PageEvent[] };
+const EMPTY_EVENTS: PageEventsResult = { enabled: false, linked: false, events: [] };
+
+/**
+ * A stored date as something to read, or the raw text when it is not a date.
+ *
+ * `starts_at` is free text server-side and is never format-checked on the way
+ * in, so this has to cope with not being given a timestamp at all. Showing the
+ * raw string back is the honest fallback: whoever typed "Late summer 2026"
+ * meant it to be read, and blanking the line would lose the only thing the
+ * page says about when this happens.
+ */
+function eventWhen(value?: string) {
+  const raw = (value || "").trim();
+  if (!raw) return "";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  return parsed.toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  });
+}
+
+/**
+ * What the cheapest still-available tier costs, or that none are left.
+ *
+ * The server sends `sold_out` per tier and never a remaining count, so this
+ * can say "gone" but not "3 left" — which is the intended limit, not a gap to
+ * fill later. An event with no tiers gets no line at all rather than "Free":
+ * we do not know that it is free, only that nobody has priced it here.
+ */
+function eventPrice(event: PageEvent) {
+  const tiers = event.ticket_types || [];
+  if (!tiers.length) return "";
+  const open = tiers.filter((tier) => !tier.sold_out);
+  if (!open.length) return "Sold out";
+  const cheapest = open.reduce((low, tier) => (tier.price_cents < low.price_cents ? tier : low));
+  if (!cheapest.price_cents) return "Free entry";
+  const amount = (cheapest.price_cents / 100).toFixed(2);
+  return `From ${event.currency ? `${event.currency} ` : ""}${amount}`;
+}
+
+/**
  * The public page surface — one component for every page type. The tab set is
  * SERVER-decided per type (artist: posts/music/videos/merch/about; business:
  * home/shop/about; …) and rendered as delivered.
@@ -115,6 +171,9 @@ export function PageScreen({ route, navigation }: Props) {
   );
   const videos = useLazyModule<PulsePost[]>(tab === "videos", pageKey, EMPTY_POSTS, () =>
     listPagePosts(Number(pageKey), { limit: 24, kind: "videos" }).then((result) => result.posts)
+  );
+  const events = useLazyModule<PageEventsResult>(tab === "events", pageKey, EMPTY_EVENTS, () =>
+    listPageEvents(Number(pageKey))
   );
 
   const load = useCallback(async () => {
@@ -450,6 +509,69 @@ export function PageScreen({ route, navigation }: Props) {
         </View>
       );
     }
+    if (tab === "events") {
+      if (events.state === "loading") {
+        return <ActivityIndicator color={colors.accent} style={styles.moduleSpinner} />;
+      }
+      if (events.state === "error") {
+        return moduleFailure(events.retry);
+      }
+      if (!events.data.events.length) {
+        if (!events.data.enabled) {
+          /*
+            The events domain is switched off for this whole environment. The
+            team gets told why the tab is empty and explicitly told there is no
+            step for them — offering "Connect a business" here would be sending
+            them to do work that changes nothing, which is worse than saying
+            nothing. The headline stays the visitor's sentence because from the
+            outside it is still simply true.
+          */
+          return emptyModule(
+            "No dates announced yet.",
+            "Events are switched off for this environment, so there is nothing to connect yet.",
+            null
+          );
+        }
+        return emptyModule(
+          "No dates announced yet.",
+          events.data.linked
+            ? "Dates you schedule for the connected business appear here."
+            : "Events are scheduled against a business. Connect the one that runs these dates and they appear here.",
+          // Same shape as the shop: connecting is a Connections action, and
+          // once something is connected the dates are created where the
+          // organiser already works rather than through a second door here.
+          events.data.linked ? null : { label: "Connect a business", go: goConnections }
+        );
+      }
+      return (
+        <View>
+          {events.data.events.map((event) => {
+            const when = eventWhen(event.starts_at);
+            const price = eventPrice(event);
+            /*
+              A View, not a Pressable. There is no event detail screen in this
+              app, and a row that lifts under the finger and then does nothing
+              is the exact defect this work is about — a control with no depth
+              behind it. Everything the visitor is allowed to know is on the
+              row already.
+            */
+            return (
+              <View key={event.event_id} style={styles.eventRow}>
+                <Text style={styles.trackTitle} numberOfLines={2}>
+                  {event.title}
+                </Text>
+                {when || event.venue ? (
+                  <Text style={styles.trackSub} numberOfLines={1}>
+                    {[when, event.venue].filter(Boolean).join(" · ")}
+                  </Text>
+                ) : null}
+                {price ? <Text style={styles.eventPrice}>{price}</Text> : null}
+              </View>
+            );
+          })}
+        </View>
+      );
+    }
     if (tab === "videos") {
       if (videos.state === "loading") {
         return <ActivityIndicator color={colors.accent} style={styles.moduleSpinner} />;
@@ -645,6 +767,19 @@ const styles = createThemedStyles(() => ({
   error: {
     color: colors.danger,
     fontWeight: "800"
+  },
+  eventPrice: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 4
+  },
+  eventRow: {
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    gap: 2,
+    paddingHorizontal: 16,
+    paddingVertical: 12
   },
   footer: {
     paddingBottom: 48

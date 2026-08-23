@@ -16,12 +16,14 @@ import { fireEvent, render, waitFor } from "@testing-library/react-native";
 const mockGetPage = jest.fn();
 const mockListPosts = jest.fn();
 const mockListMusic = jest.fn();
+const mockListEvents = jest.fn();
 jest.mock("../../api/pages", () => ({
   ...jest.requireActual("../../api/pages"),
   getPage: (...args: unknown[]) => mockGetPage(...args),
   getPageByHandle: (...args: unknown[]) => mockGetPage(...args),
   listPagePosts: (...args: unknown[]) => mockListPosts(...args),
-  listPageMusic: (...args: unknown[]) => mockListMusic(...args)
+  listPageMusic: (...args: unknown[]) => mockListMusic(...args),
+  listPageEvents: (...args: unknown[]) => mockListEvents(...args)
 }));
 
 const mockSearchMarketplace = jest.fn();
@@ -61,6 +63,9 @@ function page(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** A presence whose server-decided tab set includes Events. */
+const withEvents = { tabs: ["posts", "events", "about"], modules: { events: true } };
+
 function show(overrides?: Record<string, unknown>) {
   const navigation = nav();
   const view = render(
@@ -77,6 +82,7 @@ beforeEach(() => {
   mockGetPage.mockResolvedValue(page());
   mockListPosts.mockResolvedValue({ posts: [], has_more: false, next_offset: 0 });
   mockListMusic.mockResolvedValue({ artist: "Night Signal", tracks: [], linked: true });
+  mockListEvents.mockResolvedValue({ enabled: true, linked: true, events: [] });
   mockSearchMarketplace.mockResolvedValue({ items: [] });
 });
 
@@ -242,6 +248,167 @@ describe("shop and videos show the presence's own inventory, not a global list",
  * These tests hold the line at both ends: a visitor is never shown a control
  * they cannot use, and a team member is never shown a dead end.
  */
+/**
+ * The Events tab shows a visitor projection of the canonical events domain:
+ * upcoming published dates and nothing else. What is tested here is that the
+ * screen shows everything it is given, invents nothing it is not, and never
+ * offers an affordance that leads nowhere.
+ */
+describe("events show real dates from the events domain", () => {
+  const dates = [
+    {
+      event_id: "ev1",
+      title: "Vault Session",
+      venue: "The Vault",
+      starts_at: "2099-09-14T20:00:00Z",
+      currency: "GBP",
+      ticket_types: [
+        { ticket_type_id: "t_early", name: "Early", price_cents: 1200, sold_out: true },
+        { ticket_type_id: "t_std", name: "Standard", price_cents: 1800, sold_out: false }
+      ]
+    }
+  ];
+
+  it("does not ask the events domain anything until the tab is opened", async () => {
+    mockGetPage.mockResolvedValue(page(withEvents));
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Events")).toBeTruthy());
+    expect(mockListEvents).not.toHaveBeenCalled();
+    fireEvent.press(view.getByText("Events"));
+    await waitFor(() => expect(mockListEvents).toHaveBeenCalledWith(7));
+  });
+
+  it("shows the date, the venue and the cheapest ticket still on sale", async () => {
+    mockGetPage.mockResolvedValue(page(withEvents));
+    mockListEvents.mockResolvedValue({ enabled: true, linked: true, events: dates });
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Events")).toBeTruthy());
+    fireEvent.press(view.getByText("Events"));
+    await waitFor(() => expect(view.queryByText("Vault Session")).toBeTruthy());
+    expect(view.queryByText(/The Vault/)).toBeTruthy();
+    // 1200 is cheaper but gone, so quoting it would be an advertised price
+    // nobody can pay. 1800 is what the next person through the door spends.
+    expect(view.queryByText("From GBP 18.00")).toBeTruthy();
+    expect(view.queryByText("From GBP 12.00")).toBeNull();
+    // The raw stored timestamp is never put on screen as-is.
+    expect(view.queryByText(/2099-09-14T20:00:00Z/)).toBeNull();
+  });
+
+  it("quotes the cheapest way in, not the dearest", async () => {
+    // Distinct from the test above, which leaves only one tier on sale and so
+    // cannot tell "cheapest" from "whichever survived the filter". Three open
+    // tiers, cheapest in the middle, so neither the first nor the last row is
+    // the right answer by accident.
+    mockGetPage.mockResolvedValue(page(withEvents));
+    mockListEvents.mockResolvedValue({
+      enabled: true,
+      linked: true,
+      events: [
+        {
+          ...dates[0],
+          ticket_types: [
+            { ticket_type_id: "t_a", name: "Standard", price_cents: 2500, sold_out: false },
+            { ticket_type_id: "t_b", name: "Balcony", price_cents: 900, sold_out: false },
+            { ticket_type_id: "t_c", name: "VIP", price_cents: 6000, sold_out: false }
+          ]
+        }
+      ]
+    });
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Events")).toBeTruthy());
+    fireEvent.press(view.getByText("Events"));
+    await waitFor(() => expect(view.queryByText("From GBP 9.00")).toBeTruthy());
+    expect(view.queryByText("From GBP 60.00")).toBeNull();
+    expect(view.queryByText("From GBP 25.00")).toBeNull();
+  });
+
+  it("says sold out rather than quoting a price nobody can buy", async () => {
+    mockGetPage.mockResolvedValue(page(withEvents));
+    mockListEvents.mockResolvedValue({
+      enabled: true,
+      linked: true,
+      events: [
+        {
+          ...dates[0],
+          ticket_types: [
+            { ticket_type_id: "t_std", name: "Standard", price_cents: 1800, sold_out: true }
+          ]
+        }
+      ]
+    });
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Events")).toBeTruthy());
+    fireEvent.press(view.getByText("Events"));
+    await waitFor(() => expect(view.queryByText("Sold out")).toBeTruthy());
+    expect(view.queryByText("From GBP 18.00")).toBeNull();
+  });
+
+  it("says nothing about price for an event nobody has priced", async () => {
+    // Not "Free". An event with no tiers is one where ticketing has not been
+    // set up, which is a different claim from one that costs nothing — and the
+    // wrong one would be quoted back at the organiser on the door.
+    mockGetPage.mockResolvedValue(page(withEvents));
+    mockListEvents.mockResolvedValue({
+      enabled: true,
+      linked: true,
+      events: [{ event_id: "ev2", title: "Open Rehearsal", ticket_types: [] }]
+    });
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Events")).toBeTruthy());
+    fireEvent.press(view.getByText("Events"));
+    await waitFor(() => expect(view.queryByText("Open Rehearsal")).toBeTruthy());
+    expect(view.queryByText("Free entry")).toBeNull();
+    expect(view.queryByText("Sold out")).toBeNull();
+  });
+
+  it("shows a date it cannot parse exactly as it was typed", async () => {
+    // `starts_at` is free text server-side and never format-checked. Dropping
+    // what does not parse would delete the only thing the page says about when
+    // this happens.
+    mockGetPage.mockResolvedValue(page(withEvents));
+    mockListEvents.mockResolvedValue({
+      enabled: true,
+      linked: true,
+      events: [{ event_id: "ev3", title: "Winter Tour", starts_at: "Late 2099, dates TBC" }]
+    });
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Events")).toBeTruthy());
+    fireEvent.press(view.getByText("Events"));
+    await waitFor(() => expect(view.queryByText("Late 2099, dates TBC")).toBeTruthy());
+  });
+
+  it("reports a failing events domain as a failure, not as an empty calendar", async () => {
+    // "No dates announced yet." would be a claim about the artist. The events
+    // service being down is a claim about us, and it is temporary.
+    mockGetPage.mockResolvedValue(page(withEvents));
+    mockListEvents.mockRejectedValueOnce(new Error("503"));
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Events")).toBeTruthy());
+    fireEvent.press(view.getByText("Events"));
+    await waitFor(() => expect(view.queryByText("We couldn't load this section.")).toBeTruthy());
+    expect(view.queryByText("No dates announced yet.")).toBeNull();
+
+    mockListEvents.mockResolvedValue({ enabled: true, linked: true, events: dates });
+    fireEvent.press(view.getByText("Try Again"));
+    await waitFor(() => expect(view.queryByText("Vault Session")).toBeTruthy());
+  });
+
+  it("gives a visitor no control on an event row, because there is nothing behind one", async () => {
+    // The row is deliberately not pressable: this build has no event detail
+    // screen, and a row that responds to a tap and then does nothing is the
+    // shallow-control defect this work exists to remove.
+    mockGetPage.mockResolvedValue(page(withEvents));
+    mockListEvents.mockResolvedValue({ enabled: true, linked: true, events: dates });
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("Events")).toBeTruthy());
+    fireEvent.press(view.getByText("Events"));
+    await waitFor(() => expect(view.queryByText("Vault Session")).toBeTruthy());
+    navigation.navigate.mockClear();
+    fireEvent.press(view.getByText("Vault Session"));
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+});
+
 describe("empty modules read differently for the team than for a visitor", () => {
   const team = { viewer: { role: "OWNER", following: false } };
 
@@ -339,6 +506,68 @@ describe("empty modules read differently for the team than for a visitor", () =>
     // so there is no step to offer here.
     expect(view.queryByText("Connect a shop")).toBeNull();
     expect(view.queryByText("Listings you publish in Marketplace appear here.")).toBeTruthy();
+  });
+
+  it("tells a visitor a presence has no dates without offering to fix it", async () => {
+    mockGetPage.mockResolvedValue(page(withEvents));
+    mockListEvents.mockResolvedValue({ enabled: true, linked: false, events: [] });
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Events")).toBeTruthy());
+    fireEvent.press(view.getByText("Events"));
+    await waitFor(() => expect(view.queryByText("No dates announced yet.")).toBeTruthy());
+    // A visitor cannot connect a business, so they are never shown the button
+    // or the reason — that is the team's business, not theirs.
+    expect(view.queryByText("Connect a business")).toBeNull();
+  });
+
+  it("sends the team to Connections when no business runs the dates yet", async () => {
+    mockGetPage.mockResolvedValue(page({ ...team, ...withEvents }));
+    mockListEvents.mockResolvedValue({ enabled: true, linked: false, events: [] });
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("Events")).toBeTruthy());
+    fireEvent.press(view.getByText("Events"));
+    await waitFor(() => expect(view.queryByText("Connect a business")).toBeTruthy());
+
+    fireEvent.press(view.getByText("Connect a business"));
+    expect(navigation.navigate).toHaveBeenCalledWith("PageConnections", {
+      pageId: 7,
+      title: "Night Signal"
+    });
+  });
+
+  it("stops offering to connect a business once one is connected", async () => {
+    // Same rule as the shop: the connection exists and the calendar is simply
+    // empty. Dates are created where the organiser already works, so a second
+    // door into it here would be a second thing to keep in sync.
+    mockGetPage.mockResolvedValue(page({ ...team, ...withEvents }));
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Events")).toBeTruthy());
+    fireEvent.press(view.getByText("Events"));
+    await waitFor(() =>
+      expect(view.queryByText("Dates you schedule for the connected business appear here.")).toBeTruthy()
+    );
+    expect(view.queryByText("Connect a business")).toBeNull();
+  });
+
+  it("does not blame the presence when events are off for the whole environment", async () => {
+    // Three different empties reach this tab and they read identically if the
+    // screen only counts rows: the domain is off, nothing is connected, or
+    // there are genuinely no dates coming up. Only the middle one has a step,
+    // and offering it in the other two sends the team to do useless work.
+    mockGetPage.mockResolvedValue(page({ ...team, ...withEvents }));
+    mockListEvents.mockResolvedValue({ enabled: false, linked: false, events: [] });
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Events")).toBeTruthy());
+    fireEvent.press(view.getByText("Events"));
+    await waitFor(() =>
+      expect(
+        view.queryByText(
+          "Events are switched off for this environment, so there is nothing to connect yet."
+        )
+      ).toBeTruthy()
+    );
+    // Nothing here is theirs to fix, so nothing is offered.
+    expect(view.queryByText("Connect a business")).toBeNull();
   });
 
   it("offers to connect a shop when there is no seller behind the tab", async () => {

@@ -53,7 +53,7 @@ PAGE_STATUSES = ("ACTIVE", "PAUSED", "UNPUBLISHED", "DEACTIVATED")
 # `booking` listing types, so the catalogue exists and a second one would be a
 # second commerce backend to keep in sync.
 TYPE_TABS = {
-    "ARTIST": ["posts", "music", "videos", "merch", "about"],
+    "ARTIST": ["posts", "music", "events", "videos", "merch", "about"],
     "CREATOR": ["posts", "videos", "merch", "about"],
     "PUBLIC_FIGURE": ["posts", "videos", "about"],
     "BUSINESS": ["home", "shop", "about"],
@@ -62,11 +62,11 @@ TYPE_TABS = {
     "RESTAURANT": ["home", "menu", "about"],
     "PROFESSIONAL_SERVICE": ["home", "shop", "about"],
     "LOCAL_BUSINESS": ["home", "shop", "about"],
-    "NONPROFIT": ["home", "about"],
-    "ORGANIZATION": ["home", "about"],
+    "NONPROFIT": ["home", "events", "about"],
+    "ORGANIZATION": ["home", "events", "about"],
     "MEDIA": ["posts", "videos", "about"],
-    "SPORTS_TEAM": ["posts", "shop", "about"],
-    "VENUE": ["home", "about"],
+    "SPORTS_TEAM": ["posts", "events", "shop", "about"],
+    "VENUE": ["home", "events", "about"],
     "EDUCATION": ["home", "about"],
     "OTHER": ["posts", "about"],
 }
@@ -102,7 +102,15 @@ PERMISSIONS = {
     "transfer_ownership": {"OWNER"},
 }
 
-LINK_TYPES = ("store", "ad_account", "community", "event", "music_artist", "business_os")
+# What a presence can be pointed at. Every entry here is a system that already
+# exists and already owns its data; a link stores a pointer and nothing else.
+#
+# `event` used to sit in this list and was never resolvable. It is gone: a
+# single event is not something a presence *is* connected to, it is something
+# the business behind the presence has scheduled. Connecting the business is
+# the claim that can be checked, and it is the one that keeps answering as new
+# events are added — a per-event link would need re-doing every tour date.
+LINK_TYPES = ("store", "ad_account", "community", "music_artist", "business_os")
 
 # Tabs that always render: they are backed by the page row itself, so they can
 # never be empty in a way the viewer would read as broken.
@@ -116,7 +124,8 @@ ALWAYS_TABS = {"home", "posts", "about"}
 # tab has an availability rule, so "a tab nobody can render" stops being a thing
 # that can be typed into TYPE_TABS and quietly shipped. Adding a tab to the
 # ceiling and teaching a screen to draw it become the same change.
-RENDERABLE_TABS = frozenset(ALWAYS_TABS | {"music", "videos", "shop", "merch", "menu"})
+RENDERABLE_TABS = frozenset(
+    ALWAYS_TABS | {"music", "videos", "shop", "merch", "menu", "events"})
 
 # Optional tab -> the link_type that gives it real content. A tab with no link
 # and no rows is hidden from the public and kept (as a setup prompt) for the
@@ -126,13 +135,24 @@ TAB_LINK_SOURCE = {
     "shop": "store",
     "merch": "store",
     "menu": "store",
+    "events": "business_os",
 }
-# `events` is deliberately absent, and `event` links are now refused outright
-# rather than stored: the canonical events backend
-# (services/business_os/events) keys on `business_id` and lists only for a
-# caller holding a manager role, so there is no public read to point a tab at
-# and no way to say whose event a ref names. A tab that 403s for every visitor
-# is worse than no tab. Both come back together, or neither does.
+# `events` is here now. It used to be absent with a note saying the canonical
+# events backend listed only for a caller holding a manager role, so a public
+# tab would 403 for every visitor and the honest thing was no tab at all. That
+# was true of the backend as it stood, not of events as a feature: what was
+# missing was a *read for strangers*. `events.service.list_public_events`
+# is that read — published, not-yet-ended events under a field allowlist that
+# withholds manager identity, the business id and per-tier sales counts.
+#
+# So the tab points at `business_os`, the link that names which business runs
+# this presence. Not at a per-event link: the pointer has to keep answering as
+# the calendar changes.
+#
+# One condition is not expressible here and is checked in `module_availability`
+# instead: Business OS events are flag-gated (`BUSINESS_OS_EVENTS`), and with
+# the flag off every read raises. A link to a business is not, on its own,
+# enough to promise a visitor a tab.
 
 # Post types the videos module counts as a video. Same set pulse_feed_engine
 # uses for its video surfaces; the tab reads the page's own posts, so it needs
@@ -450,6 +470,39 @@ def _counts(conn: Any, page_id: int) -> dict:
     return {"followers": followers, "posts": posts, "videos": videos}
 
 
+def events_enabled() -> bool:
+    """Whether the canonical events domain is switched on in this environment.
+
+    Asked rather than assumed, and asked of the events module itself rather
+    than of the environment variable directly — one place decides what the flag
+    means, and this reads the answer. An import failure counts as off: a
+    deployment that does not ship the events package cannot serve events, and
+    the page should hide the tab rather than raise on every view.
+    """
+    try:
+        from services.business_os.events import service as events_service
+        return bool(events_service.is_enabled())
+    except Exception:
+        return False
+
+
+def _load_visible_page(conn: Any, ident: Any, viewer_user_id: int | None) -> dict:
+    """A page as a public read may see it, or 404.
+
+    The lifecycle invariant — UNPUBLISHED and DEACTIVATED pages 404 for
+    non-members — was enforced in each route that served a public read, which
+    meant it was enforced in the routes somebody remembered. `/music` did not
+    have it, so an unpublished artist presence still served its catalogue.
+    Module reads go through here so the check arrives with the page rather than
+    beside it.
+    """
+    page = _load_page(conn, ident)
+    if page.get("status") in ("UNPUBLISHED", "DEACTIVATED"):
+        if not (viewer_user_id and role_for(conn, viewer_user_id, page["id"])):
+            raise PageError("Page not found.", 404)
+    return page
+
+
 def module_availability(conn: Any, page: dict, counts: dict | None = None,
                         links: list[dict] | None = None) -> dict:
     """Which optional modules actually have something behind them.
@@ -464,6 +517,13 @@ def module_availability(conn: Any, page: dict, counts: dict | None = None,
     for tab in TYPE_TABS.get(page.get("page_type") or "OTHER", TYPE_TABS["OTHER"]):
         if tab in ALWAYS_TABS:
             available[tab] = True
+        elif tab == "events":
+            # Two conditions, and the second is not about this page at all:
+            # with `BUSINESS_OS_EVENTS` off the whole events domain raises 503,
+            # so a linked business would otherwise raise a tab that cannot
+            # load. The flag is checked first because it is the cheaper
+            # question and it has the same answer for every page.
+            available[tab] = events_enabled() and TAB_LINK_SOURCE[tab] in linked
         elif tab in TAB_LINK_SOURCE:
             available[tab] = TAB_LINK_SOURCE[tab] in linked
         elif tab == "videos":
@@ -1112,18 +1172,39 @@ def toggle_follow(conn: Any, user_id: int, page_id: int) -> dict:
 # only half the question — the other half is whether the actor is entitled to
 # that resource at all.
 #
-# Each entry is (table, id column, owner column, extra WHERE). `music_artist`
-# is keyed on the artist name rather than a row id, because that is what the
-# music catalogue is searched by; the entitlement is then "you publish approved
-# tracks under this name", which is the only checkable form the claim has.
+# Each entry is (table, id column, owner column, key kind, extra WHERE).
+#
+# `key kind` is what the stored id *is*, because `ref_id` always arrives as
+# text and the comparison has to be made in the column's own type:
+#
+#   "id"   — an integer primary key. A ref that is not one is refused rather
+#            than coerced, so "not-an-id" cannot collapse to 0 and match a row
+#            whose owner column happens to be empty.
+#   "fold" — matched case-insensitively against a `LOWER(...)` column.
+#   "text" — a text primary key, compared as given. `business_os_business.
+#            business_id` is a `biz_...` string; before this existed the int
+#            reader turned every one of them into the -1 sentinel, so a
+#            business could never be connected and the failure looked like a
+#            permission problem.
+#
+# `music_artist` is keyed on the artist name rather than a row id, because that
+# is what the music catalogue is searched by; the entitlement is then "you
+# publish approved tracks under this name", which is the only checkable form
+# the claim has.
 _LINK_OWNER_SOURCES = {
-    "store": ("marketplace_sellers", "id", "user_id", ""),
-    "ad_account": ("advertisers", "id", "owner_user_id", ""),
-    "community": ("pulse_groups", "id", "owner_user_id", ""),
+    "store": ("marketplace_sellers", "id", "user_id", "id", ""),
+    "ad_account": ("advertisers", "id", "owner_user_id", "id", ""),
+    "community": ("pulse_groups", "id", "owner_user_id", "id", ""),
     "music_artist": (
-        "pulse_audio_tracks", "LOWER(artist)", "uploader_user_id",
+        "pulse_audio_tracks", "LOWER(artist)", "uploader_user_id", "fold",
         " AND COALESCE(approved_by_admin,0)=1 AND COALESCE(active,1)=1",
     ),
+    # Only the business's own owner, deliberately — not its staff. Pointing a
+    # presence at a business is an identity claim ("this page is that
+    # business"), not an operational task, and a shop manager hired to run
+    # orders is not the person who gets to make it.
+    "business_os": (
+        "business_os_business", "business_id", "owner_user_id", "text", ""),
 }
 
 
@@ -1139,9 +1220,16 @@ def _link_ref_owners(conn: Any, link_type: str, ref: str) -> set[int] | None:
     source = _LINK_OWNER_SOURCES.get(link_type)
     if not source:
         return None
-    table, id_column, owner_column, extra = source
-    key = ref.casefold() if id_column.startswith("LOWER(") else _int(ref, -1)
-    if key == -1:
+    table, id_column, owner_column, key_kind, extra = source
+    if key_kind == "fold":
+        key: Any = ref.casefold()
+    elif key_kind == "text":
+        key = ref
+    else:
+        key = _int(ref, -1)
+        if key == -1:
+            return set()
+    if not key:
         return set()
     try:
         cur = conn.cursor()
@@ -1161,14 +1249,24 @@ def _link_ref_owners(conn: Any, link_type: str, ref: str) -> set[int] | None:
 # does this person hold that could be connected". The label column is whatever
 # a member would recognise the thing by — never an internal id, which is what
 # the client would otherwise have to ask them to type.
+#
+# Entries are (table, ref column, owner column, label column, owner kind, extra
+# WHERE). `owner kind` says how to bind the user ids: Business OS stores
+# `owner_user_id` as TEXT, and while SQLite quietly coerces an integer
+# parameter to match a TEXT column, PostgreSQL refuses `text = integer`
+# outright — so the same query would have found the business in dev and raised
+# in production.
 _LINK_CANDIDATE_SOURCES = {
-    "store": ("marketplace_sellers", "id", "user_id", "display_name", ""),
-    "ad_account": ("advertisers", "id", "owner_user_id", "advertiser_name", ""),
-    "community": ("pulse_groups", "id", "owner_user_id", "name", ""),
+    "store": ("marketplace_sellers", "id", "user_id", "display_name", "int", ""),
+    "ad_account": ("advertisers", "id", "owner_user_id", "advertiser_name", "int", ""),
+    "community": ("pulse_groups", "id", "owner_user_id", "name", "int", ""),
     "music_artist": (
-        "pulse_audio_tracks", "artist", "uploader_user_id", "artist",
+        "pulse_audio_tracks", "artist", "uploader_user_id", "artist", "int",
         " AND COALESCE(approved_by_admin,0)=1 AND COALESCE(active,1)=1",
     ),
+    "business_os": (
+        "business_os_business", "business_id", "owner_user_id", "display_name",
+        "text", ""),
 }
 
 LINK_LABELS = {
@@ -1176,6 +1274,10 @@ LINK_LABELS = {
     "ad_account": "Ad account",
     "community": "Community",
     "music_artist": "Music catalogue",
+    # Not "Business OS". The member connecting it is telling us which business
+    # this presence belongs to; the name of the subsystem that stores it is
+    # ours, not theirs.
+    "business_os": "Business",
 }
 
 # One map, read by both the check and the offer. Kept out of `set_link` so the
@@ -1198,14 +1300,15 @@ def _link_candidates(conn: Any, link_type: str, holder_user_ids: set[int]) -> li
     holders = sorted({_int(uid, 0) for uid in holder_user_ids if _int(uid, 0)})
     if not source or not holders:
         return []
-    table, ref_column, owner_column, label_column, extra = source
-    placeholders = ",".join("?" * len(holders))
+    table, ref_column, owner_column, label_column, owner_kind, extra = source
+    bound = [str(uid) for uid in holders] if owner_kind == "text" else holders
+    placeholders = ",".join("?" * len(bound))
     try:
         cur = conn.cursor()
         cur.execute(
             f"SELECT DISTINCT {ref_column} AS ref, {label_column} AS label "  # noqa: S608 - fixed table map
             f"FROM {table} WHERE {owner_column} IN ({placeholders}){extra}",
-            holders,
+            bound,
         )
         rows = cur.fetchall()
     except Exception as exc:
@@ -1380,7 +1483,8 @@ def list_page_posts(conn: Any, page_id: int, viewer_user_id: int | None = None,
 # Lazy modules: resolved from the canonical systems, never mirrored here
 # ---------------------------------------------------------------------------
 
-def page_music(conn: Any, page_id: int, limit: int = 24) -> dict:
+def page_music(conn: Any, page_id: int, limit: int = 24,
+               viewer_user_id: int | None = None) -> dict:
     """Tracks for an artist presence, straight from the canonical catalogue.
 
     The presence stores only a pointer (the `music_artist` link); the records
@@ -1388,7 +1492,7 @@ def page_music(conn: Any, page_id: int, limit: int = 24) -> dict:
     so the module is empty rather than guessing from the page name.
     """
     ensure_tables(conn)
-    page = _load_page(conn, page_id)
+    page = _load_visible_page(conn, page_id, viewer_user_id)
     links = [row.get("ref_id") for row in list_links(conn, page["id"], "music_artist")]
     artist = _text(links[0], 120) if links else ""
     if not artist:
@@ -1405,6 +1509,48 @@ def page_music(conn: Any, page_id: int, limit: int = 24) -> dict:
         logging.warning("PAGE_MUSIC_FAILED page_id=%s error=%s", page_id, exc)
         raise PageError("We couldn't load this section.", 503)
     return {"page_id": int(page["id"]), "artist": artist, "tracks": tracks, "linked": True}
+
+
+def page_events(conn: Any, page_id: int, limit: int = 12,
+                viewer_user_id: int | None = None) -> dict:
+    """Upcoming dates for a presence, from the canonical events domain.
+
+    The same shape as `page_music`: the presence stores a pointer (the
+    `business_os` link), the records stay where they are managed, and with no
+    link there is nothing to read rather than something to guess.
+
+    What this deliberately does not return is the `business_id` it looked the
+    events up by. The `store` link's id reaches the public view because the
+    shop tab needs it to deep-link into Marketplace; events need no such
+    handle, so the internal key stops here. A caller who never receives it
+    cannot walk it into the management endpoints to see which ones answer
+    differently.
+
+    `enabled` and `linked` are reported separately because they are different
+    problems with different owners: one is an environment that does not serve
+    events, the other is a presence nobody has pointed at a business yet. A
+    single `available: false` would leave the owner's empty state guessing.
+    """
+    ensure_tables(conn)
+    page = _load_visible_page(conn, page_id, viewer_user_id)
+    enabled = events_enabled()
+    refs = [row.get("ref_id") for row in list_links(conn, page["id"], "business_os")]
+    business = _text(refs[0], 80) if refs else ""
+    base = {"page_id": int(page["id"]), "enabled": enabled,
+            "linked": bool(business), "events": []}
+    if not enabled or not business:
+        return base
+    try:
+        from services.business_os.events import service as events_service
+        events = events_service.list_public_events(
+            business, limit=max(1, min(_int(limit, 12), 50)))
+    except Exception as exc:
+        # The events domain going down is not this page being broken, and it is
+        # certainly not this page having no events. 503 says "come back", which
+        # is the true answer; an empty list would say "there are none".
+        logging.warning("PAGE_EVENTS_FAILED page_id=%s error=%s", page_id, exc)
+        raise PageError("We couldn't load this section.", 503)
+    return {**base, "events": events}
 
 
 def admin_overview(conn: Any, page_id: int) -> dict:
@@ -1570,12 +1716,9 @@ def manage_sections(page: dict, role: str | None, links: list[dict],
     queries. Counts are the measured ones — nothing here is estimated, and a
     section with no number simply has none.
 
-    Two absences are deliberate. **Events** is missing because there is no
-    public events read to point it at yet (see the note by `TAB_LINK_SOURCE`);
-    a section that 403s for its own team is worse than no section. **Audience**
-    is missing because followers are counted but not listable — the count lives
-    in Insights, where it is honest, rather than behind a heading that promises
-    a list nobody can fetch.
+    One absence is deliberate: **Audience**. Followers are counted but not
+    listable, so the count lives in Overview, where it is honest, rather than
+    behind a heading that promises a list nobody can fetch.
     """
     page_type = page.get("page_type") or "OTHER"
     tabs = set(TYPE_TABS.get(page_type, TYPE_TABS["OTHER"]))
@@ -1627,12 +1770,33 @@ def manage_sections(page: dict, role: str | None, links: list[dict],
             ready="store" in linked,
             setup="Connect a shop you already run. Selling stays in Marketplace — this points at it.")
 
+    if "events" in tabs:
+        # `ready` answers "is there anything behind this", and for events that
+        # is two questions: a business to read events from, and an environment
+        # that serves them at all. The setup line names whichever is actually
+        # missing — telling an owner to connect a business they have already
+        # connected is how a management screen loses their trust.
+        enabled = events_enabled()
+        add("events", "Events", "Dates this presence is putting on.", "manage_links",
+            ready=enabled and "business_os" in linked,
+            setup=("Connect the business that runs these dates — events are"
+                   " scheduled and ticketed there, and this points at them."
+                   if enabled else
+                   "Events are not switched on for this environment yet."))
+
     add("advertising", "Advertising", "Campaigns run for this presence.", "manage_ads",
         ready="ad_account" in linked,
         setup="Connect an ad account you already own to run campaigns as this presence.")
 
     if page_type in BUSINESS_PAGE_TYPES:
-        add("business_os", "Business OS", "Orders, bookings and day-to-day operations.", "edit_page")
+        # Was `ready=True` unconditionally, with no link and nothing to open —
+        # a section that reported itself finished before anyone had told it
+        # which business it meant. It reads the same `business_os` link the
+        # events tab does, so connecting once answers both.
+        add("business_os", "Operations",
+            "Orders, bookings and the day-to-day for this business.", "manage_links",
+            ready="business_os" in linked,
+            setup="Connect the business you already run so this presence points at it.")
 
     add("team", "Team & access", "Who can act for this presence.", "view_analytics",
         count=_int(analytics.get("team_members"), 0))
