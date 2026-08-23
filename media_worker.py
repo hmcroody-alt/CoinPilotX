@@ -760,7 +760,7 @@ def reconcile_live_replay_backlog(limit: int = 25) -> dict:
         FROM pulse_live_sessions
         WHERE status='ended'
           AND COALESCE(agora_recording_sid,'')<>''
-          AND COALESCE(recording_status,'') NOT IN ('replay_ready','mux_asset_ready','replay_unavailable')
+          AND COALESCE(recording_status,'') NOT IN ('replay_ready','mux_asset_ready','replay_unavailable','replay_failed')
         ORDER BY id ASC LIMIT ?
         """,
         (max(1, int(limit or 25)),),

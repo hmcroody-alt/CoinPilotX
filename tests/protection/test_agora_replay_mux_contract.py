@@ -39,6 +39,7 @@ def test_existing_media_worker_finalizes_and_reconciles_live_replay():
     assert "timedelta(minutes=10)" in WORKER
     assert "terminal_posts_repaired" in WORKER
     assert "recording_status='replay_failed'" in WORKER
+    assert "'replay_unavailable','replay_failed'" in WORKER
     assert "'pending',0,5" in WORKER
     assert 'MEDIA_WORKER_INTERVAL_SECONDS", "5"' in WORKER
 
