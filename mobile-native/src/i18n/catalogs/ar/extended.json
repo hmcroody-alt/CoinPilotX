@@ -1510,6 +1510,159 @@
       "newCollection": "مجموعة جديدة",
       "collectionName": "اسم المجموعة",
       "saveToCollection": "الحفظ في مجموعة"
+    },
+    "crypto": {
+      "entry": {
+        "title": "ذكاء الكريبتو المميز",
+        "body": "قواعد التنبيه المتقدمة متعددة الشروط وتحليلات المحفظة موجودة في مركز قيادة الكريبتو الجديد.",
+        "alertsCta": "فتح مركز التنبيهات",
+        "portfolioCta": "فتح المحفظة"
+      },
+      "upsell": {
+        "title": "ميزة مميزة",
+        "cta": "عرض خطط بريميوم",
+        "alertsBody": "التنبيهات المتقدمة — التقاطعات ونوافذ الوقت وحجم التداول والقيمة السوقية وشروط المحفظة — جزء من PulseSoc بريميوم. تنبيهات السعر الأساسية أعلى/أدنى تبقى مجانية.",
+        "portfolioBody": "تقييم المحفظة وسجل القيمة وتحليل التركيز جزء من PulseSoc بريميوم."
+      },
+      "common": {
+        "loading": "جارٍ التحميل…",
+        "never": "أبدًا"
+      },
+      "alerts": {
+        "title": "مركز تنبيهات الكريبتو",
+        "subtitle": "قواعد تنبيه أساسية ومتقدمة، تُقيَّم على الخادم وتُسلَّم إلى هذا الجهاز.",
+        "listTitle": "قواعدك",
+        "empty": "لا توجد قواعد تنبيه بعد. أنشئ واحدة في الأعلى.",
+        "loadError": "تعذر تحميل التنبيهات.",
+        "create": "قاعدة جديدة",
+        "edit": "تعديل",
+        "delete": "حذف",
+        "deleteWarning": "هل تريد حذف هذه القاعدة؟ سيبقى سجل تفعيلها قابلاً للقراءة، لكن القاعدة ستتوقف عن التقييم فورًا.",
+        "confirmDelete": "تأكيد الحذف",
+        "deleted": "تم حذف القاعدة.",
+        "deleteFailed": "تعذر حذف القاعدة.",
+        "enable": "تفعيل",
+        "disable": "إيقاف مؤقت",
+        "toggleFailed": "تعذر تحديث القاعدة.",
+        "save": "حفظ القاعدة",
+        "saving": "جارٍ الحفظ…",
+        "saved": "تم حفظ القاعدة.",
+        "saveFailed": "تعذر حفظ القاعدة.",
+        "cancel": "إلغاء",
+        "cancelEdit": "إيقاف التعديل",
+        "formTitleCreate": "إنشاء قاعدة",
+        "formTitleEdit": "تعديل القاعدة",
+        "symbolLabel": "رمز الأصل",
+        "thresholdLabel": "الحد",
+        "windowLabel": "النافذة (بالدقائق)",
+        "windowHint": "بين {{min}} و{{max}} دقيقة.",
+        "cooldownLabel": "فترة التهدئة (بالثواني)",
+        "frequencyLabel": "التكرار",
+        "matchLabel": "التفعيل عندما",
+        "addCondition": "إضافة شرط",
+        "removeCondition": "إزالة",
+        "conditionTitle": "الشرط {{number}}",
+        "conditionCount": "الشروط: {{count}}",
+        "lastTriggered": "آخر تفعيل {{time}}",
+        "limits": "الحسابات المجانية: {{free}} قواعد أساسية. بريميوم: {{premium}} قاعدة، وحتى {{conditions}} شروط لكل قاعدة.",
+        "advancedLocked": "تستخدم هذه القاعدة شروطًا متقدمة. قم بالترقية إلى بريميوم لحفظها — أو أبقِ شرط سعر واحدًا أعلى/أدنى، وهو يبقى مجانيًا.",
+        "historyCta": "السجل",
+        "historyAllCta": "عرض سجل التفعيل",
+        "ruleType": {
+          "basic": "أساسية",
+          "advanced": "متقدمة"
+        },
+        "status": {
+          "active": "نشطة",
+          "paused": "موقوفة مؤقتًا",
+          "triggered": "مُفعَّلة",
+          "error": "خطأ"
+        },
+        "match": {
+          "all": "تتحقق كل الشروط",
+          "any": "يتحقق أي شرط"
+        },
+        "frequency": {
+          "once": "مرة واحدة",
+          "everyCrossing": "عند كل تقاطع",
+          "recurring": "متكرر"
+        },
+        "groups": {
+          "price": "السعر",
+          "volume": "حجم التداول",
+          "marketCap": "القيمة السوقية",
+          "portfolio": "المحفظة"
+        },
+        "conditionTypes": {
+          "priceAbove": "السعر أعلى من",
+          "priceBelow": "السعر أدنى من",
+          "priceCrossesAbove": "السعر يتقاطع صعودًا",
+          "priceCrossesBelow": "السعر يتقاطع هبوطًا",
+          "priceMovePct": "تغير السعر %",
+          "priceMoveAbs": "تغير السعر (مطلق)",
+          "volumeAbove": "حجم التداول أعلى من",
+          "volumeBelow": "حجم التداول أدنى من",
+          "volumeMovePct": "تغير حجم التداول %",
+          "marketCapAbove": "القيمة السوقية أعلى من",
+          "marketCapBelow": "القيمة السوقية أدنى من",
+          "marketCapMovePct": "تغير القيمة السوقية %",
+          "portfolioValueAbove": "قيمة المحفظة أعلى من",
+          "portfolioValueBelow": "قيمة المحفظة أدنى من",
+          "portfolioMovePct": "تغير المحفظة %",
+          "allocationAbove": "التخصيص أعلى من %"
+        },
+        "errors": {
+          "symbolRequired": "أضف رمز أصل.",
+          "symbolInvalid": "استخدم رمز أصل صالحًا مثل BTC أو ETH.",
+          "noConditions": "أضف شرطًا واحدًا على الأقل.",
+          "tooManyConditions": "يمكن أن تحتوي القاعدة على {{max}} شروط كحد أقصى.",
+          "conditionTypeInvalid": "اختر نوع شرط مدعومًا.",
+          "thresholdRequired": "أضف قيمة الحد.",
+          "thresholdInvalid": "استخدم حدًا رقميًا.",
+          "windowRequired": "أضف نافذة بالدقائق.",
+          "windowOutOfRange": "يجب أن تكون النافذة عددًا صحيحًا بين {{min}} و{{max}} دقيقة.",
+          "cooldownInvalid": "استخدم فترة تهدئة بين 0 ثانية و7 أيام.",
+          "premiumRequired": "القواعد المتقدمة تتطلب PulseSoc بريميوم."
+        }
+      },
+      "history": {
+        "title": "سجل التفعيل",
+        "subtitle": "كل مرة تم فيها تفعيل قاعدة، الأحدث أولًا.",
+        "empty": "لا توجد تفعيلات بعد.",
+        "loadError": "تعذر تحميل السجل.",
+        "loadMore": "تحميل المزيد",
+        "filtered": "عرض قاعدة واحدة فقط.",
+        "showAll": "عرض الكل",
+        "observed": "المُلاحظ: {{value}}",
+        "delivery": "التسليم: {{result}}"
+      },
+      "portfolio": {
+        "title": "محفظة الكريبتو",
+        "subtitle": "التقييم وسجل القيمة والتركيز لممتلكاتك.",
+        "totalValue": "القيمة الإجمالية",
+        "change24h": "تغير 24 ساعة",
+        "unrealizedPl": "الربح/الخسارة غير المحققة",
+        "holdingsTitle": "الممتلكات",
+        "historyTitle": "سجل القيمة",
+        "empty": "لا توجد ممتلكات بعد.",
+        "loadError": "تعذر تحميل المحفظة.",
+        "allocation": "التخصيص: {{pct}}%",
+        "avgBuy": "متوسط الشراء {{price}}",
+        "calculatedAt": "حُسبت {{time}}",
+        "marketDataAt": "بيانات السوق {{time}}",
+        "concentrationTitle": "التركيز",
+        "concentrationBody": "يشكل {{symbol}} نسبة {{pct}}% من قيمة محفظتك.",
+        "noCoverage": "لا يتوفر سجل لهذه الفترة.",
+        "partialCoverage": "السجل يغطي هذه الفترة جزئيًا فقط.",
+        "periods": {
+          "h24": "24 س",
+          "d7": "7 أيام",
+          "d30": "30 يومًا",
+          "d90": "90 يومًا",
+          "y1": "سنة",
+          "all": "الكل"
+        }
+      }
     }
   },
   "settings": {

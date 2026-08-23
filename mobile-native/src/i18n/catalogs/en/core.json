@@ -197,7 +197,10 @@
       "page": "Page",
       "createPage": "Create Presence",
       "yourPages": "Your Pages",
-      "presence": "Presence"
+      "presence": "Presence",
+      "cryptoAlertCenter": "Crypto Alerts",
+      "cryptoAlertHistory": "Alert History",
+      "cryptoPortfolio": "Crypto Portfolio"
     },
     "navSubtitles": {
       "missionControl": "Mission Control",

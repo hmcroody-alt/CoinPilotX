@@ -25,6 +25,9 @@ import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScree
 import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
 import { AlertManagementScreen } from "../screens/AlertManagementScreen";
 import { AssetDetailScreen } from "../screens/AssetDetailScreen";
+import { CryptoAlertCenterScreen } from "../screens/CryptoAlertCenterScreen";
+import { CryptoAlertHistoryScreen } from "../screens/CryptoAlertHistoryScreen";
+import { CryptoPortfolioScreen } from "../screens/CryptoPortfolioScreen";
 import { WatchlistsScreen } from "../screens/WatchlistsScreen";
 import { ActivityRoute } from "../screens/ActivityRoute";
 import { AdvertisingRoute } from "../screens/AdvertisingRoute";
@@ -555,6 +558,9 @@ export function AppNavigator() {
       <Stack.Screen name="AssetDetail" component={AssetDetailScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.assetDetail") })} />
       <Stack.Screen name="AlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.alerts") })} />
       <Stack.Screen name="CryptoAlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.alerts") })} />
+      <Stack.Screen name="CryptoAlertCenter" component={CryptoAlertCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.cryptoAlertCenter") })} />
+      <Stack.Screen name="CryptoAlertHistory" component={CryptoAlertHistoryScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.cryptoAlertHistory") })} />
+      <Stack.Screen name="CryptoPortfolio" component={CryptoPortfolioScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.cryptoPortfolio") })} />
       <Stack.Screen name="AccountCenter" component={AccountCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.accountCenter") })} />
       <Stack.Screen name="AccountSettings" component={AccountCenterScreen} options={{ title: t("common:screens.accountCenter") }} />
       <Stack.Screen name="AccountSecurity" component={AccountCenterScreen} options={{ title: t("common:screens.securityCenter") }} />

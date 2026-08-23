@@ -197,7 +197,10 @@
       "page": "पेज",
       "createPage": "उपस्थिति बनाएँ",
       "yourPages": "आपके पेज",
-      "presence": "उपस्थिति"
+      "presence": "उपस्थिति",
+      "cryptoAlertCenter": "क्रिप्टो अलर्ट",
+      "cryptoAlertHistory": "अलर्ट इतिहास",
+      "cryptoPortfolio": "क्रिप्टो पोर्टफोलियो"
     },
     "navSubtitles": {
       "missionControl": "मिशन कंट्रोल",

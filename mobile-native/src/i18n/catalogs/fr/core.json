@@ -197,7 +197,10 @@
       "page": "Page",
       "createPage": "Créer une présence",
       "yourPages": "Vos pages",
-      "presence": "Présence"
+      "presence": "Présence",
+      "cryptoAlertCenter": "Alertes crypto",
+      "cryptoAlertHistory": "Historique des alertes",
+      "cryptoPortfolio": "Portefeuille crypto"
     },
     "navSubtitles": {
       "missionControl": "Centre de pilotage",

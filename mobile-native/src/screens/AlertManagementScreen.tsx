@@ -28,6 +28,7 @@ import {
   updateCryptoAlert
 } from "../api/alerts";
 import { Panel } from "../components/Panel";
+import { useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
@@ -49,6 +50,7 @@ const emptyForm: AlertFormPayload = {
 };
 
 export function AlertManagementScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
   const routeParams = route.params as (
     { alertId?: number; alert_id?: number; id?: number; presetSymbol?: string } | undefined
   );
@@ -267,6 +269,23 @@ export function AlertManagementScreen({ route, navigation }: Props) {
           <View style={styles.statusPill}>
             <Text style={styles.statusPillText}>{state?.worker?.stale ? "Worker stale" : "Worker linked"}</Text>
           </View>
+        </View>
+      </Panel>
+
+      <Panel>
+        <Text style={styles.sectionTitle}>{t("discovery:crypto.entry.title")}</Text>
+        <Text style={styles.muted}>{t("discovery:crypto.entry.body")}</Text>
+        <View style={styles.topActions}>
+          <ActionButton
+            label={t("discovery:crypto.entry.alertsCta")}
+            variant="secondary"
+            onPress={() => navigation.navigate("CryptoAlertCenter", presetSymbol ? { presetSymbol } : undefined)}
+          />
+          <ActionButton
+            label={t("discovery:crypto.entry.portfolioCta")}
+            variant="secondary"
+            onPress={() => navigation.navigate("CryptoPortfolio")}
+          />
         </View>
       </Panel>
 

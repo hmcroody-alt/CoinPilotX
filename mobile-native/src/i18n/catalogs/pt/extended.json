@@ -1442,6 +1442,159 @@
       "newCollection": "Nova coleção",
       "collectionName": "Nome da coleção",
       "saveToCollection": "Salvar na coleção"
+    },
+    "crypto": {
+      "entry": {
+        "title": "Inteligência cripto Premium",
+        "body": "As regras de alerta avançadas com várias condições e a análise do portfólio ficam no novo centro de comando cripto.",
+        "alertsCta": "Abrir central de alertas",
+        "portfolioCta": "Abrir portfólio"
+      },
+      "upsell": {
+        "title": "Recurso Premium",
+        "cta": "Ver planos Premium",
+        "alertsBody": "Os alertas avançados — cruzamentos, janelas de tempo, volume, capitalização de mercado e condições de portfólio — fazem parte do PulseSoc Premium. Os alertas básicos de preço acima/abaixo continuam gratuitos.",
+        "portfolioBody": "A avaliação do portfólio, o histórico de valor e a análise de concentração fazem parte do PulseSoc Premium."
+      },
+      "common": {
+        "loading": "Carregando…",
+        "never": "Nunca"
+      },
+      "alerts": {
+        "title": "Central de alertas cripto",
+        "subtitle": "Regras de alerta básicas e avançadas, avaliadas no servidor e entregues neste dispositivo.",
+        "listTitle": "Suas regras",
+        "empty": "Ainda não há regras de alerta. Crie uma acima.",
+        "loadError": "Não foi possível carregar os alertas.",
+        "create": "Nova regra",
+        "edit": "Editar",
+        "delete": "Excluir",
+        "deleteWarning": "Excluir esta regra? O histórico de disparos continuará legível, mas a regra deixará de ser avaliada imediatamente.",
+        "confirmDelete": "Confirmar exclusão",
+        "deleted": "Regra excluída.",
+        "deleteFailed": "Não foi possível excluir a regra.",
+        "enable": "Ativar",
+        "disable": "Pausar",
+        "toggleFailed": "Não foi possível atualizar a regra.",
+        "save": "Salvar regra",
+        "saving": "Salvando…",
+        "saved": "Regra salva.",
+        "saveFailed": "Não foi possível salvar a regra.",
+        "cancel": "Cancelar",
+        "cancelEdit": "Parar de editar",
+        "formTitleCreate": "Criar regra",
+        "formTitleEdit": "Editar regra",
+        "symbolLabel": "Símbolo do ativo",
+        "thresholdLabel": "Limite",
+        "windowLabel": "Janela (minutos)",
+        "windowHint": "Entre {{min}} e {{max}} minutos.",
+        "cooldownLabel": "Intervalo (segundos)",
+        "frequencyLabel": "Frequência",
+        "matchLabel": "Disparar quando",
+        "addCondition": "Adicionar condição",
+        "removeCondition": "Remover",
+        "conditionTitle": "Condição {{number}}",
+        "conditionCount": "Condições: {{count}}",
+        "lastTriggered": "Último disparo {{time}}",
+        "limits": "Contas gratuitas: {{free}} regras básicas. Premium: {{premium}} regras, com até {{conditions}} condições cada.",
+        "advancedLocked": "Esta regra usa condições avançadas. Assine o Premium para salvá-la — ou mantenha uma única condição de preço acima/abaixo, que continua gratuita.",
+        "historyCta": "Histórico",
+        "historyAllCta": "Ver histórico de disparos",
+        "ruleType": {
+          "basic": "Básica",
+          "advanced": "Avançada"
+        },
+        "status": {
+          "active": "Ativa",
+          "paused": "Pausada",
+          "triggered": "Disparada",
+          "error": "Erro"
+        },
+        "match": {
+          "all": "Todas as condições são atendidas",
+          "any": "Qualquer condição é atendida"
+        },
+        "frequency": {
+          "once": "Uma vez",
+          "everyCrossing": "A cada cruzamento",
+          "recurring": "Recorrente"
+        },
+        "groups": {
+          "price": "Preço",
+          "volume": "Volume",
+          "marketCap": "Capitalização",
+          "portfolio": "Portfólio"
+        },
+        "conditionTypes": {
+          "priceAbove": "Preço acima",
+          "priceBelow": "Preço abaixo",
+          "priceCrossesAbove": "Preço cruza para cima",
+          "priceCrossesBelow": "Preço cruza para baixo",
+          "priceMovePct": "Variação de preço %",
+          "priceMoveAbs": "Variação de preço (absoluta)",
+          "volumeAbove": "Volume acima",
+          "volumeBelow": "Volume abaixo",
+          "volumeMovePct": "Variação de volume %",
+          "marketCapAbove": "Capitalização acima",
+          "marketCapBelow": "Capitalização abaixo",
+          "marketCapMovePct": "Variação de capitalização %",
+          "portfolioValueAbove": "Valor do portfólio acima",
+          "portfolioValueBelow": "Valor do portfólio abaixo",
+          "portfolioMovePct": "Variação do portfólio %",
+          "allocationAbove": "Alocação acima de %"
+        },
+        "errors": {
+          "symbolRequired": "Adicione o símbolo de um ativo.",
+          "symbolInvalid": "Use um símbolo de ativo válido, como BTC ou ETH.",
+          "noConditions": "Adicione pelo menos uma condição.",
+          "tooManyConditions": "Uma regra pode ter no máximo {{max}} condições.",
+          "conditionTypeInvalid": "Escolha um tipo de condição compatível.",
+          "thresholdRequired": "Adicione um valor de limite.",
+          "thresholdInvalid": "Use um limite numérico.",
+          "windowRequired": "Adicione uma janela em minutos.",
+          "windowOutOfRange": "A janela deve ser um número inteiro entre {{min}} e {{max}} minutos.",
+          "cooldownInvalid": "Use um intervalo entre 0 segundos e 7 dias.",
+          "premiumRequired": "Regras avançadas exigem o PulseSoc Premium."
+        }
+      },
+      "history": {
+        "title": "Histórico de disparos",
+        "subtitle": "Cada vez que uma regra disparou, o mais recente primeiro.",
+        "empty": "Ainda não há disparos.",
+        "loadError": "Não foi possível carregar o histórico.",
+        "loadMore": "Carregar mais",
+        "filtered": "Mostrando apenas uma regra.",
+        "showAll": "Mostrar todas",
+        "observed": "Observado: {{value}}",
+        "delivery": "Entrega: {{result}}"
+      },
+      "portfolio": {
+        "title": "Portfólio de cripto",
+        "subtitle": "Avaliação, histórico de valor e concentração das suas posições.",
+        "totalValue": "Valor total",
+        "change24h": "Variação 24 h",
+        "unrealizedPl": "L/P não realizado",
+        "holdingsTitle": "Posições",
+        "historyTitle": "Histórico de valor",
+        "empty": "Ainda não há posições.",
+        "loadError": "Não foi possível carregar o portfólio.",
+        "allocation": "Alocação: {{pct}}%",
+        "avgBuy": "Compra média {{price}}",
+        "calculatedAt": "Calculado {{time}}",
+        "marketDataAt": "Dados de mercado {{time}}",
+        "concentrationTitle": "Concentração",
+        "concentrationBody": "{{symbol}} representa {{pct}}% do valor do seu portfólio.",
+        "noCoverage": "Não há histórico disponível para este período.",
+        "partialCoverage": "O histórico cobre este período apenas parcialmente.",
+        "periods": {
+          "h24": "24 h",
+          "d7": "7 d",
+          "d30": "30 d",
+          "d90": "90 d",
+          "y1": "1 a",
+          "all": "Tudo"
+        }
+      }
     }
   },
   "settings": {

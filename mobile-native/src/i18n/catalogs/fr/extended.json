@@ -1442,6 +1442,159 @@
       "newCollection": "Nouvelle collection",
       "collectionName": "Nom de la collection",
       "saveToCollection": "Enregistrer dans une collection"
+    },
+    "crypto": {
+      "entry": {
+        "title": "Intelligence crypto Premium",
+        "body": "Les règles d'alerte avancées à conditions multiples et l'analyse du portefeuille se trouvent dans le nouveau centre de commande crypto.",
+        "alertsCta": "Ouvrir le centre d'alertes",
+        "portfolioCta": "Ouvrir le portefeuille"
+      },
+      "upsell": {
+        "title": "Fonction Premium",
+        "cta": "Voir les offres Premium",
+        "alertsBody": "Les alertes avancées — croisements, fenêtres temporelles, volume, capitalisation et conditions de portefeuille — font partie de PulseSoc Premium. Les alertes de prix basiques au-dessus/en dessous restent gratuites.",
+        "portfolioBody": "La valorisation du portefeuille, l'historique de valeur et l'analyse de concentration font partie de PulseSoc Premium."
+      },
+      "common": {
+        "loading": "Chargement…",
+        "never": "Jamais"
+      },
+      "alerts": {
+        "title": "Centre d'alertes crypto",
+        "subtitle": "Règles d'alerte basiques et avancées, évaluées côté serveur et livrées sur cet appareil.",
+        "listTitle": "Vos règles",
+        "empty": "Aucune règle d'alerte pour l'instant. Créez-en une ci-dessus.",
+        "loadError": "Impossible de charger les alertes.",
+        "create": "Nouvelle règle",
+        "edit": "Modifier",
+        "delete": "Supprimer",
+        "deleteWarning": "Supprimer cette règle ? Son historique de déclenchements restera lisible, mais la règle cessera immédiatement d'être évaluée.",
+        "confirmDelete": "Confirmer la suppression",
+        "deleted": "Règle supprimée.",
+        "deleteFailed": "La règle n'a pas pu être supprimée.",
+        "enable": "Activer",
+        "disable": "Mettre en pause",
+        "toggleFailed": "La règle n'a pas pu être mise à jour.",
+        "save": "Enregistrer la règle",
+        "saving": "Enregistrement…",
+        "saved": "Règle enregistrée.",
+        "saveFailed": "La règle n'a pas pu être enregistrée.",
+        "cancel": "Annuler",
+        "cancelEdit": "Arrêter la modification",
+        "formTitleCreate": "Créer une règle",
+        "formTitleEdit": "Modifier la règle",
+        "symbolLabel": "Symbole de l'actif",
+        "thresholdLabel": "Seuil",
+        "windowLabel": "Fenêtre (minutes)",
+        "windowHint": "Entre {{min}} et {{max}} minutes.",
+        "cooldownLabel": "Délai de repos (secondes)",
+        "frequencyLabel": "Fréquence",
+        "matchLabel": "Déclencher quand",
+        "addCondition": "Ajouter une condition",
+        "removeCondition": "Retirer",
+        "conditionTitle": "Condition {{number}}",
+        "conditionCount": "Conditions : {{count}}",
+        "lastTriggered": "Dernier déclenchement {{time}}",
+        "limits": "Comptes gratuits : {{free}} règles basiques. Premium : {{premium}} règles, jusqu'à {{conditions}} conditions chacune.",
+        "advancedLocked": "Cette règle utilise des conditions avancées. Passez à Premium pour l'enregistrer — ou gardez une seule condition de prix au-dessus/en dessous, qui reste gratuite.",
+        "historyCta": "Historique",
+        "historyAllCta": "Voir l'historique des déclenchements",
+        "ruleType": {
+          "basic": "Basique",
+          "advanced": "Avancée"
+        },
+        "status": {
+          "active": "Active",
+          "paused": "En pause",
+          "triggered": "Déclenchée",
+          "error": "Erreur"
+        },
+        "match": {
+          "all": "Toutes les conditions sont remplies",
+          "any": "Une condition est remplie"
+        },
+        "frequency": {
+          "once": "Une fois",
+          "everyCrossing": "À chaque croisement",
+          "recurring": "Récurrente"
+        },
+        "groups": {
+          "price": "Prix",
+          "volume": "Volume",
+          "marketCap": "Capitalisation",
+          "portfolio": "Portefeuille"
+        },
+        "conditionTypes": {
+          "priceAbove": "Prix au-dessus",
+          "priceBelow": "Prix en dessous",
+          "priceCrossesAbove": "Prix croise à la hausse",
+          "priceCrossesBelow": "Prix croise à la baisse",
+          "priceMovePct": "Variation de prix %",
+          "priceMoveAbs": "Variation de prix (absolue)",
+          "volumeAbove": "Volume au-dessus",
+          "volumeBelow": "Volume en dessous",
+          "volumeMovePct": "Variation de volume %",
+          "marketCapAbove": "Capitalisation au-dessus",
+          "marketCapBelow": "Capitalisation en dessous",
+          "marketCapMovePct": "Variation de capitalisation %",
+          "portfolioValueAbove": "Valeur du portefeuille au-dessus",
+          "portfolioValueBelow": "Valeur du portefeuille en dessous",
+          "portfolioMovePct": "Variation du portefeuille %",
+          "allocationAbove": "Allocation au-dessus de %"
+        },
+        "errors": {
+          "symbolRequired": "Ajoutez le symbole d'un actif.",
+          "symbolInvalid": "Utilisez un symbole d'actif valide comme BTC ou ETH.",
+          "noConditions": "Ajoutez au moins une condition.",
+          "tooManyConditions": "Une règle peut avoir au plus {{max}} conditions.",
+          "conditionTypeInvalid": "Choisissez un type de condition pris en charge.",
+          "thresholdRequired": "Ajoutez une valeur de seuil.",
+          "thresholdInvalid": "Utilisez un seuil numérique.",
+          "windowRequired": "Ajoutez une fenêtre en minutes.",
+          "windowOutOfRange": "La fenêtre doit être un nombre entier entre {{min}} et {{max}} minutes.",
+          "cooldownInvalid": "Utilisez un délai de repos entre 0 seconde et 7 jours.",
+          "premiumRequired": "Les règles avancées nécessitent PulseSoc Premium."
+        }
+      },
+      "history": {
+        "title": "Historique des déclenchements",
+        "subtitle": "Chaque déclenchement d'une règle, le plus récent en premier.",
+        "empty": "Aucun déclenchement pour l'instant.",
+        "loadError": "Impossible de charger l'historique.",
+        "loadMore": "Charger plus",
+        "filtered": "Affichage d'une seule règle.",
+        "showAll": "Tout afficher",
+        "observed": "Observé : {{value}}",
+        "delivery": "Livraison : {{result}}"
+      },
+      "portfolio": {
+        "title": "Portefeuille crypto",
+        "subtitle": "Valorisation, historique de valeur et concentration de vos positions.",
+        "totalValue": "Valeur totale",
+        "change24h": "Variation 24 h",
+        "unrealizedPl": "+/- values latentes",
+        "holdingsTitle": "Positions",
+        "historyTitle": "Historique de valeur",
+        "empty": "Aucune position pour l'instant.",
+        "loadError": "Impossible de charger le portefeuille.",
+        "allocation": "Allocation : {{pct}} %",
+        "avgBuy": "Achat moyen {{price}}",
+        "calculatedAt": "Calculé {{time}}",
+        "marketDataAt": "Données de marché {{time}}",
+        "concentrationTitle": "Concentration",
+        "concentrationBody": "{{symbol}} représente {{pct}} % de la valeur de votre portefeuille.",
+        "noCoverage": "Aucun historique disponible pour cette période.",
+        "partialCoverage": "L'historique ne couvre que partiellement cette période.",
+        "periods": {
+          "h24": "24 h",
+          "d7": "7 j",
+          "d30": "30 j",
+          "d90": "90 j",
+          "y1": "1 an",
+          "all": "Tout"
+        }
+      }
     }
   },
   "settings": {

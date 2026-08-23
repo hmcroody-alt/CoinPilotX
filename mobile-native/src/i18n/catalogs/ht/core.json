@@ -197,7 +197,10 @@
       "page": "Paj",
       "createPage": "Kreye yon prezans",
       "yourPages": "Paj ou yo",
-      "presence": "Prezans"
+      "presence": "Prezans",
+      "cryptoAlertCenter": "Alèt kripto",
+      "cryptoAlertHistory": "Istwa alèt yo",
+      "cryptoPortfolio": "Pòtfèy kripto"
     },
     "navSubtitles": {
       "missionControl": "Sant kontwòl",

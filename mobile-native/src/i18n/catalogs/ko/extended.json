@@ -1440,6 +1440,159 @@
       "newCollection": "새 컬렉션",
       "collectionName": "컬렉션 이름",
       "saveToCollection": "컬렉션에 저장"
+    },
+    "crypto": {
+      "entry": {
+        "title": "프리미엄 암호화폐 인텔리전스",
+        "body": "여러 조건을 갖춘 고급 알림 규칙과 포트폴리오 분석은 새로운 암호화폐 커맨드 센터에 있습니다.",
+        "alertsCta": "알림 센터 열기",
+        "portfolioCta": "포트폴리오 열기"
+      },
+      "upsell": {
+        "title": "프리미엄 기능",
+        "cta": "프리미엄 요금제 보기",
+        "alertsBody": "고급 알림(크로스, 시간 윈도우, 거래량, 시가총액, 포트폴리오 조건)은 PulseSoc 프리미엄에 포함됩니다. 기본 가격 상향/하향 알림은 계속 무료입니다.",
+        "portfolioBody": "포트폴리오 평가, 가치 기록, 집중도 분석은 PulseSoc 프리미엄에 포함됩니다."
+      },
+      "common": {
+        "loading": "불러오는 중…",
+        "never": "없음"
+      },
+      "alerts": {
+        "title": "암호화폐 알림 센터",
+        "subtitle": "기본 및 고급 알림 규칙이 서버에서 평가되어 이 기기로 전달됩니다.",
+        "listTitle": "내 규칙",
+        "empty": "아직 알림 규칙이 없습니다. 위에서 만들어 보세요.",
+        "loadError": "알림을 불러오지 못했습니다.",
+        "create": "새 규칙",
+        "edit": "편집",
+        "delete": "삭제",
+        "deleteWarning": "이 규칙을 삭제할까요? 트리거 기록은 계속 볼 수 있지만 규칙 평가는 즉시 중단됩니다.",
+        "confirmDelete": "삭제 확인",
+        "deleted": "규칙이 삭제되었습니다.",
+        "deleteFailed": "규칙을 삭제하지 못했습니다.",
+        "enable": "활성화",
+        "disable": "일시중지",
+        "toggleFailed": "규칙을 업데이트하지 못했습니다.",
+        "save": "규칙 저장",
+        "saving": "저장 중…",
+        "saved": "규칙이 저장되었습니다.",
+        "saveFailed": "규칙을 저장하지 못했습니다.",
+        "cancel": "취소",
+        "cancelEdit": "편집 중단",
+        "formTitleCreate": "규칙 만들기",
+        "formTitleEdit": "규칙 편집",
+        "symbolLabel": "자산 심볼",
+        "thresholdLabel": "기준값",
+        "windowLabel": "윈도우(분)",
+        "windowHint": "{{min}}분에서 {{max}}분 사이여야 합니다.",
+        "cooldownLabel": "쿨다운(초)",
+        "frequencyLabel": "빈도",
+        "matchLabel": "트리거 조건",
+        "addCondition": "조건 추가",
+        "removeCondition": "제거",
+        "conditionTitle": "조건 {{number}}",
+        "conditionCount": "조건 수: {{count}}",
+        "lastTriggered": "마지막 트리거 {{time}}",
+        "limits": "무료 계정: 기본 규칙 {{free}}개. 프리미엄: 규칙 {{premium}}개, 규칙당 최대 {{conditions}}개 조건.",
+        "advancedLocked": "이 규칙은 고급 조건을 사용합니다. 저장하려면 프리미엄으로 업그레이드하거나, 무료로 유지되는 단일 가격 상향/하향 조건만 남기세요.",
+        "historyCta": "기록",
+        "historyAllCta": "트리거 기록 보기",
+        "ruleType": {
+          "basic": "기본",
+          "advanced": "고급"
+        },
+        "status": {
+          "active": "활성",
+          "paused": "일시중지됨",
+          "triggered": "트리거됨",
+          "error": "오류"
+        },
+        "match": {
+          "all": "모든 조건 충족 시",
+          "any": "조건 중 하나 충족 시"
+        },
+        "frequency": {
+          "once": "한 번",
+          "everyCrossing": "크로스마다",
+          "recurring": "반복"
+        },
+        "groups": {
+          "price": "가격",
+          "volume": "거래량",
+          "marketCap": "시가총액",
+          "portfolio": "포트폴리오"
+        },
+        "conditionTypes": {
+          "priceAbove": "가격이 이상일 때",
+          "priceBelow": "가격이 이하일 때",
+          "priceCrossesAbove": "가격 상향 돌파",
+          "priceCrossesBelow": "가격 하향 돌파",
+          "priceMovePct": "가격 변동 %",
+          "priceMoveAbs": "가격 변동(절대값)",
+          "volumeAbove": "거래량이 이상일 때",
+          "volumeBelow": "거래량이 이하일 때",
+          "volumeMovePct": "거래량 변동 %",
+          "marketCapAbove": "시가총액이 이상일 때",
+          "marketCapBelow": "시가총액이 이하일 때",
+          "marketCapMovePct": "시가총액 변동 %",
+          "portfolioValueAbove": "포트폴리오 가치가 이상일 때",
+          "portfolioValueBelow": "포트폴리오 가치가 이하일 때",
+          "portfolioMovePct": "포트폴리오 변동 %",
+          "allocationAbove": "비중이 % 초과일 때"
+        },
+        "errors": {
+          "symbolRequired": "자산 심볼을 입력하세요.",
+          "symbolInvalid": "BTC 또는 ETH 같은 유효한 자산 심볼을 사용하세요.",
+          "noConditions": "조건을 하나 이상 추가하세요.",
+          "tooManyConditions": "규칙 하나에 조건은 최대 {{max}}개까지 가능합니다.",
+          "conditionTypeInvalid": "지원되는 조건 유형을 선택하세요.",
+          "thresholdRequired": "기준값을 입력하세요.",
+          "thresholdInvalid": "숫자 기준값을 사용하세요.",
+          "windowRequired": "분 단위 윈도우를 입력하세요.",
+          "windowOutOfRange": "윈도우는 {{min}}분에서 {{max}}분 사이의 정수여야 합니다.",
+          "cooldownInvalid": "쿨다운은 0초에서 7일 사이여야 합니다.",
+          "premiumRequired": "고급 규칙에는 PulseSoc 프리미엄이 필요합니다."
+        }
+      },
+      "history": {
+        "title": "트리거 기록",
+        "subtitle": "규칙이 트리거될 때마다 기록되며 최신순으로 표시됩니다.",
+        "empty": "아직 트리거가 없습니다.",
+        "loadError": "기록을 불러오지 못했습니다.",
+        "loadMore": "더 불러오기",
+        "filtered": "규칙 하나만 표시 중입니다.",
+        "showAll": "모두 보기",
+        "observed": "관측값: {{value}}",
+        "delivery": "전송: {{result}}"
+      },
+      "portfolio": {
+        "title": "암호화폐 포트폴리오",
+        "subtitle": "보유 자산의 평가, 가치 기록, 집중도.",
+        "totalValue": "총 가치",
+        "change24h": "24시간 변동",
+        "unrealizedPl": "미실현 손익",
+        "holdingsTitle": "보유 자산",
+        "historyTitle": "가치 기록",
+        "empty": "아직 보유 자산이 없습니다.",
+        "loadError": "포트폴리오를 불러오지 못했습니다.",
+        "allocation": "비중: {{pct}}%",
+        "avgBuy": "평균 매수 {{price}}",
+        "calculatedAt": "계산 {{time}}",
+        "marketDataAt": "시장 데이터 {{time}}",
+        "concentrationTitle": "집중도",
+        "concentrationBody": "{{symbol}}이(가) 포트폴리오 가치의 {{pct}}%를 차지합니다.",
+        "noCoverage": "이 기간에는 기록이 없습니다.",
+        "partialCoverage": "기록이 이 기간을 일부만 포함합니다.",
+        "periods": {
+          "h24": "24시간",
+          "d7": "7일",
+          "d30": "30일",
+          "d90": "90일",
+          "y1": "1년",
+          "all": "전체"
+        }
+      }
     }
   },
   "settings": {

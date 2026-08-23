@@ -197,7 +197,10 @@
       "page": "页面",
       "createPage": "创建公众形象",
       "yourPages": "你的页面",
-      "presence": "公众形象"
+      "presence": "公众形象",
+      "cryptoAlertCenter": "加密货币提醒",
+      "cryptoAlertHistory": "提醒历史",
+      "cryptoPortfolio": "加密货币投资组合"
     },
     "navSubtitles": {
       "missionControl": "指挥中心",

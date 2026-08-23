@@ -1440,6 +1440,159 @@
       "newCollection": "新建收藏夹",
       "collectionName": "收藏夹名称",
       "saveToCollection": "保存到收藏夹"
+    },
+    "crypto": {
+      "entry": {
+        "title": "高级加密货币智能",
+        "body": "多条件高级提醒规则和投资组合分析位于新的加密货币指挥中心。",
+        "alertsCta": "打开提醒中心",
+        "portfolioCta": "打开投资组合"
+      },
+      "upsell": {
+        "title": "高级版功能",
+        "cta": "查看高级版方案",
+        "alertsBody": "高级提醒（穿越、时间窗口、成交量、市值和投资组合条件）属于 PulseSoc 高级版。基础的价格高于/低于提醒仍然免费。",
+        "portfolioBody": "投资组合估值、价值历史和集中度分析属于 PulseSoc 高级版。"
+      },
+      "common": {
+        "loading": "加载中…",
+        "never": "从未"
+      },
+      "alerts": {
+        "title": "加密货币提醒中心",
+        "subtitle": "基础与高级提醒规则，在服务器端评估并推送到此设备。",
+        "listTitle": "你的规则",
+        "empty": "还没有提醒规则。在上方创建一个。",
+        "loadError": "无法加载提醒。",
+        "create": "新建规则",
+        "edit": "编辑",
+        "delete": "删除",
+        "deleteWarning": "删除此规则？其触发历史仍可查看，但规则将立即停止评估。",
+        "confirmDelete": "确认删除",
+        "deleted": "规则已删除。",
+        "deleteFailed": "无法删除该规则。",
+        "enable": "启用",
+        "disable": "暂停",
+        "toggleFailed": "无法更新该规则。",
+        "save": "保存规则",
+        "saving": "保存中…",
+        "saved": "规则已保存。",
+        "saveFailed": "无法保存该规则。",
+        "cancel": "取消",
+        "cancelEdit": "停止编辑",
+        "formTitleCreate": "创建规则",
+        "formTitleEdit": "编辑规则",
+        "symbolLabel": "资产代码",
+        "thresholdLabel": "阈值",
+        "windowLabel": "窗口（分钟）",
+        "windowHint": "介于 {{min}} 到 {{max}} 分钟之间。",
+        "cooldownLabel": "冷却时间（秒）",
+        "frequencyLabel": "频率",
+        "matchLabel": "触发条件",
+        "addCondition": "添加条件",
+        "removeCondition": "移除",
+        "conditionTitle": "条件 {{number}}",
+        "conditionCount": "条件数：{{count}}",
+        "lastTriggered": "上次触发 {{time}}",
+        "limits": "免费账户：{{free}} 条基础规则。高级版：{{premium}} 条规则，每条最多 {{conditions}} 个条件。",
+        "advancedLocked": "此规则使用高级条件。升级到高级版即可保存，或保留单个价格高于/低于条件（保持免费）。",
+        "historyCta": "历史",
+        "historyAllCta": "查看触发历史",
+        "ruleType": {
+          "basic": "基础",
+          "advanced": "高级"
+        },
+        "status": {
+          "active": "已启用",
+          "paused": "已暂停",
+          "triggered": "已触发",
+          "error": "错误"
+        },
+        "match": {
+          "all": "满足所有条件",
+          "any": "满足任一条件"
+        },
+        "frequency": {
+          "once": "一次",
+          "everyCrossing": "每次穿越",
+          "recurring": "重复"
+        },
+        "groups": {
+          "price": "价格",
+          "volume": "成交量",
+          "marketCap": "市值",
+          "portfolio": "投资组合"
+        },
+        "conditionTypes": {
+          "priceAbove": "价格高于",
+          "priceBelow": "价格低于",
+          "priceCrossesAbove": "价格向上穿越",
+          "priceCrossesBelow": "价格向下穿越",
+          "priceMovePct": "价格变动 %",
+          "priceMoveAbs": "价格变动（绝对值）",
+          "volumeAbove": "成交量高于",
+          "volumeBelow": "成交量低于",
+          "volumeMovePct": "成交量变动 %",
+          "marketCapAbove": "市值高于",
+          "marketCapBelow": "市值低于",
+          "marketCapMovePct": "市值变动 %",
+          "portfolioValueAbove": "投资组合价值高于",
+          "portfolioValueBelow": "投资组合价值低于",
+          "portfolioMovePct": "投资组合变动 %",
+          "allocationAbove": "配置比例高于 %"
+        },
+        "errors": {
+          "symbolRequired": "请添加资产代码。",
+          "symbolInvalid": "请使用有效的资产代码，例如 BTC 或 ETH。",
+          "noConditions": "请至少添加一个条件。",
+          "tooManyConditions": "一条规则最多包含 {{max}} 个条件。",
+          "conditionTypeInvalid": "请选择受支持的条件类型。",
+          "thresholdRequired": "请添加阈值。",
+          "thresholdInvalid": "请使用数字阈值。",
+          "windowRequired": "请以分钟为单位添加窗口。",
+          "windowOutOfRange": "窗口必须是 {{min}} 到 {{max}} 分钟之间的整数。",
+          "cooldownInvalid": "冷却时间应在 0 秒到 7 天之间。",
+          "premiumRequired": "高级规则需要 PulseSoc 高级版。"
+        }
+      },
+      "history": {
+        "title": "触发历史",
+        "subtitle": "规则每次触发的记录，最新的在前。",
+        "empty": "还没有触发记录。",
+        "loadError": "无法加载历史。",
+        "loadMore": "加载更多",
+        "filtered": "仅显示一条规则。",
+        "showAll": "显示全部",
+        "observed": "观测值：{{value}}",
+        "delivery": "推送：{{result}}"
+      },
+      "portfolio": {
+        "title": "加密货币投资组合",
+        "subtitle": "你持仓的估值、价值历史和集中度。",
+        "totalValue": "总价值",
+        "change24h": "24 小时变动",
+        "unrealizedPl": "未实现盈亏",
+        "holdingsTitle": "持仓",
+        "historyTitle": "价值历史",
+        "empty": "还没有持仓。",
+        "loadError": "无法加载投资组合。",
+        "allocation": "配置比例：{{pct}}%",
+        "avgBuy": "平均买入 {{price}}",
+        "calculatedAt": "计算于 {{time}}",
+        "marketDataAt": "市场数据 {{time}}",
+        "concentrationTitle": "集中度",
+        "concentrationBody": "{{symbol}} 占你投资组合价值的 {{pct}}%。",
+        "noCoverage": "该时段没有可用的历史数据。",
+        "partialCoverage": "历史数据仅部分覆盖该时段。",
+        "periods": {
+          "h24": "24小时",
+          "d7": "7天",
+          "d30": "30天",
+          "d90": "90天",
+          "y1": "1年",
+          "all": "全部"
+        }
+      }
     }
   },
   "settings": {

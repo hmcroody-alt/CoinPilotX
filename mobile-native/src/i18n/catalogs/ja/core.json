@@ -197,7 +197,10 @@
       "page": "ページ",
       "createPage": "プレゼンスを作成",
       "yourPages": "あなたのページ",
-      "presence": "プレゼンス"
+      "presence": "プレゼンス",
+      "cryptoAlertCenter": "暗号資産アラート",
+      "cryptoAlertHistory": "アラート履歴",
+      "cryptoPortfolio": "暗号資産ポートフォリオ"
     },
     "navSubtitles": {
       "missionControl": "管制センター",

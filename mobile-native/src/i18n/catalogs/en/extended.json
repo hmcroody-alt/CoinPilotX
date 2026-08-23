@@ -1442,6 +1442,159 @@
       "newCollection": "New collection",
       "collectionName": "Collection name",
       "saveToCollection": "Save to collection"
+    },
+    "crypto": {
+      "entry": {
+        "title": "Premium crypto intelligence",
+        "body": "Advanced multi-condition alert rules and portfolio analytics live in the new crypto command center.",
+        "alertsCta": "Open alert center",
+        "portfolioCta": "Open portfolio"
+      },
+      "upsell": {
+        "title": "Premium feature",
+        "cta": "See Premium plans",
+        "alertsBody": "Advanced alerts — crossings, time windows, volume, market cap, and portfolio conditions — are part of PulseSoc Premium. Basic above/below price alerts stay free.",
+        "portfolioBody": "Portfolio valuation, value history, and concentration insights are part of PulseSoc Premium."
+      },
+      "common": {
+        "loading": "Loading…",
+        "never": "Never"
+      },
+      "alerts": {
+        "title": "Crypto alert center",
+        "subtitle": "Basic and advanced alert rules, evaluated server-side and delivered to this device.",
+        "listTitle": "Your rules",
+        "empty": "No alert rules yet. Create one above.",
+        "loadError": "Alerts could not load.",
+        "create": "New rule",
+        "edit": "Edit",
+        "delete": "Delete",
+        "deleteWarning": "Delete this rule? Its trigger history stays readable, but the rule stops evaluating immediately.",
+        "confirmDelete": "Confirm delete",
+        "deleted": "Rule deleted.",
+        "deleteFailed": "The rule could not be deleted.",
+        "enable": "Enable",
+        "disable": "Pause",
+        "toggleFailed": "The rule could not be updated.",
+        "save": "Save rule",
+        "saving": "Saving…",
+        "saved": "Rule saved.",
+        "saveFailed": "The rule could not be saved.",
+        "cancel": "Cancel",
+        "cancelEdit": "Stop editing",
+        "formTitleCreate": "Create rule",
+        "formTitleEdit": "Edit rule",
+        "symbolLabel": "Asset symbol",
+        "thresholdLabel": "Threshold",
+        "windowLabel": "Window (minutes)",
+        "windowHint": "Between {{min}} and {{max}} minutes.",
+        "cooldownLabel": "Cooldown (seconds)",
+        "frequencyLabel": "Frequency",
+        "matchLabel": "Trigger when",
+        "addCondition": "Add condition",
+        "removeCondition": "Remove",
+        "conditionTitle": "Condition {{number}}",
+        "conditionCount": "Conditions: {{count}}",
+        "lastTriggered": "Last triggered {{time}}",
+        "limits": "Free accounts: {{free}} basic rules. Premium: {{premium}} rules, up to {{conditions}} conditions each.",
+        "advancedLocked": "This rule uses advanced conditions. Upgrade to Premium to save it — or keep a single above/below price condition, which stays free.",
+        "historyCta": "History",
+        "historyAllCta": "View trigger history",
+        "ruleType": {
+          "basic": "Basic",
+          "advanced": "Advanced"
+        },
+        "status": {
+          "active": "Active",
+          "paused": "Paused",
+          "triggered": "Triggered",
+          "error": "Error"
+        },
+        "match": {
+          "all": "All conditions match",
+          "any": "Any condition matches"
+        },
+        "frequency": {
+          "once": "Once",
+          "everyCrossing": "Every crossing",
+          "recurring": "Recurring"
+        },
+        "groups": {
+          "price": "Price",
+          "volume": "Volume",
+          "marketCap": "Market cap",
+          "portfolio": "Portfolio"
+        },
+        "conditionTypes": {
+          "priceAbove": "Price above",
+          "priceBelow": "Price below",
+          "priceCrossesAbove": "Price crosses above",
+          "priceCrossesBelow": "Price crosses below",
+          "priceMovePct": "Price move %",
+          "priceMoveAbs": "Price move (absolute)",
+          "volumeAbove": "Volume above",
+          "volumeBelow": "Volume below",
+          "volumeMovePct": "Volume move %",
+          "marketCapAbove": "Market cap above",
+          "marketCapBelow": "Market cap below",
+          "marketCapMovePct": "Market cap move %",
+          "portfolioValueAbove": "Portfolio value above",
+          "portfolioValueBelow": "Portfolio value below",
+          "portfolioMovePct": "Portfolio move %",
+          "allocationAbove": "Allocation above %"
+        },
+        "errors": {
+          "symbolRequired": "Add an asset symbol.",
+          "symbolInvalid": "Use a valid asset symbol such as BTC or ETH.",
+          "noConditions": "Add at least one condition.",
+          "tooManyConditions": "A rule can have at most {{max}} conditions.",
+          "conditionTypeInvalid": "Choose a supported condition type.",
+          "thresholdRequired": "Add a threshold value.",
+          "thresholdInvalid": "Use a numeric threshold.",
+          "windowRequired": "Add a window in minutes.",
+          "windowOutOfRange": "The window must be a whole number between {{min}} and {{max}} minutes.",
+          "cooldownInvalid": "Use a cooldown between 0 seconds and 7 days.",
+          "premiumRequired": "Advanced rules need PulseSoc Premium."
+        }
+      },
+      "history": {
+        "title": "Trigger history",
+        "subtitle": "Every time a rule fired, newest first.",
+        "empty": "No triggers yet.",
+        "loadError": "History could not load.",
+        "loadMore": "Load more",
+        "filtered": "Showing one rule only.",
+        "showAll": "Show all",
+        "observed": "Observed: {{value}}",
+        "delivery": "Delivery: {{result}}"
+      },
+      "portfolio": {
+        "title": "Crypto portfolio",
+        "subtitle": "Valuation, value history, and concentration for your holdings.",
+        "totalValue": "Total value",
+        "change24h": "24h change",
+        "unrealizedPl": "Unrealized P/L",
+        "holdingsTitle": "Holdings",
+        "historyTitle": "Value history",
+        "empty": "No holdings yet.",
+        "loadError": "The portfolio could not load.",
+        "allocation": "Allocation: {{pct}}%",
+        "avgBuy": "Avg buy {{price}}",
+        "calculatedAt": "Calculated {{time}}",
+        "marketDataAt": "Market data {{time}}",
+        "concentrationTitle": "Concentration",
+        "concentrationBody": "{{symbol}} makes up {{pct}}% of your portfolio value.",
+        "noCoverage": "No history is available for this period.",
+        "partialCoverage": "History only partially covers this period.",
+        "periods": {
+          "h24": "24h",
+          "d7": "7d",
+          "d30": "30d",
+          "d90": "90d",
+          "y1": "1y",
+          "all": "All"
+        }
+      }
     }
   },
   "settings": {
