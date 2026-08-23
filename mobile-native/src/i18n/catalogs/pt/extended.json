@@ -1444,6 +1444,22 @@
       "saveToCollection": "Salvar na coleção"
     },
     "crypto": {
+      "intelligence": {
+        "heading": "Inteligência cripto",
+        "subhead": "Ferramentas cripto Premium, incluídas em todos os planos.",
+        "alerts": {
+          "label": "Alertas cripto avançados",
+          "hint": "Condições avançadas, monitoramento recorrente, regras compostas e mais controle sobre os alertas."
+        },
+        "portfolio": {
+          "label": "Portfólio",
+          "hint": "Posições, alocação, desempenho, concentração e lucros e perdas não realizados."
+        },
+        "undx": {
+          "label": "Inteligência cripto UNDX",
+          "hint": "Entenda por que os alertas dispararam e o que está movendo seu portfólio."
+        }
+      },
       "entry": {
         "title": "Inteligência cripto Premium",
         "body": "As regras de alerta avançadas com várias condições e a análise do portfólio ficam no novo centro de comando cripto.",

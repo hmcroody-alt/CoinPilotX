@@ -1444,6 +1444,22 @@
       "saveToCollection": "In Sammlung speichern"
     },
     "crypto": {
+      "intelligence": {
+        "heading": "Krypto-Intelligenz",
+        "subhead": "Premium-Krypto-Werkzeuge, in jedem Plan enthalten.",
+        "alerts": {
+          "label": "Erweiterte Krypto-Alarme",
+          "hint": "Erweiterte Bedingungen, wiederkehrende Überwachung, kombinierte Regeln und mehr Kontrolle über deine Alarme."
+        },
+        "portfolio": {
+          "label": "Portfolio",
+          "hint": "Bestände, Allokation, Performance, Konzentration sowie unrealisierte Gewinne und Verluste."
+        },
+        "undx": {
+          "label": "UNDX-Krypto-Intelligenz",
+          "hint": "Verstehe, warum Alarme ausgelöst wurden und was dein Portfolio bewegt."
+        }
+      },
       "entry": {
         "title": "Premium-Krypto-Intelligenz",
         "body": "Erweiterte Alarmregeln mit mehreren Bedingungen und Portfolio-Analysen findest du im neuen Krypto-Kommandozentrum.",

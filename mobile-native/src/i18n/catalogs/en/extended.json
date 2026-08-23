@@ -1444,6 +1444,22 @@
       "saveToCollection": "Save to collection"
     },
     "crypto": {
+      "intelligence": {
+        "heading": "Crypto intelligence",
+        "subhead": "Premium crypto tools, included with every plan.",
+        "alerts": {
+          "label": "Advanced crypto alerts",
+          "hint": "Advanced conditions, recurring monitoring, compound rules, and richer alert controls."
+        },
+        "portfolio": {
+          "label": "Portfolio",
+          "hint": "Holdings, allocation, performance, concentration, and unrealized gains and losses."
+        },
+        "undx": {
+          "label": "UNDX crypto intelligence",
+          "hint": "Understand why alerts triggered and what is moving your portfolio."
+        }
+      },
       "entry": {
         "title": "Premium crypto intelligence",
         "body": "Advanced multi-condition alert rules and portfolio analytics live in the new crypto command center.",
