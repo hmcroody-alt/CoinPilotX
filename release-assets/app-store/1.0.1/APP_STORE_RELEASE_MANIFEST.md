@@ -84,13 +84,20 @@ are the older set from a previous attempt and are not part of this release.
 | 03 | Messaging | *withheld* | **FAIL** | Contains a room literally named **"Speed QA Room"**, plus real personal names and message snippets. Violates Stage 6 (QA names) and Stage 10 (no private real conversation data). **Deliberately not committed** — it holds a family member's private messages and git history is permanent. It stays at `/tmp/shots/03_messages.png` only. |
 | 04 | Profile | `04_profile.png` | **FAIL** | Entirely empty: 0 posts / 0 followers / 1 following / 0 media, and the placeholder "Add a bio to shape your PulseSoc identity." |
 | 05 | Marketplace | `05_marketplace.png` | **FAIL** | Two test listings ("T4" $0.50, "Big T" $15.99) sharing one generic "T" placeholder image. Stage 12 requires real product media. |
-| 06 | Business OS | *not captured* | **BLOCKED** | Not reachable. `BusinessOs` has no entry in `src/navigation/linking.ts`, and the in-app navigation drawer has no Business OS item in any section — Commerce runs Marketplace → Seller Store → Create Listing → Seller Inventory → Buyer Orders → Premium. Stage 13 cannot be satisfied without an entry point. |
+| 06 | Business OS | *not captured* | **FAIL** | **Correction to the earlier finding — it is reachable.** The route is Profile OS → Business tile → Business OS, driven by `src/profile/profileOsTiles.ts`, not by the drawer or by `linking.ts`; reached and confirmed on device this session, header now reading "Store, listings and advertising". So Stage 14's "do not add it to navigation just for the screenshot" stands — nothing needs adding. It fails on content, like the rest: 0 listings, 0 orders, $0.00, plus an ad-account verification warning. |
 | 07 | Premium | `07_premium.png` | **PASS** | UI-driven rather than content-dependent. Same frame as the IAP review screenshot. |
 | 08 | Security / Trust | `08_security.png` | **MARGINAL** | "Trust & Safety" / PulseSoc Safety Grid renders well, but the support panel read "No support tickets returned by the backend." — developer copy plus an empty state. The copy is now fixed in `TrustSafetyScreen.tsx` ("You have no open support tickets."); the capture itself predates the fix and has not been retaken, because the Mac console is at the login window. |
 
 **Two of eight screens meet the bar.** The brief requires a set "materially better than the
-old weak set"; five of the remaining six fail on account content rather than on app quality,
-and the sixth has no reachable entry point.
+old weak set". Every one of the six failures is a *content* failure — an empty or unsafe
+capture account — not an app-quality failure and not a missing feature. That is the whole of
+Blocker B, and one populated, safe account clears all six at once.
+
+The two developer-copy defects that were app-quality failures have both been fixed in code and
+verified running on the simulator (`744fdea6`): Business OS no longer shows a placeholder
+subtitle, and the Trust & Safety support panel now reads "You have no open support tickets."
+instead of "No support tickets returned by the backend." The stale captures in `raw/` predate
+those fixes and must be retaken, not re-cropped.
 
 ## App Preview — Stage 17–19
 
