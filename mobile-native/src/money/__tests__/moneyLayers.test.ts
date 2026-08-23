@@ -31,6 +31,7 @@ import {
   payoutIsTerminal,
   payoutOnboardingFailure,
   payoutOnboardingOutcome,
+  payoutOnboardingPrefersServerMessage,
   payoutReadiness,
   processingExplainer
 } from "../moneyLayers";
@@ -484,6 +485,38 @@ describe("payoutOnboardingFailure", () => {
       payoutOnboardingFailure(500, "").messageKey
     ];
     expect(new Set(keys).size).toBe(5);
+  });
+});
+
+describe("payoutOnboardingPrefersServerMessage", () => {
+  // The seller who tested this on a device saw both sentences at once —
+  // "Payout setup couldn't start. Please try again." above the server's
+  // "Payout onboarding failed. Please try again." — and read one tap as two
+  // separate failures. Exactly one sentence may win.
+  it("lets the server explain a failure, because only it knows why", () => {
+    const outcome = payoutOnboardingFailure(503, "Payout setup isn't open yet.");
+    expect(payoutOnboardingPrefersServerMessage(outcome)).toBe(true);
+  });
+
+  it("keeps the translated sentence when the failure arrived without one", () => {
+    // A dropped connection has no body to quote, so the local string is all
+    // there is — and it is the one that is translated.
+    expect(payoutOnboardingPrefersServerMessage(payoutOnboardingFailure(0, ""))).toBe(false);
+    expect(payoutOnboardingPrefersServerMessage(payoutOnboardingFailure(500, "   "))).toBe(false);
+  });
+
+  it("keeps the translated sentence for every outcome that is not a failure", () => {
+    // These are fully determined by the response shape, so the server adds no
+    // knowledge — only an untranslated, operator-worded duplicate.
+    const settled = [
+      payoutOnboardingOutcome({ ok: true, onboarding_url: "https://connect.stripe.com/x" }),
+      payoutOnboardingOutcome({ ok: true, message: "Stripe Connect is not configured yet." }),
+      payoutOnboardingFailure(403, "Approved merchant status is required."),
+      payoutOnboardingFailure(401, "Login required.")
+    ];
+    settled.forEach((outcome) =>
+      expect(payoutOnboardingPrefersServerMessage(outcome)).toBe(false)
+    );
   });
 });
 

@@ -20038,7 +20038,7 @@ def api_pulse_rewards_claim(reward_id):
                 if not connected_account_id:
                     created = _provider.create_connected_account(user, "merchant")
                     if not created.get("ok"):
-                        return jsonify(created), 503
+                        return jsonify(created), int(created.get("http_status") or 503)
                     connected_account_id = str(created.get("provider_account_id") or "")
                     try:
                         status = _provider.get_account_status(connected_account_id)
@@ -20054,7 +20054,7 @@ def api_pulse_rewards_claim(reward_id):
                     return_url=f"{base}/pulse/rewards",
                 )
                 if not link.get("ok"):
-                    return jsonify(link), 503
+                    return jsonify(link), int(link.get("http_status") or 503)
                 response = jsonify({
                     "ok": True,
                     "needs_onboarding": True,
@@ -87067,13 +87067,21 @@ def api_pulse_payouts_connect():
         return api_error(f"Approved {seller_type} status is required before payout onboarding.", 403)
     account = seller_payout_account(cur, user["user_id"], seller_type)
     connected_account_id = account.get("connected_account_id") or ""
+    trace_id = secrets.token_hex(6)
     try:
         if STRIPE_SECRET_KEY:
             if not connected_account_id:
                 stripe_account = payment_provider.create_connected_account(user, seller_type)
                 if not stripe_account.get("ok"):
                     conn.close()
-                    return jsonify(stripe_account), 503
+                    return api_error(
+                        stripe_account.get("message") or "Payout setup could not start.",
+                        int(stripe_account.get("http_status") or 503),
+                        trace_id,
+                        code=stripe_account.get("code") or "",
+                        provider_error=stripe_account.get("provider_error") or {},
+                        retryable=bool(stripe_account.get("retryable")),
+                    )
                 connected_account_id = stripe_account.get("provider_account_id") or ""
             cur.execute(
                 """
@@ -87090,7 +87098,14 @@ def api_pulse_payouts_connect():
             link = payment_provider.create_onboarding_link(connected_account_id, refresh_url=f"{base}/pulse/{seller_type}/payouts", return_url=f"{base}/pulse/{seller_type}/payouts")
             if not link.get("ok"):
                 conn.close()
-                return jsonify(link), 503
+                return api_error(
+                    link.get("message") or "Payout setup could not start.",
+                    int(link.get("http_status") or 503),
+                    trace_id,
+                    code=link.get("code") or "",
+                    provider_error=link.get("provider_error") or {},
+                    retryable=bool(link.get("retryable")),
+                )
             conn.close()
             return jsonify({"ok": True, "message": "Stripe onboarding ready.", "onboarding_url": link.get("url"), "connected_account_id": connected_account_id})
         cur.execute(
@@ -87106,10 +87121,28 @@ def api_pulse_payouts_connect():
         conn.commit(); conn.close()
         return jsonify({"ok": True, "message": "Payout profile saved. Stripe Connect is not configured yet, so bank onboarding cannot open in this environment."})
     except Exception as exc:
-        trace_id = secrets.token_hex(6)
+        # `logging.exception` alone does not reach the deployed log stream — this
+        # route failed in production for a seller and left no line behind, which
+        # is why the cause had to be reproduced by hand. `print(..., flush=True)`
+        # is what `services/db.py` already uses and what actually lands there.
+        print(
+            f"SELLER_PAYOUT_CONNECT_FAILED trace_id={trace_id} user_id={user['user_id']} "
+            f"seller_type={seller_type} exc={type(exc).__name__}: {str(exc)[:400]}",
+            flush=True,
+        )
         logging.exception("SELLER_PAYOUT_CONNECT_FAILED trace_id=%s user_id=%s seller_type=%s", trace_id, user["user_id"], seller_type)
         conn.rollback(); conn.close()
-        return api_error("Payout onboarding failed. Please try again.", 500, trace_id, error=str(exc))
+        # The raw exception text used to be returned as `error`. It is the one
+        # thing here that can carry provider or internal detail, and no client
+        # reads it; the trace id above is what ties a report to the log line.
+        return api_error(
+            "Payout setup couldn't be completed. This is a problem on PulseSoc's side, "
+            "not with your account.",
+            500,
+            trace_id,
+            code="PAYOUT_ONBOARDING_ERROR",
+            retryable=True,
+        )
 
 
 @webhook_app.route("/api/pulse/payments/checkout", methods=["POST"])

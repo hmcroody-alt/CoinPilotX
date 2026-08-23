@@ -7,10 +7,17 @@ setup-required responses instead of crashing the app.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
 import stripe
+
+from services.marketplace_payment_errors import (
+    classify_provider_exception,
+    stripe_response_dict,
+    stripe_response_value,
+)
 
 
 def _base_url() -> str:
@@ -40,16 +47,106 @@ def setup_required(message: str = "Stripe is not configured yet.") -> dict[str, 
     return {"ok": False, "status": "setup_required", "message": message, "provider": "stripe", "provider_status": provider_status()}
 
 
+# Seller-facing copy for a failed Connect call. Deliberately not the buyer copy
+# in ``marketplace_payment_errors`` — nothing is being charged here, so "No card
+# was charged" would describe an event that never happened.
+#
+# ``_PLATFORM_MESSAGE`` is the one that must not say "try again": when the
+# platform has not been signed up for Connect, every retry fails identically and
+# forever, so telling the seller to retry sends them into a loop over a blocker
+# only PulseSoc can clear.
+_PLATFORM_MESSAGE = (
+    "Payout setup isn't open yet. PulseSoc is still finishing the payment-provider "
+    "setup that has to exist before sellers can connect a bank account. Nothing is "
+    "wrong with your account, and retrying won't change it until we finish."
+)
+_CONFIG_MESSAGE = (
+    "Payout setup couldn't start because of a problem on PulseSoc's side, not with "
+    "your account. We've recorded the details."
+)
+_NETWORK_MESSAGE = "We couldn't reach the payout provider. Try again in a moment."
+_UNAVAILABLE_MESSAGE = "Payout setup is temporarily unavailable. Try again in a moment."
+
+CONNECT_PLATFORM_CODE = "CONNECT_PLATFORM_NOT_ENABLED"
+
+# Stripe answers a platform that never enabled Connect with a plain
+# ``InvalidRequestError`` whose only distinguishing mark is its message — there
+# is no ``code`` on it. Matched here purely to choose honest copy; the provider's
+# message itself is never returned to the seller.
+_PLATFORM_MARKERS = (
+    "signed up for connect",
+    "only stripe connect platforms",
+)
+
+
+def _is_platform_not_enabled(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return any(marker in text for marker in _PLATFORM_MARKERS)
+
+
+def connect_failure(exc: Exception, operation: str) -> dict[str, Any]:
+    """Turn a raised Stripe Connect error into one seller-safe descriptor.
+
+    Reuses :func:`classify_provider_exception` for the class/status decision so
+    payouts and checkout agree on what each Stripe error class means, then
+    swaps in payout copy. ``provider_error`` stays the non-sensitive
+    ``{type, code, param}`` fingerprint, never the raw message.
+    """
+    classified = classify_provider_exception(exc)
+    code = classified["code"]
+    status = classified["status"]
+
+    if _is_platform_not_enabled(exc):
+        code, status, message = CONNECT_PLATFORM_CODE, 503, _PLATFORM_MESSAGE
+    elif code == "PAYMENT_CONFIGURATION_ERROR":
+        message = _CONFIG_MESSAGE
+    elif code == "NETWORK_ERROR":
+        message = _NETWORK_MESSAGE
+    else:
+        message = _UNAVAILABLE_MESSAGE
+
+    # The provider's own message is the only place the real cause is written,
+    # and the route's ``logging.exception`` does not survive to production logs.
+    # Print so it lands on stdout the way ``services/db.py`` errors already do.
+    print(
+        f"CONNECT_{operation.upper()}_FAILED code={code} "
+        f"provider={classified['provider_error']} detail={str(exc)[:400]}",
+        flush=True,
+    )
+    logging.error("CONNECT_%s_FAILED code=%s", operation.upper(), code)
+
+    return {
+        "ok": False,
+        "status": "provider_error",
+        "code": code,
+        "http_status": status,
+        "message": message,
+        "provider_error": classified["provider_error"],
+        "retryable": code in {"NETWORK_ERROR", "PAYMENT_UNAVAILABLE"},
+    }
+
+
 def create_connected_account(user: dict[str, Any], seller_type: str) -> dict[str, Any]:
     if not _stripe_ready():
         return setup_required("Stripe Connect cannot start until STRIPE_SECRET_KEY is configured.")
-    account = stripe.Account.create(
-        type="express",
-        email=user.get("email") or None,
-        metadata={"user_id": str(user.get("user_id") or ""), "seller_type": seller_type},
-        capabilities={"card_payments": {"requested": True}, "transfers": {"requested": True}},
-    )
-    return {"ok": True, "provider_account_id": account.get("id"), "account": dict(account)}
+    user_id = str(user.get("user_id") or "")
+    try:
+        account = stripe.Account.create(
+            type="express",
+            email=user.get("email") or None,
+            metadata={"user_id": user_id, "seller_type": seller_type},
+            capabilities={"card_payments": {"requested": True}, "transfers": {"requested": True}},
+            # Guards the double tap that lands before the first response is
+            # persisted; the stored row is the durable guard once it exists.
+            idempotency_key=f"connect-account:{user_id}:{seller_type}",
+        )
+    except Exception as exc:
+        return connect_failure(exc, "account_create")
+    return {
+        "ok": True,
+        "provider_account_id": stripe_response_value(account, "id"),
+        "account": stripe_response_dict(account),
+    }
 
 
 def create_onboarding_link(provider_account_id: str, refresh_url: str = "", return_url: str = "") -> dict[str, Any]:
@@ -57,13 +154,16 @@ def create_onboarding_link(provider_account_id: str, refresh_url: str = "", retu
         return setup_required("Stripe Connect onboarding cannot start until Stripe is configured.")
     if not provider_account_id:
         return {"ok": False, "message": "Connected account id is required."}
-    link = stripe.AccountLink.create(
-        account=provider_account_id,
-        refresh_url=refresh_url or f"{_base_url()}/payments/cancel",
-        return_url=return_url or f"{_base_url()}/payments/success",
-        type="account_onboarding",
-    )
-    return {"ok": True, "url": link.get("url")}
+    try:
+        link = stripe.AccountLink.create(
+            account=provider_account_id,
+            refresh_url=refresh_url or f"{_base_url()}/payments/cancel",
+            return_url=return_url or f"{_base_url()}/payments/success",
+            type="account_onboarding",
+        )
+    except Exception as exc:
+        return connect_failure(exc, "account_link")
+    return {"ok": True, "url": stripe_response_value(link, "url")}
 
 
 def get_account_status(provider_account_id: str) -> dict[str, Any]:
@@ -71,16 +171,22 @@ def get_account_status(provider_account_id: str) -> dict[str, Any]:
         return setup_required("Stripe account status is unavailable until Stripe is configured.")
     if not provider_account_id:
         return {"ok": False, "message": "Connected account id is required."}
-    account = stripe.Account.retrieve(provider_account_id)
-    requirements = dict(account.get("requirements") or {})
+    try:
+        account = stripe.Account.retrieve(provider_account_id)
+    except Exception as exc:
+        return connect_failure(exc, "account_retrieve")
+    payouts_enabled = bool(stripe_response_value(account, "payouts_enabled", False))
+    charges_enabled = bool(stripe_response_value(account, "charges_enabled", False))
     return {
         "ok": True,
         "provider_account_id": provider_account_id,
-        "payouts_enabled": bool(account.get("payouts_enabled")),
-        "charges_enabled": bool(account.get("charges_enabled")),
-        "onboarding_status": "enabled" if account.get("payouts_enabled") and account.get("charges_enabled") else "restricted",
-        "requirements": requirements,
-        "account": dict(account),
+        "payouts_enabled": payouts_enabled,
+        "charges_enabled": charges_enabled,
+        "details_submitted": bool(stripe_response_value(account, "details_submitted", False)),
+        "disabled_reason": str(stripe_response_value(account, "disabled_reason", "") or ""),
+        "onboarding_status": "enabled" if payouts_enabled and charges_enabled else "restricted",
+        "requirements": stripe_response_dict(stripe_response_value(account, "requirements", {})),
+        "account": stripe_response_dict(account),
     }
 
 
@@ -133,21 +239,34 @@ def create_checkout_session(
         success_url=success_url or f"{_base_url()}/payments/success?transaction_id={transaction_id}",
         cancel_url=cancel_url or f"{_base_url()}/payments/cancel?transaction_id={transaction_id}",
     )
-    return {"ok": True, "checkout_url": session.get("url"), "provider_checkout_id": session.get("id"), "session": dict(session)}
+    return {
+        "ok": True,
+        "checkout_url": stripe_response_value(session, "url"),
+        "provider_checkout_id": stripe_response_value(session, "id"),
+        "session": stripe_response_dict(session),
+    }
 
 
 def create_payment_intent(**kwargs) -> dict[str, Any]:
     if not _stripe_ready():
         return setup_required("Payment intents are unavailable until Stripe is configured.")
     intent = stripe.PaymentIntent.create(**kwargs)
-    return {"ok": True, "payment_intent": dict(intent), "provider_payment_id": intent.get("id")}
+    return {
+        "ok": True,
+        "payment_intent": stripe_response_dict(intent),
+        "provider_payment_id": stripe_response_value(intent, "id"),
+    }
 
 
 def create_transfer(**kwargs) -> dict[str, Any]:
     if not _stripe_ready():
         return setup_required("Transfers are unavailable until Stripe is configured.")
     transfer = stripe.Transfer.create(**kwargs)
-    return {"ok": True, "transfer": dict(transfer), "provider_transfer_id": transfer.get("id")}
+    return {
+        "ok": True,
+        "transfer": stripe_response_dict(transfer),
+        "provider_transfer_id": stripe_response_value(transfer, "id"),
+    }
 
 
 def create_payout(*, stripe_account: str, idempotency_key: str = "", **kwargs) -> dict[str, Any]:
@@ -160,7 +279,11 @@ def create_payout(*, stripe_account: str, idempotency_key: str = "", **kwargs) -
     if idempotency_key:
         extra["idempotency_key"] = idempotency_key
     payout = stripe.Payout.create(**kwargs, **extra)
-    return {"ok": True, "payout": dict(payout), "provider_payout_id": payout.get("id")}
+    return {
+        "ok": True,
+        "payout": stripe_response_dict(payout),
+        "provider_payout_id": stripe_response_value(payout, "id"),
+    }
 
 
 def create_refund(provider_payment_id: str, amount_cents: int | None = None, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -170,7 +293,11 @@ def create_refund(provider_payment_id: str, amount_cents: int | None = None, met
     if amount_cents is not None:
         payload["amount"] = int(amount_cents)
     refund = stripe.Refund.create(**payload)
-    return {"ok": True, "refund": dict(refund), "provider_refund_id": refund.get("id")}
+    return {
+        "ok": True,
+        "refund": stripe_response_dict(refund),
+        "provider_refund_id": stripe_response_value(refund, "id"),
+    }
 
 
 def verify_webhook_signature(payload: bytes, signature_header: str | None) -> dict[str, Any]:
