@@ -399,6 +399,101 @@ _register(CapabilitySpec(
 ))
 
 
+# --- Crypto intelligence ---------------------------------------------------
+#
+# Read-only premium crypto surfaces. The premium gate itself lives in the
+# executors (services.crypto_premium_gate): a locked capability still resolves
+# and runs, and returns the honest premium_required payload so the model can
+# explain the upsell instead of pretending the feature does not exist.
+
+_PORTFOLIO_PERIODS = ("24h", "7d", "30d", "90d", "1y", "all")
+
+_register(CapabilitySpec(
+    capability_id="crypto.portfolio.summary",
+    description="Current valuation of the authenticated user's crypto portfolio "
+                "(premium; locked accounts get an upgrade notice, never invented numbers)",
+    intents=("my portfolio", "portfolio summary", "portfolio value",
+             "what is my portfolio worth", "how is my portfolio doing",
+             "portfolio breakdown", "my holdings", "my crypto holdings"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.crypto_portfolio.summary",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(),
+    executor="crypto_portfolio_summary",
+    verifier="",
+    native_route="/pulse/intelligence/:subsystem?",
+    result_card=CardType.CONTENT_RESULT,
+    audit_category="crypto_portfolio_read",
+))
+
+_register(CapabilitySpec(
+    capability_id="crypto.portfolio.history",
+    description="Portfolio value history over a chosen period "
+                "(premium; locked accounts get an upgrade notice)",
+    intents=("portfolio history", "portfolio over time", "portfolio performance",
+             "how has my portfolio changed", "portfolio chart",
+             "portfolio last week", "portfolio this month"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.crypto_portfolio.history",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        FieldSpec("period", "enum", required=False,
+                  choices=_PORTFOLIO_PERIODS, default="30d"),
+    ),
+    executor="crypto_portfolio_history",
+    verifier="",
+    native_route="/pulse/intelligence/:subsystem?",
+    result_card=CardType.CONTENT_RESULT,
+    audit_category="crypto_portfolio_read",
+))
+
+_register(CapabilitySpec(
+    capability_id="crypto.alerts.activity",
+    description="The user's crypto alert rules plus recent trigger history "
+                "(rule list is free; trigger detail is premium)",
+    intents=("alert history", "which alerts fired", "alert triggers",
+             "recent alert activity", "did my alert trigger",
+             "alert activity", "when did my alert go off"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.crypto_alerts.activity",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        FieldSpec("alert_id", "int", required=False, minimum=1),
+        FieldSpec("limit", "int", required=False, minimum=1, maximum=50, default=20),
+    ),
+    executor="crypto_alerts_activity",
+    verifier="",
+    native_route="/pulse/crypto/alerts",
+    result_card=CardType.CRYPTO_ALERT_CARD,
+    audit_category="crypto_alerts_read",
+))
+
+_register(CapabilitySpec(
+    capability_id="crypto.market.observations",
+    description="Recent sampled market observations (price, volume, market cap) "
+                "for one crypto asset",
+    intents=("recent price", "price history", "market observations",
+             "how has bitcoin moved", "recent market data", "price samples",
+             "volume history"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.crypto_market.observations",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        FieldSpec("asset_id", "identifier", required=True, max_length=60),
+        FieldSpec("limit", "int", required=False, minimum=1, maximum=100, default=24),
+    ),
+    executor="crypto_market_observations",
+    verifier="",
+    native_route="/pulse/intelligence/:subsystem?",
+    result_card=CardType.CONTENT_RESULT,
+    audit_category="crypto_market_read",
+))
+
+
 # --- Saved content ---------------------------------------------------------
 
 _register(CapabilitySpec(
