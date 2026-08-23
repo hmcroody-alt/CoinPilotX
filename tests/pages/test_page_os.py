@@ -58,14 +58,77 @@ CREATE TABLE pulse_posts (
 );
 """
 
+# A link points the page at a resource that lives in another system and belongs
+# to somebody. `set_link` consults these to answer "is the actor entitled to
+# this ref?", so they have to exist for any link test to exercise the real
+# path — the shape matches the production tables it reads.
+LINK_TARGET_SCHEMA = """
+CREATE TABLE marketplace_sellers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER UNIQUE,
+    display_name TEXT,
+    status TEXT DEFAULT 'pending'
+);
+CREATE TABLE advertisers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER,
+    advertiser_name TEXT,
+    status TEXT DEFAULT 'pending'
+);
+CREATE TABLE pulse_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER,
+    slug TEXT UNIQUE,
+    name TEXT
+);
+CREATE TABLE pulse_audio_tracks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    artist TEXT,
+    uploader_user_id INTEGER,
+    audio_url TEXT,
+    approved_by_admin INTEGER DEFAULT 0,
+    active INTEGER DEFAULT 1
+);
+"""
+
+# Resources the OWNER genuinely holds, and the matching ones a STRANGER holds.
+# Every link test names one of these rather than an arbitrary integer, because
+# an arbitrary integer is precisely what is no longer accepted.
+OWNER_SELLER_ID = 42
+STRANGER_SELLER_ID = 77
+OWNER_ADVERTISER_ID = 9
+STRANGER_ADVERTISER_ID = 91
+OWNER_GROUP_ID = 3
+STRANGER_GROUP_ID = 31
+OWNER_ARTIST = "Night Signal"
+STRANGER_ARTIST = "Someone Else"
+
 
 def make_conn():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.executescript(USERS_SCHEMA)
+    conn.executescript(LINK_TARGET_SCHEMA)
     conn.execute("INSERT INTO users VALUES (?, 'roody', 'Roody', 'Roody C', '')", (OWNER,))
     conn.execute("INSERT INTO users VALUES (?, 'friend', 'Friend', 'Friend F', '')", (FRIEND,))
     conn.execute("INSERT INTO users VALUES (?, 'stranger', 'Stranger', 'S S', '')", (STRANGER,))
+    conn.execute("INSERT INTO marketplace_sellers (id, user_id, display_name, status) VALUES (?, ?, 'Owner Shop', 'active')",
+                 (OWNER_SELLER_ID, OWNER))
+    conn.execute("INSERT INTO marketplace_sellers (id, user_id, display_name, status) VALUES (?, ?, 'Stranger Shop', 'active')",
+                 (STRANGER_SELLER_ID, STRANGER))
+    conn.execute("INSERT INTO advertisers (id, owner_user_id, advertiser_name) VALUES (?, ?, 'Owner Ads')",
+                 (OWNER_ADVERTISER_ID, OWNER))
+    conn.execute("INSERT INTO advertisers (id, owner_user_id, advertiser_name) VALUES (?, ?, 'Stranger Ads')",
+                 (STRANGER_ADVERTISER_ID, STRANGER))
+    conn.execute("INSERT INTO pulse_groups (id, owner_user_id, slug, name) VALUES (?, ?, 'owner-group', 'Owner Group')",
+                 (OWNER_GROUP_ID, OWNER))
+    conn.execute("INSERT INTO pulse_groups (id, owner_user_id, slug, name) VALUES (?, ?, 'stranger-group', 'Stranger Group')",
+                 (STRANGER_GROUP_ID, STRANGER))
+    conn.execute("INSERT INTO pulse_audio_tracks (title, artist, uploader_user_id, audio_url, approved_by_admin) "
+                 "VALUES ('Track One', ?, ?, 'https://cdn/one.mp3', 1)", (OWNER_ARTIST, OWNER))
+    conn.execute("INSERT INTO pulse_audio_tracks (title, artist, uploader_user_id, audio_url, approved_by_admin) "
+                 "VALUES ('Other Track', ?, ?, 'https://cdn/two.mp3', 1)", (STRANGER_ARTIST, STRANGER))
     pulsesoc_pages.ensure_tables(conn)
     return conn
 
@@ -341,7 +404,10 @@ class LinkTests(unittest.TestCase):
         invite = pulsesoc_pages.invite_member(self.conn, OWNER, self.page_id,
                                               {"user_id": FRIEND, "role": "MARKETPLACE_MANAGER"})
         pulsesoc_pages.accept_invite(self.conn, FRIEND, invite["invite_token"])
-        link = pulsesoc_pages.set_link(self.conn, FRIEND, self.page_id, "store", "42")
+        # The store belongs to the page's OWNER, not to the manager doing the
+        # linking. A marketplace manager acts for the presence, so the
+        # presence's own entitlement is what has to carry the link.
+        link = pulsesoc_pages.set_link(self.conn, FRIEND, self.page_id, "store", str(OWNER_SELLER_ID))
         self.assertEqual(link["link_type"], "store")
         links = pulsesoc_pages.list_links(self.conn, self.page_id, "store")
         self.assertEqual(len(links), 1)
@@ -349,12 +415,135 @@ class LinkTests(unittest.TestCase):
     def test_analyst_cannot_link_ad_account(self):
         invite = pulsesoc_pages.invite_member(self.conn, OWNER, self.page_id, {"user_id": FRIEND, "role": "ANALYST"})
         pulsesoc_pages.accept_invite(self.conn, FRIEND, invite["invite_token"])
+        # A ref the presence is genuinely entitled to, so the only thing left
+        # that can refuse it is the role.
         with self.assertRaises(PageError):
-            pulsesoc_pages.set_link(self.conn, FRIEND, self.page_id, "ad_account", "7")
+            pulsesoc_pages.set_link(self.conn, FRIEND, self.page_id, "ad_account", str(OWNER_ADVERTISER_ID))
 
     def test_unknown_link_type_rejected(self):
         with self.assertRaises(PageError):
             pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "wallet", "1")
+
+
+class LinkOwnershipTests(unittest.TestCase):
+    """Holding `manage_links` on a presence says which presence you may attach
+    things to. It says nothing about which things are yours to attach.
+
+    Before these, `set_link` took the ref on faith: the id was stored verbatim
+    and `public_view` republished it. Pointing a presence at a stranger's
+    marketplace seller was accepted, and the resulting page served
+    `shop_seller_id` for a storefront the attacker had no relationship to —
+    somebody else's inventory, listed under the attacker's name.
+    """
+
+    def setUp(self):
+        self.conn = make_conn()
+        self.page_id = create(self.conn)["id"]
+
+    def _public(self):
+        return pulsesoc_pages.public_view(
+            self.conn, pulsesoc_pages._load_page(self.conn, self.page_id))
+
+    def assertRefused(self, link_type, ref):
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, link_type, str(ref))
+        self.assertIn(ctx.exception.status_code, (400, 403))
+        self.assertEqual(pulsesoc_pages.list_links(self.conn, self.page_id, link_type), [])
+
+    def test_cannot_claim_a_strangers_storefront(self):
+        self.assertRefused("store", STRANGER_SELLER_ID)
+        self.assertEqual(self._public()["shop_seller_id"], 0)
+
+    def test_cannot_claim_a_strangers_ad_account(self):
+        self.assertRefused("ad_account", STRANGER_ADVERTISER_ID)
+
+    def test_cannot_claim_a_strangers_community(self):
+        self.assertRefused("community", STRANGER_GROUP_ID)
+
+    def test_cannot_claim_a_strangers_recording_name(self):
+        # The music module resolves by artist *name*, so an unguarded link
+        # would republish another artist's catalogue on this presence.
+        self.assertRefused("music_artist", STRANGER_ARTIST)
+
+    def test_cannot_claim_a_ref_that_does_not_exist(self):
+        # Nobody owns it, so nobody is entitled to it — including the actor.
+        self.assertRefused("store", 999999)
+
+    def test_cannot_claim_an_unrecorded_artist_name(self):
+        self.assertRefused("music_artist", "Nobody At All")
+
+    def test_a_non_numeric_ref_is_refused_not_coerced(self):
+        # `_int(ref, -1)` is the sentinel; a ref that isn't an id must not
+        # collapse to 0 and match a row whose owner column is empty.
+        self.assertRefused("store", "not-an-id")
+
+    def test_a_link_type_with_no_owner_resolver_is_refused(self):
+        # `business_os` is declared in LINK_TYPES and read by nothing. Until
+        # something can answer who a ref belongs to, storing one is storing a
+        # claim that cannot be checked later.
+        self.assertRefused("business_os", "anything")
+
+    def test_the_owner_can_still_link_what_the_owner_holds(self):
+        # The counterweight: a check that refuses everything is not a fix.
+        for link_type, ref in (
+            ("store", OWNER_SELLER_ID),
+            ("ad_account", OWNER_ADVERTISER_ID),
+            ("community", OWNER_GROUP_ID),
+            ("music_artist", OWNER_ARTIST),
+        ):
+            with self.subTest(link_type=link_type):
+                link = pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, link_type, str(ref))
+                self.assertEqual(link["ref_id"], str(ref))
+        self.assertEqual(self._public()["shop_seller_id"], OWNER_SELLER_ID)
+
+    def test_an_artist_name_matches_regardless_of_case(self):
+        # Handles and stage names are typed by people. Entitlement that
+        # depends on capitalisation would refuse the real artist.
+        link = pulsesoc_pages.set_link(
+            self.conn, OWNER, self.page_id, "music_artist", OWNER_ARTIST.upper())
+        self.assertEqual(link["ref_id"], OWNER_ARTIST.upper())
+
+    def test_an_unapproved_track_does_not_confer_a_name(self):
+        # `page_music` only serves approved, active tracks, so an unapproved
+        # upload would win the name and then publish an empty catalogue.
+        self.conn.execute(
+            "INSERT INTO pulse_audio_tracks (title, artist, uploader_user_id, audio_url, approved_by_admin) "
+            "VALUES ('Draft', 'Pending Act', ?, 'https://cdn/three.mp3', 0)", (OWNER,))
+        self.conn.commit()
+        self.assertRefused("music_artist", "Pending Act")
+
+    def test_a_delegated_manager_may_connect_their_own_storefront(self):
+        # Entitlement is actor-OR-owner, deliberately. An agency running ads
+        # or a shop for a client uses the agency's own account, and the page
+        # owner may hold no seller account at all — requiring the owner's would
+        # make MARKETPLACE_MANAGER a role that cannot do its job.
+        #
+        # What keeps that safe is not refusal but attribution: the owner
+        # granted the seat, the link is visible in the manage view, and the
+        # audit row names who attached it.
+        invite = pulsesoc_pages.invite_member(
+            self.conn, OWNER, self.page_id, {"user_id": STRANGER, "role": "MARKETPLACE_MANAGER"})
+        pulsesoc_pages.accept_invite(self.conn, STRANGER, invite["invite_token"])
+        pulsesoc_pages.set_link(self.conn, STRANGER, self.page_id, "store", str(STRANGER_SELLER_ID))
+
+        attributed = self.conn.execute(
+            "SELECT created_by FROM pulse_page_links WHERE page_id=? AND link_type='store'",
+            (self.page_id,)).fetchone()["created_by"]
+        self.assertEqual(attributed, STRANGER)
+        self.assertIn("link_set", [
+            row["action"] for row in self.conn.execute(
+                "SELECT action FROM pulse_page_audit WHERE page_id=? AND actor_user_id=?",
+                (self.page_id, STRANGER)).fetchall()])
+
+    def test_a_revoked_manager_cannot_still_connect_their_storefront(self):
+        # The seat is what grants it, so losing the seat has to take it back.
+        invite = pulsesoc_pages.invite_member(
+            self.conn, OWNER, self.page_id, {"user_id": STRANGER, "role": "MARKETPLACE_MANAGER"})
+        pulsesoc_pages.accept_invite(self.conn, STRANGER, invite["invite_token"])
+        pulsesoc_pages.remove_member(self.conn, OWNER, self.page_id, STRANGER)
+        with self.assertRaises(PageError):
+            pulsesoc_pages.set_link(
+                self.conn, STRANGER, self.page_id, "store", str(STRANGER_SELLER_ID))
 
 
 class UndxTests(unittest.TestCase):
@@ -463,14 +652,14 @@ class ModuleAvailabilityTests(unittest.TestCase):
         self.assertFalse(view["modules"]["music"])
 
     def test_linking_a_module_reveals_its_tab(self):
-        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "music_artist", "Night Signal")
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "music_artist", OWNER_ARTIST)
         view = self._view()
         self.assertIn("music", view["tabs"])
         self.assertTrue(view["modules"]["music"])
         self.assertNotIn("merch", view["tabs"])
 
     def test_tabs_never_exceed_the_type_ceiling(self):
-        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", "9")
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", str(OWNER_SELLER_ID))
         view = self._view(OWNER)
         for tab in view["tabs"]:
             self.assertIn(tab, pulsesoc_pages.TYPE_TABS["ARTIST"])
@@ -480,16 +669,23 @@ class ModuleAvailabilityTests(unittest.TestCase):
         # Without this the merch tab has nowhere to point but the global
         # marketplace, which is not this presence's inventory.
         self.assertEqual(self._view()["shop_seller_id"], 0)
-        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", "42")
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", str(OWNER_SELLER_ID))
         view = self._view()
-        self.assertEqual(view["shop_seller_id"], 42)
+        self.assertEqual(view["shop_seller_id"], OWNER_SELLER_ID)
         self.assertIn("merch", view["tabs"])
 
-    def test_events_stays_hidden_even_when_linked(self):
+    def test_an_event_link_is_refused_rather_than_stored_unresolvable(self):
         # The canonical events backend lists only for a caller holding a
         # manager role on the business, so a public events tab would 403 for
         # every visitor. Better no tab than a guaranteed dead one.
-        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "event", "5")
+        #
+        # `event` has no owner resolver, which means nothing can say whose
+        # event a ref names. Storing it anyway would leave a row that later
+        # code has to decide how to trust; refusing it keeps the question
+        # unanswered rather than answering it wrong.
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "event", "5")
+        self.assertEqual(ctx.exception.status_code, 400)
         view = self._view()
         self.assertNotIn("events", view["tabs"])
         self.assertFalse(view["modules"]["events"])
@@ -562,11 +758,11 @@ class MusicModuleTests(unittest.TestCase):
 
     def test_linked_presence_returns_only_that_artists_tracks(self):
         tracks = [
-            {"id": "1", "title": "Signal", "artist": "Night Signal"},
-            {"id": "2", "title": "Borrowed", "artist": "Someone Else"},
+            {"id": "1", "title": "Signal", "artist": OWNER_ARTIST},
+            {"id": "2", "title": "Borrowed", "artist": STRANGER_ARTIST},
         ]
         self._stub_catalogue(lambda query="", limit=12, **kw: list(tracks))
-        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "music_artist", "night signal")
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "music_artist", OWNER_ARTIST.lower())
         out = pulsesoc_pages.page_music(self.conn, self.page_id)
         self.assertTrue(out["linked"])
         self.assertEqual([t["title"] for t in out["tracks"]], ["Signal"])
@@ -576,7 +772,7 @@ class MusicModuleTests(unittest.TestCase):
             raise RuntimeError("catalogue down")
 
         self._stub_catalogue(boom)
-        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "music_artist", "Night Signal")
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "music_artist", OWNER_ARTIST)
         with self.assertRaises(PageError) as ctx:
             pulsesoc_pages.page_music(self.conn, self.page_id)
         self.assertEqual(ctx.exception.status_code, 503)
@@ -593,11 +789,11 @@ class AdminInspectionTests(unittest.TestCase):
         invite = pulsesoc_pages.invite_member(
             self.conn, OWNER, self.page_id, {"user_id": FRIEND, "role": "ADMIN"})
         pulsesoc_pages.accept_invite(self.conn, FRIEND, invite["invite_token"])
-        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", "7")
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", str(OWNER_SELLER_ID))
         out = pulsesoc_pages.admin_overview(self.conn, self.page_id)
         self.assertEqual(out["owner_user_id"], OWNER)
         self.assertIn(FRIEND, [m["user_id"] for m in out["members"]])
-        self.assertEqual([link["ref_id"] for link in out["links"]], ["7"])
+        self.assertEqual([link["ref_id"] for link in out["links"]], [str(OWNER_SELLER_ID)])
         self.assertTrue(out["recent_audit"])
 
     def test_overview_takes_no_action(self):
@@ -635,8 +831,10 @@ class CrossPresenceIsolationTests(unittest.TestCase):
             pulsesoc_pages.create_page_post(self.conn, OWNER, self.theirs, {"body": "hello"})
 
     def test_owner_of_one_presence_cannot_link_or_invite_on_another(self):
+        # OWNER really does hold this store. The refusal is about the presence
+        # he is trying to attach it to, not about the store.
         with self.assertRaises(PageError):
-            pulsesoc_pages.set_link(self.conn, OWNER, self.theirs, "store", "1")
+            pulsesoc_pages.set_link(self.conn, OWNER, self.theirs, "store", str(OWNER_SELLER_ID))
         with self.assertRaises(PageError):
             pulsesoc_pages.invite_member(self.conn, OWNER, self.theirs, {"user_id": FRIEND, "role": "ADMIN"})
 

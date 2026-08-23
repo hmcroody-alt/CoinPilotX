@@ -924,6 +924,56 @@ def toggle_follow(conn: Any, user_id: int, page_id: int) -> dict:
 # Links to canonical systems (store / ads / community / event)
 # ---------------------------------------------------------------------------
 
+# How to find out who a referenced resource belongs to, per link type. A link
+# points the page at something owned elsewhere, so permission on the PAGE is
+# only half the question — the other half is whether the actor is entitled to
+# that resource at all.
+#
+# Each entry is (table, id column, owner column, extra WHERE). `music_artist`
+# is keyed on the artist name rather than a row id, because that is what the
+# music catalogue is searched by; the entitlement is then "you publish approved
+# tracks under this name", which is the only checkable form the claim has.
+_LINK_OWNER_SOURCES = {
+    "store": ("marketplace_sellers", "id", "user_id", ""),
+    "ad_account": ("advertisers", "id", "owner_user_id", ""),
+    "community": ("pulse_groups", "id", "owner_user_id", ""),
+    "music_artist": (
+        "pulse_audio_tracks", "LOWER(artist)", "uploader_user_id",
+        " AND COALESCE(approved_by_admin,0)=1 AND COALESCE(active,1)=1",
+    ),
+}
+
+
+def _link_ref_owners(conn: Any, link_type: str, ref: str) -> set[int] | None:
+    """User ids entitled to attach `ref` as `link_type`.
+
+    Returns an empty set when the resource exists but belongs to nobody
+    reachable, and None when the lookup itself could not be performed. Both are
+    treated as "refuse" by the caller — a link that cannot be verified is never
+    granted, because the failure mode of guessing here is another member's
+    storefront rendering under someone else's page.
+    """
+    source = _LINK_OWNER_SOURCES.get(link_type)
+    if not source:
+        return None
+    table, id_column, owner_column, extra = source
+    key = ref.casefold() if id_column.startswith("LOWER(") else _int(ref, -1)
+    if key == -1:
+        return set()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT DISTINCT {owner_column} FROM {table} WHERE {id_column}=?{extra}",  # noqa: S608 - fixed table map
+            (key,),
+        )
+        return {_int(row[0], 0) for row in cur.fetchall() if _int(row[0], 0)}
+    except Exception as exc:
+        # Fail closed: a missing table or a failed query is "cannot verify",
+        # never "allowed".
+        logging.warning("PAGE_LINK_OWNER_LOOKUP_FAILED type=%s error=%s", link_type, exc)
+        return None
+
+
 def set_link(conn: Any, actor_user_id: int, page_id: int, link_type: Any, ref_id: Any) -> dict:
     ensure_tables(conn)
     page = _load_page(conn, page_id)
@@ -935,6 +985,15 @@ def set_link(conn: Any, actor_user_id: int, page_id: int, link_type: Any, ref_id
     ref = _text(ref_id, 80)
     if not ref:
         raise PageError("A reference id is required.")
+    # Permission on the page is not permission over what the page is pointed
+    # at. Without this, anyone able to edit any page could hang another
+    # member's storefront, ad account or community under their own presence —
+    # and for `store` the id lands in the PUBLIC view and raises a shop tab.
+    entitled = _link_ref_owners(conn, link_type, ref)
+    if entitled is None:
+        raise PageError("That kind of link can't be connected here yet.", 400)
+    if not entitled & {_int(actor_user_id, 0), _int(page.get("owner_user_id"), 0)}:
+        raise PageError("You can only connect something you own.", 403)
     cur = conn.cursor()
     cur.execute(
         "INSERT OR IGNORE INTO pulse_page_links (page_id, link_type, ref_id, created_by, created_at) "
