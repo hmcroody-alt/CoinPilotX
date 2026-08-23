@@ -39,6 +39,15 @@ ios/.xcode.env.local
 # The root-level entries below are therefore belt-and-braces for anyone who
 # forgets the env var. An iOS build needs nothing from this repo outside
 # mobile-native/, so anything new at the root belongs in this list.
+#
+# HAZARD — these are bare names, not anchored paths, so under EAS_NO_VCS=1
+# (archive root = mobile-native/) each one ALSO matches mobile-native/<name>.
+# `scripts/` collided exactly that way: package.json's postinstall is
+# `bash scripts/apply-native-patches.sh`, which applies the Hermes
+# react-native+0.81.5 patch, so excluding it breaks the EAS build. It is
+# re-negated at the bottom of this file. Before adding a name here, check that
+# mobile-native/ has no directory by that name — and if it ever grows one, add a
+# matching "!" line down there too.
 .git/
 services/
 tests/
@@ -78,3 +87,9 @@ mobile-native/ios/**/*.xcuserdata/
 mobile-native/ios/**/*.xcuserstate
 mobile-native/ios/**/DerivedData/
 mobile-native/ios/.xcode.env.local
+
+# Re-include the app's own scripts/ — see the HAZARD note above. Costs ~40 KB
+# under EAS_NO_VCS=1 and ~3 MB in the (unused) repo-root mode; either is cheap
+# next to shipping an unpatched binary.
+!scripts/
+!scripts/**
