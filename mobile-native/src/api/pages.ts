@@ -169,6 +169,12 @@ export type PageLinkOptions = { page_id: number; role: PageRole; links: PageLink
  * Growth windows are measured server-side from real follow/post timestamps —
  * never estimated. Completeness is derived from actual profile fields and is
  * management-only: it never appears in a public payload.
+ *
+ * These are the raw counts. Nothing renders them directly: the hub draws
+ * `PageOverview`, which the server builds from exactly this data and which
+ * decides — once, server-side — which numbers are presentable, what a window
+ * is called, and when a delta exists at all. Formatting these here instead
+ * would put that judgement in a second place, and the two would drift.
  */
 export type PageAnalytics = {
   followers: number;
@@ -215,6 +221,51 @@ export type PageSection = {
   count?: number;
 };
 
+/**
+ * One number on the Overview, and the proof that it was counted.
+ *
+ * `value` is a total measured from rows. Zero is a result: a presence with no
+ * followers has none, and suppressing the metric until it flatters would make
+ * it mean "at least one".
+ *
+ * `delta` and `window` travel together and are present only where the server
+ * measured a window. `delta` is the count of things that happened *inside*
+ * `window`, not a rate and not a projection — which is why `window` must be
+ * rendered next to it. A `delta` of 0 is a measurement, so test for the key,
+ * never for truthiness.
+ */
+export type PageOverviewMetric = {
+  key: string;
+  label: string;
+  value: number;
+  delta?: number;
+  window?: string;
+};
+
+/**
+ * The Overview section's contents, decided server-side.
+ *
+ * Nothing here is modelled, projected or estimated. Reach and engagement have
+ * no source wired, so they are absent and `note` says so rather than a
+ * plausible number standing in for them.
+ *
+ * `status` and `verification` arrive as words. They used to be rendered as the
+ * raw column values — "Status: ACTIVE · unverified" — which is a database row
+ * read aloud.
+ *
+ * `pending` is the labels of sections this caller may act on that have nothing
+ * behind them yet. It comes from the same `sections` array the tiles do, so it
+ * cannot name work that is not offered or hide work that is.
+ */
+export type PageOverview = {
+  status: string;
+  verification: string;
+  metrics: PageOverviewMetric[];
+  pending: string[];
+  completeness_percent: number;
+  note: string;
+};
+
 export type PageManageView = {
   page: PulsePage;
   role: PageRole;
@@ -231,6 +282,13 @@ export type PageManageView = {
    * assembled client-side is precisely what this replaced.
    */
   sections?: PageSection[];
+  /**
+   * Optional for the same reason, and handled the same way: an older server
+   * means no Overview block, not an Overview assembled from whatever the client
+   * happens to hold. Summing things locally is how a screen starts reporting a
+   * number nobody measured.
+   */
+  overview?: PageOverview;
 };
 
 export type HandleCheck = { candidate: string; handle: string; available: boolean; reason: string };
@@ -317,8 +375,9 @@ export async function updatePage(pageId: number, patch: Partial<CreatePagePayloa
 /**
  * The wire shape of `/api/pages/:id/manage`. The server builds it as
  * `public_view(...)` and then merges the management fields into that same
- * dict, so `role`, `capabilities`, `links`, `members`, `analytics` and
- * `completeness` arrive nested inside `page` — NOT beside it.
+ * dict, so `role`, `capabilities`, `links`, `members`, `analytics`,
+ * `completeness`, `sections` and `overview` arrive nested inside `page` — NOT
+ * beside it.
  */
 type PageManageWire = PulsePage & Omit<PageManageView, "page">;
 
@@ -334,11 +393,30 @@ type PageManageWire = PulsePage & Omit<PageManageView, "page">;
  * looked empty. The normalization below keeps that property and adds no
  * defaults that would grant anything: an absent `capabilities` stays an empty
  * list rather than becoming a guess at what the caller may do.
+ *
+ * A field the server sends and this function does not name is not a type error
+ * — it survives into the rest element, lands on `page`, and reads as
+ * `undefined` at the name the screens use. `sections` was added server-side and
+ * missed here, and the hub, which renders one tile per section, drew none. So
+ * every management field the server sends is destructured explicitly, and
+ * `pagesManageView.test.ts` asserts each one arrives; a fixture built from a
+ * real response is what turns an omission back into a failing test.
  */
 export async function getPageManageView(pageId: number): Promise<PageManageView> {
   const data = await pulseApi<{ ok: boolean; page: PageManageWire }>(`/api/pages/${pageId}/manage`);
-  const { role, capabilities, owner_user_id, phone, links, members, analytics, completeness, ...page } =
-    data.page || ({} as PageManageWire);
+  const {
+    role,
+    capabilities,
+    owner_user_id,
+    phone,
+    links,
+    members,
+    analytics,
+    completeness,
+    sections,
+    overview,
+    ...page
+  } = data.page || ({} as PageManageWire);
   return {
     page,
     role,
@@ -348,7 +426,14 @@ export async function getPageManageView(pageId: number): Promise<PageManageView>
     links: links || [],
     members,
     analytics,
-    completeness
+    completeness,
+    // Passed through as sent, `undefined` included. An older server means the
+    // hub renders no sections and no Overview, which is the honest outcome;
+    // defaulting to `[]` here would be indistinguishable from a server that
+    // genuinely offers none, and defaulting the Overview to a zeroed object
+    // would put unmeasured numbers on screen.
+    sections,
+    overview
   };
 }
 

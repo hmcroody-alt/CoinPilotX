@@ -1597,6 +1597,12 @@ def manage_sections(page: dict, role: str | None, links: list[dict],
             section["count"] = int(count)
         sections.append(section)
 
+    # The one measured block. There used to be an "Insights" section beside
+    # this one carrying the same followers/posts/team numbers, so the hub drew
+    # two headings over one set of counts — and, because the two were rendered
+    # from different objects, two that could disagree. Overview's own hint
+    # already covers what Insights claimed; the numbers live in
+    # `manage_overview` and are read from there once.
     add("overview", "Overview", "How this presence is doing right now.", "view_analytics")
     add("identity", "Identity", "Name, handle, description and contact details.", "edit_page")
 
@@ -1628,8 +1634,6 @@ def manage_sections(page: dict, role: str | None, links: list[dict],
     if page_type in BUSINESS_PAGE_TYPES:
         add("business_os", "Business OS", "Orders, bookings and day-to-day operations.", "edit_page")
 
-    add("insights", "Insights", "Followers, posts and team, as measured.", "view_analytics",
-        count=_int(analytics.get("followers"), 0))
     add("team", "Team & access", "Who can act for this presence.", "view_analytics",
         count=_int(analytics.get("team_members"), 0))
 
@@ -1646,12 +1650,90 @@ def manage_sections(page: dict, role: str | None, links: list[dict],
     return sections
 
 
+# The two enums a manager sees, in words. The hub rendered them raw for its
+# whole life — "Status: ACTIVE · unverified" — which is a database row read
+# aloud, and reads as a bug to anyone who does not know the schema.
+_STATUS_WORDS = {
+    "ACTIVE": "Live",
+    "PAUSED": "Paused",
+    "UNPUBLISHED": "Not published",
+    "DEACTIVATED": "Deactivated",
+}
+_VERIFICATION_WORDS = {
+    "unverified": "Not verified",
+    "pending": "Verification under review",
+    "verified": "Verified",
+    "rejected": "Verification declined",
+}
+
+
+def manage_overview(page: dict, analytics: dict, completeness: dict,
+                    sections: list[dict]) -> dict:
+    """One screen's worth of "how is this presence actually doing".
+
+    Every number here was counted from a row. There is no modelled reach, no
+    projected growth and no chart history: `page_analytics` measures follows
+    and posts inside a window by timestamp, and anything it cannot measure is
+    absent from this payload rather than defaulted to something plausible.
+
+    Zero is a real answer and is rendered as zero. A presence with no followers
+    has no followers — hiding the metric until it is flattering would make the
+    number mean "at least one", and then a manager could not tell an empty page
+    from a broken one.
+
+    A `delta` is only attached where the server actually counted the window. It
+    is the count of follows or posts *inside* the window, which for a page
+    younger than the window equals its whole total — true either way, and
+    labelled with the window so it cannot be read as a rate.
+
+    `pending` counts sections this role can act on that have nothing behind
+    them yet. It is derived from `sections`, so it can never name work that is
+    not offered, or hide work that is.
+    """
+    status = (page.get("status") or "").upper()
+    verification = (page.get("verification_status") or "unverified")
+    metrics: list[dict] = []
+
+    def metric(key: str, label: str, value: Any, delta: Any = None, window: str = "") -> None:
+        row = {"key": key, "label": label, "value": _int(value, 0)}
+        # `is not None` rather than truthiness: a real, measured zero is a
+        # result. Dropping it would silently turn "no new followers this month"
+        # into "we did not look".
+        if delta is not None:
+            row["delta"] = _int(delta, 0)
+            row["window"] = window
+        metrics.append(row)
+
+    metric("followers", "Followers", analytics.get("followers"),
+           analytics.get("followers_30d"), "30 days")
+    metric("posts", "Posts", analytics.get("posts"),
+           analytics.get("posts_30d"), "30 days")
+    # No window: nothing records when a member joined, so a "+2 this month"
+    # here would be invented. The total is measured and the delta is absent.
+    metric("team", "Team", analytics.get("team_members"))
+
+    pending = [s["label"] for s in sections
+               if s.get("permitted") and not s.get("ready")]
+    return {
+        "status": _STATUS_WORDS.get(status, "Unknown"),
+        "verification": _VERIFICATION_WORDS.get(verification, "Not verified"),
+        "metrics": metrics,
+        "pending": pending,
+        "completeness_percent": _int((completeness or {}).get("percent"), 0),
+        "note": analytics.get("note") or "",
+    }
+
+
 def manage_view(conn: Any, user_id: int, page_id: int) -> dict:
     page = _load_page(conn, page_id)
     role = require_permission(conn, user_id, page["id"], "view_analytics")
     view = public_view(conn, page, viewer_user_id=user_id)
     links = list_links(conn, page["id"])
     analytics = page_analytics(conn, user_id, page["id"])
+    completeness = page_completeness(conn, page)
+    # Which management sections this page has, may be acted on, and has
+    # anything behind — decided here so the client never re-derives it.
+    sections = manage_sections(page, role, links, _counts(conn, page["id"]), analytics)
     view.update({
         "role": role,
         "capabilities": sorted(p for p, roles in PERMISSIONS.items() if role in roles),
@@ -1660,9 +1742,10 @@ def manage_view(conn: Any, user_id: int, page_id: int) -> dict:
         "links": links,
         "members": list_members(conn, user_id, page["id"]) if has_permission(role, "manage_members") else [],
         "analytics": analytics,
-        "completeness": page_completeness(conn, page),
-        # Which management sections this page has, may be acted on, and has
-        # anything behind — decided here so the client never re-derives it.
-        "sections": manage_sections(page, role, links, _counts(conn, page["id"]), analytics),
+        "completeness": completeness,
+        "sections": sections,
+        # The `overview` section's contents. Built from what is already loaded
+        # above rather than from fresh queries, and from measured values only.
+        "overview": manage_overview(page, analytics, completeness, sections),
     })
     return view

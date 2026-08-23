@@ -25,6 +25,7 @@ import sqlite3
 import sys
 import types
 import unittest
+from datetime import datetime, timedelta, timezone
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, REPO_ROOT)
@@ -131,6 +132,21 @@ def make_conn():
                  "VALUES ('Other Track', ?, ?, 'https://cdn/two.mp3', 1)", (STRANGER_ARTIST, STRANGER))
     pulsesoc_pages.ensure_tables(conn)
     return conn
+
+
+def _now_iso():
+    """A timestamp inside every measurement window the service uses.
+
+    `_count_since` compares ISO-8601 text lexically against a cutoff it
+    computes from the wall clock, so a row written with a fixed literal date
+    drifts out of the window as the calendar moves and the test starts failing
+    for a reason that has nothing to do with the code.
+    """
+    return _days_ago_iso(0)
+
+
+def _days_ago_iso(days):
+    return (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def create(conn, user_id=OWNER, **overrides):
@@ -1127,6 +1143,189 @@ class ModuleAvailabilityTests(unittest.TestCase):
         self.assertEqual(only_videos["next_offset"], 2)
 
 
+class ManageOverviewTests(unittest.TestCase):
+    """The Overview is a summary or it is nothing.
+
+    A summary screen is the easiest place in a product to lie, because a
+    plausible number is indistinguishable from a measured one once it is
+    rendered. So the rule here is narrow and absolute: every value comes from a
+    row that was counted, zero is a result rather than a reason to hide, and a
+    quantity nobody records is absent instead of defaulted.
+    """
+
+    def setUp(self):
+        self.conn = make_conn()
+
+    def overview(self, user_id=OWNER, **overrides):
+        page = create(self.conn, **overrides)
+        return pulsesoc_pages.manage_view(self.conn, user_id, page["id"])["overview"], page["id"]
+
+    def test_a_brand_new_presence_reports_zeroes_rather_than_hiding_them(self):
+        overview, _ = self.overview()
+        by_key = {m["key"]: m for m in overview["metrics"]}
+        self.assertEqual(by_key["followers"]["value"], 0)
+        self.assertEqual(by_key["posts"]["value"], 0)
+        # A page with no followers has no followers. Suppressing the metric
+        # until it flatters would make it mean "at least one", and then an
+        # empty presence and a broken one look identical.
+        self.assertEqual(overview["metrics"][0]["key"], "followers")
+
+    def test_the_owner_counts_as_the_team_because_the_owner_is_on_it(self):
+        overview, _ = self.overview()
+        by_key = {m["key"]: m for m in overview["metrics"]}
+        self.assertEqual(by_key["team"]["value"], 1)
+
+    def test_counts_come_from_rows_not_from_the_page_record(self):
+        page = create(self.conn)
+        cur = self.conn.cursor()
+        for i in range(3):
+            cur.execute(
+                "INSERT INTO pulse_posts (user_id, post_type, body, page_id, created_at) "
+                "VALUES (?, 'text', ?, ?, ?)",
+                (OWNER, f"note {i}", page["id"], _now_iso()))
+        self.conn.commit()
+        # The real follow path, so the timestamp is written the way production
+        # writes it rather than the way this test imagines it.
+        pulsesoc_pages.toggle_follow(self.conn, FRIEND, page["id"])
+
+        overview = pulsesoc_pages.manage_view(self.conn, OWNER, page["id"])["overview"]
+        by_key = {m["key"]: m for m in overview["metrics"]}
+        self.assertEqual(by_key["posts"]["value"], 3)
+        self.assertEqual(by_key["followers"]["value"], 1)
+
+    def test_a_window_is_labelled_so_it_cannot_be_read_as_a_rate(self):
+        overview, _ = self.overview()
+        by_key = {m["key"]: m for m in overview["metrics"]}
+        self.assertEqual(by_key["followers"]["window"], "30 days")
+        self.assertEqual(by_key["posts"]["window"], "30 days")
+
+    def test_the_delta_covers_the_window_it_is_labelled_with(self):
+        # `page_analytics` measures both a 7-day and a 30-day window. A delta
+        # labelled "30 days" that carries the 7-day count is the most plausible
+        # wrong number on this screen — it looks right, it moves, and it
+        # understates every page older than a week.
+        page = create(self.conn)
+        pulsesoc_pages.toggle_follow(self.conn, FRIEND, page["id"])
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO pulse_page_follows (page_id, user_id, created_at) VALUES (?,?,?)",
+            (page["id"], STRANGER, _days_ago_iso(20)))
+        self.conn.commit()
+
+        overview = pulsesoc_pages.manage_view(self.conn, OWNER, page["id"])["overview"]
+        by_key = {m["key"]: m for m in overview["metrics"]}
+        self.assertEqual(by_key["followers"]["value"], 2)
+        self.assertEqual(by_key["followers"]["delta"], 2,
+                         "both follows are inside 30 days; only one is inside 7")
+
+    def test_a_measured_zero_delta_is_reported_not_dropped(self):
+        # "No new followers this month" and "we did not measure" are different
+        # statements. A truthiness check would collapse them.
+        overview, _ = self.overview()
+        by_key = {m["key"]: m for m in overview["metrics"]}
+        self.assertIn("delta", by_key["followers"])
+        self.assertEqual(by_key["followers"]["delta"], 0)
+
+    def test_team_has_no_delta_because_nothing_records_when_a_member_joined(self):
+        overview, _ = self.overview()
+        by_key = {m["key"]: m for m in overview["metrics"]}
+        self.assertNotIn("delta", by_key["team"])
+        self.assertNotIn("window", by_key["team"])
+
+    def test_recent_activity_is_counted_inside_the_window(self):
+        page = create(self.conn)
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO pulse_posts (user_id, post_type, body, page_id, created_at) "
+            "VALUES (?, 'text', 'fresh', ?, ?)", (OWNER, page["id"], _now_iso()))
+        cur.execute(
+            "INSERT INTO pulse_posts (user_id, post_type, body, page_id, created_at) "
+            "VALUES (?, 'text', 'ancient', ?, '2019-01-01T00:00:00')", (OWNER, page["id"]))
+        self.conn.commit()
+
+        overview = pulsesoc_pages.manage_view(self.conn, OWNER, page["id"])["overview"]
+        by_key = {m["key"]: m for m in overview["metrics"]}
+        self.assertEqual(by_key["posts"]["value"], 2, "the total is every post")
+        self.assertEqual(by_key["posts"]["delta"], 1, "the window is only the recent one")
+
+    def test_status_and_verification_are_words_not_enum_values(self):
+        overview, page_id = self.overview()
+        self.assertEqual(overview["status"], "Live")
+        self.assertEqual(overview["verification"], "Not verified")
+
+        pulsesoc_pages.request_verification(self.conn, OWNER, page_id, {})
+        overview = pulsesoc_pages.manage_view(self.conn, OWNER, page_id)["overview"]
+        self.assertEqual(overview["verification"], "Verification under review")
+
+        pulsesoc_pages.set_status(self.conn, OWNER, page_id, "PAUSED")
+        overview = pulsesoc_pages.manage_view(self.conn, OWNER, page_id)["overview"]
+        self.assertEqual(overview["status"], "Paused")
+
+    def test_every_status_the_product_can_be_in_has_a_word(self):
+        for status in pulsesoc_pages.PAGE_STATUSES:
+            with self.subTest(status=status):
+                self.assertIn(status, pulsesoc_pages._STATUS_WORDS)
+        for status in pulsesoc_pages.VERIFICATION_STATUSES:
+            with self.subTest(verification=status):
+                self.assertIn(status, pulsesoc_pages._VERIFICATION_WORDS)
+
+    def test_pending_names_the_sections_that_are_waiting_on_this_caller(self):
+        overview, _ = self.overview()
+        # A fresh artist page: nothing published, no artist profile linked, no
+        # shop, no ad account, not verified.
+        self.assertIn("Music", overview["pending"])
+        self.assertIn("Merch", overview["pending"])
+        self.assertIn("Posts", overview["pending"])
+        # Insights is measured the moment the page exists, so it is not work.
+        self.assertNotIn("Insights", overview["pending"])
+
+    def test_pending_never_names_work_this_role_is_not_offered(self):
+        page = create(self.conn)
+        invite = pulsesoc_pages.invite_member(
+            self.conn, OWNER, page["id"], {"user_id": FRIEND, "role": "ANALYST"})
+        pulsesoc_pages.accept_invite(self.conn, FRIEND, invite["invite_token"])
+
+        overview = pulsesoc_pages.manage_view(self.conn, FRIEND, page["id"])["overview"]
+        sections = {s["key"]: s for s in
+                    pulsesoc_pages.manage_view(self.conn, FRIEND, page["id"])["sections"]}
+        # An analyst cannot connect an artist profile or publish a post, so
+        # neither is outstanding work *for them*. Listing it would be a to-do
+        # they are structurally unable to complete.
+        self.assertFalse(sections["music"]["permitted"])
+        self.assertNotIn("Music", overview["pending"])
+        self.assertNotIn("Posts", overview["pending"])
+
+    def test_pending_drops_a_section_once_it_is_actually_backed(self):
+        page = create(self.conn)
+        before = pulsesoc_pages.manage_view(self.conn, OWNER, page["id"])["overview"]
+        self.assertIn("Merch", before["pending"])
+
+        pulsesoc_pages.set_link(self.conn, OWNER, page["id"], "store", str(OWNER_SELLER_ID))
+        after = pulsesoc_pages.manage_view(self.conn, OWNER, page["id"])["overview"]
+        self.assertNotIn("Merch", after["pending"])
+
+    def test_the_overview_says_what_it_cannot_measure(self):
+        overview, _ = self.overview()
+        # Reach and engagement have no source wired. The absence is stated
+        # rather than filled with a plausible number.
+        self.assertIn("measured", overview["note"])
+        self.assertEqual(
+            [m["key"] for m in overview["metrics"]], ["followers", "posts", "team"])
+
+    def test_completeness_is_the_same_percentage_the_checklist_shows(self):
+        page = create(self.conn)
+        view = pulsesoc_pages.manage_view(self.conn, OWNER, page["id"])
+        self.assertEqual(view["overview"]["completeness_percent"],
+                         view["completeness"]["percent"])
+
+    def test_the_overview_is_not_in_the_public_view(self):
+        page = create(self.conn)
+        public = pulsesoc_pages.public_view(
+            self.conn, pulsesoc_pages._load_page(self.conn, page["id"]), viewer_user_id=STRANGER)
+        self.assertNotIn("overview", public)
+        self.assertNotIn("completeness", public)
+
+
 class ManageSectionTests(unittest.TestCase):
     """What the management screen is allowed to offer, and why.
 
@@ -1211,7 +1410,7 @@ class ManageSectionTests(unittest.TestCase):
                     pulsesoc_pages.manage_view(self.conn, FRIEND, page["id"])["sections"]}
         # Read-only: the sections still describe the presence, but nothing that
         # changes it is marked as theirs to act on.
-        self.assertTrue(sections["insights"]["permitted"])
+        self.assertTrue(sections["overview"]["permitted"])
         self.assertTrue(sections["team"]["permitted"])
         self.assertFalse(sections["identity"]["permitted"])
         self.assertFalse(sections["settings"]["permitted"])
@@ -1291,11 +1490,14 @@ class ManageSectionTests(unittest.TestCase):
         # Zero is a real answer. A placeholder is not, and a section with
         # nothing measurable behind it carries no number at all.
         sections, _ = self.sections()
-        self.assertEqual(sections["insights"]["count"], 0)
+        self.assertEqual(sections["content"]["count"], 0)
         self.assertEqual(sections["team"]["count"], 1)
         self.assertNotIn("count", sections["identity"])
         self.assertNotIn("count", sections["settings"])
         self.assertNotIn("count", sections["verification"])
+        # Overview renders the full metric block, so a single number stapled to
+        # its tile would be one of the three picked arbitrarily.
+        self.assertNotIn("count", sections["overview"])
 
     def test_verification_reports_the_state_it_is_actually_in(self):
         sections, page_id = self.sections()
@@ -1327,12 +1529,21 @@ class ManageSectionTests(unittest.TestCase):
                 self.assertNotIn("events", sections)
 
     def test_audience_is_not_offered_while_followers_cannot_be_listed(self):
-        # Followers are counted, not listable. The count is reported under
-        # Insights, where it is honest, rather than behind a heading that
-        # promises a list nothing can fetch.
-        sections, _ = self.sections()
+        # Followers are counted, not listable. The count is reported as an
+        # Overview metric, where it is honest, rather than behind a heading
+        # that promises a list nothing can fetch.
+        sections, page_id = self.sections()
         self.assertNotIn("audience", sections)
-        self.assertIn("count", sections["insights"])
+        overview = pulsesoc_pages.manage_view(self.conn, OWNER, page_id)["overview"]
+        self.assertIn("followers", [m["key"] for m in overview["metrics"]])
+
+    def test_insights_is_not_a_second_heading_over_the_same_numbers(self):
+        # Overview and Insights both meant followers/posts/team. Two headings
+        # over one set of counts, rendered from two objects that could drift
+        # apart — the hub read `analytics` for one and would have read
+        # `overview` for the other.
+        sections, _ = self.sections()
+        self.assertNotIn("insights", sections)
 
     def test_a_ready_section_never_carries_setup_copy(self):
         sections, page_id = self.sections()

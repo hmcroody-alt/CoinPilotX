@@ -44,7 +44,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "PagesHub">;
  * team reads about verification come from the same place that decides whether
  * verification is offered at all.
  */
-const INLINE_SECTIONS = new Set(["overview", "insights", "settings", "verification"]);
+const INLINE_SECTIONS = new Set(["overview", "settings", "verification"]);
 
 /**
  * Where a ready section goes. Each destination is an existing canonical system
@@ -421,13 +421,15 @@ export function PagesHubScreen({ route, navigation }: Props) {
 
       {selected ? (
         <View style={styles.card}>
+          {/*
+            The handle, and nothing else here. Two lines used to follow it:
+            "Status: ACTIVE · unverified", which is a database row read aloud,
+            and a followers/posts line taken from the *list* row — a second
+            copy of two numbers the manage view also carries, free to disagree
+            with it the moment either read went stale. Both facts now come from
+            the Overview below, in words, from the measurement.
+          */}
           <Text style={styles.cardTitle}>@{selected.handle}</Text>
-          <Text style={styles.cardMeta}>
-            Status: {selected.status} · {selected.verification_status}
-          </Text>
-          <Text style={styles.cardMeta}>
-            {selected.followers_count} followers · {selected.posts_count} posts
-          </Text>
 
           <View style={styles.actionsGrid}>
             {/* Not a section: viewing the public page is what this presence
@@ -441,6 +443,84 @@ export function PagesHubScreen({ route, navigation }: Props) {
               <Text style={styles.actionText}>View public page</Text>
             </Pressable>
           </View>
+
+          {/*
+            Overview. The server declares this section, `INLINE_SECTIONS` keeps
+            it out of the tile grid because its content is this block — and for
+            a while this block did not exist, so the section was declared,
+            excluded, and drawn by nothing. A tile nobody renders is the
+            management-side version of a tab nobody renders.
+
+            Every value is `manage.overview`, measured server-side. Nothing here
+            is summed, projected or filled in locally: an older server that
+            sends no Overview gets no Overview, because the alternative is this
+            screen quietly becoming a second, weaker place where "what counts as
+            a real metric" is decided.
+          */}
+          {manage?.overview ? (
+            <View style={styles.overviewCard} testID="page-overview">
+              <Text style={styles.sectionTitle}>
+                {sectionByKey.get("overview")?.label || "Overview"}
+              </Text>
+              {/* Words, from the server's own mapping of the two enums. */}
+              <Text style={styles.cardMeta}>
+                {manage.overview.status} · {manage.overview.verification}
+              </Text>
+
+              <View style={styles.metricRow}>
+                {manage.overview.metrics.map((metric) => (
+                  <View key={metric.key} style={styles.metric} testID={`metric-${metric.key}`}>
+                    <Text style={styles.metricValue}>{metric.value}</Text>
+                    <Text style={styles.metricLabel}>{metric.label}</Text>
+                    {/*
+                      Key presence, not truthiness. A delta of 0 is a
+                      measurement — "nobody followed this month" — and dropping
+                      it would leave the metric looking like the window was
+                      never counted. A metric with no window (Team: nothing
+                      records when a member joined) correctly shows none.
+
+                      No sign handling: a delta counts events that happened
+                      inside the window, so it cannot be negative, and a `-`
+                      branch here would be a case no fixture could ever reach.
+                    */}
+                    {typeof metric.delta === "number" ? (
+                      <Text style={styles.metricDelta}>
+                        +{metric.delta} in the last {metric.window}
+                      </Text>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.meterTrack}>
+                <View
+                  style={[
+                    styles.meterFill,
+                    { width: `${Math.min(100, Math.max(0, manage.overview.completeness_percent))}%` }
+                  ]}
+                />
+              </View>
+              <Text style={styles.cardMeta}>
+                Profile {manage.overview.completeness_percent}% complete
+              </Text>
+
+              {/*
+                Sections this role may act on with nothing behind them yet.
+                Server-derived from the same `sections` array the tiles come
+                from, so it cannot name work that is not offered, and an ANALYST
+                is never told to go and do something they would be refused.
+              */}
+              {manage.overview.pending.length ? (
+                <Text style={styles.cardMeta} testID="overview-pending">
+                  Waiting on the team: {manage.overview.pending.join(", ")}
+                </Text>
+              ) : null}
+
+              {/* What is deliberately not measured, said out loud, rather than
+                  a plausible-looking number standing in for it. */}
+              {manage.overview.note ? <Text style={styles.note}>{manage.overview.note}</Text> : null}
+            </View>
+          ) : null}
 
           {/*
             The management surface, decided server-side per page type and role.
@@ -493,38 +573,19 @@ export function PagesHubScreen({ route, navigation }: Props) {
             </View>
           ) : null}
 
-          {/* Insights is an inline section: it has no destination, it names the
-              block of measured numbers already here. The fallback covers a
-              server that predates sections — the numbers are real either way,
-              and hiding them because a label is missing would be worse. */}
-          {manage?.analytics ? (
-            <View style={styles.analyticsCard}>
-              <Text style={styles.sectionTitle}>
-                {sectionByKey.get("insights")?.label || "Measured analytics"}
-              </Text>
-              <Text style={styles.cardMeta}>
-                Followers: {manage.analytics.followers}
-                {typeof manage.analytics.followers_7d === "number"
-                  ? ` (+${manage.analytics.followers_7d} this week, +${manage.analytics.followers_30d ?? 0} this month)`
-                  : ""}
-              </Text>
-              <Text style={styles.cardMeta}>
-                Posts: {manage.analytics.posts}
-                {typeof manage.analytics.posts_30d === "number" ? ` (+${manage.analytics.posts_30d} this month)` : ""}
-              </Text>
-              <Text style={styles.cardMeta}>Team members: {manage.analytics.team_members}</Text>
-              {manage.analytics.note ? <Text style={styles.note}>{manage.analytics.note}</Text> : null}
-            </View>
-          ) : null}
+          {/*
+            The completeness checklist — what is missing, item by item. The
+            percentage and its meter are NOT repeated here: they are one number
+            and they live in the Overview above. This card answers the next
+            question, which is which fields would move it.
 
+            Only the unfinished items are listed. A finished checklist is not a
+            list of ticks to scroll past, it is one sentence saying there is
+            nothing left, so the card collapses to that.
+          */}
           {manage?.completeness ? (
-            <View style={styles.analyticsCard}>
-              <Text style={styles.sectionTitle}>Profile completeness — {manage.completeness.percent}%</Text>
-              <View style={styles.meterTrack}>
-                <View
-                  style={[styles.meterFill, { width: `${Math.min(100, Math.max(0, manage.completeness.percent))}%` }]}
-                />
-              </View>
+            <View style={styles.analyticsCard} testID="page-completeness">
+              <Text style={styles.sectionTitle}>Finish setting up</Text>
               {manage.completeness.items
                 .filter((item) => !item.done)
                 .map((item) => (
@@ -532,7 +593,7 @@ export function PagesHubScreen({ route, navigation }: Props) {
                     ○ {item.label}
                   </Text>
                 ))}
-              {manage.completeness.percent >= 100 ? (
+              {manage.completeness.items.every((item) => item.done) ? (
                 <Text style={styles.note}>All set — nothing left to add.</Text>
               ) : null}
             </View>
@@ -740,6 +801,34 @@ const styles = createThemedStyles(() => ({
     marginVertical: 6,
     overflow: "hidden"
   },
+  metric: {
+    flexGrow: 1,
+    flexShrink: 1,
+    // Three metrics per row at every width this screen is used at, without
+    // pinning a pixel count that a 40k follower total would overflow.
+    flexBasis: "28%"
+  },
+  metricDelta: {
+    color: colors.accent,
+    fontSize: 11,
+    marginTop: 2
+  },
+  metricLabel: {
+    color: colors.muted,
+    fontSize: 12,
+    marginTop: 2
+  },
+  metricRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginTop: 10
+  },
+  metricValue: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "900"
+  },
   note: {
     color: colors.muted,
     fontSize: 11,
@@ -751,6 +840,13 @@ const styles = createThemedStyles(() => ({
     fontWeight: "800",
     marginTop: 14,
     textAlign: "center"
+  },
+  overviewCard: {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    gap: 4,
+    marginTop: 14,
+    paddingTop: 12
   },
   ownerZone: {
     borderTopColor: colors.border,

@@ -54,6 +54,39 @@ DEACTIVATED pages 404 for non-members on public endpoints.
 - Deep links: `pulse/pages/create`, `pulse/pages`, `pulse/pages/:handle`
   (static paths declared before the catch-all).
 
+## The measured block (Overview)
+
+`manage_overview()` builds the one place numbers are reported, and it is the
+only place that decides what counts as a real one. It is assembled from data
+`manage_view` has already loaded, so it costs no extra queries.
+
+- **A total is always reported, including zero.** A presence with no followers
+  has none; suppressing the metric until it flatters would make it mean "at
+  least one".
+- **A delta exists only where the server counted a window**, and `delta` and
+  `window` travel together. Team has a total and no delta, because nothing
+  records when a member joined — an invented "+0 this month" is a claim
+  nobody measured. Clients must test for the `delta` *key*, never truthiness:
+  a delta of 0 is a measurement.
+- **`status` and `verification` arrive as words**, mapped from the two enums by
+  `_STATUS_WORDS`/`_VERIFICATION_WORDS`. The hub used to print the columns raw
+  — "Status: ACTIVE · unverified" — which is a database row read aloud.
+- **`pending`** is the labels of sections *this role may act on* that have
+  nothing behind them yet, derived from the same `sections` array the tiles
+  come from. It cannot name work that is not offered, and it never tells an
+  ANALYST to go and do something the server would refuse.
+- **`note`** says what is deliberately not measured. Reach and engagement have
+  no source wired, so they are absent and named rather than filled in with a
+  plausible number.
+- **There is one heading over these numbers.** An "Insights" section used to
+  sit beside Overview carrying the same followers/posts/team counts, rendered
+  from a different object and free to disagree with it. The percentage from
+  `page_completeness` likewise appears once, in Overview; the checklist card
+  below it lists only the *unfinished items*, which is the next question rather
+  than the same answer.
+- `overview` and `completeness` are management-only and are asserted absent
+  from `public_view`.
+
 ## Hard rules
 
 - Real metrics only — no fabricated followers, reviews, or analytics.

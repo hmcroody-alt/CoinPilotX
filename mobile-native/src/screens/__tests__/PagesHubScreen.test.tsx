@@ -328,13 +328,12 @@ describe("PagesHubScreen management sections", () => {
   });
 
   it("does not make a tile out of a section that lives on this screen", async () => {
-    // Overview, Insights, Settings and Verification are the blocks already
-    // rendered here. A tile for one would be a button that scrolls to what you
-    // are looking at.
+    // Overview, Settings and Verification are the blocks already rendered
+    // here. A tile for one would be a button that scrolls to what you are
+    // looking at.
     mockGetPageManageView.mockResolvedValue(
       manageView([
         section({ key: "overview", label: "Overview", permission: "view_analytics" }),
-        section({ key: "insights", label: "Insights", permission: "view_analytics" }),
         section({ key: "settings", label: "Settings", permission: "manage_status" }),
         section({ key: "verification", label: "Verification", permission: "manage_status" }),
         section()
@@ -342,7 +341,7 @@ describe("PagesHubScreen management sections", () => {
     );
     const { getByTestId, queryByTestId } = renderScreen();
     await waitFor(() => expect(getByTestId("section-identity")).toBeTruthy());
-    for (const key of ["overview", "insights", "settings", "verification"]) {
+    for (const key of ["overview", "settings", "verification"]) {
       expect(queryByTestId(`section-${key}`)).toBeNull();
     }
   });
@@ -477,18 +476,190 @@ describe("PagesHubScreen management sections", () => {
     expect(tile.props.accessibilityRole).toBe("text");
   });
 
-  it("takes the insights heading from the server too", async () => {
+  it("takes the overview heading from the server too", async () => {
+    // A label that is deliberately NOT the local fallback: the words a team
+    // reads about this block have to come from the same place that decides
+    // whether the block is offered at all, and a fixture that says "Overview"
+    // cannot tell the two apart.
     mockGetPageManageView.mockResolvedValue({
-      ...manageView([section({ key: "insights", label: "Insights", permission: "view_analytics" })]),
-      analytics: { followers: 3, posts: 1, team_members: 2 }
+      ...manageView([section({ key: "overview", label: "How it's going", permission: "view_analytics" })]),
+      overview: overview()
     });
-    const { getByText } = renderScreen();
-    await waitFor(() => expect(getByText("Insights")).toBeTruthy());
-    expect(getByText(/Followers: 3/)).toBeTruthy();
+    const { getByText, queryByText } = renderScreen();
+    await waitFor(() => expect(getByText("How it's going")).toBeTruthy());
+    expect(queryByText("Overview")).toBeNull();
+  });
+});
+
+/** An overview as the server measures it: words, totals, windowed deltas. */
+function overview(overrides: Record<string, unknown> = {}) {
+  return {
+    status: "Live",
+    verification: "Not verified",
+    metrics: [
+      { key: "followers", label: "Followers", value: 3, delta: 2, window: "30 days" },
+      { key: "posts", label: "Posts", value: 1, delta: 1, window: "30 days" },
+      { key: "team", label: "Team", value: 2 }
+    ],
+    pending: [],
+    completeness_percent: 40,
+    note: "",
+    ...overrides
+  };
+}
+
+/**
+ * The Overview block.
+ *
+ * The server declared an `overview` section, `INLINE_SECTIONS` kept it out of
+ * the tile grid on the grounds that this screen *is* its content — and nothing
+ * on this screen rendered it. The hub instead showed the two page enums raw
+ * ("Status: ACTIVE · unverified"), the follower and post counts twice from two
+ * objects free to disagree, and an "Insights" heading over the same three
+ * numbers Overview measures.
+ *
+ * What is pinned here is that every number and every word comes from
+ * `manage.overview` — nothing is summed, mapped or defaulted locally, because
+ * a second place that decides what a real metric is, is how invented data gets
+ * on screen.
+ */
+describe("PagesHubScreen overview", () => {
+  beforeEach(() => {
+    mockListMyPages.mockResolvedValue([page()]);
+    mockListMyPageInvites.mockResolvedValue([]);
   });
 
-  it("still shows the measured numbers when the server predates sections", async () => {
-    // Real figures must not disappear because a label is missing.
+  function withOverview(over: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) {
+    mockGetPageManageView.mockResolvedValue({
+      ...manageView([section({ key: "overview", label: "Overview", permission: "view_analytics" })]),
+      overview: overview(over),
+      ...extra
+    });
+  }
+
+  it("renders the measured totals", async () => {
+    withOverview();
+    const { getByTestId, findByTestId } = renderScreen();
+    await findByTestId("page-overview");
+    // Scoped to the metric, not to the screen: "3" appears in plenty of places
+    // and a loose text match would pass on the wrong one.
+    expect(within(getByTestId("metric-followers")).getByText("3")).toBeTruthy();
+    expect(within(getByTestId("metric-followers")).getByText("Followers")).toBeTruthy();
+    expect(within(getByTestId("metric-posts")).getByText("1")).toBeTruthy();
+    expect(within(getByTestId("metric-team")).getByText("2")).toBeTruthy();
+  });
+
+  it("says the status and verification in words, not as column values", async () => {
+    withOverview({ status: "Paused", verification: "Verification under review" });
+    const { getByText, findByTestId } = renderScreen();
+    await findByTestId("page-overview");
+    expect(getByText(/Paused/)).toBeTruthy();
+    expect(getByText(/Verification under review/)).toBeTruthy();
+  });
+
+  it("never renders a raw enum, whatever the page row says", async () => {
+    // The page row still carries ACTIVE/unverified — the block must be reading
+    // the server's words rather than falling back to the row beside it.
+    withOverview();
+    const { queryByText, findByTestId } = renderScreen();
+    await findByTestId("page-overview");
+    expect(queryByText(/ACTIVE/)).toBeNull();
+    expect(queryByText(/unverified/)).toBeNull();
+  });
+
+  it("labels a delta with the window it was counted over", async () => {
+    // "+2" alone is a number with no meaning. The window is what makes it one.
+    withOverview();
+    const { getByTestId, findByTestId } = renderScreen();
+    await findByTestId("page-overview");
+    expect(within(getByTestId("metric-followers")).getByText("+2 in the last 30 days")).toBeTruthy();
+  });
+
+  it("shows a measured zero delta rather than dropping it", async () => {
+    // A truthiness test here turns "nobody followed this month" into "we did
+    // not look", which is the one thing a metrics block must not do.
+    withOverview({
+      metrics: [{ key: "followers", label: "Followers", value: 812, delta: 0, window: "30 days" }]
+    });
+    const { getByTestId, findByTestId } = renderScreen();
+    await findByTestId("page-overview");
+    expect(within(getByTestId("metric-followers")).getByText("+0 in the last 30 days")).toBeTruthy();
+  });
+
+  it("shows no window on a metric the server did not measure one for", async () => {
+    // Nothing records when a member joined. An invented "+0 in the last 30
+    // days" would be a claim the server never made.
+    withOverview();
+    const { getByTestId, findByTestId } = renderScreen();
+    await findByTestId("page-overview");
+    expect(within(getByTestId("metric-team")).queryByText(/in the last/)).toBeNull();
+  });
+
+  it("names the work that is waiting", async () => {
+    withOverview({ pending: ["Merch", "Advertising"] });
+    const { getByTestId, findByTestId } = renderScreen();
+    await findByTestId("page-overview");
+    expect(within(getByTestId("overview-pending")).getByText(/Merch, Advertising/)).toBeTruthy();
+  });
+
+  it("says nothing about waiting work when none is", async () => {
+    withOverview({ pending: [] });
+    const { queryByTestId, findByTestId } = renderScreen();
+    await findByTestId("page-overview");
+    expect(queryByTestId("overview-pending")).toBeNull();
+  });
+
+  it("says out loud what it cannot measure", async () => {
+    withOverview({ note: "Reach and engagement are not measured yet." });
+    const { getByText, findByTestId } = renderScreen();
+    await findByTestId("page-overview");
+    expect(getByText("Reach and engagement are not measured yet.")).toBeTruthy();
+  });
+
+  it("carries the completeness percentage once, here", async () => {
+    withOverview({ completeness_percent: 40 }, {
+      completeness: {
+        percent: 40,
+        items: [
+          { key: "avatar", label: "Add a profile picture", done: false },
+          { key: "name", label: "Name the presence", done: true }
+        ]
+      }
+    });
+    const { getByText, getByTestId, findByTestId } = renderScreen();
+    await findByTestId("page-overview");
+    expect(getByText("Profile 40% complete")).toBeTruthy();
+    // The checklist answers the next question — which fields would move it —
+    // and does not reprint the number.
+    const checklist = within(getByTestId("page-completeness"));
+    expect(checklist.getByText(/Add a profile picture/)).toBeTruthy();
+    expect(checklist.queryByText(/40/)).toBeNull();
+    // Done items are not a list of ticks to scroll past.
+    expect(checklist.queryByText(/Name the presence/)).toBeNull();
+    // And it must not congratulate a team that still has work listed directly
+    // above the congratulation.
+    expect(checklist.queryByText(/All set/)).toBeNull();
+  });
+
+  it("says there is nothing left only when there is nothing left", async () => {
+    withOverview({ completeness_percent: 100 }, {
+      completeness: {
+        percent: 100,
+        items: [
+          { key: "avatar", label: "Add a profile picture", done: true },
+          { key: "name", label: "Name the presence", done: true }
+        ]
+      }
+    });
+    const { getByTestId, findByTestId } = renderScreen();
+    await findByTestId("page-overview");
+    const checklist = within(getByTestId("page-completeness"));
+    expect(checklist.getByText("All set — nothing left to add.")).toBeTruthy();
+  });
+
+  it("renders nothing at all when the server sends no overview", async () => {
+    // An older server means no Overview — not one assembled here out of
+    // whatever the client happens to hold.
     mockGetPageManageView.mockResolvedValue({
       page: page(),
       role: "OWNER",
@@ -497,8 +668,11 @@ describe("PagesHubScreen management sections", () => {
       links: [],
       analytics: { followers: 3, posts: 1, team_members: 2 }
     });
-    const { getByText, queryByTestId } = renderScreen();
-    await waitFor(() => expect(getByText(/Followers: 3/)).toBeTruthy());
-    expect(queryByTestId("section-identity")).toBeNull();
+    const { queryByTestId, queryByText, findByText } = renderScreen();
+    await findByText("@nightsignal");
+    expect(queryByTestId("page-overview")).toBeNull();
+    // And emphatically not rebuilt from `analytics`, which is still present.
+    expect(queryByTestId("metric-followers")).toBeNull();
+    expect(queryByText(/ACTIVE/)).toBeNull();
   });
 });
