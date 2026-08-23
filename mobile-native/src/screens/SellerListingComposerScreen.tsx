@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  attachMarketplaceProductMedia,
   createMarketplaceListing,
   MarketplaceListingType,
   submitMarketplaceSellerListing,
@@ -199,16 +200,22 @@ export function SellerListingComposerScreen({ navigation }: Props) {
       setMediaBusy(true);
       try {
         const isCover = draft.coverMediaId <= 0;
-        const result = await media.upload(
-          {
-            endpointPath: "/api/pulse/marketplace/media/upload",
-            contextId: "draft",
-            extraFields: { kind: kind === "video" ? "video" : isCover ? "cover" : "gallery" },
-            skipProcessingPoll: true
-          },
-          asset
-        );
-        const mediaId = result ? uploadResultMediaId(result) : 0;
+        // No `endpointPath`: that is what keeps the file out of the Flask
+        // request body. The upload goes straight to R2 over a short-lived
+        // signed URL (multipart for large video), and only the resulting id is
+        // sent back to PulseSoc to attach.
+        const result = await media.upload({ contextId: "draft", skipProcessingPoll: true }, asset);
+        const uploadedId = result ? uploadResultMediaId(result) : 0;
+        // Storing the object and attaching it are separate calls now, so the
+        // attach can fail on its own. Reporting that as an upload failure is
+        // honest — the seller has no listing media either way.
+        const attached = uploadedId
+          ? await attachMarketplaceProductMedia(
+              uploadedId,
+              kind === "video" ? "video" : isCover ? "cover" : "gallery"
+            ).catch(() => null)
+          : null;
+        const mediaId = Number(attached?.media?.id || 0);
         if (mediaId > 0) {
           updateListingDraft((current) =>
             current.coverMediaId > 0

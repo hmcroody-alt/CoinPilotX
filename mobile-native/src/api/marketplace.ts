@@ -363,6 +363,34 @@ export async function uploadMarketplaceDigitalFile(file: { uri: string; name: st
   });
 }
 
+export type MarketplaceProductMediaAttachResponse = {
+  ok?: boolean;
+  message?: string;
+  media?: {
+    id?: number;
+    product_media_id?: number;
+    media_id?: number;
+    media_type?: string;
+    media_url?: string;
+    thumbnail_url?: string;
+    kind?: string;
+    is_cover?: boolean;
+    processing_status?: string;
+  };
+};
+
+/**
+ * Bind a finished direct upload to the seller's product media library. The file
+ * itself already went straight to R2 (and, for video, on to Mux) — this only
+ * records that the seller wants it on a listing.
+ */
+export async function attachMarketplaceProductMedia(mediaId: number, kind: "cover" | "gallery" | "video") {
+  return pulseApi<MarketplaceProductMediaAttachResponse>("/api/pulse/marketplace/media/attach", {
+    method: "POST",
+    body: JSON.stringify({ media_id: mediaId, kind })
+  });
+}
+
 export async function updateMarketplaceSellerListing(listingId: number, payload: MarketplaceListingUpdatePayload) {
   const result = await pulseApi<MarketplaceListingMutationResponse>(`/api/pulse/marketplace/seller/listings/${listingId}`, {
     method: "PATCH",

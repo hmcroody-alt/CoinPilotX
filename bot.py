@@ -51824,7 +51824,10 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
             return api_error("One or more listing media items are unavailable.", 400)
         cover = next((row for row in media_rows if int(row.get("is_cover") or 0)), media_rows[0])
         gallery = [row.get("media_url") for row in media_rows if (row.get("media_type") or "") in {"image", "gif"}]
-        video = next((row.get("media_url") for row in media_rows if (row.get("media_type") or "") == "video"), "")
+        video = next(
+            (marketplace_media_delivery_url(cur, row) for row in media_rows if (row.get("media_type") or "") == "video"),
+            "",
+        )
         next_cover = clean_html(cover.get("media_url") or "")[:800]
         next_gallery = json.dumps(gallery, default=str)[:1600]
         next_video = clean_html(video or "")[:800]
@@ -88395,6 +88398,138 @@ def api_pulse_marketplace_media_upload():
     return jsonify({"ok": True, "message": "Product media uploaded.", "media": media})
 
 
+MARKETPLACE_MEDIA_TYPES = {"image", "gif", "video"}
+
+
+def marketplace_attach_uploaded_media(cur, user_id, source, kind):
+    """Turn a finalized direct upload into a product media row.
+
+    The bytes are already in R2 (and, for video, already handed to Mux) by the
+    time this runs — the upload never passed through Flask. Returns
+    ``(row_id, error)``.
+    """
+    media_type = str(source["media_type"] or "")
+    if media_type not in MARKETPLACE_MEDIA_TYPES:
+        return 0, "Marketplace products support photos, GIFs, and videos only."
+    # Re-attaching the same upload must not create a duplicate gallery entry:
+    # a retry after a dropped response is indistinguishable from a first call.
+    cur.execute(
+        "SELECT id FROM marketplace_product_media WHERE source_media_id=? AND merchant_id=? LIMIT 1",
+        (int(source["id"]), int(user_id)),
+    )
+    existing = cur.fetchone()
+    if existing:
+        return int(existing["id"]), ""
+    stored_url = clean_html(source["media_url"] or "")[:800]
+    poster = clean_html(source["thumbnail_url"] or "")[:800]
+    if media_type == "video":
+        poster = clean_html(marketplace_media_poster_url(source) or poster)[:800]
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute(
+        """
+        INSERT INTO marketplace_product_media
+        (product_id, merchant_id, media_type, media_url, thumbnail_url, position, is_cover, mime_type,
+         file_size, moderation_status, source_media_id, created_at)
+        VALUES (0, ?, ?, ?, ?, 0, ?, ?, ?, 'pending_review', ?, ?)
+        """,
+        (
+            int(user_id), media_type, stored_url, poster or stored_url, 1 if kind == "cover" else 0,
+            clean_html(source["mime_type"] or "")[:120], safe_int(source["file_size_bytes"], 0),
+            int(source["id"]), now,
+        ),
+    )
+    return int(cur.lastrowid), ""
+
+
+def marketplace_media_poster_url(source):
+    """Mux poster frame for a product video, once the asset exists."""
+    playback_id = ""
+    try:
+        playback_id = str(source["mux_playback_id"] or "")
+    except Exception:
+        playback_id = ""
+    if not playback_id:
+        return ""
+    return media_service.mux_playback_urls(playback_id).get("thumbnail_url") or ""
+
+
+def marketplace_media_delivery_url(cur, media_row):
+    """Buyer-facing URL for one product media row.
+
+    Video is attached while Mux is still building the asset, so the row holds
+    the R2 original. Re-reading the source upload at listing-save time is what
+    puts the adaptive HLS stream in front of buyers instead of a progressive
+    download of the master file.
+    """
+    stored = str(media_row.get("media_url") or "")
+    if str(media_row.get("media_type") or "") != "video":
+        return stored
+    source_id = safe_int(media_row.get("source_media_id"), 0)
+    if source_id <= 0:
+        return stored
+    cur.execute("SELECT playback_url FROM chat_media_uploads WHERE id=? LIMIT 1", (source_id,))
+    row = cur.fetchone()
+    return (str(row["playback_url"] or "") if row else "") or stored
+
+
+@webhook_app.route("/api/pulse/marketplace/media/attach", methods=["POST"])
+def api_pulse_marketplace_media_attach():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    media_id = safe_int(payload.get("media_id"), 0)
+    kind = clean_html(payload.get("kind") or "gallery")[:40]
+    if media_id <= 0:
+        return api_error("An uploaded media reference is required.", 400)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
+    if not seller:
+        conn.close()
+        return api_error("Merchant approval is required before uploading product media.", 403)
+    cur.execute("SELECT * FROM chat_media_uploads WHERE id=? LIMIT 1", (media_id,))
+    source = cur.fetchone()
+    if not source:
+        conn.close()
+        return api_error("Uploaded media was not found.", 404)
+    if safe_int(source["uploader_user_id"], 0) != int(user["user_id"]):
+        conn.close()
+        return api_error("You do not have access to this upload.", 403)
+    # The upload session states its purpose up front. Refusing anything else
+    # stops a seller from binding someone's chat attachment, or their own
+    # private message media, into a public product listing.
+    if str(source["context_type"] or "") != "marketplace_product":
+        conn.close()
+        return api_error("That upload was not authorized for product media.", 400)
+    if not str(source["media_url"] or ""):
+        conn.close()
+        return api_error("That upload has not finished storing yet.", 409)
+    product_media_id, error = marketplace_attach_uploaded_media(cur, user["user_id"], source, kind)
+    if error:
+        conn.close()
+        return api_error(error, 400)
+    cur.execute("UPDATE chat_media_uploads SET context_id=? WHERE id=?", (f"draft:{product_media_id}", media_id))
+    cur.execute("SELECT * FROM marketplace_product_media WHERE id=? LIMIT 1", (product_media_id,))
+    attached = dict(cur.fetchone() or {})
+    conn.commit(); conn.close()
+    return jsonify({
+        "ok": True,
+        "message": "Product media attached.",
+        "media": {
+            "id": product_media_id,
+            "product_media_id": product_media_id,
+            "media_id": media_id,
+            "media_type": attached.get("media_type") or "",
+            "media_url": attached.get("media_url") or "",
+            "thumbnail_url": attached.get("thumbnail_url") or "",
+            "kind": kind,
+            "is_cover": kind == "cover",
+            "processing_status": str(source["processing_status"] or ""),
+        },
+    })
+
+
 @webhook_app.route("/api/pulse/marketplace/digital-files/upload", methods=["POST"])
 def api_pulse_marketplace_digital_file_upload():
     init_db()
@@ -88544,7 +88679,10 @@ def api_pulse_marketplace_listing_create():
     approval_status = "draft" if submission_action == "draft" else "pending_review"
     cover = next((m for m in media_rows if int(m.get("is_cover") or 0)), media_rows[0] if media_rows else {})
     gallery = [m.get("media_url") for m in media_rows if (m.get("media_type") or "") in {"image", "gif"}]
-    video = next((m.get("media_url") for m in media_rows if (m.get("media_type") or "") == "video"), "")
+    video = next(
+        (marketplace_media_delivery_url(cur, m) for m in media_rows if (m.get("media_type") or "") == "video"),
+        "",
+    )
     cur.execute(
         """
         INSERT INTO marketplace_listings
@@ -106488,6 +106626,11 @@ def _init_db_impl():
         ("duration_seconds", "REAL DEFAULT 0"),
         ("moderation_status", "TEXT DEFAULT 'pending_review'"),
         ("created_at", "TEXT"),
+        # Back-pointer to the `chat_media_uploads` row the bytes were stored
+        # under. Product video is attached while Mux is still building the
+        # asset, so the adaptive playback URL only exists on the source row —
+        # without this link a listing could only ever serve the R2 original.
+        ("source_media_id", "INTEGER DEFAULT 0"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_saved_products (
