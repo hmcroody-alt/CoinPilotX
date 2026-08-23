@@ -7392,6 +7392,16 @@ def api_crypto_alerts():
     return _crypto_api_result(lambda conn, user: {"ok": True, "alerts": dashboard_crypto_command_center.list_alerts(conn, user["user_id"])})
 
 
+@webhook_app.route("/api/crypto/alerts/options", methods=["GET"])
+def api_crypto_alert_options():
+    # Registered before the <int:alert_id> rules below only for readability; Flask
+    # matches the static segment first regardless, and "options" is not an int.
+    symbol = (request.args.get("symbol") or "").strip()
+    watchlist_id = (request.args.get("watchlistId") or request.args.get("watchlist_id") or "").strip()
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.alert_options(
+        conn, user["user_id"], symbol=symbol, watchlist_id=watchlist_id or None))
+
+
 @webhook_app.route("/api/crypto/alerts/<int:alert_id>", methods=["PATCH", "DELETE"])
 def api_crypto_alert_detail(alert_id):
     payload = _crypto_api_payload()

@@ -972,6 +972,17 @@ def _validate_watchlist_rule(user_id, watchlist_id, connection=None):
     return {"ok": True, "watchlist_id": watchlist_id, "watchlist_name": name or "", "symbols": symbols}
 
 
+def watchlist_rule_preflight(user_id, watchlist_id, connection=None):
+    """Would rule creation accept this list right now, and if not, why?
+
+    Deliberately the same function the gate runs rather than a second reading of
+    the same rules. A creation form that offers a list creation would refuse is
+    worse than one that offers nothing: the member picks it, fills the rest of
+    the form in, and only then is told no.
+    """
+    return _validate_watchlist_rule(user_id, watchlist_id, connection=connection)
+
+
 def create_alert_rule(
     user_id,
     alert_type="coin_price",
