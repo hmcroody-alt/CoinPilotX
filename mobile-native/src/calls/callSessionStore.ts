@@ -342,14 +342,44 @@ function desiredPollMs() {
 }
 
 /**
- * Foreground test for the poll gate. Deliberately asks "not backgrounded"
- * rather than "=== active": `AppState.currentState` is null/undefined until the
- * first change event on some cold starts, and an `=== "active"` gate would then
- * suppress every tick until the app was backgrounded and restored — an active
- * call whose status silently stops updating.
+ * Live app state, never the module-load snapshot.
+ *
+ * `appState` below is initialised while this module is evaluated. On iOS that
+ * happens during app launch — App.tsx statically imports AppNavigator, which
+ * statically imports MinimizedCallBanner, which imports this file — so the
+ * snapshot is taken before `applicationDidBecomeActive`, when
+ * `UIApplication.applicationState` is still `UIApplicationStateInactive`. The
+ * snapshot is therefore literally always "inactive" on a cold start, and
+ * nothing corrects it: `ensureAppStateSubscription` only registers once a call
+ * begins, long after the launch-time inactive -> active transition.
+ *
+ * React Native keeps `AppState.currentState` current for the whole process
+ * (AppStateImpl registers its own `appStateDidChange` listener in its
+ * constructor), so reading it at gate time is both cheap and correct. It is
+ * only trusted when it is actually a string: the react-native jest mock
+ * defines `currentState` as a function.
+ */
+function currentAppState(): string {
+  const live = AppState.currentState;
+  if (typeof live === "string" && live) return live;
+  return String(appState || "");
+}
+
+/**
+ * Foreground test for the poll gate. Only a genuine `background` suppresses a
+ * tick.
+ *
+ * "inactive" must NOT: iOS reports it for the CallKit overlay, the
+ * incoming-call banner, Control Center and the app switcher — precisely the
+ * moments that occur during a call. While the caller is ringing it has not
+ * joined the Agora channel, so no RTC event can reach it and this poll is its
+ * one and only acceptance signal; pausing it there is indistinguishable, from
+ * the user's seat, from "they never picked up". Backgrounded JS timers are
+ * suspended by the OS anyway, so the real background case is all this gate has
+ * ever needed to catch.
  */
 function appIsForegrounded() {
-  return !/inactive|background/.test(String(appState || ""));
+  return !/background/.test(currentAppState());
 }
 
 function ensurePolling() {
@@ -372,6 +402,9 @@ function stopPolling() {
 
 function ensureAppStateSubscription() {
   if (appStateSubscription) return;
+  // Re-sync from the live value before tracking deltas: the module-load
+  // snapshot was taken during app launch and is stale by construction.
+  appState = currentAppState() as AppStateStatus;
   appStateSubscription = AppState.addEventListener("change", (nextState) => {
     const wasBackgrounded = /inactive|background/.test(appState);
     appState = nextState;
