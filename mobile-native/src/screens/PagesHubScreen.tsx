@@ -318,12 +318,16 @@ export function PagesHubScreen({ route, navigation }: Props) {
             </View>
           ) : null}
 
-          {manage?.members ? (
+          {manage?.members?.length ? (
             <View style={styles.analyticsCard}>
               <Text style={styles.sectionTitle}>Team</Text>
+              {/* `name` and `handle` are what the server sends. This read
+                  `display_name || username` for its whole life, so the fallback
+                  always won and every member here rendered as "Member 22". */}
               {manage.members.map((member) => (
                 <Text key={member.user_id} style={styles.cardMeta}>
-                  {member.display_name || member.username || `Member ${member.user_id}`} — {member.role}
+                  {member.name || (member.handle ? `@${member.handle}` : `Member ${member.user_id}`)} —{" "}
+                  {member.role}
                   {member.status === "invited" ? " (invited)" : ""}
                 </Text>
               ))}

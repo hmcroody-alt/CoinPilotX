@@ -92,14 +92,35 @@ export type PageIdentity = {
 
 export type PageIdentities = { personal: PageIdentity; pages: PageIdentity[] };
 
+/**
+ * One person on a presence's team, as the server actually sends them.
+ *
+ * These field names are not cosmetic. This type previously declared
+ * `username`/`display_name`; the server has always sent `name`/`handle`. Both
+ * were optional, so TypeScript was satisfied, the render fell through to its
+ * `Member ${user_id}` fallback, and every team member in the app displayed as
+ * a number. Nothing errored — which is why it survived. Renaming a field here
+ * without renaming it in `list_members` reproduces exactly that.
+ *
+ * The `can_*` flags are decided server-side from the same permission table the
+ * mutating calls check. The client must not re-derive them from `role`: an
+ * offer the server refuses is worse than no offer.
+ */
 export type PageMember = {
   user_id: number;
+  name: string;
+  handle: string;
+  avatar_url: string;
   role: PageRole;
   status: string;
-  username?: string;
-  display_name?: string;
-  avatar_url?: string;
-  invite_expires_at?: string;
+  invited_by?: number | null;
+  invite_expires_at?: string | null;
+  since?: string | null;
+  is_owner?: boolean;
+  is_you?: boolean;
+  can_change_role?: boolean;
+  can_remove?: boolean;
+  can_receive_ownership?: boolean;
 };
 
 export type PageLink = { link_type: string; ref_id: string; created_at?: string };
