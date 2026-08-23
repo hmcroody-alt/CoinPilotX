@@ -227,7 +227,9 @@ export function TrustSafetyScreen({ navigation, route }: Props) {
             <Text style={styles.muted}>{ticket.issue_type} · {ticket.status} · {formatShortTime(ticket.updated_at || ticket.created_at)}</Text>
           </View>
         ))}
-        {!state?.tickets.length ? <Text style={styles.muted}>No support tickets returned by the backend.</Text> : null}
+        {/* Apple reviews this screen as the Security/Trust screenshot. "returned by the
+            backend" is developer phrasing, not an explanation a member can act on. */}
+        {!state?.tickets.length ? <Text style={styles.muted}>You have no open support tickets.</Text> : null}
       </Panel>
 
       <Panel>

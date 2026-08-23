@@ -4,6 +4,13 @@ Draft for the **App Review Information → Notes** field in App Store Connect.
 Every claim below was verified on device or in the codebase this session. Do not paste any
 sentence that stops being true.
 
+> **Status: this text has been written into ASC.** The Notes field now holds a 2,413-character
+> version of the draft below, saved and verified after a page reload. The text it replaced was
+> materially false — it referenced "build 1.0.1 (16)" and "Build 13", carried a Guideline 3.1.1
+> paragraph claiming paid digital access was unavailable, and described the submission as
+> "five consumable Ad Credits products". The saved text describes build 17 and the two
+> subscriptions, and preserves the Guideline 1.2 UGC-safeguards block byte-exact.
+
 ---
 
 ## Paste-ready text
@@ -62,11 +69,13 @@ notes would not survive contact with the screen itself.
 
 **Needs a decision before submitting.**
 
-1. **Demo account.** The notes offer one on request rather than supplying credentials,
-   because no reviewer account has been prepared. If PulseSoc requires sign-in to reach
-   the paywall — it does — Apple will normally expect credentials up front. Preparing a
-   reviewer account is likely the single highest-value remaining task, and it also solves
-   most of the screenshot content problem.
+1. **Demo account — earlier note corrected.** A reviewer account *is* already configured in
+   ASC. App Review Information has "Sign-in required" checked, with the username, a filled
+   password field, and contact details all present. My earlier claim that none had been
+   prepared was wrong. I did not read or alter the password. What remains open is whether
+   those credentials still work and whether that account has enough content to demonstrate
+   the app — the capture simulator is signed in as a different, empty account
+   (`PulseSocMusic`, no avatar, not premium), which is the root of Blocker B.
 
 2. **Sandbox purchase is unverified end to end.** A sandbox Apple Account was never signed
    into the capture simulator, so the flow was confirmed as far as StoreKit presenting the
@@ -80,3 +89,10 @@ notes would not survive contact with the screen itself.
    treats Monthly → Annual as a downgrade that defers to the next renewal date. This is
    not a rejection risk, but it is cheap to fix now with no subscribers and expensive
    later.
+
+4. **Five Ad Credits consumables are still unsubmitted.** `com.pulsesoc.adcredits.tier1`
+   through `tier5` sit in *Prepare for Submission*, and the shipped app references them via
+   `AD_CREDIT_SKU_PREFIX` in `mobile-native/src/payments/appleIapAdCredits.ts:37`. That is
+   the same Guideline 2.1(b) condition that got build 16 rejected. Either submit them with
+   this version or make them unreachable in the binary — see Blocker D in the manifest. The
+   review notes deliberately say nothing about Ad Credits until that is decided.
