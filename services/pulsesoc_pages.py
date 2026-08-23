@@ -61,6 +61,16 @@ TYPE_TABS = {
     "OTHER": ["posts", "about"],
 }
 
+# Page types that are an organisation rather than a person or an act. They are
+# the ones whose operations continue into Business OS, and the ones whose setup
+# checklist asks for a category, hours and a location. Both questions have the
+# same answer, so there is one list: a second copy is a second thing to forget
+# when a page type is added.
+BUSINESS_PAGE_TYPES = frozenset({
+    "BUSINESS", "BRAND", "STORE", "RESTAURANT", "PROFESSIONAL_SERVICE",
+    "LOCAL_BUSINESS", "NONPROFIT", "ORGANIZATION", "MEDIA", "VENUE", "EDUCATION",
+})
+
 ROLES = (
     "OWNER", "ADMIN", "MANAGER", "CONTENT_MANAGER",
     "ADVERTISING_MANAGER", "MARKETPLACE_MANAGER", "ANALYST",
@@ -1471,10 +1481,7 @@ def page_analytics(conn: Any, user_id: int, page_id: int) -> dict:
 # Completion guidance is management-only: the checklist derives strictly from
 # fields that actually exist on the page row plus the real post count. It is
 # never included in public_view — visitors never see setup warnings.
-_BUSINESS_COMPLETENESS_TYPES = {
-    "BUSINESS", "BRAND", "STORE", "RESTAURANT", "PROFESSIONAL_SERVICE",
-    "LOCAL_BUSINESS", "NONPROFIT", "ORGANIZATION", "MEDIA", "VENUE", "EDUCATION",
-}
+_BUSINESS_COMPLETENESS_TYPES = BUSINESS_PAGE_TYPES
 _ARTIST_COMPLETENESS_TYPES = {"ARTIST", "CREATOR", "PUBLIC_FIGURE", "SPORTS_TEAM"}
 
 
@@ -1504,18 +1511,129 @@ def page_completeness(conn: Any, page: dict) -> dict:
     return {"percent": int(round(100 * done / len(items))) if items else 0, "items": items}
 
 
+# Tabs that mean "this page type sells something", and what that section is
+# called for each. A restaurant manages a menu, an artist manages merch, a
+# store manages a shop — one section, three honest names, all of them the same
+# `store` link into the existing Marketplace.
+_STORE_TAB_LABELS = {"menu": "Menu", "merch": "Merch", "shop": "Shop"}
+
+
+def manage_sections(page: dict, role: str | None, links: list[dict],
+                    counts: dict, analytics: dict) -> list[dict]:
+    """The management surface, as sections rather than a wall of buttons.
+
+    Three separate questions, answered separately, because collapsing them is
+    how a management screen starts lying:
+
+      * **supported** — does this page *type* have this at all? A media page has
+        no merch section, not a disabled one. `TYPE_TABS` already answers what a
+        type has, so it answers this too rather than a second list drifting
+        beside it. An unsupported section is absent from this list entirely.
+      * **permitted** — may *this caller* act here? Straight out of the same
+        `PERMISSIONS` table the mutating calls read, so a section that is
+        offered is one the server will accept.
+      * **ready** — is anything behind it yet? A section with nothing behind it
+        stays visible with `setup` naming the one thing missing, because a team
+        that cannot see the empty section cannot fill it. That is the difference
+        between a section that is intentionally empty and a dead button.
+
+    Pure: every input is already loaded by `manage_view`, so this adds no
+    queries. Counts are the measured ones — nothing here is estimated, and a
+    section with no number simply has none.
+
+    Two absences are deliberate. **Events** is missing because there is no
+    public events read to point it at yet (see the note by `TAB_LINK_SOURCE`);
+    a section that 403s for its own team is worse than no section. **Audience**
+    is missing because followers are counted but not listable — the count lives
+    in Insights, where it is honest, rather than behind a heading that promises
+    a list nobody can fetch.
+    """
+    page_type = page.get("page_type") or "OTHER"
+    tabs = set(TYPE_TABS.get(page_type, TYPE_TABS["OTHER"]))
+    linked = {row.get("link_type") for row in (links or [])}
+    sections: list[dict] = []
+
+    def add(key: str, label: str, hint: str, permission: str,
+            ready: bool = True, setup: str = "", count: int | None = None) -> None:
+        section = {
+            "key": key,
+            "label": label,
+            "hint": hint,
+            "permission": permission,
+            "permitted": has_permission(role, permission),
+            "ready": bool(ready),
+            "setup": "" if ready else setup,
+        }
+        if count is not None:
+            section["count"] = int(count)
+        sections.append(section)
+
+    add("overview", "Overview", "How this presence is doing right now.", "view_analytics")
+    add("identity", "Identity", "Name, handle, description and contact details.", "edit_page")
+
+    posts = _int(counts.get("posts"), 0)
+    add("content", "Posts", "What this presence publishes.", "create_content",
+        ready=posts > 0, setup="Nothing published yet. Write the first post as this presence.",
+        count=posts)
+
+    if "music" in tabs:
+        add("music", "Music", "Tracks released under this name.", "manage_links",
+            ready="music_artist" in linked,
+            setup="Connect the artist profile these tracks were uploaded under.")
+
+    if "videos" in tabs:
+        videos = _int(counts.get("videos"), 0)
+        add("videos", "Videos", "Video posts from this presence.", "create_content",
+            ready=videos > 0, setup="Publish a video post and it appears here.", count=videos)
+
+    store_tab = next((tab for tab in ("menu", "merch", "shop") if tab in tabs), "")
+    if store_tab:
+        add("store", _STORE_TAB_LABELS[store_tab], "What this presence sells.", "manage_marketplace",
+            ready="store" in linked,
+            setup="Connect a shop you already run. Selling stays in Marketplace — this points at it.")
+
+    add("advertising", "Advertising", "Campaigns run for this presence.", "manage_ads",
+        ready="ad_account" in linked,
+        setup="Connect an ad account you already own to run campaigns as this presence.")
+
+    if page_type in BUSINESS_PAGE_TYPES:
+        add("business_os", "Business OS", "Orders, bookings and day-to-day operations.", "edit_page")
+
+    add("insights", "Insights", "Followers, posts and team, as measured.", "view_analytics",
+        count=_int(analytics.get("followers"), 0))
+    add("team", "Team & access", "Who can act for this presence.", "view_analytics",
+        count=_int(analytics.get("team_members"), 0))
+
+    verified = (page.get("verification_status") or "unverified")
+    add("verification", "Verification", "Proving this presence is who it says it is.", "manage_status",
+        ready=verified == "verified",
+        setup={
+            "pending": "Your request is with the review team.",
+            "rejected": "The last request was declined. You can send a new one.",
+        }.get(verified, "Not verified yet. Requests are reviewed, never granted automatically."))
+
+    add("payments", "Payments", "Where money for this presence arrives.", "manage_status")
+    add("settings", "Settings", "Whether this presence is live, paused or unpublished.", "manage_status")
+    return sections
+
+
 def manage_view(conn: Any, user_id: int, page_id: int) -> dict:
     page = _load_page(conn, page_id)
     role = require_permission(conn, user_id, page["id"], "view_analytics")
     view = public_view(conn, page, viewer_user_id=user_id)
+    links = list_links(conn, page["id"])
+    analytics = page_analytics(conn, user_id, page["id"])
     view.update({
         "role": role,
         "capabilities": sorted(p for p, roles in PERMISSIONS.items() if role in roles),
         "owner_user_id": int(page.get("owner_user_id") or 0),
         "phone": page.get("phone") or "",
-        "links": list_links(conn, page["id"]),
+        "links": links,
         "members": list_members(conn, user_id, page["id"]) if has_permission(role, "manage_members") else [],
-        "analytics": page_analytics(conn, user_id, page["id"]),
+        "analytics": analytics,
         "completeness": page_completeness(conn, page),
+        # Which management sections this page has, may be acted on, and has
+        # anything behind — decided here so the client never re-derives it.
+        "sections": manage_sections(page, role, links, _counts(conn, page["id"]), analytics),
     })
     return view

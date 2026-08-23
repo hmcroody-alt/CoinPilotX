@@ -1068,6 +1068,246 @@ class ModuleAvailabilityTests(unittest.TestCase):
         self.assertEqual(only_videos["next_offset"], 2)
 
 
+class ManageSectionTests(unittest.TestCase):
+    """What the management screen is allowed to offer, and why.
+
+    The hub was a flat grid of buttons with no relationship to the page in
+    front of it: a media page was offered Marketplace, an artist was offered
+    Business OS, and Advertising opened whether or not an ad account had ever
+    been connected. Every one of those is a control that fails after the tap,
+    which is a worse answer than not offering it.
+
+    Three questions are kept apart on purpose, and each is pinned separately:
+    does this *type* have the section at all, may *this caller* act in it, and
+    is anything behind it yet. Collapsing any two of them is how the screen
+    starts lying — an empty section that a team cannot see is a section they
+    cannot fill, and a disabled section for a type that will never have it is
+    permanent clutter.
+    """
+
+    def setUp(self):
+        self.conn = make_conn()
+
+    def sections(self, user_id=OWNER, **overrides):
+        page = create(self.conn, **overrides)
+        return {s["key"]: s for s in
+                pulsesoc_pages.manage_view(self.conn, user_id, page["id"])["sections"]}, page["id"]
+
+    def test_an_artist_is_offered_music_and_merch(self):
+        sections, _ = self.sections()
+        self.assertIn("music", sections)
+        self.assertEqual(sections["store"]["label"], "Merch")
+
+    def test_a_restaurant_manages_a_menu_not_merch(self):
+        # Same `store` link, same Marketplace behind it — the word changes
+        # because that is what the person running it calls the thing.
+        sections, _ = self.sections(page_type="RESTAURANT", handle="latable", name="La Table")
+        self.assertEqual(sections["store"]["label"], "Menu")
+        self.assertNotIn("music", sections)
+        # A restaurant posts, but has no video tab to manage.
+        self.assertNotIn("videos", sections)
+
+    def test_a_store_manages_a_shop(self):
+        sections, _ = self.sections(page_type="STORE", handle="thestore", name="The Store")
+        self.assertEqual(sections["store"]["label"], "Shop")
+
+    def test_a_media_page_is_not_offered_a_shop_it_cannot_have(self):
+        # A section for a type that will never have it is permanent clutter,
+        # and tapping it would land on someone else's inventory.
+        sections, _ = self.sections(page_type="MEDIA", handle="thepaper", name="The Paper")
+        self.assertNotIn("store", sections)
+        self.assertNotIn("music", sections)
+
+    def test_business_operations_are_offered_only_to_businesses(self):
+        business, _ = self.sections(page_type="BUSINESS", handle="acme", name="Acme")
+        self.assertIn("business_os", business)
+        artist, _ = self.sections(handle="nightsignal2", name="Night Signal Two")
+        self.assertNotIn("business_os", artist)
+
+    def test_the_business_list_is_the_one_the_checklist_already_uses(self):
+        # Two copies of "which types are a business" is two things to forget
+        # when a page type is added.
+        self.assertIs(pulsesoc_pages._BUSINESS_COMPLETENESS_TYPES, pulsesoc_pages.BUSINESS_PAGE_TYPES)
+
+    def test_every_offered_section_names_a_real_permission(self):
+        sections, _ = self.sections()
+        for section in sections.values():
+            self.assertIn(section["permission"], pulsesoc_pages.PERMISSIONS,
+                          f"{section['key']} is gated on a permission that does not exist")
+
+    def test_a_section_is_permitted_exactly_when_the_permission_says_so(self):
+        # Re-deriving this client-side is how a screen drifts from the server
+        # and starts rendering buttons that 403.
+        sections, _ = self.sections()
+        for section in sections.values():
+            expected = "OWNER" in pulsesoc_pages.PERMISSIONS[section["permission"]]
+            self.assertEqual(section["permitted"], expected, section["key"])
+
+    def test_an_analyst_sees_the_shape_of_the_place_but_is_permitted_nothing_it_cannot_do(self):
+        page = create(self.conn)
+        invite = pulsesoc_pages.invite_member(
+            self.conn, OWNER, page["id"], {"user_id": FRIEND, "role": "ANALYST"})
+        pulsesoc_pages.accept_invite(self.conn, FRIEND, invite["invite_token"])
+        sections = {s["key"]: s for s in
+                    pulsesoc_pages.manage_view(self.conn, FRIEND, page["id"])["sections"]}
+        # Read-only: the sections still describe the presence, but nothing that
+        # changes it is marked as theirs to act on.
+        self.assertTrue(sections["insights"]["permitted"])
+        self.assertTrue(sections["team"]["permitted"])
+        self.assertFalse(sections["identity"]["permitted"])
+        self.assertFalse(sections["settings"]["permitted"])
+        self.assertFalse(sections["content"]["permitted"])
+
+    def test_a_marketplace_manager_is_permitted_the_shop_and_not_the_settings(self):
+        page = create(self.conn)
+        invite = pulsesoc_pages.invite_member(
+            self.conn, OWNER, page["id"], {"user_id": FRIEND, "role": "MARKETPLACE_MANAGER"})
+        pulsesoc_pages.accept_invite(self.conn, FRIEND, invite["invite_token"])
+        sections = {s["key"]: s for s in
+                    pulsesoc_pages.manage_view(self.conn, FRIEND, page["id"])["sections"]}
+        self.assertTrue(sections["store"]["permitted"])
+        self.assertFalse(sections["advertising"]["permitted"])
+        self.assertFalse(sections["settings"]["permitted"])
+
+    def test_an_unconnected_section_stays_visible_and_says_what_is_missing(self):
+        # Hiding it from the team means they can never connect it. The visitor
+        # never sees this — `sections` is management-only.
+        sections, _ = self.sections()
+        self.assertFalse(sections["store"]["ready"])
+        self.assertTrue(sections["store"]["setup"])
+        self.assertFalse(sections["music"]["ready"])
+        self.assertTrue(sections["music"]["setup"])
+
+    def test_connecting_a_shop_marks_the_section_ready(self):
+        sections, page_id = self.sections()
+        self.assertFalse(sections["store"]["ready"])
+        pulsesoc_pages.set_link(self.conn, OWNER, page_id, "store", str(OWNER_SELLER_ID))
+        after = {s["key"]: s for s in
+                 pulsesoc_pages.manage_view(self.conn, OWNER, page_id)["sections"]}
+        self.assertTrue(after["store"]["ready"])
+        self.assertEqual(after["store"]["setup"], "", "a ready section has nothing left to set up")
+
+    def test_connecting_music_marks_the_music_section_ready(self):
+        sections, page_id = self.sections()
+        self.assertFalse(sections["music"]["ready"])
+        pulsesoc_pages.set_link(self.conn, OWNER, page_id, "music_artist", OWNER_ARTIST)
+        after = {s["key"]: s for s in
+                 pulsesoc_pages.manage_view(self.conn, OWNER, page_id)["sections"]}
+        self.assertTrue(after["music"]["ready"])
+
+    def test_advertising_waits_for_an_ad_account(self):
+        sections, page_id = self.sections()
+        self.assertFalse(sections["advertising"]["ready"])
+        pulsesoc_pages.set_link(self.conn, OWNER, page_id, "ad_account", str(OWNER_ADVERTISER_ID))
+        after = {s["key"]: s for s in
+                 pulsesoc_pages.manage_view(self.conn, OWNER, page_id)["sections"]}
+        self.assertTrue(after["advertising"]["ready"])
+
+    def test_posts_counts_what_was_actually_published(self):
+        sections, page_id = self.sections()
+        self.assertFalse(sections["content"]["ready"])
+        self.assertEqual(sections["content"]["count"], 0)
+        self.conn.execute(
+            "INSERT INTO pulse_posts (user_id, post_type, body, page_id, created_at) "
+            "VALUES (?, 'text', 'hello', ?, '2026-01-01')", (OWNER, page_id))
+        self.conn.commit()
+        after = {s["key"]: s for s in
+                 pulsesoc_pages.manage_view(self.conn, OWNER, page_id)["sections"]}
+        self.assertTrue(after["content"]["ready"])
+        self.assertEqual(after["content"]["count"], 1)
+
+    def test_videos_counts_videos_and_not_every_post(self):
+        _, page_id = self.sections()
+        for post_type in ("video", "text", "text"):
+            self.conn.execute(
+                "INSERT INTO pulse_posts (user_id, post_type, body, page_id, created_at) "
+                "VALUES (?, ?, 'x', ?, '2026-01-01')", (OWNER, post_type, page_id))
+        self.conn.commit()
+        sections = {s["key"]: s for s in
+                    pulsesoc_pages.manage_view(self.conn, OWNER, page_id)["sections"]}
+        self.assertEqual(sections["videos"]["count"], 1)
+        self.assertEqual(sections["content"]["count"], 3)
+
+    def test_no_count_is_ever_invented(self):
+        # Zero is a real answer. A placeholder is not, and a section with
+        # nothing measurable behind it carries no number at all.
+        sections, _ = self.sections()
+        self.assertEqual(sections["insights"]["count"], 0)
+        self.assertEqual(sections["team"]["count"], 1)
+        self.assertNotIn("count", sections["identity"])
+        self.assertNotIn("count", sections["settings"])
+        self.assertNotIn("count", sections["verification"])
+
+    def test_verification_reports_the_state_it_is_actually_in(self):
+        sections, page_id = self.sections()
+        self.assertFalse(sections["verification"]["ready"])
+        self.assertIn("reviewed", sections["verification"]["setup"])
+
+        pulsesoc_pages.request_verification(self.conn, OWNER, page_id)
+        pending = {s["key"]: s for s in
+                   pulsesoc_pages.manage_view(self.conn, OWNER, page_id)["sections"]}
+        self.assertFalse(pending["verification"]["ready"])
+        self.assertIn("review team", pending["verification"]["setup"])
+
+        self.conn.execute("UPDATE pulse_pages SET verification_status='verified' WHERE id=?", (page_id,))
+        self.conn.commit()
+        done = {s["key"]: s for s in
+                pulsesoc_pages.manage_view(self.conn, OWNER, page_id)["sections"]}
+        self.assertTrue(done["verification"]["ready"])
+        self.assertEqual(done["verification"]["setup"], "")
+
+    def test_events_is_not_offered_while_there_is_nothing_behind_it(self):
+        # `event` links are refused outright because there is no public events
+        # read to point a tab at. A management section for it would be a
+        # promise the product cannot keep. This fails the day events land,
+        # which is the reminder to wire the section then.
+        for page_type in ("ARTIST", "VENUE", "NONPROFIT"):
+            with self.subTest(page_type=page_type):
+                sections, _ = self.sections(
+                    page_type=page_type, handle=f"ev{page_type.lower()}", name=f"Ev {page_type}")
+                self.assertNotIn("events", sections)
+
+    def test_audience_is_not_offered_while_followers_cannot_be_listed(self):
+        # Followers are counted, not listable. The count is reported under
+        # Insights, where it is honest, rather than behind a heading that
+        # promises a list nothing can fetch.
+        sections, _ = self.sections()
+        self.assertNotIn("audience", sections)
+        self.assertIn("count", sections["insights"])
+
+    def test_a_ready_section_never_carries_setup_copy(self):
+        sections, page_id = self.sections()
+        pulsesoc_pages.set_link(self.conn, OWNER, page_id, "store", str(OWNER_SELLER_ID))
+        for section in pulsesoc_pages.manage_view(self.conn, OWNER, page_id)["sections"]:
+            if section["ready"]:
+                self.assertEqual(section["setup"], "", section["key"])
+            else:
+                self.assertTrue(section["setup"], f"{section['key']} is empty and says nothing about it")
+
+    def test_section_keys_are_unique_and_ordered_stably(self):
+        sections = pulsesoc_pages.manage_view(
+            self.conn, OWNER, create(self.conn)["id"])["sections"]
+        keys = [s["key"] for s in sections]
+        self.assertEqual(len(keys), len(set(keys)))
+        # Overview first, settings last: the screen reads top to bottom and the
+        # destructive controls belong at the bottom of it.
+        self.assertEqual(keys[0], "overview")
+        self.assertEqual(keys[-1], "settings")
+
+    def test_sections_never_reach_a_visitor(self):
+        page = create(self.conn)
+        public = pulsesoc_pages.public_view(
+            self.conn, pulsesoc_pages._load_page(self.conn, page["id"]), viewer_user_id=STRANGER)
+        # Setup prompts describe what a presence is missing. That is the team's
+        # business and nobody else's.
+        self.assertNotIn("sections", public)
+
+    def test_a_stranger_cannot_ask_what_the_sections_are(self):
+        page = create(self.conn)
+        with self.assertRaises(PageError):
+            pulsesoc_pages.manage_view(self.conn, STRANGER, page["id"])
+
+
 class MusicModuleTests(unittest.TestCase):
     """The presence points at the canonical catalogue; it never invents a discography."""
 
