@@ -107,10 +107,41 @@ export type PremiumPlanOffer = {
   currency: string;
 };
 
+/**
+ * What the StoreKit query asked for, and what came back.
+ *
+ * This exists because an empty paywall has four different causes that are
+ * indistinguishable once the request is over: the server offered no catalog at
+ * all, Apple answered with zero products for ids that were sent, the request
+ * threw, or it never returned. Only the request itself can tell them apart, so
+ * the facts are captured at that moment and carried out with the result.
+ *
+ * Everything here is a product identifier, a count, an error token or a build
+ * marker. No receipt, no signed transaction, no app account token, no Apple ID,
+ * no storefront account. That is what makes it safe to write to the device log
+ * and safe to show a member as a support reference.
+ */
+export type PremiumOffersDiagnostics = {
+  /** Product ids sent to Apple, in the order the server offered them. */
+  requestedProductIds: string[];
+  /** The StoreKit query kind. Auto-renewables are never fetched as `inapp`. */
+  requestType: "subs";
+  /** How many products Apple returned. */
+  productCount: number;
+  /** Product ids Apple actually returned — the set that matters for mapping. */
+  returnedProductIds: string[];
+  /** Short error token, or `null` when nothing threw. Never a message body. */
+  errorCode: string | null;
+  /** Build environment marker, e.g. `ios/release`. Never account identity. */
+  environment: string;
+};
+
 export type PremiumOffers = {
   plans: PremiumPlanOffer[];
   status: "success" | "empty" | "failed" | "timeout" | "unavailable";
   missingPlans: PremiumPlan[];
+  /** Why the list looks the way it does. Present on success and on failure. */
+  diagnostics: PremiumOffersDiagnostics;
   /**
    * Whole-percent saving of annual over twelve months of monthly, or `null`.
    *
@@ -124,6 +155,55 @@ export type PremiumOffers = {
 };
 
 export const PREMIUM_PRODUCT_FETCH_TIMEOUT_MS = 12_000;
+
+/**
+ * One tag, one line, greppable in a device log.
+ *
+ * `xcrun simctl spawn <udid> log stream` and a TestFlight sysdiagnose both carry
+ * JS console output in Release builds, so this is the only forensic trace of a
+ * product query that survives off a real device.
+ */
+export const PREMIUM_STOREKIT_LOG_TAG = "PulseSocStoreKit";
+
+/**
+ * A long unbroken alphanumeric run — a JWS segment, a receipt, a bearer token.
+ *
+ * Real StoreKit reasons are short and word-shaped (`E_USER_CANCELLED`,
+ * `SKErrorDomain`), so length alone separates an identifier from a secret that
+ * an adapter interpolated into its message.
+ */
+const OPAQUE_RUN = /[A-Za-z0-9+/=]{20,}/g;
+
+/**
+ * A short, safe token for an error.
+ *
+ * StoreKit surfaces its reason on `code`; adapters sometimes only set
+ * `message`. Either is stripped of opaque runs, reduced to an identifier shape
+ * and truncated — an error body is the one place a receipt or token could ride
+ * along into a log line, and this line is written on every failure.
+ */
+export function storeKitErrorCode(error: unknown): string {
+  const source = (error as { code?: unknown })?.code ?? (error as { message?: unknown })?.message ?? "";
+  const token = String(source)
+    .trim()
+    .replace(OPAQUE_RUN, "redacted")
+    .replace(/\s+/g, "_")
+    .replace(/[^A-Za-z0-9_.:-]/g, "");
+  return token ? token.slice(0, 64) : "unknown";
+}
+
+/** Build environment, not account environment. Sandbox vs production is Apple's to know. */
+function environmentMarker(platform: string): string {
+  return `${platform}/${typeof __DEV__ !== "undefined" && __DEV__ ? "dev" : "release"}`;
+}
+
+function reportOffers(status: PremiumOffers["status"], diagnostics: PremiumOffersDiagnostics): void {
+  try {
+    console.log(`${PREMIUM_STOREKIT_LOG_TAG} ${JSON.stringify({ status, ...diagnostics })}`);
+  } catch {
+    // Diagnostics must never be the reason a paywall fails to render.
+  }
+}
 
 function timed<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -154,10 +234,25 @@ export async function getPremiumOffers(
   } = {}
 ): Promise<PremiumOffers> {
   const timeoutMs = deps.timeoutMs ?? PREMIUM_PRODUCT_FETCH_TIMEOUT_MS;
+  // Filled in as the request progresses so that a timeout — the one outcome the
+  // request itself never gets to describe — can still say what it was asking for.
+  const probe: { requested: string[] } = { requested: [] };
   try {
-    return await timed(loadPremiumOffers(deps), timeoutMs);
+    return await timed(loadPremiumOffers(deps, probe), timeoutMs);
   } catch {
-    return { plans: [], annualSavingsPercent: null, status: "timeout", missingPlans: ["monthly", "annual"] };
+    const diagnostics: PremiumOffersDiagnostics = {
+      requestedProductIds: probe.requested,
+      requestType: "subs",
+      productCount: 0,
+      returnedProductIds: [],
+      errorCode: "premium_product_fetch_timeout",
+      environment: environmentMarker(deps.platform ?? Platform.OS)
+    };
+    reportOffers("timeout", diagnostics);
+    return {
+      plans: [], annualSavingsPercent: null, status: "timeout",
+      missingPlans: ["monthly", "annual"], diagnostics
+    };
   }
 }
 
@@ -167,13 +262,24 @@ async function loadPremiumOffers(
     intent?: typeof createPaymentIntent;
     platform?: string;
     timeoutMs?: number;
-  }
+  },
+  probe: { requested: string[] } = { requested: [] }
 ): Promise<PremiumOffers> {
   const intent = deps.intent ?? createPaymentIntent;
   const platform = deps.platform ?? Platform.OS;
-  const unavailable = (status: PremiumOffers["status"]): PremiumOffers => ({
-    plans: [], annualSavingsPercent: null, status, missingPlans: ["monthly", "annual"]
-  });
+  const environment = environmentMarker(platform);
+  const unavailable = (status: PremiumOffers["status"], errorCode: string | null): PremiumOffers => {
+    const diagnostics: PremiumOffersDiagnostics = {
+      requestedProductIds: probe.requested,
+      requestType: "subs",
+      productCount: 0,
+      returnedProductIds: [],
+      errorCode,
+      environment
+    };
+    reportOffers(status, diagnostics);
+    return { plans: [], annualSavingsPercent: null, status, missingPlans: ["monthly", "annual"], diagnostics };
+  };
 
   const wanted: PremiumPlan[] = ["monthly", "annual"];
   const catalog: Array<{ plan: PremiumPlan; productId: string }> = [];
@@ -188,16 +294,20 @@ async function loadPremiumOffers(
       // One unavailable plan must not hide the other.
     }
   }
-  if (!catalog.length) return unavailable("unavailable");
+  probe.requested = catalog.map((entry) => entry.productId);
+  // No ids to ask for: the server withdrew the catalog, so StoreKit is never
+  // reached. Reporting this as "Apple returned nothing" would send whoever
+  // reads the log to the wrong system entirely.
+  if (!catalog.length) return unavailable("unavailable", "no_server_catalog");
 
   const adapter = deps.adapter !== undefined ? deps.adapter : loadStoreKitAdapter();
-  if (!adapter?.getSubscriptions) return unavailable("unavailable");
+  if (!adapter?.getSubscriptions) return unavailable("unavailable", "storekit_unavailable");
   let products: StoreKitProduct[];
   try {
     await adapter.initConnection();
-    products = await adapter.getSubscriptions(catalog.map((entry) => entry.productId));
+    products = await adapter.getSubscriptions(probe.requested);
   } catch (error) {
-    return unavailable("failed");
+    return unavailable("failed", storeKitErrorCode(error));
   }
 
   const plans = catalog
@@ -215,11 +325,22 @@ async function loadPremiumOffers(
     .filter((offer): offer is PremiumPlanOffer => offer !== null);
 
   const missingPlans = wanted.filter((wantedPlan) => !plans.some((offer) => offer.plan === wantedPlan));
+  const status: PremiumOffers["status"] = plans.length ? "success" : "empty";
+  const diagnostics: PremiumOffersDiagnostics = {
+    requestedProductIds: probe.requested,
+    requestType: "subs",
+    productCount: products.length,
+    returnedProductIds: products.map((product) => product.id),
+    errorCode: null,
+    environment
+  };
+  reportOffers(status, diagnostics);
   return {
     plans,
     annualSavingsPercent: annualSavings(plans),
-    status: plans.length ? "success" : "empty",
-    missingPlans
+    status,
+    missingPlans,
+    diagnostics
   };
 }
 

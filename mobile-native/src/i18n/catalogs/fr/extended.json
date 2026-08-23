@@ -1985,7 +1985,13 @@
       "save": "Économisez {{percent}} %",
       "unavailable": "Les offres ne sont pas disponibles pour le moment.",
       "unavailableBody": "L'App Store n'a renvoyé aucun produit. Vérifiez votre connexion et réessayez : rien n'a été facturé.",
-      "terms": "Facturé via l'App Store. Votre abonnement se renouvelle automatiquement jusqu'à ce que vous l'annuliez dans les réglages d'abonnement Apple."
+      "unavailableOffer": "Aucune offre n'est proposée sur cet appareil pour le moment. Rien n'a été facturé.",
+      "unavailableFailed": "La requête vers l'App Store n'a pas abouti. Réessayez : rien n'a été facturé.",
+      "unavailableTimeout": "L'App Store n'a pas répondu à temps. Réessayez : rien n'a été facturé.",
+      "reference": "Référence : {{code}}",
+      "terms": "Facturé via l'App Store. Votre abonnement se renouvelle automatiquement jusqu'à ce que vous l'annuliez dans les réglages d'abonnement Apple.",
+      "bestValue": "Meilleure offre",
+      "secure": "Paiement sécurisé géré par Apple."
     },
     "purchase": {
       "start": "Continuer",

@@ -1985,7 +1985,13 @@
       "save": "{{percent}} % sparen",
       "unavailable": "Tarife sind derzeit nicht verfügbar.",
       "unavailableBody": "Der App Store hat keine Produkte zurückgegeben. Prüfe deine Verbindung und versuch es erneut – es wurde nichts abgebucht.",
-      "terms": "Abrechnung über den App Store. Dein Abo verlängert sich automatisch, bis du es in den Apple-Abo-Einstellungen kündigst."
+      "unavailableOffer": "Auf diesem Gerät werden derzeit keine Tarife angeboten. Es wurde nichts abgebucht.",
+      "unavailableFailed": "Die Anfrage an den App Store wurde nicht abgeschlossen. Versuch es erneut – es wurde nichts abgebucht.",
+      "unavailableTimeout": "Der App Store hat nicht rechtzeitig geantwortet. Versuch es erneut – es wurde nichts abgebucht.",
+      "reference": "Referenz: {{code}}",
+      "terms": "Abrechnung über den App Store. Dein Abo verlängert sich automatisch, bis du es in den Apple-Abo-Einstellungen kündigst.",
+      "bestValue": "Bestes Angebot",
+      "secure": "Sichere Zahlung über Apple."
     },
     "purchase": {
       "start": "Weiter",

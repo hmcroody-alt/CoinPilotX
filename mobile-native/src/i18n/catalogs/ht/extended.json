@@ -1981,7 +1981,13 @@
       "save": "Ekonomize {{percent}}%",
       "unavailable": "Plan yo pa disponib kounye a.",
       "unavailableBody": "App Store la pa voye okenn pwodwi. Tcheke koneksyon ou epi eseye ankò — nou pa faktire anyen.",
-      "terms": "Fakti pase nan App Store la. Abònman ou renouvle otomatikman jiskaske ou anile l nan paramèt abònman Apple yo."
+      "unavailableOffer": "Pa gen plan k ap ofri sou aparèy sa a kounye a. Nou pa faktire anyen.",
+      "unavailableFailed": "Demann lan pa t rive fini nan App Store la. Eseye ankò — nou pa faktire anyen.",
+      "unavailableTimeout": "App Store la pa reponn atan. Eseye ankò — nou pa faktire anyen.",
+      "reference": "Referans: {{code}}",
+      "terms": "Fakti pase nan App Store la. Abònman ou renouvle otomatikman jiskaske ou anile l nan paramèt abònman Apple yo.",
+      "bestValue": "Pi bon valè",
+      "secure": "Apple jere peman an an sekirite."
     },
     "purchase": {
       "start": "Kontinye",

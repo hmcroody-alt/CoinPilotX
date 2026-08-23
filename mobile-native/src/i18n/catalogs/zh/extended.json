@@ -1980,7 +1980,13 @@
       "save": "省 {{percent}}%",
       "unavailable": "当前无法获取方案。",
       "unavailableBody": "App Store 未返回任何商品。请检查网络后重试，尚未产生任何扣费。",
-      "terms": "通过 App Store 扣费。除非你在 Apple 的订阅设置中取消，否则订阅将自动续订。"
+      "unavailableOffer": "当前设备暂未提供任何方案，尚未产生任何扣费。",
+      "unavailableFailed": "App Store 请求未能完成。请重试，尚未产生任何扣费。",
+      "unavailableTimeout": "App Store 未在规定时间内响应。请重试，尚未产生任何扣费。",
+      "reference": "参考代码：{{code}}",
+      "terms": "通过 App Store 扣费。除非你在 Apple 的订阅设置中取消，否则订阅将自动续订。",
+      "bestValue": "最超值",
+      "secure": "结账由 Apple 安全处理。"
     },
     "purchase": {
       "start": "继续",

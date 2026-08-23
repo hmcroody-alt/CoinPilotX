@@ -1985,7 +1985,13 @@
       "save": "Economize {{percent}}%",
       "unavailable": "Os planos não estão disponíveis agora.",
       "unavailableBody": "A App Store não retornou nenhum produto. Verifique sua conexão e tente de novo: nada foi cobrado.",
-      "terms": "Cobrado pela App Store. Sua assinatura é renovada automaticamente até você cancelá-la nos ajustes de assinaturas da Apple."
+      "unavailableOffer": "Nenhum plano está sendo oferecido neste dispositivo agora. Nada foi cobrado.",
+      "unavailableFailed": "A solicitação à App Store não foi concluída. Tente de novo: nada foi cobrado.",
+      "unavailableTimeout": "A App Store não respondeu a tempo. Tente de novo: nada foi cobrado.",
+      "reference": "Referência: {{code}}",
+      "terms": "Cobrado pela App Store. Sua assinatura é renovada automaticamente até você cancelá-la nos ajustes de assinaturas da Apple.",
+      "bestValue": "Melhor custo-benefício",
+      "secure": "Pagamento seguro processado pela Apple."
     },
     "purchase": {
       "start": "Continuar",

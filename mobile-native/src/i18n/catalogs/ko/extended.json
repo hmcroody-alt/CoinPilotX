@@ -1980,7 +1980,13 @@
       "save": "{{percent}}% 절약",
       "unavailable": "지금은 요금제를 이용할 수 없습니다.",
       "unavailableBody": "App Store에서 상품 정보를 받지 못했습니다. 연결을 확인한 뒤 다시 시도하세요. 결제된 금액은 없습니다.",
-      "terms": "App Store를 통해 결제됩니다. Apple 구독 설정에서 취소하기 전까지 자동으로 갱신됩니다."
+      "unavailableOffer": "지금은 이 기기에서 요금제를 제공하지 않습니다. 결제된 금액은 없습니다.",
+      "unavailableFailed": "App Store 요청이 완료되지 않았습니다. 다시 시도하세요. 결제된 금액은 없습니다.",
+      "unavailableTimeout": "App Store가 제때 응답하지 않았습니다. 다시 시도하세요. 결제된 금액은 없습니다.",
+      "reference": "참조 코드: {{code}}",
+      "terms": "App Store를 통해 결제됩니다. Apple 구독 설정에서 취소하기 전까지 자동으로 갱신됩니다.",
+      "bestValue": "가장 알뜰한 선택",
+      "secure": "결제는 Apple이 안전하게 처리합니다."
     },
     "purchase": {
       "start": "계속",

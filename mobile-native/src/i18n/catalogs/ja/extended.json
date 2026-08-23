@@ -1973,7 +1973,13 @@
       "save": "{{percent}}％お得",
       "unavailable": "現在プランを利用できません。",
       "unavailableBody": "App Store から商品情報が返されませんでした。接続を確認して再試行してください。請求は発生していません。",
-      "terms": "App Store 経由で請求されます。Apple のサブスクリプション設定で解約するまで自動更新されます。"
+      "unavailableOffer": "現在このデバイスではプランが提供されていません。請求は発生していません。",
+      "unavailableFailed": "App Store へのリクエストが完了しませんでした。再試行してください。請求は発生していません。",
+      "unavailableTimeout": "App Store から時間内に応答がありませんでした。再試行してください。請求は発生していません。",
+      "reference": "参照コード: {{code}}",
+      "terms": "App Store 経由で請求されます。Apple のサブスクリプション設定で解約するまで自動更新されます。",
+      "bestValue": "いちばんお得",
+      "secure": "決済は Apple が安全に処理します。"
     },
     "purchase": {
       "start": "続ける",

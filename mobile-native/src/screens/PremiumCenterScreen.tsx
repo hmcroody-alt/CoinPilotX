@@ -39,7 +39,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   getPremiumCenter,
   premiumExperience,
@@ -159,7 +159,14 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
       } else if (next.status === "empty") {
         trackPremium("premium_product_fetch_empty");
       } else {
-        trackPremium("premium_product_fetch_failed", { reason: next.status });
+        // The status alone cannot tell an operator whether Apple was even asked.
+        // The diagnostics carry that, and every field of them is safe to emit.
+        trackPremium("premium_product_fetch_failed", {
+          reason: next.status,
+          error_code: next.diagnostics.errorCode,
+          requested: next.diagnostics.requestedProductIds.length,
+          returned: next.diagnostics.productCount
+        });
       }
       next.missingPlans.forEach((missing) => {
         trackPremium(missing === "monthly" ? "premium_product_missing_monthly" : "premium_product_missing_annual");
@@ -175,7 +182,20 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
     } catch {
       if (request === offerRequest.current) {
         trackPremium("premium_product_fetch_failed", { reason: "unexpected" });
-        setOffers({ plans: [], annualSavingsPercent: null, status: "failed", missingPlans: ["monthly", "annual"] });
+        setOffers({
+          plans: [],
+          annualSavingsPercent: null,
+          status: "failed",
+          missingPlans: ["monthly", "annual"],
+          diagnostics: {
+            requestedProductIds: [],
+            requestType: "subs",
+            productCount: 0,
+            returnedProductIds: [],
+            errorCode: "screen_unexpected",
+            environment: `${Platform.OS}/unknown`
+          }
+        });
       }
     } finally {
       if (request === offerRequest.current) {
@@ -311,16 +331,22 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
         <BillingSection subscription={center?.subscription ?? null} experience={experience} />
       )}
 
-      <BenefitsSection benefits={center?.benefits || []} held={Boolean(center?.membership.is_premium)} />
-
-      <NotYetSection items={center?.not_yet || []} />
-
+      {/*
+        Directly under the plans, not at the foot of the screen. Restore is the
+        remedy for the member who already paid — on this device or another — and
+        burying it below the benefits list is how someone ends up buying a
+        second subscription. Apple expects it discoverable too.
+      */}
       <ActionsSection
         experience={experience}
         busy={busy}
         onManage={onManage}
         onRestore={onRestore}
       />
+
+      <BenefitsSection benefits={center?.benefits || []} held={Boolean(center?.membership.is_premium)} />
+
+      <NotYetSection items={center?.not_yet || []} />
 
       <CommandCenterSection experience={experience} held={Boolean(center?.membership.is_premium)} navigation={navigation} />
 
@@ -412,6 +438,38 @@ function NoticesSection({ center }: { center: PremiumCenter | null }) {
  * Plans (discovery / purchase)
  * -------------------------------------------------------------------------- */
 
+/**
+ * Why the plan list is empty, in the member's words.
+ *
+ * The four zero states have four different remedies and used to share one
+ * sentence. "The App Store didn't return any products" is true only of `empty`;
+ * saying it when the request never left the device sends the member to check a
+ * connection that was never the problem, and sends support to Apple instead of
+ * to the catalog. `success` maps here only because an exhaustive record must,
+ * and a successful fetch with no plans is indistinguishable from `empty`.
+ */
+const ZERO_STATE_BODY: Record<PremiumOffers["status"], string> = {
+  unavailable: "premium:plans.unavailableOffer",
+  empty: "premium:plans.unavailableBody",
+  failed: "premium:plans.unavailableFailed",
+  timeout: "premium:plans.unavailableTimeout",
+  success: "premium:plans.unavailableBody"
+};
+
+/**
+ * A short code a member can read out to support.
+ *
+ * Built from the status and the already-sanitized StoreKit error token — both
+ * safe to print. It is the only thing on this screen that survives a screenshot
+ * sent to support, and it is what turns "it just says plans aren't available"
+ * into an answerable report.
+ */
+function zeroStateReference(offers: PremiumOffers | null): string {
+  const status = (offers?.status ?? "unavailable").toUpperCase();
+  const code = offers?.diagnostics?.errorCode;
+  return code && code !== "unknown" ? `${status}-${code}` : status;
+}
+
 export function PlansSection({
   offers, loading, plan, onPlan, busy, disabled, onPurchase, onRetry, expired
 }: {
@@ -445,11 +503,15 @@ export function PlansSection({
   // stays — this is still where a member manages membership — but it must not
   // fall back to a remembered price, so it offers restore instead of a price.
   if (!plans.length) {
+    const status = offers?.status ?? "unavailable";
     return (
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t("premium:plans.heading")}</Text>
         <Text style={styles.body}>{t("premium:plans.unavailable")}</Text>
-        <Text style={styles.note}>{t("premium:plans.unavailableBody")}</Text>
+        <Text style={styles.note}>{t(ZERO_STATE_BODY[status])}</Text>
+        <Text style={styles.note}>
+          {t("premium:plans.reference", { code: zeroStateReference(offers) })}
+        </Text>
         <Pressable accessibilityRole="button" disabled={loading} style={styles.retry} onPress={onRetry}>
           <Text style={styles.retryText}>{t("premium:retry")}</Text>
         </Pressable>
@@ -462,7 +524,7 @@ export function PlansSection({
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{t(expired ? "premium:plans.headingAgain" : "premium:plans.heading")}</Text>
-      <View style={styles.planRow}>
+      <View accessibilityRole="radiogroup" style={styles.planRow}>
         {plans.map((offer) => (
           <PlanCard
             key={offer.productId}
@@ -489,6 +551,12 @@ export function PlansSection({
           {busy ? t("premium:purchase.working") : t("premium:purchase.start")}
         </Text>
       </Pressable>
+      {/* Who takes the money, stated next to the button that starts it. The app
+          never sees a card number and this is the only place that can say so. */}
+      <View style={styles.secureRow}>
+        <Ionicons name="lock-closed" size={12} color={colors.muted} />
+        <Text style={styles.note}>{t("premium:plans.secure")}</Text>
+      </View>
       <Text style={styles.note}>{t("premium:plans.terms")}</Text>
     </View>
   );
@@ -506,22 +574,43 @@ function PlanCard({
 }: { offer: PremiumPlanOffer; selected: boolean; savings: number | null; onPress: () => void }) {
   const { t } = useTranslation();
   const label = t(`premium:plans.${offer.plan}`);
+  const period = t(`premium:plans.per.${offer.plan}`);
+  // Both the ribbon and the percentage hang off the same computed figure. When
+  // `annualSavings` cannot state a saving honestly — one plan missing, mixed
+  // currencies, annual not actually cheaper — the card carries no claim at all.
+  const savingsLabel = savings !== null ? t("premium:plans.save", { percent: savings }) : "";
   return (
     <Pressable
       accessibilityRole="radio"
       accessibilityState={{ selected }}
-      accessibilityLabel={`${label}, ${offer.displayPrice}`}
+      accessibilityLabel={[label, offer.displayPrice, period, savingsLabel].filter(Boolean).join(", ")}
       style={({ pressed }) => [styles.plan, selected && styles.planSelected, pressed && styles.pressed]}
       onPress={onPress}
     >
-      <Text style={[styles.planName, selected && styles.planNameSelected]}>{label}</Text>
+      {savings !== null ? (
+        <View style={styles.planRibbon}>
+          <Text style={styles.planRibbonText}>{t("premium:plans.bestValue")}</Text>
+        </View>
+      ) : null}
+      <View style={styles.planHead}>
+        {/* The selection is a state, not a colour. Rendering the radio means it
+            survives a member who cannot tell the gold border from the plain one. */}
+        <Ionicons
+          name={selected ? "radio-button-on" : "radio-button-off"}
+          size={16}
+          color={selected ? premiumTheme.gold : colors.muted}
+        />
+        <Text style={[styles.planName, selected && styles.planNameSelected]} numberOfLines={1}>
+          {label}
+        </Text>
+      </View>
       <Text style={styles.planPrice}>{offer.displayPrice}</Text>
-      <Text style={styles.planPeriod}>{t(`premium:plans.per.${offer.plan}`)}</Text>
+      <Text style={styles.planPeriod}>{period}</Text>
       {/* Computed from the two localized prices actually returned. Absent when
           there is no honest figure — never a hardcoded "SAVE 17%". */}
       {savings !== null ? (
         <View style={styles.planSave}>
-          <Text style={styles.planSaveText}>{t("premium:plans.save", { percent: savings })}</Text>
+          <Text style={styles.planSaveText}>{savingsLabel}</Text>
         </View>
       ) : null}
     </Pressable>
@@ -986,7 +1075,7 @@ const styles = createThemedStyles(() => ({
   noticeRow: { alignItems: "flex-start", flexDirection: "row", gap: 8 },
   noticeText: { color: colors.text, flex: 1, fontSize: 13, lineHeight: 19 },
 
-  planRow: { flexDirection: "row", gap: 10 },
+  planRow: { alignItems: "stretch", flexDirection: "row", gap: 10 },
   plan: {
     borderColor: colors.border,
     borderRadius: premiumTheme.radius.tile,
@@ -997,7 +1086,23 @@ const styles = createThemedStyles(() => ({
     padding: 12
   },
   planSelected: { backgroundColor: premiumTheme.goldSoft, borderColor: premiumTheme.goldBorder, borderWidth: 1 },
-  planName: { color: colors.muted, fontSize: 12, fontWeight: "700", letterSpacing: 0.4, textTransform: "uppercase" },
+  planHead: { alignItems: "center", flexDirection: "row", gap: 6 },
+  planRibbon: {
+    alignSelf: "flex-start",
+    backgroundColor: premiumTheme.gold,
+    borderRadius: premiumTheme.radius.chip,
+    marginBottom: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 2
+  },
+  planRibbonText: {
+    color: colors.background,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    textTransform: "uppercase"
+  },
+  planName: { color: colors.muted, flex: 1, fontSize: 12, fontWeight: "700", letterSpacing: 0.4, textTransform: "uppercase" },
   planNameSelected: { color: premiumTheme.gold },
   planPrice: { color: colors.text, fontSize: 20, fontWeight: "700" },
   planPeriod: { color: colors.muted, fontSize: 12 },
@@ -1076,6 +1181,7 @@ const styles = createThemedStyles(() => ({
     paddingHorizontal: 16
   },
   primaryActionText: { color: colors.background, fontSize: 14, fontWeight: "700" },
+  secureRow: { alignItems: "center", flexDirection: "row", gap: 6, justifyContent: "center" },
   secondaryAction: {
     alignItems: "center",
     borderColor: premiumTheme.goldBorder,

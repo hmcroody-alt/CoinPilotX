@@ -1985,7 +1985,13 @@
       "save": "Save {{percent}}%",
       "unavailable": "Plans aren't available right now.",
       "unavailableBody": "The App Store didn't return any products. Check your connection and try again — nothing has been charged.",
-      "terms": "Billed through the App Store. Your subscription renews automatically until you cancel it in Apple's subscription settings."
+      "unavailableOffer": "Plans aren't being offered on this device right now. Nothing has been charged.",
+      "unavailableFailed": "The App Store request didn't complete. Try again — nothing has been charged.",
+      "unavailableTimeout": "The App Store didn't respond in time. Try again — nothing has been charged.",
+      "reference": "Reference: {{code}}",
+      "terms": "Billed through the App Store. Your subscription renews automatically until you cancel it in Apple's subscription settings.",
+      "bestValue": "Best value",
+      "secure": "Secure checkout handled by Apple."
     },
     "purchase": {
       "start": "Continue",
