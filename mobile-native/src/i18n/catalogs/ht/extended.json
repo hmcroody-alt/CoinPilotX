@@ -1442,6 +1442,22 @@
       "saveToCollection": "Sere nan yon koleksyon"
     },
     "crypto": {
+      "intelligence": {
+        "heading": "Entèlijans kripto",
+        "subhead": "Zouti kripto Premium, enkli nan chak plan.",
+        "alerts": {
+          "label": "Alèt kripto avanse",
+          "hint": "Kondisyon avanse, siveyans rekiran, règ konpoze ak plis kontwòl sou alèt yo."
+        },
+        "portfolio": {
+          "label": "Pòtfèy",
+          "hint": "Pozisyon yo, repatisyon, pèfòmans, konsantrasyon ak pwofi/pèt ki poko reyalize."
+        },
+        "undx": {
+          "label": "Entèlijans kripto UNDX",
+          "hint": "Konprann poukisa alèt yo te deklanche ak sa k ap fè pòtfèy ou bouje."
+        }
+      },
       "entry": {
         "title": "Entèlijans kripto Premium",
         "body": "Règ alèt avanse ak plizyè kondisyon epi analiz pòtfèy la nan nouvo sant kòmand kripto a.",

@@ -346,6 +346,8 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
 
       <BenefitsSection benefits={center?.benefits || []} held={Boolean(center?.membership.is_premium)} />
 
+      <CryptoIntelligenceSection navigation={navigation} />
+
       <NotYetSection items={center?.not_yet || []} />
 
       <CommandCenterSection experience={experience} held={Boolean(center?.membership.is_premium)} navigation={navigation} />
@@ -784,6 +786,88 @@ function NotYetSection({ items }: { items: Array<{ key: string; label: string; s
       <Text style={styles.note}>{t("premium:notYet.note")}</Text>
     </View>
   );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Crypto Intelligence
+ * -------------------------------------------------------------------------- */
+
+/**
+ * The premium crypto capabilities, named on the surface that sells them.
+ *
+ * Presentation only: both existing plans already unlock every capability
+ * listed here, so this section introduces no product, no SKU and no gate.
+ * Copy lives in the `discovery:crypto` catalog namespace alongside the crypto
+ * screens it describes — deliberately not under `premium:`, whose copy rules
+ * exist for billing claims this section never makes.
+ *
+ * Alerts and Portfolio are pressable because their destinations already ship
+ * (`CryptoAlertCenter`, `CryptoPortfolio`); those screens carry their own
+ * premium gates, so a free member who taps through sees the honest upsell
+ * rather than a wall here. UNDX crypto intelligence surfaces inside those
+ * flows and has no standalone route, so its row stays inert — same rule as
+ * the Command Center: nothing looks tappable unless a real screen answers.
+ */
+type CryptoIntelligenceFeature = {
+  key: "alerts" | "portfolio" | "undx";
+  icon: keyof typeof Ionicons.glyphMap;
+  go?: (navigation: Props["navigation"]) => void;
+};
+
+const CRYPTO_INTELLIGENCE_FEATURES: readonly CryptoIntelligenceFeature[] = [
+  { key: "alerts", icon: "pulse-outline", go: (nav) => nav.navigate("CryptoAlertCenter") },
+  { key: "portfolio", icon: "pie-chart-outline", go: (nav) => nav.navigate("CryptoPortfolio") },
+  { key: "undx", icon: "sparkles-outline" }
+];
+
+function CryptoIntelligenceSection({ navigation }: { navigation: Props["navigation"] }) {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{t("discovery:crypto.intelligence.heading")}</Text>
+      <Text style={styles.note}>{t("discovery:crypto.intelligence.subhead")}</Text>
+      {CRYPTO_INTELLIGENCE_FEATURES.map((feature) => (
+        <CryptoIntelligenceRow key={feature.key} feature={feature} navigation={navigation} />
+      ))}
+    </View>
+  );
+}
+
+function CryptoIntelligenceRow({
+  feature, navigation
+}: { feature: CryptoIntelligenceFeature; navigation: Props["navigation"] }) {
+  const { t } = useTranslation();
+  const label = t(`discovery:crypto.intelligence.${feature.key}.label`);
+  const hint = t(`discovery:crypto.intelligence.${feature.key}.hint`);
+
+  const body = (
+    <>
+      <Ionicons name={feature.icon} size={18} color={premiumTheme.gold} />
+      <View style={styles.benefitBody}>
+        <View style={styles.benefitHead}>
+          <Text style={styles.benefitLabel} numberOfLines={2}>{label}</Text>
+          {feature.go ? <Ionicons name="chevron-forward" size={14} color={colors.muted} /> : null}
+        </View>
+        <Text style={styles.note} numberOfLines={3}>{hint}</Text>
+      </View>
+    </>
+  );
+
+  if (feature.go) {
+    const go = feature.go;
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityHint={hint}
+        style={({ pressed }) => [styles.benefitRow, pressed && styles.pressed]}
+        onPress={() => go(navigation)}
+      >
+        {body}
+      </Pressable>
+    );
+  }
+  return <View style={styles.benefitRow}>{body}</View>;
 }
 
 /* -------------------------------------------------------------------------- *
