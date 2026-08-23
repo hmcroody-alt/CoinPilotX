@@ -207,7 +207,8 @@
       "activity": "Siyal aktivite ak notifikasyon",
       "trustIdentity": "Kouch konfyans ak idantite",
       "nativeRoute": "Wout natif PulseSoc",
-      "membership": "Manm ak faktirasyon"
+      "membership": "Manm ak faktirasyon",
+      "business": "Magazen, lis ak piblisite"
     },
     "identity": {
       "member": "Manm PulseSoc"

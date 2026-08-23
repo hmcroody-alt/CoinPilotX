@@ -207,7 +207,8 @@
       "activity": "Activity and notification signals",
       "trustIdentity": "Trust and identity layer",
       "nativeRoute": "Native PulseSoc route",
-      "membership": "Membership and billing"
+      "membership": "Membership and billing",
+      "business": "Store, listings and advertising"
     },
     "identity": {
       "member": "PulseSoc member"

@@ -207,7 +207,8 @@
       "activity": "एक्टिविटी और नोटिफ़िकेशन सिग्नल",
       "trustIdentity": "भरोसा और पहचान की लेयर",
       "nativeRoute": "नेटिव PulseSoc रूट",
-      "membership": "सदस्यता और बिलिंग"
+      "membership": "सदस्यता और बिलिंग",
+      "business": "स्टोर, लिस्टिंग और विज्ञापन"
     },
     "identity": {
       "member": "PulseSoc मेंबर"

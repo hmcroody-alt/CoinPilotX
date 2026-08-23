@@ -207,7 +207,8 @@
       "activity": "Aktivitäts- und Mitteilungssignale",
       "trustIdentity": "Ebene für Vertrauen und Identität",
       "nativeRoute": "Native PulseSoc-Route",
-      "membership": "Mitgliedschaft und Abrechnung"
+      "membership": "Mitgliedschaft und Abrechnung",
+      "business": "Shop, Angebote und Werbung"
     },
     "identity": {
       "member": "PulseSoc-Mitglied"

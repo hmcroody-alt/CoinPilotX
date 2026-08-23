@@ -207,7 +207,8 @@
       "activity": "Sinais de atividade e notificações",
       "trustIdentity": "Camada de confiança e identidade",
       "nativeRoute": "Rota nativa do PulseSoc",
-      "membership": "Assinatura e faturamento"
+      "membership": "Assinatura e faturamento",
+      "business": "Loja, itens e publicidade"
     },
     "identity": {
       "member": "Membro do PulseSoc"

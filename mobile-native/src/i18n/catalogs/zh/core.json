@@ -207,7 +207,8 @@
       "activity": "动态与通知信号",
       "trustIdentity": "信任与身份层",
       "nativeRoute": "PulseSoc 原生页面",
-      "membership": "会员与账单"
+      "membership": "会员与账单",
+      "business": "店铺、商品与广告"
     },
     "identity": {
       "member": "PulseSoc 会员"

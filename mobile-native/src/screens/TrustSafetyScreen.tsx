@@ -45,7 +45,7 @@ export function TrustSafetyScreen({ navigation, route }: Props) {
   const [error, setError] = useState("");
   const [supportEmail, setSupportEmail] = useState("");
   const [supportIssue, setSupportIssue] = useState("safety");
-  const [supportSubject, setSupportSubject] = useState("PulseSoc native support request");
+  const [supportSubject, setSupportSubject] = useState("PulseSoc support request");
   const [supportMessage, setSupportMessage] = useState("");
   const [reportEmail, setReportEmail] = useState("");
   const [reportType, setReportType] = useState("phishing");
@@ -194,7 +194,7 @@ export function TrustSafetyScreen({ navigation, route }: Props) {
         <Text style={styles.eyebrow}>PulseSoc safety grid</Text>
         <Text style={styles.title}>Trust & Safety</Text>
         <Text style={styles.subtitle}>
-          {offline ? "Showing cached support history. Pull to reconnect." : "Native access to support, scam scanning, security reporting, and trusted policy routes."}
+          {offline ? "Showing cached support history. Pull to reconnect." : "Get help, report a problem, check something that looks like a scam, and review the rules that protect your account."}
         </Text>
       </View>
 
@@ -205,7 +205,7 @@ export function TrustSafetyScreen({ navigation, route }: Props) {
         <View style={styles.heroRow}>
           <View>
             <Text style={styles.panelTitle}>Protection status</Text>
-            <Text style={styles.muted}>Reports, tickets, scans, and moderation stay server-authoritative.</Text>
+            <Text style={styles.muted}>Reports, tickets and scans are reviewed by the PulseSoc safety team.</Text>
           </View>
           <Text style={styles.signal}>{state?.tickets.length || 0}</Text>
         </View>

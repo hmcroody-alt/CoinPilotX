@@ -207,7 +207,8 @@
       "activity": "إشارات النشاط والإشعارات",
       "trustIdentity": "طبقة الثقة والهوية",
       "nativeRoute": "مسار PulseSoc الأصلي",
-      "membership": "العضوية والفوترة"
+      "membership": "العضوية والفوترة",
+      "business": "المتجر والقوائم والإعلانات"
     },
     "identity": {
       "member": "عضو في PulseSoc"

@@ -663,8 +663,27 @@ function subtitleForStack(t: Translate, name: string) {
   // these: "PrivacySettings" contains neither "Account" nor "Safety", so it
   // would fall through to the generic "Native PulseSoc route".
   if (SETTINGS_ROUTE_NAMES.has(name)) return t("common:tabs.settings");
+  // Business OS and its sub-routes, checked before the substring tests below so
+  // that "BusinessOsMarketplace" reads as part of the business suite rather than
+  // as the consumer Marketplace. The hub itself is an App Store screenshot, so
+  // the generic placeholder must not appear under its title either.
+  if (name.startsWith("BusinessOs")) return t("common:navSubtitles.business");
   if (name.includes("Dashboard")) return t("common:navSubtitles.missionControl");
-  if (name.includes("Account") || name.includes("Safety") || name.includes("Verification"))
+  // "Trust", "Security" and "Scam" are here because every route that renders
+  // TrustSafetyScreen has to read as part of the trust suite. Three of them —
+  // TrustCenter, SecurityReport, ScamShield — contain none of the older
+  // substrings and were falling through to the generic placeholder; the Trust
+  // tile on the Profile OS grid lands on TrustCenter, which is an App Store
+  // screenshot candidate. The settings routes that would also match these words
+  // (SecuritySettings, PrivacySettings) are caught by the set check above.
+  if (
+    name.includes("Account") ||
+    name.includes("Safety") ||
+    name.includes("Verification") ||
+    name.includes("Trust") ||
+    name.includes("Security") ||
+    name.includes("Scam")
+  )
     return t("common:navSubtitles.trustIdentity");
   if (name.includes("Marketplace") || name.includes("Seller") || name.includes("Buyer"))
     return t("common:navSubtitles.commerce");

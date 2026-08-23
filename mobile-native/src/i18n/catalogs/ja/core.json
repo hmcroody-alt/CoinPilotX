@@ -207,7 +207,8 @@
       "activity": "アクティビティと通知のシグナル",
       "trustIdentity": "信頼と本人確認のレイヤー",
       "nativeRoute": "PulseSocのネイティブ画面",
-      "membership": "メンバーシップと請求"
+      "membership": "メンバーシップと請求",
+      "business": "ストア・出品・広告"
     },
     "identity": {
       "member": "PulseSocメンバー"
