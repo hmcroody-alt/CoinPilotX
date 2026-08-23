@@ -196,6 +196,7 @@
       "assetDetail": "资产",
       "page": "页面",
       "createPage": "创建公众形象",
+      "editPage": "编辑主页",
       "yourPages": "你的页面",
       "presence": "公众形象"
     },
@@ -212,6 +213,7 @@
       "presenceHome": "你的艺人和商家主页",
       "presenceManage": "你拥有或协助管理的主页",
       "presenceCreate": "艺人、商家或组织",
+      "presenceEdit": "名称、账号、图片和联系方式",
       "presencePublic": "公众形象页面"
     },
     "identity": {

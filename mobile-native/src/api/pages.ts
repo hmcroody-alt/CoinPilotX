@@ -171,9 +171,17 @@ export async function listPageIdentities(): Promise<PageIdentities> {
   return { personal: data.personal, pages: data.pages || [] };
 }
 
-export async function checkPageHandle(handle: string): Promise<HandleCheck> {
+/**
+ * `pageId` excludes that page from the uniqueness check. Without it, a page
+ * being edited collides with itself and its own handle reports as "taken by
+ * another page" — so an owner cannot save any change to a form that also
+ * carries the handle they already have. The server gates the exclusion on
+ * `edit_page`, so it cannot be used to probe another page's handle.
+ */
+export async function checkPageHandle(handle: string, pageId?: number): Promise<HandleCheck> {
+  const scope = pageId ? `&page_id=${pageId}` : "";
   const data = await pulseApi<{ ok: boolean } & HandleCheck>(
-    `/api/pages/handle-check?handle=${encodeURIComponent(handle)}`
+    `/api/pages/handle-check?handle=${encodeURIComponent(handle)}${scope}`
   );
   return data;
 }

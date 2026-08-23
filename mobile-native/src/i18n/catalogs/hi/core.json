@@ -196,6 +196,7 @@
       "assetDetail": "एसेट",
       "page": "पेज",
       "createPage": "उपस्थिति बनाएँ",
+      "editPage": "पेज संपादित करें",
       "yourPages": "आपके पेज",
       "presence": "उपस्थिति"
     },
@@ -212,6 +213,7 @@
       "presenceHome": "आपके आर्टिस्ट और बिज़नेस पेज",
       "presenceManage": "वे पेज जो आपके हैं या जिन्हें आप चलाने में मदद करते हैं",
       "presenceCreate": "आर्टिस्ट, बिज़नेस या संगठन",
+      "presenceEdit": "नाम, हैंडल, तस्वीरें और संपर्क",
       "presencePublic": "उपस्थिति पेज"
     },
     "identity": {

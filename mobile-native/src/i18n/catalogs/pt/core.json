@@ -196,6 +196,7 @@
       "assetDetail": "Ativo",
       "page": "Página",
       "createPage": "Criar presença",
+      "editPage": "Editar página",
       "yourPages": "Suas páginas",
       "presence": "Presença"
     },
@@ -212,6 +213,7 @@
       "presenceHome": "Suas páginas de artista e negócio",
       "presenceManage": "Páginas que você tem ou ajuda a gerir",
       "presenceCreate": "Artista, negócio ou organização",
+      "presenceEdit": "Nome, identificador, imagens e contato",
       "presencePublic": "Página de presença"
     },
     "identity": {

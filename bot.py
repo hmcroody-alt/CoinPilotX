@@ -17967,7 +17967,22 @@ def api_pulsesoc_page_handle_check():
     conn = pulse_pages_conn()
     try:
         pulsesoc_pages.ensure_tables(conn)
-        return jsonify({"ok": True, **pulsesoc_pages.check_handle(conn, request.args.get("handle"))})
+        # Editing a page re-checks the handle it already holds, which would come
+        # back "taken by another page" — by itself. `page_id` excludes it, and
+        # is gated on edit_page so the exclusion can only be asked for by
+        # someone who could rename the page anyway.
+        # A malformed page_id falls back to no exclusion, which is the stricter
+        # answer, rather than to a 500.
+        try:
+            exclude_page_id = int(request.args.get("page_id") or 0) or None
+        except (TypeError, ValueError):
+            exclude_page_id = None
+        if exclude_page_id:
+            pulsesoc_pages.require_permission(conn, user["user_id"], exclude_page_id, "edit_page")
+        return jsonify({
+            "ok": True,
+            **pulsesoc_pages.check_handle(conn, request.args.get("handle"), exclude_page_id=exclude_page_id),
+        })
     except Exception as exc:
         return pulse_pages_error_response(exc)
     finally:

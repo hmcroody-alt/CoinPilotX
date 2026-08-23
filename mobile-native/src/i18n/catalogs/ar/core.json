@@ -196,6 +196,7 @@
       "assetDetail": "الأصل",
       "page": "صفحة",
       "createPage": "إنشاء حضور",
+      "editPage": "تعديل الصفحة",
       "yourPages": "صفحاتك",
       "presence": "الحضور"
     },
@@ -212,6 +213,7 @@
       "presenceHome": "صفحات الفنان والنشاط التجاري الخاصة بك",
       "presenceManage": "صفحات تملكها أو تساعد في إدارتها",
       "presenceCreate": "فنان أو نشاط تجاري أو مؤسسة",
+      "presenceEdit": "الاسم والمعرّف والصور وجهة الاتصال",
       "presencePublic": "صفحة حضور"
     },
     "identity": {

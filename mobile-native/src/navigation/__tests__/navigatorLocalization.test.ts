@@ -32,10 +32,10 @@ beforeAll(async () => {
 describe("navigator header titles", () => {
   it("finds the title options it is meant to be checking", () => {
     // A refactor that changed the `options={{ title: ... }}` shape would make
-    // every assertion below vacuously pass. 109 stack screens (incl. the three
+    // every assertion below vacuously pass. 110 stack screens (incl. the four
     // Page OS routes, the Presence hub, and Watchlists + AssetDetail) + 14 tabs,
     // plus the `title` param the header passes when opening the activity inbox.
-    expect(TITLE_OPTIONS.length).toBe(126);
+    expect(TITLE_OPTIONS.length).toBe(127);
   });
 
   it("has no hardcoded string literal titles", () => {
@@ -107,25 +107,26 @@ describe("navigator chrome", () => {
   });
 
   /**
-   * All four Presence routes were answering with `navSubtitles.nativeRoute` —
+   * All the Presence routes were answering with `navSubtitles.nativeRoute` —
    * "Native PulseSoc route", a developer placeholder — including the public
    * page a visitor lands on from a shared link. Deriving the expected names
-   * from the registered screens means a fifth Presence route fails here rather
-   * than quietly inheriting the placeholder.
+   * from the registered screens means a newly added Presence route fails here
+   * rather than quietly inheriting the placeholder; that is exactly what
+   * happened when `PageEdit` was added, which is the point of the check.
    */
   it("gives every Presence route a subtitle of its own", () => {
     const registered = Array.from(SOURCE.matchAll(/<Stack\.Screen name="(Presence|Page[A-Za-z]*)"/g))
       .map((match) => match[1])
       .sort();
-    expect(registered).toEqual(["Page", "PageCreate", "PagesHub", "Presence"]);
+    expect(registered).toEqual(["Page", "PageCreate", "PageEdit", "PagesHub", "Presence"]);
 
     const block = SOURCE.slice(SOURCE.indexOf("const PRESENCE_ROUTE_SUBTITLES"));
     const entries = Array.from(
       block.slice(0, block.indexOf("};")).matchAll(/(\w+): "(common:navSubtitles\.[a-zA-Z]+)"/g)
     );
     expect(entries.map((entry) => entry[1]).sort()).toEqual(registered);
-    // Four routes, four different answers, none of them the placeholder.
-    expect(new Set(entries.map((entry) => entry[2])).size).toBe(4);
+    // One answer per route, all distinct, none of them the placeholder.
+    expect(new Set(entries.map((entry) => entry[2])).size).toBe(registered.length);
     entries.forEach((entry) => expect(entry[2]).not.toBe("common:navSubtitles.nativeRoute"));
   });
 });

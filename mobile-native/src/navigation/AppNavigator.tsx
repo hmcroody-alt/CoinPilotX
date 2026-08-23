@@ -78,6 +78,7 @@ import { PulseQueueScreen } from "../screens/PulseQueueScreen";
 import { PostDetailScreen } from "../screens/PostDetailScreen";
 import { ProfilePostViewerScreen } from "../screens/ProfilePostViewerScreen";
 import { PageCreateScreen } from "../screens/PageCreateScreen";
+import { PageEditScreen } from "../screens/PageEditScreen";
 import { PageScreen } from "../screens/PageScreen";
 import { PagesHubScreen } from "../screens/PagesHubScreen";
 import { PresenceHubScreen } from "../screens/PresenceHubScreen";
@@ -513,6 +514,7 @@ export function AppNavigator() {
       <Stack.Screen name="ProfileDetail" component={ProfileScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.profile") })} />
       <Stack.Screen name="Page" component={PageScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.page") })} />
       <Stack.Screen name="PageCreate" component={PageCreateScreen} options={{ title: t("common:screens.createPage") }} />
+      <Stack.Screen name="PageEdit" component={PageEditScreen} options={{ title: t("common:screens.editPage") }} />
       <Stack.Screen name="PagesHub" component={PagesHubScreen} options={{ title: t("common:screens.yourPages") }} />
       <Stack.Screen name="Presence" component={PresenceHubScreen} options={{ title: t("common:screens.presence") }} />
       <Stack.Screen name="PulseIdentity" component={PulseIdentityScreen} options={{ title: t("common:screens.pulseIdentity") }} />
@@ -671,6 +673,7 @@ const PRESENCE_ROUTE_SUBTITLES: Record<string, string> = {
   Presence: "common:navSubtitles.presenceHome",
   PagesHub: "common:navSubtitles.presenceManage",
   PageCreate: "common:navSubtitles.presenceCreate",
+  PageEdit: "common:navSubtitles.presenceEdit",
   Page: "common:navSubtitles.presencePublic"
 };
 

@@ -219,6 +219,15 @@ export function PagesHubScreen({ route, navigation }: Props) {
             >
               <Text style={styles.actionText}>View public page</Text>
             </Pressable>
+            {capabilities.has("edit_page") ? (
+              <Pressable
+                accessibilityRole="button"
+                style={styles.action}
+                onPress={() => navigation.navigate("PageEdit", { pageId: selected.id, title: selected.name })}
+              >
+                <Text style={styles.actionText}>Edit details</Text>
+              </Pressable>
+            ) : null}
             {manage && BUSINESS_TYPES.has(selected.page_type) ? (
               <Pressable
                 accessibilityRole="button"

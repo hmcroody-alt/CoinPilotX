@@ -371,6 +371,12 @@ export type RootStackParamList = {
    * without it the generic 16-type grid is offered.
    */
   PageCreate: { flavor?: "artist" | "business" } | undefined;
+  /**
+   * Identity editing for one page. `pageId` is required — the screen reads the
+   * manage view to learn whether the caller may edit at all, so there is no
+   * meaningful "the current page" default to fall back to.
+   */
+  PageEdit: { pageId: number; title?: string };
   /** My pages + role-gated management, linking into existing canonical systems. */
   PagesHub: { focusPageId?: number } | undefined;
   /**
