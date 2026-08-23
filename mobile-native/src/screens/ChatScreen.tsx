@@ -61,6 +61,7 @@ import {
 import { mergeConversationMessages } from "../api/messengerOrdering";
 import { APP_VERSION, PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
+import { recoverRoomConversation } from "../community/roomConversationRecovery";
 import { buildUndxUiContext, UndxUiContext } from "../undx/undxContext";
 import { choiceRowsOf, describeTransition, readTapOutcome, toActionCard, UndxTapOutcome } from "../undx/actionCards";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
@@ -509,6 +510,28 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setLoading(false);
     }
   }, [assistantConversation, conversationId, selfUserId]);
+
+  const retryLoad = useCallback(async () => {
+    const roomId = route.params.roomId;
+    if (!roomId) {
+      await load({ refresh: true });
+      return;
+    }
+    setRefreshing(true);
+    setError("");
+    try {
+      const repaired = await recoverRoomConversation(roomId, conversationId);
+      if (repaired.changed) {
+        navigation.replace("Chat", { ...route.params, conversationId: repaired.conversationId, roomId });
+        return;
+      }
+      await load({ refresh: true });
+    } catch (retryError) {
+      setError(retryError instanceof Error ? retryError.message : "Messages could not load.");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [conversationId, load, navigation, route.params]);
 
   const loadOlder = useCallback(async () => {
     if (assistantConversation) return;
@@ -1110,7 +1133,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         </View>
       </View>
       {error && hasMessages ? (
-        <Pressable accessibilityRole="button" accessibilityLabel="Retry loading messages" style={styles.errorBanner} onPress={() => load({ refresh: true })}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Retry loading messages" style={styles.errorBanner} onPress={() => retryLoad()}>
           <Text style={styles.error}>{error}</Text>
         </Pressable>
       ) : null}
@@ -1118,7 +1141,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         <LogiNexusStatePanel state="loading" title="Opening chat" body="Loading conversation history from the server." loading style={styles.loadingPanel} />
       ) : showFatalError ? (
         <LogiNexusStatePanel state="error" title="Messages could not load" body={error || "PulseSoc could not load this conversation. Tap retry to reconnect to the canonical message history."} style={styles.loadingPanel}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Retry loading messages" style={styles.retryStateButton} onPress={() => load({ refresh: true })}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Retry loading messages" style={styles.retryStateButton} onPress={() => retryLoad()}>
             <Text style={styles.retryStateText}>Retry</Text>
           </Pressable>
         </LogiNexusStatePanel>

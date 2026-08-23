@@ -270,6 +270,12 @@ export async function joinRoom(roomId: string) {
   );
 }
 
+export async function resolveRoomConversation(roomId: string) {
+  return pulseApi<{ ok?: boolean; room_id: string; conversation_id: number; can_message?: boolean; message?: string }>(
+    `/api/pulse/communications/rooms/${encodeURIComponent(roomId)}/conversation`
+  );
+}
+
 export async function manageRoom(roomId: string, action: "update" | "end" | "archive", input: { title?: string; description?: string; privacy?: "public" | "private" } = {}) {
   return pulseApi<{ ok?: boolean; message?: string }>(`/api/pulse/communications/rooms/${encodeURIComponent(roomId)}`, {
     method: "PATCH",

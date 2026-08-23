@@ -189,6 +189,10 @@ class RoomsGroupsMessagesTest(unittest.TestCase):
         with self.acting_as(user):
             return self.client.get(f"{V2}/conversations/{chat_id}/messages")
 
+    def resolve_room(self, user, room_id):
+        with self.acting_as(user):
+            return self.client.get(f"/api/pulse/communications/rooms/{room_id}/conversation")
+
     def bodies(self, resp):
         self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
         return [item.get("body") for item in resp.get_json().get("messages") or []]
@@ -245,8 +249,80 @@ class RoomsGroupsMessagesTest(unittest.TestCase):
         self.assertEqual(self.send_message(self.user_a, room.chat_id, "reachable").status_code, 200)
         self.assertIn("reachable", self.bodies(self.read_messages(self.user_a, room.chat_id)))
 
-        # ...and the lifecycle id must not, or the two have been confused again.
-        self.assertNotEqual(self.read_messages(self.user_a, room.room_id).status_code, 200)
+        # ...and the lifecycle id must not resolve to this room's thread. It may
+        # collide with an unrelated v2 integer, which is even more dangerous
+        # than a 404 and is why the mobile contract cannot overload the field.
+        wrong = self.read_messages(self.user_a, room.room_id)
+        if wrong.status_code == 200:
+            self.assertNotEqual(str(wrong.get_json().get("conversation_id")), str(room.chat_id))
+
+    def test_existing_room_listing_and_resolve_reuse_the_canonical_chat(self):
+        room = self.create_room(self.user_a, "Review Existing Resolve")
+        listed = next(item for item in self.list_rooms(self.user_a) if str(item.get("room_id")) == room.room_id)
+        self.assertEqual(listed.get("conversation_id"), room.chat_id)
+
+        first = self.resolve_room(self.user_a, room.room_id)
+        second = self.resolve_room(self.user_a, room.room_id)
+        self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+        self.assertEqual(second.status_code, 200, second.get_data(as_text=True))
+        self.assertEqual(first.get_json().get("conversation_id"), room.chat_id)
+        self.assertEqual(second.get_json().get("conversation_id"), room.chat_id)
+
+    def test_missing_and_stale_room_bindings_self_heal_once(self):
+        room = self.create_room(self.user_a, "Review Self Heal")
+        conn = bot.db(); conn.row_factory = bot.sqlite3.Row; cur = conn.cursor()
+
+        # A missing forward mapping reuses the reverse canonical binding.
+        cur.execute("UPDATE pulse_conversations SET comm_v2_conversation_id=0 WHERE id=?", (int(room.room_id),))
+        conn.commit(); conn.close()
+        missing = self.resolve_room(self.user_a, room.room_id)
+        self.assertEqual(missing.status_code, 200, missing.get_data(as_text=True))
+        self.assertEqual(missing.get_json().get("conversation_id"), room.chat_id)
+
+        # A genuinely stale mapping (target row gone) is replaced once, then
+        # every subsequent resolve returns the same repaired conversation.
+        conn = bot.db(); cur = conn.cursor()
+        cur.execute("DELETE FROM comm_v2_conversations WHERE id=?", (int(room.chat_id),))
+        cur.execute("UPDATE pulse_conversations SET comm_v2_conversation_id=987654321 WHERE id=?", (int(room.room_id),))
+        conn.commit(); conn.close()
+        repaired = self.resolve_room(self.user_a, room.room_id)
+        repeated = self.resolve_room(self.user_a, room.room_id)
+        repaired_id = repaired.get_json().get("conversation_id")
+        self.assertEqual(repaired.status_code, 200, repaired.get_data(as_text=True))
+        self.assertTrue(repaired_id)
+        self.assertNotEqual(repaired_id, room.chat_id)
+        self.assertEqual(repeated.get_json().get("conversation_id"), repaired_id)
+
+        conn = bot.db(); conn.row_factory = bot.sqlite3.Row; cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS total FROM comm_v2_conversations WHERE legacy_conversation_id=?", (int(room.room_id),))
+        self.assertEqual(int(dict(cur.fetchone()).get("total") or 0), 1)
+        conn.close()
+
+    def test_room_resolve_is_members_only_and_never_resurrects_deleted_rooms(self):
+        room = self.create_room(self.user_a, "Review Resolve Authority", privacy="private")
+        self.assertEqual(self.resolve_room(self.user_c, room.room_id).status_code, 403)
+        with self.acting_as(self.user_a):
+            deleted = self.client.delete(f"/api/pulse/communications/rooms/{room.room_id}")
+        self.assertEqual(deleted.status_code, 200, deleted.get_data(as_text=True))
+        self.assertEqual(self.resolve_room(self.user_a, room.room_id).status_code, 404)
+
+    def test_reconciliation_preserves_and_migrates_legacy_room_history_once(self):
+        room = self.create_room(self.user_a, "Review Legacy History")
+        conn = bot.db(); cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO pulse_messages (conversation_id,sender_user_id,body,message_type,created_at) VALUES (?,?,?,'text',?)",
+            (int(room.room_id), self.user_a["user_id"], "preserved legacy message", "2026-08-22T12:00:00"),
+        )
+        cur.execute("UPDATE pulse_conversations SET comm_v2_conversation_id=0 WHERE id=?", (int(room.room_id),))
+        conn.commit(); conn.close()
+
+        self.assertEqual(self.resolve_room(self.user_a, room.room_id).status_code, 200)
+        conn = bot.db(); conn.row_factory = bot.sqlite3.Row; cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS total FROM pulse_messages WHERE conversation_id=? AND body=?", (int(room.room_id), "preserved legacy message"))
+        self.assertEqual(int(dict(cur.fetchone()).get("total") or 0), 1)
+        cur.execute("SELECT COUNT(*) AS total FROM comm_v2_messages WHERE conversation_id=? AND body=?", (int(room.chat_id), "preserved legacy message"))
+        self.assertEqual(int(dict(cur.fetchone()).get("total") or 0), 1, "bridge must migrate legacy history exactly once")
+        conn.close()
 
     def test_repeated_send_of_one_client_message_id_stores_one_message(self):
         """A retried send (flaky network, user double-tap) must not duplicate."""
@@ -451,6 +527,27 @@ class RoomsGroupsMessagesTest(unittest.TestCase):
         self.assertEqual(read.status_code, 200, read.get_data(as_text=True))
         self.assertIn("Lobby hello", [item.get("body") for item in read.get_json().get("messages") or []])
 
+    def test_builtin_room_resolves_to_v2_and_migrates_existing_history(self):
+        with self.acting_as(self.user_a):
+            legacy_list = self.client.get("/api/pulse/messages/rooms")
+        room_key = str((legacy_list.get_json().get("rooms") or [])[0].get("room_id") or "")
+        with self.acting_as(self.user_a):
+            legacy_send = self.client.post(f"/api/pulse/messages/rooms/{room_key}/messages", json={"body": "Built-in legacy history"})
+        self.assertEqual(legacy_send.status_code, 200, legacy_send.get_data(as_text=True))
+
+        resolved_a = self.resolve_room(self.user_a, room_key)
+        self.assertEqual(resolved_a.status_code, 200, resolved_a.get_data(as_text=True))
+        chat_id = resolved_a.get_json().get("conversation_id")
+        self.assertIn("Built-in legacy history", self.bodies(self.read_messages(self.user_a, chat_id)))
+
+        with self.acting_as(self.user_b):
+            joined_b = self.client.post(f"/api/pulse/messages/rooms/{room_key}/join", json={})
+        self.assertEqual(joined_b.status_code, 200, joined_b.get_data(as_text=True))
+        self.assertEqual(joined_b.get_json().get("conversation_id"), chat_id)
+        self.assertIn("Built-in legacy history", self.bodies(self.read_messages(self.user_b, chat_id)))
+        self.assertEqual(self.send_message(self.user_b, chat_id, "Built-in V2 reply").status_code, 200)
+        self.assertIn("Built-in V2 reply", self.bodies(self.read_messages(self.user_a, chat_id)))
+
     def test_group_create_join_and_chat_are_wired(self):
         with self.acting_as(self.user_a):
             created = self.client.post(
@@ -487,11 +584,15 @@ class RoomsGroupsMessagesTest(unittest.TestCase):
         # conversation rather than the legacy group conversation row.
         opened_a = open_chat(self.user_a)
         self.assertEqual(opened_a.get("conversation_id"), chat_id)
-        self.assertNotEqual(
-            chat_id,
-            opened_b.get("group_conversation_id"),
-            "the chat id handed to clients must be the v2 conversation, not the legacy group conversation",
+        group_conversation_id = opened_b.get("group_conversation_id")
+        conn = bot.db(); conn.row_factory = bot.sqlite3.Row; cur = conn.cursor()
+        cur.execute("SELECT comm_v2_conversation_id FROM pulse_conversations WHERE id=?", (group_conversation_id,))
+        self.assertEqual(
+            int(dict(cur.fetchone()).get("comm_v2_conversation_id") or 0),
+            int(chat_id),
+            "the client id must be the canonical v2 binding even when both tables happen to allocate the same integer",
         )
+        conn.close()
 
         self.assertEqual(self.send_message(self.user_b, chat_id, "Group hello").status_code, 200)
         self.assertIn("Group hello", self.bodies(self.read_messages(self.user_a, chat_id)))

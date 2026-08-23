@@ -41,6 +41,7 @@ import {
   PulseRoom,
   PulseRoomParticipant,
   reportGroup,
+  resolveRoomConversation,
   setGroupMemberRole
 } from "../api/groups";
 import { CommunityCreateIntent, takeCommunityCreateIntent } from "../community/communityCreateIntent";
@@ -219,12 +220,12 @@ export function GroupsScreen({ route, navigation }: Props) {
     setBusyKey(`room-${room.id}`);
     setError("");
     try {
-      let conversationId = Number(room.conversation_id || 0);
-      if (!conversationId) {
-        const result = await joinRoom(room.room_id || room.id);
-        conversationId = Number(result.conversation_id || 0);
-      }
-      if (conversationId && navigation) navigation.navigate("Chat", { conversationId, title: room.title || room.name });
+      const roomId = room.room_id || room.id;
+      const result = room.current_user_role
+        ? await resolveRoomConversation(roomId)
+        : await joinRoom(roomId);
+      const conversationId = Number(result.conversation_id || 0);
+      if (conversationId && navigation) navigation.navigate("Chat", { conversationId, roomId, title: room.title || room.name });
       else setError("Room chat is not available yet.");
     } catch (roomError) {
       setError(roomError instanceof Error ? roomError.message : "Room could not be opened.");
@@ -398,7 +399,7 @@ export function GroupsScreen({ route, navigation }: Props) {
           onCreated={async (result) => {
             setCreateKind(null);
             await load("refresh");
-            if (result.conversationId && navigation) navigation.navigate("Chat", { conversationId: result.conversationId, title: result.title });
+            if (result.conversationId && navigation) navigation.navigate("Chat", { conversationId: result.conversationId, roomId: result.roomId, title: result.title });
           }}
         />
       ) : null}
@@ -409,7 +410,7 @@ export function GroupsScreen({ route, navigation }: Props) {
 function CommunityCreateSheet({ kind, onClose, onCreated }: {
   kind: CommunityCreateIntent;
   onClose: () => void;
-  onCreated: (result: { conversationId?: number; title: string }) => Promise<void>;
+  onCreated: (result: { conversationId?: number; roomId?: string; title: string }) => Promise<void>;
 }) {
   const insets = useSafeAreaInsets();
   const [title, setTitle] = useState("");
@@ -430,7 +431,7 @@ function CommunityCreateSheet({ kind, onClose, onCreated }: {
         await onCreated({ title: title.trim() });
       } else {
         const result = await createRoom({ title: title.trim(), description: description.trim(), privacy, inviteeUserIds });
-        await onCreated({ conversationId: Number(result.conversation_id || 0) || undefined, title: title.trim() });
+        await onCreated({ conversationId: Number(result.conversation_id || 0) || undefined, roomId: result.room_id, title: title.trim() });
       }
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : `${label} failed.`);

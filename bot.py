@@ -43569,7 +43569,7 @@ def pulse_room_definition(room_id):
     return None
 
 
-def pulse_ensure_default_rooms(cur, current_user_id):
+def pulse_ensure_default_rooms(cur, current_user_id, conn=None, canonical_chat=False):
     rooms = []
     room_member_ids_by_conversation = {}
     for room in PULSE_CHAT_ROOMS:
@@ -43635,7 +43635,12 @@ def pulse_ensure_default_rooms(cur, current_user_id):
                 # with nobody in it still rendered a bar just under half full --
                 # a simulated activity signal on a dead room.
                 "energy": min(99, online_count * 12),
-                "conversation_id": conversation_id,
+                "conversation_id": (
+                    pulse_chat_bridge.sync_thread(cur, conn, conversation_id)
+                    if canonical_chat and conn is not None
+                    else conversation_id
+                ),
+                "legacy_conversation_id": conversation_id,
                 "name": room["name"],
                 "title": room["name"],
                 "description": room["description"],
@@ -84675,7 +84680,7 @@ def pulse_comm_pulse_conversations(cur, user_id, include_types, trace_id="", lim
     return items, skipped
 
 
-def pulse_comm_rooms(cur, user_id):
+def pulse_comm_rooms(cur, user_id, conn=None):
     rooms = [
         {
             **room,
@@ -84686,7 +84691,7 @@ def pulse_comm_rooms(cur, user_id):
             "latest_message": room.get("last_message") or "",
             "capabilities": {"voice": False, "video": False, "files": False, "undx": False},
         }
-        for room in pulse_ensure_default_rooms(cur, user_id)
+        for room in pulse_ensure_default_rooms(cur, user_id, conn=conn, canonical_chat=True)
     ]
     cur.execute(
         """
@@ -84707,11 +84712,18 @@ def pulse_comm_rooms(cur, user_id):
     )
     for row in cur.fetchall():
         room = dict(row)
-        conversation_id = int(room.get("id") or 0)
+        room_id = int(room.get("id") or 0)
+        # Room lifecycle uses the legacy id; ChatScreen only understands the
+        # canonical Communications V2 id. Reconcile on every authorized listing
+        # so rooms created before the bridge (and stale mappings) self-heal.
+        chat_conversation_id = 0
+        if room.get("current_user_role") and conn is not None:
+            chat_conversation_id = pulse_chat_bridge.sync_thread(cur, conn, room_id)
         rooms.append({
-            "id": str(conversation_id),
-            "room_id": str(conversation_id),
-            "conversation_id": conversation_id if room.get("current_user_role") else None,
+            "id": str(room_id),
+            "room_id": str(room_id),
+            "conversation_id": chat_conversation_id or None,
+            "chat_available": bool(chat_conversation_id),
             "conversation_type": "room",
             "source": "pulse",
             "name": room.get("title") or "PulseSoc Room",
@@ -84919,7 +84931,7 @@ def api_pulse_communications_conversations():
             items.extend(pulse_items)
             items.extend(pulse_comm_legacy_conversations(user["user_id"]))
         if kind in {"all", "rooms", "room"}:
-            items.extend(pulse_comm_rooms(cur, user["user_id"]))
+            items.extend(pulse_comm_rooms(cur, user["user_id"], conn))
         if kind in {"all", "groups", "group"}:
             group_items, group_skipped = pulse_comm_pulse_conversations(cur, user["user_id"], {"group", "community", "community_group", "creator", "live"}, trace_id=trace_id)
             skipped.extend(group_skipped)
@@ -84979,20 +84991,60 @@ def api_pulse_communications_rooms():
                 cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
                 member_count = int(dict(cur.fetchone() or {}).get("total") or 1)
                 cur.execute("UPDATE pulse_conversations SET member_count=? WHERE id=?", (member_count, conversation_id))
-            conn.commit()
             # The room entity lives here, but every client reads the v2 message stack,
             # so hand back the paired v2 conversation id for chat. room_id stays legacy —
             # it is what join/leave/manage/role are keyed on.
-            chat_conversation_id = pulse_chat_bridge.sync_thread(cur, conn, conversation_id) or conversation_id
+            chat_conversation_id = pulse_chat_bridge.sync_thread(cur, conn, conversation_id)
+            if not chat_conversation_id:
+                conn.close()
+                return pulse_comm_error("Room chat is temporarily unavailable. Retry to repair the conversation.", 503, trace_id)
             conn.close()
             pulse_emit_event("community_room_created", {"conversation_id": chat_conversation_id, "privacy": privacy}, user["user_id"], conversation_id)
             return jsonify({"ok": True, "room_id": str(conversation_id), "conversation_id": chat_conversation_id, "message": "Room started.", "next_url": f"/pulse/messages/{chat_conversation_id}", "trace_id": trace_id})
-        rooms = pulse_comm_rooms(cur, user["user_id"])
+        rooms = pulse_comm_rooms(cur, user["user_id"], conn)
         conn.commit(); conn.close()
         return jsonify({"ok": True, "items": rooms, "rooms": rooms, "trace_id": trace_id, "features": pulse_comm_features()})
     except Exception as exc:
         logging.exception("PULSE_COMM_ROOMS_FAILED trace_id=%s user_id=%s", trace_id, user.get("user_id"))
         return pulse_comm_error("Rooms could not load.", 500, trace_id)
+
+
+@webhook_app.route("/api/pulse/communications/rooms/<room_id>/conversation", methods=["GET"])
+@webhook_app.route("/api/pulse/communications/rooms/<int:room_id>/conversation", methods=["GET"])
+def api_pulse_community_room_conversation(room_id):
+    """Resolve and idempotently repair a text Room's canonical chat binding."""
+    init_db(); user = api_account_user()
+    if not user:
+        return pulse_comm_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor(); ensure_pulse_messenger_schema(cur, conn)
+    if not str(room_id).isdigit():
+        definition = pulse_room_definition(room_id)
+        if not definition:
+            conn.close(); return pulse_comm_error("Room not found.", 404)
+        result, status = pulse_get_or_create_room_conversation(cur, user["user_id"], room_key=definition["key"])
+        legacy_conversation_id = safe_int(result.get("conversation_id"), 0)
+        chat_conversation_id = pulse_chat_bridge.sync_thread(cur, conn, legacy_conversation_id)
+        if not chat_conversation_id:
+            conn.close(); return pulse_comm_error("Room chat is temporarily unavailable. Retry to repair the conversation.", 503)
+        conn.close()
+        return jsonify({"ok": True, "room_id": definition["key"], "conversation_id": chat_conversation_id, "can_message": True})
+    room_id = safe_int(room_id, 0)
+    room = pulse_community_room(cur, room_id)
+    if not room or str(room.get("status") or "active") != "active":
+        conn.close(); return pulse_comm_error("Room not found.", 404)
+    role = pulse_community_room_role(cur, room_id, user["user_id"])
+    if not role:
+        conn.close(); return pulse_comm_error("Join this room before opening its messages.", 403)
+    chat_conversation_id = pulse_chat_bridge.sync_thread(cur, conn, room_id)
+    if not chat_conversation_id:
+        conn.close(); return pulse_comm_error("Room chat is temporarily unavailable. Retry to repair the conversation.", 503)
+    conn.close()
+    return jsonify({
+        "ok": True,
+        "room_id": str(room_id),
+        "conversation_id": chat_conversation_id,
+        "can_message": True,
+    })
 
 
 @webhook_app.route("/api/pulse/communications/rooms/<int:room_id>/join", methods=["POST"])
@@ -85013,10 +85065,12 @@ def api_pulse_community_room_join(room_id):
     else:
         cur.execute("INSERT INTO pulse_conversation_participants (conversation_id,user_id,role,muted,archived,joined_at,created_at) VALUES (?,?,'member',0,0,?,?)", (room_id, user["user_id"], now, now))
     cur.execute("UPDATE pulse_conversations SET member_count=(SELECT COUNT(*) FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''), updated_at=? WHERE id=?", (room_id, now, room_id))
-    conn.commit()
     # Grant the joiner access to the paired v2 thread and return that id — the
     # client navigates straight into chat with whatever comes back here.
-    chat_conversation_id = pulse_chat_bridge.sync_thread(cur, conn, room_id) or room_id
+    chat_conversation_id = pulse_chat_bridge.sync_thread(cur, conn, room_id)
+    if not chat_conversation_id:
+        conn.close()
+        return pulse_comm_error("Room chat is temporarily unavailable. Retry to repair the conversation.", 503)
     conn.close()
     return jsonify({"ok": True, "room_id": str(room_id), "conversation_id": chat_conversation_id, "message": "Room joined.", "next_url": f"/pulse/messages/{chat_conversation_id}"})
 
@@ -85373,7 +85427,17 @@ def api_pulse_chatroom_join(room_id):
         result, status = pulse_get_or_create_room_conversation(cur, user["user_id"], room_key=room["key"])
         if result.get("ok"):
             result["trace_id"] = trace_id
-        conn.commit(); conn.close()
+        legacy_conversation_id = safe_int(result.get("conversation_id"), 0)
+        chat_conversation_id = pulse_chat_bridge.sync_thread(cur, conn, legacy_conversation_id)
+        if result.get("ok") and not chat_conversation_id:
+            conn.close()
+            return api_error("Room chat is temporarily unavailable. Retry to repair the conversation.", 503, trace_id)
+        if chat_conversation_id:
+            result["room_id"] = room["key"]
+            result["legacy_conversation_id"] = legacy_conversation_id
+            result["conversation_id"] = chat_conversation_id
+            result["next_url"] = f"/pulse/messages/{chat_conversation_id}"
+        conn.close()
         if result.get("ok"):
             pulse_emit_event("participant_joined", {"conversation_id": result.get("conversation_id"), "room_id": room["key"], "user_id": user["user_id"], "display_name": user.get("display_name") or user.get("username") or "PulseSoc member"}, user["user_id"], int(result.get("conversation_id") or 0))
         return jsonify(result), status

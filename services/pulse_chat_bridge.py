@@ -42,6 +42,7 @@ is a text conversation row; the audio/live surfaces are a different subsystem.
 from __future__ import annotations
 
 import logging
+import json
 import secrets
 from datetime import datetime
 
@@ -114,6 +115,14 @@ def _ensure_v2_schema(cur, conn) -> None:
         service._ensure_columns(bot, cur, conn)
     except Exception:
         logging.debug("PULSE_CHAT_BRIDGE_V2_COLUMN_CHECK_SKIPPED", exc_info=True)
+    cur.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_comm_v2_conversations_legacy "
+        "ON comm_v2_conversations(legacy_conversation_id)"
+    )
+    cur.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_comm_v2_messages_legacy "
+        "ON comm_v2_messages(legacy_message_id)"
+    )
 
 
 def _legacy_conversation(cur, legacy_conversation_id: int) -> dict:
@@ -159,9 +168,9 @@ def _create_v2_conversation(cur, legacy: dict) -> int:
     cur.execute(
         """
         INSERT INTO comm_v2_conversations
-        (public_id, conversation_type, title, description, owner_user_id, created_by_user_id,
+        (public_id, conversation_type, title, description, owner_user_id, created_by_user_id, legacy_conversation_id,
          privacy, visibility, status, is_discoverable, member_count, created_at, updated_at, last_activity_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, 0, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, 0, ?, ?, ?)
         """,
         (
             f"{prefix}_{secrets.token_hex(8)}",
@@ -170,6 +179,7 @@ def _create_v2_conversation(cur, legacy: dict) -> int:
             str(legacy.get("description") or "")[:500],
             _int(legacy.get("owner_user_id")),
             _int(legacy.get("created_by_user_id") or legacy.get("owner_user_id")),
+            _int(legacy.get("id")),
             privacy,
             "public" if is_public else "members",
             is_public,
@@ -308,7 +318,7 @@ def _reconcile_conversation(cur, v2_conversation_id: int, legacy: dict) -> None:
     cur.execute(
         """
         UPDATE comm_v2_conversations
-        SET title=?, description=?, owner_user_id=?, privacy=?, visibility=?, is_discoverable=?,
+        SET title=?, description=?, owner_user_id=?, legacy_conversation_id=?, privacy=?, visibility=?, is_discoverable=?,
             status=?, deleted_at=?, updated_at=?,
             member_count=(SELECT COUNT(*) FROM comm_v2_participants
                           WHERE conversation_id=? AND membership_state='active' AND COALESCE(left_at,'')='')
@@ -318,6 +328,7 @@ def _reconcile_conversation(cur, v2_conversation_id: int, legacy: dict) -> None:
             str(legacy.get("title") or "")[:120],
             str(legacy.get("description") or "")[:500],
             _int(legacy.get("owner_user_id")),
+            _int(legacy.get("id")),
             privacy,
             "public" if is_public else "members",
             is_public,
@@ -328,6 +339,68 @@ def _reconcile_conversation(cur, v2_conversation_id: int, legacy: dict) -> None:
             int(v2_conversation_id),
         ),
     )
+
+
+def _migrate_legacy_messages(cur, legacy_conversation_id: int, v2_conversation_id: int) -> None:
+    """Copy visible legacy history once, preserving the source rows in place."""
+    cur.execute(
+        """
+        SELECT id, sender_user_id, COALESCE(body,'') AS body,
+               COALESCE(message_type,'text') AS message_type,
+               COALESCE(reply_to_id,0) AS reply_to_id,
+               COALESCE(client_message_id,'') AS client_message_id,
+               COALESCE(delivery_status,'sent') AS delivery_status,
+               COALESCE(created_at,'') AS created_at,
+               COALESCE(edited_at,'') AS edited_at
+        FROM pulse_messages
+        WHERE conversation_id=? AND COALESCE(deleted_at,'')=''
+        ORDER BY id ASC
+        """,
+        (int(legacy_conversation_id),),
+    )
+    messages = [_row(row) for row in cur.fetchall()]
+    now = _now()
+    for message in messages:
+        legacy_message_id = _int(message.get("id"))
+        if not legacy_message_id:
+            continue
+        cur.execute("SELECT id FROM comm_v2_messages WHERE legacy_message_id=? LIMIT 1", (legacy_message_id,))
+        if cur.fetchone():
+            continue
+        cur.execute(
+            """
+            INSERT INTO comm_v2_messages
+            (public_id, legacy_message_id, conversation_id, sender_user_id, message_type, body,
+             reply_to_message_id, client_message_id, delivery_status, moderation_status,
+             metadata_json, created_at, updated_at, edited_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 'approved', ?, ?, ?, ?)
+            """,
+            (
+                f"legacy_{legacy_conversation_id}_{legacy_message_id}",
+                legacy_message_id,
+                int(v2_conversation_id),
+                _int(message.get("sender_user_id")),
+                str(message.get("message_type") or "text")[:40],
+                str(message.get("body") or "")[:4000],
+                str(message.get("client_message_id") or "")[:120],
+                str(message.get("delivery_status") or "sent")[:40],
+                json.dumps({"legacy_conversation_id": int(legacy_conversation_id)}, separators=(",", ":")),
+                message.get("created_at") or now,
+                message.get("edited_at") or message.get("created_at") or now,
+                message.get("edited_at") or "",
+            ),
+        )
+    for message in messages:
+        reply_to_id = _int(message.get("reply_to_id"))
+        if not reply_to_id:
+            continue
+        cur.execute("SELECT id FROM comm_v2_messages WHERE legacy_message_id=? LIMIT 1", (reply_to_id,))
+        target = _int(_row(cur.fetchone()).get("id"))
+        if target:
+            cur.execute(
+                "UPDATE comm_v2_messages SET reply_to_message_id=? WHERE legacy_message_id=?",
+                (target, _int(message.get("id"))),
+            )
 
 
 def sync_thread(cur, conn, legacy_conversation_id, commit: bool = True) -> int:
@@ -359,6 +432,12 @@ def sync_thread(cur, conn, legacy_conversation_id, commit: bool = True) -> int:
             if not cur.fetchone():
                 v2_conversation_id = 0
         if not v2_conversation_id:
+            cur.execute(
+                "SELECT id FROM comm_v2_conversations WHERE legacy_conversation_id=? LIMIT 1",
+                (legacy_conversation_id,),
+            )
+            v2_conversation_id = _int(_row(cur.fetchone()).get("id"))
+        if not v2_conversation_id:
             v2_conversation_id = _create_v2_conversation(cur, legacy)
             if not v2_conversation_id:
                 return 0
@@ -369,6 +448,7 @@ def sync_thread(cur, conn, legacy_conversation_id, commit: bool = True) -> int:
 
         _reconcile_participants(cur, v2_conversation_id, legacy, _legacy_participants(cur, legacy_conversation_id))
         _reconcile_conversation(cur, v2_conversation_id, legacy)
+        _migrate_legacy_messages(cur, legacy_conversation_id, v2_conversation_id)
         if commit:
             conn.commit()
         return v2_conversation_id

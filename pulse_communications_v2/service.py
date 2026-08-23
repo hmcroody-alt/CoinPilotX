@@ -241,6 +241,7 @@ def _ensure_columns(bot, cur, conn) -> None:
         ("direct_key", "TEXT"),
         ("community_id", "INTEGER"),
         ("channel_id", "INTEGER"),
+        ("legacy_conversation_id", "INTEGER"),
         ("privacy", "TEXT DEFAULT 'private'"),
         ("visibility", "TEXT DEFAULT 'members'"),
         ("status", "TEXT DEFAULT 'active'"),
@@ -273,6 +274,7 @@ def _ensure_columns(bot, cur, conn) -> None:
     ], conn=conn)
     add(cur, "comm_v2_messages", [
         ("public_id", "TEXT"),
+        ("legacy_message_id", "INTEGER"),
         ("conversation_id", "INTEGER"),
         ("sender_user_id", "INTEGER"),
         ("message_type", "TEXT DEFAULT 'text'"),

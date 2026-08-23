@@ -108,6 +108,7 @@ export type RootStackParamList = {
   } | undefined;
   Chat: {
     conversationId: number;
+    roomId?: string;
     title?: string;
     avatarUrl?: string;
     presence?: string;
