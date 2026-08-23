@@ -6,14 +6,39 @@ ROOT = Path(__file__).resolve().parents[2]
 BOT = (ROOT / "bot.py").read_text(encoding="utf-8")
 RECORDING = (ROOT / "services" / "agora_cloud_recording_service.py").read_text(encoding="utf-8")
 MUX = (ROOT / "services" / "mux_live_service.py").read_text(encoding="utf-8")
+WORKER = (ROOT / "media_worker.py").read_text(encoding="utf-8")
 
 
 def test_private_r2_recording_is_prepared_for_mux_without_public_objects():
     assert "prepare_private_mux_input" in RECORDING
     assert 'Config(signature_version="s3v4")' in RECORDING
-    assert 'ContentType": "video/mp2t"' in RECORDING
+    assert 'ContentType="application/vnd.apple.mpegurl"' in RECORDING
     assert "generate_presigned_url" in RECORDING
+    assert "get_object(Bucket=bucket, Key=segment_key)" not in RECORDING
+    assert "upload_fileobj" not in RECORDING
     assert "create_mux_asset_from_private_recording" in MUX
+
+
+def test_end_live_enqueues_exactly_one_replay_job_without_moving_video_in_flask():
+    endpoint = BOT[BOT.index("def api_pulse_live_end"):BOT.index("def pulse_creator_status_page")]
+    assert "finalize_live_replay" in endpoint
+    assert "prepare_private_mux_input" not in endpoint
+    assert "create_mux_asset_from_private_recording" not in endpoint
+    assert "agora_cloud_recording_service.stop(" not in endpoint
+    assert "status IN ('pending','processing')" in endpoint
+
+
+def test_existing_media_worker_finalizes_and_reconciles_live_replay():
+    assert '"finalize_live_replay"' in WORKER
+    assert "_process_live_replay_job" in WORKER
+    assert "prepare_private_mux_input" in WORKER
+    assert "create_mux_asset_from_private_recording" in WORKER
+    assert "create_mux_asset_from_live_recording" in WORKER
+    assert "mark_live_feed_replay_ready" in WORKER
+    assert "reconcile_live_replay_backlog" in WORKER
+    assert "timedelta(minutes=10)" in WORKER
+    assert "terminal_posts_repaired" in WORKER
+    assert 'MEDIA_WORKER_INTERVAL_SECONDS", "5"' in WORKER
 
 
 def test_mux_ready_stores_replay_identity_and_duration_before_reel_creation():

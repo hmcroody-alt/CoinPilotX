@@ -20,7 +20,9 @@ describe("Live Feed distribution architecture", () => {
   it("opens canonical Live and polls only the visible Live post for ended/replay state", () => {
     expect(home).toContain('navigation.navigate("LiveDetail", { liveId');
     expect(home).toContain("getPostDetail(activeLivePost.id)");
-    expect(postCard).toContain("Replay processing");
+    expect(postCard).toContain("Preparing replay…");
+    expect(postCard).toContain("Replay unavailable");
+    expect(postCard).toContain('liveStatus === "processing"');
     expect(postCard).toContain("Join Live");
     expect(profileViewer).toContain("getPostDetail(activePostId)");
   });

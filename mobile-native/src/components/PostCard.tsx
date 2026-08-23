@@ -163,7 +163,8 @@ export function PostCard({
   const liveStatus = String(post.live?.status || "").toLowerCase();
   const isLivePost = String(post.content_type || post.post_type || "").toLowerCase() === "live" || liveId > 0;
   const isRealtimeLive = isLivePost && ["starting", "live", "broadcasting", "active", "connecting", "connected", "reconnecting"].includes(liveStatus);
-  const isReplayProcessing = isLivePost && ["ended", "processing"].includes(liveStatus);
+  const isReplayProcessing = isLivePost && liveStatus === "processing";
+  const isReplayUnavailable = isLivePost && ["unavailable", "failed"].includes(liveStatus);
 
   async function submitInlineComment() {
     const bodyText = commentBody.trim();
@@ -348,8 +349,16 @@ export function PostCard({
         </View>
       ) : isReplayProcessing ? (
         <View style={[styles.liveProcessing, mediaBleedStyle]}>
+          {post.live?.preview_url ? <Image source={{ uri: post.live.preview_url }} style={StyleSheet.absoluteFill} blurRadius={8} /> : null}
           <Text style={styles.liveProcessingTitle}>Live ended</Text>
-          <Text style={styles.liveProcessingBody}>Replay processing</Text>
+          <ActivityIndicator color={colors.accent} />
+          <Text style={styles.liveProcessingBody}>Preparing replay…</Text>
+        </View>
+      ) : isReplayUnavailable ? (
+        <View style={[styles.liveProcessing, mediaBleedStyle]}>
+          {post.live?.preview_url ? <Image source={{ uri: post.live.preview_url }} style={StyleSheet.absoluteFill} blurRadius={8} /> : null}
+          <Text style={styles.liveProcessingTitle}>Live ended</Text>
+          <Text style={styles.liveProcessingBody}>Replay unavailable</Text>
         </View>
       ) : null}
 
