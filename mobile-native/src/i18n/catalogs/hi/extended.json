@@ -2070,6 +2070,11 @@
       "undx": {
         "advanced": "एडवांस्ड UNDX"
       },
+      "verification": {
+        "blue_check": {
+          "apply": "ब्लू चेक आवेदन तक पहुँच"
+        }
+      },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "Founder Hub का एक्सेस",
       "premium_upload_limits": "ज़्यादा अपलोड सीमा",

@@ -42,6 +42,15 @@ export type VerificationState = {
     founderNumber: number;
     plan: string;
   };
+  /** Server's answer to "may this account submit a Blue Check request".
+   *
+   *  Read from `/api/premium/status`, which resolves it through the same
+   *  entitlement function the submit endpoint gates on, so the button this
+   *  drives cannot promise something the POST then refuses. It is deliberately
+   *  separate from `premiumBadges.premiumActive`: holding a membership is not
+   *  the same fact as holding this capability, and the client must not infer
+   *  one from the other. Absent or unparseable means locked. */
+  blueCheckApplyAllowed: boolean;
   checklist: VerificationChecklistItem[];
   tracks: VerificationTrack[];
   loadedAt: string;
@@ -59,6 +68,9 @@ export type VerificationTrack = {
   label: string;
   detail: string;
   documentRequired: boolean;
+  /** True when submitting on this track requires an active PulseSoc Premium
+   *  membership. It gates the *application*, never the decision. */
+  premiumGated: boolean;
 };
 
 export type VerificationActionResponse = {
@@ -68,6 +80,9 @@ export type VerificationActionResponse = {
   status?: string;
   verification_type?: string;
   document_type?: string;
+  /** Set when the server matched an application already open on this track and
+   *  returned it instead of creating a second one. */
+  duplicate?: boolean;
 };
 
 export const verificationTracks: VerificationTrack[] = [
@@ -75,25 +90,29 @@ export const verificationTracks: VerificationTrack[] = [
     key: "identity",
     label: "Identity",
     detail: "Strengthens account trust and connected profile safety signals.",
-    documentRequired: true
+    documentRequired: true,
+    premiumGated: false
   },
   {
     key: "blue_check",
     label: "Blue Check",
     detail: "Asks for the public checkmark shown next to your name.",
-    documentRequired: false
+    documentRequired: false,
+    premiumGated: true
   },
   {
     key: "business",
     label: "Business",
     detail: "Supports marketplace, organization, advertiser, and business profile trust.",
-    documentRequired: true
+    documentRequired: true,
+    premiumGated: false
   },
   {
     key: "government_id",
     label: "Government ID",
     detail: "For proving who you are with a passport, licence, or ID card.",
-    documentRequired: true
+    documentRequired: true,
+    premiumGated: false
   }
 ];
 
@@ -198,6 +217,10 @@ export type VerificationActionSet = {
   /** False once a request is with reviewers: the track is fixed until they
    *  decide, so the chooser must not invite a change it cannot make. */
   canChooseTrack: boolean;
+  /** True when the selected track needs Premium and this account does not have
+   *  it. The screen shows the membership panel in place of the submit button.
+   *  Never set while a request is already with reviewers — see below. */
+  premiumLocked: boolean;
 };
 
 /**
@@ -223,7 +246,45 @@ export function verificationActions(input: {
   requestId?: number;
   selectedTrack?: VerificationTrackKey;
   currentTrack?: VerificationTrackKey;
+  /** Whether this account may submit on the selected track. Only meaningful for
+   *  Premium-gated tracks; pass true for everything else. */
+  canSubmitSelectedTrack?: boolean;
 }): VerificationActionSet {
+  const base = unlockedVerificationActions(input);
+  if (input.canSubmitSelectedTrack !== false) return { ...base, premiumLocked: false };
+
+  // Every action in `path` posts to the gated submit endpoint, so all of them —
+  // start, continue, update, add another — must go when the capability is
+  // missing. Leaving one would render a button the server answers with 403.
+  //
+  // `document` and `appeal` deliberately survive. A membership that lapses
+  // mid-review must not strand a request that is already with reviewers: the
+  // person can still send the evidence they were asked for and still appeal a
+  // refusal. The server agrees — only submission is gated.
+  //
+  // The headline is only replaced when there was something to offer. When the
+  // switch already returned an empty path the request is with reviewers, and
+  // its real status is the honest thing to say; overwriting it with a sales
+  // message would be the "shows a state that isn't real" failure this screen
+  // exists to avoid.
+  return {
+    ...base,
+    headline: base.path.length ? PREMIUM_LOCKED_HEADLINE : base.headline,
+    path: [],
+    premiumLocked: true
+  };
+}
+
+/** Copy for a locked track. States the exchange exactly: membership buys the
+ *  application, not the checkmark. Must never imply a purchased outcome. */
+export const PREMIUM_LOCKED_HEADLINE = "Blue Check applications are included with PulseSoc Premium. Premium opens the application — a reviewer still decides.";
+
+function unlockedVerificationActions(input: {
+  status: VerificationStatus;
+  requestId?: number;
+  selectedTrack?: VerificationTrackKey;
+  currentTrack?: VerificationTrackKey;
+}): Omit<VerificationActionSet, "premiumLocked"> {
   const status = normalizeStatus(input.status);
   const requestId = Number(input.requestId || 0);
   const selected = normalizeTrack(String(input.selectedTrack || "identity"));
@@ -357,6 +418,7 @@ function normalizeVerificationState(
       founderNumber: Number(premium.founder_number || 0),
       plan: String(premium.plan || (premium.founder_active ? "founder_premium" : premium.premium_active ? "premium" : "free"))
     },
+    blueCheckApplyAllowed: premium.blue_check_apply === true,
     checklist: [
       { key: "profile", label: "Your profile is filled in", complete: profileComplete, detail: "Your name, handle, and photo are set." },
       { key: "email", label: "Your email is confirmed", complete: emailVerified, detail: "You have confirmed the email address on your account." },
@@ -377,8 +439,15 @@ function normalizeVerificationStateFromCache(state: VerificationState): Verifica
     requestId: Number(state.requestId || 0),
     verificationType: normalizeTrack(state.verificationType),
     recommendations: normalizeStringList(state.recommendations || []),
+    // A cache written before this field existed has no opinion, and "no
+    // opinion" must read as locked rather than as permission.
+    blueCheckApplyAllowed: state.blueCheckApplyAllowed === true,
     checklist: Array.isArray(state.checklist) ? state.checklist : [],
-    tracks: Array.isArray(state.tracks) && state.tracks.length ? state.tracks : verificationTracks,
+    // Always the current catalog, never the cached copy. The tracks are a static
+    // constant that no server populates, and a cache written before Blue Check
+    // was gated would carry entries with no `premiumGated` flag — restoring it
+    // would show the submit button unlocked until the network call landed.
+    tracks: verificationTracks,
     loadedAt: state.loadedAt || ""
   };
 }

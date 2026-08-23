@@ -2065,6 +2065,11 @@
       "undx": {
         "advanced": "UNDX avanse"
       },
+      "verification": {
+        "blue_check": {
+          "apply": "Aksè pou aplike pou Blue Check"
+        }
+      },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "Aksè nan Founder Hub",
       "premium_upload_limits": "Limit voye pi wo",

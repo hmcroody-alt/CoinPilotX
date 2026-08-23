@@ -61,6 +61,11 @@ PREMIUM_CAPABILITIES = (
     "premium.profile.customization",
     "premium.media.higher_quality",
     "premium.undx.advanced",
+    # Unlocks the ability to SUBMIT a Blue Check verification request. It does
+    # not grant the badge and carries no weight in the review: a reviewer still
+    # decides on the evidence. Membership buys the application, never the
+    # outcome — see NOT_VERIFICATION in premium_api.
+    "premium.verification.blue_check.apply",
 )
 
 #: Plans that confer Premium membership, in the catalog's vocabulary.

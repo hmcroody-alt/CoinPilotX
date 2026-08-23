@@ -2070,6 +2070,11 @@
       "undx": {
         "advanced": "UNDX avançado"
       },
+      "verification": {
+        "blue_check": {
+          "apply": "Acesso ao pedido de Blue Check"
+        }
+      },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "Acesso ao Founder Hub",
       "premium_upload_limits": "Limites de envio maiores",

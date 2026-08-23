@@ -10401,6 +10401,18 @@ def api_dashboard_account_verification_request():
     try:
         result = dashboard_account_command_center.submit_verification_request(conn, int(user["user_id"]), payload.get("verification_type") or "identity", payload)
         return jsonify({"ok": True, "message": "Verification request submitted.", **result})
+    except PermissionError as exc:
+        # The Premium gate. 403 carrying a machine-readable code so the client
+        # can offer the membership instead of rendering a bare failure. The copy
+        # is the server's, so one place decides what a Blue Check application
+        # actually costs and what it does not promise.
+        conn.rollback()
+        # `error_code`, not `code`: the native client reads `error_code` (falling
+        # back to `error`) when it builds a PulseApiError, so a `code` key would
+        # arrive as an untyped failure and the app would show a dead end instead
+        # of the membership panel.
+        return api_error(str(exc), 403, error_code="premium_required",
+                         capability=dashboard_account_command_center.BLUE_CHECK_APPLY_CAPABILITY)
     except ValueError as exc:
         conn.rollback()
         return api_error(str(exc), 400)
@@ -11813,6 +11825,12 @@ def api_premium_status():
         "current_period_end": provider_row.get("current_period_end") or fresh_user.get("subscription_expires_at") or fresh_user.get("pro_expires_at") or "",
         "cancel_at_period_end": bool(int(provider_row.get("cancel_at_period_end") or 0)) if provider_row else False,
         "billing_portal_available": bool(status_payload.get("billing_portal_available")),
+        # Whether this member may SUBMIT a Blue Check application. Answered by
+        # the same function the submit gate enforces, so the Verification Center
+        # can never show an unlocked control that the server then refuses. It
+        # says nothing about whether the badge would be granted — that is a
+        # reviewer's call, not a subscription's.
+        "blue_check_apply": dashboard_account_command_center.blue_check_apply_allowed_for(uid, fresh_user),
         "billing_url": "/billing/portal",
         "premium_url": "/pulse/premium",
         "profile_url": "/pulse/profile",

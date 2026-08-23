@@ -121,6 +121,17 @@ _REGISTRY: tuple[Feature, ...] = (
             "premium.undx.credits below. Do not advertise a numeric allowance."
         ),
     ),
+    Feature(
+        "premium.verification.blue_check.apply", "Blue Check application access",
+        PRODUCTION,
+        enforced_by="services.dashboard_account_command_center.submit_verification_request",
+        note=(
+            "Grants the right to SUBMIT a Blue Check request — never the badge "
+            "and never a thumb on the scale. A reviewer decides on the evidence, "
+            "and an approved badge outlives the membership that unlocked the "
+            "form. The label must not imply an outcome."
+        ),
+    ),
 
     # --- legacy entitlement keys that are GRANTED BUT NEVER READ -------------
     # Each of these is written to the entitlement tables on purchase and then

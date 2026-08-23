@@ -2057,6 +2057,11 @@
       "undx": {
         "advanced": "UNDX アドバンス"
       },
+      "verification": {
+        "blue_check": {
+          "apply": "Blue Check申請へのアクセス"
+        }
+      },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "Founder Hub へのアクセス",
       "premium_upload_limits": "アップロード上限の拡大",

@@ -69,19 +69,27 @@ _SEED_CATALOG = [
     ("pulse_premium_monthly", "premium.profile.customization", None, None),
     ("pulse_premium_monthly", "premium.media.higher_quality", None, None),
     ("pulse_premium_monthly", "premium.undx.advanced", None, None),
+    ("pulse_premium_monthly", "premium.verification.blue_check.apply", None, None),
     ("pulse_premium_annual", "premium.access", None, None),
     ("pulse_premium_annual", "premium.profile.customization", None, None),
     ("pulse_premium_annual", "premium.media.higher_quality", None, None),
     ("pulse_premium_annual", "premium.undx.advanced", None, None),
+    ("pulse_premium_annual", "premium.verification.blue_check.apply", None, None),
     ("pulse_premium_trial", "premium.access", None, None),
     ("pulse_premium_trial", "premium.profile.customization", None, None),
+    # A trial confers the application right too: the review is what decides the
+    # badge, so a trialist submitting evidence costs nothing but reviewer time,
+    # and gating it would make "Premium unlocks the application" untrue.
+    ("pulse_premium_trial", "premium.verification.blue_check.apply", None, None),
     ("pulse_premium_grandfathered", "premium.access", None, None),
     ("pulse_premium_grandfathered", "premium.profile.customization", None, None),
     ("pulse_premium_grandfathered", "premium.media.higher_quality", None, None),
     ("pulse_premium_grandfathered", "premium.undx.advanced", None, None),
+    ("pulse_premium_grandfathered", "premium.verification.blue_check.apply", None, None),
     # Business — a Business subscription confers Premium membership too.
     ("pulse_business_monthly", "premium.access", None, None),
     ("pulse_business_monthly", "premium.profile.customization", None, None),
+    ("pulse_business_monthly", "premium.verification.blue_check.apply", None, None),
     ("pulse_business_monthly", "business.team_members", 10, None),
     ("pulse_business_monthly", "business.analytics.advanced", None, None),
     # Marketplace.
