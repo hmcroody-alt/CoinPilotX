@@ -183,6 +183,38 @@ export type PageAnalytics = {
 export type PageCompletenessItem = { key: string; label: string; done: boolean };
 export type PageCompleteness = { percent: number; items: PageCompletenessItem[] };
 
+/**
+ * One area of the management surface, as the server decided it.
+ *
+ * Three separate facts, which the client must not collapse into one:
+ *
+ *  - **absence** — a section this page type does not have is not in the array
+ *    at all. There is no disabled shop on a media page; there is no shop. The
+ *    page type never reaches the client as a decision, so nothing here should
+ *    ever be greyed out on the strength of it.
+ *  - **`permitted`** — whether *this caller's role* may act here, read from the
+ *    same permission table the mutating endpoints check. Re-deriving this from
+ *    `capabilities` client-side is how a screen drifts into offering buttons
+ *    that 403.
+ *  - **`ready`** — whether anything is behind it yet. A section that is not
+ *    ready is still shown, with `setup` naming the single missing thing, so the
+ *    team can see what to fill in. Empty is a state; hidden is a dead end.
+ *
+ * `count` is present only where a real number was measured. A section without
+ * one has no number — not zero, and never an estimate.
+ */
+export type PageSection = {
+  key: string;
+  label: string;
+  hint: string;
+  permission: string;
+  permitted: boolean;
+  ready: boolean;
+  /** Empty when `ready`. The one missing thing, in words, when not. */
+  setup: string;
+  count?: number;
+};
+
 export type PageManageView = {
   page: PulsePage;
   role: PageRole;
@@ -193,6 +225,12 @@ export type PageManageView = {
   members?: PageMember[];
   analytics?: PageAnalytics;
   completeness?: PageCompleteness;
+  /**
+   * Optional because an older server does not send it. The hub then shows no
+   * sections rather than falling back to a guessed set — a management surface
+   * assembled client-side is precisely what this replaced.
+   */
+  sections?: PageSection[];
 };
 
 export type HandleCheck = { candidate: string; handle: string; available: boolean; reason: string };

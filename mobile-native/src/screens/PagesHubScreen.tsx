@@ -20,6 +20,7 @@ import {
   PageInvite,
   PageManageView,
   pageRoleLabel,
+  PageSection,
   PageStatus,
   pageTypeLabel,
   PulsePage,
@@ -27,6 +28,7 @@ import {
   setPageStatus
 } from "../api/pages";
 import { PulseApiError } from "../api/pulseApi";
+import { FeedComposer } from "../components/FeedComposer";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
@@ -34,14 +36,50 @@ import { createThemedStyles } from "../theme/themedStyles";
 type Props = NativeStackScreenProps<RootStackParamList, "PagesHub">;
 
 /**
- * Page types whose management continues into Business OS. A Presence answers
- * WHO the identity is; Business OS is HOW it operates — this hub links the
- * two, it never embeds Business OS features here.
+ * Sections whose content is *this screen*. They are not tiles — they name the
+ * blocks rendered further down, so a tile for one would be a button that
+ * scrolls to what you are already looking at.
+ *
+ * Their labels and setup copy are still taken from the server, so the words a
+ * team reads about verification come from the same place that decides whether
+ * verification is offered at all.
  */
-const BUSINESS_TYPES = new Set([
-  "BUSINESS", "BRAND", "STORE", "RESTAURANT", "PROFESSIONAL_SERVICE",
-  "LOCAL_BUSINESS", "NONPROFIT", "ORGANIZATION", "MEDIA", "VENUE", "EDUCATION"
-]);
+const INLINE_SECTIONS = new Set(["overview", "insights", "settings", "verification"]);
+
+/**
+ * Where a ready section goes. Each destination is an existing canonical system
+ * — the hub links into Marketplace, Advertising, Payments and Business OS, it
+ * does not reimplement any of them.
+ *
+ * `content` is deliberately absent: posting as a presence opens the composer in
+ * place rather than navigating, because the page you are managing is the
+ * context the composer needs.
+ */
+const SECTION_ROUTES = {
+  identity: "PageEdit",
+  music: "PageConnections",
+  videos: "Page",
+  store: "MarketplaceManager",
+  advertising: "BusinessOsAdvertising",
+  business_os: "BusinessOs",
+  team: "PageTeam",
+  payments: "BusinessOsPayments"
+} as const;
+
+/**
+ * Where a section that is *not* ready goes instead — the place that makes it
+ * ready, rather than the empty destination behind it.
+ *
+ * A shop with nothing connected opens Connections, not an inventory screen
+ * belonging to nobody. This is the whole point of the server sending `ready`:
+ * the tile stays visible and says what is missing, and the tap goes somewhere
+ * that can fix it.
+ */
+const SECTION_SETUP_ROUTES = {
+  music: "PageConnections",
+  store: "PageConnections",
+  advertising: "PageConnections"
+} as const;
 
 /**
  * Page OS hub — every page the signed-in user belongs to, with management for
@@ -63,6 +101,10 @@ export function PagesHubScreen({ route, navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [composerOpen, setComposerOpen] = useState(false);
+  // Bumped after publishing, so the manage view — and with it the Posts count
+  // on the section tile — is re-read from the server rather than guessed at.
+  const [manageRefresh, setManageRefresh] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -140,11 +182,76 @@ export function PagesHubScreen({ route, navigation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, manageRefresh]);
 
   const selected = pages.find((p) => p.id === selectedId) || null;
-  const capabilities = new Set(manage?.capabilities || []);
   const isOwner = manage?.role === "OWNER";
+  const sections = manage?.sections || [];
+  const sectionByKey = new Map(sections.map((section) => [section.key, section]));
+  const tiles = sections.filter((section) => !INLINE_SECTIONS.has(section.key));
+
+  /**
+   * A section is tappable when this caller may act in it. A section they may
+   * not act in still renders — an analyst should be able to see the shape of
+   * the place they are reporting on — but as a description rather than a
+   * control, because the server will refuse the action behind it.
+   */
+  function openSection(section: PageSection) {
+    // Redundant with the `disabled` prop on the tile, deliberately: the two are
+    // set from different expressions, and a rendering change that stops
+    // disabling the tile should not also be the change that starts navigating.
+    // No test can separate them while both hold, which is the point.
+    if (!selected || !section.permitted) return;
+    // Posting is the one section that happens here: the composer needs the
+    // presence as context, and navigating away to find it is how "post as your
+    // page" became unreachable in the first place.
+    if (section.key === "content" || (section.key === "videos" && !section.ready)) {
+      setComposerOpen(true);
+      return;
+    }
+    const route =
+      (!section.ready && SECTION_SETUP_ROUTES[section.key as keyof typeof SECTION_SETUP_ROUTES]) ||
+      SECTION_ROUTES[section.key as keyof typeof SECTION_ROUTES];
+    const pageParams = { pageId: selected.id, title: selected.name };
+    switch (route) {
+      case "PageEdit":
+        return navigation.navigate("PageEdit", pageParams);
+      case "PageConnections":
+        return navigation.navigate("PageConnections", pageParams);
+      case "PageTeam":
+        return navigation.navigate("PageTeam", pageParams);
+      case "Page":
+        return navigation.navigate("Page", {
+          pageId: selected.id,
+          handle: selected.handle,
+          title: selected.name
+        });
+      case "BusinessOs":
+        return navigation.navigate("BusinessOs", { title: selected.name });
+      case "BusinessOsAdvertising":
+        return navigation.navigate("BusinessOsAdvertising", { title: selected.name });
+      case "MarketplaceManager":
+        return navigation.navigate("MarketplaceManager", { title: selected.name });
+      case "BusinessOsPayments":
+        return navigation.navigate("BusinessOsPayments", { title: selected.name });
+      default:
+        // A section this build has no destination for. It still renders, with
+        // its label, count and setup line, because a server that grew a
+        // section should not make it invisible on an older client — but there
+        // is nowhere honest to send the tap, so it does not claim to be a
+        // button. `sectionIsNavigable` keeps that consistent with the UI.
+        return;
+    }
+  }
+
+  function sectionIsNavigable(section: PageSection) {
+    if (!section.permitted) return false;
+    if (section.key === "content" || (section.key === "videos" && !section.ready)) return true;
+    return Boolean(
+      SECTION_ROUTES[section.key as keyof typeof SECTION_ROUTES] ||
+        SECTION_SETUP_ROUTES[section.key as keyof typeof SECTION_SETUP_ROUTES]
+    );
+  }
 
   async function changeStatus(status: PageStatus) {
     if (!selected || busy) return;
@@ -323,6 +430,9 @@ export function PagesHubScreen({ route, navigation }: Props) {
           </Text>
 
           <View style={styles.actionsGrid}>
+            {/* Not a section: viewing the public page is what this presence
+                looks like to everyone else, and that is worth one tap whatever
+                your role and whatever the page type has. */}
             <Pressable
               accessibilityRole="button"
               style={styles.action}
@@ -330,81 +440,68 @@ export function PagesHubScreen({ route, navigation }: Props) {
             >
               <Text style={styles.actionText}>View public page</Text>
             </Pressable>
-            {capabilities.has("edit_page") ? (
-              <Pressable
-                accessibilityRole="button"
-                style={styles.action}
-                onPress={() => navigation.navigate("PageEdit", { pageId: selected.id, title: selected.name })}
-              >
-                <Text style={styles.actionText}>Edit details</Text>
-              </Pressable>
-            ) : null}
-            {/* Connections is offered to anyone the manage view loaded for.
-                Which connections they may actually change is decided by the
-                server and shown per row, so a manager is not left guessing
-                whether the screen has anything for them. */}
-            {manage ? (
-              <Pressable
-                accessibilityRole="button"
-                style={styles.action}
-                onPress={() => navigation.navigate("PageConnections", { pageId: selected.id, title: selected.name })}
-              >
-                <Text style={styles.actionText}>Connections</Text>
-              </Pressable>
-            ) : null}
-            {/* Everyone who can load the manage view can see the roster; the
-                server decides per member whether anything is editable, so this
-                is not gated on manage_members. */}
-            {manage ? (
-              <Pressable
-                accessibilityRole="button"
-                style={styles.action}
-                onPress={() => navigation.navigate("PageTeam", { pageId: selected.id, title: selected.name })}
-              >
-                <Text style={styles.actionText}>Team &amp; access</Text>
-              </Pressable>
-            ) : null}
-            {manage && BUSINESS_TYPES.has(selected.page_type) ? (
-              <Pressable
-                accessibilityRole="button"
-                style={styles.action}
-                onPress={() => navigation.navigate("BusinessOs", { title: selected.name })}
-              >
-                <Text style={styles.actionText}>Open Business OS</Text>
-              </Pressable>
-            ) : null}
-            {capabilities.has("manage_ads") ? (
-              <Pressable
-                accessibilityRole="button"
-                style={styles.action}
-                onPress={() => navigation.navigate("BusinessOsAdvertising", { title: selected.name })}
-              >
-                <Text style={styles.actionText}>Advertising</Text>
-              </Pressable>
-            ) : null}
-            {capabilities.has("manage_marketplace") ? (
-              <Pressable
-                accessibilityRole="button"
-                style={styles.action}
-                onPress={() => navigation.navigate("MarketplaceManager", { title: selected.name })}
-              >
-                <Text style={styles.actionText}>Marketplace</Text>
-              </Pressable>
-            ) : null}
-            {isOwner ? (
-              <Pressable
-                accessibilityRole="button"
-                style={styles.action}
-                onPress={() => navigation.navigate("BusinessOsPayments", { title: selected.name })}
-              >
-                <Text style={styles.actionText}>Payments</Text>
-              </Pressable>
-            ) : null}
           </View>
 
+          {/*
+            The management surface, decided server-side per page type and role.
+            This grid used to be fixed: a media page was offered Marketplace, an
+            artist was offered Business OS, and Advertising opened whether or
+            not an ad account existed. Every tile here is one the server said
+            this page has — so a tile that is absent is a capability this page
+            genuinely does not have, and a tile that is present is one the
+            server will accept.
+          */}
+          {tiles.length ? (
+            <View style={styles.sectionGrid}>
+              {tiles.map((section) => {
+                const navigable = sectionIsNavigable(section);
+                return (
+                  <Pressable
+                    key={section.key}
+                    accessibilityRole={navigable ? "button" : "text"}
+                    accessibilityLabel={`${section.label}${section.ready ? "" : " — setup needed"}`}
+                    accessibilityState={{ disabled: !navigable }}
+                    disabled={!navigable}
+                    testID={`section-${section.key}`}
+                    style={[styles.sectionTile, !section.ready && styles.sectionTilePending]}
+                    onPress={() => openSection(section)}
+                  >
+                    <View style={styles.sectionTileHead}>
+                      <Text style={styles.sectionTileLabel}>{section.label}</Text>
+                      {typeof section.count === "number" ? (
+                        <Text style={styles.sectionTileCount}>{section.count}</Text>
+                      ) : null}
+                    </View>
+                    {/*
+                      When something is behind the section, say what it is for.
+                      When nothing is, say the one thing missing instead — an
+                      empty section a team can see is one they can fill, and
+                      that is the difference between intentionally empty and
+                      broken.
+                    */}
+                    <Text style={styles.sectionTileHint}>
+                      {section.ready ? section.hint : section.setup}
+                    </Text>
+                    {!section.permitted ? (
+                      <Text style={styles.sectionTileLocked}>
+                        Your role can't change this.
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+
+          {/* Insights is an inline section: it has no destination, it names the
+              block of measured numbers already here. The fallback covers a
+              server that predates sections — the numbers are real either way,
+              and hiding them because a label is missing would be worse. */}
           {manage?.analytics ? (
             <View style={styles.analyticsCard}>
-              <Text style={styles.sectionTitle}>Measured analytics</Text>
+              <Text style={styles.sectionTitle}>
+                {sectionByKey.get("insights")?.label || "Measured analytics"}
+              </Text>
               <Text style={styles.cardMeta}>
                 Followers: {manage.analytics.followers}
                 {typeof manage.analytics.followers_7d === "number"
@@ -459,7 +556,12 @@ export function PagesHubScreen({ route, navigation }: Props) {
 
           {isOwner ? (
             <View style={styles.ownerZone}>
-              <Text style={styles.sectionTitle}>Owner controls</Text>
+              {/* Settings and Verification are the other two inline sections:
+                  both live here, in the owner zone, so they name this block
+                  rather than sending an owner somewhere else to find it. */}
+              <Text style={styles.sectionTitle}>
+                {sectionByKey.get("settings")?.label || "Settings"}
+              </Text>
               <View style={styles.actionsGrid}>
                 {selected.status !== "ACTIVE" ? (
                   <Pressable accessibilityRole="button" style={styles.action} disabled={busy} onPress={() => changeStatus("ACTIVE")}>
@@ -477,6 +579,12 @@ export function PagesHubScreen({ route, navigation }: Props) {
                   <Text style={styles.dangerText}>Deactivate</Text>
                 </Pressable>
               </View>
+              {/* The server already worked out what state verification is in
+                  and what that means — pending, rejected, or never asked. The
+                  button is only offered when there is something to ask for. */}
+              {sectionByKey.get("verification")?.setup ? (
+                <Text style={styles.note}>{sectionByKey.get("verification")!.setup}</Text>
+              ) : null}
               {selected.verification_status === "unverified" ? (
                 <Pressable accessibilityRole="button" style={styles.action} disabled={busy} onPress={askVerification}>
                   <Text style={styles.actionText}>Request verification</Text>
@@ -492,6 +600,29 @@ export function PagesHubScreen({ route, navigation }: Props) {
       ) : null}
 
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+
+      {/*
+        The composer, opened from the Posts section already speaking as this
+        presence. It has existed and worked for its whole life while being
+        mounted nowhere: `createPagePost` and the identity switcher were
+        reachable from no screen in the app, so publishing as a page was
+        impossible natively. This is the mount.
+      */}
+      {selected ? (
+        <FeedComposer
+          visible={composerOpen}
+          presetPageId={selected.id}
+          onClose={() => setComposerOpen(false)}
+          onCreated={() => {
+            setComposerOpen(false);
+            setNotice(`Published as ${selected.name}.`);
+            // Posts count is measured server-side, so the tile is re-read
+            // rather than incremented locally.
+            load();
+            setManageRefresh((n) => n + 1);
+          }}
+        />
+      ) : null}
     </ScrollView>
   );
 }
@@ -664,6 +795,53 @@ const styles = createThemedStyles(() => ({
   root: {
     backgroundColor: colors.background,
     flex: 1
+  },
+  sectionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12
+  },
+  sectionTile: {
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexBasis: "48%",
+    flexGrow: 1,
+    gap: 4,
+    minHeight: 76,
+    padding: 12
+  },
+  sectionTileCount: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  sectionTileHead: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "space-between"
+  },
+  sectionTileHint: {
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 16
+  },
+  sectionTileLabel: {
+    color: colors.text,
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: "800"
+  },
+  sectionTileLocked: {
+    color: colors.muted,
+    fontSize: 10,
+    fontStyle: "italic"
+  },
+  /** Not-yet-set-up reads as unfinished, not as broken or forbidden. */
+  sectionTilePending: {
+    borderStyle: "dashed"
   },
   sectionTitle: {
     color: colors.text,
