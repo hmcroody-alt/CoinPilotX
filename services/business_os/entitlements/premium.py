@@ -128,11 +128,19 @@ def legacy_founder(user_id: Any) -> Optional[bool]:
 
 
 # --- identity columns (authority C) -----------------------------------------
-_IDENTITY_COLUMNS = (
+_USER_COLUMNS = (
     "premium_status", "subscription_status", "lifetime_premium",
     "premium_glow_manual_grant", "premium_mark_override", "premium_expires_at",
-    "is_pro", "plan", "subscription_plan", "founder_number", "founder_status",
+    "is_pro", "plan", "subscription_plan",
 )
+
+# founder_number/founder_status are not columns on ``users``; they live on
+# founder_memberships, whose ``status`` the rest of the codebase aliases to
+# founder_status. has_active_premium() reads both, so they have to be joined
+# in rather than dropped.
+_FOUNDER_COLUMNS = ("founder_number", "founder_status")
+
+_IDENTITY_COLUMNS = _USER_COLUMNS + _FOUNDER_COLUMNS
 
 
 def identity_row(user_id: Any) -> dict:
@@ -141,8 +149,13 @@ def identity_row(user_id: Any) -> dict:
         conn = db.connect()
         try:
             cur = conn.execute(
-                f"SELECT {', '.join(_IDENTITY_COLUMNS)} FROM users "
-                "WHERE user_id = ? LIMIT 1",
+                f"SELECT {', '.join('u.' + c for c in _USER_COLUMNS)}, "
+                "fm.founder_number AS founder_number, "
+                "fm.status AS founder_status "
+                "FROM users u "
+                "LEFT JOIN founder_memberships fm "
+                "ON fm.user_id = u.user_id AND fm.status = 'active' "
+                "WHERE u.user_id = ? LIMIT 1",
                 (int(user_id),),
             )
             row = cur.fetchone()
