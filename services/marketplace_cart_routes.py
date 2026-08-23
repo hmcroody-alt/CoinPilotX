@@ -743,8 +743,12 @@ def cart_checkout():
         # Reserve physical inventory before handing the buyer to Stripe. The
         # reservation is keyed to the transaction, so duplicate taps cannot
         # decrement twice; expiry/failure restores it.
-        for line, tx_id in zip(lines, tx_ids):
-            if line["fulfillment"] == "digital":
+        # Stock is held for things there is a finite number of. A booking or a
+        # seat at an event has no parcel to run out of, and the legacy test here
+        # only recognised `digital` — so those lines decremented a quantity that
+        # means nothing to them, in the one lane that still did it.
+        for line, tx_id, line_kind in zip(lines, tx_ids, line_kinds):
+            if line_kind in marketplace_fulfillment.STOCKLESS_KINDS:
                 continue
             cur.execute(
                 "UPDATE marketplace_listings SET quantity=quantity-?, updated_at=? "

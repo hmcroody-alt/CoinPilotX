@@ -270,3 +270,63 @@ class TestClientServerAgreement:
         client = self._client_fields()
         for kind in mf.UNDECIDED_KINDS:
             assert client[kind] == []
+
+
+class TestEveryLaneIsWiredTheSameWay:
+    """Three entry points reach Stripe. A rule enforced in two of them is not a rule.
+
+    Source-level, because these routes live in the monolith and in blueprints
+    that want a live app to exercise. What is being pinned is ordering: the
+    answers are validated and frozen onto the order *before* a charge exists.
+    """
+
+    ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+    @classmethod
+    def _lane(cls, relative: str, start: str = "", end: str = "") -> str:
+        source = (cls.ROOT / relative).read_text(encoding="utf-8")
+        if start:
+            source = source[source.index(start):]
+        if end:
+            source = source[: source.index(end)]
+        return source
+
+    LANES = {
+        "buy_now": ("bot.py", "def api_pulse_payments_checkout():", "\ndef _creator_checkout_for_item"),
+        "cart": ("services/marketplace_cart_routes.py", "def cart_checkout():", ""),
+        "offer": ("services/marketplace_offers_routes.py", "def offer_checkout(", ""),
+    }
+
+    @pytest.mark.parametrize("lane", sorted(LANES))
+    def test_the_lane_validates_before_it_creates_a_transaction(self, lane):
+        code = self._lane(*self.LANES[lane])
+        validate = code.index("marketplace_fulfillment.validate_details")
+        # An order that cannot be fulfilled must not leave a row behind, and must
+        # not hold stock while the buyer works out what was missing.
+        assert validate < code.index("INSERT INTO seller_transactions")
+
+    @pytest.mark.parametrize("lane", sorted(LANES))
+    def test_the_lane_freezes_the_answers_onto_the_order(self, lane):
+        code = self._lane(*self.LANES[lane])
+        # Frozen at checkout, so a seller editing the listing next week cannot
+        # change where last week's order was going.
+        assert "fulfillment_snapshot" in code[: code.index("INSERT INTO seller_transactions")]
+        assert '"fulfillment"] = fulfillment_snapshot' in code or '"fulfillment": fulfillment_snapshot' in code
+
+    @pytest.mark.parametrize("lane", sorted(LANES))
+    def test_the_lane_hands_a_collected_address_to_stripe_instead_of_asking_again(self, lane):
+        code = self._lane(*self.LANES[lane])
+        assert 'payment_intent_data["shipping"] = stripe_shipping_object' in code
+        assert "if stripe_shipping_object" in code
+
+    @pytest.mark.parametrize("lane", sorted(LANES))
+    def test_the_lane_reads_the_order_type_off_the_listing_not_the_request(self, lane):
+        # Whole file: the cart resolves through a module-level helper, and where
+        # the call lives matters less than that the request never supplies it.
+        module = (self.ROOT / self.LANES[lane][0]).read_text(encoding="utf-8")
+        assert "marketplace_fulfillment.resolve_kind" in module
+
+    @pytest.mark.parametrize("lane", sorted(LANES))
+    def test_the_lane_does_not_hold_stock_for_something_with_no_stock(self, lane):
+        code = self._lane(*self.LANES[lane])
+        assert "marketplace_fulfillment.STOCKLESS_KINDS" in code
