@@ -228,6 +228,19 @@ export function PagesHubScreen({ route, navigation }: Props) {
                 <Text style={styles.actionText}>Edit details</Text>
               </Pressable>
             ) : null}
+            {/* Connections is offered to anyone the manage view loaded for.
+                Which connections they may actually change is decided by the
+                server and shown per row, so a manager is not left guessing
+                whether the screen has anything for them. */}
+            {manage ? (
+              <Pressable
+                accessibilityRole="button"
+                style={styles.action}
+                onPress={() => navigation.navigate("PageConnections", { pageId: selected.id, title: selected.name })}
+              >
+                <Text style={styles.actionText}>Connections</Text>
+              </Pressable>
+            ) : null}
             {manage && BUSINESS_TYPES.has(selected.page_type) ? (
               <Pressable
                 accessibilityRole="button"

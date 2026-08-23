@@ -35,7 +35,7 @@ describe("navigator header titles", () => {
     // every assertion below vacuously pass. 110 stack screens (incl. the four
     // Page OS routes, the Presence hub, and Watchlists + AssetDetail) + 14 tabs,
     // plus the `title` param the header passes when opening the activity inbox.
-    expect(TITLE_OPTIONS.length).toBe(127);
+    expect(TITLE_OPTIONS.length).toBe(128);
   });
 
   it("has no hardcoded string literal titles", () => {
@@ -118,7 +118,14 @@ describe("navigator chrome", () => {
     const registered = Array.from(SOURCE.matchAll(/<Stack\.Screen name="(Presence|Page[A-Za-z]*)"/g))
       .map((match) => match[1])
       .sort();
-    expect(registered).toEqual(["Page", "PageCreate", "PageEdit", "PagesHub", "Presence"]);
+    expect(registered).toEqual([
+      "Page",
+      "PageConnections",
+      "PageCreate",
+      "PageEdit",
+      "PagesHub",
+      "Presence"
+    ]);
 
     const block = SOURCE.slice(SOURCE.indexOf("const PRESENCE_ROUTE_SUBTITLES"));
     const entries = Array.from(

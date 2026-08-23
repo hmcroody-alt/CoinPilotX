@@ -97,11 +97,12 @@ TAB_LINK_SOURCE = {
     "merch": "store",
     "menu": "store",
 }
-# `events` is deliberately absent. The `event` link type exists and can be set,
-# but the canonical events backend (services/business_os/events) lists only for
-# a caller holding a manager role on the business — there is no public read. A
-# tab that 403s for every visitor is worse than no tab, so events stays hidden
-# until a public listing exists.
+# `events` is deliberately absent, and `event` links are now refused outright
+# rather than stored: the canonical events backend
+# (services/business_os/events) keys on `business_id` and lists only for a
+# caller holding a manager role, so there is no public read to point a tab at
+# and no way to say whose event a ref names. A tab that 403s for every visitor
+# is worse than no tab. Both come back together, or neither does.
 
 # Post types the videos module counts as a video. Same set pulse_feed_engine
 # uses for its video surfaces; the tab reads the page's own posts, so it needs
@@ -974,13 +975,120 @@ def _link_ref_owners(conn: Any, link_type: str, ref: str) -> set[int] | None:
         return None
 
 
+# The same tables read the other way round: not "who owns this ref" but "what
+# does this person hold that could be connected". The label column is whatever
+# a member would recognise the thing by — never an internal id, which is what
+# the client would otherwise have to ask them to type.
+_LINK_CANDIDATE_SOURCES = {
+    "store": ("marketplace_sellers", "id", "user_id", "display_name", ""),
+    "ad_account": ("advertisers", "id", "owner_user_id", "advertiser_name", ""),
+    "community": ("pulse_groups", "id", "owner_user_id", "name", ""),
+    "music_artist": (
+        "pulse_audio_tracks", "artist", "uploader_user_id", "artist",
+        " AND COALESCE(approved_by_admin,0)=1 AND COALESCE(active,1)=1",
+    ),
+}
+
+LINK_LABELS = {
+    "store": "Shop",
+    "ad_account": "Ad account",
+    "community": "Community",
+    "music_artist": "Music catalogue",
+}
+
+# One map, read by both the check and the offer. Kept out of `set_link` so the
+# permission a member is told they need cannot drift from the one enforced.
+_LINK_PERMISSION = {"store": "manage_marketplace", "ad_account": "manage_ads"}
+
+
+def _link_permission(link_type: str) -> str:
+    return _LINK_PERMISSION.get(link_type, "manage_links")
+
+
+def _link_candidates(conn: Any, link_type: str, holder_user_ids: set[int]) -> list[dict]:
+    """Refs of `link_type` held by any of `holder_user_ids`, with labels.
+
+    A lookup failure yields an empty list, not an error: being unable to offer
+    a choice is a smaller problem than a management screen that will not open,
+    and nothing here grants anything — `set_link` re-derives entitlement.
+    """
+    source = _LINK_CANDIDATE_SOURCES.get(link_type)
+    holders = sorted({_int(uid, 0) for uid in holder_user_ids if _int(uid, 0)})
+    if not source or not holders:
+        return []
+    table, ref_column, owner_column, label_column, extra = source
+    placeholders = ",".join("?" * len(holders))
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT DISTINCT {ref_column} AS ref, {label_column} AS label "  # noqa: S608 - fixed table map
+            f"FROM {table} WHERE {owner_column} IN ({placeholders}){extra}",
+            holders,
+        )
+        rows = cur.fetchall()
+    except Exception as exc:
+        logging.warning("PAGE_LINK_CANDIDATES_FAILED type=%s error=%s", link_type, exc)
+        return []
+    out = []
+    for row in rows:
+        record = _row(row)
+        ref = _text(record.get("ref"), 80)
+        if not ref:
+            continue
+        out.append({"ref_id": ref, "label": _text(record.get("label"), 120) or ref})
+    return sorted(out, key=lambda item: item["label"].casefold())
+
+
+def link_options(conn: Any, actor_user_id: int, page_id: int) -> dict:
+    """What this presence is connected to, and what it could be connected to.
+
+    Without this the only way to attach a shop is to know its internal id and
+    type it in, which is both unusable and the shape that made the missing
+    ownership check so easy to exploit. Offering only real, held resources
+    means the ordinary path never involves a member handling an id at all.
+
+    Convenience, not authority: every ref returned here is re-checked by
+    `set_link`, so a stale or hand-crafted option buys nothing.
+    """
+    ensure_tables(conn)
+    page = _load_page(conn, page_id)
+    role = require_permission(conn, actor_user_id, page["id"], "view_analytics")
+    connected = {}
+    for row in list_links(conn, page["id"]):
+        connected.setdefault(_text(row.get("link_type"), 40), _text(row.get("ref_id"), 80))
+    # Actor-or-owner, matching `set_link` exactly. Offering the owner's
+    # resources to a delegated manager is what lets that manager finish the job
+    # they were given the seat for.
+    holders = {_int(actor_user_id, 0), _int(page.get("owner_user_id"), 0)}
+    links = []
+    for link_type in LINK_TYPES:
+        # A type with no resolver cannot be offered, for the same reason it
+        # cannot be set: nothing can say whose it is.
+        if link_type not in _LINK_CANDIDATE_SOURCES:
+            continue
+        permission = _link_permission(link_type)
+        can_manage = has_permission(role, permission)
+        links.append({
+            "link_type": link_type,
+            "label": LINK_LABELS.get(link_type, link_type),
+            "permission": permission,
+            "can_manage": can_manage,
+            "connected_ref_id": connected.get(link_type, ""),
+            # Withheld rather than filtered client-side: a role that cannot
+            # connect anything has no reason to receive a list of what the
+            # owner holds.
+            "options": _link_candidates(conn, link_type, holders) if can_manage else [],
+        })
+    return {"page_id": int(page["id"]), "role": role, "links": links}
+
+
 def set_link(conn: Any, actor_user_id: int, page_id: int, link_type: Any, ref_id: Any) -> dict:
     ensure_tables(conn)
     page = _load_page(conn, page_id)
     link_type = _text(link_type, 40).lower()
     if link_type not in LINK_TYPES:
         raise PageError("Choose a valid link type.")
-    perm = {"store": "manage_marketplace", "ad_account": "manage_ads"}.get(link_type, "manage_links")
+    perm = _link_permission(link_type)
     require_permission(conn, actor_user_id, page["id"], perm)
     ref = _text(ref_id, 80)
     if not ref:

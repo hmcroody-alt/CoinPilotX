@@ -197,6 +197,7 @@
       "page": "ページ",
       "createPage": "プレゼンスを作成",
       "editPage": "ページを編集",
+      "pageConnections": "連携",
       "yourPages": "あなたのページ",
       "presence": "プレゼンス"
     },
@@ -214,6 +215,7 @@
       "presenceManage": "あなたが所有または運営を手伝うページ",
       "presenceCreate": "アーティスト・ビジネス・団体",
       "presenceEdit": "名前・ハンドル・画像・連絡先",
+      "presenceConnections": "このプレゼンスの連携先",
       "presencePublic": "プレゼンスページ"
     },
     "identity": {

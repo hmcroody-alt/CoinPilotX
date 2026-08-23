@@ -546,6 +546,96 @@ class LinkOwnershipTests(unittest.TestCase):
                 self.conn, STRANGER, self.page_id, "store", str(STRANGER_SELLER_ID))
 
 
+class LinkOptionsTests(unittest.TestCase):
+    """`link_options` is what makes connecting a shop a choice rather than a
+    request to type an internal id. It has to offer exactly what `set_link`
+    would accept — offering more is a button that fails, offering less is a
+    capability the member cannot reach.
+    """
+
+    def setUp(self):
+        self.conn = make_conn()
+        self.page_id = create(self.conn)["id"]
+
+    def options(self, actor=OWNER):
+        return {
+            entry["link_type"]: entry
+            for entry in pulsesoc_pages.link_options(self.conn, actor, self.page_id)["links"]
+        }
+
+    def test_offers_the_resources_the_owner_holds_by_name(self):
+        store = self.options()["store"]
+        self.assertEqual(store["options"], [{"ref_id": str(OWNER_SELLER_ID), "label": "Owner Shop"}])
+        # The label is what the member recognises; the id is carried but never
+        # something they have to know.
+        self.assertEqual(store["connected_ref_id"], "")
+
+    def test_never_offers_a_resource_the_presence_has_no_claim_to(self):
+        for link_type in ("store", "ad_account", "community", "music_artist"):
+            with self.subTest(link_type=link_type):
+                refs = [option["ref_id"] for option in self.options()[link_type]["options"]]
+                self.assertNotIn(str(STRANGER_SELLER_ID), refs)
+                self.assertNotIn(str(STRANGER_ADVERTISER_ID), refs)
+                self.assertNotIn(str(STRANGER_GROUP_ID), refs)
+                self.assertNotIn(STRANGER_ARTIST, refs)
+
+    def test_reports_what_is_already_connected(self):
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", str(OWNER_SELLER_ID))
+        self.assertEqual(self.options()["store"]["connected_ref_id"], str(OWNER_SELLER_ID))
+
+    def test_offers_no_type_that_set_link_would_refuse(self):
+        # The two lists are derived from different maps; if they ever diverge,
+        # the surface grows a control with nothing behind it.
+        for link_type, entry in self.options().items():
+            with self.subTest(link_type=link_type):
+                self.assertIn(link_type, pulsesoc_pages.LINK_TYPES)
+        self.assertNotIn("event", self.options())
+        self.assertNotIn("business_os", self.options())
+
+    def test_every_offered_ref_is_actually_acceptable(self):
+        # The strongest form of the same claim: take the offer at its word and
+        # put it through the real entry point.
+        for link_type, entry in self.options().items():
+            for option in entry["options"]:
+                with self.subTest(link_type=link_type, ref=option["ref_id"]):
+                    pulsesoc_pages.set_link(
+                        self.conn, OWNER, self.page_id, link_type, option["ref_id"])
+
+    def test_a_role_that_cannot_connect_is_told_so_and_shown_nothing(self):
+        invite = pulsesoc_pages.invite_member(
+            self.conn, OWNER, self.page_id, {"user_id": FRIEND, "role": "ANALYST"})
+        pulsesoc_pages.accept_invite(self.conn, FRIEND, invite["invite_token"])
+        store = self.options(FRIEND)["store"]
+        self.assertFalse(store["can_manage"])
+        # An analyst has no reason to receive an inventory of what the owner
+        # holds, so the list is withheld rather than shown and disabled.
+        self.assertEqual(store["options"], [])
+
+    def test_a_marketplace_manager_is_offered_the_shop_they_can_connect(self):
+        invite = pulsesoc_pages.invite_member(
+            self.conn, OWNER, self.page_id, {"user_id": FRIEND, "role": "MARKETPLACE_MANAGER"})
+        pulsesoc_pages.accept_invite(self.conn, FRIEND, invite["invite_token"])
+        options = self.options(FRIEND)
+        self.assertTrue(options["store"]["can_manage"])
+        self.assertEqual(
+            [o["ref_id"] for o in options["store"]["options"]], [str(OWNER_SELLER_ID)])
+        # Same person, different question: they may connect a shop, not ads.
+        self.assertFalse(options["ad_account"]["can_manage"])
+
+    def test_a_stranger_gets_no_inventory_at_all(self):
+        with self.assertRaises(PageError):
+            pulsesoc_pages.link_options(self.conn, STRANGER, self.page_id)
+
+    def test_a_missing_backing_table_offers_nothing_rather_than_failing(self):
+        # Optional subsystems are registered in try/except and can be absent.
+        # The management screen still has to open.
+        self.conn.execute("DROP TABLE marketplace_sellers")
+        options = self.options()
+        self.assertEqual(options["store"]["options"], [])
+        self.assertTrue(options["store"]["can_manage"])
+        self.assertTrue(options["community"]["options"])
+
+
 class UndxTests(unittest.TestCase):
     def setUp(self):
         self.conn = make_conn()

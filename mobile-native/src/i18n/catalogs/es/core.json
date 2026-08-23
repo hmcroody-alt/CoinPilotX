@@ -197,6 +197,7 @@
       "page": "Página",
       "createPage": "Crear presencia",
       "editPage": "Editar página",
+      "pageConnections": "Conexiones",
       "yourPages": "Tus páginas",
       "presence": "Presencia"
     },
@@ -214,6 +215,7 @@
       "presenceManage": "Páginas que tienes o ayudas a gestionar",
       "presenceCreate": "Artista, negocio u organización",
       "presenceEdit": "Nombre, usuario, imágenes y contacto",
+      "presenceConnections": "Con qué está conectada esta presencia",
       "presencePublic": "Página de presencia"
     },
     "identity": {

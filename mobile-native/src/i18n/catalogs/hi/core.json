@@ -197,6 +197,7 @@
       "page": "पेज",
       "createPage": "उपस्थिति बनाएँ",
       "editPage": "पेज संपादित करें",
+      "pageConnections": "कनेक्शन",
       "yourPages": "आपके पेज",
       "presence": "उपस्थिति"
     },
@@ -214,6 +215,7 @@
       "presenceManage": "वे पेज जो आपके हैं या जिन्हें आप चलाने में मदद करते हैं",
       "presenceCreate": "आर्टिस्ट, बिज़नेस या संगठन",
       "presenceEdit": "नाम, हैंडल, तस्वीरें और संपर्क",
+      "presenceConnections": "यह प्रेज़ेंस किससे जुड़ी है",
       "presencePublic": "उपस्थिति पेज"
     },
     "identity": {

@@ -105,6 +105,33 @@ export type PageMember = {
 export type PageLink = { link_type: string; ref_id: string; created_at?: string };
 
 /**
+ * One thing a presence could be connected to — a shop, ad account, community
+ * or music catalogue the member (or the page's owner) actually holds.
+ *
+ * `label` is what the member recognises it by. `ref_id` is carried so the
+ * connect call can name it, and is never something a member has to know or
+ * type: a raw id in a text box is both unusable and the shape that made
+ * connecting *other people's* resources so easy before the server started
+ * checking.
+ */
+export type PageLinkOption = { ref_id: string; label: string };
+
+export type PageLinkSlot = {
+  link_type: string;
+  label: string;
+  /** The page permission the server requires to change this connection. */
+  permission: string;
+  /** Whether this caller's role may change it. Decided server-side. */
+  can_manage: boolean;
+  /** "" when nothing is connected. */
+  connected_ref_id: string;
+  /** Empty when `can_manage` is false — withheld, not merely disabled. */
+  options: PageLinkOption[];
+};
+
+export type PageLinkOptions = { page_id: number; role: PageRole; links: PageLinkSlot[] };
+
+/**
  * Growth windows are measured server-side from real follow/post timestamps —
  * never estimated. Completeness is derived from actual profile fields and is
  * management-only: it never appears in a public payload.
@@ -398,6 +425,17 @@ export async function listPageLinks(pageId: number, type?: string) {
   const suffix = type ? `?type=${encodeURIComponent(type)}` : "";
   const data = await pulseApi<{ ok: boolean; links: PageLink[] }>(`/api/pages/${pageId}/links${suffix}`);
   return data.links || [];
+}
+
+/**
+ * The connectable inventory for this presence. Options are a convenience, not
+ * an authorization: the server re-derives entitlement when the connection is
+ * actually made, so a stale option fails at `setPageLink` rather than
+ * succeeding on the strength of having been offered.
+ */
+export async function getPageLinkOptions(pageId: number): Promise<PageLinkOptions> {
+  const data = await pulseApi<{ ok: boolean } & PageLinkOptions>(`/api/pages/${pageId}/link-options`);
+  return { page_id: Number(data.page_id || pageId), role: data.role, links: data.links || [] };
 }
 
 export async function setPageLink(pageId: number, linkType: string, refId: string) {

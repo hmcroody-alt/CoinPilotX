@@ -197,6 +197,7 @@
       "page": "Paj",
       "createPage": "Kreye yon prezans",
       "editPage": "Modifye paj la",
+      "pageConnections": "Koneksyon",
       "yourPages": "Paj ou yo",
       "presence": "Prezans"
     },
@@ -214,6 +215,7 @@
       "presenceManage": "Paj ou posede oswa ou ede jere",
       "presenceCreate": "Atis, biznis oswa òganizasyon",
       "presenceEdit": "Non, non itilizatè, imaj ak kontak",
+      "presenceConnections": "Ak kisa prezans sa a konekte",
       "presencePublic": "Paj prezans"
     },
     "identity": {

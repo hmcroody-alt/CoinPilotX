@@ -18210,6 +18210,28 @@ def api_pulsesoc_page_links(page_id):
         conn.close()
 
 
+@webhook_app.route("/api/pages/<int:page_id>/link-options", methods=["GET"])
+def api_pulsesoc_page_link_options(page_id):
+    """What this presence is connected to, and what it could be connected to.
+
+    Separate from `/links` because that returns rows as stored; this answers a
+    question the management surface actually asks — which of the caller's own
+    shops, ad accounts, communities and catalogues are attachable here. Without
+    it the only way to connect anything is to know an internal id and type it.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        return jsonify({"ok": True, **pulsesoc_pages.link_options(conn, user["user_id"], page_id)})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
 @webhook_app.route("/api/admin/pages", methods=["GET"])
 def api_admin_pages_search():
     admin, denied = require_admin_api("users.view")
