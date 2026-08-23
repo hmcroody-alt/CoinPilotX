@@ -204,27 +204,94 @@ as misleading metadata.
 
 Option 1 is the fastest path to resubmission. Option 2 gives the best store page.
 
-## Blocker C — the Mac console is at the login window
+## Blocker C — the Mac console was at the login window
 
-No screenshot can be **re-captured** this session, and no App Preview can be recorded.
+**CLEARED.** The Mac is logged in: `who` reports `hmcherie console`, `IOConsoleLocked` is
+false, and the Simulator is running with PulseSoc live. `request_access` grants Simulator at
+**full** tier, so taps work. Everything this blocker was holding — the Ad Credits capture, the
+Business OS route, the Security recapture, the App Preview — is now reachable.
 
-The desktop is locked at the login window. Proven, not inferred: `open_application Simulator`
-and repeated screenshots return only wallpaper, `osascript` has no assistive access, and the
-decisive test — a bare `key escape` — returns *"loginwindow is not in the allowed applications
-and is currently in front."*
+Two things it was holding are done: the Ad Credits review screenshot (Stage 3, see above) and
+the Business OS / Trust & Safety copy fixes, both verified on device against a freshly built
+release bundle.
 
-`xcrun simctl` still works headlessly, so `io … screenshot`, `openurl`, `launch`, `terminate`
-and `get_app_container` are all available. What is **not** available is a tap. `idb` is not
-installed, and there is no other way to drive the simulator's UI. Any capture that requires
-navigating to a screen is therefore out of reach, including:
+## Blocker C2 — App Store Connect is signed out
 
-- retaking `08_security.png` after the copy fix
-- Business OS via Profile → Business tile (Stage 4's mandated route — it has no deep link, so
-  `simctl openurl` cannot substitute)
-- the App Preview recording
-- the Ad Credits IAP review screenshot (see Blocker D)
+**Owner action required. This is the single largest blocker remaining.**
 
-This clears the moment someone logs the Mac in. It is not a code or tooling defect.
+Mid-session, ASC dropped the browser session. Every navigation to
+`/apps/6777591572/distribution/iaps` now redirects to `https://appstoreconnect.apple.com/login`,
+confirmed repeatedly. Signing in is not something this session can do — it needs an Apple
+password and 2FA, which are out of scope by policy.
+
+What is blocked behind it, and nothing else:
+
+- Ad Credits tier3 / tier4 / tier5 review screenshots (tier1 verified uploaded, tier2 injected
+  but unverified) — Stage 4
+- Subscription level ordering — Stage 5
+- Build 17 selection on the version — Stage 24
+- Replacing the 6.5" screenshot set and uploading the App Preview — Stages 25–26
+- Adding all seven IAPs to the review package — Stage 27
+- Final review notes and audit — Stages 28–29
+
+Note that the **binary upload does not need this**. See Blocker A2.
+
+## Blocker A2 — distribution signing: resolved, and the archive is the real problem
+
+Stage 22 asked which artifact is missing. Answered precisely:
+
+**Nothing is missing on the EAS side.** `eas build --platform ios --profile production` reports
+*"All credentials are ready to build @hmcroody/pulsesoc-native (com.pulsesoc.app)"*:
+
+| Artifact | State |
+|---|---|
+| Distribution Certificate | serial `3B0E096FA823409F9A70634AE3DDE8A3`, expires 2027-06-07, team `87ZC69AGSR` (ROODY CHERIE, Individual) |
+| Provisioning Profile | Developer Portal ID `U52P7K5MA7`, **active**, expires 2027-06-07 |
+| App Store Connect API Key | held by the EAS credentials service |
+
+The **local** machine has none of these — `security find-identity -p codesigning` lists only
+two *Apple Development* identities, `~/Library/MobileDevice/Provisioning Profiles/` is empty,
+and there is no `.p8` anywhere. So a local `xcodebuild` archive genuinely cannot be signed for
+distribution, but it does not need to be: EAS signs in the cloud, and because EAS holds an ASC
+API key, **`eas submit` can upload the build without the owner's browser session.**
+
+The actual failure was transport, not signing. The project archive was **251 MB** and the
+upload died at 213 MB with `write EPIPE`.
+
+The first two diagnoses were wrong and are recorded here so nobody repeats them. Naming the
+heavy backend directories in `.easignore` individually (`services/`, `backups/`, `tests/`,
+`static/`, `scripts/`, `.fuse_hidden*`) changed the size by **zero bytes**. Inverting the rule
+to `/*` + `!/mobile-native` also left it at **exactly 251 MB** — gitignore cannot re-include a
+path whose parent directory is excluded.
+
+The measurement that broke it open: git-tracked files total **281 MB**, untracked-and-not-
+excluded total **0 MB**. 281 MB of tracked content compressing to a 251 MB archive means
+`.easignore` was not being consulted **at all**.
+
+**Root cause.** `mobile-native/` lives inside the CoinPilotX git repo, so `eas-cli` selects its
+Git VCS client, roots the archive at the *repo* root, and builds the tarball with
+`git archive HEAD` — which honours `.gitignore` and ignores `.easignore` entirely.
+
+**Fix.** Bypass the VCS client so eas-cli falls back to a filesystem walk rooted at
+`mobile-native/`, which does honour `.easignore`:
+
+```
+EAS_NO_VCS=1 npx eas-cli build --platform ios --profile production --non-interactive
+```
+
+Archive: **251 MB → 66.1 MB**, uploads cleanly. Trade-off: the working tree is archived as-is,
+so commit before building if the archive must correspond to a SHA.
+
+### Build number — a second trap in the same command
+
+`app.json` carries `"buildNumber": "17"`, but the project is **bare** (an `ios/` directory
+exists), and eas-cli says so out loud: *"Specified value for `ios.bundleIdentifier` in
+app.config.js or app.json is ignored because an ios directory was detected in the project."*
+The same applies to the build number — the native values win. `project.pbxproj` had
+`CURRENT_PROJECT_VERSION = 16` and `Info.plist` had `CFBundleVersion 16`, so the first
+successful-archive run would have produced **another build 16**, which App Store Connect
+rejects as a duplicate. Both native values are now **17**. When bumping for build 18, edit the
+native files — changing `app.json` alone does nothing.
 
 ## Blocker D — five Ad Credits consumables are still unsubmitted
 

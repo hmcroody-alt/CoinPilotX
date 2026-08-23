@@ -14,8 +14,51 @@ ios/**/*.xcuserstate
 ios/**/DerivedData/
 ios/.xcode.env.local
 
-# EAS archives from the git root for this app, so keep repo-root patterns too.
+# Everything below this line is repo-root cleanup, and it only matters when the
+# build is run WITHOUT EAS_NO_VCS=1. Read this before touching it.
+#
+# mobile-native/ sits inside the CoinPilotX git repo, so by default eas-cli
+# picks its Git VCS client, roots the archive at the *repo* root, and builds the
+# tarball from `git archive HEAD` — which consults .gitignore and ignores
+# .easignore entirely. That is why the archive was 251 MB (≈ the 281 MB of
+# tracked files, compressed) and died mid-upload with `write EPIPE` at 213 MB,
+# and why two rounds of edits to this file changed the size by exactly zero.
+# Naming offenders individually did nothing; so did inverting to "/*" plus
+# "!/mobile-native" (gitignore cannot re-include a path whose parent directory
+# is excluded).
+#
+# The fix is to bypass the VCS client:
+#
+#     EAS_NO_VCS=1 npx eas-cli build --platform ios --profile production
+#
+# That switches eas-cli to a filesystem walk rooted at mobile-native/, which
+# does honour .easignore — archive drops to 66 MB and uploads cleanly. The
+# trade-off is that uncommitted working-tree changes are included, so commit
+# first if you want the archive to match a SHA.
+#
+# The root-level entries below are therefore belt-and-braces for anyone who
+# forgets the env var. An iOS build needs nothing from this repo outside
+# mobile-native/, so anything new at the root belongs in this list.
 .git/
+services/
+tests/
+scripts/
+backups/
+backend/
+static/
+templates/
+migrations/
+models/
+seo/
+data/
+outputs/
+logs/
+certificates/
+pulse_communications_v2/
+.fuse_hidden*
+*.pyc
+*.sqlite
+*.sqlite3
 reports/
 release-assets/
 mobile/
