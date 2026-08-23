@@ -12,9 +12,14 @@ import {
   View
 } from "react-native";
 import {
+  acceptPageInvite,
+  declinePageInvite,
   getPageManageView,
+  listMyPageInvites,
   listMyPages,
+  PageInvite,
   PageManageView,
+  pageRoleLabel,
   PageStatus,
   pageTypeLabel,
   PulsePage,
@@ -51,6 +56,7 @@ const BUSINESS_TYPES = new Set([
 export function PagesHubScreen({ route, navigation }: Props) {
   const focusPageId = route.params?.focusPageId;
   const [pages, setPages] = useState<PulsePage[]>([]);
+  const [invites, setInvites] = useState<PageInvite[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [manage, setManage] = useState<PageManageView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,9 +80,51 @@ export function PagesHubScreen({ route, navigation }: Props) {
     }
   }, [focusPageId]);
 
+  /**
+   * Invites are a separate read, and deliberately a separate failure. A user
+   * with no invites is the common case, and an older server without the
+   * endpoint should leave this hub working exactly as before — so a failure
+   * here empties the list rather than surfacing an error over the pages the
+   * user came for.
+   */
+  const loadInvites = useCallback(async () => {
+    try {
+      setInvites(await listMyPageInvites());
+    } catch {
+      setInvites([]);
+    }
+  }, []);
+
+  async function answerInvite(invite: PageInvite, accept: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setNotice("");
+    try {
+      if (accept) {
+        await acceptPageInvite(invite.token);
+        setNotice(`You're now ${pageRoleLabel(invite.role).toLowerCase()} of ${invite.page_name}.`);
+      } else {
+        await declinePageInvite(invite.token);
+        setNotice(`Invite from ${invite.page_name} declined.`);
+      }
+      // Accepting adds a page and clears the invite; declining only clears it.
+      // Both are re-read from the server rather than patched locally, so the
+      // screen can never disagree with what actually happened.
+      await Promise.all([load(), loadInvites()]);
+      if (accept) setSelectedId(invite.page_id);
+    } catch (inviteError) {
+      setNotice(
+        inviteError instanceof PulseApiError ? inviteError.message : "That invite could not be updated."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadInvites();
+  }, [load, loadInvites]);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,11 +205,74 @@ export function PagesHubScreen({ route, navigation }: Props) {
           onRefresh={() => {
             setRefreshing(true);
             load();
+            loadInvites();
           }}
           tintColor={colors.accent}
         />
       }
     >
+      {/*
+        The invitee's half of the invite flow. The token is returned to the
+        person who *sent* the invite, and nothing is pushed or mailed — so
+        before this existed, the only route onto a team was someone pasting a
+        secret to you. This is where an invite is actually findable, and it
+        sits above everything else because it expires.
+      */}
+      {invites.map((invite) => (
+        <View key={invite.token} style={styles.inviteCard} testID={`invite-${invite.page_id}`}>
+          <Text style={styles.inviteTitle}>
+            {invite.invited_by_name
+              ? `${invite.invited_by_name} invited you to ${invite.page_name}`
+              : `You've been invited to ${invite.page_name}`}
+          </Text>
+          <Text style={styles.cardMeta}>
+            {pageTypeLabel(invite.page_type)}
+            {invite.page_handle ? ` · @${invite.page_handle}` : ""} · as {pageRoleLabel(invite.role).toLowerCase()}
+          </Text>
+          {invite.expired ? (
+            // Shown rather than hidden: an invite that silently vanishes reads
+            // as one that was never sent, and leaves nothing to ask about.
+            <>
+              <Text style={styles.note}>
+                This invite expired. Ask {invite.invited_by_name || "whoever invited you"} for a new one.
+              </Text>
+              <View style={styles.actionsGrid}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Dismiss expired invite from ${invite.page_name}`}
+                  disabled={busy}
+                  style={styles.action}
+                  onPress={() => answerInvite(invite, false)}
+                >
+                  <Text style={styles.actionText}>Dismiss</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <View style={styles.actionsGrid}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Accept invite to ${invite.page_name}`}
+                disabled={busy}
+                style={[styles.action, styles.inviteAccept]}
+                onPress={() => answerInvite(invite, true)}
+              >
+                <Text style={styles.inviteAcceptText}>Accept</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Decline invite to ${invite.page_name}`}
+                disabled={busy}
+                style={styles.action}
+                onPress={() => answerInvite(invite, false)}
+              >
+                <Text style={styles.actionText}>Decline</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      ))}
+
       <Pressable
         accessibilityRole="button"
         style={styles.createButton}
@@ -462,6 +573,29 @@ const styles = createThemedStyles(() => ({
     lineHeight: 21,
     marginTop: 16,
     textAlign: "center"
+  },
+  inviteAccept: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent
+  },
+  inviteAcceptText: {
+    color: colors.background,
+    fontSize: 13,
+    fontWeight: "800"
+  },
+  inviteCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.accent,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 14,
+    padding: 16
+  },
+  inviteTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "900",
+    marginBottom: 4
   },
   meterFill: {
     backgroundColor: colors.accent,

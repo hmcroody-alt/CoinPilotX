@@ -834,6 +834,102 @@ def invite_member(conn: Any, actor_user_id: int, page_id: int, payload: dict) ->
     return {"user_id": target_id, "role": role, "status": "invited", "invite_token": token, "expires_at": expires}
 
 
+def list_my_invites(conn: Any, user_id: int) -> list[dict]:
+    """The invites waiting on *you*, with the token needed to act on them.
+
+    `invite_member` returns the token to the inviter and to nobody else, and
+    nothing is sent to the invitee — so before this existed the only way onto a
+    team was for the inviter to copy the token out of an API response and hand
+    it over by hand. That is precisely the shared-credential habit the role
+    system replaces, reintroduced one layer up.
+
+    Returning a user their own token grants nothing new: `accept_invite` and
+    `decline_invite` both match on `invite_token AND user_id`, so a token is
+    only usable by the person it was already issued to.
+
+    Expired invites are listed with `expired: true` rather than filtered out.
+    Hiding them makes the screen read as though the invite was never sent, and
+    the invitee is then left with nothing to say to the person who sent it;
+    shown, they can ask for a fresh one.
+    """
+    ensure_tables(conn)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT m.invite_token, m.role, m.invite_expires_at, m.created_at,
+               p.id AS page_id, p.name AS page_name, p.handle AS page_handle,
+               p.avatar_url AS page_avatar_url, p.page_type, p.status AS page_status,
+               u.username AS inviter_username, u.display_name AS inviter_display_name,
+               u.full_name AS inviter_full_name
+        FROM pulse_page_members m
+        JOIN pulse_pages p ON p.id = m.page_id
+        LEFT JOIN users u ON u.user_id = m.invited_by
+        WHERE m.user_id=? AND m.status='invited' AND m.invite_token IS NOT NULL
+        ORDER BY m.created_at DESC
+        """,
+        (int(user_id),),
+    )
+    now = _now()
+    out = []
+    for raw in cur.fetchall():
+        invite = _row(raw)
+        # A deactivated page has no team to join; accepting would hand someone a
+        # role on something they cannot see.
+        if str(invite.get("page_status") or "").upper() == "DEACTIVATED":
+            continue
+        expires = str(invite.get("invite_expires_at") or "")
+        out.append({
+            "token": invite.get("invite_token") or "",
+            "role": invite.get("role"),
+            "expires_at": expires,
+            "expired": bool(expires and expires < now),
+            "invited_at": invite.get("created_at"),
+            "page_id": int(invite.get("page_id") or 0),
+            "page_name": invite.get("page_name") or "",
+            "page_handle": invite.get("page_handle") or "",
+            "page_avatar_url": invite.get("page_avatar_url") or "",
+            "page_type": invite.get("page_type") or "",
+            "invited_by_name": (invite.get("inviter_display_name")
+                                or invite.get("inviter_full_name")
+                                or invite.get("inviter_username")
+                                or ""),
+        })
+    return out
+
+
+def decline_invite(conn: Any, user_id: int, token: Any) -> dict:
+    """Refuse an invite. Scoped exactly like `accept_invite`.
+
+    Without this the invitee's only exit is to accept and hope someone with
+    `manage_members` removes them later — clearing the invite is itself a
+    management action they do not have. Declining is the one thing about an
+    invite that is unambiguously the invitee's call, so it is gated on holding
+    the token, not on a page permission.
+    """
+    ensure_tables(conn)
+    token = _text(token, 120)
+    if not token:
+        raise PageError("Invite token required.")
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM pulse_page_members WHERE invite_token=? AND user_id=? AND status='invited' LIMIT 1",
+        (token, int(user_id)),
+    )
+    invite = _row(cur.fetchone())
+    if not invite:
+        raise PageError("Invite not found or already handled.", 404)
+    cur.execute(
+        "UPDATE pulse_page_members SET status='declined', invite_token=NULL, invite_expires_at=NULL, "
+        "updated_at=? WHERE id=?",
+        (_now(), int(invite["id"])),
+    )
+    _audit(conn, int(invite["page_id"]), user_id, "invite_declined", after={"role": invite.get("role")})
+    conn.commit()
+    _sentinel_event("page.invite_declined", user_id, int(invite["page_id"]),
+                    payload={"role": invite.get("role")})
+    return {"page_id": int(invite["page_id"]), "status": "declined"}
+
+
 def accept_invite(conn: Any, user_id: int, token: Any) -> dict:
     ensure_tables(conn)
     token = _text(token, 120)

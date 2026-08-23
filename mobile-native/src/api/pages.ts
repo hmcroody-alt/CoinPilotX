@@ -365,9 +365,49 @@ export async function invitePageMember(
   );
 }
 
+export type PageInvite = {
+  /** The credential. Only ever returned to the person it was issued to. */
+  token: string;
+  role: PageRole;
+  expires_at: string;
+  expired: boolean;
+  invited_at: string;
+  page_id: number;
+  page_name: string;
+  page_handle: string;
+  page_avatar_url: string;
+  page_type: PageType;
+  invited_by_name: string;
+};
+
+/**
+ * The invites waiting on you.
+ *
+ * `invitePageMember` returns the token to the *inviter*, and nothing is pushed
+ * or mailed to the invitee — so without this read, joining a team meant someone
+ * pasting a secret to you by hand. Scoped server-side to the caller; there is
+ * no page id to pass, deliberately.
+ */
+export async function listMyPageInvites(): Promise<PageInvite[]> {
+  const data = await pulseApi<{ ok: boolean; invites: PageInvite[] }>("/api/pages/invites");
+  return data.invites || [];
+}
+
 export async function acceptPageInvite(token: string) {
   return pulseApi<{ ok: boolean; membership: { page_id: number; role: PageRole } }>(
     "/api/pages/invites/accept",
+    { method: "POST", body: JSON.stringify({ token }) }
+  );
+}
+
+/**
+ * Refuse an invite. Removal is gated on `manage_members`, which an invitee does
+ * not have — so without this the only way out of an unwanted invite is to
+ * accept it and ask to be removed.
+ */
+export async function declinePageInvite(token: string) {
+  return pulseApi<{ ok: boolean; page_id: number; status: string }>(
+    "/api/pages/invites/decline",
     { method: "POST", body: JSON.stringify({ token }) }
   );
 }
@@ -504,3 +544,29 @@ export function pageTypeLabel(pageType?: string) {
   const text = String(pageType || "OTHER").replace(/_/g, " ").toLowerCase();
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
+
+/**
+ * A role name is a wire constant; this is how it reads to a person.
+ *
+ * Sentence case, not title case: "Content manager" is a description of a job,
+ * "Content Manager" reads like a product feature. Derived rather than mapped so
+ * a role the server adds still renders as words instead of ADVERTISING_MANAGER.
+ *
+ * Lives here rather than in a screen because the team screen and the invite
+ * inbox both name roles, and a second copy is a second thing to get wrong.
+ */
+export function pageRoleLabel(role?: string) {
+  const words = String(role || "").split("_").join(" ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** What a role can actually do, in the terms of the thing being handed over. */
+export const PAGE_ROLE_SUMMARY: Record<string, string> = {
+  OWNER: "Full control, including ownership and deletion.",
+  ADMIN: "Everything except transferring ownership.",
+  MANAGER: "Edit the page, post, and manage connections.",
+  CONTENT_MANAGER: "Post and manage content. No settings or team changes.",
+  ADVERTISING_MANAGER: "Run campaigns from the connected ad account.",
+  MARKETPLACE_MANAGER: "Manage the connected shop and its listings.",
+  ANALYST: "Read-only. Sees insights, changes nothing."
+};

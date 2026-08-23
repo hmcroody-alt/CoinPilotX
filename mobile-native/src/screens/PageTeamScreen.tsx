@@ -5,7 +5,9 @@ import {
   changePageMemberRole,
   getPageTeam,
   invitePageMember,
+  PAGE_ROLE_SUMMARY,
   PageMember,
+  pageRoleLabel,
   PageRole,
   PageTeam,
   removePageMember,
@@ -43,29 +45,6 @@ type Props = NativeStackScreenProps<RootStackParamList, "PageTeam">;
  * typed confirmation, to someone who is already an active member — that is the
  * server's rule, and this screen states it rather than discovering it.
  */
-
-/** What a role can actually do, in the terms of the thing being handed over. */
-const ROLE_SUMMARY: Record<string, string> = {
-  OWNER: "Full control, including ownership and deletion.",
-  ADMIN: "Everything except transferring ownership.",
-  MANAGER: "Edit the page, post, and manage connections.",
-  CONTENT_MANAGER: "Post and manage content. No settings or team changes.",
-  ADVERTISING_MANAGER: "Run campaigns from the connected ad account.",
-  MARKETPLACE_MANAGER: "Manage the connected shop and its listings.",
-  ANALYST: "Read-only. Sees insights, changes nothing."
-};
-
-/**
- * A role name is a wire constant; this is how it reads to a person.
- *
- * Sentence case, not title case: "Content manager" is a description of a job,
- * "Content Manager" reads like a product feature. Derived rather than mapped
- * so a role the server adds still renders as words instead of ADVERTISING_MANAGER.
- */
-function roleLabel(role: string) {
-  const words = role.split("_").join(" ").toLowerCase();
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
 
 function memberName(member: PageMember) {
   return member.name || (member.handle ? `@${member.handle}` : `Member ${member.user_id}`);
@@ -195,7 +174,7 @@ export function PageTeamScreen({ route }: Props) {
                   {member.is_you ? " (you)" : ""}
                 </Text>
                 <Text style={styles.cardRole}>
-                  {roleLabel(member.role)}
+                  {pageRoleLabel(member.role)}
                   {member.status === "invited" ? " · invite pending" : ""}
                 </Text>
               </View>
@@ -211,7 +190,7 @@ export function PageTeamScreen({ route }: Props) {
               ) : null}
             </View>
 
-            <Text style={styles.cardBody}>{ROLE_SUMMARY[member.role] || ""}</Text>
+            <Text style={styles.cardBody}>{PAGE_ROLE_SUMMARY[member.role] || ""}</Text>
 
             {member.is_owner ? (
               /* Not a disabled button with no explanation: the owner's seat is
@@ -237,20 +216,20 @@ export function PageTeamScreen({ route }: Props) {
                           /* The same role name appears in this panel and in
                              the invite form. Read aloud, "Manager" alone says
                              nothing about which person it would apply to. */
-                          accessibilityLabel={`Make ${memberName(member)} ${roleLabel(role)}`}
+                          accessibilityLabel={`Make ${memberName(member)} ${pageRoleLabel(role)}`}
                           disabled={Boolean(busy)}
                           style={styles.option}
                           onPress={() =>
                             act(
                               `role:${member.user_id}:${role}`,
                               () => changePageMemberRole(pageId, member.user_id, role),
-                              `${memberName(member)} is now ${roleLabel(role)}.`
+                              `${memberName(member)} is now ${pageRoleLabel(role)}.`
                             )
                           }
                         >
                           <View style={styles.optionText}>
-                            <Text style={styles.optionLabel}>{roleLabel(role)}</Text>
-                            <Text style={styles.optionBody}>{ROLE_SUMMARY[role] || ""}</Text>
+                            <Text style={styles.optionLabel}>{pageRoleLabel(role)}</Text>
+                            <Text style={styles.optionBody}>{PAGE_ROLE_SUMMARY[role] || ""}</Text>
                           </View>
                           <Text style={styles.optionAction}>
                             {busy === `role:${member.user_id}:${role}` ? "Saving…" : "Set"}
@@ -363,14 +342,14 @@ export function PageTeamScreen({ route }: Props) {
             <Pressable
               key={role}
               accessibilityRole="button"
-              accessibilityLabel={`Invite as ${roleLabel(role)}`}
+              accessibilityLabel={`Invite as ${pageRoleLabel(role)}`}
               accessibilityState={{ selected: inviteRole === role }}
               style={[styles.option, inviteRole === role && styles.optionSelected]}
               onPress={() => setInviteRole(role)}
             >
               <View style={styles.optionText}>
-                <Text style={styles.optionLabel}>{roleLabel(role)}</Text>
-                <Text style={styles.optionBody}>{ROLE_SUMMARY[role] || ""}</Text>
+                <Text style={styles.optionLabel}>{pageRoleLabel(role)}</Text>
+                <Text style={styles.optionBody}>{PAGE_ROLE_SUMMARY[role] || ""}</Text>
               </View>
               {inviteRole === role ? <Text style={styles.optionAction}>Chosen</Text> : null}
             </Pressable>

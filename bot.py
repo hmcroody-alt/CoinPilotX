@@ -17989,6 +17989,40 @@ def api_pulsesoc_page_handle_check():
         conn.close()
 
 
+@webhook_app.route("/api/pages/invites", methods=["GET"])
+def api_pulsesoc_page_invites():
+    # The invite token used to exist only in the inviter's API response, so
+    # joining a team meant someone pasting it to you. This is how the person it
+    # was issued to finds it. Scoped to the caller by user_id, never by page.
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        return jsonify({"ok": True, "invites": pulsesoc_pages.list_my_invites(conn, user["user_id"])})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/invites/decline", methods=["POST"])
+def api_pulsesoc_page_invite_decline():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        payload = request.get_json(silent=True) or {}
+        return jsonify({"ok": True, **pulsesoc_pages.decline_invite(conn, user["user_id"], payload.get("token"))})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
 @webhook_app.route("/api/pages/invites/accept", methods=["POST"])
 def api_pulsesoc_page_invite_accept():
     init_db()

@@ -399,6 +399,137 @@ class TeamViewTests(unittest.TestCase):
         self.assertNotIn(FRIEND, [m["user_id"] for m in view["members"]])
 
 
+class InviteInboxTests(unittest.TestCase):
+    """The invitee's half of the invite, which did not exist.
+
+    `invite_member` returned the token to the *inviter* and told the invitee
+    nothing — no notification, no inbox, no way to look it up. The only path
+    onto a team was for the inviter to paste a secret to you out of band, which
+    is the shared-credential habit the whole role system exists to replace.
+
+    These tests pin two things that are easy to get subtly wrong: the inbox is
+    scoped to the caller and to nothing else (an inbox that leaks by page id is
+    a token disclosure), and declining is available to the invitee alone,
+    because clearing an invite is otherwise gated on `manage_members` — a
+    permission the invitee by definition does not have yet.
+    """
+
+    def setUp(self):
+        self.conn = make_conn()
+        self.page = create(self.conn)
+        self.page_id = self.page["id"]
+
+    def invite(self, user_id=FRIEND, role="ADMIN", actor=OWNER):
+        return pulsesoc_pages.invite_member(
+            self.conn, actor, self.page_id, {"user_id": user_id, "role": role})
+
+    def test_the_invitee_can_find_the_invite_without_being_handed_the_token(self):
+        sent = self.invite()
+        inbox = pulsesoc_pages.list_my_invites(self.conn, FRIEND)
+        self.assertEqual(len(inbox), 1)
+        # The token is the whole point: without it the row is a notification
+        # the invitee cannot act on.
+        self.assertEqual(inbox[0]["token"], sent["invite_token"])
+        self.assertEqual(inbox[0]["role"], "ADMIN")
+
+    def test_the_invite_says_which_presence_and_who_sent_it(self):
+        self.invite()
+        entry = pulsesoc_pages.list_my_invites(self.conn, FRIEND)[0]
+        # An invite that says only "you have an invite" is a phishing prompt.
+        self.assertEqual(entry["page_id"], self.page_id)
+        self.assertEqual(entry["page_name"], "Night Signal")
+        self.assertEqual(entry["page_handle"], "nightsignal")
+        self.assertEqual(entry["page_type"], "ARTIST")
+        self.assertEqual(entry["invited_by_name"], "Roody")
+
+    def test_the_inbox_belongs_to_one_person(self):
+        self.invite(FRIEND)
+        # The token is a credential. Anyone else asking gets nothing, including
+        # the person who sent it.
+        self.assertEqual(pulsesoc_pages.list_my_invites(self.conn, STRANGER), [])
+        self.assertEqual(pulsesoc_pages.list_my_invites(self.conn, OWNER), [])
+
+    def test_an_accepted_invite_leaves_the_inbox(self):
+        sent = self.invite()
+        pulsesoc_pages.accept_invite(self.conn, FRIEND, sent["invite_token"])
+        self.assertEqual(pulsesoc_pages.list_my_invites(self.conn, FRIEND), [])
+
+    def test_an_expired_invite_is_shown_and_marked_not_hidden(self):
+        self.invite()
+        self.conn.execute("UPDATE pulse_page_members SET invite_expires_at='2020-01-01T00:00:00+00:00' "
+                          "WHERE page_id=? AND user_id=?", (self.page_id, FRIEND))
+        inbox = pulsesoc_pages.list_my_invites(self.conn, FRIEND)
+        # Filtering it out would read as "nobody ever invited me", leaving the
+        # invitee with nothing to say to the person who did.
+        self.assertEqual(len(inbox), 1)
+        self.assertTrue(inbox[0]["expired"])
+
+    def test_a_live_invite_is_not_marked_expired(self):
+        self.invite()
+        self.assertFalse(pulsesoc_pages.list_my_invites(self.conn, FRIEND)[0]["expired"])
+
+    def test_an_invite_to_a_deactivated_presence_is_withdrawn(self):
+        self.invite()
+        pulsesoc_pages.set_status(self.conn, OWNER, self.page_id, "DEACTIVATED")
+        # Accepting would hand someone a role on something they cannot see.
+        self.assertEqual(pulsesoc_pages.list_my_invites(self.conn, FRIEND), [])
+
+    def test_declining_clears_the_invite(self):
+        sent = self.invite()
+        out = pulsesoc_pages.decline_invite(self.conn, FRIEND, sent["invite_token"])
+        self.assertEqual(out["status"], "declined")
+        self.assertEqual(pulsesoc_pages.list_my_invites(self.conn, FRIEND), [])
+
+    def test_declining_does_not_join_the_team(self):
+        sent = self.invite()
+        pulsesoc_pages.decline_invite(self.conn, FRIEND, sent["invite_token"])
+        self.assertIsNone(pulsesoc_pages.role_for(self.conn, FRIEND, self.page_id))
+        roster = pulsesoc_pages.team_view(self.conn, OWNER, self.page_id)["members"]
+        self.assertNotIn(FRIEND, [m["user_id"] for m in roster])
+
+    def test_a_declined_invite_cannot_then_be_accepted(self):
+        sent = self.invite()
+        pulsesoc_pages.decline_invite(self.conn, FRIEND, sent["invite_token"])
+        with self.assertRaises(PageError):
+            pulsesoc_pages.accept_invite(self.conn, FRIEND, sent["invite_token"])
+
+    def test_someone_else_cannot_decline_your_invite(self):
+        sent = self.invite(FRIEND)
+        # Holding the token is not enough; the inviter holds it too.
+        with self.assertRaises(PageError):
+            pulsesoc_pages.decline_invite(self.conn, OWNER, sent["invite_token"])
+        self.assertEqual(len(pulsesoc_pages.list_my_invites(self.conn, FRIEND)), 1)
+
+    def test_declining_is_audited(self):
+        sent = self.invite()
+        pulsesoc_pages.decline_invite(self.conn, FRIEND, sent["invite_token"])
+        audit = self.conn.execute(
+            "SELECT * FROM pulse_page_audit WHERE page_id=? AND action='invite_declined'",
+            (self.page_id,),
+        ).fetchall()
+        self.assertEqual(len(audit), 1)
+
+    def test_a_declined_member_can_be_invited_again(self):
+        first = self.invite()
+        pulsesoc_pages.decline_invite(self.conn, FRIEND, first["invite_token"])
+        second = self.invite()
+        self.assertNotEqual(second["invite_token"], first["invite_token"])
+        pulsesoc_pages.accept_invite(self.conn, FRIEND, second["invite_token"])
+        self.assertEqual(pulsesoc_pages.role_for(self.conn, FRIEND, self.page_id), "ADMIN")
+
+    def test_declining_needs_a_token(self):
+        with self.assertRaises(PageError):
+            pulsesoc_pages.decline_invite(self.conn, FRIEND, "")
+
+    def test_invites_from_several_presences_all_arrive(self):
+        self.invite()
+        other = create(self.conn, name="Day Signal", handle="daysignal")
+        pulsesoc_pages.invite_member(self.conn, OWNER, other["id"], {"user_id": FRIEND, "role": "ANALYST"})
+        inbox = pulsesoc_pages.list_my_invites(self.conn, FRIEND)
+        self.assertEqual(
+            sorted(entry["page_id"] for entry in inbox), sorted([self.page_id, other["id"]]))
+
+
 class IdentityTests(unittest.TestCase):
     def setUp(self):
         self.conn = make_conn()
