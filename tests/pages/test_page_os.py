@@ -969,6 +969,60 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(out["followers_count"], 0)
 
 
+class TabCeilingTests(unittest.TestCase):
+    """Every tab a page type offers is a tab something can draw.
+
+    These are the tests that make a dead tab impossible rather than merely
+    absent. Removing `services` fixed one instance; this class is the reason a
+    second one cannot be typed into TYPE_TABS and shipped.
+    """
+
+    def test_every_offered_tab_is_one_the_client_can_render(self):
+        for page_type, tabs in pulsesoc_pages.TYPE_TABS.items():
+            with self.subTest(page_type=page_type):
+                unknown = set(tabs) - pulsesoc_pages.RENDERABLE_TABS
+                self.assertEqual(
+                    unknown, set(),
+                    f"{page_type} offers {sorted(unknown)}, which no screen draws. "
+                    "Either teach PageScreen to render it or take it out of the ceiling.")
+
+    def test_every_renderable_tab_has_a_rule_for_when_it_is_backed(self):
+        # The other half of the same invariant. A tab the client can draw but
+        # the server has no availability rule for would fall through
+        # `module_availability` and raise — better caught here than in a request.
+        ruled = (pulsesoc_pages.ALWAYS_TABS
+                 | set(pulsesoc_pages.TAB_LINK_SOURCE)
+                 | {"videos"})
+        self.assertEqual(pulsesoc_pages.RENDERABLE_TABS - ruled, set())
+
+    def test_a_tab_with_no_availability_rule_is_refused_loudly(self):
+        # The failure mode this replaces was silent: an unknown tab used to be
+        # recorded as unavailable, which hid it from visitors and left it in
+        # place for the team, who tapped it and got a blank screen.
+        conn = make_conn()
+        page = create(conn)
+        original = dict(pulsesoc_pages.TYPE_TABS)
+        pulsesoc_pages.TYPE_TABS["ARTIST"] = ["posts", "reviews", "about"]
+        try:
+            with self.assertRaises(PageError) as ctx:
+                pulsesoc_pages.module_availability(conn, page)
+            self.assertEqual(ctx.exception.status_code, 500)
+            self.assertIn("reviews", str(ctx.exception))
+        finally:
+            pulsesoc_pages.TYPE_TABS.clear()
+            pulsesoc_pages.TYPE_TABS.update(original)
+
+    def test_a_services_business_is_pointed_at_the_marketplace_it_already_has(self):
+        # Marketplace carries `service` and `booking` listing types, so the
+        # catalogue exists. A separate services module would be a second
+        # commerce backend with its own listings, payments and moderation.
+        for page_type in ("BUSINESS", "PROFESSIONAL_SERVICE", "LOCAL_BUSINESS"):
+            with self.subTest(page_type=page_type):
+                tabs = pulsesoc_pages.TYPE_TABS[page_type]
+                self.assertNotIn("services", tabs)
+                self.assertIn("shop", tabs)
+
+
 class ModuleAvailabilityTests(unittest.TestCase):
     """A tab only reaches the public once something real backs it."""
 
@@ -1028,7 +1082,12 @@ class ModuleAvailabilityTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 400)
         view = self._view()
         self.assertNotIn("events", view["tabs"])
-        self.assertFalse(view["modules"]["events"])
+        # Not "an events module that reports itself unavailable" — no events
+        # module at all. A module key that is always False is still a shape the
+        # client can be tempted to render a tab from, and `_visible_tabs` hands
+        # the team the whole type ceiling regardless of availability, so an
+        # always-False entry in TYPE_TABS was a tab the owner could still tap.
+        self.assertNotIn("events", view["modules"])
 
     def test_the_videos_tab_appears_once_the_presence_has_a_video_post(self):
         view = self._view()

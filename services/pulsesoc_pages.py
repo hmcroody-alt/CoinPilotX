@@ -41,23 +41,33 @@ PAGE_TYPES = (
 PAGE_STATUSES = ("ACTIVE", "PAUSED", "UNPUBLISHED", "DEACTIVATED")
 
 # Which page types get which optional tab modules on the client. Only tabs
-# with real backing data render; this is the ceiling, not a promise.
+# with real backing data render for a visitor; this is the ceiling, not a
+# promise.
+#
+# Every value here must be in RENDERABLE_TABS. A tab this list names and no
+# client screen draws is a button that opens onto nothing — which is worse than
+# the missing feature it stands in for, because it looks like a bug rather than
+# an absence. `services` used to be exactly that for BUSINESS,
+# PROFESSIONAL_SERVICE and LOCAL_BUSINESS: no link source, no rows, no renderer.
+# Those types get `shop` instead — Marketplace already carries `service` and
+# `booking` listing types, so the catalogue exists and a second one would be a
+# second commerce backend to keep in sync.
 TYPE_TABS = {
-    "ARTIST": ["posts", "music", "videos", "events", "merch", "about"],
-    "CREATOR": ["posts", "videos", "events", "merch", "about"],
-    "PUBLIC_FIGURE": ["posts", "videos", "events", "about"],
-    "BUSINESS": ["home", "services", "shop", "about"],
+    "ARTIST": ["posts", "music", "videos", "merch", "about"],
+    "CREATOR": ["posts", "videos", "merch", "about"],
+    "PUBLIC_FIGURE": ["posts", "videos", "about"],
+    "BUSINESS": ["home", "shop", "about"],
     "BRAND": ["home", "shop", "about"],
     "STORE": ["home", "shop", "about"],
     "RESTAURANT": ["home", "menu", "about"],
-    "PROFESSIONAL_SERVICE": ["home", "services", "about"],
-    "LOCAL_BUSINESS": ["home", "services", "shop", "about"],
-    "NONPROFIT": ["home", "events", "about"],
-    "ORGANIZATION": ["home", "events", "about"],
+    "PROFESSIONAL_SERVICE": ["home", "shop", "about"],
+    "LOCAL_BUSINESS": ["home", "shop", "about"],
+    "NONPROFIT": ["home", "about"],
+    "ORGANIZATION": ["home", "about"],
     "MEDIA": ["posts", "videos", "about"],
-    "SPORTS_TEAM": ["posts", "events", "shop", "about"],
-    "VENUE": ["home", "events", "about"],
-    "EDUCATION": ["home", "events", "about"],
+    "SPORTS_TEAM": ["posts", "shop", "about"],
+    "VENUE": ["home", "about"],
+    "EDUCATION": ["home", "about"],
     "OTHER": ["posts", "about"],
 }
 
@@ -97,6 +107,16 @@ LINK_TYPES = ("store", "ad_account", "community", "event", "music_artist", "busi
 # Tabs that always render: they are backed by the page row itself, so they can
 # never be empty in a way the viewer would read as broken.
 ALWAYS_TABS = {"home", "posts", "about"}
+
+# Every tab PageScreen has a branch for. This is a contract with the client,
+# restated here because the server is what decides which tabs a page offers and
+# it therefore needs to know which ones mean anything.
+#
+# The point of naming it is `module_availability`: with this set closed, every
+# tab has an availability rule, so "a tab nobody can render" stops being a thing
+# that can be typed into TYPE_TABS and quietly shipped. Adding a tab to the
+# ceiling and teaching a screen to draw it become the same change.
+RENDERABLE_TABS = frozenset(ALWAYS_TABS | {"music", "videos", "shop", "merch", "menu"})
 
 # Optional tab -> the link_type that gives it real content. A tab with no link
 # and no rows is hidden from the public and kept (as a setup prompt) for the
@@ -449,7 +469,16 @@ def module_availability(conn: Any, page: dict, counts: dict | None = None,
         elif tab == "videos":
             available[tab] = counts.get("videos", 0) > 0
         else:
-            available[tab] = False
+            # Unreachable while RENDERABLE_TABS and the branches above agree,
+            # and that is the whole design: the previous version of this line
+            # was `available[tab] = False`, which turned "nobody taught the
+            # server what backs this tab" into a tab that is merely hidden from
+            # visitors — and still shown to the team, who then tapped it and got
+            # a blank screen. `services` lived there for months. Failing here
+            # means a new tab cannot reach production without a rule.
+            raise PageError(
+                f"tab '{tab}' has no availability rule; add one before offering it",
+                500)
     if "posts" in available:
         available["posts"] = True
     return available

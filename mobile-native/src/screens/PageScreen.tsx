@@ -80,12 +80,17 @@ const SHOP_TABS = ["shop", "merch", "menu"];
 
 /**
  * The public page surface — one component for every page type. The tab set is
- * SERVER-decided per type (artist: posts/music/videos/events/merch/about;
- * business: home/services/shop/about; …) and rendered as delivered.
+ * SERVER-decided per type (artist: posts/music/videos/merch/about; business:
+ * home/shop/about; …) and rendered as delivered.
+ *
+ * The branches in `renderTabBody` are the client half of a contract: the server
+ * keeps the same set as `RENDERABLE_TABS` and refuses to offer a tab outside it,
+ * so a page type cannot name a tab that nothing here draws. Adding a tab means
+ * adding a branch below and the rule that says when it is backed.
  *
  * Real metrics only: follower and post counts come from the server's measured
- * counts. Tabs without a canonical data source render an honest empty state —
- * never invented numbers, never placeholder reviews.
+ * counts. An empty module says so — never invented numbers, never placeholder
+ * reviews — and says it differently to the team, who can do something about it.
  */
 export function PageScreen({ route, navigation }: Props) {
   const params = route.params || {};
@@ -477,9 +482,18 @@ export function PageScreen({ route, navigation }: Props) {
         </View>
       );
     }
-    // services / reviews — no canonical source wired yet: honest empty state,
-    // never fabricated content.
-    return <Text style={styles.empty}>Nothing here yet.</Text>;
+    /*
+      A tab this build has no branch for. It should be unreachable: the server
+      only offers tabs in its `RENDERABLE_TABS`, which is this file's branch set
+      written down, and it raises rather than serving one without a rule.
+
+      What is left is version skew — a newer server offering a tab to an older
+      app. So this says the module needs a newer app, which is true and
+      actionable, instead of "Nothing here yet.", which is a claim about the
+      page and would be false. It offers nothing to the team either: updating is
+      not something they do from here.
+    */
+    return <Text style={styles.empty}>This section needs a newer version of the app.</Text>;
   }
 
   function moduleFailure(retry: () => void) {

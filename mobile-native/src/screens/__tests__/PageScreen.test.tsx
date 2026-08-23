@@ -97,6 +97,29 @@ describe("presence tabs are server-decided", () => {
     expect(view.queryByText("Music")).toBeNull();
     expect(mockListMusic).not.toHaveBeenCalled();
   });
+
+  it("blames the app version, not the page, for a tab it has no branch for", async () => {
+    // Unreachable against a matching server: it only offers tabs in its
+    // `RENDERABLE_TABS`, which is this screen's branch set written down. What
+    // remains is a newer server talking to an older build, and saying "nothing
+    // here yet" would be a claim about the page — and a false one.
+    mockGetPage.mockResolvedValue(
+      page({
+        viewer: { role: "OWNER", following: false },
+        tabs: ["posts", "seances", "about"],
+        modules: { seances: true }
+      })
+    );
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Seances")).toBeTruthy());
+    fireEvent.press(view.getByText("Seances"));
+    await waitFor(() =>
+      expect(view.queryByText("This section needs a newer version of the app.")).toBeTruthy()
+    );
+    expect(view.queryByText("Nothing here yet.")).toBeNull();
+    // Nothing to offer the team either — updating is not done from here.
+    expect(view.queryByText("Open Manage")).toBeNull();
+  });
 });
 
 describe("modules load lazily and fail independently", () => {
