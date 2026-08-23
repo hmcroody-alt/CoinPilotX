@@ -206,7 +206,8 @@
       "commerce": "Commerce layer",
       "activity": "Activity and notification signals",
       "trustIdentity": "Trust and identity layer",
-      "nativeRoute": "Native PulseSoc route"
+      "nativeRoute": "Native PulseSoc route",
+      "membership": "Membership and billing"
     },
     "identity": {
       "member": "PulseSoc member"

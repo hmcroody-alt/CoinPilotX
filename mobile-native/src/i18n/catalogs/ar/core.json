@@ -206,7 +206,8 @@
       "commerce": "طبقة التجارة",
       "activity": "إشارات النشاط والإشعارات",
       "trustIdentity": "طبقة الثقة والهوية",
-      "nativeRoute": "مسار PulseSoc الأصلي"
+      "nativeRoute": "مسار PulseSoc الأصلي",
+      "membership": "العضوية والفوترة"
     },
     "identity": {
       "member": "عضو في PulseSoc"

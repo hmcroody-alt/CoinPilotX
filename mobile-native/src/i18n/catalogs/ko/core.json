@@ -206,7 +206,8 @@
       "commerce": "커머스 레이어",
       "activity": "활동 및 알림 신호",
       "trustIdentity": "신뢰 및 신원 레이어",
-      "nativeRoute": "PulseSoc 네이티브 화면"
+      "nativeRoute": "PulseSoc 네이티브 화면",
+      "membership": "멤버십 및 결제"
     },
     "identity": {
       "member": "PulseSoc 멤버"

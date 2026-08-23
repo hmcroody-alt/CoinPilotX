@@ -206,7 +206,8 @@
       "commerce": "Handelsebene",
       "activity": "Aktivitäts- und Mitteilungssignale",
       "trustIdentity": "Ebene für Vertrauen und Identität",
-      "nativeRoute": "Native PulseSoc-Route"
+      "nativeRoute": "Native PulseSoc-Route",
+      "membership": "Mitgliedschaft und Abrechnung"
     },
     "identity": {
       "member": "PulseSoc-Mitglied"

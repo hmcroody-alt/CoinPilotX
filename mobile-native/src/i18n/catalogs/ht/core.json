@@ -206,7 +206,8 @@
       "commerce": "Kouch komès",
       "activity": "Siyal aktivite ak notifikasyon",
       "trustIdentity": "Kouch konfyans ak idantite",
-      "nativeRoute": "Wout natif PulseSoc"
+      "nativeRoute": "Wout natif PulseSoc",
+      "membership": "Manm ak faktirasyon"
     },
     "identity": {
       "member": "Manm PulseSoc"

@@ -206,7 +206,8 @@
       "commerce": "कॉमर्स लेयर",
       "activity": "एक्टिविटी और नोटिफ़िकेशन सिग्नल",
       "trustIdentity": "भरोसा और पहचान की लेयर",
-      "nativeRoute": "नेटिव PulseSoc रूट"
+      "nativeRoute": "नेटिव PulseSoc रूट",
+      "membership": "सदस्यता और बिलिंग"
     },
     "identity": {
       "member": "PulseSoc मेंबर"

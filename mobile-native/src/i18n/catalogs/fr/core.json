@@ -206,7 +206,8 @@
       "commerce": "Couche commerce",
       "activity": "Signaux d'activité et de notification",
       "trustIdentity": "Couche confiance et identité",
-      "nativeRoute": "Route native PulseSoc"
+      "nativeRoute": "Route native PulseSoc",
+      "membership": "Abonnement et facturation"
     },
     "identity": {
       "member": "Membre PulseSoc"

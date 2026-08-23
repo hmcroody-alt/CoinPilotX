@@ -206,7 +206,8 @@
       "commerce": "Capa de comercio",
       "activity": "Señales de actividad y notificaciones",
       "trustIdentity": "Capa de confianza e identidad",
-      "nativeRoute": "Ruta nativa de PulseSoc"
+      "nativeRoute": "Ruta nativa de PulseSoc",
+      "membership": "Membresía y facturación"
     },
     "identity": {
       "member": "Miembro de PulseSoc"

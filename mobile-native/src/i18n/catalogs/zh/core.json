@@ -206,7 +206,8 @@
       "commerce": "电商层",
       "activity": "动态与通知信号",
       "trustIdentity": "信任与身份层",
-      "nativeRoute": "PulseSoc 原生页面"
+      "nativeRoute": "PulseSoc 原生页面",
+      "membership": "会员与账单"
     },
     "identity": {
       "member": "PulseSoc 会员"

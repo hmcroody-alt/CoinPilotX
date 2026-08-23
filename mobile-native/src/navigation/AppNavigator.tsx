@@ -669,6 +669,10 @@ function subtitleForStack(t: Translate, name: string) {
   if (name.includes("Marketplace") || name.includes("Seller") || name.includes("Buyer"))
     return t("common:navSubtitles.commerce");
   if (name.includes("Call") || name.includes("Chat")) return t("common:navSubtitles.pulseCommand");
+  // Premium is a paywall a member reaches deliberately, and Apple reviews it as
+  // a screenshot. "Native PulseSoc route" is a developer placeholder, not a
+  // description, so it must not be what sits under the title there.
+  if (name.includes("Premium")) return t("common:navSubtitles.membership");
   return t("common:navSubtitles.nativeRoute");
 }
 
