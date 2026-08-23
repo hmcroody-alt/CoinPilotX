@@ -95,12 +95,13 @@ export function ProfilePostViewerScreen({ route, navigation }: Props) {
 
   const activeLivePost = posts[activePostId];
   const activeLiveId = Number(activeLivePost?.live?.live_session_id || 0);
+  const activeLiveStatus = String(activeLivePost?.live?.status || "").toLowerCase();
 
   // Keep the visible Profile Live card on canonical server state. In
   // particular, replace "Replay processing" with the ready Mux Long Reel as
   // soon as its webhook finalizes the post; no pull-to-refresh is required.
   useEffect(() => {
-    if (!activePostId || !activeLiveId) return undefined;
+    if (!activePostId || !activeLiveId || activeLiveStatus !== "processing") return undefined;
     let cancelled = false;
     const refresh = async () => {
       const detail = await getPostDetail(activePostId).catch(() => null);
@@ -110,7 +111,7 @@ export function ProfilePostViewerScreen({ route, navigation }: Props) {
     };
     const timer = setInterval(() => { refresh().catch(() => undefined); }, 6_000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [activeLiveId, activePostId]);
+  }, [activeLiveId, activeLiveStatus, activePostId]);
 
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken<number>[] }) => {
     const visible = viewableItems.find((item) => item.isViewable && item.item);

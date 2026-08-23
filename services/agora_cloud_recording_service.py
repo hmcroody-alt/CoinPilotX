@@ -7,7 +7,6 @@ import json
 import logging
 import os
 import posixpath
-import tempfile
 from urllib.error import HTTPError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
@@ -99,12 +98,12 @@ def public_recording_url(prefix: str, filename: str) -> str:
 
 
 def prepare_private_mux_input(prefix: str, filename: str) -> dict:
-    """Build a private, lossless MPEG-TS input Mux can fetch safely.
+    """Build a private HLS input Mux can fetch directly from R2.
 
     Agora returns a finalized HLS playlist whose segments remain private in R2.
-    Mux cannot follow those private relative segment URLs. Preserve the exact
-    media packets by concatenating the playlist's ordered TS segments into one
-    private R2 object and return only a short-lived SigV4 URL in memory.
+    Replace only its relative segment references with short-lived SigV4 URLs;
+    Mux then reads the original packets provider-to-provider. This avoids
+    downloading and re-uploading the complete recording through PulseSoc.
     """
     try:
         import boto3
@@ -125,35 +124,28 @@ def prepare_private_mux_input(prefix: str, filename: str) -> dict:
         bucket = os.environ["R2_BUCKET"]
         manifest = client.get_object(Bucket=bucket, Key=manifest_key)["Body"].read().decode("utf-8", "replace")
         base_dir = posixpath.dirname(manifest_key)
-        segment_keys = []
+        expires = max(900, min(int(os.getenv("R2_MUX_SIGNED_URL_TTL_SECONDS", "7200")), 21600))
+        rewritten = []
+        segment_count = 0
         for line in manifest.splitlines():
             uri = line.strip()
             if not uri or uri.startswith("#"):
+                rewritten.append(line)
                 continue
             if "://" in uri:
                 return {"ok": False, "reason": "external_segment"}
             segment_key = posixpath.normpath(posixpath.join(base_dir, uri))
             if not segment_key.startswith(f"{base_dir}/"):
                 return {"ok": False, "reason": "invalid_segment_path"}
-            segment_keys.append(segment_key)
-        if not segment_keys:
+            rewritten.append(client.generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": segment_key}, ExpiresIn=expires))
+            segment_count += 1
+        if not segment_count:
             return {"ok": False, "reason": "empty_recording"}
-        mux_key = posixpath.join(base_dir, "mux-ingest.ts")
-        total_bytes = 0
-        with tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024) as output:
-            for segment_key in segment_keys:
-                body = client.get_object(Bucket=bucket, Key=segment_key)["Body"]
-                while True:
-                    chunk = body.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    output.write(chunk)
-                    total_bytes += len(chunk)
-            output.seek(0)
-            client.upload_fileobj(output, bucket, mux_key, ExtraArgs={"ContentType": "video/mp2t"})
-        expires = max(900, min(int(os.getenv("R2_MUX_SIGNED_URL_TTL_SECONDS", "7200")), 21600))
+        mux_key = posixpath.join(base_dir, "mux-ingest.m3u8")
+        mux_manifest = ("\n".join(rewritten) + "\n").encode("utf-8")
+        client.put_object(Bucket=bucket, Key=mux_key, Body=mux_manifest, ContentType="application/vnd.apple.mpegurl")
         input_url = client.generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": mux_key}, ExpiresIn=expires)
-        return {"ok": True, "input_url": input_url, "object_key": mux_key, "bytes": total_bytes, "segments": len(segment_keys)}
+        return {"ok": True, "input_url": input_url, "object_key": mux_key, "bytes": len(mux_manifest), "segments": segment_count}
     except Exception as exc:
         logging.warning("AGORA_RECORDING_MUX_INPUT_FAILED error_type=%s", type(exc).__name__)
         return {"ok": False, "reason": "mux_input_failed", "message": "The private recording could not be prepared for Mux."}

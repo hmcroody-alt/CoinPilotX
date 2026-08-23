@@ -80,7 +80,7 @@ def ensure_live_feed_post(cur, *, user_id: int, live_id: int, title: str, catego
     return int(cur.lastrowid)
 
 
-def mark_live_feed_ended(cur, *, live_id: int, replay_url: str = "", viewer_count: int = 0) -> int:
+def mark_live_feed_ended(cur, *, live_id: int, replay_url: str = "", viewer_count: int = 0, replay_expected: bool = True) -> int:
     """Convert the live feed post to ended/replay state."""
     now = _now()
     cur.execute("SELECT id, title FROM pulse_posts WHERE live_session_id=? AND deleted_at IS NULL LIMIT 1", (int(live_id),))
@@ -88,7 +88,7 @@ def mark_live_feed_ended(cur, *, live_id: int, replay_url: str = "", viewer_coun
     if not row:
         return 0
     post_id = int(row.get("id") or 0)
-    status = "archived" if replay_url else "processing"
+    status = "archived" if replay_url else "processing" if replay_expected else "unavailable"
     cur.execute(
         """
         UPDATE pulse_posts

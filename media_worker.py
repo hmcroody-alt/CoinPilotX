@@ -50,7 +50,7 @@ if running_on_railway() and not os.getenv("DATABASE_URL"):
 
 try:
     import bot
-    from services import media_covers, media_service, media_storage
+    from services import agora_cloud_recording_service, agora_media_push_service, media_covers, media_service, media_storage, mux_live_service
 except Exception as exc:
     print("CoinPilotX media engine import failed", repr(exc), flush=True)
     traceback.print_exc()
@@ -58,11 +58,12 @@ except Exception as exc:
 
 
 WORKER_NAME = "coinpilotx-media-engine"
-INTERVAL_SECONDS = max(5, int(os.getenv("MEDIA_WORKER_INTERVAL_SECONDS", "20")))
+INTERVAL_SECONDS = max(5, int(os.getenv("MEDIA_WORKER_INTERVAL_SECONDS", "5")))
 BATCH_SIZE = max(1, min(int(os.getenv("MEDIA_WORKER_BATCH_SIZE", "25")), 100))
 MAX_ATTEMPTS = max(1, int(os.getenv("MEDIA_WORKER_MAX_ATTEMPTS", "3")))
-MEDIA_JOB_TYPES = {"generate_thumbnail", "process_video"}
+MEDIA_JOB_TYPES = {"generate_thumbnail", "process_video", "finalize_live_replay"}
 RUNNING = True
+REPLAYS_READY_TO_PUBLISH: set[int] = set()
 
 
 def _now() -> str:
@@ -553,6 +554,9 @@ def _fail_or_retry_job(cur, job, error: Exception) -> None:
 def _process_media_job(cur, job) -> None:
     job_type = str(job.get("job_type") or "")
     target_id = int(job.get("target_id") or 0)
+    if job_type == "finalize_live_replay":
+        _process_live_replay_job(cur, job)
+        return
     if job_type not in MEDIA_JOB_TYPES:
         _complete_job(cur, int(job.get("id") or 0), "done")
         return
@@ -607,6 +611,69 @@ def _process_media_job(cur, job) -> None:
     _complete_job(cur, int(job.get("id") or 0), "done")
 
 
+def _process_live_replay_job(cur, job) -> None:
+    """Finalize one Agora recording without making the web request a video pipe."""
+    live_id = int(job.get("target_id") or 0)
+    cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+    live = dict(cur.fetchone() or {})
+    if not live or (live.get("status") or "").lower() != "ended":
+        _complete_job(cur, int(job.get("id") or 0), "done")
+        return
+    asset_id = str(live.get("mux_recording_asset_id") or "")
+    if asset_id:
+        mux_asset = mux_live_service.create_mux_asset_from_live_recording(recording_asset_id=asset_id)
+        if not mux_asset.get("ok"):
+            raise RuntimeError(mux_asset.get("message") or "Mux replay reconciliation failed")
+        if (mux_asset.get("mux_status") or "").lower() == "ready":
+            playback_id = mux_asset.get("mux_recording_playback_id") or live.get("mux_recording_playback_id") or ""
+            playback_url = mux_asset.get("playback_url") or ""
+            cur.execute(
+                "UPDATE pulse_live_sessions SET mux_recording_playback_id=COALESCE(NULLIF(?,''),mux_recording_playback_id), replay_url=COALESCE(NULLIF(?,''),replay_url), recording_status='mux_asset_ready', recording_error='', updated_at=? WHERE id=?",
+                (playback_id, playback_url, _now(), live_id),
+            )
+            bot.live_feed_service.mark_live_feed_replay_ready(
+                cur,
+                live_id=live_id,
+                playback_url=playback_url,
+                preview_url=live.get("thumbnail_url") or "",
+                viewer_count=int(live.get("viewer_count") or 0),
+            )
+            REPLAYS_READY_TO_PUBLISH.add(live_id)
+            _complete_job(cur, int(job.get("id") or 0), "done")
+            return
+        run_after = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=30)).isoformat(timespec="seconds")
+        cur.execute("UPDATE pulse_jobs SET status='pending', run_after=?, updated_at=? WHERE id=?", (run_after, _now(), int(job.get("id") or 0)))
+        return
+
+    filename = str(live.get("agora_recording_filename") or "")
+    if not filename:
+        if live.get("agora_converter_id"):
+            agora_media_push_service.stop_mux_bridge(live.get("agora_converter_id") or "")
+        stopped = agora_cloud_recording_service.stop(
+            channel_name=live.get("webrtc_room_id") or f"pulse-live-{live_id}",
+            resource_id=live.get("agora_recording_resource_id") or "",
+            sid=live.get("agora_recording_sid") or "",
+            recording_uid=live.get("agora_recording_uid") or "",
+        )
+        if not stopped.get("ok") or not stopped.get("filename"):
+            raise RuntimeError(stopped.get("message") or stopped.get("reason") or "Agora recording did not finalize")
+        filename = str(stopped.get("filename") or "")
+        cur.execute("UPDATE pulse_live_sessions SET agora_recording_filename=?, recording_status='preparing_replay', updated_at=? WHERE id=?", (filename, _now(), live_id))
+
+    mux_input = agora_cloud_recording_service.prepare_private_mux_input(live.get("agora_recording_prefix") or "", filename)
+    if not mux_input.get("ok"):
+        raise RuntimeError(mux_input.get("message") or mux_input.get("reason") or "Replay input preparation failed")
+    created = mux_live_service.create_mux_asset_from_private_recording(mux_input.get("input_url") or "")
+    if not created.get("ok") or not created.get("mux_recording_asset_id"):
+        raise RuntimeError(created.get("message") or "Mux replay asset creation failed")
+    cur.execute(
+        "UPDATE pulse_live_sessions SET mux_recording_asset_id=?, mux_recording_playback_id=COALESCE(NULLIF(?,''),mux_recording_playback_id), recording_status='processing_replay', recording_error='', updated_at=? WHERE id=? AND COALESCE(mux_recording_asset_id,'')=''",
+        (created.get("mux_recording_asset_id") or "", created.get("mux_recording_playback_id") or "", _now(), live_id),
+    )
+    run_after = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=30)).isoformat(timespec="seconds")
+    cur.execute("UPDATE pulse_jobs SET status='pending', run_after=?, updated_at=? WHERE id=?", (run_after, _now(), int(job.get("id") or 0)))
+
+
 def process_media_jobs(limit: int = BATCH_SIZE) -> dict:
     conn = bot.db()
     conn.row_factory = bot.sqlite3.Row
@@ -655,15 +722,77 @@ def process_media_jobs(limit: int = BATCH_SIZE) -> dict:
             _fail_or_retry_job(cur, job, exc)
     conn.commit()
     conn.close()
+    for live_id in list(REPLAYS_READY_TO_PUBLISH):
+        try:
+            bot.pulse_live_publish_replay_reel(live_id, trace_id=f"media-worker-reconcile-{live_id}")
+            REPLAYS_READY_TO_PUBLISH.discard(live_id)
+        except Exception:
+            logging.exception("MEDIA_WORKER_REPLAY_PUBLISH_FAILED live_id=%s", live_id)
     return {"queued": len(jobs), "processed": processed, "failed": failed}
 
 
+def reconcile_live_replay_backlog(limit: int = 25) -> dict:
+    """Idempotently recover ended recordings and terminal no-source posts."""
+    conn = bot.db()
+    conn.row_factory = bot.sqlite3.Row
+    cur = conn.cursor()
+    now = _now()
+    stale = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=10)).isoformat(timespec="seconds")
+    cur.execute(
+        "UPDATE pulse_jobs SET status='pending', run_after=?, updated_at=? WHERE job_type='finalize_live_replay' AND status='processing' AND updated_at<?",
+        (now, now, stale),
+    )
+    recovered = int(cur.rowcount or 0)
+    cur.execute(
+        """
+        SELECT id, recording_status
+        FROM pulse_live_sessions
+        WHERE status='ended'
+          AND COALESCE(agora_recording_sid,'')<>''
+          AND COALESCE(recording_status,'') NOT IN ('replay_ready','mux_asset_ready','replay_unavailable')
+        ORDER BY id ASC LIMIT ?
+        """,
+        (max(1, int(limit or 25)),),
+    )
+    queued = 0
+    for row in cur.fetchall():
+        live_id = int(row["id"])
+        cur.execute(
+            "SELECT id FROM pulse_jobs WHERE job_type='finalize_live_replay' AND target_type='live' AND target_id=? AND status IN ('pending','processing') LIMIT 1",
+            (live_id,),
+        )
+        if cur.fetchone():
+            continue
+        cur.execute(
+            "INSERT INTO pulse_jobs (job_type,target_type,target_id,status,attempts,max_attempts,run_after,created_at,updated_at) VALUES ('finalize_live_replay','live',?,'pending',0,120,?,?,?)",
+            (live_id, now, now, now),
+        )
+        queued += 1
+    cur.execute(
+        """
+        UPDATE pulse_posts
+        SET live_status='unavailable', updated_at=?
+        WHERE live_status IN ('processing','ended')
+          AND live_session_id IN (
+              SELECT id FROM pulse_live_sessions
+              WHERE status='ended' AND recording_status IN ('replay_unavailable','replay_failed')
+          )
+        """,
+        (now,),
+    )
+    terminal_repaired = int(cur.rowcount or 0)
+    conn.commit()
+    conn.close()
+    return {"queued": queued, "stale_recovered": recovered, "terminal_posts_repaired": terminal_repaired}
+
+
 def run_cycle() -> dict:
+    replay = reconcile_live_replay_backlog(BATCH_SIZE)
     uploads = process_pending_uploads(BATCH_SIZE)
     jobs = process_media_jobs(BATCH_SIZE)
     playback = process_playback_backlog(int(os.getenv("MEDIA_WORKER_PLAYBACK_BACKLOG_BATCH", "2")))
     covers = process_cover_backlog(int(os.getenv("MEDIA_WORKER_COVER_BACKLOG_BATCH", "4")))
-    return {"uploads": uploads, "jobs": jobs, "playback": playback, "covers": covers}
+    return {"replay": replay, "uploads": uploads, "jobs": jobs, "playback": playback, "covers": covers}
 
 
 def main() -> None:
