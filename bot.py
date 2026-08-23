@@ -7405,6 +7405,50 @@ def api_crypto_watchlists():
     return _crypto_api_result(lambda conn, user: {"ok": True, "watchlists": dashboard_crypto_command_center.list_watchlists(conn, user["user_id"])})
 
 
+@webhook_app.route("/api/crypto/watchlists/market", methods=["GET"])
+def api_crypto_watchlist_market_view():
+    """Every owned watchlist joined to one live market snapshot.
+
+    One request answers the whole screen. A ten-asset watchlist must not become
+    ten provider calls, and the join happens server-side so the client never
+    has to reconcile two sources that disagree about freshness.
+    """
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.watchlist_market_view(conn, user["user_id"]))
+
+
+@webhook_app.route("/api/crypto/watchlists/<int:watchlist_id>", methods=["PATCH", "DELETE"])
+def api_crypto_watchlist_detail(watchlist_id):
+    payload = _crypto_api_payload()
+    if request.method == "DELETE":
+        return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.delete_watchlist(conn, user["user_id"], watchlist_id))
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.rename_watchlist(conn, user["user_id"], watchlist_id, payload))
+
+
+@webhook_app.route("/api/crypto/assets/search", methods=["GET"])
+def api_crypto_asset_search():
+    query = clean_html(request.args.get("q") or "")[:40]
+    try:
+        limit = int(request.args.get("limit") or 25)
+    except (TypeError, ValueError):
+        # A junk `?limit=` is a bad argument, not a server fault; silently use
+        # the default rather than returning a 503 from the generic handler.
+        limit = 25
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.search_assets(query, limit=limit))
+
+
+@webhook_app.route("/api/crypto/assets/<symbol>", methods=["GET"])
+def api_crypto_asset_detail(symbol):
+    clean_symbol = clean_html(symbol).upper()[:12]
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.asset_detail(conn, user["user_id"], clean_symbol))
+
+
+@webhook_app.route("/api/crypto/assets/<symbol>/history", methods=["GET"])
+def api_crypto_asset_history(symbol):
+    clean_symbol = clean_html(symbol).upper()[:12]
+    range_key = clean_html(request.args.get("range") or "24H").upper()[:4]
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.asset_history(user["user_id"], clean_symbol, range_key))
+
+
 @webhook_app.route("/api/crypto/watchlists/<int:watchlist_id>/assets", methods=["POST"])
 def api_crypto_watchlist_assets(watchlist_id):
     payload = _crypto_api_payload()
@@ -7469,8 +7513,20 @@ def api_crypto_recent_assets():
     return _crypto_api_result(lambda conn, user: {"ok": True, "recent": dashboard_crypto_command_center.list_recent_assets(conn, user["user_id"])})
 
 
-@webhook_app.route("/api/crypto/favorites", methods=["GET"])
+@webhook_app.route("/api/crypto/favorites", methods=["GET", "POST"])
 def api_crypto_favorite_assets():
+    """Read the user's favourite assets, or toggle one.
+
+    POST lives on the existing GET route rather than on a new one so favourites
+    keep a single server-side home. The favourite is stored against the
+    authenticated user, which is what makes it survive a reinstall and follow
+    the account to a second device — a device-local flag would not.
+    """
+    if request.method == "POST":
+        payload = _crypto_api_payload()
+        symbol = str(payload.get("symbol") or payload.get("assetSymbol") or "")
+        favorite = bool(payload.get("favorite", True))
+        return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.set_favorite_asset(conn, user["user_id"], symbol, favorite))
     return _crypto_api_result(lambda conn, user: {"ok": True, "favorites": dashboard_crypto_command_center.list_favorite_assets(conn, user["user_id"])})
 
 

@@ -421,8 +421,14 @@ export type RootStackParamList = {
   IntelligenceCenter: ({ alertId?: number; subsystem?: string; title?: string } & ProfileOsParams) | undefined;
   UndxActionCenter: { orgId?: string; actor?: string; productArea?: string; title?: string } | undefined;
   UndxCapabilities: { title?: string } | undefined;
-  AlertManagement: { alertId?: number; title?: string } | undefined;
-  CryptoAlertManagement: { alertId?: number; alert_id?: number; id?: number; title?: string } | undefined;
+  // `presetSymbol` seeds the create form when the user arrives from an asset.
+  // It selects an asset; it does not create anything.
+  AlertManagement: { alertId?: number; presetSymbol?: string; title?: string } | undefined;
+  CryptoAlertManagement:
+    | { alertId?: number; alert_id?: number; id?: number; presetSymbol?: string; title?: string }
+    | undefined;
+  Watchlists: { title?: string } | undefined;
+  AssetDetail: { symbol: string; name?: string; title?: string };
   AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;
   AccountSettings: { title?: string } | undefined;
   AccountSecurity: { title?: string } | undefined;
