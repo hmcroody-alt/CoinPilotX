@@ -208,7 +208,11 @@
       "trustIdentity": "Couche confiance et identité",
       "nativeRoute": "Route native PulseSoc",
       "membership": "Abonnement et facturation",
-      "business": "Boutique, articles et publicité"
+      "business": "Boutique, articles et publicité",
+      "presenceHome": "Vos pages artiste et entreprise",
+      "presenceManage": "Pages que vous détenez ou cogérez",
+      "presenceCreate": "Artiste, entreprise ou organisation",
+      "presencePublic": "Page de présence"
     },
     "identity": {
       "member": "Membre PulseSoc"

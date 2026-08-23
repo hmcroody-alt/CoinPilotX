@@ -208,7 +208,11 @@
       "trustIdentity": "Camada de confiança e identidade",
       "nativeRoute": "Rota nativa do PulseSoc",
       "membership": "Assinatura e faturamento",
-      "business": "Loja, itens e publicidade"
+      "business": "Loja, itens e publicidade",
+      "presenceHome": "Suas páginas de artista e negócio",
+      "presenceManage": "Páginas que você tem ou ajuda a gerir",
+      "presenceCreate": "Artista, negócio ou organização",
+      "presencePublic": "Página de presença"
     },
     "identity": {
       "member": "Membro do PulseSoc"

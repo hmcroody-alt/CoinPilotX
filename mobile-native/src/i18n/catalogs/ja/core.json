@@ -208,7 +208,11 @@
       "trustIdentity": "信頼と本人確認のレイヤー",
       "nativeRoute": "PulseSocのネイティブ画面",
       "membership": "メンバーシップと請求",
-      "business": "ストア・出品・広告"
+      "business": "ストア・出品・広告",
+      "presenceHome": "あなたのアーティスト／ビジネスページ",
+      "presenceManage": "あなたが所有または運営を手伝うページ",
+      "presenceCreate": "アーティスト・ビジネス・団体",
+      "presencePublic": "プレゼンスページ"
     },
     "identity": {
       "member": "PulseSocメンバー"

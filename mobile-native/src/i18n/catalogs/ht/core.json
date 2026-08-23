@@ -208,7 +208,11 @@
       "trustIdentity": "Kouch konfyans ak idantite",
       "nativeRoute": "Wout natif PulseSoc",
       "membership": "Manm ak faktirasyon",
-      "business": "Magazen, lis ak piblisite"
+      "business": "Magazen, lis ak piblisite",
+      "presenceHome": "Paj atis ak biznis ou yo",
+      "presenceManage": "Paj ou posede oswa ou ede jere",
+      "presenceCreate": "Atis, biznis oswa òganizasyon",
+      "presencePublic": "Paj prezans"
     },
     "identity": {
       "member": "Manm PulseSoc"

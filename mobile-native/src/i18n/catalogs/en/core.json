@@ -208,7 +208,11 @@
       "trustIdentity": "Trust and identity layer",
       "nativeRoute": "Native PulseSoc route",
       "membership": "Membership and billing",
-      "business": "Store, listings and advertising"
+      "business": "Store, listings and advertising",
+      "presenceHome": "Your artist and business pages",
+      "presenceManage": "Pages you own or help run",
+      "presenceCreate": "Artist, business or organization",
+      "presencePublic": "Presence page"
     },
     "identity": {
       "member": "PulseSoc member"

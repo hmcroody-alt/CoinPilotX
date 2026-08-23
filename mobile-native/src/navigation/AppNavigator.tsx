@@ -658,11 +658,31 @@ const SETTINGS_ROUTE_NAMES = new Set([
   "DeveloperSettings"
 ]);
 
+/**
+ * The four Presence routes, each with its own subtitle rather than one shared
+ * "Presence layer" line. Their titles are "Presence", "Your Pages", "Create
+ * Presence" and — for `Page` — the page's own name, which between them leave
+ * four different questions open, so one answer would only fit one of them.
+ *
+ * Keyed on exact names instead of a substring test on "Page", because "Page" is
+ * a short enough word to turn up inside an unrelated route later.
+ */
+const PRESENCE_ROUTE_SUBTITLES: Record<string, string> = {
+  Presence: "common:navSubtitles.presenceHome",
+  PagesHub: "common:navSubtitles.presenceManage",
+  PageCreate: "common:navSubtitles.presenceCreate",
+  Page: "common:navSubtitles.presencePublic"
+};
+
 function subtitleForStack(t: Translate, name: string) {
   // Checked before the substring tests below, which would otherwise mislabel
   // these: "PrivacySettings" contains neither "Account" nor "Safety", so it
   // would fall through to the generic "Native PulseSoc route".
   if (SETTINGS_ROUTE_NAMES.has(name)) return t("common:tabs.settings");
+  // All four Presence routes were reaching the generic placeholder, including
+  // the public page a visitor lands on from a share link.
+  const presence = PRESENCE_ROUTE_SUBTITLES[name];
+  if (presence) return t(presence);
   // Business OS and its sub-routes, checked before the substring tests below so
   // that "BusinessOsMarketplace" reads as part of the business suite rather than
   // as the consumer Marketplace. The hub itself is an App Store screenshot, so

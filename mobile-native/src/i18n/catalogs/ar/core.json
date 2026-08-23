@@ -208,7 +208,11 @@
       "trustIdentity": "طبقة الثقة والهوية",
       "nativeRoute": "مسار PulseSoc الأصلي",
       "membership": "العضوية والفوترة",
-      "business": "المتجر والقوائم والإعلانات"
+      "business": "المتجر والقوائم والإعلانات",
+      "presenceHome": "صفحات الفنان والنشاط التجاري الخاصة بك",
+      "presenceManage": "صفحات تملكها أو تساعد في إدارتها",
+      "presenceCreate": "فنان أو نشاط تجاري أو مؤسسة",
+      "presencePublic": "صفحة حضور"
     },
     "identity": {
       "member": "عضو في PulseSoc"

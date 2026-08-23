@@ -95,11 +95,38 @@ describe("navigator chrome", () => {
    * `subtitleForStack` classifies routes by substring, so it silently returns
    * the generic fallback for anything unrecognised. Asserting the keys exist
    * stops a typo from turning a subtitle into a humanized key fragment.
+   *
+   * Matched as bare string literals rather than `t("…")` calls: the Presence
+   * routes hold their keys in a lookup map and pass them to `t()` a line later,
+   * which a search for the call shape would walk straight past.
    */
   it("resolves every navigation subtitle key", () => {
-    const keys = Array.from(SOURCE.matchAll(/t\("(common:navSubtitles\.[a-zA-Z]+)"\)/g)).map((match) => match[1]);
+    const keys = Array.from(SOURCE.matchAll(/"(common:navSubtitles\.[a-zA-Z]+)"/g)).map((match) => match[1]);
     expect(keys.length).toBeGreaterThan(0);
     Array.from(new Set(keys)).forEach((key) => expect(hasKey("en", key)).toBe(true));
+  });
+
+  /**
+   * All four Presence routes were answering with `navSubtitles.nativeRoute` —
+   * "Native PulseSoc route", a developer placeholder — including the public
+   * page a visitor lands on from a shared link. Deriving the expected names
+   * from the registered screens means a fifth Presence route fails here rather
+   * than quietly inheriting the placeholder.
+   */
+  it("gives every Presence route a subtitle of its own", () => {
+    const registered = Array.from(SOURCE.matchAll(/<Stack\.Screen name="(Presence|Page[A-Za-z]*)"/g))
+      .map((match) => match[1])
+      .sort();
+    expect(registered).toEqual(["Page", "PageCreate", "PagesHub", "Presence"]);
+
+    const block = SOURCE.slice(SOURCE.indexOf("const PRESENCE_ROUTE_SUBTITLES"));
+    const entries = Array.from(
+      block.slice(0, block.indexOf("};")).matchAll(/(\w+): "(common:navSubtitles\.[a-zA-Z]+)"/g)
+    );
+    expect(entries.map((entry) => entry[1]).sort()).toEqual(registered);
+    // Four routes, four different answers, none of them the placeholder.
+    expect(new Set(entries.map((entry) => entry[2])).size).toBe(4);
+    entries.forEach((entry) => expect(entry[2]).not.toBe("common:navSubtitles.nativeRoute"));
   });
 });
 
@@ -110,7 +137,7 @@ describe("navigator chrome", () => {
  */
 describe("navigation chrome is translated in every shipped language", () => {
   const keys = [
-    ...Array.from(SOURCE.matchAll(/t\("(common:(?:screens|tabs|navSubtitles|identity)\.[a-zA-Z]+)"\)/g)).map(
+    ...Array.from(SOURCE.matchAll(/"(common:(?:screens|tabs|navSubtitles|identity)\.[a-zA-Z]+)"/g)).map(
       (match) => match[1]
     )
   ];

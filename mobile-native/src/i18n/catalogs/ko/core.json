@@ -208,7 +208,11 @@
       "trustIdentity": "신뢰 및 신원 레이어",
       "nativeRoute": "PulseSoc 네이티브 화면",
       "membership": "멤버십 및 결제",
-      "business": "스토어, 판매글, 광고"
+      "business": "스토어, 판매글, 광고",
+      "presenceHome": "내 아티스트 및 비즈니스 페이지",
+      "presenceManage": "내가 소유하거나 운영을 돕는 페이지",
+      "presenceCreate": "아티스트, 비즈니스 또는 단체",
+      "presencePublic": "프레즌스 페이지"
     },
     "identity": {
       "member": "PulseSoc 멤버"
