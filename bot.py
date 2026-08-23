@@ -98022,6 +98022,14 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
             "username": pulse_feed_engine.MEMBER_000_PUBLIC_PLAYER_ID,
             "public_player_id": pulse_feed_engine.MEMBER_000_PUBLIC_PLAYER_ID,
             "avatar_url": pulse_feed_engine.MEMBER_000_AVATAR_URL,
+            # The native profile normalizer reads ``avatar_thumbnail_url`` first
+            # and falls back to ``avatar_url``; naming both keeps the small and
+            # large renders on one asset rather than letting the fallback decide.
+            "avatar_thumbnail_url": pulse_feed_engine.MEMBER_000_AVATAR_URL,
+            # ``cover_url``/``banner_url`` are aliases everywhere else in this
+            # payload, so the system account supplies both for the same reason.
+            "cover_url": pulse_feed_engine.MEMBER_000_COVER_URL,
+            "banner_url": pulse_feed_engine.MEMBER_000_COVER_URL,
             "bio": "Official automated insights and safety education from PulseSoc.",
             "account_type": "PULSESOC_AUTOMATED",
             "automated": True,

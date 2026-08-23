@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { PULSE_API_BASE_URL } from "./config";
+import { absoluteApiUrl, PULSE_API_BASE_URL } from "./config";
 import { FeedResponse, listFeed, normalizePosts, PulsePost } from "./feed";
 import { PulseApiError, pulseApi } from "./pulseApi";
 import {
@@ -443,9 +443,10 @@ export function profileErrorState(error: unknown): ProfileErrorState {
   };
 }
 
+// Kept as a named wrapper so the call sites above read unchanged; the rule
+// itself now lives in `./config`, where the feed normalizer shares it. Declared
+// as a function rather than a const alias so it stays hoisted -- the call sites
+// sit earlier in the file.
 function absoluteProfileUrl(url: string) {
-  if (!url) return "";
-  if (/^https?:\/\//i.test(url)) return url;
-  if (url.startsWith("/")) return `${PULSE_API_BASE_URL}${url}`;
-  return `${PULSE_API_BASE_URL}/${url}`;
+  return absoluteApiUrl(url);
 }

@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { PULSE_API_BASE_URL } from "./config";
+import { absoluteApiUrl, PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
 import { profileTargetFromAuthor } from "./profileTarget";
 import { CanonicalMediaRecord, hasRenderableImage, hasRenderableMediaUrl, mediaRecordForCache } from "../media/mediaContract";
@@ -589,6 +589,12 @@ export function normalizeComments(items: PulseComment[], fallbackPostId = 0) {
     .filter((comment) => comment.id > 0 || comment.body.length > 0);
 }
 
+function commentAuthorWithLoadableAvatar(author: PulseAuthor | undefined) {
+  if (!author) return undefined;
+  const avatar = absoluteApiUrl(author.avatar_url);
+  return avatar === author.avatar_url ? author : { ...author, avatar_url: avatar };
+}
+
 export function normalizeComment(item: PulseComment, fallbackPostId = 0): PulseComment {
   const id = Number(item.comment_id || item.id || 0);
   return {
@@ -597,7 +603,11 @@ export function normalizeComment(item: PulseComment, fallbackPostId = 0): PulseC
     comment_id: id,
     post_id: Number(item.post_id || fallbackPostId || 0),
     body: String(item.body || item.content || item.text || ""),
-    author: item.author || item.user || undefined,
+    // Only the avatar is touched. A comment author is passed through otherwise
+    // unreshaped -- running it through `normalizeAuthor` would invent display
+    // names and ids that comment rendering does not expect -- but a relative
+    // avatar path is unloadable here exactly as it is on a feed card.
+    author: commentAuthorWithLoadableAvatar(item.author || item.user),
     replies: normalizeComments(item.replies || [], Number(item.post_id || fallbackPostId || 0)),
     reply_count: Number(item.reply_count ?? item.replies?.length ?? 0)
   };
@@ -658,7 +668,12 @@ function normalizeAuthor(item: PulsePost): PulseAuthor {
     display_name: author.display_name || author.name || item.author_name || item.author_username || "PulseSoc",
     username: author.username || author.handle || item.author_username || "",
     public_player_id: author.public_player_id || item.author_public_player_id || "",
-    avatar_url: author.avatar_url || item.author_avatar_url || ""
+    // Absolutised for the same reason `api/profile.ts` absolutises it: a
+    // site-relative avatar path is unloadable by `<Image>` and renders as an
+    // empty circle. This also covers payloads already cached on device from
+    // before the server started sending absolute URLs, so an existing install
+    // shows the account's picture immediately rather than after a refresh.
+    avatar_url: absoluteApiUrl(author.avatar_url || item.author_avatar_url || "")
   };
 }
 
