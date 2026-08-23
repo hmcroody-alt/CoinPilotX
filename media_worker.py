@@ -549,6 +549,17 @@ def _fail_or_retry_job(cur, job, error: Exception) -> None:
         "UPDATE pulse_jobs SET status=?, attempts=?, error_message=?, run_after=?, updated_at=? WHERE id=?",
         (status, attempts, str(error)[:1000], run_after, _now(), int(job.get("id") or 0)),
     )
+    if status == "failed" and str(job.get("job_type") or "") == "finalize_live_replay":
+        live_id = int(job.get("target_id") or 0)
+        message = str(error or "Replay finalization failed.")[:500]
+        cur.execute(
+            "UPDATE pulse_live_sessions SET recording_status='replay_failed', recording_error=?, updated_at=? WHERE id=? AND status='ended' AND COALESCE(replay_url,'')=''",
+            (message, _now(), live_id),
+        )
+        cur.execute(
+            "UPDATE pulse_posts SET live_status='unavailable', updated_at=? WHERE live_session_id=? AND live_status IN ('processing','ended','live')",
+            (_now(), live_id),
+        )
 
 
 def _process_media_job(cur, job) -> None:
@@ -764,7 +775,7 @@ def reconcile_live_replay_backlog(limit: int = 25) -> dict:
         if cur.fetchone():
             continue
         cur.execute(
-            "INSERT INTO pulse_jobs (job_type,target_type,target_id,status,attempts,max_attempts,run_after,created_at,updated_at) VALUES ('finalize_live_replay','live',?,'pending',0,120,?,?,?)",
+            "INSERT INTO pulse_jobs (job_type,target_type,target_id,status,attempts,max_attempts,run_after,created_at,updated_at) VALUES ('finalize_live_replay','live',?,'pending',0,5,?,?,?)",
             (live_id, now, now, now),
         )
         queued += 1

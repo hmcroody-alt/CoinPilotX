@@ -48,7 +48,7 @@ def test_live_replay_job_creates_one_mux_asset_then_reconciles_ready(tmp_path, m
         VALUES (70,7,'processing',3,'','','poster.jpg','Live','Live','published','2026-01-01T00:00:00');
         INSERT INTO pulse_jobs
           (id,job_type,target_type,target_id,status,attempts,max_attempts,run_after,created_at,updated_at)
-        VALUES (1,'finalize_live_replay','live',7,'pending',0,120,'2026-01-01T00:00:00','2026-01-01T00:00:00','2026-01-01T00:00:00');
+        VALUES (1,'finalize_live_replay','live',7,'pending',0,5,'2026-01-01T00:00:00','2026-01-01T00:00:00','2026-01-01T00:00:00');
         """
     )
     conn.commit()

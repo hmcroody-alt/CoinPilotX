@@ -50656,7 +50656,7 @@ def api_pulse_live_end(live_id):
         )
         if not cur.fetchone():
             cur.execute(
-                "INSERT INTO pulse_jobs (job_type,target_type,target_id,status,attempts,max_attempts,run_after,created_at,updated_at) VALUES ('finalize_live_replay','live',?,'pending',0,120,?,?,?)",
+                "INSERT INTO pulse_jobs (job_type,target_type,target_id,status,attempts,max_attempts,run_after,created_at,updated_at) VALUES ('finalize_live_replay','live',?,'pending',0,5,?,?,?)",
                 (live_id, now, now, now),
             )
     cur.execute("UPDATE pulse_live_streams SET status='ended', ended_at=?, updated_at=? WHERE session_id=?", (now, now, live_id))
