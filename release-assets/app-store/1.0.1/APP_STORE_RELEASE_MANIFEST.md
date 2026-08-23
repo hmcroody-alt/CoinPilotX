@@ -364,15 +364,31 @@ So build 17 references purchasable products that have never been submitted for r
 is precisely what Apple cited. tier1 is otherwise fully configured; the only missing field is
 **Review Information → Screenshot**, and that capture needs the GUI (Blocker C).
 
-**Two ways out, owner's call:**
+**Owner decision — settled.** Option 1: *"Do not gate the Ad Credits out of the build. PulseSoc
+actually uses these products. Submit all five Ad Credit consumables with build 17."* The
+gating alternative is closed and should not be revisited.
 
-1. **Submit them too** — capture one Ad Credits purchase screen, attach it to all five,
-   and add all five to the same Draft Submission as the subscriptions.
-2. **Make them unreachable in build 17** — if Ad Credits are not meant to ship yet, gate the
-   entry point so the binary does not reference them. This is a code change outside the
-   current scope lock and would need a new build.
+### Review screenshot progress against that decision
 
-Doing neither risks a second 2.1(b) rejection for the same reason.
+One capture from the real Ad Wallet UI serves all five tiers (identical file, 1320 × 2868,
+328,676 bytes, sha256 `aa9736ff…dcd38`), committed at `c8b92673` under
+`release-assets/app-store/1.0.1/ad-credit-review/`.
+
+| Tier | Apple ID | Review screenshot | State |
+|---|---|---|---|
+| tier1 | 6800110602 | ✅ uploaded, confirmed on reload | Prepare for Submission |
+| tier2 | 6800120648 | ⚠️ uploaded, **persistence not re-confirmed** before the session was signed out | Prepare for Submission |
+| tier3 | 6800116824 | ❌ not uploaded | Prepare for Submission |
+| tier4 | 6800125742 | ❌ not uploaded | Prepare for Submission |
+| tier5 | 6800133055 | ❌ not uploaded | Prepare for Submission |
+
+The remaining three uploads are mechanical and are blocked only by Blocker C2. All five images
+are already served with open CORS from
+`raw.githubusercontent.com/hmcroody-alt/CoinPilotX/c8b9267…/release-assets/app-store/1.0.1/ad-credit-review/adcredits_tierN_review.png`
+(verified 200 + `access-control-allow-origin: *` for all five), so the fetch → `DataTransfer` →
+`input.files` injection into `iap_review_info_undefined` can run the moment ASC is signed in.
+ASC uploads the file immediately on selection; the Save button staying disabled is expected and
+is not a failure.
 
 ## Ready to resubmit
 
