@@ -545,11 +545,13 @@ export function AppNavigator() {
       <Stack.Screen name="UndxActionCenter" component={UndxActionCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.undxActionCenter") })} />
       <Stack.Screen name="UndxCapabilities" component={UndxCapabilitiesScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.undxCapabilities") })} />
       <Stack.Screen name="Watchlists" component={WatchlistsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.watchlists") })} />
-      {/* The header title stays a catalog string rather than the asset's name.
-          The screen already shows the icon, name and symbol in its own header,
-          so a dynamic title only duplicates that — and it would put an
-          untranslated, provider-supplied string in the one place every other
-          screen keeps localized. */}
+      {/* This is the first-frame title only: AssetDetailScreen calls
+          `setOptions` on mount and replaces it with the asset's name, which is a
+          proper noun and so is deliberately not routed through the catalog. The
+          catalog string still belongs here and still has to be localized,
+          because it is what renders in the moment before the screen mounts —
+          the one case where this header is showing our copy rather than the
+          provider's. */}
       <Stack.Screen name="AssetDetail" component={AssetDetailScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.assetDetail") })} />
       <Stack.Screen name="AlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.alerts") })} />
       <Stack.Screen name="CryptoAlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.alerts") })} />
