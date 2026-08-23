@@ -7337,6 +7337,18 @@ def _crypto_api_result(callback):
     except ValueError as exc:
         if conn is not None:
             conn.rollback()
+        # A denial the client must be able to act on differently from a typo:
+        # "you need Premium" opens the upgrade sheet, a bad threshold highlights
+        # a field. Plain ValueErrors keep the original 400 exactly as before.
+        code = getattr(exc, "code", "")
+        if code:
+            return jsonify({
+                "ok": False,
+                "error": code,
+                "code": code,
+                "capability": getattr(exc, "capability", ""),
+                "message": str(exc),
+            }), getattr(exc, "http_status", 400)
         return api_error(str(exc), 400)
     except Exception as exc:
         if conn is not None:

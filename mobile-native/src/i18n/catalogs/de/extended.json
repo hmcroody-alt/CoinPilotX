@@ -2070,6 +2070,9 @@
       "undx": {
         "advanced": "UNDX erweitert"
       },
+      "crypto": {
+        "advanced_alerts": "Erweiterte Krypto-Alerts"
+      },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "Zugang zum Founder Hub",
       "premium_upload_limits": "Höhere Upload-Limits",

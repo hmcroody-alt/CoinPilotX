@@ -123,12 +123,16 @@ _REGISTRY: tuple[Feature, ...] = (
     ),
 
     Feature(
-        "premium.crypto.advanced_alerts", "Advanced crypto alerts", NEXT_WAVE,
+        "premium.crypto.advanced_alerts", "Advanced crypto alerts", PRODUCTION,
+        enforced_by="services.alert_engine.create_alert_rule",
         note=(
-            "Entitlement key is registered and resolvable, but the alert engine "
-            "does not yet read it and the advanced conditions do not yet exist. "
-            "Promote to PRODUCTION in the change that adds the gate to "
-            "services.alert_engine, not before."
+            "Multi-metric compound conditions (price, 24h change, 24h volume, "
+            "market cap) joined by and/or, plus crossing comparators. Gated in "
+            "create_alert_rule rather than in the HTTP route, because the worker, "
+            "UNDX and the admin tools all create rules through that function. "
+            "Basic single-threshold alerts stay free and take the original "
+            "evaluation path. Time-window conditions are NOT part of this and "
+            "must not be advertised until a sampled observation series exists."
         ),
     ),
     Feature(

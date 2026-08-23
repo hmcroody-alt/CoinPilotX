@@ -2057,6 +2057,9 @@
       "undx": {
         "advanced": "UNDX アドバンス"
       },
+      "crypto": {
+        "advanced_alerts": "高度な暗号資産アラート"
+      },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "Founder Hub へのアクセス",
       "premium_upload_limits": "アップロード上限の拡大",

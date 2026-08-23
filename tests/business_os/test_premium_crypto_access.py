@@ -169,14 +169,25 @@ def test_crypto_keys_are_seeded_on_every_plan_that_confers_membership():
 
 
 # PCRY-009 -------------------------------------------------------------------
+#: Crypto capabilities a real gate reads today. Adding a key here is the
+#: deliberate act of declaring it sellable, and belongs in the same change that
+#: ships its gate — never ahead of it.
+GATED_TODAY = {pca.ADVANCED_ALERTS}
+
+
 def test_crypto_capabilities_are_not_advertised_before_a_gate_reads_them():
-    """Honesty rule: the entitlement resolving is not the feature existing. These
-    stay out of the sold benefit list until the gate that enforces them ships."""
+    """Honesty rule: the entitlement resolving is not the feature existing. A
+    crypto capability stays out of the sold benefit list until the gate that
+    enforces it ships, and joins it only when that gate is named."""
     for key in pca.CRYPTO_CAPABILITIES:
         feature = rd.get(key)
         assert feature is not None, f"{key} missing from the readiness registry"
-        assert rd.sellable(key) is False, (
-            f"{key} became sellable while no gate reads it")
+        if key in GATED_TODAY:
+            assert rd.sellable(key) is True, f"{key} has a gate but is not advertised"
+            assert feature.enforced_by, f"{key} is sellable but names no gate"
+        else:
+            assert rd.sellable(key) is False, (
+                f"{key} became sellable while no gate reads it")
 
 
 # PCRY-010 -------------------------------------------------------------------

@@ -18,6 +18,7 @@ import re
 import threading
 
 from services import alert_engine
+from services import crypto_alert_conditions
 from services import db as db_service
 from services import market_data as market_data_service
 
@@ -479,18 +480,50 @@ def _alert_history_counts(conn: Any, user_id: int, alert_ids: list[int]) -> dict
     return {int((_row_dict(row) or {}).get("alert_rule_id") or 0): _safe_int((_row_dict(row) or {}).get("total"), 0) for row in cur.fetchall()}
 
 
+class PremiumRequired(ValueError):
+    """The capability exists and works; this account is not entitled to it.
+
+    A ``ValueError`` subclass so every existing handler keeps treating it as a
+    client error, but carrying a machine-readable code because the client has to
+    tell "you need Premium" apart from "you typed the threshold wrong" — one
+    opens the upgrade sheet, the other highlights a field.
+    """
+
+    code = "premium_required"
+    http_status = 402
+
+    def __init__(self, message: str, capability: str = ""):
+        super().__init__(message)
+        self.capability = capability
+
+
 def create_alert(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     ensure_tables(conn)
     symbol = _normalize_symbol(payload.get("assetSymbol") or payload.get("asset_symbol"))
-    condition = str(payload.get("condition") or payload.get("condition_type") or "").strip().lower()
-    if condition not in ALERT_CONDITIONS:
-        raise ValueError("Choose a supported alert condition.")
-    try:
-        target = Decimal(str(payload.get("targetValue") or payload.get("target_value") or ""))
-    except (InvalidOperation, ValueError):
-        raise ValueError("Use a valid target value.")
-    if target <= 0:
-        raise ValueError("Target value must be greater than zero.")
+    raw_clauses = payload.get("conditions") or payload.get("clauses")
+    spec = None
+    condition = ""
+    target = None
+    if isinstance(raw_clauses, list) and raw_clauses:
+        # Advanced (Premium) rule. The legacy ``condition``/``targetValue`` fields
+        # are not read: `alert_engine.create_alert_rule` derives them from the
+        # first clause, so there is one definition of the rule rather than a
+        # client-supplied summary that could disagree with the clauses.
+        try:
+            spec = crypto_alert_conditions.validate_spec(
+                {"logic": payload.get("logic") or "and", "clauses": raw_clauses})
+        except crypto_alert_conditions.ConditionError as exc:
+            raise ValueError(str(exc))
+    else:
+        condition = str(payload.get("condition") or payload.get("condition_type") or "").strip().lower()
+        if condition not in ALERT_CONDITIONS:
+            raise ValueError("Choose a supported alert condition.")
+        try:
+            target = Decimal(str(payload.get("targetValue") or payload.get("target_value") or ""))
+        except (InvalidOperation, ValueError):
+            raise ValueError("Use a valid target value.")
+        if target <= 0:
+            raise ValueError("Target value must be greater than zero.")
     cur = conn.cursor()
     active_count = _count(cur, "alert_rules", "user_id=? AND COALESCE(status, 'active')='active' AND deleted_at IS NULL", (int(user_id),))
     if active_count >= 100:
@@ -501,26 +534,37 @@ def create_alert(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, 
         "sms": bool(payload.get("notifySMS", False)),
         "in_app": bool(payload.get("notifyInApp", True)),
     }
-    alert_type = "move_24h" if condition in {"moves_up_percent", "moves_down_percent", "volatility_above"} else "coin_price"
+    if spec:
+        percent_primary = crypto_alert_conditions.is_percent_metric(spec["clauses"][0]["metric"])
+        alert_type = "move_24h" if percent_primary else "coin_price"
+    else:
+        alert_type = "move_24h" if condition in {"moves_up_percent", "moves_down_percent", "volatility_above"} else "coin_price"
     result = alert_engine.create_alert_rule(
         int(user_id),
         alert_type=alert_type,
         symbol=symbol,
-        condition=condition,
-        threshold=float(target),
+        condition=condition or "above",
+        threshold=float(target) if target is not None else 0.0,
         channels=channels,
         target=symbol,
         source="user_created",
         metadata={"note": str(payload.get("note") or "")[:240], "created_from": "crypto_command_center"},
         connection=conn,
         schema_ready=True,
+        condition_spec=spec,
     )
     if not result.get("ok"):
+        if result.get("code") == "premium_required":
+            raise PremiumRequired(result.get("message") or "This alert needs PulseSoc Premium.",
+                                  capability=result.get("capability") or "")
         raise ValueError(result.get("message") or "Alert could not be created.")
     alert_id = int(result.get("alert_id") or 0)
-    _audit(conn, user_id, "create_alert", "crypto_alert", alert_id, {"asset": symbol, "condition": condition})
+    _audit(conn, user_id, "create_alert", "crypto_alert", alert_id,
+           {"asset": symbol, "condition": condition or (spec or {}).get("logic") or "advanced",
+            "advanced": bool(spec)})
     conn.commit()
-    return {"ok": True, "alert_id": alert_id, "message": f"{symbol} alert created."}
+    return {"ok": True, "alert_id": alert_id, "message": f"{symbol} alert created.",
+            "advanced": bool(spec)}
 
 
 def update_alert(conn: Any, user_id: int, alert_id: int, payload: dict[str, Any]) -> dict[str, Any]:

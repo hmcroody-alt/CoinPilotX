@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 import requests
 
-from . import db as db_service, email_service, live_market_service, notification_service, pulsesoc_notification_system, push_service, sms_service, user_context
+from . import crypto_alert_conditions as conditions, db as db_service, email_service, live_market_service, notification_service, premium_crypto_access, pulsesoc_notification_system, push_service, sms_service, user_context
 
 
 SUPPORTED_ALERT_TYPES = {
@@ -199,6 +199,16 @@ def _ensure_alert_schema_impl(conn=None):
             # new rules only. Nothing in the product writes this column, so a
             # non-NULL value here is always an explicit operator override.
             ("repeat_step_percent", "REAL"),
+            # Advanced (Premium) conditions. NULL on every rule that existed
+            # before this column and on every basic rule created since, and the
+            # evaluator branches on NULL, so the free single-threshold path is
+            # untouched rather than reimplemented on top of the spec.
+            ("condition_spec", "TEXT"),
+            # The metrics this rule read last cycle, as JSON. A crossing needs a
+            # prior reading to cross *from*, and each clause needs its own — a
+            # single scalar cannot carry the previous price and the previous
+            # volume at once.
+            ("last_observations", "TEXT"),
         ],
     )
     cur.execute(
@@ -376,6 +386,27 @@ def _condition_label(condition):
         "moves_down_percent": "moved down more than",
         "volatility_above": "volatility crossed",
     }.get(condition, condition.replace("_", " "))
+
+
+def _describe_observations(spec, observations):
+    """The readings behind a compound alert, in the order the member wrote them.
+
+    A metric the market source did not publish is reported as unavailable rather
+    than omitted. The rule still fired — an OR settles on one clause — and the
+    member is owed the reason it does not see a number for the other.
+    """
+    observations = observations or {}
+    parts = []
+    for clause in spec.get("clauses") or ():
+        metric = clause["metric"]
+        value = observations.get(metric)
+        if value is None:
+            parts.append(f"{conditions.metric_label(metric)} unavailable")
+        elif conditions.is_percent_metric(metric):
+            parts.append(f"{conditions.metric_label(metric)} {round(float(value), 2)}%")
+        else:
+            parts.append(f"{conditions.metric_label(metric)} {_format_money(value)}")
+    return ", ".join(parts)
 
 
 def _user_record(user_id):
@@ -668,6 +699,30 @@ def _public_rule(row):
     rule["source_ref"] = rule.get("source_ref") or ""
     rule["deleted_at"] = rule.get("deleted_at") or ""
     rule["active"] = 1 if (rule.get("status") or "active") == "active" else 0
+    spec = _json_loads(rule.get("condition_spec"), None)
+    # Re-validated on read, not trusted from storage. A spec that no longer
+    # validates (a metric retired, a row hand-edited) must fall back to the basic
+    # single-threshold rule the row also carries rather than be evaluated
+    # half-understood — the alternative is a rule that silently watches fewer
+    # conditions than the member set.
+    if isinstance(spec, dict):
+        try:
+            spec = conditions.validate_spec(spec)
+        except conditions.ConditionError:
+            logging.warning("alert_rules.condition_spec on rule %s is no longer valid; "
+                            "falling back to the basic condition.", rule.get("id"))
+            spec = None
+    else:
+        spec = None
+    rule["condition_spec"] = spec
+    rule["is_advanced"] = bool(spec)
+    # Rendered once, server-side. A compound rule's description has to agree with
+    # what the engine evaluates and with what the notification says, and three
+    # independent renderers (web, native, notification copy) would eventually
+    # disagree about a rule the member cannot otherwise inspect.
+    rule["condition_summary"] = conditions.describe_spec(spec, rule["asset_symbol"]) if spec else ""
+    observations = _json_loads(rule.get("last_observations"), None)
+    rule["last_observations"] = observations if isinstance(observations, dict) else {}
     return rule
 
 
@@ -685,12 +740,34 @@ def create_alert_rule(
     metadata=None,
     connection=None,
     schema_ready=False,
+    condition_spec=None,
 ):
     if not schema_ready:
         ensure_alert_schema(connection)
     alert_type = _normalize_alert_type(alert_type)
     symbol = _normalize_symbol(symbol or target)
     condition = _normalize_condition(condition)
+    spec = None
+    if condition_spec:
+        # Gated here rather than only in the route, because the worker, UNDX and
+        # the admin tools all create rules through this function. A gate that
+        # lives in one HTTP handler is a gate on one door of several.
+        if not premium_crypto_access.allowed_for_user_id(user_id, premium_crypto_access.ADVANCED_ALERTS):
+            return {"ok": False, "code": "premium_required",
+                    "capability": premium_crypto_access.ADVANCED_ALERTS,
+                    "message": "Advanced alert conditions are part of PulseSoc Premium."}
+        try:
+            spec = conditions.validate_spec(condition_spec)
+        except conditions.ConditionError as exc:
+            return {"ok": False, "code": "invalid_condition", "message": str(exc)}
+        # The advanced rule still carries a basic condition + threshold, taken
+        # from its first clause. Every existing reader — the dashboard, the
+        # legacy Telegram surfaces, `_central_crypto_alert_type` — reads those
+        # columns, and leaving them empty would make an advanced rule look
+        # malformed to code that predates this feature.
+        primary = spec["clauses"][0]
+        condition = "above" if primary["comparator"] in {"above", "crosses_above"} else "below"
+        threshold = primary["value"]
     try:
         threshold_value = float(threshold)
     except Exception:
@@ -706,8 +783,8 @@ def create_alert_rule(
             """
             INSERT INTO alert_rules
             (user_id, alert_type, symbol, target, condition, threshold_value, target_value, channels_json, channels,
-             status, active, cooldown_seconds, trigger_count, source, source_ref, metadata, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, 0, ?, ?, ?, ?, ?)
+             status, active, cooldown_seconds, trigger_count, source, source_ref, metadata, condition_spec, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, 0, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user_id,
@@ -723,6 +800,7 @@ def create_alert_rule(
                 str(source or "user_created")[:80],
                 str(source_ref or "")[:160],
                 json.dumps(metadata or {})[:4000],
+                json.dumps(spec) if spec else None,
                 now,
                 now,
             ),
@@ -921,6 +999,12 @@ def duplicate_alert_rule(rule_id, user_id):
         source="duplicated",
         source_ref=f"alert_rules:{rule_id}",
         metadata={"duplicated_from": rule_id},
+        # Without this a duplicated advanced rule silently becomes the basic
+        # single-threshold rule its legacy columns describe — the copy would
+        # watch less than the original and look identical in the list. The
+        # entitlement is re-checked on the way through, so a lapsed member
+        # cannot mint new advanced rules by duplicating an old one.
+        condition_spec=rule.get("condition_spec"),
     )
     if result.get("ok"):
         result["message"] = "Alert duplicated."
@@ -1118,6 +1202,65 @@ def condition_matches(condition, observed_value, threshold_value):
     return False
 
 
+def evaluate_rule_condition(rule):
+    """Did this rule's condition match? One answer for basic and advanced rules.
+
+    Both kinds go through the same state machine below, so both must produce the
+    same shape: ``{ok, matched, value, metric, observations}``. ``value`` is the
+    single scalar the latch, the repeat comparison and the notification copy are
+    all written in terms of, which is why an advanced rule still names a primary
+    metric rather than trying to latch on a tuple.
+
+    A rule without a ``condition_spec`` takes the original path unchanged —
+    ``current_observed_value`` then ``condition_matches`` — so no existing rule's
+    behaviour depends on any of the advanced code being correct.
+
+    ``ok=False`` with ``status="skipped"`` is the *undecidable* answer: the
+    market source did not publish a metric the rule reads, or a crossing clause
+    has no earlier reading to compare against. The caller treats it exactly like
+    a failed quote — check the rule, leave the latch alone, notify nobody —
+    because a rule that cannot be evaluated has not been observed to be false.
+    """
+    spec = rule.get("condition_spec")
+    if not spec:
+        observed = current_observed_value(rule)
+        if not observed.get("ok"):
+            return observed
+        observed["matched"] = condition_matches(
+            rule.get("condition"), observed["value"], rule.get("threshold_value"))
+        observed["observations"] = {}
+        return observed
+
+    symbol = _normalize_symbol(rule.get("symbol") or rule.get("target"))
+    quote = live_market_service.get_crypto_quote(symbol)
+    asset = quote.get("asset") or {}
+    if not asset:
+        return {"ok": False, "status": "error", "observations": {},
+                "message": quote.get("message") or f"{symbol} quote unavailable."}
+
+    result = conditions.evaluate_spec(asset, spec, rule.get("last_observations"))
+    observations = result["observations"]
+    primary = spec["clauses"][0]["metric"]
+    if not result["ok"]:
+        # Still carries the observations: recording what we *did* see is what
+        # gives the next cycle a reading for a crossing to compare against, so a
+        # crossing rule arms itself rather than staying undecidable forever.
+        return {"ok": False, "status": "skipped", "observations": observations,
+                "symbol": symbol, "metric": primary,
+                "value": observations.get(primary),
+                "message": result["message"] or "Alert conditions could not be evaluated."}
+
+    value = observations.get(primary)
+    if value is None:
+        # The primary metric was unavailable but the rule was still decided (an
+        # OR another clause already answered). Report the value that decided it.
+        value = next((c["observed"] for c in result["clauses"]
+                      if c.get("observed") is not None), None)
+    return {"ok": True, "symbol": symbol, "metric": primary, "value": float(value),
+            "matched": bool(result["matched"]), "observations": observations,
+            "quote": quote, "spec_result": result}
+
+
 #: Latch states persisted on ``alert_rules.condition_state``.
 STATE_ARMED = "armed"
 STATE_LATCHED = "latched"
@@ -1164,13 +1307,31 @@ def _repeat_is_further(condition, value, reference):
     already knows they are above it, so that is not news.
     """
     condition = _normalize_condition(condition)
-    if condition in {"above", "moves_up_percent"}:
+    # ``crosses_above``/``crosses_below`` only ever arrive from an advanced
+    # rule's primary clause; no stored basic rule carries them, so adding them
+    # here cannot change how an existing rule repeats. They matter for a latched
+    # OR rule, where a second clause can hold the latch open after the crossing
+    # itself has stopped being true.
+    if condition in {"above", "moves_up_percent", "crosses_above"}:
         return value > reference
-    if condition in {"below", "moves_down_percent"}:
+    if condition in {"below", "moves_down_percent", "crosses_below"}:
         return value < reference
     if condition == "volatility_above":
         return abs(value) > abs(reference)
     return False
+
+
+def _repeat_direction(rule):
+    """Which way is "further into the breach" for this rule?
+
+    An advanced rule's latch follows its primary (first) clause, because that is
+    the metric ``value`` carries. A compound rule that is latched on "price above
+    61,000 and volume above 30B" repeats when the *price* moves further up, which
+    is the clause the member led with and the number the notification quotes.
+    """
+    spec = rule.get("condition_spec") or {}
+    clauses = spec.get("clauses") or ()
+    return clauses[0]["comparator"] if clauses else rule.get("condition")
 
 
 def alert_repeat_progressed(condition, value, last_notified, step_percent):
@@ -1310,6 +1471,28 @@ def _set_last_notified_value(rule_id, observed_value):
         conn.close()
 
 
+def _set_last_observations(rule_id, observations):
+    """Persist the metrics this rule read, for the next cycle to compare against.
+
+    Separate from ``last_observed_value`` rather than replacing it: that column
+    is the single scalar the latch and the repeat comparison run on, and every
+    existing rule, dashboard and test reads it. This one answers a question the
+    scalar cannot — "what was the volume last time?" — for rules that watch more
+    than one metric.
+    """
+    ensure_alert_schema()
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE alert_rules SET last_observations=?, updated_at=? WHERE id=?",
+            (json.dumps(observations)[:4000], _now(), rule_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _set_condition_state(rule_id, state, observed_value):
     """Persist a non-firing state transition (arming / re-arming)."""
     ensure_alert_schema()
@@ -1362,17 +1545,40 @@ def evaluate_alert_rule(rule):
     rule = _public_rule(rule)
     if (rule.get("status") or "active") != "active":
         return {"ok": True, "triggered": False, "message": "Alert is not active."}
-    observed = current_observed_value(rule)
+    observed = evaluate_rule_condition(rule)
+    if observed.get("observations"):
+        # Written before the outcome is acted on, and on the undecidable path
+        # too: this is the reading the *next* cycle's crossing compares against,
+        # so skipping it when we could not decide would leave a crossing rule
+        # permanently unable to see its first edge.
+        _set_last_observations(rule["id"], observed["observations"])
+        # The in-memory rule was loaded before this cycle, so it still holds the
+        # previous reading — which `evaluate_rule_condition` needed and nothing
+        # after this point does. Notification copy quotes these values, so leaving
+        # them stale would report the wrong numbers on the alert that just fired.
+        rule["last_observations"] = observed["observations"]
     if not observed.get("ok"):
         # A missing/failed quote must not disturb latch state, otherwise a single
-        # provider blip would re-arm a latched rule and let it fire again.
+        # provider blip would re-arm a latched rule and let it fire again. An
+        # undecidable advanced rule is the same situation for the same reason.
         _mark_checked(rule["id"], status_message=observed.get("message"))
         if observed.get("status") == "error":
             _create_event(rule, None, "error", observed.get("message") or "Alert evaluation failed.")
+        elif (observed.get("value") is not None
+              and str(rule.get("condition_state") or "").strip().lower() != STATE_LATCHED):
+            # We read the market but could not decide the rule. Arming here is
+            # what makes a crossing rule work at all: its first cycle is *always*
+            # undecidable — there is nothing to cross from — so if that cycle did
+            # not count as the arming observation, the rule would spend its second
+            # cycle arming and never fire on the edge it just saw.
+            #
+            # Restricted to rules that are not latched, which is what preserves
+            # the guarantee above: a provider gap on a latched rule still leaves
+            # the latch exactly where it was.
+            _set_condition_state(rule["id"], STATE_ARMED, observed.get("value"))
         return {"ok": observed.get("status") != "error", "triggered": False, "message": observed.get("message") or "Alert skipped."}
-    threshold = rule.get("threshold_value")
     value = observed["value"]
-    matched = condition_matches(rule.get("condition"), value, threshold)
+    matched = observed["matched"]
     _mark_checked(rule["id"])
     previous_state = str(rule.get("condition_state") or "").strip().lower()
 
@@ -1429,7 +1635,7 @@ def evaluate_alert_rule(rule):
                 "state": STATE_LATCHED,
                 "message": "Condition still met; repeat baseline recorded for this already-latched alert.",
             }
-        if not alert_repeat_progressed(rule.get("condition"), value, last_notified, step_percent):
+        if not alert_repeat_progressed(_repeat_direction(rule), value, last_notified, step_percent):
             return {
                 "ok": True,
                 "triggered": False,
@@ -1577,7 +1783,14 @@ def trigger_alert(rule, observed_value, trigger_seq=None, repeat=False):
     # the threshold was crossed earlier and the market has since moved further —
     # so it is labelled as a continuing move rather than a fresh crossing.
     moment = "Still moving" if repeat else "Value at crossing"
-    if condition in {"above", "below"}:
+    spec = rule.get("condition_spec")
+    if spec:
+        # A compound rule must restate every condition it fired on. Naming only
+        # the threshold that happens to sit in ``threshold_value`` would describe
+        # a different, simpler alert than the one the member created.
+        message = (f"{conditions.describe_spec(spec, symbol)}. {moment}: "
+                   f"{_describe_observations(spec, rule.get('last_observations'))}.")
+    elif condition in {"above", "below"}:
         message = f"{symbol} {_condition_label(condition)} {_format_money(threshold)}. {moment}: {_format_money(observed_value)}."
     else:
         message = f"{symbol} {_condition_label(condition)} {threshold}%. {moment}: {round(float(observed_value), 2)}%."

@@ -2154,6 +2154,9 @@
       "undx": {
         "advanced": "UNDX المتقدم"
       },
+      "crypto": {
+        "advanced_alerts": "تنبيهات العملات الرقمية المتقدمة"
+      },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "الوصول إلى Founder Hub",
       "premium_upload_limits": "حدود رفع أعلى",

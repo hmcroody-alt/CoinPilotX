@@ -2064,6 +2064,9 @@
       "undx": {
         "advanced": "고급 UNDX"
       },
+      "crypto": {
+        "advanced_alerts": "고급 암호화폐 알림"
+      },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "Founder Hub 이용",
       "premium_upload_limits": "더 높은 업로드 한도",
