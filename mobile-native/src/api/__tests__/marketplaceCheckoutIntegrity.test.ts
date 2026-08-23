@@ -65,4 +65,30 @@ describe("checkout failures name the buyer's next move", () => {
       "Checkout could not start. No card was charged."
     );
   });
+
+  it("tells a buyer whose order is too small that the total is the problem", () => {
+    // A $0.10 listing is under Stripe's USD floor, so no retry, reinstall or
+    // second card will ever get past it. Falling back to the screen's generic
+    // "Checkout could not start" sent the buyer round that loop with no exit.
+    const error = new PulseApiError(
+      "This order total is below USD 0.50, the smallest amount card payments accept. No card was charged.",
+      400,
+      "ORDER_TOTAL_BELOW_MINIMUM"
+    );
+
+    expect(buyerErrorCopy(error, "Checkout could not start. No card was charged.")).toBe(
+      "This order total is below the minimum amount card payments accept. No card was charged."
+    );
+  });
+
+  it("separates a card decline from the platform being misconfigured", () => {
+    // Both used to arrive as one hard-coded 500 from Buy Now. They call for
+    // opposite moves: try another card, versus wait — so they must not share
+    // a sentence.
+    const declined = new PulseApiError("Your card could not be charged.", 402, "PAYMENT_FAILED");
+    const misconfigured = new PulseApiError("Payments are temporarily unavailable.", 400, "PAYMENT_CONFIGURATION_ERROR");
+
+    expect(buyerErrorCopy(declined, "fallback")).toBe("Your card could not be charged. No card was charged.");
+    expect(buyerErrorCopy(misconfigured, "fallback")).toBe("Payments are temporarily unavailable. No card was charged.");
+  });
 });

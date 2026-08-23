@@ -45,7 +45,11 @@ from services.marketplace_cart_routes import (
     release_inventory_reservation,
     stripe_shipping_checkout_params,
 )
-from services.marketplace_payment_errors import classify_provider_exception, stripe_response_value
+from services.marketplace_payment_errors import (
+    below_minimum_charge_error,
+    classify_provider_exception,
+    stripe_response_value,
+)
 from services import marketplace_quote_service
 from services import marketplace_goods_policy
 
@@ -526,6 +530,14 @@ def offer_checkout(offer_id: int):
         )
         amount = commercial_quote["buyer_total_minor"]
         platform_fee = commercial_quote["platform_fee_minor"]
+        # An accepted offer can be haggled below the floor even when the listing
+        # price was above it, so this lane needs the same pre-flight as the
+        # other two — refused before the transaction row and the stock hold.
+        below_minimum = below_minimum_charge_error(amount, currency)
+        if below_minimum:
+            return _error(below_minimum["message"], below_minimum["status"],
+                          code=below_minimum["code"], amount_cents=amount,
+                          minimum_charge_cents=below_minimum["minimum_minor"])
         now = _now()
         cur.execute(
             """

@@ -204,13 +204,21 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
       throw new Error("Secure in-app checkout could not be created.");
     } catch (error) {
       setStage("review");
+      // A creation attempt that reached Stripe and failed has spent this key on
+      // those exact parameters, and the next attempt is built against a fresh
+      // transaction id — so reusing the key makes every retry fail as "same key,
+      // different request" regardless of whether the original cause is gone.
+      // Tapping again after reading an error is a new attempt; collapsing a
+      // double-tap of the *same* attempt is the `opening` guard's job, above.
+      // Skipped once a bootstrap exists, because then nothing was re-created.
+      if (!sheet) intentKey.current = makeIntentKey(params.mode, subject);
       // The locally thrown messages above already name the buyer's next move,
       // so they are their own fallback; `buyerErrorCopy` is what keeps a server
       // 500's "temporary service issue" from becoming the dominant sentence.
       const local = error instanceof Error ? error.message : "";
       setMessage(buyerErrorCopy(error, local || "Checkout could not start. No card was charged."));
     }
-  }, [checkoutUrl, lane, mustChooseLane, params.listingId, params.mode, params.sellerUserId, resolvedLane, sheet, stage, transactionIds]);
+  }, [checkoutUrl, lane, mustChooseLane, params.listingId, params.mode, params.sellerUserId, resolvedLane, sheet, stage, subject, transactionIds]);
 
   if (stage === "confirmed") {
     const primaryId = transactionIds[0];

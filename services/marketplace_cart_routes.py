@@ -43,7 +43,11 @@ from flask import Blueprint, jsonify, request
 
 from services import marketplace_listing_lifecycle as listing_lifecycle
 from services import marketplace_seller_identity as seller_identity
-from services.marketplace_payment_errors import classify_provider_exception, stripe_response_value
+from services.marketplace_payment_errors import (
+    below_minimum_charge_error,
+    classify_provider_exception,
+    stripe_response_value,
+)
 from services import marketplace_quote_service
 from services import marketplace_goods_policy
 
@@ -98,7 +102,9 @@ def _error(message: str, status: int = 400, *, code: str = "", **extra):
 
         ITEM_UNAVAILABLE, OUT_OF_STOCK, SELLER_UNAVAILABLE, INVALID_QUANTITY,
         CART_FULL, PRICE_CHANGED, ADDRESS_REQUIRED, PAYMENT_UNAVAILABLE,
-        LOGIN_REQUIRED, NOT_FOUND
+        PAYMENT_CONFIGURATION_ERROR, PAYMENT_FAILED, NETWORK_ERROR,
+        ORDER_TOTAL_BELOW_MINIMUM, FULFILLMENT_REQUIRED, LOGIN_REQUIRED,
+        NOT_FOUND
 
     ``message`` stays human because web and admin surfaces render it directly.
     """
@@ -635,6 +641,14 @@ def cart_checkout():
         total_minor = sum(q["buyer_total_minor"] for q in line_quotes)
         platform_fee = sum(q["platform_fee_minor"] for q in line_quotes)
         seller_net = sum(q["seller_earnings_minor"] for q in line_quotes)
+
+        # The cart settles as one charge, so it is the group total that has to
+        # clear the per-currency floor — a 10c line is fine next to a $9 one.
+        below_minimum = below_minimum_charge_error(total_minor, currency)
+        if below_minimum:
+            return _error(below_minimum["message"], below_minimum["status"],
+                          code=below_minimum["code"], total_cents=total_minor,
+                          minimum_charge_cents=below_minimum["minimum_minor"])
 
         tx_ids = []
         for l, commercial_quote in zip(lines, line_quotes):

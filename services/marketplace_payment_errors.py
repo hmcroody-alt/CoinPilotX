@@ -1,4 +1,4 @@
-"""Classify a payment-provider exception into a buyer-safe checkout error.
+"""Buyer-safe checkout errors: one pre-flight rule, one exception classifier.
 
 Both marketplace checkout paths (`marketplace_cart_routes` and
 `marketplace_offers_routes`) create a Stripe PaymentIntent / Checkout Session
@@ -21,6 +21,12 @@ This module turns the caught exception into a stable, machine-readable triple:
 It never returns the provider's raw message or any secret. Stripe is detected by
 duck-typing (class name + attributes) so this module has no import dependency on
 the ``stripe`` package and stays trivially unit-testable.
+
+One failure is worth refusing *before* the provider rather than classifying
+after it: an order total under Stripe's per-currency minimum. It is not a
+provider outage and it is not transient — the same tap will fail forever — so it
+is answered here as a validation error naming the actual floor, before a
+transaction row exists and before stock is reserved.
 """
 
 from __future__ import annotations
@@ -55,6 +61,78 @@ _STRIPE_CLASS_MAP: dict[str, tuple[str, int, str]] = {
     "StripeError": ("PAYMENT_UNAVAILABLE", 502, _GENERIC_MESSAGE),
     "APIError": ("PAYMENT_UNAVAILABLE", 502, _GENERIC_MESSAGE),
 }
+
+
+# Stripe refuses a charge below a floor that is *per currency*, not a fixed
+# dollar figure: 0.50 in USD and EUR, 0.30 in GBP, 50 in JPY (zero-decimal, so
+# fifty yen rather than half a yen), 175 in HUF, 10 in MXN. Sending less raises
+# an InvalidRequestError, which reached the buyer as "Checkout could not be
+# created." on a listing whose price they could see was fine — so a total the
+# card networks will not carry read as PulseSoc being broken.
+#
+# Values are minor units, the units every checkout amount is already carried in,
+# so no conversion happens at a call site.
+# Source: https://docs.stripe.com/currencies, "Minimum charge amounts".
+STRIPE_MINIMUM_CHARGE_MINOR: dict[str, int] = {
+    "AED": 200, "ARS": 50, "AUD": 50, "BRL": 50, "CAD": 50, "CHF": 50,
+    "COP": 50, "CZK": 1500, "DKK": 250, "EUR": 50, "GBP": 30, "HKD": 400,
+    "HUF": 17500, "IDR": 50, "ILS": 50, "INR": 50, "JPY": 50, "KRW": 50,
+    "MXN": 1000, "MYR": 200, "NOK": 300, "NZD": 50, "PHP": 50, "PLN": 200,
+    "RON": 200, "RUB": 50, "SEK": 300, "SGD": 50, "THB": 1000, "USD": 50,
+    "ZAR": 50,
+}
+
+# An unlisted currency falls back deliberately low rather than high. Too low
+# simply defers to Stripe's own rejection, which the classifier below still
+# maps; too high would refuse a checkout Stripe would have accepted, which is a
+# worse failure because nothing in the app could explain it.
+DEFAULT_MINIMUM_CHARGE_MINOR = 50
+
+# Charges in these currencies are quoted without a decimal point, so a minor
+# unit *is* the unit. Used for display only — the table above is already minor.
+_ZERO_DECIMAL_CURRENCIES = frozenset({
+    "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF",
+    "UGX", "VND", "VUV", "XAF", "XOF", "XPF",
+})
+
+BELOW_MINIMUM_CODE = "ORDER_TOTAL_BELOW_MINIMUM"
+
+
+def minimum_charge_minor(currency: str) -> int:
+    """Smallest chargeable amount for ``currency``, in minor units."""
+    code = str(currency or "USD").upper()
+    return STRIPE_MINIMUM_CHARGE_MINOR.get(code, DEFAULT_MINIMUM_CHARGE_MINOR)
+
+
+def format_minor(amount_minor: int, currency: str) -> str:
+    """``1000, "MXN"`` -> ``"MXN 10.00"``; ``50, "JPY"`` -> ``"JPY 50"``."""
+    code = str(currency or "USD").upper()
+    if code in _ZERO_DECIMAL_CURRENCIES:
+        return f"{code} {int(amount_minor)}"
+    return f"{code} {int(amount_minor) / 100:.2f}"
+
+
+def below_minimum_charge_error(amount_minor: Any, currency: str) -> dict[str, Any] | None:
+    """``None`` when the total is chargeable, else a buyer-safe descriptor.
+
+    Shaped like :func:`classify_provider_exception` — ``code``/``status``/
+    ``message`` — so the three checkout lanes answer both failures the same way.
+    """
+    floor = minimum_charge_minor(currency)
+    amount = int(amount_minor or 0)
+    if amount >= floor:
+        return None
+    return {
+        "code": BELOW_MINIMUM_CODE,
+        "status": 400,
+        "message": (
+            f"This order total is below {format_minor(floor, currency)}, the smallest "
+            "amount card payments accept. No card was charged."
+        ),
+        "minimum_minor": floor,
+        "amount_minor": amount,
+        "currency": str(currency or "USD").upper(),
+    }
 
 
 def stripe_response_value(response: Any, name: str, default: Any = "") -> Any:

@@ -87227,6 +87227,18 @@ def api_pulse_payments_checkout():
     else:
         platform_fee = int(round(amount_cents * fee_bps / 10000))
         seller_net = amount_cents - platform_fee
+    from services.marketplace_payment_errors import below_minimum_charge_error, classify_provider_exception
+    # The buyer total, not the list price: whatever Stripe is asked to charge is
+    # what has to clear the per-currency floor. Refused here, before a
+    # transaction row and before stock is held, so an unchargeable listing costs
+    # the buyer a sentence rather than a reserved unit and an opaque 500.
+    below_minimum = below_minimum_charge_error(amount_cents, currency)
+    if below_minimum:
+        conn.close()
+        return api_error(below_minimum["message"], below_minimum["status"],
+                         error_code=below_minimum["code"],
+                         minimum_charge_cents=below_minimum["minimum_minor"],
+                         amount_cents=amount_cents, currency=currency)
     cur.execute(
         """
         INSERT INTO seller_transactions
@@ -87410,19 +87422,31 @@ def api_pulse_payments_checkout():
     except Exception as exc:
         trace_id = secrets.token_hex(6)
         logging.exception("SELLER_CHECKOUT_CREATE_FAILED trace_id=%s tx_id=%s", trace_id, tx_id)
+        # The same classifier the cart and accepted-offer lanes use. This branch
+        # used to answer every failure with one hard-coded 500 and the raw
+        # exception text: a card decline, an unreachable Stripe and a
+        # misconfigured key were indistinguishable to the buyer, and a retry was
+        # the only move any of them suggested.
+        classified = classify_provider_exception(exc)
         if inventory_held:
             marketplace_cart_service.release_inventory_reservation(cur, tx_id, now=now)
-        cur.execute("UPDATE seller_transactions SET status='checkout_failed', metadata_json=?, updated_at=? WHERE id=?", (json.dumps({"error": str(exc), "trace_id": trace_id}, default=str), now, tx_id))
+        cur.execute("UPDATE seller_transactions SET status='checkout_failed', metadata_json=?, updated_at=? WHERE id=?",
+                    (json.dumps({"error": str(exc), "trace_id": trace_id,
+                                 "provider_error": classified["provider_error"]}, default=str), now, tx_id))
         pulse_emit_payment_checkout_event(
             cur,
             {**tx_event, "status": "checkout_failed"},
             "checkout_failed",
             status="checkout_failed",
             actor_user_id=buyer["user_id"],
-            extra={"trace_id": trace_id},
+            extra={"trace_id": trace_id, "provider_error": classified["provider_error"]},
         )
         conn.commit(); conn.close()
-        return api_error("Checkout could not be created.", 500, trace_id, error=str(exc), transaction_id=tx_id)
+        # The provider fingerprint ({type, code, param}) ships; the provider's
+        # free-text message does not, so nothing can echo account or key detail.
+        return api_error(classified["message"], classified["status"], trace_id,
+                         error_code=classified["code"], provider_error=classified["provider_error"],
+                         transaction_id=tx_id)
 
 
 def _creator_checkout_for_item(buyer, item_type, item_id, plan_key=""):

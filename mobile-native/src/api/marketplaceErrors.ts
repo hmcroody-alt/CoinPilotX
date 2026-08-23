@@ -26,6 +26,9 @@ export type MarketplaceErrorCode =
   | "ADDRESS_REQUIRED"
   | "FULFILLMENT_REQUIRED"
   | "PAYMENT_UNAVAILABLE"
+  | "PAYMENT_CONFIGURATION_ERROR"
+  | "PAYMENT_FAILED"
+  | "ORDER_TOTAL_BELOW_MINIMUM"
   | "PRICE_CHANGED"
   | "CART_FULL"
   | "OWN_LISTING"
@@ -40,6 +43,13 @@ const COPY: Record<MarketplaceErrorCode, string> = {
   ADDRESS_REQUIRED: "Add a delivery address to continue.",
   FULFILLMENT_REQUIRED: "Choose pickup or delivery before you pay.",
   PAYMENT_UNAVAILABLE: "Payment is unavailable right now. No card was charged.",
+  PAYMENT_CONFIGURATION_ERROR: "Payments are temporarily unavailable. No card was charged.",
+  PAYMENT_FAILED: "Your card could not be charged. No card was charged.",
+  // Named as the order's problem, not the platform's: retrying, updating the
+  // app or trying another card will never clear it, so copy that suggests any
+  // of those sends the buyer round a loop with no exit.
+  ORDER_TOTAL_BELOW_MINIMUM:
+    "This order total is below the minimum amount card payments accept. No card was charged.",
   PRICE_CHANGED: "The price changed. Review the new price before you continue.",
   CART_FULL: "Your cart is full. Remove an item to add another.",
   OWN_LISTING: "This is your own listing.",
