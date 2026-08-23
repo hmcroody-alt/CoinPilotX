@@ -144,6 +144,7 @@ AUTO_PK_TABLES = {
     "users": "user_id",
     "alerts_history": "id",
     "price_history": "id",
+    "market_observations": "id",
     "portfolio_snapshots": "id",
     "whale_alerts": "id",
     "ai_analyses": "id",
