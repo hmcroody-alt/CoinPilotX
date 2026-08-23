@@ -102,9 +102,43 @@ Blocker B, not behind any technical limitation.
 
 ## Binary — Stage 22–24
 
-- `mobile-native/app.json` — `buildNumber` **16 → 17**, version held at 1.0.1
+**Build 17 is built, signed, and uploaded to App Store Connect.**
+
+| Field | Value |
+|---|---|
+| EAS build ID | `099a96f9-a83c-4875-9c23-672124289ae1` |
+| Version / build | 1.0.1 (**17**) |
+| Profile / distribution | `production` / `store` |
+| Status | `finished` — 8/23/2026 07:30:42 → 07:37:56 |
+| Fingerprint | `ef530251a1d2235bfb3f05effa1aab56884ed7d0` |
+| Archive URL | `https://expo.dev/artifacts/eas/seTJ_nvKSNz2SU_UBnWqRrA-BVfNcomSLiYTQsiUmtI.ipa` |
+| EAS submission ID | `94eb4249-f77e-4516-bd51-85ddb6f8afd2` |
+| ASC upload | ✔ *"Submitted your app to Apple App Store Connect!"* via ASC API key `3J78N2VTH6` (EAS servers) |
+
+The upload needed no browser session — EAS holds the App Store Connect API key, so the binary
+path was never actually blocked by the ASC logout.
+
+**Not yet verifiable: Apple-side processing.** Confirming the build finished processing, and
+selecting it on the version (Stage 24), both require the ASC UI, and
+`/apps/6777591572/testflight/ios` still bounces to `login?…&authResult=FAILED`. The upload
+being *accepted* is real evidence — ASC validates the bundle ID, signing, entitlements and
+build-number uniqueness at upload time and rejects duplicates — but it is not the same as
+"Processing complete", so this is reported as accepted-not-yet-confirmed rather than PASS.
+
+- Build number bumped in the **native** project (`CURRENT_PROJECT_VERSION`, `CFBundleVersion`)
+  16 → 17; `app.json`'s `buildNumber` is ignored for bare projects — see Blocker A2
 - Bundle ID `com.pulsesoc.app`, StoreKit entitlement and `associatedDomains` unchanged
 - Product IDs unchanged and still matching the backend map
+
+### Product IDs referenced by the binary — Stage 27 evidence
+
+The app hardcodes no product IDs; it holds only the prefix `AD_CREDIT_SKU_PREFIX =
+"com.pulsesoc.adcredits."` (`src/payments/appleIapAdCredits.ts:37`) and takes the catalog from
+the server. Server-side truth is `services/pulse_payment_router.py`:
+`APPLE_ADCREDIT_PRODUCTS` (tier1 499, tier2 999, tier3 2499, tier4 4999, tier5 9999) and
+`APPLE_PREMIUM_PRODUCTS` (monthly 999, annual 9999). That is **exactly seven** products, at
+exactly the prices in the mission brief, with no eighth product reachable from the binary —
+which is the specific condition that must hold to avoid a repeat 2.1(b) rejection.
 
 ### Gates run
 
@@ -119,7 +153,19 @@ The audio gate's own runner reports a `bot.py` hit, but it diffs `origin/main..H
 picks up pre-existing branch commits. Checked directly against the 52 category patterns, this
 mission's changes match nothing.
 
-**Archive and upload: NOT DONE.** See Blocker A.
+**Archive and upload: DONE.** 1.0.1 (17) is on App Store Connect. See the table above and
+Blocker A2 for the two traps that had to be cleared first (the archive was never honouring
+`.easignore`, and the native build number was still 16).
+
+A third failure mode is worth recording because it will recur: the tarball upload to
+`storage.googleapis.com` died with `write EPIPE` on **three** separate attempts, at 213/251 MB,
+then 9.6/66.1 MB, then succeeded on the fourth at 66.1 MB. The random failure offset rules out
+size as the cause — shrinking the archive was necessary but not sufficient. Local Node is
+**v26.0.0**, well ahead of the Node 18/20/22 LTS line Expo tests against, which is the leading
+suspect for an aborted streamed PUT. If this recurs, retry first; if it recurs persistently,
+run eas-cli under Node 22, or fall back to `eas build --local` (Xcode 26.6, CocoaPods 1.16.2
+and fastlane 2.238.0 are all present on this machine, and `--local` pulls the same distribution
+credentials from EAS while skipping the upload entirely).
 
 ## Blocker A — upload path
 
@@ -340,12 +386,13 @@ Doing neither risks a second 2.1(b) rejection for the same reason.
 | Subscriptions attached to the version | ⏳ Apple gates this: *"Your first auto-renewable subscription must be submitted with a new app version"* — needs build 17 first |
 | Reviewer / demo account configured | ✅ already present in ASC: sign-in required, username, password, contact all filled |
 | App Review Information → Notes accurate | ✅ rewritten and saved, 2,413 chars, verified after reload |
-| Security screen developer copy removed | ✅ fixed in `TrustSafetyScreen.tsx`; ⚠️ capture not retaken — Blocker C |
+| Security screen developer copy removed | ✅ fixed in `TrustSafetyScreen.tsx` and verified on device; ⚠️ store capture not retaken — Blocker B |
 | New screenshot set materially better than the old | ❌ Blocker B — 2 of 8 pass; store slot still holds 6 old 6.5" images |
-| App Preview produced and uploaded | ❌ Blocker C, then B |
-| Build 17 archived and uploaded | ❌ Blocker A — no distribution cert, no profile, no API key |
-| Build 17 selected on the version | ❌ build 16 is still the selected build |
-| Release gates green | ✅ tsc exit 0, i18n 11 locales, 70 tests, audio no-match |
+| App Preview produced and uploaded | ❌ Blocker B |
+| Build 17 archived and uploaded | ✅ EAS `099a96f9`, 1.0.1 (17), accepted by ASC via API key `3J78N2VTH6` |
+| Build 17 finished Apple-side processing | ⏳ unverifiable — needs the ASC UI (Blocker C2) |
+| Build 17 selected on the version | ❌ build 16 is still the selected build — Blocker C2 |
+| Release gates green | ✅ tsc exit 0, i18n 11/11, full jest 268 suites / 4404 tests, audio protected-path gate no-match |
 | No preventable metadata blocker | ❌ Blocker D — five Ad Credits consumables unsubmitted; ⚠️ subscription level ordering still an open decision |
 
 Per the brief's final rule, **"Resubmit to App Review" has not been clicked** and will not be
