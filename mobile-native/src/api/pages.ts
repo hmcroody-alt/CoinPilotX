@@ -207,9 +207,42 @@ export async function updatePage(pageId: number, patch: Partial<CreatePagePayloa
   return data.page;
 }
 
-export async function getPageManageView(pageId: number) {
-  const data = await pulseApi<{ ok: boolean } & PageManageView>(`/api/pages/${pageId}/manage`);
-  return data;
+/**
+ * The wire shape of `/api/pages/:id/manage`. The server builds it as
+ * `public_view(...)` and then merges the management fields into that same
+ * dict, so `role`, `capabilities`, `links`, `members`, `analytics` and
+ * `completeness` arrive nested inside `page` — NOT beside it.
+ */
+type PageManageWire = PulsePage & Omit<PageManageView, "page">;
+
+/**
+ * Reading those fields off the top level of the response returns `undefined`
+ * for every one of them, which is how the whole management surface came to be
+ * invisible to the people who own the page: `capabilities` was always `[]` and
+ * `role === "OWNER"` was always false, so the owner status controls,
+ * verification request, analytics, completeness meter, team list, Advertising,
+ * Marketplace and Payments never rendered for anybody.
+ *
+ * Both of those read fail-closed, which is why nothing looked broken — it just
+ * looked empty. The normalization below keeps that property and adds no
+ * defaults that would grant anything: an absent `capabilities` stays an empty
+ * list rather than becoming a guess at what the caller may do.
+ */
+export async function getPageManageView(pageId: number): Promise<PageManageView> {
+  const data = await pulseApi<{ ok: boolean; page: PageManageWire }>(`/api/pages/${pageId}/manage`);
+  const { role, capabilities, owner_user_id, phone, links, members, analytics, completeness, ...page } =
+    data.page || ({} as PageManageWire);
+  return {
+    page,
+    role,
+    capabilities: capabilities || [],
+    owner_user_id: Number(owner_user_id || 0),
+    phone: phone || "",
+    links: links || [],
+    members,
+    analytics,
+    completeness
+  };
 }
 
 export async function setPageStatus(pageId: number, status: PageStatus) {
