@@ -53,6 +53,7 @@ import {
   marketplaceListingFulfillment as listingFulfillment,
   marketplaceListingPriceMinor
 } from "../api/marketplaceBuyerPresentation";
+import { resolveFulfillmentKind, ticketOptions } from "../api/marketplaceFulfillment";
 import { buyerErrorCopy } from "../api/marketplaceErrors";
 import { sellerStoreInitial, sellerStoreName } from "../api/sellerIdentity";
 import { conversationSplitEnabled } from "../api/conversationDomain";
@@ -251,7 +252,9 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
       priceLabel: listing.price_label || "",
       ...(unitMinor != null ? { subtotalMinor: unitMinor * qty, currency: listing.currency || "USD" } : {}),
       quantity: qty,
-      fulfillment: listingFulfillment(listing)
+      fulfillment: listingFulfillment(listing),
+      fulfillmentKind: resolveFulfillmentKind(listing),
+      ticketOptions: ticketOptions(listing)
     });
   }
 

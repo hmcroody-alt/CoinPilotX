@@ -1,6 +1,7 @@
 import { NavigatorScreenParams } from "@react-navigation/native";
 
 import type { MarketplaceListing } from "../api/marketplace";
+import type { MarketplaceFulfillmentKind } from "../api/marketplaceFulfillment";
 
 /**
  * Context carried by every destination opened from a Profile OS tile.
@@ -200,6 +201,12 @@ export type RootStackParamList = {
     // `both` means the seller offers pickup *or* shipping and the buyer has not
     // chosen yet — the checkout screen makes them choose before it will pay.
     fulfillment?: "digital" | "pickup" | "shipping" | "both";
+    // The canonical order type, which decides what the buyer is asked for before
+    // payment. `fulfillment` above only separates the physical lanes, so a
+    // booking or an event arrives there indistinguishable from a shipped parcel.
+    fulfillmentKind?: MarketplaceFulfillmentKind;
+    // Ticket tiers the seller published, for the one field a buyer picks from.
+    ticketOptions?: string[];
   };
   /**
    * One route, several screens. Default is the rebuilt two-sided ads manager;

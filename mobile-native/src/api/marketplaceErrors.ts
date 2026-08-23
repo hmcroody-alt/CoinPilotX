@@ -25,6 +25,8 @@ export type MarketplaceErrorCode =
   | "INVALID_QUANTITY"
   | "ADDRESS_REQUIRED"
   | "FULFILLMENT_REQUIRED"
+  | "FULFILLMENT_DETAILS_REQUIRED"
+  | "ITEM_NEEDS_OWN_CHECKOUT"
   | "PAYMENT_UNAVAILABLE"
   | "PAYMENT_CONFIGURATION_ERROR"
   | "PAYMENT_FAILED"
@@ -41,7 +43,11 @@ const COPY: Record<MarketplaceErrorCode, string> = {
   SELLER_UNAVAILABLE: "This seller is not accepting orders right now.",
   INVALID_QUANTITY: "Choose a quantity the seller still has in stock.",
   ADDRESS_REQUIRED: "Add a delivery address to continue.",
-  FULFILLMENT_REQUIRED: "Choose pickup or delivery before you pay.",
+  FULFILLMENT_REQUIRED: "Choose how you want this order fulfilled before you pay.",
+  // The server names the offending field in `field`; this is the fallback for
+  // a client that is a build behind and does not know the field it names.
+  FULFILLMENT_DETAILS_REQUIRED: "Some order details are still missing. Check the order details step.",
+  ITEM_NEEDS_OWN_CHECKOUT: "Bookings, services and events are checked out one at a time. Buy this item on its own.",
   PAYMENT_UNAVAILABLE: "Payment is unavailable right now. No card was charged.",
   PAYMENT_CONFIGURATION_ERROR: "Payments are temporarily unavailable. No card was charged.",
   PAYMENT_FAILED: "Your card could not be charged. No card was charged.",

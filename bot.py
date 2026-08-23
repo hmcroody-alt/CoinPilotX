@@ -242,6 +242,7 @@ from services import (
     multistream_service,
     intelligence as intelligence_service,
     market_data as market_data_service,
+    marketplace_fulfillment as marketplace_fulfillment,
     marketplace_listing_types as marketplace_listing_types_service,
     marketplace_listing_lifecycle as marketplace_listing_lifecycle,
     marketplace_seller_identity as marketplace_seller_identity,
@@ -87239,6 +87240,54 @@ def api_pulse_payments_checkout():
                          error_code=below_minimum["code"],
                          minimum_charge_cents=below_minimum["minimum_minor"],
                          amount_cents=amount_cents, currency=currency)
+
+    fulfillment_kind = ""
+    fulfillment_snapshot = {}
+    shipping_checkout_params = {}
+    stripe_shipping_object = {}
+    if item_type == "marketplace_product":
+        try:
+            listing_metadata = json.loads(item.get("listing_metadata_json") or "{}")
+            if not isinstance(listing_metadata, dict):
+                listing_metadata = {}
+        except Exception:
+            listing_metadata = {}
+        # The order type is read out of the seller's stored row, never out of the
+        # request: what a buyer must supply before paying is not something the
+        # buyer's own client gets to assert.
+        fulfillment_kind = marketplace_fulfillment.resolve_kind(
+            item.get("listing_type") or item.get("product_type"), item.get("delivery_type"), listing_metadata
+        )
+        # When the seller offers more than one lane the buyer decides. Refusing
+        # here is deliberate: defaulting to shipping is how a buyer who meant to
+        # collect in person ends up typing an address they don't need.
+        fulfillment_kind, lane_error = marketplace_fulfillment.resolve_choice(
+            fulfillment_kind, payload.get("fulfillment")
+        )
+        if lane_error:
+            conn.close()
+            return api_error("Choose how you want this order fulfilled before you pay.", 400, error_code=lane_error)
+        # Everything this order type obliges the buyer to answer — a delivery
+        # address, a booking slot, an attendee name — is settled before a
+        # transaction row exists, so the payment sheet is never where a missing
+        # detail is discovered.
+        details_ok, details = marketplace_fulfillment.validate_details(
+            fulfillment_kind, payload.get("fulfillment_details"), listing_metadata
+        )
+        if not details_ok:
+            conn.close()
+            return api_error(details["message"], details["status"],
+                             error_code=details["code"], field=details.get("field", ""))
+        fulfillment_snapshot = marketplace_fulfillment.snapshot(fulfillment_kind, details)
+        stripe_shipping_object = marketplace_fulfillment.stripe_shipping(details)
+        # Stripe is only asked to collect an address PulseSoc does not already
+        # hold — which, once the review step runs, is none of them.
+        if not stripe_shipping_object and marketplace_fulfillment.needs_shipping_address(fulfillment_kind):
+            shipping_checkout_params = marketplace_cart_service.stripe_shipping_checkout_params(["shipping"])
+
+    transaction_details = {"title": title}
+    if fulfillment_snapshot:
+        transaction_details["fulfillment"] = fulfillment_snapshot
     cur.execute(
         """
         INSERT INTO seller_transactions
@@ -87247,8 +87296,8 @@ def api_pulse_payments_checkout():
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, ?, ?)
         """,
         (buyer["user_id"], seller_user_id, seller_type, item_type, item_id, amount_cents, currency, platform_fee, seller_net,
-         (marketplace_quote_service.transaction_metadata({"title": title}, commercial_quote, payout_state="pending_checkout")
-          if commercial_quote else json.dumps({"title": title}, default=str)), now, now),
+         (marketplace_quote_service.transaction_metadata(transaction_details, commercial_quote, payout_state="pending_checkout")
+          if commercial_quote else json.dumps(transaction_details, default=str)), now, now),
     )
     tx_id = int(cur.lastrowid)
     tx_event = {
@@ -87276,28 +87325,8 @@ def api_pulse_payments_checkout():
         conn.commit(); conn.close()
         return api_error("Stripe checkout is not configured yet. No card was charged.", 503, transaction_id=tx_id)
     inventory_held = False
-    shipping_checkout_params = {}
     if item_type == "marketplace_product":
-        listing_kind = str(item.get("listing_type") or item.get("product_type") or "physical").lower()
-        try:
-            listing_metadata = json.loads(item.get("listing_metadata_json") or "{}")
-            if not isinstance(listing_metadata, dict):
-                listing_metadata = {}
-        except Exception:
-            listing_metadata = {}
-        delivery_kind = str(item.get("delivery_type") or listing_metadata.get("delivery_options") or "shipping").lower()
-        # When the seller offers pickup *or* shipping the buyer decides, and the
-        # decision is what tells Stripe whether to ask for a delivery address.
-        # Refusing here is deliberate: defaulting to shipping is how a buyer who
-        # meant to collect in person ends up typing an address they don't need.
-        buyer_fulfillment = str(payload.get("fulfillment") or "").strip().lower()
-        if delivery_kind in {"both", "pickup_or_shipping", "shipping_or_pickup"}:
-            if buyer_fulfillment not in {"pickup", "shipping"}:
-                conn.close()
-                return api_error("Choose pickup or delivery before you pay.", 400, error_code="FULFILLMENT_REQUIRED")
-            delivery_kind = buyer_fulfillment
-        shipping_checkout_params = marketplace_cart_service.stripe_shipping_checkout_params([delivery_kind])
-        inventory_limited = listing_kind not in {"digital", "service", "event", "booking"} and delivery_kind != "digital"
+        inventory_limited = fulfillment_kind not in marketplace_fulfillment.STOCKLESS_KINDS
         if inventory_limited:
             cur.execute(
                 "UPDATE marketplace_listings SET quantity=quantity-1, updated_at=? WHERE id=? AND quantity>=1",
@@ -87328,6 +87357,10 @@ def api_pulse_payments_checkout():
                 "idempotency_key": idempotency_key,
             })
         payment_intent_data = {"metadata": checkout_metadata}
+        # The address the buyer typed on the review step, handed to Stripe rather
+        # than re-requested from them a screen later.
+        if stripe_shipping_object:
+            payment_intent_data["shipping"] = stripe_shipping_object
         # Seller Connect state must never be a prerequisite for the buyer to
         # pay. Route a destination charge only to an account Stripe will
         # actually accept; otherwise take the platform charge and settle the

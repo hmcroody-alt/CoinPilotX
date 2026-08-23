@@ -41,10 +41,11 @@ from services import marketplace_seller_identity as seller_identity
 # how one of them ends up overselling while the other two look correct.
 from services.marketplace_cart_routes import (
     _apple_pay_merchant_id,
-    _fulfillment,
+    _listing_metadata,
     release_inventory_reservation,
     stripe_shipping_checkout_params,
 )
+from services import marketplace_fulfillment
 from services.marketplace_payment_errors import (
     below_minimum_charge_error,
     classify_provider_exception,
@@ -520,13 +521,26 @@ def offer_checkout(offer_id: int):
         fee_bps = bot.seller_fee_bps(cur, "merchant")
         qty = max(1, int(offer.get("qty") or 1))
         currency = offer.get("currency") or "USD"
+        # An offer is negotiated on a listing of some type, and that type asks the
+        # buyer the same questions here as it does on Buy Now. Haggling over the
+        # price does not make the delivery address optional.
+        listing_metadata = _listing_metadata(listing)
+        fulfillment_kind = marketplace_fulfillment.resolve_kind(
+            listing.get("listing_type") or listing.get("product_type"),
+            listing.get("delivery_type"), listing_metadata,
+        )
+        fulfillment_kind, lane_error = marketplace_fulfillment.resolve_choice(
+            fulfillment_kind, payload.get("fulfillment")
+        )
+        if lane_error:
+            return _error("Choose how you want this order fulfilled before you pay.", 400, code=lane_error)
         commercial_quote = marketplace_quote_service.create_quote(
             listing_id=listing_id, seller_id=seller_id, quantity=qty,
             unit_price_minor=int(offer.get("amount_minor") or 0), currency=currency,
             live_fee_bps=fee_bps, offer_id=offer_id,
             offer_accepted_at=offer.get("responded_at") or offer.get("updated_at"),
             offer_expires_at=offer.get("accept_expires_at") or offer.get("expires_at"),
-            shipping={"fulfillment": _fulfillment(listing)},
+            shipping={"fulfillment": fulfillment_kind},
         )
         amount = commercial_quote["buyer_total_minor"]
         platform_fee = commercial_quote["platform_fee_minor"]
@@ -538,6 +552,15 @@ def offer_checkout(offer_id: int):
             return _error(below_minimum["message"], below_minimum["status"],
                           code=below_minimum["code"], amount_cents=amount,
                           minimum_charge_cents=below_minimum["minimum_minor"])
+
+        details_ok, details = marketplace_fulfillment.validate_details(
+            fulfillment_kind, payload.get("fulfillment_details"), listing_metadata
+        )
+        if not details_ok:
+            return _error(details["message"], details["status"],
+                          code=details["code"], field=details.get("field", ""))
+        fulfillment_snapshot = marketplace_fulfillment.snapshot(fulfillment_kind, details)
+        stripe_shipping_object = marketplace_fulfillment.stripe_shipping(details)
         now = _now()
         cur.execute(
             """
@@ -550,7 +573,9 @@ def offer_checkout(offer_id: int):
              commercial_quote["seller_earnings_minor"],
              marketplace_quote_service.transaction_metadata(
                  {"title": listing.get("title") or "Marketplace item",
-                  "offer_id": offer_id, "qty": qty}, commercial_quote,
+                  "offer_id": offer_id, "qty": qty,
+                  **({"fulfillment": fulfillment_snapshot} if fulfillment_snapshot else {})},
+                 commercial_quote,
                  payout_state="pending_checkout"),
              now, now),
         )
@@ -560,11 +585,10 @@ def offer_checkout(offer_id: int):
             return _error("Stripe checkout is not configured yet. No card was charged.", 503,
                           code="PAYMENT_UNAVAILABLE", transaction_id=tx_id)
 
-        fulfillment = _fulfillment(listing)
         # An accepted offer used to skip reservation entirely, so two buyers with
         # two accepted offers on a one-of-a-kind item could both reach Stripe.
         # Same keyed reservation the cart uses; released if the provider call fails.
-        if fulfillment != "digital":
+        if fulfillment_kind not in marketplace_fulfillment.STOCKLESS_KINDS:
             cur.execute(
                 "UPDATE marketplace_listings SET quantity=quantity-?, updated_at=? WHERE id=? AND quantity>=?",
                 (qty, now, listing_id, qty),
@@ -586,8 +610,12 @@ def offer_checkout(offer_id: int):
                                  "item_type": "marketplace_product", "item_id": str(listing_id),
                                  "buyer_user_id": str(buyer_id), "seller_user_id": str(seller_id),
                                  "listing_ids": str(listing_id), "quantities": str(qty),
-                                 "fulfillment": fulfillment}
+                                 "fulfillment": fulfillment_kind}
             payment_intent_data = {"metadata": dict(checkout_metadata)}
+            # The address the buyer typed on the review step, handed to Stripe
+            # rather than re-requested from them a screen later.
+            if stripe_shipping_object:
+                payment_intent_data["shipping"] = stripe_shipping_object
             # The old gate here read the raw account id, which exists from the
             # moment onboarding *starts*. Stripe then rejects the transfer to an
             # account that cannot yet accept charges, and the buyer sees
@@ -646,8 +674,10 @@ def offer_checkout(offer_id: int):
                 payment_intent_data=payment_intent_data,
                 metadata=checkout_metadata,
                 idempotency_key=f"marketplace-offer:{buyer_id}:{tx_id}",
-                # A pickup-only offer is never asked for a delivery address.
-                **stripe_shipping_checkout_params([fulfillment]),
+                # A pickup-only offer is never asked for a delivery address, and
+                # neither is one whose address PulseSoc already collected.
+                **({} if stripe_shipping_object
+                   else stripe_shipping_checkout_params([fulfillment_kind])),
             )
             cur.execute(
                 "UPDATE seller_transactions SET stripe_checkout_session_id=?, status='checkout_created', updated_at=? WHERE id=?",

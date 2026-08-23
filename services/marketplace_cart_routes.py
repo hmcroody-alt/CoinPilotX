@@ -41,6 +41,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
+from services import marketplace_fulfillment
 from services import marketplace_listing_lifecycle as listing_lifecycle
 from services import marketplace_seller_identity as seller_identity
 from services.marketplace_payment_errors import (
@@ -250,6 +251,22 @@ def _fulfillment(listing: dict) -> str:
     return "shipping"
 
 
+def _listing_metadata(listing: dict) -> dict:
+    try:
+        meta = json.loads(listing.get("listing_metadata_json") or "{}")
+    except Exception:
+        return {}
+    return meta if isinstance(meta, dict) else {}
+
+
+def _fulfillment_kind(listing: dict) -> str:
+    return marketplace_fulfillment.resolve_kind(
+        listing.get("listing_type") or listing.get("product_type"),
+        listing.get("delivery_type"),
+        _listing_metadata(listing),
+    )
+
+
 def _apple_pay_merchant_id() -> str:
     """Empty means the native sheet offers card only.
 
@@ -294,7 +311,7 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
                l.id AS l_id, l.seller_user_id, l.title, l.price_label,
                l.currency, l.quantity, l.status, l.approval_status,
                l.delivery_type, l.product_type, l.listing_type, l.cover_image_url,
-               l.category, l.subcategory, l.description,
+               l.category, l.subcategory, l.description, l.listing_metadata_json,
                COALESCE(ms.status, 'missing') AS seller_status,
                {seller_identity.store_name_select('ms')}
         FROM marketplace_cart_items c
@@ -311,7 +328,7 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
         listing = {k: row.get(k) for k in (
             "seller_user_id", "title", "price_label", "currency", "quantity",
             "status", "approval_status", "seller_status", "delivery_type", "product_type", "listing_type", "cover_image_url",
-            "category", "subcategory", "description",
+            "category", "subcategory", "description", "listing_metadata_json",
         )} if row.get("l_id") else {}
         price_now, currency_now = (_listing_price_minor(bot, listing)
                                    if listing else (0, row.get("snapshot_currency") or "USD"))
@@ -335,6 +352,11 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
             "seller_store_name": seller_identity.display_store_name(row),
             "seller_name": seller_identity.display_store_name(row),
             "fulfillment": _fulfillment(listing) if listing else "shipping",
+            # The canonical kind, which distinguishes the things `fulfillment`
+            # cannot: a booking from a parcel, a remote service from an on-site
+            # one. It decides what the buyer is asked for before paying.
+            "fulfillment_kind": _fulfillment_kind(listing) if listing else "shipping",
+            "listing_metadata": _listing_metadata(listing) if listing else {},
             "goods_policy": marketplace_goods_policy.evaluate(listing) if listing else {},
             "added_at": row.get("added_at") or "",
         })
@@ -622,6 +644,48 @@ def cart_checkout():
             for l in lines
         ]
 
+        # A group checkout settles every line against one set of buyer details,
+        # which is right for an address — a cart ships to one place — and wrong
+        # for a date: two bookings in one basket need two slots, and there is
+        # nowhere in a shared form to put the second. Those are refused here and
+        # bought one at a time, rather than charged with the question unasked.
+        # The guard above only settles the physical both-lanes case; a service
+        # the seller offers remotely *or* on site is equally undecided and its
+        # answer changes whether an address is asked for at all.
+        line_kinds = []
+        for line in lines:
+            kind, lane_error = marketplace_fulfillment.resolve_choice(
+                line.get("fulfillment_kind") or "shipping", fulfillment_choice
+            )
+            if lane_error:
+                return _error("Choose how you want this order fulfilled before you pay.", 400, code=lane_error)
+            line_kinds.append(kind)
+        scheduled = [k for k in line_kinds if k.startswith(("service_", "booking_", "event_"))]
+        if scheduled and len(lines) > 1:
+            return _error(
+                "Bookings, services and events are checked out one at a time. Buy this item on its own.",
+                409, code="ITEM_NEEDS_OWN_CHECKOUT")
+        # One address for the group, asked for only when something in it travels.
+        details_kind = next((k for k in line_kinds if marketplace_fulfillment.needs_shipping_address(k)), "")
+        group_details: dict = {}
+        stripe_shipping_object: dict = {}
+        if not details_kind and scheduled:
+            details_kind = scheduled[0]
+        if not details_kind:
+            details_kind = next((k for k in line_kinds if k == "pickup"), "")
+        if details_kind:
+            details_ok, group_details = marketplace_fulfillment.validate_details(
+                details_kind, payload.get("fulfillment_details"),
+                lines[0].get("listing_metadata") if len(lines) == 1 else {},
+            )
+            if not details_ok:
+                return _error(group_details["message"], group_details["status"],
+                              code=group_details["code"], field=group_details.get("field", ""))
+            stripe_shipping_object = marketplace_fulfillment.stripe_shipping(group_details)
+        fulfillment_snapshot = (
+            marketplace_fulfillment.snapshot(details_kind, group_details) if details_kind else {}
+        )
+
         approved = bot.approved_marketplace_seller_for_user(cur, seller_user_id)
         if not approved:
             # Seller *approval* is a marketplace-eligibility gate and is a real
@@ -664,7 +728,8 @@ def cart_checkout():
                 (buyer_id, seller_user_id, l["listing_id"], line_amount, currency,
                  line_fee, commercial_quote["seller_earnings_minor"],
                  marketplace_quote_service.transaction_metadata(
-                     {"title": l["title"], "qty": l["qty"], "cart_line_id": l["line_id"]},
+                     {"title": l["title"], "qty": l["qty"], "cart_line_id": l["line_id"],
+                      **({"fulfillment": fulfillment_snapshot} if fulfillment_snapshot else {})},
                      commercial_quote, payout_state="pending_checkout"),
                  now, now),
             )
@@ -704,6 +769,10 @@ def cart_checkout():
             payment_intent_data, connected_account_id = _stripe_payment_intent_data(
                 bot=bot, tx_ids=tx_ids, buyer_id=buyer_id, platform_fee=platform_fee, payout=payout
             )
+            # The address the buyer typed on the review step, handed to Stripe
+            # rather than re-requested from them a screen later.
+            if stripe_shipping_object:
+                payment_intent_data["shipping"] = stripe_shipping_object
             checkout_metadata = {
                 "seller_transaction_ids": ",".join(str(t) for t in tx_ids),
                 "cart_checkout": "1",
@@ -777,7 +846,9 @@ def cart_checkout():
                 idempotency_key=f"marketplace-cart:{buyer_id}:{idempotency_key or primary_tx}",
                 # Resolved lanes, not raw ones: a buyer who chose pickup is never
                 # asked for a delivery address.
-                **stripe_shipping_checkout_params(resolved_lanes),
+                # Stripe is only asked for an address PulseSoc does not already
+                # hold — which, once the review step runs, is none of them.
+                **({} if stripe_shipping_object else stripe_shipping_checkout_params(resolved_lanes)),
             )
             for tx_id in tx_ids:
                 cur.execute(

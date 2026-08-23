@@ -110,11 +110,14 @@ def test_the_offers_lane_imports_the_cart_helpers_rather_than_copying_them():
     # implementations is how one of them drifts.
     assert offers.release_inventory_reservation is cart.release_inventory_reservation
     assert offers.stripe_shipping_checkout_params is cart.stripe_shipping_checkout_params
-    assert offers._fulfillment is cart._fulfillment
+    assert offers._listing_metadata is cart._listing_metadata
 
 
 def test_a_pickup_only_offer_is_never_asked_for_a_delivery_address():
-    assert "stripe_shipping_checkout_params([fulfillment])" in _code(OFFERS)
+    # Stripe is asked for an address only when PulseSoc has none: an order whose
+    # address the buyer typed on the review step must not be asked again.
+    assert "stripe_shipping_checkout_params([fulfillment_kind])" in _code(OFFERS)
+    assert "{} if stripe_shipping_object" in _code(OFFERS)
 
 
 def test_payment_intent_success_settles_marketplace_orders_completely():

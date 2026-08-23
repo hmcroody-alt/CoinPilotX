@@ -18,6 +18,7 @@
  */
 
 import { pulseApi } from "./pulseApi";
+import type { MarketplaceFulfillmentKind } from "./marketplaceFulfillment";
 import { sellerStoreNameOrEmpty } from "./sellerIdentity";
 import type { PaymentSheetBootstrap } from "./stripePaymentSheet";
 
@@ -53,6 +54,10 @@ export type CartLine = {
   /** `both` means the seller offers pickup *or* shipping and the buyer has not
    * chosen yet. It stays unresolved all the way to checkout on purpose. */
   fulfillment: "digital" | "pickup" | "shipping" | "both";
+  /** The canonical order type, which `fulfillment` above cannot express: it has
+   * no value for a booking or an event, and those fell through to "shipping". */
+  fulfillment_kind?: MarketplaceFulfillmentKind;
+  listing_metadata?: Record<string, unknown>;
   added_at: string;
 };
 
@@ -146,18 +151,23 @@ export async function validateCart(): Promise<CartValidation> {
 export async function checkoutCartGroup(
   sellerUserId: number,
   idempotencyKey: string,
-  fulfillment: "pickup" | "shipping" | "" = "",
+  fulfillment = "",
   // Ask for a PaymentIntent the in-app Stripe sheet can present instead of a
   // hosted page the phone would have to open in Safari. Only set when this
   // binary actually contains the Stripe SDK, so a build without it never
   // creates an intent it has no way to collect on.
-  paymentMode: "payment_sheet" | "" = ""
+  paymentMode: "payment_sheet" | "" = "",
+  // What the buyer told PulseSoc on the details step. The server re-validates it
+  // against the listing rows before it will create a charge, so this is the
+  // submission, not the decision.
+  fulfillmentDetails: Record<string, string> | null = null
 ): Promise<CheckoutHandoff> {
   const data = (await pulseApi("/api/pulse/marketplace/cart/checkout", {
     method: "POST",
     body: JSON.stringify({
       seller_user_id: sellerUserId,
       idempotency_key: idempotencyKey,
+      ...(fulfillmentDetails ? { fulfillment_details: fulfillmentDetails } : {}),
       // Sent only when the buyer actually had a choice to make. The server
       // refuses the session rather than guessing, so an omitted value can never
       // quietly become "shipping" for someone who meant to collect in person.

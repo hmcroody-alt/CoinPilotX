@@ -55,8 +55,19 @@ describe("the amount on the Pay button", () => {
 
 describe("checkout failures name the buyer's next move", () => {
   it("has copy for an unanswered fulfillment choice", () => {
+    // Worded past pickup-or-delivery: a service listing offers the same open
+    // choice between remote and in person.
     const error = new PulseApiError("Choose pickup or delivery before you pay.", 400, "FULFILLMENT_REQUIRED");
-    expect(buyerErrorCopy(error, "Checkout could not start.")).toBe("Choose pickup or delivery before you pay.");
+    expect(buyerErrorCopy(error, "Checkout could not start.")).toBe(
+      "Choose how you want this order fulfilled before you pay."
+    );
+  });
+
+  it("has copy for a missing order detail and for an item that cannot share a checkout", () => {
+    const missing = new PulseApiError("", 400, "FULFILLMENT_DETAILS_REQUIRED");
+    expect(buyerErrorCopy(missing, "Checkout could not start.")).toContain("order details");
+    const alone = new PulseApiError("", 409, "ITEM_NEEDS_OWN_CHECKOUT");
+    expect(buyerErrorCopy(alone, "Checkout could not start.")).toContain("one at a time");
   });
 
   it("never lets an unhandled server exception become the dominant sentence", () => {

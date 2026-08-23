@@ -505,8 +505,15 @@ export type MarketplaceCheckoutResult = MarketplaceActionResponse & { handoff: C
 export async function openMarketplaceCheckout(
   listingId: number,
   idempotencyKey = "",
-  fulfillment: "pickup" | "shipping" | "" = "",
-  paymentMode: "payment_sheet" | "" = ""
+  // The lane the buyer picked when the seller offered more than one. A string
+  // rather than a union: a service offered both remotely and in person is also
+  // a choice, and it is not spelled "pickup" or "shipping".
+  fulfillment = "",
+  paymentMode: "payment_sheet" | "" = "",
+  // What the buyer told PulseSoc on the details step. The server re-derives the
+  // order type from the listing row and re-validates this against it, so this is
+  // the buyer's submission, not the decision.
+  fulfillmentDetails: Record<string, string> | null = null
 ): Promise<MarketplaceCheckoutResult> {
   const result = await pulseApi<MarketplaceActionResponse & CheckoutResponse>("/api/pulse/payments/checkout", {
     method: "POST",
@@ -514,6 +521,7 @@ export async function openMarketplaceCheckout(
       item_type: "marketplace_product",
       item_id: listingId,
       idempotency_key: idempotencyKey,
+      ...(fulfillmentDetails ? { fulfillment_details: fulfillmentDetails } : {}),
       // Present only for a listing that offers pickup *or* shipping, where the
       // buyer's answer decides whether Stripe collects a delivery address.
       ...(fulfillment ? { fulfillment } : {}),

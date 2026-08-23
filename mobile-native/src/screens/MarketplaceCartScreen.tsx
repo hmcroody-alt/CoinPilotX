@@ -56,6 +56,7 @@ import {
   type CartLine,
   type CartSnapshot
 } from "../api/marketplaceCommerce";
+import { groupFulfillmentKind, type MarketplaceFulfillmentKind } from "../api/marketplaceFulfillment";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { useScreenPerf } from "../core/useScreenPerf";
 import { RootStackParamList } from "../navigation/types";
@@ -187,7 +188,20 @@ export function MarketplaceCartScreen({ navigation }: Props) {
       : lanes.includes("shipping")
         ? "shipping"
         : lanes.includes("pickup") ? "pickup" : "digital";
+    // One Stripe session covers the group, so the group answers one set of
+    // questions. Which set is chosen the same way the server chooses it.
+    const groupLines = group.fulfillments.flatMap((entry) => entry.lines);
+    const kinds = groupLines.map(
+      (line) => (line.fulfillment_kind || "shipping") as MarketplaceFulfillmentKind
+    );
+    const soleTickets = groupLines.length === 1
+      ? (groupLines[0]?.listing_metadata?.tickets as { name?: string }[] | undefined)
+      : undefined;
     navigation.navigate("MarketplaceCheckout", {
+      fulfillmentKind: groupFulfillmentKind(kinds) || undefined,
+      ...(Array.isArray(soleTickets)
+        ? { ticketOptions: soleTickets.map((t) => String(t?.name || "").trim()).filter(Boolean) }
+        : {}),
       mode: "cart",
       sellerUserId: group.sellerUserId,
       sellerName: group.sellerName,
