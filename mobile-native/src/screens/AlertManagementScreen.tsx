@@ -49,13 +49,22 @@ const emptyForm: AlertFormPayload = {
 };
 
 export function AlertManagementScreen({ route, navigation }: Props) {
-  const routeParams = route.params as ({ alertId?: number; alert_id?: number; id?: number } | undefined);
+  const routeParams = route.params as (
+    { alertId?: number; alert_id?: number; id?: number; presetSymbol?: string } | undefined
+  );
   const routeAlertId = Number(routeParams?.alertId || routeParams?.alert_id || routeParams?.id || 0);
+  // "Create alert" from an asset arrives here with that asset already chosen.
+  // It seeds the form only — the rest of the flow, its validation and its
+  // engine call stay exactly the canonical ones, because a second create path
+  // is how two alert systems start.
+  const presetSymbol = String(routeParams?.presetSymbol || "").trim().toUpperCase().slice(0, 12);
   const [state, setState] = useState<AlertManagementState | null>(null);
   const [selectedId, setSelectedId] = useState(routeAlertId);
   const selectedIdRef = useRef(selectedId);
   const [historyEvents, setHistoryEvents] = useState<AlertEvent[]>([]);
-  const [form, setForm] = useState<AlertFormPayload>(emptyForm);
+  const [form, setForm] = useState<AlertFormPayload>(
+    presetSymbol ? { ...emptyForm, assetSymbol: presetSymbol } : emptyForm
+  );
   const [editingId, setEditingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
@@ -141,7 +150,9 @@ export function AlertManagementScreen({ route, navigation }: Props) {
 
   function resetForm() {
     setEditingId(null);
-    setForm(emptyForm);
+    // Back to the asset the user came in with, not to the global default. They
+    // arrived from SOL; clearing the form to BTC would be a silent retarget.
+    setForm(presetSymbol ? { ...emptyForm, assetSymbol: presetSymbol } : emptyForm);
   }
 
   async function saveForm() {

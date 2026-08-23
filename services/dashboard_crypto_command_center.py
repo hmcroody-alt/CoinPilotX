@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 import hashlib
 import json
+import logging
 import os
 import re
 import threading
@@ -590,6 +591,44 @@ def create_watchlist(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[s
     return {"ok": True, "watchlist_id": watchlist_id, "message": "Watchlist created."}
 
 
+def rename_watchlist(conn: Any, user_id: int, watchlist_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_tables(conn)
+    name = re.sub(r"\s+", " ", str(payload.get("name") or "").strip())[:80]
+    if not name:
+        raise ValueError("Watchlist name is required.")
+    cur = conn.cursor()
+    # The user_id predicate is the authorization check, not a filter: a rename
+    # aimed at someone else's list matches no row and reports "not found"
+    # rather than confirming that the id exists.
+    cur.execute("UPDATE crypto_watchlists SET name=?, updated_at=? WHERE id=? AND user_id=?", (name, _now(), int(watchlist_id), int(user_id)))
+    if cur.rowcount == 0:
+        raise ValueError("Watchlist not found.")
+    _audit(conn, user_id, "rename_watchlist", "crypto_watchlist", watchlist_id, {"name": name})
+    conn.commit()
+    return {"ok": True, "watchlist_id": int(watchlist_id), "name": name, "message": "Watchlist renamed."}
+
+
+def delete_watchlist(conn: Any, user_id: int, watchlist_id: int) -> dict[str, Any]:
+    """Delete a watchlist and its membership rows — and nothing else.
+
+    Membership and alert rules are separate things the user set up separately.
+    Someone who stops tracking an asset on a list has not asked to stop being
+    told when it crosses their price, so no alert is touched here. Favorites
+    are account-level for the same reason.
+    """
+    ensure_tables(conn)
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM crypto_watchlists WHERE id=? AND user_id=? LIMIT 1", (int(watchlist_id), int(user_id)))
+    if not cur.fetchone():
+        raise ValueError("Watchlist not found.")
+    cur.execute("DELETE FROM crypto_watchlist_assets WHERE watchlist_id=? AND user_id=?", (int(watchlist_id), int(user_id)))
+    removed = int(cur.rowcount or 0)
+    cur.execute("DELETE FROM crypto_watchlists WHERE id=? AND user_id=?", (int(watchlist_id), int(user_id)))
+    _audit(conn, user_id, "delete_watchlist", "crypto_watchlist", watchlist_id, {"assets_removed": removed})
+    conn.commit()
+    return {"ok": True, "message": "Watchlist deleted.", "assets_removed": removed}
+
+
 def add_watchlist_asset(conn: Any, user_id: int, watchlist_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     ensure_tables(conn)
     symbol = _normalize_symbol(payload.get("assetSymbol") or payload.get("asset_symbol"))
@@ -597,6 +636,14 @@ def add_watchlist_asset(conn: Any, user_id: int, watchlist_id: int, payload: dic
     cur.execute("SELECT id FROM crypto_watchlists WHERE id=? AND user_id=? LIMIT 1", (int(watchlist_id), int(user_id)))
     if not cur.fetchone():
         raise ValueError("Watchlist not found.")
+    # One row per asset per list. Without this a double-tap on "Add" produces
+    # two BTC rows that then disagree about their own position ordering.
+    cur.execute(
+        "SELECT id FROM crypto_watchlist_assets WHERE watchlist_id=? AND user_id=? AND asset_symbol=? LIMIT 1",
+        (int(watchlist_id), int(user_id), symbol),
+    )
+    if cur.fetchone():
+        raise ValueError(f"{symbol} is already on this watchlist.")
     position = _count(cur, "crypto_watchlist_assets", "watchlist_id=? AND user_id=?", (int(watchlist_id), int(user_id))) + 1
     cur.execute(
         "INSERT INTO crypto_watchlist_assets (watchlist_id, user_id, asset_symbol, position, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -633,6 +680,246 @@ def list_favorite_assets(conn: Any, user_id: int) -> list[dict[str, Any]]:
     cur = conn.cursor()
     cur.execute("SELECT * FROM crypto_favorite_assets WHERE user_id=? ORDER BY created_at DESC LIMIT 40", (int(user_id),))
     return _rows(cur)
+
+
+def set_favorite_asset(conn: Any, user_id: int, symbol: str, favorite: bool) -> dict[str, Any]:
+    """Add or remove one account-level favorite.
+
+    Favorites live on the account rather than the device because the same
+    person on a phone and on the web is one person with one set of favourites;
+    a device-local star would silently disagree with itself.
+    """
+    ensure_tables(conn)
+    symbol = _normalize_symbol(symbol)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM crypto_favorite_assets WHERE user_id=? AND asset_symbol=?", (int(user_id), symbol))
+    if favorite:
+        cur.execute(
+            "INSERT INTO crypto_favorite_assets (user_id, asset_symbol, note, created_at) VALUES (?, ?, ?, ?)",
+            (int(user_id), symbol, "", _now()),
+        )
+    _audit(conn, user_id, "set_favorite_asset", "crypto_asset", symbol, {"favorite": favorite})
+    conn.commit()
+    return {"ok": True, "symbol": symbol, "favorite": bool(favorite), "message": f"{symbol} {'added to' if favorite else 'removed from'} favorites."}
+
+
+def _safe_symbol(value: Any) -> str:
+    """`_normalize_symbol` for data we are reading rather than accepting.
+
+    Validation belongs on the way in. On the way out, a single malformed legacy
+    row must not raise and take a whole watchlist screen down with it, so this
+    returns "" and lets the caller skip it.
+    """
+    try:
+        return _normalize_symbol(value)
+    except ValueError:
+        return ""
+
+
+def _favorite_symbols(conn: Any, user_id: int) -> set[str]:
+    cur = conn.cursor()
+    cur.execute("SELECT asset_symbol FROM crypto_favorite_assets WHERE user_id=?", (int(user_id),))
+    symbols = {_safe_symbol(row[0]) for row in (cur.fetchall() or [])}
+    symbols.discard("")
+    return symbols
+
+
+def _market_index() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Symbol -> live market row, plus the provider's own status.
+
+    One provider call serves every asset on every watchlist. The status is
+    returned alongside so a caller can label the whole screen as stale instead
+    of quietly presenting old numbers as current.
+
+    A provider that raises is a market outage, not a watchlist error. The lists
+    themselves are our own data and stay perfectly readable without prices, so
+    an outage degrades to "--" in the price column rather than to a dead screen.
+    """
+    try:
+        board = market_board(category="top_market_cap", limit=80)
+    except Exception as exc:
+        logging.info("Crypto market board unavailable for watchlists: %s", exc)
+        return {}, {
+            "source": "unavailable",
+            "updated_at": _now(),
+            "warning": "Live prices are temporarily unavailable.",
+            "ready": False,
+        }
+    index = {}
+    for item in board.get("markets") or []:
+        symbol = _safe_symbol(item.get("symbol"))
+        if symbol:
+            index[symbol] = item
+    status = {
+        "source": board.get("source") or "unavailable",
+        "updated_at": board.get("updated_at") or _now(),
+        "warning": board.get("warning") or "",
+        "ready": bool(index),
+    }
+    return index, status
+
+
+def _asset_quote(symbol: str, market: dict[str, Any] | None) -> dict[str, Any]:
+    """One asset's market numbers, with absence represented as null.
+
+    Every numeric field here is either a real provider value or None. There is
+    no zero-as-unknown and no last-good value passed off as current, because a
+    price of 0.00 and a 0.00% change both read as facts on a screen.
+    """
+    market = market or {}
+    return {
+        "symbol": symbol,
+        "name": str(market.get("name") or symbol),
+        "image": str(market.get("image") or ""),
+        "price": _safe_float(market.get("price"), None),
+        "change_24h": _safe_float(market.get("change_24h"), None),
+        "price_change_24h": _safe_float(market.get("price_change_24h"), None),
+        "market_cap": _safe_float(market.get("market_cap"), None),
+        "market_cap_rank": _safe_int(market.get("market_cap_rank"), 0) or None,
+        "volume_24h": _safe_float(market.get("volume_24h"), None),
+        "circulating_supply": _safe_float(market.get("circulating_supply"), None),
+        "max_supply": _safe_float(market.get("max_supply"), None),
+        "sparkline": [float(value) for value in (market.get("sparkline") or [])],
+        "has_market_data": bool(market),
+    }
+
+
+def watchlist_market_view(conn: Any, user_id: int) -> dict[str, Any]:
+    """Every watchlist the user owns, joined to one live market snapshot."""
+    ensure_tables(conn)
+    watchlists = list_watchlists(conn, user_id)
+    market_index, status = _market_index()
+    favorites = _favorite_symbols(conn, user_id)
+    alert_counts = _alert_counts_by_symbol(conn, user_id)
+
+    view = []
+    for watchlist in watchlists:
+        assets = []
+        for row in watchlist.get("assets") or []:
+            symbol = _safe_symbol(row.get("asset_symbol"))
+            if not symbol:
+                continue
+            quote = _asset_quote(symbol, market_index.get(symbol))
+            quote.update({
+                "id": _safe_int(row.get("id"), 0),
+                "watchlist_id": _safe_int(watchlist.get("id"), 0),
+                "position": _safe_int(row.get("position"), 0),
+                "notes": str(row.get("notes") or ""),
+                "favorite": symbol in favorites,
+                "alert_count": alert_counts.get(symbol, 0),
+            })
+            assets.append(quote)
+        changes = [asset["change_24h"] for asset in assets if asset["change_24h"] is not None]
+        view.append({
+            "id": _safe_int(watchlist.get("id"), 0),
+            "name": str(watchlist.get("name") or "Watchlist"),
+            "created_at": watchlist.get("created_at"),
+            "updated_at": watchlist.get("updated_at"),
+            "asset_count": len(assets),
+            # Only an average of the assets we actually have numbers for, and
+            # None when that is none of them.
+            "average_change_24h": (sum(changes) / len(changes)) if changes else None,
+            "priced_asset_count": len(changes),
+            "assets": assets,
+        })
+
+    favorite_assets = []
+    for symbol in sorted(favorites):
+        quote = _asset_quote(symbol, market_index.get(symbol))
+        quote.update({"favorite": True, "alert_count": alert_counts.get(symbol, 0)})
+        favorite_assets.append(quote)
+
+    return {
+        "ok": True,
+        "watchlists": view,
+        "favorites": favorite_assets,
+        "market": status,
+    }
+
+
+def _live_alert_rules(user_id: int, symbol: str = "") -> list[dict[str, Any]]:
+    """The user's non-deleted alert rules, straight from the canonical engine.
+
+    Watchlists read alerts; they never own them. A failure here degrades the
+    alert badge to zero rather than failing the watchlist screen.
+    """
+    try:
+        result = alert_engine.list_alert_rules(int(user_id), limit=200, symbol=symbol or None)
+    except Exception:
+        return []
+    rules = (result or {}).get("alerts") or []
+    return [
+        rule for rule in rules
+        if isinstance(rule, dict) and str(rule.get("status") or "active").lower() not in {"deleted", "archived"}
+    ]
+
+
+def _alert_counts_by_symbol(conn: Any, user_id: int) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for rule in _live_alert_rules(user_id):
+        symbol = _safe_symbol(rule.get("asset_symbol") or rule.get("symbol") or rule.get("target"))
+        if symbol:
+            counts[symbol] = counts.get(symbol, 0) + 1
+    return counts
+
+
+def asset_detail(conn: Any, user_id: int, symbol: str) -> dict[str, Any]:
+    """Everything the asset detail screen needs, in one owner-scoped read."""
+    ensure_tables(conn)
+    symbol = _normalize_symbol(symbol)
+    market_index, status = _market_index()
+    quote = _asset_quote(symbol, market_index.get(symbol))
+    quote["favorite"] = symbol in _favorite_symbols(conn, user_id)
+
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT w.id AS watchlist_id, w.name AS watchlist_name, a.id AS asset_id
+        FROM crypto_watchlist_assets a
+        JOIN crypto_watchlists w ON w.id = a.watchlist_id
+        WHERE a.user_id=? AND a.asset_symbol=?
+        ORDER BY w.updated_at DESC
+        """,
+        (int(user_id), symbol),
+    )
+    memberships = _rows(cur)
+
+    alerts = [
+        rule for rule in _live_alert_rules(user_id, symbol)
+        if _safe_symbol(rule.get("asset_symbol") or rule.get("symbol") or rule.get("target")) == symbol
+    ]
+
+    record_recent_asset(conn, user_id, symbol)
+    return {
+        "ok": True,
+        "asset": quote,
+        "watchlists": memberships,
+        "alerts": alerts,
+        "ranges": market_data_service.supported_history_ranges(symbol),
+        "market": status,
+    }
+
+
+def asset_history(user_id: int, symbol: str, range_key: str = "24H") -> dict[str, Any]:
+    return market_data_service.asset_history(_normalize_symbol(symbol), range_key)
+
+
+def search_assets(query: str, limit: int = 25) -> dict[str, Any]:
+    """Assets the provider can actually price, filtered by the user's query.
+
+    Deliberately searches the same board that supplies prices. Offering an
+    asset the price engine has never heard of would let a user add a row that
+    can only ever read "Unavailable".
+    """
+    market_index, status = _market_index()
+    needle = str(query or "").strip().lower()
+    matches = []
+    for symbol, item in market_index.items():
+        name = str(item.get("name") or "")
+        if not needle or needle in symbol.lower() or needle in name.lower():
+            matches.append(_asset_quote(symbol, item))
+    matches.sort(key=lambda asset: (asset.get("market_cap_rank") or 9999, asset["symbol"]))
+    return {"ok": True, "assets": matches[: max(1, min(int(limit or 25), 80))], "market": status}
 
 
 def record_recent_asset(conn: Any, user_id: int, symbol: str) -> None:

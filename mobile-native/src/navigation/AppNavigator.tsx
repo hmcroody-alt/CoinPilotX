@@ -24,6 +24,8 @@ import { AccountCenterScreen } from "../screens/AccountCenterScreen";
 import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScreen";
 import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
 import { AlertManagementScreen } from "../screens/AlertManagementScreen";
+import { AssetDetailScreen } from "../screens/AssetDetailScreen";
+import { WatchlistsScreen } from "../screens/WatchlistsScreen";
 import { ActivityRoute } from "../screens/ActivityRoute";
 import { AdvertisingRoute } from "../screens/AdvertisingRoute";
 import { BusinessBuyerPreviewScreen } from "../screens/BusinessBuyerPreviewScreen";
@@ -542,6 +544,13 @@ export function AppNavigator() {
       <Stack.Screen name="IntelligenceCenter" component={IntelligenceCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.intelligence") })} />
       <Stack.Screen name="UndxActionCenter" component={UndxActionCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.undxActionCenter") })} />
       <Stack.Screen name="UndxCapabilities" component={UndxCapabilitiesScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.undxCapabilities") })} />
+      <Stack.Screen name="Watchlists" component={WatchlistsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.watchlists") })} />
+      {/* The header title stays a catalog string rather than the asset's name.
+          The screen already shows the icon, name and symbol in its own header,
+          so a dynamic title only duplicates that — and it would put an
+          untranslated, provider-supplied string in the one place every other
+          screen keeps localized. */}
+      <Stack.Screen name="AssetDetail" component={AssetDetailScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.assetDetail") })} />
       <Stack.Screen name="AlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.alerts") })} />
       <Stack.Screen name="CryptoAlertManagement" component={AlertManagementScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.alerts") })} />
       <Stack.Screen name="AccountCenter" component={AccountCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.accountCenter") })} />

@@ -163,6 +163,13 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     navigation.navigate("GrowthCenter", { title: "Growth Center" });
     return;
   }
+  // Before the alerts rule only for readability — the two paths are disjoint.
+  // Both spellings are matched because the dashboard links to
+  // `/dashboard/crypto/watchlists` while older entries use a bare `/watchlists`.
+  if (path.includes("/crypto/watchlists") || path.includes("/watchlists")) {
+    navigation.navigate("Watchlists", { title: "Watchlists" });
+    return;
+  }
   if (path.includes("/crypto/alerts")) {
     navigation.navigate("AlertManagement", { title: "Alerts" });
     return;
