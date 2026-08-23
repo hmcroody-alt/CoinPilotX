@@ -212,7 +212,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
               <Text style={styles.lessonHeading}>{section.heading || `Step ${index + 1}`}</Text>
               <Text style={styles.bodyText}>{section.body || ""}</Text>
             </View>
-          )) : <Text style={styles.muted}>Knowledge map details stay on the existing lesson page until available in the native payload.</Text>}
+          )) : <Text style={styles.muted}>This lesson has no knowledge map in the app yet. Open the full lesson on pulsesoc.com to see it.</Text>}
         </Panel>
         <Panel>
           <Text style={styles.sectionTitle}>Quiz preview</Text>
@@ -230,7 +230,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
           <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={askTutor}>
             <Text style={styles.secondaryText}>Ask Tutor</Text>
           </Pressable>
-          {tutorAnswer ? <Text style={styles.answer}>{tutorAnswer}</Text> : <Text style={styles.muted}>Tutor answers use the existing education AI endpoint and safety rules.</Text>}
+          {tutorAnswer ? <Text style={styles.answer}>{tutorAnswer}</Text> : <Text style={styles.muted}>Ask a question about this lesson and the PulseSoc tutor will answer, following the same safety rules as the rest of PulseSoc.</Text>}
         </Panel>
         {DIGITAL_COMMERCE_ENABLED ? (
           <Panel>
@@ -313,7 +313,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
       ListEmptyComponent={
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No lessons found</Text>
-          <Text style={styles.emptyText}>Native learning will show lessons when `/api/education/lessons` returns available rows for this category.</Text>
+          <Text style={styles.emptyText}>Lessons in this category will appear here as soon as they are published. Try another category in the meantime.</Text>
         </View>
       }
     />

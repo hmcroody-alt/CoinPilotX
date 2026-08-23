@@ -344,8 +344,8 @@ export function GroupsScreen({ route, navigation }: Props) {
               ))}
               {!rooms.length ? (
                 <PulseCommandPanel style={styles.roomEmpty}>
-                  <Text style={styles.roomTitle}>No room signals</Text>
-                  <Text style={styles.roomText}>Rooms appear here when the existing backend returns them.</Text>
+                  <Text style={styles.roomTitle}>No rooms right now</Text>
+                  <Text style={styles.roomText}>Rooms appear here when one of your communities starts one.</Text>
                 </PulseCommandPanel>
               ) : null}
             </ScrollView>
@@ -633,7 +633,7 @@ function GroupOverview({ group }: { group: PulseGroup }) {
         <BoundaryPanel title="Rules unavailable" body="The current group contract did not return rules for this community." />
       )}
       <Text style={styles.sectionTitle}>Community Feed</Text>
-      {(group.posts || []).length ? group.posts?.map((post) => <GroupPostCard key={post.id} post={post} />) : <Text style={styles.emptyText}>Group posts will appear here when the existing backend returns them.</Text>}
+      {(group.posts || []).length ? group.posts?.map((post) => <GroupPostCard key={post.id} post={post} />) : <Text style={styles.emptyText}>This group has no posts yet. Be the first to share something with the community.</Text>}
     </View>
   );
 }

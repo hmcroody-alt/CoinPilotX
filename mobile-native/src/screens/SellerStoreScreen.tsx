@@ -293,7 +293,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         <View style={styles.hero}>
           <Text style={styles.kicker}>Marketplace Command</Text>
           <Text style={styles.heroTitle}>Storefront readiness</Text>
-          <Text style={styles.heroCopy}>Seller approval, product review, payment, payout, trust, and fulfillment decisions remain server-authoritative.</Text>
+          <Text style={styles.heroCopy}>Seller approval, product review, payments, payouts, and fulfillment are all decided by PulseSoc.</Text>
         </View>
         <View style={styles.metricGrid}>
           <Metric label="Listings loaded" value={String(listings.length)} />
@@ -438,7 +438,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
                 <Text style={styles.dangerText}>{busy === `delete:${editingListing.id}` ? "Removing..." : "Remove"}</Text>
               </Pressable>
             </View>
-            <Text style={styles.meta}>Updates are saved server-side and re-enter marketplace review when content changes. Checkout, payouts, fulfillment, disputes, and provider actions stay inside native provider boundaries.</Text>
+            <Text style={styles.meta}>Your edits are saved to your PulseSoc store, and the listing goes back through marketplace review whenever its content changes. Checkout, payouts, fulfillment, and disputes are handled on pulsesoc.com.</Text>
           </View>
         ) : null}
       </Panel>
@@ -447,7 +447,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       {shows("media") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Product media gallery</Text>
-        <Text style={styles.copy}>The gallery reuses marketplace media payloads and the shared native media viewer. Unsupported media falls back safely inside the viewer.</Text>
+        <Text style={styles.copy}>Tap any item to open it full screen. Anything the viewer cannot play falls back to a still preview.</Text>
         <View style={styles.mediaGrid}>
           {mediaItems.slice(0, 8).map((item, index) => (
             <Pressable

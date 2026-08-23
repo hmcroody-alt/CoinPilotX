@@ -86,8 +86,8 @@ export function DashboardModuleDetailScreen() {
           <Text style={styles.infoValue}>{routeClass.label}: {routeClass.detail}</Text>
         </View>
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Server authority</Text>
-          <Text style={styles.infoValue}>Permissions, locks, provider state, and business rules stay backend-owned.</Text>
+          <Text style={styles.infoLabel}>Managed by</Text>
+          <Text style={styles.infoValue}>Permissions, access locks, and account rules for this module are decided by PulseSoc, not by this app.</Text>
         </View>
       </View>
 
@@ -117,9 +117,9 @@ export function DashboardModuleDetailScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Foundation status</Text>
+        <Text style={styles.sectionTitle}>What you can do here</Text>
         <Text style={styles.bodyText}>
-          This shell completes native dashboard navigation parity for the module card. Advanced workflows remain inside native provider boundaries until their dedicated screens are built and verified.
+          You can reach this module and see its current state from the app. Its more advanced workflows are available on pulsesoc.com.
         </Text>
       </View>
     </ScrollView>
@@ -134,7 +134,7 @@ function LiveStateSection({ panel, loading, error }: { panel: DashboardLiveState
           <Text style={styles.sectionTitle}>Live state</Text>
           <ActivityIndicator color={colors.accent} />
         </View>
-        <Text style={styles.bodyText}>Loading server-authoritative dashboard state.</Text>
+        <Text style={styles.bodyText}>Loading the latest state for this module.</Text>
       </View>
     );
   }

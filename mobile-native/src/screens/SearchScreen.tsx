@@ -257,7 +257,7 @@ function EventsGatewayShortcut({ onPress }: { onPress: () => void }) {
     <Pressable style={styles.eventsGateway} onPress={onPress}>
       <Text style={styles.eventsGatewayKicker}>Native gateway</Text>
       <Text style={styles.eventsGatewayTitle}>Events and scheduled Live</Text>
-      <Text style={styles.eventsGatewayText}>Open scheduled broadcasts from the existing PulseSoc Live backend. Creation and ticketing stay inside provider-owned boundaries.</Text>
+      <Text style={styles.eventsGatewayText}>Browse broadcasts people have scheduled. Creating events and selling tickets are handled on pulsesoc.com.</Text>
     </Pressable>
   );
 }

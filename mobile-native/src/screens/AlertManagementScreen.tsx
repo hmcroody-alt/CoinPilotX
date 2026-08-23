@@ -362,7 +362,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
             onTest={() => runAction(alert, "test")}
             pendingDelete={pendingDeleteId === alert.id}
           />
-        )) : <Text style={styles.muted}>No alerts returned yet. Create your first server-owned alert above.</Text>}
+        )) : <Text style={styles.muted}>You have no alerts yet. Create your first one above — PulseSoc keeps watching for it even when the app is closed.</Text>}
       </Panel>
 
       {selectedAlert ? (
@@ -387,7 +387,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
             <Text style={styles.muted}>{event.message || `${event.condition || "alert"} at ${event.observed_value ?? "unknown"} against ${event.threshold_value ?? "target"}`}</Text>
             <Text style={styles.rowMeta}>{event.created_at || "No timestamp"}</Text>
           </View>
-        )) : <Text style={styles.muted}>No alert history returned yet. The backend will add events after a rule fires or a test delivery is recorded.</Text>}
+        )) : <Text style={styles.muted}>You have no alert history yet. Events appear here after one of your alerts triggers or you send a test.</Text>}
         {recentEvents.length > 12 ? <Text style={styles.rowMeta}>Showing the newest 12 of {recentEvents.length} alert history events.</Text> : null}
       </Panel>
 
@@ -452,7 +452,7 @@ function AlertCard({
       </View>
       {pendingDelete ? (
         <View style={styles.confirmBox}>
-          <Text style={styles.confirmText}>Delete this alert? This uses the existing PulseSoc alert delete endpoint and cannot be undone in the native client.</Text>
+          <Text style={styles.confirmText}>Delete this alert? It will stop watching straight away, and this cannot be undone.</Text>
           <View style={styles.topActions}>
             <ActionButton label="Cancel" variant="secondary" disabled={busy} onPress={onCancelDelete} />
             <ActionButton label={busy ? "Deleting" : "Confirm delete"} variant="danger" disabled={busy} onPress={onConfirmDelete} />

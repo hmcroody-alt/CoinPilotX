@@ -396,7 +396,7 @@ function SecuritySectionView({
             <Text style={styles.muted}>{event.device_label || "PulseSoc"} · {formatShortTime(event.created_at)}</Text>
           </View>
         ))}
-        {!state?.securityEvents.length ? <Text style={styles.muted}>No recent security events were returned by the backend.</Text> : null}
+        {!state?.securityEvents.length ? <Text style={styles.muted}>You have no recent security events. Sign-ins, password changes, and device approvals show up here.</Text> : null}
         <ActionButton label="Advanced security web" variant="secondary" onPress={() => onOpenWeb("/dashboard/account/security")} />
       </Panel>
     </>
@@ -430,7 +430,7 @@ function PrivacySectionView({
       <Panel>
         <Text style={styles.panelTitle}>Notification privacy</Text>
         <SettingChoice label="Notifications" settingKey="notifications_enabled" value={draftSettings.notifications_enabled} onChange={onDraftChange} />
-        <Text style={styles.muted}>Detailed notification channels remain in the native Notification Preferences screen and existing backend preference APIs.</Text>
+        <Text style={styles.muted}>Choose which notifications you get, channel by channel, in Notification Preferences.</Text>
       </Panel>
 
       <Panel>
@@ -474,7 +474,7 @@ function DevicesSectionView({
             <ActionButton label={busy === `remove-device:${device.id}` ? "Removing" : "Remove"} variant="danger" disabled={busy === `remove-device:${device.id}`} onPress={() => onRemove(device.id)} />
           </View>
         ))}
-        {!state?.trustedDevices.length ? <Text style={styles.muted}>No trusted devices were returned by the backend.</Text> : null}
+        {!state?.trustedDevices.length ? <Text style={styles.muted}>You have no trusted devices yet. Devices you sign in on and approve appear here.</Text> : null}
         <ActionButton label="Advanced device web" variant="secondary" onPress={() => onOpenWeb("/pulse/settings/devices")} />
       </Panel>
     </>

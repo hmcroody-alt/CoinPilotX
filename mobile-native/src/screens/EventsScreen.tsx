@@ -168,8 +168,8 @@ export function EventsScreen({ route, navigation }: Props) {
             </Pressable>
           </View>
           <View style={styles.notice}>
-            <Text style={styles.noticeTitle}>Backend authority preserved</Text>
-            <Text style={styles.noticeText}>Reminders, ticketing, event checkout, hosting, co-hosting, and studio setup stay on the existing PulseSoc backend until dedicated native contracts exist.</Text>
+            <Text style={styles.noticeTitle}>Managed on pulsesoc.com</Text>
+            <Text style={styles.noticeText}>Reminders, ticketing, checkout, hosting, co-hosting, and studio setup are handled on pulsesoc.com.</Text>
           </View>
         </View>
       </ScrollView>
@@ -207,7 +207,7 @@ export function EventsScreen({ route, navigation }: Props) {
       ListEmptyComponent={
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No scheduled events yet</Text>
-          <Text style={styles.emptyText}>PulseSoc will show scheduled Live events here when `/api/pulse/live-now` returns scheduled data.</Text>
+          <Text style={styles.emptyText}>Scheduled Live events will appear here as soon as anyone you follow schedules one.</Text>
         </View>
       }
       ListFooterComponent={

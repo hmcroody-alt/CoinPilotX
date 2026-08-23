@@ -301,7 +301,7 @@ function EmptyState({ category }: { category: ActivityCategory }) {
     <View style={styles.emptyState}>
       <View style={styles.emptyOrb} />
       <Text style={styles.emptyTitle}>No {activityCategoryLabel(category).toLowerCase()} activity</Text>
-      <Text style={styles.emptyBody}>When PulseSoc has new signals for this lane, they will appear here with the same server-authoritative routing used by notifications.</Text>
+      <Text style={styles.emptyBody}>New activity in this category will appear here, alongside the matching notification.</Text>
     </View>
   );
 }
