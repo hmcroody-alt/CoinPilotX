@@ -535,7 +535,9 @@ def create_alert(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, 
         "in_app": bool(payload.get("notifyInApp", True)),
     }
     if spec:
-        percent_primary = crypto_alert_conditions.is_percent_metric(spec["clauses"][0]["metric"])
+        # A windowed clause compares a percent change whatever its metric, so it
+        # classifies as a move rather than a price level.
+        percent_primary = crypto_alert_conditions.clause_is_percent(spec["clauses"][0])
         alert_type = "move_24h" if percent_primary else "coin_price"
     else:
         alert_type = "move_24h" if condition in {"moves_up_percent", "moves_down_percent", "volatility_above"} else "coin_price"

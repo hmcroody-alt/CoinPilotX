@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 import requests
 
-from . import crypto_alert_conditions as conditions, db as db_service, email_service, live_market_service, notification_service, premium_crypto_access, pulsesoc_notification_system, push_service, sms_service, user_context
+from . import crypto_alert_conditions as conditions, db as db_service, email_service, live_market_service, market_observations, notification_service, premium_crypto_access, pulsesoc_notification_system, push_service, sms_service, user_context
 
 
 SUPPORTED_ALERT_TYPES = {
@@ -388,7 +388,48 @@ def _condition_label(condition):
     }.get(condition, condition.replace("_", " "))
 
 
-def _describe_observations(spec, observations):
+def _measure_windows(symbol, spec):
+    """Measure exactly the windows this rule depends on, and nothing else.
+
+    Each entry is the full reading from ``market_observations.window_reading``,
+    including the readings the series could not answer — the condition library
+    turns those into an undecidable clause, and the copy below quotes the age of
+    the baseline that was actually compared rather than implying the requested
+    window was measured to the minute.
+    """
+    readings = {}
+    for metric, minutes in conditions.required_windows(spec):
+        try:
+            readings[conditions.window_key(metric, minutes)] = (
+                market_observations.window_reading(symbol, metric, minutes))
+        except Exception as exc:
+            # A series failure is undecidable, not false: leaving the key absent
+            # is exactly how the library reads "this window has no answer".
+            logging.warning("Window reading failed for %s %s/%sm: %s",
+                            symbol, metric, minutes, exc)
+    return readings
+
+
+def _describe_window(clause, observations, windows):
+    """One windowed clause's reading, named by the interval actually compared.
+
+    The requested window is what the member asked for; ``baseline_age_seconds``
+    is what the series could measure. Quoting the first as though it were the
+    second would be a precision claim the sampler does not support.
+    """
+    metric = clause["metric"]
+    minutes = conditions.clause_window(clause)
+    subject = f"{conditions.metric_label(metric)} over {conditions.window_label(minutes)}"
+    value = (observations or {}).get(conditions.clause_key(clause))
+    if value is None:
+        return f"{subject} unavailable"
+    reading = (windows or {}).get(conditions.window_key(metric, minutes)) or {}
+    age = reading.get("baseline_age_seconds")
+    measured = f" (measured over {round(float(age) / 60.0)}m)" if age else ""
+    return f"{subject} {round(float(value), 2)}%{measured}"
+
+
+def _describe_observations(spec, observations, windows=None):
     """The readings behind a compound alert, in the order the member wrote them.
 
     A metric the market source did not publish is reported as unavailable rather
@@ -398,8 +439,11 @@ def _describe_observations(spec, observations):
     observations = observations or {}
     parts = []
     for clause in spec.get("clauses") or ():
+        if conditions.clause_window(clause):
+            parts.append(_describe_window(clause, observations, windows))
+            continue
         metric = clause["metric"]
-        value = observations.get(metric)
+        value = observations.get(conditions.clause_key(clause))
         if value is None:
             parts.append(f"{conditions.metric_label(metric)} unavailable")
         elif conditions.is_percent_metric(metric):
@@ -1238,19 +1282,22 @@ def evaluate_rule_condition(rule):
         return {"ok": False, "status": "error", "observations": {},
                 "message": quote.get("message") or f"{symbol} quote unavailable."}
 
-    result = conditions.evaluate_spec(asset, spec, rule.get("last_observations"))
+    windows = _measure_windows(symbol, spec)
+    result = conditions.evaluate_spec(asset, spec, rule.get("last_observations"), windows)
     observations = result["observations"]
-    primary = spec["clauses"][0]["metric"]
+    primary_clause = spec["clauses"][0]
+    primary = primary_clause["metric"]
+    primary_key = conditions.clause_key(primary_clause)
     if not result["ok"]:
         # Still carries the observations: recording what we *did* see is what
         # gives the next cycle a reading for a crossing to compare against, so a
         # crossing rule arms itself rather than staying undecidable forever.
         return {"ok": False, "status": "skipped", "observations": observations,
                 "symbol": symbol, "metric": primary,
-                "value": observations.get(primary),
+                "value": observations.get(primary_key),
                 "message": result["message"] or "Alert conditions could not be evaluated."}
 
-    value = observations.get(primary)
+    value = observations.get(primary_key)
     if value is None:
         # The primary metric was unavailable but the rule was still decided (an
         # OR another clause already answered). Report the value that decided it.
@@ -1258,7 +1305,7 @@ def evaluate_rule_condition(rule):
                       if c.get("observed") is not None), None)
     return {"ok": True, "symbol": symbol, "metric": primary, "value": float(value),
             "matched": bool(result["matched"]), "observations": observations,
-            "quote": quote, "spec_result": result}
+            "windows": windows, "quote": quote, "spec_result": result}
 
 
 #: Latch states persisted on ``alert_rules.condition_state``.
@@ -1546,6 +1593,10 @@ def evaluate_alert_rule(rule):
     if (rule.get("status") or "active") != "active":
         return {"ok": True, "triggered": False, "message": "Alert is not active."}
     observed = evaluate_rule_condition(rule)
+    # Deliberately in-memory only. A window reading describes the two moments
+    # this cycle compared; persisting it would let a later notification quote a
+    # baseline age that was never measured for it.
+    rule["last_windows"] = observed.get("windows") or {}
     if observed.get("observations"):
         # Written before the outcome is acted on, and on the undecidable path
         # too: this is the reading the *next* cycle's crossing compares against,
@@ -1789,7 +1840,7 @@ def trigger_alert(rule, observed_value, trigger_seq=None, repeat=False):
         # the threshold that happens to sit in ``threshold_value`` would describe
         # a different, simpler alert than the one the member created.
         message = (f"{conditions.describe_spec(spec, symbol)}. {moment}: "
-                   f"{_describe_observations(spec, rule.get('last_observations'))}.")
+                   f"{_describe_observations(spec, rule.get('last_observations'), rule.get('last_windows'))}.")
     elif condition in {"above", "below"}:
         message = f"{symbol} {_condition_label(condition)} {_format_money(threshold)}. {moment}: {_format_money(observed_value)}."
     else:

@@ -365,6 +365,147 @@ def test_description_works_without_a_symbol():
           "price is above 100")
 
 
+# --- time windows -----------------------------------------------------------
+def wclause(metric="price", comparator="below", value=-5.0, minutes=60) -> dict:
+    return {"metric": metric, "comparator": comparator, "value": value,
+            "window_minutes": minutes}
+
+
+def windows(**readings) -> dict:
+    """A measured-window map as ``alert_engine`` builds it.
+
+    Values are the readings ``market_observations.window_reading`` returns; a
+    window it could not answer is passed through here as ``ok`` False, exactly
+    as the engine files it.
+    """
+    return {key: ({"ok": True, "change_percent": value}
+                  if value is not None else {"ok": False, "change_percent": None})
+            for key, value in readings.items()}
+
+
+def test_a_window_is_accepted_only_on_a_metric_that_has_one():
+    """``change_24h`` is already a delta; the percent change of a percent change
+    is not a quantity anybody means to ask about."""
+    check("price is windowable", "window_minutes" in cond.validate_clause(wclause("price")), True)
+    check("volume is windowable", "window_minutes" in cond.validate_clause(wclause("volume_24h")), True)
+    check("24h change is not", _raises(cond.validate_clause, wclause("change_24h")), True)
+
+
+def test_a_windowed_crossing_is_rejected_at_creation():
+    """The baseline advances with every sample, so a crossing here would fire on
+    the window sliding forward and report it to the member as a market event."""
+    check("crosses_above", _raises(cond.validate_clause, wclause(comparator="crosses_above")), True)
+    check("crosses_below", _raises(cond.validate_clause, wclause(comparator="crosses_below")), True)
+
+
+def test_an_unoffered_window_is_rejected_rather_than_snapped():
+    """A rule stored as 60 minutes when the member asked for 45 is a rule they
+    did not write, and nothing on screen would show the substitution."""
+    check("45m", _raises(cond.validate_clause, wclause(minutes=45)), True)
+    check("nonsense", _raises(cond.validate_clause, wclause(minutes="soon")), True)
+    check("60m survives", cond.validate_clause(wclause(minutes=60))["window_minutes"], 60)
+
+
+def test_an_absent_window_leaves_a_plain_level_clause():
+    for empty in (None, "", 0):
+        result = cond.validate_clause({"metric": "price", "comparator": "above",
+                                       "value": 1.0, "window_minutes": empty})
+        check(f"{empty!r} is not a window", "window_minutes" in result, False)
+
+
+def test_a_window_is_part_of_a_clause_identity():
+    """"price above 61,000" and "price over 1h above 5%" are different
+    conditions on the same metric and both belong in one rule."""
+    result = cond.validate_spec(spec(clause("price", "above", 61000.0),
+                                     wclause("price", "above", 5.0, 60)))
+    check("both kept", len(result["clauses"]), 2)
+    check("same window is still a duplicate",
+          _raises(cond.validate_spec, spec(wclause("price", "above", 5.0, 60),
+                                          wclause("price", "above", 9.0, 60))), True)
+    check("different windows are not duplicates",
+          len(cond.validate_spec(spec(wclause("price", "above", 5.0, 60),
+                                      wclause("price", "above", 9.0, 240)))["clauses"]), 2)
+
+
+def test_required_windows_names_only_what_the_rule_needs():
+    """The engine measures these and nothing else, rather than every window of
+    every metric on every cycle."""
+    rule = spec(clause("price", "above", 1.0), wclause("price", "below", -5.0, 60),
+                wclause("volume_24h", "above", 50.0, 240))
+    check("pairs", cond.required_windows(rule),
+          [("price", 60), ("volume_24h", 240)])
+    check("a level-only rule needs none", cond.required_windows(spec(clause())), [])
+
+
+def test_a_windowed_clause_reads_the_measured_change_not_the_level():
+    rule = spec(wclause("price", "below", -5.0, 60))
+    result = cond.evaluate_spec(FULL_ASSET, rule,
+                                windows=windows(**{"price@60m": -8.0}))
+    check("decided", result["ok"], True)
+    check("matched", result["matched"], True)
+    # The price itself is 61,500 — far above -5. Reading the level here would
+    # have answered a completely different question.
+    check("observed is the window change", result["clauses"][0]["observed"], -8.0)
+
+
+def test_a_window_the_series_cannot_answer_is_undecidable_not_flat():
+    """The single most important case: "not enough history" must never resolve
+    to "it did not move", or a fall alert stays silent through the fall."""
+    rule = spec(wclause("price", "below", -5.0, 60))
+    result = cond.evaluate_spec(FULL_ASSET, rule,
+                                windows=windows(**{"price@60m": None}))
+    check("undecidable", result["ok"], False)
+    check("no verdict", result["matched"], None)
+    check("reason", result["clauses"][0]["reason"], "window_unavailable")
+    check("named to the member",
+          "not enough recorded readings" in result["message"], True)
+
+
+def test_a_missing_window_map_is_undecidable_not_an_error():
+    rule = spec(wclause("price", "below", -5.0, 60))
+    check("undecidable", cond.evaluate_spec(FULL_ASSET, rule)["ok"], False)
+
+
+def test_an_and_with_a_matched_level_still_waits_on_its_window():
+    """Half a compound rule is not the rule. Answering on the level alone would
+    fire an alert the member did not write."""
+    rule = spec(clause("price", "above", 1000.0), wclause("price", "below", -5.0, 60))
+    result = cond.evaluate_spec(FULL_ASSET, rule, windows=windows(**{"price@60m": None}))
+    check("undecidable", result["ok"], False)
+    result = cond.evaluate_spec(FULL_ASSET, rule, windows=windows(**{"price@60m": -9.0}))
+    check("decided once measured", result["matched"], True)
+
+
+def test_an_or_already_matched_does_not_wait_on_its_window():
+    """Nothing the unmeasured window could have said would change the outcome."""
+    rule = spec(clause("price", "above", 1000.0), wclause("price", "below", -5.0, 60),
+                logic="or")
+    result = cond.evaluate_spec(FULL_ASSET, rule, windows=windows(**{"price@60m": None}))
+    check("decided", result["ok"], True)
+    check("matched", result["matched"], True)
+
+
+def test_observations_keep_the_window_and_the_level_apart():
+    """Keyed by metric alone, the windowed clause would overwrite the level one
+    and the next cycle's crossing would compare against the wrong quantity."""
+    rule = spec(clause("price", "above", 1.0), wclause("price", "below", -5.0, 60))
+    snapshot = cond.observation_map(FULL_ASSET, rule, windows(**{"price@60m": -8.0}))
+    check("level reading", snapshot["price"], 61500.0)
+    check("window reading", snapshot["price@60m"], -8.0)
+
+
+def test_a_windowed_description_names_the_window_and_reads_as_a_percent():
+    check("hours", cond.describe_clause(wclause("price", "below", -5.0, 60), "BTC"),
+          "BTC price over 1h is below -5.0%")
+    check("minutes", cond.describe_clause(wclause("price", "above", 3.0, 15), "BTC"),
+          "BTC price over 15m is above 3.0%")
+    # A currency metric measured over a window is still a percent change, so it
+    # must not be rendered as an amount of money.
+    check("volume is a percent too",
+          cond.describe_clause(wclause("volume_24h", "above", 40.0, 240), "BTC"),
+          "BTC 24h volume over 4h is above 40.0%")
+
+
 TESTS = [
     test_every_supported_metric_resolves_from_a_board_row,
     test_missing_metric_is_none_and_never_zero,
@@ -396,6 +537,19 @@ TESTS = [
     test_observation_map_records_gaps_as_none,
     test_descriptions_read_as_the_member_wrote_them,
     test_description_works_without_a_symbol,
+    test_a_window_is_accepted_only_on_a_metric_that_has_one,
+    test_a_windowed_crossing_is_rejected_at_creation,
+    test_an_unoffered_window_is_rejected_rather_than_snapped,
+    test_an_absent_window_leaves_a_plain_level_clause,
+    test_a_window_is_part_of_a_clause_identity,
+    test_required_windows_names_only_what_the_rule_needs,
+    test_a_windowed_clause_reads_the_measured_change_not_the_level,
+    test_a_window_the_series_cannot_answer_is_undecidable_not_flat,
+    test_a_missing_window_map_is_undecidable_not_an_error,
+    test_an_and_with_a_matched_level_still_waits_on_its_window,
+    test_an_or_already_matched_does_not_wait_on_its_window,
+    test_observations_keep_the_window_and_the_level_apart,
+    test_a_windowed_description_names_the_window_and_reads_as_a_percent,
 ]
 
 

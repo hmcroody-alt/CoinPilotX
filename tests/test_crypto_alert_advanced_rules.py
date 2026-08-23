@@ -91,7 +91,36 @@ def _fake_allowed(user_id, key):
     return int(user_id or 0) in _PREMIUM_USERS
 
 
+#: Measured windows the stubbed series should report, keyed ``BTC:price@60m``.
+#: A key that is absent is a window the series cannot answer, which is the
+#: normal state for the first hour after a symbol is first sampled.
+_WINDOWS: dict[str, float] = {}
+
+
+def _fake_window_reading(symbol, metric, minutes, now=None):
+    key = f"{str(symbol).upper()}:{metric}@{int(minutes)}m"
+    if key not in _WINDOWS:
+        return {"ok": False, "symbol": symbol, "metric": metric,
+                "window_minutes": minutes, "change_percent": None,
+                "baseline_age_seconds": None, "reason": "window_not_covered",
+                "message": "not watched long enough"}
+    return {"ok": True, "symbol": symbol, "metric": metric,
+            "window_minutes": minutes, "change_percent": _WINDOWS[key],
+            "baseline_age_seconds": int(minutes) * 60 + 90,
+            "latest": None, "baseline": None, "sample_count": 40,
+            "reason": "", "message": ""}
+
+
+def set_window(symbol="BTC", metric="price", minutes=60, change=None):
+    key = f"{symbol.upper()}:{metric}@{int(minutes)}m"
+    if change is None:
+        _WINDOWS.pop(key, None)
+    else:
+        _WINDOWS[key] = change
+
+
 alert_engine.live_market_service.get_crypto_quote = _fake_quote
+alert_engine.market_observations.window_reading = _fake_window_reading
 alert_engine.dispatch_alert_event = _fake_dispatch
 # Channel readiness reads account rows this hermetic database does not carry, and
 # is not what any assertion here is about.
@@ -617,6 +646,148 @@ def test_duplicating_an_advanced_rule_recheck_the_entitlement():
     check("named as a paywall", result.get("code"), "premium_required")
 
 
+# --------------------------------------------------------------------------
+# Time windows
+# --------------------------------------------------------------------------
+def wclause(metric="price", comparator="below", value=-5.0, minutes=60) -> dict:
+    return {"metric": metric, "comparator": comparator, "value": value,
+            "window_minutes": minutes}
+
+
+def test_a_windowed_rule_fires_on_the_measured_change():
+    DISPATCHED.clear()
+    rule_id = make_advanced_rule(wclause("price", "below", -5.0, 60))
+    set_market(price=60_000)
+    set_window(change=-1.0)
+    check("a shallow dip is silent", observe(rule_id).get("triggered"), False)
+    clear_cooldown(rule_id)
+    set_market(price=56_000)
+    set_window(change=-6.5)
+    check("fires once the fall passes the threshold",
+          observe(rule_id).get("triggered"), True)
+
+
+def test_a_windowed_rule_reads_the_change_not_the_price():
+    """The threshold is a percentage. If the engine handed the level to the
+    comparator instead, "price fell more than 5% in an hour" would be answered
+    as "price is below -5", which is false for every asset that has ever
+    existed — a rule that could not fire, with nothing to show why."""
+    DISPATCHED.clear()
+    rule_id = make_advanced_rule(wclause("price", "below", -5.0, 60))
+    set_market(price=56_000)
+    set_window(change=-1.0)
+    observe(rule_id)  # arms: the fall has not happened yet
+    clear_cooldown(rule_id)
+    set_window(change=-9.0)
+    check("fires", observe(rule_id).get("triggered"), True)
+    check("the reported value is the change",
+          load_rule(rule_id)["last_observations"], json.dumps({"price@60m": -9.0}))
+
+
+def test_a_window_the_series_cannot_answer_never_fires_and_never_rearms():
+    """The core honesty case. "We have not been watching long enough" must not
+    resolve to "it did not fall", which would both silence the alert during the
+    fall and re-arm a latched rule so it fires again on the next real reading."""
+    DISPATCHED.clear()
+    rule_id = make_advanced_rule(wclause("price", "below", -5.0, 60),
+                                 clause("price", "below", 60_000))
+    set_market(price=61_000)
+    set_window(change=-1.0)
+    observe(rule_id)  # arms
+    clear_cooldown(rule_id)
+    set_market(price=56_000)
+    set_window(change=-8.0)
+    check("fires while the window is measurable", observe(rule_id).get("triggered"), True)
+    check("latched", load_rule(rule_id)["condition_state"], "latched")
+
+    set_window(change=None)  # sampler restarted; the window is gone
+    clear_cooldown(rule_id)
+    set_market(price=55_000)
+    result = observe(rule_id)
+    check("undecidable does not fire", result.get("triggered"), False)
+    check("latch survives", load_rule(rule_id)["condition_state"], "latched")
+    check("no second notification", len(DISPATCHED), 1)
+
+
+def test_an_unmeasurable_window_is_a_gap_not_an_error():
+    """A series that is merely young is not an engine fault, and logging it as
+    one would make normal startup look like a broken alert."""
+    rule_id = make_advanced_rule(wclause("price", "below", -5.0, 60))
+    set_market(price=56_000)
+    set_window(change=None)
+    observe(rule_id)
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM alert_events WHERE alert_rule_id=? AND status='error'",
+                    (rule_id,))
+        check("no error event", int(cur.fetchone()[0]), 0)
+    finally:
+        conn.close()
+
+
+def test_a_windowed_notification_names_the_window_and_what_it_measured():
+    """The requested window is what the member asked for; the baseline age is
+    what the sampler could compare. Quoting the first as the second would be a
+    precision claim the series does not support."""
+    DISPATCHED.clear()
+    rule_id = make_advanced_rule(wclause("price", "below", -5.0, 60))
+    set_market(price=56_000)
+    set_window(change=-1.0)
+    observe(rule_id)  # arms
+    clear_cooldown(rule_id)
+    set_window(change=-7.25)
+    observe(rule_id)
+    message = DISPATCHED[-1]["message"]
+    check("names the window", "BTC price over 1h is below -5.0%" in message, True)
+    check("quotes the measured change", "price over 1h -7.25%" in message, True)
+    # The stub reports a baseline 90 seconds past the boundary, so the honest
+    # statement is 62 minutes, not 60.
+    check("quotes the interval actually compared", "(measured over 62m)" in message, True)
+
+
+def test_a_windowed_rule_is_premium_gated_like_any_other_advanced_rule():
+    result = alert_engine.create_alert_rule(
+        free_user(), alert_type="coin_price", symbol="BTC",
+        channels={"push": True}, condition_spec={"clauses": [wclause()]})
+    check("refused", result.get("ok"), False)
+    check("named as a paywall", result.get("code"), "premium_required")
+
+
+def test_a_windowed_crossing_is_refused_at_creation():
+    """Rejected here rather than at evaluation: the baseline advances every
+    sample, so a crossing would fire on the window sliding forward."""
+    result = alert_engine.create_alert_rule(
+        premium_user(), alert_type="coin_price", symbol="BTC",
+        channels={"push": True},
+        condition_spec={"clauses": [wclause(comparator="crosses_below")]})
+    check("refused", result.get("ok"), False)
+
+
+def test_only_the_windows_a_rule_uses_are_measured():
+    """Measuring every window of every metric on every cycle would turn one
+    rule into eight series queries per sweep."""
+    asked: list = []
+    original = alert_engine.market_observations.window_reading
+
+    def _recording(symbol, metric, minutes, now=None):
+        asked.append((metric, minutes))
+        return original(symbol, metric, minutes, now)
+
+    alert_engine.market_observations.window_reading = _recording
+    try:
+        rule_id = make_advanced_rule(clause("price", "above", 1),
+                                     wclause("price", "below", -5.0, 60),
+                                     wclause("volume_24h", "above", 40.0, 240))
+        set_market(price=56_000, volume_24h=1)
+        set_window(change=-8.0)
+        set_window(metric="volume_24h", minutes=240, change=50.0)
+        observe(rule_id)
+    finally:
+        alert_engine.market_observations.window_reading = original
+    check("exactly the rule's windows", asked, [("price", 60), ("volume_24h", 240)])
+
+
 TESTS = [
     test_free_user_cannot_create_an_advanced_rule,
     test_free_user_can_still_create_a_basic_rule,
@@ -645,6 +816,14 @@ TESTS = [
     test_command_center_rejects_an_unusable_advanced_payload_as_a_field_error,
     test_duplicating_an_advanced_rule_keeps_its_conditions,
     test_duplicating_an_advanced_rule_recheck_the_entitlement,
+    test_a_windowed_rule_fires_on_the_measured_change,
+    test_a_windowed_rule_reads_the_change_not_the_price,
+    test_a_window_the_series_cannot_answer_never_fires_and_never_rearms,
+    test_an_unmeasurable_window_is_a_gap_not_an_error,
+    test_a_windowed_notification_names_the_window_and_what_it_measured,
+    test_a_windowed_rule_is_premium_gated_like_any_other_advanced_rule,
+    test_a_windowed_crossing_is_refused_at_creation,
+    test_only_the_windows_a_rule_uses_are_measured,
 ]
 
 

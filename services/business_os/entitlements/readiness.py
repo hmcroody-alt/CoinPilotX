@@ -131,8 +131,12 @@ _REGISTRY: tuple[Feature, ...] = (
             "create_alert_rule rather than in the HTTP route, because the worker, "
             "UNDX and the admin tools all create rules through that function. "
             "Basic single-threshold alerts stay free and take the original "
-            "evaluation path. Time-window conditions are NOT part of this and "
-            "must not be advertised until a sampled observation series exists."
+            "evaluation path. Time-window conditions now evaluate against a real "
+            "sampled series (services.market_observations, written only by "
+            "alert_worker) and a window the series cannot answer is undecidable "
+            "rather than zero. They are still not advertised: no surface offers "
+            "them yet, and a window is only honest to sell once the creation UI "
+            "offers exactly what coverage() reports it can answer."
         ),
     ),
     Feature(

@@ -6,13 +6,23 @@ in here to answer one question: *given this asset snapshot and what we saw last
 time, does the rule match?* Keeping that answer pure is what makes the advanced
 conditions testable without a worker, a provider, or a device.
 
+Time-window clauses
+-------------------
+A clause may carry ``window_minutes``, in which case the quantity compared is the
+percent change in that metric over the window rather than its current level.
+Purity is preserved the same way it is for crossings: the library does not read
+the series. The caller measures each window against
+``services.market_observations`` and hands the readings in, exactly as it hands
+in ``previous``. A window the series cannot answer arrives as ``None`` and is
+undecidable — never zero, and never "it did not move".
+
 What is deliberately NOT here
 -----------------------------
-**Time-window conditions.** "Moved 5% within the last hour" cannot be answered
-from a single snapshot, and the existing ``price_history`` table is written by
-legacy Telegram paths at no fixed cadence and read as "the last N rows" — so a
-window built on it would be a guess wearing a timestamp. Those conditions belong
-on top of a real sampled observation series and are not offered until one exists.
+**Crossings of a windowed value.** A window's baseline advances with every
+sample, so the 60-minute change moves even when the price does not. A crossing
+comparator on top of that would fire on the baseline sliding forward and report
+it as a market event. Windowed clauses are restricted to level comparators, and
+the combination is rejected at creation.
 
 **Arbitrary user expressions.** A clause is a fixed ``{metric, comparator,
 value}`` triple validated against closed vocabularies. There is no expression
@@ -80,6 +90,20 @@ COMPARATORS = ("above", "below", "crosses_above", "crosses_below")
 LEVEL_COMPARATORS = frozenset({"above", "below"})
 CROSSING_COMPARATORS = frozenset({"crosses_above", "crosses_below"})
 
+#: Metrics a window may be measured over. ``change_24h`` and ``price_change_24h``
+#: are excluded because they are already deltas, and the percent change of a
+#: percent change is not a quantity anybody means to ask about.
+WINDOWABLE_METRICS = frozenset({"price", "volume_24h", "market_cap"})
+
+#: Windows the sampled series can actually answer, in minutes.
+#: ``services.market_observations`` samples on the alert worker's ~45s cycle, so
+#: the shortest offered window still spans many distinct readings; anything
+#: shorter would risk comparing a reading with itself. The longest is bounded by
+#: that module's retention. It reads these values from here rather than
+#: declaring its own, so the rule vocabulary and the series capability cannot
+#: drift apart.
+WINDOW_CHOICES = (15, 30, 60, 120, 240, 360, 720, 1440)
+
 LOGIC_AND = "and"
 LOGIC_OR = "or"
 LOGIC_MODES = (LOGIC_AND, LOGIC_OR)
@@ -104,6 +128,84 @@ def metric_label(metric: Any) -> str:
 
 def is_percent_metric(metric: Any) -> bool:
     return normalize_metric(metric) in PERCENT_METRICS
+
+
+def normalize_window(minutes: Any) -> int:
+    """One of :data:`WINDOW_CHOICES`, or :class:`ConditionError`.
+
+    Rejects rather than snapping to the nearest offered window: a rule stored as
+    "60 minutes" when the member asked for 45 is a rule they did not write.
+    """
+    try:
+        value = int(minutes)
+    except (TypeError, ValueError):
+        raise ConditionError("An alert window must be a whole number of minutes.")
+    if value not in WINDOW_CHOICES:
+        offered = ", ".join(str(choice) for choice in WINDOW_CHOICES)
+        raise ConditionError(
+            f"Unsupported alert window: {value} minutes. Choose one of {offered}.")
+    return value
+
+
+def clause_window(clause: Any) -> int:
+    """The clause's window in minutes, or ``0`` for a level clause."""
+    if not isinstance(clause, dict):
+        return 0
+    raw = clause.get("window_minutes")
+    if raw in (None, "", 0):
+        return 0
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
+
+def window_label(minutes: Any) -> str:
+    value = int(minutes or 0)
+    if value and value % 60 == 0:
+        hours = value // 60
+        return f"{hours}h"
+    return f"{value}m"
+
+
+def clause_key(clause: Any) -> str:
+    """Identity of a clause within one rule's observation map.
+
+    A rule may legitimately hold both "price is above 61,000" and "price over 1h
+    is below -5%". Keying the stored observations by metric alone would let the
+    second overwrite the first, so the previous reading a clause is compared
+    against would belong to the other clause.
+    """
+    metric = normalize_metric((clause or {}).get("metric"))
+    minutes = clause_window(clause)
+    return f"{metric}@{minutes}m" if minutes else metric
+
+
+def window_key(metric: Any, minutes: Any) -> str:
+    """The key the caller must file a measured window reading under."""
+    return f"{normalize_metric(metric)}@{int(minutes)}m"
+
+
+def required_windows(spec: Any) -> list:
+    """``(metric, minutes)`` for every window this rule needs measured.
+
+    The engine uses this to fetch exactly the readings the rule depends on,
+    rather than measuring every window of every metric on every cycle.
+    """
+    seen: list = []
+    for clause in (spec or {}).get("clauses") or ():
+        minutes = clause_window(clause)
+        if not minutes:
+            continue
+        pair = (normalize_metric(clause.get("metric")), minutes)
+        if pair not in seen:
+            seen.append(pair)
+    return seen
+
+
+def clause_is_percent(clause: Any) -> bool:
+    """Windowed clauses always compare a percent change, whatever the metric."""
+    return bool(clause_window(clause)) or is_percent_metric((clause or {}).get("metric"))
 
 
 def metric_value(asset: Optional[dict], metric: Any) -> Optional[float]:
@@ -171,7 +273,24 @@ def validate_clause(clause: Any) -> dict:
         raise ConditionError("Each alert condition needs a numeric value.")
     if value != value or value in (float("inf"), float("-inf")):
         raise ConditionError("Each alert condition needs a finite value.")
-    return {"metric": metric, "comparator": comparator, "value": value}
+    normalized = {"metric": metric, "comparator": comparator, "value": value}
+
+    minutes = clause.get("window_minutes")
+    if minutes in (None, "", 0):
+        return normalized
+    minutes = normalize_window(minutes)
+    if metric not in WINDOWABLE_METRICS:
+        raise ConditionError(
+            f"{metric_label(metric)} cannot be measured over a window.")
+    if comparator not in LEVEL_COMPARATORS:
+        # See the module docstring: a window's baseline advances every sample, so
+        # a crossing here would fire on the baseline moving rather than on the
+        # market moving, and report that to the member as a market event.
+        raise ConditionError(
+            "A time-window condition compares a change, so it supports 'above' "
+            "and 'below' only.")
+    normalized["window_minutes"] = minutes
+    return normalized
 
 
 def validate_spec(spec: Any) -> dict:
@@ -189,7 +308,10 @@ def validate_spec(spec: Any) -> dict:
     clauses = [validate_clause(clause) for clause in raw_clauses]
     seen = set()
     for clause in clauses:
-        key = (clause["metric"], clause["comparator"])
+        # The window is part of the identity: "price above 61,000" and "price
+        # over 1h above 5%" are different conditions on the same metric and both
+        # belong in one rule.
+        key = (clause["metric"], clause["comparator"], clause_window(clause))
         if key in seen:
             raise ConditionError(
                 f"This alert repeats the same {metric_label(clause['metric'])} condition twice.")
@@ -197,48 +319,88 @@ def validate_spec(spec: Any) -> dict:
     return {"logic": logic, "clauses": clauses}
 
 
-def observation_map(asset: Optional[dict], spec: dict) -> dict:
-    """Every metric this rule reads, snapshotted. Persisted as the next ``previous``.
+def window_change(windows: Optional[dict], metric: Any, minutes: Any) -> Optional[float]:
+    """The measured percent change for one window, or ``None`` if undecidable.
 
-    Only the metrics the rule actually uses are recorded, so the stored snapshot
-    stays a description of the rule rather than of the provider payload.
+    ``windows`` maps :func:`window_key` to a reading from
+    ``services.market_observations.window_reading``. A reading that came back
+    ``ok`` False is a window the series could not answer, and it is returned here
+    as ``None`` so it flows through the same undecidable path as a metric the
+    provider omitted.
     """
-    return {
-        clause["metric"]: metric_value(asset, clause["metric"])
-        for clause in spec.get("clauses") or ()
-    }
+    reading = (windows or {}).get(window_key(metric, minutes))
+    if not isinstance(reading, dict) or not reading.get("ok"):
+        return None
+    value = reading.get("change_percent")
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value if value == value else None
+
+
+def observation_map(asset: Optional[dict], spec: dict,
+                    windows: Optional[dict] = None) -> dict:
+    """Every quantity this rule reads, snapshotted. Persisted as the next ``previous``.
+
+    Only the quantities the rule actually uses are recorded, so the stored
+    snapshot stays a description of the rule rather than of the provider payload.
+    Keyed by :func:`clause_key` so a windowed clause and a level clause on the
+    same metric do not overwrite each other.
+    """
+    snapshot = {}
+    for clause in spec.get("clauses") or ():
+        minutes = clause_window(clause)
+        if minutes:
+            snapshot[clause_key(clause)] = window_change(windows, clause["metric"], minutes)
+        else:
+            snapshot[clause_key(clause)] = metric_value(asset, clause["metric"])
+    return snapshot
 
 
 def evaluate_clause(asset: Optional[dict], clause: dict,
-                    previous: Optional[dict] = None) -> dict:
+                    previous: Optional[dict] = None,
+                    windows: Optional[dict] = None) -> dict:
     """One clause against one snapshot.
 
-    ``matched`` is ``None`` when undecidable: the provider omitted the metric, or
-    a crossing was asked for and there is no prior observation.
+    ``matched`` is ``None`` when undecidable: the provider omitted the metric, a
+    crossing was asked for and there is no prior observation, or the clause is
+    windowed and the series could not answer that window.
     """
     metric = clause["metric"]
-    observed = metric_value(asset, metric)
-    if observed is None:
-        return {"metric": metric, "comparator": clause["comparator"],
-                "value": clause["value"], "observed": None, "matched": None,
-                "reason": "metric_unavailable"}
-    prior = (previous or {}).get(metric)
+    minutes = clause_window(clause)
+    key = clause_key(clause)
+    base = {"metric": metric, "key": key, "window_minutes": minutes,
+            "comparator": clause["comparator"], "value": clause["value"]}
+
+    if minutes:
+        observed = window_change(windows, metric, minutes)
+        if observed is None:
+            return {**base, "observed": None, "matched": None,
+                    "reason": "window_unavailable"}
+    else:
+        observed = metric_value(asset, metric)
+        if observed is None:
+            return {**base, "observed": None, "matched": None,
+                    "reason": "metric_unavailable"}
+
+    prior = (previous or {}).get(key)
     if prior is not None:
         try:
             prior = float(prior)
         except (TypeError, ValueError):
             prior = None
     matched = compare(clause["comparator"], observed, clause["value"], prior)
-    reason = ""
-    if matched is None:
-        reason = "no_prior_observation"
-    return {"metric": metric, "comparator": clause["comparator"],
-            "value": clause["value"], "observed": observed, "previous": prior,
+    reason = "" if matched is not None else "no_prior_observation"
+    return {**base, "observed": observed, "previous": prior,
             "matched": matched, "reason": reason}
 
 
 def evaluate_spec(asset: Optional[dict], spec: dict,
-                  previous: Optional[dict] = None) -> dict:
+                  previous: Optional[dict] = None,
+                  windows: Optional[dict] = None) -> dict:
     """A whole compound rule against one snapshot.
 
     Returns ``{ok, matched, logic, clauses, observations, undecidable}``.
@@ -254,7 +416,7 @@ def evaluate_spec(asset: Optional[dict], spec: dict,
     """
     clauses = spec.get("clauses") or ()
     logic = str(spec.get("logic") or LOGIC_AND).strip().lower()
-    results = [evaluate_clause(asset, clause, previous) for clause in clauses]
+    results = [evaluate_clause(asset, clause, previous, windows) for clause in clauses]
     decided = [r["matched"] for r in results if r["matched"] is not None]
     undecidable = [r for r in results if r["matched"] is None]
 
@@ -274,32 +436,44 @@ def evaluate_spec(asset: Optional[dict], spec: dict,
         "matched": bool(matched) if resolved else None,
         "logic": logic,
         "clauses": results,
-        "observations": observation_map(asset, spec),
-        "undecidable": [r["metric"] for r in undecidable],
+        "observations": observation_map(asset, spec, windows),
+        "undecidable": [r["key"] for r in undecidable],
         "message": "" if resolved else _undecidable_message(undecidable),
     }
+
+
+def _clause_subject(clause: dict, symbol: str = "") -> str:
+    """``BTC price`` or ``BTC price over 1h`` — the thing the clause is about."""
+    metric = normalize_metric(clause.get("metric"))
+    minutes = clause_window(clause)
+    subject = f"{symbol} {metric_label(metric)}".strip()
+    return f"{subject} over {window_label(minutes)}" if minutes else subject
 
 
 def _undecidable_message(undecidable: list) -> str:
     if not undecidable:
         return ""
     reasons = {r["reason"] for r in undecidable}
-    names = ", ".join(sorted({metric_label(r["metric"]) for r in undecidable}))
+    names = ", ".join(sorted({_clause_subject(r) for r in undecidable}))
     if reasons == {"no_prior_observation"}:
         return f"Watching {names}; a crossing needs one earlier reading to compare against."
+    if reasons == {"window_unavailable"}:
+        # Deliberately not "it has not moved": the series has not been running
+        # long enough, or has a hole in it, and saying otherwise would report an
+        # absence of data as an observation about the market.
+        return (f"Watching {names}; there are not enough recorded readings to "
+                "measure that window yet.")
     return f"{names.capitalize()} is not available from the market source right now."
 
 
 def describe_clause(clause: dict, symbol: str = "") -> str:
     """Plain description of one clause, for notification bodies and audit rows."""
-    metric = normalize_metric(clause.get("metric"))
     comparator = str(clause.get("comparator") or "above")
     value = clause.get("value")
     verbs = {"above": "is above", "below": "is below",
              "crosses_above": "crosses above", "crosses_below": "crosses below"}
-    amount = f"{value}%" if is_percent_metric(metric) else f"{value:,}"
-    subject = f"{symbol} {metric_label(metric)}".strip()
-    return f"{subject} {verbs.get(comparator, comparator)} {amount}"
+    amount = f"{value}%" if clause_is_percent(clause) else f"{value:,}"
+    return f"{_clause_subject(clause, symbol)} {verbs.get(comparator, comparator)} {amount}"
 
 
 def describe_spec(spec: dict, symbol: str = "") -> str:
