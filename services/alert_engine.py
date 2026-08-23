@@ -209,7 +209,37 @@ def _ensure_alert_schema_impl(conn=None):
             # single scalar cannot carry the previous price and the previous
             # volume at once.
             ("last_observations", "TEXT"),
+            # Set when the rule watches every asset on a watchlist instead of the
+            # single ``symbol``. Membership is read fresh each cycle rather than
+            # copied here, so adding an asset to the watchlist extends the rule
+            # and removing one stops it — which is what "watch this list" means.
+            ("watchlist_id", "INTEGER"),
         ],
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS alert_rule_symbol_state (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_id INTEGER NOT NULL,
+            symbol TEXT NOT NULL,
+            condition_state TEXT,
+            trigger_seq INTEGER DEFAULT 0,
+            last_observed_value REAL,
+            last_notified_value REAL,
+            last_observations TEXT,
+            last_triggered_at TEXT,
+            state_changed_at TEXT,
+            updated_at TEXT
+        )
+        """
+    )
+    # One latch per (rule, symbol). A watchlist rule cannot share the columns on
+    # its own row: "BTC crossed" and "ETH crossed" are separate events, and a
+    # single latch would let whichever fired first silence every other asset on
+    # the list until it re-armed.
+    cur.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_rule_symbol_state_rule_symbol "
+        "ON alert_rule_symbol_state (rule_id, symbol)"
     )
     cur.execute(
         """
@@ -767,7 +797,179 @@ def _public_rule(row):
     rule["condition_summary"] = conditions.describe_spec(spec, rule["asset_symbol"]) if spec else ""
     observations = _json_loads(rule.get("last_observations"), None)
     rule["last_observations"] = observations if isinstance(observations, dict) else {}
+    rule["watchlist_id"] = int(rule["watchlist_id"]) if rule.get("watchlist_id") else None
+    rule["is_watchlist_rule"] = bool(rule["watchlist_id"])
+    if rule["is_watchlist_rule"] and not rule.get("_state_scope"):
+        # ``_normalize_symbol`` above filled this with its BTC default. A rule
+        # that watches a list is about no single asset, and saying "BTC" would be
+        # read as one. A *member* of that list is about exactly one asset, which
+        # is why the scope check is here: this function runs again on each member
+        # and would otherwise erase the symbol it is being evaluated for.
+        rule["asset_symbol"] = ""
+        rule["symbol"] = ""
+        rule["condition_summary"] = conditions.describe_spec(spec, "") if spec else ""
     return rule
+
+
+#: How many assets one watchlist rule will evaluate per cycle.
+#:
+#: Not a performance guess: each member costs three small UPDATEs a cycle and
+#: the quotes themselves come from one cached board, so the real limit is how
+#: many simultaneous notifications a person can read. A list past this is
+#: refused at creation rather than silently trimmed.
+WATCHLIST_RULE_MAX_SYMBOLS = int(os.getenv("ALERT_WATCHLIST_MAX_SYMBOLS", "25"))
+
+
+def _watchlist_symbols(user_id, watchlist_id, limit=None, connection=None):
+    """The assets on one member's watchlist, in the order they arranged them.
+
+    Queried directly rather than through ``dashboard_crypto_command_center``,
+    which imports this module — the tables are read-only here and only two
+    column names are borrowed.
+
+    Scoped by ``user_id`` as well as ``watchlist_id`` so a rule can never be
+    pointed at somebody else's list by editing an id.
+
+    Reuses the caller's connection when it has one: alert creation runs inside an
+    open transaction, and a second connection reading the same database would sit
+    behind that write lock rather than answering.
+    """
+    limit = int(limit or WATCHLIST_RULE_MAX_SYMBOLS)
+    owns_connection = connection is None
+    conn = connection or user_context.connect()
+    try:
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT asset_symbol FROM crypto_watchlist_assets "
+                "WHERE watchlist_id=? AND user_id=? ORDER BY position ASC, id ASC LIMIT ?",
+                (int(watchlist_id), int(user_id), limit + 1),
+            )
+            rows = cur.fetchall() or []
+        except Exception:
+            # The crypto command centre creates these tables on first use, so a
+            # database that has never opened it simply has no watchlists yet.
+            logging.warning("Watchlist assets unavailable for watchlist %s", watchlist_id, exc_info=True)
+            return [], False
+    finally:
+        if owns_connection:
+            conn.close()
+    symbols = []
+    for row in rows:
+        symbol = _normalize_symbol(row[0] if not isinstance(row, dict) else row.get("asset_symbol"))
+        if symbol and symbol not in symbols:
+            symbols.append(symbol)
+    return symbols[:limit], len(symbols) > limit
+
+
+def _ensure_symbol_state(rule_id, symbol):
+    """Return this (rule, symbol)'s latch row, creating it empty if new.
+
+    An empty row is the same starting point a brand-new rule has: no recorded
+    state, so the first observation arms and cannot fire. That is what makes an
+    asset added to the watchlist today behave like a rule created today, rather
+    than firing immediately on a level it has been sitting at for a week.
+    """
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR IGNORE INTO alert_rule_symbol_state (rule_id, symbol, updated_at) VALUES (?, ?, ?)",
+            (int(rule_id), symbol, _now()),
+        )
+        conn.commit()
+        cur.execute(
+            "SELECT * FROM alert_rule_symbol_state WHERE rule_id=? AND symbol=? LIMIT 1",
+            (int(rule_id), symbol),
+        )
+        return _row_to_dict(cur.fetchone()) or {}
+    finally:
+        conn.close()
+
+
+#: Columns the latch machine reads and writes. A watchlist member's evaluation
+#: reads them from its own state row instead of the rule row; everything else
+#: about the rule (threshold, spec, channels, cooldown) is shared.
+_SCOPED_STATE_COLUMNS = (
+    "condition_state", "trigger_seq", "last_observed_value",
+    "last_notified_value", "last_triggered_at", "state_changed_at",
+)
+
+
+def _member_rule(rule, symbol):
+    """One watchlist member seen as the rule the engine already knows how to run.
+
+    Everything downstream — the latch, the notification copy, the event row —
+    is written against a rule with one symbol, so a member is presented as
+    exactly that. ``_state_scope`` is what routes the state writes back to the
+    per-symbol row instead of the shared one.
+    """
+    state = _ensure_symbol_state(rule["id"], symbol)
+    member = dict(rule)
+    member["symbol"] = symbol
+    member["asset_symbol"] = symbol
+    member["_state_scope"] = symbol
+    for column in _SCOPED_STATE_COLUMNS:
+        member[column] = state.get(column)
+    member["last_observations"] = state.get("last_observations")
+    return member
+
+
+def _state_table(scope):
+    """Where this evaluation's latch lives, and how to address its row."""
+    if scope:
+        return "alert_rule_symbol_state", "rule_id=? AND symbol=?"
+    return "alert_rules", "id=?"
+
+
+def _state_key(rule_id, scope):
+    return (rule_id, scope) if scope else (rule_id,)
+
+
+def _validate_watchlist_rule(user_id, watchlist_id, connection=None):
+    """Can this member point a rule at this list, today?
+
+    Refuses an oversized list rather than trimming it. A rule that quietly
+    watches 25 of 40 assets is one the member believes covers all 40, and they
+    would only discover otherwise by not being told about the other fifteen.
+    """
+    if not premium_crypto_access.allowed_for_user_id(user_id, premium_crypto_access.ADVANCED_ALERTS):
+        return {"ok": False, "code": "premium_required",
+                "capability": premium_crypto_access.ADVANCED_ALERTS,
+                "message": "Watching a whole list with one alert is part of PulseSoc Premium."}
+    try:
+        watchlist_id = int(watchlist_id)
+    except (TypeError, ValueError):
+        return {"ok": False, "code": "invalid_watchlist", "message": "Choose a watchlist to watch."}
+    owns_connection = connection is None
+    conn = connection or user_context.connect()
+    try:
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT name FROM crypto_watchlists WHERE id=? AND user_id=? LIMIT 1",
+                        (watchlist_id, int(user_id)))
+            row = cur.fetchone()
+        except Exception:
+            logging.warning("Watchlist lookup failed for %s", watchlist_id, exc_info=True)
+            row = None
+    finally:
+        if owns_connection:
+            conn.close()
+    if not row:
+        # Same answer for "does not exist" and "belongs to somebody else", so the
+        # error cannot be used to probe which watchlist ids are real.
+        return {"ok": False, "code": "watchlist_not_found",
+                "message": "That watchlist could not be found."}
+    symbols, truncated = _watchlist_symbols(user_id, watchlist_id, connection=connection)
+    if not symbols:
+        return {"ok": False, "code": "watchlist_empty",
+                "message": "Add at least one asset to that watchlist first."}
+    if truncated:
+        return {"ok": False, "code": "watchlist_too_large",
+                "message": (f"One alert can watch up to {WATCHLIST_RULE_MAX_SYMBOLS} assets. "
+                            "Split this list, or create the alert on a shorter one.")}
+    name = row[0] if not isinstance(row, dict) else row.get("name")
+    return {"ok": True, "watchlist_id": watchlist_id, "watchlist_name": name or "", "symbols": symbols}
 
 
 def create_alert_rule(
@@ -785,12 +987,23 @@ def create_alert_rule(
     connection=None,
     schema_ready=False,
     condition_spec=None,
+    watchlist_id=None,
 ):
     if not schema_ready:
         ensure_alert_schema(connection)
     alert_type = _normalize_alert_type(alert_type)
-    symbol = _normalize_symbol(symbol or target)
     condition = _normalize_condition(condition)
+    if watchlist_id:
+        gate = _validate_watchlist_rule(user_id, watchlist_id, connection)
+        if not gate["ok"]:
+            return gate
+        watchlist_id = gate["watchlist_id"]
+        # Left empty on purpose. ``_normalize_symbol`` defaults to BTC, and a rule
+        # that watches a whole list must not carry a ticker that says otherwise.
+        symbol = ""
+    else:
+        watchlist_id = None
+        symbol = _normalize_symbol(symbol or target)
     spec = None
     if condition_spec:
         # Gated here rather than only in the route, because the worker, UNDX and
@@ -827,8 +1040,9 @@ def create_alert_rule(
             """
             INSERT INTO alert_rules
             (user_id, alert_type, symbol, target, condition, threshold_value, target_value, channels_json, channels,
-             status, active, cooldown_seconds, trigger_count, source, source_ref, metadata, condition_spec, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, 0, ?, ?, ?, ?, ?, ?)
+             status, active, cooldown_seconds, trigger_count, source, source_ref, metadata, condition_spec,
+             watchlist_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, 0, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user_id,
@@ -845,6 +1059,7 @@ def create_alert_rule(
                 str(source_ref or "")[:160],
                 json.dumps(metadata or {})[:4000],
                 json.dumps(spec) if spec else None,
+                watchlist_id,
                 now,
                 now,
             ),
@@ -1418,7 +1633,7 @@ def alert_repeat_progressed(condition, value, last_notified, step_percent):
     return (magnitude / scale) * 100.0 >= step_percent
 
 
-def _claim_repeat(rule_id, observed_value, expected_seq):
+def _claim_repeat(rule_id, observed_value, expected_seq, scope=None):
     """Atomically claim a repeat notification for an already-latched rule.
 
     The same concurrency problem as ``_claim_crossing``: several workers may
@@ -1437,17 +1652,19 @@ def _claim_repeat(rule_id, observed_value, expected_seq):
     conn = user_context.connect()
     try:
         cur = conn.cursor()
+        table, where = _state_table(scope)
         cur.execute(
-            """
-            UPDATE alert_rules
+            f"""
+            UPDATE {table}
             SET trigger_seq=COALESCE(trigger_seq, 0)+1,
                 last_notified_value=?,
                 last_observed_value=?,
                 state_changed_at=?,
                 updated_at=?
-            WHERE id=? AND COALESCE(trigger_seq, 0)=?
+            WHERE {where} AND COALESCE(trigger_seq, 0)=?
             """,
-            (observed_value, observed_value, _now(), _now(), rule_id, int(expected_seq or 0)),
+            (observed_value, observed_value, _now(), _now(),
+             *_state_key(rule_id, scope), int(expected_seq or 0)),
         )
         claimed = int(getattr(cur, "rowcount", 0) or 0) > 0
         conn.commit()
@@ -1458,7 +1675,7 @@ def _claim_repeat(rule_id, observed_value, expected_seq):
         conn.close()
 
 
-def _claim_crossing(rule_id, observed_value):
+def _claim_crossing(rule_id, observed_value, scope=None):
     """Atomically claim a false->true crossing for ``rule_id``.
 
     The alert worker can run in several processes at once (and a dashboard
@@ -1475,31 +1692,33 @@ def _claim_crossing(rule_id, observed_value):
     conn = user_context.connect()
     try:
         cur = conn.cursor()
+        table, where = _state_table(scope)
         cur.execute(
-            """
-            UPDATE alert_rules
+            f"""
+            UPDATE {table}
             SET condition_state=?,
                 trigger_seq=COALESCE(trigger_seq, 0)+1,
                 last_observed_value=?,
                 last_notified_value=?,
                 state_changed_at=?,
                 updated_at=?
-            WHERE id=? AND COALESCE(condition_state, '')<>?
+            WHERE {where} AND COALESCE(condition_state, '')<>?
             """,
-            (STATE_LATCHED, observed_value, observed_value, _now(), _now(), rule_id, STATE_LATCHED),
+            (STATE_LATCHED, observed_value, observed_value, _now(), _now(),
+             *_state_key(rule_id, scope), STATE_LATCHED),
         )
         claimed = int(getattr(cur, "rowcount", 0) or 0) > 0
         conn.commit()
         if not claimed:
             return None
-        cur.execute("SELECT trigger_seq FROM alert_rules WHERE id=? LIMIT 1", (rule_id,))
+        cur.execute(f"SELECT trigger_seq FROM {table} WHERE {where} LIMIT 1", _state_key(rule_id, scope))
         row = cur.fetchone()
         return int((row[0] if row else 0) or 0)
     finally:
         conn.close()
 
 
-def _set_last_notified_value(rule_id, observed_value):
+def _set_last_notified_value(rule_id, observed_value, scope=None):
     """Seed the repeat baseline without notifying.
 
     Used for rules that were already latched before ``last_notified_value``
@@ -1509,16 +1728,17 @@ def _set_last_notified_value(rule_id, observed_value):
     conn = user_context.connect()
     try:
         cur = conn.cursor()
+        table, where = _state_table(scope)
         cur.execute(
-            "UPDATE alert_rules SET last_notified_value=?, last_observed_value=?, updated_at=? WHERE id=?",
-            (observed_value, observed_value, _now(), rule_id),
+            f"UPDATE {table} SET last_notified_value=?, last_observed_value=?, updated_at=? WHERE {where}",
+            (observed_value, observed_value, _now(), *_state_key(rule_id, scope)),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def _set_last_observations(rule_id, observations):
+def _set_last_observations(rule_id, observations, scope=None):
     """Persist the metrics this rule read, for the next cycle to compare against.
 
     Separate from ``last_observed_value`` rather than replacing it: that column
@@ -1531,28 +1751,30 @@ def _set_last_observations(rule_id, observations):
     conn = user_context.connect()
     try:
         cur = conn.cursor()
+        table, where = _state_table(scope)
         cur.execute(
-            "UPDATE alert_rules SET last_observations=?, updated_at=? WHERE id=?",
-            (json.dumps(observations)[:4000], _now(), rule_id),
+            f"UPDATE {table} SET last_observations=?, updated_at=? WHERE {where}",
+            (json.dumps(observations)[:4000], _now(), *_state_key(rule_id, scope)),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def _set_condition_state(rule_id, state, observed_value):
+def _set_condition_state(rule_id, state, observed_value, scope=None):
     """Persist a non-firing state transition (arming / re-arming)."""
     ensure_alert_schema()
     conn = user_context.connect()
     try:
         cur = conn.cursor()
+        table, where = _state_table(scope)
         cur.execute(
-            """
-            UPDATE alert_rules
+            f"""
+            UPDATE {table}
             SET condition_state=?, last_observed_value=?, state_changed_at=?, updated_at=?
-            WHERE id=?
+            WHERE {where}
             """,
-            (state, observed_value, _now(), _now(), rule_id),
+            (state, observed_value, _now(), _now(), *_state_key(rule_id, scope)),
         )
         conn.commit()
     finally:
@@ -1592,6 +1814,9 @@ def evaluate_alert_rule(rule):
     rule = _public_rule(rule)
     if (rule.get("status") or "active") != "active":
         return {"ok": True, "triggered": False, "message": "Alert is not active."}
+    if rule.get("watchlist_id") and not rule.get("_state_scope"):
+        return _evaluate_watchlist_rule(rule)
+    scope = rule.get("_state_scope")
     observed = evaluate_rule_condition(rule)
     # Deliberately in-memory only. A window reading describes the two moments
     # this cycle compared; persisting it would let a later notification quote a
@@ -1602,7 +1827,7 @@ def evaluate_alert_rule(rule):
         # too: this is the reading the *next* cycle's crossing compares against,
         # so skipping it when we could not decide would leave a crossing rule
         # permanently unable to see its first edge.
-        _set_last_observations(rule["id"], observed["observations"])
+        _set_last_observations(rule["id"], observed["observations"], scope)
         # The in-memory rule was loaded before this cycle, so it still holds the
         # previous reading — which `evaluate_rule_condition` needed and nothing
         # after this point does. Notification copy quotes these values, so leaving
@@ -1626,7 +1851,7 @@ def evaluate_alert_rule(rule):
             # Restricted to rules that are not latched, which is what preserves
             # the guarantee above: a provider gap on a latched rule still leaves
             # the latch exactly where it was.
-            _set_condition_state(rule["id"], STATE_ARMED, observed.get("value"))
+            _set_condition_state(rule["id"], STATE_ARMED, observed.get("value"), scope)
         return {"ok": observed.get("status") != "error", "triggered": False, "message": observed.get("message") or "Alert skipped."}
     value = observed["value"]
     matched = observed["matched"]
@@ -1635,7 +1860,7 @@ def evaluate_alert_rule(rule):
 
     if not matched:
         if previous_state != STATE_ARMED:
-            _set_condition_state(rule["id"], STATE_ARMED, value)
+            _set_condition_state(rule["id"], STATE_ARMED, value, scope)
         return {
             "ok": True,
             "triggered": False,
@@ -1677,7 +1902,7 @@ def evaluate_alert_rule(rule):
         # immediately on migration.
         last_notified = rule.get("last_notified_value")
         if last_notified is None:
-            _set_last_notified_value(rule["id"], value)
+            _set_last_notified_value(rule["id"], value, scope)
             return {
                 "ok": True,
                 "triggered": False,
@@ -1708,7 +1933,7 @@ def evaluate_alert_rule(rule):
                     "state": STATE_LATCHED,
                     "message": f"Value moved further, skipped because repeats are rate limited to one per {repeat_min} seconds.",
                 }
-        repeat_seq = _claim_repeat(rule["id"], value, rule.get("trigger_seq"))
+        repeat_seq = _claim_repeat(rule["id"], value, rule.get("trigger_seq"), scope)
         if repeat_seq is None:
             return {
                 "ok": True,
@@ -1723,7 +1948,7 @@ def evaluate_alert_rule(rule):
     if previous_state != STATE_ARMED:
         # First observation of this rule: record where the market sits without
         # firing, so only a subsequent genuine crossing notifies.
-        _set_condition_state(rule["id"], STATE_ARMED, value)
+        _set_condition_state(rule["id"], STATE_ARMED, value, scope)
         return {
             "ok": True,
             "triggered": False,
@@ -1739,7 +1964,7 @@ def evaluate_alert_rule(rule):
         message = f"Condition met, skipped because alert is cooling down for {cooldown} seconds."
         return {"ok": True, "triggered": False, "cooldown": True, "observed_value": value, "state": previous_state, "message": message}
 
-    trigger_seq = _claim_crossing(rule["id"], value)
+    trigger_seq = _claim_crossing(rule["id"], value, scope)
     if trigger_seq is None:
         # Another worker/request won the same crossing; it owns the notification.
         return {
@@ -1751,6 +1976,54 @@ def evaluate_alert_rule(rule):
             "message": "Crossing already claimed by a concurrent evaluation; no duplicate notification sent.",
         }
     return trigger_alert(rule, value, trigger_seq=trigger_seq)
+
+
+def _evaluate_watchlist_rule(rule):
+    """Run one watchlist rule once per asset currently on the list.
+
+    Each asset is evaluated as an ordinary single-symbol rule with its own latch,
+    so everything the engine already guarantees — arm on first observation, one
+    notification per crossing, restart-safe dedup — holds per asset rather than
+    once for the whole list.
+
+    Membership is read here, every cycle, rather than frozen at creation. An
+    asset added to the watchlist starts with no recorded state and therefore
+    arms before it can fire; an asset removed simply stops being evaluated, and
+    its state row is left in place so that re-adding it does not present a level
+    it has been sitting at for days as a fresh crossing.
+    """
+    symbols, truncated = _watchlist_symbols(rule.get("user_id"), rule["watchlist_id"])
+    if not symbols:
+        _mark_checked(rule["id"], status_message="Watchlist is empty.")
+        return {"ok": True, "triggered": False, "symbols": [],
+                "message": "This alert watches a list that has no assets on it yet."}
+    results = []
+    triggered = 0
+    errors = 0
+    last_error = ""
+    for symbol in symbols:
+        try:
+            result = evaluate_alert_rule(_member_rule(rule, symbol))
+        except Exception as exc:
+            # One asset's failure is not the list's failure: the remaining assets
+            # are independently decidable and stopping here would silence them.
+            errors += 1
+            last_error = str(exc)
+            logging.exception("Watchlist alert member failed rule_id=%s symbol=%s", rule["id"], symbol)
+            continue
+        results.append({"symbol": symbol, **result})
+        if result.get("triggered"):
+            triggered += 1
+        if not result.get("ok"):
+            errors += 1
+            last_error = result.get("message") or last_error
+    message = f"Checked {len(results)} of {len(symbols)} assets on this watchlist."
+    if truncated:
+        message += (f" Only the first {WATCHLIST_RULE_MAX_SYMBOLS} are watched; "
+                    "the list has grown past that.")
+    return {"ok": errors == 0, "triggered": triggered > 0, "triggered_count": triggered,
+            "symbols": symbols, "truncated": truncated, "results": results,
+            "message": last_error or message}
 
 
 def _mark_checked(rule_id, status_message=""):
@@ -1777,7 +2050,16 @@ def _create_event(rule, observed_value, status, message, trigger_seq=None):
     """
     ensure_alert_schema()
     now = _now()
-    trigger_key = f"{rule.get('id')}:{int(trigger_seq)}" if trigger_seq is not None else None
+    # A watchlist member's sequence counts that asset's crossings, so the rule id
+    # alone no longer identifies an event — BTC's first crossing and ETH's first
+    # crossing would both be "12:1" and the unique index would drop the second.
+    scope = rule.get("_state_scope")
+    if trigger_seq is None:
+        trigger_key = None
+    elif scope:
+        trigger_key = f"{rule.get('id')}:{scope}:{int(trigger_seq)}"
+    else:
+        trigger_key = f"{rule.get('id')}:{int(trigger_seq)}"
     conn = user_context.connect()
     cur = conn.cursor()
     if trigger_key:
@@ -1845,9 +2127,10 @@ def trigger_alert(rule, observed_value, trigger_seq=None, repeat=False):
         message = f"{symbol} {_condition_label(condition)} {_format_money(threshold)}. {moment}: {_format_money(observed_value)}."
     else:
         message = f"{symbol} {_condition_label(condition)} {threshold}%. {moment}: {round(float(observed_value), 2)}%."
+    scope = rule.get("_state_scope")
     if trigger_seq is None:
         # Direct/manual invocation (tests, admin replays) still gets a stable key.
-        trigger_seq = _claim_crossing(rule.get("id"), observed_value)
+        trigger_seq = _claim_crossing(rule.get("id"), observed_value, scope)
         if trigger_seq is None:
             return {"ok": True, "triggered": False, "latched": True, "observed_value": observed_value, "message": "Crossing already claimed."}
     event = _create_event(rule, observed_value, "triggered", message, trigger_seq=trigger_seq)
@@ -1856,6 +2139,15 @@ def trigger_alert(rule, observed_value, trigger_seq=None, repeat=False):
         return {"ok": True, "triggered": False, "deduped": True, "event": event, "observed_value": observed_value, "message": "Crossing already notified; duplicate suppressed."}
     conn = user_context.connect()
     cur = conn.cursor()
+    if scope:
+        # Cooldown rate limits one asset's crossings, so it is measured per asset.
+        # A shared timestamp would mean a busy asset muted the rest of the list.
+        cur.execute(
+            "UPDATE alert_rule_symbol_state SET last_triggered_at=?, updated_at=? WHERE rule_id=? AND symbol=?",
+            (_now(), _now(), rule.get("id"), scope),
+        )
+    # The count on the rule row stays the rule's own total across every asset,
+    # which is what the member sees next to the rule they created.
     cur.execute(
         """
         UPDATE alert_rules

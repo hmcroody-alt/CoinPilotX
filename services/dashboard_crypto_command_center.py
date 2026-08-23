@@ -499,7 +499,10 @@ class PremiumRequired(ValueError):
 
 def create_alert(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     ensure_tables(conn)
-    symbol = _normalize_symbol(payload.get("assetSymbol") or payload.get("asset_symbol"))
+    watchlist_id = payload.get("watchlistId") or payload.get("watchlist_id") or None
+    # A rule is about one asset or about one list, never both. Accepting a symbol
+    # alongside a list would leave the client deciding which one the rule meant.
+    symbol = "" if watchlist_id else _normalize_symbol(payload.get("assetSymbol") or payload.get("asset_symbol"))
     raw_clauses = payload.get("conditions") or payload.get("clauses")
     spec = None
     condition = ""
@@ -554,6 +557,7 @@ def create_alert(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, 
         connection=conn,
         schema_ready=True,
         condition_spec=spec,
+        watchlist_id=watchlist_id,
     )
     if not result.get("ok"):
         if result.get("code") == "premium_required":
@@ -562,11 +566,13 @@ def create_alert(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, 
         raise ValueError(result.get("message") or "Alert could not be created.")
     alert_id = int(result.get("alert_id") or 0)
     _audit(conn, user_id, "create_alert", "crypto_alert", alert_id,
-           {"asset": symbol, "condition": condition or (spec or {}).get("logic") or "advanced",
+           {"asset": symbol, "watchlist_id": watchlist_id,
+            "condition": condition or (spec or {}).get("logic") or "advanced",
             "advanced": bool(spec)})
     conn.commit()
-    return {"ok": True, "alert_id": alert_id, "message": f"{symbol} alert created.",
-            "advanced": bool(spec)}
+    message = "Watchlist alert created." if watchlist_id else f"{symbol} alert created."
+    return {"ok": True, "alert_id": alert_id, "message": message,
+            "advanced": bool(spec), "watchlist_id": watchlist_id}
 
 
 def update_alert(conn: Any, user_id: int, alert_id: int, payload: dict[str, Any]) -> dict[str, Any]:
