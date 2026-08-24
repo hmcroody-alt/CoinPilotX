@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSE_API_BASE_URL } from "./config";
-import { pulseApi } from "./pulseApi";
+import { PulseApiError, pulseApi } from "./pulseApi";
 
 const MUSIC_CACHE_KEY = "pulsesoc.native.music.library.v1";
 const MUSIC_SELECTION_PREFIX = "pulsesoc.native.music.pending.";
@@ -100,6 +100,22 @@ export async function searchPulseMusic(params: PulseMusicSearchParams = {}) {
     surfaces: data.surfaces || ["reel", "video", "status", "post"],
     provider: data.provider || {}
   };
+}
+
+/**
+ * Resolve one track by id. `null` means the catalog has no approved track under
+ * that id — a real answer, distinct from the request failing, which throws.
+ */
+export async function getPulseMusicTrack(trackId: string) {
+  const id = String(trackId || "").trim();
+  if (!id) return null;
+  try {
+    const data = await pulseApi<{ item?: Record<string, unknown> }>(`/api/pulse/music/${encodeURIComponent(id)}`);
+    return data.item ? normalizeMusicTrack(data.item) : null;
+  } catch (error) {
+    if (error instanceof PulseApiError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 export async function loadCachedPulseMusicSnapshot() {
